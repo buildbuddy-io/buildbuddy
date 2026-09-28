@@ -393,7 +393,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 	executorID := "unknown"
 	for {
 		select {
-		case <-h.scheduler.shuttingDown:
+		case <-h.scheduler.shutdownCtx.Done():
 			return status.CanceledError("server is shutting down")
 		case err := <-errChan:
 			return err
@@ -1309,7 +1309,14 @@ type SchedulerServer struct {
 	taskRouter           interfaces.TaskRouter
 	clock                clockwork.Clock
 	schedulerClientCache *schedulerClientCache
-	shuttingDown         <-chan struct{}
+	// Canceled when the server starts shutting down.
+	shutdownCtx context.Context
+	// Tracks background goroutines so that shutdown can wait for them to
+	// exit. backgroundMu ensures that no goroutines are added once shutdown
+	// has started waiting.
+	backgroundMu sync.Mutex
+	background   sync.WaitGroup
+
 	// host:port at which this scheduler can be reached
 	ownHostPort string
 
@@ -1373,12 +1380,6 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		return nil, status.FailedPreconditionErrorf("Redis is required for remote execution")
 	}
 
-	shuttingDown := make(chan struct{})
-	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		close(shuttingDown)
-		return nil
-	})
-
 	taskRouter := env.GetTaskRouter()
 	if taskRouter == nil {
 		return nil, status.FailedPreconditionError("Missing task router in env")
@@ -1412,13 +1413,14 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	if options.LeaseDuration == 0 {
 		options.LeaseDuration = *leaseDuration
 	}
+	shutdownCtx, cancelShutdown := context.WithCancel(context.Background())
 	s := &SchedulerServer{
 		env:                               env,
 		pools:                             make(map[nodePoolKey]*nodePool),
 		rdb:                               env.GetRemoteExecutionRedisClient(),
 		taskRouter:                        taskRouter,
 		clock:                             clock,
-		shuttingDown:                      shuttingDown,
+		shutdownCtx:                       shutdownCtx,
 		enableUserOwnedExecutors:          remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		forceUserOwnedDarwinExecutors:     remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
 		forceUserOwnedWindowsExecutors:    remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedWindowsExecutors(),
@@ -1433,7 +1435,41 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
 	}
 	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		s.backgroundMu.Lock()
+		cancelShutdown()
+		s.backgroundMu.Unlock()
+
+		done := make(chan struct{})
+		go func() {
+			s.background.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+			return nil
+		case <-ctx.Done():
+			return status.DeadlineExceededError("timed out waiting for scheduler background work to finish")
+		}
+	})
 	return s, nil
+}
+
+// goBackground runs f in a goroutine that is canceled and waited on when the
+// server shuts down. f is not run if the server is already shutting down.
+func (s *SchedulerServer) goBackground(ctx context.Context, f func(ctx context.Context)) {
+	s.backgroundMu.Lock()
+	defer s.backgroundMu.Unlock()
+	if s.isShuttingDown() {
+		return
+	}
+	s.background.Go(func() {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		stop := context.AfterFunc(s.shutdownCtx, cancel)
+		defer stop()
+		f(ctx)
+	})
 }
 
 func (s *SchedulerServer) GetSharedExecutorPoolGroupID() string {
@@ -1620,11 +1656,11 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 	log.CtxInfof(ctx, "Scheduler: registered executor %q (host ID %q, host %q, version %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), node.GetHost(), node.GetVersion(), poolKey)
 	metrics.RemoteExecutionExecutorRegistrationCount.With(prometheus.Labels{metrics.VersionLabel: node.GetVersion()}).Inc()
 
-	go func() {
+	s.goBackground(ctx, func(ctx context.Context) {
 		if _, err := s.assignWorkToNode(ctx, handle, poolKey); err != nil {
 			log.CtxWarningf(ctx, "Failed to assign work to new node: %s", err.Error())
 		}
-	}()
+	})
 	return nil
 }
 
@@ -2115,7 +2151,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 
 func (s *SchedulerServer) isShuttingDown() bool {
 	select {
-	case <-s.shuttingDown:
+	case <-s.shutdownCtx.Done():
 		return true
 	default:
 		return false
