@@ -84,16 +84,19 @@ var UsageFields = []UsageField{
 	},
 	{
 		Name:                "total_download_size_bytes",
-		PrimaryDBExpression: "SUM(total_download_size_bytes)",
-		OLAPExpression:      rawUsageSum(sku.RemoteCacheCASDownloadedBytes),
-		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES,
+		PrimaryDBExpression: "SUM(CASE WHEN proxy <> 'customer' THEN total_download_size_bytes ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASDownloadedBytes,
+			rawUsageLabelNotEquals(sku.Proxy, sku.ProxyCustomer)),
+		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_external_download_size_bytes",
-		PrimaryDBExpression: "SUM(CASE WHEN origin <> 'internal' THEN total_download_size_bytes ELSE 0 END)",
+		PrimaryDBExpression: "SUM(CASE WHEN origin <> 'internal' AND proxy <> 'customer' THEN total_download_size_bytes ELSE 0 END)",
 		OLAPExpression: rawUsageSum(
 			sku.RemoteCacheCASDownloadedBytes,
 			rawUsageLabelNotEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelNotEquals(sku.Proxy, sku.ProxyCustomer),
 		),
 		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_EXTERNAL_DOWNLOAD_SIZE_BYTES,
 	},
@@ -119,16 +122,19 @@ var UsageFields = []UsageField{
 	},
 	{
 		Name:                "total_upload_size_bytes",
-		PrimaryDBExpression: "SUM(total_upload_size_bytes)",
-		OLAPExpression:      rawUsageSum(sku.RemoteCacheCASUploadedBytes),
-		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_UPLOAD_SIZE_BYTES,
+		PrimaryDBExpression: "SUM(CASE WHEN proxy <> 'customer' THEN total_upload_size_bytes ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASUploadedBytes,
+			rawUsageLabelNotEquals(sku.Proxy, sku.ProxyCustomer)),
+		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_UPLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_external_upload_size_bytes",
-		PrimaryDBExpression: "SUM(CASE WHEN origin <> 'internal' THEN total_upload_size_bytes ELSE 0 END)",
+		PrimaryDBExpression: "SUM(CASE WHEN origin <> 'internal' AND proxy <> 'customer' THEN total_upload_size_bytes ELSE 0 END)",
 		OLAPExpression: rawUsageSum(
 			sku.RemoteCacheCASUploadedBytes,
 			rawUsageLabelNotEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelNotEquals(sku.Proxy, sku.ProxyCustomer),
 		),
 		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_EXTERNAL_UPLOAD_SIZE_BYTES,
 	},
