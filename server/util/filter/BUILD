@@ -23,6 +23,7 @@ go_test(
         ":filter",
         "//proto:invocation_status_go_proto",
         "//proto:stat_filter_go_proto",
+        "//server/util/query_builder",
         "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@org_golang_google_protobuf//proto",

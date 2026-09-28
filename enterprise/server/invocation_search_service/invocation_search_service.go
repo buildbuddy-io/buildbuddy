@@ -358,12 +358,9 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 		dialectName = s.olapdbh.DialectName()
 	}
 
-	for _, f := range req.GetQuery().GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS, dialectName)
-		if err != nil {
-			return "", nil, err
-		}
-		q.AddWhereClause(s, a...)
+	err = filter.AddGenericFiltersToQuery(q, req.GetQuery().GetGenericFilters(), sfpb.ObjectTypes_INVOCATION_OBJECTS, dialectName)
+	if err != nil {
+		return "", nil, err
 	}
 
 	// Clickhouse doesn't hold permissions data, but we need to *always*
@@ -636,13 +633,11 @@ func (s *InvocationSearchService) GetInvocationFilterSuggestions(ctx context.Con
 	}
 	q := query_builder.NewQuery("SELECT topK(8, 3)(user) AS top_users, topK(8, 3)(host) AS top_hosts, topK(8, 3)(branch_name) AS top_branches, topK(3)(command) AS top_commands FROM Invocations")
 	q.AddWhereClause("group_id = ?", req.GetRequestContext().GetGroupId())
-	for _, f := range req.GetFilters() {
-		fStr, fArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS, "clickhouse")
-		if err != nil {
-			return nil, err
-		}
-		q.AddWhereClause(fStr, fArgs...)
+	err := filter.AddGenericFiltersToQuery(q, req.GetFilters(), sfpb.ObjectTypes_INVOCATION_OBJECTS, "clickhouse")
+	if err != nil {
+		return nil, err
 	}
+
 	qStr, qArgs := q.Build()
 	rq := s.olapdbh.NewQuery(ctx, "invocation_search_service_filter_suggestions").Raw(qStr, qArgs...)
 

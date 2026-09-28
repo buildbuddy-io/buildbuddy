@@ -207,7 +207,21 @@ func generateArrayContainsQueryStringAndArgs(column string, args []string, diale
 	return out, outArgs, nil
 }
 
-func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFilter, qType stat_filter.ObjectTypes, dialect string) (string, []any, error) {
+func AddGenericFiltersToQuery(q *query_builder.Query, filters []*stat_filter.GenericFilter, qType stat_filter.ObjectTypes, dialect string) error {
+	for _, f := range filters {
+		qStr, qArgs, err := validateAndGenerateGenericFilterQueryStringAndArgs(f, qType, dialect)
+		if err != nil {
+			return err
+		}
+		if len(qStr) == 0 {
+			continue
+		}
+		q.AddWhereClause(qStr, qArgs...)
+	}
+	return nil
+}
+
+func validateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFilter, qType stat_filter.ObjectTypes, dialect string) (string, []any, error) {
 	if f == nil {
 		return "", nil, status.InvalidArgumentError("invalid nil entry in filter list")
 	}
@@ -239,7 +253,10 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		return "", nil, status.InvalidArgumentErrorf("Filter %s does not support operand %s", f.GetType(), f.GetOperand().String())
 	}
 	if !slices.Contains(typeOptions.GetSupportedObjects(), qType) {
-		return "", nil, status.InvalidArgumentErrorf("Filtering by %s not supported for %s", qType, f.GetType())
+		// Silently ignore unsupported field types for ergonomics with client-side strings.
+		// Is this smart? Is it dumb? Kind of both.  We need a decent number of UI changes
+		// before invocation- and execution-specific filters can be handled coherently.
+		return "", nil, nil
 	}
 
 	v := f.GetValue()
