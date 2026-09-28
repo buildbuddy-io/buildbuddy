@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 # Do not use a concurrency group here: pending runs can be replaced, losing a
-# push. The script waits for the previous push's tag to preserve version order.
+# push. release.py waits for the previous push's tag to preserve version order.
 jobs:
   tag:
     # The internal cut-release workflow creates the initial minor-version tag.
@@ -26,7 +26,6 @@ jobs:
       - name: Create patch version tag
         env:
           BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.event.after }}
           FORCED: ${{ github.event.forced }}
           RELEASE_BRANCH: ${{ github.ref_name }}
         run: |
@@ -36,4 +35,5 @@ jobs:
           fi
           git config --local user.email "github-actions-release-bot@users.noreply.github.com"
           git config --local user.name "github-actions-release[bot]"
-          python3 tools/tag_release_branch.py "$BEFORE" "$AFTER" "$RELEASE_BRANCH"
+          ./release.py --auto --force --bump_version_type=patch \
+            --release_branch="$RELEASE_BRANCH" --previous_commit="$BEFORE"
