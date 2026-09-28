@@ -62,7 +62,8 @@ type Entry struct {
 	Ready    string
 	Restarts int64
 
-	Node       string
+	Node string
+	// IPs holds addresses, including load balancer hostnames and external names.
 	IPs        []string
 	Images     []string
 	Containers []string
@@ -206,7 +207,8 @@ type Index struct {
 
 func New() *Index { return &Index{} }
 
-// NewStore registers and returns the store for one resource type.
+// NewStore registers and returns the store for one resource type. Callers
+// should only register each resource type once.
 func (ix *Index) NewStore(res ResourceType) *Store {
 	s := &Store{res: res, entries: map[string]*Entry{}}
 	ix.mu.Lock()
@@ -222,7 +224,8 @@ func (ix *Index) snapshot() []*Store {
 }
 
 // Scan calls fn for every entry of the given kind (all kinds if empty),
-// restricted to cluster if non-empty.
+// restricted to cluster if non-empty. The callback should not call into the
+// index or store.
 func (ix *Index) Scan(cluster, kind string, fn func(*Entry)) {
 	for _, s := range ix.snapshot() {
 		if cluster != "" && s.res.Cluster != cluster {

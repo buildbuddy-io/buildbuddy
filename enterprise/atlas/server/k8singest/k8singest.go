@@ -4,7 +4,7 @@ package k8singest
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/atlas/server/summaries"
@@ -59,10 +59,8 @@ func enrich(e *summaries.Entry, u *unstructured.Unstructured) {
 	switch e.Kind {
 	case "Pod":
 		enrichPod(e, u)
-	case "Deployment", "StatefulSet", "ReplicaSet":
-		enrichWorkload(e, u, "readyReplicas", "replicas")
-	case "DaemonSet":
-		enrichWorkload(e, u, "numberReady", "desiredNumberScheduled")
+	case "Deployment", "StatefulSet", "ReplicaSet", "DaemonSet":
+		enrichWorkload(e, u)
 	case "Service":
 		enrichService(e, u)
 	case "Node":
@@ -83,7 +81,24 @@ func enrichPod(e *summaries.Entry, u *unstructured.Unstructured) {
 		e.IPs = []string{ip}
 	}
 
-	containers, _, _ := unstructured.NestedSlice(u.Object, "spec", "containers")
+	// Sidecars (init containers with restartPolicy Always) run for the life of
+	// the pod, so they count as regular containers, as in kubectl.
+	sidecars := map[string]bool{}
+	var containers []any
+	initContainers, _, _ := unstructured.NestedSlice(u.Object, "spec", "initContainers")
+	for _, c := range initContainers {
+		cm, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		if rp, _, _ := unstructured.NestedString(cm, "restartPolicy"); rp == "Always" {
+			name, _, _ := unstructured.NestedString(cm, "name")
+			sidecars[name] = true
+			containers = append(containers, cm)
+		}
+	}
+	regular, _, _ := unstructured.NestedSlice(u.Object, "spec", "containers")
+	containers = append(containers, regular...)
 	for _, c := range containers {
 		cm, ok := c.(map[string]any)
 		if !ok {
@@ -115,8 +130,29 @@ func enrichPod(e *summaries.Entry, u *unstructured.Unstructured) {
 		}
 	}
 
-	statuses, _, _ := unstructured.NestedSlice(u.Object, "status", "containerStatuses")
 	ready := 0
+	initStatuses, _, _ := unstructured.NestedSlice(u.Object, "status", "initContainerStatuses")
+	for _, s := range initStatuses {
+		sm, ok := s.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _, _ := unstructured.NestedString(sm, "name")
+		if r, _, _ := unstructured.NestedBool(sm, "ready"); r && sidecars[name] {
+			ready++
+		}
+		// A finished init container's restarts are history, as in kubectl.
+		if code, done, _ := unstructured.NestedInt64(sm, "state", "terminated", "exitCode"); done && code == 0 {
+			continue
+		}
+		if n, _, _ := unstructured.NestedInt64(sm, "restartCount"); n > 0 {
+			e.Restarts += n
+		}
+		if reason := waitingReason(sm); reason != "" {
+			e.Phase = "Init:" + reason
+		}
+	}
+	statuses, _, _ := unstructured.NestedSlice(u.Object, "status", "containerStatuses")
 	for _, s := range statuses {
 		sm, ok := s.(map[string]any)
 		if !ok {
@@ -128,9 +164,7 @@ func enrichPod(e *summaries.Entry, u *unstructured.Unstructured) {
 		if n, _, _ := unstructured.NestedInt64(sm, "restartCount"); n > 0 {
 			e.Restarts += n
 		}
-		// A waiting reason (CrashLoopBackOff, ImagePullBackOff, ...) is more
-		// informative than the generic phase, so let it win.
-		if reason, _, _ := unstructured.NestedString(sm, "state", "waiting", "reason"); reason != "" && reason != "ContainerCreating" {
+		if reason := waitingReason(sm); reason != "" {
 			e.Phase = reason
 		}
 	}
@@ -139,15 +173,28 @@ func enrichPod(e *summaries.Entry, u *unstructured.Unstructured) {
 	}
 }
 
-func enrichWorkload(e *summaries.Entry, u *unstructured.Unstructured, readyField, desiredField string) {
-	ready, _, _ := unstructured.NestedInt64(u.Object, "status", readyField)
-	var desired int64
+// waitingReason returns a container's waiting reason (CrashLoopBackOff,
+// ImagePullBackOff, ...) when it says more than the pod phase does.
+func waitingReason(status map[string]any) string {
+	reason, _, _ := unstructured.NestedString(status, "state", "waiting", "reason")
+	if reason == "ContainerCreating" || reason == "PodInitializing" {
+		return ""
+	}
+	return reason
+}
+
+func enrichWorkload(e *summaries.Entry, u *unstructured.Unstructured) {
+	var ready, desired int64
 	if e.Kind == "DaemonSet" {
-		desired, _, _ = unstructured.NestedInt64(u.Object, "status", desiredField)
-	} else if n, ok, _ := unstructured.NestedInt64(u.Object, "spec", desiredField); ok {
-		desired = n
+		ready, _, _ = unstructured.NestedInt64(u.Object, "status", "numberReady")
+		desired, _, _ = unstructured.NestedInt64(u.Object, "status", "desiredNumberScheduled")
 	} else {
-		desired = 1 // the API default when spec.replicas is unset
+		ready, _, _ = unstructured.NestedInt64(u.Object, "status", "readyReplicas")
+		if n, ok, _ := unstructured.NestedInt64(u.Object, "spec", "replicas"); ok {
+			desired = n
+		} else {
+			desired = 1 // the API default when spec.replicas is unset
+		}
 	}
 	e.Ready = fmt.Sprintf("%d/%d", ready, desired)
 	e.Selector, _, _ = unstructured.NestedStringMap(u.Object, "spec", "selector", "matchLabels")
@@ -165,15 +212,27 @@ func enrichWorkload(e *summaries.Entry, u *unstructured.Unstructured, readyField
 func enrichService(e *summaries.Entry, u *unstructured.Unstructured) {
 	e.Phase, _, _ = unstructured.NestedString(u.Object, "spec", "type")
 	e.Selector, _, _ = unstructured.NestedStringMap(u.Object, "spec", "selector")
-	if ip, _, _ := unstructured.NestedString(u.Object, "spec", "clusterIP"); ip != "" && ip != "None" {
-		e.IPs = append(e.IPs, ip)
+	// clusterIPs has both families of a dual-stack service; objects from
+	// before it existed only have clusterIP.
+	addrs, ok, _ := unstructured.NestedStringSlice(u.Object, "spec", "clusterIPs")
+	if !ok {
+		ip, _, _ := unstructured.NestedString(u.Object, "spec", "clusterIP")
+		addrs = []string{ip}
 	}
+	external, _, _ := unstructured.NestedStringSlice(u.Object, "spec", "externalIPs")
+	addrs = append(addrs, external...)
 	ingress, _, _ := unstructured.NestedSlice(u.Object, "status", "loadBalancer", "ingress")
 	for _, i := range ingress {
 		if im, ok := i.(map[string]any); ok {
-			if ip, _, _ := unstructured.NestedString(im, "ip"); ip != "" {
-				e.IPs = append(e.IPs, ip)
-			}
+			ip, _, _ := unstructured.NestedString(im, "ip")
+			host, _, _ := unstructured.NestedString(im, "hostname") // AWS load balancers
+			addrs = append(addrs, ip, host)
+		}
+	}
+	name, _, _ := unstructured.NestedString(u.Object, "spec", "externalName")
+	for _, a := range append(addrs, name) {
+		if a != "" && a != "None" { // "None" is a headless service
+			e.IPs = append(e.IPs, a)
 		}
 	}
 	ports, _, _ := unstructured.NestedSlice(u.Object, "spec", "ports")
@@ -238,7 +297,7 @@ func enrichNode(e *summaries.Entry, u *unstructured.Unstructured) {
 		}
 	}
 	if len(roles) > 0 {
-		sort.Strings(roles)
+		slices.Sort(roles)
 		e.SetExtra("roles", strings.Join(roles, ","))
 	}
 }
@@ -247,21 +306,28 @@ func enrichJob(e *summaries.Entry, u *unstructured.Unstructured) {
 	succeeded, _, _ := unstructured.NestedInt64(u.Object, "status", "succeeded")
 	failed, _, _ := unstructured.NestedInt64(u.Object, "status", "failed")
 	active, _, _ := unstructured.NestedInt64(u.Object, "status", "active")
+	suspended, _, _ := unstructured.NestedBool(u.Object, "spec", "suspend")
 	switch {
 	case conditionTrue(u, "Complete"):
 		e.Phase = "Complete"
 	case conditionTrue(u, "Failed"):
 		e.Phase = "Failed"
+	case suspended:
+		e.Phase = "Suspended"
 	case active > 0:
 		e.Phase = "Active"
 	case failed > 0:
 		e.Phase = "Retrying"
 	}
-	completions := int64(1)
+	// Same as kubectl's COMPLETIONS column. Without spec.completions the job
+	// is a work queue, done once any one pod succeeds.
 	if n, ok, _ := unstructured.NestedInt64(u.Object, "spec", "completions"); ok {
-		completions = n
+		e.Ready = fmt.Sprintf("%d/%d", succeeded, n)
+	} else if p, _, _ := unstructured.NestedInt64(u.Object, "spec", "parallelism"); p > 1 {
+		e.Ready = fmt.Sprintf("%d/1 of %d", succeeded, p)
+	} else {
+		e.Ready = fmt.Sprintf("%d/1", succeeded)
 	}
-	e.Ready = fmt.Sprintf("%d/%d", succeeded, completions)
 }
 
 // conditionTrue reports whether status.conditions has the named condition
@@ -291,15 +357,15 @@ func enrichCronJob(e *summaries.Entry, u *unstructured.Unstructured) {
 	}
 }
 
-// Store is a wrapper over a summary Store.
+// Store is the write side of a summary Store, as a Reflector sees it.
 // It takes objects from the kubernetes client, converts them into internal
-// types and passes that to the underyling store.
+// types and passes that to the underlying store.
 type Store struct {
 	res summaries.ResourceType
 	s   *summaries.Store
 }
 
-var _ cache.Store = (*Store)(nil)
+var _ cache.ReflectorStore = (*Store)(nil)
 
 func NewStore(s *summaries.Store) *Store {
 	return &Store{res: s.ResourceType(), s: s}
@@ -326,15 +392,11 @@ func (a *Store) Delete(obj any) error {
 	return nil
 }
 
-// keyOf returns the store key for anything cache.Store may be handed: a
-// Kubernetes object, a tombstone from a missed delete (which carries only the
-// key), or an entry that List returned.
+// keyOf returns the store key for a Kubernetes object or for a tombstone from
+// a missed delete, which carries only the key.
 func (a *Store) keyOf(obj any) (string, error) {
-	switch o := obj.(type) {
-	case cache.DeletedFinalStateUnknown:
-		return o.Key, nil
-	case *summaries.Entry:
-		return o.Key(), nil
+	if d, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		return d.Key, nil
 	}
 	e, err := Summarize(a.res, obj)
 	if err != nil {
@@ -358,37 +420,3 @@ func (a *Store) Replace(objs []any, _ string) error {
 }
 
 func (a *Store) Resync() error { return nil }
-
-func (a *Store) List() []any {
-	entries := a.s.Entries()
-	out := make([]any, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, e)
-	}
-	return out
-}
-
-func (a *Store) ListKeys() []string {
-	entries := a.s.Entries()
-	out := make([]string, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, e.Key())
-	}
-	return out
-}
-
-func (a *Store) Get(obj any) (any, bool, error) {
-	key, err := a.keyOf(obj)
-	if err != nil {
-		return nil, false, err
-	}
-	return a.GetByKey(key)
-}
-
-func (a *Store) GetByKey(key string) (any, bool, error) {
-	e, ok := a.s.Get(key)
-	if !ok {
-		return nil, false, nil
-	}
-	return e, true, nil
-}

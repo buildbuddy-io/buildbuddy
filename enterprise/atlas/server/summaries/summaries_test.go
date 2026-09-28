@@ -137,6 +137,19 @@ func TestSearch(t *testing.T) {
 		require.Equal(t, 0, ix.Search("", 10).Total)
 		require.Equal(t, 0, ix.Search("   ", 10).Total)
 	})
+
+	t.Run("a kind shared by two api groups is two groups", func(t *testing.T) {
+		ix := New()
+		for _, group := range []string{"fleet.example", "capi.example"} {
+			res := ResourceType{Cluster: "uswest1", Group: group, Version: "v1", Resource: "clusters", Kind: "Cluster"}
+			ix.NewStore(res).Put(&Entry{Cluster: "uswest1", Group: group, Version: "v1", Resource: "clusters", Kind: "Cluster", Name: "east"})
+		}
+		res := ix.Search("east", 10)
+		require.Equal(t, 2, res.Total)
+		require.Len(t, res.Groups, 2)
+		require.Equal(t, "capi.example", res.Groups[0].Group, "equal scores sort by group")
+		require.Equal(t, "fleet.example", res.Groups[1].Group)
+	})
 }
 
 func TestSelectorMatches(t *testing.T) {

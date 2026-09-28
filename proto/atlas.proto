@@ -42,6 +42,7 @@ message Entry {
   string ready = 13;
   int64 restarts = 14;
   string node = 15;
+  // Addresses, including load balancer hostnames and external names.
   repeated string ips = 16;
   repeated string images = 17;
   repeated string containers = 18;
@@ -64,6 +65,8 @@ message SearchGroup {
   // per-group max.
   int32 total = 2;
   repeated Entry entries = 3;
+  // API group, since unrelated kinds can share a name across groups.
+  string group = 4;
 }
 
 message SearchResponse {
