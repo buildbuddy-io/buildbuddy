@@ -268,12 +268,11 @@ def generate_release_notes(old_version):
 
 def get_latest_remote_version():
     run_or_die('git fetch --all --tags')
-    # Use version order, not creation date: a recent patch may be for an older minor.
-    p = run_or_die("git tag -l 'v*' --sort=-version:refname", capture_stdout=True)
-    for tag in p.stdout.splitlines():
-        if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
-            return tag
-    die("No version tag found to base the release on.")
+    p = run_or_die("./tools/latest_version_tag.sh", capture_stdout=True)
+    version = p.stdout.strip()
+    if not version:
+        die("No version tag found to base the release on.")
+    return version
 
 def get_cpu_architecture():
     arch = platform.machine()

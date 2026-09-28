@@ -5,6 +5,11 @@ on:
     branches:
       - "bb_release_*"
 
+# Serialize runs per branch so concurrent pushes don't pick the same patch version.
+concurrency:
+  group: tag-release-branch-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   tag:
     # The internal cut-release workflow creates the initial minor-version tag.
@@ -19,8 +24,11 @@ jobs:
 
       - name: Create patch version tag
         run: |
-          previous_version=$(git tag --merged HEAD -l 'v*' --sort=version:refname |
-            sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | tail -n1)
+          if git tag --points-at HEAD | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "HEAD already has a version tag; nothing to do."
+            exit 0
+          fi
+          previous_version=$(./tools/latest_version_tag.sh --merged HEAD)
           if [[ -z "$previous_version" ]]; then
             echo "No version tag found in release branch history." >&2
             exit 1
