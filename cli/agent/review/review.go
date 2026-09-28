@@ -33,8 +33,8 @@ check it out first with ` + "`gh pr checkout <pr>`" + `.
 
 Requires gh and a GitHub token in REPO_TOKEN, GH_TOKEN, or GITHUB_TOKEN.
 
-Drafts and PRs that already have a bot review are skipped; pass --force to
-review them anyway.
+Drafts and PRs that already have a bot review are skipped; pass --force (or
+set AGENT_REVIEW_FORCE=1) to review them anyway.
 
 By default, PRs from forks are refused, because reviewing one runs the agent over
 untrusted code; pass --allow_fork to review one anyway.
@@ -169,7 +169,7 @@ func HandleReview(args []string) (int, error) {
 
 	// A PR is reviewed once, when it's ready for review, so skip drafts and PRs
 	// that already have a bot review to avoid spamming them with reviews.
-	if !*force {
+	if !*force && os.Getenv("AGENT_REVIEW_FORCE") != "1" {
 		skip, err := shouldSkip(ctx, gh, owner, repo, pr)
 		if err != nil {
 			return -1, err
@@ -256,7 +256,7 @@ func isFork(pr *github.PullRequest, owner, repo string) bool {
 // shouldSkip reports whether the PR is a draft or already has a bot review.
 func shouldSkip(ctx context.Context, gh *github.Client, owner, repo string, pr *github.PullRequest) (bool, error) {
 	if pr.GetDraft() {
-		log.Printf("PR #%d is a draft — skipping (pass --force to override).", pr.GetNumber())
+		log.Printf("PR #%d is a draft — skipping (pass --force or set AGENT_REVIEW_FORCE=1 to override).", pr.GetNumber())
 		return true, nil
 	}
 	log.Printf("Checking for existing reviews...")
@@ -266,7 +266,7 @@ func shouldSkip(ctx context.Context, gh *github.Client, owner, repo string, pr *
 	}
 	for _, r := range reviews {
 		if r.GetUser().GetType() == "Bot" {
-			log.Printf("PR #%d already has a bot review — skipping (pass --force to override).", pr.GetNumber())
+			log.Printf("PR #%d already has a bot review — skipping (pass --force or set AGENT_REVIEW_FORCE=1 to override).", pr.GetNumber())
 			return true, nil
 		}
 	}
