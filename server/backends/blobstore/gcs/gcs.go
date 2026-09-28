@@ -79,6 +79,7 @@ func NewGCSBlobStore(ctx context.Context, bucket, credsFile, creds, projectID st
 			otelgrpc.WithMeterProvider(rpcutil.MeterProvider()),
 			otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents),
 		))))
+		opts = append(opts, option.WithGRPCDialOption(rpcutil.ClientSizeMetricsDialOption()))
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(interceptors.Metrics().UnaryClientInterceptor())))
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(interceptors.Metrics().StreamClientInterceptor())))
 		gcsClient, err = storage.NewGRPCClient(ctx, opts...)

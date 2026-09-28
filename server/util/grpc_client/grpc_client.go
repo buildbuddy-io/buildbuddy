@@ -445,6 +445,7 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 	}
 	return []grpc.DialOption{
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler(otelOpts...)),
+		rpcutil.ClientSizeMetricsDialOption(),
 		interceptors.GetUnaryClientInterceptor(),
 		interceptors.GetStreamClientInterceptor(),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
