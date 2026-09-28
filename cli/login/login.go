@@ -65,6 +65,9 @@ The exit code indicates the result of the check:
 `
 )
 
+// authenticateFn is replaced in tests to avoid a network round-trip.
+var authenticateFn = authenticate
+
 func authenticate(apiKey string) error {
 	conn, err := grpc_client.DialSimple(*apiTarget)
 	if err != nil {
@@ -101,18 +104,19 @@ func HandleLogin(args []string) (exitCode int, err error) {
 	}
 	buildbuddyURL.Path = ""
 
-	repoRoot, err := storage.RepoRootPath()
-	if err != nil {
-		return -1, fmt.Errorf("locate .git repo root path: %w", err)
-	}
-
 	if *check || *allowExisting {
-		apiKey, err := storage.ReadRepoConfig(apiKeyRepoSetting)
+		// Check the same key that builds would use, which may come from the
+		// environment rather than .git/config.
+		apiKey, err := apiKeyFromEnvOrRepo()
 		if err != nil {
-			return -1, fmt.Errorf("read .git/config: %w", err)
+			// E.g. not in a git repo. There is no usable key, so treat this
+			// the same as an unset key.
+			log.Debugf("Could not read api key from bb config: %s", err)
 		}
 		code := 0
-		if err := authenticate(apiKey); err != nil {
+		if apiKey == "" {
+			code = 1
+		} else if err := authenticateFn(apiKey); err != nil {
 			if status.IsUnauthenticatedError(err) {
 				code = 1
 			} else {
@@ -135,6 +139,11 @@ func HandleLogin(args []string) (exitCode int, err error) {
 			}
 			// Unauthenticated - proceed to login.
 		}
+	}
+
+	repoRoot, err := storage.RepoRootPath()
+	if err != nil {
+		return -1, fmt.Errorf("locate .git repo root path: %w", err)
 	}
 
 	userInputCh := make(chan Result[string])
@@ -411,21 +420,33 @@ func GetAPIKey() (string, error) {
 	return getAPIKey(true /*=interactive*/)
 }
 
-func getAPIKey(interactive bool) (string, error) {
-	var err error
+// apiKeyFromEnvOrRepo returns the BUILDBUDDY_API_KEY environment variable if
+// set, and otherwise the API key saved in .git/config. It returns an empty
+// string if neither is set.
+func apiKeyFromEnvOrRepo() (string, error) {
 	apiKey := strings.TrimSpace(os.Getenv("BUILDBUDDY_API_KEY"))
 	if apiKey != "" {
 		debugAPIKey("BUILDBUDDY_API_KEY", apiKey)
 		return apiKey, nil
 	}
-	apiKey, err = storage.ReadRepoConfig("api-key")
+	apiKey, err := storage.ReadRepoConfig(apiKeyRepoSetting)
+	if err != nil {
+		return "", err
+	}
 	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		log.Debugf("API key is empty")
+		return "", nil
+	}
+	debugAPIKey(".git/config buildbuddy.api-key", apiKey)
+	return apiKey, nil
+}
+
+func getAPIKey(interactive bool) (string, error) {
+	apiKey, err := apiKeyFromEnvOrRepo()
 	if err != nil {
 		log.Debugf("Could not read api key from bb config: %s", err)
-	} else if apiKey == "" {
-		log.Debugf("API key is empty")
-	} else {
-		debugAPIKey(".git/config buildbuddy.api-key", apiKey)
+	} else if apiKey != "" {
 		return apiKey, nil
 	}
 	// If an API key is not set, and we're running in a terminal, start the
