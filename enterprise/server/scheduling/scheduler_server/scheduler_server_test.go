@@ -109,6 +109,26 @@ type schedulerOpts struct {
 }
 
 func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, context.Context) {
+	// The scheduler does some work in background goroutines that the test can't
+	// wait on directly (e.g. the unclaimed tasks lookup started when an executor
+	// joins). That work reads flags while holding the node pool's
+	// unclaimedTasksMu, so acquire each pool's lock after everything else has
+	// been torn down. Otherwise the next test's flags.Set races with it.
+	var s *SchedulerServer
+	t.Cleanup(func() {
+		if s == nil {
+			return
+		}
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		for _, np := range s.pools {
+			func() {
+				np.unclaimedTasksMu.Lock()
+				defer np.unclaimedTasksMu.Unlock()
+			}()
+		}
+	})
+
 	redisTarget := testredis.Start(t).Target
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
@@ -131,7 +151,7 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	err = execution_server.Register(env)
 	require.NoError(t, err)
 	env.SetTaskRouter(&fakeTaskRouter{opts.preferredExecutors})
-	s, err := NewSchedulerServerWithOptions(env, &opts.options)
+	s, err = NewSchedulerServerWithOptions(env, &opts.options)
 	require.NoError(t, err)
 	env.SetSchedulerService(s)
 
