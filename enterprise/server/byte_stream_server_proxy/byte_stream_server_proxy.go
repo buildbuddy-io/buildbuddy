@@ -928,18 +928,6 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	meteredStream := &meteredServerSideClientStream{compressor: "unknown", ByteStream_WriteServer: stream}
 	stream = meteredStream
 
-	encryptionRequested := s.shouldBypassLocalCacheForEncryption(ctx)
-	if proxy_util.SkipRemote(ctx) && encryptionRequested {
-		err := status.FailedPreconditionError("proxy_skip_remote is incompatible with encrypted cache requests on proxies without encryption support")
-		recordWriteMetrics(byteStreamMetrics{
-			requestType: requestTypeLabel,
-			compressor:  meteredStream.compressor,
-			err:         err,
-			bytes:       meteredStream.bytes,
-		})
-		return err
-	}
-
 	if s.writeChunkingEnabled(ctx) && !proxy_util.SkipRemote(ctx) {
 		result, err := s.writeChunked(ctx, stream)
 		if err == nil {
@@ -973,8 +961,19 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 		}
 	}
 
+	remoteOnlyForEncryption := s.shouldBypassLocalCacheForEncryption(ctx)
+	if proxy_util.SkipRemote(ctx) && remoteOnlyForEncryption {
+		err := status.FailedPreconditionError("proxy_skip_remote is incompatible with encrypted cache requests on proxies without encryption support")
+		recordWriteMetrics(byteStreamMetrics{
+			requestType: requestTypeLabel,
+			compressor:  meteredStream.compressor,
+			err:         err,
+			bytes:       meteredStream.bytes,
+		})
+		return err
+	}
 	var err error
-	if encryptionRequested {
+	if remoteOnlyForEncryption {
 		err = s.writeRemoteOnly(ctx, stream)
 	} else if proxy_util.SkipRemote(ctx) {
 		err = s.writeLocalOnly(stream)
