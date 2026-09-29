@@ -104,3 +104,43 @@ func TestListAppendAndRange(t *testing.T) {
 		require.Equal(t, testCase.expected, list, testCase.msg)
 	}
 }
+
+func TestListAppendAndTruncate(t *testing.T) {
+	mc, err := NewMemoryMetricsCollector()
+	require.NoError(t, err)
+	ctx := t.Context()
+
+	// Append values that fit under the max length.
+	err = mc.ListAppendAndTruncate(ctx, "key", 3, "1", "2")
+	require.NoError(t, err)
+	// Append more values than fit. Only the first should be kept.
+	err = mc.ListAppendAndTruncate(ctx, "key", 3, "3", "4")
+	require.NoError(t, err)
+	// Append to a list that is already at the max length. Nothing should be
+	// kept.
+	err = mc.ListAppendAndTruncate(ctx, "key", 3, "5")
+	require.NoError(t, err)
+
+	// The list should contain the first 3 values appended.
+	list, err := mc.ListRange(ctx, "key", 0, -1)
+	require.NoError(t, err)
+	require.Equal(t, []string{"1", "2", "3"}, list)
+
+	// Lower the max length. The list should be truncated to its first 2
+	// values, and the new value should be dropped.
+	err = mc.ListAppendAndTruncate(ctx, "key", 2, "6")
+	require.NoError(t, err)
+	truncated, err := mc.ListRange(ctx, "key", 0, -1)
+	require.NoError(t, err)
+	require.Equal(t, []string{"1", "2"}, truncated)
+
+	// Raise the max length again and append a value where "3" used to be.
+	err = mc.ListAppendAndTruncate(ctx, "key", 3, "7")
+	require.NoError(t, err)
+	grown, err := mc.ListRange(ctx, "key", 0, -1)
+	require.NoError(t, err)
+	require.Equal(t, []string{"1", "2", "7"}, grown)
+
+	// The list read before the truncation should be unchanged.
+	require.Equal(t, []string{"1", "2", "3"}, list)
+}
