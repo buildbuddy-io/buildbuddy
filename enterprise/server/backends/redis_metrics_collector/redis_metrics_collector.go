@@ -131,7 +131,7 @@ func (c *collector) ListAppendAndTruncate(ctx context.Context, key string, maxLe
 	if err := c.ListAppend(ctx, key, values...); err != nil {
 		return err
 	}
-	return c.rbuf.LTrim(ctx, key, 0, maxLength-1)
+	return c.rbuf.LTruncate(ctx, key, maxLength)
 }
 
 func (c *collector) ReadCounts(ctx context.Context, key string) (map[string]int64, error) {

@@ -396,14 +396,10 @@ func TestCommandBuffer(t *testing.T) {
 	err = buf.RPush(ctx, "list2", "A")
 	require.NoError(t, err)
 
-	// Trim list3 to its first 2 values, then push a third value. Buffered trims
-	// are applied after all buffered pushes, so the third value should get
-	// trimmed too.
-	err = buf.RPush(ctx, "list3", "1", "2")
+	// Push 3 values to list3, then truncate it to its first 2 values.
+	err = buf.RPush(ctx, "list3", "1", "2", "3")
 	require.NoError(t, err)
-	err = buf.LTrim(ctx, "list3", 0, 1)
-	require.NoError(t, err)
-	err = buf.RPush(ctx, "list3", "3")
+	err = buf.LTruncate(ctx, "list3", 2)
 	require.NoError(t, err)
 
 	// Create 2 keys that don't expire (initially).
@@ -512,7 +508,7 @@ func TestCommandBuffer_PostShutdown(t *testing.T) {
 
 	err = buf.RPush(ctx, "list1", "1", "2", "3")
 	require.NoError(t, err)
-	err = buf.LTrim(ctx, "list1", 0, 1)
+	err = buf.LTruncate(ctx, "list1", 2)
 	require.NoError(t, err)
 
 	// Create 2 keys that don't expire (initially).

@@ -529,10 +529,6 @@ type valueExpiration struct {
 	expiration time.Duration
 }
 
-type listRange struct {
-	start, stop int64
-}
-
 // CommandBuffer buffers and aggregates Redis commands in-memory and allows
 // periodically flushing the aggregate results in batch. This is useful for
 // reducing the load placed on Redis in cases where a high volume of commands
@@ -569,8 +565,8 @@ type CommandBuffer struct {
 	hincr map[string]map[string]int64
 	// Buffer for RPUSH commands.
 	rpush map[string][]any
-	// Buffer for LTRIM commands.
-	ltrim map[string]listRange
+	// Buffer for list truncations, which are flushed as LTRIM commands.
+	ltruncate map[string]int64
 	// Buffer for SADD commands.
 	sadd map[string]map[any]struct{}
 	// Buffer for EXPIRE commands.
@@ -591,7 +587,7 @@ func (c *CommandBuffer) init() {
 	c.incr = map[string]int64{}
 	c.hincr = map[string]map[string]int64{}
 	c.rpush = map[string][]any{}
-	c.ltrim = map[string]listRange{}
+	c.ltruncate = map[string]int64{}
 	c.sadd = map[string]map[any]struct{}{}
 	c.expire = map[string]time.Duration{}
 }
@@ -698,21 +694,27 @@ func (c *CommandBuffer) RPush(ctx context.Context, key string, values ...any) er
 	return nil
 }
 
-// LTrim adds an LTRIM operation to the buffer, overwriting any previous LTRIM
-// currently buffered for the given key.
+// LTruncate adds an operation to the buffer that truncates the list at key to
+// its first length values, overwriting any truncation currently buffered for
+// the given key. Truncations are sent to Redis as LTRIM commands.
 //
 // If the server is shutting down, the command will be issued to Redis
 // synchronously using the given context. Otherwise, the command is added to
 // the buffer and the context is ignored.
-func (c *CommandBuffer) LTrim(ctx context.Context, key string, start, stop int64) error {
+func (c *CommandBuffer) LTruncate(ctx context.Context, key string, length int64) error {
+	// LTRIM treats a stop index of -1 as the end of the list, so truncating
+	// to 0 values would keep the whole list.
+	if length < 1 {
+		return fmt.Errorf("invalid list length %d", length)
+	}
 	c.mu.Lock()
 	if c.shouldFlushSynchronously() {
 		c.mu.Unlock()
-		return c.rdb.LTrim(ctx, key, start, stop).Err()
+		return c.rdb.LTrim(ctx, key, 0, length-1).Err()
 	}
 	defer c.mu.Unlock()
 
-	c.ltrim[key] = listRange{start, stop}
+	c.ltruncate[key] = length
 	return nil
 }
 
@@ -758,7 +760,7 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 	hincr := c.hincr
 	sadd := c.sadd
 	rpush := c.rpush
-	ltrim := c.ltrim
+	ltruncate := c.ltruncate
 	expire := c.expire
 	// Set all fields to fresh values so the current ones can be flushed without
 	// keeping a hold on the lock.
@@ -781,8 +783,8 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 	for key, values := range rpush {
 		pipe.RPush(ctx, key, values...)
 	}
-	for key, r := range ltrim {
-		pipe.LTrim(ctx, key, r.start, r.stop)
+	for key, length := range ltruncate {
+		pipe.LTrim(ctx, key, 0, length-1)
 	}
 	for key, set := range sadd {
 		members := []any{}
