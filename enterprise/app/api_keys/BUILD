@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -29,7 +29,23 @@ ts_library(
         "//app/util:errors",
         "//app/util:proto",
         "//app/util:react",
+        "//enterprise/app/api_keys:visibility",
         "//proto:api_key_ts_proto",
         "//proto:capability_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "visibility",
+    srcs = ["visibility.ts"],
+    deps = ["//proto:api_key_ts_proto"],
+)
+
+ts_jasmine_node_test(
+    name = "visibility_test",
+    srcs = ["visibility_test.ts"],
+    deps = [
+        ":visibility",
+        "//proto:api_key_ts_proto",
     ],
 )

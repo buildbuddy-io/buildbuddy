@@ -25,6 +25,7 @@ import { timestampToDate } from "../../../app/util/proto";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import { capability } from "../../../proto/capability_ts_proto";
 import { withKey } from "../../../app/util/react";
+import { defaultVisibility, initialVisibility, setDevelopersVisible } from "./visibility";
 
 export interface ApiKeysComponentProps {
   /** The authenticated user. */
@@ -74,8 +75,6 @@ const INITIAL_STATE: State = {
 };
 
 type ApiKeyFields = api_key.ICreateApiKeyRequest | api_key.IUpdateApiKeyRequest;
-
-const DEFAULT_VISIBILITY = [api_key.Visibility.VISIBLE_TO_GROUP_ADMINS];
 
 type FormState<T extends ApiKeyFields> = {
   isOpen: boolean;
@@ -152,7 +151,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
         isSubmitting: false,
         request: new api_key.CreateApiKeyRequest({
           capability: this.defaultCapabilities(),
-          visibility: DEFAULT_VISIBILITY,
+          visibility: defaultVisibility(),
         }),
       },
     });
@@ -210,7 +209,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           label: apiKey.label,
           capability: [...apiKey.capability],
           visibleToDevelopers: apiKey.visibleToDevelopers,
-          visibility: [...apiKey.visibility],
+          visibility: initialVisibility(apiKey),
         }),
       },
     });
@@ -343,13 +342,9 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     request: ApiKeyFields,
     e: React.ChangeEvent<HTMLInputElement>
   ) {
-    // Only toggle the developers bit so that other bits survive an edit.
-    const visibility: api_key.Visibility[] = (request.visibility ?? []).filter(
-      (v) => v !== api_key.Visibility.VISIBLE_TO_DEVELOPERS
-    );
-    if (e.target.checked) visibility.push(api_key.Visibility.VISIBLE_TO_DEVELOPERS);
+    // onChange applies a state updater function, so both updates take effect.
     onChange("visibleToDevelopers", e.target.checked);
-    onChange("visibility", visibility);
+    onChange("visibility", setDevelopersVisible(request.visibility, e.target.checked));
   }
 
   private canSetCapabilities(caps: capability.Capability[]): boolean {
