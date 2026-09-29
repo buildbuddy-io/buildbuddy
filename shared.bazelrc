@@ -396,6 +396,9 @@ common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --remote_executor=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --config=remote-shared
+# Build actions run on Linux, so don't use the host's (Windows) bash path.
+common:untrusted-ci-windows --shell_executable=/bin/bash
+common:untrusted-ci-windows --experimental_remote_downloader=grpcs://remote.buildbuddy.io
 
 # Use BuildBuddy endpoints from the ci_runner-generated bazelrc.
 # These will point to local, dev, or prod, depending on which app created the workflow action.
