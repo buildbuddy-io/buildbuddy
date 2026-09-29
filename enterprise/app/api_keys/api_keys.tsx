@@ -75,6 +75,8 @@ const INITIAL_STATE: State = {
 
 type ApiKeyFields = api_key.ICreateApiKeyRequest | api_key.IUpdateApiKeyRequest;
 
+const DEFAULT_VISIBILITY = [api_key.Visibility.VISIBLE_TO_GROUP_ADMINS];
+
 type FormState<T extends ApiKeyFields> = {
   isOpen: boolean;
   isSubmitting: boolean;
@@ -150,6 +152,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
         isSubmitting: false,
         request: new api_key.CreateApiKeyRequest({
           capability: this.defaultCapabilities(),
+          visibility: DEFAULT_VISIBILITY,
         }),
       },
     });
@@ -161,12 +164,12 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     this.setState({ createForm: newFormState(api_key.CreateApiKeyRequest.create()) });
   }
   private onChangeCreateForm(name: string, value: any) {
-    this.setState({
+    this.setState((state) => ({
       createForm: {
-        ...this.state.createForm,
-        request: new api_key.CreateApiKeyRequest({ ...this.state.createForm.request, [name]: value }),
+        ...state.createForm,
+        request: new api_key.CreateApiKeyRequest({ ...state.createForm.request, [name]: value }),
       },
-    });
+    }));
   }
   private async onSubmitCreateNewForm(e: React.FormEvent) {
     e.preventDefault();
@@ -207,6 +210,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           label: apiKey.label,
           capability: [...apiKey.capability],
           visibleToDevelopers: apiKey.visibleToDevelopers,
+          visibility: [...apiKey.visibility],
         }),
       },
     });
@@ -218,12 +222,12 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     this.setState({ updateForm: newFormState(api_key.UpdateApiKeyRequest.create()) });
   }
   private onChangeUpdateForm(name: string, value: any) {
-    this.setState({
+    this.setState((state) => ({
       updateForm: {
-        ...this.state.updateForm,
-        request: new api_key.UpdateApiKeyRequest({ ...this.state.updateForm.request, [name]: value }),
+        ...state.updateForm,
+        request: new api_key.UpdateApiKeyRequest({ ...state.updateForm.request, [name]: value }),
       },
-    });
+    }));
   }
   private async onSubmitUpdateForm(e: React.FormEvent) {
     e.preventDefault();
@@ -334,8 +338,18 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange("capability", [capability.Capability.SEND_NOTIFICATION]);
   }
 
-  private onChangeVisibility(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
+  private onChangeVisibility(
+    onChange: (name: string, value: any) => any,
+    request: ApiKeyFields,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    // Only toggle the developers bit so that other bits survive an edit.
+    const visibility: api_key.Visibility[] = (request.visibility ?? []).filter(
+      (v) => v !== api_key.Visibility.VISIBLE_TO_DEVELOPERS
+    );
+    if (e.target.checked) visibility.push(api_key.Visibility.VISIBLE_TO_DEVELOPERS);
     onChange("visibleToDevelopers", e.target.checked);
+    onChange("visibility", visibility);
   }
 
   private canSetCapabilities(caps: capability.Capability[]): boolean {
@@ -521,7 +535,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   <label className="checkbox-row">
                     <input
                       type="checkbox"
-                      onChange={this.onChangeVisibility.bind(this, onChange)}
+                      onChange={this.onChangeVisibility.bind(this, onChange, request)}
                       checked={request.visibleToDevelopers}
                     />
                     <span>
