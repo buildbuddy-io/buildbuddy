@@ -107,6 +107,8 @@ export default class SingleActionChartComponent extends React.Component<Props, S
       extractValue: (startTimeUsec: number) => lineData.get(startTimeUsec) ?? null,
       formatHoverValue: this.props.formatValue,
       color: ChartColor.BLUE,
+      connectNulls: true,
+      hideActiveDot: true,
     });
 
     if (areaData.size > 0) {
@@ -117,6 +119,8 @@ export default class SingleActionChartComponent extends React.Component<Props, S
         // TODO: Make this non-ugly (custom tooltip)
         formatHoverValue: (_: number) => "",
         color: ChartColor.BLUE,
+        connectNulls: true,
+        hideActiveDot: true,
       });
     }
 
@@ -130,9 +134,7 @@ export default class SingleActionChartComponent extends React.Component<Props, S
           this.setState({ selectedDataPoint: undefined });
           return;
         }
-        console.log("Stoppin!");
         e.stopPropagation();
-        console.log(scatterData.get(startTimeUsec) ?? null);
         const exec = this.props.timeline.executionSamples.find((e) => +e.startTimeUsec === startTimeUsec);
         if (exec) {
           this.setState({ selectedDataPoint: exec, selectedCoord: c });

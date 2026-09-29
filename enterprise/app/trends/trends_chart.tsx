@@ -15,6 +15,7 @@ import {
   ResponsiveContainer,
   Scatter,
   ScatterPointItem,
+  ScatterShapeProps,
   Tooltip,
   TooltipContentProps,
   useChartHeight,
@@ -124,11 +125,24 @@ function getResolvedColor(color: ChartColor | string): string {
  * (infuriating) default behavior, which only looks at the X axis when deciding
  * hover in composed charts.
  */
-function customScatterDot(color: string, clickable: boolean): ScatterCustomizedShape {
-  if (clickable) {
-    return <circle r={3} fill={color} stroke="transparent" strokeWidth={15} cursor="pointer" />;
+function customScatterDot(
+  p: ScatterShapeProps,
+  extractor: (datum: number) => any,
+  color: string,
+  clickable: boolean
+): ScatterCustomizedShape {
+  if (!p.payload || !extractor(p.payload)) {
+    return <></>;
   }
-  return <Dot r={3} fill={color} stroke="transparent" />;
+  if (clickable) {
+    return (
+      <g cursor="pointer" className="trend-chart-dot" fill={color}>
+        <circle cx={p.cx} cy={p.cy} r={15} fill="transparent" stroke="transparent" />
+        <circle cx={p.cx} cy={p.cy} r={3} stroke={color} fill="inherit" />
+      </g>
+    );
+  }
+  return <Dot cx={p.cx} cy={p.cy} className="trend-chart-dot" r={3} fill={color} stroke={color} />;
 }
 
 function TrendsChartTooltip({
@@ -285,7 +299,7 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
                 }
               : undefined
           }
-          shape={customScatterDot(scatterColor, Boolean(clickHandler))}
+          shape={(props, _) => customScatterDot(props, ds.extractValue, scatterColor, Boolean(clickHandler))}
         />
       );
     case SeriesType.AREA:
