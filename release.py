@@ -265,10 +265,13 @@ def generate_release_notes(old_version):
         buf += line.decode("utf-8")
     return buf
 
-def get_latest_remote_version():
-    run_or_die('git fetch --all --tags')
+def get_latest_version():
     p = run_or_die("./tools/latest_version_tag.sh", capture_stdout=True)
     return p.stdout.strip()
+
+def tag_exists(tag):
+    p = subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/tags/{tag}'], stdout=subprocess.DEVNULL)
+    return p.returncode == 0
 
 def get_cpu_architecture():
     arch = platform.machine()
@@ -285,6 +288,7 @@ def main():
     parser.add_argument('--allow_dirty', default=False, action='store_true')
     parser.add_argument('--force', default=False, action='store_true')
     parser.add_argument('--bump_version_type', default='minor', choices=['major', 'minor', 'patch', 'none'])
+    parser.add_argument('--base_version', default='', help='Existing version tag to bump, like v2.12.8. Defaults to the latest version tag.')
     parser.add_argument('--update_app_image', default=False, action='store_true')
     parser.add_argument('--update_enterprise_app_image', default=False, action='store_true')
     parser.add_argument('--update_executor_image', default=False, action='store_true')
@@ -307,11 +311,14 @@ def main():
         die('Your workspace has uncommitted changes. ' +
             'Please run this in a clean workspace!')
 
-    old_version = get_latest_remote_version()
+    run_or_die('git fetch --all --tags')
+    old_version = args.base_version or get_latest_version()
+    if not tag_exists(old_version):
+        die(f"Version tag {old_version} does not exist.")
     is_old_version_published = is_published_release(old_version)
 
     if not is_old_version_published and not args.force:
-        die(f"The latest tag {old_version} does not correspond to a published github release." +
+        die(f"The tag {old_version} does not correspond to a published github release." +
         " It may be a draft release or it may have never been created." +
         " If you still want to upgrade the version, rerun the script with --force.")
 
