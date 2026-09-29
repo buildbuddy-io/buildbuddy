@@ -125,4 +125,22 @@ func TestListAppendAndTruncate(t *testing.T) {
 	list, err := mc.ListRange(ctx, "key", 0, -1)
 	require.NoError(t, err)
 	require.Equal(t, []string{"1", "2", "3"}, list)
+
+	// Lower the max length. The list should be truncated to its first 2
+	// values, and the new value should be dropped.
+	err = mc.ListAppendAndTruncate(ctx, "key", 2, "6")
+	require.NoError(t, err)
+	truncated, err := mc.ListRange(ctx, "key", 0, -1)
+	require.NoError(t, err)
+	require.Equal(t, []string{"1", "2"}, truncated)
+
+	// Raise the max length again and append a value where "3" used to be.
+	err = mc.ListAppendAndTruncate(ctx, "key", 3, "7")
+	require.NoError(t, err)
+	grown, err := mc.ListRange(ctx, "key", 0, -1)
+	require.NoError(t, err)
+	require.Equal(t, []string{"1", "2", "7"}, grown)
+
+	// The list read before the truncation should be unchanged.
+	require.Equal(t, []string{"1", "2", "3"}, list)
 }
