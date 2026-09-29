@@ -19,8 +19,8 @@ import (
 )
 
 func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
-	wt := webtester.New(t)
 	target := buildbuddy_enterprise.SetupWebTarget(t)
+	wt := webtester.New(t)
 
 	workspacePath := testbazel.MakeTempModule(t, map[string]string{
 		"BUILD": `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
@@ -133,8 +133,8 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 }
 
 func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
-	wt := webtester.New(t)
 	target := buildbuddy_enterprise.SetupWebTarget(t)
+	wt := webtester.New(t)
 
 	workspacePath := testbazel.MakeTempModule(t, map[string]string{
 		"BUILD": `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
@@ -234,13 +234,13 @@ func TestInvocationWithRemoteExecution(t *testing.T) {
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 
 	ctx := context.Background()
-	wt := webtester.New(t)
 	target := buildbuddy_enterprise.SetupWebTarget(
 		t,
 		"--remote_execution.enable_remote_exec=true",
 	)
 	// Register an executor so that we can test RBE end-to-end.
 	_ = testexecutor.Run(t, "--executor.app_target="+target.GRPCAddress())
+	wt := webtester.New(t)
 
 	workspacePath := testbazel.MakeTempModule(t, map[string]string{
 		"BUILD": `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
