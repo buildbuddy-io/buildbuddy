@@ -180,11 +180,8 @@ message StreamLogsResponse {
 
 // FrontendConfig is rendered into the page by the server for the UI to read.
 message FrontendConfig {
-  // The path the UI is mounted under, without a trailing slash; empty at the
-  // root.
-  string base_path = 1;
-  string app_bundle_hash = 2;
-  string version = 3;
+  string app_bundle_hash = 1;
+  string version = 2;
 }
 
 service AtlasService {
