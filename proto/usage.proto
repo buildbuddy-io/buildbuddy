@@ -132,8 +132,8 @@ message Usage {
   // customer-managed (customer-run) cache proxy.
   int64 total_customer_proxy_download_size_bytes = 20;
 
-  // The number of bytes uploaded to cache through a customer-managed
-  // (customer-run) cache proxy.
+  // The number of bytes uploaded to just a customer-managed (customer-run)
+  // cache proxy, and not forwarded to BuildBuddy-owned servers.
   int64 total_customer_proxy_upload_size_bytes = 21;
 
   // Fixed compute usage, in compute-unit-microseconds (one compute unit
