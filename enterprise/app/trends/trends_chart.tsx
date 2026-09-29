@@ -109,6 +109,11 @@ interface Props {
   // When set, replaces the default tooltip with one driven by the scatter
   // point nearest to the mouse.
   pointTooltip?: PointTooltipConfig;
+  // When set, the x axis is a continuous numeric axis spanning this range, so
+  // that `data` entries are positioned by their value rather than by their
+  // index.  Otherwise the x axis is categorical, with one equally sized slot
+  // per `data` entry.
+  xAxisDomain?: [number, number];
 
   onZoomSelection?: (startDate: number, endDate: number) => void;
 }
@@ -705,7 +710,12 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" yAxisId="primary" />
             {!this.props.hideLegend && <Legend onClick={this.onLegendClick.bind(this)} />}
-            <XAxis dataKey={(v) => v} tickFormatter={this.props.formatXAxisLabel} ticks={this.props.ticks} />
+            <XAxis
+              dataKey={(v) => v}
+              tickFormatter={this.props.formatXAxisLabel}
+              ticks={this.props.ticks}
+              {...(this.props.xAxisDomain ? { type: "number" as const, domain: this.props.xAxisDomain } : {})}
+            />
             <YAxis
               yAxisId="primary"
               tickFormatter={this.props.primaryYAxis.formatTickValue}
