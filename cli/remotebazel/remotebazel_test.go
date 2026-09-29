@@ -805,6 +805,83 @@ func TestGeneratingPatches(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(runnerRepoPath, "deleted.bin"))
 }
 
+func TestGeneratingPatches_IgnoresUserDiffConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		gitConfig string
+		// Directory within the repo that remote bazel is run from.
+		workDir string
+	}{
+		{
+			name:      "noprefix",
+			gitConfig: "[diff]\n\tnoprefix = true\n",
+		},
+		{
+			name:      "color",
+			gitConfig: "[color]\n\tdiff = always\n",
+		},
+		{
+			name:      "external diff",
+			gitConfig: "[diff]\n\texternal = true\n",
+		},
+		{
+			name:      "textconv",
+			gitConfig: "[diff \"upper\"]\n\ttextconv = tr a-z A-Z <\n",
+		},
+		{
+			name:      "relative",
+			gitConfig: "[diff]\n\trelative = true\n",
+			workDir:   "pkg",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			remoteRepoPath, _ := testgit.MakeTempRepo(t, map[string]string{
+				"pkg/hello.txt":  "echo HI\n",
+				".gitattributes": "*.txt diff=upper\n",
+			})
+			localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
+			runnerRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
+
+			testshell.Run(t, localRepoPath, `
+				echo "echo HELLO" > pkg/hello.txt
+				echo "echo BYE" > pkg/bye.txt
+			`)
+
+			// Only set the user's git config once the test repos are set up,
+			// so that it only affects patch generation.
+			gitConfigPath := filepath.Join(t.TempDir(), "gitconfig")
+			require.NoError(t, os.WriteFile(gitConfigPath, []byte(tc.gitConfig), 0644))
+			t.Setenv("GIT_CONFIG_GLOBAL", gitConfigPath)
+
+			require.NoError(t, os.Chdir(filepath.Join(localRepoPath, tc.workDir)))
+			resetRepoRootPathForTest(t)
+
+			config, err := Config()
+			require.NoError(t, err)
+			require.NotEmpty(t, config.Patches)
+
+			for i, patchBytes := range config.Patches {
+				patchPath := filepath.Join(t.TempDir(), fmt.Sprintf("%d.patch", i))
+				require.NoError(t, os.WriteFile(patchPath, patchBytes, 0644))
+				testshell.Run(t, runnerRepoPath, fmt.Sprintf("git apply %q", patchPath))
+			}
+			files := []string{"pkg/hello.txt"}
+			if tc.workDir == "" {
+				// Untracked files are only listed relative to the working
+				// directory, so only check them when running from the root.
+				files = append(files, "pkg/bye.txt")
+			}
+			for _, file := range files {
+				want, err := os.ReadFile(filepath.Join(localRepoPath, file))
+				require.NoError(t, err)
+				got, err := os.ReadFile(filepath.Join(runnerRepoPath, file))
+				require.NoError(t, err)
+				require.Equal(t, string(want), string(got), "%s should match the local working tree", file)
+			}
+		})
+	}
+}
+
 func TestWorkingDirectory(t *testing.T) {
 	rootDir := t.TempDir()
 	repoRoot := filepath.Join(rootDir, "repo")
