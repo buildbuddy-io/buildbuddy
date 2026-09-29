@@ -394,6 +394,8 @@ common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --remote_executor=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --config=remote-shared
+# Build actions run on Linux; tests use the native Windows test runner.
+common:untrusted-ci-windows --shell_executable=/bin/bash
 common:untrusted-ci-windows --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64,@toolchains_buildbuddy//platforms:darwin_arm64,@toolchains_buildbuddy//platforms:darwin_x86_64,//platforms:local_windows_amd64
 # Target pure-Go Windows (no cgo), matching the executor_windows_* aliases.
 # The auto-detected host platform would build cgo with hermetic LLVM, which
