@@ -5,8 +5,10 @@ on:
     branches:
       - "bb_release_*"
 
+# Tags are pushed with BUILDBUDDY_GITHUB_USER_TOKEN (so they trigger release
+# workflows), not GITHUB_TOKEN.
 permissions:
-  contents: write
+  contents: read
 
 # Serialize runs per branch so concurrent pushes don't pick the same patch version.
 concurrency:
