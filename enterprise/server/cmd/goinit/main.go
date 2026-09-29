@@ -230,6 +230,19 @@ func main() {
 
 	die(mkdirp("/dev", 0755))
 	die(mount("devtmpfs", "/dev", "devtmpfs", syscall.MS_NOSUID, "mode=0620,gid=5"))
+	// Rootless container tools such as Podman need to open /dev/net/tun and
+	// /dev/fuse as nonroot users. devtmpfs creates both as 0600 root:root, and
+	// typical distros rely on udev to relax them to 0666. The guest has no
+	// udev, so apply the same mode here. Opening either device grants nothing
+	// on its own, because creating a TUN device requires CAP_NET_ADMIN and
+	// mounting a FUSE filesystem requires CAP_SYS_ADMIN, which nonroot users
+	// only have within user namespaces that they create. The arm64 guest
+	// kernel is built without TUN, so tolerate missing nodes.
+	for _, devicePath := range []string{"/dev/net/tun", "/dev/fuse"} {
+		if err := os.Chmod(devicePath, 0666); err != nil && !os.IsNotExist(err) {
+			die(err)
+		}
+	}
 
 	// The following devices are provided by our firecracker implementation:
 	//
@@ -302,7 +315,11 @@ func main() {
 
 	die(mkdirp("/run", 0755))
 	die(mount("run", "/run", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, ""))
-	die(mkdirp("/run/lock", 1777))
+	// Give /run/lock the sticky, world-writable mode that Debian and Ubuntu
+	// use, so that nonroot programs can create lock files there. mkdir
+	// applies the umask, so set the mode with chmod.
+	die(mkdirp("/run/lock", 0755))
+	die(os.Chmod("/run/lock", fs.ModeSticky|0777))
 
 	die(syscall.Symlink("/proc/self/fd", "/dev/fd"))
 	die(syscall.Symlink("/proc/self/fd/0", "/dev/stdin"))
