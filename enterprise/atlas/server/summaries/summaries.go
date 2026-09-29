@@ -6,6 +6,7 @@ package summaries
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -220,7 +221,7 @@ func (ix *Index) NewStore(res ResourceType) *Store {
 func (ix *Index) snapshot() []*Store {
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
-	return append([]*Store(nil), ix.stores...)
+	return slices.Clone(ix.stores)
 }
 
 // Scan calls fn for every entry of the given kind (all kinds if empty),
