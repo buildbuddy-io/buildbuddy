@@ -1427,6 +1427,10 @@ type MetricsCollector interface {
 	GetAll(ctx context.Context, key ...string) ([]string, error)
 	ListAppend(ctx context.Context, key string, values ...string) error
 	ListRange(ctx context.Context, key string, start, stop int64) ([]string, error)
+	// ListAppendAndTruncate appends values to the list at key, then truncates
+	// the list to its first maxLength values, so that the oldest values are
+	// kept. maxLength must be positive.
+	ListAppendAndTruncate(ctx context.Context, key string, maxLength int64, values ...string) error
 	ReadCounts(ctx context.Context, key string) (map[string]int64, error)
 	Delete(ctx context.Context, key string) error
 	Expire(ctx context.Context, key string, duration time.Duration) error

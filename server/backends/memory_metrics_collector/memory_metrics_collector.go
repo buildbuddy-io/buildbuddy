@@ -230,6 +230,35 @@ func (m *MemoryMetricsCollector) ListRange(ctx context.Context, key string, star
 	return list[lower:upper], nil
 }
 
+func (m *MemoryMetricsCollector) ListAppendAndTruncate(ctx context.Context, key string, maxLength int64, values ...string) error {
+	if maxLength < 1 {
+		return status.InvalidArgumentErrorf("invalid list length %d", maxLength)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	list, err := m.getList(key)
+	if err != nil {
+		return err
+	}
+	// The list can be longer than maxLength if earlier calls passed a larger
+	// maxLength. Limit the capacity too, so that later appends reallocate
+	// instead of overwriting values in slices previously returned by
+	// ListRange.
+	if int64(len(list)) > maxLength {
+		m.l.Add(key, list[:maxLength:maxLength])
+		return nil
+	}
+	// If the appended value would just be removed due to truncation, do
+	// nothing.
+	n := min(int64(len(values)), maxLength-int64(len(list)))
+	if n <= 0 {
+		return nil
+	}
+	m.l.Add(key, append(list, values[:n]...))
+	return nil
+}
+
 func (m *MemoryMetricsCollector) ReadCounts(ctx context.Context, key string) (map[string]int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
