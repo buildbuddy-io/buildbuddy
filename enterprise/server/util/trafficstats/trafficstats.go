@@ -116,6 +116,10 @@ type rpcCounters struct {
 	method                    string
 }
 
+func (c *rpcCounters) String() string {
+	return fmt.Sprintf("{groupID:%s dest:%+v ingressBytes:%d egressBytes:%d method:%s}", c.groupID, c.dest, c.ingressBytes.Load(), c.egressBytes.Load(), c.method)
+}
+
 var (
 	//go:embed data/aws.csv
 	awsRangesCSV []byte
@@ -225,9 +229,9 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 			// intercetors run after InPayload.
 			if c.groupID == "unset" || c.dest.Provider == "unset" {
 				if endErr == nil {
-					alert.CtxUnexpectedEvent(ctx, "trafficstats_unset_dimensions_at_end", "Maybe you forgot to install the interceptor? %s", c)
+					alert.CtxUnexpectedEvent(ctx, "trafficstats_unset_dimensions_at_end", "Maybe you forgot to install the interceptor? %+v", c)
 				} else {
-					log.Debugf("Traffic stats unset dimensions at end: %s. Error: %v", c, endErr)
+					log.Debugf("Traffic stats unset dimensions at end: %+v. Error: %v", c, endErr)
 				}
 			}
 			ingressBytes, egressBytes := c.ingressBytes.Load(), c.egressBytes.Load()
@@ -242,10 +246,6 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 			}
 		}
 	}
-}
-
-func (c *rpcCounters) String() string {
-	return fmt.Sprintf("{groupID:%s dest:%+v ingressBytes:%d egressBytes:%d method:%s}", c.groupID, c.dest, c.ingressBytes.Load(), c.egressBytes.Load(), c.method)
 }
 
 // UnaryInterceptor populates the rpcCounters with metric labels derived
