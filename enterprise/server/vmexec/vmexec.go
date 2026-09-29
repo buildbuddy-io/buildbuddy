@@ -714,14 +714,14 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 type stdoutWriter struct{ msgs chan *message }
 
 func (w *stdoutWriter) Write(b []byte) (int, error) {
-	w.msgs <- &message{Response: &vmxpb.ExecStreamedResponse{Stdout: b}}
+	w.msgs <- &message{Response: &vmxpb.ExecStreamedResponse{Stdout: bytes.Clone(b)}}
 	return len(b), nil
 }
 
 type stderrWriter struct{ msgs chan *message }
 
 func (w *stderrWriter) Write(b []byte) (int, error) {
-	w.msgs <- &message{Response: &vmxpb.ExecStreamedResponse{Stderr: b}}
+	w.msgs <- &message{Response: &vmxpb.ExecStreamedResponse{Stderr: bytes.Clone(b)}}
 	return len(b), nil
 }
 
