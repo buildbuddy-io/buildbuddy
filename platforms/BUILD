@@ -38,3 +38,9 @@ platform(
         "@platforms//cpu:arm64",
     ],
 )
+
+platform(
+    name = "local_windows_amd64",
+    exec_properties = {"no-remote-exec": "1"},
+    parents = ["@io_bazel_rules_go//go/toolchain:windows_amd64"],
+)
