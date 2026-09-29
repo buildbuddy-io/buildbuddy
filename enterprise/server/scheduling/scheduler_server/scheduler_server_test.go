@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"runtime"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -2240,4 +2242,37 @@ func TestGetNewestVersion_ScopedToSharedPoolGroup(t *testing.T) {
 	v := s.getNewestVersion(ctx)
 	require.NotNil(t, v)
 	require.Equal(t, "2.153.0", v.String())
+}
+
+// countGoroutines returns the number of live goroutines whose stack contains
+// the given substring.
+func countGoroutines(substr string) int {
+	buf := make([]byte, 16<<20)
+	buf = buf[:runtime.Stack(buf, true /*=all*/)]
+	n := 0
+	for g := range strings.SplitSeq(string(buf), "\n\n") {
+		if strings.Contains(g, substr) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestShutdown_StopsExecutorStreamReceiver(t *testing.T) {
+	env, _ := getEnv(t, &schedulerOpts{}, "user1")
+	executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
+	executor.Register()
+
+	// The executor's stream has a goroutine receiving requests from it.
+	const receiver = "(*executorHandle).Serve.func"
+	before := countGoroutines(receiver)
+	require.Positive(t, before)
+
+	// Shutting down the scheduler ends the stream, which must also stop the
+	// receiving goroutine.
+	env.GetHealthChecker().Shutdown()
+	env.GetHealthChecker().WaitForGracefulShutdown()
+	require.Eventually(t, func() bool {
+		return countGoroutines(receiver) < before
+	}, 10*time.Second, 10*time.Millisecond, "executor stream receiver goroutine is still running after shutdown")
 }
