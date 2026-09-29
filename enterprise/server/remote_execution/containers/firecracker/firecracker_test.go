@@ -169,7 +169,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "06539147a1f8486eefc46604c4b422bbebc482f5b51e3344842a24ed87b54c1c"
+		expectedHash    = "f5723a3e6d851d9e5f2706988d9cf29b06469dc7b2fde089d8fb457b7c813259"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -413,15 +413,29 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
 	}
+	// Sanity check some basic properties of the filesystem that goinit
+	// provisions.
+	permPaths := "/dev/fuse /run/lock"
+	expectedPerms := "666 /dev/fuse\n1777 /run/lock\n"
+	// TODO: enable TUN for arm64 kernel and remove this conditional.
+	if runtime.GOARCH == "amd64" {
+		permPaths += " /dev/net/tun"
+		expectedPerms += "666 /dev/net/tun\n"
+	}
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
+		Arguments: []string{"sh", "-ec", `
+			printf "$GREETING $(cat world.txt)\n"
+			printf "foo" >&2
+
+			stat -c '%a %n' ` + permPaths + `
+		`},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "GREETING", Value: "Hello"},
 		},
 	}
 	expectedResult := &interfaces.CommandResult{
 		ExitCode: 0,
-		Stdout:   []byte("Hello world"),
+		Stdout:   []byte("Hello world\n" + expectedPerms),
 		Stderr:   []byte("foo"),
 	}
 
