@@ -125,6 +125,7 @@ jobs:
                    //enterprise/server/remote_execution/commandutil:commandutil_test `
                    //enterprise/server/remote_execution/filecache:filecache_test `
                    //enterprise/server/remote_execution/workspace:workspace_test `
+                   //enterprise/server/test/executor_smoke:executor_smoke_test `
                    //enterprise/server/util/procstats:procstats_test `
                    //server/util/fastcopy:fastcopy_test
 
