@@ -31,7 +31,7 @@ jobs:
             echo "HEAD already has a version tag; nothing to do."
             exit 0
           fi
-          previous_version=$(./tools/latest_version_tag.sh --merged HEAD)
+          previous_version=$(./tools/branch_latest_version_tag.sh)
           if [[ -z "$previous_version" ]]; then
             echo "No version tag found in release branch history." >&2
             exit 1

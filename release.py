@@ -268,7 +268,7 @@ def generate_release_notes(old_version):
 
 def get_latest_remote_version():
     run_or_die('git fetch --all --tags')
-    p = run_or_die("./tools/latest_version_tag.sh", capture_stdout=True)
+    p = run_or_die("./tools/repo_latest_version_tag.sh", capture_stdout=True)
     version = p.stdout.strip()
     if not version:
         die("No version tag found to base the release on.")
