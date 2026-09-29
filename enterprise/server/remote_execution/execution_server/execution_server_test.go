@@ -900,6 +900,16 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{SelfHostedLinuxExecutionDurationUsec: durationUsec},
 		},
 		{
+			// Old self-hosted executors don't send scheduling metadata, so
+			// the self-hosted bit and effective pool have to come from the
+			// scheduling metadata recorded at dispatch time.
+			name:                   "SelfHostedExecutors_NoSchedulingMetadata",
+			platformOverrides:      map[string]string{"use-self-hosted-executors": "true"},
+			expectedSelfHosted:     true,
+			expectedExecutionUsage: tables.UsageCounts{SelfHostedLinuxExecutionDurationUsec: durationUsec},
+			omitSchedulingMetadata: true,
+		},
+		{
 			name:                   "CachedResult",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			cachedResult:           true,
@@ -1008,6 +1018,9 @@ type publishTest struct {
 	// flexibleCompute routes the execution into the flexible-compute branch
 	// of incrementOLAPExecutionUsage.
 	flexibleCompute bool
+	// omitSchedulingMetadata leaves the scheduling metadata out of the
+	// executor's auxiliary metadata, like old executors do.
+	omitSchedulingMetadata bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -1172,7 +1185,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			VmExecInitDurationUsec:  4003,
 			VmExecDialDurationUsec:  4004,
 		}
-	} else {
+	} else if !test.omitSchedulingMetadata {
 		effectivePool := "test-pool"
 		if test.useDefaultPool {
 			effectivePool = "default-pool"
@@ -2376,6 +2389,44 @@ func TestMarkFailed(t *testing.T) {
 
 	err = s.MarkExecutionFailed(ctx, "uploads/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/1", status.InternalError("It didn't work"))
 	require.True(t, status.IsNotFoundError(err), "error should be NotFoundError, but was %s", err)
+}
+
+func TestMarkFailed_RecordsSchedulingMetadata(t *testing.T) {
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	env, _, _ := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{ToolInvocationId: iid})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "pool", Value: "test-pool"},
+			{Name: "use-self-hosted-executors", Value: "true"},
+		}},
+	}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	taskID := arn.NewUploadString()
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, taskID)
+	require.NoError(t, err)
+
+	// Fail the execution without an executor ever having reported on it.
+	err = s.MarkExecutionFailed(ctx, taskID, status.InternalError("It didn't work"))
+	require.NoError(t, err)
+
+	executions, err := env.GetExecutionCollector().GetExecutions(ctx, iid, 0, -1)
+	require.NoError(t, err)
+	require.Len(t, executions, 1)
+	assert.Equal(t, int64(repb.ExecutionStage_COMPLETED), executions[0].GetStage())
+	assert.True(t, executions[0].GetSelfHosted())
+	assert.Equal(t, "test-pool", executions[0].GetEffectivePool())
 }
 
 func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
