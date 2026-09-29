@@ -61,6 +61,12 @@ type WebTester struct {
 
 // New returns a WebTester scoped to the given test. It registers a cleanup
 // function to record a screenshot if the test fails.
+//
+// Call New after starting any servers that the browser talks to. Cleanup
+// functions run in reverse order, so this ensures that the browser has been
+// checked for errors and closed before those servers shut down. Otherwise,
+// the page may fail to reach a server that is shutting down, and show an
+// error banner that fails the test.
 func New(t *testing.T) *WebTester {
 	// Note, the chromeArgs and chromedriverArgs below are appended to the
 	// default args defined here:
