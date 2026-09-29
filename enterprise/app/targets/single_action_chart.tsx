@@ -90,7 +90,7 @@ export default class SingleActionChartComponent extends React.Component<Props, S
       }
     }
 
-    for (const e of this.props.timeline.execution) {
+    for (const e of this.props.timeline.executionSamples) {
       scatterData.set(+e.startTimeUsec, this.props.getScatterValue(e));
       timeKeys.push(+e.startTimeUsec);
     }
@@ -133,7 +133,7 @@ export default class SingleActionChartComponent extends React.Component<Props, S
         console.log("Stoppin!");
         e.stopPropagation();
         console.log(scatterData.get(startTimeUsec) ?? null);
-        const exec = this.props.timeline.execution.find((e) => +e.startTimeUsec === startTimeUsec);
+        const exec = this.props.timeline.executionSamples.find((e) => +e.startTimeUsec === startTimeUsec);
         if (exec) {
           this.setState({ selectedDataPoint: exec, selectedCoord: c });
         }

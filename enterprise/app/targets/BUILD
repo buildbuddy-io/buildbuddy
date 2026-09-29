@@ -76,7 +76,6 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/tslib",
         "//app/components/button",
-        "//app/format",
         "//app/router",
         "//enterprise/app/trends:trends_chart",
         "//proto:execution_stats_ts_proto",

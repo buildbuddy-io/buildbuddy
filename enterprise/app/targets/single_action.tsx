@@ -101,7 +101,7 @@ export default class SingleActionComponent extends React.Component<Props, State>
   }
 
   private renderExecutionTable() {
-    const rows = [...this.props.timeline.execution]
+    const rows = [...this.props.timeline.executionSamples]
       .sort(
         (a, b) => (this.state.ascending ? 1 : -1) * (this.state.orderBy.extractor(a) - this.state.orderBy.extractor(b))
       )
@@ -164,7 +164,7 @@ export default class SingleActionComponent extends React.Component<Props, State>
               })}
             </div>
           </div>
-          {this.state.resultLimit < this.props.timeline.execution.length && (
+          {this.state.resultLimit < this.props.timeline.executionSamples.length && (
             <div className="table-footer-controls">
               <FilledButton
                 className="load-more-button"
