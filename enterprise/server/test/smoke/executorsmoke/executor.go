@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -127,23 +126,22 @@ func (p *executorProcess) kill() {
 	}
 }
 
-// shutdown asks the executor to shut down gracefully and waits up to the
-// given timeout for it to exit. Graceful shutdown is only supported on
-// platforms with SIGTERM; elsewhere the process is killed.
-func (p *executorProcess) shutdown(timeout time.Duration) (graceful bool, err error) {
-	if runtime.GOOS == "windows" {
-		p.kill()
-		return false, nil
+// shutdown sends SIGTERM to the executor and waits up to the given timeout
+// for it to exit. It returns an error if the executor had already exited,
+// could not be signaled, exited with an error, or did not exit in time.
+func (p *executorProcess) shutdown(timeout time.Duration) error {
+	if p.exited() {
+		return fmt.Errorf("executor exited before shutdown was requested: %v", p.exitErr())
 	}
 	if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		return false, err
+		return fmt.Errorf("send SIGTERM: %w", err)
 	}
 	select {
 	case <-p.done:
-		return true, p.exitErr()
+		return p.exitErr()
 	case <-time.After(timeout):
 		p.kill()
-		return true, fmt.Errorf("executor did not exit within %s of SIGTERM", timeout)
+		return fmt.Errorf("executor did not exit within %s of SIGTERM", timeout)
 	}
 }
 

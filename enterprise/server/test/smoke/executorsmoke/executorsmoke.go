@@ -41,6 +41,7 @@ import (
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -546,13 +547,49 @@ func (s *suite) testRecycledRunner(t *testing.T) {
 	if s.target.APIKey == "" {
 		t.Skip("runner recycling requires an authenticated client")
 	}
+	// Runners are returned to the pool asynchronously after a task
+	// completes, so a task can start on a fresh runner even though recycling
+	// works. Keep running tasks until one reuses a previously seen runner.
 	props := []string{"recycle-runner=true"}
-	for i := range 3 {
+	seen := map[string]bool{}
+	deadline := time.Now().Add(1 * time.Minute)
+	for i := 0; ; i++ {
 		msg := fmt.Sprintf("recycled run %d", i)
 		res := s.mustExecute(t, &action{tool: []string{"stdio", msg, ""}, props: props})
 		require.Equal(t, 0, int(res.ActionResult.GetExitCode()), "stderr: %s", res.Stderr)
-		assert.Equal(t, msg, res.Stdout)
+		require.Equal(t, msg, res.Stdout)
+		md := s.runnerMetadata(t, res)
+		require.NotEmpty(t, md.GetRunnerId(), "runner metadata should include a runner ID")
+		t.Logf("Task %d ran on runner %q (task number %d)", i, md.GetRunnerId(), md.GetTaskNumber())
+		if seen[md.GetRunnerId()] {
+			require.Greater(t, md.GetTaskNumber(), int64(1), "reused runner should report task number > 1")
+			return
+		}
+		require.Equal(t, int64(1), md.GetTaskNumber(), "new runner should report task number 1")
+		seen[md.GetRunnerId()] = true
+		if time.Now().After(deadline) {
+			require.FailNowf(t, "runner was never recycled", "ran %d tasks on %d distinct runners", i+1, len(seen))
+		}
+		time.Sleep(1 * time.Second)
 	}
+}
+
+// runnerMetadata returns the runner metadata that the executor recorded for
+// the given execution. It is read from the cached ExecuteResponse, which is
+// written asynchronously after the execution completes.
+func (s *suite) runnerMetadata(t *testing.T, res *actionResult) *espb.RunnerMetadata {
+	t.Helper()
+	var execRes *repb.ExecuteResponse
+	require.Eventually(t, func() bool {
+		var err error
+		execRes, err = rexec.GetCachedExecuteResponse(s.ctx, s.env.GetActionCacheClient(), res.Name)
+		return err == nil
+	}, 1*time.Minute, 250*time.Millisecond, "cached ExecuteResponse for %s", res.Name)
+	aux := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(execRes.GetResult().GetExecutionMetadata(), aux)
+	require.NoError(t, err)
+	require.True(t, ok, "execution metadata should include auxiliary metadata")
+	return aux.GetRunnerMetadata()
 }
 
 func (s *suite) testConcurrent(t *testing.T) {
@@ -617,11 +654,12 @@ func (s *suite) testIsolation(t *testing.T, isolationType string) {
 }
 
 func (s *suite) testShutdown(t *testing.T) {
-	graceful, err := s.executor.shutdown(1 * time.Minute)
-	if !graceful {
-		t.Skipf("graceful shutdown is not supported on %s", runtime.GOOS)
+	if runtime.GOOS == "windows" {
+		require.False(t, s.executor.exited(), "executor exited unexpectedly: %v", s.executor.exitErr())
+		s.executor.kill()
+		t.Skip("graceful shutdown (SIGTERM) is not supported on windows")
 	}
-	require.NoError(t, err, "executor should exit cleanly on SIGTERM")
+	require.NoError(t, s.executor.shutdown(1*time.Minute), "executor should exit cleanly on SIGTERM")
 	if s.target.GroupID == "" {
 		return
 	}
@@ -710,6 +748,9 @@ func (s *suite) execute(ctx context.Context, a *action) (*actionResult, error) {
 		"OSFamily=" + s.os,
 		"Arch=" + s.arch,
 		"Pool=" + s.pool,
+		// Run on the bare runner unless the action overrides this, since
+		// enabling other isolation types changes the executor's default.
+		"workload-isolation-type=none",
 	}
 	if s.target.APIKey != "" {
 		// Route to the group's own executors rather than any shared pool.

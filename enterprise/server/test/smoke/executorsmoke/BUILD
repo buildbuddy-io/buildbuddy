@@ -15,6 +15,7 @@ go_library(
     deps = [
         "//proto:buildbuddy_service_go_proto",
         "//proto:context_go_proto",
+        "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/real_environment",
