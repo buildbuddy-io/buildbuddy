@@ -29,7 +29,7 @@ go_library(
     embedsrcs = select({
         "@io_bazel_rules_go//go/platform:windows": [],
         "//conditions:default": ["bb-bin"],
-    }),
+    }),  # keep
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/bb",
     visibility = ["//visibility:public"],
 )
