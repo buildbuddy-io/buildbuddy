@@ -1122,6 +1122,102 @@ func TestRecoverFromSnapshotCrashMidApply(t *testing.T) {
 	require.Equal(t, len(keys), countPresentKeys(t, restarted, keys))
 }
 
+// A rejected entry writes no data and no session response, but it still
+// advances the stored last applied index.
+func TestRejectedEntryAdvancesLastAppliedIndex(t *testing.T) {
+	incrKey := keys.MakeKey(constants.SystemPrefix, []byte("incr-key"))
+	increment := func() *rbuilder.BatchBuilder {
+		return rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{Key: incrKey, Delta: 1})
+	}
+	staleHeader := &rfpb.Header{RangeId: 1, Generation: 0}
+	currentHeader := &rfpb.Header{RangeId: 1, Generation: 1}
+
+	for _, tc := range []struct {
+		name string
+		// makeEntry returns the entry that must be rejected. It may apply
+		// other entries first.
+		makeEntry func(t *testing.T, em *entryMaker, repl *replica.Replica) dbsm.Entry
+		// wantCounter is the counter value after the rejected entry.
+		wantCounter uint64
+		// retry, if set, is applied after the rejection and must succeed.
+		retry *rbuilder.BatchBuilder
+	}{
+		{
+			name: "malformed payload",
+			makeEntry: func(t *testing.T, em *entryMaker, repl *replica.Replica) dbsm.Entry {
+				em.index++
+				return dbsm.Entry{Index: em.index, Cmd: []byte{0xff, 0xff, 0xff}}
+			},
+		},
+		{
+			name: "stale header",
+			makeEntry: func(t *testing.T, em *entryMaker, repl *replica.Replica) dbsm.Entry {
+				session := &rfpb.Session{Id: []byte("stale-header-session"), Index: 1}
+				return em.makeEntry(increment().SetHeader(staleHeader).SetSession(session))
+			},
+			// A stored session response would be replayed here instead of
+			// running the request.
+			retry: increment().SetHeader(currentHeader).SetSession(&rfpb.Session{Id: []byte("stale-header-session"), Index: 1}),
+		},
+		{
+			name: "stale session",
+			makeEntry: func(t *testing.T, em *entryMaker, repl *replica.Replica) dbsm.Entry {
+				session := &rfpb.Session{Id: []byte("stale-session"), Index: 2}
+				rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(increment().SetSession(session))})
+				require.NoError(t, err)
+				require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+				session.Index = 1
+				return em.makeEntry(increment().SetSession(session))
+			},
+			wantCounter: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repl := testutil.NewTestingReplica(t, 1, 1)
+			_, err := repl.Open(make(chan struct{}))
+			require.NoError(t, err)
+			em := newEntryMaker(t)
+			writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+			readCounter := func(r *testutil.TestingReplica) uint64 {
+				rsp, err := directRead(t, r, incrKey)
+				if status.IsNotFoundError(err) {
+					return 0
+				}
+				require.NoError(t, err)
+				return binary.LittleEndian.Uint64(rsp.GetKv().GetValue())
+			}
+
+			entry := tc.makeEntry(t, em, repl.Replica)
+			rsp, err := repl.Update([]dbsm.Entry{entry})
+			require.NoError(t, err)
+			require.Equal(t, constants.EntryErrorValue, int(rsp[0].Result.Value))
+
+			idx, err := repl.LastAppliedIndex()
+			require.NoError(t, err)
+			require.Equal(t, entry.Index, idx)
+			require.Equal(t, tc.wantCounter, readCounter(repl))
+
+			if tc.retry != nil {
+				rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(tc.retry)})
+				require.NoError(t, err)
+				require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+				require.Equal(t, tc.wantCounter+1, readCounter(repl))
+			}
+			wantIndex, err := repl.LastAppliedIndex()
+			require.NoError(t, err)
+
+			// The index survives a restart.
+			require.NoError(t, repl.Close())
+			restarted := testutil.NewTestingReplicaWithLeaser(t, 1, 1, repl.Leaser())
+			t.Cleanup(func() { require.NoError(t, restarted.Close()) })
+			openIndex, err := restarted.Open(make(chan struct{}))
+			require.NoError(t, err)
+			require.Equal(t, wantIndex, openIndex)
+		})
+	}
+}
+
 // syncBuffer is a bytes.Buffer safe for concurrent writers.
 type syncBuffer struct {
 	mu  sync.Mutex

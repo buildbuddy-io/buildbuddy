@@ -1580,6 +1580,20 @@ func (sm *Replica) updateSession(wb pebble.Batch, reqSession *rfpb.Session, rspB
 	return nil
 }
 
+// rejectEntry marks entry as applied without applying it. It commits a batch
+// holding only the last applied index and returns rejectErr as the entry's
+// result. Dragonboat counts every entry handed to Update as applied, so the
+// stored index must advance even when the entry is rejected.
+func (sm *Replica) rejectEntry(db pebble.IPebbleDB, entry dbsm.Entry, rejectErr error) dbsm.Entry {
+	wb := db.NewBatch()
+	defer wb.Close()
+	if err := sm.commitIndexBatch(wb, entry.Index); err != nil {
+		sm.log.Errorf("[%s] failed to commit last applied index for rejected entry (index=%d): %s", sm.name(), entry.Index, err)
+	}
+	entry.Result = errorEntry(rejectErr)
+	return entry
+}
+
 func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Entry, error) {
 	// This method should return errors if something truly fails in an
 	// unrecoverable way (proto marshal/unmarshal, pebble batch commit) but
@@ -1588,8 +1602,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	batchReq := &rfpb.BatchCmdRequest{}
 	if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
 		err = status.InternalErrorf("[%s] failed to unmarshal entry.Cmd: %w", sm.name(), err)
-		entry.Result = errorEntry(err)
-		return entry, nil
+		return sm.rejectEntry(db, entry, err), nil
 	}
 
 	// All of the data in a BatchCmdRequest is handled in a single pebble
@@ -1604,8 +1617,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	}
 	lastRspData, err := sm.getLastRespFromSession(db, reqSession)
 	if err != nil {
-		entry.Result = errorEntry(err)
-		return entry, nil
+		return sm.rejectEntry(db, entry, err), nil
 	}
 	// We have executed this command in the past, return the stored response and
 	// skip execution.
@@ -1630,8 +1642,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	batchRsp := &rfpb.BatchCmdResponse{}
 	if header := batchReq.GetHeader(); header != nil {
 		if err := validateHeaderAgainstRange(rd, header); err != nil {
-			entry.Result = errorEntry(err)
-			return entry, nil
+			return sm.rejectEntry(db, entry, err), nil
 		}
 	}
 	if txid := batchReq.GetTransactionId(); len(txid) > 0 {
@@ -1670,14 +1681,12 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
 		err = status.InternalErrorf("[%s] failed to marshal batchRsp: %w", sm.name(), err)
-		entry.Result = errorEntry(err)
-		return entry, nil
+		return sm.rejectEntry(db, entry, err), nil
 	}
 	entry.Result = getEntryResult(entry.Cmd, rspBuf)
 	if reqSession != nil {
 		if err := sm.updateSession(wb, reqSession, rspBuf); err != nil {
-			entry.Result = errorEntry(err)
-			return entry, nil
+			return sm.rejectEntry(db, entry, err), nil
 		}
 	}
 
