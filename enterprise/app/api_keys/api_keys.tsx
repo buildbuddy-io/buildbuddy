@@ -530,6 +530,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   <label className="checkbox-row">
                     <input
                       type="checkbox"
+                      debug-id="visible-to-developers-checkbox"
                       onChange={this.onChangeVisibility.bind(this, onChange, request)}
                       checked={request.visibleToDevelopers}
                     />
@@ -544,7 +545,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
             <DialogFooter>
               <DialogFooterButtons>
                 {isSubmitting && <Spinner />}
-                <OutlinedButton type="button" onClick={onRequestClose}>
+                <OutlinedButton type="button" onClick={onRequestClose} debug-id="api-key-form-cancel">
                   Cancel
                 </OutlinedButton>
                 <FilledButton type="submit" disabled={isSubmitting}>
