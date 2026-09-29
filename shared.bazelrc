@@ -385,8 +385,8 @@ common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 # common:untrusted-ci --remote_header=x-buildbuddy-platform.enable-vfs=true
 
 # Windows CI: Bazel runs on a Windows host, but everything we build there is
-# pure Go, so build actions are cross-compiled on Linux RBE. Tests still run
-# locally on the Windows host (their exec platform is the target platform).
+# pure Go, so build actions are cross-compiled on Linux RBE. Tests run on an
+# execution platform matching the (Windows) target platform, i.e. the host.
 common:untrusted-ci-windows --config=ci-shared
 common:untrusted-ci-windows --config=tests-windows
 common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows-25/rin20260818
@@ -395,15 +395,7 @@ common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocati
 common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --remote_executor=grpcs://remote.buildbuddy.io
-common:untrusted-ci-windows --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
-common:untrusted-ci-windows --use_target_platform_for_tests
-common:untrusted-ci-windows --strategy=TestRunner=local
-# Repository fetching (mostly go_repository + LLVM/Go SDK downloads) takes ~5
-# minutes of every Windows CI run even when all actions are cache hits. Fetch
-# downloads through the remote asset API and reuse reproducible repo contents
-# from the remote cache instead.
-common:untrusted-ci-windows --experimental_remote_downloader=grpcs://remote.buildbuddy.io
-common:untrusted-ci-windows --experimental_remote_repo_contents_cache
+common:untrusted-ci-windows --config=remote-shared
 
 # Use BuildBuddy endpoints from the ci_runner-generated bazelrc.
 # These will point to local, dev, or prod, depending on which app created the workflow action.
