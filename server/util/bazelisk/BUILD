@@ -1,16 +1,17 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
-genrule(
+copy_file(
     name = "bazelisk-crossplatform",
-    srcs = select({
-        "@bazel_tools//src/conditions:darwin_x86_64": ["@com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64//file:downloaded"],
-        "@bazel_tools//src/conditions:darwin_arm64": ["@com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64//file:downloaded"],
-        "@bazel_tools//src/conditions:linux_aarch64": ["@com_github_bazelbuild_bazelisk-bazelisk-linux-arm64//file:downloaded"],
-        "@bazel_tools//src/conditions:windows_x64": ["@com_github_bazelbuild_bazelisk-bazelisk-windows-amd64//file:downloaded"],
-        "//conditions:default": ["@com_github_bazelbuild_bazelisk-bazelisk-linux-amd64//file:downloaded"],
+    src = select({
+        "@bazel_tools//src/conditions:darwin_x86_64": "@com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64//file:downloaded",
+        "@bazel_tools//src/conditions:darwin_arm64": "@com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64//file:downloaded",
+        "@bazel_tools//src/conditions:linux_aarch64": "@com_github_bazelbuild_bazelisk-bazelisk-linux-arm64//file:downloaded",
+        "@bazel_tools//src/conditions:windows_x64": "@com_github_bazelbuild_bazelisk-bazelisk-windows-amd64//file:downloaded",
+        "//conditions:default": "@com_github_bazelbuild_bazelisk-bazelisk-linux-amd64//file:downloaded",
     }),
-    outs = ["bazelisk-bin"],
-    cmd_bash = "cp $(SRCS) $@",
+    out = "bazelisk-bin",
+    allow_symlink = True,
     visibility = ["//visibility:public"],
 )
 
