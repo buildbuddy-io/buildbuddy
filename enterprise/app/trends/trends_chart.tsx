@@ -1,4 +1,5 @@
-import React, { MouseEvent, MouseEventHandler } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
   Area,
@@ -20,6 +21,7 @@ import {
   TooltipContentProps,
   useChartHeight,
   useChartWidth,
+  usePlotArea,
   useXAxisScale,
   useYAxisScale,
   XAxis,
@@ -47,7 +49,7 @@ export interface ChartDataSeries {
   name: string;
   formatHoverValue?: (datum: number) => string | JSX.Element;
   extractValue: (datum: number) => any;
-  onClick?: (datum: number, e: MouseEvent<SVGElement>, s: ClickCoordinateInfo) => void;
+  onClick?: (datum: number, e: React.MouseEvent<SVGElement>, s: ClickCoordinateInfo) => void;
   type: SeriesType;
   color: ChartColor | string;
   usesSecondaryAxis?: boolean;
@@ -59,6 +61,34 @@ export interface ChartDataSeries {
 interface ChartYAxis {
   allowDecimals?: boolean;
   formatTickValue?: (datum: number, index: number) => string;
+}
+
+/** A scatter point identified by the series it belongs to and its x-axis datum. */
+export interface NearestScatterPoint {
+  series: ChartDataSeries;
+  // The x-axis datum (one of the chart's `data` entries) and the series' value
+  // at that datum.
+  datum: number;
+  value: number;
+}
+
+/**
+ * Configures a tooltip that follows the scatter point nearest to the mouse
+ * instead of the default tooltip, which is shared across every series at the
+ * x-axis datum under the mouse.
+ */
+export interface PointTooltipConfig {
+  // Scatter points farther than this many pixels from the mouse are ignored.
+  maxDistancePx: number;
+  // Renders the tooltip contents.  `datum` is the x-axis datum nearest to the
+  // mouse, `point` is the closest scatter point within `maxDistancePx` (if
+  // there is one), and `pinned` is true when the tooltip has been pinned to
+  // `point` by clicking on it, in which case the tooltip is interactive.
+  // Return null to hide the tooltip.
+  render: (datum: number | undefined, point: NearestScatterPoint | undefined, pinned: boolean) => JSX.Element | null;
+  // If true, clicking on a scatter point pins the tooltip to it until the chart
+  // is clicked again.
+  pinnable?: boolean;
 }
 
 interface Props {
@@ -76,8 +106,9 @@ interface Props {
   secondaryYAxis?: ChartYAxis;
   hideLegend?: boolean;
   tooltipEntryLimit?: number;
-  customTooltip?: JSX.Element;
-  onClick?: MouseEventHandler<SVGGraphicsElement>;
+  // When set, replaces the default tooltip with one driven by the scatter
+  // point nearest to the mouse.
+  pointTooltip?: PointTooltipConfig;
 
   onZoomSelection?: (startDate: number, endDate: number) => void;
 }
@@ -323,6 +354,277 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
   return <></>;
 }
 
+interface PixelPosition {
+  x: number;
+  y: number;
+}
+
+interface LocatedScatterPoint extends NearestScatterPoint {
+  // Pixel position relative to the top-left corner of the chart's SVG.
+  x: number;
+  y: number;
+}
+
+interface PointTooltipLayerProps {
+  config: PointTooltipConfig;
+  data: number[];
+  dataSeries: ChartDataSeries[];
+}
+
+// Gap between the tooltip and the mouse (or the pinned point).
+const POINT_TOOLTIP_OFFSET_PX = 12;
+
+/**
+ * Converts a mouse event into a position relative to the SVG's top-left corner
+ * (the coordinate system used by the axis scales), accounting for any CSS
+ * scaling applied to the chart.
+ */
+function svgRelativePosition(svg: SVGSVGElement, e: MouseEvent): PixelPosition {
+  const rect = svg.getBoundingClientRect();
+  const width = svg.width.baseVal.value;
+  const height = svg.height.baseVal.value;
+  const scaleX = width > 0 && rect.width > 0 ? rect.width / width : 1;
+  const scaleY = height > 0 && rect.height > 0 ? rect.height / height : 1;
+  return { x: (e.clientX - rect.left) / scaleX, y: (e.clientY - rect.top) / scaleY };
+}
+
+/**
+ * Places the tooltip below and to the right of `anchor`, flipping it above
+ * and/or to the left when it would otherwise overflow the chart.
+ */
+function pointTooltipPosition(
+  anchor: PixelPosition,
+  size: { width: number; height: number },
+  chartWidth: number,
+  chartHeight: number
+): PixelPosition {
+  let x = anchor.x + POINT_TOOLTIP_OFFSET_PX;
+  if (x + size.width > chartWidth) {
+    x = Math.max(0, anchor.x - POINT_TOOLTIP_OFFSET_PX - size.width);
+  }
+  let y = anchor.y + POINT_TOOLTIP_OFFSET_PX;
+  if (y + size.height > chartHeight) {
+    y = Math.max(0, anchor.y - POINT_TOOLTIP_OFFSET_PX - size.height);
+  }
+  return { x, y };
+}
+
+/**
+ * Renders a tooltip that tracks the scatter point nearest to the mouse.
+ *
+ * Recharts' own tooltip snaps to the x-axis datum under the mouse and reports
+ * every series at that datum, which is a poor fit for dense scatter plots.
+ * This component instead listens to the chart's SVG directly, uses the axis
+ * scales to locate every scatter point in pixel space, and lets the caller
+ * render whatever it likes for the closest one.  The tooltip itself is
+ * rendered into the chart wrapper via a portal, just like recharts' tooltip.
+ */
+function PointTooltipLayer({ config, data, dataSeries }: PointTooltipLayerProps) {
+  const anchorRef = useRef<SVGGElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  const [mouse, setMouse] = useState<PixelPosition | undefined>(undefined);
+  const [pinned, setPinned] = useState<{ seriesName: string; datum: number } | undefined>(undefined);
+  const [tooltipSize, setTooltipSize] = useState({ width: 0, height: 0 });
+
+  const xScale = useXAxisScale();
+  const primaryScale = useYAxisScale("primary");
+  const secondaryScale = useYAxisScale("secondary");
+  const plotArea = usePlotArea();
+  const chartWidth = useChartWidth() ?? 0;
+  const chartHeight = useChartHeight() ?? 0;
+
+  // Pixel positions of every visible scatter point.
+  const points = useMemo<LocatedScatterPoint[]>(() => {
+    const located: LocatedScatterPoint[] = [];
+    if (!xScale) {
+      return located;
+    }
+    for (const series of dataSeries) {
+      if (series.type !== SeriesType.SCATTER) {
+        continue;
+      }
+      const yScale = series.usesSecondaryAxis ? secondaryScale : primaryScale;
+      if (!yScale) {
+        continue;
+      }
+      for (const datum of data) {
+        const value = series.extractValue(datum);
+        if (value === null || value === undefined) {
+          continue;
+        }
+        const x = xScale(datum, { position: "middle" });
+        const y = yScale(value);
+        if (x === undefined || y === undefined) {
+          continue;
+        }
+        located.push({ series, datum, value, x, y });
+      }
+    }
+    return located;
+  }, [data, dataSeries, xScale, primaryScale, secondaryScale]);
+
+  const findNearestPoint = (position: PixelPosition): LocatedScatterPoint | undefined => {
+    let nearest: LocatedScatterPoint | undefined;
+    let nearestDistance = config.maxDistancePx;
+    for (const point of points) {
+      const distance = Math.hypot(point.x - position.x, point.y - position.y);
+      if (distance <= nearestDistance) {
+        nearest = point;
+        nearestDistance = distance;
+      }
+    }
+    return nearest;
+  };
+
+  const findNearestDatum = (position: PixelPosition): number | undefined => {
+    if (!xScale) {
+      return undefined;
+    }
+    let nearest: number | undefined;
+    let nearestDistance = Infinity;
+    for (const datum of data) {
+      const x = xScale(datum, { position: "middle" });
+      if (x === undefined) {
+        continue;
+      }
+      const distance = Math.abs(x - position.x);
+      if (distance < nearestDistance) {
+        nearest = datum;
+        nearestDistance = distance;
+      }
+    }
+    return nearest;
+  };
+
+  // The SVG listeners below are attached once, so route clicks through a ref
+  // that always points at a handler with the current props and state.
+  const onChartClickRef = useRef<(position: PixelPosition) => void>(() => {});
+  onChartClickRef.current = (position) => {
+    if (!config.pinnable) {
+      return;
+    }
+    const point = findNearestPoint(position);
+    setPinned((current) => {
+      if (!point || (current && current.seriesName === point.series.name && current.datum === point.datum)) {
+        return undefined;
+      }
+      return { seriesName: point.series.name, datum: point.datum };
+    });
+  };
+
+  useEffect(() => {
+    const svg = anchorRef.current?.ownerSVGElement;
+    if (!svg) {
+      return;
+    }
+    // Recharts positions the wrapper relatively and sizes it to the SVG, so
+    // absolute positions inside of it line up with SVG coordinates.
+    setPortalTarget(svg.parentElement);
+    const onMouseMove = (e: MouseEvent) => setMouse(svgRelativePosition(svg, e));
+    const onMouseLeave = () => setMouse(undefined);
+    const onClick = (e: MouseEvent) => onChartClickRef.current(svgRelativePosition(svg, e));
+    svg.addEventListener("mousemove", onMouseMove);
+    svg.addEventListener("mouseleave", onMouseLeave);
+    svg.addEventListener("click", onClick);
+    return () => {
+      svg.removeEventListener("mousemove", onMouseMove);
+      svg.removeEventListener("mouseleave", onMouseLeave);
+      svg.removeEventListener("click", onClick);
+    };
+  }, []);
+
+  // Re-locate the pinned point on every render so that it follows resizes, and
+  // forget it if the data changed underneath it.
+  const pinnedPoint = pinned
+    ? points.find((p) => p.series.name === pinned.seriesName && p.datum === pinned.datum)
+    : undefined;
+  useEffect(() => {
+    if (pinned && !pinnedPoint) {
+      setPinned(undefined);
+    }
+  }, [pinned, pinnedPoint]);
+
+  let datum: number | undefined;
+  let point: LocatedScatterPoint | undefined;
+  let anchor: PixelPosition | undefined;
+  if (pinnedPoint) {
+    datum = pinnedPoint.datum;
+    point = pinnedPoint;
+    anchor = pinnedPoint;
+  } else if (
+    mouse &&
+    plotArea &&
+    mouse.x >= plotArea.x &&
+    mouse.x <= plotArea.x + plotArea.width &&
+    mouse.y >= plotArea.y &&
+    mouse.y <= plotArea.y + plotArea.height
+  ) {
+    point = findNearestPoint(mouse);
+    datum = point ? point.datum : findNearestDatum(mouse);
+    anchor = mouse;
+  }
+  const isPinned = Boolean(pinnedPoint);
+  const content = anchor ? config.render(datum, point, isPinned) : null;
+
+  // Show a pointer cursor when there's something to pin.
+  useEffect(() => {
+    const svg = anchorRef.current?.ownerSVGElement;
+    if (svg) {
+      svg.style.cursor = config.pinnable && point && !isPinned ? "pointer" : "";
+    }
+  }, [config.pinnable, point, isPinned]);
+
+  // Measure the rendered tooltip so it can be kept inside the chart.  Layout
+  // effects run before paint, so the corrected position is what gets drawn.
+  useLayoutEffect(() => {
+    const el = tooltipRef.current;
+    if (el && (el.offsetWidth !== tooltipSize.width || el.offsetHeight !== tooltipSize.height)) {
+      setTooltipSize({ width: el.offsetWidth, height: el.offsetHeight });
+    }
+  });
+
+  const position = anchor ? pointTooltipPosition(anchor, tooltipSize, chartWidth, chartHeight) : undefined;
+
+  return (
+    <g ref={anchorRef} className="trend-chart-point-layer">
+      {point && (
+        <circle
+          className="trend-chart-point-highlight"
+          cx={point.x}
+          cy={point.y}
+          r={6}
+          fill="none"
+          stroke={getResolvedColor(point.series.color)}
+          strokeWidth={2}
+          pointerEvents="none"
+        />
+      )}
+      {portalTarget &&
+        content &&
+        position &&
+        createPortal(
+          <div
+            ref={tooltipRef}
+            className="trend-chart-point-tooltip"
+            style={{
+              position: "absolute",
+              left: position.x,
+              top: position.y,
+              // Size to the content rather than to the space left of the
+              // chart's edge, so the tooltip doesn't reflow as it moves.
+              width: "max-content",
+              pointerEvents: isPinned ? "auto" : "none",
+              zIndex: 1,
+            }}>
+            {content}
+          </div>,
+          portalTarget
+        )}
+    </g>
+  );
+}
+
 export default class TrendsChartComponent extends React.Component<Props, State> {
   state: State = { hiddenSeries: new Set() };
 
@@ -385,7 +687,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
 
   render() {
     const hasSecondaryAxis = this.props.secondaryYAxis !== undefined;
-    const topLevelClickHandler = this.props.onClick;
+    const visibleSeries = this.props.dataSeries.filter((_, index) => !this.state.hiddenSeries.has(index));
 
     return (
       <div
@@ -396,7 +698,6 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
-            onClick={topLevelClickHandler ? (_, e) => topLevelClickHandler(e) : undefined}
             accessibilityLayer={false}
             data={this.props.data}
             onMouseDown={this.props.onZoomSelection && this.onMouseDown.bind(this)}
@@ -424,14 +725,14 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
               allowDecimals={this.props.secondaryYAxis?.allowDecimals}
               width={84}
             />
-            {this.props.customTooltip ?? (
+            {!this.props.pointTooltip && (
               <Tooltip
                 content={
                   <TrendsChartTooltip
                     limit={this.props.tooltipEntryLimit ?? 0}
                     formatLabel={this.props.formatHoverXAxisLabel}
                     shouldRender={() => this.shouldRenderTooltip()}
-                    dataSeries={this.props.dataSeries.filter((_, index) => !this.state.hiddenSeries.has(index))}
+                    dataSeries={visibleSeries}
                   />
                 }
               />
@@ -442,6 +743,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
               const highlight = this.props.highlightSeries === ds.name;
               return (
                 <RenderedDataSeries
+                  key={index}
                   ds={ds}
                   hidden={hidden}
                   highlight={highlight}
@@ -450,6 +752,10 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
                 />
               );
             })}
+            {/* Rendered after the series so the highlighted point draws on top. */}
+            {this.props.pointTooltip && (
+              <PointTooltipLayer config={this.props.pointTooltip} data={this.props.data} dataSeries={visibleSeries} />
+            )}
             {this.state.refAreaLeft && this.state.refAreaRight ? (
               <ReferenceArea
                 yAxisId="primary"

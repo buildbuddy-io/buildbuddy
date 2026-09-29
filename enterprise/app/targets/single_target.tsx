@@ -1,29 +1,40 @@
-import moment from "moment";
+import {
+  Activity,
+  BarChart2,
+  Clock,
+  Cpu,
+  Download,
+  Layers,
+  MemoryStick,
+  Monitor,
+  PieChart,
+  Terminal,
+  Upload,
+} from "lucide-react";
 import React from "react";
 import { User } from "../../../app/auth/user";
+import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import { OutlinedButton } from "../../../app/components/button/button";
+import DonutChart, { makeColorPicker, NamedValue } from "../../../app/components/chart/donut_chart";
+import { FilterInput } from "../../../app/components/filter_input/filter_input";
+import Link from "../../../app/components/link/link";
 import Select, { Option } from "../../../app/components/select/select";
+import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
 import * as format from "../../../app/format/format";
+import router, { Path } from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
+import { getChartColor } from "../../../app/util/color";
 import { computeDiffs } from "../../../app/util/diff";
 import * as proto from "../../../app/util/proto";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
-import { getProtoFilterParams } from "../filter/filter_util";
-import TrendsChartComponent, { ChartColor, ChartDataSeries, SeriesType } from "../trends/trends_chart";
-import { computeTimeKeys } from "../trends/common";
-import DonutChart, { makeColorPicker, NamedValue } from "../../../app/components/chart/donut_chart";
-import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
-import Link from "../../../app/components/link/link";
-import router, { Path } from "../../../app/router/router";
 import FilterComponent from "../filter/filter";
-import { Activity, BarChart, BarChart2, Hash, PieChart } from "lucide-react";
-import { ComposedChart, Line, ResponsiveContainer, XAxis, YAxis } from "recharts";
-import { FilterInput } from "../../../app/components/filter_input/filter_input";
-import TargetChartComponent, { TimelineDataSeries } from "./target_chart";
-import { getChartColor } from "../../../app/util/color";
+import { getProtoFilterParams } from "../filter/filter_util";
+import { computeTimeKeys } from "../trends/common";
+import { SeriesType } from "../trends/trends_chart";
 import SingleActionComponent from "./single_action";
+import TargetChartComponent, { TimelineDataSeries } from "./target_chart";
 
 const MICROSECONDS_PER_SECOND = 1e6;
 
@@ -63,6 +74,22 @@ const FILTER_DIMENSIONS: Array<{
  * collapse to "...", and the file name is always shown in full. For example,
  * abbreviating "output/path/b.o" against "output/path/a.o" yields ".../b.o".
  */
+function formatPlatform(timeline: execution_stats.ExecutionTimeline): string {
+  return [timeline.os, timeline.arch].filter(Boolean).join("/") || "Unknown platform";
+}
+
+// Scrolls `el` and every scrollable ancestor of it back to the top.  The
+// enterprise layout scrolls the main content area rather than the window, so
+// scrolling the window alone isn't enough.
+function scrollToTop(el: HTMLElement | null) {
+  for (let node: HTMLElement | null = el; node; node = node.parentElement) {
+    if (node.scrollTop > 0) {
+      node.scrollTop = 0;
+    }
+  }
+  window.scrollTo(0, 0);
+}
+
 function formatOutputPath(outputPath: string, comparePath?: string): JSX.Element[] {
   if (!comparePath) {
     return [<>{outputPath}</>];
@@ -164,7 +191,8 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     filterText: "",
   };
 
-  private currentTarget?: string;
+  private rootRef = React.createRef<HTMLDivElement>();
+  private currentRequestKey?: string;
   private pendingTimelineRequest?: CancelablePromise;
 
   private getPageTitle() {
@@ -180,25 +208,47 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     this.fetchExecutionTimeline();
   }
 
-  componentDidUpdate(): void {
+  componentDidUpdate(prevProps: Props): void {
     this.updateDocumentTitle();
+    if (this.props.search === prevProps.search) {
+      return;
+    }
     this.fetchExecutionTimeline();
+    // Moving between the target overview and a single action is a page change,
+    // so start the reader at the top of the new page.
+    if (
+      this.props.search.get("output_path") !== prevProps.search.get("output_path") ||
+      this.props.search.get("target") !== prevProps.search.get("target")
+    ) {
+      scrollToTop(this.rootRef.current);
+    }
   }
 
   componentWillUnmount(): void {
     this.pendingTimelineRequest?.cancel();
   }
 
+  // Returns the URL params that affect the timeline request.  The output path
+  // only selects which of the returned timelines to display, so moving between
+  // the target overview and a single action doesn't need a new request.
+  private getRequestKey(): string {
+    const params = new URLSearchParams(this.props.search);
+    params.delete("output_path");
+    params.sort();
+    return params.toString();
+  }
+
   private fetchExecutionTimeline(): void {
-    const target = this.props.search.get("target") ?? "";
-    // Avoid re-fetching when the target hasn't changed across updates.
-    if (target === this.currentTarget) {
+    const requestKey = this.getRequestKey();
+    // Avoid re-fetching when nothing relevant to the request has changed.
+    if (requestKey === this.currentRequestKey) {
       return;
     }
-    this.currentTarget = target;
+    this.currentRequestKey = requestKey;
 
     this.pendingTimelineRequest?.cancel();
 
+    const target = this.getTarget();
     if (!target) {
       this.setState({ loading: false, timeline: undefined, filters: {} });
       return;
@@ -232,12 +282,37 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     this.pendingTimelineRequest = rpcService.service
       .getExecutionTimeline(request)
       .then((response) => {
-        console.log("R");
-        console.log(response);
-        this.setState({ timeline: response });
+        if (requestKey !== this.currentRequestKey) {
+          return;
+        }
+        // Keep the mnemonic and platform selections across refreshes, unless
+        // they no longer match anything in the new response.
+        const mnemonics = new Set(response.timelines.map((tl) => tl.mnemonic));
+        const platforms = new Set(response.timelines.map((tl) => tl.os + OS_ARCH_SEPARATOR + tl.arch));
+        const keepMnemonic = this.state.mnemonic !== undefined && mnemonics.has(this.state.mnemonic);
+        const keepPlatform =
+          this.state.os !== undefined && platforms.has(this.state.os + OS_ARCH_SEPARATOR + this.state.arch);
+        this.setState({
+          timeline: response,
+          mnemonic: keepMnemonic ? this.state.mnemonic : undefined,
+          os: keepPlatform ? this.state.os : undefined,
+          arch: keepPlatform ? this.state.arch : undefined,
+        });
       })
       .catch((e) => errorService.handleError(e))
-      .finally(() => this.setState({ loading: false }));
+      .finally(() => {
+        if (requestKey === this.currentRequestKey) {
+          this.setState({ loading: false });
+        }
+      });
+  }
+
+  private getSingleActionTimeline(): execution_stats.ExecutionTimeline | undefined {
+    const outputPath = this.getOutputPath();
+    if (outputPath == null) {
+      return undefined;
+    }
+    return this.state.timeline?.timelines.find((tl) => tl.outputPath === outputPath);
   }
 
   private handleFilterChange(key: string, value: string): void {
@@ -483,14 +558,9 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     const memorySeries: TimelineDataSeries[] = [];
     let i = 0;
 
-    console.log(interval);
-    console.log(domain);
-
     let { timeKeys, ticks } = computeTimeKeys(interval, domain);
     timeKeys = timeKeys.map((v) => v * 1000);
     ticks = ticks.map((v) => v * 1000);
-    console.log(timeKeys);
-    console.log(ticks);
 
     for (const timeline of timelines) {
       const durationByStartTime = new Map<number, number>();
@@ -623,6 +693,106 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     return Boolean(this.getOutputPath());
   }
 
+  // Summarizes every remote action of the target that matched the filters.
+  private renderTargetDetails(): React.ReactNode {
+    const timelines = this.state.timeline?.timelines ?? [];
+    if (timelines.length === 0) {
+      return null;
+    }
+    const mnemonics = Array.from(new Set(timelines.map((tl) => tl.mnemonic || "Unknown mnemonic"))).sort();
+    const platforms = Array.from(new Set(timelines.map(formatPlatform))).sort();
+    const total = (get: (summary: execution_stats.ExecutionTimelineSummary) => number) =>
+      timelines.reduce((sum, tl) => sum + (tl.summary ? get(tl.summary) : 0), 0);
+    return (
+      <>
+        <div className="detail" title="Distinct remote actions run for this target">
+          <Activity />
+          {format.formatWithCommas(timelines.length)} {timelines.length === 1 ? "remote action" : "remote actions"}
+        </div>
+        <div className="detail" title={mnemonics.join(", ")}>
+          <Terminal />
+          {mnemonics.length === 1 ? mnemonics[0] : `${mnemonics.length} mnemonics`}
+        </div>
+        <div className="detail" title={platforms.join(", ")}>
+          <Monitor />
+          {platforms.length === 1 ? platforms[0] : `${platforms.length} platforms`}
+        </div>
+        <div className="detail" title="Total wall time spent running remote actions">
+          <Clock />
+          {format.durationUsec(total((s) => +s.durationUsecTotal))} wall time
+        </div>
+        <div className="detail" title="Total CPU time used by remote actions">
+          <Cpu />
+          {format.durationMillis(total((s) => +s.cpuNanosTotal) / 1e6)} CPU time
+        </div>
+        <div className="detail" title="Total inputs downloaded by remote actions">
+          <Download />
+          {format.bytes(total((s) => +s.downloadedBytesTotal))} downloaded
+        </div>
+        <div className="detail" title="Total outputs uploaded by remote actions">
+          <Upload />
+          {format.bytes(total((s) => +s.uploadedBytesTotal))} uploaded
+        </div>
+      </>
+    );
+  }
+
+  // Summarizes the single action being viewed.
+  private renderActionDetails(): React.ReactNode {
+    const timeline = this.getSingleActionTimeline();
+    if (!timeline) {
+      return null;
+    }
+    const summary = timeline.summary;
+    const sampleCount = timeline.executionSamples.length;
+    return (
+      <>
+        <div className="detail" title="Action mnemonic">
+          <Terminal />
+          {timeline.mnemonic || "Unknown mnemonic"}
+        </div>
+        <div className="detail" title="Execution platform">
+          <Monitor />
+          {formatPlatform(timeline)}
+        </div>
+        {+timeline.shard > 0 && (
+          <div className="detail" title="Test shard">
+            <Layers />
+            Shard {String(timeline.shard)}
+          </div>
+        )}
+        <div className="detail" title="Executions sampled for the charts and table below">
+          <Activity />
+          {format.formatWithCommas(sampleCount)} sampled {sampleCount === 1 ? "execution" : "executions"}
+        </div>
+        {summary && (
+          <>
+            <div className="detail" title="Median wall time">
+              <Clock />
+              {format.durationUsec(this.getP50(summary.durationUsec))} median wall time
+            </div>
+            <div className="detail" title="Median CPU time">
+              <Cpu />
+              {format.durationMillis(this.getP50(summary.cpuNanos) / 1e6)} median CPU time
+            </div>
+            <div className="detail" title="Median peak memory">
+              <MemoryStick />
+              {format.bytes(this.getP50(summary.peakMemory))} median peak memory
+            </div>
+            <div className="detail" title="Total inputs downloaded">
+              <Download />
+              {format.bytes(+summary.downloadedBytesTotal)} downloaded
+            </div>
+            <div className="detail" title="Total outputs uploaded">
+              <Upload />
+              {format.bytes(+summary.uploadedBytesTotal)} uploaded
+            </div>
+          </>
+        )}
+      </>
+    );
+  }
+
   renderHeader() {
     const target = this.getTarget();
     const outputPath = this.getOutputPath();
@@ -658,14 +828,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
               {title}
             </div>
           </div>
-          <div className="details">
-            <div className="detail" title={title}>
-              <Hash />X builds
-            </div>
-            <div className="detail" title={title}>
-              <Activity />Y actions
-            </div>
-          </div>
+          <div className="details">{outputPath ? this.renderActionDetails() : this.renderTargetDetails()}</div>
         </div>
       </div>
     );
@@ -684,7 +847,6 @@ export default class SingleTargetComponent extends React.Component<Props, State>
   }
 
   onPlatformChange(event: React.ChangeEvent<HTMLSelectElement>) {
-    let platform: string | undefined = event.target.value;
     if (event.target.value == ALL_VALUES) {
       this.setState({ os: undefined, arch: undefined });
     } else {
@@ -712,25 +874,29 @@ export default class SingleTargetComponent extends React.Component<Props, State>
         <div className="controls row">
           <label>Mnemonic</label>
           <Select
-            debug-id="filter-cache-requests"
+            debug-id="filter-mnemonic"
             value={this.state.mnemonic ?? ALL_VALUES}
             onChange={this.onMnemonicChange.bind(this)}>
             {mnemonics.map((m) => (
-              <Option value={m}>{m}</Option>
+              <Option key={m} value={m}>
+                {m === ALL_VALUES ? "All" : m}
+              </Option>
             ))}
           </Select>
           <div className="separator" />
           <label>OS/Arch</label>
           <Select
-            debug-id="filter-cache-requests"
+            debug-id="filter-platform"
             value={
               this.state.os != undefined || this.state.arch != undefined
-                ? (this.state.os ?? "") + OS_ARCH_SEPARATOR + (this.state.mnemonic ?? "")
+                ? (this.state.os ?? "") + OS_ARCH_SEPARATOR + (this.state.arch ?? "")
                 : ALL_VALUES
             }
             onChange={this.onPlatformChange.bind(this)}>
             {platforms.map((p) => (
-              <Option value={p}>{p.replace(OS_ARCH_SEPARATOR, "/")}</Option>
+              <Option key={p} value={p}>
+                {p === ALL_VALUES ? "All" : p.replace(OS_ARCH_SEPARATOR, "/")}
+              </Option>
             ))}
           </Select>
         </div>
@@ -844,6 +1010,16 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     );
   }
 
+  private renderEmptyState(message: string): React.ReactNode {
+    return (
+      <div className="container">
+        <div className="targets-empty">
+          <div className="empty-message">{message}</div>
+        </div>
+      </div>
+    );
+  }
+
   render(): React.ReactNode {
     const p = getProtoFilterParams(this.props.search);
     const domain: [Date, Date] = [
@@ -851,41 +1027,40 @@ export default class SingleTargetComponent extends React.Component<Props, State>
       p.updatedBefore ? proto.timestampToDate(p.updatedBefore) : new Date(),
     ];
 
-    if (this.state.loading) {
-      // TODO: Loading state.
-      return <div className="target-data">{this.renderHeader()}</div>;
-    }
-
-    if (!this.state.timeline) {
-      // TODO: Error state.
-      return <div className="target-data">{this.renderHeader()}</div>;
-    }
-
-    let pageContent: React.ReactNode = <></>;
-
+    let pageContent: React.ReactNode;
     const outputPath = this.getOutputPath();
-    if (outputPath != null) {
+    if (this.state.loading) {
+      pageContent = (
+        <div className="container">
+          <div className="loading-section">
+            <Spinner />
+          </div>
+        </div>
+      );
+    } else if (!this.state.timeline) {
+      pageContent = this.renderEmptyState("No remote execution data is available for this target.");
+    } else if (outputPath != null) {
       // Single action page.
-      const singleAction = this.state.timeline.timelines.find((tl) => tl.outputPath === outputPath);
-      if (singleAction === undefined) {
-        // TODO: Error state.
-      } else {
-        pageContent = (
-          <SingleActionComponent
-            domain={domain}
-            interval={this.state.timeline.interval!}
-            outputPath={outputPath!}
-            target={this.getTarget()}
-            timeline={singleAction!}
-          />
-        );
-      }
+      const singleAction = this.getSingleActionTimeline();
+      pageContent = singleAction ? (
+        <SingleActionComponent
+          domain={domain}
+          interval={this.state.timeline.interval!}
+          outputPath={outputPath}
+          target={this.getTarget()}
+          timeline={singleAction}
+        />
+      ) : (
+        this.renderEmptyState("No remote executions of this action matched the current filters.")
+      );
+    } else if (this.state.timeline.timelines.length === 0) {
+      pageContent = this.renderEmptyState("No remote executions of this target matched the current filters.");
     } else {
       pageContent = this.renderSingleTarget(domain);
     }
 
     return (
-      <div className="target-data">
+      <div className="target-data" ref={this.rootRef}>
         {this.renderHeader()}
         {pageContent}
       </div>

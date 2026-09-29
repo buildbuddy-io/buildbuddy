@@ -223,3 +223,118 @@
   font-size: 16px;
   text-align: center;
 }
+
+.target-data .loading-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+}
+
+/* HEADER */
+
+.target-data .shelf .detail svg {
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+/* FILTER AND SORT CONTROLS */
+
+.target-data .controls.row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.target-data .controls.row label {
+  font-weight: 600;
+}
+
+.target-data .controls.row .separator {
+  border-left: 1px solid var(--color-border-primary);
+  align-self: stretch;
+  margin: 0 8px;
+}
+
+/* SINGLE ACTION PAGE */
+
+.target-data .single-action-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.target-data .single-action-chart-tooltip {
+  min-width: 220px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.target-data .single-action-chart-tooltip .tooltip-section + .tooltip-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.target-data .single-action-chart-tooltip .tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.target-data .single-action-chart-tooltip .tooltip-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.target-data .single-action-chart-tooltip .tooltip-hint {
+  font-size: 12px;
+  color: var(--color-hovercard-muted);
+}
+
+.target-data .chart-table-container .digest-column {
+  width: 96px;
+  padding: 4px;
+  font-family: monospace;
+}
+
+.target-data .chart-table-container .date-column {
+  flex-grow: 1;
+  width: 240px;
+  padding: 4px;
+}
+
+.target-data .table-summary {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* TABLE PAGER */
+
+.target-data .table-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.target-data .table-pager .table-pager-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.target-data .table-pager .icon-button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+}
+
+.target-data .table-pager .icon-button svg {
+  width: 16px;
+  height: 16px;
+}
