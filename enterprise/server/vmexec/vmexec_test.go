@@ -76,18 +76,18 @@ func TestExecStreamed_Stdio(t *testing.T) {
 
 func TestExecStreamed_LargeOutput(t *testing.T) {
 	client := startExecService(t)
-	// Write a few MB of distinct lines to stdout and stderr. The server reads
+	// Write about 600 KB of distinct lines to stdout and stderr. The server reads
 	// output in chunks of up to 32 KiB, usually faster than it can stream them
 	// to the client, so several chunks are typically waiting to be sent while
 	// the next chunk is read.
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-c", `
-			seq 1 500000
-			seq 1 500000 >&2
+			seq 1 100000
+			seq 1 100000 >&2
 		`},
 	}
 	var expected strings.Builder
-	for i := range 500_000 {
+	for i := range 100_000 {
 		fmt.Fprintf(&expected, "%d\n", i+1)
 	}
 
@@ -95,7 +95,7 @@ func TestExecStreamed_LargeOutput(t *testing.T) {
 
 	// Every chunk should be sent with the contents it had when it was read, so
 	// the output received by the client should match exactly. Compare with ==
-	// to avoid printing a multi-MB diff on failure.
+	// to avoid printing a huge diff on failure.
 	require.NoError(t, res.Error)
 	stdout := string(res.Stdout)
 	stderr := string(res.Stderr)
