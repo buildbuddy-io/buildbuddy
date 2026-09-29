@@ -1,4 +1,4 @@
-package smoke_test
+package local_test
 
 import (
 	"testing"
