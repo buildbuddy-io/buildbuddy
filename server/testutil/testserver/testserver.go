@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -40,12 +39,11 @@ const (
 type Server struct {
 	monitoringPort        int
 	healthCheckServerType string
-	mu                    sync.Mutex
-	exited                bool
-	// err is the error returned by `cmd.Wait()`.
-	err error
 	// done is closed once `cmd.Wait()` returns.
 	done chan struct{}
+	// err is the error returned by `cmd.Wait()`. Only read it after done is
+	// closed.
+	err error
 }
 
 func runfile(t *testing.T, path string) string {
@@ -101,11 +99,7 @@ func Run(t *testing.T, opts *Opts) *Server {
 		}
 	})
 	go func() {
-		err := cmd.Wait()
-		server.mu.Lock()
-		defer server.mu.Unlock()
-		server.exited = true
-		server.err = err
+		server.err = cmd.Wait()
 		close(server.done)
 	}()
 	if err := server.waitForReady(); err != nil {
@@ -127,12 +121,10 @@ func (s *Server) waitForReady() error {
 	start := time.Now()
 	log.Debug("testserver waitForReady start")
 	for i := 0; ; i++ {
-		s.mu.Lock()
-		exited := s.exited
-		err := s.err
-		s.mu.Unlock()
-		if exited {
-			return fmt.Errorf("binary failed to start: %s", err)
+		select {
+		case <-s.done:
+			return fmt.Errorf("binary failed to start: %s", s.err)
+		default:
 		}
 		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/readyz?server-type=%s", s.monitoringPort, s.healthCheckServerType))
 		ok := false
