@@ -127,6 +127,13 @@ func (c *collector) ListRange(ctx context.Context, key string, start, stop int64
 	return c.rdb.LRange(ctx, key, start, stop).Result()
 }
 
+func (c *collector) ListAppendAndTruncate(ctx context.Context, key string, maxLength int64, values ...string) error {
+	if err := c.ListAppend(ctx, key, values...); err != nil {
+		return err
+	}
+	return c.rbuf.LTrim(ctx, key, 0, maxLength-1)
+}
+
 func (c *collector) ReadCounts(ctx context.Context, key string) (map[string]int64, error) {
 	h, err := c.rdb.HGetAll(ctx, key).Result()
 	if err != nil {

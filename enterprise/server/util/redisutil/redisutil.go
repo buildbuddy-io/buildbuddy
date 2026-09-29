@@ -529,6 +529,10 @@ type valueExpiration struct {
 	expiration time.Duration
 }
 
+type listRange struct {
+	start, stop int64
+}
+
 // CommandBuffer buffers and aggregates Redis commands in-memory and allows
 // periodically flushing the aggregate results in batch. This is useful for
 // reducing the load placed on Redis in cases where a high volume of commands
@@ -565,6 +569,8 @@ type CommandBuffer struct {
 	hincr map[string]map[string]int64
 	// Buffer for RPUSH commands.
 	rpush map[string][]any
+	// Buffer for LTRIM commands.
+	ltrim map[string]listRange
 	// Buffer for SADD commands.
 	sadd map[string]map[any]struct{}
 	// Buffer for EXPIRE commands.
@@ -585,6 +591,7 @@ func (c *CommandBuffer) init() {
 	c.incr = map[string]int64{}
 	c.hincr = map[string]map[string]int64{}
 	c.rpush = map[string][]any{}
+	c.ltrim = map[string]listRange{}
 	c.sadd = map[string]map[any]struct{}{}
 	c.expire = map[string]time.Duration{}
 }
@@ -691,6 +698,24 @@ func (c *CommandBuffer) RPush(ctx context.Context, key string, values ...any) er
 	return nil
 }
 
+// LTrim adds an LTRIM operation to the buffer, overwriting any previous LTRIM
+// currently buffered for the given key.
+//
+// If the server is shutting down, the command will be issued to Redis
+// synchronously using the given context. Otherwise, the command is added to
+// the buffer and the context is ignored.
+func (c *CommandBuffer) LTrim(ctx context.Context, key string, start, stop int64) error {
+	c.mu.Lock()
+	if c.shouldFlushSynchronously() {
+		c.mu.Unlock()
+		return c.rdb.LTrim(ctx, key, start, stop).Err()
+	}
+	defer c.mu.Unlock()
+
+	c.ltrim[key] = listRange{start, stop}
+	return nil
+}
+
 // Expire adds an EXPIRE operation to the buffer, overwriting any previous
 // expiry currently buffered for the given key. The duration is applied
 // as-is when flushed to Redis, meaning that any time elapsed until the flush
@@ -733,6 +758,7 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 	hincr := c.hincr
 	sadd := c.sadd
 	rpush := c.rpush
+	ltrim := c.ltrim
 	expire := c.expire
 	// Set all fields to fresh values so the current ones can be flushed without
 	// keeping a hold on the lock.
@@ -754,6 +780,9 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 	}
 	for key, values := range rpush {
 		pipe.RPush(ctx, key, values...)
+	}
+	for key, r := range ltrim {
+		pipe.LTrim(ctx, key, r.start, r.stop)
 	}
 	for key, set := range sadd {
 		members := []any{}

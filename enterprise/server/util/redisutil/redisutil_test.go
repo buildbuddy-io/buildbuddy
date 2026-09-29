@@ -396,6 +396,16 @@ func TestCommandBuffer(t *testing.T) {
 	err = buf.RPush(ctx, "list2", "A")
 	require.NoError(t, err)
 
+	// Trim list3 to its first 2 values, then push a third value. Buffered trims
+	// are applied after all buffered pushes, so the third value should get
+	// trimmed too.
+	err = buf.RPush(ctx, "list3", "1", "2")
+	require.NoError(t, err)
+	err = buf.LTrim(ctx, "list3", 0, 1)
+	require.NoError(t, err)
+	err = buf.RPush(ctx, "list3", "3")
+	require.NoError(t, err)
+
 	// Create 2 keys that don't expire (initially).
 	_, err = rdb.Set(ctx, "expiring1", "value1", 0).Result()
 	require.NoError(t, err)
@@ -453,6 +463,9 @@ func TestCommandBuffer(t *testing.T) {
 	list2, err := rdb.LRange(ctx, "list2", 0, -1).Result()
 	require.NoError(t, err)
 	assert.Equal(t, []string{"A"}, list2)
+	list3, err := rdb.LRange(ctx, "list3", 0, -1).Result()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2"}, list3)
 
 	_, err = rdb.Get(ctx, "expiring1").Result()
 	assert.Equal(t, redis.Nil, err)
@@ -497,6 +510,11 @@ func TestCommandBuffer_PostShutdown(t *testing.T) {
 	err = buf.SAdd(ctx, "set2", "1")
 	require.NoError(t, err)
 
+	err = buf.RPush(ctx, "list1", "1", "2", "3")
+	require.NoError(t, err)
+	err = buf.LTrim(ctx, "list1", 0, 1)
+	require.NoError(t, err)
+
 	// Create 2 keys that don't expire (initially).
 	_, err = rdb.Set(ctx, "expiring1", "value1", 0).Result()
 	require.NoError(t, err)
@@ -538,6 +556,10 @@ func TestCommandBuffer_PostShutdown(t *testing.T) {
 	s2, err := rdb.SMembers(ctx, "set2").Result()
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"1"}, s2, "SAdd not working as expected")
+
+	list1, err := rdb.LRange(ctx, "list1", 0, -1).Result()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2"}, list1)
 
 	_, err = rdb.Get(ctx, "expiring1").Result()
 	assert.Equal(t, redis.Nil, err)
