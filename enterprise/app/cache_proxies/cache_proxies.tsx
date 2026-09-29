@@ -66,7 +66,7 @@ class CacheProxySetup extends React.Component<CacheProxySetupProps> {
 
 interface CacheProxiesListProps {
   regions: RegionalCacheProxyResponse[];
-  summary: boolean;
+  summaryMode: boolean;
 }
 
 class CacheProxiesList extends React.Component<CacheProxiesListProps> {
@@ -75,15 +75,15 @@ class CacheProxiesList extends React.Component<CacheProxiesListProps> {
     const proxiesByCluster = new Map<string, RegionalCacheProxy[]>();
     for (const region of this.props.regions) {
       for (const proxy of region.response.cacheProxy) {
-        if (!proxy.node) {
+        if (!proxy.summary) {
           continue;
         }
-        const node = proxy.node as cache_proxy.CacheProxyNode;
-        const key = `${region.name}-${node.osFamily || ""}-${node.arch || ""}`;
+        const proxySummary = proxy.summary as cache_proxy.CacheProxySummary;
+        const key = `${region.name}-${proxySummary.osFamily || ""}-${proxySummary.arch || ""}`;
         if (!proxiesByCluster.has(key)) {
           proxiesByCluster.set(key, []);
         }
-        proxiesByCluster.get(key)!.push({ region: region.name, proxy, node });
+        proxiesByCluster.get(key)!.push({ region: region.name, proxy, proxySummary });
       }
     }
     const keys = Array.from(proxiesByCluster.keys()).sort();
@@ -95,7 +95,7 @@ class CacheProxiesList extends React.Component<CacheProxiesListProps> {
           if (!proxies || proxies.length === 0) {
             return null;
           }
-          const { region, node } = proxies[0];
+          const { region, proxySummary } = proxies[0];
           return (
             <React.Fragment key={key}>
               <div className="cache-proxy-details">
@@ -108,19 +108,19 @@ class CacheProxiesList extends React.Component<CacheProxiesListProps> {
                   {proxies.length} {proxies.length === 1 ? "cache proxy" : "cache proxies"}
                 </CacheProxyDetail>
                 <CacheProxyDetail Icon={Laptop} label="OS">
-                  {node.osFamily || "unknown"}
+                  {proxySummary.osFamily || "unknown"}
                 </CacheProxyDetail>
                 <CacheProxyDetail Icon={Cpu} label="Arch">
-                  {node.arch || "unknown"}
+                  {proxySummary.arch || "unknown"}
                 </CacheProxyDetail>
               </div>
               {proxies.map((p) => (
                 <CacheProxyCardComponent
-                  key={`${p.region}-${p.node.proxyId}`}
-                  node={p.node}
+                  key={`${p.region}-${p.proxySummary.proxyId}`}
+                  proxy={p.proxySummary}
                   lastCheckInTime={p.proxy.lastCheckInTime}
                   statistics={p.proxy.statistics}
-                  summary={this.props.summary}
+                  summaryMode={this.props.summaryMode}
                 />
               ))}
             </React.Fragment>
@@ -152,8 +152,8 @@ interface Props {
 
 type RegionalCacheProxy = {
   region: string;
-  proxy: cache_proxy.GetCacheProxiesResponse.ICacheProxy;
-  node: cache_proxy.CacheProxyNode;
+  proxy: cache_proxy.ICacheProxy;
+  proxySummary: cache_proxy.CacheProxySummary;
 };
 
 type RegionalCacheProxyResponse = {
@@ -282,7 +282,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
   }
 
   render() {
-    const hasProxies = this.state.regions.some((r) => r.response.cacheProxy.some((proxy) => proxy.node));
+    const hasProxies = this.state.regions.some((r) => r.response.cacheProxy.some((proxy) => proxy.summary));
     const hasKeys = this.state.proxyKeys.length > 0;
     // When neither proxies nor cache-proxy API keys exist, skip the tab UI
     // and show a single clean empty-state view (matching the executors page
@@ -333,7 +333,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                       </div>
                     )}
                     {hasProxies && (
-                      <CacheProxiesList regions={this.state.regions} summary={this.state.viewMode === "summary"} />
+                      <CacheProxiesList regions={this.state.regions} summaryMode={this.state.viewMode === "summary"} />
                     )}
                   </>
                 )}

@@ -1786,6 +1786,10 @@ func (s *BuildBuddyServer) GetCacheProxies(ctx context.Context, req *cppb.GetCac
 	return cps.GetCacheProxies(ctx, req)
 }
 
+func (s *BuildBuddyServer) GetCacheProxy(ctx context.Context, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error) {
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) SearchExecution(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error) {
 	if req == nil {
 		return nil, status.InvalidArgumentErrorf("SearchExecutionRequest cannot be empty")

@@ -26,12 +26,12 @@ const WRITE_COLOR = cssColor("--color-indigo-500", "#3f51b5");
 const EMPTY_COLOR = "#eee";
 
 interface Props {
-  node: cache_proxy.CacheProxyNode;
+  proxy: cache_proxy.CacheProxySummary;
   lastCheckInTime?: google_timestamp.protobuf.Timestamp | null;
   statistics?: cache_proxy.IStatistics | null;
   // When true, the card is in summary mode and the statistics divider and
   // rings are hidden.
-  summary?: boolean;
+  summaryMode?: boolean;
 }
 
 // toNumber accepts the int64-as-number-or-Long values that protobuf-ts
@@ -73,26 +73,26 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
           <div className="details">
             <div className="cache-proxy-section">
               <div className="cache-proxy-section-title">Hostname:</div>
-              <div>{this.props.node.host}</div>
+              <div>{this.props.proxy.host}</div>
             </div>
             <div className="cache-proxy-section">
               <div className="cache-proxy-section-title">Proxy Instance ID:</div>
-              <div>{this.props.node.proxyId}</div>
+              <div>{this.props.proxy.proxyId}</div>
             </div>
-            {this.props.node.proxyHostId && (
+            {this.props.proxy.proxyHostId && (
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Proxy Host ID:</div>
-                <div>{this.props.node.proxyHostId}</div>
+                <div>{this.props.proxy.proxyHostId}</div>
               </div>
             )}
             <div className="cache-proxy-section">
               <div className="cache-proxy-section-title">Version:</div>
-              <div>{this.props.node.version}</div>
+              <div>{this.props.proxy.version}</div>
             </div>
-            {this.props.node.startTime && (
+            {this.props.proxy.startTime && (
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Uptime:</div>
-                <div>{format.durationSince(this.props.node.startTime)}</div>
+                <div>{format.durationSince(this.props.proxy.startTime)}</div>
               </div>
             )}
             {this.props.lastCheckInTime && (
@@ -101,23 +101,23 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
                 <div>{format.relativeTimeSeconds(this.props.lastCheckInTime)}</div>
               </div>
             )}
-            {toNumber(this.props.node.allocatedMemoryBytes) > 0 && (
+            {toNumber(this.props.proxy.allocatedMemoryBytes) > 0 && (
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Allocated Memory:</div>
-                <div>{format.bytes(toNumber(this.props.node.allocatedMemoryBytes))}</div>
+                <div>{format.bytes(toNumber(this.props.proxy.allocatedMemoryBytes))}</div>
               </div>
             )}
-            {toNumber(this.props.node.allocatedCpuMillis) > 0 && (
+            {toNumber(this.props.proxy.allocatedCpuMillis) > 0 && (
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Allocated Milli CPU:</div>
-                <div>{toNumber(this.props.node.allocatedCpuMillis)}</div>
+                <div>{toNumber(this.props.proxy.allocatedCpuMillis)}</div>
               </div>
             )}
-            {this.props.node.labels && Object.keys(this.props.node.labels).length > 0 && (
+            {this.props.proxy.labels && Object.keys(this.props.proxy.labels).length > 0 && (
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Labels:</div>
                 <div>
-                  {Object.entries(this.props.node.labels)
+                  {Object.entries(this.props.proxy.labels)
                     .sort(([a], [b]) => a.localeCompare(b))
                     .map(([k, v]) => (
                       <div key={k}>
@@ -127,17 +127,17 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
                 </div>
               </div>
             )}
-            {!this.props.summary && this.props.node.configuredFlags.length > 0 && (
+            {!this.props.summaryMode && this.props.proxy.configuredFlags.length > 0 && (
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Configuration:</div>
                 <div className="cache-proxy-configured-flags">
-                  {this.props.node.configuredFlags.map((f) => (
+                  {this.props.proxy.configuredFlags.map((f) => (
                     <div key={f}>{f}</div>
                   ))}
                 </div>
               </div>
             )}
-            {!this.props.summary && this.props.statistics && this.renderStatistics(this.props.statistics)}
+            {!this.props.summaryMode && this.props.statistics && this.renderStatistics(this.props.statistics)}
           </div>
         </div>
       </div>

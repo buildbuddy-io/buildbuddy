@@ -201,6 +201,7 @@ var (
 		buildBuddyServicePrefix + "GetExecutionNodes",
 		// Cache proxy deployment view
 		buildBuddyServicePrefix + "GetCacheProxies",
+		buildBuddyServicePrefix + "GetCacheProxy",
 		// BuildBuddy usage data
 		buildBuddyServicePrefix + "GetUsage",
 		buildBuddyServicePrefix + "GetUsageAlertingRules",

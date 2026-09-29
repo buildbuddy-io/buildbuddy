@@ -194,29 +194,29 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 				log.CtxInfof(ctx, "Cache proxy %q (group %q) closed its registration stream", proxyID, groupID)
 				return stream.SendAndClose(&cppb.RegisterCacheProxyResponse{})
 			}
-			node := req.GetNode()
-			if node == nil {
-				log.CtxInfof(ctx, "Rejecting cache proxy heartbeat from group %q: missing node info", groupID)
-				return status.InvalidArgumentError("registration request missing node info")
+			summary := req.GetSummary()
+			if summary == nil {
+				log.CtxInfof(ctx, "Rejecting cache proxy heartbeat from group %q: missing summary info", groupID)
+				return status.InvalidArgumentError("registration request missing summary info")
 			}
-			if node.GetProxyId() == "" {
+			if summary.GetProxyId() == "" {
 				log.CtxInfof(ctx, "Rejecting cache proxy heartbeat from group %q: missing proxy_id", groupID)
 				return status.InvalidArgumentError("registration request missing proxy_id")
 			}
 			if req.GetShuttingDown() {
-				log.CtxInfof(ctx, "Cache proxy %q (group %q) signalled shutdown; removing from registry", node.GetProxyId(), groupID)
-				if err := s.removeProxy(ctx, groupID, node.GetProxyId()); err != nil {
-					log.CtxWarningf(ctx, "Could not remove shutting-down cache proxy %q (group %q): %s", node.GetProxyId(), groupID, err)
+				log.CtxInfof(ctx, "Cache proxy %q (group %q) signalled shutdown; removing from registry", summary.GetProxyId(), groupID)
+				if err := s.removeProxy(ctx, groupID, summary.GetProxyId()); err != nil {
+					log.CtxWarningf(ctx, "Could not remove shutting-down cache proxy %q (group %q): %s", summary.GetProxyId(), groupID, err)
 					return err
 				}
 				return stream.SendAndClose(&cppb.RegisterCacheProxyResponse{})
 			}
-			if err := s.insertOrUpdateProxy(ctx, groupID, node, req.GetStatistics()); err != nil {
-				log.CtxInfof(ctx, "Closing cache proxy registration stream for proxy %q (group %q): could not store registration: %s", node.GetProxyId(), groupID, err)
+			if err := s.insertOrUpdateProxy(ctx, groupID, summary, req.GetStatistics()); err != nil {
+				log.CtxInfof(ctx, "Closing cache proxy registration stream for proxy %q (group %q): could not store registration: %s", summary.GetProxyId(), groupID, err)
 				return err
 			}
-			proxyID = node.GetProxyId()
-			log.CtxDebugf(ctx, "Cache proxy %q (host ID %q, host %q) checked in", proxyID, node.GetProxyHostId(), node.GetHost())
+			proxyID = summary.GetProxyId()
+			log.CtxDebugf(ctx, "Cache proxy %q (host ID %q, host %q) checked in", proxyID, summary.GetProxyHostId(), summary.GetHost())
 		case <-checkCredentialsTicker.Chan():
 			if _, err := s.authorize(ctx); err != nil {
 				if status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err) {
@@ -229,11 +229,11 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 	}
 }
 
-func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, groupID string, node *cppb.CacheProxyNode, stats *cppb.Statistics) error {
+func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, groupID string, summary *cppb.CacheProxySummary, stats *cppb.Statistics) error {
 	acl := perms.ToACLProto(nil /*=userID*/, groupID, perms.GROUP_WRITE|perms.GROUP_READ)
 
 	r := &cppb.RegisteredCacheProxy{
-		Registration: node,
+		Summary:      summary,
 		GroupId:      groupID,
 		Acl:          acl,
 		LastPingTime: timestamppb.Now(),
@@ -243,7 +243,7 @@ func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, grou
 	if err != nil {
 		return err
 	}
-	return s.rdb.HSet(ctx, redisKeyForCacheProxies(groupID), node.GetProxyId(), b).Err()
+	return s.rdb.HSet(ctx, redisKeyForCacheProxies(groupID), summary.GetProxyId(), b).Err()
 }
 
 func (s *CacheProxyRegistryServer) removeProxy(ctx context.Context, groupID, proxyID string) error {
@@ -278,7 +278,7 @@ func (s *CacheProxyRegistryServer) getNewestVersion(ctx context.Context) *semver
 			continue
 		}
 		// Skip "unknown" and other unparseable versions.
-		v, err := semver.NewVersion(reg.GetRegistration().GetVersion())
+		v, err := semver.NewVersion(reg.GetSummary().GetVersion())
 		if err != nil {
 			continue
 		}
@@ -296,7 +296,7 @@ func (s *CacheProxyRegistryServer) getNewestVersion(ctx context.Context) *semver
 // if any of the given proxies meets one of the configured upgrade triggers
 // (see the --cache_proxy.upgrade_prompt_* flags), and nil otherwise. The
 // urgency reflects the most-outdated proxy in the list.
-func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []*cppb.GetCacheProxiesResponse_CacheProxy) *uppb.Prompt {
+func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []*cppb.CacheProxy) *uppb.Prompt {
 	if s.detector == nil || len(proxies) == 0 {
 		return nil
 	}
@@ -307,7 +307,7 @@ func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []
 	}
 	versions := make([]string, 0, len(proxies))
 	for _, p := range proxies {
-		versions = append(versions, p.GetNode().GetVersion())
+		versions = append(versions, p.GetSummary().GetVersion())
 	}
 	return s.detector.Detect(newestVersion, versions, fmt.Sprintf(upgradePromptMessage, newestVersionString))
 }
@@ -335,7 +335,7 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 		return nil, err
 	}
 
-	proxies := make([]*cppb.GetCacheProxiesResponse_CacheProxy, 0, len(entries))
+	proxies := make([]*cppb.CacheProxy, 0, len(entries))
 	for id, data := range entries {
 		reg := &cppb.RegisteredCacheProxy{}
 		if err := proto.Unmarshal([]byte(data), reg); err != nil {
@@ -355,22 +355,30 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 		if err := perms.AuthorizeRead(user, reg.GetAcl()); err != nil {
 			continue
 		}
-		proxies = append(proxies, &cppb.GetCacheProxiesResponse_CacheProxy{
-			Node:            reg.GetRegistration(),
+		summary := reg.GetSummary()
+		summary.LastCheckInTime = reg.GetLastPingTime()
+		proxies = append(proxies, &cppb.CacheProxy{
+			Summary:         summary,
 			LastCheckInTime: reg.GetLastPingTime(),
 			Statistics:      reg.GetStatistics(),
 		})
 	}
 
-	slices.SortFunc(proxies, func(a, b *cppb.GetCacheProxiesResponse_CacheProxy) int {
-		if c := strings.Compare(a.GetNode().GetHost(), b.GetNode().GetHost()); c != 0 {
+	slices.SortFunc(proxies, func(a, b *cppb.CacheProxy) int {
+		if c := strings.Compare(a.GetSummary().GetHost(), b.GetSummary().GetHost()); c != 0 {
 			return c
 		}
-		return strings.Compare(a.GetNode().GetProxyId(), b.GetNode().GetProxyId())
+		return strings.Compare(a.GetSummary().GetProxyId(), b.GetSummary().GetProxyId())
 	})
+
+	summaries := make([]*cppb.CacheProxySummary, 0, len(proxies))
+	for _, p := range proxies {
+		summaries = append(summaries, p.GetSummary())
+	}
 
 	return &cppb.GetCacheProxiesResponse{
 		CacheProxy:    proxies,
+		Summary:       summaries,
 		UpgradePrompt: s.upgradePrompt(ctx, proxies),
 	}, nil
 }

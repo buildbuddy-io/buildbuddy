@@ -7,9 +7,10 @@ import "proto/upgrade.proto";
 
 package cache_proxy;
 
-// CacheProxyNode is the registration info that a cache proxy sends to the
-// main BuildBuddy server.
-message CacheProxyNode {
+// CacheProxySummary contains a summary of this cache proxy's state. It is used
+// in the registration RPC for registering running proxies with the server, and
+// returned in the GetCacheProxiesResponse.
+message CacheProxySummary {
   // Cache proxy host (typically the proxy's hostname or pod name).
   // Ex. "10.52.6.5" or "cache-proxy-abc123"
   string host = 1;
@@ -53,7 +54,11 @@ message CacheProxyNode {
   // The flags this cache proxy was configured with (via the command line or
   // config file), in "--name=value" form. Only flags set to non-default
   // values are included, and the values of secret flags are redacted.
+  // TODO(go/b/8433): move this to CacheProxyDetails
   repeated string configured_flags = 11;
+
+  // Last time this cache proxy checked in with the server.
+  google.protobuf.Timestamp last_check_in_time = 12;
 }
 
 // Statistics about this cache proxy's performance. Cumulative over the
@@ -80,10 +85,23 @@ message Statistics {
   int64 cas_write_bytes = 12;
 }
 
+message CacheProxyDetails {
+  CacheProxySummary cache_proxy_summary = 1;
+
+  // The flags this cache proxy was configured with (via the command line or
+  // config file), in "--name=value" form. Only flags set to non-default
+  // values are included, and the values of secret flags are redacted.
+  repeated string configured_flags = 2;
+
+  Statistics statistics = 3;
+}
+
 // RegisterCacheProxyRequest is sent on the client-side stream from the proxy
 // to the server, both initially and as a periodic heartbeat.
 message RegisterCacheProxyRequest {
-  CacheProxyNode node = 1;
+  CacheProxySummary summary = 1;
+
+  // TODO(go/b/8433): move this to CacheProxyDetails
   Statistics statistics = 2;
 
   // When true, the proxy is shutting down cleanly and the server should
@@ -101,27 +119,45 @@ message GetCacheProxiesRequest {
   context.RequestContext request_context = 1;
 }
 
+// TODO(go/b/8433): delete this message.
+message CacheProxy {
+  CacheProxySummary summary = 1;
+
+  // Last time this cache proxy checked in with the server.
+  google.protobuf.Timestamp last_check_in_time = 2;
+
+  // Statistics about this cache proxy's performance.
+  // TODO(go/b/8433): move this to CacheProxyDetails
+  Statistics statistics = 3;
+}
+
 message GetCacheProxiesResponse {
   context.ResponseContext response_context = 1;
 
+  // TODO(go/b/8544): delete this field, use "summary" instead
   repeated CacheProxy cache_proxy = 2;
+  repeated CacheProxySummary summary = 4;
 
-  message CacheProxy {
-    CacheProxyNode node = 1;
+  upgrade.Prompt upgrade_prompt = 3;
+}
 
-    // Last time this cache proxy checked in with the server.
-    google.protobuf.Timestamp last_check_in_time = 2;
+message GetCacheProxyRequest {
+  context.RequestContext request_context = 1;
 
-    // Statistics about this cache proxy's performance.
-    Statistics statistics = 3;
-  }
+  string proxy_id = 2;
+}
+
+message GetCacheProxyResponse {
+  context.ResponseContext response_context = 1;
+
+  CacheProxyDetails details = 2;
 
   upgrade.Prompt upgrade_prompt = 3;
 }
 
 // Persisted information about a connected cache proxy.
 message RegisteredCacheProxy {
-  CacheProxyNode registration = 1;
+  CacheProxySummary summary = 1;
   string group_id = 2;
   acl.ACL acl = 3;
   google.protobuf.Timestamp last_ping_time = 4;
