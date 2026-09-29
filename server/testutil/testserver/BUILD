@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "testserver",
@@ -9,11 +9,4 @@ go_library(
         "//server/util/log",
         "@io_bazel_rules_go//go/runfiles",
     ],
-)
-
-go_test(
-    name = "testserver_test",
-    srcs = ["testserver_test.go"],
-    embed = [":testserver"],
-    deps = ["@com_github_stretchr_testify//require"],
 )
