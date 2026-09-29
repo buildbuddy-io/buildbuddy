@@ -736,6 +736,10 @@ type ApiService interface {
 }
 
 type WorkflowService interface {
+	// WorkflowLinkHandler handles workflows triggered from links in
+	// external services such as GitHub.
+	WorkflowLinkHandler() http.Handler
+
 	DeleteLegacyWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error)
 	GetLegacyWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error)
 	GetWorkflowHistory(ctx context.Context) (*wfpb.GetWorkflowHistoryResponse, error)

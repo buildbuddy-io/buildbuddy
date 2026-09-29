@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -136,6 +137,48 @@ func newTestEnv(t *testing.T) *testenv.TestEnv {
 
 	return te
 }
+
+func TestWorkflowLinkHandler_RerunReview(t *testing.T) {
+	te := newTestEnv(t)
+	h := te.GetWorkflowService().WorkflowLinkHandler()
+
+	t.Run("redirects anonymous users to login", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, rerunReviewURL("invocation-1"), nil)
+		rsp := httptest.NewRecorder()
+
+		h.ServeHTTP(rsp, req)
+
+		require.Equal(t, http.StatusTemporaryRedirect, rsp.Code)
+	})
+
+	t.Run("rejects unsupported methods", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, rerunReviewURL("invocation-1"), nil)
+		rsp := httptest.NewRecorder()
+
+		h.ServeHTTP(rsp, req)
+
+		require.Equal(t, http.StatusMethodNotAllowed, rsp.Code)
+	})
+
+	t.Run("rejects unknown actions", func(t *testing.T) {
+		ctx := testauth.WithAuthenticatedUserInfo(context.Background(), &testauth.TestUser{
+			UserID:  "US1",
+			GroupID: "GR1",
+		})
+		req := httptest.NewRequest(http.MethodGet, "/workflows/actions/unknown", nil).WithContext(ctx)
+		rsp := httptest.NewRecorder()
+
+		h.ServeHTTP(rsp, req)
+
+		require.Equal(t, http.StatusNotFound, rsp.Code)
+	})
+}
+
+func rerunReviewURL(invocationID string) string {
+	return rerunReviewActionPathForTest + "?invocation_id=" + invocationID
+}
+
+const rerunReviewActionPathForTest = "/workflows/actions/rerun_review"
 
 func setupFakeGitProvider(t *testing.T, te *testenv.TestEnv) *testgit.FakeProvider {
 	provider := testgit.NewFakeProvider()

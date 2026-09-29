@@ -502,6 +502,7 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 
 	if wfs := env.GetWorkflowService(); wfs != nil {
 		mux.Handle("/webhooks/workflow/", interceptors.WrapExternalHandler(env, wfs))
+		mux.Handle("/workflows/actions/", interceptors.WrapAuthenticatedExternalHandler(env, wfs.WorkflowLinkHandler()))
 	}
 	if gh := env.GetGitHubAppService(); gh != nil {
 		if gh.IsReadWriteAppEnabled() {
