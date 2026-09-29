@@ -2349,3 +2349,21 @@ func TestShutdown_StopsExecutorStreamReceiver(t *testing.T) {
 		return countGoroutines(receiver) < before
 	}, 10*time.Second, 10*time.Millisecond, "executor stream receiver goroutine is still running after shutdown")
 }
+
+func TestShutdown_StopsSchedulerClientCacheExpirer(t *testing.T) {
+	// Returns the number of live goroutines running the expirer.
+	expirers := func() int {
+		buf := make([]byte, 16<<20)
+		buf = buf[:runtime.Stack(buf, true /*=all*/)]
+		return strings.Count(string(buf), "(*schedulerClientCache).startExpirer")
+	}
+	env, _ := getEnv(t, &schedulerOpts{}, "")
+	before := expirers()
+	require.Positive(t, before)
+
+	env.GetHealthChecker().Shutdown()
+	env.GetHealthChecker().WaitForGracefulShutdown()
+	require.Eventually(t, func() bool {
+		return expirers() < before
+	}, 10*time.Second, 10*time.Millisecond, "scheduler client cache expirer is still running after shutdown")
+}
