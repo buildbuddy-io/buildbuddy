@@ -517,6 +517,9 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
 				executionProto.SelfHosted = schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
 				executionProto.EffectivePool = schedulingMeta.GetPool()
+			} else {
+				// Old self-hosted executors don't send scheduling metadata.
+				executionProto.SelfHosted = true
 			}
 
 			request := auxMeta.GetExecuteRequest()
