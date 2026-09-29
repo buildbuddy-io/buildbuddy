@@ -384,7 +384,9 @@ common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 # TODO(vanja) turn on once https://github.com/buildbuddy-io/buildbuddy-internal/issues/6247 is fixed
 # common:untrusted-ci --remote_header=x-buildbuddy-platform.enable-vfs=true
 
-# Disabled RBE for Windows
+# Windows CI: Bazel runs on a Windows host, but everything we build there is
+# pure Go, so build actions are cross-compiled on Linux RBE. Tests still run
+# locally on the Windows host (their exec platform is the target platform).
 common:untrusted-ci-windows --config=ci-shared
 common:untrusted-ci-windows --config=tests-windows
 common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows-25/rin20260818
@@ -392,6 +394,10 @@ common:untrusted-ci-windows --repository_cache=C:/bazel/repo-cache/
 common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
+common:untrusted-ci-windows --remote_executor=grpcs://remote.buildbuddy.io
+common:untrusted-ci-windows --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+common:untrusted-ci-windows --use_target_platform_for_tests
+common:untrusted-ci-windows --strategy=TestRunner=local
 # Repository fetching (mostly go_repository + LLVM/Go SDK downloads) takes ~5
 # minutes of every Windows CI run even when all actions are cache hits. Fetch
 # downloads through the remote asset API and reuse reproducible repo contents
