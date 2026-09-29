@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -2040,10 +2041,14 @@ func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 			}
 		}
 	}
-	if lastAppliedIndexValue != nil {
+	if len(lastAppliedIndexValue) > 0 {
 		if err := wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), lastAppliedIndexValue, nil); err != nil {
 			return err
 		}
+	} else {
+		// Alert instead of returning an error, which makes dragonboat
+		// panic.
+		alert.UnexpectedEvent("raft-snapshot-missing-last-applied-index", "[%s] applied a snapshot with no last applied index", sm.name())
 	}
 	sm.log.Debugf("applySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
 	return flushBatch(wb)
