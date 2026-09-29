@@ -19,10 +19,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"fmt"
 	"net/netip"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -106,9 +108,11 @@ func (h *StatsHandler) counterHandlesForLabels(groupID, provider, region string)
 }
 
 type rpcCounters struct {
-	groupID                   string
-	dest                      Destination
-	ingressBytes, egressBytes int
+	groupID string
+	dest    Destination
+	// Updated atomically, since gRPC reports payloads for a stream from both
+	// its sending and receiving goroutines, which may run concurrently.
+	ingressBytes, egressBytes atomic.Int64
 	method                    string
 }
 
@@ -209,30 +213,39 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 			alert.CtxUnexpectedEvent(ctx, "trafficstats_no_counters_in_handleprc", "They should be set in TagRPC.")
 			return
 		}
-		c.ingressBytes += ingress
-		c.egressBytes += egress
+		if ingress > 0 {
+			c.ingressBytes.Add(int64(ingress))
+		}
+		if egress > 0 {
+			c.egressBytes.Add(int64(egress))
+		}
 		if end {
 			// Exporting metrics has to happen at the end of the RPC to make
 			// that the interceptor populated the dimensions. For unary RPCs,
 			// intercetors run after InPayload.
 			if c.groupID == "unset" || c.dest.Provider == "unset" {
 				if endErr == nil {
-					alert.CtxUnexpectedEvent(ctx, "trafficstats_unset_dimensions_at_end", "Maybe you forgot to install the interceptor? %+v", c)
+					alert.CtxUnexpectedEvent(ctx, "trafficstats_unset_dimensions_at_end", "Maybe you forgot to install the interceptor? %s", c)
 				} else {
-					log.Debugf("Traffic stats unset dimensions at end: %+v. Error: %v", c, endErr)
+					log.Debugf("Traffic stats unset dimensions at end: %s. Error: %v", c, endErr)
 				}
 			}
-			if c.ingressBytes > 0 || c.egressBytes > 0 {
+			ingressBytes, egressBytes := c.ingressBytes.Load(), c.egressBytes.Load()
+			if ingressBytes > 0 || egressBytes > 0 {
 				handles := h.counterHandlesForLabels(c.groupID, c.dest.Provider, c.dest.Region)
-				if c.ingressBytes > 0 {
-					handles.ingress.Add(float64(c.ingressBytes))
+				if ingressBytes > 0 {
+					handles.ingress.Add(float64(ingressBytes))
 				}
-				if c.egressBytes > 0 {
-					handles.egress.Add(float64(c.egressBytes))
+				if egressBytes > 0 {
+					handles.egress.Add(float64(egressBytes))
 				}
 			}
 		}
 	}
+}
+
+func (c *rpcCounters) String() string {
+	return fmt.Sprintf("{groupID:%s dest:%+v ingressBytes:%d egressBytes:%d method:%s}", c.groupID, c.dest, c.ingressBytes.Load(), c.egressBytes.Load(), c.method)
 }
 
 // UnaryInterceptor populates the rpcCounters with metric labels derived
