@@ -547,7 +547,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                   {
                     type: SeriesType.BAR,
                     name: "linux remote execution cpu time",
-                    extractValue: (ts) => +(this.getUsage(ts).cloudRbeCpuNanos ?? 0 / 1000),
+                    extractValue: (ts) => +(this.getUsage(ts).cloudCpuNanos ?? 0) / 1000,
                     formatHoverValue: (value) => formatMinutes(value || 0),
                     onClick: this.onBarClicked.bind(this, "build_time"),
                     color: ChartColor.BLUE,
