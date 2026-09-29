@@ -25,14 +25,10 @@ const (
 	readyCheckTimeout = 60 * time.Second
 
 	// shutdownTimeout is how long to wait for the binary to exit after
-	// sending it SIGTERM at the end of the test. BuildBuddy binaries finish
-	// shutting down within --max_shutdown_duration (25s by default) unless a
-	// shutdown function hangs, so this leaves some margin beyond that.
+	// sending it SIGTERM at the end of the test.
+	// --max_shutdown_duration is 25s by default.
 	shutdownTimeout = 35 * time.Second
 
-	// raceDetectedExitCode is the exit code of a binary built with the race
-	// detector that detected data races, if it would otherwise have exited
-	// with code 0.
 	raceDetectedExitCode = 66
 )
 
@@ -76,9 +72,6 @@ func Run(t *testing.T, opts *Opts) *Server {
 	}
 	t.Cleanup(func() {
 		// Shut the binary down gracefully and check that it exited cleanly.
-		// This also makes data races count: a binary built with the race
-		// detector (e.g. with --config=race) only reports that it detected
-		// races through its exit code, and only if it exits normally.
 		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
 			t.Errorf("Failed to send SIGTERM to %s: %s", opts.BinaryRunfilePath, err)
 		}
