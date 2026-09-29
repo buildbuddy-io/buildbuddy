@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -197,6 +198,43 @@ func TestStatsHandler_NoPeerInfo(t *testing.T) {
 	}
 	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerEgressBytes, labels); got != 50 {
 		t.Fatalf("metric value = %v, want 50", got)
+	}
+}
+
+func TestStatsHandler_ConcurrentStreamPayloads(t *testing.T) {
+	metrics.GRPCServerEgressBytes.Reset()
+	metrics.GRPCServerIngressBytes.Reset()
+
+	handler := newTestHandler(t)
+
+	ctx := handler.TagRPC(context.Background(), &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Stream"})
+	handler.initCounters(ctx)
+	// A bidi stream may send and receive on different goroutines, so gRPC
+	// can report outgoing and incoming payloads concurrently.
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for range 1000 {
+			handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 2})
+		}
+	})
+	wg.Go(func() {
+		for range 1000 {
+			handler.HandleRPC(ctx, &stats.InPayload{WireLength: 3})
+		}
+	})
+	wg.Wait()
+	handler.HandleRPC(ctx, &stats.End{})
+
+	labels := prometheus.Labels{
+		metrics.GroupID:                  unknownGroupID,
+		metrics.DestinationProviderLabel: "other",
+		metrics.DestinationRegionLabel:   "unknown",
+	}
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerEgressBytes, labels); got != 2000 {
+		t.Fatalf("egress metric value = %v, want 2000", got)
+	}
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerIngressBytes, labels); got != 3000 {
+		t.Fatalf("ingress metric value = %v, want 3000", got)
 	}
 }
 
