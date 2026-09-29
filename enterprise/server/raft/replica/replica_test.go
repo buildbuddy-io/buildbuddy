@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,12 +24,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/lni/dragonboat/v4"
+	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
+	dbconfig "github.com/lni/dragonboat/v4/config"
+	zlog "github.com/rs/zerolog/log"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -1109,6 +1120,186 @@ func TestRecoverFromSnapshotCrashMidApply(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, snapshotIndex, idx)
 	require.Equal(t, len(keys), countPresentKeys(t, restarted, keys))
+}
+
+// syncBuffer is a bytes.Buffer safe for concurrent writers.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// recordingSM wraps a Replica and records what dragonboat hands to it, so
+// the test can compare dragonboat's view of the on-disk index with ours.
+type recordingSM struct {
+	*replica.Replica
+
+	mu              sync.Mutex
+	openIndex       uint64
+	lastUpdateIndex uint64
+}
+
+func (r *recordingSM) Open(stopc <-chan struct{}) (uint64, error) {
+	idx, err := r.Replica.Open(stopc)
+	r.mu.Lock()
+	r.openIndex = idx
+	r.mu.Unlock()
+	return idx, err
+}
+
+func (r *recordingSM) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
+	rsp, err := r.Replica.Update(entries)
+	if err == nil && len(entries) > 0 {
+		r.mu.Lock()
+		r.lastUpdateIndex = entries[len(entries)-1].Index
+		r.mu.Unlock()
+	}
+	return rsp, err
+}
+
+func (r *recordingSM) indexes() (openIndex, lastUpdateIndex uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.openIndex, r.lastUpdateIndex
+}
+
+func syncProposeWithRetry(t *testing.T, nh *dragonboat.NodeHost, rangeID uint64, batch *rbuilder.BatchBuilder) dbsm.Result {
+	buf, err := batch.ToBuf()
+	require.NoError(t, err)
+	var lastErr error
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		res, err := nh.SyncPropose(ctx, nh.GetNoOPSession(rangeID), buf)
+		cancel()
+		if err == nil {
+			return res
+		}
+		lastErr = err
+		time.Sleep(10 * time.Millisecond)
+	}
+	require.FailNowf(t, "propose timed out", "last error: %s", lastErr)
+	return dbsm.Result{}
+}
+
+// Dragonboat treats every entry handed to Update as applied, and records
+// that index as the snapshot's OnDiskIndex. On restart it expects Open() to
+// return at least the OnDiskIndex of the latest snapshot, because a local
+// snapshot of an on-disk state machine holds no data to recover from. An
+// entry rejected by Update must therefore still advance the stored index.
+func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
+	const rangeID, replicaID = 1, 1
+
+	// Capture dragonboat's logs. BuildBuddy's raft logger turns Panicf into
+	// an error log, so a failed dragonboat invariant only shows up there.
+	logs := &syncBuffer{}
+	origLogger := zlog.Logger
+	zlog.Logger = zerolog.New(io.MultiWriter(os.Stderr, logs)).With().Timestamp().Logger()
+	t.Cleanup(func() { zlog.Logger = origLogger })
+
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(filepath.Join(rootDir, "pebble"), "test", &pebble.Options{})
+	require.NoError(t, err)
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	raftAddr := fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
+	nhc := dbconfig.NodeHostConfig{
+		WALDir:         filepath.Join(rootDir, "wal"),
+		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
+		RTTMillisecond: 1,
+		RaftAddress:    raftAddr,
+		Expert: dbconfig.ExpertConfig{
+			LogDB: dbconfig.GetSmallMemLogDBConfig(),
+		},
+	}
+	rc := raftConfig.GetRaftConfig(rangeID, replicaID)
+
+	var sm *recordingSM
+	factory := func(rangeID, replicaID uint64) dbsm.IOnDiskStateMachine {
+		sm = &recordingSM{
+			Replica: replica.New(leaser, rangeID, replicaID, &testutil.FakeStore{}, nil /*=usageUpdates*/),
+		}
+		return sm
+	}
+
+	nh, err := dragonboat.NewNodeHost(nhc)
+	require.NoError(t, err)
+	err = nh.StartOnDiskReplica(map[uint64]string{replicaID: raftAddr}, false /*=join*/, factory, rc)
+	require.NoError(t, err)
+
+	// Entry 1 commits: it writes the range descriptor.
+	rd := &rfpb.RangeDescriptor{
+		Start:      keys.Key{constants.UnsplittableMaxByte},
+		End:        keys.MaxByte,
+		RangeId:    rangeID,
+		Generation: 1,
+	}
+	rdBuf, err := proto.Marshal(rd)
+	require.NoError(t, err)
+	res := syncProposeWithRetry(t, nh, rangeID, rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{Key: constants.LocalRangeKey, Value: rdBuf},
+	}))
+	require.NotEqual(t, uint64(constants.EntryErrorValue), res.Value)
+	require.Contains(t, logs.String(), "opened disk SM", "dragonboat log capture is not working")
+
+	// Entry 2 is rejected: its header has a stale generation.
+	res = syncProposeWithRetry(t, nh, rangeID, rbuilder.NewBatchBuilder().
+		SetHeader(&rfpb.Header{RangeId: rangeID, Generation: 0}).
+		Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{Key: []byte("key-rejected"), Value: []byte("value")},
+		}))
+	require.Equal(t, uint64(constants.EntryErrorValue), res.Value)
+
+	_, onDiskIndex := sm.indexes()
+	storedIndex, err := sm.LastAppliedIndex()
+	require.NoError(t, err)
+	t.Logf("before snapshot: dragonboat on-disk index=%d, stored last applied index=%d", onDiskIndex, storedIndex)
+
+	// Snapshot now, while the rejected entry is the latest one.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = nh.SyncRequestSnapshot(ctx, rangeID, dragonboat.SnapshotOption{
+		OverrideCompactionOverhead: true,
+		CompactionOverhead:         0,
+	})
+	require.NoError(t, err)
+
+	// Restart the node on the same directories and pebble DB.
+	nh.Close()
+	nh, err = dragonboat.NewNodeHost(nhc)
+	require.NoError(t, err)
+	t.Cleanup(nh.Close)
+	err = nh.StartOnDiskReplica(nil, false /*=join*/, factory, rc)
+	require.NoError(t, err)
+
+	// A successful proposal means startup recovery has finished.
+	res = syncProposeWithRetry(t, nh, rangeID, rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{Key: []byte("key-after-restart"), Value: []byte("value")},
+	}))
+	require.NotEqual(t, uint64(constants.EntryErrorValue), res.Value)
+
+	openIndex, _ := sm.indexes()
+	t.Logf("after restart: Open returned %d, snapshot on-disk index=%d", openIndex, onDiskIndex)
+	assert.GreaterOrEqual(t, openIndex, onDiskIndex, "Open must return at least the snapshot's on-disk index")
+	for line := range strings.SplitSeq(logs.String(), "\n") {
+		if strings.Contains(line, "onDiskInitIndex") {
+			assert.Fail(t, "dragonboat invariant failed", line)
+		}
+	}
 }
 
 func TestApplySnapshotEntriesDeleted(t *testing.T) {
