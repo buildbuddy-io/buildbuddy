@@ -2,6 +2,15 @@ name: "Build Windows executor"
 
 on:
   pull_request:
+  # Also run on master so that PRs can restore the Go module cache and reuse
+  # remote cache entries from master (GitHub caches created by one PR are not
+  # visible to other PRs).
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "docs/**"
+      - "website/**"
 
 jobs:
   build:

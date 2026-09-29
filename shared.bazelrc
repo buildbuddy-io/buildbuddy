@@ -392,6 +392,12 @@ common:untrusted-ci-windows --repository_cache=C:/bazel/repo-cache/
 common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
+# Repository fetching (mostly go_repository + LLVM/Go SDK downloads) takes ~5
+# minutes of every Windows CI run even when all actions are cache hits. Fetch
+# downloads through the remote asset API and reuse reproducible repo contents
+# from the remote cache instead.
+common:untrusted-ci-windows --experimental_remote_downloader=grpcs://remote.buildbuddy.io
+common:untrusted-ci-windows --experimental_remote_repo_contents_cache
 
 # Use BuildBuddy endpoints from the ci_runner-generated bazelrc.
 # These will point to local, dev, or prod, depending on which app created the workflow action.
