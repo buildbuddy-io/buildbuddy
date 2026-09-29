@@ -273,6 +273,10 @@ def tag_exists(tag):
     p = subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/tags/{tag}'], stdout=subprocess.DEVNULL)
     return p.returncode == 0
 
+def is_ancestor(ancestor, descendant):
+    p = subprocess.run(['git', 'merge-base', '--is-ancestor', ancestor, descendant])
+    return p.returncode == 0
+
 def get_cpu_architecture():
     arch = platform.machine()
     if arch in ['x86_64', 'AMD64']:
@@ -315,6 +319,10 @@ def main():
     old_version = args.base_version or get_latest_version()
     if not tag_exists(old_version):
         die(f"Version tag {old_version} does not exist.")
+    # The latest version tag isn't always an ancestor of HEAD (release tags may
+    # be on cherry-picks), so only check an explicitly requested base.
+    if args.base_version and not is_ancestor(old_version, 'HEAD'):
+        die(f"HEAD does not contain {old_version}. Is --base_version from this branch, and is the full history fetched?")
     is_old_version_published = is_published_release(old_version)
 
     if not is_old_version_published and not args.force:
@@ -338,6 +346,8 @@ def main():
         print('I found existing version: %s' % old_version)
         if not args.auto:
             new_version = confirm_new_version(new_version)
+        if tag_exists(new_version):
+            die(f"Version tag {new_version} already exists.")
         print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
 
         time.sleep(2)
