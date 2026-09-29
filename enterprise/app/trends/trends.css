@@ -84,10 +84,6 @@
   display: inline-block;
 }
 
-.trend-chart-dot:hover {
-  fill: #fff;
-}
-
 .trends-clickable-bar .recharts-bar-rectangle:hover {
   fill-opacity: 0.7;
 }
