@@ -29,6 +29,15 @@ const (
 	// --max_shutdown_duration is 25s by default.
 	shutdownTimeout = 35 * time.Second
 
+	// stackDumpTimeout is how long to wait for the binary to exit after
+	// sending it SIGQUIT to dump its goroutine stacks.
+	stackDumpTimeout = 5 * time.Second
+
+	// waitDelay bounds how long to wait for the binary's output to be fully
+	// read after it exits, in case a subprocess it started still holds its
+	// stdout or stderr open.
+	waitDelay = 5 * time.Second
+
 	raceDetectedExitCode = 66
 )
 
@@ -67,9 +76,11 @@ func Run(t *testing.T, opts *Opts) *Server {
 	cmd := exec.Command(runfile(t, opts.BinaryRunfilePath), opts.Args...)
 	cmd.Stdout = log.Writer("[testserver] ")
 	cmd.Stderr = log.Writer("[testserver] ")
+	cmd.WaitDelay = waitDelay
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	ready := false
 	t.Cleanup(func() {
 		// Shut the binary down gracefully and check that it exited cleanly.
 		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
@@ -78,9 +89,20 @@ func Run(t *testing.T, opts *Opts) *Server {
 		select {
 		case <-server.done:
 		case <-time.After(shutdownTimeout):
-			cmd.Process.Kill() // ignore errors
-			<-server.done
-			t.Errorf("%s did not exit within %s of receiving SIGTERM", opts.BinaryRunfilePath, shutdownTimeout)
+			// SIGQUIT makes the Go runtime dump all goroutine stacks to the
+			// log, to show what shutdown is stuck on.
+			cmd.Process.Signal(syscall.SIGQUIT) // ignore errors
+			select {
+			case <-server.done:
+			case <-time.After(stackDumpTimeout):
+				cmd.Process.Kill() // ignore errors
+				<-server.done
+			}
+			t.Errorf("%s did not exit within %s of receiving SIGTERM. See the test log for its goroutine stacks.", opts.BinaryRunfilePath, shutdownTimeout)
+			return
+		}
+		if !ready {
+			// waitForReady already failed the test.
 			return
 		}
 		switch exitCode := cmd.ProcessState.ExitCode(); exitCode {
@@ -98,6 +120,7 @@ func Run(t *testing.T, opts *Opts) *Server {
 	if err := server.waitForReady(); err != nil {
 		t.Fatal(err)
 	}
+	ready = true
 	return server
 }
 
