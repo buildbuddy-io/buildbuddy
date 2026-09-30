@@ -79,6 +79,10 @@ const (
 
 	dialTimeout = 30 * time.Second
 	pingTimeout = 5 * time.Second
+
+	// maxPingsInFlight caps the ping sockets open for a guest; echo requests
+	// over the limit are dropped.
+	maxPingsInFlight = 128
 )
 
 // udpIdleTimeout is how long a UDP flow may go without traffic in either
@@ -109,6 +113,7 @@ type Network struct {
 	gateway         tcpip.Address
 	externalNetwork bool
 	allowedPrefixes []netip.Prefix
+	pings           chan struct{}
 }
 
 // NewVMNetwork creates a net namespace containing tapDeviceName for a VMM to
@@ -174,6 +179,7 @@ func newNetwork(ctx context.Context, gatewayCIDR string, enableExternalNetworkin
 		gateway:         tcpip.AddrFrom4(gateway.Addr().As4()),
 		externalNetwork: enableExternalNetworking,
 		allowedPrefixes: allowed,
+		pings:           make(chan struct{}, maxPingsInFlight),
 	}
 	defer func() {
 		if err != nil {
@@ -273,7 +279,6 @@ func (n *Network) startStack(prefixLen int) error {
 		}
 		return udpForwarder.HandlePacket(id, pkt)
 	})
-	// The stack answers echo requests to the gateway itself.
 	n.stack.SetTransportProtocolHandler(gicmp.ProtocolNumber4, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
 		return n.forwardEcho(id, pkt)
 	})
@@ -393,12 +398,22 @@ func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuf
 	if len(h) < header.ICMPv4MinimumSize || h.Type() != header.ICMPv4Echo {
 		return false
 	}
+	// The stack answers echo requests to the gateway itself.
+	if id.LocalAddress == n.gateway {
+		return true
+	}
 	if !n.isAllowed(id.LocalAddress) {
 		n.reject(pkt)
 		return true
 	}
+	select {
+	case n.pings <- struct{}{}:
+	default:
+		return true
+	}
 	ident, seq, data := h.Ident(), h.Sequence(), pkt.Data().AsRange().ToSlice()
 	go func() {
+		defer func() { <-n.pings }()
 		conn, err := icmp.ListenPacket("udp4", "0.0.0.0")
 		if err != nil {
 			return

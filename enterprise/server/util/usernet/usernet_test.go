@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
 	"slices"
 	"syscall"
 	"testing"
@@ -108,6 +109,58 @@ func TestContainerNetwork(t *testing.T) {
 		reply := header.ICMPv4(buf[:size])
 		require.Equal(t, header.ICMPv4EchoReply, reply.Type())
 		require.Equal(t, "ping", string(reply.Payload()))
+	})
+
+	t.Run("icmp over limit", func(t *testing.T) {
+		var conn *icmp.PacketConn
+		require.NoError(t, inNamespace(n.netns, func() error {
+			var err error
+			conn, err = icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+			return err
+		}))
+		defer conn.Close()
+		ping := func(seq uint16) error {
+			if _, err := conn.WriteTo(icmpEcho(header.ICMPv4Echo, 1, seq, []byte("ping")), &net.IPAddr{IP: hostIP}); err != nil {
+				return err
+			}
+			conn.SetReadDeadline(time.Now().Add(time.Second))
+			_, _, err := conn.ReadFrom(make([]byte, 1500))
+			return err
+		}
+		for range maxPingsInFlight {
+			n.pings <- struct{}{}
+		}
+		require.ErrorIs(t, ping(1), os.ErrDeadlineExceeded)
+		for range maxPingsInFlight {
+			<-n.pings
+		}
+		require.NoError(t, ping(2))
+	})
+
+	t.Run("icmp to gateway", func(t *testing.T) {
+		var conn *icmp.PacketConn
+		require.NoError(t, inNamespace(n.netns, func() error {
+			var err error
+			conn, err = icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+			return err
+		}))
+		defer conn.Close()
+		gateway := netip.MustParsePrefix(containerGatewayCIDR).Addr().AsSlice()
+		_, err := conn.WriteTo(icmpEcho(header.ICMPv4Echo, 1, 1, []byte("ping")), &net.IPAddr{IP: gateway})
+		require.NoError(t, err)
+		// Read everything that arrives, to catch an unreachable sent alongside
+		// the reply.
+		var types []header.ICMPv4Type
+		conn.SetReadDeadline(time.Now().Add(time.Second))
+		buf := make([]byte, 1500)
+		for {
+			size, _, err := conn.ReadFrom(buf)
+			if err != nil {
+				break
+			}
+			types = append(types, header.ICMPv4(buf[:size]).Type())
+		}
+		require.Equal(t, []header.ICMPv4Type{header.ICMPv4EchoReply}, types)
 	})
 
 	t.Run("blocked private IP", func(t *testing.T) {
