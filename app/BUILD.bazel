@@ -50,7 +50,6 @@ genrule(
     # https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Cascade/Introduction#cascading_order
     srcs = [
         "//app/root:colors.css",
-        "//app/root:xterm-colors.css",
         "//app/root:root.css",
         "//app/icons:icons.css",
         "//app/alert:alert.css",

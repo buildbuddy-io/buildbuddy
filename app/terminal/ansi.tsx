@@ -37,6 +37,16 @@ function clearStyle(style: AnsiStyle) {
 }
 
 const colors = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
+const brightColors = [
+  "gray",
+  "bright-red",
+  "bright-green",
+  "bright-yellow",
+  "bright-blue",
+  "bright-magenta",
+  "bright-cyan",
+  "bright-white",
+];
 
 enum Mode {
   NORMAL = "normal",
@@ -47,6 +57,32 @@ enum Mode {
   BACKGROUND_24BIT = "background 24-bit color",
   BACKGROUND_256 = "background 256 color",
   INVALID = "invalid",
+}
+
+function colorFrom256(code: number): string | undefined {
+  if (!Number.isSafeInteger(code) || code < 0 || code > 255) {
+    return undefined;
+  }
+  if (code < 8) {
+    return colors[code];
+  }
+  if (code < 16) {
+    return brightColors[code - 8];
+  }
+  if (code < 232) {
+    const rgb6 = code - 16;
+    const blue = rgb6 % 6;
+    const green = ((rgb6 - blue) / 6) % 6;
+    const red = (rgb6 - green * 6 - blue) / 36;
+    return (
+      "#" +
+      (red ? red * 40 + 55 : 0).toString(16).toUpperCase().padStart(2, "0") +
+      (green ? green * 40 + 55 : 0).toString(16).toUpperCase().padStart(2, "0") +
+      (blue ? blue * 40 + 55 : 0).toString(16).toUpperCase().padStart(2, "0")
+    );
+  }
+  const gray = ((code - 232) * 10 + 8).toString(16).toUpperCase().padStart(2, "0");
+  return "#" + gray + gray + gray;
 }
 
 function applyCode(style: AnsiStyle, mode: Mode, code: number): Mode {
@@ -75,7 +111,7 @@ function applyCode(style: AnsiStyle, mode: Mode, code: number): Mode {
       if (code < 0 || code > 255) {
         return Mode.INVALID;
       }
-      style.foreground = code.toString().padStart(3, "0");
+      style.foreground = colorFrom256(code);
       return Mode.NORMAL;
     case Mode.BACKGROUND:
       if (code === 2) {
@@ -99,7 +135,7 @@ function applyCode(style: AnsiStyle, mode: Mode, code: number): Mode {
       if (code < 0 || code > 255) {
         return Mode.INVALID;
       }
-      style.background = code.toString().padStart(3, "0");
+      style.background = colorFrom256(code);
       return Mode.NORMAL;
     default:
       throw new Error("Unknown mode in applyCode: " + mode);
@@ -175,7 +211,7 @@ function applyCodeForNormalMode(style: AnsiStyle, code: number): Mode {
     case 96:
     case 97:
       // "Bright" foreground color (treat the same as non-bright for now)
-      style.foreground = colors[code - 90];
+      style.foreground = brightColors[code - 90];
       return Mode.NORMAL;
     case 100:
       // 100 is technically "bright black bg color" but just treat it as grey.
@@ -188,8 +224,8 @@ function applyCodeForNormalMode(style: AnsiStyle, code: number): Mode {
     case 105:
     case 106:
     case 107:
-      // "Bright" background color (treat the same as non-bright for now)
-      style.background = colors[code - 100];
+      // "Bright" background color
+      style.background = brightColors[code - 100];
       return Mode.NORMAL;
     default:
       return Mode.NORMAL;

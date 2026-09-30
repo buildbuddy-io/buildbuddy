@@ -54,7 +54,7 @@ describe("getContent", () => {
 
   it("should handle 256 color", () => {
     expect(
-      getContent("\x1b[3;38;5;;48;5;60;1mHello World", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER)
+      getContent("\x1b[3;38;5;13;48;5;60;1mHello World", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER)
         .rows
     ).toEqual([
       {
@@ -67,8 +67,8 @@ describe("getContent", () => {
             style: {
               bold: true,
               italic: true,
-              foreground: "000",
-              background: "060",
+              foreground: "bright-magenta",
+              background: "#5F5F87",
             },
           },
         ],
@@ -78,7 +78,7 @@ describe("getContent", () => {
 
   it("should fall back to normal processing if the color sequence is invalid", () => {
     expect(
-      getContent("\x1b[3;38;;5;30;48;5;60;1mHello World", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER)
+      getContent("\x1b[3;38;;5;30;48;5;145;1mHello World", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER)
         .rows
     ).toEqual([
       {
@@ -91,7 +91,7 @@ describe("getContent", () => {
             style: {
               bold: true,
               foreground: "black",
-              background: "060",
+              background: "#AFAFAF",
             },
           },
         ],
