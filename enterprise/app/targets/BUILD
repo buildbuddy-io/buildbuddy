@@ -95,7 +95,7 @@ ts_library(
         "//app/components/select",
         "//app/components/tooltip",
         "//app/format",
-        "//app/invocation:action_compare_button",
+        "//enterprise/app/targets:execution_menu_button",
         "//enterprise/app/targets:single_action_chart",
         "//proto:execution_stats_ts_proto",
         "//proto:stats_ts_proto",
@@ -116,5 +116,21 @@ ts_library(
         "//enterprise/app/trends:trends_chart",
         "//proto:execution_stats_ts_proto",
         "//proto:stats_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "execution_menu_button",
+    srcs = ["execution_menu_button.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//app/components/menu",
+        "//app/components/popup",
+        "//app/invocation:action_compare_button",
+        "//app/invocation:action_comparison_service",
+        "//app/router",
     ],
 )

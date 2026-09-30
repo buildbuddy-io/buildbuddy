@@ -183,9 +183,44 @@
 }
 
 .target-data .chart-table-container .compare-column {
-  position: relative;
   width: 32px;
   padding: 4px;
+}
+
+/* The row menus open below their rows, so they must not be clipped by the
+   table.  This table's rows have no backgrounds, so nothing needs clipping to
+   the table's rounded corners. */
+.target-data .chart-table-container .results-table.executions-table {
+  overflow: visible;
+}
+
+/* Anchors the menu popup to the button. */
+.target-data .execution-menu {
+  position: relative;
+}
+
+/* Sized to the row's line height so that it doesn't make the row taller. */
+.target-data .execution-menu-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-icon-default);
+  cursor: pointer;
+}
+
+.target-data .execution-menu-button:hover {
+  background: var(--color-bg-hover);
+}
+
+.target-data .execution-menu-button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .target-data .table-footer-controls {

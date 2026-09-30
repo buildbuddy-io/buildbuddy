@@ -5,9 +5,9 @@ import Link from "../../../app/components/link/link";
 import Select, { Option } from "../../../app/components/select/select";
 import { Tooltip, pinBottomLeftOffsetFromMouse } from "../../../app/components/tooltip/tooltip";
 import format from "../../../app/format/format";
-import ActionCompareButtonComponent from "../../../app/invocation/action_compare_button";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
+import ExecutionMenuButtonComponent, { getExecutionPath } from "./execution_menu_button";
 import SingleActionChartComponent from "./single_action_chart";
 
 interface Props {
@@ -242,7 +242,7 @@ export default class SingleActionComponent extends React.Component<Props, State>
           )}
         </div>
         <div className="chart-table-container">
-          <div className="results-table">
+          <div className="results-table executions-table">
             <div className="row column-headers">
               <div className="digest-column">Digest</div>
               <div className="date-column">{START_TIME.name}</div>
@@ -259,7 +259,7 @@ export default class SingleActionComponent extends React.Component<Props, State>
                   <div className="digest-column">
                     <Link
                       className="digest-bubble"
-                      href={`/invocation/${e.invocationId}?actionDigest=${e.actionDigestHash}#action`}
+                      href={getExecutionPath(e.invocationId, e.actionDigestHash)}
                       title={e.actionDigestHash}
                       style={{ "--digest-hue": format.colorHashHue(e.actionDigestHash) } as React.CSSProperties}>
                       {e.actionDigestHash.slice(0, DIGEST_PREFIX_LENGTH)}
@@ -272,11 +272,7 @@ export default class SingleActionComponent extends React.Component<Props, State>
                     </div>
                   ))}
                   <div className="compare-column">
-                    <ActionCompareButtonComponent
-                      actionDigest={e.actionDigestHash}
-                      invocationId={e.invocationId}
-                      mini={true}
-                    />
+                    <ExecutionMenuButtonComponent actionDigest={e.actionDigestHash} invocationId={e.invocationId} />
                   </div>
                 </div>
               ))}
