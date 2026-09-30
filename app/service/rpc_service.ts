@@ -155,12 +155,14 @@ class RpcService {
     };
   }
 
-  getDownloadUrl(params: Record<string, string>, view = false): string {
+  /** Returns the URL of an authenticated HTTP handler, with the request context attached. */
+  getAuthenticatedUrl(path: string, params: Record<string, string>): string {
     const encodedRequestContext = uint8ArrayToBase64(context.RequestContext.encode(this.requestContext).finish());
-    return `/file/${view ? "view" : "download"}?${new URLSearchParams({
-      ...params,
-      request_context: encodedRequestContext,
-    })}`;
+    return `${path}?${new URLSearchParams({ ...params, request_context: encodedRequestContext })}`;
+  }
+
+  getDownloadUrl(params: Record<string, string>, view = false): string {
+    return this.getAuthenticatedUrl(`/file/${view ? "view" : "download"}`, params);
   }
 
   getBytestreamUrl(

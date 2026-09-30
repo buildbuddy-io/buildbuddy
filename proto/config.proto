@@ -218,6 +218,9 @@ message FrontendConfig {
 
   // Whether the current bill can be viewed on the usage page.
   bool usage_bill_enabled = 72;
+
+  // Whether usage can be downloaded as a CSV from the usage page.
+  bool usage_export_enabled = 73;
 }
 
 message Region {

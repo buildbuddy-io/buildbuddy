@@ -3,12 +3,16 @@ package usage_service_test
 import (
 	"context"
 	"math"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/column/orderedmap"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -482,4 +486,139 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 		},
 	}
 	assert.Empty(t, cmp.Diff(expectedResponse, rsp, protocmp.Transform()))
+}
+
+func TestUsageExport(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "app.read_usage_from_olap_db", true)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	service, err := usage_service.New(env, clockwork.NewFakeClockAt(time.Date(2024, 2, 22, 12, 0, 0, 0, time.UTC)))
+	require.NoError(t, err)
+
+	rbeLabels := map[sku.LabelName]sku.LabelValue{
+		sku.Client:        sku.ClientExecutor,
+		sku.Origin:        sku.OriginInternal,
+		sku.Server:        sku.ServerApp,
+		sku.OS:            sku.OSLinux,
+		sku.Arch:          sku.ArchX86_64,
+		sku.SelfHosted:    sku.SelfHostedFalse,
+		sku.IsolationType: "firecracker",
+	}
+	workflowLabels := map[sku.LabelName]sku.LabelValue{
+		sku.Client:        sku.ClientExecutorWorkflows,
+		sku.Origin:        sku.OriginInternal,
+		sku.Server:        sku.ServerApp,
+		sku.OS:            sku.OSLinux,
+		sku.Arch:          sku.ArchX86_64,
+		sku.SelfHosted:    sku.SelfHostedFalse,
+		sku.IsolationType: "firecracker",
+	}
+	selfHostedLabels := map[sku.LabelName]sku.LabelValue{
+		sku.Client:        sku.ClientExecutor,
+		sku.OS:            sku.OSLinux,
+		sku.Arch:          sku.ArchArm64,
+		sku.SelfHosted:    sku.SelfHostedTrue,
+		sku.IsolationType: "oci",
+	}
+	macLabels := map[sku.LabelName]sku.LabelValue{
+		sku.Client:        sku.ClientExecutor,
+		sku.OS:            sku.OSMac,
+		sku.Arch:          sku.ArchArm64,
+		sku.SelfHosted:    sku.SelfHostedFalse,
+		sku.IsolationType: "none",
+	}
+	externalLabels := map[sku.LabelName]sku.LabelValue{sku.Origin: sku.OriginExternal}
+	internalLabels := map[sku.LabelName]sku.LabelValue{sku.Origin: sku.OriginInternal, sku.Client: sku.ClientExecutor}
+	internalBazelLabels := map[sku.LabelName]sku.LabelValue{sku.Origin: sku.OriginInternal, sku.Client: sku.ClientBazel}
+	customerProxyLabels := map[sku.LabelName]sku.LabelValue{sku.Origin: sku.OriginExternal, sku.Proxy: sku.ProxyCustomer}
+
+	day3 := time.Date(2024, 2, 3, 0, 0, 0, 0, time.UTC)
+	day4 := time.Date(2024, 2, 4, 0, 0, 0, 0, time.UTC)
+	// Each row gets its own minute so that none are deduplicated.
+	n := 0
+	row := func(groupID string, day time.Time, s sku.SKU, labels map[sku.LabelName]sku.LabelValue, count int64) *schema.RawUsage {
+		n++
+		return &schema.RawUsage{
+			GroupID:     groupID,
+			SKU:         s,
+			Labels:      orderedmap.FromMap(labels),
+			PeriodStart: day.Add(time.Duration(n) * time.Minute),
+			Count:       count,
+		}
+	}
+	require.NoError(t, env.GetOLAPDBHandle().FlushUsages(ctx, []*schema.RawUsage{
+		// Usage without execution dimensions is exported on one row per day.
+		row("GR1", day3, sku.BuildEventsBESCount, nil, 13),
+		row("GR1", day3, sku.RemoteCacheACHits, nil, 5),
+		row("GR1", day3, sku.RemoteCacheACCachedExecDurationNanos, nil, int64(90*time.Second)),
+		row("GR1", day3, sku.RemoteCacheCASHits, nil, 10_000),
+		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, externalLabels, 101),
+		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, internalLabels, 202),
+		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, internalBazelLabels, 303),
+		// Customer proxy bytes are not counted as external bytes.
+		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, customerProxyLabels, 700),
+		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, externalLabels, 404),
+		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, internalLabels, 505),
+		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, internalBazelLabels, 606),
+		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, customerProxyLabels, 800),
+		// Execution usage is exported per combination of execution dimensions,
+		// in minutes.
+		row("GR1", day3, sku.RemoteExecutionExecuteWorkerDurationNanos, rbeLabels, int64(2*time.Minute)),
+		row("GR1", day3, sku.RemoteExecutionExecuteWorkerDurationNanos, rbeLabels, int64(time.Minute)),
+		row("GR1", day3, sku.RemoteExecutionExecuteWorkerDurationNanos, workflowLabels, int64(3*time.Minute)),
+		row("GR1", day3, sku.RemoteExecutionExecuteWorkerDurationNanos, selfHostedLabels, int64(30*time.Second)),
+		row("GR1", day3, sku.RemoteExecutionExecuteWorkerCPUNanos, rbeLabels, int64(time.Minute)),
+		row("GR1", day3, sku.RemoteExecutionExecuteWorkerCPUNanos, selfHostedLabels, int64(90*time.Second)),
+		row("GR1", day3, sku.RemoteExecutionExecuteFixedComputeNanos, rbeLabels, int64(30*time.Second)),
+		row("GR1", day3, sku.RemoteExecutionExecuteFixedComputeNanos, workflowLabels, int64(6*time.Second)),
+		row("GR1", day3, sku.RemoteExecutionExecuteFlexibleComputeNanos, selfHostedLabels, int64(6*time.Second)),
+		row("GR1", day3, sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes, workflowLabels, 1_001),
+		row("GR1", day3, sku.RemoteExecutionExecuteLocalSnapshotSavedBytes, rbeLabels, 4_004),
+		// Dimensions with zero usage are not exported.
+		row("GR1", day3, sku.RemoteExecutionExecuteFlexibleComputeNanos, macLabels, 0),
+		row("GR1", day4, sku.BuildEventsBESCount, nil, 15),
+		row("GR1", day4, sku.RemoteExecutionExecuteFixedComputeNanos, rbeLabels, int64(90*time.Second)),
+		row("GR1", day4, sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes, rbeLabels, 2_002),
+		// Usage outside the date range or for another group is not exported.
+		row("GR1", day3.AddDate(0, -1, 0), sku.BuildEventsBESCount, nil, 77),
+		row("GR2", day3, sku.BuildEventsBESCount, nil, 107),
+	}))
+
+	authCtx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	export := func(ctx context.Context, url string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		service.GetUsageExportHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil).WithContext(ctx))
+		return rec
+	}
+
+	rec := export(authCtx, "/usage/download?start=2024-02-01&end=2024-03-01")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, "text/csv; charset=utf-8", rec.Header().Get("Content-Type"))
+	assert.Equal(t, `attachment; filename="usage-2024-02-01-2024-02-29.csv"`, rec.Header().Get("Content-Disposition"))
+	assert.Equal(t, strings.Join([]string{
+		"time,invocations,action_cache_hits,cached_build_minutes,cas_cache_hits,external_download_bytes,internal_download_bytes,workflow_download_bytes,customer_proxy_download_bytes,external_upload_bytes,internal_upload_bytes,workflow_upload_bytes,customer_proxy_upload_bytes,is_workflow,is_self_hosted,arch,os,isolation_type,execution_minutes,cpu_minutes,fixed_compute_unit_minutes,flexible_compute_unit_minutes,remote_snapshot_saved_bytes,local_snapshot_saved_bytes",
+		"2024-02-03,13,5,1.500,10000,101,202,303,700,404,505,606,800,,,,,,0.000,0.000,0.000,0.000,0,0",
+		"2024-02-03,0,0,0.000,0,0,0,0,0,0,0,0,0,false,false,x86_64,linux,firecracker,3.000,1.000,0.500,0.000,0,4004",
+		"2024-02-03,0,0,0.000,0,0,0,0,0,0,0,0,0,false,true,arm64,linux,oci,0.500,1.500,0.000,0.100,0,0",
+		"2024-02-03,0,0,0.000,0,0,0,0,0,0,0,0,0,true,false,x86_64,linux,firecracker,3.000,0.000,0.100,0.000,1001,0",
+		"2024-02-04,15,0,0.000,0,0,0,0,0,0,0,0,0,,,,,,0.000,0.000,0.000,0.000,0,0",
+		"2024-02-04,0,0,0.000,0,0,0,0,0,0,0,0,0,false,false,x86_64,linux,firecracker,0.000,0.000,1.500,0.000,2002,0",
+		"",
+	}, "\n"), rec.Body.String())
+
+	for _, url := range []string{
+		"/usage/download",
+		"/usage/download?start=2024-02-30&end=2024-03-01",
+		"/usage/download?start=2024-03-01&end=2024-02-01",
+		"/usage/download?start=2023-01-01&end=2024-06-01",
+	} {
+		assert.Equal(t, http.StatusBadRequest, export(authCtx, url).Code, url)
+	}
+	assert.Equal(t, http.StatusUnauthorized, export(ctx, "/usage/download?start=2024-02-01&end=2024-03-01").Code)
 }

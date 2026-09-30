@@ -272,6 +272,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		GroupMembershipRequestsEnabled:         new(env.GetUserDB() != nil && env.GetUserDB().GetGroupMembershipRequestsEnabled()),
 		UsageAlertsEnabled:                     env.GetUsageService() != nil && env.GetUsageService().GetAlertsEnabled(),
 		UsageBillEnabled:                       env.GetUsageService() != nil && env.GetUsageService().GetBillEnabled(),
+		UsageExportEnabled:                     env.GetUsageService() != nil && env.GetUsageService().GetExportEnabled(),
 		InvocationLogStreamingEnabled:          *invocationLogStreamingEnabled,
 		TargetFlakesUiEnabled:                  *targetFlakesUIEnabled && env.GetOLAPDBHandle() != nil,
 		CodeEditorV2Enabled:                    *features.CodeEditorV2Enabled,
