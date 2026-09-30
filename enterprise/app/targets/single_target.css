@@ -296,7 +296,16 @@
 .target-data .chart-table-container .digest-column {
   width: 96px;
   padding: 4px;
+}
+
+/* Matches the look of the DigestComponent hash bubble, but wraps a link. */
+.target-data .digest-bubble {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 4px;
   font-family: monospace;
+  color: var(--color-digest-hash-text);
+  background-color: hsl(var(--digest-hue), 50%, var(--color-digest-color-lightness));
 }
 
 .target-data .chart-table-container .date-column {

@@ -256,8 +256,12 @@ export default class SingleActionComponent extends React.Component<Props, State>
             <div className="results-list column">
               {rows.map((e) => (
                 <div key={`${e.invocationId}/${e.actionDigestHash}/${e.startTimeUsec}`} className="row result-row">
-                  <div className="digest-column" title={e.actionDigestHash}>
-                    <Link href={`/invocation/${e.invocationId}?actionDigest=${e.actionDigestHash}#action`}>
+                  <div className="digest-column">
+                    <Link
+                      className="digest-bubble"
+                      href={`/invocation/${e.invocationId}?actionDigest=${e.actionDigestHash}#action`}
+                      title={e.actionDigestHash}
+                      style={{ "--digest-hue": format.colorHashHue(e.actionDigestHash) } as React.CSSProperties}>
                       {e.actionDigestHash.slice(0, DIGEST_PREFIX_LENGTH)}
                     </Link>
                   </div>
