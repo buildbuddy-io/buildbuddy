@@ -1762,6 +1762,53 @@ func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t 
 	require.GreaterOrEqual(t, fileCache.openCount(fileNode2), 2)
 }
 
+func TestDownloadTree_InputDownloadConcurrency(t *testing.T) {
+	for _, limit := range []int{1, 4} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			flags.Set(t, "cache.client.input_download_concurrency", limit)
+			dirtools.ResetInputDownloadLimiterForTest()
+			env, ctx := testEnv(t)
+			client := &trackingReadClient{
+				ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+				ByteStreamClient:                env.GetByteStreamClient(),
+			}
+			env.SetContentAddressableStorageClient(client)
+			env.SetByteStreamClient(client)
+
+			// Download several trees at once, each with a mix of small
+			// files, which are batched, and large files, which are streamed.
+			eg := &errgroup.Group{}
+			for range 3 {
+				root := &repb.Directory{}
+				for i := range 10 {
+					size := int64(100)
+					if i%5 == 0 {
+						size = 3 * 1024 * 1024
+					}
+					rn, content := testdigest.RandomCASResourceBuf(t, size)
+					err := env.GetCache().Set(ctx, rn, content)
+					require.NoError(t, err)
+					root.Files = append(root.Files, &repb.FileNode{Name: fmt.Sprintf("file-%d", i), Digest: rn.GetDigest()})
+				}
+				rootDir := testfs.MakeTempDir(t)
+				eg.Go(func() error {
+					_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, &repb.Tree{Root: root}, &dirtools.DownloadTreeOpts{RootDir: rootDir})
+					return err
+				})
+			}
+			err := eg.Wait()
+			require.NoError(t, err)
+
+			// Both kinds of reads should have happened, with no more files
+			// being read at once than the limit.
+			batchReads, streamReads, maxInFlight := client.batchReads, client.streamReads, client.maxInFlight
+			require.Positive(t, batchReads)
+			require.Positive(t, streamReads)
+			require.LessOrEqual(t, maxInFlight, limit)
+		})
+	}
+}
+
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 
@@ -1900,4 +1947,39 @@ func (c *countingByteStreamClient) readCount(resourceName string) int {
 
 func fileNodeKey(node *repb.FileNode) string {
 	return fmt.Sprintf("%s/%d/%t", node.GetDigest().GetHash(), node.GetDigest().GetSizeBytes(), node.GetIsExecutable())
+}
+
+type trackingReadClient struct {
+	repb.ContentAddressableStorageClient
+	bspb.ByteStreamClient
+
+	mu          sync.Mutex
+	batchReads  int
+	streamReads int
+	inFlight    int
+	maxInFlight int
+}
+
+func (c *trackingReadClient) track(n int, reads *int) (done func()) {
+	c.mu.Lock()
+	*reads++
+	c.inFlight += n
+	c.maxInFlight = max(c.maxInFlight, c.inFlight)
+	c.mu.Unlock()
+	time.Sleep(10 * time.Millisecond)
+	return func() {
+		c.mu.Lock()
+		c.inFlight -= n
+		c.mu.Unlock()
+	}
+}
+
+func (c *trackingReadClient) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest, opts ...grpc.CallOption) (*repb.BatchReadBlobsResponse, error) {
+	defer c.track(len(req.GetDigests()), &c.batchReads)()
+	return c.ContentAddressableStorageClient.BatchReadBlobs(ctx, req, opts...)
+}
+
+func (c *trackingReadClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	defer c.track(1, &c.streamReads)()
+	return c.ByteStreamClient.Read(ctx, req, opts...)
 }
