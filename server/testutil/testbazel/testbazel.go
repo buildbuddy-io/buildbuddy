@@ -98,7 +98,7 @@ func BinaryPath(t testing.TB) string {
 
 		start := time.Now()
 		installBase := initInstallBase(t)
-		t.Logf("Initialized bazel install base in %s", time.Since(start))
+		t.Logf("Initialized bazel install base in %s", time.Since(start).Round(time.Millisecond))
 
 		bazelrc := filepath.Join(os.Getenv("TEST_TMPDIR"), "bazel-"+Version+".bazelrc")
 		var bazelrcLines []string

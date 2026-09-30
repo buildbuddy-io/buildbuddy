@@ -40,8 +40,9 @@ func TestBazelVersion(t *testing.T) {
 	require.NoError(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
 
 	require.Contains(t, output, "Build label: "+testbazel.Version)
-	// Make sure we don't print any warnings.
+	// Make sure we don't print any warnings. The CLI logs warnings to stderr.
 	require.NotContains(t, output, log.WarningPrefix)
+	require.NotContains(t, string(stderr), log.WarningPrefix)
 }
 
 func TestBazelRun(t *testing.T) {

@@ -34,6 +34,10 @@ var (
 	verbose       = flag.Bool("test_cli_verbose", false, "Whether to add --verbose to the CLI.")
 
 	initEnvOnce sync.Once
+
+	// commandTests maps each *exec.Cmd created by Command to its test, so
+	// that the output helpers can log to the test that ran the command.
+	commandTests sync.Map
 )
 
 // BinaryPath returns the path to the CLI binary.
@@ -60,6 +64,8 @@ func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 		args = append([]string{"--verbose"}, args...)
 	}
 	cmd := exec.Command(BinaryPath(t), args...)
+	commandTests.Store(cmd, t)
+	t.Cleanup(func() { commandTests.Delete(cmd) })
 	cmd.Dir = workspacePath
 	if *streamOutputs {
 		cmd.Stdout = os.Stderr
@@ -136,7 +142,12 @@ func CombinedOutput(cmd *exec.Cmd) ([]byte, error) {
 func runTimed(cmd *exec.Cmd) error {
 	start := time.Now()
 	err := cmd.Run()
-	fmt.Fprintf(os.Stderr, "[testcli] %q took %s (exit code %d)\n", cmd.Args[1:], time.Since(start).Round(time.Millisecond), cmd.ProcessState.ExitCode())
+	msg := fmt.Sprintf("[testcli] %s %q took %s (exit code %d)", filepath.Base(cmd.Args[0]), cmd.Args[1:], time.Since(start).Round(time.Millisecond), cmd.ProcessState.ExitCode())
+	if t, ok := commandTests.Load(cmd); ok {
+		t.(*testing.T).Log(msg)
+	} else {
+		fmt.Fprintln(os.Stderr, msg)
+	}
 	return err
 }
 
