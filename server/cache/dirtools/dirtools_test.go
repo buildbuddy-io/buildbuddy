@@ -1762,6 +1762,164 @@ func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t 
 	require.GreaterOrEqual(t, fileCache.openCount(fileNode2), 2)
 }
 
+func TestDownloadTree_InputDownloadConcurrencyCountsBatchedFiles(t *testing.T) {
+	flags.Set(t, "cache.client.input_download_concurrency", 2)
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+	client := &trackingReadClient{
+		ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+		ByteStreamClient:                env.GetByteStreamClient(),
+		gate:                            make(chan struct{}),
+	}
+	env.SetContentAddressableStorageClient(client)
+	env.SetByteStreamClient(client)
+	root := &repb.Directory{}
+	for i := range 4 {
+		d := setFile(t, env, ctx, "", fmt.Sprintf("file-%d", i))
+		root.Files = append(root.Files, &repb.FileNode{Name: fmt.Sprintf("file-%d.txt", i), Digest: d})
+	}
+
+	// Download 4 small files with a limit of 2. Small files are batched, and
+	// a batch takes a slot for each of its files, so the files should be read
+	// in 2 batches of 2, with only one batch in flight at a time.
+	eg := &errgroup.Group{}
+	eg.Go(func() error {
+		_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, &repb.Tree{Root: root}, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+		return err
+	})
+	require.Eventually(t, func() bool { return client.filesInFlight() == 2 }, 5*time.Second, time.Millisecond)
+	require.Never(t, func() bool { return client.filesInFlight() > 2 }, 50*time.Millisecond, time.Millisecond)
+
+	// Open the gate. All 4 files should be downloaded, and no more than 2
+	// should ever have been read at once.
+	close(client.gate)
+	err := eg.Wait()
+	require.NoError(t, err)
+	batchSizes, maxFilesInFlight := client.batchStats()
+	require.Equal(t, []int{2, 2}, batchSizes)
+	require.Equal(t, 2, maxFilesInFlight)
+	for i := range 4 {
+		assert.FileExists(t, filepath.Join(tmpDir, fmt.Sprintf("file-%d.txt", i)))
+	}
+}
+
+func TestDownloadTree_InputDownloadConcurrencyHoldsSlotUntilFileIsWritten(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		fileSize int64
+	}{
+		{name: "batched", fileSize: 16},
+		{name: "streamed", fileSize: 3 * 1024 * 1024},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "cache.client.input_download_concurrency", 1)
+			env, ctx := testEnv(t)
+			tmpDir := testfs.MakeTempDir(t)
+			client := &trackingReadClient{
+				ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+				ByteStreamClient:                env.GetByteStreamClient(),
+			}
+			env.SetContentAddressableStorageClient(client)
+			env.SetByteStreamClient(client)
+			// Adding a downloaded file to the file cache is the last step
+			// of writing it, so blocking that step keeps the file's
+			// download from finishing.
+			fc := &blockingFileCache{
+				FileCache: env.GetFileCache(),
+				entered:   make(chan struct{}, 2),
+				gate:      make(chan struct{}),
+			}
+			env.SetFileCache(fc)
+			root := &repb.Directory{}
+			for i := range 2 {
+				rn, content := testdigest.RandomCASResourceBuf(t, tc.fileSize)
+				err := env.GetCache().Set(ctx, rn, content)
+				require.NoError(t, err)
+				root.Files = append(root.Files, &repb.FileNode{Name: fmt.Sprintf("file-%d.txt", i), Digest: rn.GetDigest()})
+			}
+
+			// Download 2 files with a limit of 1.
+			eg := &errgroup.Group{}
+			eg.Go(func() error {
+				_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, &repb.Tree{Root: root}, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+				return err
+			})
+
+			// The file that is read first keeps the only slot while it is
+			// being written, so the other file should not be read until
+			// the write finishes.
+			select {
+			case <-fc.entered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for a downloaded file to be added to the file cache")
+			}
+			require.Never(t, func() bool { return client.numReads() > 1 }, 100*time.Millisecond, time.Millisecond)
+
+			// Let the writes finish. Both files should then be downloaded
+			// with a read each.
+			close(fc.gate)
+			err := eg.Wait()
+			require.NoError(t, err)
+			numReads := client.numReads()
+			require.Equal(t, 2, numReads)
+			for i := range 2 {
+				assert.FileExists(t, filepath.Join(tmpDir, fmt.Sprintf("file-%d.txt", i)))
+			}
+		})
+	}
+}
+
+func TestDownloadTree_InputDownloadConcurrencyCountsFileCacheLinks(t *testing.T) {
+	flags.Set(t, "cache.client.input_download_concurrency", 2)
+	// Allow more link goroutines per task than the fetch limit, so that the
+	// fetch limit is the one that applies.
+	flags.Set(t, "cache.client.filecache_link_parallelism", 4)
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+	client := &trackingReadClient{
+		ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+		ByteStreamClient:                env.GetByteStreamClient(),
+	}
+	env.SetContentAddressableStorageClient(client)
+	env.SetByteStreamClient(client)
+	cacheTmpDir := testfs.MakeTempDir(t)
+	root := &repb.Directory{}
+	for i := range 4 {
+		data := fmt.Sprintf("cached-file-%d", i)
+		addToFileCache(t, ctx, env, cacheTmpDir, data)
+		d, err := digest.Compute(strings.NewReader(data), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		root.Files = append(root.Files, &repb.FileNode{Name: fmt.Sprintf("file-%d.txt", i), Digest: d})
+	}
+	fc := &gatedLinkFileCache{
+		FileCache: env.GetFileCache(),
+		gate:      make(chan struct{}),
+	}
+	env.SetFileCache(fc)
+
+	// Download a tree whose 4 files are all in the file cache, with a limit
+	// of 2. Each link takes a download slot, so only 2 files should be linked
+	// at once.
+	eg := &errgroup.Group{}
+	eg.Go(func() error {
+		_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, &repb.Tree{Root: root}, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+		return err
+	})
+	require.Eventually(t, func() bool { return fc.linksInFlight() == 2 }, 5*time.Second, time.Millisecond)
+	require.Never(t, func() bool { return fc.linksInFlight() > 2 }, 50*time.Millisecond, time.Millisecond)
+
+	// Open the gate. All 4 files should be linked without reading anything
+	// from the CAS.
+	close(fc.gate)
+	err := eg.Wait()
+	require.NoError(t, err)
+	numReads := client.numReads()
+	require.Equal(t, 0, numReads)
+	for i := range 4 {
+		assert.FileExists(t, filepath.Join(tmpDir, fmt.Sprintf("file-%d.txt", i)))
+	}
+}
+
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 
@@ -1900,4 +2058,110 @@ func (c *countingByteStreamClient) readCount(resourceName string) int {
 
 func fileNodeKey(node *repb.FileNode) string {
 	return fmt.Sprintf("%s/%d/%t", node.GetDigest().GetHash(), node.GetDigest().GetSizeBytes(), node.GetIsExecutable())
+}
+
+// trackingReadClient wraps the CAS and ByteStream clients to count the reads
+// that reach the server. If gate is set, BatchReadBlobs calls wait for it to
+// be closed, so tests can observe how many files are being read at once.
+type trackingReadClient struct {
+	repb.ContentAddressableStorageClient
+	bspb.ByteStreamClient
+
+	gate chan struct{}
+
+	mu               sync.Mutex
+	reads            int
+	batchSizes       []int
+	inFlight         int
+	maxFilesInFlight int
+}
+
+func (c *trackingReadClient) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest, opts ...grpc.CallOption) (*repb.BatchReadBlobsResponse, error) {
+	n := len(req.GetDigests())
+	c.mu.Lock()
+	c.reads++
+	c.batchSizes = append(c.batchSizes, n)
+	c.inFlight += n
+	c.maxFilesInFlight = max(c.maxFilesInFlight, c.inFlight)
+	c.mu.Unlock()
+	if c.gate != nil {
+		<-c.gate
+	}
+	rsp, err := c.ContentAddressableStorageClient.BatchReadBlobs(ctx, req, opts...)
+	c.mu.Lock()
+	c.inFlight -= n
+	c.mu.Unlock()
+	return rsp, err
+}
+
+func (c *trackingReadClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	c.mu.Lock()
+	c.reads++
+	c.mu.Unlock()
+	return c.ByteStreamClient.Read(ctx, req, opts...)
+}
+
+// numReads returns the number of BatchReadBlobs and ByteStream Read calls.
+func (c *trackingReadClient) numReads() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.reads
+}
+
+// filesInFlight returns the number of files in BatchReadBlobs calls that
+// have not returned yet.
+func (c *trackingReadClient) filesInFlight() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inFlight
+}
+
+func (c *trackingReadClient) batchStats() (batchSizes []int, maxFilesInFlight int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.batchSizes), c.maxFilesInFlight
+}
+
+// blockingFileCache signals entered and then waits for gate to be closed
+// whenever a file is added.
+type blockingFileCache struct {
+	interfaces.FileCache
+
+	entered chan struct{}
+	gate    chan struct{}
+}
+
+func (c *blockingFileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
+	c.entered <- struct{}{}
+	<-c.gate
+	return c.FileCache.AddFile(ctx, node, existingFilePath)
+}
+
+// gatedLinkFileCache counts FastLinkFile calls in flight and makes them wait
+// for gate to be closed.
+type gatedLinkFileCache struct {
+	interfaces.FileCache
+
+	gate chan struct{}
+
+	mu       sync.Mutex
+	inFlight int
+}
+
+func (c *gatedLinkFileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) bool {
+	c.mu.Lock()
+	c.inFlight++
+	c.mu.Unlock()
+	<-c.gate
+	linked := c.FileCache.FastLinkFile(ctx, node, outputPath)
+	c.mu.Lock()
+	c.inFlight--
+	c.mu.Unlock()
+	return linked
+}
+
+func (c *gatedLinkFileCache) linksInFlight() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inFlight
 }
