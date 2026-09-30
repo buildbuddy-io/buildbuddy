@@ -1121,7 +1121,13 @@ func (s *ExecutionServer) checkAnonymousExecutionExperiment(ctx context.Context)
 	if _, err := s.authenticator.AuthenticatedUser(ctx); !authutil.IsAnonymousUserError(err) {
 		return nil
 	}
-	if !fp.Boolean(ctx, rejectAnonymousExecutionsExperiment, false) {
+	// Attach IP for fractional rollouts since there may not be an invocation_id
+	// attached.
+	var opts []any
+	if ip := clientip.Get(ctx); ip != "" {
+		opts = append(opts, experiments.WithContext("client_ip", ip))
+	}
+	if !fp.Boolean(ctx, rejectAnonymousExecutionsExperiment, false, opts...) {
 		return nil
 	}
 	return status.PermissionDeniedError("Anonymous remote execution is no longer supported. Please create an account at https://buildbuddy.io and use an API key.")

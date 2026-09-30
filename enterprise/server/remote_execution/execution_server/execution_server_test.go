@@ -2494,6 +2494,70 @@ func TestExecute_RejectAnonymousExecutionsExperiment(t *testing.T) {
 	}
 }
 
+func TestExecute_RejectAnonymousExecutionsExperiment_TargetsClientIP(t *testing.T) {
+	// The test gRPC connection has no usable peer address, so supply the
+	// client IP via a trusted X-Forwarded-For header instead.
+	flags.Set(t, "auth.trust_xforwardedfor_header", true)
+
+	const rejectedIP = "203.0.113.7"
+	const allowedIP = "198.51.100.9"
+
+	env, conn, _ := setupEnv(t)
+	tmp := testfs.MakeTempDir(t)
+	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "remote_execution.reject_anonymous_executions": {
+      "state": "ENABLED",
+      "variants": {
+        "true": true,
+        "false": false
+      },
+      "defaultVariant": "false",
+      "targeting": {
+        "if": [
+          {"==": [{"var": "client_ip"}, "`+rejectedIP+`"]},
+          "true",
+          "false"
+        ]
+      }
+    }
+  }
+}
+`)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	ad, err := digest.Compute(strings.NewReader("nonexistent action"), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	client := repb.NewExecutionClient(conn)
+
+	execute := func(clientIP string) error {
+		ctx := metadata.AppendToOutgoingContext(context.Background(), "X-Forwarded-For", clientIP)
+		stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+			ActionDigest:   ad,
+			DigestFunction: repb.DigestFunction_SHA256,
+		})
+		require.NoError(t, err)
+		_, err = stream.Recv()
+		require.Error(t, err)
+		return err
+	}
+
+	err = execute(rejectedIP)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PERMISSION_DENIED for targeted IP, got %s", err)
+
+	// A different anonymous IP is not targeted and proceeds to the action
+	// fetch, which fails because the action does not exist.
+	err = execute(allowedIP)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FAILED_PRECONDITION for non-targeted IP, got %s", err)
+}
+
 func TestDispatch_RedisAvailabilityMonitoring_CleansUpChannelOnScheduleFailure(t *testing.T) {
 	flags.Set(t, "remote_execution.enable_redis_availability_monitoring", true)
 	env, _, redisHandle := setupEnv(t)
