@@ -35,9 +35,9 @@ func TestBazelVersion(t *testing.T) {
 	// Note: this test makes sure that the version output appears in stdout
 	// (not stderr), so that tools can do things like `bb version | grep ...`
 	// the same way they can with vanilla bazel.
-	b, err := testcli.Output(cmd)
-	output := string(b)
-	require.NoError(t, err, "output: %s", string(b))
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	output := string(stdout)
+	require.NoError(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
 
 	require.Contains(t, output, "Build label: "+testbazel.Version)
 	// Make sure we don't print any warnings.
@@ -67,9 +67,9 @@ sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 	})
 	testfs.MakeExecutable(t, ws, "print_args.sh")
 	cmd := testcli.BazelCommand(t, ws, "run", ":print_args", "--", "--before", "--verbose", "hello", "--after")
-	b, err := testcli.Output(cmd)
-	require.NoError(t, err, "output: %s", string(b))
-	require.Equal(t, "--before --verbose hello --after\n", string(b))
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	require.NoError(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
+	require.Equal(t, "--before --verbose hello --after\n", string(stdout))
 }
 
 func TestInvokeViaBazelisk(t *testing.T) {
@@ -92,17 +92,40 @@ func TestInvokeViaBazelisk(t *testing.T) {
 		// Make sure that if we're using the .bazelversion trick, we still have
 		// a way to override the bazel version via env var
 		// (BB_USE_BAZEL_VERSION).
+		// Use a fake bazel for the override, so that the test doesn't need to
+		// download or start a second real bazel.
+		overrideBazel := writeFakeBazelVersion(t, ws, "override-bazel")
 		cmd := testcli.BazeliskCommand(t, ws, "version")
-		cmd.Env = append(os.Environ(), "BB_USE_BAZEL_VERSION=6.0.0")
-		// Sanity check: make sure testbazel.Version is different from the one
-		// we're testing here.
-		require.NotEqual(t, "6.0.0", testbazel.Version)
+		cmd.Env = append(os.Environ(), "BB_USE_BAZEL_VERSION="+overrideBazel)
 		b, err := testcli.CombinedOutput(cmd)
 
 		require.NoError(t, err, "output: %s", string(b))
 		require.Regexp(t, `(?m)^bb (unknown|\d+\.\d+\.\d+)$`, string(b))
-		require.Contains(t, string(b), "Build label: 6.0.0")
+		require.Contains(t, string(b), "Build label: override-bazel")
 	}
+}
+
+// writeFakeBazelVersion writes a fake bazel binary to the workspace and returns
+// its path. It answers `bazel version` with the given build label and
+// `bazel help flags-as-proto` with the parser test fixture.
+func writeFakeBazelVersion(t *testing.T, ws, buildLabel string) string {
+	// Bazelisk copies local binaries into its cache, so the script refers to
+	// the fixture by absolute path.
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"fake-bazel/flags-as-proto.b64": test_data.BazelHelpFlagsAsProtoOutput,
+		"fake-bazel/bazel": `#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    flags-as-proto) exec cat "` + ws + `/fake-bazel/flags-as-proto.b64" ;;
+    version) echo "Build label: ` + buildLabel + `"; exit 0 ;;
+  esac
+done
+echo "fake bazel: unexpected args: $*" >&2
+exit 1
+`,
+	})
+	testfs.MakeExecutable(t, ws, "fake-bazel/bazel")
+	return ws + "/fake-bazel/bazel"
 }
 
 func TestBazelHelp(t *testing.T) {
@@ -112,9 +135,9 @@ func TestBazelHelp(t *testing.T) {
 	// Note: this test makes sure that the help output appears in stdout (not
 	// stderr), so that tools can do things like `eval $(bb help completion)`
 	// the same way they can with vanilla bazel.
-	b, err := testcli.Output(cmd)
-	output := string(b)
-	require.NoError(t, err, "output: %s", string(b))
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	output := string(stdout)
+	require.NoError(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
 
 	require.Contains(t, output, `BAZEL_STARTUP_OPTIONS="`)
 }
@@ -617,14 +640,14 @@ plugins:
 `,
 	})
 	cmd := testcli.Command(t, ws, "mod", "dump_repo_mapping", "")
-	b, err := testcli.Output(cmd)
-	require.NoErrorf(t, err, "output: %s", string(b))
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	require.NoErrorf(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
 	// stdout should look like a JSON object
-	require.Regexp(t, `^\{.*\}$`, strings.TrimSpace(string(b)))
+	require.Regexp(t, `^\{.*\}$`, strings.TrimSpace(string(stdout)))
 }
 
 func retryUntilSuccess(t *testing.T, f func() error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	r := retry.DefaultWithContext(ctx)
 	var err error
@@ -669,6 +692,9 @@ mv "$tmp" "$FORWARDED_BAZEL_ARGS_FILE"
 			testfs.MakeExecutable(t, ws, "testplugin/pre_bazel.sh")
 
 			args := []string{"--bazelrc=" + ws + "/unrelated.bazelrc", "test", "--test_output=all", ":needs_required_rc"}
+			// --ignore_all_rc_files also drops the bazelrc that keeps the test
+			// bazel offline, so pass those options explicitly.
+			args = append(args, testbazel.HermeticFlags(t)...)
 			b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, args...))
 			output := strings.ReplaceAll(string(b), "\r\n", "\n")
 
@@ -714,6 +740,9 @@ exec "$BAZEL_REAL" "` + wrapperStartupArg + `" "$@"
 			testfs.MakeExecutable(t, ws, "tools/bazel")
 
 			args := []string{"--bazelrc=" + ws + "/unrelated.bazelrc", "test", "--test_output=all", ":needs_required_rc"}
+			// --ignore_all_rc_files also drops the bazelrc that keeps the test
+			// bazel offline, so pass those options explicitly.
+			args = append(args, testbazel.HermeticFlags(t)...)
 			b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, args...))
 			output := strings.ReplaceAll(string(b), "\r\n", "\n")
 

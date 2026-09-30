@@ -4,11 +4,8 @@ package(default_visibility = ["//cli:__subpackages__"])
 
 go_test(
     name = "cli_test",
+    size = "large",
     srcs = ["cli_test.go"],
-    exec_properties = {
-        # TODO: remove network dependency.
-        "test.dockerNetwork": "bridge",
-    },
     shard_count = 4,
     deps = [
         "//cli/log",
