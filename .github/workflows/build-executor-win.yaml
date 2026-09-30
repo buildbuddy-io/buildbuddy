@@ -142,6 +142,9 @@ jobs:
                    //enterprise/server/remote_execution/workspace:workspace_test `
                    //enterprise/server/util/procstats:procstats_test `
                    //server/util/fastcopy:fastcopy_test
+          # PowerShell doesn't stop when a native command fails, so check
+          # the exit code before running tests.
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           bazelisk --output_user_root=C:/0 `
                    --windows_enable_symlinks `
