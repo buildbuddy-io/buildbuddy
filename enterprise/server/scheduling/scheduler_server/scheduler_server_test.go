@@ -2367,3 +2367,137 @@ func TestShutdown_StopsSchedulerClientCacheExpirer(t *testing.T) {
 		return expirers() < before
 	}, 10*time.Second, 10*time.Millisecond, "scheduler client cache expirer is still running after shutdown")
 }
+
+// startShutdown starts shutting down the scheduler, and returns a channel that
+// receives shutdown's result.
+func startShutdown(s *SchedulerServer, ctx context.Context) <-chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.shutdown(ctx)
+	}()
+	return errCh
+}
+
+// requireShutdownBlocked asserts that shutdown hasn't returned after a short
+// while.
+func requireShutdownBlocked(t *testing.T, errCh <-chan error) {
+	select {
+	case err := <-errCh:
+		require.FailNow(t, "shutdown returned while work was still running", "err: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestShutdown_CancelsAndWaitsForBackgroundWork(t *testing.T) {
+	s, ctx := getScheduleServer(t, false, false, "")
+
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	release := make(chan struct{})
+	var finished atomic.Bool
+	s.goBackground(ctx, func(ctx context.Context) {
+		close(started)
+		<-ctx.Done()
+		close(canceled)
+		<-release
+		finished.Store(true)
+	})
+	<-started
+
+	// Shutdown cancels the work, but doesn't return until the work does.
+	errCh := startShutdown(s, context.Background())
+	select {
+	case <-canceled:
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "shutdown did not cancel background work")
+	}
+	requireShutdownBlocked(t, errCh)
+	close(release)
+	require.NoError(t, <-errCh)
+	require.True(t, finished.Load())
+}
+
+func TestShutdown_SkipsBackgroundWorkStartedAfterShutdown(t *testing.T) {
+	s, ctx := getScheduleServer(t, false, false, "")
+	require.NoError(t, s.shutdown(ctx))
+
+	s.goBackground(ctx, func(context.Context) {
+		t.Error("background work started after shutdown")
+	})
+	_, ok := s.trackBackground()
+	require.False(t, ok)
+	// If the work had been started, shutting down again would wait for it,
+	// so it would have failed the test by now.
+	require.NoError(t, s.shutdown(ctx))
+}
+
+func TestShutdown_ConcurrentWithBackgroundWork(t *testing.T) {
+	s, ctx := getScheduleServer(t, false, false, "")
+
+	// All background work that shutdown admits must finish before shutdown
+	// returns.
+	var shutdownReturned atomic.Bool
+	var submitters sync.WaitGroup
+	for range 20 {
+		submitters.Go(func() {
+			for range 50 {
+				s.goBackground(ctx, func(context.Context) {
+					if shutdownReturned.Load() {
+						t.Error("background work started after shutdown returned")
+					}
+					runtime.Gosched()
+					if shutdownReturned.Load() {
+						t.Error("background work still running after shutdown returned")
+					}
+				})
+			}
+		})
+	}
+	require.NoError(t, s.shutdown(context.Background()))
+	shutdownReturned.Store(true)
+	submitters.Wait()
+}
+
+func TestShutdown_ReturnsWhenDeadlineExpires(t *testing.T) {
+	s, ctx := getScheduleServer(t, false, false, "")
+
+	// This work ignores cancellation, so shutdown can't finish in time.
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	s.goBackground(ctx, func(context.Context) {
+		<-release
+	})
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err := s.shutdown(shutdownCtx)
+	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got: %v", err)
+}
+
+func TestShutdown_WaitsForUnclaimedTaskLookups(t *testing.T) {
+	s, ctx := getScheduleServer(t, false, false, "")
+	pool := s.getOrCreatePool(nodePoolKey{os: defaultOS, arch: defaultArch})
+
+	// Unclaimed task lookups run in a singleflight goroutine, which keeps
+	// running after its caller gives up.
+	lookupStarted := make(chan struct{})
+	release := make(chan struct{})
+	var lookupFinished atomic.Bool
+	s.goBackground(ctx, func(ctx context.Context) {
+		pool.unclaimedTasksSingleFlight.Do(ctx, "lookup", func(context.Context) ([]string, error) {
+			close(lookupStarted)
+			<-release
+			lookupFinished.Store(true)
+			return nil, nil
+		})
+	})
+	<-lookupStarted
+
+	// Shutdown cancels the caller, which returns right away, but shutdown
+	// still waits for the lookup.
+	errCh := startShutdown(s, context.Background())
+	requireShutdownBlocked(t, errCh)
+	close(release)
+	require.NoError(t, <-errCh)
+	require.True(t, lookupFinished.Load())
+}

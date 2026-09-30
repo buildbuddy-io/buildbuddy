@@ -43,6 +43,19 @@ func (p *panicError) Unwrap() error {
 type Group[K comparable, V any] struct {
 	calls map[K]*call[V] // lazily initialized
 	mu    sync.Mutex     // protects calls
+
+	// Tracks the goroutines running calls' functions, which can outlive
+	// every caller of Do.
+	running sync.WaitGroup
+}
+
+// Wait blocks until every function started by Do has returned, including
+// functions whose callers have all given up waiting for them.
+//
+// As with sync.WaitGroup, calls to Do must not start while Wait is waiting
+// for the group to become idle.
+func (g *Group[K, V]) Wait() {
+	g.running.Wait()
 }
 
 // Do executes and returns the results of the given function, making sure that
@@ -82,9 +95,11 @@ func (g *Group[K, V]) Do(ctx context.Context, key K, fn func(ctx context.Context
 		counter: 1,
 	}
 	g.calls[key] = c
+	g.running.Add(1)
 	g.mu.Unlock()
 
 	go func() {
+		defer g.running.Done()
 		defer func() {
 			if v := recover(); v != nil {
 				c.panicErr = &panicError{value: v, stack: debug.Stack()}

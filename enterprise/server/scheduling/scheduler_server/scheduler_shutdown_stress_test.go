@@ -72,9 +72,11 @@ type stressConfig struct {
 	redisHook           redis.Hook
 	// Shutdown must complete within this long.
 	shutdownDeadline time.Duration
-	// Write the TTL flag after shutdown returns. Disable for scenarios
-	// where goroutines are known to outlive shutdown by design (timeouts).
-	checkFlagRace bool
+	// Require that no scheduler goroutines outlive shutdown, and write the
+	// TTL flag after shutdown returns, so that any scheduler code still
+	// reading it shows up as a data race. Disable for scenarios where
+	// goroutines are known to outlive shutdown by design (timeouts).
+	expectCleanShutdown bool
 	// How long to wait after the test for stragglers to finish, so they
 	// don't pollute later tests.
 	drain time.Duration
@@ -216,7 +218,7 @@ func runShutdownStress(t *testing.T, cfg stressConfig) {
 	elapsed := time.Since(start)
 	t.Logf("shutdown took %s", elapsed)
 
-	if cfg.checkFlagRace {
+	if cfg.expectCleanShutdown {
 		// Any scheduler code reading the flag from here on races with
 		// these writes.
 		for i := range 50 {
@@ -228,9 +230,13 @@ func runShutdownStress(t *testing.T, cfg stressConfig) {
 	}
 
 	// Let goroutines unblocked by shutdown finish exiting, then report
-	// whatever scheduler code is still running.
-	time.Sleep(200 * time.Millisecond)
+	// whatever scheduler code is still running. Goroutines tied to executor
+	// streams exit shortly after shutdown ends the streams.
 	leftovers := schedulerGoroutines()
+	for deadline := time.Now().Add(2 * time.Second); len(leftovers) > 0 && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+		leftovers = schedulerGoroutines()
+	}
 	keys := make([]string, 0, len(leftovers))
 	for k := range leftovers {
 		keys = append(keys, k)
@@ -238,6 +244,9 @@ func runShutdownStress(t *testing.T, cfg stressConfig) {
 	sort.Strings(keys)
 	for _, k := range keys {
 		t.Logf("STRESS leftover scheduler goroutine after shutdown: %dx %s", leftovers[k], k)
+	}
+	if cfg.expectCleanShutdown {
+		require.Empty(t, leftovers, "scheduler goroutines still running after shutdown")
 	}
 
 	cancelExecutors()
@@ -265,7 +274,7 @@ func TestShutdownStress(t *testing.T) {
 			cfg: stressConfig{
 				executors: 30, tasks: 50, cacheTTL: 0,
 				maxShutdownDelay: 100 * time.Millisecond,
-				shutdownDeadline: 5 * time.Second, checkFlagRace: true,
+				shutdownDeadline: 5 * time.Second, expectCleanShutdown: true,
 			},
 		},
 		{
@@ -273,7 +282,7 @@ func TestShutdownStress(t *testing.T) {
 			cfg: stressConfig{
 				executors: 30, tasks: 50, cacheTTL: time.Second,
 				maxShutdownDelay: 100 * time.Millisecond,
-				shutdownDeadline: 5 * time.Second, checkFlagRace: true,
+				shutdownDeadline: 5 * time.Second, expectCleanShutdown: true,
 			},
 		},
 		{
@@ -281,7 +290,7 @@ func TestShutdownStress(t *testing.T) {
 			cfg: stressConfig{
 				executors: 10, tasks: 50, cacheTTL: 0, askForMore: true,
 				maxShutdownDelay: 200 * time.Millisecond,
-				shutdownDeadline: 5 * time.Second, checkFlagRace: true,
+				shutdownDeadline: 5 * time.Second, expectCleanShutdown: true,
 			},
 		},
 		{
@@ -290,7 +299,7 @@ func TestShutdownStress(t *testing.T) {
 				executors: 10, tasks: 10, cacheTTL: 0,
 				redisHook:        &zrangeStaller{delay: 5 * time.Second, honorCtx: true},
 				maxShutdownDelay: 100 * time.Millisecond,
-				shutdownDeadline: 2 * time.Second, checkFlagRace: true,
+				shutdownDeadline: 2 * time.Second, expectCleanShutdown: true,
 			},
 		},
 		{
