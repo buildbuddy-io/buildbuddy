@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
@@ -40,6 +42,7 @@ import (
 var (
 	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
 	recordOrigin                   = flag.Bool("cache.record_action_result_origin", true, "If true, the origin of the action result will be added to it's auxiliary metadata.")
+	missingBlobRetryTimeout        = flag.Duration("cache.action_result_missing_blob_retry_timeout", 5*time.Second, "Maximum total validation time for action cache requests opting into missing CAS blob retries.")
 )
 
 // chunkCheckConcurrency bounds how many chunked-manifest fallback lookups
@@ -80,11 +83,53 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, maxChunkSizeBytes int64, digests []*rspb.ResourceName) error {
-	missing, err := cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_AC_VALIDATION), digests)
-	if err != nil {
-		return err
+// retryMissingCAS retries only missing references, with exponential backoff and
+// jitter. All checks share the validation context's deadline.
+func retryMissingCAS[T any](ctx context.Context, enabled bool, fn func() (T, error)) (T, error) {
+	backoff := 50 * time.Millisecond
+	for {
+		value, err := fn()
+		if !enabled || err == nil || (!status.IsNotFoundError(err) && !os.IsNotExist(err)) {
+			return value, err
+		}
+		timer := time.NewTimer(time.Duration(float64(backoff) * (0.5 + rand.Float64())))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return value, err
+		case <-timer.C:
+		}
+		backoff = min(2*backoff, time.Second)
 	}
+}
+
+func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, maxChunkSizeBytes int64, digests []*rspb.ResourceName, retryMissing bool) error {
+	_, err := retryMissingCAS(ctx, retryMissing, func() (struct{}, error) {
+		// Keep only missing references for subsequent attempts, rather than
+		// rechecking all the files in the action result.
+		missing, err := cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_AC_VALIDATION), digests)
+		if err != nil {
+			return struct{}{}, err
+		}
+		if retryMissing {
+			missingHashes := make(map[string]bool, len(missing))
+			for _, d := range missing {
+				missingHashes[d.GetHash()] = true
+			}
+			remaining := make([]*rspb.ResourceName, 0, len(missing))
+			for _, rn := range digests {
+				if missingHashes[rn.GetDigest().GetHash()] {
+					remaining = append(remaining, rn)
+				}
+			}
+			digests = remaining
+		}
+		return struct{}{}, checkMissingFiles(ctx, cache, instanceName, digestFunction, maxChunkSizeBytes, missing)
+	})
+	return err
+}
+
+func checkMissingFiles(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, maxChunkSizeBytes int64, missing []*repb.Digest) error {
 	if len(missing) == 0 {
 		return nil
 	}
@@ -151,6 +196,15 @@ func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName st
 }
 
 func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, r *repb.ActionResult) error {
+	return validateActionResult(ctx, cache, remoteInstanceName, digestFunction, r, false)
+}
+
+func validateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, r *repb.ActionResult, retryMissing bool) error {
+	if retryMissing {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, *missingBlobRetryTimeout)
+		defer cancel()
+	}
 	maxChunkSizeBytes := chunking.MaxChunkSizeBytes()
 	outputFileDigests := make([]*rspb.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
@@ -171,7 +225,9 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			tree, err := readOutputTree(gCtx, cache, remoteInstanceName, digestFunction, maxChunkSizeBytes, chunkedTreeReadLimiter, dc.GetTreeDigest())
+			tree, err := retryMissingCAS(gCtx, retryMissing, func() (*repb.Tree, error) {
+				return readOutputTree(gCtx, cache, remoteInstanceName, digestFunction, maxChunkSizeBytes, chunkedTreeReadLimiter, dc.GetTreeDigest())
+			})
 			if err != nil {
 				return err
 			}
@@ -190,7 +246,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 		return err
 	}
 
-	return checkFilesExist(ctx, cache, remoteInstanceName, digestFunction, maxChunkSizeBytes, outputFileDigests)
+	return checkFilesExist(ctx, cache, remoteInstanceName, digestFunction, maxChunkSizeBytes, outputFileDigests, retryMissing)
 }
 
 func setWorkerMetadata(ar *repb.ActionResult) {
@@ -247,7 +303,7 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 		return nil, nil, 0, err
 	}
 
-	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
+	if err := validateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp, req.GetRetryMissingBlobs()); err != nil {
 		return nil, nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
 	}
 	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't

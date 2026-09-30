@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,6 +53,138 @@ type getErrorCache struct {
 	interfaces.Cache
 	match func(*rspb.ResourceName) bool
 	err   error
+}
+
+// unavailableReferenceCache hides a reference for a fixed number of checks.
+type unavailableReferenceCache struct {
+	interfaces.Cache
+	mu              sync.Mutex
+	hash            string
+	failures        int
+	err             error
+	acReads         int
+	getChecks       int
+	missingRequests [][]string
+}
+
+func (c *unavailableReferenceCache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if rn.GetCacheType() == rspb.CacheType_AC {
+		c.acReads++
+	}
+	if rn.GetDigest().GetHash() == c.hash {
+		c.getChecks++
+		if c.getChecks <= c.failures {
+			return nil, c.err
+		}
+	}
+	return c.Cache.Get(ctx, rn)
+}
+
+func (c *unavailableReferenceCache) FindMissing(ctx context.Context, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var hashes []string
+	for _, rn := range rns {
+		hashes = append(hashes, rn.GetDigest().GetHash())
+	}
+	c.missingRequests = append(c.missingRequests, hashes)
+	if len(c.missingRequests) <= c.failures {
+		for _, rn := range rns {
+			if rn.GetDigest().GetHash() == c.hash {
+				return []*repb.Digest{rn.GetDigest()}, nil
+			}
+		}
+	}
+	return c.Cache.FindMissing(ctx, rns)
+}
+
+func TestGetActionResult_MissingBlobRetries(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		retry        bool
+		tree         bool
+		absentResult bool
+		failures     int
+		retryTimeout time.Duration
+		ctxTimeout   time.Duration
+		getError     error
+		wantHit      bool
+		wantChecks   int
+	}{
+		{name: "normal lookup does not retry", failures: 2, wantChecks: 1},
+		{name: "snapshot retries missing files", retry: true, failures: 2, wantHit: true, wantChecks: 3},
+		{name: "snapshot retries missing trees", retry: true, tree: true, failures: 2, wantHit: true, wantChecks: 3},
+		{name: "normal lookup does not retry trees", tree: true, failures: 2, wantChecks: 1},
+		{name: "absent action result is not retried", retry: true, absentResult: true},
+		{name: "validation retry budget expires", retry: true, failures: 1000, retryTimeout: 10 * time.Millisecond, wantChecks: 1},
+		{name: "caller deadline stops retries", retry: true, failures: 1000, ctxTimeout: 10 * time.Millisecond, wantChecks: 1},
+		{name: "other validation errors are not retried", retry: true, tree: true, failures: 2, getError: status.UnavailableError("unavailable"), wantChecks: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			require.NoError(t, err)
+			cache := &unavailableReferenceCache{Cache: te.GetCache(), failures: tc.failures, err: status.NotFoundError("temporarily missing")}
+			if tc.getError != nil {
+				cache.err = tc.getError
+			}
+			te.SetCache(cache)
+			server, err := action_cache_server.NewActionCacheServer(te)
+			require.NoError(t, err)
+
+			fileData := []byte("snapshot chunk")
+			fileDigest, err := digest.Compute(bytes.NewReader(fileData), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			require.NoError(t, cache.Set(ctx, digest.NewCASResourceName(fileDigest, "", repb.DigestFunction_SHA256).ToProto(), fileData))
+			otherData := []byte("available snapshot chunk")
+			otherDigest, err := digest.Compute(bytes.NewReader(otherData), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			require.NoError(t, cache.Set(ctx, digest.NewCASResourceName(otherDigest, "", repb.DigestFunction_SHA256).ToProto(), otherData))
+			result := &repb.ActionResult{OutputFiles: []*repb.OutputFile{{Path: "chunk", Digest: fileDigest}, {Path: "available", Digest: otherDigest}}}
+			cache.hash = fileDigest.GetHash()
+			if tc.tree {
+				treeBytes, err := proto.Marshal(&repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "chunk", Digest: fileDigest}}}})
+				require.NoError(t, err)
+				treeDigest, err := digest.Compute(bytes.NewReader(treeBytes), repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				require.NoError(t, cache.Set(ctx, digest.NewCASResourceName(treeDigest, "", repb.DigestFunction_SHA256).ToProto(), treeBytes))
+				result = &repb.ActionResult{OutputDirectories: []*repb.OutputDirectory{{Path: "chunks", TreeDigest: treeDigest}}}
+				cache.hash = treeDigest.GetHash()
+			}
+			actionDigest := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}
+			if !tc.absentResult {
+				_, err := server.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{ActionDigest: actionDigest, DigestFunction: repb.DigestFunction_SHA256, ActionResult: result})
+				require.NoError(t, err)
+			}
+			if tc.retryTimeout > 0 {
+				flags.Set(t, "cache.action_result_missing_blob_retry_timeout", tc.retryTimeout)
+			}
+			if tc.ctxTimeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tc.ctxTimeout)
+				defer cancel()
+			}
+			got, err := server.GetActionResult(ctx, &repb.GetActionResultRequest{ActionDigest: actionDigest, DigestFunction: repb.DigestFunction_SHA256, RetryMissingBlobs: tc.retry})
+			if tc.wantHit {
+				require.NoError(t, err)
+				require.Empty(t, cmp.Diff(result, got, protocmp.Transform()))
+			} else {
+				require.True(t, status.IsNotFoundError(err), "got %v", err)
+			}
+			require.Equal(t, 1, cache.acReads, "the action result itself should only be fetched once")
+			if tc.tree {
+				require.Equal(t, tc.wantChecks, cache.getChecks)
+			} else {
+				require.Len(t, cache.missingRequests, tc.wantChecks)
+				for _, hashes := range cache.missingRequests[min(1, len(cache.missingRequests)):] {
+					require.Equal(t, []string{fileDigest.GetHash()}, hashes, "retry only the missing references")
+				}
+			}
+		})
+	}
 }
 
 func (c *getErrorCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
