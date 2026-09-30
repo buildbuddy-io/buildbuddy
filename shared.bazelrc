@@ -435,16 +435,7 @@ common:workflows --config=buildbuddy_remote_cache
 common:workflows --config=buildbuddy_experimental_remote_downloader
 common:workflows --noexperimental_remote_downloader_local_fallback
 
-# Keep local disk usage low in Firecracker-based workflows, whose disks are
-# snapshotted and reused, so anything written outside the output base grows
-# the snapshot across runs. Downloads are cached remotely through the Remote
-# Asset API instead (see buildbuddy_experimental_remote_downloader above).
-# Apply this config last in each Firecracker workflows config: ci-shared (which
-# sets --repository_cache for GitHub Actions) and --config=release are
-# expanded before it, and repo-specific rc files may add more flags to
-# `workflows`, so flags set here would be overridden if it came earlier.
 common:workflows-disk-minimal --config=download-minimal
-# An empty --repository_cache also disables the repo contents cache.
 common:workflows-disk-minimal --repository_cache=
 common:workflows-disk-minimal --repo_contents_cache=
 
