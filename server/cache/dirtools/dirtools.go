@@ -549,7 +549,6 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	}
 
 	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction, chunkingParams)
-	uploader.LimitOutputUploads()
 
 	// Upload output files to the remote cache and also add them to the local
 	// cache since they are likely to be used as inputs to subsequent actions.
