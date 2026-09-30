@@ -1118,8 +1118,7 @@ func TestRecoverFromSnapshotCrashMidApply(t *testing.T) {
 	require.Equal(t, len(keys), countPresentKeys(t, restarted, keys))
 }
 
-// A rejected entry writes no data and no session response, but it still
-// advances the stored last applied index.
+// Rejected entries advance only the stored index, leaving data and sessions alone.
 func TestRejectedEntryAdvancesLastAppliedIndex(t *testing.T) {
 	incrKey := keys.MakeKey(constants.SystemPrefix, []byte("incr-key"))
 	increment := func() *rbuilder.BatchBuilder {
@@ -1130,12 +1129,11 @@ func TestRejectedEntryAdvancesLastAppliedIndex(t *testing.T) {
 
 	for _, tc := range []struct {
 		name string
-		// makeEntry returns the entry that must be rejected. It may apply
-		// other entries first.
+		// makeEntry may apply setup entries before returning a rejected entry.
 		makeEntry func(t *testing.T, em *entryMaker, repl *replica.Replica) dbsm.Entry
-		// wantCounter is the counter value after the rejected entry.
+		// Counter value after rejection.
 		wantCounter uint64
-		// retry, if set, is applied after the rejection and must succeed.
+		// Optional retry that must succeed.
 		retry *rbuilder.BatchBuilder
 	}{
 		{
@@ -1151,8 +1149,7 @@ func TestRejectedEntryAdvancesLastAppliedIndex(t *testing.T) {
 				session := &rfpb.Session{Id: []byte("stale-header-session"), Index: 1}
 				return em.makeEntry(increment().SetHeader(staleHeader).SetSession(session))
 			},
-			// A stored session response would be replayed here instead of
-			// running the request.
+			// Verify rejection did not cache a session response.
 			retry: increment().SetHeader(currentHeader).SetSession(&rfpb.Session{Id: []byte("stale-header-session"), Index: 1}),
 		},
 		{
@@ -1214,8 +1211,8 @@ func TestRejectedEntryAdvancesLastAppliedIndex(t *testing.T) {
 	}
 }
 
-// recordingSM wraps a Replica and records what dragonboat hands to it, so
-// the test can compare dragonboat's view of the on-disk index with ours.
+// recordingSM records Open's index and the last index from successful Updates.
+// The latter tracks Dragonboat's onDiskIndex as entries are applied.
 type recordingSM struct {
 	*replica.Replica
 
@@ -1266,11 +1263,8 @@ func syncProposeWithRetry(t *testing.T, nh *dragonboat.NodeHost, rangeID uint64,
 	return dbsm.Result{}
 }
 
-// Dragonboat treats every entry handed to Update as applied, and records
-// that index as the snapshot's OnDiskIndex. On restart it expects Open() to
-// return at least the OnDiskIndex of the latest snapshot, because a local
-// snapshot of an on-disk state machine holds no data to recover from. An
-// entry rejected by Update must therefore still advance the stored index.
+// Open must cover the snapshot's OnDiskIndex, including rejected entries:
+// local on-disk snapshots contain no application data to restore.
 func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 	const rangeID, replicaID = 1, 1
 
@@ -1310,7 +1304,7 @@ func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 	err = nh.StartOnDiskReplica(map[uint64]string{replicaID: raftAddr}, false /*=join*/, factory, rc)
 	require.NoError(t, err)
 
-	// Entry 1 commits: it writes the range descriptor.
+	// Write the range descriptor.
 	rd := &rfpb.RangeDescriptor{
 		Start:      keys.Key{constants.UnsplittableMaxByte},
 		End:        keys.MaxByte,
@@ -1324,7 +1318,7 @@ func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 	}))
 	require.NotEqual(t, uint64(constants.EntryErrorValue), res.Value)
 
-	// Entry 2 is rejected: its header has a stale generation.
+	// Reject a stale header.
 	res = syncProposeWithRetry(t, nh, rangeID, rbuilder.NewBatchBuilder().
 		SetHeader(&rfpb.Header{RangeId: rangeID, Generation: 0}).
 		Add(&rfpb.DirectWriteRequest{
@@ -1332,14 +1326,13 @@ func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 		}))
 	require.Equal(t, uint64(constants.EntryErrorValue), res.Value)
 
-	// The rejected entry must have advanced the stored index to match
-	// dragonboat's view.
+	// Rejection must advance the stored index to match Dragonboat's.
 	_, onDiskIndex := sm.indexes()
 	storedIndex, err := sm.LastAppliedIndex()
 	require.NoError(t, err)
 	require.Equal(t, onDiskIndex, storedIndex)
 
-	// Snapshot now, while the rejected entry is the latest one.
+	// Snapshot with the rejected entry last.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_, err = nh.SyncRequestSnapshot(ctx, rangeID, dragonboat.SnapshotOption{
@@ -1348,7 +1341,7 @@ func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Restart the node on the same directories and pebble DB.
+	// Restart using the same storage.
 	nh.Close()
 	nh, err = dragonboat.NewNodeHost(nhc)
 	require.NoError(t, err)
@@ -1356,7 +1349,7 @@ func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 	err = nh.StartOnDiskReplica(nil, false /*=join*/, factory, rc)
 	require.NoError(t, err)
 
-	// A successful proposal means startup recovery has finished.
+	// Propose to wait for startup recovery.
 	res = syncProposeWithRetry(t, nh, rangeID, rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{Key: []byte("key-after-restart"), Value: []byte("value")},
 	}))

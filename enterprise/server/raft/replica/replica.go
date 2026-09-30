@@ -1580,10 +1580,8 @@ func (sm *Replica) updateSession(wb pebble.Batch, reqSession *rfpb.Session, rspB
 	return nil
 }
 
-// rejectEntry marks entry as applied without applying it. It commits a batch
-// holding only the last applied index and returns rejectErr as the entry's
-// result. Dragonboat counts every entry handed to Update as applied, so the
-// stored index must advance even when the entry is rejected.
+// rejectEntry commits only the index and returns rejectErr in the result.
+// Dragonboat advances its applied index even for rejected entries.
 func (sm *Replica) rejectEntry(db pebble.IPebbleDB, entry dbsm.Entry, rejectErr error) dbsm.Entry {
 	wb := db.NewBatch()
 	defer wb.Close()

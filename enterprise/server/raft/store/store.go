@@ -220,8 +220,7 @@ func getNodehostConfigForTest(cfg *raftConfig.ServerConfig, raftListener *listen
 
 	nhc.RTTMillisecond = 1
 	nhc.Expert.LogDB = dbConfig.GetSmallMemLogDBConfig()
-	// Each logdb shard is a pebble instance. Tests do not need the
-	// throughput of the default 16, and opening fewer speeds up startup.
+	// Fewer Pebble instances speed up test startup.
 	nhc.Expert.LogDB.Shards = 2
 	nhc.EnableMetrics = false
 	return nhc
