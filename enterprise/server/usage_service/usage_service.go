@@ -2,6 +2,7 @@ package usage_service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"flag"
 	"fmt"
@@ -892,47 +893,45 @@ var usageExportSKUs = slices.Concat([]sku.SKU{
 	sku.RemoteExecutionExecuteWorkerCPUNanos,
 }, olapOnlyUsageSKUs)
 
-// usageExportColumn is a column selected by the export query.
+// usageExportColumn is a column of the usage CSV export.
 type usageExportColumn struct {
-	// Name is the SELECT alias, scanned into the matching usageExportRow field.
-	Name string
+	Header string
 	// Expression is the ClickHouse expression over the Usage view.
 	Expression string
+	// Dimension columns are what rows are grouped by; the rest are totals.
+	Dimension bool
 }
 
-// usageExportDimensions are the labels that rows are grouped by. Arch, OS and
+// usageExportColumns are the export's columns, in order. Arch, OS and
 // isolation type are only recorded for executions. is_workflow is only set
 // for BuildBuddy-hosted workflow runners: bazel inside a runner and
-// self-hosted runners aren't labeled as workflow usage.
-var usageExportDimensions = []usageExportColumn{
-	{"is_workflow", "if(" + rawUsageLabelEquals(sku.Client, sku.ClientExecutorWorkflows) + ", 'true', 'false')"},
-	{"is_self_hosted", "if(" + rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedTrue) + ", 'true', 'false')"},
-	{"arch", rawUsageLabel(sku.Arch)},
-	{"os", rawUsageLabel(sku.OS)},
-	{"isolation_type", rawUsageLabel(sku.IsolationType)},
-}
-
-// usageExportMetrics are the exported totals, with durations in microseconds.
-// Workflow bytes are left out: they're mostly snapshots, charged separately.
-var usageExportMetrics = []usageExportColumn{
-	{"invocations", usageFieldOLAPExpression("invocations")},
-	{"action_cache_hits", usageFieldOLAPExpression("action_cache_hits")},
-	{"cached_build_usec", usageFieldOLAPExpression("total_cached_action_exec_usec")},
-	{"cas_cache_hits", usageFieldOLAPExpression("cas_cache_hits")},
-	{"external_download_bytes", usageFieldOLAPExpression("total_external_download_size_bytes")},
-	{"internal_download_bytes", usageFieldOLAPExpression("total_internal_download_size_bytes")},
-	{"customer_proxy_download_bytes", usageFieldOLAPExpression("total_customer_proxy_download_size_bytes")},
-	{"external_upload_bytes", usageFieldOLAPExpression("total_external_upload_size_bytes")},
-	{"internal_upload_bytes", usageFieldOLAPExpression("total_internal_upload_size_bytes")},
-	{"customer_proxy_upload_bytes", usageFieldOLAPExpression("total_customer_proxy_upload_size_bytes")},
+// self-hosted runners aren't labeled as workflow usage. Workflow bytes are
+// left out: they're mostly snapshots, charged separately.
+var usageExportColumns = []usageExportColumn{
+	{"time", "formatDateTime(period_start, '%F')", true},
+	{"invocations", usageFieldOLAPExpression("invocations"), false},
+	{"action_cache_hits", usageFieldOLAPExpression("action_cache_hits"), false},
+	{"cached_build_minutes", usageExportMinutes(usageFieldOLAPExpression("total_cached_action_exec_usec")), false},
+	{"cas_cache_hits", usageFieldOLAPExpression("cas_cache_hits"), false},
+	{"external_download_bytes", usageFieldOLAPExpression("total_external_download_size_bytes"), false},
+	{"internal_download_bytes", usageFieldOLAPExpression("total_internal_download_size_bytes"), false},
+	{"customer_proxy_download_bytes", usageFieldOLAPExpression("total_customer_proxy_download_size_bytes"), false},
+	{"external_upload_bytes", usageFieldOLAPExpression("total_external_upload_size_bytes"), false},
+	{"internal_upload_bytes", usageFieldOLAPExpression("total_internal_upload_size_bytes"), false},
+	{"customer_proxy_upload_bytes", usageFieldOLAPExpression("total_customer_proxy_upload_size_bytes"), false},
+	{"is_workflow", "if(" + rawUsageLabelEquals(sku.Client, sku.ClientExecutorWorkflows) + ", 'true', 'false')", true},
+	{"is_self_hosted", "if(" + rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedTrue) + ", 'true', 'false')", true},
+	{"arch", rawUsageLabel(sku.Arch), true},
+	{"os", rawUsageLabel(sku.OS), true},
+	{"isolation_type", rawUsageLabel(sku.IsolationType), true},
 	// Not limited to cloud Linux executions like the Usage page's fields: OS
 	// and hosting are dimensions here.
-	{"execution_usec", rawUsageSumUsec(sku.RemoteExecutionExecuteWorkerDurationNanos)},
-	{"cpu_usec", rawUsageSumUsec(sku.RemoteExecutionExecuteWorkerCPUNanos)},
-	{"fixed_compute_unit_usec", rawUsageSumUsec(sku.RemoteExecutionExecuteFixedComputeNanos)},
-	{"flexible_compute_unit_usec", rawUsageSumUsec(sku.RemoteExecutionExecuteFlexibleComputeNanos)},
-	{"remote_snapshot_saved_bytes", rawUsageSum(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes)},
-	{"local_snapshot_saved_bytes", rawUsageSum(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes)},
+	{"execution_minutes", usageExportMinutes(rawUsageSumUsec(sku.RemoteExecutionExecuteWorkerDurationNanos)), false},
+	{"cpu_minutes", usageExportMinutes(rawUsageSumUsec(sku.RemoteExecutionExecuteWorkerCPUNanos)), false},
+	{"fixed_compute_unit_minutes", usageExportMinutes(rawUsageSumUsec(sku.RemoteExecutionExecuteFixedComputeNanos)), false},
+	{"flexible_compute_unit_minutes", usageExportMinutes(rawUsageSumUsec(sku.RemoteExecutionExecuteFlexibleComputeNanos)), false},
+	{"remote_snapshot_saved_bytes", rawUsageSum(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes), false},
+	{"local_snapshot_saved_bytes", rawUsageSum(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes), false},
 }
 
 // usageFieldOLAPExpression returns the named UsageFields entry's OLAP expression.
@@ -945,92 +944,9 @@ func usageFieldOLAPExpression(name string) string {
 	panic("no Usage field named " + name)
 }
 
-// usageExportRow is one day's usage for one combination of dimensions.
-type usageExportRow struct {
-	Period                     string
-	IsWorkflow                 string
-	IsSelfHosted               string
-	Arch                       string
-	OS                         string
-	IsolationType              string
-	Invocations                int64
-	ActionCacheHits            int64
-	CachedBuildUsec            int64
-	CasCacheHits               int64
-	ExternalDownloadBytes      int64
-	InternalDownloadBytes      int64
-	CustomerProxyDownloadBytes int64
-	ExternalUploadBytes        int64
-	InternalUploadBytes        int64
-	CustomerProxyUploadBytes   int64
-	ExecutionUsec              int64
-	CPUUsec                    int64
-	FixedComputeUnitUsec       int64
-	FlexibleComputeUnitUsec    int64
-	RemoteSnapshotSavedBytes   int64
-	LocalSnapshotSavedBytes    int64
-}
-
-var usageExportHeader = []string{
-	"time",
-	"invocations",
-	"action_cache_hits",
-	"cached_build_minutes",
-	"cas_cache_hits",
-	"external_download_bytes",
-	"internal_download_bytes",
-	"customer_proxy_download_bytes",
-	"external_upload_bytes",
-	"internal_upload_bytes",
-	"customer_proxy_upload_bytes",
-	"is_workflow",
-	"is_self_hosted",
-	"arch",
-	"os",
-	"isolation_type",
-	"execution_minutes",
-	"cpu_minutes",
-	"fixed_compute_unit_minutes",
-	"flexible_compute_unit_minutes",
-	"remote_snapshot_saved_bytes",
-	"local_snapshot_saved_bytes",
-}
-
-// record returns the row's CSV fields, in usageExportHeader order.
-func (r *usageExportRow) record() []string {
-	return []string{
-		r.Period,
-		formatCount(r.Invocations),
-		formatCount(r.ActionCacheHits),
-		formatMinutes(r.CachedBuildUsec),
-		formatCount(r.CasCacheHits),
-		formatCount(r.ExternalDownloadBytes),
-		formatCount(r.InternalDownloadBytes),
-		formatCount(r.CustomerProxyDownloadBytes),
-		formatCount(r.ExternalUploadBytes),
-		formatCount(r.InternalUploadBytes),
-		formatCount(r.CustomerProxyUploadBytes),
-		r.IsWorkflow,
-		r.IsSelfHosted,
-		r.Arch,
-		r.OS,
-		r.IsolationType,
-		formatMinutes(r.ExecutionUsec),
-		formatMinutes(r.CPUUsec),
-		formatMinutes(r.FixedComputeUnitUsec),
-		formatMinutes(r.FlexibleComputeUnitUsec),
-		formatCount(r.RemoteSnapshotSavedBytes),
-		formatCount(r.LocalSnapshotSavedBytes),
-	}
-}
-
-func formatCount(count int64) string {
-	return strconv.FormatInt(count, 10)
-}
-
-// formatMinutes formats microseconds as minutes with three decimals.
-func formatMinutes(usec int64) string {
-	return strconv.FormatFloat(float64(usec)/60e6, 'f', 3, 64)
+// usageExportMinutes converts a microsecond sum to minutes with three decimals.
+func usageExportMinutes(usecExpression string) string {
+	return "round(" + usecExpression + " / 60000000, 3)"
 }
 
 // GetUsageExportHandler serves the usage CSV export for the [start, end)
@@ -1060,7 +976,7 @@ func (s *usageService) handleUsageExport(w http.ResponseWriter, r *http.Request)
 		http.Error(w, status.Message(err), http.StatusBadRequest)
 		return
 	}
-	rows, err := s.scanUsageExportRows(ctx, groupID, start, end)
+	records, err := s.scanUsageExportRows(ctx, groupID, start, end)
 	if err != nil {
 		log.CtxErrorf(ctx, "Failed to query usage export for group %s: %s", groupID, err)
 		http.Error(w, "failed to query usage", http.StatusInternalServerError)
@@ -1070,7 +986,7 @@ func (s *usageService) handleUsageExport(w http.ResponseWriter, r *http.Request)
 	lastDay := end.AddDate(0, 0, -1).Format(usageExportDateFormat)
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="usage-%s-%s.csv"`, start.Format(usageExportDateFormat), lastDay))
-	if err := writeUsageExportCSV(w, rows); err != nil {
+	if err := writeUsageExportCSV(w, records); err != nil {
 		log.CtxWarningf(ctx, "Failed to write usage export for group %s: %s", groupID, err)
 	}
 }
@@ -1094,44 +1010,51 @@ func parseUsageExportRange(params url.Values) (start, end time.Time, err error) 
 	return start, end, nil
 }
 
-// scanUsageExportRows returns one row per day and combination of dimensions,
-// in that order, skipping rows whose exported columns are all zero.
-func (s *usageService) scanUsageExportRows(ctx context.Context, groupID string, start, end time.Time) ([]*usageExportRow, error) {
-	selectExpressions := []string{"formatDateTime(period_start, '%F') AS period"}
-	groupBy := []string{"period"}
-	for _, column := range usageExportDimensions {
-		selectExpressions = append(selectExpressions, column.Expression+" AS "+column.Name)
-		groupBy = append(groupBy, column.Name)
+// scanUsageExportRows returns one CSV record per day and combination of
+// dimensions, in that order, skipping rows whose totals are all zero.
+func (s *usageService) scanUsageExportRows(ctx context.Context, groupID string, start, end time.Time) ([][]string, error) {
+	var selectExpressions, groupBy, nonZero []string
+	for _, column := range usageExportColumns {
+		if column.Dimension {
+			selectExpressions = append(selectExpressions, column.Expression+" AS "+column.Header)
+			groupBy = append(groupBy, column.Header)
+		} else {
+			selectExpressions = append(selectExpressions, "toString("+column.Expression+") AS "+column.Header)
+			nonZero = append(nonZero, column.Expression+" > 0")
+		}
 	}
-	metrics := make([]string, 0, len(usageExportMetrics))
-	for _, column := range usageExportMetrics {
-		selectExpressions = append(selectExpressions, column.Expression+" AS "+column.Name)
-		metrics = append(metrics, column.Name)
-	}
-	return db.ScanAll(s.olapdbh.NewQuery(ctx, "usage_service_scan_olap_export").Raw(`
+	var records [][]string
+	groupByString := strings.Join(groupBy, ", ")
+	err := s.olapdbh.NewQuery(ctx, "usage_service_scan_olap_export").Raw(`
 		SELECT `+strings.Join(selectExpressions, ",\n\t\t")+`
 		FROM Usage
 		WHERE period_start >= ? AND period_start < ?
 		AND group_id = ?
 		AND sku IN ?
-		GROUP BY `+strings.Join(groupBy, ", ")+`
-		HAVING greatest(`+strings.Join(metrics, ", ")+`) > 0
-		ORDER BY `+strings.Join(groupBy, ", ")+`
-	`, start, end, groupID, usageExportSKUs), &usageExportRow{})
-}
-
-func writeUsageExportCSV(w io.Writer, rows []*usageExportRow) error {
-	cw := csv.NewWriter(w)
-	if err := cw.Write(usageExportHeader); err != nil {
-		return err
-	}
-	for _, row := range rows {
-		if err := cw.Write(row.record()); err != nil {
+		GROUP BY `+groupByString+`
+		HAVING `+strings.Join(nonZero, " OR ")+`
+		ORDER BY `+groupByString+`
+	`, start, end, groupID, usageExportSKUs).IterateRaw(func(_ context.Context, row *sql.Rows) error {
+		record := make([]string, len(usageExportColumns))
+		values := make([]any, len(record))
+		for i := range record {
+			values[i] = &record[i]
+		}
+		if err := row.Scan(values...); err != nil {
 			return err
 		}
+		records = append(records, record)
+		return nil
+	})
+	return records, err
+}
+
+func writeUsageExportCSV(w io.Writer, records [][]string) error {
+	header := make([]string, len(usageExportColumns))
+	for i, column := range usageExportColumns {
+		header[i] = column.Header
 	}
-	cw.Flush()
-	return cw.Error()
+	return csv.NewWriter(w).WriteAll(append([][]string{header}, records...))
 }
 
 func validateUsageAlertingRuleConfiguration(config *usagepb.UsageAlertingRuleConfiguration) error {

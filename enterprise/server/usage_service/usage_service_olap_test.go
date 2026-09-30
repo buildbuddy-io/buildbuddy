@@ -588,8 +588,9 @@ func TestUsageExport(t *testing.T) {
 		row("GR1", day4, sku.BuildEventsBESCount, nil, 15),
 		row("GR1", day4, sku.RemoteExecutionExecuteFixedComputeNanos, rbeLabels, int64(90*time.Second)),
 		row("GR1", day4, sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes, rbeLabels, 2_002),
-		// Rows whose only usage isn't exported are skipped.
+		// Rows whose only usage isn't exported, or rounds to zero, are skipped.
 		row("GR1", day4, sku.RemoteCacheCASUploadedBytes, workflowCacheLabels, 1_010),
+		row("GR1", day4, sku.RemoteExecutionExecuteWorkerDurationNanos, macLabels, int64(20*time.Millisecond)),
 		// Usage outside the range or from another group isn't exported.
 		row("GR1", day3.AddDate(0, -1, 0), sku.BuildEventsBESCount, nil, 77),
 		row("GR2", day3, sku.BuildEventsBESCount, nil, 107),
@@ -609,13 +610,13 @@ func TestUsageExport(t *testing.T) {
 	assert.Equal(t, `attachment; filename="usage-2024-02-01-2024-02-29.csv"`, rec.Header().Get("Content-Disposition"))
 	assert.Equal(t, strings.Join([]string{
 		"time,invocations,action_cache_hits,cached_build_minutes,cas_cache_hits,external_download_bytes,internal_download_bytes,customer_proxy_download_bytes,external_upload_bytes,internal_upload_bytes,customer_proxy_upload_bytes,is_workflow,is_self_hosted,arch,os,isolation_type,execution_minutes,cpu_minutes,fixed_compute_unit_minutes,flexible_compute_unit_minutes,remote_snapshot_saved_bytes,local_snapshot_saved_bytes",
-		"2024-02-03,13,5,1.500,10000,101,202,700,404,505,800,false,false,,,,0.000,0.000,0.000,0.000,0,0",
-		"2024-02-03,0,0,0.000,0,0,0,0,0,0,0,false,false,x86_64,linux,firecracker,3.000,1.000,0.500,0.000,0,4004",
-		"2024-02-03,0,0,0.000,0,0,0,0,0,0,0,false,true,arm64,linux,oci,0.500,1.500,0.000,0.100,0,0",
-		"2024-02-03,0,0,0.000,7,0,0,0,0,0,0,true,false,,,,0.000,0.000,0.000,0.000,0,0",
-		"2024-02-03,0,0,0.000,0,0,0,0,0,0,0,true,false,x86_64,linux,firecracker,3.000,0.000,0.100,0.000,1001,0",
-		"2024-02-04,15,0,0.000,0,0,0,0,0,0,0,false,false,,,,0.000,0.000,0.000,0.000,0,0",
-		"2024-02-04,0,0,0.000,0,0,0,0,0,0,0,false,false,x86_64,linux,firecracker,0.000,0.000,1.500,0.000,2002,0",
+		"2024-02-03,13,5,1.5,10000,101,202,700,404,505,800,false,false,,,,0,0,0,0,0,0",
+		"2024-02-03,0,0,0,0,0,0,0,0,0,0,false,false,x86_64,linux,firecracker,3,1,0.5,0,0,4004",
+		"2024-02-03,0,0,0,0,0,0,0,0,0,0,false,true,arm64,linux,oci,0.5,1.5,0,0.1,0,0",
+		"2024-02-03,0,0,0,7,0,0,0,0,0,0,true,false,,,,0,0,0,0,0,0",
+		"2024-02-03,0,0,0,0,0,0,0,0,0,0,true,false,x86_64,linux,firecracker,3,0,0.1,0,1001,0",
+		"2024-02-04,15,0,0,0,0,0,0,0,0,0,false,false,,,,0,0,0,0,0,0",
+		"2024-02-04,0,0,0,0,0,0,0,0,0,0,false,false,x86_64,linux,firecracker,0,0,1.5,0,2002,0",
 		"",
 	}, "\n"), rec.Body.String())
 
