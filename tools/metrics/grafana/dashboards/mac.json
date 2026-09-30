@@ -4992,7 +4992,7 @@
             "type": "prometheus",
             "uid": "vm"
           },
-          "description": "Number of Mac hosts by Darwin kernel release (not public facing release version)",
+          "description": "Number of Mac hosts by user-facing macOS version",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -5044,19 +5044,19 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "count by (release) (max by (region, group_name, inventory_hostname, release) (node_uname_info{region=~\"${region}\", job=\"mac-node\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
+              "expr": "count by (version_id) (max by (region, group_name, inventory_hostname, version_id) (node_os_info{region=~\"${region}\", job=\"mac-node\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
               "instant": false,
               "interval": "",
-              "legendFormat": "Darwin {{release}}",
+              "legendFormat": "macOS {{version_id}}",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Mac hosts by Darwin kernel release",
+          "title": "Mac hosts by macOS version",
           "type": "timeseries"
         }
       ],
-      "title": "Mac hosts by Darwin kernel release",
+      "title": "Mac hosts by macOS version",
       "type": "row"
     }
   ],
