@@ -57,7 +57,7 @@ import (
 
 const (
 	// ContainerIP is the address of a container's eth0. (This matches slirp4netns)
-	ContainerIP = "10.0.2.100"
+	ContainerIP          = "10.0.2.100"
 	containerGatewayCIDR = "10.0.2.2/24"
 	containerDevice      = "eth0"
 
