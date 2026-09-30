@@ -2427,6 +2427,73 @@ func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
 	require.Contains(t, executeResponse.GetStatus().GetMessage(), "Secrets requested but secret service not available")
 }
 
+func TestExecute_RejectAnonymousExecutionsExperiment(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		experimentOn  bool
+		authenticated bool
+		wantRejected  bool
+	}{
+		{
+			name:          "anonymous user is rejected when experiment is enabled",
+			experimentOn:  true,
+			authenticated: false,
+			wantRejected:  true,
+		},
+		{
+			name:          "anonymous user is allowed when experiment is disabled",
+			experimentOn:  false,
+			authenticated: false,
+			wantRejected:  false,
+		},
+		{
+			name:          "authenticated user is allowed when experiment is enabled",
+			experimentOn:  true,
+			authenticated: true,
+			wantRejected:  false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, conn, _ := setupEnv(t)
+			configureExperiments(t, env, map[string]bool{
+				"remote_execution.reject_anonymous_executions": tc.experimentOn,
+			})
+
+			ctx := context.Background()
+			if tc.authenticated {
+				var err error
+				ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+				require.NoError(t, err)
+			}
+
+			// Use an action digest that does not exist in the CAS. Requests
+			// that pass the anonymous-user check should fail later with
+			// FAILED_PRECONDITION (missing blob) when fetching the action,
+			// which proves that the check runs before the action is fetched
+			// and only rejects anonymous users.
+			ad, err := digest.Compute(strings.NewReader("nonexistent action"), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+
+			client := repb.NewExecutionClient(conn)
+			stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+				ActionDigest:   ad,
+				DigestFunction: repb.DigestFunction_SHA256,
+			})
+			require.NoError(t, err)
+
+			_, err = stream.Recv()
+			require.Error(t, err)
+			if tc.wantRejected {
+				require.True(t, status.IsPermissionDeniedError(err), "expected PERMISSION_DENIED, got %s", err)
+				require.Contains(t, err.Error(), "Anonymous remote execution is no longer supported. Please create an account at https://buildbuddy.io")
+			} else {
+				require.True(t, status.IsFailedPreconditionError(err), "expected FAILED_PRECONDITION, got %s", err)
+				require.Contains(t, err.Error(), "not found")
+			}
+		})
+	}
+}
+
 func TestDispatch_RedisAvailabilityMonitoring_CleansUpChannelOnScheduleFailure(t *testing.T) {
 	flags.Set(t, "remote_execution.enable_redis_availability_monitoring", true)
 	env, _, redisHandle := setupEnv(t)
