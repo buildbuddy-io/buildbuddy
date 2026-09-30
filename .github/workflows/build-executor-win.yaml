@@ -9,6 +9,12 @@ on:
       - "docs/**"
       - "website/**"
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref (branch, tag or SHA) to check out and build. Defaults to the ref the workflow runs from."
+        required: false
+        default: ""
+        type: string
 
 jobs:
   build:
@@ -79,6 +85,10 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          # Empty (the default outside of manual runs) checks out the ref that
+          # triggered the workflow.
+          ref: ${{ inputs.ref }}
 
       - name: Setup Bazel Go module cache
         uses: ./.github/actions/setup-bazel-go-mod-cache
