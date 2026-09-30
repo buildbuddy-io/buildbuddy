@@ -1,8 +1,10 @@
 package replica_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -997,6 +999,116 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	readCloser, err = reader(t, repl2.Replica, header, fileRecord)
 	require.NoError(t, err)
 	require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
+}
+
+// crashingReader fails after reading a fixed number of bytes.
+type crashingReader struct {
+	r         io.Reader
+	remaining int
+}
+
+var errSimulatedCrash = errors.New("simulated crash")
+
+func (c *crashingReader) Read(p []byte) (int, error) {
+	if c.remaining <= 0 {
+		return 0, errSimulatedCrash
+	}
+	if len(p) > c.remaining {
+		p = p[:c.remaining]
+	}
+	n, err := c.r.Read(p)
+	c.remaining -= n
+	return n, err
+}
+
+// writeDirectKVs writes direct KV entries and returns their keys.
+func writeDirectKVs(t *testing.T, em *entryMaker, repl *replica.Replica, count, valueSize int) [][]byte {
+	keys := make([][]byte, 0, count)
+	for i := range count {
+		key := []byte(fmt.Sprintf("key-%04d", i))
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   key,
+				Value: bytes.Repeat([]byte{byte(i)}, valueSize),
+			},
+		}))
+		rsp, err := repl.Update([]dbsm.Entry{entry})
+		require.NoError(t, err)
+		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func countPresentKeys(t *testing.T, repl *testutil.TestingReplica, keys [][]byte) int {
+	present := 0
+	for _, key := range keys {
+		rsp, err := directRead(t, repl, key)
+		if status.IsNotFoundError(err) {
+			continue
+		}
+		require.NoError(t, err)
+		require.NotEmpty(t, rsp.GetKv().GetValue())
+		present++
+	}
+	return present
+}
+
+// A partial restore must not persist the snapshot's applied index, so
+// Dragonboat reapplies the snapshot after restart.
+func TestRecoverFromSnapshotCrashMidApply(t *testing.T) {
+	prev := replica.TestingSetSnapshotBatchSizeBytes(4 * 1024)
+	t.Cleanup(func() { replica.TestingSetSnapshotBatchSizeBytes(prev) })
+
+	stopc := make(chan struct{})
+	em := newEntryMaker(t)
+
+	// Create a snapshot spanning many batches.
+	src := testutil.NewTestingReplica(t, 1, 1)
+	t.Cleanup(func() { require.NoError(t, src.Close()) })
+	_, err := src.Open(stopc)
+	require.NoError(t, err)
+	writeDefaultRangeDescriptor(t, em, src.Replica)
+	keys := writeDirectKVs(t, em, src.Replica, 100, 1024)
+	snapshotIndex, err := src.LastAppliedIndex()
+	require.NoError(t, err)
+	require.Greater(t, snapshotIndex, uint64(0))
+
+	snapI, err := src.PrepareSnapshot()
+	require.NoError(t, err)
+	snapBuf := &bytes.Buffer{}
+	require.NoError(t, src.SaveSnapshot(snapI, snapBuf, nil /*=quitChan*/))
+	snapBytes := snapBuf.Bytes()
+
+	// Fail halfway through restoring the snapshot.
+	dst := testutil.NewTestingReplica(t, 1, 2)
+	leaser := dst.Leaser()
+	_, err = dst.Open(stopc)
+	require.NoError(t, err)
+	err = dst.RecoverFromSnapshot(&crashingReader{
+		r:         bytes.NewReader(snapBytes),
+		remaining: len(snapBytes) / 2,
+	}, nil /*=quitChan*/)
+	require.ErrorIs(t, err, errSimulatedCrash)
+	require.NoError(t, dst.Close())
+
+	// Restart on the partially restored DB.
+	restarted := testutil.NewTestingReplicaWithLeaser(t, 1, 2, leaser)
+	t.Cleanup(func() { require.NoError(t, restarted.Close()) })
+	openIndex, err := restarted.Open(stopc)
+	require.NoError(t, err)
+
+	present := countPresentKeys(t, restarted, keys)
+	require.Less(t, present, len(keys), "crash should leave range data incomplete")
+	require.Less(t, openIndex, snapshotIndex, "Open must not report the snapshot index while range data is incomplete")
+
+	// Reapply the snapshot, as Dragonboat would.
+	err = restarted.RecoverFromSnapshot(bytes.NewReader(snapBytes), nil /*=quitChan*/)
+	require.NoError(t, err)
+	idx, err := restarted.LastAppliedIndex()
+	require.NoError(t, err)
+	require.Equal(t, snapshotIndex, idx)
+	require.Equal(t, len(keys), countPresentKeys(t, restarted, keys))
 }
 
 func TestApplySnapshotEntriesDeleted(t *testing.T) {

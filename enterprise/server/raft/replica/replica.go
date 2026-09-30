@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -43,6 +44,11 @@ const (
 )
 
 var (
+	// Flush snapshot batches before they approach Pebble's size limit. Pebble
+	// panics when the batch is greater than ~4GB (or 2GB on 32-bit systems)
+	// Tests lower this to exercise multi-batch restores.
+	snapshotBatchSizeBytes = 1 * gb
+
 	// Estimated disk usage will be re-computed when more than this many
 	// state machine updates have happened since the last check.
 	// Assuming 1024 size chunks, checking every 1000 writes will mean
@@ -1983,12 +1989,15 @@ func flushBatch(wb pebble.Batch) error {
 	return nil
 }
 
+// applySnapshotFromReader restores a snapshot in bounded batches. It writes
+// the applied index last so a crash triggers snapshot reapplication.
 func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
 	wb := db.NewBatch()
 	defer wb.Close()
 
 	readBuf := bufio.NewReader(r)
 
+	var lastAppliedIndexValue []byte
 	inLocalRangeSection := true
 	for {
 		r, count, err := readDataFromReader(readBuf)
@@ -2024,6 +2033,10 @@ func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 						return err
 					}
 				}
+				if bytes.Equal(kv.Key, constants.LastAppliedIndexKey) {
+					lastAppliedIndexValue = kv.Value
+					continue
+				}
 				kv.Key = sm.replicaLocalKey(kv.Key)
 			} else {
 				inLocalRangeSection = false
@@ -2036,13 +2049,21 @@ func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		if err := wb.Set(kv.Key, kv.Value, nil); err != nil {
 			return err
 		}
-		if wb.Len() > 1*gb {
-			// Pebble panics when the batch is greater than ~4GB (or 2GB on 32-bit systems)
+		if wb.Len() > snapshotBatchSizeBytes {
 			sm.log.Debugf("applySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
 			if err = flushBatch(wb); err != nil {
 				return err
 			}
 		}
+	}
+	if len(lastAppliedIndexValue) > 0 {
+		if err := wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), lastAppliedIndexValue, nil); err != nil {
+			return err
+		}
+	} else {
+		// Alert instead of returning an error, which makes dragonboat
+		// panic.
+		alert.UnexpectedEvent("raft-snapshot-missing-last-applied-index", "[%s] applied a snapshot with no last applied index", sm.name())
 	}
 	sm.log.Debugf("applySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
 	return flushBatch(wb)
@@ -2143,7 +2164,7 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 		return err
 	}
 	defer readDB.Close()
-	return sm.loadReplicaState(db)
+	return sm.loadReplicaState(readDB)
 }
 
 func (sm *Replica) ReplicaID() uint64 {
@@ -2156,6 +2177,13 @@ func (sm *Replica) RangeID() uint64 {
 
 func (sm *Replica) TestingDB() (pebble.IPebbleDB, error) {
 	return sm.leaser.DB()
+}
+
+// TestingSetSnapshotBatchSizeBytes overrides the snapshot batch size.
+func TestingSetSnapshotBatchSizeBytes(n int) int {
+	prev := snapshotBatchSizeBytes
+	snapshotBatchSizeBytes = n
+	return prev
 }
 
 // Close closes the IOnDiskStateMachine instance. Close is invoked when the

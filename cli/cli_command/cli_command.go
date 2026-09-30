@@ -45,7 +45,7 @@ var Commands = []*Command{
 	},
 	{
 		Name: "download",
-		Help: "Downloads artifacts from a remote cache.",
+		Help: "Downloads artifacts from a remote cache or from an invocation.",
 	},
 	{
 		Name: "execute",

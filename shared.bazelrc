@@ -385,13 +385,21 @@ common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 # common:untrusted-ci --remote_header=x-buildbuddy-platform.enable-vfs=true
 
 # Disabled RBE for Windows
-common:untrusted-ci-windows --config=ci-shared
-common:untrusted-ci-windows --config=tests-windows
+common:ci-windows-shared --config=ci-shared
+common:ci-windows-shared --config=tests-windows
+common:ci-windows-shared --repository_cache=C:/bazel/repo-cache/
+common:ci-windows-shared --bes_results_url=https://app.buildbuddy.io/invocation/
+common:ci-windows-shared --bes_backend=grpcs://remote.buildbuddy.io
+common:ci-windows-shared --remote_cache=grpcs://remote.buildbuddy.io
+
+# Windows CI for PRs.
+common:untrusted-ci-windows --config=ci-windows-shared
 common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows-25/rin20260818
-common:untrusted-ci-windows --repository_cache=C:/bazel/repo-cache/
-common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
-common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
-common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
+
+# Windows CI for master. Uses a separate cache from PRs so that master builds
+# never use outputs uploaded by PR code, like ci and untrusted-ci.
+common:ci-windows --config=ci-windows-shared
+common:ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/ci-windows-25/rin20260818
 
 # Use BuildBuddy endpoints from the ci_runner-generated bazelrc.
 # These will point to local, dev, or prod, depending on which app created the workflow action.

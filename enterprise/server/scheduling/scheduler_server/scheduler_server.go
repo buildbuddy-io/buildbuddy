@@ -406,7 +406,6 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				if err := h.scheduler.AddConnectedExecutor(ctx, h, registration); err != nil {
 					return err
 				}
-				h.setRegistration(registration)
 				executorID = registration.GetExecutorId()
 			} else if req.GetEnqueueTaskReservationResponse() != nil {
 				h.handleTaskReservationResponse(req.GetEnqueueTaskReservationResponse())
@@ -1612,6 +1611,11 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 		return err
 	}
 
+	// Set the handle's registration before adding it to the pool or offering
+	// it work below, since both make the handle visible to other goroutines,
+	// which use the registration to decide what work it can take and how to
+	// size that work.
+	handle.setRegistration(node)
 	pool := s.getOrCreatePool(poolKey)
 	newExecutor := pool.AddConnectedExecutor(node, handle)
 	if !newExecutor {
