@@ -50,6 +50,10 @@ var (
 
 	initInputTreeWrangler     sync.Once
 	inputTreeWranglerInstance *inputTreeWrangler
+
+	// DownloadDeduper shares in-flight downloads. Callers obtain the downloaded
+	// file from filecache so they don't depend on another task's workspace.
+	DownloadDeduper = singleflight.Group[downloadDedupeKey, struct{}]{}
 )
 
 const (
@@ -77,8 +81,6 @@ type downloadDedupeKey struct {
 	groupID  string
 	fetchKey fetchKey
 }
-
-var DownloadDeduper = singleflight.Group[downloadDedupeKey, *FilePointer]{}
 
 type TransferInfo struct {
 	FileCount        int64
@@ -1135,40 +1137,57 @@ func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient
 // The blob is optionally added to the file cache, if the file cache
 // is enabled.
 func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsClient bspb.ByteStreamClient, dedupeKey downloadDedupeKey, fps []*FilePointer, opts *DownloadTreeOpts) error {
-	fp, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
-		fp0 := fps[0]
+	fp0 := fps[0]
+	fileCache := ff.env.GetFileCache()
+	fetched := false
+	fetch := func(ctx context.Context) (struct{}, error) {
+		// Another download may have populated the cache since the initial
+		// lookup. Linking also gives this task its own reference to the file.
+		if err := ff.treeWrangler.LinkFromFileCache(ctx, fps[:1], opts); err == nil {
+			fetched = true
+			return struct{}{}, nil
+		}
+		if err := removeExisting(fp0, opts); err != nil {
+			return struct{}{}, err
+		}
 
 		var mode os.FileMode = 0644
 		if fp0.FileNode.IsExecutable {
 			mode = 0755
 		}
 		if err := ff.downloadBlobToFile(ctx, bsClient, fp0.FileNode, fp0.FullPath, mode); err != nil {
-			return nil, err
+			return struct{}{}, err
 		}
 
-		fileCache := ff.env.GetFileCache()
 		if fileCache != nil {
-			if err := fileCache.AddFile(ff.ctx, fp0.FileNode, fp0.FullPath); err != nil {
+			if err := fileCache.AddFile(ctx, fp0.FileNode, fp0.FullPath); err != nil {
 				log.Warningf("Error adding file to filecache: %s", err)
 			}
 		}
 
-		return fp0, nil
-	})
+		fetched = true
+		return struct{}{}, nil
+	}
+	var err error
+	if fileCache == nil {
+		_, err = fetch(ctx)
+	} else {
+		_, _, err = DownloadDeduper.Do(ctx, dedupeKey, fetch)
+	}
 	if err != nil {
 		return err
 	}
 
-	// Depending on whether or not this bytestream request was deduped, fp
-	// will either be == fps[0], or a different fp from a concurrent request
-	// made by the same user.
-	// Check for that case, to avoid copying a file over itself, and copy fp
-	// to all of the destination fps.
-	for _, dest := range fps {
-		if fp == dest {
-			continue
+	// A shared download belongs to another task, which may already have
+	// removed its workspace. Link from filecache, or download our own copy
+	// if the cache entry was evicted or could not be added.
+	if !fetched {
+		if _, err := fetch(ctx); err != nil {
+			return err
 		}
-		if err := copyFile(fp, dest, opts); err != nil {
+	}
+	for _, dest := range fps[1:] {
+		if err := copyFile(fp0, dest, opts); err != nil {
 			return err
 		}
 	}
@@ -1180,22 +1199,34 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 
 // bytestreamReadToFilecache streams a blob directly into the filecache.
 func (ff *BatchFileFetcher) bytestreamReadToFilecache(ctx context.Context, bsClient bspb.ByteStreamClient, dedupeKey downloadDedupeKey, fps []*FilePointer) error {
-	_, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
-		fp0 := fps[0]
+	fileCache := ff.env.GetFileCache()
+	fp0 := fps[0]
+	fetch := func(ctx context.Context) (struct{}, error) {
+		if fileCache.ContainsFile(ctx, fp0.FileNode) {
+			return struct{}{}, nil
+		}
 
-		w, err := ff.env.GetFileCache().Writer(ctx, fp0.FileNode, ff.digestFunction)
+		w, err := fileCache.Writer(ctx, fp0.FileNode, ff.digestFunction)
 		if err != nil {
-			return nil, status.WrapError(err, "could not create filecache writer")
+			return struct{}{}, status.WrapError(err, "could not create filecache writer")
 		}
 
 		if err := ff.bytestreamReadToWriter(ctx, bsClient, fp0.FileNode, w); err != nil {
-			return nil, err
+			return struct{}{}, err
 		}
 
-		return fp0, nil
-	})
+		return struct{}{}, nil
+	}
+	_, _, err := DownloadDeduper.Do(ctx, dedupeKey, fetch)
 	if err != nil {
 		return err
+	}
+	// A download shared with a filesystem task may have succeeded even if
+	// adding it to filecache failed. Ensure prefetch still populates the cache.
+	if !fileCache.ContainsFile(ctx, fp0.FileNode) {
+		if _, err := fetch(ctx); err != nil {
+			return err
+		}
 	}
 
 	ff.completeRemoteFetch(dedupeKey.fetchKey, fps)

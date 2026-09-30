@@ -1017,6 +1017,178 @@ func TestDownloadTreeBytestreamDownloadDeduped(t *testing.T) {
 	assert.FileExists(t, filepath.Join(tmpDirB, "large-file.txt"))
 }
 
+func TestDownloadTree_SharedDownloadUsesFileCache(t *testing.T) {
+	for _, testCase := range []struct {
+		name              string
+		leaderPrefetch    bool
+		followerPrefetch  bool
+		evict             bool
+		failCacheAdd      bool
+		expectedDownloads int64
+	}{
+		{name: "workspace removed", expectedDownloads: 1},
+		{name: "prefetch", leaderPrefetch: true, expectedDownloads: 1},
+		{name: "cache entry evicted", evict: true, expectedDownloads: 2},
+		{name: "cache insertion failed", failCacheAdd: true, expectedDownloads: 2},
+		{name: "prefetch waiter", followerPrefetch: true, expectedDownloads: 1},
+		{name: "prefetch waiter after eviction", followerPrefetch: true, evict: true, expectedDownloads: 2},
+		{name: "prefetch waiter after failed insertion", followerPrefetch: true, failCacheAdd: true, expectedDownloads: 2},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env, _ := testEnv(t)
+			ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+			require.NoError(t, err)
+			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			rootDir := testfs.MakeTempDir(t)
+			followerDir := testfs.MakeTempDir(t)
+			rn, content := testdigest.RandomCASResourceBuf(t, dirtools.BatchReadLimitBytes+1)
+			require.NoError(t, env.GetCache().Set(ctx, rn, content))
+			node := &repb.FileNode{Name: "file", Digest: rn.GetDigest(), IsExecutable: true}
+			tree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{node}}}
+			followerTree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{
+				node,
+				{Name: "other", Digest: rn.GetDigest(), IsExecutable: true},
+			}}}
+
+			cc := env.GetCache().(*controlledCache)
+			cc.readerCalls = make(chan struct{}, 4)
+			unblockReader := sync.OnceFunc(cc.InjectReaderPause(digest.NewKey(rn.GetDigest())))
+			t.Cleanup(unblockReader)
+
+			fc := env.GetFileCache()
+			followerMiss := make(chan struct{}, 1)
+			env.SetFileCache(&controlledFileCache{
+				FileCache: fc,
+				addFile: func(ctx context.Context, node *repb.FileNode, path string) error {
+					if path != filepath.Join(rootDir, "file") {
+						return fc.AddFile(ctx, node, path)
+					}
+					var addErr error
+					if !testCase.failCacheAdd {
+						addErr = fc.AddFile(ctx, node, path)
+					} else {
+						addErr = os.ErrPermission
+					}
+					if testCase.evict {
+						fc.DeleteFile(ctx, node)
+					}
+					// The downloading task can finish before a waiter creates
+					// its inputs. Remove its workspace before waking waiters.
+					if err := os.RemoveAll(rootDir); err != nil {
+						addErr = err
+					}
+					return addErr
+				},
+				fastLinkFile: func(ctx context.Context, node *repb.FileNode, path string) bool {
+					hit := fc.FastLinkFile(ctx, node, path)
+					if !hit && path == filepath.Join(followerDir, "file") {
+						select {
+						case followerMiss <- struct{}{}:
+						default:
+						}
+					}
+					return hit
+				},
+				containsFile: func(ctx context.Context, node *repb.FileNode) bool {
+					hit := fc.ContainsFile(ctx, node)
+					if !hit && testCase.followerPrefetch {
+						select {
+						case followerMiss <- struct{}{}:
+						default:
+						}
+					}
+					return hit
+				},
+			})
+
+			var mu sync.Mutex
+			var downloads int64
+			eg := &errgroup.Group{}
+			leaderDir := rootDir
+			if testCase.leaderPrefetch {
+				leaderDir = ""
+			}
+			eg.Go(func() error {
+				info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: leaderDir})
+				if err != nil {
+					return err
+				}
+				mu.Lock()
+				downloads += info.FileCount
+				mu.Unlock()
+				return nil
+			})
+			select {
+			case <-cc.readerCalls:
+			case <-ctx.Done():
+				t.Fatal("timed out waiting for the first download")
+			}
+			followerRoot := followerDir
+			if testCase.followerPrefetch {
+				followerRoot = ""
+			}
+			eg.Go(func() error {
+				info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, followerTree, &dirtools.DownloadTreeOpts{RootDir: followerRoot})
+				if err != nil {
+					return err
+				}
+				mu.Lock()
+				downloads += info.FileCount
+				mu.Unlock()
+				return nil
+			})
+			select {
+			case <-followerMiss:
+			case <-ctx.Done():
+				t.Fatal("timed out waiting for the second task to miss the cache")
+			}
+			unblockReader()
+			require.NoError(t, eg.Wait())
+			require.Equal(t, testCase.expectedDownloads, downloads)
+			if testCase.followerPrefetch {
+				data, err := fc.Read(ctx, node)
+				require.NoError(t, err)
+				require.Equal(t, rn.GetDigest().GetHash(), hash.String(string(data)))
+				return
+			}
+			for _, name := range []string{"file", "other"} {
+				path := filepath.Join(followerDir, name)
+				data, err := os.ReadFile(path)
+				require.NoError(t, err)
+				require.Equal(t, rn.GetDigest().GetHash(), hash.String(string(data)))
+				info, err := os.Stat(path)
+				require.NoError(t, err)
+				require.Equal(t, os.FileMode(0755), info.Mode().Perm())
+			}
+		})
+	}
+}
+
+func TestDownloadTree_ConcurrentDownloadsWithoutFileCache(t *testing.T) {
+	env, _ := testEnv(t)
+	env.SetFileCache(nil)
+	ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+	require.NoError(t, err)
+	rn, content := testdigest.RandomCASResourceBuf(t, dirtools.BatchReadLimitBytes+1)
+	require.NoError(t, env.GetCache().Set(ctx, rn, content))
+	tree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "file", Digest: rn.GetDigest()}}}}
+	rootDirs := []string{testfs.MakeTempDir(t), testfs.MakeTempDir(t)}
+	eg := &errgroup.Group{}
+	for _, rootDir := range rootDirs {
+		eg.Go(func() error {
+			_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: rootDir})
+			return err
+		})
+	}
+	require.NoError(t, eg.Wait())
+	for _, rootDir := range rootDirs {
+		data, err := os.ReadFile(filepath.Join(rootDir, "file"))
+		require.NoError(t, err)
+		require.Equal(t, rn.GetDigest().GetHash(), hash.String(string(data)))
+	}
+}
+
 func TestDownloadTreeWithFileCache(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
@@ -1842,6 +2014,25 @@ func addToFileCache(t *testing.T, ctx context.Context, env *testenv.TestEnv, tem
 	t.Logf("Added digest %s/%d to filecache (content: %q)", d.GetHash(), d.GetSizeBytes(), data)
 	err = env.GetFileCache().AddFile(ctx, &repb.FileNode{Name: filepath.Base(path), Digest: d}, path)
 	require.NoError(t, err)
+}
+
+type controlledFileCache struct {
+	interfaces.FileCache
+	addFile      func(context.Context, *repb.FileNode, string) error
+	fastLinkFile func(context.Context, *repb.FileNode, string) bool
+	containsFile func(context.Context, *repb.FileNode) bool
+}
+
+func (c *controlledFileCache) AddFile(ctx context.Context, node *repb.FileNode, path string) error {
+	return c.addFile(ctx, node, path)
+}
+
+func (c *controlledFileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, path string) bool {
+	return c.fastLinkFile(ctx, node, path)
+}
+
+func (c *controlledFileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
+	return c.containsFile(ctx, node)
 }
 
 type countingFileCache struct {
