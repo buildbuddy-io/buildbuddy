@@ -536,6 +536,7 @@ func TestUsageExport(t *testing.T) {
 	internalLabels := map[sku.LabelName]sku.LabelValue{sku.Origin: sku.OriginInternal, sku.Client: sku.ClientExecutor}
 	internalBazelLabels := map[sku.LabelName]sku.LabelValue{sku.Origin: sku.OriginInternal, sku.Client: sku.ClientBazel}
 	customerProxyLabels := map[sku.LabelName]sku.LabelValue{sku.Origin: sku.OriginExternal, sku.Proxy: sku.ProxyCustomer}
+	workflowCacheLabels := map[sku.LabelName]sku.LabelValue{sku.Origin: sku.OriginInternal, sku.Client: sku.ClientExecutorWorkflows}
 
 	day3 := time.Date(2024, 2, 3, 0, 0, 0, 0, time.UTC)
 	day4 := time.Date(2024, 2, 4, 0, 0, 0, 0, time.UTC)
@@ -552,20 +553,25 @@ func TestUsageExport(t *testing.T) {
 		}
 	}
 	require.NoError(t, env.GetOLAPDBHandle().FlushUsages(ctx, []*schema.RawUsage{
-		// Usage without execution dimensions is exported on one row per day.
+		// Cache usage has no arch, OS or isolation type.
 		row("GR1", day3, sku.BuildEventsBESCount, nil, 13),
 		row("GR1", day3, sku.RemoteCacheACHits, nil, 5),
 		row("GR1", day3, sku.RemoteCacheACCachedExecDurationNanos, nil, int64(90*time.Second)),
 		row("GR1", day3, sku.RemoteCacheCASHits, nil, 10_000),
 		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, externalLabels, 101),
 		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, internalLabels, 202),
-		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, internalBazelLabels, 303),
 		// Customer proxy bytes are not counted as external bytes.
 		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, customerProxyLabels, 700),
 		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, externalLabels, 404),
 		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, internalLabels, 505),
-		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, internalBazelLabels, 606),
 		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, customerProxyLabels, 800),
+		// Workflow bytes aren't exported, whether from bazel running inside
+		// BuildBuddy or from workflow runners. Workflow runner hits are, on
+		// their own rows.
+		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, internalBazelLabels, 303),
+		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, internalBazelLabels, 606),
+		row("GR1", day3, sku.RemoteCacheCASHits, workflowCacheLabels, 7),
+		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, workflowCacheLabels, 909),
 		// Execution usage is exported per combination of execution dimensions,
 		// in minutes.
 		row("GR1", day3, sku.RemoteExecutionExecuteWorkerDurationNanos, rbeLabels, int64(2*time.Minute)),
@@ -602,13 +608,14 @@ func TestUsageExport(t *testing.T) {
 	assert.Equal(t, "text/csv; charset=utf-8", rec.Header().Get("Content-Type"))
 	assert.Equal(t, `attachment; filename="usage-2024-02-01-2024-02-29.csv"`, rec.Header().Get("Content-Disposition"))
 	assert.Equal(t, strings.Join([]string{
-		"time,invocations,action_cache_hits,cached_build_minutes,cas_cache_hits,external_download_bytes,internal_download_bytes,workflow_download_bytes,customer_proxy_download_bytes,external_upload_bytes,internal_upload_bytes,workflow_upload_bytes,customer_proxy_upload_bytes,is_workflow,is_self_hosted,arch,os,isolation_type,execution_minutes,cpu_minutes,fixed_compute_unit_minutes,flexible_compute_unit_minutes,remote_snapshot_saved_bytes,local_snapshot_saved_bytes",
-		"2024-02-03,13,5,1.500,10000,101,202,303,700,404,505,606,800,,,,,,0.000,0.000,0.000,0.000,0,0",
-		"2024-02-03,0,0,0.000,0,0,0,0,0,0,0,0,0,false,false,x86_64,linux,firecracker,3.000,1.000,0.500,0.000,0,4004",
-		"2024-02-03,0,0,0.000,0,0,0,0,0,0,0,0,0,false,true,arm64,linux,oci,0.500,1.500,0.000,0.100,0,0",
-		"2024-02-03,0,0,0.000,0,0,0,0,0,0,0,0,0,true,false,x86_64,linux,firecracker,3.000,0.000,0.100,0.000,1001,0",
-		"2024-02-04,15,0,0.000,0,0,0,0,0,0,0,0,0,,,,,,0.000,0.000,0.000,0.000,0,0",
-		"2024-02-04,0,0,0.000,0,0,0,0,0,0,0,0,0,false,false,x86_64,linux,firecracker,0.000,0.000,1.500,0.000,2002,0",
+		"time,invocations,action_cache_hits,cached_build_minutes,cas_cache_hits,external_download_bytes,internal_download_bytes,customer_proxy_download_bytes,external_upload_bytes,internal_upload_bytes,customer_proxy_upload_bytes,is_workflow,is_self_hosted,arch,os,isolation_type,execution_minutes,cpu_minutes,fixed_compute_unit_minutes,flexible_compute_unit_minutes,remote_snapshot_saved_bytes,local_snapshot_saved_bytes",
+		"2024-02-03,13,5,1.500,10000,101,202,700,404,505,800,false,false,,,,0.000,0.000,0.000,0.000,0,0",
+		"2024-02-03,0,0,0.000,0,0,0,0,0,0,0,false,false,x86_64,linux,firecracker,3.000,1.000,0.500,0.000,0,4004",
+		"2024-02-03,0,0,0.000,0,0,0,0,0,0,0,false,true,arm64,linux,oci,0.500,1.500,0.000,0.100,0,0",
+		"2024-02-03,0,0,0.000,7,0,0,0,0,0,0,true,false,,,,0.000,0.000,0.000,0.000,0,0",
+		"2024-02-03,0,0,0.000,0,0,0,0,0,0,0,true,false,x86_64,linux,firecracker,3.000,0.000,0.100,0.000,1001,0",
+		"2024-02-04,15,0,0.000,0,0,0,0,0,0,0,false,false,,,,0.000,0.000,0.000,0.000,0,0",
+		"2024-02-04,0,0,0.000,0,0,0,0,0,0,0,false,false,x86_64,linux,firecracker,0.000,0.000,1.500,0.000,2002,0",
 		"",
 	}, "\n"), rec.Body.String())
 

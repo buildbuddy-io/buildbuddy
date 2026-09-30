@@ -883,14 +883,6 @@ const (
 	usageExportMaxRange = 366 * 24 * time.Hour
 )
 
-// usageExportExecutionSKUs are exported per combination of execution
-// dimensions. All other SKUs are exported on one row per day with blank
-// dimensions, so that every column sums correctly.
-var usageExportExecutionSKUs = slices.Concat([]sku.SKU{
-	sku.RemoteExecutionExecuteWorkerDurationNanos,
-	sku.RemoteExecutionExecuteWorkerCPUNanos,
-}, olapOnlyUsageSKUs)
-
 // usageExportSKUs are all SKUs with an exported column.
 var usageExportSKUs = slices.Concat([]sku.SKU{
 	sku.BuildEventsBESCount,
@@ -899,7 +891,9 @@ var usageExportSKUs = slices.Concat([]sku.SKU{
 	sku.RemoteCacheCASHits,
 	sku.RemoteCacheCASDownloadedBytes,
 	sku.RemoteCacheCASUploadedBytes,
-}, usageExportExecutionSKUs)
+	sku.RemoteExecutionExecuteWorkerDurationNanos,
+	sku.RemoteExecutionExecuteWorkerCPUNanos,
+}, olapOnlyUsageSKUs)
 
 // usageExportColumn is a column selected by the export query.
 type usageExportColumn struct {
@@ -910,18 +904,20 @@ type usageExportColumn struct {
 	Expression string
 }
 
-// usageExportDimensions are the execution dimensions that rows are grouped
-// by. They are blank for SKUs without execution dimensions.
+// usageExportDimensions are the usage labels that rows are grouped by. Arch,
+// OS and isolation type are only recorded for executions, so they are blank
+// on rows of other usage.
 var usageExportDimensions = []usageExportColumn{
-	{"is_workflow", usageExportDimension("if(" + rawUsageLabelEquals(sku.Client, sku.ClientExecutorWorkflows) + ", 'true', 'false')")},
-	{"is_self_hosted", usageExportDimension("if(" + rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedTrue) + ", 'true', 'false')")},
-	{"arch", usageExportDimension(rawUsageLabel(sku.Arch))},
-	{"os", usageExportDimension(rawUsageLabel(sku.OS))},
-	{"isolation_type", usageExportDimension(rawUsageLabel(sku.IsolationType))},
+	{"is_workflow", "if(" + rawUsageLabelEquals(sku.Client, sku.ClientExecutorWorkflows) + ", 'true', 'false')"},
+	{"is_self_hosted", "if(" + rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedTrue) + ", 'true', 'false')"},
+	{"arch", rawUsageLabel(sku.Arch)},
+	{"os", rawUsageLabel(sku.OS)},
+	{"isolation_type", rawUsageLabel(sku.IsolationType)},
 }
 
 // usageExportMetrics are the exported totals. Durations are selected in
-// microseconds and written in minutes.
+// microseconds and written in minutes. Workflow bytes aren't exported: they
+// are mostly snapshots, which are charged separately.
 var usageExportMetrics = []usageExportColumn{
 	{"invocations", usageFieldOLAPExpression("invocations")},
 	{"action_cache_hits", usageFieldOLAPExpression("action_cache_hits")},
@@ -929,11 +925,9 @@ var usageExportMetrics = []usageExportColumn{
 	{"cas_cache_hits", usageFieldOLAPExpression("cas_cache_hits")},
 	{"external_download_bytes", usageFieldOLAPExpression("total_external_download_size_bytes")},
 	{"internal_download_bytes", usageFieldOLAPExpression("total_internal_download_size_bytes")},
-	{"workflow_download_bytes", usageFieldOLAPExpression("total_workflow_download_size_bytes")},
 	{"customer_proxy_download_bytes", usageFieldOLAPExpression("total_customer_proxy_download_size_bytes")},
 	{"external_upload_bytes", usageFieldOLAPExpression("total_external_upload_size_bytes")},
 	{"internal_upload_bytes", usageFieldOLAPExpression("total_internal_upload_size_bytes")},
-	{"workflow_upload_bytes", usageFieldOLAPExpression("total_workflow_upload_size_bytes")},
 	{"customer_proxy_upload_bytes", usageFieldOLAPExpression("total_customer_proxy_upload_size_bytes")},
 	// Unlike the Usage page's execution durations, these aren't limited to
 	// Linux executions on BuildBuddy-hosted executors: OS and hosting are
@@ -944,16 +938,6 @@ var usageExportMetrics = []usageExportColumn{
 	{"flexible_compute_unit_usec", rawUsageSumUsec(sku.RemoteExecutionExecuteFlexibleComputeNanos)},
 	{"remote_snapshot_saved_bytes", rawUsageSum(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes)},
 	{"local_snapshot_saved_bytes", rawUsageSum(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes)},
-}
-
-// usageExportDimension returns the expression for SKUs with execution
-// dimensions, and ” for the rest.
-func usageExportDimension(expression string) string {
-	quoted := make([]string, 0, len(usageExportExecutionSKUs))
-	for _, usageSKU := range usageExportExecutionSKUs {
-		quoted = append(quoted, "'"+string(usageSKU)+"'")
-	}
-	return "if(sku IN (" + strings.Join(quoted, ", ") + "), " + expression + ", '')"
 }
 
 // usageFieldOLAPExpression returns the OLAP expression of the named Usage
@@ -967,8 +951,7 @@ func usageFieldOLAPExpression(name string) string {
 	panic("no Usage field named " + name)
 }
 
-// usageExportRow is one day's usage for one combination of execution
-// dimensions.
+// usageExportRow is one day's usage for one combination of dimensions.
 type usageExportRow struct {
 	Period                     string
 	IsWorkflow                 string
@@ -982,11 +965,9 @@ type usageExportRow struct {
 	CasCacheHits               int64
 	ExternalDownloadBytes      int64
 	InternalDownloadBytes      int64
-	WorkflowDownloadBytes      int64
 	CustomerProxyDownloadBytes int64
 	ExternalUploadBytes        int64
 	InternalUploadBytes        int64
-	WorkflowUploadBytes        int64
 	CustomerProxyUploadBytes   int64
 	ExecutionUsec              int64
 	CPUUsec                    int64
@@ -1004,11 +985,9 @@ var usageExportHeader = []string{
 	"cas_cache_hits",
 	"external_download_bytes",
 	"internal_download_bytes",
-	"workflow_download_bytes",
 	"customer_proxy_download_bytes",
 	"external_upload_bytes",
 	"internal_upload_bytes",
-	"workflow_upload_bytes",
 	"customer_proxy_upload_bytes",
 	"is_workflow",
 	"is_self_hosted",
@@ -1033,11 +1012,9 @@ func (r *usageExportRow) record() []string {
 		formatCount(r.CasCacheHits),
 		formatCount(r.ExternalDownloadBytes),
 		formatCount(r.InternalDownloadBytes),
-		formatCount(r.WorkflowDownloadBytes),
 		formatCount(r.CustomerProxyDownloadBytes),
 		formatCount(r.ExternalUploadBytes),
 		formatCount(r.InternalUploadBytes),
-		formatCount(r.WorkflowUploadBytes),
 		formatCount(r.CustomerProxyUploadBytes),
 		r.IsWorkflow,
 		r.IsSelfHosted,
@@ -1063,8 +1040,8 @@ func formatMinutes(usec int64) string {
 }
 
 // GetUsageExportHandler serves the usage CSV export: one row per UTC day and
-// combination of execution dimensions, for the [start, end) date range given
-// as YYYY-MM-DD query params.
+// combination of dimensions, for the [start, end) date range given as
+// YYYY-MM-DD query params.
 func (s *usageService) GetUsageExportHandler() http.Handler {
 	return http.HandlerFunc(s.handleUsageExport)
 }
@@ -1126,9 +1103,8 @@ func parseUsageExportRange(params url.Values) (start, end time.Time, err error) 
 	return start, end, nil
 }
 
-// scanUsageExportRows returns one row per day and combination of execution
-// dimensions, ordered by day then dimensions. Each day's blank-dimension row
-// sorts first.
+// scanUsageExportRows returns one row per day and combination of dimensions,
+// ordered by day then dimensions.
 func (s *usageService) scanUsageExportRows(ctx context.Context, groupID string, start, end time.Time) ([]*usageExportRow, error) {
 	selectExpressions := []string{"formatDateTime(period_start, '%F') AS period"}
 	groupBy := []string{"period"}
