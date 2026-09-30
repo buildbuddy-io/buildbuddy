@@ -402,10 +402,7 @@ common:ci-shared --config=download-minimal
 # common:ci-shared --config=race
 common:ci-shared --build_metadata=ROLE=CI
 common:ci-shared --flaky_test_attempts=2
-# Keep this empty: repo-specific workflows configs expand ci-shared after
-# workflows, so a non-empty value here would re-enable caching in Firecracker.
-# This also disables the default repo contents cache.
-common:ci-shared --repository_cache=
+common:ci-shared --repository_cache=~/repo-cache/
 common:ci-shared --announce_rc
 common:ci-shared --color=yes
 
@@ -437,10 +434,19 @@ common:workflows --config=buildbuddy_bes_results_url
 common:workflows --config=buildbuddy_remote_cache
 common:workflows --config=buildbuddy_experimental_remote_downloader
 common:workflows --noexperimental_remote_downloader_local_fallback
-# Explicitly disable repository cache for BuildBuddy Workflows.
-# This helps reduce disk space usage in the Firecracker, thus reduce the VM snapshot size.
-# Rely on remote downloader to cache downloads through Remote Asset API instead.
-common:workflows --repository_cache=
+
+# Keep local disk usage low in Firecracker-based workflows, whose disks are
+# snapshotted and reused, so anything written outside the output base grows
+# the snapshot across runs. Downloads are cached remotely through the Remote
+# Asset API instead (see buildbuddy_experimental_remote_downloader above).
+# Apply this config last in each Firecracker workflows config: ci-shared (which
+# sets --repository_cache for GitHub Actions) and --config=release are
+# expanded before it, and repo-specific rc files may add more flags to
+# `workflows`, so flags set here would be overridden if it came earlier.
+common:workflows-disk-minimal --config=download-minimal
+# An empty --repository_cache also disables the repo contents cache.
+common:workflows-disk-minimal --repository_cache=
+common:workflows-disk-minimal --repo_contents_cache=
 
 # Configuration used for Linux workflows
 common:linux-workflows --config=remote-shared
@@ -448,6 +454,7 @@ common:linux-workflows --config=target-linux-x86
 common:linux-workflows --config=workflows
 common:linux-workflows --config=buildbuddy_remote_executor
 common:linux-workflows --build_metadata=TAGS=linux-workflow
+common:linux-workflows --config=workflows-disk-minimal
 
 # Configuration used for Linux ARM64 workflows. The workflow runner itself is
 # x86_64; only build actions are scheduled on ARM64 executors.
@@ -459,6 +466,7 @@ common:linux-arm64-workflows --config=target-linux-arm64
 common:linux-arm64-workflows --config=workflows
 common:linux-arm64-workflows --config=buildbuddy_remote_executor
 common:linux-arm64-workflows --build_metadata=TAGS=linux-arm64-workflow
+common:linux-arm64-workflows --config=workflows-disk-minimal
 # TODO(vanja) turn on once https://github.com/buildbuddy-io/buildbuddy-internal/issues/6247 is fixed
 # common:linux-workflows --remote_header=x-buildbuddy-platform.enable-vfs=true
 
