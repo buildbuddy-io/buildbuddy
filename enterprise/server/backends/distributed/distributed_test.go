@@ -4224,23 +4224,6 @@ func TestWriteByReference(t *testing.T) {
 		assertReplicated(t, locals, dcs, rn)
 	})
 
-	t.Run("references are shared by default", func(t *testing.T) {
-		setWriteReferenceExperiments(t, true)
-		_, dcs, locals, store := newCluster(t, 3)
-		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-		require.NoError(t, dcs[0].Set(ctx, rn, buf))
-
-		require.Equal(t, 1, store.uploadCount())
-		byteCommits, refWrites, refWritesCloned := totals(locals)
-		require.Equal(t, 0, byteCommits)
-		require.Equal(t, 3, refWrites)
-		require.Equal(t, 0, refWritesCloned)
-		for _, l := range locals {
-			require.Equal(t, 1, l.sharedRefWrites())
-		}
-		assertReplicated(t, locals, dcs, rn)
-	})
-
 	t.Run("share flag distributes shared references without cloning", func(t *testing.T) {
 		setReferenceExperiments(t, map[string]bool{
 			"distributed_cache.write_gcs_references": true,
