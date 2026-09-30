@@ -80,6 +80,13 @@ func NewGCSBlobStore(ctx context.Context, bucket, credsFile, creds, projectID st
 			otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents),
 		))))
 		opts = append(opts, option.WithGRPCDialOption(rpcutil.ClientSizeMetricsDialOption()))
+		// The storage client installs its own copy of grpc-go's OpenTelemetry
+		// plugin by default. Copies on the same channel share their per-attempt
+		// byte counts, so each would record double. Use only ours.
+		opts = append(opts, storage.WithDisabledClientMetrics())
+		// The storage client's stubs don't pass grpc.StaticMethod(), without
+		// which the plugin records the method as "other".
+		opts = append(opts, option.WithGRPCDialOption(grpc.WithDefaultCallOptions(grpc.StaticMethod())))
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(interceptors.Metrics().UnaryClientInterceptor())))
 		opts = append(opts, option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(interceptors.Metrics().StreamClientInterceptor())))
 		gcsClient, err = storage.NewGRPCClient(ctx, opts...)
