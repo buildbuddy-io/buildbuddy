@@ -18,6 +18,18 @@ jobs:
     name: Build + Test Windows executor
     runs-on: windows-2025
     if: "!contains(github.event.head_commit.message, 'ci skip')"
+    env:
+      # PRs run untrusted code, so they use a separate remote cache from master.
+      BAZEL_CI_CONFIG: ${{ github.event_name == 'pull_request' && 'untrusted-ci-windows' || 'ci-windows' }}
+      BAZEL_TARGETS: >-
+        //enterprise/server/cmd/executor:executor_windows_amd64
+        //enterprise/server/cmd/executor:executor_windows_386
+        //enterprise/server/cmd/executor:executor_windows_arm64
+        //enterprise/server/remote_execution/commandutil:commandutil_test
+        //enterprise/server/remote_execution/filecache:filecache_test
+        //enterprise/server/remote_execution/workspace:workspace_test
+        //enterprise/server/util/procstats:procstats_test
+        //server/util/fastcopy:fastcopy_test
     steps:
       # Setup DevDrive for CoW testing.
       # Inspired by https://github.com/samypr100/setup-dev-drive/
@@ -107,41 +119,52 @@ jobs:
       #     }
       #     exit 1
 
-      - name: Build & test
+      # Because "startup" options could not be assigned to different configs in .bazelrc, we are adding them directly here.
+      # These options follow the best practices in https://bazel.build/configure/windows. Specifically:
+      #   - Set output_user_root to the shortest path possible to avoid Windows path length limitations.
+      #     Without this, actions with longer path input files would fail randomly with irrelevant errors.
+      #
+      #   - Enable windows symlink helps reduce disk usage.
+      #     Without this, files will be fully copied instead.
+      #
+      # Build everything before running tests, so that tests don't compete with
+      # compile actions for the runner's CPU and time out. Both steps must use
+      # the same flags so that the test step reuses the build's analysis cache.
+      - name: Build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # Because "startup" options could not be assigned to different configs in .bazelrc, we are adding them directly here.
-        # These options follow the best practices in https://bazel.build/configure/windows. Specifically:
-        #   - Set output_user_root to the shortest path possible to avoid Windows path length limitations.
-        #     Without this, actions with longer path input files would fail randomly with irrelevant errors.
-        #
-        #   - Enable windows symlink helps reduce disk usage.
-        #     Without this, files will be fully copied instead.
+          BUILDBUDDY_ORG_API_KEY: ${{ secrets.BUILDBUDDY_ORG_API_KEY }}
         run: |
-          # PRs run untrusted code, so they use a separate remote cache from master.
-          $ciConfig = 'untrusted-ci-windows'
-          if ('${{ github.event_name }}' -ne 'pull_request') {
-            $ciConfig = 'ci-windows'
-          }
           $authArgs = @()
-          $apiKey = '${{ secrets.BUILDBUDDY_ORG_API_KEY }}'
-          if ($apiKey) {
-            $authArgs = @("--remote_header=x-buildbuddy-api-key=$apiKey")
+          if ($env:BUILDBUDDY_ORG_API_KEY) {
+            $authArgs = @("--remote_header=x-buildbuddy-api-key=$env:BUILDBUDDY_ORG_API_KEY")
           }
+          $targets = $env:BAZEL_TARGETS -split '\s+'
+          bazelisk --output_user_root=C:/0 `
+                   --windows_enable_symlinks `
+                   build `
+                   --config=$env:BAZEL_CI_CONFIG `
+                   @authArgs `
+                   -- `
+                   @targets
+
+      - name: Test
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILDBUDDY_ORG_API_KEY: ${{ secrets.BUILDBUDDY_ORG_API_KEY }}
+        run: |
+          $authArgs = @()
+          if ($env:BUILDBUDDY_ORG_API_KEY) {
+            $authArgs = @("--remote_header=x-buildbuddy-api-key=$env:BUILDBUDDY_ORG_API_KEY")
+          }
+          $targets = $env:BAZEL_TARGETS -split '\s+'
           bazelisk --output_user_root=C:/0 `
                    --windows_enable_symlinks `
                    test `
-                   --config=$ciConfig `
+                   --config=$env:BAZEL_CI_CONFIG `
                    @authArgs `
                    -- `
-                   //enterprise/server/cmd/executor:executor_windows_amd64 `
-                   //enterprise/server/cmd/executor:executor_windows_386 `
-                   //enterprise/server/cmd/executor:executor_windows_arm64 `
-                   //enterprise/server/remote_execution/commandutil:commandutil_test `
-                   //enterprise/server/remote_execution/filecache:filecache_test `
-                   //enterprise/server/remote_execution/workspace:workspace_test `
-                   //enterprise/server/util/procstats:procstats_test `
-                   //server/util/fastcopy:fastcopy_test
+                   @targets
 
       # Uncomment the following line to run the fastcopy benchmark test.
       # - name: Run fastcopy Go benchmarks (NTFS vs DevDrive)
