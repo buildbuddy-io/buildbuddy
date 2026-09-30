@@ -93,6 +93,7 @@ ts_library(
         "//app/components/button",
         "//app/components/link",
         "//app/components/select",
+        "//app/components/tooltip",
         "//app/format",
         "//app/invocation:action_compare_button",
         "//enterprise/app/targets:single_action_chart",
