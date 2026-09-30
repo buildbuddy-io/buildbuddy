@@ -1769,7 +1769,7 @@ func TestDownloadTree_InputDownloadConcurrencyCountsBatchedFiles(t *testing.T) {
 	client := &trackingReadClient{
 		ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
 		ByteStreamClient:                env.GetByteStreamClient(),
-		gate:                            make(chan struct{}),
+		unblock:                         make(chan struct{}),
 	}
 	env.SetContentAddressableStorageClient(client)
 	env.SetByteStreamClient(client)
@@ -1790,9 +1790,9 @@ func TestDownloadTree_InputDownloadConcurrencyCountsBatchedFiles(t *testing.T) {
 	require.Eventually(t, func() bool { return client.filesInFlight() == 2 }, 5*time.Second, time.Millisecond)
 	require.Never(t, func() bool { return client.filesInFlight() > 2 }, 50*time.Millisecond, time.Millisecond)
 
-	// Open the gate. All 4 files should be downloaded, and no more than 2
+	// Unblock the reads. All 4 files should be downloaded, and no more than 2
 	// should ever have been read at once.
-	close(client.gate)
+	close(client.unblock)
 	err := eg.Wait()
 	require.NoError(t, err)
 	batchSizes, maxFilesInFlight := client.batchStats()
@@ -1827,7 +1827,7 @@ func TestDownloadTree_InputDownloadConcurrencyHoldsSlotUntilFileIsWritten(t *tes
 			fc := &blockingFileCache{
 				FileCache: env.GetFileCache(),
 				entered:   make(chan struct{}, 2),
-				gate:      make(chan struct{}),
+				unblock:   make(chan struct{}),
 			}
 			env.SetFileCache(fc)
 			root := &repb.Directory{}
@@ -1857,7 +1857,7 @@ func TestDownloadTree_InputDownloadConcurrencyHoldsSlotUntilFileIsWritten(t *tes
 
 			// Let the writes finish. Both files should then be downloaded
 			// with a read each.
-			close(fc.gate)
+			close(fc.unblock)
 			err := eg.Wait()
 			require.NoError(t, err)
 			numReads := client.numReads()
@@ -1891,9 +1891,9 @@ func TestDownloadTree_InputDownloadConcurrencyCountsFileCacheLinks(t *testing.T)
 		require.NoError(t, err)
 		root.Files = append(root.Files, &repb.FileNode{Name: fmt.Sprintf("file-%d.txt", i), Digest: d})
 	}
-	fc := &gatedLinkFileCache{
+	fc := &countingLinkFileCache{
 		FileCache: env.GetFileCache(),
-		gate:      make(chan struct{}),
+		unblock:   make(chan struct{}),
 	}
 	env.SetFileCache(fc)
 
@@ -1908,9 +1908,9 @@ func TestDownloadTree_InputDownloadConcurrencyCountsFileCacheLinks(t *testing.T)
 	require.Eventually(t, func() bool { return fc.linksInFlight() == 2 }, 5*time.Second, time.Millisecond)
 	require.Never(t, func() bool { return fc.linksInFlight() > 2 }, 50*time.Millisecond, time.Millisecond)
 
-	// Open the gate. All 4 files should be linked without reading anything
+	// Unblock the links. All 4 files should be linked without reading anything
 	// from the CAS.
-	close(fc.gate)
+	close(fc.unblock)
 	err := eg.Wait()
 	require.NoError(t, err)
 	numReads := client.numReads()
@@ -1918,6 +1918,76 @@ func TestDownloadTree_InputDownloadConcurrencyCountsFileCacheLinks(t *testing.T)
 	for i := range 4 {
 		assert.FileExists(t, filepath.Join(tmpDir, fmt.Sprintf("file-%d.txt", i)))
 	}
+}
+
+func TestDownloadTree_InputDownloadConcurrencyDedupedDownloadTakesOneSlot(t *testing.T) {
+	flags.Set(t, "cache.client.input_download_concurrency", 2)
+	env, ctx := testEnv(t)
+	fc := &countingLinkFileCache{FileCache: env.GetFileCache()}
+	env.SetFileCache(fc)
+	largeRN, largeContent := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	err := env.GetCache().Set(ctx, largeRN, largeContent)
+	require.NoError(t, err)
+	smallRN, smallContent := testdigest.RandomCASResourceBuf(t, 16)
+	err = env.GetCache().Set(ctx, smallRN, smallContent)
+	require.NoError(t, err)
+	largeTree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "large.txt", Digest: largeRN.GetDigest()}}}}
+	smallTree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "small.txt", Digest: smallRN.GetDigest()}}}}
+	tmpDirA := testfs.MakeTempDir(t)
+	tmpDirB := testfs.MakeTempDir(t)
+	tmpDirC := testfs.MakeTempDir(t)
+
+	// Pause server reads of the large file, and start a task that downloads
+	// it. That task holds a download slot while the read is paused.
+	cc := env.GetCache().(*controlledCache)
+	cc.mu.Lock()
+	cc.readerCalls = make(chan struct{}, 4)
+	cc.mu.Unlock()
+	unblockReader := cc.InjectReaderPause(digest.NewKey(largeRN.GetDigest()))
+	eg := &errgroup.Group{}
+	eg.Go(func() error {
+		_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, largeTree, &dirtools.DownloadTreeOpts{RootDir: tmpDirA})
+		return err
+	})
+	select {
+	case <-cc.readerCalls:
+	case <-time.After(5 * time.Second):
+		unblockReader()
+		t.Fatal("timed out waiting for the large file to be read")
+	}
+
+	// Start a second task that needs the large file. Once it has missed the
+	// file cache, it waits on the first task's download without taking a
+	// slot of its own.
+	eg.Go(func() error {
+		_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, largeTree, &dirtools.DownloadTreeOpts{RootDir: tmpDirB})
+		return err
+	})
+	require.Eventually(t, func() bool { return fc.linkCalls() == 2 }, 5*time.Second, time.Millisecond)
+
+	// A third task should be able to use the second slot to download a
+	// different file while the large file is still paused.
+	smallCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err = dirtools.DownloadTree(smallCtx, env, "", repb.DigestFunction_SHA256, smallTree, &dirtools.DownloadTreeOpts{RootDir: tmpDirC})
+	if err != nil {
+		unblockReader()
+		require.NoError(t, err)
+	}
+
+	// Let the large file finish. It should have been read from the server
+	// only once, with both tasks getting a copy.
+	unblockReader()
+	err = eg.Wait()
+	require.NoError(t, err)
+	select {
+	case <-cc.readerCalls:
+		t.Fatal("expected the large file to be read only once")
+	default:
+	}
+	assert.FileExists(t, filepath.Join(tmpDirA, "large.txt"))
+	assert.FileExists(t, filepath.Join(tmpDirB, "large.txt"))
+	assert.FileExists(t, filepath.Join(tmpDirC, "small.txt"))
 }
 
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
@@ -2061,13 +2131,13 @@ func fileNodeKey(node *repb.FileNode) string {
 }
 
 // trackingReadClient wraps the CAS and ByteStream clients to count the reads
-// that reach the server. If gate is set, BatchReadBlobs calls wait for it to
-// be closed, so tests can observe how many files are being read at once.
+// that reach the server. If unblock is set, BatchReadBlobs calls wait for it
+// to be closed, so tests can observe how many files are being read at once.
 type trackingReadClient struct {
 	repb.ContentAddressableStorageClient
 	bspb.ByteStreamClient
 
-	gate chan struct{}
+	unblock chan struct{}
 
 	mu               sync.Mutex
 	reads            int
@@ -2084,8 +2154,8 @@ func (c *trackingReadClient) BatchReadBlobs(ctx context.Context, req *repb.Batch
 	c.inFlight += n
 	c.maxFilesInFlight = max(c.maxFilesInFlight, c.inFlight)
 	c.mu.Unlock()
-	if c.gate != nil {
-		<-c.gate
+	if c.unblock != nil {
+		<-c.unblock
 	}
 	rsp, err := c.ContentAddressableStorageClient.BatchReadBlobs(ctx, req, opts...)
 	c.mu.Lock()
@@ -2122,37 +2192,41 @@ func (c *trackingReadClient) batchStats() (batchSizes []int, maxFilesInFlight in
 	return slices.Clone(c.batchSizes), c.maxFilesInFlight
 }
 
-// blockingFileCache signals entered and then waits for gate to be closed
+// blockingFileCache signals entered and then waits for unblock to be closed
 // whenever a file is added.
 type blockingFileCache struct {
 	interfaces.FileCache
 
 	entered chan struct{}
-	gate    chan struct{}
+	unblock chan struct{}
 }
 
 func (c *blockingFileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
 	c.entered <- struct{}{}
-	<-c.gate
+	<-c.unblock
 	return c.FileCache.AddFile(ctx, node, existingFilePath)
 }
 
-// gatedLinkFileCache counts FastLinkFile calls in flight and makes them wait
-// for gate to be closed.
-type gatedLinkFileCache struct {
+// countingLinkFileCache counts FastLinkFile calls. If unblock is set, calls
+// wait for it to be closed, so tests can observe how many links are in flight.
+type countingLinkFileCache struct {
 	interfaces.FileCache
 
-	gate chan struct{}
+	unblock chan struct{}
 
 	mu       sync.Mutex
+	calls    int
 	inFlight int
 }
 
-func (c *gatedLinkFileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) bool {
+func (c *countingLinkFileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) bool {
 	c.mu.Lock()
+	c.calls++
 	c.inFlight++
 	c.mu.Unlock()
-	<-c.gate
+	if c.unblock != nil {
+		<-c.unblock
+	}
 	linked := c.FileCache.FastLinkFile(ctx, node, outputPath)
 	c.mu.Lock()
 	c.inFlight--
@@ -2160,7 +2234,13 @@ func (c *gatedLinkFileCache) FastLinkFile(ctx context.Context, node *repb.FileNo
 	return linked
 }
 
-func (c *gatedLinkFileCache) linksInFlight() int {
+func (c *countingLinkFileCache) linkCalls() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
+func (c *countingLinkFileCache) linksInFlight() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.inFlight
