@@ -1036,14 +1036,17 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 
 	// Close the fetchQueue channel after we are done linking so that the
 	// fetch queue can terminate once all the digests are fetched.
-	_ = linkEG.Wait()
+	linkErr := linkEG.Wait()
 	close(fetchQueue)
 
 	ff.statsMu.Lock()
 	ff.stats.LocalCacheLinkDuration = durationpb.New(time.Since(linkStart))
 	ff.statsMu.Unlock()
 
-	return eg.Wait()
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	return linkErr
 }
 
 func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
