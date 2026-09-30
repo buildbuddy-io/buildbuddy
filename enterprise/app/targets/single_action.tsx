@@ -122,7 +122,6 @@ const STAT_SETS: StatSet[] = [
     name: "Timing",
     stats: [WALL_TIME, ...TIMING_PHASES.map((p) => p.stat)],
     columns: [statColumn(WALL_TIME), { name: "Timing", className: "timing-column", render: renderTimingBar }],
-    legend: TIMING_PHASES,
   },
   {
     name: "Resources",
@@ -230,16 +229,6 @@ export default class SingleActionComponent extends React.Component<Props, State>
               </Option>
             ))}
           </Select>
-          {this.state.tableStats.legend && (
-            <div className="timing-legend">
-              {this.state.tableStats.legend.map((p) => (
-                <div key={p.stat.name} className="timing-legend-item">
-                  <span className={`timing-swatch ${p.className}`} />
-                  {p.stat.name}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
         <div className="chart-table-container">
           <div className="results-table executions-table">
