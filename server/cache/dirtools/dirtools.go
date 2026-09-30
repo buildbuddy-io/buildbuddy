@@ -724,8 +724,11 @@ func newFetchKey(d *repb.Digest, executable bool) fetchKey {
 // addressed by the digest.
 type FileMap map[fetchKey][]*FilePointer
 
-// inputDownloadLimiter limits how many input files are downloaded or linked
-// from the file cache at once across all tasks.
+// inputDownloadLimiter limits how many input files are materialized at once
+// across all tasks. Each of these takes a slot until the file is written:
+//   - A download from the remote cache, batched or streamed.
+//   - A hard link from the local file cache.
+//   - Creating an empty file.
 type inputDownloadLimiter struct {
 	init sync.Once
 	sem  *semaphore.Weighted
