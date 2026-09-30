@@ -1201,6 +1201,24 @@ func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient
 	return nil
 }
 
+// publishDownloadedFile adds a completed filesystem download to the file
+// cache. Callers must only expose fp to consumers after this succeeds.
+func (ff *BatchFileFetcher) publishDownloadedFile(ctx context.Context, fp *FilePointer) error {
+	if fp.FileNode.GetIsExecutable() && fp.FileNode.GetDigest().GetSizeBytes() > BatchReadLimitBytes {
+		if err := waitForExecutableReady(ctx, fp.FullPath); err != nil {
+			return err
+		}
+	}
+
+	fileCache := ff.env.GetFileCache()
+	if fileCache != nil {
+		if err := fileCache.AddFile(ff.ctx, fp.FileNode, fp.FullPath); err != nil {
+			log.Warningf("Error adding file to filecache: %s", err)
+		}
+	}
+	return nil
+}
+
 // bytestreamReadToFilesystem streams a blob to the filesystem locations
 // listed in fps. The blob is fetched once and linked into the remaining
 // locations.
@@ -1223,12 +1241,8 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 		if err := ff.downloadBlobToFile(ctx, bsClient, fp0.FileNode, fp0.FullPath, mode); err != nil {
 			return nil, err
 		}
-
-		fileCache := ff.env.GetFileCache()
-		if fileCache != nil {
-			if err := fileCache.AddFile(ff.ctx, fp0.FileNode, fp0.FullPath); err != nil {
-				log.Warningf("Error adding file to filecache: %s", err)
-			}
+		if err := ff.publishDownloadedFile(ctx, fp0); err != nil {
+			return nil, err
 		}
 
 		return fp0, nil
