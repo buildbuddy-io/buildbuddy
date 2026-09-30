@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -1768,7 +1769,7 @@ func TestDownloadTree_InputDownloadConcurrency(t *testing.T) {
 			flags.Set(t, "cache.client.input_download_concurrency", limit)
 			dirtools.ResetInputDownloadLimiterForTest()
 			env, ctx := testEnv(t)
-			client := &trackingReadClient{
+			client := &trackingClient{
 				ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
 				ByteStreamClient:                env.GetByteStreamClient(),
 			}
@@ -1804,6 +1805,54 @@ func TestDownloadTree_InputDownloadConcurrency(t *testing.T) {
 			batchReads, streamReads, maxInFlight := client.batchReads, client.streamReads, client.maxInFlight
 			require.Positive(t, batchReads)
 			require.Positive(t, streamReads)
+			require.LessOrEqual(t, maxInFlight, limit)
+		})
+	}
+}
+
+func TestUploadTree_OutputUploadConcurrency(t *testing.T) {
+	for _, limit := range []int{1, 4} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			flags.Set(t, "cache.client.output_upload_concurrency", limit)
+			cachetools.ResetOutputUploadLimiterForTest()
+			env, ctx := testEnv(t)
+			client := &trackingClient{
+				ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+				ByteStreamClient:                env.GetByteStreamClient(),
+			}
+			env.SetContentAddressableStorageClient(client)
+			env.SetByteStreamClient(client)
+
+			// Upload several trees at once, each with a mix of small files,
+			// which are batched, and large files, which are streamed.
+			eg := &errgroup.Group{}
+			for range 3 {
+				rootDir := testfs.MakeTempDir(t)
+				contents := map[string]string{}
+				for i := range 10 {
+					size := int64(100)
+					if i%5 == 0 {
+						size = 3 * 1024 * 1024
+					}
+					_, content := testdigest.RandomCASResourceBuf(t, size)
+					contents[fmt.Sprintf("out/file-%d", i)] = string(content)
+				}
+				testfs.WriteAllFileContents(t, rootDir, contents)
+				cmd := &repb.Command{OutputPaths: []string{"out"}}
+				dirHelper := dirtools.NewDirHelper(rootDir, cmd, fs.FileMode(0o755))
+				eg.Go(func() error {
+					_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, cmd, &repb.ActionResult{}, false /*=addToFileCache*/, nil /*=chunkingParams*/)
+					return err
+				})
+			}
+			err := eg.Wait()
+			require.NoError(t, err)
+
+			// Both kinds of writes should have happened, with no more blobs
+			// being written at once than the limit.
+			batchWrites, streamWrites, maxInFlight := client.batchWrites, client.streamWrites, client.maxInFlight
+			require.Positive(t, batchWrites)
+			require.Positive(t, streamWrites)
 			require.LessOrEqual(t, maxInFlight, limit)
 		})
 	}
@@ -1949,20 +1998,22 @@ func fileNodeKey(node *repb.FileNode) string {
 	return fmt.Sprintf("%s/%d/%t", node.GetDigest().GetHash(), node.GetDigest().GetSizeBytes(), node.GetIsExecutable())
 }
 
-type trackingReadClient struct {
+type trackingClient struct {
 	repb.ContentAddressableStorageClient
 	bspb.ByteStreamClient
 
-	mu          sync.Mutex
-	batchReads  int
-	streamReads int
-	inFlight    int
-	maxInFlight int
+	mu           sync.Mutex
+	batchReads   int
+	streamReads  int
+	batchWrites  int
+	streamWrites int
+	inFlight     int
+	maxInFlight  int
 }
 
-func (c *trackingReadClient) track(n int, reads *int) (done func()) {
+func (c *trackingClient) track(n int, calls *int) (done func()) {
 	c.mu.Lock()
-	*reads++
+	*calls++
 	c.inFlight += n
 	c.maxInFlight = max(c.maxInFlight, c.inFlight)
 	c.mu.Unlock()
@@ -1974,12 +2025,22 @@ func (c *trackingReadClient) track(n int, reads *int) (done func()) {
 	}
 }
 
-func (c *trackingReadClient) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest, opts ...grpc.CallOption) (*repb.BatchReadBlobsResponse, error) {
+func (c *trackingClient) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest, opts ...grpc.CallOption) (*repb.BatchReadBlobsResponse, error) {
 	defer c.track(len(req.GetDigests()), &c.batchReads)()
 	return c.ContentAddressableStorageClient.BatchReadBlobs(ctx, req, opts...)
 }
 
-func (c *trackingReadClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+func (c *trackingClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
 	defer c.track(1, &c.streamReads)()
 	return c.ByteStreamClient.Read(ctx, req, opts...)
+}
+
+func (c *trackingClient) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest, opts ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
+	defer c.track(len(req.GetRequests()), &c.batchWrites)()
+	return c.ContentAddressableStorageClient.BatchUpdateBlobs(ctx, req, opts...)
+}
+
+func (c *trackingClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	defer c.track(1, &c.streamWrites)()
+	return c.ByteStreamClient.Write(ctx, opts...)
 }

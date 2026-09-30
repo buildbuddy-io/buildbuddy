@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -108,6 +109,8 @@ var (
 	acRPCTimeout                = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
 	filecacheTreeSalt           = flag.String("cache.filecache_tree_salt", "20250304", "A salt to invalidate filecache tree hashes, if/when needed.")
 	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", true, "If true, GetTree requests will set send_cached_subtree_digests.")
+	outputUploadConcurrency     = flag.Int("cache.client.output_upload_concurrency", 0, "Maximum number of blobs being uploaded to the CAS at once across all tasks when uploading action outputs, including stdout and stderr. Each blob holds its slot until its upload finishes. 0 means no limit.")
+	outputUploadBatchFiles      = flag.Int("cache.client.output_upload_max_batch_files", 0, "Maximum number of files to send in a single BatchUpdateBlobs request when uploading outputs, capped at cache.client.output_upload_concurrency when that is set. If 0, batches are limited to max(cache.client.output_upload_concurrency/8, 1) when that is set, and only by size otherwise.")
 
 	uploadBufPool = bytebufferpool.VariableSize(uploadBufSizeBytes)
 
@@ -116,6 +119,8 @@ var (
 	chunkUploadSem = make(chan struct{}, 256)
 
 	defaultChunkLocationCache = newChunkLocationCache()
+
+	outputUploadLimit = &outputUploadLimiter{}
 )
 
 // readAtSeeker combines io.ReaderAt and io.ReadSeeker. This is satisfied by
@@ -999,6 +1004,37 @@ func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName 
 	return uploadProtoToCache(ctx, cache, rspb.CacheType_CAS, instanceName, digestFunction, in)
 }
 
+// outputUploadLimiter limits how many blobs are uploaded at once across all
+// tasks when uploading action outputs.
+//
+// Each of these operations consumes 1 slot until the upload finishes:
+//   - A ByteStream upload, including a chunked upload
+//   - A single upload within a larger BatchUpdateBlobs request
+type outputUploadLimiter struct {
+	init sync.Once
+	sem  *semaphore.Weighted
+}
+
+// AcquireOutputUploadSlots waits for n output upload slots, capped at the
+// limit, and returns a func that releases them.
+func AcquireOutputUploadSlots(ctx context.Context, n int64) (release func(), err error) {
+	limit := int64(*outputUploadConcurrency)
+	if limit <= 0 {
+		return func() {}, nil
+	}
+	l := outputUploadLimit
+	l.init.Do(func() { l.sem = semaphore.NewWeighted(limit) })
+	n = min(n, limit)
+	if err := l.sem.Acquire(ctx, n); err != nil {
+		return nil, err
+	}
+	return func() { l.sem.Release(n) }, nil
+}
+
+func ResetOutputUploadLimiterForTest() {
+	outputUploadLimit = &outputUploadLimiter{}
+}
+
 // BatchCASUploader uploads many files to CAS concurrently, batching small
 // uploads together and falling back to bytestream uploads for large files.
 type BatchCASUploader struct {
@@ -1012,12 +1048,22 @@ type BatchCASUploader struct {
 	unsentBatchSize int64
 	stats           UploadStats
 	chunkingParams  *repb.FastCdc2020Params
+	maxBatchFiles   int
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
 // context (it should not be used outside the lifecycle of the request).
 func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, chunkingParams *repb.FastCdc2020Params) *BatchCASUploader {
 	eg, ctx := errgroup.WithContext(ctx)
+	// A batch takes a slot per file, and slots are granted in order, so a
+	// batch needing most of the slots would stall all other uploads.
+	maxBatchFiles := *outputUploadBatchFiles
+	if limit := *outputUploadConcurrency; limit > 0 {
+		if maxBatchFiles <= 0 {
+			maxBatchFiles = max(1, limit/8)
+		}
+		maxBatchFiles = min(maxBatchFiles, limit)
+	}
 	return &BatchCASUploader{
 		ctx:             ctx,
 		env:             env,
@@ -1028,6 +1074,7 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		digestFunction:  digestFunction,
 		uploads:         make(map[digest.Key]struct{}),
 		chunkingParams:  chunkingParams,
+		maxBatchFiles:   maxBatchFiles,
 	}
 }
 
@@ -1062,7 +1109,14 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		if ras, ok := rsc.(readAtSeeker); ok && ul.chunkingParams.GetAvgChunkSizeBytes() > 0 {
 			ul.eg.Go(func() error {
 				defer r.Close()
-				_, _, err := uploadFromReaderWithChunking(ul.ctx, ul.env, resourceName, ras, ul.chunkingParams)
+				// The whole chunked upload takes a single slot, and its chunk
+				// uploads are limited separately.
+				release, err := AcquireOutputUploadSlots(ul.ctx, 1)
+				if err != nil {
+					return err
+				}
+				defer release()
+				_, _, err = uploadFromReaderWithChunking(ul.ctx, ul.env, resourceName, ras, ul.chunkingParams)
 				return err
 			})
 			return nil
@@ -1074,7 +1128,12 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		}
 		ul.eg.Go(func() error {
 			defer r.Close()
-			_, _, err := UploadFromReader(ul.ctx, byteStreamClient, resourceName, r)
+			release, err := AcquireOutputUploadSlots(ul.ctx, 1)
+			if err != nil {
+				return err
+			}
+			defer release()
+			_, _, err = UploadFromReader(ul.ctx, byteStreamClient, resourceName, r)
 			return err
 		})
 		return nil
@@ -1091,7 +1150,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		b = compression.CompressZstd(nil, b)
 	}
 	additionalSize := int64(len(b))
-	if ul.unsentBatchSize+additionalSize > BatchUploadLimitBytes {
+	if ul.unsentBatchSize+additionalSize > BatchUploadLimitBytes || (ul.maxBatchFiles > 0 && len(ul.unsentBatchReq.GetRequests()) >= ul.maxBatchFiles) {
 		ul.flushCurrentBatch()
 	}
 	ul.unsentBatchReq.Requests = append(ul.unsentBatchReq.Requests, &repb.BatchUpdateBlobsRequest_Request{
@@ -1159,6 +1218,11 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 	}
 	ul.unsentBatchSize = 0
 	ul.eg.Go(func() error {
+		release, err := AcquireOutputUploadSlots(ul.ctx, int64(len(req.GetRequests())))
+		if err != nil {
+			return err
+		}
+		defer release()
 		rsp, err := BatchUpdateBlobs(ul.ctx, casClient, req)
 		if err != nil {
 			return err
