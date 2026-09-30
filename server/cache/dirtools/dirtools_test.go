@@ -1771,8 +1771,10 @@ func TestDownloadTree_InputDownloadConcurrencyCountsBatchedFiles(t *testing.T) {
 		wantBatchSizes []int
 	}{
 		// By default, batches hold at most an eighth of the limit.
-		{name: "default", maxBatchFiles: 0, wantBatchSizes: slices.Repeat([]int{2}, 10)},
-		{name: "explicit", maxBatchFiles: 4, wantBatchSizes: slices.Repeat([]int{4}, 5)},
+		{name: "default", maxBatchFiles: 0, wantBatchSizes: slices.Repeat([]int{2}, 16)},
+		{name: "explicit", maxBatchFiles: 4, wantBatchSizes: slices.Repeat([]int{4}, 8)},
+		// Batches never hold more files than the limit.
+		{name: "above limit", maxBatchFiles: 32, wantBatchSizes: slices.Repeat([]int{16}, 2)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			flags.Set(t, "cache.client.input_download_concurrency", 16)
@@ -1788,12 +1790,12 @@ func TestDownloadTree_InputDownloadConcurrencyCountsBatchedFiles(t *testing.T) {
 			env.SetContentAddressableStorageClient(client)
 			env.SetByteStreamClient(client)
 			root := &repb.Directory{}
-			for i := range 20 {
+			for i := range 32 {
 				d := setFile(t, env, ctx, "", fmt.Sprintf("file-%d", i))
 				root.Files = append(root.Files, &repb.FileNode{Name: fmt.Sprintf("file-%d.txt", i), Digest: d})
 			}
 
-			// Download 20 small files with a limit of 16. Small files are
+			// Download 32 small files with a limit of 16. Small files are
 			// batched, and a batch takes a slot for each of its files, so
 			// batches should be in flight until 16 files are being read.
 			eg := &errgroup.Group{}
@@ -1804,7 +1806,7 @@ func TestDownloadTree_InputDownloadConcurrencyCountsBatchedFiles(t *testing.T) {
 			require.Eventually(t, func() bool { return client.filesInFlight() == 16 }, 5*time.Second, time.Millisecond)
 			require.Never(t, func() bool { return client.filesInFlight() > 16 }, 50*time.Millisecond, time.Millisecond)
 
-			// Unblock the reads. All 20 files should be downloaded in
+			// Unblock the reads. All 32 files should be downloaded in
 			// batches of the expected size, and no more than 16 should ever
 			// have been read at once.
 			close(client.unblock)
@@ -1813,7 +1815,7 @@ func TestDownloadTree_InputDownloadConcurrencyCountsBatchedFiles(t *testing.T) {
 			batchSizes, maxFilesInFlight := client.batchStats()
 			require.Equal(t, tc.wantBatchSizes, batchSizes)
 			require.Equal(t, 16, maxFilesInFlight)
-			for i := range 20 {
+			for i := range 32 {
 				assert.FileExists(t, filepath.Join(tmpDir, fmt.Sprintf("file-%d.txt", i)))
 			}
 		})
@@ -2061,6 +2063,139 @@ func TestDownloadTree_InputDownloadConcurrencyFileCacheOnlyLookupsTakeNoSlot(t *
 	err = eg.Wait()
 	require.NoError(t, err)
 	assert.FileExists(t, filepath.Join(tmpDir, "large.txt"))
+}
+
+func TestDownloadTree_InputDownloadConcurrencySharedDownloadIsCopiedWithoutWaiting(t *testing.T) {
+	flags.Set(t, "cache.client.input_download_concurrency", 1)
+	dirtools.ResetInputDownloadLimiterForTest()
+	env, ctx := testEnv(t)
+	fc := &countingLinkFileCache{FileCache: env.GetFileCache()}
+	env.SetFileCache(fc)
+	sharedRN, sharedContent := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	err := env.GetCache().Set(ctx, sharedRN, sharedContent)
+	require.NoError(t, err)
+	otherRN, otherContent := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	err = env.GetCache().Set(ctx, otherRN, otherContent)
+	require.NoError(t, err)
+	sharedTree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "shared.txt", Digest: sharedRN.GetDigest()}}}}
+	otherTree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "other.txt", Digest: otherRN.GetDigest()}}}}
+	tmpDirA := testfs.MakeTempDir(t)
+	tmpDirB := testfs.MakeTempDir(t)
+	tmpDirC := testfs.MakeTempDir(t)
+
+	// Pause server reads of both files.
+	cc := env.GetCache().(*controlledCache)
+	cc.mu.Lock()
+	cc.readerCalls = make(chan struct{}, 4)
+	cc.mu.Unlock()
+	unblockShared := sync.OnceFunc(cc.InjectReaderPause(digest.NewKey(sharedRN.GetDigest())))
+	t.Cleanup(unblockShared)
+	unblockOther := sync.OnceFunc(cc.InjectReaderPause(digest.NewKey(otherRN.GetDigest())))
+	t.Cleanup(unblockOther)
+
+	// Task A downloads the shared file, holding the only slot while its read
+	// is paused, and task B waits on A's download of the same file. Task C
+	// needs a different file, so it waits for the slot that A holds.
+	eg := &errgroup.Group{}
+	eg.Go(func() error {
+		_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, sharedTree, &dirtools.DownloadTreeOpts{RootDir: tmpDirA})
+		return err
+	})
+	select {
+	case <-cc.readerCalls:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the shared file to be read")
+	}
+	bDone := make(chan error, 1)
+	go func() {
+		_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, sharedTree, &dirtools.DownloadTreeOpts{RootDir: tmpDirB})
+		bDone <- err
+	}()
+	eg.Go(func() error {
+		_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, otherTree, &dirtools.DownloadTreeOpts{RootDir: tmpDirC})
+		return err
+	})
+	require.Eventually(t, func() bool { return fc.numLookups() == 3 }, 5*time.Second, time.Millisecond)
+
+	// Let the shared file finish, so that C takes the slot and holds it
+	// while its own read is paused. B copies the shared file from A's
+	// download, and should finish without waiting for the slot. If it
+	// waited, A could finish and delete its copy of the file first.
+	unblockShared()
+	select {
+	case <-cc.readerCalls:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the other file to be read")
+	}
+	select {
+	case err := <-bDone:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for B to copy the shared file")
+	}
+
+	// Let the other file finish.
+	unblockOther()
+	err = eg.Wait()
+	require.NoError(t, err)
+	assert.FileExists(t, filepath.Join(tmpDirA, "shared.txt"))
+	assert.FileExists(t, filepath.Join(tmpDirB, "shared.txt"))
+	assert.FileExists(t, filepath.Join(tmpDirC, "other.txt"))
+}
+
+func TestDownloadTree_InputDownloadConcurrencyCountsEmptyFiles(t *testing.T) {
+	flags.Set(t, "cache.client.input_download_concurrency", 1)
+	dirtools.ResetInputDownloadLimiterForTest()
+	env, ctx := testEnv(t)
+	largeRN, largeContent := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	err := env.GetCache().Set(ctx, largeRN, largeContent)
+	require.NoError(t, err)
+	emptyDigest, err := digest.Compute(strings.NewReader(""), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	largeTree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "large.txt", Digest: largeRN.GetDigest()}}}}
+	emptyTree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "empty.txt", Digest: emptyDigest}}}}
+	largeDir := testfs.MakeTempDir(t)
+	emptyDir := testfs.MakeTempDir(t)
+
+	// Pause server reads of the large file, and start a task that downloads
+	// it. That task holds the only download slot while the read is paused.
+	cc := env.GetCache().(*controlledCache)
+	cc.mu.Lock()
+	cc.readerCalls = make(chan struct{}, 4)
+	cc.mu.Unlock()
+	unblockReader := sync.OnceFunc(cc.InjectReaderPause(digest.NewKey(largeRN.GetDigest())))
+	t.Cleanup(unblockReader)
+	eg := &errgroup.Group{}
+	eg.Go(func() error {
+		_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, largeTree, &dirtools.DownloadTreeOpts{RootDir: largeDir})
+		return err
+	})
+	select {
+	case <-cc.readerCalls:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the large file to be read")
+	}
+
+	// Creating an empty file takes a slot too, so a task with only an empty
+	// file should wait while the slot is held.
+	emptyDone := make(chan error, 1)
+	go func() {
+		_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, emptyTree, &dirtools.DownloadTreeOpts{RootDir: emptyDir})
+		emptyDone <- err
+	}()
+	require.Never(t, func() bool { return len(emptyDone) > 0 }, 100*time.Millisecond, time.Millisecond)
+
+	// Let the large file finish. The empty file should then be created.
+	unblockReader()
+	select {
+	case err := <-emptyDone:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the empty file to be created")
+	}
+	err = eg.Wait()
+	require.NoError(t, err)
+	assert.FileExists(t, filepath.Join(emptyDir, "empty.txt"))
 }
 
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {

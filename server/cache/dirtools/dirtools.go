@@ -48,7 +48,7 @@ var (
 	linkParallelism            = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
 	inputTreeSetupParallelism  = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
 	inputDownloadConcurrency   = flag.Int("cache.client.input_download_concurrency", 0, "Maximum number of input files being downloaded from the CAS or linked from the local file cache at once across all tasks. Each file holds its slot until it has been written to disk. 0 means no limit.")
-	inputDownloadMaxBatchFiles = flag.Int("cache.client.input_download_max_batch_files", 0, "Maximum number of files to read in a single BatchReadBlobs request when downloading inputs. If 0, batches are limited to an eighth of cache.client.input_download_concurrency (at least 1) when that is set, and only by size otherwise.")
+	inputDownloadMaxBatchFiles = flag.Int("cache.client.input_download_max_batch_files", 0, "Maximum number of files to read in a single BatchReadBlobs request when downloading inputs, capped at cache.client.input_download_concurrency when that is set. If 0, batches are limited to an eighth of cache.client.input_download_concurrency (at least 1) when that is set, and only by size otherwise.")
 
 	initInputTreeWrangler     sync.Once
 	inputTreeWranglerInstance *inputTreeWrangler
@@ -1038,11 +1038,19 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 
 			// Write empty files directly (skip checking cache and downloading).
 			if digest.IsEmptyHash(dk.ToDigest(), ff.digestFunction) && !ff.onlyDownloadToFileCache {
+				// Creating files writes to disk, so it takes a download
+				// slot like linking them does.
+				release, err := inputDownloadLimit.acquire(ctx, 1)
+				if err != nil {
+					return err
+				}
 				for _, fp := range filePointers {
 					if err := writeFile(fp, []byte(""), opts); err != nil {
+						release()
 						return err
 					}
 				}
+				release()
 				continue
 			}
 
@@ -1069,8 +1077,13 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 		// for nearly all work in flight to finish, so by default batches are
 		// capped at a small fraction of the limit.
 		maxBatchFiles := *inputDownloadMaxBatchFiles
-		if limit := *inputDownloadConcurrency; maxBatchFiles <= 0 && limit > 0 {
-			maxBatchFiles = max(1, limit/8)
+		if limit := *inputDownloadConcurrency; limit > 0 {
+			if maxBatchFiles <= 0 {
+				maxBatchFiles = max(1, limit/8)
+			}
+			// A larger batch would read more files at once than the limit
+			// allows, since it can take at most every slot.
+			maxBatchFiles = min(maxBatchFiles, limit)
 		}
 		req := newRequest()
 		currentBatchRequestSize := int64(0)
@@ -1267,15 +1280,6 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 	// made by the same user.
 	// Check for that case, to avoid copying a file over itself, and copy fp
 	// to all of the destination fps.
-	if fp != fps[0] || len(fps) > 1 {
-		// Copies are made with hard links or clones, which take a download
-		// slot like links from the file cache do.
-		release, err := inputDownloadLimit.acquire(ctx, 1)
-		if err != nil {
-			return err
-		}
-		defer release()
-	}
 	for _, dest := range fps {
 		if fp == dest {
 			continue
