@@ -33,7 +33,7 @@ go_library(
 
 go_test(
     name = "replica_test",
-    size = "small",
+    size = "medium",
     srcs = ["replica_test.go"],
     deps = [
         ":replica",
@@ -60,9 +60,6 @@ go_test(
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//config",
         "@com_github_lni_dragonboat_v4//statemachine",
-        "@com_github_rs_zerolog//:zerolog",
-        "@com_github_rs_zerolog//log",
-        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],

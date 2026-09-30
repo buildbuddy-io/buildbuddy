@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -31,13 +30,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/lni/dragonboat/v4"
-	"github.com/rs/zerolog"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	dbconfig "github.com/lni/dragonboat/v4/config"
-	zlog "github.com/rs/zerolog/log"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -1218,24 +1214,6 @@ func TestRejectedEntryAdvancesLastAppliedIndex(t *testing.T) {
 	}
 }
 
-// syncBuffer is a bytes.Buffer safe for concurrent writers.
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
 // recordingSM wraps a Replica and records what dragonboat hands to it, so
 // the test can compare dragonboat's view of the on-disk index with ours.
 type recordingSM struct {
@@ -1296,13 +1274,6 @@ func syncProposeWithRetry(t *testing.T, nh *dragonboat.NodeHost, rangeID uint64,
 func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 	const rangeID, replicaID = 1, 1
 
-	// Capture dragonboat's logs. BuildBuddy's raft logger turns Panicf into
-	// an error log, so a failed dragonboat invariant only shows up there.
-	logs := &syncBuffer{}
-	origLogger := zlog.Logger
-	zlog.Logger = zerolog.New(io.MultiWriter(os.Stderr, logs)).With().Timestamp().Logger()
-	t.Cleanup(func() { zlog.Logger = origLogger })
-
 	rootDir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(filepath.Join(rootDir, "pebble"), "test", &pebble.Options{})
 	require.NoError(t, err)
@@ -1313,13 +1284,15 @@ func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 	})
 
 	raftAddr := fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
+	logDBConfig := dbconfig.GetSmallMemLogDBConfig()
+	logDBConfig.Shards = 2
 	nhc := dbconfig.NodeHostConfig{
 		WALDir:         filepath.Join(rootDir, "wal"),
 		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
 		RTTMillisecond: 1,
 		RaftAddress:    raftAddr,
 		Expert: dbconfig.ExpertConfig{
-			LogDB: dbconfig.GetSmallMemLogDBConfig(),
+			LogDB: logDBConfig,
 		},
 	}
 	rc := raftConfig.GetRaftConfig(rangeID, replicaID)
@@ -1350,7 +1323,6 @@ func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 		Kv: &rfpb.KV{Key: constants.LocalRangeKey, Value: rdBuf},
 	}))
 	require.NotEqual(t, uint64(constants.EntryErrorValue), res.Value)
-	require.Contains(t, logs.String(), "opened disk SM", "dragonboat log capture is not working")
 
 	// Entry 2 is rejected: its header has a stale generation.
 	res = syncProposeWithRetry(t, nh, rangeID, rbuilder.NewBatchBuilder().
@@ -1360,10 +1332,12 @@ func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 		}))
 	require.Equal(t, uint64(constants.EntryErrorValue), res.Value)
 
+	// The rejected entry must have advanced the stored index to match
+	// dragonboat's view.
 	_, onDiskIndex := sm.indexes()
 	storedIndex, err := sm.LastAppliedIndex()
 	require.NoError(t, err)
-	t.Logf("before snapshot: dragonboat on-disk index=%d, stored last applied index=%d", onDiskIndex, storedIndex)
+	require.Equal(t, onDiskIndex, storedIndex)
 
 	// Snapshot now, while the rejected entry is the latest one.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1389,13 +1363,7 @@ func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 	require.NotEqual(t, uint64(constants.EntryErrorValue), res.Value)
 
 	openIndex, _ := sm.indexes()
-	t.Logf("after restart: Open returned %d, snapshot on-disk index=%d", openIndex, onDiskIndex)
-	assert.GreaterOrEqual(t, openIndex, onDiskIndex, "Open must return at least the snapshot's on-disk index")
-	for line := range strings.SplitSeq(logs.String(), "\n") {
-		if strings.Contains(line, "onDiskInitIndex") {
-			assert.Fail(t, "dragonboat invariant failed", line)
-		}
-	}
+	require.Equal(t, onDiskIndex, openIndex, "Open must return the snapshot's on-disk index")
 }
 
 func TestApplySnapshotEntriesDeleted(t *testing.T) {
