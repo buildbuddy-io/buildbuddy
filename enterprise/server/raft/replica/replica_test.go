@@ -1299,8 +1299,16 @@ func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 		return sm
 	}
 
+	// Close before DB cleanup, even on failure; avoid double-close panics.
+	closeOnce := func(nh *dragonboat.NodeHost) func() {
+		var once sync.Once
+		return func() { once.Do(nh.Close) }
+	}
+
 	nh, err := dragonboat.NewNodeHost(nhc)
 	require.NoError(t, err)
+	closeNH := closeOnce(nh)
+	t.Cleanup(closeNH)
 	err = nh.StartOnDiskReplica(map[uint64]string{replicaID: raftAddr}, false /*=join*/, factory, rc)
 	require.NoError(t, err)
 
@@ -1342,10 +1350,10 @@ func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
 	require.NoError(t, err)
 
 	// Restart using the same storage.
-	nh.Close()
+	closeNH()
 	nh, err = dragonboat.NewNodeHost(nhc)
 	require.NoError(t, err)
-	t.Cleanup(nh.Close)
+	t.Cleanup(closeOnce(nh))
 	err = nh.StartOnDiskReplica(nil, false /*=join*/, factory, rc)
 	require.NoError(t, err)
 
