@@ -1848,8 +1848,8 @@ func TestUploadTree_OutputUploadConcurrency(t *testing.T) {
 			err := eg.Wait()
 			require.NoError(t, err)
 
-			// Both kinds of writes should have happened, with no more blobs
-			// being written at once than the limit.
+			// Both kinds of writes should have happened, with no more write
+			// RPCs in flight at once than the limit.
 			batchWrites, streamWrites, maxInFlight := client.batchWrites, client.streamWrites, client.maxInFlight
 			require.Positive(t, batchWrites)
 			require.Positive(t, streamWrites)
@@ -2041,7 +2041,7 @@ func (c *trackingClient) Read(ctx context.Context, req *bspb.ReadRequest, opts .
 }
 
 func (c *trackingClient) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest, opts ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
-	defer c.track(len(req.GetRequests()), &c.batchWrites)()
+	defer c.track(1, &c.batchWrites)()
 	return c.ContentAddressableStorageClient.BatchUpdateBlobs(ctx, req, opts...)
 }
 
