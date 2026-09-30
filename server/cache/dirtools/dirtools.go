@@ -725,11 +725,13 @@ func newFetchKey(d *repb.Digest, executable bool) fetchKey {
 type FileMap map[fetchKey][]*FilePointer
 
 // inputDownloadLimiter limits how many input files are materialized at once
-// across all tasks. Each of these takes a slot until the file is written:
-//   - A ByteStream download.
-//   - A single file within a BatchReadBlobs request.
-//   - A hard link from the local file cache.
-//   - Creating an empty file.
+// across all tasks.
+//
+// Each of these operations consumes 1 slot until the file is written:
+//   - A ByteStream download
+//   - A single download within a larger BatchReadBlobs request
+//   - A hard link from the local file cache
+//   - Creating an empty file
 type inputDownloadLimiter struct {
 	init sync.Once
 	sem  *semaphore.Weighted
