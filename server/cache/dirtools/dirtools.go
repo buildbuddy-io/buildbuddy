@@ -663,6 +663,7 @@ func writeFile(fp *FilePointer, data []byte, opts *DownloadTreeOpts) error {
 		return err
 	}
 	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
 		return err
 	}
 	//	defer log.Printf("Wrote %d bytes to file %q", len(data), filePath)
@@ -1046,7 +1047,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 	if err := eg.Wait(); err != nil {
 		return err
 	}
-	return linkErr
+	return status.WrapError(linkErr, "link inputs")
 }
 
 func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
