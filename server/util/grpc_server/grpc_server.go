@@ -231,6 +231,7 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 	}
 	opts := []grpc.ServerOption{
 		grpc.StatsHandler(statsHandler),
+		rpcutil.ServerSizeMetricsOption(),
 		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
 		interceptors.GetStreamInterceptor(env, config.ExtraChainedStreamInterceptors...),
 		grpc.ChainUnaryInterceptor(config.PostAuthUnaryInterceptors...),
