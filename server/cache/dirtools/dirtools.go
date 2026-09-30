@@ -44,11 +44,11 @@ import (
 )
 
 var (
-	enableDownloadCompression  = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
-	linkParallelism            = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
-	inputTreeSetupParallelism  = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
-	inputDownloadConcurrency   = flag.Int("cache.client.input_download_concurrency", 0, "Maximum number of input files being downloaded from the CAS or linked from the local file cache at once across all tasks. Each file holds its slot until it has been written to disk. 0 means no limit.")
-	inputDownloadMaxBatchFiles = flag.Int("cache.client.input_download_max_batch_files", 0, "Maximum number of files to read in a single BatchReadBlobs request when downloading inputs, capped at cache.client.input_download_concurrency when that is set. If 0, batches are limited to max(cache.client.input_download_concurrency/8, 1) when that is set, and only by size otherwise.")
+	enableDownloadCompression = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
+	linkParallelism           = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
+	inputTreeSetupParallelism = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
+	inputDownloadConcurrency  = flag.Int("cache.client.input_download_concurrency", 0, "Maximum number of input files being downloaded from the CAS or linked from the local file cache at once across all tasks. Each file holds its slot until it has been written to disk. 0 means no limit.")
+	inputDownloadBatchFiles   = flag.Int("cache.client.input_download_max_batch_files", 0, "Maximum number of files to read in a single BatchReadBlobs request when downloading inputs, capped at cache.client.input_download_concurrency when that is set. If 0, batches are limited to max(cache.client.input_download_concurrency/8, 1) when that is set, and only by size otherwise.")
 
 	initInputTreeWrangler     sync.Once
 	inputTreeWranglerInstance *inputTreeWrangler
@@ -1047,7 +1047,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 	eg.Go(func() error {
 		// A batch takes a slot per file, and slots are granted in order, so
 		// a batch needing most of the slots would stall all other downloads.
-		maxBatchFiles := *inputDownloadMaxBatchFiles
+		maxBatchFiles := *inputDownloadBatchFiles
 		if limit := *inputDownloadConcurrency; limit > 0 {
 			if maxBatchFiles <= 0 {
 				maxBatchFiles = max(1, limit/8)
