@@ -1006,6 +1006,7 @@ func TestExecutorJoin_OffersWorkSizedForJoiningExecutor(t *testing.T) {
 		AssignableMilliCpu:    32_000,
 	}
 	require.NoError(t, s.AddConnectedExecutor(ctx, handle, node))
+	t.Cleanup(func() { s.RemoveConnectedExecutor(ctx, handle, node) })
 
 	select {
 	case rsp := <-stream.sent:
