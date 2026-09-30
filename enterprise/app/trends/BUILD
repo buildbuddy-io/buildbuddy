@@ -184,7 +184,9 @@ ts_library(
     srcs = ["trends_chart.tsx"],
     deps = [
         "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
+        "//:node_modules/react-dom",
         "//:node_modules/recharts",
         "//:node_modules/tslib",
         "//app/router",

@@ -93,6 +93,8 @@
   --color-orange-100: #ffe0b2;
   --color-orange-50: #fff3e0;
   --color-orange-500: #ff9800;
+  --color-orange-800: #ef6c00;
+  --color-orange-900: #e65100;
   --color-overlay-dark: rgba(0, 0, 0, 0.1);
   --color-overlay-dark-border: rgba(0, 0, 0, 0.15);
   --color-overlay-dark-divider: rgba(0, 0, 0, 0.2);
@@ -357,6 +359,10 @@
   --color-text-secondary: var(--color-gray-600-alt);
   --color-text-tab-inactive: var(--color-gray-500);
   --color-text-tertiary: var(--color-gray-500-alt);
+  --color-timing-execution: var(--color-green-600);
+  --color-timing-input-download: var(--color-blue-600);
+  --color-timing-output-upload: var(--color-purple-600);
+  --color-timing-queue: var(--color-orange-800);
   --color-tree-node-size-text: var(--color-black);
   --color-trends-divider: var(--color-gray-200);
   --color-trends-hovercard-bg: var(--color-overlay-light-solid);
@@ -555,6 +561,8 @@
   --color-text-secondary: var(--color-gray-400);
   --color-text-label: var(--color-gray-400);
   --color-text-tertiary: var(--color-gray-500);
+  --color-timing-output-upload: var(--color-purple-400);
+  --color-timing-queue: var(--color-orange-900);
   --color-tree-node-size-text: var(--color-gray-200);
   --color-trends-divider: var(--color-gray-900-alt);
   --color-trends-hovercard-bg: var(--color-gray-800);
