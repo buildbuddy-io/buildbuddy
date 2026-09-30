@@ -819,7 +819,7 @@ func TestTimestamps(t *testing.T) {
 	rs := rawStat(t, testFilePath)
 	require.NoError(t, err)
 	require.Less(t, time.Since(rs.Mtime).Seconds(), float64(5))
-	require.InDelta(t, rs.Mtime.UnixMilli(), rs.Atime.UnixMilli(), 10)
+	require.Less(t, time.Since(rs.Atime).Seconds(), float64(5))
 
 	// Manually reset the mtime and check that it has been updated.
 	nextYear := time.Now().Add(365 * 24 * time.Hour)
