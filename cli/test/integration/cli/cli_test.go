@@ -669,6 +669,9 @@ mv "$tmp" "$FORWARDED_BAZEL_ARGS_FILE"
 			testfs.MakeExecutable(t, ws, "testplugin/pre_bazel.sh")
 
 			args := []string{"--bazelrc=" + ws + "/unrelated.bazelrc", "test", "--test_output=all", ":needs_required_rc"}
+			// --ignore_all_rc_files also drops the bazelrc that keeps the test
+			// bazel offline, so pass those options explicitly.
+			args = append(args, testbazel.HermeticFlags(t)...)
 			b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, args...))
 			output := strings.ReplaceAll(string(b), "\r\n", "\n")
 
@@ -714,6 +717,9 @@ exec "$BAZEL_REAL" "` + wrapperStartupArg + `" "$@"
 			testfs.MakeExecutable(t, ws, "tools/bazel")
 
 			args := []string{"--bazelrc=" + ws + "/unrelated.bazelrc", "test", "--test_output=all", ":needs_required_rc"}
+			// --ignore_all_rc_files also drops the bazelrc that keeps the test
+			// bazel offline, so pass those options explicitly.
+			args = append(args, testbazel.HermeticFlags(t)...)
 			b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, args...))
 			output := strings.ReplaceAll(string(b), "\r\n", "\n")
 
