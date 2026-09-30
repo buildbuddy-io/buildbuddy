@@ -1037,6 +1037,10 @@ func (l *outputUploadLimiter) acquire(ctx context.Context, n int64) (release fun
 		return func() {}, nil
 	}
 	l.init.Do(func() { l.sem = semaphore.NewWeighted(limit) })
+	// The semaphore never grants more than the limit, so asking for more would
+	// wait until ctx is done. Because of this clamp, a batch with more blobs
+	// than the limit sends all of them while holding fewer slots than blobs, so
+	// callers should keep batches within the limit, as BatchCASUploader does.
 	n = min(n, limit)
 	if err := l.sem.Acquire(ctx, n); err != nil {
 		return nil, err
