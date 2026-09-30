@@ -384,7 +384,7 @@ common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 # TODO(vanja) turn on once https://github.com/buildbuddy-io/buildbuddy-internal/issues/6247 is fixed
 # common:untrusted-ci --remote_header=x-buildbuddy-platform.enable-vfs=true
 
-# Disabled RBE for Windows
+# Windows CI: cross-compile pure Go on Linux RBE and execute tests on Windows.
 common:untrusted-ci-windows --config=ci-shared
 common:untrusted-ci-windows --config=tests-windows
 common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows-25/rin20260818
@@ -392,6 +392,18 @@ common:untrusted-ci-windows --repository_cache=C:/bazel/repo-cache/
 common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
+common:untrusted-ci-windows --remote_executor=grpcs://remote.buildbuddy.io
+common:untrusted-ci-windows --config=remote-shared
+# Build actions run on Linux; tests use the native Windows test runner.
+common:untrusted-ci-windows --shell_executable=/bin/bash
+common:untrusted-ci-windows --action_env=PATH=/usr/bin:/bin
+common:untrusted-ci-windows --test_env=PATH
+common:untrusted-ci-windows --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64,@toolchains_buildbuddy//platforms:darwin_arm64,@toolchains_buildbuddy//platforms:darwin_x86_64,//platforms:local_windows_amd64
+# Target pure-Go Windows (no cgo), matching the executor_windows_* aliases.
+# The auto-detected host platform would build cgo with hermetic LLVM, which
+# doesn't support Windows well yet.
+common:untrusted-ci-windows --platforms=//platforms:local_windows_amd64
+common:untrusted-ci-windows --experimental_remote_downloader=grpcs://remote.buildbuddy.io
 
 # Use BuildBuddy endpoints from the ci_runner-generated bazelrc.
 # These will point to local, dev, or prod, depending on which app created the workflow action.

@@ -2,6 +2,15 @@ name: "Build Windows executor"
 
 on:
   pull_request:
+  # Also run on master so that PRs can restore the Go module cache and reuse
+  # remote cache entries from master (GitHub caches created by one PR are not
+  # visible to other PRs).
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "docs/**"
+      - "website/**"
 
 jobs:
   build:
@@ -77,6 +86,9 @@ jobs:
         uses: ./.github/actions/setup-bazel-go-mod-cache
         with:
           gomodcache: C:/Users/runneradmin/go/pkg/mod
+          # Only save on master: PR caches aren't visible to other PRs, and
+          # ~650MB per PR crowds out other caches under the 10GB repo limit.
+          save: ${{ github.event_name == 'push' }}
 
       # This step would list out all files under $vs2022Path for debugging purposes.
       # Uncomment if GitHub released a new Windows image and you need to find the new path of cl.exe.
@@ -107,6 +119,9 @@ jobs:
         #
         #   - Enable windows symlink helps reduce disk usage.
         #     Without this, files will be fully copied instead.
+        #
+        #   - Reuse reproducible repository contents (e.g. go_repository) from
+        #     the remote cache. Repository fetching otherwise takes 5+ minutes.
         run: |
           $authArgs = @()
           $apiKey = '${{ secrets.BUILDBUDDY_ORG_API_KEY }}'
@@ -115,6 +130,7 @@ jobs:
           }
           bazelisk --output_user_root=C:/0 `
                    --windows_enable_symlinks `
+                   --experimental_remote_repo_contents_cache `
                    test `
                    --config=untrusted-ci-windows `
                    @authArgs `
