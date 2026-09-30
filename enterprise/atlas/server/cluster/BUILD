@@ -15,6 +15,7 @@ go_library(
         "//enterprise/atlas/server/summaries",
         "//server/util/flag",
         "//server/util/log",
+        "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/runtime",
@@ -38,6 +39,7 @@ go_test(
     deps = [
         "//enterprise/atlas/server/summaries",
         "@com_github_stretchr_testify//require",
+        "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/fields",

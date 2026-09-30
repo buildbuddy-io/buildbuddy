@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
-	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -91,7 +90,12 @@ func Handler(env environment.Env, opts Options) (http.Handler, error) {
 	mux.Handle("/app/", interceptors.WrapExternalHandler(env,
 		http.StripPrefix("/app", cacheByHash(assetServer(opts.AppFS), bundleHash))))
 	mux.Handle("/", interceptors.WrapExternalHandler(env, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if path.Ext(r.URL.Path) != "" {
+		// Serve the static UI resources and let the UI handle the routes client
+		// side, as necessary. The only exception are things that look like
+		// files (e.g. favicon.ico) in which case we serve a 404. /object/ is an
+		// exception because resource names may contain dots.
+
+		if path.Ext(r.URL.Path) != "" && !strings.HasPrefix(r.URL.Path, "/object/") {
 			http.NotFound(w, r)
 			return
 		}
@@ -105,9 +109,9 @@ func Handler(env environment.Env, opts Options) (http.Handler, error) {
 	return mux, nil
 }
 
-// chain wraps h in the given middlewares; the first listed runs outermost.
+// chain wraps h in the given interceptors, executing in the passed-in order.
 func chain(h http.Handler, wrappers ...func(http.Handler) http.Handler) http.Handler {
-	for _, wrapper := range slices.Backward(wrappers) {
+	for _, wrapper := range wrappers {
 		h = wrapper(h)
 	}
 	return h

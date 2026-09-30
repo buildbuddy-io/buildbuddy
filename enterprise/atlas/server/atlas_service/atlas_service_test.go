@@ -2,7 +2,7 @@ package atlas_service
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	atlaspb "github.com/buildbuddy-io/buildbuddy/proto/atlas"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -208,12 +209,16 @@ func TestGetObjectUnknownClusterAndBadRequests(t *testing.T) {
 type fakeLogs struct {
 	lastNS, lastPod string
 	lastOpts        cluster.LogOptions
+	err             error // returned when set
 }
 
 func (f *fakeLogs) Logs(ctx context.Context, ns, pod string, opts cluster.LogOptions) (io.ReadCloser, error) {
 	f.lastNS, f.lastPod, f.lastOpts = ns, pod, opts
+	if f.err != nil {
+		return nil, f.err
+	}
 	if opts.Previous {
-		return nil, fmt.Errorf("previous terminated container not found")
+		return nil, apierrors.NewBadRequest("previous terminated container not found")
 	}
 	return io.NopCloser(strings.NewReader("log line 1\nlog line 2\n")), nil
 }
@@ -255,6 +260,16 @@ func TestStreamLogs(t *testing.T) {
 	require.True(t, status.IsFailedPreconditionError(err), "got %v", err)
 	require.Contains(t, err.Error(), "previous terminated container not found")
 	require.EqualValues(t, 200, logs.lastOpts.TailLines, "default tail applies")
+
+	// A missing pod is NotFound; a failure the apiserver did not answer is
+	// Unavailable, so callers can tell them apart.
+	req := &atlaspb.StreamLogsRequest{Cluster: "uswest1", Namespace: "prod", Name: "web-7d9f-abcde"}
+	logs.err = apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, "web-7d9f-abcde")
+	err = s.StreamLogs(req, &logStream{ctx: context.Background()})
+	require.True(t, status.IsNotFoundError(err), "got %v", err)
+	logs.err = errors.New("dial tcp: connection refused")
+	err = s.StreamLogs(req, &logStream{ctx: context.Background()})
+	require.True(t, status.IsUnavailableError(err), "got %v", err)
 
 	err = s.StreamLogs(&atlaspb.StreamLogsRequest{Cluster: "nope", Namespace: "prod", Name: "x"}, &logStream{ctx: context.Background()})
 	require.True(t, status.IsNotFoundError(err), "got %v", err)

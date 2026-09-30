@@ -30,6 +30,7 @@ go_test(
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/runtime/schema",

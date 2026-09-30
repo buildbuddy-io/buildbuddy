@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protojson"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	atlaspb "github.com/buildbuddy-io/buildbuddy/proto/atlas"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -48,7 +49,7 @@ type fakeLogs struct{}
 
 func (fakeLogs) Logs(ctx context.Context, ns, pod string, opts cluster.LogOptions) (io.ReadCloser, error) {
 	if opts.Previous {
-		return nil, fmt.Errorf("previous terminated container not found")
+		return nil, apierrors.NewBadRequest("previous terminated container not found")
 	}
 	return io.NopCloser(strings.NewReader("log line 1\nlog line 2\n")), nil
 }
@@ -111,7 +112,12 @@ func TestIndexAndAssets(t *testing.T) {
 
 	// The index carries the frontend config and asset URLs, and is served for
 	// client-side routes too.
-	for _, path := range []string{"/", "/clusters", "/object/uswest1/-/v1/pods/prod/web"} {
+	// Object names may have dots and must not be mistaken for asset requests.
+	for _, path := range []string{
+		"/", "/clusters", "/object/uswest1/-/v1/pods/prod/web",
+		"/object/uswest1/-/v1/configmaps/prod/kube-root-ca.crt",
+		"/object/uswest1/-/v1/nodes/-/node-1.sjc.example",
+	} {
 		resp, body := get(t, srv, path)
 		require.Equal(t, 200, resp.StatusCode, path)
 		require.Contains(t, resp.Header.Get("Content-Type"), "text/html")

@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/rest"
 )
 
@@ -45,17 +46,31 @@ func TestRESTLogSource(t *testing.T) {
 }
 
 func TestRESTLogSourceSurfacesAPIServerRefusal(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		io.WriteString(w, `{"kind":"Status","message":"previous terminated container \"app\" in pod \"web-1\" not found"}`)
-	}))
-	defer srv.Close()
+	for _, tc := range []struct {
+		name string
+		code int
+		body string
+		is   func(error) bool
+		msg  string
+	}{
+		{"missing pod", 404, `{"kind":"Status","status":"Failure","message":"pods \"web-1\" not found","reason":"NotFound","code":404}`, apierrors.IsNotFound, `pods "web-1" not found`},
+		{"no previous run", 400, `{"kind":"Status","status":"Failure","message":"previous terminated container \"app\" in pod \"web-1\" not found","reason":"BadRequest","code":400}`, apierrors.IsBadRequest, `previous terminated container "app" in pod "web-1" not found`},
+		{"not a Status body", 503, `upstream unavailable`, apierrors.IsServiceUnavailable, `upstream unavailable`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.code)
+				io.WriteString(w, tc.body)
+			}))
+			defer srv.Close()
+			ls, err := newRESTLogSource(&rest.Config{Host: srv.URL})
+			require.NoError(t, err)
 
-	ls, err := newRESTLogSource(&rest.Config{Host: srv.URL})
-	require.NoError(t, err)
-
-	_, err = ls.Logs(context.Background(), "prod", "web-1", LogOptions{Previous: true})
-	require.ErrorContains(t, err, `previous terminated container "app" in pod "web-1" not found`)
+			_, err = ls.Logs(context.Background(), "prod", "web-1", LogOptions{Previous: true})
+			require.True(t, tc.is(err), "got %v", err)
+			require.ErrorContains(t, err, tc.msg)
+		})
+	}
 }
 
 func TestLogsWithoutSource(t *testing.T) {

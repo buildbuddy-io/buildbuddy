@@ -3,10 +3,12 @@ package atlas_service
 
 import (
 	"bytes"
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -135,6 +137,18 @@ func (s *AtlasService) GetObject(ctx context.Context, req *atlaspb.GetObjectRequ
 	return rsp, nil
 }
 
+// mapLogFetchError maps a k8s API error into a user-facing error.
+func mapLogFetchError(err error) error {
+	var refusal *apierrors.StatusError
+	switch {
+	case apierrors.IsNotFound(err):
+		return status.NotFoundErrorf("%s", err)
+	case errors.As(err, &refusal):
+		return status.FailedPreconditionErrorf("%s", err)
+	}
+	return status.UnavailableErrorf("streaming logs: %s", err)
+}
+
 func (s *AtlasService) StreamLogs(req *atlaspb.StreamLogsRequest, stream atlaspb.AtlasService_StreamLogsServer) error {
 	if req.GetCluster() == "" || req.GetNamespace() == "" || req.GetName() == "" {
 		return status.InvalidArgumentError("cluster, namespace and name are required")
@@ -154,7 +168,7 @@ func (s *AtlasService) StreamLogs(req *atlaspb.StreamLogsRequest, stream atlaspb
 	}
 	logs, err := c.Logs(stream.Context(), req.GetNamespace(), req.GetName(), opts)
 	if err != nil {
-		return status.FailedPreconditionErrorf("%s", err)
+		return mapLogFetchError(err)
 	}
 	defer logs.Close()
 
@@ -281,11 +295,8 @@ func (s *AtlasService) scanEntries(clusterName, kind string, filter func(*summar
 			out = append(out, e)
 		}
 	})
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Namespace != out[j].Namespace {
-			return out[i].Namespace < out[j].Namespace
-		}
-		return out[i].Name < out[j].Name
+	slices.SortFunc(out, func(a, b *summaries.Entry) int {
+		return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
 	})
 	return out
 }
@@ -307,6 +318,8 @@ func (s *AtlasService) relationsFor(e *summaries.Entry) *relations {
 	rel := &relations{}
 
 	// Walk the ownership chain upward (Pod -> ReplicaSet -> Deployment).
+	// 4 is an arbitrary cap to ensure the loop terminates. We don't expect any
+	// proper resource to get there.
 	cur := e
 	for range 4 {
 		if cur.Owner == "" {
