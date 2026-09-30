@@ -1017,6 +1017,194 @@ func TestDownloadTreeBytestreamDownloadDeduped(t *testing.T) {
 	assert.FileExists(t, filepath.Join(tmpDirB, "large-file.txt"))
 }
 
+func TestDownloadTree_SharedDownloadUsesFileCache(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		// Whether the leader (the task that downloads the blob) or the waiter
+		// (the task that waits on that download) is a VFS prefetch task, which
+		// writes inputs only to the file cache and has no workspace.
+		leaderPrefetch bool
+		waiterPrefetch bool
+		// Whether the file cache evicts the blob right after the leader adds
+		// it, or fails to add it.
+		evict             bool
+		failCacheAdd      bool
+		expectedDownloads int64
+	}{
+		{name: "leader workspace removed", expectedDownloads: 1},
+		{name: "leader prefetch", leaderPrefetch: true, expectedDownloads: 1},
+		{name: "cache entry evicted", evict: true, expectedDownloads: 2},
+		{name: "cache insertion failed", failCacheAdd: true, expectedDownloads: 2},
+		{name: "waiter prefetch", waiterPrefetch: true, expectedDownloads: 1},
+		{name: "waiter prefetch after eviction", waiterPrefetch: true, evict: true, expectedDownloads: 2},
+		{name: "waiter prefetch after failed insertion", waiterPrefetch: true, failCacheAdd: true, expectedDownloads: 2},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env, _ := testEnv(t)
+			ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+			require.NoError(t, err)
+			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			leaderDir := testfs.MakeTempDir(t)
+			waiterDir := testfs.MakeTempDir(t)
+
+			// Tasks only share ByteStream downloads, so use a blob that's too
+			// large to batch-read. The waiter needs the blob at two paths, so
+			// it also copies the blob from its first path to the second.
+			rn, content := testdigest.RandomCASResourceBuf(t, dirtools.BatchReadLimitBytes+1)
+			require.NoError(t, env.GetCache().Set(ctx, rn, content))
+			node := &repb.FileNode{Name: "file", Digest: rn.GetDigest(), IsExecutable: true}
+			leaderTree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{node}}}
+			waiterTree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{
+				node,
+				{Name: "other", Digest: rn.GetDigest(), IsExecutable: true},
+			}}}
+
+			// Pause the leader's download so that the waiter misses the file
+			// cache while the download is in progress.
+			cc := env.GetCache().(*controlledCache)
+			cc.readerCalls = make(chan struct{}, 4)
+			unblockReader := sync.OnceFunc(cc.InjectReaderPause(digest.NewKey(rn.GetDigest())))
+			t.Cleanup(unblockReader)
+
+			fc := env.GetFileCache()
+			waiterMissed := make(chan struct{})
+			notifyWaiterMissed := sync.OnceFunc(func() { close(waiterMissed) })
+			env.SetFileCache(&controlledFileCache{
+				FileCache: fc,
+				addFile: func(ctx context.Context, node *repb.FileNode, path string) error {
+					if path != filepath.Join(leaderDir, "file") {
+						return fc.AddFile(ctx, node, path)
+					}
+					var addErr error
+					if !testCase.failCacheAdd {
+						addErr = fc.AddFile(ctx, node, path)
+					} else {
+						addErr = os.ErrPermission
+					}
+					if testCase.evict {
+						fc.DeleteFile(ctx, node)
+					}
+					// Remove the leader's workspace before the waiter wakes up,
+					// as if the leader task finished before the waiter linked
+					// its inputs.
+					if err := os.RemoveAll(leaderDir); err != nil {
+						addErr = err
+					}
+					return addErr
+				},
+				fastLinkFile: func(ctx context.Context, node *repb.FileNode, path string) bool {
+					hit := fc.FastLinkFile(ctx, node, path)
+					if !hit && path == filepath.Join(waiterDir, "file") {
+						notifyWaiterMissed()
+					}
+					return hit
+				},
+				containsFile: func(ctx context.Context, node *repb.FileNode) bool {
+					// Only prefetch tasks call ContainsFile.
+					hit := fc.ContainsFile(ctx, node)
+					if !hit && testCase.waiterPrefetch {
+						notifyWaiterMissed()
+					}
+					return hit
+				},
+			})
+
+			// Start the leader and wait for it to start downloading.
+			var leaderInfo, waiterInfo *dirtools.TransferInfo
+			eg := &errgroup.Group{}
+			leaderRoot := leaderDir
+			if testCase.leaderPrefetch {
+				leaderRoot = ""
+			}
+			eg.Go(func() error {
+				var err error
+				leaderInfo, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, leaderTree, &dirtools.DownloadTreeOpts{RootDir: leaderRoot})
+				return err
+			})
+			select {
+			case <-cc.readerCalls:
+			case <-ctx.Done():
+				t.Fatal("timed out waiting for the first download")
+			}
+
+			// Start the waiter and wait for it to miss the file cache.
+			waiterRoot := waiterDir
+			if testCase.waiterPrefetch {
+				waiterRoot = ""
+			}
+			eg.Go(func() error {
+				var err error
+				waiterInfo, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, waiterTree, &dirtools.DownloadTreeOpts{RootDir: waiterRoot})
+				return err
+			})
+			select {
+			case <-waiterMissed:
+			case <-ctx.Done():
+				t.Fatal("timed out waiting for the second task to miss the cache")
+			}
+
+			// Let the leader finish. The waiter normally joins the leader's
+			// download. If the leader finishes first, the waiter runs its own
+			// fetch instead, which also checks the file cache first, so the
+			// outcome is the same.
+			unblockReader()
+			require.NoError(t, eg.Wait())
+
+			// The waiter should download the blob again only if the leader's
+			// copy didn't stay in the file cache.
+			require.Equal(t, testCase.expectedDownloads, leaderInfo.FileCount+waiterInfo.FileCount)
+
+			// A prefetch waiter should leave the blob in the file cache, and
+			// any other waiter should have the blob at both of its paths.
+			if testCase.waiterPrefetch {
+				data, err := fc.Read(ctx, node)
+				require.NoError(t, err)
+				require.Equal(t, rn.GetDigest().GetHash(), hash.String(string(data)))
+				return
+			}
+			for _, name := range []string{"file", "other"} {
+				path := filepath.Join(waiterDir, name)
+				data, err := os.ReadFile(path)
+				require.NoError(t, err)
+				require.Equal(t, rn.GetDigest().GetHash(), hash.String(string(data)))
+				info, err := os.Stat(path)
+				require.NoError(t, err)
+				require.Equal(t, os.FileMode(0755), info.Mode().Perm())
+			}
+		})
+	}
+}
+
+func TestDownloadTree_ConcurrentDownloadsWithoutFileCache(t *testing.T) {
+	// Without a file cache, tasks can't get a shared download's result from
+	// anywhere, so each task downloads its own copy.
+	env, _ := testEnv(t)
+	env.SetFileCache(nil)
+	ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+	require.NoError(t, err)
+	rn, content := testdigest.RandomCASResourceBuf(t, dirtools.BatchReadLimitBytes+1)
+	require.NoError(t, env.GetCache().Set(ctx, rn, content))
+	tree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "file", Digest: rn.GetDigest()}}}}
+
+	// Download the same blob into two workspaces at once. Both should end up
+	// with the full blob.
+	rootDirs := []string{testfs.MakeTempDir(t), testfs.MakeTempDir(t)}
+	eg := &errgroup.Group{}
+	for _, rootDir := range rootDirs {
+		eg.Go(func() error {
+			_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: rootDir})
+			return err
+		})
+	}
+	require.NoError(t, eg.Wait())
+	for _, rootDir := range rootDirs {
+		data, err := os.ReadFile(filepath.Join(rootDir, "file"))
+		require.NoError(t, err)
+		require.Equal(t, rn.GetDigest().GetHash(), hash.String(string(data)))
+	}
+}
+
 func TestDownloadTreeWithFileCache(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
@@ -1842,6 +2030,25 @@ func addToFileCache(t *testing.T, ctx context.Context, env *testenv.TestEnv, tem
 	t.Logf("Added digest %s/%d to filecache (content: %q)", d.GetHash(), d.GetSizeBytes(), data)
 	err = env.GetFileCache().AddFile(ctx, &repb.FileNode{Name: filepath.Base(path), Digest: d}, path)
 	require.NoError(t, err)
+}
+
+type controlledFileCache struct {
+	interfaces.FileCache
+	addFile      func(context.Context, *repb.FileNode, string) error
+	fastLinkFile func(context.Context, *repb.FileNode, string) bool
+	containsFile func(context.Context, *repb.FileNode) bool
+}
+
+func (c *controlledFileCache) AddFile(ctx context.Context, node *repb.FileNode, path string) error {
+	return c.addFile(ctx, node, path)
+}
+
+func (c *controlledFileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, path string) bool {
+	return c.fastLinkFile(ctx, node, path)
+}
+
+func (c *controlledFileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
+	return c.containsFile(ctx, node)
 }
 
 type countingFileCache struct {

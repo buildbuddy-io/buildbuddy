@@ -1135,8 +1135,14 @@ func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient
 // The blob is optionally added to the file cache, if the file cache
 // is enabled.
 func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsClient bspb.ByteStreamClient, dedupeKey downloadDedupeKey, fps []*FilePointer, opts *DownloadTreeOpts) error {
-	fp, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
-		fp0 := fps[0]
+	fp0 := fps[0]
+	// fetch writes the blob to fp0. It links the blob from the file cache if
+	// another task has added it there, and otherwise downloads the blob and
+	// adds it to the file cache.
+	fetch := func(ctx context.Context) (*FilePointer, error) {
+		if err := ff.treeWrangler.LinkFromFileCache(ctx, fps[:1], opts); err == nil {
+			return fp0, nil
+		}
 
 		var mode os.FileMode = 0644
 		if fp0.FileNode.IsExecutable {
@@ -1154,21 +1160,34 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 		}
 
 		return fp0, nil
-	})
+	}
+
+	// Concurrent tasks that need the same blob share a fetch. The waiting
+	// tasks get their own copy from the file cache afterwards, so without a
+	// file cache, waiting would only delay their own downloads.
+	var fp *FilePointer
+	var err error
+	if ff.env.GetFileCache() == nil {
+		fp, err = fetch(ctx)
+	} else {
+		fp, _, err = DownloadDeduper.Do(ctx, dedupeKey, fetch)
+	}
 	if err != nil {
 		return err
 	}
 
-	// Depending on whether or not this bytestream request was deduped, fp
-	// will either be == fps[0], or a different fp from a concurrent request
-	// made by the same user.
-	// Check for that case, to avoid copying a file over itself, and copy fp
-	// to all of the destination fps.
-	for _, dest := range fps {
-		if fp == dest {
-			continue
+	// If another task ran the shared fetch, fp points into that task's
+	// workspace, which it may remove at any time. Run fetch again to get our
+	// own copy. This normally links the file that the other task added to the
+	// file cache, and only downloads the blob again if that file was evicted
+	// or could not be added.
+	if fp != fp0 {
+		if _, err := fetch(ctx); err != nil {
+			return err
 		}
-		if err := copyFile(fp, dest, opts); err != nil {
+	}
+	for _, dest := range fps[1:] {
+		if err := copyFile(fp0, dest, opts); err != nil {
 			return err
 		}
 	}
@@ -1180,10 +1199,16 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 
 // bytestreamReadToFilecache streams a blob directly into the filecache.
 func (ff *BatchFileFetcher) bytestreamReadToFilecache(ctx context.Context, bsClient bspb.ByteStreamClient, dedupeKey downloadDedupeKey, fps []*FilePointer) error {
-	_, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
-		fp0 := fps[0]
+	fileCache := ff.env.GetFileCache()
+	fp0 := fps[0]
+	// fetch downloads the blob into the file cache, unless another task has
+	// already added it there.
+	fetch := func(ctx context.Context) (*FilePointer, error) {
+		if fileCache.ContainsFile(ctx, fp0.FileNode) {
+			return fp0, nil
+		}
 
-		w, err := ff.env.GetFileCache().Writer(ctx, fp0.FileNode, ff.digestFunction)
+		w, err := fileCache.Writer(ctx, fp0.FileNode, ff.digestFunction)
 		if err != nil {
 			return nil, status.WrapError(err, "could not create filecache writer")
 		}
@@ -1193,9 +1218,19 @@ func (ff *BatchFileFetcher) bytestreamReadToFilecache(ctx context.Context, bsCli
 		}
 
 		return fp0, nil
-	})
+	}
+	fp, _, err := DownloadDeduper.Do(ctx, dedupeKey, fetch)
 	if err != nil {
 		return err
+	}
+	// If another task ran the shared fetch, it may have downloaded the blob
+	// into its workspace and then failed to add it to the file cache, or the
+	// file cache may have evicted it since. Run fetch again to make sure the
+	// blob is in the file cache.
+	if fp != fp0 {
+		if _, err := fetch(ctx); err != nil {
+			return err
+		}
 	}
 
 	ff.completeRemoteFetch(dedupeKey.fetchKey, fps)
