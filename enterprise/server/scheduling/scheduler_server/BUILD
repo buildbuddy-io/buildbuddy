@@ -56,7 +56,10 @@ go_library(
 go_test(
     name = "scheduler_server_test",
     size = "medium",
-    srcs = ["scheduler_server_test.go"],
+    srcs = [
+        "scheduler_server_test.go",
+        "scheduler_shutdown_stress_test.go",
+    ],
     embed = [":scheduler_server"],
     deps = [
         "//enterprise/server/backends/redis_execution_collector",
@@ -81,12 +84,14 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/claims",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/platform",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/upgrade",
+        "@com_github_go_redis_redis_v8//:redis",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_uuid//:uuid",
         "@com_github_jonboulle_clockwork//:clockwork",
