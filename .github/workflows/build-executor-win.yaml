@@ -21,10 +21,11 @@ jobs:
     env:
       # PRs run untrusted code, so they use a separate remote cache from master.
       BAZEL_CI_CONFIG: ${{ github.event_name == 'pull_request' && 'untrusted-ci-windows' || 'ci-windows' }}
-      BAZEL_TARGETS: >-
+      EXECUTOR_TARGETS: >-
         //enterprise/server/cmd/executor:executor_windows_amd64
         //enterprise/server/cmd/executor:executor_windows_386
         //enterprise/server/cmd/executor:executor_windows_arm64
+      TEST_TARGETS: >-
         //enterprise/server/remote_execution/commandutil:commandutil_test
         //enterprise/server/remote_execution/filecache:filecache_test
         //enterprise/server/remote_execution/workspace:workspace_test
@@ -139,7 +140,7 @@ jobs:
           if ($env:BUILDBUDDY_ORG_API_KEY) {
             $authArgs = @("--remote_header=x-buildbuddy-api-key=$env:BUILDBUDDY_ORG_API_KEY")
           }
-          $targets = $env:BAZEL_TARGETS -split '\s+'
+          $targets = "$env:EXECUTOR_TARGETS $env:TEST_TARGETS" -split '\s+'
           bazelisk --output_user_root=C:/0 `
                    --windows_enable_symlinks `
                    build `
@@ -157,7 +158,7 @@ jobs:
           if ($env:BUILDBUDDY_ORG_API_KEY) {
             $authArgs = @("--remote_header=x-buildbuddy-api-key=$env:BUILDBUDDY_ORG_API_KEY")
           }
-          $targets = $env:BAZEL_TARGETS -split '\s+'
+          $targets = $env:TEST_TARGETS -split '\s+'
           bazelisk --output_user_root=C:/0 `
                    --windows_enable_symlinks `
                    test `
