@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
@@ -93,7 +94,7 @@ func Output(cmd *exec.Cmd) ([]byte, error) {
 		cmd.Stderr = os.Stderr
 	}
 	cmd.Stdout = w
-	err := cmd.Run()
+	err := runTimed(cmd)
 	return buf.Bytes(), err
 }
 
@@ -112,7 +113,7 @@ func SplitOutput(cmd *exec.Cmd) (stdout, stderr []byte, _ error) {
 	}
 	cmd.Stdout = stdoutW
 	cmd.Stderr = stderrW
-	err := cmd.Run()
+	err := runTimed(cmd)
 	return stdoutBuf.Bytes(), stderrBuf.Bytes(), err
 }
 
@@ -126,8 +127,17 @@ func CombinedOutput(cmd *exec.Cmd) ([]byte, error) {
 	}
 	cmd.Stdout = w
 	cmd.Stderr = w
-	err := cmd.Run()
+	err := runTimed(cmd)
 	return buf.Bytes(), err
+}
+
+// runTimed runs the command and logs how long it took, since slow Bazel
+// startup is the most common cause of timeouts in CLI tests.
+func runTimed(cmd *exec.Cmd) error {
+	start := time.Now()
+	err := cmd.Run()
+	fmt.Fprintf(os.Stderr, "[testcli] %q took %s (exit code %d)\n", cmd.Args[1:], time.Since(start).Round(time.Millisecond), cmd.ProcessState.ExitCode())
+	return err
 }
 
 // NewWorkspace creates a new bazel workspace with .bazelversion configured

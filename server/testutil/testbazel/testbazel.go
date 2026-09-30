@@ -96,7 +96,9 @@ func BinaryPath(t testing.TB) string {
 		path, err := runfiles.Rlocation(bazelRlocationpath)
 		require.NoError(t, err, "look up bazel binary path")
 
+		start := time.Now()
 		installBase := initInstallBase(t)
+		t.Logf("Initialized bazel install base in %s", time.Since(start))
 
 		bazelrc := filepath.Join(os.Getenv("TEST_TMPDIR"), "bazel-"+Version+".bazelrc")
 		var bazelrcLines []string
