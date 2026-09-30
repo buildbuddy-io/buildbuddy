@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -20,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/mdutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/docker/go-units"
@@ -147,7 +147,7 @@ func downloadArtifacts(ctx context.Context, client apipb.ApiServiceClient, invoc
 		log.Warnf("Skipped %d artifacts due to invalid paths or duplicates", skipped)
 	}
 
-	var patchPaths []string
+	downloaded := 0
 	for i, artifact := range artifacts {
 		path := paths[i]
 		if path == "" {
@@ -200,14 +200,10 @@ func downloadArtifacts(ctx context.Context, client apipb.ApiServiceClient, invoc
 			log.Warnf("Skipping artifact %q after GetFile failed: %s", artifact.GetName(), getFileErr)
 			continue
 		}
-		log.Printf("Downloaded %s", path)
-		if strings.HasSuffix(strings.ToLower(path), ".patch") {
-			patchPaths = append(patchPaths, path)
-		}
+		log.Debugf("Downloaded %s", path)
+		downloaded++
 	}
-	if len(patchPaths) > 0 {
-		log.Printf("To apply the downloaded patch artifacts, run: git apply %s", shlex.Quote(patchPaths...))
-	}
+	log.Printf("Downloaded %d artifact(s) to %s", downloaded, outputDir)
 	return nil
 }
 
@@ -294,7 +290,7 @@ func HandleDownload(args []string) (int, error) {
 			if err != nil {
 				return -1, fmt.Errorf("create temporary artifact directory: %w", err)
 			}
-			log.Printf("Downloading artifacts to %s", outputDir)
+			log.Printf("%sDownloading artifacts to %s%s", terminal.Esc(90), outputDir, terminal.Esc())
 		}
 		if err := downloadArtifacts(ctx, apipb.NewApiServiceClient(conn), invocationID, outputDir); err != nil {
 			log.Print(err)
