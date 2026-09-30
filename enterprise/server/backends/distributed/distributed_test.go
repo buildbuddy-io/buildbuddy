@@ -4206,7 +4206,10 @@ func TestWriteByReference(t *testing.T) {
 	}
 
 	t.Run("write flag uploads once and distributes references", func(t *testing.T) {
-		setWriteReferenceExperiments(t, true)
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references": true,
+			"distributed_cache.share_gcs_references": false,
+		})
 		_, dcs, locals, store := newCluster(t, 3)
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, dcs[0].Set(ctx, rn, buf))
@@ -4218,6 +4221,23 @@ func TestWriteByReference(t *testing.T) {
 		require.Equal(t, 0, byteCommits)
 		require.Equal(t, 3, refWrites)
 		require.Equal(t, 2, refWritesCloned) // Only 2 of the 3 should clone.
+		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("references are shared by default", func(t *testing.T) {
+		setWriteReferenceExperiments(t, true)
+		_, dcs, locals, store := newCluster(t, 3)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+
+		require.Equal(t, 1, store.uploadCount())
+		byteCommits, refWrites, refWritesCloned := totals(locals)
+		require.Equal(t, 0, byteCommits)
+		require.Equal(t, 3, refWrites)
+		require.Equal(t, 0, refWritesCloned)
+		for _, l := range locals {
+			require.Equal(t, 1, l.sharedRefWrites())
+		}
 		assertReplicated(t, locals, dcs, rn)
 	})
 
