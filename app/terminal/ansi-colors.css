@@ -1,5 +1,7 @@
 /* Dark terminal colors */
 
+/* Standard palette */
+
 .terminal .ansi-fg-black {
   color: var(--color-black);
 }
@@ -24,8 +26,11 @@
 .terminal .ansi-fg-white {
   color: var(--color-white);
 }
+
+/* High-intensity palette (except for gray, these are the same as standard for now) */
+
 .terminal .ansi-fg-gray {
-  color: var(--color-gray);
+  color: var(--color-gray-400);
 }
 .terminal .ansi-fg-bright-red {
   color: var(--color-red-400);
@@ -48,14 +53,17 @@
 .terminal .ansi-fg-bright-white {
   color: var(--color-white);
 }
+
+/* Standard palette */
+
 .terminal .ansi-bg-black {
   background-color: var(--color-black);
 }
-.terminal .ansi-bg-green {
-  background-color: var(--color-green-400);
-}
 .terminal .ansi-bg-red {
   background-color: var(--color-red-400);
+}
+.terminal .ansi-bg-green {
+  background-color: var(--color-green-400);
 }
 .terminal .ansi-bg-yellow {
   background-color: var(--color-yellow-400);
@@ -72,17 +80,17 @@
 .terminal .ansi-bg-white {
   background-color: var(--color-white);
 }
-.terminal .ansi-bg-grey {
-  background-color: var(--color-gray-400);
-}
+
+/* High-intensity palette (except for gray, these are the same as standard for now) */
+
 .terminal .ansi-bg-gray {
-  background-color: var(--color-gray);
-}
-.terminal .ansi-bg-bright-green {
-  background-color: var(--color-green-400);
+  background-color: var(--color-gray-400);
 }
 .terminal .ansi-bg-bright-red {
   background-color: var(--color-red-400);
+}
+.terminal .ansi-bg-bright-green {
+  background-color: var(--color-green-400);
 }
 .terminal .ansi-bg-bright-yellow {
   background-color: var(--color-yellow-400);
@@ -102,11 +110,14 @@
 
 /* Light terminal color overrides */
 
-.terminal.light-terminal .ansi-fg-green {
-  color: var(--color-green-700);
-}
+
+/* Standard palette */
+
 .terminal.light-terminal .ansi-fg-red {
   color: var(--color-red-600);
+}
+.terminal.light-terminal .ansi-fg-green {
+  color: var(--color-green-700);
 }
 .terminal.light-terminal .ansi-fg-yellow {
   color: var(--color-yellow-800);
@@ -120,14 +131,17 @@
 .terminal.light-terminal .ansi-fg-cyan {
   color: var(--color-cyan-600);
 }
+
+/* High-intensity palette (except for gray, these are the same as standard for now) */
+
 .terminal.light-terminal .ansi-fg-gray {
   color: var(--color-gray-600);
 }
-.terminal.light-terminal .ansi-fg-bright-green {
-  color: var(--color-green-700);
-}
 .terminal.light-terminal .ansi-fg-bright-red {
   color: var(--color-red-600);
+}
+.terminal.light-terminal .ansi-fg-bright-green {
+  color: var(--color-green-700);
 }
 .terminal.light-terminal .ansi-fg-bright-yellow {
   color: var(--color-yellow-800);
