@@ -590,6 +590,8 @@ func TestUsageExport(t *testing.T) {
 		row("GR1", day4, sku.BuildEventsBESCount, nil, 15),
 		row("GR1", day4, sku.RemoteExecutionExecuteFixedComputeNanos, rbeLabels, int64(90*time.Second)),
 		row("GR1", day4, sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes, rbeLabels, 2_002),
+		// Rows whose only usage isn't exported are skipped.
+		row("GR1", day4, sku.RemoteCacheCASUploadedBytes, workflowCacheLabels, 1_010),
 		// Usage outside the date range or for another group is not exported.
 		row("GR1", day3.AddDate(0, -1, 0), sku.BuildEventsBESCount, nil, 77),
 		row("GR2", day3, sku.BuildEventsBESCount, nil, 107),

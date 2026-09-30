@@ -906,7 +906,10 @@ type usageExportColumn struct {
 
 // usageExportDimensions are the usage labels that rows are grouped by. Arch,
 // OS and isolation type are only recorded for executions, so they are blank
-// on rows of other usage.
+// on rows of other usage. is_workflow identifies BuildBuddy-hosted workflow
+// runners by their client label. Bazel running inside a runner, and everything
+// on self-hosted runners, isn't labeled as workflow usage, so its invocations
+// and cache hits land on is_workflow=false.
 var usageExportDimensions = []usageExportColumn{
 	{"is_workflow", "if(" + rawUsageLabelEquals(sku.Client, sku.ClientExecutorWorkflows) + ", 'true', 'false')"},
 	{"is_self_hosted", "if(" + rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedTrue) + ", 'true', 'false')"},
@@ -1104,7 +1107,8 @@ func parseUsageExportRange(params url.Values) (start, end time.Time, err error) 
 }
 
 // scanUsageExportRows returns one row per day and combination of dimensions,
-// ordered by day then dimensions.
+// ordered by day then dimensions. Rows whose exported columns are all zero are
+// skipped.
 func (s *usageService) scanUsageExportRows(ctx context.Context, groupID string, start, end time.Time) ([]*usageExportRow, error) {
 	selectExpressions := []string{"formatDateTime(period_start, '%F') AS period"}
 	groupBy := []string{"period"}
@@ -1112,8 +1116,10 @@ func (s *usageService) scanUsageExportRows(ctx context.Context, groupID string, 
 		selectExpressions = append(selectExpressions, column.Expression+" AS "+column.Name)
 		groupBy = append(groupBy, column.Name)
 	}
+	metrics := make([]string, 0, len(usageExportMetrics))
 	for _, column := range usageExportMetrics {
 		selectExpressions = append(selectExpressions, column.Expression+" AS "+column.Name)
+		metrics = append(metrics, column.Name)
 	}
 	return db.ScanAll(s.olapdbh.NewQuery(ctx, "usage_service_scan_olap_export").Raw(`
 		SELECT `+strings.Join(selectExpressions, ",\n\t\t")+`
@@ -1122,7 +1128,7 @@ func (s *usageService) scanUsageExportRows(ctx context.Context, groupID string, 
 		AND group_id = ?
 		AND sku IN ?
 		GROUP BY `+strings.Join(groupBy, ", ")+`
-		HAVING MAX(count) > 0
+		HAVING greatest(`+strings.Join(metrics, ", ")+`) > 0
 		ORDER BY `+strings.Join(groupBy, ", ")+`
 	`, start, end, groupID, usageExportSKUs), &usageExportRow{})
 }
