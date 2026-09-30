@@ -2,6 +2,13 @@ name: "Build Windows executor"
 
 on:
   pull_request:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "docs/**"
+      - "website/**"
+  workflow_dispatch:
 
 jobs:
   build:
