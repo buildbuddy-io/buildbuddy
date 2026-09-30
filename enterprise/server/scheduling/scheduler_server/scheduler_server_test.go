@@ -946,6 +946,79 @@ func TestExecutorJoin_ReservationCarriesTaskOwnerJWT(t *testing.T) {
 	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor2, taskID)))
 }
 
+// fakeExecutorStream is the scheduler's end of an executor's work stream, for
+// tests that drive an executorHandle directly instead of through gRPC.
+type fakeExecutorStream struct {
+	scpb.Scheduler_RegisterAndStreamWorkServer
+	ctx  context.Context
+	sent chan *scpb.RegisterAndStreamWorkResponse
+}
+
+func (s *fakeExecutorStream) Context() context.Context {
+	return s.ctx
+}
+
+func (s *fakeExecutorStream) Send(rsp *scpb.RegisterAndStreamWorkResponse) error {
+	select {
+	case s.sent <- rsp:
+		return nil
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	}
+}
+
+func TestExecutorJoin_OffersWorkSizedForJoiningExecutor(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+
+	executor1 := newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
+	executor1.Register()
+
+	// Schedule a task with a measured size that differs from its default
+	// size. Only an executor whose registration is known gets the measured
+	// size; otherwise the scheduler falls back to the default.
+	req := newScheduleRequest(ctx, t, env, scheduleOpts{})
+	req.Metadata.MeasuredTaskSize = &scpb.TaskSize{
+		EstimatedMemoryBytes: 3_000_000_000,
+		EstimatedMilliCpu:    3_000,
+	}
+	require.NotEqual(t, req.GetMetadata().GetMeasuredTaskSize().GetEstimatedMilliCpu(), req.GetMetadata().GetTaskSize().GetEstimatedMilliCpu())
+	_, err := s.ScheduleTask(ctx, req)
+	require.NoError(t, err)
+	nextReservation(t, executor1, req.GetTaskId())
+
+	// Join a second executor the way Serve does when it receives a
+	// registration: by calling AddConnectedExecutor on a handle whose
+	// registration isn't set yet. AddConnectedExecutor offers the joining
+	// executor unclaimed tasks from another goroutine, so the registration
+	// must be set before that goroutine starts.
+	streamCtx, cancel := context.WithCancel(ctx)
+	t.Cleanup(cancel)
+	stream := &fakeExecutorStream{ctx: streamCtx, sent: make(chan *scpb.RegisterAndStreamWorkResponse, 10)}
+	handle := newExecutorHandle(env, s, false /*=requireAuthorization*/, stream)
+	node := &scpb.ExecutionNode{
+		ExecutorId:            "n2",
+		OsFamily:              defaultOS,
+		Arch:                  defaultArch,
+		Host:                  "foo",
+		AssignableMemoryBytes: 64_000_000_000,
+		AssignableMilliCpu:    32_000,
+	}
+	require.NoError(t, s.AddConnectedExecutor(ctx, handle, node))
+	t.Cleanup(func() { s.RemoveConnectedExecutor(ctx, handle, node) })
+
+	select {
+	case rsp := <-stream.sent:
+		reservation := rsp.GetEnqueueTaskReservationRequest()
+		require.Equal(t, req.GetTaskId(), reservation.GetTaskId(), "expected a task reservation, got: %+v", rsp)
+		require.Equal(t, int64(3_000), reservation.GetTaskSize().GetEstimatedMilliCpu())
+		require.Equal(t, int64(3_000_000_000), reservation.GetTaskSize().GetEstimatedMemoryBytes())
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "joining executor was not offered the unclaimed task")
+	}
+}
+
 func TestExecutorShutdown_ReEnqueuedReservationCarriesTaskOwnerJWT(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 	executorCtx := authenticatedContext(t, env, "user2")
