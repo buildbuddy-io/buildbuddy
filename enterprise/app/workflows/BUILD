@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -32,8 +32,29 @@ ts_library(
         "//enterprise/app/workflows:action_list",
         "//enterprise/app/workflows:checks_dropdown",
         "//enterprise/app/workflows:github_app_import",
+        "//enterprise/app/workflows:run_workflow_deep_link",
         "//enterprise/app/workflows:zero_state",
         "//proto:github_ts_proto",
+        "//proto:workflow_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "run_workflow_deep_link",
+    srcs = ["run_workflow_deep_link.ts"],
+    deps = [
+        "//:node_modules/tslib",
+        "//app/util:git",
+        "//proto:workflow_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "run_workflow_deep_link_test",
+    srcs = ["run_workflow_deep_link_test.ts"],
+    deps = [
+        ":run_workflow_deep_link",
+        "//:node_modules/tslib",
         "//proto:workflow_ts_proto",
     ],
 )
