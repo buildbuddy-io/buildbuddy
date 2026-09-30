@@ -2,8 +2,10 @@ package cluster
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakedisco "k8s.io/client-go/discovery/fake"
@@ -68,6 +71,25 @@ func newFakeCluster(t *testing.T, ix *summaries.Index, objs ...runtime.Object) *
 		eventsGVR: "EventList",
 		{Group: "apps", Version: "v1", Resource: "deployments"}: "DeploymentList",
 	}, objs...)
+	// client-go's fakes ignore field selectors. Apply them to event lists so
+	// the tests exercise the selector Events sends.
+	dyn.PrependReactor("list", "events", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		la := action.(clienttesting.ListAction)
+		obj, err := dyn.Tracker().List(eventsGVR, schema.GroupVersionKind{Version: "v1", Kind: "Event"}, la.GetNamespace())
+		if err != nil {
+			return true, nil, err
+		}
+		list := obj.(*unstructured.UnstructuredList)
+		list.Items = slices.DeleteFunc(list.Items, func(e unstructured.Unstructured) bool {
+			about, _, _ := unstructured.NestedStringMap(e.Object, "involvedObject")
+			set := fields.Set{}
+			for k, v := range about {
+				set["involvedObject."+k] = v
+			}
+			return !la.GetListRestrictions().Fields.Matches(set)
+		})
+		return true, list, nil
+	})
 
 	metaScheme := metadatafake.NewTestScheme()
 	require.NoError(t, metav1.AddMetaToScheme(metaScheme))
@@ -145,6 +167,59 @@ func TestWatchFeedsIndex(t *testing.T) {
 	require.NotEmpty(t, st.Resources)
 }
 
+func TestRediscoveryDropsVanishedTypes(t *testing.T) {
+	ix := summaries.New()
+	c := newFakeCluster(t, ix, podU("web-1", "prod"))
+	ctx := t.Context()
+	c.discover(ctx)
+	require.Eventually(t, func() bool {
+		_, ok := ix.GetEntry("test", "", "pods", "prod", "web-1")
+		return ok
+	}, 10*time.Second, 10*time.Millisecond)
+	c.mu.Lock()
+	pods := c.watchers[podsGVR]
+	c.mu.Unlock()
+	require.NotNil(t, pods)
+
+	// Discovery stops reporting pods, as after a CRD is deleted or its
+	// preferred version moves.
+	var remaining []*metav1.APIResourceList
+	for _, list := range testResources() {
+		list.APIResources = slices.DeleteFunc(list.APIResources, func(r metav1.APIResource) bool { return r.Name == "pods" })
+		remaining = append(remaining, list)
+	}
+	c.disco.(*fakedisco.FakeDiscovery).Resources = remaining
+	c.discover(ctx)
+
+	_, ok := ix.GetEntry("test", "", "pods", "prod", "web-1")
+	require.False(t, ok, "the store left the index")
+	require.Equal(t, 0, ix.Search("web-1", 10).Total)
+	c.mu.Lock()
+	_, watching := c.watchers[podsGVR]
+	c.mu.Unlock()
+	require.False(t, watching)
+	select {
+	case <-pods.done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the old watcher kept running")
+	}
+}
+
+func TestEventsKeepsNewest(t *testing.T) {
+	var objs []runtime.Object
+	for i := range maxEvents + 5 {
+		ts := time.Date(2026, 7, 30, 0, 0, i, 0, time.UTC).Format(time.RFC3339)
+		objs = append(objs, eventU(fmt.Sprintf("e%d", i), "prod", "Pod", "web-1", "", fmt.Sprintf("r%d", i), ts))
+	}
+	c := newFakeCluster(t, summaries.New(), objs...)
+
+	events, err := c.Events(context.Background(), podU("web-1", "prod"))
+	require.NoError(t, err)
+	require.Len(t, events, maxEvents)
+	require.Equal(t, fmt.Sprintf("r%d", maxEvents+4), events[0].Reason, "the newest survive the cut")
+	require.Equal(t, "r5", events[maxEvents-1].Reason, "the oldest are dropped")
+}
+
 func TestGetObjectRedactsSecrets(t *testing.T) {
 	secret := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "v1",
@@ -180,13 +255,13 @@ func TestGetObjectRedactsSecrets(t *testing.T) {
 	require.False(t, found)
 }
 
-func eventU(name, ns, about, reason, ts string) *unstructured.Unstructured {
+func eventU(name, ns, aboutKind, about, aboutUID, reason, ts string) *unstructured.Unstructured {
 	return &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "v1",
 		"kind":       "Event",
 		"metadata":   map[string]any{"name": name, "namespace": ns},
 		"involvedObject": map[string]any{
-			"name": about, "namespace": ns,
+			"kind": aboutKind, "name": about, "namespace": ns, "uid": aboutUID,
 		},
 		"type":          "Warning",
 		"reason":        reason,
@@ -199,14 +274,18 @@ func eventU(name, ns, about, reason, ts string) *unstructured.Unstructured {
 func TestEvents(t *testing.T) {
 	ix := summaries.New()
 	c := newFakeCluster(t, ix,
-		eventU("e1", "prod", "web-1", "BackOff", "2026-07-30T10:00:00Z"),
-		eventU("e2", "prod", "web-1", "Unhealthy", "2026-07-30T11:00:00Z"),
-		eventU("e3", "prod", "other-pod", "Killing", "2026-07-30T12:00:00Z"),
+		eventU("e1", "prod", "Pod", "web-1", "pod-uid", "BackOff", "2026-07-30T10:00:00Z"),
+		eventU("e2", "prod", "Pod", "web-1", "", "Unhealthy", "2026-07-30T11:00:00Z"), // no uid recorded
+		eventU("e3", "prod", "Pod", "other-pod", "", "Killing", "2026-07-30T12:00:00Z"),
+		eventU("e4", "prod", "Service", "web-1", "", "SyncFailed", "2026-07-30T12:00:00Z"),
+		eventU("e5", "prod", "Pod", "web-1", "old-pod-uid", "Started", "2026-07-30T13:00:00Z"),
 	)
 
-	events, err := c.Events(context.Background(), "prod", "web-1")
+	pod := podU("web-1", "prod")
+	pod.SetUID("pod-uid")
+	events, err := c.Events(context.Background(), pod)
 	require.NoError(t, err)
-	require.Len(t, events, 2, "events about other objects are excluded")
+	require.Len(t, events, 2, "other objects, same-named other kinds and an earlier pod of that name are excluded")
 	require.Equal(t, "Unhealthy", events[0].Reason, "most recent first")
 	require.Equal(t, "BackOff", events[1].Reason)
 	require.EqualValues(t, 3, events[0].Count)

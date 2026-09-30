@@ -165,13 +165,28 @@ func (c *Cluster) discover(ctx context.Context) {
 		// Partial discovery (a broken aggregated API) still yields the rest.
 		log.Warningf("Cluster %q: partial API discovery: %s", c.name, err)
 	}
+	want := map[schema.GroupVersionResource]bool{}
 	for _, r := range resources {
-		c.mu.Lock()
-		_, exists := c.watchers[r.gvr]
-		if !exists {
+		want[r.gvr] = true
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Types discovery no longer reports (a deleted CRD, a preferred version
+	// that moved) stop being watched and leave the index. Not after a partial
+	// discovery, which is missing whole groups that still exist.
+	if err == nil {
+		for gvr, w := range c.watchers {
+			if !want[gvr] {
+				w.cancel()
+				c.ix.RemoveStore(w.store)
+				delete(c.watchers, gvr)
+			}
+		}
+	}
+	for _, r := range resources {
+		if _, exists := c.watchers[r.gvr]; !exists {
 			c.watchers[r.gvr] = c.startWatcher(ctx, r)
 		}
-		c.mu.Unlock()
 	}
 }
 
@@ -249,8 +264,10 @@ func (c *Cluster) listWatchableResources() ([]discoveredResource, error) {
 
 // watcher keeps one resource type synced into its index store.
 type watcher struct {
-	res   summaries.ResourceType
-	store *summaries.Store
+	res    summaries.ResourceType
+	store  *summaries.Store
+	cancel context.CancelFunc
+	done   chan struct{} // closed when run returns
 
 	mu      sync.Mutex
 	lastErr error
@@ -258,7 +275,8 @@ type watcher struct {
 }
 
 func (c *Cluster) startWatcher(ctx context.Context, r discoveredResource) *watcher {
-	w := &watcher{res: r.res, store: c.ix.NewStore(r.res)}
+	ctx, cancel := context.WithCancel(ctx)
+	w := &watcher{res: r.res, store: c.ix.NewStore(r.res), cancel: cancel, done: make(chan struct{})}
 
 	var lw cache.ListerWatcher
 	var example runtime.Object
@@ -287,6 +305,7 @@ func (c *Cluster) startWatcher(ctx context.Context, r discoveredResource) *watch
 }
 
 func (w *watcher) run(ctx context.Context, lw cache.ListerWatcher, example runtime.Object) {
+	defer close(w.done)
 	r := cache.NewReflectorWithOptions(lw, example, k8singest.NewStore(w.store), cache.ReflectorOptions{
 		Name: w.res.String(),
 	})
@@ -429,24 +448,24 @@ type Event struct {
 	LastSeen time.Time
 }
 
-// Events returns recent events about the named object, most recent first.
-func (c *Cluster) Events(ctx context.Context, namespace, name string) ([]Event, error) {
+// Events returns recent events about the object, most recent first.
+func (c *Cluster) Events(ctx context.Context, obj *unstructured.Unstructured) ([]Event, error) {
+	namespace, name, kind, uid := obj.GetNamespace(), obj.GetName(), obj.GetKind(), string(obj.GetUID())
 	ri := c.dyn.Resource(schema.GroupVersionResource{Version: "v1", Resource: "events"})
-	sel := "involvedObject.name=" + name
+	sel := "involvedObject.name=" + name + ",involvedObject.kind=" + kind
 	if namespace != "" {
 		sel += ",involvedObject.namespace=" + namespace
 	}
-	list, err := ri.Namespace(namespace).List(ctx, metav1.ListOptions{FieldSelector: sel, Limit: 100})
+	list, err := ri.Namespace(namespace).List(ctx, metav1.ListOptions{FieldSelector: sel})
 	if err != nil {
 		return nil, err
 	}
 	var out []Event
 	for _, item := range list.Items {
-		// Field selectors are enforced server-side, but re-check so fakes (and
-		// any event-API drift) cannot attribute another object's events.
-		n, _, _ := unstructured.NestedString(item.Object, "involvedObject", "name")
-		ns, _, _ := unstructured.NestedString(item.Object, "involvedObject", "namespace")
-		if n != name || (namespace != "" && ns != namespace) {
+		// An event that recorded a uid must be about this object, not an
+		// earlier one of the same name. Those without one are kept, which is
+		// why uid is not in the selector.
+		if u, _, _ := unstructured.NestedString(item.Object, "involvedObject", "uid"); u != "" && uid != "" && u != uid {
 			continue
 		}
 		ev := Event{}
@@ -458,8 +477,11 @@ func (c *Cluster) Events(ctx context.Context, namespace, name string) ([]Event, 
 		out = append(out, ev)
 	}
 	slices.SortStableFunc(out, func(a, b Event) int { return b.LastSeen.Compare(a.LastSeen) })
-	return out, nil
+	return out[:min(len(out), maxEvents)], nil
 }
+
+// maxEvents caps how many of an object's events are returned, newest first.
+const maxEvents = 100
 
 func latestEventTime(u *unstructured.Unstructured) time.Time {
 	for _, path := range [][]string{{"lastTimestamp"}, {"eventTime"}, {"firstTimestamp"}} {

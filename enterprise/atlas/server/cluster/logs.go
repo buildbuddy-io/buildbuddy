@@ -64,8 +64,7 @@ func newRESTLogSource(rc *rest.Config) (*restLogSource, error) {
 }
 
 func (s *restLogSource) Logs(ctx context.Context, namespace, pod string, opts LogOptions) (io.ReadCloser, error) {
-	u := *s.base
-	u.Path = fmt.Sprintf("/api/v1/namespaces/%s/pods/%s/log", url.PathEscape(namespace), url.PathEscape(pod))
+	u := s.base.JoinPath("api", "v1", "namespaces", url.PathEscape(namespace), "pods", url.PathEscape(pod), "log")
 	q := url.Values{}
 	if opts.Container != "" {
 		q.Set("container", opts.Container)
