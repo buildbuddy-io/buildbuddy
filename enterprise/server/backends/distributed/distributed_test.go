@@ -4206,7 +4206,10 @@ func TestWriteByReference(t *testing.T) {
 	}
 
 	t.Run("write flag uploads once and distributes references", func(t *testing.T) {
-		setWriteReferenceExperiments(t, true)
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references": true,
+			"distributed_cache.share_gcs_references": false,
+		})
 		_, dcs, locals, store := newCluster(t, 3)
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, dcs[0].Set(ctx, rn, buf))
