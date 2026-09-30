@@ -1065,25 +1065,25 @@ func grpcRow() *dashboard.RowBuilder {
 				SortBy("Last *").
 				SortDesc(true)).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_client_request_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))).
+			WithTarget(dash.PromQuery(`sum by (grpc_method) (rate(grpc_client_attempt_sent_total_compressed_message_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "{{grpc_method}}"))).
 		WithPanel(ts("gRPC Client Response Bytes", dash.UnitBinaryBytesPerSec).
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *").
 				SortDesc(true)).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_client_response_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))).
+			WithTarget(dash.PromQuery(`sum by (grpc_method) (rate(grpc_client_attempt_rcvd_total_compressed_message_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "{{grpc_method}}"))).
 		WithPanel(ts("gRPC Server Request Bytes", dash.UnitBinaryBytesPerSec).
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *").
 				SortDesc(true)).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_server_request_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))).
+			WithTarget(dash.PromQuery(`sum by (grpc_method) (rate(grpc_server_call_rcvd_total_compressed_message_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "{{grpc_method}}"))).
 		WithPanel(ts("gRPC Server Response Bytes", dash.UnitBinaryBytesPerSec).
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *").
 				SortDesc(true)).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_server_response_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))).
+			WithTarget(dash.PromQuery(`sum by (grpc_method) (rate(grpc_server_call_sent_total_compressed_message_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "{{grpc_method}}"))).
 		WithPanel(ts("gRPC client RPCs per connection", dash.UnitShort).
 			Description("Active RPCs on each gRPC client connection, summed over methods. Hides 0 values.").
 			Min(0).
