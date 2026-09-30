@@ -213,8 +213,8 @@ type Namespace struct {
 	name string
 }
 
-// createUniqueNetNamespace creates a new unique net namespace.
-func createUniqueNetNamespace(ctx context.Context) (*Namespace, error) {
+// CreateUniqueNetNamespace creates a new unique net namespace.
+func CreateUniqueNetNamespace(ctx context.Context) (*Namespace, error) {
 	name := netNamespacePrefix + uuid.New()
 	if err := runCommand(ctx, "ip", "netns", "add", name); err != nil {
 		return nil, err
@@ -375,6 +375,38 @@ func attachAddressToVeth(ctx context.Context, netns *Namespace, ipAddr, vethName
 	} else {
 		return runCommand(ctx, "ip", "addr", "add", ipAddr, "dev", vethName)
 	}
+}
+
+// Network is the net namespace that a container or VM runs in.
+type Network interface {
+	NamespacePath() string
+	Stats(ctx context.Context) (*repb.NetworkStats, error)
+	Cleanup(ctx context.Context) error
+}
+
+// TaskAllowedPrivateIPs returns the private IPs that actions may reach, as
+// configured by --executor.task_allowed_private_ips.
+func TaskAllowedPrivateIPs(ctx context.Context) ([]netip.Prefix, error) {
+	var prefixes []netip.Prefix
+	for _, allow := range *taskAllowedPrivateIPs {
+		if allow == "default" {
+			defaultIP, err := DefaultIP(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("find default IP: %w", err)
+			}
+			allow = defaultIP.String()
+		}
+		if addr, err := netip.ParseAddr(allow); err == nil {
+			prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
+			continue
+		}
+		prefix, err := netip.ParsePrefix(allow)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid allowed private IP %q", allow)
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	return prefixes, nil
 }
 
 // VethPairNetwork is the interface common to OCI container networks and VM
@@ -864,17 +896,14 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 		})
 	}
 
+	allowedIPs, err := TaskAllowedPrivateIPs(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var iptablesRules [][]string
-	for _, allow := range *taskAllowedPrivateIPs {
-		if allow == "default" {
-			defaultIP, err := DefaultIP(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("find default IP: %w", err)
-			}
-			allow = defaultIP.String()
-		}
-		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", allow, "-j", "ACCEPT"})
-		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", allow, "-j", "ACCEPT"})
+	for _, allow := range allowedIPs {
+		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", allow.String(), "-j", "ACCEPT"})
+		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", allow.String(), "-j", "ACCEPT"})
 	}
 	for _, r := range PrivateIPRanges {
 		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
@@ -1044,7 +1073,7 @@ func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string, e
 	}()
 
 	// Create a net namespace.
-	netns, err := createUniqueNetNamespace(ctx)
+	netns, err := CreateUniqueNetNamespace(ctx)
 	if err != nil {
 		return nil, status.WrapError(err, "create net namespace")
 	}
@@ -1211,7 +1240,7 @@ func CreateContainerNetwork(ctx context.Context, loopbackOnly bool) (_ *Containe
 	}()
 
 	// Create a net namespace.
-	netns, err := createUniqueNetNamespace(ctx)
+	netns, err := CreateUniqueNetNamespace(ctx)
 	if err != nil {
 		return nil, status.WrapError(err, "create net namespace")
 	}
