@@ -1763,45 +1763,60 @@ func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t 
 }
 
 func TestDownloadTree_InputDownloadConcurrencyCountsBatchedFiles(t *testing.T) {
-	flags.Set(t, "cache.client.input_download_concurrency", 16)
-	dirtools.ResetInputDownloadLimiterForTest()
-	env, ctx := testEnv(t)
-	tmpDir := testfs.MakeTempDir(t)
-	client := &trackingReadClient{
-		ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
-		ByteStreamClient:                env.GetByteStreamClient(),
-		unblock:                         make(chan struct{}),
-	}
-	env.SetContentAddressableStorageClient(client)
-	env.SetByteStreamClient(client)
-	root := &repb.Directory{}
-	for i := range 20 {
-		d := setFile(t, env, ctx, "", fmt.Sprintf("file-%d", i))
-		root.Files = append(root.Files, &repb.FileNode{Name: fmt.Sprintf("file-%d.txt", i), Digest: d})
-	}
+	for _, tc := range []struct {
+		name          string
+		maxBatchFiles int
+		// wantBatchSizes lists the number of files in each BatchReadBlobs
+		// request.
+		wantBatchSizes []int
+	}{
+		// By default, batches hold at most an eighth of the limit.
+		{name: "default", maxBatchFiles: 0, wantBatchSizes: slices.Repeat([]int{2}, 10)},
+		{name: "explicit", maxBatchFiles: 4, wantBatchSizes: slices.Repeat([]int{4}, 5)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "cache.client.input_download_concurrency", 16)
+			flags.Set(t, "cache.client.input_download_max_batch_files", tc.maxBatchFiles)
+			dirtools.ResetInputDownloadLimiterForTest()
+			env, ctx := testEnv(t)
+			tmpDir := testfs.MakeTempDir(t)
+			client := &trackingReadClient{
+				ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+				ByteStreamClient:                env.GetByteStreamClient(),
+				unblock:                         make(chan struct{}),
+			}
+			env.SetContentAddressableStorageClient(client)
+			env.SetByteStreamClient(client)
+			root := &repb.Directory{}
+			for i := range 20 {
+				d := setFile(t, env, ctx, "", fmt.Sprintf("file-%d", i))
+				root.Files = append(root.Files, &repb.FileNode{Name: fmt.Sprintf("file-%d.txt", i), Digest: d})
+			}
 
-	// Download 20 small files with a limit of 16. Small files are batched,
-	// batches hold at most an eighth of the limit, and a batch takes a slot
-	// for each of its files. So the files should be read in 10 batches of 2,
-	// with 8 of them in flight at once.
-	eg := &errgroup.Group{}
-	eg.Go(func() error {
-		_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, &repb.Tree{Root: root}, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
-		return err
-	})
-	require.Eventually(t, func() bool { return client.filesInFlight() == 16 }, 5*time.Second, time.Millisecond)
-	require.Never(t, func() bool { return client.filesInFlight() > 16 }, 50*time.Millisecond, time.Millisecond)
+			// Download 20 small files with a limit of 16. Small files are
+			// batched, and a batch takes a slot for each of its files, so
+			// batches should be in flight until 16 files are being read.
+			eg := &errgroup.Group{}
+			eg.Go(func() error {
+				_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, &repb.Tree{Root: root}, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+				return err
+			})
+			require.Eventually(t, func() bool { return client.filesInFlight() == 16 }, 5*time.Second, time.Millisecond)
+			require.Never(t, func() bool { return client.filesInFlight() > 16 }, 50*time.Millisecond, time.Millisecond)
 
-	// Unblock the reads. All 20 files should be downloaded, and no more than
-	// 16 should ever have been read at once.
-	close(client.unblock)
-	err := eg.Wait()
-	require.NoError(t, err)
-	batchSizes, maxFilesInFlight := client.batchStats()
-	require.Equal(t, slices.Repeat([]int{2}, 10), batchSizes)
-	require.Equal(t, 16, maxFilesInFlight)
-	for i := range 20 {
-		assert.FileExists(t, filepath.Join(tmpDir, fmt.Sprintf("file-%d.txt", i)))
+			// Unblock the reads. All 20 files should be downloaded in
+			// batches of the expected size, and no more than 16 should ever
+			// have been read at once.
+			close(client.unblock)
+			err := eg.Wait()
+			require.NoError(t, err)
+			batchSizes, maxFilesInFlight := client.batchStats()
+			require.Equal(t, tc.wantBatchSizes, batchSizes)
+			require.Equal(t, 16, maxFilesInFlight)
+			for i := range 20 {
+				assert.FileExists(t, filepath.Join(tmpDir, fmt.Sprintf("file-%d.txt", i)))
+			}
+		})
 	}
 }
 
