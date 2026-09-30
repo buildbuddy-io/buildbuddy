@@ -405,8 +405,7 @@ func (s *usageService) GetBillEnabled() bool {
 	return *billEnabled && s.metronome != nil
 }
 
-// GetExportEnabled returns whether the usage CSV export should be exposed to
-// the frontend. The export only reads from the OLAP DB.
+// GetExportEnabled returns whether the OLAP-only usage CSV export is available.
 func (s *usageService) GetExportEnabled() bool {
 	return s.readFromOLAPDB
 }
@@ -875,11 +874,9 @@ func (s *usageService) addOLAPOnlyUsage(ctx context.Context, groupID string, sta
 }
 
 const (
-	// usageExportDateFormat is the format of the export's start and end query
-	// params.
+	// usageExportDateFormat is the start and end query param format.
 	usageExportDateFormat = "2006-01-02"
-	// usageExportMaxRange bounds the export so that its rows can be buffered
-	// in memory.
+	// usageExportMaxRange keeps the export small enough to buffer in memory.
 	usageExportMaxRange = 366 * 24 * time.Hour
 )
 
@@ -897,19 +894,16 @@ var usageExportSKUs = slices.Concat([]sku.SKU{
 
 // usageExportColumn is a column selected by the export query.
 type usageExportColumn struct {
-	// Name is the SELECT alias, and the snake_case name of the usageExportRow
-	// field that the column is scanned into.
+	// Name is the SELECT alias, scanned into the matching usageExportRow field.
 	Name string
 	// Expression is the ClickHouse expression over the Usage view.
 	Expression string
 }
 
-// usageExportDimensions are the usage labels that rows are grouped by. Arch,
-// OS and isolation type are only recorded for executions, so they are blank
-// on rows of other usage. is_workflow identifies BuildBuddy-hosted workflow
-// runners by their client label. Bazel running inside a runner, and everything
-// on self-hosted runners, isn't labeled as workflow usage, so its invocations
-// and cache hits land on is_workflow=false.
+// usageExportDimensions are the labels that rows are grouped by. Arch, OS and
+// isolation type are only recorded for executions. is_workflow is only set
+// for BuildBuddy-hosted workflow runners: bazel inside a runner and
+// self-hosted runners aren't labeled as workflow usage.
 var usageExportDimensions = []usageExportColumn{
 	{"is_workflow", "if(" + rawUsageLabelEquals(sku.Client, sku.ClientExecutorWorkflows) + ", 'true', 'false')"},
 	{"is_self_hosted", "if(" + rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedTrue) + ", 'true', 'false')"},
@@ -918,9 +912,8 @@ var usageExportDimensions = []usageExportColumn{
 	{"isolation_type", rawUsageLabel(sku.IsolationType)},
 }
 
-// usageExportMetrics are the exported totals. Durations are selected in
-// microseconds and written in minutes. Workflow bytes aren't exported: they
-// are mostly snapshots, which are charged separately.
+// usageExportMetrics are the exported totals, with durations in microseconds.
+// Workflow bytes are left out: they're mostly snapshots, charged separately.
 var usageExportMetrics = []usageExportColumn{
 	{"invocations", usageFieldOLAPExpression("invocations")},
 	{"action_cache_hits", usageFieldOLAPExpression("action_cache_hits")},
@@ -932,9 +925,8 @@ var usageExportMetrics = []usageExportColumn{
 	{"external_upload_bytes", usageFieldOLAPExpression("total_external_upload_size_bytes")},
 	{"internal_upload_bytes", usageFieldOLAPExpression("total_internal_upload_size_bytes")},
 	{"customer_proxy_upload_bytes", usageFieldOLAPExpression("total_customer_proxy_upload_size_bytes")},
-	// Unlike the Usage page's execution durations, these aren't limited to
-	// Linux executions on BuildBuddy-hosted executors: OS and hosting are
-	// dimensions instead.
+	// Not limited to cloud Linux executions like the Usage page's fields: OS
+	// and hosting are dimensions here.
 	{"execution_usec", rawUsageSumUsec(sku.RemoteExecutionExecuteWorkerDurationNanos)},
 	{"cpu_usec", rawUsageSumUsec(sku.RemoteExecutionExecuteWorkerCPUNanos)},
 	{"fixed_compute_unit_usec", rawUsageSumUsec(sku.RemoteExecutionExecuteFixedComputeNanos)},
@@ -943,8 +935,7 @@ var usageExportMetrics = []usageExportColumn{
 	{"local_snapshot_saved_bytes", rawUsageSum(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes)},
 }
 
-// usageFieldOLAPExpression returns the OLAP expression of the named Usage
-// field, so that the export matches the Usage page.
+// usageFieldOLAPExpression returns the named UsageFields entry's OLAP expression.
 func usageFieldOLAPExpression(name string) string {
 	for _, field := range UsageFields {
 		if field.Name == name {
@@ -1042,9 +1033,8 @@ func formatMinutes(usec int64) string {
 	return strconv.FormatFloat(float64(usec)/60e6, 'f', 3, 64)
 }
 
-// GetUsageExportHandler serves the usage CSV export: one row per UTC day and
-// combination of dimensions, for the [start, end) date range given as
-// YYYY-MM-DD query params.
+// GetUsageExportHandler serves the usage CSV export for the [start, end)
+// YYYY-MM-DD query params: one row per UTC day and combination of dimensions.
 func (s *usageService) GetUsageExportHandler() http.Handler {
 	return http.HandlerFunc(s.handleUsageExport)
 }
@@ -1076,8 +1066,7 @@ func (s *usageService) handleUsageExport(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "failed to query usage", http.StatusInternalServerError)
 		return
 	}
-	// Only set the download headers once the query has succeeded, so that
-	// errors are shown in the browser rather than downloaded.
+	// Set the download headers only on success, so errors aren't downloaded.
 	lastDay := end.AddDate(0, 0, -1).Format(usageExportDateFormat)
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="usage-%s-%s.csv"`, start.Format(usageExportDateFormat), lastDay))
@@ -1086,8 +1075,7 @@ func (s *usageService) handleUsageExport(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-// parseUsageExportRange parses the export's start (inclusive) and end
-// (exclusive) UTC dates.
+// parseUsageExportRange parses the [start, end) UTC dates.
 func parseUsageExportRange(params url.Values) (start, end time.Time, err error) {
 	start, err = time.Parse(usageExportDateFormat, params.Get("start"))
 	if err != nil {
@@ -1107,8 +1095,7 @@ func parseUsageExportRange(params url.Values) (start, end time.Time, err error) 
 }
 
 // scanUsageExportRows returns one row per day and combination of dimensions,
-// ordered by day then dimensions. Rows whose exported columns are all zero are
-// skipped.
+// in that order, skipping rows whose exported columns are all zero.
 func (s *usageService) scanUsageExportRows(ctx context.Context, groupID string, start, end time.Time) ([]*usageExportRow, error) {
 	selectExpressions := []string{"formatDateTime(period_start, '%F') AS period"}
 	groupBy := []string{"period"}

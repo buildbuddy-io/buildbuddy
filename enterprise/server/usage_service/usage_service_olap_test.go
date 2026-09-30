@@ -540,7 +540,7 @@ func TestUsageExport(t *testing.T) {
 
 	day3 := time.Date(2024, 2, 3, 0, 0, 0, 0, time.UTC)
 	day4 := time.Date(2024, 2, 4, 0, 0, 0, 0, time.UTC)
-	// Each row gets its own minute so that none are deduplicated.
+	// Each row gets its own minute so none are deduplicated.
 	n := 0
 	row := func(groupID string, day time.Time, s sku.SKU, labels map[sku.LabelName]sku.LabelValue, count int64) *schema.RawUsage {
 		n++
@@ -560,20 +560,18 @@ func TestUsageExport(t *testing.T) {
 		row("GR1", day3, sku.RemoteCacheCASHits, nil, 10_000),
 		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, externalLabels, 101),
 		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, internalLabels, 202),
-		// Customer proxy bytes are not counted as external bytes.
+		// Customer proxy bytes aren't external bytes.
 		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, customerProxyLabels, 700),
 		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, externalLabels, 404),
 		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, internalLabels, 505),
 		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, customerProxyLabels, 800),
-		// Workflow bytes aren't exported, whether from bazel running inside
-		// BuildBuddy or from workflow runners. Workflow runner hits are, on
-		// their own rows.
+		// Workflow bytes aren't exported, from internal bazel or from workflow
+		// runners. Workflow runner hits get their own rows.
 		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, internalBazelLabels, 303),
 		row("GR1", day3, sku.RemoteCacheCASUploadedBytes, internalBazelLabels, 606),
 		row("GR1", day3, sku.RemoteCacheCASHits, workflowCacheLabels, 7),
 		row("GR1", day3, sku.RemoteCacheCASDownloadedBytes, workflowCacheLabels, 909),
-		// Execution usage is exported per combination of execution dimensions,
-		// in minutes.
+		// Execution usage is exported per dimension combination, in minutes.
 		row("GR1", day3, sku.RemoteExecutionExecuteWorkerDurationNanos, rbeLabels, int64(2*time.Minute)),
 		row("GR1", day3, sku.RemoteExecutionExecuteWorkerDurationNanos, rbeLabels, int64(time.Minute)),
 		row("GR1", day3, sku.RemoteExecutionExecuteWorkerDurationNanos, workflowLabels, int64(3*time.Minute)),
@@ -592,7 +590,7 @@ func TestUsageExport(t *testing.T) {
 		row("GR1", day4, sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes, rbeLabels, 2_002),
 		// Rows whose only usage isn't exported are skipped.
 		row("GR1", day4, sku.RemoteCacheCASUploadedBytes, workflowCacheLabels, 1_010),
-		// Usage outside the date range or for another group is not exported.
+		// Usage outside the range or from another group isn't exported.
 		row("GR1", day3.AddDate(0, -1, 0), sku.BuildEventsBESCount, nil, 77),
 		row("GR2", day3, sku.BuildEventsBESCount, nil, 107),
 	}))
