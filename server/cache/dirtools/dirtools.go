@@ -726,7 +726,8 @@ type FileMap map[fetchKey][]*FilePointer
 
 // inputDownloadLimiter limits how many input files are materialized at once
 // across all tasks. Each of these takes a slot until the file is written:
-//   - A download from the remote cache, batched or streamed.
+//   - A ByteStream download.
+//   - A single file within a BatchReadBlobs request.
 //   - A hard link from the local file cache.
 //   - Creating an empty file.
 type inputDownloadLimiter struct {
