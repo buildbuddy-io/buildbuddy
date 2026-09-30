@@ -2031,8 +2031,13 @@ func (c *trackingClient) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 }
 
 func (c *trackingClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
-	defer c.track(1, &c.streamReads)()
-	return c.ByteStreamClient.Read(ctx, req, opts...)
+	done := c.track(1, &c.streamReads)
+	stream, err := c.ByteStreamClient.Read(ctx, req, opts...)
+	if err != nil {
+		done()
+		return nil, err
+	}
+	return &trackedReadStream{ByteStream_ReadClient: stream, done: sync.OnceFunc(done)}, nil
 }
 
 func (c *trackingClient) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest, opts ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
@@ -2041,6 +2046,38 @@ func (c *trackingClient) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUp
 }
 
 func (c *trackingClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
-	defer c.track(1, &c.streamWrites)()
-	return c.ByteStreamClient.Write(ctx, opts...)
+	done := c.track(1, &c.streamWrites)
+	stream, err := c.ByteStreamClient.Write(ctx, opts...)
+	if err != nil {
+		done()
+		return nil, err
+	}
+	return &trackedWriteStream{ByteStream_WriteClient: stream, done: sync.OnceFunc(done)}, nil
+}
+
+// trackedReadStream keeps a read in flight until the stream ends, which
+// happens when Recv returns EOF or an error.
+type trackedReadStream struct {
+	bspb.ByteStream_ReadClient
+	done func()
+}
+
+func (s *trackedReadStream) Recv() (*bspb.ReadResponse, error) {
+	rsp, err := s.ByteStream_ReadClient.Recv()
+	if err != nil {
+		s.done()
+	}
+	return rsp, err
+}
+
+// trackedWriteStream keeps a write in flight until the client finishes it
+// with CloseAndRecv.
+type trackedWriteStream struct {
+	bspb.ByteStream_WriteClient
+	done func()
+}
+
+func (s *trackedWriteStream) CloseAndRecv() (*bspb.WriteResponse, error) {
+	defer s.done()
+	return s.ByteStream_WriteClient.CloseAndRecv()
 }

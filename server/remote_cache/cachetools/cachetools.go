@@ -1010,6 +1010,8 @@ func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName 
 // Each of these operations consumes 1 slot until the upload finishes:
 //   - A ByteStream upload, including a chunked upload
 //   - A single upload within a larger BatchUpdateBlobs request
+//
+// BatchCASUploader only takes slots after LimitOutputUploads is called.
 type outputUploadLimiter struct {
 	init sync.Once
 	sem  *semaphore.Weighted
@@ -1048,22 +1050,16 @@ type BatchCASUploader struct {
 	unsentBatchSize int64
 	stats           UploadStats
 	chunkingParams  *repb.FastCdc2020Params
-	maxBatchFiles   int
+
+	// Set by LimitOutputUploads.
+	limitOutputUploads bool
+	maxBatchFiles      int
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
 // context (it should not be used outside the lifecycle of the request).
 func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, chunkingParams *repb.FastCdc2020Params) *BatchCASUploader {
 	eg, ctx := errgroup.WithContext(ctx)
-	// A batch takes a slot per file, and slots are granted in order, so a
-	// batch needing most of the slots would stall all other uploads.
-	maxBatchFiles := *outputUploadBatchFiles
-	if limit := *outputUploadConcurrency; limit > 0 {
-		if maxBatchFiles <= 0 {
-			maxBatchFiles = max(1, limit/8)
-		}
-		maxBatchFiles = min(maxBatchFiles, limit)
-	}
 	return &BatchCASUploader{
 		ctx:             ctx,
 		env:             env,
@@ -1074,8 +1070,30 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		digestFunction:  digestFunction,
 		uploads:         make(map[digest.Key]struct{}),
 		chunkingParams:  chunkingParams,
-		maxBatchFiles:   maxBatchFiles,
 	}
+}
+
+// LimitOutputUploads makes each upload wait for output upload slots, so that
+// uploads of action outputs count against the process-wide limit. It must be
+// called before any uploads.
+func (ul *BatchCASUploader) LimitOutputUploads() {
+	ul.limitOutputUploads = true
+	// A batch takes a slot per file, and slots are granted in order, so a
+	// batch needing most of the slots would stall all other uploads.
+	ul.maxBatchFiles = *outputUploadBatchFiles
+	if limit := *outputUploadConcurrency; limit > 0 {
+		if ul.maxBatchFiles <= 0 {
+			ul.maxBatchFiles = max(1, limit/8)
+		}
+		ul.maxBatchFiles = min(ul.maxBatchFiles, limit)
+	}
+}
+
+func (ul *BatchCASUploader) acquireSlots(n int64) (release func(), err error) {
+	if !ul.limitOutputUploads {
+		return func() {}, nil
+	}
+	return AcquireOutputUploadSlots(ul.ctx, n)
 }
 
 // Upload adds the given content to the current batch or begins a streaming
@@ -1111,7 +1129,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 				defer r.Close()
 				// The whole chunked upload takes a single slot, and its chunk
 				// uploads are limited separately.
-				release, err := AcquireOutputUploadSlots(ul.ctx, 1)
+				release, err := ul.acquireSlots(1)
 				if err != nil {
 					return err
 				}
@@ -1128,7 +1146,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		}
 		ul.eg.Go(func() error {
 			defer r.Close()
-			release, err := AcquireOutputUploadSlots(ul.ctx, 1)
+			release, err := ul.acquireSlots(1)
 			if err != nil {
 				return err
 			}
@@ -1218,7 +1236,7 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 	}
 	ul.unsentBatchSize = 0
 	ul.eg.Go(func() error {
-		release, err := AcquireOutputUploadSlots(ul.ctx, int64(len(req.GetRequests())))
+		release, err := ul.acquireSlots(int64(len(req.GetRequests())))
 		if err != nil {
 			return err
 		}

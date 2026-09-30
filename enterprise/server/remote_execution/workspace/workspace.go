@@ -513,13 +513,16 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	var stdoutDigest, stderrDigest *repb.Digest
 
 	eg, egCtx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
+	uploadBlob := func(b []byte) (*repb.Digest, error) {
 		release, err := cachetools.AcquireOutputUploadSlots(egCtx, 1)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		defer release()
-		d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
+		return cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(b))
+	}
+	eg.Go(func() error {
+		d, err := uploadBlob(cmdResult.Stdout)
 		if err != nil {
 			return status.UnavailableErrorf("upload stdout: %s", err)
 		}
@@ -527,12 +530,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		return nil
 	})
 	eg.Go(func() error {
-		release, err := cachetools.AcquireOutputUploadSlots(egCtx, 1)
-		if err != nil {
-			return err
-		}
-		defer release()
-		d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
+		d, err := uploadBlob(cmdResult.Stderr)
 		if err != nil {
 			return status.UnavailableErrorf("upload stderr: %s", err)
 		}
@@ -578,12 +576,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	serverLogs := make(map[string]*repb.LogFile, len(cmdResult.AuxiliaryLogs))
 	for name, b := range cmdResult.AuxiliaryLogs {
 		eg.Go(func() error {
-			release, err := cachetools.AcquireOutputUploadSlots(egCtx, 1)
-			if err != nil {
-				return err
-			}
-			defer release()
-			d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(b))
+			d, err := uploadBlob(b)
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to upload auxiliary log %q: %s", name, err)
 				return nil
