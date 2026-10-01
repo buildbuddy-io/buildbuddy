@@ -428,13 +428,16 @@ func TestGetExecutionTimeline(t *testing.T) {
 	actionDigest2 := &repb.Digest{Hash: "fafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafa", SizeBytes: 256}
 	actionDigest3 := &repb.Digest{Hash: "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0", SizeBytes: 0}
 	actionDigest4 := &repb.Digest{Hash: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", SizeBytes: 0}
+	actionDigest5 := &repb.Digest{Hash: "fbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfb", SizeBytes: 64}
 
 	exid1 := makeExecutionID(actionDigest1)
 	exid2 := makeExecutionID(actionDigest2)
 	exid3 := makeExecutionID(actionDigest3)
 	exid4 := makeExecutionID(actionDigest4)
+	exid5 := makeExecutionID(actionDigest5)
 
 	const target = "//server/util/timeline:timeline"
+	const outputPath = "bazel-out/k8-fastbuild/bin/server/util/timeline/timeline"
 	// Anchor the test data to midday UTC so that both executions always land
 	// in the same 1-day aggregation bucket.
 	testDayStartUsec := time.Now().UTC().Truncate(24 * time.Hour).UnixMicro()
@@ -453,6 +456,7 @@ func TestGetExecutionTimeline(t *testing.T) {
 			InvocationUUID:               strings.ReplaceAll(uuid.New(), "-", ""),
 			TargetLabel:                  target,
 			Command:                      "build",
+			OutputPath:                   outputPath,
 			Stage:                        int64(repb.ExecutionStage_COMPLETED),
 			QueuedTimestampUsec:          testTimestampUsec + 1000000,
 			WorkerStartTimestampUsec:     testTimestampUsec + 1000000,
@@ -467,6 +471,7 @@ func TestGetExecutionTimeline(t *testing.T) {
 			InvocationUUID:               strings.ReplaceAll(uuid.New(), "-", ""),
 			TargetLabel:                  target,
 			Command:                      "test",
+			OutputPath:                   outputPath,
 			Stage:                        int64(repb.ExecutionStage_COMPLETED),
 			QueuedTimestampUsec:          testTimestampUsec,
 			WorkerStartTimestampUsec:     testTimestampUsec,
@@ -481,6 +486,7 @@ func TestGetExecutionTimeline(t *testing.T) {
 			GroupID:                      "GR1",
 			InvocationUUID:               strings.ReplaceAll(uuid.New(), "-", ""),
 			TargetLabel:                  "//server/util/other:other",
+			OutputPath:                   outputPath,
 			WorkerStartTimestampUsec:     testTimestampUsec,
 			WorkerCompletedTimestampUsec: testTimestampUsec + 1000000,
 			CreatedAtUsec:                testTimestampUsec + 2000,
@@ -491,13 +497,31 @@ func TestGetExecutionTimeline(t *testing.T) {
 			GroupID:                      "GR2",
 			InvocationUUID:               strings.ReplaceAll(uuid.New(), "-", ""),
 			TargetLabel:                  target,
+			OutputPath:                   outputPath,
 			WorkerStartTimestampUsec:     testTimestampUsec,
 			WorkerCompletedTimestampUsec: testTimestampUsec + 1000000,
 			CreatedAtUsec:                testTimestampUsec + 3000,
 			UpdatedAtUsec:                testTimestampUsec + 3000,
 		},
+		// Matching group and target but no output path - should be excluded
+		// from both the stats and the sampled executions.
+		{
+			GroupID:                      "GR1",
+			InvocationUUID:               strings.ReplaceAll(uuid.New(), "-", ""),
+			TargetLabel:                  target,
+			Command:                      "test",
+			OutputPath:                   "",
+			Stage:                        int64(repb.ExecutionStage_COMPLETED),
+			QueuedTimestampUsec:          testTimestampUsec,
+			WorkerStartTimestampUsec:     testTimestampUsec,
+			WorkerCompletedTimestampUsec: testTimestampUsec + 9000000,
+			CPUNanos:                     9000000000,
+			PeakMemoryBytes:              1024 * 1024 * 1024,
+			CreatedAtUsec:                testTimestampUsec + 4000,
+			UpdatedAtUsec:                testTimestampUsec + 4000,
+		},
 	}
-	executionIDs := []string{exid1, exid2, exid3, exid4}
+	executionIDs := []string{exid1, exid2, exid3, exid4, exid5}
 	for i, execution := range executions {
 		require.NoError(t, clickhouse.FillExecutionResourceFieldsFromExecutionID(execution, executionIDs[i]))
 		err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
@@ -513,10 +537,12 @@ func TestGetExecutionTimeline(t *testing.T) {
 		Target: target,
 	})
 	require.NoError(t, err)
-	// Both executions share an (empty) output path, mnemonic, os, and arch, so
-	// they are grouped into a single timeline.
-	require.Len(t, rsp.Timelines, 1, "should only return GR1 executions for the requested target")
+	// Both executions share an output path, mnemonic, os, and arch, so they
+	// are grouped into a single timeline.  The execution with an empty output
+	// path is dropped entirely rather than forming its own timeline.
+	require.Len(t, rsp.Timelines, 1, "should only return GR1 executions with an output path for the requested target")
 	timeline := rsp.Timelines[0]
+	assert.Equal(t, outputPath, timeline.GetOutputPath())
 	require.Len(t, timeline.ExecutionSamples, 2)
 
 	// Results should be ordered by start_time_usec ascending.
