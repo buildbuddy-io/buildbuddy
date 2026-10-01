@@ -117,10 +117,11 @@ function supportsRemoteCacheChunking(version: BazelVersion | null) {
   );
 }
 
-// Rewinding needs the stale action-cache fix backported to Bazel 8.8 and 9.3.
+// Rewinding needs the stale action-cache fix backported to Bazel 8.8.
 // https://github.com/bazelbuild/bazel/pull/30266
+// Bazel 9.3+ enables it by default, so don't suggest it there.
 function shouldSuggestRemoteCacheRewinding(version: BazelVersion | null) {
-  return (version?.major === 8 && version.minor >= 8) || bazelVersionAtLeast(version, 9, 3);
+  return version?.major === 8 && version.minor >= 8;
 }
 
 // The BEP retains explicit values such as "false"; only --noflag becomes "0".

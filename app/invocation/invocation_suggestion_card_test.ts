@@ -321,8 +321,8 @@ describe("getSuggestions", () => {
       expect(hasSuggestion(suggestions, "--execution_log_compact_file=execution_log.binpb.zst")).toBe(true);
     });
 
-    it("only suggests lost-input rewinding on supported releases when it is not explicitly configured", () => {
-      for (const [version, supported] of [
+    it("only suggests lost-input rewinding where it is supported, not the default, and not explicitly configured", () => {
+      for (const [version, expected] of [
         ["8.6.0", false],
         ["8.7.0", false],
         ["8.7.1", false],
@@ -335,18 +335,19 @@ describe("getSuggestions", () => {
         ["9.1.0", false],
         ["9.2.0", false],
         ["9.2.1", false],
-        ["9.3.0rc1", true],
-        ["9.3.0", true],
-        ["9.3.1", true],
-        ["9.4.0", true],
-        ["9.10.0", true],
-        ["10.0.0rc1", true],
-        ["10.0.0", true],
-        ["11.0.0", true],
+        // Bazel 9.3+ enables it by default, so it isn't suggested there.
+        ["9.3.0rc1", false],
+        ["9.3.0", false],
+        ["9.3.1", false],
+        ["9.4.0", false],
+        ["9.10.0", false],
+        ["10.0.0rc1", false],
+        ["10.0.0", false],
+        ["11.0.0", false],
       ] as const) {
         expect(hasSuggestion(getRemoteSuggestions(version), "--rewind_lost_inputs"))
           .withContext(`${version}, absent`)
-          .toBe(supported);
+          .toBe(expected);
         expect(hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: "false" }), "--rewind_lost_inputs"))
           .withContext(`${version}, disabled`)
           .toBe(false);
