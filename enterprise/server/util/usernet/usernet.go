@@ -86,7 +86,8 @@ const (
 )
 
 // udpIdleTimeout is how long a UDP flow may go without traffic in either
-// direction before it's closed. It's a var so that tests can shorten it.
+// direction before it's closed. It's a var so that tests can shorten it; each
+// Network copies it when created.
 var udpIdleTimeout = time.Minute
 
 // gatewayLinkAddress is the stack's MAC address.
@@ -114,6 +115,7 @@ type Network struct {
 	externalNetwork bool
 	allowedPrefixes []netip.Prefix
 	pings           chan struct{}
+	udpIdleTimeout  time.Duration
 }
 
 // NewVMNetwork creates a net namespace containing tapDeviceName for a VMM to
@@ -180,6 +182,7 @@ func newNetwork(ctx context.Context, gatewayCIDR string, enableExternalNetworkin
 		externalNetwork: enableExternalNetworking,
 		allowedPrefixes: allowed,
 		pings:           make(chan struct{}, maxPingsInFlight),
+		udpIdleTimeout:  udpIdleTimeout,
 	}
 	defer func() {
 		if err != nil {
@@ -235,6 +238,27 @@ func (n *Network) startStack(prefixLen int) error {
 		}
 	}
 
+	// Handlers must be set before the NIC starts delivering packets.
+	ctx, cancel := context.WithCancel(context.Background())
+	n.cancel = cancel
+	tcpForwarder := tcp.NewForwarder(n.stack, 0 /*=rcvWnd*/, 1024 /*=maxInFlight*/, func(r *tcp.ForwarderRequest) {
+		n.forwardTCP(ctx, r)
+	})
+	n.stack.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
+	udpForwarder := udp.NewForwarder(n.stack, func(r *udp.ForwarderRequest) {
+		n.forwardUDP(ctx, r)
+	})
+	n.stack.SetTransportProtocolHandler(udp.ProtocolNumber, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
+		if !n.isAllowed(id.LocalAddress) {
+			n.reject(pkt)
+			return true
+		}
+		return udpForwarder.HandlePacket(id, pkt)
+	})
+	n.stack.SetTransportProtocolHandler(gicmp.ProtocolNumber4, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
+		return n.forwardEcho(id, pkt)
+	})
+
 	ep, err := fdbased.New(&fdbased.Options{
 		FDs:                []int{n.fd},
 		MTU:                mtu,
@@ -262,26 +286,6 @@ func (n *Network) startStack(prefixLen int) error {
 	n.stack.SetPromiscuousMode(nicID, true)
 	n.stack.SetSpoofing(nicID, true)
 	n.stack.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicID}})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	n.cancel = cancel
-	tcpForwarder := tcp.NewForwarder(n.stack, 0 /*=rcvWnd*/, 1024 /*=maxInFlight*/, func(r *tcp.ForwarderRequest) {
-		n.forwardTCP(ctx, r)
-	})
-	n.stack.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := udp.NewForwarder(n.stack, func(r *udp.ForwarderRequest) {
-		n.forwardUDP(ctx, r)
-	})
-	n.stack.SetTransportProtocolHandler(udp.ProtocolNumber, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-		if !n.isAllowed(id.LocalAddress) {
-			n.reject(pkt)
-			return true
-		}
-		return udpForwarder.HandlePacket(id, pkt)
-	})
-	n.stack.SetTransportProtocolHandler(gicmp.ProtocolNumber4, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-		return n.forwardEcho(id, pkt)
-	})
 	return nil
 }
 
@@ -348,10 +352,10 @@ func (n *Network) forwardUDP(ctx context.Context, r *udp.ForwarderRequest) {
 	}
 	dst := net.JoinHostPort(id.LocalAddress.String(), strconv.Itoa(int(id.LocalPort)))
 	// The forwarder runs on the stack's packet processing goroutine.
-	go relayUDP(ctx, gonet.NewUDPConn(&wq, ep), dst)
+	go relayUDP(ctx, gonet.NewUDPConn(&wq, ep), dst, n.udpIdleTimeout)
 }
 
-func relayUDP(ctx context.Context, guest *gonet.UDPConn, dst string) {
+func relayUDP(ctx context.Context, guest *gonet.UDPConn, dst string, idleTimeout time.Duration) {
 	remote, err := (&net.Dialer{}).DialContext(ctx, "udp", dst)
 	if err != nil {
 		guest.Close()
@@ -364,18 +368,18 @@ func relayUDP(ctx context.Context, guest *gonet.UDPConn, dst string) {
 	stop := context.AfterFunc(ctx, closeBoth)
 	defer stop()
 	// The flow is closed once neither direction has had traffic for
-	// udpIdleTimeout.
+	// idleTimeout.
 	var lastActivity atomic.Int64
 	lastActivity.Store(time.Now().UnixNano())
 	relay := func(dst, src net.Conn) {
 		defer closeBoth()
 		buf := make([]byte, 65535)
 		for {
-			src.SetReadDeadline(time.Unix(0, lastActivity.Load()).Add(udpIdleTimeout))
+			src.SetReadDeadline(time.Unix(0, lastActivity.Load()).Add(idleTimeout))
 			size, err := src.Read(buf)
 			if err != nil {
 				var netErr net.Error
-				if errors.As(err, &netErr) && netErr.Timeout() && time.Since(time.Unix(0, lastActivity.Load())) < udpIdleTimeout {
+				if errors.As(err, &netErr) && netErr.Timeout() && time.Since(time.Unix(0, lastActivity.Load())) < idleTimeout {
 					// The other direction had traffic since the deadline was set.
 					continue
 				}

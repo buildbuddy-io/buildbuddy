@@ -7,6 +7,7 @@ go_library(
     name = "usernet",
     srcs = ["usernet.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/usernet",
+    target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
@@ -42,6 +43,7 @@ go_test(
         "test.no-sandbox": "",
     },
     tags = ["docker"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//server/testutil/testnetworking",
         "//server/util/networking",
