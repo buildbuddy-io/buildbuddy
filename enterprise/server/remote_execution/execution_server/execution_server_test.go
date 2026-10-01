@@ -955,6 +955,14 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			redisRestart:           true,
 		},
 		{
+			// The dispatch-time record is lost but the invocation links
+			// survive, so the OLAP row is still written. Everything in the
+			// row must be recoverable from the COMPLETED update alone.
+			name:                   "LostInProgressRecord",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			lostInProgressRecord:   true,
+		},
+		{
 			name:                   "DefaultPool",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			useDefaultPool:         true,
@@ -1001,10 +1009,15 @@ type publishTest struct {
 	exitCode                 int32
 	publishMoreMetadata      bool
 	redisRestart             bool
-	useDefaultPool           bool
-	recycleRunner            bool
-	flushAfterCleanup        bool
-	invalidTestSize          string
+	// lostInProgressRecord deletes the dispatch-time in-progress execution
+	// record from Redis before the executor publishes COMPLETED, leaving the
+	// invocation links intact. This simulates losing the Redis shard that
+	// held the record (shard restart, LRU eviction) without losing the rest.
+	lostInProgressRecord bool
+	useDefaultPool       bool
+	recycleRunner        bool
+	flushAfterCleanup    bool
+	invalidTestSize      string
 	// flexibleCompute routes the execution into the flexible-compute branch
 	// of incrementOLAPExecutionUsage.
 	flexibleCompute bool
@@ -1112,6 +1125,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 
 	if test.redisRestart {
 		r.Restart()
+	}
+	if test.lostInProgressRecord {
+		err := env.GetExecutionCollector().DeleteInProgressExecution(ctx, taskID)
+		require.NoError(t, err)
 	}
 
 	executorGroupID := sharedPoolGroupID
@@ -1444,6 +1461,15 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			"created_at_usec",
 			"updated_at_usec",
 		)))
+	if test.lostInProgressRecord {
+		// Only the dispatch-time record carries CreatedAtUsec; when it's
+		// lost, the flush falls back to the queued timestamp.
+		assert.Equal(t, queuedTime.UnixMicro(), collectedExecutions[0].GetCreatedAtUsec())
+	} else {
+		// The dispatch-time value (wall-clock now) must not be replaced by
+		// the fallback (the fixed queuedTime far in the past).
+		assert.Greater(t, collectedExecutions[0].GetCreatedAtUsec(), queuedTime.UnixMicro())
+	}
 }
 
 // TestPublishOperation_RetriedStream simulates the executor's
