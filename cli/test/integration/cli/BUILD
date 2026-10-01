@@ -4,6 +4,7 @@ package(default_visibility = ["//cli:__subpackages__"])
 
 go_test(
     name = "cli_test",
+    size = "large",
     srcs = ["cli_test.go"],
     shard_count = 4,
     deps = [
