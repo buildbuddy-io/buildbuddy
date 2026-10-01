@@ -243,6 +243,7 @@ func waitUntilHealthy(t testing.TB, target string) {
 	start := time.Now()
 	ctx := context.Background()
 	r := redis.NewClient(redisutil.TargetToOptions(target))
+	defer r.Close()
 	for {
 		err := r.Ping(ctx).Err()
 		if err == nil {
