@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"slices"
 	"strings"
 	"sync"
@@ -16,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/atlas/server/summaries"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -232,11 +232,7 @@ func (c *Cluster) listWatchableResources() ([]discoveredResource, error) {
 			if ignored[r.Name] {
 				continue
 			}
-			verbs := map[string]bool{}
-			for _, v := range r.Verbs {
-				verbs[v] = true
-			}
-			if !verbs["list"] || !verbs["watch"] {
+			if !slices.Contains(r.Verbs, "list") || !slices.Contains(r.Verbs, "watch") {
 				continue
 			}
 			gr := schema.GroupResource{Group: gv.Group, Resource: r.Name}
@@ -320,9 +316,10 @@ func (w *watcher) run(ctx context.Context, lw cache.ListerWatcher, example runti
 			w.lastErr = err
 			w.errTime = time.Now()
 			w.mu.Unlock()
-			log.Warningf("Watch %s: %s", w.res, err)
+			log.Warningf("Watch %s failed: %s", w.res, err)
 		}
-		delay := backoff + time.Duration(random.RandUint64()%uint64(backoff/2+1))
+		// Backoff with some jitter.
+		delay := backoff + rand.N(backoff/2+1)
 		select {
 		case <-ctx.Done():
 			return

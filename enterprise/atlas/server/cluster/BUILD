@@ -15,7 +15,6 @@ go_library(
         "//enterprise/atlas/server/summaries",
         "//server/util/flag",
         "//server/util/log",
-        "//server/util/random",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/runtime",
