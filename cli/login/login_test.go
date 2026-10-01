@@ -182,6 +182,48 @@ func TestResolveAPIKey(t *testing.T) {
 	}
 }
 
+func TestResolveAPIKeyOutsideGitRepo(t *testing.T) {
+	stubRepoRootPath(t, func() (string, error) {
+		return "", storage.ErrNotInRepo
+	})
+
+	t.Run("env set", func(t *testing.T) {
+		isolateHomeDir(t)
+		t.Setenv("BUILDBUDDY_API_KEY", "env-api-key")
+
+		apiKey, source, err := resolveAPIKey()
+
+		require.NoError(t, err)
+		require.Equal(t, "env-api-key", apiKey)
+		require.Equal(t, apiKeySourceEnv, source)
+	})
+
+	t.Run("env unset", func(t *testing.T) {
+		isolateHomeDir(t)
+		t.Setenv("BUILDBUDDY_API_KEY", "")
+
+		apiKey, source, err := resolveAPIKey()
+
+		require.NoError(t, err)
+		require.Empty(t, apiKey)
+		require.Equal(t, apiKeySourceNone, source)
+	})
+}
+
+func TestResolveAPIKeyReturnsUnexpectedRepoErrors(t *testing.T) {
+	isolateHomeDir(t)
+	t.Setenv("BUILDBUDDY_API_KEY", "")
+	stubRepoRootPath(t, func() (string, error) {
+		return "", errors.New("detected dubious ownership in repository")
+	})
+
+	_, source, err := resolveAPIKey()
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "dubious ownership")
+	require.Equal(t, apiKeySourceNone, source)
+}
+
 // --check must report on the credentials a build would use, not just on
 // .git/config. This covers the command's exit codes; TestResolveAPIKey covers
 // resolution on its own.
@@ -192,7 +234,8 @@ func TestHandleLoginCheck(t *testing.T) {
 		repoAPIKey       *string
 		authErr          error
 		expectedExitCode int
-		// expectedAuthKey is the key passed to the authenticator.
+		// expectedAuthKey is the key passed to the authenticator, or "" if it
+		// must not be called at all.
 		expectedAuthKey string
 	}{
 		{
@@ -228,6 +271,12 @@ func TestHandleLoginCheck(t *testing.T) {
 			expectedExitCode: 2,
 			expectedAuthKey:  "env-api-key",
 		},
+		{
+			// The answer is knowable locally, so --check must not dial, and must
+			// not turn an offline transport failure into exit 2.
+			name:             "no credential anywhere reports invalid without dialing",
+			expectedExitCode: 1,
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			repoRoot := setUpRepo(t)
@@ -242,9 +291,57 @@ func TestHandleLoginCheck(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedExitCode, exitCode)
-			require.Equal(t, []string{testCase.expectedAuthKey}, *authKeys)
+			if testCase.expectedAuthKey == "" {
+				require.Empty(t, *authKeys, "authenticator should not have been called")
+			} else {
+				require.Equal(t, []string{testCase.expectedAuthKey}, *authKeys)
+			}
 			// --check never writes anything.
 			requireRepoAPIKey(t, repoRoot, testCase.repoAPIKey)
+		})
+	}
+}
+
+func TestHandleLoginCheckWithoutRepo(t *testing.T) {
+	for _, testCase := range []struct {
+		name             string
+		repoErr          error
+		envAPIKey        string
+		expectedExitCode int
+		expectedAuthKeys []string
+	}{
+		{
+			name:             "outside a repo with a valid env key",
+			repoErr:          storage.ErrNotInRepo,
+			envAPIKey:        "env-api-key",
+			expectedExitCode: 0,
+			expectedAuthKeys: []string{"env-api-key"},
+		},
+		{
+			name:             "outside a repo with no key",
+			repoErr:          storage.ErrNotInRepo,
+			expectedExitCode: 1,
+		},
+		{
+			name:             "unreadable repo with no env key",
+			repoErr:          errors.New("detected dubious ownership in repository"),
+			expectedExitCode: 2,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			isolateHomeDir(t)
+			stubRepoRootPath(t, func() (string, error) {
+				return "", testCase.repoErr
+			})
+			resetLoginFlags(t)
+			t.Setenv("BUILDBUDDY_API_KEY", testCase.envAPIKey)
+			authKeys := stubAuthenticate(t, nil)
+
+			exitCode, err := HandleLogin([]string{"--check"})
+
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedExitCode, exitCode)
+			require.Equal(t, testCase.expectedAuthKeys, *authKeys)
 		})
 	}
 }
@@ -317,6 +414,120 @@ func TestLogSavedKeyStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHandleLoginAllowExistingReportsWhichCredentialItUsed(t *testing.T) {
+	setUpRepo(t)
+	resetLoginFlags(t)
+	t.Setenv("BUILDBUDDY_API_KEY", "env-api-key")
+	stubAuthenticate(t, nil)
+	logs := captureLogs(t)
+
+	exitCode, err := HandleLogin([]string{"--allow_existing"})
+
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	require.Contains(t, logs.String(), "Already logged in using $BUILDBUDDY_API_KEY")
+}
+
+func TestHandleLogoutRemovesAPIKey(t *testing.T) {
+	repoRoot := setUpRepo(t)
+	t.Setenv("BUILDBUDDY_API_KEY", "")
+	require.NoError(t, storage.WriteRepoConfig(apiKeyRepoSetting, "repo-api-key"))
+
+	exitCode, err := HandleLogout(nil)
+
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	// `api-key =` contains the substring "api-key", so a text search cannot tell
+	// "removed" from "present with an empty value".
+	require.False(t, gitConfigHasKey(t, repoRoot, gitConfigAPIKeyName))
+}
+
+// A second logout must not claim to have removed a key.
+func TestHandleLogoutWithNoSavedKey(t *testing.T) {
+	setUpRepo(t)
+	t.Setenv("BUILDBUDDY_API_KEY", "")
+	logs := captureLogs(t)
+
+	exitCode, err := HandleLogout(nil)
+
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	require.Contains(t, logs.String(), "No API key was saved in .git/config.")
+	require.NotContains(t, logs.String(), "Cleared")
+}
+
+func TestHandleLogoutWarnsAboutEnvironmentKey(t *testing.T) {
+	t.Run("env key still set", func(t *testing.T) {
+		setUpRepo(t)
+		t.Setenv("BUILDBUDDY_API_KEY", "env-api-key")
+		logs := captureLogs(t)
+
+		exitCode, err := HandleLogout(nil)
+
+		require.NoError(t, err)
+		require.Equal(t, 0, exitCode)
+		require.Contains(t, logs.String(), "BUILDBUDDY_API_KEY is still set")
+		require.NotContains(t, logs.String(), "You are now logged out!")
+	})
+
+	t.Run("no env key", func(t *testing.T) {
+		setUpRepo(t)
+		t.Setenv("BUILDBUDDY_API_KEY", "")
+		logs := captureLogs(t)
+
+		exitCode, err := HandleLogout(nil)
+
+		require.NoError(t, err)
+		require.Equal(t, 0, exitCode)
+		require.NotContains(t, logs.String(), "BUILDBUDDY_API_KEY")
+		require.Contains(t, logs.String(), "You are now logged out!")
+	})
+
+	// A whitespace-only value is not a usable credential. Warning here would
+	// tell the user they are still logged in when they are not.
+	t.Run("whitespace-only env key", func(t *testing.T) {
+		setUpRepo(t)
+		t.Setenv("BUILDBUDDY_API_KEY", "   ")
+		logs := captureLogs(t)
+
+		exitCode, err := HandleLogout(nil)
+
+		require.NoError(t, err)
+		require.Equal(t, 0, exitCode)
+		require.NotContains(t, logs.String(), "BUILDBUDDY_API_KEY")
+		require.Contains(t, logs.String(), "You are now logged out!")
+	})
+}
+
+func TestHandleLogoutOutsideGitRepo(t *testing.T) {
+	isolateHomeDir(t)
+	stubRepoRootPath(t, func() (string, error) {
+		return "", storage.ErrNotInRepo
+	})
+	t.Setenv("BUILDBUDDY_API_KEY", "env-api-key")
+	logs := captureLogs(t)
+
+	exitCode, err := HandleLogout(nil)
+
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	require.Contains(t, logs.String(), "BUILDBUDDY_API_KEY is still set")
+}
+
+func TestHandleLogoutHelpDoesNotLogOut(t *testing.T) {
+	repoRoot := setUpRepo(t)
+	require.NoError(t, storage.WriteRepoConfig(apiKeyRepoSetting, "repo-api-key"))
+	logs := captureLogs(t)
+
+	exitCode, err := HandleLogout([]string{"--help"})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, exitCode)
+	require.Contains(t, logs.String(), "bb logout")
+	require.True(t, gitConfigHasKey(t, repoRoot, gitConfigAPIKeyName),
+		"the saved API key should still be present")
 }
 
 func setUpRepo(t *testing.T) string {
