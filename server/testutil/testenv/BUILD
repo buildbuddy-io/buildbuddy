@@ -19,6 +19,7 @@ go_library(
         "//server/remote_cache/hit_tracker",
         "//server/testutil/testclickhouse",
         "//server/testutil/testfs",
+        "//server/testutil/testleak",
         "//server/testutil/testmysql",
         "//server/testutil/testpostgres",
         "//server/util/clickhouse",

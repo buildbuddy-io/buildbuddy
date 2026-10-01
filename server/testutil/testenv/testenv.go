@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpostgres"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
@@ -176,6 +177,7 @@ func WithDBHandle(dbh interfaces.DBHandle) TestEnvOption {
 }
 
 func GetTestEnv(t testing.TB, opts ...TestEnvOption) *real_environment.RealEnv {
+	testleak.Check(t)
 	dbHandleOpt := &dbHandleOption{}
 	for _, opt := range opts {
 		switch opt := opt.(type) {
