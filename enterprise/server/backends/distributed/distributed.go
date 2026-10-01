@@ -1378,7 +1378,10 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	if len(resources) == 0 {
 		return nil, nil
 	}
-	requireQuorum := findmissing.RequiresQuorum(ctx)
+	// During node migrations, disable quorum requirements so that
+	// reads are respected from both the old and new replica sets,
+	// until data has fully migrated to the new nodes.
+	requireQuorum := findmissing.RequiresQuorum(ctx) && len(c.opts.NewNodes) == 0
 	requiredReplicas := 1
 	if requireQuorum {
 		requiredReplicas = c.opts.ReplicationFactor/2 + 1

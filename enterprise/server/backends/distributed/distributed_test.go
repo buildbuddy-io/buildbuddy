@@ -4748,6 +4748,32 @@ func TestFindMissingWithoutQuorumStopsAfterFirstHit(t *testing.T) {
 	}
 }
 
+func TestFindMissingQuorumDuringNewNodesMigration(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	peers := make([]string, 6)
+	for i := range peers {
+		peers[i] = fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	}
+	caches := make(map[string]*quorumTestCache)
+	var dc *Cache
+	for _, peer := range peers {
+		c := &quorumTestCache{Cache: newMemoryCache(t, 1000000), lookups: make(map[string]int)}
+		caches[peer] = c
+		dc = startNewDCache(t, env, Options{
+			ListenAddr: peer, Nodes: slices.Clone(peers[:3]), NewNodes: slices.Clone(peers[3:]),
+			ReplicationFactor: 3, DisableLocalLookup: true,
+		}, c)
+		waitForReady(t, peer)
+	}
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	// Only an old node has this digest; the new write replicas are empty.
+	require.NoError(t, caches[peers[0]].Cache.Set(ctx, rn, buf))
+	quorumCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(findmissing.RequireQuorumHeader, "true"))
+	missing, err := dc.FindMissing(quorumCtx, []*rspb.ResourceName{rn})
+	require.NoError(t, err)
+	require.Empty(t, missing)
+}
+
 func TestFindMissingQuorumIgnoresNonReplicaCopies(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	peers := make([]string, 4)
