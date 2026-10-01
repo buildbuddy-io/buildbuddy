@@ -12,7 +12,11 @@ go_test(
         "main_test.go",
     ],
     data = ["//enterprise/server/cmd/executor"],
-    target_compatible_with = ["@platforms//os:linux"],
+    # The test-scoped app server doesn't build for Windows.
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     x_defs = {
         "executorRlocationpath": "$(rlocationpath //enterprise/server/cmd/executor)",
     },

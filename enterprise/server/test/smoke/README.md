@@ -30,14 +30,14 @@ no dependency on the host's shell or coreutils.
 - `local:local_test` starts a test-scoped app with executor auth
   enabled and tests the executor built from source. Pass
   `--test_arg=--executor_binary=<path or URL>` to test another binary. This
-  target runs only on Linux.
+  target runs on Linux and macOS.
 - `:smoke_test` (manual) tests an executor against an existing app.
-  Use it for platforms that can't run the app, such as macOS and Windows. The
+  Use it for platforms that can't run the app, such as Windows. The
   test must run on a host whose OS/arch matches the executor.
 
 ## Testing a release artifact
 
-On Linux, against a local app:
+On Linux or macOS, against a local app:
 
 ```sh
 bazel test //enterprise/server/test/smoke/local:local_test \

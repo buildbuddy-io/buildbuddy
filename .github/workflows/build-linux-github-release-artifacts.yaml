@@ -12,6 +12,11 @@ on:
         description: "Version to tag release artifacts."
         required: true
         type: string
+      upload_artifacts:
+        description: "Upload artifacts to the GitHub release. Uncheck to only build and smoke test."
+        required: false
+        default: true
+        type: boolean
   workflow_call:
     inputs:
       release_branch:
@@ -22,6 +27,11 @@ on:
         description: "Version to tag release artifacts."
         required: true
         type: string
+      upload_artifacts:
+        description: "Upload artifacts to the GitHub release."
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   build:
@@ -48,9 +58,7 @@ jobs:
           # the version of the running binary.
           fetch-depth: 0
 
-      - name: Build and Upload Artifacts
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Artifacts
         run: |
           bazelisk build \
             --config=release \
@@ -63,6 +71,30 @@ jobs:
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-linux-${{ matrix.arch }}
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-${{ matrix.arch }}
           cp bazel-out/${{ matrix.musl_output_platform }}-opt/bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-${{ matrix.arch }}-static
+
+      # Run the executor smoke tests against the exact binaries we're about to
+      # upload. Uses the same config as the build so the test-scoped app
+      # server doesn't need to be rebuilt.
+      - name: Smoke Test Executors
+        run: |
+          smoke_test() {
+            bazelisk test \
+              --config=release \
+              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+              --test_output=errors \
+              --test_arg=--executor_binary="$PWD/$1" \
+              --test_arg=--expected_version=${{ inputs.version_tag }} \
+              "${@:2}" \
+              //enterprise/server/test/smoke/local:local_test
+          }
+          smoke_test executor-enterprise-linux-${{ matrix.arch }}
+          smoke_test executor-enterprise-linux-${{ matrix.arch }}-static --test_arg=--expect_static_binary
+
+      - name: Upload Artifacts
+        if: inputs.upload_artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
           gh release upload \
             ${{ inputs.version_tag }} \
             buildbuddy-linux-${{ matrix.arch }} \
