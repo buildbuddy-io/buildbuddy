@@ -346,8 +346,27 @@ func runCommand(name string, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
+// gitDiffForPatch runs `git diff` with the given args, overriding user and
+// system git config that would otherwise change the patch format (e.g.
+// `diff.noprefix`, `diff.relative`, `color.diff`, `diff.external` or a
+// textconv driver), so that the patch can always be applied with a plain
+// `git apply` on the remote runner.
+func gitDiffForPatch(args ...string) (string, error) {
+	gitArgs := []string{
+		// `-c` is used instead of `--no-relative`, which requires git 2.28+.
+		"-c", "diff.relative=false",
+		"diff",
+		"--no-color",
+		"--no-ext-diff",
+		"--no-textconv",
+		"--src-prefix=a/",
+		"--dst-prefix=b/",
+	}
+	return runGit(append(gitArgs, args...)...)
+}
+
 func diffUntrackedFile(path string) (string, error) {
-	patch, err := runGit("diff", "--no-index", "--binary", "/dev/null", path)
+	patch, err := gitDiffForPatch("--no-index", "--binary", "/dev/null", path)
 	if err != nil {
 		// `git diff` returns exit code 1 if there is (valid) diff. Explicitly
 		// check for this case.
@@ -536,7 +555,7 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 	}()
 
 	// `--binary` is inert for a text diff and the only applyable form for a binary one.
-	patch, err := runGit("diff", "--binary", baseCommit)
+	patch, err := gitDiffForPatch("--binary", baseCommit)
 	if err != nil {
 		return nil, status.WrapError(err, "git diff")
 	}
