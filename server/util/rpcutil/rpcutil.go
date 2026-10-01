@@ -17,11 +17,13 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/stats"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	grpcotel "google.golang.org/grpc/stats/opentelemetry"
 )
 
 const GRPCMaxSizeBytes = int64(4 * 1000 * 1000)
@@ -283,6 +285,9 @@ func (s *Sender[S, R]) CloseAndRecvWithTimeout(timeout time.Duration) (R, error)
 	return rsp, nil
 }
 
+// sizeBuckets are the histogram buckets for RPC byte-size metrics
+var sizeBuckets = []float64{1024, 32768, 1048576, 4194304, 8388608}
+
 // Provides an OpenTelemetry MeterProvider that exports metrics to Prometheus.
 // Wrapped in a sync.Once to avoid registering Prometheus metrics multiple
 // times in case there are multiple gRPC clients or servers.
@@ -306,8 +311,7 @@ var MeterProvider = sync.OnceValue(func() metric.MeterProvider {
 	sizeView := sdkmetric.NewView(
 		sdkmetric.Instrument{Name: "rpc.client.*.size"},
 		sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
-			// 1KiB, 32KiB, 1MiB, 4MiB, 8MiB
-			Boundaries: []float64{1024, 32768, 1048576, 4194304, 8388608},
+			Boundaries: sizeBuckets,
 		}},
 	)
 	perRPCView := sdkmetric.NewView(
@@ -346,8 +350,49 @@ var MeterProvider = sync.OnceValue(func() metric.MeterProvider {
 		sdkmetric.Instrument{Name: "rpc.server.call.duration"},
 		sdkmetric.Stream{AttributeFilter: metricAttrs},
 	)
+	// Coarse buckets and a method/status label allowlist for grpc-go's message
+	// size histograms. The allowlist drops the client-side grpc.target label,
+	// which is a per-peer address for connections like distributed cache peers.
+	grpcSizeView := sdkmetric.NewView(
+		sdkmetric.Instrument{Name: "grpc.*_total_compressed_message_size"},
+		sdkmetric.Stream{
+			Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				Boundaries: sizeBuckets,
+			},
+			AttributeFilter: attribute.NewAllowKeysFilter("grpc.method", "grpc.status"),
+		},
+	)
 	return sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(exporter),
-		sdkmetric.WithView(durationView, sizeView, perRPCView, clientCallDurationView, serverCallDurationView),
+		sdkmetric.WithView(durationView, sizeView, perRPCView, clientCallDurationView, serverCallDurationView, grpcSizeView),
 	)
 })
+
+// otelgrpc 0.67+ no longer records request/response sizes, so use grpc-go's
+// OpenTelemetry plugin for only its message size metrics.
+func sizeMetricsOptions(names ...string) grpcotel.Options {
+	return grpcotel.Options{
+		MetricsOptions: grpcotel.MetricsOptions{
+			MeterProvider: MeterProvider(),
+			Metrics:       stats.NewMetricSet(names...),
+		},
+	}
+}
+
+// ClientSizeMetricsDialOption records the compressed bytes sent and received
+// per client call attempt, as grpc_client_attempt_{sent,rcvd}_total_compressed_message_size_bytes.
+func ClientSizeMetricsDialOption() grpc.DialOption {
+	return grpcotel.DialOption(sizeMetricsOptions(
+		grpcotel.ClientAttemptSentCompressedTotalMessageSizeMetricName,
+		grpcotel.ClientAttemptRcvdCompressedTotalMessageSizeMetricName,
+	))
+}
+
+// ServerSizeMetricsOption records the compressed bytes sent and received per
+// server call, as grpc_server_call_{sent,rcvd}_total_compressed_message_size_bytes.
+func ServerSizeMetricsOption() grpc.ServerOption {
+	return grpcotel.ServerOption(sizeMetricsOptions(
+		grpcotel.ServerCallSentCompressedTotalMessageSizeMetricName,
+		grpcotel.ServerCallRcvdCompressedTotalMessageSizeMetricName,
+	))
+}

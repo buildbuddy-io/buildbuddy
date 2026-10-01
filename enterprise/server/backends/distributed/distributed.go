@@ -1222,7 +1222,7 @@ func (c *Cache) backfillByReference(ctx context.Context) bool {
 	if fp == nil {
 		return false
 	}
-	return fp.Boolean(ctx, "distributed_cache.backfill_gcs_references", false)
+	return fp.Boolean(ctx, "distributed_cache.backfill_gcs_references", true)
 }
 
 type backfillOrder struct {
@@ -1884,7 +1884,7 @@ func (c *Cache) shareGCSReferences(ctx context.Context) bool {
 	if fp == nil {
 		return false
 	}
-	return fp.Boolean(ctx, "distributed_cache.share_gcs_references", false)
+	return fp.Boolean(ctx, "distributed_cache.share_gcs_references", true)
 }
 
 // referenceMultiWriter is like byteMultiWriter, but the peers receive only

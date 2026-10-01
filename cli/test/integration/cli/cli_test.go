@@ -92,17 +92,40 @@ func TestInvokeViaBazelisk(t *testing.T) {
 		// Make sure that if we're using the .bazelversion trick, we still have
 		// a way to override the bazel version via env var
 		// (BB_USE_BAZEL_VERSION).
+		// Use a fake bazel for the override, so that the test doesn't need to
+		// download or start a second real bazel.
+		overrideBazel := writeFakeBazelVersion(t, ws, "override-bazel")
 		cmd := testcli.BazeliskCommand(t, ws, "version")
-		cmd.Env = append(os.Environ(), "BB_USE_BAZEL_VERSION=6.0.0")
-		// Sanity check: make sure testbazel.Version is different from the one
-		// we're testing here.
-		require.NotEqual(t, "6.0.0", testbazel.Version)
+		cmd.Env = append(os.Environ(), "BB_USE_BAZEL_VERSION="+overrideBazel)
 		b, err := testcli.CombinedOutput(cmd)
 
 		require.NoError(t, err, "output: %s", string(b))
 		require.Regexp(t, `(?m)^bb (unknown|\d+\.\d+\.\d+)$`, string(b))
-		require.Contains(t, string(b), "Build label: 6.0.0")
+		require.Contains(t, string(b), "Build label: override-bazel")
 	}
+}
+
+// writeFakeBazelVersion writes a fake bazel binary to the workspace and returns
+// its path. It answers `bazel version` with the given build label and
+// `bazel help flags-as-proto` with the parser test fixture.
+func writeFakeBazelVersion(t *testing.T, ws, buildLabel string) string {
+	// Bazelisk copies local binaries into its cache, so the script refers to
+	// the fixture by absolute path.
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"fake-bazel/flags-as-proto.b64": test_data.BazelHelpFlagsAsProtoOutput,
+		"fake-bazel/bazel": `#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    flags-as-proto) exec cat "` + ws + `/fake-bazel/flags-as-proto.b64" ;;
+    version) echo "Build label: ` + buildLabel + `"; exit 0 ;;
+  esac
+done
+echo "fake bazel: unexpected args: $*" >&2
+exit 1
+`,
+	})
+	testfs.MakeExecutable(t, ws, "fake-bazel/bazel")
+	return ws + "/fake-bazel/bazel"
 }
 
 func TestBazelHelp(t *testing.T) {
@@ -669,6 +692,9 @@ mv "$tmp" "$FORWARDED_BAZEL_ARGS_FILE"
 			testfs.MakeExecutable(t, ws, "testplugin/pre_bazel.sh")
 
 			args := []string{"--bazelrc=" + ws + "/unrelated.bazelrc", "test", "--test_output=all", ":needs_required_rc"}
+			// --ignore_all_rc_files also drops the bazelrc that keeps the test
+			// bazel offline, so pass those options explicitly.
+			args = append(args, testbazel.HermeticFlags(t)...)
 			b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, args...))
 			output := strings.ReplaceAll(string(b), "\r\n", "\n")
 
@@ -714,6 +740,9 @@ exec "$BAZEL_REAL" "` + wrapperStartupArg + `" "$@"
 			testfs.MakeExecutable(t, ws, "tools/bazel")
 
 			args := []string{"--bazelrc=" + ws + "/unrelated.bazelrc", "test", "--test_output=all", ":needs_required_rc"}
+			// --ignore_all_rc_files also drops the bazelrc that keeps the test
+			// bazel offline, so pass those options explicitly.
+			args = append(args, testbazel.HermeticFlags(t)...)
 			b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, args...))
 			output := strings.ReplaceAll(string(b), "\r\n", "\n")
 

@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -108,6 +109,7 @@ var (
 	acRPCTimeout                = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
 	filecacheTreeSalt           = flag.String("cache.filecache_tree_salt", "20250304", "A salt to invalidate filecache tree hashes, if/when needed.")
 	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", true, "If true, GetTree requests will set send_cached_subtree_digests.")
+	outputUploadConcurrency     = flag.Int("cache.client.output_upload_concurrency", 0, "Maximum number of CAS write RPCs in flight at once across this process, such as for action outputs and snapshot chunks. Each ByteStream write and each BatchUpdateBlobs request holds a slot until it finishes. 0 means no limit.")
 
 	uploadBufPool = bytebufferpool.VariableSize(uploadBufSizeBytes)
 
@@ -116,6 +118,8 @@ var (
 	chunkUploadSem = make(chan struct{}, 256)
 
 	defaultChunkLocationCache = newChunkLocationCache()
+
+	outputUploadLimit = &outputUploadLimiter{}
 )
 
 // readAtSeeker combines io.ReaderAt and io.ReadSeeker. This is satisfied by
@@ -147,6 +151,11 @@ func FindMissingBlobs(ctx context.Context, casClient repb.ContentAddressableStor
 // standard CAS RPC timeout applied to each attempt.
 func BatchUpdateBlobs(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	return retry.Do(ctx, retryOptions("BatchUpdateBlobs"), func(ctx context.Context) (*repb.BatchUpdateBlobsResponse, error) {
+		release, err := outputUploadLimit.acquire(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
 		ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
 		defer cancel()
 		return casClient.BatchUpdateBlobs(ctx, req)
@@ -533,6 +542,11 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if r.IsEmpty() {
 		return r.GetDigest(), 0, nil
 	}
+	release, err := outputUploadLimit.acquire(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer release()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stream, err := bsClient.Write(ctx)
@@ -997,6 +1011,38 @@ func UploadBlobToCAS(ctx context.Context, bsClient bspb.ByteStreamClient, instan
 
 func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, in proto.Message) (*repb.Digest, error) {
 	return uploadProtoToCache(ctx, cache, rspb.CacheType_CAS, instanceName, digestFunction, in)
+}
+
+// outputUploadLimiter limits how many CAS write RPCs are in flight at once
+// across the whole process.
+//
+// Each of these RPCs consumes 1 slot until it finishes:
+//   - A ByteStream write, including each chunk of a chunked upload
+//   - A BatchUpdateBlobs request, regardless of how many blobs it holds
+//
+// Writes through an UploadWriter don't take a slot, because the caller decides
+// how long the writer stays open. For example, the OCI read-through cacher
+// keeps a writer open while it streams an image layer from the registry.
+type outputUploadLimiter struct {
+	init sync.Once
+	sem  *semaphore.Weighted
+}
+
+// acquire waits for a slot and returns a func that releases it.
+func (l *outputUploadLimiter) acquire(ctx context.Context) (release func(), err error) {
+	limit := int64(*outputUploadConcurrency)
+	if limit <= 0 {
+		return func() {}, nil
+	}
+	l.init.Do(func() { l.sem = semaphore.NewWeighted(limit) })
+	if err := l.sem.Acquire(ctx, 1); err != nil {
+		return nil, err
+	}
+	return func() { l.sem.Release(1) }, nil
+}
+
+func ResetOutputUploadLimiterForTest() {
+	outputUploadLimit = &outputUploadLimiter{}
 }
 
 // BatchCASUploader uploads many files to CAS concurrently, batching small

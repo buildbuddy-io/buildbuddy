@@ -91,7 +91,6 @@ var (
 	healthCheckInterval                   = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 	healthCheckTimeout                    = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 	overprovisionCPUs                     = flag.Int("executor.firecracker_overprovision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
-	initOnAllocAndFree                    = flag.Bool("executor.firecracker_init_on_alloc_and_free", false, "Set init_on_alloc=1 and init_on_free=1 in firecracker vms")
 	netPoolSize                           = flag.Int("executor.firecracker_network_pool_size", -1, "Limit on the number of networks to be reused between VMs, applied independently to each mode-specific pool (local, external). Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
@@ -1764,10 +1763,6 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 
 	if !vmConfig.EnablePci {
 		kernelArgs = append(kernelArgs, "pci=off")
-	}
-
-	if *initOnAllocAndFree {
-		kernelArgs = append(kernelArgs, "init_on_alloc=1", "init_on_free=1")
 	}
 
 	var initArgs []string

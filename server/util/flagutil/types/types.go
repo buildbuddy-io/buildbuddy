@@ -103,6 +103,12 @@ func (f *JSONSliceFlag[T]) Set(values string) error {
 	if err := json.Unmarshal([]byte(values), &a); err != nil {
 		return err
 	}
+	// Treat "null" as an empty list. Expand() passes a flag's String() to
+	// Set(), and String() returns "null" when the slice is nil, which happens
+	// after ResetFlags() resets a flag with an empty default value.
+	if a == nil {
+		return nil
+	}
 	v := (reflect.Value)(*f).Elem()
 	if _, ok := a.([]any); ok {
 		dst := reflect.New(reflect.TypeFor[T]()).Interface()

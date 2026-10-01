@@ -516,7 +516,7 @@ func grpcRow() *dashboard.RowBuilder {
 		return ts(title, dash.UnitBinaryBytesPerSec).
 			Legend(lastValueLegend()).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(`+metric+`{`+proxyFilter+`}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))
+			WithTarget(dash.PromQuery(`sum by (grpc_method) (rate(`+metric+`{`+proxyFilter+`}[${window}]))`, "{{grpc_method}}"))
 	}
 	return row("gRPC (cache-proxy)").
 		WithPanel(ts("Handled gRPC requests per second by status", dash.UnitRequestsPerSec).
@@ -534,10 +534,10 @@ func grpcRow() *dashboard.RowBuilder {
 			Legend(lastValueLegend()).
 			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (grpc_method, grpc_service) (rate(grpc_client_msg_sent_total{`+proxyFilter+`}[${window}]))`, "/{{grpc_service}}/{{grpc_method}}"))).
-		WithPanel(bytesPanel("gRPC Client Request Bytes", "rpc_client_request_size_bytes_sum")).
-		WithPanel(bytesPanel("gRPC Client Response Bytes", "rpc_client_response_size_bytes_sum")).
-		WithPanel(bytesPanel("gRPC Server Request Bytes", "rpc_server_request_size_bytes_sum")).
-		WithPanel(bytesPanel("gRPC Server Response Bytes", "rpc_server_response_size_bytes_sum")).
+		WithPanel(bytesPanel("gRPC Client Request Bytes", "grpc_client_attempt_sent_total_compressed_message_size_bytes_sum")).
+		WithPanel(bytesPanel("gRPC Client Response Bytes", "grpc_client_attempt_rcvd_total_compressed_message_size_bytes_sum")).
+		WithPanel(bytesPanel("gRPC Server Request Bytes", "grpc_server_call_rcvd_total_compressed_message_size_bytes_sum")).
+		WithPanel(bytesPanel("gRPC Server Response Bytes", "grpc_server_call_sent_total_compressed_message_size_bytes_sum")).
 		WithPanel(ts("gRPC client RPCs per connection", dash.UnitShort).
 			Description("Active RPCs on each gRPC client connection, summed over methods. Hides 0 values.").
 			Min(0).

@@ -47,9 +47,13 @@ var (
 	enableDownloadCompression = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
 	linkParallelism           = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
 	inputTreeSetupParallelism = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
+	inputDownloadConcurrency  = flag.Int("cache.client.input_download_concurrency", 0, "Maximum number of input files being downloaded from the CAS or linked from the local file cache at once across all tasks. Each file holds its slot until it has been written to disk. 0 means no limit.")
+	inputDownloadBatchFiles   = flag.Int("cache.client.input_download_max_batch_files", 0, "Maximum number of files to read in a single BatchReadBlobs request when downloading inputs, capped at cache.client.input_download_concurrency when that is set. If 0, batches are limited to max(cache.client.input_download_concurrency/8, 1) when that is set, and only by size otherwise.")
 
 	initInputTreeWrangler     sync.Once
 	inputTreeWranglerInstance *inputTreeWrangler
+
+	inputDownloadLimit = &inputDownloadLimiter{}
 )
 
 const (
@@ -720,6 +724,38 @@ func newFetchKey(d *repb.Digest, executable bool) fetchKey {
 // addressed by the digest.
 type FileMap map[fetchKey][]*FilePointer
 
+// inputDownloadLimiter limits how many input files are materialized at once
+// across all tasks.
+//
+// Each of these operations consumes 1 slot until the file is written:
+//   - A ByteStream download
+//   - A single download within a larger BatchReadBlobs request
+//   - A hard link from the local file cache
+//   - Creating an empty file
+type inputDownloadLimiter struct {
+	init sync.Once
+	sem  *semaphore.Weighted
+}
+
+// acquire waits for n slots, capped at the limit, and returns a func that
+// releases them.
+func (l *inputDownloadLimiter) acquire(ctx context.Context, n int64) (release func(), err error) {
+	limit := int64(*inputDownloadConcurrency)
+	if limit <= 0 {
+		return func() {}, nil
+	}
+	l.init.Do(func() { l.sem = semaphore.NewWeighted(limit) })
+	n = min(n, limit)
+	if err := l.sem.Acquire(ctx, n); err != nil {
+		return nil, err
+	}
+	return func() { l.sem.Release(n) }, nil
+}
+
+func ResetInputDownloadLimiterForTest() {
+	inputDownloadLimit = &inputDownloadLimiter{}
+}
+
 type BatchFileFetcher struct {
 	ctx                     context.Context
 	env                     environment.Env
@@ -820,6 +856,14 @@ func (ff *BatchFileFetcher) downloadedFileIndicesBitmap() ([]byte, error) {
 }
 
 func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.BatchReadBlobsRequest, opts *DownloadTreeOpts) error {
+	// Files are written after the whole batch is read, so hold a slot for
+	// each file until then.
+	release, err := inputDownloadLimit.acquire(ctx, int64(len(req.GetDigests())))
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	casClient := ff.env.GetContentAddressableStorageClient()
 	if casClient == nil {
 		return status.FailedPreconditionErrorf("cannot batch download files when casClient is not set")
@@ -881,7 +925,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 	return nil
 }
 
-func (ff *BatchFileFetcher) checkAndMaybeLinkFromFileCache(filePointers []*FilePointer, opts *DownloadTreeOpts) error {
+func (ff *BatchFileFetcher) checkAndMaybeLinkFromFileCache(ctx context.Context, filePointers []*FilePointer, opts *DownloadTreeOpts) error {
 	if ff.onlyDownloadToFileCache {
 		if len(filePointers) == 0 {
 			return status.FailedPreconditionErrorf("file pointers list is empty")
@@ -889,12 +933,22 @@ func (ff *BatchFileFetcher) checkAndMaybeLinkFromFileCache(filePointers []*FileP
 		// All the file pointers refer to the same artifact so we only need to
 		// check once.
 		fp := filePointers[0]
-		if !ff.env.GetFileCache().ContainsFile(ff.ctx, fp.FileNode) {
+		if !ff.env.GetFileCache().ContainsFile(ctx, fp.FileNode) {
 			return status.NotFoundErrorf("File %s not found in cache", fp.FileNode.Digest.Hash)
 		}
 	} else {
-		err := ff.treeWrangler.LinkFromFileCache(ff.ctx, filePointers, opts)
+		// Check the index before taking a slot, so that a miss only waits
+		// for a slot once, to download the file.
+		fc := ff.env.GetFileCache()
+		if fc == nil || len(filePointers) == 0 || !fc.ContainsFile(ctx, filePointers[0].FileNode) {
+			return status.NotFoundError("not in file cache")
+		}
+		release, err := inputDownloadLimit.acquire(ctx, 1)
 		if err != nil {
+			return err
+		}
+		defer release()
+		if err := ff.treeWrangler.LinkFromFileCache(ctx, filePointers, opts); err != nil {
 			return err
 		}
 	}
@@ -945,6 +999,10 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 
 	fetchQueue := make(chan digestToFetch, 100)
 
+	// Link goroutines also use eg's context, so they stop waiting for slots
+	// once a download fails.
+	eg, ctx := errgroup.WithContext(ff.ctx)
+
 	linkStart := time.Now()
 	linkEG.Go(func() error {
 		// Note: filesToFetch is keyed by digest, so all files in `filePointers` have
@@ -956,18 +1014,24 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 
 			// Write empty files directly (skip checking cache and downloading).
 			if digest.IsEmptyHash(dk.ToDigest(), ff.digestFunction) && !ff.onlyDownloadToFileCache {
+				release, err := inputDownloadLimit.acquire(ctx, 1)
+				if err != nil {
+					return err
+				}
 				for _, fp := range filePointers {
 					if err := writeFile(fp, []byte(""), opts); err != nil {
+						release()
 						return err
 					}
 				}
+				release()
 				continue
 			}
 
 			linkEG.Go(func() error {
 				// If the digest is in the file cache, there's nothing
 				// more to do.
-				if err := ff.checkAndMaybeLinkFromFileCache(filePointers, opts); err == nil {
+				if err := ff.checkAndMaybeLinkFromFileCache(ctx, filePointers, opts); err == nil {
 					ff.notifyFetchCompleted(dk)
 					return nil
 				}
@@ -982,8 +1046,16 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 
 	// Read work off the fetchQueue channel and generate batch read requests
 	// to download data.
-	eg, ctx := errgroup.WithContext(ff.ctx)
 	eg.Go(func() error {
+		// A batch takes a slot per file, and slots are granted in order, so
+		// a batch needing most of the slots would stall all other downloads.
+		maxBatchFiles := *inputDownloadBatchFiles
+		if limit := *inputDownloadConcurrency; limit > 0 {
+			if maxBatchFiles <= 0 {
+				maxBatchFiles = max(1, limit/8)
+			}
+			maxBatchFiles = min(maxBatchFiles, limit)
+		}
 		req := newRequest()
 		currentBatchRequestSize := int64(0)
 		for f := range fetchQueue {
@@ -1009,7 +1081,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 			// If the digest would push our current batch request
 			// size over the gRPC max, dispatch the request and
 			// start a new one.
-			if currentBatchRequestSize+size > BatchReadLimitBytes {
+			if currentBatchRequestSize+size > BatchReadLimitBytes || (maxBatchFiles > 0 && len(req.Digests) >= maxBatchFiles) {
 				reqCopy := req
 				eg.Go(func() error {
 					return ff.batchDownloadFiles(ctx, reqCopy, opts)
@@ -1136,6 +1208,12 @@ func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient
 // is enabled.
 func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsClient bspb.ByteStreamClient, dedupeKey downloadDedupeKey, fps []*FilePointer, opts *DownloadTreeOpts) error {
 	fp, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
+		// Only the deduped call takes a slot, since waiting tasks do no I/O.
+		release, err := inputDownloadLimit.acquire(ctx, 1)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
 		fp0 := fps[0]
 
 		var mode os.FileMode = 0644
@@ -1181,6 +1259,11 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 // bytestreamReadToFilecache streams a blob directly into the filecache.
 func (ff *BatchFileFetcher) bytestreamReadToFilecache(ctx context.Context, bsClient bspb.ByteStreamClient, dedupeKey downloadDedupeKey, fps []*FilePointer) error {
 	_, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
+		release, err := inputDownloadLimit.acquire(ctx, 1)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
 		fp0 := fps[0]
 
 		w, err := ff.env.GetFileCache().Writer(ctx, fp0.FileNode, ff.digestFunction)
