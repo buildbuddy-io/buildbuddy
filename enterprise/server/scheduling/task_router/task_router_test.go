@@ -15,11 +15,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"golang.org/x/exp/slices"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -335,6 +337,10 @@ func TestTaskRouter_RankNodes_AffinityRouting_UsesExperimentSelectedKey(t *testi
 	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 	require.NoError(t, err)
 	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	// Replacing the provider shuts it down.
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
@@ -865,6 +871,9 @@ func newTaskRouter(t *testing.T, env environment.Env) interfaces.TaskRouter {
 }
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
+	// The flagd provider never stops its event handler: the in-process
+	// service doesn't close its event channel on shutdown.
+	testleak.Check(t, goleak.IgnoreTopFunction("github.com/open-feature/go-sdk-contrib/providers/flagd/pkg.(*Provider).handleEvents"))
 	redisTarget := testredis.Start(t).Target
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,

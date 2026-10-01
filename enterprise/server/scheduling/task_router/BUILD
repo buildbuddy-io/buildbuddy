@@ -34,6 +34,7 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testleak",
         "//server/util/bazel_request",
         "//server/util/testing/flags",
         "@com_github_open_feature_go_sdk//openfeature",
@@ -42,5 +43,6 @@ go_test(
         "@com_github_open_feature_go_sdk_contrib_providers_flagd//pkg",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_exp//slices",
+        "@org_uber_go_goleak//:goleak",
     ],
 )
