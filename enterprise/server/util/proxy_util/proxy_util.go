@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"google.golang.org/grpc/metadata"
@@ -28,6 +29,7 @@ var (
 		usageutil.OriginHeaderName,
 		bazel_request.RequestMetadataKey,
 		cdc.ChunkedHeaderName,
+		findmissing.RequireQuorumHeader,
 		cdc.SpliceWithoutValidationHeaderName,
 		// Forward the client's opt-in for local AC caching so it survives
 		// proxy-to-proxy hops and every proxy in the chain honors it.

@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -39,6 +40,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -4598,4 +4600,179 @@ func TestBackfillByReference(t *testing.T) {
 		assertBackfilled(t, locals, rn)
 		assertBackfillCounts(t, countsBefore, "bytes", rn)
 	})
+}
+
+// Records authoritative lookups, allowing tests to distinguish them from
+// lookaside hits and to simulate an unavailable replica or failed repair.
+type quorumTestCache struct {
+	interfaces.Cache
+	mu             sync.Mutex
+	lookups        map[string]int
+	findMissingErr error
+	writeErr       error
+}
+
+func (c *quorumTestCache) FindMissing(ctx context.Context, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
+	c.mu.Lock()
+	for _, r := range rns {
+		c.lookups[r.GetDigest().GetHash()]++
+	}
+	c.mu.Unlock()
+	if c.findMissingErr != nil {
+		return nil, c.findMissingErr
+	}
+	return c.Cache.FindMissing(ctx, rns)
+}
+
+func (c *quorumTestCache) Writer(ctx context.Context, rn *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	if c.writeErr != nil {
+		return nil, c.writeErr
+	}
+	return c.Cache.Writer(ctx, rn)
+}
+
+func TestFindMissingQuorum(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		present      int
+		failedPeer   bool
+		failedRepair bool
+		wantMissing  bool
+	}{
+		{name: "all replicas present", present: 3},
+		{name: "two replicas present repair third", present: 2},
+		{name: "one replica present repair both but report missing", present: 1, wantMissing: true},
+		{name: "no replicas present", wantMissing: true},
+		{name: "two replicas present one unavailable", present: 2, failedPeer: true},
+		{name: "one present one missing one unavailable", present: 1, failedPeer: true, wantMissing: true},
+		{name: "quorum survives failed repair", present: 2, failedRepair: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "cache.distributed_cache.enable_backfill", true)
+			env, _, ctx := getEnvAuthAndCtx(t)
+			peers := make([]string, 3)
+			for i := range peers {
+				peers[i] = fmt.Sprintf("localhost:%d", testport.FindFree(t))
+			}
+			caches := make([]*quorumTestCache, 3)
+			var dc *Cache
+			for i, peer := range peers {
+				caches[i] = &quorumTestCache{Cache: newMemoryCache(t, 1000000), lookups: make(map[string]int)}
+				c := startNewDCache(t, env, Options{
+					ListenAddr: peer, Nodes: slices.Clone(peers), ReplicationFactor: 3,
+					DisableLocalLookup: true, LookasideCacheSizeBytes: 1000000,
+				}, caches[i])
+				if i == 0 {
+					dc = c
+				}
+				waitForReady(t, peer)
+			}
+			rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+			// A second digest ensures batched results are tracked independently.
+			absent, _ := testdigest.RandomCASResourceBuf(t, 100)
+			for i := 0; i < tc.present; i++ {
+				require.NoError(t, caches[i].Cache.Set(ctx, rn, buf))
+			}
+			if tc.failedPeer {
+				caches[2].findMissingErr = status.UnavailableError("replica unavailable")
+			}
+			if tc.failedRepair {
+				caches[2].writeErr = status.UnavailableError("repair failed")
+			}
+			// Even an origin lookaside hit cannot satisfy quorum or skip peer checks.
+			dc.addLookasideEntry(ctx, rn, buf)
+			quorumCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(findmissing.RequireQuorumHeader, "true"))
+			missing, err := dc.FindMissing(quorumCtx, []*rspb.ResourceName{rn, absent, rn})
+			require.NoError(t, err)
+			expectedMissing := []*repb.Digest{absent.GetDigest()}
+			if tc.wantMissing {
+				expectedMissing = append(expectedMissing, rn.GetDigest(), rn.GetDigest())
+			}
+			require.ElementsMatch(t, expectedMissing, missing)
+			for i, c := range caches {
+				c.mu.Lock()
+				require.GreaterOrEqual(t, c.lookups[rn.GetDigest().GetHash()], 1, "peer %d must be checked", i)
+				require.GreaterOrEqual(t, c.lookups[absent.GetDigest().GetHash()], 1)
+				if tc.present == 3 {
+					require.Equal(t, 1, c.lookups[rn.GetDigest().GetHash()], "duplicate digests must not count as additional replicas")
+				}
+				c.mu.Unlock()
+				if tc.present > 0 && !(i == 2 && (tc.failedPeer || tc.failedRepair)) {
+					// Repair works even for a missing peer after the first successful one.
+					data, err := c.Cache.Get(ctx, rn)
+					require.NoError(t, err)
+					require.Equal(t, buf, data)
+				} else {
+					_, err := c.Cache.Get(ctx, rn)
+					require.True(t, status.IsNotFoundError(err))
+				}
+			}
+			if tc.present == 1 && !tc.failedPeer {
+				// Only a subsequent check observes the quorum created by repair.
+				missing, err = dc.FindMissing(quorumCtx, []*rspb.ResourceName{rn})
+				require.NoError(t, err)
+				require.Empty(t, missing)
+			}
+		})
+	}
+}
+
+func TestFindMissingWithoutQuorumStopsAfterFirstHit(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	peers := make([]string, 3)
+	for i := range peers {
+		peers[i] = fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	}
+	caches := make(map[string]*quorumTestCache)
+	var dc *Cache
+	for _, peer := range peers {
+		c := &quorumTestCache{Cache: newMemoryCache(t, 1000000), lookups: make(map[string]int)}
+		caches[peer] = c
+		dc = startNewDCache(t, env, Options{ListenAddr: peer, Nodes: slices.Clone(peers), ReplicationFactor: 3}, c)
+		waitForReady(t, peer)
+	}
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	first := dc.readPeers(rn).PreferredPeers[0]
+	require.NoError(t, caches[first].Cache.Set(ctx, rn, buf))
+	missing, err := dc.FindMissing(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err)
+	require.Empty(t, missing)
+	for peer, c := range caches {
+		c.mu.Lock()
+		expected := 0
+		if peer == first {
+			expected = 1
+		}
+		require.Equal(t, expected, c.lookups[rn.GetDigest().GetHash()])
+		c.mu.Unlock()
+	}
+}
+
+func TestFindMissingQuorumIgnoresNonReplicaCopies(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	peers := make([]string, 4)
+	for i := range peers {
+		peers[i] = fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	}
+	caches := make(map[string]*quorumTestCache)
+	var dc *Cache
+	for _, peer := range peers {
+		c := &quorumTestCache{Cache: newMemoryCache(t, 1000000), lookups: make(map[string]int)}
+		caches[peer] = c
+		dc = startNewDCache(t, env, Options{ListenAddr: peer, Nodes: slices.Clone(peers), ReplicationFactor: 3}, c)
+		waitForReady(t, peer)
+	}
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	writePeers, err := dc.writePeers(rn)
+	require.NoError(t, err)
+	nonReplica := writePeers.FallbackPeers[0]
+	require.NoError(t, caches[nonReplica].Cache.Set(ctx, rn, buf))
+	// Read-through copies outside the intended write replicas don't count.
+	quorumCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(findmissing.RequireQuorumHeader, "true"))
+	missing, err := dc.FindMissing(quorumCtx, []*rspb.ResourceName{rn})
+	require.NoError(t, err)
+	require.Equal(t, []*repb.Digest{rn.GetDigest()}, missing)
+	caches[nonReplica].mu.Lock()
+	require.Zero(t, caches[nonReplica].lookups[rn.GetDigest().GetHash()])
+	caches[nonReplica].mu.Unlock()
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -230,7 +231,7 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	defer spn.End()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.BlobDigests)))
 
-	if s.findMissingBlobsCache == nil || s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.bypass_find_missing_cache", false) {
+	if findmissing.RequiresQuorum(ctx) || s.findMissingBlobsCache == nil || s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.bypass_find_missing_cache", false) {
 		req.Purpose = repb.FindMissingBlobsRequest_CACHE_PROXY_CAS_PASSTHROUGH
 		return s.remote.FindMissingBlobs(ctx, req)
 	}

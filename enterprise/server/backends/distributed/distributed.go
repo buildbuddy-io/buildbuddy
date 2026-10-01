@@ -921,11 +921,13 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.
 
 	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
 	for _, r := range rns {
-		if _, found := c.getLookasideEntry(ctx, r); found {
-			continue
-		} else {
-			stillMissing = append(stillMissing, r)
+		// If quorum is requested, skip the lookaside cache to make sure the required number of replicas have the artifact.
+		if !findmissing.RequiresQuorum(ctx) {
+			if _, found := c.getLookasideEntry(ctx, r); found {
+				continue
+			}
 		}
+		stillMissing = append(stillMissing, r)
 	}
 	if len(stillMissing) == 0 {
 		return nil, nil
@@ -1376,17 +1378,38 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	if len(resources) == 0 {
 		return nil, nil
 	}
+	requireQuorum := findmissing.RequiresQuorum(ctx)
+	requiredReplicas := 1
+	if requireQuorum {
+		requiredReplicas = c.opts.ReplicationFactor/2 + 1
+	}
 	purpose := findmissing.PurposeFromContext(ctx)
 
-	mu := sync.RWMutex{} // protects(foundMap)
+	mu := sync.RWMutex{} // protects peer results
 	hashResources := make(map[string][]*rspb.ResourceName, 0)
-	foundMap := make(map[string]struct{}, len(resources))
 	peerMap := make(map[string]*peerset.PeerSet, len(resources))
+	type peersWithDataMetadata struct {
+		peers             []string
+		numPeersConsulted int
+	}
+	digestToPeersWithData := make(map[string]*peersWithDataMetadata, len(resources))
+	peersMissingData := make(map[string][]string)
+
 	for _, r := range resources {
 		hash := r.GetDigest().GetHash()
 		hashResources[hash] = append(hashResources[hash], r)
 		if _, ok := peerMap[hash]; !ok {
-			peerMap[hash] = c.readPeers(r)
+			if requireQuorum {
+				// If quorum is requested, don't consider fallback peers.
+				// Only check the peers that were expected to write the data.
+				ps, err := c.writePeers(r)
+				if err != nil {
+					return nil, err
+				}
+				peerMap[hash] = peerset.New(ps.PreferredPeers, nil)
+			} else {
+				peerMap[hash] = c.readPeers(r)
+			}
 		}
 	}
 
@@ -1402,7 +1425,10 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		peerRequests := make(map[string][]*rspb.ResourceName, 0)
 		for h, perHashResources := range hashResources {
 			// If a previous request has already found this digest, skip it.
-			if _, ok := foundMap[h]; ok {
+			//
+			// If quorum is requested, continue visiting every replica even after reaching quorum, so
+			// every copy's atime can be refreshed and missing copies can be repaired.
+			if _, ok := digestToPeersWithData[h]; ok && !requireQuorum {
 				continue
 			}
 
@@ -1414,11 +1440,14 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 				continue
 			}
 			peerRequests[peer] = append(peerRequests[peer], perHashResources[0])
+			if metadata := digestToPeersWithData[h]; metadata != nil {
+				metadata.numPeersConsulted++
+			}
 		}
 		if len(peerRequests) == 0 {
 			stillMissing := make([]string, 0)
 			for h := range hashResources {
-				if _, ok := foundMap[h]; !ok {
+				if peersWithData := digestToPeersWithData[h]; peersWithData == nil || len(peersWithData.peers) < requiredReplicas {
 					stillMissing = append(stillMissing, h)
 				}
 			}
@@ -1448,8 +1477,12 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 				for _, r := range resources {
 					hash := r.GetDigest().GetHash()
 					if _, ok := peerMissingHashes[hash]; !ok {
-						foundMap[hash] = struct{}{}
-						hitMetric.Observe(float64(lookups))
+						if digestToPeersWithData[hash] == nil {
+							digestToPeersWithData[hash] = &peersWithDataMetadata{numPeersConsulted: lookups}
+						}
+						digestToPeersWithData[hash].peers = append(digestToPeersWithData[hash].peers, peer)
+					} else if requireQuorum {
+						peersMissingData[hash] = append(peersMissingData[hash], peer)
 					}
 				}
 				return nil
@@ -1463,26 +1496,36 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			}
 			continue
 		}
-		if len(foundMap) == len(hashResources) {
-			// If we've found everything, we can exit now.
-			break
+	}
+
+	for _, peersWithData := range digestToPeersWithData {
+		if len(peersWithData.peers) >= requiredReplicas {
+			hitMetric.Observe(float64(peersWithData.numPeersConsulted))
 		}
 	}
 
 	// For every digest we found, if we did not find it
 	// on the first peer in our list, we want to backfill it.
 	backfills := make([]*backfillOrder, 0)
-	for h := range foundMap {
+	for h, peersWithData := range digestToPeersWithData {
 		r := hashResources[h][0]
-		ps := peerMap[h]
-		backfills = append(backfills, c.getBackfillOrders(r, ps)...)
+		if requireQuorum {
+			// If quorum is requested, backfill any replicas that are missing data.
+			if *enableBackfill && peersWithData != nil && len(peersMissingData[h]) > 0 {
+				backfills = append(backfills, &backfillOrder{r: r, source: peersWithData.peers[0], dests: peersMissingData[h]})
+			}
+		} else if peersWithData != nil {
+			backfills = append(backfills, c.getBackfillOrders(r, peerMap[h])...)
+		}
 	}
 	c.backfillPeers(ctx, backfills)
 
 	var missing []*repb.Digest
 	for _, r := range resources {
 		d := r.GetDigest()
-		if _, ok := foundMap[d.GetHash()]; !ok {
+		// Report the quorum observed before repair; a repair attempt alone
+		// does not turn an under-replicated digest into a hit.
+		if peersWithData := digestToPeersWithData[d.GetHash()]; peersWithData == nil || len(peersWithData.peers) < requiredReplicas {
 			missing = append(missing, d)
 		}
 	}
