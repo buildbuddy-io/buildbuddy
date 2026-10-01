@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "healthcheck",
@@ -17,4 +17,10 @@ go_library(
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_x_sync//errgroup",
     ],
+)
+
+go_test(
+    name = "healthcheck_test",
+    srcs = ["healthcheck_test.go"],
+    embed = [":healthcheck"],
 )

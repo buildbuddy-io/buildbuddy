@@ -50,9 +50,12 @@ go_library(
 
 go_test(
     name = "db_test",
-    srcs = ["db_test.go"],
+    srcs = [
+        "db_test.go",
+        "stats_test.go",
+    ],
+    embed = [":db"],
     deps = [
-        ":db",
         "@com_github_stretchr_testify//require",
     ],
 )
