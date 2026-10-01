@@ -36,9 +36,7 @@ export default class ExecutionMenuButtonComponent extends React.Component<Props,
   private subscription = new Subscription();
 
   componentDidMount() {
-    this.subscription.add(
-      actionComparisonService.subscribe((data) => this.setState({ comparisonActionData: data }))
-    );
+    this.subscription.add(actionComparisonService.subscribe((data) => this.setState({ comparisonActionData: data })));
   }
 
   componentWillUnmount() {
@@ -71,7 +69,12 @@ export default class ExecutionMenuButtonComponent extends React.Component<Props,
       return;
     }
     router.navigateTo(
-      getCompareActionsPath(selected.invocationId, selected.actionDigest, this.props.invocationId, this.props.actionDigest)
+      getCompareActionsPath(
+        selected.invocationId,
+        selected.actionDigest,
+        this.props.invocationId,
+        this.props.actionDigest
+      )
     );
     actionComparisonService.clearComparisonAction();
     this.setState({ isDropdownOpen: false });
