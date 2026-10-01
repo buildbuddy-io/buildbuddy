@@ -126,7 +126,7 @@ func Register(env *real_environment.RealEnv) error {
 	refreshConfiguredFlags()
 
 	log.Infof("Registering Cache Proxy %s on host %q", proxyID, hostname)
-	node := &cppb.CacheProxyNode{
+	summary := &cppb.CacheProxySummary{
 		Host:                 hostname,
 		ProxyId:              proxyID,
 		OsFamily:             runtime.GOOS,
@@ -158,7 +158,7 @@ func Register(env *real_environment.RealEnv) error {
 	})
 	go func() {
 		defer close(doneCh)
-		run(ctx, shutdownCh, env, *appTarget, *apiKey, node)
+		run(ctx, shutdownCh, env, *appTarget, *apiKey, summary)
 	}()
 	return nil
 }
@@ -168,13 +168,13 @@ func refreshConfiguredFlags() {
 	configuredFlagsCache.Store(&flags)
 }
 
-func run(ctx context.Context, shutdownCh <-chan struct{}, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {
+func run(ctx context.Context, shutdownCh <-chan struct{}, env environment.Env, target, apiKey string, summary *cppb.CacheProxySummary) {
 	ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
 	for {
 		conn, err := grpc_client.DialInternalWithPoolSize(env, target, 1)
 		if err == nil {
 			client := cppb.NewCacheProxyRegistryClient(conn)
-			if err := streamHeartbeats(ctx, shutdownCh, client, node); err != nil && ctx.Err() == nil {
+			if err := streamHeartbeats(ctx, shutdownCh, client, summary); err != nil && ctx.Err() == nil {
 				log.Warningf("Cache Proxy registration stream failed, will retry in %s: %s", retryInterval, err)
 			}
 			_ = conn.Close()
@@ -192,13 +192,13 @@ func run(ctx context.Context, shutdownCh <-chan struct{}, env environment.Env, t
 // ctx is cancelled, or shutdownCh is closed. On a clean shutdown signal it
 // also sends a final shutting_down=true message so the server can drop us
 // from its registry immediately instead of waiting for the staleness TTL.
-func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cppb.CacheProxyRegistryClient, node *cppb.CacheProxyNode) error {
-	stream, cleanup, err := openStream(ctx, client, node)
+func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cppb.CacheProxyRegistryClient, summary *cppb.CacheProxySummary) error {
+	stream, cleanup, err := openStream(ctx, client, summary)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
-	log.Infof("Successfully registered Cache Proxy %q with the app", node.GetProxyId())
+	log.Infof("Successfully registered Cache Proxy %q with the app", summary.GetProxyId())
 
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
@@ -213,7 +213,7 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 		case <-shutdownCh:
 			// Best-effort goodbye. If the send fails the server will
 			// eventually drop us via the staleness TTL anyway.
-			if err := sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node, ShuttingDown: true}); err == nil {
+			if err := sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary, ShuttingDown: true}); err == nil {
 				// Send succeeded; close the stream cleanly. On send
 				// failure (io.EOF) sendHeartbeat has already drained
 				// the trailer via its own CloseAndRecv, so we skip it
@@ -222,7 +222,7 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 			}
 			return nil
 		case <-ticker.C:
-			req := &cppb.RegisterCacheProxyRequest{Node: node, Statistics: collectStatistics()}
+			req := &cppb.RegisterCacheProxyRequest{Summary: summary, Statistics: collectStatistics()}
 			if err := sendHeartbeat(stream, req); err != nil {
 				return err
 			}
@@ -301,7 +301,7 @@ func sumByStatus(cv *prometheus.CounterVec) (hits int64, misses int64, uncacheab
 	return int64(h), int64(m), int64(u)
 }
 
-func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node *cppb.CacheProxyNode) (cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, func(), error) {
+func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, summary *cppb.CacheProxySummary) (cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, func(), error) {
 	// The stream is opened on a child ctx. If setup hasn't completed by
 	// initialSendTimeout the AfterFunc cancels that child, failing the
 	// in-flight call so the caller's retry loop can back off. Once setup
@@ -326,7 +326,7 @@ func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node 
 	if err != nil {
 		return nil, nil, fail(err)
 	}
-	if err := sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node, Statistics: collectStatistics()}); err != nil {
+	if err := sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary, Statistics: collectStatistics()}); err != nil {
 		return nil, nil, fail(err)
 	}
 	setupTimer.Stop()
@@ -337,9 +337,9 @@ func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node 
 // has already terminated (io.EOF), it drains the trailer via CloseAndRecv to
 // surface the real status (PermissionDenied, etc.) instead of a bare EOF.
 func sendHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, req *cppb.RegisterCacheProxyRequest) error {
-	if node := req.GetNode(); node != nil {
+	if summary := req.GetSummary(); summary != nil {
 		if flags := configuredFlagsCache.Load(); flags != nil {
-			node.ConfiguredFlags = *flags
+			summary.ConfiguredFlags = *flags
 		}
 	}
 	err := stream.Send(req)

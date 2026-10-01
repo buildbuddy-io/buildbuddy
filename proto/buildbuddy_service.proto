@@ -154,8 +154,13 @@ service BuildBuddyService {
       returns (cache.GetTreeDirectorySizesResponse);
 
   // Cache Proxy API
+  // TODO(go/b/8433): remove GetCacheProxies
   rpc GetCacheProxies(cache_proxy.GetCacheProxiesRequest)
       returns (cache_proxy.GetCacheProxiesResponse);
+  rpc ListCacheProxies(cache_proxy.ListCacheProxiesRequest)
+      returns (cache_proxy.ListCacheProxiesResponse);
+  rpc GetCacheProxy(cache_proxy.GetCacheProxyRequest)
+      returns (cache_proxy.GetCacheProxyResponse);
 
   // Targets API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);

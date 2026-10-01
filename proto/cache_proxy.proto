@@ -7,57 +7,81 @@ import "proto/upgrade.proto";
 
 package cache_proxy;
 
-// CacheProxyNode is the registration info that a cache proxy sends to the
-// main BuildBuddy server.
-message CacheProxyNode {
-  // Cache proxy host (typically the proxy's hostname or pod name).
+// CacheProxySummary is a summary of a cache proxy's state.
+message CacheProxySummary {
+  // The host on which the cache proxy is running (typically the machine's
+  // hostname or kubernetes pod name).
+  //
   // Ex. "10.52.6.5" or "cache-proxy-abc123"
   string host = 1;
 
-  // Unique ID that identifies this cache proxy instance. Set once when the
-  // proxy starts and preserved for the lifetime of the process. Each proxy
-  // generates its own ID on startup.
+  // Unique ID identifying this cache proxy process. Set once when the cache
+  // proxy process starts and preserved for its lifetime. Each new cache proxy
+  // process generates its own unique ID on startup.
   //
   // Ex. "34c5cf7e-b3b1-4e20-b43c-3e196b30d983"
   string proxy_id = 2;
 
-  // Unique ID that identifies the host the cache proxy is running on.
+  // Unique ID identifying the host the cache proxy is running on. Persists
+  // across cache proxy processes running on the same host (in most cases).
   //
   // Ex. "23894af6-a540-430a-962e-a14b1f398472"
   string proxy_host_id = 3;
 
-  // Proxy's operating system family. One of: "darwin", "linux", or "windows".
+  // The cache proxy's operating system family. One of: "darwin", "linux", or
+  // "windows".
   string os_family = 4;
 
-  // Architecture of the cache proxy node.
-  // Ex. "amd64"
+  // Architecture of the cache proxy. Usually one of: "amd64" or "arm64".
   string arch = 5;
 
-  // Version of the cache proxy binary.
+  // Version of the cache proxy binary, formatted as a semver with a "v" in
+  // front, e.g. "v2.301.0".
   string version = 6;
 
   // Time when this cache proxy process started.
   google.protobuf.Timestamp start_time = 7;
 
-  // Optional set of key-value labels identifying this cache proxy. Set
-  // operationally (e.g. region, canary, environment) and surfaced on the
-  // deployment view.
+  // Optional set of key-value labels identifying this cache proxy. These labels
+  // can be used to identify cache proxies by the cloud, cluster, region, or
+  // zone where they're running, their deployment or experimental configuration
+  // (for example, canaries), or other operationally relevant information.
   map<string, string> labels = 8;
 
-  // CPU allocated to this cache proxy node, in milliCPU (1000 == 1 core).
+  // CPU allocated to this cache proxy process, in milliCPU (1000 == 1 core).
   int64 allocated_cpu_millis = 9;
 
-  // Memory allocated to this cache proxy node, in bytes.
+  // Memory allocated to this cache proxy process, in bytes.
   int64 allocated_memory_bytes = 10;
 
   // The flags this cache proxy was configured with (via the command line or
   // config file), in "--name=value" form. Only flags set to non-default
   // values are included, and the values of secret flags are redacted.
+  //
+  // TODO(go/b/8433): remove this field.
   repeated string configured_flags = 11;
+
+  // The last time this cache proxy checked in with the server.
+  google.protobuf.Timestamp last_check_in_time = 12;
+}
+
+// CacheProxyDetails contains details about a cache proxy's state. The summary
+// is contained in and always returned with the details, but other fields are
+// optional and only returned when requested.
+message CacheProxyDetails {
+  CacheProxySummary summary = 1;
+
+  // The flags this cache proxy was configured with (via the command line or
+  // config file), in "--name=value" form. Only flags set to non-default
+  // values are included, and the values of secret flags are redacted.
+  repeated string configured_flags = 2;
+
+  // Statistics about this cache proxy's performance.
+  Statistics statistics = 3;
 }
 
 // Statistics about this cache proxy's performance. Cumulative over the
-// lifetime of this cache proxy.
+// lifetime of this cache proxy process.
 message Statistics {
   // Read statistics — broken out by hit/miss.
   int64 ac_read_hits = 1;
@@ -83,31 +107,35 @@ message Statistics {
 // RegisterCacheProxyRequest is sent on the client-side stream from the proxy
 // to the server, both initially and as a periodic heartbeat.
 message RegisterCacheProxyRequest {
-  CacheProxyNode node = 1;
+  CacheProxySummary summary = 1;
+
+  // TODO(go/b/8433): remove
   Statistics statistics = 2;
 
-  // When true, the proxy is shutting down cleanly and the server should
-  // remove this proxy from its registry immediately rather than waiting
+  // When true, the cache proxy is shutting down cleanly and the server should
+  // remove this cache proxy from its registry immediately rather than waiting
   // for the heartbeat staleness TTL.
   bool shutting_down = 3;
 }
 
-// RegisterCacheProxyResponse is returned by the server once the proxy closes
-// the stream (or the stream is broken). Empty for now but kept as a message
-// so we can add fields later without changing the RPC signature.
+// RegisterCacheProxyResponse is returned by the server once the cache proxy
+// closes the stream (or the stream is broken). Empty for now but kept as a
+// message so we can add fields later without changing the RPC signature.
 message RegisterCacheProxyResponse {}
 
+// TODO(go/b/8433): remove
 message GetCacheProxiesRequest {
   context.RequestContext request_context = 1;
 }
 
+// TODO(go/b/8433): remove
 message GetCacheProxiesResponse {
   context.ResponseContext response_context = 1;
 
   repeated CacheProxy cache_proxy = 2;
 
   message CacheProxy {
-    CacheProxyNode node = 1;
+    CacheProxySummary summary = 1;
 
     // Last time this cache proxy checked in with the server.
     google.protobuf.Timestamp last_check_in_time = 2;
@@ -119,9 +147,53 @@ message GetCacheProxiesResponse {
   upgrade.Prompt upgrade_prompt = 3;
 }
 
+// ListCacheProxiesRequest and ListCacheProxiesResponse are used to list all
+// cache proxies running under a provided RequestContext.
+message ListCacheProxiesRequest {
+  context.RequestContext request_context = 1;
+}
+
+message ListCacheProxiesResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated CacheProxySummary summary = 2;
+
+  upgrade.Prompt upgrade_prompt = 3;
+}
+
+// CacheProxySelector selects a single cache proxy for retrieval via the
+// details-fetching GetCacheProxy RPC.
+message CacheProxySelector {
+  // The proxy_id of the cache proxy to fetch. See CacheProxySummary for a
+  // description of the proxy_id.
+  string proxy_id = 1;
+}
+
+// GetCacheProxyRequest and GetCacheProxyResponse are used to fetch details
+// about a single cache proxy.
+message GetCacheProxyRequest {
+  context.RequestContext request_context = 1;
+
+  CacheProxySelector selector = 2;
+
+  // Whether to include the cache proxy's configured flags in the response.
+  bool include_configured_flags = 3;
+
+  // Whether to include the cache proxy's statistics in the response.
+  bool include_statistics = 4;
+}
+
+message GetCacheProxyResponse {
+  context.ResponseContext response_context = 1;
+
+  CacheProxyDetails details = 2;
+
+  upgrade.Prompt upgrade_prompt = 3;
+}
+
 // Persisted information about a connected cache proxy.
 message RegisteredCacheProxy {
-  CacheProxyNode registration = 1;
+  CacheProxySummary summary = 1;
   string group_id = 2;
   acl.ACL acl = 3;
   google.protobuf.Timestamp last_ping_time = 4;
@@ -132,11 +204,11 @@ message RegisteredCacheProxy {
 // live cache proxies for each group, so the deployment view can list them.
 service CacheProxyRegistry {
   // RegisterAndStreamHeartbeat is opened by the cache proxy on startup. The
-  // proxy sends an initial RegisterCacheProxyRequest with its identifying
+  // cache proxy sends an initial RegisterCacheProxyRequest with its identifying
   // info, then re-sends the same message periodically as a heartbeat. The
   // server uses these heartbeats to maintain a TTL-backed registry of live
-  // proxies, scoped to the group identified by the proxy's API key. The
-  // server returns a single RegisterCacheProxyResponse once the proxy
+  // cache proxies, scoped to the group identified by the proxy's API key. The
+  // server returns a single RegisterCacheProxyResponse once the cache proxy
   // closes the stream (or the connection drops).
   rpc RegisterAndStreamHeartbeat(stream RegisterCacheProxyRequest)
       returns (RegisterCacheProxyResponse) {}
