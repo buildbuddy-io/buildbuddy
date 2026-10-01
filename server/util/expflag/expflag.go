@@ -122,6 +122,7 @@ package expflag
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -346,10 +347,17 @@ type evaluatedFlagsKey struct{}
 // contextFlag is a flag attached to a context by ContextWithEvaluatedFlags.
 type contextFlag struct {
 	proto *expb.EvaluatedFlag
-	// object is the proto's object value converted to a map, or nil if the
-	// value is not an object. It is converted once when the flags are
-	// attached, so that each ObjectDetails call does not build a new map.
-	object map[string]any
+	// object is set if the value is an object.
+	object *lazyObject
+}
+
+// lazyObject converts an object flag's value to a map on the first read and
+// reuses it afterwards, so that tasks pay for the conversion only if they read
+// the flag, and only once.
+type lazyObject struct {
+	once  sync.Once
+	proto *structpb.Struct
+	value map[string]any
 }
 
 // ContextWithEvaluatedFlags attaches flags evaluated by another process to
@@ -360,7 +368,7 @@ func ContextWithEvaluatedFlags(ctx context.Context, flags []*expb.EvaluatedFlag)
 	for _, f := range flags {
 		cf := contextFlag{proto: f}
 		if v, ok := f.GetValue().(*expb.EvaluatedFlag_ObjectValue); ok {
-			cf.object = v.ObjectValue.AsMap()
+			cf.object = &lazyObject{proto: v.ObjectValue}
 		}
 		byName[f.GetName()] = cf
 	}
@@ -414,8 +422,9 @@ func (contextProvider) Float64Details(ctx context.Context, name string, defaultV
 
 func (contextProvider) ObjectDetails(ctx context.Context, name string, defaultValue map[string]any, _ ...any) (map[string]any, interfaces.ExperimentFlagDetails) {
 	f := evaluatedFlagFromContext(ctx, name)
-	if f.object != nil {
-		return f.object, evaluatedFlagDetails{f.proto}
+	if o := f.object; o != nil {
+		o.once.Do(func() { o.value = o.proto.AsMap() })
+		return o.value, evaluatedFlagDetails{f.proto}
 	}
 	return defaultValue, unusableFlagDetails(f.proto)
 }
