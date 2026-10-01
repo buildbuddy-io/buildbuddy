@@ -1575,12 +1575,34 @@ func Configure(ctx context.Context) error {
 	}
 	hostNetAllocator = a
 
+	// Userspace networks forward pings using ping sockets, which the executor
+	// can only open if its group is in ping_group_range.
+	if err := allowPingSockets(); err != nil {
+		log.Warningf("Could not allow ping sockets; pings from userspace networks will fail: %s", err)
+	}
+
 	if IsSecondaryNetworkEnabled() {
 		// Adds a new routing table
 		if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
 			return err
 		}
 		return configurePolicyBasedRoutingForSecondaryNetwork(ctx)
+	}
+	return nil
+}
+
+func allowPingSockets() error {
+	const path = "/proc/sys/net/ipv4/ping_group_range"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var minGID, maxGID int
+	if _, err := fmt.Sscan(string(b), &minGID, &maxGID); err != nil {
+		return status.InternalErrorf("parse %s: %s", path, err)
+	}
+	if gid := os.Getgid(); gid < minGID || gid > maxGID {
+		return os.WriteFile(path, []byte(fmt.Sprintf("%d %d", gid, gid)), 0)
 	}
 	return nil
 }
