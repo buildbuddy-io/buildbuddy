@@ -355,8 +355,13 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 		if err := perms.AuthorizeRead(user, reg.GetAcl()); err != nil {
 			continue
 		}
+		summary := reg.GetSummary()
+		if summary == nil {
+			continue
+		}
+		summary.LastCheckInTime = reg.GetLastPingTime()
 		proxies = append(proxies, &cppb.GetCacheProxiesResponse_CacheProxy{
-			Summary:         reg.GetSummary(),
+			Summary:         summary,
 			LastCheckInTime: reg.GetLastPingTime(),
 			Statistics:      reg.GetStatistics(),
 		})
@@ -373,4 +378,21 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 		CacheProxy:    proxies,
 		UpgradePrompt: s.upgradePrompt(ctx, proxies),
 	}, nil
+}
+
+func (s *CacheProxyRegistryServer) ListCacheProxies(ctx context.Context, req *cppb.ListCacheProxiesRequest) (*cppb.ListCacheProxiesResponse, error) {
+	getReq := cppb.GetCacheProxiesRequest{RequestContext: req.GetRequestContext()}
+	getResp, err := s.GetCacheProxies(ctx, &getReq)
+	if err != nil {
+		return nil, err
+	}
+	resp := cppb.ListCacheProxiesResponse{
+		UpgradePrompt: getResp.GetUpgradePrompt(),
+	}
+	summaries := []*cppb.CacheProxySummary{}
+	for _, summary := range getResp.GetCacheProxy() {
+		summaries = append(summaries, summary.GetSummary())
+	}
+	resp.Summary = summaries
+	return &resp, nil
 }
