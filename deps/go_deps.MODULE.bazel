@@ -346,6 +346,7 @@ use_repo(
     "io_k8s_api",
     "io_k8s_apimachinery",
     "io_k8s_client_go",
+    "io_k8s_sigs_yaml",
     "io_kythe",
     "io_opentelemetry_go_contrib_detectors_aws_ec2_v2",
     "io_opentelemetry_go_contrib_detectors_gcp",

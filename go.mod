@@ -433,6 +433,7 @@ require (
 	github.com/shurcooL/graphql v0.0.0-20230722043721-ed46e5a46466 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/spf13/cast v1.5.1 // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.7.0 // indirect
 	github.com/tetratelabs/wazero v1.9.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect

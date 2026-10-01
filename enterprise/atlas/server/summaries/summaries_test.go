@@ -60,6 +60,18 @@ func TestStoreLifecycle(t *testing.T) {
 	require.Empty(t, s.Entries())
 }
 
+func TestRemoveStore(t *testing.T) {
+	ix := New()
+	s := ix.NewStore(podRes)
+	s.Put(podEntry("a", "prod"))
+	require.Equal(t, 1, ix.Search("kind:pod", 10).Total)
+
+	ix.RemoveStore(s)
+	require.Equal(t, 0, ix.Search("kind:pod", 10).Total)
+	_, ok := ix.GetEntry("uswest1", "", "pods", "prod", "a")
+	require.False(t, ok)
+}
+
 func TestParseQuery(t *testing.T) {
 	q := ParseQuery("kind:pod ns:prod cluster:uswest1 label:app=web redis:7.2 Cache")
 	require.Equal(t, "pod", q.Kind)
