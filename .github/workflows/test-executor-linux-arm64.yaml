@@ -46,6 +46,6 @@ jobs:
           common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           EOF
 
-          bazelisk --experimental_remote_repo_contents_cache test --config=race --test_tag_filters= \
+          bazelisk test --config=race --test_tag_filters= \
             //enterprise/server/remote_execution/vbd:vbd_test \
             //enterprise/server/test/integration/podman:podman_test

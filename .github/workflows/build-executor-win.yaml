@@ -130,7 +130,6 @@ jobs:
           }
           bazelisk --output_user_root=C:/0 `
                    --windows_enable_symlinks `
-                   --experimental_remote_repo_contents_cache `
                    test `
                    --config=$ciConfig `
                    @authArgs `

@@ -47,7 +47,7 @@ jobs:
           $windows386Target = "//enterprise/server/cmd/executor:executor_windows_386"
           $windowsArm64Target = "//enterprise/server/cmd/executor:executor_windows_arm64"
 
-          bazelisk --output_user_root=C:/0 --experimental_remote_repo_contents_cache build @commonArgs $amd64Target $windows386Target $windowsArm64Target
+          bazelisk --output_user_root=C:/0 build @commonArgs $amd64Target $windows386Target $windowsArm64Target
           Copy-Item -Path bazel-out/windows_amd64-opt/bin/enterprise/server/cmd/executor/executor_/executor.exe -Destination executor-enterprise-windows-amd64-beta.exe
           Copy-Item -Path bazel-out/windows_386-opt/bin/enterprise/server/cmd/executor/executor_/executor.exe -Destination executor-enterprise-windows-386-beta.exe
           Copy-Item -Path bazel-out/windows_arm64-opt/bin/enterprise/server/cmd/executor/executor_/executor.exe -Destination executor-enterprise-windows-arm64-beta.exe

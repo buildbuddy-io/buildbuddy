@@ -17,7 +17,7 @@ jobs:
 
       - name: Coverage
         run: |
-          bazelisk --experimental_remote_repo_contents_cache coverage \
+          bazelisk coverage \
               --config=ci \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
               --experimental_split_coverage_postprocessing \
