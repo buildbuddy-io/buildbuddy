@@ -290,6 +290,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		// Global experiments can be handled here, but experiments that are user or group specific
 		// should be included in the experiments field of GetUserResponse instead.
 		FlipLogoOnHover: flipLogoOnHover.Get(ctx),
+		SingleTargetStatsEnabled: true // efp.Boolean(ctx, "single-target-stats", false /*=default*/) && env.GetOLAPDBHandle() != nil
 	}
 
 	configJSON, err := protojson.Marshal(&config)
