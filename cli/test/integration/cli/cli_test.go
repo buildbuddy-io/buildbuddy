@@ -669,12 +669,20 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 }
 
 func TestBazelModDumpRepoMappingEmptyString(t *testing.T) {
+	// The CLI may add its own options anywhere, so only require that an empty
+	// argument still follows dump_repo_mapping.
 	ws := newFakeBazelWorkspace(t, `
-args=("$@")
-[[ ${#args[@]} -ge 3 ]]
-[[ "${args[${#args[@]}-1]}" == "" ]]
-[[ "${args[${#args[@]}-2]}" == "dump_repo_mapping" ]]
-printf '%s\n' 'empty repo mapping argument preserved'
+seen_command=0
+for arg in "$@"; do
+  if [[ "$arg" == dump_repo_mapping ]]; then
+    seen_command=1
+  elif [[ "$seen_command" == 1 && -z "$arg" ]]; then
+    echo 'empty repo mapping argument preserved'
+    exit 0
+  fi
+done
+echo "fake bazel: no empty argument after dump_repo_mapping in: $(printf '<%s> ' "$@")" >&2
+exit 1
 `)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		// Add a nop plugin to make sure we properly handle args when there is
@@ -686,9 +694,9 @@ plugins:
 `,
 	})
 	cmd := testcli.Command(t, ws, "mod", "dump_repo_mapping", "")
-	b, err := testcli.Output(cmd)
-	require.NoErrorf(t, err, "output: %s", string(b))
-	require.Equal(t, "empty repo mapping argument preserved\n", string(b))
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	require.NoErrorf(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
+	require.Equal(t, "empty repo mapping argument preserved\n", string(stdout))
 }
 
 func retryUntilSuccess(t *testing.T, f func() error) {
