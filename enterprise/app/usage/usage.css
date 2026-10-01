@@ -50,8 +50,9 @@
   flex-shrink: 0;
 }
 
-.usage-page .usage-period-header .usage-period {
-  font-weight: 600;
+/* Anchor the date range picker popup to its button. */
+.usage-page .popup-wrapper {
+  position: relative;
 }
 
 .usage-page .usage-period-table {

@@ -136,6 +136,21 @@ func TestGetUsage(t *testing.T) {
 		},
 	}
 	assert.Empty(t, cmp.Diff(expectedResponse, rsp, protocmp.Transform()))
+
+	// A date range returns just the days in it.
+	rsp, err = service.GetUsageInternal(ctx1, group, &usagepb.GetUsageRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: "GR1"},
+		StartDate:      "2024-02-04",
+		EndDate:        "2024-02-05",
+	})
+	require.NoError(t, err)
+	expectedResponse.Usage = &usagepb.Usage{
+		Period:       "2024-02-04/2024-02-05",
+		Invocations:  15,
+		CasCacheHits: 12_000,
+	}
+	expectedResponse.DailyUsage = expectedResponse.DailyUsage[1:]
+	assert.Empty(t, cmp.Diff(expectedResponse, rsp, protocmp.Transform()))
 }
 
 func TestGetCurrentBill(t *testing.T) {

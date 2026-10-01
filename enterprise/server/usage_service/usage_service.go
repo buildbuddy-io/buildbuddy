@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -341,11 +340,6 @@ type usageService struct {
 	olapdbh        interfaces.OLAPDBHandle
 	readFromOLAPDB bool
 
-	// start is the earliest moment in time at which we're able to return usage
-	// data to the user. We return usage data from the start of the month
-	// corresponding to this date.
-	start time.Time
-
 	// metronome is nil if the read-only key is not configured.
 	metronome *metronome.Client
 	bills     lru.LRU[*usagepb.Bill]
@@ -375,7 +369,6 @@ func New(env environment.Env, clock clockwork.Clock) (*usageService, error) {
 		clock:          clock,
 		olapdbh:        olapdbh,
 		readFromOLAPDB: readFromOLAPDB,
-		start:          configuredUsageStartDate(),
 	}
 	if metronome.ReadOnlyConfigured() {
 		client, err := metronome.NewReadOnlyClient(nil, nil)
@@ -424,16 +417,25 @@ func (s *usageService) GetUsageInternal(ctx context.Context, g *tables.Group, re
 	}
 
 	var start, end time.Time
-	if req.GetUsagePeriod() != "" {
-		p, err := parseUsagePeriod(req.GetUsagePeriod())
+	var period string
+	var err error
+	if req.GetStartDate() != "" || req.GetEndDate() != "" {
+		start, end, err = parseUsageDateRange(req.GetStartDate(), req.GetEndDate())
 		if err != nil {
 			return nil, err
 		}
+		period = start.Format(usageDateFormat) + "/" + end.Format(usageDateFormat)
+	} else {
+		p := getUsagePeriod(now)
+		if req.GetUsagePeriod() != "" {
+			p, err = parseUsagePeriod(req.GetUsagePeriod())
+			if err != nil {
+				return nil, err
+			}
+		}
 		start = p.Start()
 		end = addCalendarMonths(start, 1)
-	} else {
-		start = getUsagePeriod(now).Start()
-		end = addCalendarMonths(start, 1)
+		period = p.String()
 	}
 
 	useOLAP := s.readFromOLAPDB || req.GetUseOlap()
@@ -449,7 +451,6 @@ func (s *usageService) GetUsageInternal(ctx context.Context, g *tables.Group, re
 	rsp := &usagepb.GetUsageResponse{
 		AvailableUsagePeriods: availableUsagePeriods,
 	}
-	period := getUsagePeriod(start).String()
 
 	aggregateUsage := &usagepb.Usage{
 		Period: period,
@@ -875,10 +876,10 @@ func (s *usageService) addOLAPOnlyUsage(ctx context.Context, groupID string, sta
 }
 
 const (
-	// usageExportDateFormat is the start and end query param format.
-	usageExportDateFormat = "2006-01-02"
-	// usageExportMaxRange keeps the export small enough to buffer in memory.
-	usageExportMaxRange = 366 * 24 * time.Hour
+	// usageDateFormat is the format of usage date params.
+	usageDateFormat = "2006-01-02"
+	// usageMaxDateRange keeps daily usage small enough to buffer in memory.
+	usageMaxDateRange = 366 * 24 * time.Hour
 )
 
 // usageExportSKUs are all SKUs with an exported column.
@@ -971,7 +972,8 @@ func (s *usageService) handleUsageExport(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "group ID is required", http.StatusForbidden)
 		return
 	}
-	start, end, err := parseUsageExportRange(r.URL.Query())
+	params := r.URL.Query()
+	start, end, err := parseUsageDateRange(params.Get("start"), params.Get("end"))
 	if err != nil {
 		http.Error(w, status.Message(err), http.StatusBadRequest)
 		return
@@ -983,29 +985,29 @@ func (s *usageService) handleUsageExport(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	// Set the download headers only on success, so errors aren't downloaded.
-	lastDay := end.AddDate(0, 0, -1).Format(usageExportDateFormat)
+	lastDay := end.AddDate(0, 0, -1).Format(usageDateFormat)
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="usage-%s-%s.csv"`, start.Format(usageExportDateFormat), lastDay))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="usage-%s-%s.csv"`, start.Format(usageDateFormat), lastDay))
 	if err := writeUsageExportCSV(w, records); err != nil {
 		log.CtxWarningf(ctx, "Failed to write usage export for group %s: %s", groupID, err)
 	}
 }
 
-// parseUsageExportRange parses the [start, end) UTC dates.
-func parseUsageExportRange(params url.Values) (start, end time.Time, err error) {
-	start, err = time.Parse(usageExportDateFormat, params.Get("start"))
+// parseUsageDateRange parses [start, end) UTC dates.
+func parseUsageDateRange(startParam, endParam string) (start, end time.Time, err error) {
+	start, err = time.Parse(usageDateFormat, startParam)
 	if err != nil {
 		return start, end, status.InvalidArgumentErrorf("invalid start date: %s", err)
 	}
-	end, err = time.Parse(usageExportDateFormat, params.Get("end"))
+	end, err = time.Parse(usageDateFormat, endParam)
 	if err != nil {
 		return start, end, status.InvalidArgumentErrorf("invalid end date: %s", err)
 	}
 	if !end.After(start) {
 		return start, end, status.InvalidArgumentError("end date must be after start date")
 	}
-	if end.Sub(start) > usageExportMaxRange {
-		return start, end, status.InvalidArgumentErrorf("date range must not exceed %d days", usageExportMaxRange/(24*time.Hour))
+	if end.Sub(start) > usageMaxDateRange {
+		return start, end, status.InvalidArgumentErrorf("date range must not exceed %d days", usageMaxDateRange/(24*time.Hour))
 	}
 	return start, end, nil
 }

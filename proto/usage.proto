@@ -16,6 +16,11 @@ message GetUsageRequest {
 
   // If true, query usage data from the OLAP DB for this request.
   bool use_olap = 3;
+
+  // The UTC date range to be fetched instead of usage_period, in "YYYY-MM-DD"
+  // format: start inclusive, end exclusive, at most 366 days.
+  string start_date = 4;
+  string end_date = 5;
 }
 
 message GetUsageResponse {
@@ -61,7 +66,8 @@ message ExecutionUsage {
 // Usage represents a count of BuildBuddy resources used for a particular time
 // period.
 message Usage {
-  // Usage period in UTC, in "YYYY-MM" or "YYYY-MM-DD" format.
+  // Usage period in UTC: "YYYY-MM", "YYYY-MM-DD", or a "YYYY-MM-DD/YYYY-MM-DD"
+  // date range with an exclusive end.
   string period = 1;
 
   // The number of invocations.
