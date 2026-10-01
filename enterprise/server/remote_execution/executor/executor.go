@@ -320,6 +320,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// do this if the peer is ready to handle this partial COMPLETED update,
 		// which is indicated by the presence of
 		// "remote_execution.publish_post_completion_stats" in experiments.
+		// TODO(vanja) remove this once every app (including on-prem) is ready
+		// for the second COMPLETED Operation.
 		if slices.Contains(task.GetExperiments(), "remote_execution.publish_post_completion_stats") {
 			if stats := r.PostCompletionStats(); stats != nil && firstCompletedPublished {
 				statsAny, err := anypb.New(stats)
