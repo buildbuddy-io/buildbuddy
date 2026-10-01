@@ -956,8 +956,8 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 		},
 		{
 			// The dispatch-time record is lost but the invocation links
-			// survive, so the OLAP row is still written. Everything in the
-			// row must be recoverable from the COMPLETED update alone.
+			// survive, so the OLAP row is still written. Recover as much
+			// as possible from the COMPLETED update alone.
 			name:                   "LostInProgressRecord",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			lostInProgressRecord:   true,
