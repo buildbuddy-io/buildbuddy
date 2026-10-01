@@ -299,6 +299,7 @@ func (s *ExecutionSearchService) addTimelineWhereClauses(q *query_builder.Query,
 	// Executions are not supposed to have an empty output path, but some
 	// past issues have leaked a few instances of this into clickhouse,
 	// so let's just filter them out to be safe.
+	// See buildbuddy-io/buildbuddy/pull/13613
 	q.AddWhereClause("output_path != ''")
 	return s.addExecutionQueryFilters(q, req.GetQuery())
 }
