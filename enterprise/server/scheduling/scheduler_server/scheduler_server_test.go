@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -47,6 +48,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
@@ -364,7 +366,7 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
 	"$schema": "https://flagd.dev/schema/v0/flags.json",
 	"flags": {
-		"remote_execution.persistent_volumes": {
+		"executor.persistent_volumes": {
 			"state": "ENABLED",
 			"defaultVariant": "default",
 			"variants": {
@@ -385,10 +387,13 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 	openfeature.SetProviderAndWait(provider)
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
+	expflag.SetFlagProvider(fp)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 
 	env, ctx := getEnv(t, &schedulerOpts{}, "")
 	env.SetExperimentFlagProvider(fp)
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.supportsExperimentFlags = true
 	fe.Register()
 
 	taskID := scheduleTask(ctx, t, env, map[string]string{})
@@ -397,10 +402,75 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 	lease := fe.Claim(taskID)
 	defer lease.Finalize()
 
-	require.Equal(t, []string{"remote_execution.persistent_volumes:tmp-cache"}, lease.task.GetExperiments())
-	require.Empty(t, cmp.Diff([]*repb.Platform_Property{
-		{Name: "persistent-volumes", Value: "cache:/tmp/.cache"},
-	}, lease.task.GetPlatformOverrides().GetProperties(), protocmp.Transform()), nil)
+	// The scheduler should send the experiment's value with the leased task,
+	// and leave it to the executor to apply the value to the task's platform.
+	gotFlags := lease.task.GetExperimentFlags()
+	require.Empty(t, cmp.Diff([]*expb.EvaluatedFlag{
+		{Name: "executor.persistent_volumes", Variant: "tmp-cache", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
+	}, gotFlags, protocmp.Transform()))
+	gotOverrides := lease.task.GetPlatformOverrides().GetProperties()
+	require.Empty(t, gotOverrides)
+}
+
+func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
+	// Note: persistent_volumes is just used as an example here. The scheduler
+	// should handle all experiments the same way.
+	tmp := testfs.MakeTempDir(t)
+	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
+	"$schema": "https://flagd.dev/schema/v0/flags.json",
+	"flags": {
+		"executor.persistent_volumes": {
+			"state": "ENABLED",
+			"defaultVariant": "enabled",
+			"variants": {
+				"enabled": "cache:/tmp/.cache"
+			}
+		}
+	}
+}`)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	expflag.SetFlagProvider(fp)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
+	for _, tc := range []struct {
+		name                    string
+		supportsExperimentFlags bool
+		wantFlags               []*expb.EvaluatedFlag
+	}{
+		{
+			name:                    "ExecutorSupportsExperimentFlags",
+			supportsExperimentFlags: true,
+			wantFlags: []*expb.EvaluatedFlag{
+				{Name: "executor.persistent_volumes", Variant: "enabled", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
+			},
+		},
+		{
+			name:                    "ExecutorDoesNotSupportExperimentFlags",
+			supportsExperimentFlags: false,
+			wantFlags:               nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "")
+			env.SetExperimentFlagProvider(fp)
+			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			fe.supportsExperimentFlags = tc.supportsExperimentFlags
+			fe.Register()
+
+			taskID := scheduleTask(ctx, t, env, map[string]string{})
+
+			fe.WaitForTask(taskID)
+			lease := fe.Claim(taskID)
+			defer lease.Finalize()
+
+			gotFlags := lease.task.GetExperimentFlags()
+			require.Empty(t, cmp.Diff(tc.wantFlags, gotFlags, protocmp.Transform()))
+		})
+	}
 }
 
 type task struct {
@@ -421,8 +491,9 @@ type fakeExecutor struct {
 	t               *testing.T
 	schedulerClient scpb.SchedulerClient
 
-	id   string
-	node *scpb.ExecutionNode
+	id                      string
+	node                    *scpb.ExecutionNode
+	supportsExperimentFlags bool
 
 	ctx       context.Context
 	stop      context.CancelFunc
@@ -696,11 +767,12 @@ func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, err
 		return nil, err
 	}
 	err = stream.Send(&scpb.LeaseTaskRequest{
-		TaskId:            taskID,
-		ExecutorId:        e.id,
-		ExecutorHostname:  e.node.GetHost(),
-		SupportsReconnect: true,
-		ReconnectToken:    reconnectToken,
+		TaskId:                  taskID,
+		ExecutorId:              e.id,
+		ExecutorHostname:        e.node.GetHost(),
+		SupportsReconnect:       true,
+		ReconnectToken:          reconnectToken,
+		SupportsExperimentFlags: e.supportsExperimentFlags,
 	})
 	if err != nil {
 		return nil, err

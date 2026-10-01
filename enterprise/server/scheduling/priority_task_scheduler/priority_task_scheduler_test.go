@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -29,6 +31,24 @@ const (
 	testGroupID2 = "group2"
 	testGroupID3 = "group3"
 )
+
+var (
+	testExperiment = expflag.Bool("priority_task_scheduler_test.experiment", false, "Exercises experiment flag propagation from the task to the execution context.")
+)
+
+func TestPropagateExecutionTaskValuesToContext_ExperimentFlags(t *testing.T) {
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	scheduler := &PriorityTaskScheduler{exec: NewFakeExecutor()}
+
+	task := &repb.ExecutionTask{ExperimentFlags: []*expb.EvaluatedFlag{
+		{Name: testExperiment.Name(), Variant: "treatment", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true}},
+	}}
+	ctx := scheduler.propagateExecutionTaskValuesToContext(t.Context(), task)
+	value, details := testExperiment.GetWithDetails(ctx)
+	require.True(t, value)
+	require.Equal(t, "treatment", details.GetVariant())
+}
 
 func newTaskReservationRequest(taskID, taskGroupID string, priority int32) *scpb.EnqueueTaskReservationRequest {
 	return &scpb.EnqueueTaskReservationRequest{

@@ -71,6 +71,11 @@ message LeaseTaskRequest {
   // The token issued by the server when initially establishing the lease. This
   // should be set by the client when attempting to retry a disconnected lease.
   string reconnect_token = 8;
+
+  // Whether the executor reads experiment flag values from
+  // ExecutionTask.experiment_flags. The scheduler only evaluates executor
+  // experiments for executors that set this.
+  bool supports_experiment_flags = 10;
 }
 
 message LeaseTaskResponse {
