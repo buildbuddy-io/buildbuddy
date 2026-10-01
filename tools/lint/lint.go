@@ -393,7 +393,7 @@ func nogoPatchFiles(ctx context.Context, stderr io.Writer, buildArgs, targets []
 	}
 	cmd.Args = append(cmd.Args, "cquery", "--output=files")
 	cmd.Args = append(cmd.Args, buildArgs...)
-	cmd.Args = append(cmd.Args, targets...)
+	cmd.Args = append(cmd.Args, strings.Join(targets, " + "))
 	stdoutBuf := &strings.Builder{}
 	cmd.Stdout = stdoutBuf
 	cmd.Stderr = stderr
