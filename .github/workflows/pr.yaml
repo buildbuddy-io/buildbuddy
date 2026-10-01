@@ -17,7 +17,7 @@ jobs:
 
       - name: Test
         run: |
-          bazelisk test \
+          bazelisk --experimental_remote_repo_contents_cache test \
             --config=untrusted-ci \
             --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
             //...

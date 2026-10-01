@@ -1,3 +1,7 @@
+# Bazel commands below pass --experimental_remote_repo_contents_cache so that
+# cacheable external repos are stored in the remote cache and only downloaded
+# when needed, instead of being fetched onto the runner's disk. It's a startup
+# option, so it can't be set per-config in .bazelrc.
 actions:
   - name: Test
     container_image: ubuntu-22.04
@@ -13,7 +17,7 @@ actions:
         branches:
           - "*"
     steps:
-      - run: "bazel test //... --config=linux-workflows --config=race --config=tests-ci --experimental_enable_execution_graph_log --experimental_execution_graph_log_dep_type=all --experimental_execution_graph_include_change_pruned_actions"
+      - run: "bazel --experimental_remote_repo_contents_cache test //... --config=linux-workflows --config=race --config=tests-ci --experimental_enable_execution_graph_log --experimental_execution_graph_log_dep_type=all --experimental_execution_graph_include_change_pruned_actions"
     allow_concurrent_runs: false
   - name: Test (linux_arm64)
     container_image: ubuntu-22.04
@@ -30,7 +34,7 @@ actions:
     steps:
       # vbd_test needs mount privileges; it runs in the GitHub arm64 workflow.
       - run: >-
-          bazel test --config=linux-arm64-workflows --config=race --config=tests-linux-arm64
+          bazel --experimental_remote_repo_contents_cache test --config=linux-arm64-workflows --config=race --config=tests-linux-arm64
           --
           //enterprise/server/remote_execution/...
           //enterprise/server/test/integration/remote_execution/...
@@ -55,7 +59,7 @@ actions:
     steps:
       # Linux amd64 GitHub release binaries and flame-public images from release.py.
       - run: >-
-          bazel build --config=release --config=linux-workflows
+          bazel --experimental_remote_repo_contents_cache build --config=release --config=linux-workflows
           //server/cmd/buildbuddy:buildbuddy
           //enterprise/server/cmd/server:buildbuddy
           //enterprise/server/cmd/executor:executor
@@ -81,7 +85,7 @@ actions:
     steps:
       # Linux arm64 GitHub release binaries.
       - run: >-
-          bazel build --config=release --config=linux-arm64-workflows
+          bazel --experimental_remote_repo_contents_cache build --config=release --config=linux-arm64-workflows
           //server/cmd/buildbuddy:buildbuddy
           //enterprise/server/cmd/server:buildbuddy
           //enterprise/server/cmd/executor
@@ -100,7 +104,7 @@ actions:
     # when running on push to master.
     git_fetch_depth: 0
     steps:
-      - run: "bazel run //tools/lint --config=linux-workflows"
+      - run: "bazel --experimental_remote_repo_contents_cache run //tools/lint --config=linux-workflows"
     allow_concurrent_runs: false
   - name: Test (darwin_amd64)
     os: "darwin"
@@ -117,7 +121,7 @@ actions:
     # TODO: Fix the tests below on Mac, and re-enable.
     steps:
       - run: >-
-          bazel test --config=mac-workflows
+          bazel --experimental_remote_repo_contents_cache test --config=mac-workflows
           --
           //...
           -//server/backends/disk_cache:all
@@ -145,7 +149,7 @@ actions:
     # TODO: Fix the tests below on Mac, and re-enable.
     steps:
       - run: >-
-          bazel test --config=mac-workflows
+          bazel --experimental_remote_repo_contents_cache test --config=mac-workflows
           --
           //...
           -//server/backends/disk_cache:all
@@ -166,7 +170,7 @@ actions:
         branches:
           - "master"
     steps:
-      - run: "bazel test //... --config=linux-workflows --config=performance --config=tests-performance"
+      - run: "bazel --experimental_remote_repo_contents_cache test //... --config=linux-workflows --config=performance --config=tests-performance"
   - name: Baremetal tests
     container_image: ubuntu-22.04
     triggers:
@@ -178,7 +182,7 @@ actions:
           - "*"
         merge_with_base_interval: 3h
     steps:
-      - run: "bazel test //... --config=linux-workflows --config=race --config=tests-bare"
+      - run: "bazel --experimental_remote_repo_contents_cache test //... --config=linux-workflows --config=race --config=tests-bare"
     allow_concurrent_runs: false
   - name: Nightly non-determinism check
     triggers:
