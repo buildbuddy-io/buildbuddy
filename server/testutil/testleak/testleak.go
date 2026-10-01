@@ -2,6 +2,7 @@
 package testleak
 
 import (
+	"slices"
 	"testing"
 
 	"go.uber.org/goleak"
@@ -15,7 +16,7 @@ import (
 // opts are passed to goleak, and are typically goleak.IgnoreTopFunction or
 // goleak.IgnoreAnyFunction options listing known leaks.
 func Check(t testing.TB, opts ...goleak.Option) {
-	opts = append(opts, goleak.IgnoreCurrent())
+	opts = append(slices.Clip(opts), goleak.IgnoreCurrent())
 	t.Cleanup(func() {
 		if err := goleak.Find(opts...); err != nil {
 			t.Errorf("goroutines leaked by %s: %s", t.Name(), err)
