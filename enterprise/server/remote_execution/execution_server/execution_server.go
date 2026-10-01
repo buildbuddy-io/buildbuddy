@@ -125,6 +125,17 @@ func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution 
 	execution.OutputUploadCompletedTimestampUsec = md.GetOutputUploadCompletedTimestamp().AsTime().UnixMicro()
 }
 
+func (s *ExecutionServer) fillExecutionFromSchedulingMetadata(md *scpb.SchedulingMetadata, execution *repb.StoredExecution) {
+	execution.PreviousMeasuredMemoryBytes = md.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
+	execution.PreviousMeasuredMilliCpu = md.GetMeasuredTaskSize().GetEstimatedMilliCpu()
+	execution.PreviousMeasuredFreeDiskBytes = md.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
+	execution.PredictedMemoryBytes = md.GetPredictedTaskSize().GetEstimatedMemoryBytes()
+	execution.PredictedMilliCpu = md.GetPredictedTaskSize().GetEstimatedMilliCpu()
+	execution.PredictedFreeDiskBytes = md.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
+	execution.SelfHosted = md.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
+	execution.EffectivePool = md.GetPool()
+}
+
 func generateCommandSnippet(command *repb.Command) string {
 	const targetLength = 200
 	snippetBits := make([]string, 0)
@@ -507,16 +518,9 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.Arch = properties.Arch
 			}
 
+			executionProto.EstimatedFreeDiskBytes = md.GetEstimatedTaskSize().GetEstimatedFreeDiskBytes()
 			if schedulingMeta := auxMeta.GetSchedulingMetadata(); schedulingMeta != nil {
-				executionProto.EstimatedFreeDiskBytes = md.GetEstimatedTaskSize().GetEstimatedFreeDiskBytes()
-				executionProto.PreviousMeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
-				executionProto.PreviousMeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
-				executionProto.PreviousMeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
-				executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
-				executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
-				executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
-				executionProto.SelfHosted = schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
-				executionProto.EffectivePool = schedulingMeta.GetPool()
+				s.fillExecutionFromSchedulingMetadata(schedulingMeta, executionProto)
 			} else if auxMeta != nil {
 				// Old self-hosted executors don't send scheduling metadata.
 				executionProto.SelfHosted = true
@@ -1089,6 +1093,16 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		// an unsupported request fails at scheduling time with a message
 		// naming the type that no executor supports.
 		RequestedIsolationType: platform.FindEffectiveValue(executionTask, platform.WorkloadIsolationPropertyName),
+	}
+	if *writeExecutionProgressStateToRedis {
+		// Record the scheduling metadata now rather than relying on getting it
+		// back from the executor: since executions that fail before an executor
+		// completes them never report it.
+		executionProto := &repb.StoredExecution{ExecutionId: executionID}
+		s.fillExecutionFromSchedulingMetadata(schedulingMetadata, executionProto)
+		if err := s.executionCollector.UpdateInProgressExecution(ctx, executionProto); err != nil {
+			log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
+		}
 	}
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {
