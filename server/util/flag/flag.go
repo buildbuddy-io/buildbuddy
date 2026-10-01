@@ -39,6 +39,10 @@ func Parse() {
 	flag.Parse()
 }
 
+func Lookup(name string) *Flag {
+	return common.DefaultFlagSet.Lookup(name)
+}
+
 func String(name string, value string, usage string, tags ...flagtags.Taggable) *string {
 	return autoflags.New(common.DefaultFlagSet, name, value, usage, tags...)
 }
