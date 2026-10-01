@@ -537,6 +537,9 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 
 			}
 			executionProto.CommandSnippet = generateCommandSnippet(cmd)
+			// This is technically recorded when the command is originally
+			// dispatched, but it can go missing if redis restarts.
+			executionProto.OutputPath = primaryOutputPath(cmd)
 		}
 
 		if err := s.executionCollector.UpdateInProgressExecution(ctx, executionProto); err != nil {
@@ -604,6 +607,11 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 	executionProto, err := s.executionCollector.GetInProgressExecution(ctx, executionID)
 	if err != nil {
 		return nil, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
+	}
+	// If CreatedAtUsec is otherwise unset (perhaps redis restarted), let's at
+	// least make it match the queued timestamp so that the field is ~useful.
+	if executionProto.GetCreatedAtUsec() == 0 {
+		executionProto.CreatedAtUsec = executionProto.GetQueuedTimestampUsec()
 	}
 
 	links, err = s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
