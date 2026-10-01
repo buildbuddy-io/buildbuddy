@@ -12,6 +12,11 @@ on:
         description: "Version to tag release artifacts."
         required: true
         type: string
+      upload_artifacts:
+        description: "Upload artifacts to the GitHub release. Uncheck to only build and smoke test."
+        required: false
+        default: true
+        type: boolean
   workflow_call:
     inputs:
       release_branch:
@@ -22,6 +27,11 @@ on:
         description: "Version to tag release artifacts."
         required: true
         type: string
+      upload_artifacts:
+        description: "Upload artifacts to the GitHub release."
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   build:
@@ -46,9 +56,8 @@ jobs:
           # the version of the running binary.
           fetch-depth: 0
 
-      - name: Build and Upload Artifacts
+      - name: Build Artifacts
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEVELOPER_DIR: /Library/Developer/CommandLineTools
         run: |
           bazelisk build \
@@ -58,6 +67,27 @@ jobs:
             //enterprise/server/cmd/executor:executor
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-darwin-arm64
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-darwin-arm64
+
+      # Run the executor smoke tests against the exact binary we're about to
+      # upload. Uses the same config as the build so the test-scoped app
+      # server doesn't need to be rebuilt.
+      - name: Smoke Test Executor
+        env:
+          DEVELOPER_DIR: /Library/Developer/CommandLineTools
+        run: |
+          bazelisk test \
+            --config=release-m1 \
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+            --test_output=errors \
+            --test_arg=--executor_binary="$PWD/executor-enterprise-darwin-arm64" \
+            --test_arg=--expected_version=${{ inputs.version_tag }} \
+            //enterprise/server/test/smoke/local:local_test
+
+      - name: Upload Artifacts
+        if: inputs.upload_artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
           gh release upload \
             ${{ inputs.version_tag }} \
             buildbuddy-enterprise-darwin-arm64 \
