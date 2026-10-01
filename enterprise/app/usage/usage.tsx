@@ -1,8 +1,10 @@
 import Long from "long";
+import { Download } from "lucide-react";
 import moment from "moment";
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import { OutlinedLinkButton } from "../../../app/components/button/link_button";
 import Select, { Option } from "../../../app/components/select/select";
 import HelpTooltip from "../../../app/components/tooltip/help_tooltip";
 import errorService from "../../../app/errors/error_service";
@@ -621,6 +623,14 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     );
   }
 
+  private usageExportUrl(): string {
+    const start = moment.utc(this.state.selectedPeriod, "YYYY-MM");
+    return rpcService.getAuthenticatedUrl("/usage/download", {
+      start: start.format("YYYY-MM-DD"),
+      end: start.clone().add(1, "month").format("YYYY-MM-DD"),
+    });
+  }
+
   render() {
     if (!this.state.response) return null;
     // Wait for the bill so the top panel does not switch after it renders.
@@ -638,14 +648,28 @@ class UsageReport extends React.Component<UsageReportProps, State> {
             BuildBuddy usage for <span className="usage-period">{this.state.selectedPeriod} (UTC)</span>
           </div>
         </div>
-        <Select title="Usage period" defaultValue={this.state.selectedPeriod} onChange={this.onChangePeriod.bind(this)}>
-          {this.state.response.availableUsagePeriods.map((period, i) => (
-            <Option key={period} value={period}>
-              {period}
-              {i === 0 ? " (Current period)" : ""}
-            </Option>
-          ))}
-        </Select>
+        <div className="usage-period-controls">
+          <Select
+            title="Usage period"
+            defaultValue={this.state.selectedPeriod}
+            onChange={this.onChangePeriod.bind(this)}>
+            {this.state.response.availableUsagePeriods.map((period, i) => (
+              <Option key={period} value={period}>
+                {period}
+                {i === 0 ? " (Current period)" : ""}
+              </Option>
+            ))}
+          </Select>
+          {capabilities.config.usageExportEnabled && (
+            <OutlinedLinkButton
+              href={this.usageExportUrl()}
+              target="_blank"
+              title="Download daily usage for this period as CSV">
+              <Download className="icon" />
+              <span>Download</span>
+            </OutlinedLinkButton>
+          )}
+        </div>
       </div>
     );
     // The bill covers the current period only, and replaces the usage summary for it.

@@ -75,6 +75,7 @@ go_test(
         "//proto:context_go_proto",
         "//proto:usage_go_proto",
         "//server/tables",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/usage/sku",
         "//server/util/clickhouse/schema",
