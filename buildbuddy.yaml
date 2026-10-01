@@ -192,6 +192,19 @@ actions:
     steps:
       - run: |
           bb detect nondeterminism --bazel_command='build //... --config=linux-workflows' --notify_email --notify_slack=BB_CHECKS_SLACK_WEBHOOK_URL
+  - name: Build container images
+    triggers:
+      schedule:
+        crons: ["0 9 * * *"] # 9:00 UTC nightly
+    container_image: ubuntu-22.04
+    resource_requests:
+      disk: 60GB
+      cpu: 8
+      memory: 16GB
+    timeout: 2h
+    steps:
+      # Checks that the images under dockerfiles/ still build. Nothing is pushed.
+      - run: dockerfiles/build_images.sh
   - name: Code review
     container_image: ubuntu-22.04
     triggers:
