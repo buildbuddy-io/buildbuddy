@@ -31,7 +31,10 @@ var (
 	appName      = flag.String("experiments.app_name", "buildbuddy-app", "Client name to use for experiments")
 	flagdBackend = flag.String("experiments.flagd_backend", "", "Flagd backend to use for evaluating flags")
 
-	noDetails           = (*details)(nil)
+	// noDetails are the details returned when flag evaluation fails.
+	noDetails = (*details)(nil)
+	// flagNotFoundDetails are the details returned when the flag is not defined
+	// in the experiment config.
 	flagNotFoundDetails = &details{flagNotFound: true}
 )
 
