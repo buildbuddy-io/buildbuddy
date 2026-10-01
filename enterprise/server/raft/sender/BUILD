@@ -36,6 +36,7 @@ go_test(
     srcs = ["sender_test.go"],
     exec_properties = {
         "test.EstimatedComputeUnits": "8",
+        "test.EstimatedMemory": "8GB",
     } | select({
         "@io_bazel_rules_go//go/platform:linux": {
             "test.workload-isolation-type": "firecracker",
