@@ -5,6 +5,8 @@
 # Use BLAKE3 digest function.
 startup --digest_function=BLAKE3
 
+startup --experimental_remote_repo_contents_cache
+
 ################
 # COMMON FLAGS #
 ################
