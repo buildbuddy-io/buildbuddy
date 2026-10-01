@@ -828,6 +828,14 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 		return nil, err
 	}
 	stopStats := make(chan struct{})
+	// Stop the stats pollers if we fail to return a handle that can stop
+	// them.
+	ok := false
+	defer func() {
+		if !ok {
+			close(stopStats)
+		}
+	}()
 	statsRecorder := &dbStatsRecorder{
 		db:   primarySQLDB,
 		role: "primary",
@@ -890,6 +898,7 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 			return replicaSQLDB.Ping()
 		}))
 	}
+	ok = true
 	return dbh, nil
 }
 

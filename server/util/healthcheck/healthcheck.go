@@ -116,8 +116,8 @@ func (h *HealthChecker) Statusz(ctx context.Context) string {
 }
 
 // handleSignals starts a graceful shutdown when the server is signaled. It
-// returns if the server finishes shutting down without being signaled. If the
-// server is signaled, it keeps handling signals until the process exits.
+// returns if the server finishes shutting down before being signaled. If the
+// server is signaled first, it keeps handling signals until the process exits.
 func (h *HealthChecker) handleSignals(signalChan <-chan os.Signal) {
 	// When running in a terminal, the ^C character echoed back to the user
 	// messes up the log output a bit. So, print a newline every time we get
@@ -128,6 +128,13 @@ func (h *HealthChecker) handleSignals(signalChan <-chan os.Signal) {
 	case sig = <-signalChan:
 	case <-h.done:
 		return
+	}
+	// A signal can arrive as shutdown finishes, and select picks at random
+	// when both are ready.
+	select {
+	case <-h.done:
+		return
+	default:
 	}
 	if isTTY {
 		fmt.Println()
