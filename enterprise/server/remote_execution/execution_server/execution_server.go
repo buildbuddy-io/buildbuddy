@@ -1085,8 +1085,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 	if *writeExecutionProgressStateToRedis {
 		// Record the scheduling metadata now rather than relying on getting it
-		// back from the executor: old executors don't send it, and executions
-		// that fail before an executor completes them never report it.
+		// back from the executor: since executions that fail before an executor
+		// completes them never report it.
 		executionProto := &repb.StoredExecution{ExecutionId: executionID}
 		s.fillExecutionFromSchedulingMetadata(schedulingMetadata, executionProto)
 		if err := s.executionCollector.UpdateInProgressExecution(ctx, executionProto); err != nil {
