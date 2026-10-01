@@ -1601,10 +1601,19 @@ func allowPingSockets() error {
 	if _, err := fmt.Sscan(string(b), &minGID, &maxGID); err != nil {
 		return status.InternalErrorf("parse %s: %s", path, err)
 	}
-	if gid := os.Getgid(); gid < minGID || gid > maxGID {
-		return os.WriteFile(path, []byte(fmt.Sprintf("%d %d", gid, gid)), 0)
+	gid := os.Getgid()
+	if minGID <= gid && gid <= maxGID {
+		return nil
 	}
-	return nil
+	// The setting is shared with everything else in the net namespace, so
+	// widen the range rather than replacing it. An empty range (min > max,
+	// like the kernel default "1 0") is replaced.
+	if minGID <= maxGID {
+		minGID, maxGID = min(minGID, gid), max(maxGID, gid)
+	} else {
+		minGID, maxGID = gid, gid
+	}
+	return os.WriteFile(path, []byte(fmt.Sprintf("%d %d", minGID, maxGID)), 0)
 }
 
 // configurePolicyBasedRoutingForNetworkWIthRoutePrefix configures policy routing for secondary

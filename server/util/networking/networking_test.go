@@ -687,3 +687,28 @@ func trafficTestHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+func TestConfigureAllowsPingSockets(t *testing.T) {
+	testnetworking.Setup(t)
+	const path = "/proc/sys/net/ipv4/ping_group_range"
+	original, err := os.ReadFile(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { os.WriteFile(path, original, 0) })
+
+	gid := os.Getgid()
+	for _, tc := range []struct {
+		name, initial, want string
+	}{
+		{"empty range is replaced", "1 0", fmt.Sprintf("%d %d", gid, gid)},
+		{"range is widened", fmt.Sprintf("%d %d", gid+100, gid+2000), fmt.Sprintf("%d %d", gid, gid+2000)},
+		{"range containing gid is unchanged", fmt.Sprintf("%d %d", gid, gid+2000), fmt.Sprintf("%d %d", gid, gid+2000)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, os.WriteFile(path, []byte(tc.initial), 0))
+			require.NoError(t, networking.Configure(context.Background()))
+			b, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, strings.Join(strings.Fields(string(b)), " "))
+		})
+	}
+}
