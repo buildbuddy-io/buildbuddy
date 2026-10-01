@@ -107,6 +107,7 @@ export default class UsageComponent extends React.Component<UsageProps> {
       <>
         <div className="usage-header">
           <div className="usage-title">Usage</div>
+          {this.activeTab() === "report" && <DateRangePickerButton search={usageDateRange(this.props.search).search} />}
         </div>
         {this.renderTabs()}
       </>
@@ -118,8 +119,8 @@ export default class UsageComponent extends React.Component<UsageProps> {
 
     return (
       <div className="usage-page">
+        <div className="container">{this.renderHeader()}</div>
         <div className="container usage-page-container">
-          {this.renderHeader()}
           {activeTab === "report" && <UsageReport user={this.props.user} search={this.props.search} />}
           {activeTab === "alerting" && <UsageAlertsComponent />}
         </div>
@@ -643,7 +644,6 @@ class UsageReport extends React.Component<UsageReportProps, State> {
           <div className="selected-period-label">BuildBuddy usage (UTC)</div>
         </div>
         <div className="usage-period-controls">
-          <DateRangePickerButton search={range.search} />
           {capabilities.config.usageExportEnabled && (
             <OutlinedLinkButton
               href={this.usageExportUrl()}
