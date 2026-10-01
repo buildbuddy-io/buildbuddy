@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/aws_rds_certs"
@@ -325,6 +326,10 @@ type DBHandle struct {
 	db            *gorm.DB
 	readReplicaDB *gorm.DB
 	driver        string
+
+	// Closed to stop polling for connection stats.
+	stopStats     chan struct{}
+	stopStatsOnce sync.Once
 }
 
 type Options struct {
@@ -365,6 +370,9 @@ func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.DBOp
 }
 
 func (dbh *DBHandle) Close() error {
+	if dbh.stopStats != nil {
+		dbh.stopStatsOnce.Do(func() { close(dbh.stopStats) })
+	}
 	var errs []error
 	if dbh.db != nil {
 		db, err := dbh.db.DB()
@@ -747,10 +755,15 @@ type dbStatsRecorder struct {
 	lastRecordedStats sql.DBStats
 }
 
-func (r *dbStatsRecorder) poll() {
+// poll records connection stats until stop is closed.
+func (r *dbStatsRecorder) poll(stop <-chan struct{}) {
 	for {
 		r.recordStats()
-		time.Sleep(*statsPollInterval)
+		select {
+		case <-stop:
+			return
+		case <-time.After(*statsPollInterval):
+		}
 	}
 }
 
@@ -814,11 +827,20 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 	if err != nil {
 		return nil, err
 	}
+	stopStats := make(chan struct{})
+	// Stop the stats pollers if we fail to return a handle that can stop
+	// them.
+	ok := false
+	defer func() {
+		if !ok {
+			close(stopStats)
+		}
+	}()
 	statsRecorder := &dbStatsRecorder{
 		db:   primarySQLDB,
 		role: "primary",
 	}
-	go statsRecorder.poll()
+	go statsRecorder.poll(stopStats)
 
 	if *autoMigrateDB || *autoMigrateDBAndExit || *printSchemaChangesAndExit {
 		sqlStrings := make([]string, 0)
@@ -844,8 +866,9 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 	}
 
 	dbh := &DBHandle{
-		db:     primaryDB,
-		driver: driverName,
+		db:        primaryDB,
+		driver:    driverName,
+		stopStats: stopStats,
 	}
 	env.GetHealthChecker().AddHealthCheck("sql_primary", interfaces.CheckerFunc(func(ctx context.Context) error {
 		return primarySQLDB.Ping()
@@ -869,12 +892,13 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 			db:   replicaSQLDB,
 			role: "read_replica",
 		}
-		go statsRecorder.poll()
+		go statsRecorder.poll(dbh.stopStats)
 
 		env.GetHealthChecker().AddHealthCheck("sql_read_replica", interfaces.CheckerFunc(func(ctx context.Context) error {
 			return replicaSQLDB.Ping()
 		}))
 	}
+	ok = true
 	return dbh, nil
 }
 

@@ -2,9 +2,16 @@ package db_test
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhealthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 )
 
@@ -98,4 +105,15 @@ func TestParseDataSource(t *testing.T) {
 	dsn, err = ds.DSN()
 	require.NoError(t, err)
 	require.Equal(t, "postgres://user:pass@host:9097/db?foo=bar", dsn)
+}
+
+func TestClose_StopsBackgroundGoroutines(t *testing.T) {
+	dbPath := filepath.Join(testfs.MakeTempDir(t), "test.db")
+	flags.Set(t, "database.data_source", fmt.Sprintf("sqlite3://file:%s?mode=memory&cache=shared", dbPath))
+	testleak.Check(t)
+
+	env := real_environment.NewRealEnv(testhealthcheck.NewTestingHealthChecker())
+	dbh, err := db.GetConfiguredDatabase(context.Background(), env)
+	require.NoError(t, err)
+	require.NoError(t, dbh.Close())
 }
