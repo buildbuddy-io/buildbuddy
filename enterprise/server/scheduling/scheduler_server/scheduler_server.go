@@ -1271,6 +1271,10 @@ func newSchedulerClientCache(env environment.Env, localServerHostPort string, lo
 
 // startExpirer periodically closes clients that haven't been used recently,
 // until the server starts shutting down.
+//
+// Clients still cached at shutdown are left open: LeaseTask handlers, which
+// shutdown doesn't wait for, may still use them to re-enqueue tasks on other
+// schedulers.
 func (c *schedulerClientCache) startExpirer(shuttingDown <-chan struct{}) {
 	go func() {
 		ticker := time.NewTicker(unusedSchedulerClientCheckInterval)

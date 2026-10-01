@@ -111,15 +111,14 @@ type schedulerOpts struct {
 	userOwnedEnabled   bool
 	groupOwnedEnabled  bool
 	preferredExecutors []string
+	// Set by tests that end with a LeaseTask handler re-enqueuing a task.
+	// Shutdown doesn't wait for those handlers, so their goroutines can
+	// outlive the test.
+	leaksLeaseTasks bool
 }
 
 // knownLeaks lists goroutines that are known to outlive tests in this package.
 var knownLeaks = []goleak.Option{
-	// Shutdown doesn't wait for LeaseTask handlers, or for the reservations
-	// they re-enqueue when a lease ends.
-	goleak.IgnoreAnyFunction("github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server.(*SchedulerServer).LeaseTask"),
-	goleak.IgnoreAnyFunction("github.com/buildbuddy-io/buildbuddy/server/util/background.ExtendContextForFinalization.func1"),
-	goleak.IgnoreTopFunction("context.(*cancelCtx).propagateCancel.func2"),
 	// The flagd provider never stops its event handler: the in-process
 	// service doesn't close its event channel on shutdown.
 	goleak.IgnoreTopFunction("github.com/open-feature/go-sdk-contrib/providers/flagd/pkg.(*Provider).handleEvents"),
@@ -130,8 +129,20 @@ var knownLeaks = []goleak.Option{
 	goleak.IgnoreAnyFunction("github.com/fsnotify/fsnotify.(*inotify).readEvents"),
 }
 
+// leaseTaskLeaks lists goroutines that LeaseTask handlers leave running when
+// they re-enqueue a task. See schedulerOpts.leaksLeaseTasks.
+var leaseTaskLeaks = []goleak.Option{
+	goleak.IgnoreAnyFunction("github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server.(*SchedulerServer).LeaseTask"),
+	goleak.IgnoreAnyFunction("github.com/buildbuddy-io/buildbuddy/server/util/background.ExtendContextForFinalization.func1"),
+	goleak.IgnoreTopFunction("context.(*cancelCtx).propagateCancel.func2"),
+}
+
 func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, context.Context) {
-	testleak.Check(t, knownLeaks...)
+	leaks := knownLeaks
+	if opts.leaksLeaseTasks {
+		leaks = append(slices.Clip(leaks), leaseTaskLeaks...)
+	}
+	testleak.Check(t, leaks...)
 	redisTarget := testredis.Start(t).Target
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
@@ -904,7 +915,7 @@ func enqueueTaskReservation(ctx context.Context, t *testing.T, env environment.E
 }
 
 func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
-	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{leaksLeaseTasks: true}, "user1")
 
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
@@ -922,7 +933,7 @@ func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
 }
 
 func TestExecutorReEnqueue_MatchingLeaseID(t *testing.T) {
-	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{leaksLeaseTasks: true}, "user1")
 
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
@@ -943,7 +954,7 @@ func TestExecutorReEnqueue_MatchingLeaseID(t *testing.T) {
 }
 
 func TestExecutorReEnqueue_NonMatchingLeaseID(t *testing.T) {
-	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{leaksLeaseTasks: true}, "user1")
 
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
@@ -961,7 +972,7 @@ func TestExecutorReEnqueue_NonMatchingLeaseID(t *testing.T) {
 }
 
 func TestExecutorReEnqueue_RetriesDisabled(t *testing.T) {
-	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{leaksLeaseTasks: true}, "user1")
 
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
@@ -1209,7 +1220,7 @@ func TestLeaseReconnectGrace_OtherExecutorsCannotStealTask(t *testing.T) {
 	flags.Set(t, "remote_execution.lease_reconnect_grace_period", 24*time.Hour)
 	// Disable unclaimed tasks cache so we test immediate work stealing.
 	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
-	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{leaksLeaseTasks: true}, "user1")
 
 	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
 	holder.Register()
@@ -1261,7 +1272,7 @@ func TestLeaseReconnectGrace_OtherExecutorsCannotStealTask(t *testing.T) {
 func TestLeaseReconnectGrace_RetriesDisabled(t *testing.T) {
 	// Set a high grace period since we use real time in the test.
 	flags.Set(t, "remote_execution.lease_reconnect_grace_period", 24*time.Hour)
-	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{leaksLeaseTasks: true}, "user1")
 
 	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
 	holder.Register()
@@ -1513,7 +1524,7 @@ func TestReEnqueueTask_GroupCheck(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			env, ctx := getEnv(t, &schedulerOpts{leaksLeaseTasks: true}, "user1")
 			if test.experiment != nil {
 				configureLeaseTaskGroupCheck(t, env, test.experiment.enforce, test.experiment.excludedGroupIDs)
 			}
