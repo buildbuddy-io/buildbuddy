@@ -8,7 +8,10 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 )
 
@@ -89,28 +92,25 @@ func (s *restLogSource) Logs(ctx context.Context, namespace, pod string, opts Lo
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		// The apiserver explains refusals well ("previous terminated container
-		// not found", "a container name must be specified"), so surface its
-		// words rather than just the code.
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
-		return nil, fmt.Errorf("%s", statusMessage(body, resp.Status))
+		return nil, apiError(resp.StatusCode, body)
 	}
 	return resp.Body, nil
 }
 
-// statusMessage extracts the message from a k8s Status JSON body, falling
-// back to the raw body or HTTP status.
-func statusMessage(body []byte, httpStatus string) string {
-	type status struct {
-		Message string `json:"message"`
+// apiError turns an apiserver error response into the *StatusError the typed
+// clients return.
+func apiError(code int, body []byte) error {
+	st := &metav1.Status{}
+	if err := json.Unmarshal(body, st); err != nil || st.Kind != "Status" {
+		st = &metav1.Status{Status: metav1.StatusFailure, Message: strings.TrimSpace(string(body))}
+		if st.Message == "" {
+			st.Message = http.StatusText(code)
+		}
 	}
-	var st status
-	if err := json.Unmarshal(body, &st); err == nil && st.Message != "" {
-		return st.Message
+	if st.Code == 0 {
+		st.Code = int32(code)
 	}
-	if len(body) > 0 {
-		return string(body)
-	}
-	return httpStatus
+	return &apierrors.StatusError{ErrStatus: *st}
 }
