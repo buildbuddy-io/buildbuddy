@@ -87,6 +87,7 @@ type file struct {
 	uid, gid int
 	size     int64
 	link     string
+	xattrs   string
 	hash     [32]byte
 	mtime    int64
 }
@@ -105,6 +106,8 @@ type image struct {
 	files   map[string]*file
 	pkgs    map[string]pkg
 	pkgKind string
+	// dpkgArch is the image's native architecture, as dpkg names it.
+	dpkgArch string
 	// owner maps a file path to the package that installed it (dpkg only).
 	owner     map[string]string
 	osRelease string
@@ -216,8 +219,23 @@ func imageFromIndex(idx v1.ImageIndex, platform *v1.Platform) (v1.Image, error) 
 		}
 	}
 	for _, d := range images {
-		if d.Platform == nil || d.Platform.Satisfies(*platform) {
-			return idx.Image(d.Digest)
+		if d.Platform != nil {
+			if d.Platform.Satisfies(*platform) {
+				return idx.Image(d.Digest)
+			}
+			continue
+		}
+		// No platform in the index; check the image's config instead.
+		img, err := idx.Image(d.Digest)
+		if err != nil {
+			return nil, err
+		}
+		cf, err := img.ConfigFile()
+		if err != nil {
+			return nil, err
+		}
+		if p := cf.Platform(); p == nil || p.Satisfies(*platform) {
+			return img, nil
 		}
 	}
 	return nil, fmt.Errorf("no image for platform %s", platform)
@@ -242,6 +260,7 @@ func load(ref string, platform *v1.Platform) (*image, error) {
 	if err != nil {
 		return nil, err
 	}
+	out.dpkgArch = dpkgArch(out.config.Architecture)
 	out.layers = len(layers)
 	for _, l := range layers {
 		s, err := l.Size()
@@ -275,6 +294,11 @@ func load(ref string, platform *v1.Platform) (*image, error) {
 			link:  h.Linkname,
 			mtime: h.ModTime.Unix(),
 		}
+		for _, k := range sortedKeys(h.PAXRecords) {
+			if strings.HasPrefix(k, "SCHILY.xattr.") {
+				f.xattrs += k + "=" + h.PAXRecords[k] + "\n"
+			}
+		}
 		if h.Typeflag == tar.TypeReg {
 			var buf bytes.Buffer
 			keep := p == "/var/lib/dpkg/status" || strings.HasPrefix(p, "/var/lib/dpkg/status.d/") ||
@@ -297,8 +321,8 @@ func load(ref string, platform *v1.Platform) (*image, error) {
 					out.osRelease = prettyName(buf.Bytes())
 				}
 			case strings.HasPrefix(p, "/var/lib/dpkg/info/"):
-				pkgName := strings.TrimSuffix(path.Base(p), ".list")
-				pkgName, _, _ = strings.Cut(pkgName, ":")
+				pkgName, arch, _ := strings.Cut(strings.TrimSuffix(path.Base(p), ".list"), ":")
+				pkgName = dpkgKey(pkgName, arch, out.dpkgArch)
 				for line := range strings.SplitSeq(buf.String(), "\n") {
 					if line != "" && line != "/." {
 						out.owner[line] = pkgName
@@ -313,7 +337,7 @@ func load(ref string, platform *v1.Platform) (*image, error) {
 	switch {
 	case len(dpkgStatus) > 0:
 		out.pkgKind = "dpkg"
-		out.pkgs = parseDpkg(dpkgStatus)
+		out.pkgs = parseDpkg(dpkgStatus, out.dpkgArch)
 	case apkInstalled != nil:
 		out.pkgKind = "apk"
 		out.pkgs = parseApk(apkInstalled, out.owner)
@@ -332,7 +356,7 @@ func prettyName(b []byte) string {
 
 // parseDpkg parses dpkg status files (a single /var/lib/dpkg/status, or the
 // per-package files in /var/lib/dpkg/status.d/ used by distroless images).
-func parseDpkg(files [][]byte) map[string]pkg {
+func parseDpkg(files [][]byte, nativeArch string) map[string]pkg {
 	pkgs := map[string]pkg{}
 	for _, b := range files {
 		for stanza := range strings.SplitSeq(string(b), "\n\n") {
@@ -348,7 +372,8 @@ func parseDpkg(files [][]byte) map[string]pkg {
 			if s := fields["Status"]; s != "" && !strings.HasSuffix(s, " installed") {
 				continue
 			}
-			pkgs[fields["Package"]] = pkg{version: fields["Version"], arch: fields["Architecture"]}
+			arch := fields["Architecture"]
+			pkgs[dpkgKey(fields["Package"], arch, nativeArch)] = pkg{version: fields["Version"], arch: arch}
 		}
 	}
 	return pkgs
@@ -356,6 +381,29 @@ func parseDpkg(files [][]byte) map[string]pkg {
 
 // parseApk parses /lib/apk/db/installed, recording which package owns each
 // file in owner.
+// dpkgArch returns dpkg's name for an OCI architecture.
+func dpkgArch(arch string) string {
+	switch arch {
+	case "386":
+		return "i386"
+	case "arm":
+		return "armhf"
+	case "ppc64le":
+		return "ppc64el"
+	}
+	return arch
+}
+
+// dpkgKey identifies an installed dpkg package by its name, qualified with
+// its architecture if that isn't the image's native one (multi-arch images can
+// have e.g. both libc6 and libc6:i386 installed).
+func dpkgKey(name, arch, nativeArch string) string {
+	if arch == "" || arch == "all" || arch == nativeArch {
+		return name
+	}
+	return name + ":" + arch
+}
+
 func parseApk(b []byte, owner map[string]string) map[string]pkg {
 	pkgs := map[string]pkg{}
 	for stanza := range strings.SplitSeq(string(b), "\n\n") {
@@ -420,6 +468,8 @@ func diffConfig(a, b *image) {
 	add("WorkingDir", ca.WorkingDir, cb.WorkingDir)
 	add("ExposedPorts", fmt.Sprint(sortedKeys(ca.ExposedPorts)), fmt.Sprint(sortedKeys(cb.ExposedPorts)))
 	add("Volumes", fmt.Sprint(sortedKeys(ca.Volumes)), fmt.Sprint(sortedKeys(cb.Volumes)))
+	add("StopSignal", ca.StopSignal, cb.StopSignal)
+	add("Healthcheck", healthcheck(ca.Healthcheck), healthcheck(cb.Healthcheck))
 
 	envA, envB := map[string]string{}, map[string]string{}
 	for _, e := range ca.Env {
@@ -441,6 +491,13 @@ func diffConfig(a, b *image) {
 	for _, l := range lines {
 		fmt.Println(l)
 	}
+}
+
+func healthcheck(h *v1.HealthConfig) string {
+	if h == nil {
+		return ""
+	}
+	return fmt.Sprintf("%q interval=%s timeout=%s start_period=%s retries=%d", h.Test, h.Interval, h.Timeout, h.StartPeriod, h.Retries)
 }
 
 func diffMaps(kind string, a, b map[string]string) []string {
@@ -520,12 +577,12 @@ const (
 	added change = iota
 	removed
 	content  // file contents, type, or symlink target differ
-	metadata // mode or owner differ
+	metadata // mode, owner, or xattrs (e.g. file capabilities) differ
 	mtimeOnly
 	numChanges
 )
 
-var changeNames = [numChanges]string{"added", "removed", "content", "mode/owner", "mtime only"}
+var changeNames = [numChanges]string{"added", "removed", "content", "mode/owner/xattrs", "mtime only"}
 
 func classify(fa, fb *file) (change, bool) {
 	switch {
@@ -535,7 +592,7 @@ func classify(fa, fb *file) (change, bool) {
 		return removed, true
 	case fa.typ != fb.typ || fa.link != fb.link || fa.hash != fb.hash:
 		return content, true
-	case fa.mode != fb.mode || fa.uid != fb.uid || fa.gid != fb.gid:
+	case fa.mode != fb.mode || fa.uid != fb.uid || fa.gid != fb.gid || fa.xattrs != fb.xattrs:
 		return metadata, true
 	case fa.mtime != fb.mtime && fa.typ != tar.TypeDir:
 		return mtimeOnly, true
@@ -665,10 +722,9 @@ func ownerOf(img *image, p string) string {
 	}
 	// dpkg's per-package metadata: /var/lib/dpkg/info/<pkg>[:<arch>].<ext>
 	if rest, ok := strings.CutPrefix(p, "/var/lib/dpkg/info/"); ok {
-		rest = rest[:max(0, strings.LastIndex(rest, "."))]
-		rest, _, _ = strings.Cut(rest, ":")
-		if _, ok := img.pkgs[rest]; ok {
-			return rest
+		pkgName, arch, _ := strings.Cut(rest[:max(0, strings.LastIndex(rest, "."))], ":")
+		if key := dpkgKey(pkgName, arch, img.dpkgArch); img.pkgs[key] != (pkg{}) {
+			return key
 		}
 	}
 	return ""
