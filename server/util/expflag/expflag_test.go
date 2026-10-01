@@ -2,11 +2,11 @@ package expflag_test
 
 import (
 	"context"
-	"flag"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
@@ -17,17 +17,19 @@ import (
 )
 
 var (
-	boolExperiment    = expflag.Bool("expflag_test.bool", true, "A boolean experiment.")
-	stringExperiment  = expflag.String("expflag_test.string", "default", "A string experiment.")
-	int64Experiment   = expflag.Int64("expflag_test.int64", 1, "An integer experiment.")
-	float64Experiment = expflag.Float64("expflag_test.float64", 1, "A floating point experiment.")
-	objectExperiment  = expflag.Object("expflag_test.object", map[string]any{"enabled": true}, "An object experiment.")
+	boolExperiment    = expflag.Bool("expflag_test.bool", true, "A boolean value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-bool"), flag.Secret)
+	stringExperiment  = expflag.String("expflag_test.string", "default", "A string value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-string"), flag.Secret)
+	int64Experiment   = expflag.Int64("expflag_test.int64", 1, "An integer value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-int64"), flag.Secret)
+	float64Experiment = expflag.Float64("expflag_test.float64", 1, "A floating point value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-float64"), flag.Secret)
+	objectExperiment  = expflag.Object("expflag_test.object", map[string]any{"enabled": true}, "An object value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-object"), flag.Secret)
 )
 
 type fakeProvider struct {
 	expflag.FlagProvider
 
 	name         string
+	names        []string
+	missingName  string
 	defaultValue bool
 	opts         []any
 
@@ -37,13 +39,40 @@ type fakeProvider struct {
 
 func (p *fakeProvider) BooleanDetails(ctx context.Context, name string, defaultValue bool, opts ...any) (bool, interfaces.ExperimentFlagDetails) {
 	p.name, p.defaultValue, p.opts = name, defaultValue, opts
-	return p.value, fakeDetails(p.variant)
+	p.names = append(p.names, name)
+	if name == p.missingName {
+		return defaultValue, fakeDetails{flagNotFound: true}
+	}
+	return p.value, fakeDetails{variant: p.variant}
 }
 
-type fakeDetails string
+type fakeDetails struct {
+	variant      string
+	flagNotFound bool
+}
 
 func (d fakeDetails) Variant() string {
-	return string(d)
+	return d.variant
+}
+
+func (d fakeDetails) FlagNotFound() bool {
+	return d.flagNotFound
+}
+
+func TestConstructorOptions(t *testing.T) {
+	for _, name := range []string{"bool", "string", "int64", "float64", "object"} {
+		t.Run(name, func(t *testing.T) {
+			f := flag.Lookup("expflag_test." + name)
+			require.NotNil(t, f)
+			internal, ok := f.Value.(interface{ Internal() bool })
+			require.True(t, ok)
+			require.True(t, internal.Internal())
+			secret, ok := f.Value.(interface{ IsSecret() bool })
+			require.True(t, ok)
+			require.True(t, secret.IsSecret())
+			require.Nil(t, flag.Lookup("expflag-test-"+name))
+		})
+	}
 }
 
 func TestDefaults(t *testing.T) {
@@ -135,6 +164,52 @@ func TestFlagProvider(t *testing.T) {
 		Value:   &expb.EvaluatedFlag_BoolValue{BoolValue: true},
 	}, evaluated, protocmp.Transform())
 	require.Empty(t, diff)
+}
+
+func TestDeprecatedExperimentName_ForwardsOptions(t *testing.T) {
+	provider := &fakeProvider{missingName: boolExperiment.Name(), value: true, variant: "legacy"}
+	expflag.SetFlagProvider(provider)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	flags.Set(t, boolExperiment.Name(), false)
+
+	value, details := boolExperiment.GetWithDetails(t.Context(), "option")
+	require.Equal(t, []string{boolExperiment.Name(), "expflag-test-bool"}, provider.names)
+	require.Equal(t, []any{"option"}, provider.opts)
+	require.False(t, provider.defaultValue)
+	require.True(t, value)
+	require.Equal(t, boolExperiment.Name(), details.GetName())
+	require.Equal(t, "legacy", details.GetVariant())
+}
+
+func TestDeprecatedExperimentName_ContextProvider(t *testing.T) {
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	flags.Set(t, boolExperiment.Name(), false)
+
+	for _, testCase := range []struct {
+		name    string
+		primary *expb.EvaluatedFlag
+		want    bool
+		variant string
+	}{
+		{name: "missing", want: true, variant: "legacy"},
+		{name: "false", primary: &expb.EvaluatedFlag{Value: &expb.EvaluatedFlag_BoolValue{BoolValue: false}}},
+		{name: "unset", primary: &expb.EvaluatedFlag{}},
+		{name: "wrong_type", primary: &expb.EvaluatedFlag{Value: &expb.EvaluatedFlag_StringValue{StringValue: "true"}}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			evaluated := []*expb.EvaluatedFlag{{Name: "expflag-test-bool", Variant: "legacy", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true}}}
+			if testCase.primary != nil {
+				testCase.primary.Name = boolExperiment.Name()
+				evaluated = append(evaluated, testCase.primary)
+			}
+			ctx := expflag.ContextWithEvaluatedFlags(t.Context(), evaluated)
+			value, details := boolExperiment.GetWithDetails(ctx)
+			require.Equal(t, testCase.want, value)
+			require.Equal(t, testCase.variant, details.GetVariant())
+			require.Equal(t, boolExperiment.Name(), details.GetName())
+		})
+	}
 }
 
 func TestContextProvider(t *testing.T) {

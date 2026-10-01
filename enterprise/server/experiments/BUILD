@@ -32,6 +32,7 @@ go_test(
     srcs = ["experiments_test.go"],
     deps = [
         ":experiments",
+        "//proto:experiments_go_proto",
         "//proto:group_go_proto",
         "//server/tables",
         "//server/testutil/testauth",
