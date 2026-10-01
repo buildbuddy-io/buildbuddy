@@ -297,3 +297,22 @@ func TestOnReload(t *testing.T) {
 	require.NoError(t, config.Reload())
 	require.Equal(t, 1, calls)
 }
+
+func TestReloadWithUnsetSliceAndMapFlags(t *testing.T) {
+	replaceFlagsForTesting(t)
+	slice := flag.Slice("slice", []secretHolder{}, "")
+	m := flag.Map("map", map[string]secretHolder{}, "")
+
+	configFile := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(configFile, []byte(""), 0644))
+	configPathFlag := flag.CommandLine.Lookup("config_file")
+	require.NotNil(t, configPathFlag)
+	previousPath := config.Path()
+	require.NoError(t, configPathFlag.Value.Set(configFile))
+	t.Cleanup(func() { configPathFlag.Value.Set(previousPath) })
+
+	require.NoError(t, config.Load())
+	require.NoError(t, config.Reload())
+	require.Empty(t, *slice)
+	require.Empty(t, *m)
+}

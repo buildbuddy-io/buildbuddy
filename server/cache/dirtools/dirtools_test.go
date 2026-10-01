@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -1271,6 +1272,23 @@ func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) 
 	require.Equal(t, []uint32{3, 4}, bitmap.ToArray())
 }
 
+func TestDownloadTreeReturnsEmptyFileWriteError(t *testing.T) {
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+	emptyDigest, err := digest.Compute(strings.NewReader(""), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	tree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "empty.txt", Digest: emptyDigest}}}}
+
+	// Put a directory where the empty file should go, so creating the file
+	// fails.
+	err = os.Mkdir(filepath.Join(tmpDir, "empty.txt"), 0755)
+	require.NoError(t, err)
+
+	// The download should fail rather than succeed with the file missing.
+	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+	require.Error(t, err)
+}
+
 func TestDownloadTreeEmptyDigest(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
@@ -1762,6 +1780,101 @@ func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t 
 	require.GreaterOrEqual(t, fileCache.openCount(fileNode2), 2)
 }
 
+func TestDownloadTree_InputDownloadConcurrency(t *testing.T) {
+	for _, limit := range []int{1, 4} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			flags.Set(t, "cache.client.input_download_concurrency", limit)
+			dirtools.ResetInputDownloadLimiterForTest()
+			env, ctx := testEnv(t)
+			client := &trackingClient{
+				ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+				ByteStreamClient:                env.GetByteStreamClient(),
+			}
+			env.SetContentAddressableStorageClient(client)
+			env.SetByteStreamClient(client)
+
+			// Download several trees at once, each with a mix of small
+			// files, which are batched, and large files, which are streamed.
+			eg := &errgroup.Group{}
+			for range 3 {
+				root := &repb.Directory{}
+				for i := range 10 {
+					size := int64(100)
+					if i%5 == 0 {
+						size = 3 * 1024 * 1024
+					}
+					rn, content := testdigest.RandomCASResourceBuf(t, size)
+					err := env.GetCache().Set(ctx, rn, content)
+					require.NoError(t, err)
+					root.Files = append(root.Files, &repb.FileNode{Name: fmt.Sprintf("file-%d", i), Digest: rn.GetDigest()})
+				}
+				rootDir := testfs.MakeTempDir(t)
+				eg.Go(func() error {
+					_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, &repb.Tree{Root: root}, &dirtools.DownloadTreeOpts{RootDir: rootDir})
+					return err
+				})
+			}
+			err := eg.Wait()
+			require.NoError(t, err)
+
+			// Both kinds of reads should have happened, with no more files
+			// being read at once than the limit.
+			batchReads, streamReads, maxInFlight := client.batchReads, client.streamReads, client.maxInFlight
+			require.Positive(t, batchReads)
+			require.Positive(t, streamReads)
+			require.LessOrEqual(t, maxInFlight, limit)
+		})
+	}
+}
+
+func TestUploadTree_OutputUploadConcurrency(t *testing.T) {
+	for _, limit := range []int{1, 4} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			flags.Set(t, "cache.client.output_upload_concurrency", limit)
+			cachetools.ResetOutputUploadLimiterForTest()
+			env, ctx := testEnv(t)
+			client := &trackingClient{
+				ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+				ByteStreamClient:                env.GetByteStreamClient(),
+			}
+			env.SetContentAddressableStorageClient(client)
+			env.SetByteStreamClient(client)
+
+			// Upload several trees at once, each with a mix of small files,
+			// which are batched, and large files, which are streamed.
+			eg := &errgroup.Group{}
+			for range 3 {
+				rootDir := testfs.MakeTempDir(t)
+				contents := map[string]string{}
+				for i := range 10 {
+					size := int64(100)
+					if i%5 == 0 {
+						size = 3 * 1024 * 1024
+					}
+					_, content := testdigest.RandomCASResourceBuf(t, size)
+					contents[fmt.Sprintf("out/file-%d", i)] = string(content)
+				}
+				testfs.WriteAllFileContents(t, rootDir, contents)
+				cmd := &repb.Command{OutputPaths: []string{"out"}}
+				dirHelper := dirtools.NewDirHelper(rootDir, cmd, fs.FileMode(0o755))
+				eg.Go(func() error {
+					_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, cmd, &repb.ActionResult{}, false /*=addToFileCache*/, nil /*=chunkingParams*/)
+					return err
+				})
+			}
+			err := eg.Wait()
+			require.NoError(t, err)
+
+			// Both kinds of writes should have happened, with no more write
+			// RPCs in flight at once than the limit.
+			batchWrites, streamWrites, maxInFlight := client.batchWrites, client.streamWrites, client.maxInFlight
+			require.Positive(t, batchWrites)
+			require.Positive(t, streamWrites)
+			require.LessOrEqual(t, maxInFlight, limit)
+		})
+	}
+}
+
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 
@@ -1900,4 +2013,88 @@ func (c *countingByteStreamClient) readCount(resourceName string) int {
 
 func fileNodeKey(node *repb.FileNode) string {
 	return fmt.Sprintf("%s/%d/%t", node.GetDigest().GetHash(), node.GetDigest().GetSizeBytes(), node.GetIsExecutable())
+}
+
+type trackingClient struct {
+	repb.ContentAddressableStorageClient
+	bspb.ByteStreamClient
+
+	mu           sync.Mutex
+	batchReads   int
+	streamReads  int
+	batchWrites  int
+	streamWrites int
+	inFlight     int
+	maxInFlight  int
+}
+
+func (c *trackingClient) track(n int, calls *int) (done func()) {
+	c.mu.Lock()
+	*calls++
+	c.inFlight += n
+	c.maxInFlight = max(c.maxInFlight, c.inFlight)
+	c.mu.Unlock()
+	time.Sleep(10 * time.Millisecond)
+	return func() {
+		c.mu.Lock()
+		c.inFlight -= n
+		c.mu.Unlock()
+	}
+}
+
+func (c *trackingClient) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest, opts ...grpc.CallOption) (*repb.BatchReadBlobsResponse, error) {
+	defer c.track(len(req.GetDigests()), &c.batchReads)()
+	return c.ContentAddressableStorageClient.BatchReadBlobs(ctx, req, opts...)
+}
+
+func (c *trackingClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	done := c.track(1, &c.streamReads)
+	stream, err := c.ByteStreamClient.Read(ctx, req, opts...)
+	if err != nil {
+		done()
+		return nil, err
+	}
+	return &trackedReadStream{ByteStream_ReadClient: stream, done: sync.OnceFunc(done)}, nil
+}
+
+func (c *trackingClient) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest, opts ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
+	defer c.track(1, &c.batchWrites)()
+	return c.ContentAddressableStorageClient.BatchUpdateBlobs(ctx, req, opts...)
+}
+
+func (c *trackingClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	done := c.track(1, &c.streamWrites)
+	stream, err := c.ByteStreamClient.Write(ctx, opts...)
+	if err != nil {
+		done()
+		return nil, err
+	}
+	return &trackedWriteStream{ByteStream_WriteClient: stream, done: sync.OnceFunc(done)}, nil
+}
+
+// trackedReadStream keeps a read in flight until the stream ends, which
+// happens when Recv returns EOF or an error.
+type trackedReadStream struct {
+	bspb.ByteStream_ReadClient
+	done func()
+}
+
+func (s *trackedReadStream) Recv() (*bspb.ReadResponse, error) {
+	rsp, err := s.ByteStream_ReadClient.Recv()
+	if err != nil {
+		s.done()
+	}
+	return rsp, err
+}
+
+// trackedWriteStream keeps a write in flight until the client finishes it
+// with CloseAndRecv.
+type trackedWriteStream struct {
+	bspb.ByteStream_WriteClient
+	done func()
+}
+
+func (s *trackedWriteStream) CloseAndRecv() (*bspb.WriteResponse, error) {
+	defer s.done()
+	return s.ByteStream_WriteClient.CloseAndRecv()
 }

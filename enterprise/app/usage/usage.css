@@ -1,5 +1,5 @@
 .usage-page .container.usage-page-container {
-  max-width: 768px;
+  max-width: 900px;
 }
 
 .usage-page .org-name {
@@ -40,6 +40,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.usage-page .usage-period-header .usage-period-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Let the period label wrap instead of squeezing the controls. */
+  flex-shrink: 0;
 }
 
 .usage-page .usage-period-header .usage-period {

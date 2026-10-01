@@ -464,6 +464,9 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 	mux.Handle("/rpc/BuildBuddyService/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
 	mux.Handle("/file/download", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
 	mux.Handle("/file/view", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
+	if us := env.GetUsageService(); us != nil && us.GetExportEnabled() {
+		mux.Handle("/usage/download", interceptors.WrapAuthenticatedExternalHandler(env, us.GetUsageExportHandler()))
+	}
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 

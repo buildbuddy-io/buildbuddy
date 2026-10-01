@@ -965,6 +965,14 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			redisRestart:           true,
 		},
 		{
+			// The dispatch-time record is lost but the invocation links
+			// survive, so the OLAP row is still written. Recover as much
+			// as possible from the COMPLETED update alone.
+			name:                   "LostInProgressRecord",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			lostInProgressRecord:   true,
+		},
+		{
 			name:                   "DefaultPool",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			useDefaultPool:         true,
@@ -1011,10 +1019,15 @@ type publishTest struct {
 	exitCode                 int32
 	publishMoreMetadata      bool
 	redisRestart             bool
-	useDefaultPool           bool
-	recycleRunner            bool
-	flushAfterCleanup        bool
-	invalidTestSize          string
+	// lostInProgressRecord deletes the dispatch-time in-progress execution
+	// record from Redis before the executor publishes COMPLETED, leaving the
+	// invocation links intact. This simulates losing the Redis shard that
+	// held the record (shard restart, LRU eviction) without losing the rest.
+	lostInProgressRecord bool
+	useDefaultPool       bool
+	recycleRunner        bool
+	flushAfterCleanup    bool
+	invalidTestSize      string
 	// flexibleCompute routes the execution into the flexible-compute branch
 	// of incrementOLAPExecutionUsage.
 	flexibleCompute bool
@@ -1125,6 +1138,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 
 	if test.redisRestart {
 		r.Restart()
+	}
+	if test.lostInProgressRecord {
+		err := env.GetExecutionCollector().DeleteInProgressExecution(ctx, taskID)
+		require.NoError(t, err)
 	}
 
 	executorGroupID := sharedPoolGroupID
@@ -1457,6 +1474,15 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			"created_at_usec",
 			"updated_at_usec",
 		)))
+	if test.lostInProgressRecord {
+		// Only the dispatch-time record carries CreatedAtUsec; when it's
+		// lost, the flush falls back to the queued timestamp.
+		assert.Equal(t, queuedTime.UnixMicro(), collectedExecutions[0].GetCreatedAtUsec())
+	} else {
+		// The dispatch-time value (wall-clock now) must not be replaced by
+		// the fallback (the fixed queuedTime far in the past).
+		assert.Greater(t, collectedExecutions[0].GetCreatedAtUsec(), queuedTime.UnixMicro())
+	}
 }
 
 // TestPublishOperation_RetriedStream simulates the executor's
@@ -2476,6 +2502,137 @@ func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
 	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), rows[0].ExecutionID)
 	require.NoError(t, err)
 	require.Contains(t, executeResponse.GetStatus().GetMessage(), "Secrets requested but secret service not available")
+}
+
+func TestExecute_RejectAnonymousExecutionsExperiment(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		experimentOn  bool
+		authenticated bool
+		wantRejected  bool
+	}{
+		{
+			name:          "anonymous user is rejected when experiment is enabled",
+			experimentOn:  true,
+			authenticated: false,
+			wantRejected:  true,
+		},
+		{
+			name:          "anonymous user is allowed when experiment is disabled",
+			experimentOn:  false,
+			authenticated: false,
+			wantRejected:  false,
+		},
+		{
+			name:          "authenticated user is allowed when experiment is enabled",
+			experimentOn:  true,
+			authenticated: true,
+			wantRejected:  false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, conn, _ := setupEnv(t)
+			configureExperiments(t, env, map[string]bool{
+				"remote_execution.reject_anonymous_executions": tc.experimentOn,
+			})
+
+			ctx := context.Background()
+			if tc.authenticated {
+				var err error
+				ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+				require.NoError(t, err)
+			}
+
+			// Use an action digest that does not exist in the CAS. Requests
+			// that pass the anonymous-user check should fail later with
+			// FAILED_PRECONDITION (missing blob) when fetching the action,
+			// which proves that the check runs before the action is fetched
+			// and only rejects anonymous users.
+			ad, err := digest.Compute(strings.NewReader("nonexistent action"), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+
+			client := repb.NewExecutionClient(conn)
+			stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+				ActionDigest:   ad,
+				DigestFunction: repb.DigestFunction_SHA256,
+			})
+			require.NoError(t, err)
+
+			_, err = stream.Recv()
+			require.Error(t, err)
+			if tc.wantRejected {
+				require.True(t, status.IsPermissionDeniedError(err), "expected PERMISSION_DENIED, got %s", err)
+				require.Contains(t, err.Error(), "Anonymous remote execution is no longer supported. Please create an account at https://buildbuddy.io")
+			} else {
+				require.True(t, status.IsFailedPreconditionError(err), "expected FAILED_PRECONDITION, got %s", err)
+				require.Contains(t, err.Error(), "not found")
+			}
+		})
+	}
+}
+
+func TestExecute_RejectAnonymousExecutionsExperiment_TargetsClientIP(t *testing.T) {
+	// The test gRPC connection has no usable peer address, so supply the
+	// client IP via a trusted X-Forwarded-For header instead.
+	flags.Set(t, "auth.trust_xforwardedfor_header", true)
+
+	const rejectedIP = "203.0.113.7"
+	const allowedIP = "198.51.100.9"
+
+	env, conn, _ := setupEnv(t)
+	tmp := testfs.MakeTempDir(t)
+	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "remote_execution.reject_anonymous_executions": {
+      "state": "ENABLED",
+      "variants": {
+        "true": true,
+        "false": false
+      },
+      "defaultVariant": "false",
+      "targeting": {
+        "if": [
+          {"==": [{"var": "client_ip"}, "`+rejectedIP+`"]},
+          "true",
+          "false"
+        ]
+      }
+    }
+  }
+}
+`)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	ad, err := digest.Compute(strings.NewReader("nonexistent action"), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	client := repb.NewExecutionClient(conn)
+
+	execute := func(clientIP string) error {
+		ctx := metadata.AppendToOutgoingContext(context.Background(), "X-Forwarded-For", clientIP)
+		stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+			ActionDigest:   ad,
+			DigestFunction: repb.DigestFunction_SHA256,
+		})
+		require.NoError(t, err)
+		_, err = stream.Recv()
+		require.Error(t, err)
+		return err
+	}
+
+	err = execute(rejectedIP)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PERMISSION_DENIED for targeted IP, got %s", err)
+
+	// A different anonymous IP is not targeted and proceeds to the action
+	// fetch, which fails because the action does not exist.
+	err = execute(allowedIP)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FAILED_PRECONDITION for non-targeted IP, got %s", err)
 }
 
 func TestDispatch_RedisAvailabilityMonitoring_CleansUpChannelOnScheduleFailure(t *testing.T) {

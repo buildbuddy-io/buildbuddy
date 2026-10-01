@@ -36,6 +36,7 @@ go_library(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",
+        "@org_golang_x_sync//semaphore",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [
             "@org_golang_x_sys//unix",

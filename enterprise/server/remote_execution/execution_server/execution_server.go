@@ -521,6 +521,9 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.EstimatedFreeDiskBytes = md.GetEstimatedTaskSize().GetEstimatedFreeDiskBytes()
 			if schedulingMeta := auxMeta.GetSchedulingMetadata(); schedulingMeta != nil {
 				s.fillExecutionFromSchedulingMetadata(schedulingMeta, executionProto)
+			} else if auxMeta != nil {
+				// Old self-hosted executors don't send scheduling metadata.
+				executionProto.SelfHosted = true
 			}
 
 			request := auxMeta.GetExecuteRequest()
@@ -538,6 +541,9 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 
 			}
 			executionProto.CommandSnippet = generateCommandSnippet(cmd)
+			// This is technically recorded when the command is originally
+			// dispatched, but it can go missing if redis restarts.
+			executionProto.OutputPath = primaryOutputPath(cmd)
 		}
 
 		if err := s.executionCollector.UpdateInProgressExecution(ctx, executionProto); err != nil {
@@ -605,6 +611,11 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 	executionProto, err := s.executionCollector.GetInProgressExecution(ctx, executionID)
 	if err != nil {
 		return nil, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
+	}
+	// If CreatedAtUsec is otherwise unset (perhaps redis restarted), let's at
+	// least make it match the queued timestamp so that the field is ~useful.
+	if executionProto.GetCreatedAtUsec() == 0 {
+		executionProto.CreatedAtUsec = executionProto.GetQueuedTimestampUsec()
 	}
 
 	links, err = s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
@@ -1120,6 +1131,30 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	return pool, nil
 }
 
+const rejectAnonymousExecutionsExperiment = "remote_execution.reject_anonymous_executions"
+
+// checkAnonymousExecutionExperiment returns an error if anonymous execution is
+// disabled by experiment.
+func (s *ExecutionServer) checkAnonymousExecutionExperiment(ctx context.Context) error {
+	fp := s.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return nil
+	}
+	if _, err := s.authenticator.AuthenticatedUser(ctx); !authutil.IsAnonymousUserError(err) {
+		return nil
+	}
+	// Attach IP for fractional rollouts since there may not be an invocation_id
+	// attached.
+	var opts []any
+	if ip := clientip.Get(ctx); ip != "" {
+		opts = append(opts, experiments.WithContext("client_ip", ip))
+	}
+	if !fp.Boolean(ctx, rejectAnonymousExecutionsExperiment, false, opts...) {
+		return nil
+	}
+	return status.PermissionDeniedError("Anonymous remote execution is no longer supported. Please create an account at https://buildbuddy.io and use an API key.")
+}
+
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
 	// Enforce a priority range of -1000 to 1000 for now so that we have some
 	// flexibility to assign different meanings to priority values later on.
@@ -1130,6 +1165,10 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	adInstanceDigest := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.authenticator)
 	if err != nil {
+		return err
+	}
+
+	if err := s.checkAnonymousExecutionExperiment(ctx); err != nil {
 		return err
 	}
 

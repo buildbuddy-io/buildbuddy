@@ -450,6 +450,92 @@ func TestMeterProviderGRPCViews(t *testing.T) {
 	}
 }
 
+func TestSizeMetrics(t *testing.T) {
+	lis := bufconn.Listen(1 << 20)
+	srv := grpc.NewServer(rpcutil.ServerSizeMetricsOption())
+	hlpb.RegisterHealthServer(srv, health.NewServer())
+	go srv.Serve(lis)
+	defer srv.Stop()
+
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		rpcutil.ClientSizeMetricsDialOption(),
+	)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = hlpb.NewHealthClient(conn).Check(ctx, &hlpb.HealthCheckRequest{Service: "some-service-name"})
+	require.Error(t, err)
+	_, err = hlpb.NewHealthClient(conn).Check(ctx, &hlpb.HealthCheckRequest{})
+	require.NoError(t, err)
+
+	normalize := func(name string) string { return strings.ReplaceAll(name, ".", "_") }
+	names := []string{
+		"grpc_client_attempt_sent_total_compressed_message_size_bytes",
+		"grpc_client_attempt_rcvd_total_compressed_message_size_bytes",
+		"grpc_server_call_sent_total_compressed_message_size_bytes",
+		"grpc_server_call_rcvd_total_compressed_message_size_bytes",
+	}
+	var families map[string]*dto.MetricFamily
+	require.Eventually(t, func() bool {
+		metricFamilies, err := prometheus.DefaultGatherer.Gather()
+		require.NoError(t, err)
+		families = map[string]*dto.MetricFamily{}
+		for _, f := range metricFamilies {
+			families[normalize(f.GetName())] = f
+		}
+		for _, name := range names {
+			if families[name] == nil {
+				return false
+			}
+		}
+		return true
+	}, 5*time.Second, 10*time.Millisecond)
+
+	for name := range families {
+		if strings.HasPrefix(name, "grpc_") {
+			require.Contains(t, names, name, "unexpected grpc-go metric family; add it to the metric set or a View")
+		}
+	}
+	for _, name := range names {
+		for _, m := range families[name].GetMetric() {
+			labels := map[string]string{}
+			for _, lp := range m.GetLabel() {
+				labels[normalize(lp.GetName())] = lp.GetValue()
+			}
+			require.NotContains(t, labels, "grpc_target", name)
+			require.Equal(t, "grpc.health.v1.Health/Check", labels["grpc_method"], name)
+			require.Contains(t, []string{"OK", "NOT_FOUND"}, labels["grpc_status"], name)
+
+			var boundaries []float64
+			for _, b := range m.GetHistogram().GetBucket() {
+				if !math.IsInf(b.GetUpperBound(), 1) {
+					boundaries = append(boundaries, b.GetUpperBound())
+				}
+			}
+			require.Equal(t, []float64{1024, 32768, 1048576, 4194304, 8388608}, boundaries, name)
+			require.Equal(t, uint64(1), m.GetHistogram().GetSampleCount(), name)
+		}
+	}
+	// Only the request with a service name has a non-empty payload.
+	for _, name := range []string{
+		"grpc_client_attempt_sent_total_compressed_message_size_bytes",
+		"grpc_server_call_rcvd_total_compressed_message_size_bytes",
+	} {
+		var sum float64
+		for _, m := range families[name].GetMetric() {
+			sum += m.GetHistogram().GetSampleSum()
+		}
+		require.Equal(t, float64(len("some-service-name")+2), sum, name)
+	}
+}
+
 func TestTracingMessageEvents(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		for _, tc := range []struct {

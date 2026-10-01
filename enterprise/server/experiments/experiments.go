@@ -30,6 +30,12 @@ import (
 var (
 	appName      = flag.String("experiments.app_name", "buildbuddy-app", "Client name to use for experiments")
 	flagdBackend = flag.String("experiments.flagd_backend", "", "Flagd backend to use for evaluating flags")
+
+	// noDetails are the details returned when flag evaluation fails.
+	noDetails = (*details)(nil)
+	// flagNotFoundDetails are the details returned when the flag is not defined
+	// in the experiment config.
+	flagNotFoundDetails = &details{flagNotFound: true}
 )
 
 // Register adds a new interfaces.ExperimentFlagProvider to the env. If the
@@ -99,17 +105,33 @@ func NewFlagProvider(clientName string) (*FlagProvider, error) {
 // details implements the interfaces.ExperimentFlagDetails interface,
 // providing details about flag evaluation.
 type details struct {
-	variant string
+	variant      string
+	flagNotFound bool
 }
-
-// noDetails are returned when flag evaluation fails.
-var noDetails = (*details)(nil)
 
 func (d *details) Variant() string {
 	if d == nil {
 		return ""
 	}
 	return d.variant
+}
+
+// FlagNotFound lets expflag fall back to a flag's deprecated experiment name.
+// expflag checks for this method with a type assertion, so renaming it would
+// silently disable the fallback.
+func (d *details) FlagNotFound() bool {
+	return d != nil && d.flagNotFound
+}
+
+func evaluationErrorDetails(d openfeature.EvaluationDetails) *details {
+	// openfeature returns the same error code for not found and disabled, so we
+	// check the error message here. There's a test that will fail if
+	// openfeature changes the error string here
+	// (TestDeprecatedExperimentName_Flagd/disabled)
+	if d.ErrorCode == openfeature.FlagNotFoundCode && d.ErrorMessage != "flag: "+d.FlagKey+" is disabled" {
+		return flagNotFoundDetails
+	}
+	return noDetails
 }
 
 // FlagProvider implements the interface.ExperimentFlagProvider interface.
@@ -279,9 +301,9 @@ func (fp *FlagProvider) BooleanDetails(ctx context.Context, flagName string, def
 	d, err := fp.client.BooleanValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
 		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
-		return defaultValue, noDetails
+		return defaultValue, evaluationErrorDetails(d.EvaluationDetails)
 	}
-	return d.Value, &details{d.Variant}
+	return d.Value, &details{variant: d.Variant}
 }
 
 // String extracts the evaluationContext from ctx, applies any option
@@ -300,9 +322,9 @@ func (fp *FlagProvider) StringDetails(ctx context.Context, flagName string, defa
 	d, err := fp.client.StringValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
 		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
-		return defaultValue, noDetails
+		return defaultValue, evaluationErrorDetails(d.EvaluationDetails)
 	}
-	return d.Value, &details{d.Variant}
+	return d.Value, &details{variant: d.Variant}
 }
 
 // Float64 extracts the evaluationContext from ctx, applies any option
@@ -321,9 +343,9 @@ func (fp *FlagProvider) Float64Details(ctx context.Context, flagName string, def
 	d, err := fp.client.FloatValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
 		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
-		return defaultValue, noDetails
+		return defaultValue, evaluationErrorDetails(d.EvaluationDetails)
 	}
-	return d.Value, &details{d.Variant}
+	return d.Value, &details{variant: d.Variant}
 }
 
 // Int64 extracts the evaluationContext from ctx, applies any option
@@ -342,9 +364,9 @@ func (fp *FlagProvider) Int64Details(ctx context.Context, flagName string, defau
 	d, err := fp.client.IntValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
 		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
-		return defaultValue, noDetails
+		return defaultValue, evaluationErrorDetails(d.EvaluationDetails)
 	}
-	return d.Value, &details{d.Variant}
+	return d.Value, &details{variant: d.Variant}
 }
 
 // Object extracts the evaluationContext from ctx, applies any option
@@ -363,11 +385,11 @@ func (fp *FlagProvider) ObjectDetails(ctx context.Context, flagName string, defa
 	d, err := fp.client.ObjectValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
 		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
-		return defaultValue, noDetails
+		return defaultValue, evaluationErrorDetails(d.EvaluationDetails)
 	}
 	v := d.Value
 	if m, ok := d.Value.(map[string]any); ok {
-		return m, &details{d.Variant}
+		return m, &details{variant: d.Variant}
 	} else {
 		log.CtxWarningf(ctx, "Experiment flag %q expected value of type map[string]any, but the value is %T (%v)", flagName, v, v)
 	}

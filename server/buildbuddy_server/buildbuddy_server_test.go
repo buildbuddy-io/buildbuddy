@@ -125,6 +125,14 @@ func (s *fakeUsageService) GetBillEnabled() bool {
 	return true
 }
 
+func (s *fakeUsageService) GetExportEnabled() bool {
+	return false
+}
+
+func (s *fakeUsageService) GetUsageExportHandler() http.Handler {
+	return http.NotFoundHandler()
+}
+
 func createInvocationForTesting(te environment.Env, user string) (string, error) {
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()

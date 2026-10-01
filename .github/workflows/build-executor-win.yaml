@@ -2,6 +2,16 @@ name: "Build Windows executor"
 
 on:
   pull_request:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "docs/**"
+      - "website/**"
+  # Manual runs build the branch picked in "Use workflow from", which must be a
+  # branch in this repo. Don't add an input for an arbitrary ref to check out:
+  # that could run a fork PR's code with this workflow's secrets.
+  workflow_dispatch:
 
 jobs:
   build:
@@ -108,6 +118,11 @@ jobs:
         #   - Enable windows symlink helps reduce disk usage.
         #     Without this, files will be fully copied instead.
         run: |
+          # PRs run untrusted code, so they use a separate remote cache from master.
+          $ciConfig = 'untrusted-ci-windows'
+          if ('${{ github.event_name }}' -ne 'pull_request') {
+            $ciConfig = 'ci-windows'
+          }
           $authArgs = @()
           $apiKey = '${{ secrets.BUILDBUDDY_ORG_API_KEY }}'
           if ($apiKey) {
@@ -116,7 +131,7 @@ jobs:
           bazelisk --output_user_root=C:/0 `
                    --windows_enable_symlinks `
                    test `
-                   --config=untrusted-ci-windows `
+                   --config=$ciConfig `
                    @authArgs `
                    -- `
                    //enterprise/server/cmd/executor:executor_windows_amd64 `

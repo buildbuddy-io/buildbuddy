@@ -218,6 +218,13 @@ func (ix *Index) NewStore(res ResourceType) *Store {
 	return s
 }
 
+// RemoveStore unregisters a store; its entries leave search at once.
+func (ix *Index) RemoveStore(s *Store) {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	ix.stores = slices.DeleteFunc(ix.stores, func(x *Store) bool { return x == s })
+}
+
 func (ix *Index) snapshot() []*Store {
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()

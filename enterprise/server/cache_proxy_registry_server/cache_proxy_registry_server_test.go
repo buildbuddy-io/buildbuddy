@@ -122,12 +122,12 @@ func TestGetCacheProxies(t *testing.T) {
 	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
 
 	// Insert two proxies out of host-order; expect them returned alphabetically.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host:    "host-b",
 		ProxyId: "id-b",
 		Version: "1.0",
 	}, nil))
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host:    "host-a",
 		ProxyId: "id-a",
 		Version: "1.0",
@@ -139,8 +139,8 @@ func TestGetCacheProxies(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, resp.GetCacheProxy(), 2)
-	assert.Equal(t, "host-a", resp.GetCacheProxy()[0].GetNode().GetHost())
-	assert.Equal(t, "host-b", resp.GetCacheProxy()[1].GetNode().GetHost())
+	assert.Equal(t, "host-a", resp.GetCacheProxy()[0].GetSummary().GetHost())
+	assert.Equal(t, "host-b", resp.GetCacheProxy()[1].GetSummary().GetHost())
 }
 
 func TestUpgradeTriggersFromFlags(t *testing.T) {
@@ -187,10 +187,10 @@ func TestGetCacheProxies_UpgradePrompt(t *testing.T) {
 
 	// The newest version is registered by the shared executor pool group
 	// (BuildBuddy's own proxies); the prompt compares against it.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxySummary{
 		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
 	}, nil))
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "host-old", ProxyId: "id-old", Version: "v2.140.0",
 	}, nil))
 
@@ -208,10 +208,10 @@ func TestGetCacheProxies_UpgradePrompt_WithinAllowance(t *testing.T) {
 	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
 
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxySummary{
 		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
 	}, nil))
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "host-old", ProxyId: "id-old", Version: "v2.152.0",
 	}, nil))
 
@@ -229,10 +229,10 @@ func TestGetCacheProxies_UpgradePrompt_IgnoresOtherGroups(t *testing.T) {
 
 	// A newer version registered outside the shared executor pool group
 	// shouldn't set the bar.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), "GR-OTHER", &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), "GR-OTHER", &cppb.CacheProxySummary{
 		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
 	}, nil))
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "host-old", ProxyId: "id-old", Version: "v2.140.0",
 	}, nil))
 
@@ -250,10 +250,10 @@ func TestGetCacheProxies_UpgradePrompt_SkipsUnparseableVersions(t *testing.T) {
 
 	// Dev builds report "unknown"; they should neither count as the newest
 	// version nor trigger the prompt themselves.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxySummary{
 		Host: "host-dev", ProxyId: "id-dev", Version: "unknown",
 	}, nil))
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "host-old", ProxyId: "id-old", Version: "unknown",
 	}, nil))
 
@@ -271,14 +271,14 @@ func TestGetCacheProxies_UpgradePrompt_IgnoresStaleRegistrations(t *testing.T) {
 
 	// A long-gone proxy with a very new version shouldn't set the bar.
 	stale := &cppb.RegisteredCacheProxy{
-		Registration: &cppb.CacheProxyNode{Host: "host-new", ProxyId: "id-new", Version: "v2.199.0"},
+		Summary:      &cppb.CacheProxySummary{Host: "host-new", ProxyId: "id-new", Version: "v2.199.0"},
 		GroupId:      testSharedPoolGroupID,
 		LastPingTime: timestamppb.New(time.Now().Add(-2 * maxRegistrationStaleness)),
 	}
 	b, err := proto.Marshal(stale)
 	require.NoError(t, err)
 	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies(testSharedPoolGroupID), "id-new", b).Err())
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "host-old", ProxyId: "id-old", Version: "v2.150.0",
 	}, nil))
 
@@ -296,7 +296,7 @@ func TestGetCacheProxies_Isolation(t *testing.T) {
 	s, _ := newServer(t, map[string]interfaces.UserInfo{"OTHER_KEY": other})
 
 	// A proxy was registered for the original test group.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "host", ProxyId: "id",
 	}, nil))
 
@@ -316,11 +316,11 @@ func TestGetCacheProxies_Expiration(t *testing.T) {
 	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
 
 	// Insert a fresh proxy and a stale one directly into Redis.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "fresh", ProxyId: "fresh",
 	}, nil))
 	stale := &cppb.RegisteredCacheProxy{
-		Registration: &cppb.CacheProxyNode{Host: "stale", ProxyId: "stale"},
+		Summary:      &cppb.CacheProxySummary{Host: "stale", ProxyId: "stale"},
 		GroupId:      testGroupID,
 		LastPingTime: timestamppb.New(time.Now().Add(-2 * maxRegistrationStaleness)),
 	}
@@ -334,7 +334,7 @@ func TestGetCacheProxies_Expiration(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, resp.GetCacheProxy(), 1)
-	assert.Equal(t, "fresh", resp.GetCacheProxy()[0].GetNode().GetHost())
+	assert.Equal(t, "fresh", resp.GetCacheProxy()[0].GetSummary().GetHost())
 }
 
 func TestGetCacheProxies_Statistics(t *testing.T) {
@@ -355,7 +355,7 @@ func TestGetCacheProxies_Statistics(t *testing.T) {
 		CasWrites:        1000,
 		CasWriteBytes:    10_000_000,
 	}
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "h", ProxyId: "id",
 	}, stats))
 
@@ -387,7 +387,7 @@ func TestGetCacheProxies_StatisticsNil(t *testing.T) {
 
 	// A proxy that reports no stats (older client, or no traffic yet) should
 	// still round-trip cleanly, just with a nil Statistics on the response.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "h", ProxyId: "id",
 	}, nil))
 
@@ -408,10 +408,10 @@ func TestInsertOrUpdateProxy_StatisticsOverwritten(t *testing.T) {
 	// write for a given proxy ID must fully replace the first — we don't
 	// want the UI showing yesterday's numbers because today's heartbeat
 	// happened to omit a field.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "h", ProxyId: "id",
 	}, &cppb.Statistics{AcReadHits: 1, CasReadHits: 2}))
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "h", ProxyId: "id",
 	}, &cppb.Statistics{AcReadHits: 10, CasReadHits: 20}))
 
@@ -449,7 +449,7 @@ func TestStreamHeartbeat_PersistsRegistration(t *testing.T) {
 	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
 	require.NoError(t, err)
 	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
-		Node: &cppb.CacheProxyNode{
+		Summary: &cppb.CacheProxySummary{
 			Host: "proxy-1", ProxyId: "id-1", Version: "v1",
 		},
 	}))
@@ -465,7 +465,7 @@ func TestStreamHeartbeat_PersistsRegistration(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, getResp.GetCacheProxy(), 1)
-	assert.Equal(t, "id-1", getResp.GetCacheProxy()[0].GetNode().GetProxyId())
+	assert.Equal(t, "id-1", getResp.GetCacheProxy()[0].GetSummary().GetProxyId())
 }
 
 func TestStreamHeartbeat_PersistsStatistics(t *testing.T) {
@@ -475,7 +475,7 @@ func TestStreamHeartbeat_PersistsStatistics(t *testing.T) {
 	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
 	require.NoError(t, err)
 	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
-		Node: &cppb.CacheProxyNode{
+		Summary: &cppb.CacheProxySummary{
 			Host: "proxy-1", ProxyId: "id-1", Version: "v1",
 		},
 		Statistics: &cppb.Statistics{
@@ -516,13 +516,13 @@ func TestStreamHeartbeat_ShutDown(t *testing.T) {
 		_, _ = keepStream.CloseAndRecv()
 	})
 	require.NoError(t, keepStream.Send(&cppb.RegisterCacheProxyRequest{
-		Node: &cppb.CacheProxyNode{Host: "h-keep", ProxyId: "id-keep"},
+		Summary: &cppb.CacheProxySummary{Host: "h-keep", ProxyId: "id-keep"},
 	}))
 
 	shutdownStream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
 	require.NoError(t, err)
 	require.NoError(t, shutdownStream.Send(&cppb.RegisterCacheProxyRequest{
-		Node: &cppb.CacheProxyNode{Host: "h-bye", ProxyId: "id-bye"},
+		Summary: &cppb.CacheProxySummary{Host: "h-bye", ProxyId: "id-bye"},
 	}))
 
 	// stream.Send only buffers — the server-side recv→insertOrUpdateProxy
@@ -538,7 +538,7 @@ func TestStreamHeartbeat_ShutDown(t *testing.T) {
 
 	// Now send ShuttingDown=true on the second stream only.
 	require.NoError(t, shutdownStream.Send(&cppb.RegisterCacheProxyRequest{
-		Node:         &cppb.CacheProxyNode{Host: "h-bye", ProxyId: "id-bye"},
+		Summary:      &cppb.CacheProxySummary{Host: "h-bye", ProxyId: "id-bye"},
 		ShuttingDown: true,
 	}))
 	_, err = shutdownStream.CloseAndRecv()
@@ -553,7 +553,7 @@ func TestStreamHeartbeat_ShutDown(t *testing.T) {
 		if err != nil || len(resp.GetCacheProxy()) != 1 {
 			return false
 		}
-		return resp.GetCacheProxy()[0].GetNode().GetProxyId() == "id-keep"
+		return resp.GetCacheProxy()[0].GetSummary().GetProxyId() == "id-keep"
 	}, 2*time.Second, 25*time.Millisecond, "only the shutting-down proxy should have been removed")
 }
 
@@ -578,7 +578,7 @@ func TestStreamHeartbeat_Unauthorized(t *testing.T) {
 	assert.True(t, status.IsPermissionDeniedError(err), "expected permission denied, got: %v", err)
 }
 
-func TestStreamHeartbeat_MissingNode(t *testing.T) {
+func TestStreamHeartbeat_MissingSummary(t *testing.T) {
 	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	_, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": user})
 
@@ -597,7 +597,7 @@ func TestStreamHeartbeat_MissingID(t *testing.T) {
 	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
 	require.NoError(t, err)
 	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
-		Node: &cppb.CacheProxyNode{Host: "h", ProxyId: ""},
+		Summary: &cppb.CacheProxySummary{Host: "h", ProxyId: ""},
 	}))
 	_, err = stream.CloseAndRecv()
 	require.Error(t, err)
@@ -648,7 +648,7 @@ func TestStreamHeartbeat_AccessRevoked(t *testing.T) {
 	require.NoError(t, err)
 	// Confirm the stream is up by sending an initial heartbeat.
 	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
-		Node: &cppb.CacheProxyNode{Host: "h", ProxyId: "id"},
+		Summary: &cppb.CacheProxySummary{Host: "h", ProxyId: "id"},
 	}))
 
 	// Wait until the server-side ticker is registered on the fake clock
@@ -664,7 +664,7 @@ func TestStreamHeartbeat_AccessRevoked(t *testing.T) {
 	// once the server has closed its side.
 	require.Eventually(t, func() bool {
 		return stream.Send(&cppb.RegisterCacheProxyRequest{
-			Node: &cppb.CacheProxyNode{Host: "h", ProxyId: "id"},
+			Summary: &cppb.CacheProxySummary{Host: "h", ProxyId: "id"},
 		}) == io.EOF
 	}, 5*time.Second, 25*time.Millisecond, "server did not terminate stream after revocation")
 

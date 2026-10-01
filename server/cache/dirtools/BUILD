@@ -2,7 +2,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "dirtools",
-    srcs = ["dirtools.go"],
+    srcs = [
+        "dirtools.go",
+        "executable_readiness_linux.go",
+        "executable_readiness_other.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/cache/dirtools",
     visibility = ["//visibility:public"],
     deps = [
@@ -31,20 +35,32 @@ go_library(
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sync//semaphore",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:android": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 go_test(
     name = "dirtools_test",
     size = "small",
-    srcs = ["dirtools_test.go"],
+    srcs = [
+        "dirtools_test.go",
+        "executable_readiness_linux_test.go",
+    ],
+    embed = [":dirtools"],
     deps = [
-        ":dirtools",
         "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/remote_cache/byte_stream_server",
+        "//server/remote_cache/cachetools",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
         "//server/testutil/testdigest",
@@ -63,5 +79,15 @@ go_test(
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_x_sync//errgroup",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:android": [
+            "//server/environment",
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//server/environment",
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
 )

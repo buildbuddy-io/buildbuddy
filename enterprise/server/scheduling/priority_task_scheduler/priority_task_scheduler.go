@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
@@ -613,6 +614,10 @@ func (q *PriorityTaskScheduler) CancelTaskReservation(ctx context.Context, taskI
 }
 
 func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
+	// Experiment flags read their values from the task rather than evaluating
+	// experiments on the executor.
+	ctx = expflag.ContextWithEvaluatedFlags(ctx, execTask.GetExperimentFlags())
+
 	// Make sure we identify any executor cache requests as being from the
 	// executor, and also set the client origin (e.g. internal / external).
 	ctx = usageutil.WithLocalServerLabels(ctx)

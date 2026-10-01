@@ -711,6 +711,9 @@ type UsageService interface {
 	GetCurrentBill(ctx context.Context, req *usagepb.GetCurrentBillRequest) (*usagepb.GetCurrentBillResponse, error)
 	GetAlertsEnabled() bool
 	GetBillEnabled() bool
+	GetExportEnabled() bool
+	// GetUsageExportHandler serves the usage CSV export.
+	GetUsageExportHandler() http.Handler
 }
 
 type NotificationService interface {
