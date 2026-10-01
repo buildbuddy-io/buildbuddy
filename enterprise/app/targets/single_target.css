@@ -1,0 +1,495 @@
+.target-data .target-data-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.target-data .target-data-title {
+  font-size: 32px;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.target-data .target-data-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.target-data .target-data-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.target-data .target-data-filter-label {
+  font-weight: 600;
+}
+
+.target-data .target-data-actions-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.target-data .target-data-card-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.target-data .target-data-filters {
+  margin-bottom: 0;
+}
+
+.target-data .target-data-table-wrapper {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.target-data .target-data-table {
+  width: 100%;
+  position: relative;
+  border-collapse: collapse;
+}
+
+.target-data .target-data-table th,
+.target-data .target-data-table td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid #eee;
+  white-space: nowrap;
+}
+
+.target-data .target-data-table th {
+  font-weight: 600;
+  color: #666;
+  cursor: pointer;
+  user-select: none;
+}
+
+.target-data .target-data-table th:hover {
+  color: #333;
+}
+
+/* Non-path columns shrink to fit their content... */
+.target-data .target-data-table th:not(.output-path-column),
+.target-data .target-data-table td:not(.output-path-column) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* ...so the output path column absorbs all the remaining width, ellipsizing
+   when it overflows. */
+.target-data .target-data-table .output-path-column {
+  max-width: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.target-data .target-data-table-row {
+  cursor: pointer;
+}
+
+.target-data .target-data-table-row:hover {
+  background-color: #f7f7f7;
+}
+
+.target-data .target-donuts {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 1200px;
+}
+.target-data .target-donut {
+  min-width: 350px;
+  width: calc(50% - 32px);
+  margin-bottom: 32px;
+  margin-right: 32px;
+}
+
+.target-data .top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  --gap: 8px;
+  margin-top: calc(-1 * var(--gap));
+  margin-right: calc(-1 * var(--gap));
+}
+
+/* TABLE JUNK */
+
+.target-data .chart-table-container .results-table {
+  border: 1px solid var(--color-border-primary);
+  border-radius: 4px;
+  overflow: hidden;
+  line-height: 20px;
+}
+
+.target-data .chart-table-container .row {
+  display: flex;
+  &:not(:last-child) {
+    border-bottom: 1px solid var(--color-border-primary);
+  }
+}
+
+.target-data .chart-table-container .column-headers {
+  font-weight: 600;
+}
+
+.target-data .chart-table-container .result-row {
+  transition: background-color 0.2s ease;
+}
+
+.target-data .chart-table-container .result-row.clickable {
+  cursor: pointer;
+}
+
+.target-data .chart-table-container .result-row.clickable:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.target-data .chart-table-container .legend-column {
+  width: 12px;
+  padding: 9px 8px 9px 12px;
+}
+
+.target-data .chart-table-container .legend-column .legend-square {
+  width: 12px;
+  height: 12px;
+}
+
+.target-data .chart-table-container .empty-row {
+  height: 30px;
+}
+
+.target-data .chart-table-container .action-column {
+  flex-grow: 1;
+  width: 100px;
+  padding: 4px;
+}
+
+.target-data .chart-table-container .stat-column {
+  width: 100px;
+  padding: 4px;
+  text-align: right;
+}
+
+.target-data .chart-table-container .compare-column {
+  width: 32px;
+  padding: 4px;
+}
+
+/* The row menus open below their rows, so they must not be clipped by the
+   table.  This table's rows have no backgrounds, so nothing needs clipping to
+   the table's rounded corners. */
+.target-data .chart-table-container .results-table.executions-table {
+  overflow: visible;
+}
+
+/* Anchors the menu popup to the button. */
+.target-data .execution-menu {
+  position: relative;
+}
+
+/* Sized to the row's line height so that it doesn't make the row taller. */
+.target-data .execution-menu-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-icon-default);
+  cursor: pointer;
+}
+
+.target-data .execution-menu-button:hover {
+  background: var(--color-bg-hover);
+}
+
+.target-data .execution-menu-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.target-data .table-footer-controls {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+}
+
+.target-data .load-more-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.target-data .targets-table-target {
+  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.target-data .targets-table-value {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.target-data .targets-empty {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 80px 40px;
+}
+
+.target-data .empty-message {
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  text-align: center;
+}
+
+.target-data .loading-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+}
+
+/* HEADER */
+
+.target-data .shelf .detail svg {
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+/* FILTER AND SORT CONTROLS */
+
+.target-data .controls.row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.target-data .controls.row label {
+  font-weight: 600;
+}
+
+.target-data .controls.row .separator {
+  border-left: 1px solid var(--color-border-primary);
+  align-self: stretch;
+  margin: 0 8px;
+}
+
+/* SINGLE ACTION PAGE */
+
+.target-data .single-action-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.target-data .single-action-chart-tooltip {
+  min-width: 220px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.target-data .single-action-chart-tooltip .tooltip-section + .tooltip-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.target-data .single-action-chart-tooltip .tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.target-data .single-action-chart-tooltip .tooltip-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.target-data .single-action-chart-tooltip .tooltip-hint {
+  font-size: 12px;
+  color: var(--color-hovercard-muted);
+}
+
+.target-data .chart-table-container {
+  margin-top: 12px;
+}
+
+.target-data .chart-table-container .digest-column {
+  width: 96px;
+  padding: 4px;
+}
+
+/* Matches the look of the DigestComponent hash bubble, but wraps a link. */
+.target-data .digest-bubble {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  color: var(--color-digest-hash-text);
+  background-color: hsl(var(--digest-hue), 50%, var(--color-digest-color-lightness));
+}
+
+.target-data .chart-table-container .date-column {
+  flex-grow: 1;
+  width: 240px;
+  padding: 4px;
+}
+
+/* TIMING BAR */
+
+.target-data .chart-table-container .timing-column {
+  display: flex;
+  align-items: center;
+  flex-grow: 1;
+  width: 200px;
+  padding: 0 8px;
+}
+
+/* The hover target is taller than the bar itself so it's easy to hit. */
+.target-data .timing-bar {
+  width: 100%;
+  padding: 8px 0;
+}
+
+.target-data .timing-track {
+  display: flex;
+  /* Gaps show the card background, separating adjacent segments. */
+  gap: 2px;
+  height: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.target-data .timing-track.empty {
+  background-color: var(--color-bg-tertiary);
+}
+
+.target-data .timing-segment {
+  flex-basis: 0;
+  min-width: 2px;
+}
+
+.target-data .timing-bar:hover .timing-segment {
+  filter: brightness(1.15);
+}
+
+.target-data .controls.row .timing-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.target-data .timing-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The tooltip and swatches are rendered outside of .target-data, so the
+   following rules are not scoped to it. */
+
+.timing-swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* The phase colors were picked so that adjacent segments stay distinct under
+   red-green color blindness and clear 3:1 contrast against the card background
+   in both the light and dark themes. */
+.timing-phase-queue {
+  background-color: var(--color-timing-queue);
+}
+
+.timing-phase-input-download {
+  background-color: var(--color-timing-input-download);
+}
+
+.timing-phase-execution {
+  background-color: var(--color-timing-execution);
+}
+
+.timing-phase-output-upload {
+  background-color: var(--color-timing-output-upload);
+}
+
+.trend-chart-hover.timing-tooltip {
+  min-width: 200px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.timing-tooltip .timing-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timing-tooltip .timing-tooltip-label {
+  flex-grow: 1;
+}
+
+.timing-tooltip .timing-tooltip-value {
+  margin-left: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.target-data .table-summary {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* TABLE PAGER */
+
+.target-data .table-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.target-data .table-pager .table-pager-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.target-data .table-pager .icon-button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+}
+
+.target-data .table-pager .icon-button svg {
+  width: 16px;
+  height: 16px;
+}

@@ -18,6 +18,19 @@ interface State {
   isDropdownOpen: boolean;
 }
 
+/** Returns the path of the page comparing action `a` against action `b`. */
+export function getCompareActionsPath(
+  invocationIdA: string,
+  actionDigestA: string,
+  invocationIdB: string,
+  actionDigestB: string
+): string {
+  return (
+    Path.compareActionsPath +
+    `${invocationIdA}:${encodeURIComponent(actionDigestA)}...${invocationIdB}:${encodeURIComponent(actionDigestB)}`
+  );
+}
+
 export default class ActionCompareButtonComponent extends React.Component<ActionCompareButtonComponentProps, State> {
   state: State = {
     isDropdownOpen: false,
@@ -57,14 +70,14 @@ export default class ActionCompareButtonComponent extends React.Component<Action
       return;
     }
 
-    // Build the compare URL
-    const comparePath =
-      Path.compareActionsPath +
-      `${comparisonData.invocationId}:${encodeURIComponent(
-        comparisonData.actionDigest
-      )}...${this.props.invocationId}:${encodeURIComponent(this.props.actionDigest)}`;
-
-    router.navigateTo(comparePath);
+    router.navigateTo(
+      getCompareActionsPath(
+        comparisonData.invocationId,
+        comparisonData.actionDigest,
+        this.props.invocationId,
+        this.props.actionDigest
+      )
+    );
 
     // Clear the comparison selection
     actionComparisonService.clearComparisonAction();
