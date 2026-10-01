@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -17,14 +16,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
-	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -32,27 +26,8 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
-
-const (
-	maxGroupsPerUserExperiment = "app.max_groups_per_user"
-)
-
-func configureMaxGroupsPerUserExperiment(t *testing.T, env *testenv.TestEnv, maxGroups int64) {
-	provider := openfeatureTesting.NewTestProvider()
-	provider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
-		maxGroupsPerUserExperiment: {
-			State:          memprovider.Enabled,
-			DefaultVariant: "configured",
-			Variants:       map[string]any{"configured": int(maxGroups)},
-		},
-	})
-	require.NoError(t, openfeature.SetProviderAndWait(provider))
-	t.Cleanup(provider.Cleanup)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
-}
 
 func authUserCtx(ctx context.Context, env environment.Env, t *testing.T, userID string) context.Context {
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
@@ -113,7 +88,7 @@ func TestCreateGroup(t *testing.T) {
 
 	// Enable all organization-creation restrictions. Enterprise parent orgs
 	// should always be able to create child orgs using an org API key.
-	configureMaxGroupsPerUserExperiment(t, te, 1)
+	flags.Set(t, "app.max_groups_per_user", int64(1))
 	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
 	require.NoError(t, err)
 
@@ -359,7 +334,7 @@ func TestCreateGroup_Allowed(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, user.Groups, tc.ownedGroups+tc.invitedGroups)
 
-			configureMaxGroupsPerUserExperiment(t, te, int64(tc.maxGroups))
+			flags.Set(t, "app.max_groups_per_user", int64(tc.maxGroups))
 			server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
 			require.NoError(t, err)
 
