@@ -11,6 +11,11 @@
   word-break: break-all;
 }
 
+.target-data .target-data-card-title {
+  display: flex;
+  align-items: center;
+}
+
 .target-data .target-data-filters {
   display: flex;
   flex-wrap: wrap;
