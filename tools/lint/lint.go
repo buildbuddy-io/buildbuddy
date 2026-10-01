@@ -21,11 +21,12 @@ import (
 )
 
 var (
-	fix      = flag.Bool("fix", false, "If true, attempt to fix lint errors automatically.")
-	tool     = flag.Slice("tool", []string{}, "If set, only run the given tool. Can be specified multiple times.")
-	exclude  = flag.Slice("exclude", []string{}, "If set, exclude the given tool. Can be specified multiple times.")
-	force    = flag.Bool("force", false, "If true, run on all files, not just files changed since the diff base.")
-	diffBase = flag.String("diff_base", "", "If set, use the given git rev as the diff base when determining changed files.")
+	fix        = flag.Bool("fix", false, "If true, attempt to fix lint errors automatically.")
+	tool       = flag.Slice("tool", []string{}, "If set, only run the given tool. Can be specified multiple times.")
+	exclude    = flag.Slice("exclude", []string{}, "If set, exclude the given tool. Can be specified multiple times.")
+	force      = flag.Bool("force", false, "If true, run on all files, not just files changed since the diff base.")
+	diffBase   = flag.String("diff_base", "", "If set, use the given git rev as the diff base when determining changed files.")
+	bazelFlags = flag.Slice("bazel_flag", []string{}, "Extra flag to pass to nested bazel commands that build code, such as the GoVet check's `bazel build` (e.g. --bazel_flag=--config=remote). Can be specified multiple times.")
 
 	legacyAllFlag = flag.Bool("a", false, "Has no effect (kept for backwards compatibility but will be removed soon)")
 )
@@ -36,6 +37,7 @@ var (
 // Set via x_defs in BUILD file.
 var (
 	buildifierRlocationpath  string
+	gazelleRlocationpath     string
 	goimportsRlocationpath   string
 	goRlocationpath          string
 	clangFormatRlocationpath string
@@ -56,10 +58,15 @@ var (
 		// Runs exclusively because this might change deps.bzl which BuildFiles
 		// might also change.
 		{Name: "GoModulesFix", Run: runFixGoDeps, WriteLock: true},
-		// Fixes build+starlark file formatting and deps (via embedded gazelle).
+		// Fixes build+starlark file formatting (via buildifier) and deps (via
+		// gazelle).
 		// Runs exclusively because this might change deps.bzl which GoDeps
 		// might also change.
-		{Name: "BuildFix", Run: runBBFix, WriteLock: true},
+		{Name: "BuildFix", Run: runGazelleAndBuildifier, WriteLock: true},
+		// Runs the nogo analyzers (//:vet) on changed Go targets, applying
+		// their suggested fixes in fix mode. Runs exclusively because this
+		// might change go files which GoFormat might also change.
+		{Name: "GoVet", Run: runNogo, WriteLock: true},
 		// Ensures that MODULE.bazel.lock is up to date.
 		{Name: "UpdateLockfile", Run: runBazelModDeps, WriteLock: true},
 	}
@@ -90,33 +97,39 @@ type Tool struct {
 	Run func(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error
 }
 
-func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
+// runGazelleAndBuildifier does what `bb fix` does for this repo: it runs
+// gazelle to update BUILD files, then buildifier on the changed starlark
+// files. It runs both tools from runfiles rather than going through `bb fix`,
+// which would otherwise start a nested `bazel run //:gazelle`.
+func runGazelleAndBuildifier(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	return errors.Join(
+		runGazelle(ctx, stdout, stderr, fix),
+		runBuildifier(ctx, stdout, stderr, fix, files),
+	)
+}
+
+func runGazelle(ctx context.Context, stdout, stderr io.Writer, fix bool) error {
+	cmd, err := getRunfileToolCommand(ctx, gazelleRlocationpath)
 	if err != nil {
-		return fmt.Errorf("get bb command: %w", err)
+		return fmt.Errorf("get gazelle command: %w", err)
 	}
-	cmd.Args = append(cmd.Args, "fix")
 	if !fix {
-		cmd.Args = append(cmd.Args, "--diff")
+		// In diff mode, gazelle prints the diff and exits with code 1 if
+		// there are any changes.
+		cmd.Args = append(cmd.Args, "-mode=diff")
 	}
-	stdoutCounter := &ioutil.Counter{}
-	cmd.Stdout = io.MultiWriter(stdout, stdoutCounter)
+	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	// bb fix runs gazelle, which needs 'go' in PATH to resolve imports.
+	// Some gazelle extensions shell out to 'go'.
 	goPath, err := runfiles.Rlocation(goRlocationpath)
 	if err != nil {
 		return fmt.Errorf("find go in runfiles: %w", err)
 	}
 	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+os.Getenv("PATH"))
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("run bb fix: %w", err)
+		return fmt.Errorf("run gazelle: %w", err)
 	}
-	// In diff mode, fail if the diff is non-empty.
-	var fixErr error
-	if !fix && stdoutCounter.Count() > 0 {
-		fixErr = fmt.Errorf("bb fix found lint errors")
-	}
-	return errors.Join(fixErr, runBuildifier(ctx, stdout, stderr, fix, files))
+	return nil
 }
 
 func runBuildifier(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
@@ -279,6 +292,130 @@ func runPrettier(ctx context.Context, stdout, stderr io.Writer, fix bool, files 
 	// For why we set BAZEL_BINDIR to ".", see
 	// https://github.com/aspect-build/rules_js/tree/dbb5af0d2a9a2bb50e4cf4a96dbc582b27567155#running-nodejs-programs
 	cmd.Env = append(cmd.Env, "BAZEL_BINDIR=.")
+	return cmd.Run()
+}
+
+// runNogo builds the nogo validation and fix outputs of the Go targets that
+// contain changed Go files. nogo runs as part of every Go build, so this
+// enforces the same checks (configured by //:vet) that a build would, but
+// without building or linking anything else. In fix mode, it also applies the
+// fixes suggested by nogo analyzers.
+func runNogo(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	files = filterToExtensions(files, []string{".go"})
+	if len(files) == 0 {
+		return nil
+	}
+	targets, err := queryGoTargets(ctx, stderr, files)
+	if err != nil {
+		return err
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	buildArgs := []string{
+		"--output_groups=nogo_fix",
+		"--keep_going",
+		"--skip_incompatible_explicit_targets",
+		// Make sure the patch files are available locally when building
+		// without the bytes.
+		`--remote_download_regex=.*_nogo/nogo\.patch$`,
+	}
+	buildArgs = append(buildArgs, *bazelFlags...)
+	buildErr := runBB(ctx, stdout, stderr, append(append([]string{"build"}, buildArgs...), targets...)...)
+	if !fix || buildErr == nil {
+		if buildErr != nil {
+			return fmt.Errorf("nogo found lint errors: %w", buildErr)
+		}
+		return nil
+	}
+
+	// Apply suggested fixes, then build again to report any findings that
+	// couldn't be fixed automatically.
+	patches, err := nogoPatchFiles(ctx, stderr, buildArgs, targets)
+	if err != nil {
+		return err
+	}
+	applied := 0
+	for _, patch := range patches {
+		if info, err := os.Stat(patch); err != nil || info.Size() == 0 {
+			continue
+		}
+		// A go_library and its go_test share sources, so their patches can
+		// contain the same hunks. Skip hunks that were already applied and
+		// don't leave .rej or .orig files around. Patch failures are not
+		// fatal, since the build below reports anything left unfixed.
+		cmd := exec.CommandContext(ctx, "patch", "--forward", "--reject-file=-", "--no-backup-if-mismatch", "-p1", "-i", patch)
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(stderr, "Failed to fully apply nogo fix %s: %s\n", patch, err)
+		}
+		applied++
+	}
+	if applied == 0 {
+		return fmt.Errorf("nogo found lint errors: %w", buildErr)
+	}
+	if err := runBB(ctx, stdout, stderr, append(append([]string{"build"}, buildArgs...), targets...)...); err != nil {
+		return fmt.Errorf("nogo found lint errors that couldn't be fixed automatically: %w", err)
+	}
+	return nil
+}
+
+// queryGoTargets returns the Go rules which have any of the given files as
+// sources.
+func queryGoTargets(ctx context.Context, stderr io.Writer, files []string) ([]string, error) {
+	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
+	if err != nil {
+		return nil, fmt.Errorf("get bb command: %w", err)
+	}
+	query := fmt.Sprintf(`kind("^go_(library|binary|test) rule$", same_pkg_direct_rdeps(set(%s)))`, strings.Join(files, " "))
+	// Files that aren't in any package (e.g. testdata) produce query errors,
+	// so keep going and use the partial result.
+	cmd.Args = append(cmd.Args, "query", "--keep_going", "--output=label", query)
+	stdoutBuf := &strings.Builder{}
+	cmd.Stdout = stdoutBuf
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		// Exit code 3 means the query succeeded, but only partially.
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 3 {
+			return nil, fmt.Errorf("query go targets: %w", err)
+		}
+	}
+	return lines(strings.TrimSpace(stdoutBuf.String())), nil
+}
+
+// nogoPatchFiles returns the paths of the nogo.patch files built for the given
+// targets.
+func nogoPatchFiles(ctx context.Context, stderr io.Writer, buildArgs, targets []string) ([]string, error) {
+	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
+	if err != nil {
+		return nil, fmt.Errorf("get bb command: %w", err)
+	}
+	cmd.Args = append(cmd.Args, "cquery", "--output=files")
+	cmd.Args = append(cmd.Args, buildArgs...)
+	cmd.Args = append(cmd.Args, targets...)
+	stdoutBuf := &strings.Builder{}
+	cmd.Stdout = stdoutBuf
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("query nogo outputs: %w", err)
+	}
+	var patches []string
+	for _, dir := range lines(strings.TrimSpace(stdoutBuf.String())) {
+		patches = append(patches, filepath.Join(dir, "nogo.patch"))
+	}
+	return patches, nil
+}
+
+// runBB runs the bb CLI from runfiles with the given args.
+func runBB(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get bb command: %w", err)
+	}
+	cmd.Args = append(cmd.Args, args...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	return cmd.Run()
 }
 
