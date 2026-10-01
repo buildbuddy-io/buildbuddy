@@ -5,12 +5,6 @@
 # Use BLAKE3 digest function.
 startup --digest_function=BLAKE3
 
-# Store reproducible external repos in the remote cache, and only download
-# their files when Bazel reads them or a local action needs them. Commands
-# without a remote cache keep fetching repos to disk as before. Cached repos
-# live in Bazel's memory rather than under bazel-<workspace>/external, so tools
-# that read external sources directly (e.g. IDEs) may not see them. To opt
-# out, add `startup --noexperimental_remote_repo_contents_cache` to user.bazelrc.
 startup --experimental_remote_repo_contents_cache
 
 ################
