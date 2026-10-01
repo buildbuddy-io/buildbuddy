@@ -199,8 +199,10 @@ var (
 		buildBuddyServicePrefix + "InvalidateAllSnapshotsForRepo",
 		// RBE deployment view
 		buildBuddyServicePrefix + "GetExecutionNodes",
-		// Cache proxy deployment view
-		buildBuddyServicePrefix + "GetCacheProxies",
+		// Cache proxy APIs
+		buildBuddyServicePrefix + "GetCacheProxies", // TODO(go/b/8433): remove
+		buildBuddyServicePrefix + "ListCacheProxies",
+		buildBuddyServicePrefix + "GetCacheProxy",
 		// BuildBuddy usage data
 		buildBuddyServicePrefix + "GetUsage",
 		buildBuddyServicePrefix + "GetUsageAlertingRules",
