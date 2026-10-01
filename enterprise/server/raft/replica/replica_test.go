@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,12 +23,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/lni/dragonboat/v4"
 	"github.com/stretchr/testify/require"
+
+	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
+	dbconfig "github.com/lni/dragonboat/v4/config"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -1109,6 +1116,255 @@ func TestRecoverFromSnapshotCrashMidApply(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, snapshotIndex, idx)
 	require.Equal(t, len(keys), countPresentKeys(t, restarted, keys))
+}
+
+// Rejected entries advance only the stored index, leaving data and sessions alone.
+func TestRejectedEntryAdvancesLastAppliedIndex(t *testing.T) {
+	incrKey := keys.MakeKey(constants.SystemPrefix, []byte("incr-key"))
+	increment := func() *rbuilder.BatchBuilder {
+		return rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{Key: incrKey, Delta: 1})
+	}
+	staleHeader := &rfpb.Header{RangeId: 1, Generation: 0}
+	currentHeader := &rfpb.Header{RangeId: 1, Generation: 1}
+
+	for _, tc := range []struct {
+		name string
+		// makeEntry may apply setup entries before returning a rejected entry.
+		makeEntry func(t *testing.T, em *entryMaker, repl *replica.Replica) dbsm.Entry
+		// Counter value after rejection.
+		wantCounter uint64
+		// Optional retry that must succeed.
+		retry *rbuilder.BatchBuilder
+	}{
+		{
+			name: "malformed payload",
+			makeEntry: func(t *testing.T, em *entryMaker, repl *replica.Replica) dbsm.Entry {
+				em.index++
+				return dbsm.Entry{Index: em.index, Cmd: []byte{0xff, 0xff, 0xff}}
+			},
+		},
+		{
+			name: "stale header",
+			makeEntry: func(t *testing.T, em *entryMaker, repl *replica.Replica) dbsm.Entry {
+				session := &rfpb.Session{Id: []byte("stale-header-session"), Index: 1}
+				return em.makeEntry(increment().SetHeader(staleHeader).SetSession(session))
+			},
+			// Verify rejection did not cache a session response.
+			retry: increment().SetHeader(currentHeader).SetSession(&rfpb.Session{Id: []byte("stale-header-session"), Index: 1}),
+		},
+		{
+			name: "stale session",
+			makeEntry: func(t *testing.T, em *entryMaker, repl *replica.Replica) dbsm.Entry {
+				session := &rfpb.Session{Id: []byte("stale-session"), Index: 2}
+				rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(increment().SetSession(session))})
+				require.NoError(t, err)
+				require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+				session.Index = 1
+				return em.makeEntry(increment().SetSession(session))
+			},
+			wantCounter: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repl := testutil.NewTestingReplica(t, 1, 1)
+			_, err := repl.Open(make(chan struct{}))
+			require.NoError(t, err)
+			em := newEntryMaker(t)
+			writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+			readCounter := func(r *testutil.TestingReplica) uint64 {
+				rsp, err := directRead(t, r, incrKey)
+				if status.IsNotFoundError(err) {
+					return 0
+				}
+				require.NoError(t, err)
+				return binary.LittleEndian.Uint64(rsp.GetKv().GetValue())
+			}
+
+			entry := tc.makeEntry(t, em, repl.Replica)
+			rsp, err := repl.Update([]dbsm.Entry{entry})
+			require.NoError(t, err)
+			require.Equal(t, constants.EntryErrorValue, int(rsp[0].Result.Value))
+
+			idx, err := repl.LastAppliedIndex()
+			require.NoError(t, err)
+			require.Equal(t, entry.Index, idx)
+			require.Equal(t, tc.wantCounter, readCounter(repl))
+
+			if tc.retry != nil {
+				rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(tc.retry)})
+				require.NoError(t, err)
+				require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+				require.Equal(t, tc.wantCounter+1, readCounter(repl))
+			}
+			wantIndex, err := repl.LastAppliedIndex()
+			require.NoError(t, err)
+
+			// The index survives a restart.
+			require.NoError(t, repl.Close())
+			restarted := testutil.NewTestingReplicaWithLeaser(t, 1, 1, repl.Leaser())
+			t.Cleanup(func() { require.NoError(t, restarted.Close()) })
+			openIndex, err := restarted.Open(make(chan struct{}))
+			require.NoError(t, err)
+			require.Equal(t, wantIndex, openIndex)
+		})
+	}
+}
+
+// recordingSM records Open's index and the last index from successful Updates.
+// The latter tracks Dragonboat's onDiskIndex as entries are applied.
+type recordingSM struct {
+	*replica.Replica
+
+	mu              sync.Mutex
+	openIndex       uint64
+	lastUpdateIndex uint64
+}
+
+func (r *recordingSM) Open(stopc <-chan struct{}) (uint64, error) {
+	idx, err := r.Replica.Open(stopc)
+	r.mu.Lock()
+	r.openIndex = idx
+	r.mu.Unlock()
+	return idx, err
+}
+
+func (r *recordingSM) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
+	rsp, err := r.Replica.Update(entries)
+	if err == nil && len(entries) > 0 {
+		r.mu.Lock()
+		r.lastUpdateIndex = entries[len(entries)-1].Index
+		r.mu.Unlock()
+	}
+	return rsp, err
+}
+
+func (r *recordingSM) indexes() (openIndex, lastUpdateIndex uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.openIndex, r.lastUpdateIndex
+}
+
+func syncProposeWithRetry(t *testing.T, nh *dragonboat.NodeHost, rangeID uint64, batch *rbuilder.BatchBuilder) dbsm.Result {
+	buf, err := batch.ToBuf()
+	require.NoError(t, err)
+	var lastErr error
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		res, err := nh.SyncPropose(ctx, nh.GetNoOPSession(rangeID), buf)
+		cancel()
+		if err == nil {
+			return res
+		}
+		lastErr = err
+		time.Sleep(10 * time.Millisecond)
+	}
+	require.FailNowf(t, "propose timed out", "last error: %s", lastErr)
+	return dbsm.Result{}
+}
+
+// Open must cover the snapshot's OnDiskIndex, including rejected entries:
+// local on-disk snapshots contain no application data to restore.
+func TestRejectedEntryAdvancesOpenIndex(t *testing.T) {
+	const rangeID, replicaID = 1, 1
+
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(filepath.Join(rootDir, "pebble"), "test", &pebble.Options{})
+	require.NoError(t, err)
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	raftAddr := fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
+	logDBConfig := dbconfig.GetSmallMemLogDBConfig()
+	logDBConfig.Shards = 2
+	nhc := dbconfig.NodeHostConfig{
+		WALDir:         filepath.Join(rootDir, "wal"),
+		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
+		RTTMillisecond: 1,
+		RaftAddress:    raftAddr,
+		Expert: dbconfig.ExpertConfig{
+			LogDB: logDBConfig,
+		},
+	}
+	rc := raftConfig.GetRaftConfig(rangeID, replicaID)
+
+	var sm *recordingSM
+	factory := func(rangeID, replicaID uint64) dbsm.IOnDiskStateMachine {
+		sm = &recordingSM{
+			Replica: replica.New(leaser, rangeID, replicaID, &testutil.FakeStore{}, nil /*=usageUpdates*/),
+		}
+		return sm
+	}
+
+	// Close before DB cleanup, even on failure; avoid double-close panics.
+	closeOnce := func(nh *dragonboat.NodeHost) func() {
+		var once sync.Once
+		return func() { once.Do(nh.Close) }
+	}
+
+	nh, err := dragonboat.NewNodeHost(nhc)
+	require.NoError(t, err)
+	closeNH := closeOnce(nh)
+	t.Cleanup(closeNH)
+	err = nh.StartOnDiskReplica(map[uint64]string{replicaID: raftAddr}, false /*=join*/, factory, rc)
+	require.NoError(t, err)
+
+	// Write the range descriptor.
+	rd := &rfpb.RangeDescriptor{
+		Start:      keys.Key{constants.UnsplittableMaxByte},
+		End:        keys.MaxByte,
+		RangeId:    rangeID,
+		Generation: 1,
+	}
+	rdBuf, err := proto.Marshal(rd)
+	require.NoError(t, err)
+	res := syncProposeWithRetry(t, nh, rangeID, rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{Key: constants.LocalRangeKey, Value: rdBuf},
+	}))
+	require.NotEqual(t, uint64(constants.EntryErrorValue), res.Value)
+
+	// Reject a stale header.
+	res = syncProposeWithRetry(t, nh, rangeID, rbuilder.NewBatchBuilder().
+		SetHeader(&rfpb.Header{RangeId: rangeID, Generation: 0}).
+		Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{Key: []byte("key-rejected"), Value: []byte("value")},
+		}))
+	require.Equal(t, uint64(constants.EntryErrorValue), res.Value)
+
+	// Rejection must advance the stored index to match Dragonboat's.
+	_, onDiskIndex := sm.indexes()
+	storedIndex, err := sm.LastAppliedIndex()
+	require.NoError(t, err)
+	require.Equal(t, onDiskIndex, storedIndex)
+
+	// Snapshot with the rejected entry last.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = nh.SyncRequestSnapshot(ctx, rangeID, dragonboat.SnapshotOption{
+		OverrideCompactionOverhead: true,
+		CompactionOverhead:         0,
+	})
+	require.NoError(t, err)
+
+	// Restart using the same storage.
+	closeNH()
+	nh, err = dragonboat.NewNodeHost(nhc)
+	require.NoError(t, err)
+	t.Cleanup(closeOnce(nh))
+	err = nh.StartOnDiskReplica(nil, false /*=join*/, factory, rc)
+	require.NoError(t, err)
+
+	// Propose to wait for startup recovery.
+	res = syncProposeWithRetry(t, nh, rangeID, rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{Key: []byte("key-after-restart"), Value: []byte("value")},
+	}))
+	require.NotEqual(t, uint64(constants.EntryErrorValue), res.Value)
+
+	openIndex, _ := sm.indexes()
+	require.Equal(t, onDiskIndex, openIndex, "Open must return the snapshot's on-disk index")
 }
 
 func TestApplySnapshotEntriesDeleted(t *testing.T) {

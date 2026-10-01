@@ -220,6 +220,8 @@ func getNodehostConfigForTest(cfg *raftConfig.ServerConfig, raftListener *listen
 
 	nhc.RTTMillisecond = 1
 	nhc.Expert.LogDB = dbConfig.GetSmallMemLogDBConfig()
+	// Fewer Pebble instances speed up test startup.
+	nhc.Expert.LogDB.Shards = 2
 	nhc.EnableMetrics = false
 	return nhc
 }

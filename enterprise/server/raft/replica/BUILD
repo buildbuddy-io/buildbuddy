@@ -33,11 +33,12 @@ go_library(
 
 go_test(
     name = "replica_test",
-    size = "small",
+    size = "medium",
     srcs = ["replica_test.go"],
     deps = [
         ":replica",
         "//enterprise/server/filestore",
+        "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
@@ -50,11 +51,14 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testdigest",
         "//server/testutil/testfs",
+        "//server/testutil/testport",
         "//server/util/disk",
         "//server/util/ioutil",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/uuid",
+        "@com_github_lni_dragonboat_v4//:dragonboat",
+        "@com_github_lni_dragonboat_v4//config",
         "@com_github_lni_dragonboat_v4//statemachine",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_rpc//status",
