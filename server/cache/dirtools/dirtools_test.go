@@ -1272,6 +1272,23 @@ func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) 
 	require.Equal(t, []uint32{3, 4}, bitmap.ToArray())
 }
 
+func TestDownloadTreeReturnsEmptyFileWriteError(t *testing.T) {
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+	emptyDigest, err := digest.Compute(strings.NewReader(""), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	tree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "empty.txt", Digest: emptyDigest}}}}
+
+	// Put a directory where the empty file should go, so creating the file
+	// fails.
+	err = os.Mkdir(filepath.Join(tmpDir, "empty.txt"), 0755)
+	require.NoError(t, err)
+
+	// The download should fail rather than succeed with the file missing.
+	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+	require.Error(t, err)
+}
+
 func TestDownloadTreeEmptyDigest(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
