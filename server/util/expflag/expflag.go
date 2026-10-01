@@ -310,7 +310,9 @@ func (f *Flag[T]) Get(ctx context.Context, opts ...any) T {
 }
 
 // GetWithDetails evaluates the flag and returns its value along with the
-// evaluation details, which include the selected variant.
+// evaluation details, which include the selected variant. For Object flags,
+// the returned map may be shared with other callers, so callers must not
+// modify it.
 func (f *Flag[T]) GetWithDetails(ctx context.Context, opts ...any) (T, *expb.EvaluatedFlag) {
 	value, details := f.get(ctx, opts...)
 	evaluated := &expb.EvaluatedFlag{Name: f.name}
