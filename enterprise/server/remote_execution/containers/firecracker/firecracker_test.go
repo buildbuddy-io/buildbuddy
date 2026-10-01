@@ -3072,83 +3072,103 @@ func TestStatsReturnsLatestGuestStatsDuringExec(t *testing.T) {
 }
 
 func TestFirecrackerRunWithNetwork(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	flags.Set(t, "executor.network_stats_enabled", true)
+	for _, tc := range []struct {
+		name        string
+		experiments []string
+	}{
+		{name: "veth"},
+		{name: "userspace", experiments: []string{"executor.userspace_networking"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+			flags.Set(t, "executor.network_stats_enabled", true)
 
-	// Make sure the container can send packets to something external to the VM
-	googleDNS := "8.8.8.8"
-	cmd := &repb.Command{Arguments: []string{"ping", "-c1", googleDNS}}
+			// Make sure the container can send packets to something external to the VM
+			googleDNS := "8.8.8.8"
+			cmd := &repb.Command{Arguments: []string{"ping", "-c1", googleDNS}}
 
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         2500,
+					NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: getExecutorConfig(t),
+			}
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Experiments: tc.experiments}, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Run will handle the full lifecycle: no need to call Remove() here.
+			res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+			if res.Error != nil {
+				t.Fatal(res.Error)
+			}
+
+			assert.Equal(t, 0, res.ExitCode)
+			assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+			assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+			assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+		})
 	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
-
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
 }
 
 func TestFirecrackerRunWithoutNetwork(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	flags.Set(t, "executor.network_stats_enabled", true)
+	for _, tc := range []struct {
+		name        string
+		experiments []string
+	}{
+		{name: "veth"},
+		{name: "userspace", experiments: []string{"executor.userspace_networking"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+			flags.Set(t, "executor.network_stats_enabled", true)
 
-	// Make sure the container can't send packets to the internet when
-	// NetworkMode is LOCAL.
-	googleDNS := "8.8.8.8"
-	cmd := &repb.Command{Arguments: []string{"ping", "-c1", "-W1", googleDNS}}
+			// Make sure the container can't send packets to the internet when
+			// NetworkMode is LOCAL.
+			googleDNS := "8.8.8.8"
+			cmd := &repb.Command{Arguments: []string{"ping", "-c1", "-W1", googleDNS}}
 
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_LOCAL,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         2500,
+					NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_LOCAL,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: getExecutorConfig(t),
+			}
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Experiments: tc.experiments}, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Run will handle the full lifecycle: no need to call Remove() here.
+			res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+			if res.Error != nil {
+				t.Fatal(res.Error)
+			}
+
+			// Ping should fail because external network is disabled.
+			assert.NotEqual(t, 0, res.ExitCode)
+			// Note: some bytes are sent (the ping request) and received (ICMP reject).
+			assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+			assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+		})
 	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
-
-	// Ping should fail because external network is disabled.
-	assert.NotEqual(t, 0, res.ExitCode)
-	// Note: some bytes are sent (the ping request) and received (ICMP reject).
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
 }
 
 func TestFirecrackerResolvConf(t *testing.T) {
@@ -3185,66 +3205,76 @@ func TestFirecrackerResolvConf(t *testing.T) {
 }
 
 func TestSnapshotAndResumeWithNetwork(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	flags.Set(t, "executor.network_stats_enabled", true)
+	for _, tc := range []struct {
+		name        string
+		experiments []string
+	}{
+		{name: "veth"},
+		{name: "userspace", experiments: []string{"executor.userspace_networking"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+			flags.Set(t, "executor.network_stats_enabled", true)
 
-	// Make sure the container can send packets to something external of the VM
-	googleDNS := "8.8.8.8"
-	cmd := &repb.Command{
-		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
-			{Name: "recycle-runner", Value: "true"},
-		}},
-		Arguments: []string{"ping", "-c1", googleDNS},
+			// Make sure the container can send packets to something external of the VM
+			googleDNS := "8.8.8.8"
+			cmd := &repb.Command{
+				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: "recycle-runner", Value: "true"},
+				}},
+				Arguments: []string{"ping", "-c1", googleDNS},
+			}
+
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         2500,
+					NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: getExecutorConfig(t),
+			}
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Experiments: tc.experiments, Command: cmd}, opts)
+			require.NoError(t, err)
+			require.NoError(t, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+			err = c.Create(ctx, opts.ActionWorkingDirectory)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				err := c.Remove(ctx)
+				require.NoError(t, err)
+			})
+
+			res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+			require.NoError(t, res.Error)
+			assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
+			assert.Equal(t, 0, res.ExitCode)
+			assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+			assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+			assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+
+			err = c.Pause(ctx)
+			require.NoError(t, err)
+
+			err = c.Unpause(ctx)
+			require.NoError(t, err)
+
+			res = c.Exec(ctx, cmd, &interfaces.Stdio{})
+			require.NoError(t, res.Error)
+			assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
+			assert.Equal(t, 0, res.ExitCode)
+			assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+			assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+			assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+
+			err = c.Pause(ctx)
+			require.NoError(t, err)
+		})
 	}
-
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Command: cmd}, opts)
-	require.NoError(t, err)
-	require.NoError(t, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
-	err = c.Create(ctx, opts.ActionWorkingDirectory)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err := c.Remove(ctx)
-		require.NoError(t, err)
-	})
-
-	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
-	require.NoError(t, res.Error)
-	assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
-
-	err = c.Pause(ctx)
-	require.NoError(t, err)
-
-	err = c.Unpause(ctx)
-	require.NoError(t, err)
-
-	res = c.Exec(ctx, cmd, &interfaces.Stdio{})
-	require.NoError(t, res.Error)
-	assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
-	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
-
-	err = c.Pause(ctx)
-	require.NoError(t, err)
 }
 
 func TestFirecrackerRunWithNetworkPooling(t *testing.T) {

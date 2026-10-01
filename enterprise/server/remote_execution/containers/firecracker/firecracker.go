@@ -43,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/usernet"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -682,7 +683,7 @@ type FirecrackerContainer struct {
 
 	externalNetworkPool *networking.VMNetworkPool
 	localNetworkPool    *networking.VMNetworkPool
-	network             *networking.VMNetwork
+	network             networking.Network
 
 	// Whether the VM was recycled.
 	recycled bool
@@ -1993,6 +1994,15 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 
 	externalNetworking := externalNetworkingEnabled(c.vmConfig.NetworkMode)
 
+	if slices.Contains(c.task.GetExperiments(), "executor.userspace_networking") {
+		network, err := usernet.NewVMNetwork(ctx, tapDeviceName, tapAddr, externalNetworking)
+		if err != nil {
+			return status.UnavailableErrorf("create userspace VM network: %s", err)
+		}
+		c.network = network
+		return nil
+	}
+
 	if pool := c.vmNetworkPool(); pool != nil {
 		if network := pool.Get(ctx); network != nil {
 			c.network = network
@@ -2201,8 +2211,10 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if pool := c.vmNetworkPool(); pool != nil {
-		if ok := pool.Add(ctx, network); ok {
+	// Userspace networks are cheap to create, so only VM networks are pooled.
+	vmNetwork, isVMNetwork := network.(*networking.VMNetwork)
+	if pool := c.vmNetworkPool(); pool != nil && isVMNetwork {
+		if ok := pool.Add(ctx, vmNetwork); ok {
 			return nil
 		}
 		log.CtxInfof(ctx, "Failed to add network to pool - cleaning up network.")

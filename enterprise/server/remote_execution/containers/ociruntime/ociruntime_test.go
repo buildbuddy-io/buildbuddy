@@ -1142,6 +1142,7 @@ func TestNetworking(t *testing.T) {
 		name                       string
 		defaultNetworkFlag         string
 		dockerNetworkProp          string
+		experiments                []string
 		expectExternalConnectivity bool
 	}{
 		{
@@ -1164,6 +1165,17 @@ func TestNetworking(t *testing.T) {
 			dockerNetworkProp:          "bridge",
 			expectExternalConnectivity: true,
 		},
+		{
+			name:                       "userspace networking",
+			experiments:                []string{"executor.userspace_networking"},
+			expectExternalConnectivity: true,
+		},
+		{
+			name:                       "userspace networking disabled via flag",
+			defaultNetworkFlag:         "off",
+			experiments:                []string{"executor.userspace_networking"},
+			expectExternalConnectivity: false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -1185,10 +1197,13 @@ func TestNetworking(t *testing.T) {
 			require.NoError(t, err)
 			wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-				ContainerImage: image,
-				DockerNetwork:  tc.dockerNetworkProp,
-			}})
+			c, err := provider.New(ctx, &container.Init{
+				Props: &platform.Properties{
+					ContainerImage: image,
+					DockerNetwork:  tc.dockerNetworkProp,
+				},
+				Task: &repb.ScheduledTask{ExecutionTask: &repb.ExecutionTask{Experiments: tc.experiments}},
+			})
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				err := c.Remove(ctx)

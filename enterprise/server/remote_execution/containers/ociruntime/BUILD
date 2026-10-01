@@ -28,6 +28,7 @@ go_library(
         "//enterprise/server/remote_execution/executor_auth",
         "//enterprise/server/remote_execution/gpu",
         "//enterprise/server/util/oci",
+        "//enterprise/server/util/usernet",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/environment",
