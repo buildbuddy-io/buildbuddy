@@ -424,7 +424,7 @@ func (s *usageService) GetUsageInternal(ctx context.Context, g *tables.Group, re
 		if err != nil {
 			return nil, err
 		}
-		period = start.Format(usageDateFormat) + "/" + end.Format(usageDateFormat)
+		period = req.GetStartDate() + "/" + req.GetEndDate()
 	} else {
 		p := getUsagePeriod(now)
 		if req.GetUsagePeriod() != "" {
@@ -985,15 +985,15 @@ func (s *usageService) handleUsageExport(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	// Set the download headers only on success, so errors aren't downloaded.
-	lastDay := end.AddDate(0, 0, -1).Format(usageDateFormat)
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="usage-%s-%s.csv"`, start.Format(usageDateFormat), lastDay))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="usage-%s-%s.csv"`, params.Get("start"), params.Get("end")))
 	if err := writeUsageExportCSV(w, records); err != nil {
 		log.CtxWarningf(ctx, "Failed to write usage export for group %s: %s", groupID, err)
 	}
 }
 
-// parseUsageDateRange parses [start, end) UTC dates.
+// parseUsageDateRange parses inclusive UTC dates, returning end as an
+// exclusive bound.
 func parseUsageDateRange(startParam, endParam string) (start, end time.Time, err error) {
 	start, err = time.Parse(usageDateFormat, startParam)
 	if err != nil {
@@ -1003,8 +1003,9 @@ func parseUsageDateRange(startParam, endParam string) (start, end time.Time, err
 	if err != nil {
 		return start, end, status.InvalidArgumentErrorf("invalid end date: %s", err)
 	}
+	end = end.AddDate(0, 0, 1)
 	if !end.After(start) {
-		return start, end, status.InvalidArgumentError("end date must be after start date")
+		return start, end, status.InvalidArgumentError("end date must not be before start date")
 	}
 	if end.Sub(start) > usageMaxDateRange {
 		return start, end, status.InvalidArgumentErrorf("date range must not exceed %d days", usageMaxDateRange/(24*time.Hour))

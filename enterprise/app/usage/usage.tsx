@@ -189,7 +189,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     }
     const { start, end } = usageDateRange(this.props.search);
     const dates: number[] = [];
-    for (const day = moment(start, "YYYY-MM-DD"); day.isBefore(moment(end, "YYYY-MM-DD")); day.add(1, "day")) {
+    for (const day = moment(start, "YYYY-MM-DD"); day.isSameOrBefore(moment(end, "YYYY-MM-DD")); day.add(1, "day")) {
       dates.push(day.unix());
     }
     return (
@@ -823,31 +823,29 @@ class UsageReport extends React.Component<UsageReportProps, State> {
   }
 }
 
-/** The current UTC month, with an exclusive end. */
+/** The current UTC month's first and last days. */
 function currentMonth(): { start: string; end: string } {
-  const month = moment.utc().startOf("month");
-  return { start: month.format("YYYY-MM-DD"), end: month.add(1, "month").format("YYYY-MM-DD") };
+  const now = moment.utc();
+  return { start: now.format("YYYY-MM-01"), end: now.endOf("month").format("YYYY-MM-DD") };
 }
 
 /**
- * The date range selected in the URL, as "YYYY-MM-DD" UTC days with an
- * exclusive end, defaulting to the current month. Also returns the URL params
- * with that default filled in, for the date range picker.
+ * The inclusive "YYYY-MM-DD" date range selected in the URL, defaulting to the
+ * current month. Also returns the URL params with that default filled in, for
+ * the date range picker.
  */
 function usageDateRange(search: URLSearchParams): { search: URLSearchParams; start: string; end: string } {
   if (![START_DATE_PARAM_NAME, END_DATE_PARAM_NAME, LAST_N_DAYS_PARAM_NAME].some((name) => search.get(name))) {
     const month = currentMonth();
     search = new URLSearchParams(search);
     search.set(START_DATE_PARAM_NAME, month.start);
-    search.set(END_DATE_PARAM_NAME, moment(month.end, "YYYY-MM-DD").subtract(1, "day").format("YYYY-MM-DD"));
+    search.set(END_DATE_PARAM_NAME, month.end);
   }
   const { startDate, endDate } = getDateRangeForPicker(search);
   return {
     search,
     start: moment(startDate).format("YYYY-MM-DD"),
-    end: moment(endDate ?? new Date())
-      .add(1, "day")
-      .format("YYYY-MM-DD"),
+    end: moment(endDate ?? new Date()).format("YYYY-MM-DD"),
   };
 }
 
