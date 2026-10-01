@@ -371,6 +371,11 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 	}
 	defer removeConnectedExecutor()
 
+	// Canceled when Serve returns, so that the receive goroutine doesn't
+	// block forever trying to hand off a request or error that nobody will
+	// read (e.g. if Serve returned because the server is shutting down).
+	recvCtx, cancelRecv := context.WithCancel(ctx)
+	defer cancelRecv()
 	requestChan := make(chan *scpb.RegisterAndStreamWorkRequest, 1)
 	errChan := make(chan error)
 	go func() {
@@ -378,15 +383,28 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 			req, err := h.stream.Recv()
 			if err == io.EOF {
 				close(requestChan)
-				break
+				return
 			}
 			if err != nil {
-				errChan <- err
-				break
+				select {
+				case errChan <- err:
+				case <-recvCtx.Done():
+				}
+				return
 			}
-			requestChan <- req
+			select {
+			case requestChan <- req:
+			case <-recvCtx.Done():
+				return
+			}
 		}
 	}()
+
+	// Shutdown waits for Serve to return, so work done on the executor's
+	// behalf is canceled when shutdown starts. Cleanup, such as removing the
+	// executor, uses ctx so that it still runs during shutdown.
+	workCtx, cancelWork := h.scheduler.cancelOnShutdown(ctx)
+	defer cancelWork()
 
 	checkCredentialsTicker := time.NewTicker(checkRegistrationCredentialsInterval)
 	defer checkCredentialsTicker.Stop()
@@ -395,7 +413,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 	executorID := "unknown"
 	for {
 		select {
-		case <-h.scheduler.shuttingDown:
+		case <-h.scheduler.shutdownCtx.Done():
 			return status.CanceledError("server is shutting down")
 		case err := <-errChan:
 			return err
@@ -449,7 +467,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				lastWorkTime = time.Now()
 
 				log.CtxDebugf(ctx, "Executor %q requested more work (last work %s ago).", executorID, timeSinceLastWork)
-				numEnqueued, err := h.scheduler.assignWorkToNode(ctx, h, poolKey)
+				numEnqueued, err := h.scheduler.assignWorkToNode(workCtx, h, poolKey)
 				if err != nil {
 					log.CtxWarningf(ctx, "Could not assign more work to executor %q: %s", executorID, err)
 					continue
@@ -1240,20 +1258,29 @@ type schedulerClientCache struct {
 	localServer         *SchedulerServer
 }
 
-func newSchedulerClientCache(env environment.Env, localServerHostPort string, localServer *SchedulerServer) *schedulerClientCache {
+func newSchedulerClientCache(env environment.Env, localServerHostPort string, localServer *SchedulerServer, shuttingDown <-chan struct{}) *schedulerClientCache {
 	cache := &schedulerClientCache{
 		env:                 env,
 		clients:             make(map[string]*schedulerClient),
 		localServerHostPort: localServerHostPort,
 		localServer:         localServer,
 	}
-	cache.startExpirer()
+	cache.startExpirer(shuttingDown)
 	return cache
 }
 
-func (c *schedulerClientCache) startExpirer() {
+// startExpirer periodically closes clients that haven't been used recently,
+// until the server starts shutting down.
+func (c *schedulerClientCache) startExpirer(shuttingDown <-chan struct{}) {
 	go func() {
+		ticker := time.NewTicker(unusedSchedulerClientCheckInterval)
+		defer ticker.Stop()
 		for {
+			select {
+			case <-shuttingDown:
+				return
+			case <-ticker.C:
+			}
 			c.mu.Lock()
 			for addr, client := range c.clients {
 				if time.Since(client.lastAccess) > unusedSchedulerClientExpiration {
@@ -1265,7 +1292,6 @@ func (c *schedulerClientCache) startExpirer() {
 				}
 			}
 			c.mu.Unlock()
-			time.Sleep(unusedSchedulerClientCheckInterval)
 		}
 	}()
 }
@@ -1310,7 +1336,15 @@ type SchedulerServer struct {
 	taskRouter           interfaces.TaskRouter
 	clock                clockwork.Clock
 	schedulerClientCache *schedulerClientCache
-	shuttingDown         <-chan struct{}
+	// Canceled when the server starts shutting down.
+	shutdownCtx    context.Context
+	cancelShutdown context.CancelFunc
+	// Tracks background goroutines and executor streams, so that shutdown can
+	// wait for them to exit. backgroundMu ensures that nothing is added once
+	// shutdown has started waiting.
+	backgroundMu sync.Mutex
+	background   sync.WaitGroup
+
 	// host:port at which this scheduler can be reached
 	ownHostPort string
 
@@ -1374,12 +1408,6 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		return nil, status.FailedPreconditionErrorf("Redis is required for remote execution")
 	}
 
-	shuttingDown := make(chan struct{})
-	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		close(shuttingDown)
-		return nil
-	})
-
 	taskRouter := env.GetTaskRouter()
 	if taskRouter == nil {
 		return nil, status.FailedPreconditionError("Missing task router in env")
@@ -1413,13 +1441,15 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	if options.LeaseDuration == 0 {
 		options.LeaseDuration = *leaseDuration
 	}
+	shutdownCtx, cancelShutdown := context.WithCancel(context.Background())
 	s := &SchedulerServer{
 		env:                               env,
 		pools:                             make(map[nodePoolKey]*nodePool),
 		rdb:                               env.GetRemoteExecutionRedisClient(),
 		taskRouter:                        taskRouter,
 		clock:                             clock,
-		shuttingDown:                      shuttingDown,
+		shutdownCtx:                       shutdownCtx,
+		cancelShutdown:                    cancelShutdown,
 		enableUserOwnedExecutors:          remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		forceUserOwnedDarwinExecutors:     remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
 		forceUserOwnedWindowsExecutors:    remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedWindowsExecutors(),
@@ -1433,8 +1463,80 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		detector:                          options.UpgradeDetector,
 		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
 	}
-	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
+	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s, shutdownCtx.Done())
+	env.GetHealthChecker().RegisterShutdownFunction(s.shutdown)
 	return s, nil
+}
+
+// shutdown cancels background work and executor streams, then waits for them
+// to exit, or for ctx to be done.
+func (s *SchedulerServer) shutdown(ctx context.Context) error {
+	s.backgroundMu.Lock()
+	s.cancelShutdown()
+	s.backgroundMu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		s.background.Wait()
+		// Unclaimed task lookups run in singleflight goroutines that can
+		// outlive their callers. Every caller is tracked by s.background, so
+		// no new lookups can start once it's drained.
+		s.mu.RLock()
+		pools := make([]*nodePool, 0, len(s.pools))
+		for _, pool := range s.pools {
+			pools = append(pools, pool)
+		}
+		s.mu.RUnlock()
+		for _, pool := range pools {
+			pool.unclaimedTasksSingleFlight.Wait()
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return status.DeadlineExceededError("timed out waiting for scheduler background work to finish")
+	}
+}
+
+// trackBackground registers work that shutdown waits for, and returns a
+// function to call when the work is done. If the server is already shutting
+// down, it registers nothing and returns false, and the work must not start.
+func (s *SchedulerServer) trackBackground() (done func(), ok bool) {
+	s.backgroundMu.Lock()
+	defer s.backgroundMu.Unlock()
+	if s.isShuttingDown() {
+		return nil, false
+	}
+	s.background.Add(1)
+	return s.background.Done, true
+}
+
+// cancelOnShutdown returns a copy of ctx that is also canceled when the server
+// starts shutting down.
+func (s *SchedulerServer) cancelOnShutdown(ctx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(s.shutdownCtx, cancel)
+	return ctx, func() {
+		stop()
+		cancel()
+	}
+}
+
+// goBackground runs f in a goroutine that is canceled and waited on when the
+// server shuts down. f is not run if the server is already shutting down.
+func (s *SchedulerServer) goBackground(ctx context.Context, f func(ctx context.Context)) {
+	done, ok := s.trackBackground()
+	if !ok {
+		return
+	}
+	go func() {
+		defer done()
+		ctx, cancel := s.cancelOnShutdown(ctx)
+		defer cancel()
+		f(ctx)
+	}()
 }
 
 func (s *SchedulerServer) GetSharedExecutorPoolGroupID() string {
@@ -1626,11 +1728,11 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 	log.CtxInfof(ctx, "Scheduler: registered executor %q (host ID %q, host %q, version %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), node.GetHost(), node.GetVersion(), poolKey)
 	metrics.RemoteExecutionExecutorRegistrationCount.With(prometheus.Labels{metrics.VersionLabel: node.GetVersion()}).Inc()
 
-	go func() {
+	s.goBackground(ctx, func(ctx context.Context) {
 		if _, err := s.assignWorkToNode(ctx, handle, poolKey); err != nil {
 			log.CtxWarningf(ctx, "Failed to assign work to new node: %s", err.Error())
 		}
-	}()
+	})
 	return nil
 }
 
@@ -1678,6 +1780,13 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 }
 
 func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error {
+	// Shutdown waits for executor streams, since they do work on the
+	// executor's behalf, such as looking up tasks to assign to it.
+	done, ok := s.trackBackground()
+	if !ok {
+		return status.CanceledError("server is shutting down")
+	}
+	defer done()
 	handle := newExecutorHandle(s.env, s, s.requireExecutorAuthorization, stream)
 	return handle.Serve(stream.Context())
 }
@@ -2121,7 +2230,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 
 func (s *SchedulerServer) isShuttingDown() bool {
 	select {
-	case <-s.shuttingDown:
+	case <-s.shutdownCtx.Done():
 		return true
 	default:
 		return false

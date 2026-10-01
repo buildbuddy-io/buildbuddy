@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"runtime"
 	"slices"
 	"sort"
 	"sync"
@@ -29,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
@@ -43,6 +45,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -110,7 +113,25 @@ type schedulerOpts struct {
 	preferredExecutors []string
 }
 
+// knownLeaks lists goroutines that are known to outlive tests in this package.
+var knownLeaks = []goleak.Option{
+	// Shutdown doesn't wait for LeaseTask handlers, or for the reservations
+	// they re-enqueue when a lease ends.
+	goleak.IgnoreAnyFunction("github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server.(*SchedulerServer).LeaseTask"),
+	goleak.IgnoreAnyFunction("github.com/buildbuddy-io/buildbuddy/server/util/background.ExtendContextForFinalization.func1"),
+	goleak.IgnoreTopFunction("context.(*cancelCtx).propagateCancel.func2"),
+	// The flagd provider never stops its event handler: the in-process
+	// service doesn't close its event channel on shutdown.
+	goleak.IgnoreTopFunction("github.com/open-feature/go-sdk-contrib/providers/flagd/pkg.(*Provider).handleEvents"),
+	// Shutting down the flagd provider can deadlock: the file sync blocks
+	// sending an update that nothing receives, while shutdown waits for it.
+	goleak.IgnoreAnyFunction("github.com/open-feature/flagd/core/pkg/sync/file.(*Sync).Sync"),
+	goleak.IgnoreAnyFunction("github.com/open-feature/go-sdk-contrib/providers/flagd/pkg/service/in_process.(*InProcess).Shutdown"),
+	goleak.IgnoreAnyFunction("github.com/fsnotify/fsnotify.(*inotify).readEvents"),
+}
+
 func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, context.Context) {
+	testleak.Check(t, knownLeaks...)
 	redisTarget := testredis.Start(t).Target
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
@@ -144,6 +165,7 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	t.Cleanup(cancel)
 	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
 	require.NoError(t, err)
+	t.Cleanup(func() { clientConn.Close() })
 	sc := scpb.NewSchedulerClient(clientConn)
 	env.SetSchedulerClient(sc)
 
@@ -328,7 +350,11 @@ func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
 }`)
 	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
 	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	// Replacing the provider shuts it down.
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
 
@@ -384,7 +410,11 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 }`)
 	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
 	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	// Replacing the provider shuts it down.
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
 	expflag.SetFlagProvider(fp)
@@ -430,7 +460,11 @@ func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
 }`)
 	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
 	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	// Replacing the provider shuts it down.
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
 	expflag.SetFlagProvider(fp)
@@ -1295,7 +1329,11 @@ func configureLeaseTaskGroupCheck(t *testing.T, env *testenv.TestEnv, enforce bo
 }`)
 	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
 	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	// Replacing the provider shuts it down.
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
@@ -2385,4 +2423,152 @@ func TestGetNewestVersion_ScopedToSharedPoolGroup(t *testing.T) {
 	v := s.getNewestVersion(ctx)
 	require.NotNil(t, v)
 	require.Equal(t, "2.153.0", v.String())
+}
+
+func TestShutdown_WithConnectedExecutor(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.Register()
+	// Wait until the scheduler is serving the executor's stream.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	fe.WaitForTask(taskID)
+
+	// Shut down while the executor is still connected. The leak check in
+	// getEnv verifies that nothing serving the stream is left running.
+	env.GetHealthChecker().Shutdown()
+	env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
+// startShutdown starts shutting down the scheduler, and returns a channel that
+// receives shutdown's result.
+func startShutdown(s *SchedulerServer, ctx context.Context) <-chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.shutdown(ctx)
+	}()
+	return errCh
+}
+
+// requireShutdownBlocked asserts that shutdown hasn't returned after a short
+// while.
+func requireShutdownBlocked(t *testing.T, errCh <-chan error) {
+	select {
+	case err := <-errCh:
+		require.FailNow(t, "shutdown returned while work was still running", "err: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestShutdown_CancelsAndWaitsForBackgroundWork(t *testing.T) {
+	s, ctx := getScheduleServer(t, false, false, "")
+
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	release := make(chan struct{})
+	var finished atomic.Bool
+	s.goBackground(ctx, func(ctx context.Context) {
+		close(started)
+		<-ctx.Done()
+		close(canceled)
+		<-release
+		finished.Store(true)
+	})
+	<-started
+
+	// Shutdown cancels the work, but doesn't return until the work does.
+	errCh := startShutdown(s, context.Background())
+	select {
+	case <-canceled:
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "shutdown did not cancel background work")
+	}
+	requireShutdownBlocked(t, errCh)
+	close(release)
+	require.NoError(t, <-errCh)
+	require.True(t, finished.Load())
+}
+
+func TestShutdown_SkipsBackgroundWorkStartedAfterShutdown(t *testing.T) {
+	s, ctx := getScheduleServer(t, false, false, "")
+	require.NoError(t, s.shutdown(ctx))
+
+	s.goBackground(ctx, func(context.Context) {
+		t.Error("background work started after shutdown")
+	})
+	_, ok := s.trackBackground()
+	require.False(t, ok)
+	// If the work had been started, shutting down again would wait for it,
+	// so it would have failed the test by now.
+	require.NoError(t, s.shutdown(ctx))
+}
+
+func TestShutdown_ConcurrentWithBackgroundWork(t *testing.T) {
+	s, ctx := getScheduleServer(t, false, false, "")
+
+	// All background work that shutdown admits must finish before shutdown
+	// returns.
+	var shutdownReturned atomic.Bool
+	var submitters sync.WaitGroup
+	for range 20 {
+		submitters.Go(func() {
+			for range 50 {
+				s.goBackground(ctx, func(context.Context) {
+					if shutdownReturned.Load() {
+						t.Error("background work started after shutdown returned")
+					}
+					runtime.Gosched()
+					if shutdownReturned.Load() {
+						t.Error("background work still running after shutdown returned")
+					}
+				})
+			}
+		})
+	}
+	require.NoError(t, s.shutdown(context.Background()))
+	shutdownReturned.Store(true)
+	submitters.Wait()
+}
+
+func TestShutdown_ReturnsWhenDeadlineExpires(t *testing.T) {
+	s, ctx := getScheduleServer(t, false, false, "")
+
+	// This work ignores cancellation, so shutdown can't finish in time.
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	s.goBackground(ctx, func(context.Context) {
+		<-release
+	})
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err := s.shutdown(shutdownCtx)
+	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got: %v", err)
+}
+
+func TestShutdown_WaitsForUnclaimedTaskLookups(t *testing.T) {
+	s, ctx := getScheduleServer(t, false, false, "")
+	pool := s.getOrCreatePool(nodePoolKey{os: defaultOS, arch: defaultArch})
+
+	// Unclaimed task lookups run in a singleflight goroutine, which keeps
+	// running after its caller gives up.
+	lookupStarted := make(chan struct{})
+	release := make(chan struct{})
+	var lookupFinished atomic.Bool
+	s.goBackground(ctx, func(ctx context.Context) {
+		pool.unclaimedTasksSingleFlight.Do(ctx, "lookup", func(context.Context) ([]string, error) {
+			close(lookupStarted)
+			<-release
+			lookupFinished.Store(true)
+			return nil, nil
+		})
+	})
+	<-lookupStarted
+
+	// Shutdown cancels the caller, which returns right away, but shutdown
+	// still waits for the lookup.
+	errCh := startShutdown(s, context.Background())
+	requireShutdownBlocked(t, errCh)
+	close(release)
+	require.NoError(t, <-errCh)
+	require.True(t, lookupFinished.Load())
 }
