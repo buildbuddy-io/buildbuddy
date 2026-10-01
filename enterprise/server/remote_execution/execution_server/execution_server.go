@@ -608,11 +608,8 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 	if err != nil {
 		return nil, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
 	}
-	// CreatedAtUsec is stored in redis based on the timestamp when the original
-	// task was dispatched.  If redis restarts, this time is lost, so we just
-	// set it to be the queue time on the worker (so there's at least a valid
-	// timestamp).  Technically, this also lets us still identify this case
-	// by querying clickhouse.
+	// If CreatedAtUsec is otherwise unset (potentially from redis loss), let's
+	// at least make it match the queued timestamp so that the field is ~useful.
 	if executionProto.GetCreatedAtUsec() == 0 {
 		executionProto.CreatedAtUsec = executionProto.GetQueuedTimestampUsec()
 	}
