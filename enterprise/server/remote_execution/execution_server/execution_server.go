@@ -608,8 +608,8 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 	if err != nil {
 		return nil, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
 	}
-	// If CreatedAtUsec is otherwise unset (potentially from redis loss), let's
-	// at least make it match the queued timestamp so that the field is ~useful.
+	// If CreatedAtUsec is otherwise unset (perhaps redis restarted), let's at
+	// least make it match the queued timestamp so that the field is ~useful.
 	if executionProto.GetCreatedAtUsec() == 0 {
 		executionProto.CreatedAtUsec = executionProto.GetQueuedTimestampUsec()
 	}
