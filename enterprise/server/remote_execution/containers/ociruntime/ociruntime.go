@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/gpu"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/usernet"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -496,6 +497,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		cgroupSettings:     &scpb.CgroupSettings{},
 		imageRef:           args.Props.ContainerImage,
 		networkEnabled:     networkMode != "off",
+		userspaceNetwork:   slices.Contains(args.Task.GetExecutionTask().GetExperiments(), "executor.userspace_networking"),
 		isPersistentWorker: args.Props.PersistentWorkerKey != "",
 		tiniEnabled:        args.Props.DockerInit || *enableTini,
 		user:               args.Props.DockerUser,
@@ -538,17 +540,18 @@ type ociContainer struct {
 	persistentVolumeMounts []specs.Mount
 	stats                  container.UsageStats
 	networkPool            *networking.ContainerNetworkPool
-	network                *networking.ContainerNetwork
+	network                networking.Network
 	lxcfsMount             string
 	releaseCPUs            func()
 	isPersistentWorker     bool
 
-	imageRef       string
-	networkEnabled bool
-	user           string
-	forceRoot      bool
-	execrootPath   string
-	shmSizeBytes   int64
+	imageRef         string
+	networkEnabled   bool
+	userspaceNetwork bool
+	user             string
+	forceRoot        bool
+	execrootPath     string
+	shmSizeBytes     int64
 
 	milliCPU      int64 // milliCPU allocation from task size
 	memoryBytes   int64 // memory allocation from task size in bytes
@@ -645,11 +648,16 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	// Note: we don't add 'host.containers.internal' here because we don't
 	// support networking across containers.
 	hostsFileLines := strings.Split(strings.TrimSpace(string(hostsFile)), "\n")
-	if c.network.HostNetwork() != nil {
-		hostsFileLines = append(hostsFileLines, fmt.Sprintf("%s %s", c.network.HostNetwork().NamespacedIP(), c.containerName()))
-	} else {
-		hostsFileLines = append(hostsFileLines, fmt.Sprintf("127.0.0.1 %s", c.containerName()))
+	ip := "127.0.0.1"
+	switch n := c.network.(type) {
+	case *networking.ContainerNetwork:
+		if n.HostNetwork() != nil {
+			ip = n.HostNetwork().NamespacedIP()
+		}
+	case *usernet.Network:
+		ip = usernet.ContainerIP
 	}
+	hostsFileLines = append(hostsFileLines, fmt.Sprintf("%s %s", ip, c.containerName()))
 	hostsBytes := []byte(strings.Join(hostsFileLines, "\n") + "\n")
 	if err := os.WriteFile(filepath.Join(c.bundlePath(), "hosts"), hostsBytes, 0644); err != nil {
 		return fmt.Errorf("write hosts file: %w", err)
@@ -931,6 +939,15 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 }
 
 func (c *ociContainer) createNetwork(ctx context.Context) error {
+	if c.networkEnabled && c.userspaceNetwork {
+		network, err := usernet.NewContainerNetwork(ctx)
+		if err != nil {
+			return status.WrapError(err, "create userspace network")
+		}
+		c.network = network
+		return nil
+	}
+
 	// TODO: should we pool loopback-only networks too?
 	if c.networkEnabled {
 		network := c.networkPool.Get(ctx)
@@ -957,9 +974,10 @@ func (c *ociContainer) cleanupNetwork(ctx context.Context) error {
 		return nil
 	}
 
-	// Add to the pool but only if this is not a loopback-only network.
-	if c.networkEnabled {
-		if c.networkPool.Add(ctx, n) {
+	// Add to the pool but only if this is not a loopback-only or userspace
+	// network.
+	if containerNetwork, ok := n.(*networking.ContainerNetwork); ok && c.networkEnabled {
+		if c.networkPool.Add(ctx, containerNetwork) {
 			return nil
 		}
 	}
