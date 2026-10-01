@@ -83,6 +83,7 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/testutil/testleak",
         "//server/util/claims",
         "//server/util/expflag",
         "//server/util/log",
@@ -101,5 +102,6 @@ go_test(
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_uber_go_goleak//:goleak",
     ],
 )
