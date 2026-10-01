@@ -302,7 +302,8 @@ func (f *Flag[T]) Name() string {
 }
 
 // Get evaluates the flag and returns its value. Options are passed through to
-// the provider, for example experiments.WithContext.
+// the provider, for example experiments.WithContext. For Object flags, the
+// returned map may be shared with other callers, so callers must not modify it.
 func (f *Flag[T]) Get(ctx context.Context, opts ...any) T {
 	value, _ := f.get(ctx, opts...)
 	return value
