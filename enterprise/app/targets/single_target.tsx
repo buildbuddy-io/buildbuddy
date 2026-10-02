@@ -4,6 +4,7 @@ import {
   Clock,
   Cpu,
   Download,
+  Hash,
   Layers,
   MemoryStick,
   Monitor,
@@ -401,11 +402,16 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     const platforms = Array.from(new Set(timelines.map(formatPlatform))).sort();
     const total = (get: (summary: execution_stats.ExecutionTimelineSummary) => number) =>
       timelines.reduce((sum, tl) => sum + (tl.summary ? get(tl.summary) : 0), 0);
+    const totalExecutions = total((s) => +s.totalExecutions);
     return (
       <>
         <div className="detail" title="Distinct remote actions run for this target">
           <Activity />
           {format.formatWithCommas(timelines.length)} {timelines.length === 1 ? "remote action" : "remote actions"}
+        </div>
+        <div className="detail" title="Total execution">
+          <Hash />
+          {totalExecutions} execution{totalExecutions === 1 ? "" : "s"}
         </div>
         <div className="detail" title={mnemonics.join(", ")}>
           <Terminal />
@@ -461,6 +467,10 @@ export default class SingleTargetComponent extends React.Component<Props, State>
         )}
         {summary && (
           <>
+            <div className="detail" title="Total executions">
+              <Hash />
+              {summary.totalExecutions} execution{+summary.totalExecutions === 1 ? "" : "s"}
+            </div>
             <div className="detail" title="Median wall time">
               <Clock />
               {format.durationUsec(this.getP50(summary.durationUsec))} median wall time
