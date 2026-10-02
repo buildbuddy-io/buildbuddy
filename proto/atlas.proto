@@ -112,7 +112,7 @@ message PortLink {
   // a port.
   // A single port may have multiple debug pages (e.g. /statusz, /flagz, etc)
   // and each will be sent as its own PortLink.
-  // A plain port will not path set.
+  // A plain port will not have a path set.
   string path = 9;
 }
 
