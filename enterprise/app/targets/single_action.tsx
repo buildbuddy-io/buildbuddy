@@ -25,7 +25,6 @@ interface ExecStat {
   formatter: (v: number) => string;
 }
 
-// A phase of an execution, shown as one segment of the timing bar.
 interface TimingPhase {
   stat: ExecStat;
   // CSS class that colors the phase's bar segment and legend swatch.
@@ -59,7 +58,6 @@ const START_TIME: ExecStat = {
 
 const WALL_TIME: ExecStat = { name: "Wall time", extractor: (e) => +e.durationUsec, formatter: format.durationUsec };
 
-// The phases of an execution, in the order that they happen.
 const TIMING_PHASES: TimingPhase[] = [
   {
     stat: { name: "Queue", extractor: (e) => +e.workerQueueUsec, formatter: format.durationUsec },
@@ -108,8 +106,10 @@ function renderTimingTooltip(e: execution_stats.ExecutionTimelineEntry): React.R
   );
 }
 
-// Renders a bar split into one segment per phase, each sized in proportion to
-// the share of the execution's total phase time that it accounts for.
+// Renders a segmented bar where each segment represents an execution phase.
+// The total width of the bar is set based on the longest execution, so that
+// an execution that is about half as long takes up about half as much
+// horizontal space.
 function renderTimingBar(e: execution_stats.ExecutionTimelineEntry, d: DerivedSummaryStats): React.ReactNode {
   let totalUsec = 0;
   const segments = TIMING_PHASES.map((p) => ({ phase: p, usec: p.stat.extractor(e) })).filter((s) => {
