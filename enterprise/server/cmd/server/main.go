@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/billing/usagebilling"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_registry_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
@@ -132,6 +133,9 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		log.Fatalf("%v", err)
 	}
 	notification.Register(env)
+	if err := usagebilling.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	if err := api.Register(env); err != nil {
 		log.Fatalf("%v", err)

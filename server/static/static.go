@@ -218,6 +218,8 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 	if authDB := env.GetAuthDB(); authDB != nil {
 		apiKeyValueReadbackEnabled = authDB.GetAPIKeyValueReadbackEnabled()
 	}
+	billingService := env.GetBillingService()
+	usageBasedBillingEnabled := billingService != nil && billingService.Configured()
 	config := cfgpb.FrontendConfig{
 		Version:                                version,
 		AppBundleHash:                          appBundleHash,
@@ -273,6 +275,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		UsageAlertsEnabled:                     env.GetUsageService() != nil && env.GetUsageService().GetAlertsEnabled(),
 		UsageBillEnabled:                       env.GetUsageService() != nil && env.GetUsageService().GetBillEnabled(),
 		UsageExportEnabled:                     env.GetUsageService() != nil && env.GetUsageService().GetExportEnabled(),
+		UsageBasedBillingEnabled:               usageBasedBillingEnabled,
 		InvocationLogStreamingEnabled:          *invocationLogStreamingEnabled,
 		TargetFlakesUiEnabled:                  *targetFlakesUIEnabled && env.GetOLAPDBHandle() != nil,
 		CodeEditorV2Enabled:                    *features.CodeEditorV2Enabled,

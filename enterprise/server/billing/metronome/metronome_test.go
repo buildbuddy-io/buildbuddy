@@ -422,3 +422,75 @@ func TestGetCredit(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, credit)
 }
+
+func TestBillThroughStripe(t *testing.T) {
+	var existingConfigs string
+	var setConfig, edit map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		switch r.Method + " " + r.URL.Path {
+		case "POST /v1/getCustomerBillingProviderConfigurations":
+			assert.Equal(t, "cust-1", body["customer_id"])
+			fmt.Fprint(w, existingConfigs)
+		case "POST /v1/setCustomerBillingProviderConfigurations":
+			setConfig = body["data"].([]any)[0].(map[string]any)
+			fmt.Fprint(w, `{"data":[{"id":"config-1"}]}`)
+		case "POST /v2/contracts/list":
+			assert.Equal(t, "cust-1", body["customer_id"])
+			fmt.Fprint(w, `{"data":[{"id":"contract-0","uniqueness_key":"other"},{"id":"contract-1","uniqueness_key":"GR1"}]}`)
+		case "POST /v2/contracts/edit":
+			edit = body
+			fmt.Fprint(w, `{"data":{"id":"contract-1"}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	testflags.Set(t, "http.client.allow_localhost", true)
+	testflags.Set(t, "billing.metronome.api_key", "test-key")
+	testflags.Set(t, "billing.metronome.api_url", server.URL)
+
+	c, err := metronome.NewClient(nil, nil)
+	require.NoError(t, err)
+	stripeConfig := map[string]any{"stripe_customer_id": "cus_1", "stripe_collection_method": "charge_automatically"}
+	wantEdit := func(configID string) map[string]any {
+		return map[string]any{
+			"customer_id": "cust-1",
+			"contract_id": "contract-1",
+			"add_billing_provider_configuration_update": map[string]any{
+				"billing_provider_configuration": map[string]any{"billing_provider_configuration_id": configID},
+				"schedule":                       map[string]any{"effective_at": "START_OF_CURRENT_PERIOD"},
+			},
+		}
+	}
+
+	existingConfigs = `{"data":[]}`
+	require.NoError(t, c.BillThroughStripe(t.Context(), "cust-1", "GR1", "cus_1"))
+	assert.Equal(t, map[string]any{
+		"customer_id":      "cust-1",
+		"billing_provider": "stripe",
+		"delivery_method":  "direct_to_billing_provider",
+		"configuration":    stripeConfig,
+	}, setConfig)
+	assert.Equal(t, wantEdit("config-1"), edit)
+
+	testflags.Set(t, "billing.metronome.stripe_delivery_method_id", "delivery-1")
+	require.NoError(t, c.BillThroughStripe(t.Context(), "cust-1", "GR1", "cus_1"))
+	assert.Equal(t, map[string]any{
+		"customer_id":        "cust-1",
+		"billing_provider":   "stripe",
+		"delivery_method_id": "delivery-1",
+		"configuration":      stripeConfig,
+	}, setConfig)
+
+	existingConfigs = `{"data":[{"id":"config-0","billing_provider":"stripe","configuration":{"stripe_customer_id":"cus_other"}},{"id":"config-2","billing_provider":"stripe","configuration":{"stripe_customer_id":"cus_1"}}]}`
+	setConfig = nil
+	require.NoError(t, c.BillThroughStripe(t.Context(), "cust-1", "GR1", "cus_1"))
+	assert.Nil(t, setConfig)
+	assert.Equal(t, wantEdit("config-2"), edit)
+
+	err = c.BillThroughStripe(t.Context(), "cust-1", "GR2", "cus_1")
+	require.True(t, status.IsNotFoundError(err), "unexpected error: %v", err)
+}

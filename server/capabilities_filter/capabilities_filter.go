@@ -209,6 +209,8 @@ var (
 		buildBuddyServicePrefix + "CreateUsageAlertingRule",
 		buildBuddyServicePrefix + "DeleteUsageAlertingRule",
 		buildBuddyServicePrefix + "GetCurrentBill",
+		buildBuddyServicePrefix + "CreateUsageBasedBillingSetupSession",
+		buildBuddyServicePrefix + "CompleteUsageBasedBillingSetup",
 		// Org SSO configuration
 		buildBuddyServicePrefix + "GetSSOConfig",
 		buildBuddyServicePrefix + "SetSSOConfig",
