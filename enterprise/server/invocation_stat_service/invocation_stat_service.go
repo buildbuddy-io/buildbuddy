@@ -1244,7 +1244,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	placeholderQuery := query_builder.NewQuery("")
 
 	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), queryFilterOptions{
-		includeExecutionFilters: req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC,
+		includeExecutionFilters: req.GetDrilldownMetric().Execution != nil,
 		excludeMergedExecutions: req.GetDrilldownMetric().Execution != nil,
 	}, req.GetRequestContext()); err != nil {
 		return "", nil, err
