@@ -169,7 +169,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "f5723a3e6d851d9e5f2706988d9cf29b06469dc7b2fde089d8fb457b7c813259"
+		expectedHash    = "8e39891dea9121003282eedf4a9974fc35416867c11d05cb48efad5b4811398e"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -3167,6 +3167,54 @@ func TestFirecrackerRunWithoutNetwork(t *testing.T) {
 			// Note: some bytes are sent (the ping request) and received (ICMP reject).
 			assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
 			assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
+		})
+	}
+}
+
+func TestFirecrackerLoopback(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		networkMode fcpb.NetworkMode
+		ipv6Enabled bool
+	}{
+		{name: "off", networkMode: fcpb.NetworkMode_NETWORK_MODE_OFF},
+		{name: "off_ipv6", networkMode: fcpb.NetworkMode_NETWORK_MODE_OFF, ipv6Enabled: true},
+		{name: "local", networkMode: fcpb.NetworkMode_NETWORK_MODE_LOCAL},
+		{name: "external", networkMode: fcpb.NetworkMode_NETWORK_MODE_EXTERNAL},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if testCase.ipv6Enabled && runtime.GOARCH != "amd64" {
+				t.Skip("IPv6 is not yet supported by the arm64 guest kernel")
+			}
+			ctx := t.Context()
+			env := getTestEnv(ctx, t, envOpts{})
+			workDir := testfs.MakeTempDir(t)
+			script := "ping -c1 -W1 127.0.0.1"
+			if testCase.ipv6Enabled {
+				script += " && ping6 -c1 -W1 ::1"
+			}
+			if testCase.networkMode == fcpb.NetworkMode_NETWORK_MODE_OFF {
+				// Loopback must work without attaching an external interface.
+				script += " && test ! -e /sys/class/net/eth0 && ! ping -c1 -W1 8.8.8.8"
+			}
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         minMemSizeMB,
+					NetworkMode:       testCase.networkMode,
+					Ipv6Enabled:       testCase.ipv6Enabled,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: getExecutorConfig(t),
+			}
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+			require.NoError(t, err)
+
+			res := c.Run(ctx, &repb.Command{Arguments: []string{"sh", "-c", script}}, workDir, oci.Credentials{})
+			require.NoError(t, res.Error)
+			assert.Equal(t, 0, res.ExitCode, "stdout: %s\nstderr: %s", res.Stdout, res.Stderr)
 		})
 	}
 }
