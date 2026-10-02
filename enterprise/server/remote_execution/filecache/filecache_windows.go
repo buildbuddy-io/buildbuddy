@@ -4,12 +4,25 @@ package filecache
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
+
+// ctimeUsec returns the file's creation time in microseconds since the Unix
+// epoch. Windows has no inode change time, and the creation time is the
+// closest analog for approximating when the file was placed in the cache.
+func ctimeUsec(info os.FileInfo) (int64, bool) {
+	attrs, ok := info.Sys().(*syscall.Win32FileAttributeData)
+	if !ok {
+		return 0, false
+	}
+	return attrs.CreationTime.Nanoseconds() / 1000, true
+}
 
 // Buffer lengths for the Windows volume path APIs are expressed in UTF-16
 // code units. See https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getvolumepathnamew.
