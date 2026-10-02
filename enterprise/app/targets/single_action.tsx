@@ -63,6 +63,10 @@ const TIMING_PHASES: TimingPhase[] = [
     className: "timing-phase-queue",
   },
   {
+    stat: { name: "Runner setup", extractor: (e) => +e.runnerSetupUsec, formatter: format.durationUsec },
+    className: "timing-phase-runner-setup",
+  },
+  {
     stat: { name: "Input download", extractor: (e) => +e.inputDownloadUsec, formatter: format.durationUsec },
     className: "timing-phase-input-download",
   },

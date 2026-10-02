@@ -362,6 +362,7 @@
   --color-timing-execution: var(--color-green-600);
   --color-timing-input-download: var(--color-blue-600);
   --color-timing-output-upload: var(--color-purple-600);
+  --color-timing-runner-setup: var(--color-teal-600);
   --color-timing-queue: var(--color-orange-800);
   --color-tree-node-size-text: var(--color-black);
   --color-trends-divider: var(--color-gray-200);
