@@ -64,6 +64,11 @@ type Entry struct {
 	Restarts int64
 
 	Node string
+	// Hostname and Subdomain give a pod the stable record
+	// "<hostname>.<subdomain>.<ns>.svc" when a headless service named
+	// Subdomain selects it, as with StatefulSet pods.
+	Hostname  string
+	Subdomain string
 	// IPs holds addresses, including load balancer hostnames and external names.
 	IPs        []string
 	Images     []string

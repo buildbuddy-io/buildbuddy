@@ -243,6 +243,23 @@ func TestDebugPageLinks(t *testing.T) {
 	}, names(portLinks(c, svc, nil)))
 }
 
+func TestStatefulSetPodLinks(t *testing.T) {
+	flags.Set(t, "atlas.pod_zone", "pod.example")
+	flags.Set(t, "atlas.svc_zone", "svc.example")
+	c := cluster.NewWithClients("uswest1", nil, nil, nil, nil)
+	pod := &summaries.Entry{
+		Kind: "Pod", Namespace: "data", Name: "redis-0", IPs: []string{"10.52.25.24"},
+		Hostname: "redis-0", Subdomain: "redis",
+		Ports: []summaries.Port{{Name: "redis", Port: 6379}},
+	}
+	links := portLinks(c, pod, nil)
+	require.Len(t, links, 1)
+	require.Equal(t, "redis-0.redis.data.svc.example:6379", links[0].GetHostPort(), "the headless service's per-pod record, not the pod IP")
+
+	pod.Subdomain = ""
+	require.Equal(t, "10-52-25-24.data.pod.example:6379", portLinks(c, pod, nil)[0].GetHostPort(), "without one, the pod record")
+}
+
 func TestSearch(t *testing.T) {
 	s, _ := newTestService(t)
 	rsp, err := s.Search(context.Background(), &atlaspb.SearchRequest{Query: "web kind:pod"})

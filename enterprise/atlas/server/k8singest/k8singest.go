@@ -76,6 +76,8 @@ func enrich(e *summaries.Entry, u *unstructured.Unstructured) {
 
 func enrichPod(e *summaries.Entry, u *unstructured.Unstructured) {
 	e.Node, _, _ = unstructured.NestedString(u.Object, "spec", "nodeName")
+	e.Hostname, _, _ = unstructured.NestedString(u.Object, "spec", "hostname")
+	e.Subdomain, _, _ = unstructured.NestedString(u.Object, "spec", "subdomain")
 	e.Phase, _, _ = unstructured.NestedString(u.Object, "status", "phase")
 	if ip, _, _ := unstructured.NestedString(u.Object, "status", "podIP"); ip != "" {
 		e.IPs = []string{ip}

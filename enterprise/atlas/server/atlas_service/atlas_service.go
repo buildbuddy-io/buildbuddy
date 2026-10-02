@@ -447,7 +447,16 @@ func portLinks(c *cluster.Cluster, e *summaries.Entry, rel *relations) []*atlasp
 	switch e.Kind {
 	case "Pod":
 		host := ""
-		if podZone != "" && len(e.IPs) > 0 && e.Namespace != "" {
+		switch {
+		case e.Subdomain != "" && svcZone != "" && e.Namespace != "":
+			// If a pod is part of a headless service, return the stable
+			// pod name DNS instead of an unstable IP reference.
+			hostname := e.Hostname
+			if hostname == "" {
+				hostname = e.Name
+			}
+			host = hostname + "." + e.Subdomain + "." + e.Namespace + "." + svcZone
+		case podZone != "" && len(e.IPs) > 0 && e.Namespace != "":
 			host = dashedIP(e.IPs[0]) + "." + e.Namespace + "." + podZone
 		}
 		for _, p := range e.Ports {
