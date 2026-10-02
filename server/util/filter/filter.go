@@ -25,6 +25,8 @@ func ExecutionMetricToDbField(m stat_filter.ExecutionMetricType) (string, error)
 		return "updated_at_usec", nil
 	case stat_filter.ExecutionMetricType_QUEUE_TIME_USEC_EXECUTION_METRIC:
 		return rectifiedDurationValue("queued_timestamp_usec", "worker_start_timestamp_usec"), nil
+	case stat_filter.ExecutionMetricType_RUNNER_SETUP_TIME_EXECUTION_METRIC:
+		return rectifiedDurationValue("worker_start_timestamp_usec", "input_fetch_start_timestamp_usec"), nil
 	case stat_filter.ExecutionMetricType_INPUT_DOWNLOAD_TIME_EXECUTION_METRIC:
 		return rectifiedDurationValue("input_fetch_start_timestamp_usec", "input_fetch_completed_timestamp_usec"), nil
 	case stat_filter.ExecutionMetricType_REAL_EXECUTION_TIME_EXECUTION_METRIC:
