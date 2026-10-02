@@ -65,6 +65,7 @@ go_library(
         "//server/util/capabilities",
         "//server/util/claims",
         "//server/util/clientip",
+        "//server/util/db",
         "//server/util/flag",
         "//server/util/flagutil",
         "//server/util/git",

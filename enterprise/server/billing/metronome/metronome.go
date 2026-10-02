@@ -28,6 +28,9 @@ var (
 	readOnlyAPIKey = flag.String("billing.metronome.read_only_api_key", "", "Metronome API bearer token with read-only access, used by the app to read bills.", flag.Secret)
 	apiURL         = flag.String("billing.metronome.api_url", "https://api.metronome.com", "Metronome API base URL.", flag.Internal)
 	packageAlias   = flag.String("billing.metronome.package_alias", "", "Alias of the Metronome package new contracts are created from. The package holds the rate card and any credits.")
+	// The Stripe account differs per environment, and Metronome requires the ID
+	// when more than one Stripe account is connected to it.
+	stripeDeliveryMethodID = flag.String("billing.metronome.stripe_delivery_method_id", "", "ID of the Stripe connection in Metronome that invoices are sent to. Required if Metronome has more than one Stripe connection.")
 )
 
 const (
@@ -101,6 +104,10 @@ type Client struct {
 	httpClient   *http.Client
 	retryOptions *retry.Options
 	apiKey       string
+}
+
+func Configured() bool {
+	return *apiKey != ""
 }
 
 func ReadOnlyConfigured() bool {
@@ -336,6 +343,126 @@ func (c *Client) CreateContract(ctx context.Context, customerID string, starting
 		return nil
 	}
 	return err
+}
+
+type billingConfigsRequest struct {
+	Data []billingConfig `json:"data"`
+}
+
+// Metronome accepts exactly one of DeliveryMethod and DeliveryMethodID.
+type billingConfig struct {
+	CustomerID       string              `json:"customer_id"`
+	BillingProvider  string              `json:"billing_provider"`
+	DeliveryMethod   string              `json:"delivery_method,omitempty"`
+	DeliveryMethodID string              `json:"delivery_method_id,omitempty"`
+	Configuration    stripeConfiguration `json:"configuration"`
+}
+
+type stripeConfiguration struct {
+	StripeCustomerID       string `json:"stripe_customer_id"`
+	StripeCollectionMethod string `json:"stripe_collection_method"`
+}
+
+type customerRef struct {
+	CustomerID string `json:"customer_id"`
+}
+
+type billingConfigsResponse struct {
+	Data []struct {
+		ID              string              `json:"id"`
+		BillingProvider string              `json:"billing_provider"`
+		Configuration   stripeConfiguration `json:"configuration"`
+	} `json:"data"`
+}
+
+type billingProviderEdit struct {
+	CustomerID string                `json:"customer_id"`
+	ContractID string                `json:"contract_id"`
+	Update     billingProviderUpdate `json:"add_billing_provider_configuration_update"`
+}
+
+type billingProviderUpdate struct {
+	Configuration billingProviderConfigurationID `json:"billing_provider_configuration"`
+	Schedule      billingProviderSchedule        `json:"schedule"`
+}
+
+type billingProviderConfigurationID struct {
+	ID string `json:"billing_provider_configuration_id"`
+}
+
+type billingProviderSchedule struct {
+	EffectiveAt string `json:"effective_at"`
+}
+
+const stripeBillingProvider = "stripe"
+
+// stripeBillingConfigID links the Stripe customer to the Metronome customer and
+// returns the ID of that link. Setting the same link again returns no ID, so
+// an existing one is looked up first.
+func (c *Client) stripeBillingConfigID(ctx context.Context, customerID, stripeCustomerID string) (string, error) {
+	var existing billingConfigsResponse
+	if err := c.do(ctx, http.MethodPost, "/v1/getCustomerBillingProviderConfigurations", nil, customerRef{CustomerID: customerID}, &existing); err != nil {
+		return "", err
+	}
+	for _, config := range existing.Data {
+		if config.BillingProvider == stripeBillingProvider && config.Configuration.StripeCustomerID == stripeCustomerID {
+			return config.ID, nil
+		}
+	}
+
+	config := billingConfig{
+		CustomerID:      customerID,
+		BillingProvider: stripeBillingProvider,
+		Configuration:   stripeConfiguration{StripeCustomerID: stripeCustomerID, StripeCollectionMethod: "charge_automatically"},
+	}
+	if *stripeDeliveryMethodID != "" {
+		config.DeliveryMethodID = *stripeDeliveryMethodID
+	} else {
+		config.DeliveryMethod = "direct_to_billing_provider"
+	}
+	var created billingConfigsResponse
+	if err := c.do(ctx, http.MethodPost, "/v1/setCustomerBillingProviderConfigurations", nil, billingConfigsRequest{Data: []billingConfig{config}}, &created); err != nil {
+		return "", err
+	}
+	if len(created.Data) == 0 || created.Data[0].ID == "" {
+		return "", status.InternalError("Metronome returned no billing provider configuration")
+	}
+	return created.Data[0].ID, nil
+}
+
+// BillThroughStripe makes the Stripe customer pay for the Metronome customer's
+// contract with the uniqueness key: Metronome sends that contract's invoices to
+// Stripe, which charges the customer's default payment method. It applies from
+// the start of the current billing period, so the open invoice is included.
+func (c *Client) BillThroughStripe(ctx context.Context, customerID, uniquenessKey, stripeCustomerID string) error {
+	configID, err := c.stripeBillingConfigID(ctx, customerID, stripeCustomerID)
+	if err != nil {
+		return err
+	}
+	var contracts struct {
+		Data []struct {
+			ID            string `json:"id"`
+			UniquenessKey string `json:"uniqueness_key"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v2/contracts/list", nil, customerRef{CustomerID: customerID}, &contracts); err != nil {
+		return err
+	}
+	for _, contract := range contracts.Data {
+		if contract.UniquenessKey != uniquenessKey {
+			continue
+		}
+		edit := billingProviderEdit{
+			CustomerID: customerID,
+			ContractID: contract.ID,
+			Update: billingProviderUpdate{
+				Configuration: billingProviderConfigurationID{ID: configID},
+				Schedule:      billingProviderSchedule{EffectiveAt: "START_OF_CURRENT_PERIOD"},
+			},
+		}
+		return c.do(ctx, http.MethodPost, "/v2/contracts/edit", nil, edit, nil)
+	}
+	return status.NotFoundErrorf("Metronome customer %s has no contract with uniqueness key %q", customerID, uniquenessKey)
 }
 
 // Invoice amounts are in the invoice's credit type, US cents for USD.

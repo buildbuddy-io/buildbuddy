@@ -380,6 +380,41 @@ message SetGroupStatusResponse {
   context.ResponseContext response_context = 1;
 }
 
+message CreateUsageBasedBillingSetupSessionRequest {
+  context.RequestContext request_context = 1;
+
+  // Optional redirect URL for successful payment method setup. Defaults to
+  // the organization's settings page.
+  string success_url = 2;
+
+  // Optional redirect URL for canceled payment method setup. Defaults to the
+  // organization's settings page.
+  string cancel_url = 3;
+}
+
+message CreateUsageBasedBillingSetupSessionResponse {
+  context.ResponseContext response_context = 1;
+
+  // Billing setup URL to redirect the user to.
+  string setup_url = 2;
+
+  // Billing setup session ID. The caller should pass this to
+  // CompleteUsageBasedBillingSetup after returning from the billing provider.
+  string setup_session_id = 3;
+}
+
+message CompleteUsageBasedBillingSetupRequest {
+  context.RequestContext request_context = 1;
+
+  // Billing setup session ID returned by
+  // CreateUsageBasedBillingSetupSession.
+  string setup_session_id = 2;
+}
+
+message CompleteUsageBasedBillingSetupResponse {
+  context.ResponseContext response_context = 1;
+}
+
 // SSOConfig describes the SSO configuration for a group.
 message SSOConfig {
   // The SAML IdP metadata URL. Empty if SSO is not configured.
