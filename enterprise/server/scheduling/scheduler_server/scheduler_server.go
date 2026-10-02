@@ -941,6 +941,7 @@ type nodePool struct {
 	connectedExecutors []*executionNode
 
 	unclaimedTasksSingleFlight singleflight.Group[string, []string]
+	unclaimedTasksTTL          time.Duration
 
 	unclaimedTasksMu     sync.Mutex
 	unclaimedTasks       []string
@@ -949,9 +950,10 @@ type nodePool struct {
 
 func newNodePool(env environment.Env, key nodePoolKey) *nodePool {
 	np := &nodePool{
-		key:   key,
-		rdb:   env.GetRemoteExecutionRedisClient(),
-		clock: env.GetClock(),
+		key:               key,
+		rdb:               env.GetRemoteExecutionRedisClient(),
+		clock:             env.GetClock(),
+		unclaimedTasksTTL: *unclaimedTasksCacheTTL,
 	}
 	return np
 }
@@ -1182,14 +1184,14 @@ func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if *unclaimedTasksCacheTTL <= 0 {
+		if np.unclaimedTasksTTL <= 0 {
 			return unclaimed, nil
 		}
 
 		np.unclaimedTasksMu.Lock()
 		defer np.unclaimedTasksMu.Unlock()
 		np.unclaimedTasks = unclaimed
-		np.unclaimedTasksExpiry = np.clock.Now().Add(*unclaimedTasksCacheTTL)
+		np.unclaimedTasksExpiry = np.clock.Now().Add(np.unclaimedTasksTTL)
 
 		return unclaimed, nil
 	})
