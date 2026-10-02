@@ -425,7 +425,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     // ensure that we try to keep this matching region in the future (if we
     // ever wind up needing it).
     const service = rpcService.getRegionalServiceOrDefault(
-      this.state.model?.stringCommandLineOption("remote_execution") ?? ""
+      this.state.model?.stringCommandLineOption("remote_executor") ?? ""
     );
 
     this.runnerExecutionStream = waitExecution(service, runnerExecution.executionId, {
