@@ -62,7 +62,7 @@ func TestChunker_ReassemblesOriginalData(t *testing.T) {
 	}
 
 	const averageSize = 64 * 1024
-	c, err := chunking.NewChunker(ctx, averageSize, writeChunkFn)
+	c, err := chunking.NewChunker(ctx, averageSize, 0, writeChunkFn)
 	require.NoError(t, err)
 
 	_, err = c.Write(originalData)
@@ -140,8 +140,8 @@ func TestShouldReadChunkedUsesReadFallbackThreshold(t *testing.T) {
 		SizeBytes: 3 * 1024 * 1024,
 	}))
 	assert.True(t, chunking.ShouldReadChunked(3*1024*1024, 0, 0))
-	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 3*1024*1024, 0, 0))
-	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 5*1024*1024, 0, 0))
+	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 3*1024*1024, chunking.AvgChunkSizeBytes(), 0, 0))
+	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 5*1024*1024, chunking.AvgChunkSizeBytes(), 0, 0))
 	assert.False(t, chunking.ShouldReadChunked(2*1024*1024, 0, 0))
 	assert.False(t, chunking.ShouldReadChunked(3*1024*1024, 0, 1024))
 }
@@ -219,7 +219,7 @@ func TestChunker_DeterministicChunking(t *testing.T) {
 			return nil
 		}
 
-		c, err := chunking.NewChunker(ctx, averageSize, writeChunkFn)
+		c, err := chunking.NewChunker(ctx, averageSize, 0, writeChunkFn)
 		require.NoError(t, err)
 
 		_, err = c.Write(originalData)
@@ -237,6 +237,27 @@ func TestChunker_DeterministicChunking(t *testing.T) {
 	}
 }
 
+func TestChunker_UsesFastCDCSeed(t *testing.T) {
+	originalData := make([]byte, 1024*1024)
+	_, err := rand.Read(originalData)
+	require.NoError(t, err)
+
+	chunkSizes := func(seed uint32) []int {
+		var sizes []int
+		c, err := chunking.NewChunker(t.Context(), 64*1024, uint64(seed), func(data []byte) error {
+			sizes = append(sizes, len(data))
+			return nil
+		})
+		require.NoError(t, err)
+		_, err = c.Write(originalData)
+		require.NoError(t, err)
+		require.NoError(t, c.Close())
+		return sizes
+	}
+
+	assert.NotEqual(t, chunkSizes(0), chunkSizes(1))
+}
+
 func TestChunker_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -245,7 +266,7 @@ func TestChunker_ContextCancellation(t *testing.T) {
 	}
 
 	const averageSize = 16 * 1024
-	c, err := chunking.NewChunker(ctx, averageSize, writeChunkFn)
+	c, err := chunking.NewChunker(ctx, averageSize, 0, writeChunkFn)
 	require.NoError(t, err)
 
 	cancel()
@@ -278,7 +299,7 @@ func TestStoreAndLoad(t *testing.T) {
 			require.NoError(t, err)
 
 			var chunkDigests []*repb.Digest
-			c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
+			c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), 0, func(data []byte) error {
 				d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
 				if err != nil {
 					return err
@@ -341,7 +362,7 @@ func TestStore_MissingChunk(t *testing.T) {
 	require.NoError(t, err)
 
 	var chunkDigests []*repb.Digest
-	c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
+	c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), 0, func(data []byte) error {
 		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
 		if err != nil {
 			return err
@@ -663,10 +684,10 @@ func (p booleanFlagProvider) Boolean(ctx context.Context, flagName string, defau
 func TestShouldReadChunkedOnProxy_UsesExperimentFlag(t *testing.T) {
 	ctx := context.Background()
 	size := chunking.MaxChunkSizeBytes() + 1
-	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, size, 0, 0))
+	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, size, chunking.AvgChunkSizeBytes(), 0, 0))
 	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, booleanFlagProvider{
 		values: map[string]bool{"cache_proxy.attempt_chunked_reads": false},
-	}, size, 0, 0))
+	}, size, chunking.AvgChunkSizeBytes(), 0, 0))
 }
 
 func BenchmarkStore(b *testing.B) {
