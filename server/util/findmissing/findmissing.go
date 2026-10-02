@@ -12,6 +12,8 @@ package findmissing
 import (
 	"context"
 
+	"google.golang.org/grpc/metadata"
+
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -30,4 +32,21 @@ func PurposeFromContext(ctx context.Context) repb.FindMissingBlobsRequest_Purpos
 		return p
 	}
 	return repb.FindMissingBlobsRequest_UNKNOWN
+}
+
+// RequireQuorumHeader requires that a quorum of replicas contain the required digest,
+// before reporting a hit.
+//
+// If unset, a hit will reported as long as one replica contains the digest.
+const RequireQuorumHeader = "x-buildbuddy-find-missing-require-quorum"
+
+// WithQuorum sets the quorum header on an outgoing context.
+func WithQuorum(ctx context.Context) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, RequireQuorumHeader, "true")
+}
+
+// RequiresQuorum reports whether the incoming context requires quorum checks.
+func RequiresQuorum(ctx context.Context) bool {
+	values := metadata.ValueFromIncomingContext(ctx, RequireQuorumHeader)
+	return len(values) > 0 && values[0] == "true"
 }
