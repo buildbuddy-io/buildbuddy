@@ -23,15 +23,42 @@ import ActionListComponent from "./action_list";
 import ChecksDropdown from "./checks_dropdown";
 import GitHubAppImport from "./github_app_import";
 import WorkflowsZeroStateAnimation from "./zero_state";
+import { parseEnvironmentVariablesInput, parseRunRequestFromURL } from "./run_workflow_deep_link";
 
 type Workflow = workflow.GetWorkflowsResponse.Workflow;
 
 export type WorkflowsProps = {
   path: string;
+  search: URLSearchParams;
   user: User;
 };
 
-export default class WorkflowsComponent extends React.Component<WorkflowsProps> {
+type WorkflowsState = {
+  runRequest?: workflow.ExecuteWorkflowRequest;
+};
+
+export default class WorkflowsComponent extends React.Component<WorkflowsProps, WorkflowsState> {
+  state: WorkflowsState = {};
+
+  componentDidMount() {
+    this.updateRunRequest();
+  }
+
+  componentDidUpdate(prevProps: WorkflowsProps) {
+    if (prevProps.path !== this.props.path || prevProps.search.toString() !== this.props.search.toString()) {
+      this.updateRunRequest();
+    }
+  }
+
+  private updateRunRequest() {
+    try {
+      this.setState({ runRequest: parseRunRequestFromURL(this.props.path, this.props.search) });
+    } catch (e) {
+      this.setState({ runRequest: undefined });
+      errorService.handleError(e);
+    }
+  }
+
   render() {
     const { path, user } = this.props;
 
@@ -41,7 +68,7 @@ export default class WorkflowsComponent extends React.Component<WorkflowsProps> 
       }
     }
 
-    return <ListWorkflowsComponent user={user} />;
+    return <ListWorkflowsComponent user={user} runRequest={this.state.runRequest} />;
   }
 }
 
@@ -68,6 +95,7 @@ type State = {
 
 export type ListWorkflowsProps = {
   user: User;
+  runRequest?: workflow.ExecuteWorkflowRequest;
 };
 
 class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> {
@@ -95,15 +123,31 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
   private fetchWorkflowsRPC?: CancelablePromise;
   private fetchReposRPC?: CancelablePromise;
   private fetchWorkflowHistoryRPC?: CancelablePromise;
+  private reportedMissingRepoURL = "";
 
   componentDidMount() {
     document.title = "Workflows | BuildBuddy";
     this.fetch();
   }
 
-  componentDidUpdate(prevProps: WorkflowsProps) {
+  componentDidUpdate(prevProps: ListWorkflowsProps) {
     if (this.props.user !== prevProps.user) {
       this.fetch();
+    }
+    this.maybeReportMissingRunRequest();
+  }
+
+  private maybeReportMissingRunRequest() {
+    const repoURL = this.props.runRequest?.pushedRepoUrl;
+    if (!repoURL || !this.state.reposResponse) return;
+    const hasMatchingRepo = this.state.reposResponse.repos.some(
+      (repo) => normalizeRepoURL(repo.repoUrl) === normalizeRepoURL(repoURL)
+    );
+    if (hasMatchingRepo) {
+      this.reportedMissingRepoURL = "";
+    } else if (this.reportedMissingRepoURL !== repoURL) {
+      this.reportedMissingRepoURL = repoURL;
+      errorService.handleError("The requested repository is not linked to this organization.");
     }
   }
 
@@ -231,6 +275,11 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       // Then sort by repo URL.
       return a.repoUrl.localeCompare(b.repoUrl);
     });
+    const matchingRepoURL = this.props.runRequest?.pushedRepoUrl;
+    const runRequestMatchesRepo = (repoURL: string) =>
+      Boolean(
+        this.props.runRequest && matchingRepoURL && normalizeRepoURL(repoURL) === normalizeRepoURL(matchingRepoURL)
+      );
     return (
       <div className="workflows-page">
         <div className="shelf">
@@ -285,6 +334,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     onClickUnlinkItem={() => this.setState({ repoToUnlink: repo.repoUrl })}
                     onClickInvalidateAllItem={() => this.setState({ repoToInvalidate: repo.repoUrl })}
                     history={this.renderActionList(workflowHistory, repo.repoUrl)}
+                    runRequest={runRequestMatchesRepo(repo.repoUrl) ? this.props.runRequest : undefined}
                   />
                 </>
               ))}
@@ -358,15 +408,17 @@ type RepoItemProps = {
   onClickUnlinkItem: (url: string) => void;
   onClickInvalidateAllItem: ((url: string) => void) | null;
   history: React.ReactNode;
+  runRequest?: workflow.ExecuteWorkflowRequest;
 };
 
 type RepoItemState = {
   isMenuOpen: boolean;
 
   showRunWorkflowInput: boolean;
-  runWorkflowActionNames: string;
+  runWorkflowActionName: string;
   runWorkflowEnv: string;
   runWorkflowBranch: string;
+  runWorkflowCommit: string;
   runWorkflowVisibility: string;
   isWorkflowRunning: boolean;
   runWorkflowActionStatuses: workflow.ExecuteWorkflowResponse.ActionStatus[] | null;
@@ -377,10 +429,13 @@ type RepoItemState = {
 class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   state: RepoItemState = {
     isMenuOpen: false,
-    showRunWorkflowInput: false,
-    runWorkflowActionNames: "",
-    runWorkflowEnv: "",
-    runWorkflowBranch: "",
+    showRunWorkflowInput: Boolean(this.props.runRequest),
+    runWorkflowActionName: this.props.runRequest?.actionNames[0] ?? "",
+    runWorkflowEnv: Object.entries(this.props.runRequest?.env ?? {})
+      .map(([name, value]) => `${name}=${value}`)
+      .join(","),
+    runWorkflowBranch: this.props.runRequest?.pushedBranch ?? "",
+    runWorkflowCommit: this.props.runRequest?.commitSha ?? "",
     runWorkflowVisibility: "",
     isWorkflowRunning: false,
     runWorkflowActionStatuses: null,
@@ -451,20 +506,10 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     rpcService.service
       .executeWorkflow(
         new workflow.ExecuteWorkflowRequest({
+          commitSha: this.state.runWorkflowCommit,
           pushedRepoUrl: this.props.repoUrl,
-          // Parse "var1=val1,var2=val2" string from the input field to Record<string, string>
-          env: Object.fromEntries<string>(
-            this.state.runWorkflowEnv
-              .split(",")
-              .filter((n) => n.includes("="))
-              .map((n) => n.trim().split("="))
-              .filter((parts) => parts.length)
-              .map(([name, ...valueParts]) => [name, valueParts.join("=")])
-          ),
-          actionNames: this.state.runWorkflowActionNames
-            .split(",")
-            .map((n) => n.trim())
-            .filter((n) => n.length > 0),
+          env: parseEnvironmentVariablesInput(this.state.runWorkflowEnv),
+          actionNames: this.state.runWorkflowActionName.trim() ? [this.state.runWorkflowActionName.trim()] : [],
           pushedBranch: this.state.runWorkflowBranch,
           targetRepoUrl: this.props.repoUrl,
           targetBranch: this.state.runWorkflowBranch,
@@ -581,25 +626,37 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                     className="run-workflow-input">
                     <div className="title">Run workflow from branch:</div>
                     <TextInput
+                      value={this.state.runWorkflowBranch}
                       placeholder={"e.g. main"}
                       onChange={(e) => this.setState({ runWorkflowBranch: e.target.value })}
                     />
+                    <div className="title">Commit SHA:</div>
+                    <TextInput
+                      value={this.state.runWorkflowCommit}
+                      placeholder={"e.g. e782592f (optional)"}
+                      onChange={(e) => this.setState({ runWorkflowCommit: e.target.value })}
+                    />
                     <div className="title">Visibility metadata:</div>
                     <TextInput
+                      value={this.state.runWorkflowVisibility}
                       placeholder={"e.g. PUBLIC (optional)"}
                       onChange={(e) => this.setState({ runWorkflowVisibility: e.target.value })}
                     />
-                    <div className="title">Action Names:</div>
+                    <div className="title">Action Name:</div>
                     <TextInput
-                      placeholder={"e.g. Test,Build"}
-                      onChange={(e) => this.setState({ runWorkflowActionNames: e.target.value })}
+                      value={this.state.runWorkflowActionName}
+                      placeholder={"e.g. Test"}
+                      onChange={(e) => this.setState({ runWorkflowActionName: e.target.value })}
                     />
                     <div className="title">Environment Variables:</div>
                     <TextInput
+                      value={this.state.runWorkflowEnv}
                       placeholder={"e.g. VAR1=value1,VAR2=value2"}
                       onChange={(e) => this.setState({ runWorkflowEnv: e.target.value })}
                     />
-                    <FilledButton onClick={this.runWorkflow.bind(this)} disabled={this.state.runWorkflowBranch === ""}>
+                    <FilledButton
+                      onClick={this.runWorkflow.bind(this)}
+                      disabled={this.state.runWorkflowBranch === "" && this.state.runWorkflowCommit === ""}>
                       Run
                     </FilledButton>
                   </Popup>
