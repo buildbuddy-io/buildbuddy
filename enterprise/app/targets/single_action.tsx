@@ -292,10 +292,8 @@ export default class SingleActionComponent extends React.Component<Props, State>
   }
 
   render() {
-    // TODO: Exit code chart
-
-    // TODO: Phase duration charts.
-
+    // TODO(jdhollen): Add some more data here--exit code stats, CI stats,
+    // phase durations, etc.
     return (
       <div className="container">
         <div className="card">
