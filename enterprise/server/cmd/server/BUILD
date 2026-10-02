@@ -146,33 +146,6 @@ go_binary(
     embed = [":server_lib"],
 )
 
-container_image(
-    name = "base_image",
-    base = "@buildbuddy_go_image_base//image",
-    symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % runfiles_directory(),
-        "buildbuddy": "tmp",
-    },
-    tags = ["manual"],
-)
-
-# The go_image below can be used to build and run the server image.
-# The container_image target just builds and tags the image without running it.
-
-go_image(
-    name = "buildbuddy_go_image",
-    base = ":base_image",
-    binary = ":buildbuddy",
-    tags = ["manual"],
-)
-
-container_image(
-    name = "buildbuddy_image",
-    base = ":buildbuddy_go_image",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
 image_layer(
     name = "symlink_layer",
     annotations = {
@@ -308,11 +281,10 @@ layer_from_tar(
 image_manifest(
     name = "image_manifest",
     annotations = {
-        "org.opencontainers.image.title": "Enterprise BuildBuddy Server (unconfigured)",
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server",
         "org.opencontainers.image.description": (
             "Contains the BuildBuddy binary, runfiles, configuration files, " +
-            "and symlinks necessary to run the enterprise BuildBuddy server. " +
-            "Does not include configuration files."
+            "and symlinks necessary to run the enterprise BuildBuddy server.",
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },

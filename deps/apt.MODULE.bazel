@@ -43,6 +43,28 @@ apt.sources_list(
     types = ["deb"],
     uris = ["https://snapshot.debian.org/archive/debian-security/{}".format(snapshot)],
 )
+apt.sources_list(
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
+    components = ["stable"],
+    suites = ["trixie"],
+    types = ["deb"],
+    uris = ["https://nvidia.github.io/libnvidia-container"],
+    # gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
+)
+apt.sources_list(
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
+    components = ["stable"],
+    suites = ["trixie"],
+    types = ["deb"],
+    uris = ["https://download.docker.com/linux/debian"],
+    # gpg_keys = ["//apt/keys:docker.asc"],
+)
 
 # Configure Debian debian13 packages
 apt.install(
@@ -63,6 +85,26 @@ apt.install(
 
         # base-nossl packages
         "libc6",
+
+        # executor packages
+        "tini",
+        "e2fsprogs",
+        "fuse",
+        "iproute2",
+        "conntrack",
+        "amazon-ecr-credential-helper",
+        "lxcfs",
+
+        # nvidia packages
+        "nvidia_container_toolkit_base",
+        
+        # docker packages
+        "docker-ce",
+        "docker-ce-cli",
+        "docker-ce-rootless-extras",
+        "containerd.io",
+        "docker-buildx-plugin",
+        "docker-compose-plugin",
     ],
     suites = [
         "trixie",
