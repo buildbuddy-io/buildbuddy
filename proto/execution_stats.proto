@@ -475,34 +475,36 @@ message Quantile {
 }
 
 message ExecutionTimelineSummary {
-  int64 duration_usec_total = 1;
-  repeated Quantile duration_usec = 2;
+  int64 total_executions = 1;
 
-  int64 cpu_nanos_total = 3;
-  repeated Quantile cpu_nanos = 4;
+  int64 duration_usec_total = 2;
+  repeated Quantile duration_usec = 3;
 
-  repeated Quantile peak_memory = 5;
+  int64 cpu_nanos_total = 4;
+  repeated Quantile cpu_nanos = 5;
 
-  int64 downloaded_bytes_total = 6;
-  repeated Quantile downloaded_bytes = 7;
+  repeated Quantile peak_memory = 6;
 
-  int64 uploaded_bytes_total = 8;
-  repeated Quantile uploaded_bytes = 9;
+  int64 downloaded_bytes_total = 7;
+  repeated Quantile downloaded_bytes = 8;
 
-  int64 worker_queue_usec_total = 10;
-  repeated Quantile worker_queue_usec = 11;
+  int64 uploaded_bytes_total = 9;
+  repeated Quantile uploaded_bytes = 10;
 
-  int64 runner_setup_usec_total = 12;
-  repeated Quantile runner_setup_usec = 13;
+  int64 worker_queue_usec_total = 11;
+  repeated Quantile worker_queue_usec = 12;
 
-  int64 input_download_usec_total = 14;
-  repeated Quantile input_download_usec = 15;
+  int64 runner_setup_usec_total = 13;
+  repeated Quantile runner_setup_usec = 14;
 
-  int64 execution_usec_total = 16;
-  repeated Quantile execution_usec = 17;
+  int64 input_download_usec_total = 15;
+  repeated Quantile input_download_usec = 16;
 
-  int64 output_upload_usec_total = 18;
-  repeated Quantile output_upload_usec = 19;
+  int64 execution_usec_total = 17;
+  repeated Quantile execution_usec = 18;
+
+  int64 output_upload_usec_total = 19;
+  repeated Quantile output_upload_usec = 20;
 }
 
 message ExecutionTimeline {
