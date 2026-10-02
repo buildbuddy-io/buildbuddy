@@ -18,16 +18,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 var (
-	apiKey         = flag.String("billing.metronome.api_key", "", "Metronome API bearer token.", flag.Secret)
-	readOnlyAPIKey = flag.String("billing.metronome.read_only_api_key", "", "Metronome API bearer token with read-only access, used by the app to read bills.", flag.Secret)
-	apiURL         = flag.String("billing.metronome.api_url", "https://api.metronome.com", "Metronome API base URL.", flag.Internal)
-	packageAlias   = flag.String("billing.metronome.package_alias", "", "Alias of the Metronome package new contracts are created from. The package holds the rate card and any credits.")
+	apiKey                 = flag.String("billing.metronome.api_key", "", "Metronome API bearer token.", flag.Secret)
+	readOnlyAPIKey         = flag.String("billing.metronome.read_only_api_key", "", "Metronome API bearer token with read-only access, used by the app to read bills.", flag.Secret)
+	apiURL                 = flag.String("billing.metronome.api_url", "https://api.metronome.com", "Metronome API base URL.", flag.Internal)
+	packageAlias           = flag.String("billing.metronome.package_alias", "", "Alias of the Metronome package new contracts are created from. The package holds the rate card and any credits.")
+	stripeDeliveryMethodID = flag.String("billing.metronome.stripe_delivery_method_id", "", "ID of the Stripe connection in Metronome that invoices are sent to. Required if Metronome has more than one Stripe connection.")
 )
 
 const (
@@ -338,6 +340,147 @@ func (c *Client) CreateContract(ctx context.Context, customerID string, starting
 	return err
 }
 
+// CustomerClient is the part of Client that EnsureCustomer uses.
+type CustomerClient interface {
+	FindCustomerID(ctx context.Context, ingestAlias string) (string, error)
+	CreateCustomer(ctx context.Context, name, ingestAlias string) (string, error)
+	CreateContract(ctx context.Context, customerID string, startingAt time.Time, uniquenessKey string) error
+}
+
+// EnsureCustomer returns the ID of the group's customer, creating the customer
+// and its contract if needed. The contract covers the whole month of t.
+func EnsureCustomer(ctx context.Context, client CustomerClient, groupID string, t time.Time) (string, error) {
+	customerID, err := client.FindCustomerID(ctx, groupID)
+	if err != nil {
+		return "", err
+	}
+	if customerID == "" {
+		customerID, err = client.CreateCustomer(ctx, groupID, groupID)
+		if err != nil {
+			return "", err
+		}
+		log.Infof("Created Metronome customer %s for group %s", customerID, groupID)
+	}
+	// Runs for existing customers too, in case an earlier call failed after
+	// creating the customer.
+	t = t.UTC()
+	monthStart := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
+	if err := client.CreateContract(ctx, customerID, monthStart, groupID); err != nil {
+		return "", err
+	}
+	return customerID, nil
+}
+
+type customerIDRequest struct {
+	CustomerID string `json:"customer_id"`
+}
+
+// Metronome accepts exactly one of DeliveryMethod and DeliveryMethodID.
+type billingConfig struct {
+	ID               string `json:"id,omitempty"`
+	CustomerID       string `json:"customer_id"`
+	BillingProvider  string `json:"billing_provider"`
+	DeliveryMethod   string `json:"delivery_method,omitempty"`
+	DeliveryMethodID string `json:"delivery_method_id,omitempty"`
+	Configuration    struct {
+		StripeCustomerID       string `json:"stripe_customer_id"`
+		StripeCollectionMethod string `json:"stripe_collection_method"`
+	} `json:"configuration"`
+}
+
+// StripeLink is the billing provider configuration that links a customer to a
+// Stripe customer.
+type StripeLink struct {
+	ID               string
+	StripeCustomerID string
+}
+
+// LinkStripeCustomer records the Stripe customer on the Metronome customer.
+// Invoices are not sent to Stripe until the link is added to a contract.
+func (c *Client) LinkStripeCustomer(ctx context.Context, customerID, stripeCustomerID string) (*StripeLink, error) {
+	config := billingConfig{CustomerID: customerID, BillingProvider: "stripe", DeliveryMethodID: *stripeDeliveryMethodID}
+	if config.DeliveryMethodID == "" {
+		config.DeliveryMethod = "direct_to_billing_provider"
+	}
+	config.Configuration.StripeCustomerID = stripeCustomerID
+	config.Configuration.StripeCollectionMethod = "charge_automatically"
+	body := struct {
+		Data []billingConfig `json:"data"`
+	}{Data: []billingConfig{config}}
+	var resp struct {
+		Data []billingConfig `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v1/setCustomerBillingProviderConfigurations", nil, body, &resp); err != nil {
+		return nil, err
+	}
+	if len(resp.Data) == 0 {
+		return nil, status.InternalError("Metronome did not return the billing provider configuration")
+	}
+	return &StripeLink{ID: resp.Data[0].ID, StripeCustomerID: stripeCustomerID}, nil
+}
+
+// FindStripeLink returns nil if the customer is not linked to a Stripe
+// customer.
+func (c *Client) FindStripeLink(ctx context.Context, customerID string) (*StripeLink, error) {
+	var resp struct {
+		Data []billingConfig `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v1/getCustomerBillingProviderConfigurations", nil, customerIDRequest{CustomerID: customerID}, &resp); err != nil {
+		return nil, err
+	}
+	for _, config := range resp.Data {
+		if config.BillingProvider == "stripe" {
+			return &StripeLink{ID: config.ID, StripeCustomerID: config.Configuration.StripeCustomerID}, nil
+		}
+	}
+	return nil, nil
+}
+
+type contractEditRequest struct {
+	CustomerID                            string `json:"customer_id"`
+	ContractID                            string `json:"contract_id"`
+	UniquenessKey                         string `json:"uniqueness_key"`
+	AddBillingProviderConfigurationUpdate struct {
+		BillingProviderConfiguration struct {
+			ID string `json:"billing_provider_configuration_id"`
+		} `json:"billing_provider_configuration"`
+		Schedule struct {
+			EffectiveAt string `json:"effective_at"`
+		} `json:"schedule"`
+	} `json:"add_billing_provider_configuration_update"`
+}
+
+// AddBillingProviderToContract bills the customer's contract with the
+// uniqueness key through the billing provider configuration, starting with the
+// current billing period. It is a no-op if it was already added.
+func (c *Client) AddBillingProviderToContract(ctx context.Context, customerID, contractUniquenessKey, configID string) error {
+	var contracts struct {
+		Data []struct {
+			ID            string `json:"id"`
+			UniquenessKey string `json:"uniqueness_key"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v2/contracts/list", nil, customerIDRequest{CustomerID: customerID}, &contracts); err != nil {
+		return err
+	}
+	body := contractEditRequest{CustomerID: customerID, UniquenessKey: configID}
+	for _, contract := range contracts.Data {
+		if contract.UniquenessKey == contractUniquenessKey {
+			body.ContractID = contract.ID
+		}
+	}
+	if body.ContractID == "" {
+		return status.NotFoundErrorf("Metronome customer %s has no contract %q", customerID, contractUniquenessKey)
+	}
+	body.AddBillingProviderConfigurationUpdate.BillingProviderConfiguration.ID = configID
+	body.AddBillingProviderConfigurationUpdate.Schedule.EffectiveAt = "START_OF_CURRENT_PERIOD"
+	err := c.do(ctx, http.MethodPost, "/v2/contracts/edit", nil, body, nil)
+	if status.IsAlreadyExistsError(err) {
+		return nil
+	}
+	return err
+}
+
 // Invoice amounts are in the invoice's credit type, US cents for USD.
 type Invoice struct {
 	StartTimestamp time.Time         `json:"start_timestamp"`
@@ -484,7 +627,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		return err
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return errorForStatusCode(resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return ErrorForStatusCode(resp.StatusCode, "Metronome API error: status "+strconv.Itoa(resp.StatusCode)+": "+strings.TrimSpace(string(respBody)))
 	}
 	if out == nil {
 		return nil
@@ -492,8 +635,9 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	return json.Unmarshal(respBody, out)
 }
 
-func errorForStatusCode(statusCode int, body string) error {
-	message := "Metronome API error: status " + strconv.Itoa(statusCode) + ": " + body
+// ErrorForStatusCode returns an error with the message and the code that
+// matches the HTTP status code of a failed API request.
+func ErrorForStatusCode(statusCode int, message string) error {
 	switch statusCode {
 	case http.StatusBadRequest:
 		return status.InvalidArgumentError(message)

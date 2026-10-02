@@ -755,6 +755,52 @@ func (s *BuildBuddyServer) SetGroupStatus(ctx context.Context, req *grpb.SetGrou
 	return &grpb.SetGroupStatusResponse{}, nil
 }
 
+func (s *BuildBuddyServer) CreateUsageBasedBillingSetupSession(ctx context.Context, req *grpb.CreateUsageBasedBillingSetupSessionRequest) (*grpb.CreateUsageBasedBillingSetupSessionResponse, error) {
+	group, billingService, err := s.usageBasedBillingSetup(ctx, req.GetRequestContext().GetGroupId())
+	if err != nil {
+		return nil, err
+	}
+	setupURL, err := billingService.CreateSetupSession(ctx, group)
+	if err != nil {
+		return nil, err
+	}
+	return &grpb.CreateUsageBasedBillingSetupSessionResponse{SetupUrl: setupURL}, nil
+}
+
+func (s *BuildBuddyServer) CompleteUsageBasedBillingSetup(ctx context.Context, req *grpb.CompleteUsageBasedBillingSetupRequest) (*grpb.CompleteUsageBasedBillingSetupResponse, error) {
+	group, billingService, err := s.usageBasedBillingSetup(ctx, req.GetRequestContext().GetGroupId())
+	if err != nil {
+		return nil, err
+	}
+	if err := billingService.CompleteSetup(ctx, group, req.GetSetupSessionId()); err != nil {
+		return nil, err
+	}
+	return &grpb.CompleteUsageBasedBillingSetupResponse{}, nil
+}
+
+// Only an admin of a free tier group can set up usage based billing for it.
+func (s *BuildBuddyServer) usageBasedBillingSetup(ctx context.Context, groupID string) (*tables.Group, interfaces.BillingService, error) {
+	if err := s.authorizeSSOConfigAccess(ctx, groupID); err != nil {
+		return nil, nil, err
+	}
+	billingService := s.env.GetBillingService()
+	if billingService == nil {
+		return nil, nil, status.FailedPreconditionError("usage-based billing is not configured")
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, nil, status.UnimplementedError("Not Implemented")
+	}
+	group, err := userDB.GetGroupByID(ctx, groupID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if group.Status != grpb.Group_FREE_TIER_GROUP_STATUS {
+		return nil, nil, status.FailedPreconditionError("usage-based billing setup is only available for free tier organizations")
+	}
+	return group, billingService, nil
+}
+
 func (s *BuildBuddyServer) authorizeSSOConfigAccess(ctx context.Context, groupID string) error {
 	if groupID == "" {
 		return status.InvalidArgumentError("Missing organization identifier")

@@ -233,6 +233,13 @@ func TestGetCurrentBill(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, rsp.GetBill())
 	assert.EqualValues(t, 6, requests.Load())
+
+	// The bill is fetched as soon as the group becomes usage based.
+	require.NoError(t, env.GetDBHandle().NewQuery(ctx, "test").Raw(
+		`UPDATE "Groups" SET status = ? WHERE group_id = ?`, int32(grpb.Group_USAGE_BASED_GROUP_STATUS), "GR2").Exec().Error)
+	_, err = service.GetCurrentBill(ctx2, &usagepb.GetCurrentBillRequest{})
+	require.NoError(t, err)
+	assert.EqualValues(t, 7, requests.Load())
 }
 
 func TestUsageFields_CoverEveryUsageFieldAndAlertingMetric(t *testing.T) {

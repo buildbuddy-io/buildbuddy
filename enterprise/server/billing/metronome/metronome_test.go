@@ -277,6 +277,50 @@ func TestCreateCustomerAndContract(t *testing.T) {
 	require.True(t, status.IsFailedPreconditionError(err), "unexpected error: %v", err)
 }
 
+func TestAddBillingProviderToContract(t *testing.T) {
+	var edit map[string]any
+	conflict := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /v2/contracts/list":
+			fmt.Fprint(w, `{"data":[{"id":"contract-0","uniqueness_key":"other"},{"id":"contract-1","uniqueness_key":"GR1"}]}`)
+		case "POST /v2/contracts/edit":
+			if conflict {
+				http.Error(w, "uniqueness key already used", http.StatusConflict)
+				return
+			}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&edit))
+			fmt.Fprint(w, `{"data":{"id":"edit-1"}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	testflags.Set(t, "http.client.allow_localhost", true)
+	testflags.Set(t, "billing.metronome.api_key", "test-key")
+	testflags.Set(t, "billing.metronome.api_url", server.URL)
+
+	c, err := metronome.NewClient(nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, c.AddBillingProviderToContract(t.Context(), "cust-1", "GR1", "config-1"))
+	assert.Equal(t, map[string]any{
+		"customer_id":    "cust-1",
+		"contract_id":    "contract-1",
+		"uniqueness_key": "config-1",
+		"add_billing_provider_configuration_update": map[string]any{
+			"billing_provider_configuration": map[string]any{"billing_provider_configuration_id": "config-1"},
+			"schedule":                       map[string]any{"effective_at": "START_OF_CURRENT_PERIOD"},
+		},
+	}, edit)
+
+	conflict = true
+	require.NoError(t, c.AddBillingProviderToContract(t.Context(), "cust-1", "GR1", "config-1"))
+
+	err = c.AddBillingProviderToContract(t.Context(), "cust-1", "GR2", "config-1")
+	require.True(t, status.IsNotFoundError(err), "unexpected error: %v", err)
+}
+
 func TestFindCustomerID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "GET /v1/customers", r.Method+" "+r.URL.Path)

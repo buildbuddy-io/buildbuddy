@@ -113,10 +113,8 @@ func run() error {
 type window struct{ from, to time.Time }
 
 type metronomeClient interface {
+	metronome.CustomerClient
 	ReportUsage(ctx context.Context, events []metronome.UsageEvent) error
-	FindCustomerID(ctx context.Context, ingestAlias string) (string, error)
-	CreateCustomer(ctx context.Context, name, ingestAlias string) (string, error)
-	CreateContract(ctx context.Context, customerID string, startingAt time.Time, uniquenessKey string) error
 }
 
 // A nil client is a dry run: nothing is sent and the export state is not
@@ -267,21 +265,8 @@ func ensureCustomer(ctx context.Context, client metronomeClient, groupID string,
 	if !metronome.PackageConfigured() {
 		return nil
 	}
-	customerID, err := client.FindCustomerID(ctx, groupID)
-	if err != nil {
-		return err
-	}
-	if customerID == "" {
-		customerID, err = client.CreateCustomer(ctx, groupID, groupID)
-		if err != nil {
-			return err
-		}
-		log.Infof("Created Metronome customer %s for group %s", customerID, groupID)
-	}
-	// Runs for existing customers too, in case an earlier run failed after
-	// creating the customer. The contract covers the whole month of the usage.
-	monthStart := time.Date(usageTime.Year(), usageTime.Month(), 1, 0, 0, 0, 0, time.UTC)
-	return client.CreateContract(ctx, customerID, monthStart, groupID)
+	_, err := metronome.EnsureCustomer(ctx, client, groupID, usageTime)
+	return err
 }
 
 // queryUsageRows returns per-minute usage rows in the window [from, to). The "Usage"
