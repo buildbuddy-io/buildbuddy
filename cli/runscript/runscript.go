@@ -20,6 +20,10 @@ func Configure(args *arg.BazelArgs) (newArgs *arg.BazelArgs, scriptPath string, 
 	if existingScript != "" {
 		return args, "", nil
 	}
+	// Resolved args canonicalize --run=false to --norun.
+	if arg.ContainsExact(arg.GetBazelArgs(args.Resolved()), "--norun") {
+		return args, "", nil
+	}
 	script, err := os.CreateTemp("", "bb-run-*")
 	if err != nil {
 		return nil, "", err
