@@ -1,4 +1,4 @@
-import { addDays, endOfMonth, isSameDay, startOfDay, startOfMonth, subMonths } from "date-fns";
+import { addDays, addMonths, endOfMonth, isSameDay, startOfDay, startOfMonth } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import React from "react";
 import { formatDateOnly, formatDateRange } from "../../format/format";
@@ -6,8 +6,29 @@ import { OutlinedButton } from "../button/button";
 import TextInput from "../input/input";
 import Select, { Option } from "../select/select";
 
-/** The "last N days" preset options shown in the sidebar. */
-const LAST_N_DAYS_OPTIONS = [1, 2, 7, 30, 90, 180, 365];
+/** A sidebar preset: the last N days, or a calendar month relative to the current one. */
+type Preset = { lastNDays: number } | { monthOffset: number };
+
+const PRESETS: Preset[] = [
+  { lastNDays: 1 },
+  { lastNDays: 2 },
+  { lastNDays: 7 },
+  { lastNDays: 30 },
+  { lastNDays: 90 },
+  { lastNDays: 180 },
+  { lastNDays: 365 },
+  { monthOffset: 0 },
+  { monthOffset: -1 },
+];
+
+/** The date range a preset selects as of now. */
+function presetRange(preset: Preset, now: Date): Range & { startDate: Date; endDate: Date } {
+  if ("lastNDays" in preset) {
+    return { startDate: startOfDay(addDays(now, 1 - preset.lastNDays)), endDate: now, lastNDays: preset.lastNDays };
+  }
+  const month = addMonths(startOfMonth(now), preset.monthOffset);
+  return { startDate: month, endDate: endOfMonth(month) };
+}
 
 const MONTH_NAMES = [
   "January",
@@ -124,12 +145,15 @@ export class DateRangePicker extends React.Component<DateRangePickerProps, State
   }
 
   /** Renders a sidebar option that selects the given range. */
-  private renderPreset(label: string, preset: Range & { startDate: Date; endDate: Date }) {
+  private renderPreset(preset: Range & { startDate: Date; endDate: Date }) {
     const { range } = this.props;
+    const now = new Date();
+    // The formatter takes an exclusive end, like the URL helpers produce.
+    const label = formatDateRange(preset.startDate, addDays(startOfDay(preset.endDate), 1), { now });
     const selected =
       !!range.startDate &&
       isSameDay(range.startDate, preset.startDate) &&
-      isSameDay(range.endDate ?? new Date(), preset.endDate);
+      isSameDay(range.endDate ?? now, preset.endDate);
     const onSelect = () => this.props.onChange(preset);
     return (
       <div
@@ -171,21 +195,7 @@ export class DateRangePicker extends React.Component<DateRangePickerProps, State
     }
     return (
       <div className="date-range-picker">
-        <div className="preset-picker">
-          {LAST_N_DAYS_OPTIONS.map((lastNDays) => {
-            const startDate = startOfDay(addDays(now, 1 - lastNDays));
-            return this.renderPreset(formatDateRange(startDate, undefined, { now }), {
-              startDate,
-              endDate: now,
-              lastNDays,
-            });
-          })}
-          {this.renderPreset("Current month", { startDate: startOfMonth(now), endDate: endOfMonth(now) })}
-          {this.renderPreset("Last month", {
-            startDate: startOfMonth(subMonths(now, 1)),
-            endDate: endOfMonth(subMonths(now, 1)),
-          })}
-        </div>
+        <div className="preset-picker">{PRESETS.map((preset) => this.renderPreset(presetRange(preset, now)))}</div>
         <div className="calendar-picker">
           <div className="text-inputs">
             <DateInput

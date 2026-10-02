@@ -1,4 +1,4 @@
-import { isSameDay } from "date-fns";
+import { endOfMonth, isSameDay, startOfMonth } from "date-fns";
 import Long from "long";
 import moment from "moment";
 import { google as google_duration } from "../../proto/duration_ts_proto";
@@ -315,6 +315,13 @@ export function formatDateRange(startDate: Date, endDate?: Date, { now = new Dat
     if (startOfDay.getTime() === endDate.getTime()) {
       endDate = moment(startOfDay).subtract(1, "day").toDate();
     }
+  }
+
+  // Whole calendar months, as the date picker's month presets select.
+  if (endDate && isSameDay(startDate, startOfMonth(startDate)) && isSameDay(endDate, endOfMonth(startDate))) {
+    const monthsAgo = moment(now).startOf("month").diff(moment(startDate).startOf("month"), "months");
+    if (monthsAgo === 0) return "Current month";
+    if (monthsAgo === 1) return "Last month";
   }
 
   // Start time is at midnight, end date is (implicitly or explicitly) today.
