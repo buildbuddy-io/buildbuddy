@@ -4,7 +4,6 @@ package dirtools
 
 import (
 	"context"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,8 +29,7 @@ func TestPublishDownloadedExecutableWaitsForWriter(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "executable")
-			contents := make([]byte, BatchReadLimitBytes+1)
-			copy(contents, "#!/bin/true\n")
+			contents := []byte("#!/bin/true\n")
 			require.NoError(t, os.WriteFile(path, contents, 0755))
 			requireExecutableReadinessSupported(t, path)
 			writer, err := os.OpenFile(path, os.O_WRONLY, 0)
@@ -108,28 +106,33 @@ func TestWaitForExecutableReadyReleasesLease(t *testing.T) {
 	require.NoError(t, writer.Close())
 }
 
-func TestWaitForExecutableReadyPreservesBehaviorWhenLeasesUnsupported(t *testing.T) {
+func TestWaitForExecutableReadyContinuesOnLeaseError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "executable")
 	require.NoError(t, os.WriteFile(path, []byte("#!/bin/true\n"), 0755))
-	for _, leaseErr := range []error{unix.EINVAL, unix.EOPNOTSUPP, unix.ENOSYS} {
+	for _, leaseErr := range []error{unix.EINVAL, unix.EOPNOTSUPP, unix.ENOSYS, unix.EACCES, unix.EIO} {
 		t.Run(leaseErr.Error(), func(t *testing.T) {
+			// The readiness check is advisory, so a lease error other than
+			// EAGAIN should let publication proceed with the downloaded file.
 			fcntl := func(uintptr, int, int) (int, error) { return 0, leaseErr }
-			require.NoError(t, waitForExecutableReadyWithFcntl(t.Context(), path, fcntl))
+			err := waitForExecutableReadyWithFcntl(t.Context(), path, executableReadyTimeout, fcntl)
+			require.NoError(t, err)
 			require.NoError(t, exec.CommandContext(t.Context(), path).Run())
 		})
 	}
 }
 
-func TestWaitForExecutableReadyReturnsUnexpectedLeaseError(t *testing.T) {
+func TestWaitForExecutableReadyTimesOut(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "executable")
 	require.NoError(t, os.WriteFile(path, []byte("#!/bin/true\n"), 0755))
-	fcntl := func(uintptr, int, int) (int, error) { return 0, unix.EIO }
-	require.ErrorIs(t, waitForExecutableReadyWithFcntl(t.Context(), path, fcntl), unix.EIO)
-}
 
-func TestWaitForExecutableReadyDoesNotIgnoreNonRegularFile(t *testing.T) {
-	fcntl := func(uintptr, int, int) (int, error) { return 0, unix.EINVAL }
-	require.ErrorIs(t, waitForExecutableReadyWithFcntl(t.Context(), t.TempDir(), fcntl), unix.EINVAL)
+	// Simulate a filesystem that never grants the lease, as if a writer stayed
+	// open forever.
+	fcntl := func(uintptr, int, int) (int, error) { return 0, unix.EAGAIN }
+
+	// The wait should give up after the timeout and let publication proceed,
+	// rather than blocking input download until the task is canceled.
+	err := waitForExecutableReadyWithFcntl(t.Context(), path, 20*time.Millisecond, fcntl)
+	require.NoError(t, err)
 }
 
 func requireExecutableReadinessSupported(t *testing.T, path string) {
@@ -138,10 +141,9 @@ func requireExecutableReadinessSupported(t *testing.T, path string) {
 	require.NoError(t, err)
 	defer f.Close()
 	_, err = unix.FcntlInt(f.Fd(), unix.F_SETLEASE, unix.F_RDLCK)
-	if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.EOPNOTSUPP) || errors.Is(err, unix.ENOSYS) {
-		t.Skipf("file leases are unsupported: %s", err)
+	if err != nil {
+		t.Skipf("cannot acquire file leases: %s", err)
 	}
-	require.NoError(t, err)
 	_, err = unix.FcntlInt(f.Fd(), unix.F_SETLEASE, unix.F_UNLCK)
 	require.NoError(t, err)
 }

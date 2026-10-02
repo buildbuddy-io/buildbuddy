@@ -885,7 +885,6 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 	}
 	ff.statsMu.Unlock()
 
-	fileCache := ff.env.GetFileCache()
 	for _, res := range responses {
 		if res.Err != nil {
 			log.CtxInfof(ctx, "Failed to download %s: %s", digest.String(res.Digest), res.Err)
@@ -907,10 +906,8 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 				if err := writeFile(ptr, res.Data, opts); err != nil {
 					return err
 				}
-				if fileCache != nil {
-					if err := fileCache.AddFile(ff.ctx, ptr.FileNode, ptr.FullPath); err != nil {
-						log.Warningf("Error adding file to filecache: %s", err)
-					}
+				if err := ff.publishDownloadedFile(ctx, ptr); err != nil {
+					return err
 				}
 				// Only need to write the first file explicitly; the rest of the files can
 				// be fast-copied from the first.
@@ -1206,9 +1203,11 @@ func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient
 }
 
 // publishDownloadedFile adds a completed filesystem download to the file
-// cache. Callers must only expose fp to consumers after this succeeds.
+// cache. If the file is executable, it first waits for writers to close (see
+// waitForExecutableReady). Callers must only expose fp to consumers after this
+// succeeds.
 func (ff *BatchFileFetcher) publishDownloadedFile(ctx context.Context, fp *FilePointer) error {
-	if fp.FileNode.GetIsExecutable() && fp.FileNode.GetDigest().GetSizeBytes() > BatchReadLimitBytes {
+	if fp.FileNode.GetIsExecutable() {
 		if err := waitForExecutableReady(ctx, fp.FullPath); err != nil {
 			return err
 		}

@@ -4,8 +4,8 @@ go_library(
     name = "dirtools",
     srcs = [
         "dirtools.go",
-        "executable_readiness_linux.go",
-        "executable_readiness_other.go",
+        "dirtools_linux.go",
+        "dirtools_notlinux.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/cache/dirtools",
     visibility = ["//visibility:public"],
@@ -37,9 +37,11 @@ go_library(
         "@org_golang_x_sync//semaphore",
     ] + select({
         "@io_bazel_rules_go//go/platform:android": [
+            "//server/util/tracing",
             "@org_golang_x_sys//unix",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
+            "//server/util/tracing",
             "@org_golang_x_sys//unix",
         ],
         "//conditions:default": [],
@@ -50,8 +52,8 @@ go_test(
     name = "dirtools_test",
     size = "small",
     srcs = [
+        "dirtools_linux_test.go",
         "dirtools_test.go",
-        "executable_readiness_linux_test.go",
     ],
     embed = [":dirtools"],
     deps = [
