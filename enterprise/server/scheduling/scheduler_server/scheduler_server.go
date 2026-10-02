@@ -941,10 +941,7 @@ type nodePool struct {
 	connectedExecutors []*executionNode
 
 	unclaimedTasksSingleFlight singleflight.Group[string, []string]
-	// The unclaimed tasks cache TTL flag value, captured when the pool is
-	// created. The cache is refreshed from goroutines that can outlive the
-	// request that started them, so they shouldn't read the flag directly.
-	unclaimedTasksTTL time.Duration
+	unclaimedTasksTTL          time.Duration
 
 	unclaimedTasksMu     sync.Mutex
 	unclaimedTasks       []string
