@@ -85,7 +85,9 @@ func (q Query) matches(e *Entry) bool {
 	return true
 }
 
-// score ranks a matched entry. For now we only prioritize hits on the name.
+// score ranks a matched entry by how well each term matches its name: the
+// whole name, a whole word of it ("app" in "buildbuddy-app-7d9f"), a prefix,
+// a substring, or not at all (the term hit a label, an image, ...).
 func (q Query) score(e *Entry) int {
 	s := kindWeight(e.Kind)
 	name := strings.ToLower(e.Name)
@@ -93,6 +95,8 @@ func (q Query) score(e *Entry) int {
 		switch {
 		case name == t:
 			s += 100
+		case hasWord(name, t):
+			s += 80
 		case strings.HasPrefix(name, t):
 			s += 60
 		case strings.Contains(name, t):
@@ -103,6 +107,24 @@ func (q Query) score(e *Entry) int {
 	}
 	return s
 }
+
+// hasWord reports whether term occurs in name on word boundaries.
+// The term may itself span words, e.g. "buildbuddy-app" in "prod-buildbuddy-app-7d9f".
+func hasWord(name, term string) bool {
+	for from := 0; ; {
+		i := strings.Index(name[from:], term)
+		if i < 0 {
+			return false
+		}
+		i += from
+		if j := i + len(term); (i == 0 || isWordSep(name[i-1])) && (j == len(name) || isWordSep(name[j])) {
+			return true
+		}
+		from = i + 1
+	}
+}
+
+func isWordSep(c byte) bool { return c == '-' || c == '.' }
 
 // kindWeight breaks ties between kinds based on how likely it's a resource
 // someone is looking for.
