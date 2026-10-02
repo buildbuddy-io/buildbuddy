@@ -59,12 +59,18 @@ message SearchRequest {
   int32 group_limit = 2;
 }
 
+message SearchResult {
+  Entry entry = 1;
+  // Tunnel links for the entry's ports.
+  repeated PortLink links = 2;
+}
+
 message SearchGroup {
   string kind = 1;
-  // Total is the total number of matches whereas entries is capped at the
+  // Total is the total number of matches whereas results is capped at the
   // per-group max.
   int32 total = 2;
-  repeated Entry entries = 3;
+  repeated SearchResult results = 3;
   // API group, since unrelated kinds can share a name across groups.
   string group = 4;
 }

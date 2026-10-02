@@ -58,7 +58,10 @@ func (s *AtlasService) Search(ctx context.Context, req *atlaspb.SearchRequest) (
 	for _, g := range res.Groups {
 		group := &atlaspb.SearchGroup{Group: g.Group, Kind: g.Kind, Total: int32(g.Total)}
 		for _, e := range g.Items {
-			group.Entries = append(group.Entries, entryProto(e))
+			group.Results = append(group.Results, &atlaspb.SearchResult{
+				Entry: entryProto(e),
+				Links: portLinks(s.c, e, nil),
+			})
 		}
 		rsp.Groups = append(rsp.Groups, group)
 	}
