@@ -19,6 +19,8 @@ go_test(
     embed = [":runscript"],
     deps = [
         "//cli/arg",
+        "//cli/parser",
+        "//cli/parser/test_data",
         "//cli/workspace",
         "@com_github_stretchr_testify//require",
     ],
