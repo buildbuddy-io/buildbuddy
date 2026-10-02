@@ -1701,6 +1701,8 @@ type Crypter interface {
 	SetEncryptionConfig(ctx context.Context, req *enpb.SetEncryptionConfigRequest) (*enpb.SetEncryptionConfigResponse, error)
 	GetEncryptionConfig(ctx context.Context, req *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error)
 
+	// ActiveKey returns the key with which newly-written cache data should be
+	// encrypted. A (nil, nil) response means data should be stored unencrypted.
 	ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error)
 
 	// NewEncryptor uses the key ID and version in em, which must be non-nil.

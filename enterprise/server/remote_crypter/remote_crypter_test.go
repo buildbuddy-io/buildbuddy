@@ -338,6 +338,33 @@ func TestActiveKey(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err))
 }
 
+func TestDoNotEncryptCacheProxyContents(t *testing.T) {
+	flags.Set(t, "crypter.remote.do_not_encrypt_local_data", true)
+	te := testenv.GetTestEnv(t)
+	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
+	te.SetAuthenticator(authenticator)
+	ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
+	require.NoError(t, err)
+
+	require.False(t, remote_crypter.SupportsEncryption(te)(ctx))
+	require.NoError(t, remote_crypter.Register(te))
+	require.NotNil(t, te.GetCrypter())
+	require.True(t, remote_crypter.SupportsEncryption(te)(ctx))
+
+	md, err := te.GetCrypter().ActiveKey(ctx)
+	require.NoError(t, err)
+	require.Nil(t, md)
+}
+
+func TestDoNotEncryptCacheProxyContentsWithRemoteTarget(t *testing.T) {
+	flags.Set(t, "crypter.remote.do_not_encrypt_local_data", true)
+	flags.Set(t, "crypter.remote.target", "grpc://localhost:1234")
+	te := testenv.GetTestEnv(t)
+	err := remote_crypter.Register(te)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+	require.Nil(t, te.GetCrypter())
+}
+
 func TestUnauthorizedIdentity(t *testing.T) {
 	authenticator, crypter, clock, service := setupWithIdentity(t, "some-other-client")
 	group1Key := "group1key"
