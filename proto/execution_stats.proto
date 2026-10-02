@@ -6,6 +6,7 @@ import "google/protobuf/duration.proto";
 import "google/rpc/status.proto";
 import "proto/acl.proto";
 import "proto/context.proto";
+import "proto/experiments.proto";
 import "proto/invocation_status.proto";
 import "proto/remote_execution.proto";
 import "proto/scheduler.proto";
@@ -161,6 +162,10 @@ message ExecutionAuxiliaryMetadata {
 
   // Metrics reported by the guest VM which executed this action.
   VMMetrics vm_metrics = 12;
+
+  // Experiment flags that the executor received with the task, so that the
+  // app can record which variants were applied to this execution.
+  repeated experiments.EvaluatedFlag experiment_flags = 13;
 }
 
 // Metrics associated with the guest VM which executed an action. Mostly

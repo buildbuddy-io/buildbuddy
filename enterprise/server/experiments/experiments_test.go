@@ -202,6 +202,25 @@ func TestNoopProviderProvidesDefaults(t *testing.T) {
 	require.Nil(t, fp.Object(ctx, "my_flag", nil))
 }
 
+func TestProtoToVariantMap(t *testing.T) {
+	// Simulate flags evaluated for a task, where some flags selected an
+	// experiment variant and others got no variant or the "default" variant.
+	evaluated := []*expb.EvaluatedFlag{
+		{Name: "treatment_flag", Variant: "treatment", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true}},
+		{Name: "control_flag", Variant: "control", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: false}},
+		{Name: "default_flag", Variant: "default", Value: &expb.EvaluatedFlag_StringValue{StringValue: "x"}},
+		{Name: "unconfigured_flag", Value: &expb.EvaluatedFlag_StringValue{StringValue: ""}},
+	}
+
+	variants := experiments.ProtoToVariantMap(evaluated)
+
+	// Flags with an empty or "default" variant should be excluded.
+	require.Equal(t, map[string]string{
+		"treatment_flag": "treatment",
+		"control_flag":   "control",
+	}, variants)
+}
+
 func TestPrimitiveFlags(t *testing.T) {
 	ctx := context.Background()
 

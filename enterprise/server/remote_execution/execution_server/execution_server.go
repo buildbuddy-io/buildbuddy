@@ -489,6 +489,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 
 			executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
 			executionProto.Experiments = auxMeta.GetExperiments()
+			executionProto.ExperimentVariants = experiments.ProtoToVariantMap(auxMeta.GetExperimentFlags())
 
 			executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
 			executionProto.RunnerId = auxMeta.GetRunnerMetadata().GetRunnerId()

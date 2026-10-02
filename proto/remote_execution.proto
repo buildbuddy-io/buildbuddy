@@ -3395,4 +3395,8 @@ message StoredExecution {
   // up to the point where the vmexec server was serving. Set for every
   // firecracker execution.
   int64 vm_exec_dial_duration_usec = 96;
+
+  // Maps experiment flag names to the variant selected for this execution.
+  // Flags with an empty or "default" variant are omitted.
+  map<string, string> experiment_variants = 97;
 }
