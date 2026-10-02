@@ -44,6 +44,7 @@ import rpc_service from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import CacheProxiesComponent from "../cache_proxies/cache_proxies";
+import CacheProxyComponent from "../cache_proxies/cache_proxy";
 import CliLoginComponent from "../cli_login/cli_login";
 import CodeSearchComponent from "../codesearch/codesearch";
 import ExecutorsComponent from "../executors/executors";
@@ -239,7 +240,8 @@ export default class EnterpriseRootComponent extends React.Component {
     let usage = this.state.user && this.state.path.startsWith("/usage/");
     let auditLogs = this.state.user && this.state.path.startsWith("/audit-logs/");
     let executors = this.state.user && this.state.path.startsWith("/executors");
-    let cacheProxies = this.state.user && this.state.path.startsWith("/cache-proxies");
+    let cacheProxy = this.state.user && this.state.path.startsWith(Path.cacheProxyPath);
+    let cacheProxies = this.state.user && !cacheProxy && this.state.path.startsWith("/cache-proxies");
     let tests = this.state.user && this.state.path.startsWith("/tests");
     let workflows = this.state.user && this.state.path.startsWith("/workflows");
     let code = this.state.user && this.state.path.startsWith("/code");
@@ -260,6 +262,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !usage &&
       !executors &&
       !cacheProxies &&
+      !cacheProxy &&
       !tests &&
       !invocationId &&
       !compareInvocationIds &&
@@ -435,6 +438,13 @@ export default class EnterpriseRootComponent extends React.Component {
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                   {cacheProxies && this.state.user && (
                     <CacheProxiesComponent path={this.state.path} user={this.state.user} />
+                  )}
+                  {cacheProxy && this.state.user && (
+                    <CacheProxyComponent
+                      user={this.state.user}
+                      proxyId={decodeURIComponent(this.state.path.substring(Path.cacheProxyPath.length))}
+                      region={this.state.search.get("region") ?? undefined}
+                    />
                   )}
                   {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}
                   {workflows && this.state.user && (

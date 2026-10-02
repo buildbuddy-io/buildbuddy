@@ -660,6 +660,7 @@ export class Path {
   static auditLogsPath = "/audit-logs/";
   static executorsPath = "/executors/";
   static cacheProxiesPath = "/cache-proxies/";
+  static cacheProxyPath = "/cache-proxies/proxy/";
   static tapPath = "/tests/";
   static workflowsPath = "/workflows/";
   static codePath = "/code/";
