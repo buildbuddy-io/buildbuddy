@@ -398,7 +398,8 @@ func dashedIP(ip string) string {
 // relays via that cluster's gateway.
 func portLinks(c *cluster.Cluster, e *summaries.Entry, rel *relations) []*atlaspb.PortLink {
 	svcZone, podZone := c.Zones()
-	var out []*atlaspb.PortLink
+	// Ports first, then the pages some of them are known to serve.
+	var out, pages []*atlaspb.PortLink
 
 	addPort := func(p summaries.Port, host string, via atlaspb.PortLink_Via, viaName string) {
 		l := &atlaspb.PortLink{
@@ -416,6 +417,23 @@ func portLinks(c *cluster.Cluster, e *summaries.Entry, rel *relations) []*atlasp
 			}
 		}
 		out = append(out, l)
+		// A port known to serve debug pages also gets one link per page,
+		// named by the page.
+		if known := debugPages(e, p); len(known) > 0 && host != "" {
+			for _, pg := range known {
+				pages = append(pages, &atlaspb.PortLink{
+					Name:     pg.name,
+					Port:     p.Port,
+					Protocol: p.Protocol,
+					Host:     host,
+					HostPort: l.HostPort,
+					Url:      "http://" + l.HostPort + pg.path,
+					Via:      via,
+					ViaName:  viaName,
+					Path:     pg.path,
+				})
+			}
+		}
 	}
 
 	switch e.Kind {
@@ -443,7 +461,42 @@ func portLinks(c *cluster.Cluster, e *summaries.Entry, rel *relations) []*atlasp
 			addPort(p, host, atlaspb.PortLink_SERVICE, "")
 		}
 	}
-	return out
+	return append(out, pages...)
+}
+
+type debugPage struct{ name, path string }
+
+// buildbuddyDebugPages are the standard handlers on BuildBuddy servers.
+// For now, we use a simple heuristic to display these links. In the future, it
+// might make sense to drive this via k8s annotations.
+var buildbuddyDebugPages = []debugPage{
+	{"statusz", "/statusz"},
+	{"metrics", "/metrics"},
+	{"pprof", "/debug/pprof/"},
+	{"flagz", "/flagz"},
+	{"rpcz", "/rpcz"},
+	{"channelz", "/channelz/"},
+}
+
+// debugPages lists the debug pages a port is known to serve.
+func debugPages(e *summaries.Entry, p summaries.Port) []debugPage {
+	name := strings.ToLower(p.Name)
+	if (name == "monitoring" || p.Port == 9090) && isBuildBuddyImage(e) {
+		return buildbuddyDebugPages
+	}
+	if strings.Contains(name, "metrics") || strings.HasPrefix(name, "prom") {
+		return []debugPage{{"metrics", "/metrics"}}
+	}
+	return nil
+}
+
+func isBuildBuddyImage(e *summaries.Entry) bool {
+	for _, img := range e.Images {
+		if strings.Contains(img, "buildbuddy") {
+			return true
+		}
+	}
+	return false
 }
 
 // guessScheme decides whether a port is worth a clickable browser link, from
