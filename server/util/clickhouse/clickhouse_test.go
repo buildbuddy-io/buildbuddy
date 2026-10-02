@@ -127,6 +127,16 @@ func TestExecutionFromProto(t *testing.T) {
 				TestTotalShards: 6,
 			},
 		},
+		{
+			name: "ExperimentVariants",
+			in: &repb.StoredExecution{
+				ExecutionId:        executionID,
+				ExperimentVariants: map[string]string{"executor.some_experiment": "treatment"},
+			},
+			want: &schema.Execution{
+				ExperimentVariants: map[string]string{"executor.some_experiment": "treatment"},
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			// Convert the stored execution as the ClickHouse flush path does.
@@ -146,6 +156,7 @@ func TestExecutionFromProto(t *testing.T) {
 			require.Equal(t, testCase.want.VMDnsWaitDurationUsec, execution.VMDnsWaitDurationUsec)
 			require.Equal(t, testCase.want.VMExecInitDurationUsec, execution.VMExecInitDurationUsec)
 			require.Equal(t, testCase.want.VMExecDialDurationUsec, execution.VMExecDialDurationUsec)
+			require.Equal(t, testCase.want.ExperimentVariants, execution.ExperimentVariants)
 			require.Equal(t, testCase.in.GetExecutionId(), reconstructExecutionID(t, execution))
 		})
 	}
@@ -196,6 +207,10 @@ func TestFlushExecutionStats_SkipsMalformedExecutionIDs(t *testing.T) {
 			TestSize:        "enormous",
 			TestShardIndex:  3,
 			TestTotalShards: 8,
+			ExperimentVariants: map[string]string{
+				"executor.some_experiment":  "treatment",
+				"executor.other_experiment": "control",
+			},
 		},
 		{
 			ExecutionId:    "not-a-resource-name",
@@ -224,6 +239,10 @@ func TestFlushExecutionStats_SkipsMalformedExecutionIDs(t *testing.T) {
 	require.Equal(t, "enormous", rows[0].TestSize)
 	require.Equal(t, uint32(3), rows[0].TestShardIndex)
 	require.Equal(t, uint32(8), rows[0].TestTotalShards)
+	require.Equal(t, map[string]string{
+		"executor.some_experiment":  "treatment",
+		"executor.other_experiment": "control",
+	}, rows[0].ExperimentVariants)
 }
 
 func TestFlushExecutionStats_AllMalformedExecutionIDs_SkipsInsert(t *testing.T) {
