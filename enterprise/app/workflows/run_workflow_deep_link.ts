@@ -3,6 +3,12 @@ import { workflow } from "../../../proto/workflow_ts_proto";
 
 const RUN_WORKFLOW_PATH = "/workflows/run";
 
+// Links may only select from a fixed set of env var presets, rather than
+// setting arbitrary env vars.
+const ENV_PRESETS: Record<string, Record<string, string>> = {
+  AGENT_REVIEW: { AGENT_REVIEW_FORCE: "1" },
+};
+
 function requiredParameter(search: URLSearchParams, name: string): string {
   const value = search.get(name)?.trim() ?? "";
   if (!value) {
@@ -24,20 +30,13 @@ function validateRepositoryURL(value: string): string {
   return normalized;
 }
 
-function parseEnvironmentVariables(values: string[]): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const assignment of values) {
-    const separatorIndex = assignment.indexOf("=");
-    if (separatorIndex < 0) {
-      throw new Error("Environment variables must use the format NAME=value");
-    }
-    const name = assignment.slice(0, separatorIndex).trim();
-    if (!name) {
-      throw new Error("Environment variable names must not be empty");
-    }
-    env[name] = assignment.slice(separatorIndex + 1).trim();
+function parseEnvPreset(search: URLSearchParams): Record<string, string> {
+  const preset = search.get("env_preset")?.trim() ?? "";
+  if (!preset) return {};
+  if (!Object.prototype.hasOwnProperty.call(ENV_PRESETS, preset)) {
+    throw new Error(`invalid env_preset parameter`);
   }
-  return env;
+  return { ...ENV_PRESETS[preset] };
 }
 
 export function parseEnvironmentVariablesInput(value: string): Record<string, string> {
@@ -72,15 +71,10 @@ export function parseRunRequestFromURL(
   const branch = search.get("branch")?.trim() ?? "";
   const commit = search.get("commit")?.trim() ?? "";
 
-  const env = search
-    .getAll("env")
-    .map((value) => value.trim())
-    .filter(Boolean);
-
   if (!branch && !commit) {
     throw new Error("At least one of branch or commit must be set");
   }
-  const parsedEnv = parseEnvironmentVariables(env);
+  const parsedEnv = parseEnvPreset(search);
 
   return new workflow.ExecuteWorkflowRequest({
     pushedRepoUrl: repoURL,

@@ -23,8 +23,7 @@ describe("parseRunRequestFromURL", () => {
         ["action_name", "Code review"],
         ["branch", "feature/review"],
         ["commit", "0123456789abcdef0123456789abcdef01234567"],
-        ["env", "AGENT_REVIEW_FORCE=1"],
-        ["env", "MODE=thorough"],
+        ["env_preset", "AGENT_REVIEW"],
       ])
     );
 
@@ -34,7 +33,7 @@ describe("parseRunRequestFromURL", () => {
     expect(result?.pushedBranch).toBe("feature/review");
     expect(result?.targetBranch).toBe("feature/review");
     expect(result?.commitSha).toBe("0123456789abcdef0123456789abcdef01234567");
-    expect(result?.env).toEqual({ AGENT_REVIEW_FORCE: "1", MODE: "thorough" });
+    expect(result?.env).toEqual({ AGENT_REVIEW_FORCE: "1" });
     expect(result?.async).toBeTrue();
   });
 
@@ -89,11 +88,11 @@ describe("parseRunRequestFromURL", () => {
           ["repo_url", "https://github.com/foo/bar"],
           ["action_name", "Review"],
           ["branch", "main"],
-          ["commit", "0123456789abcdef0123456789abcdef01234567"],
-          ["env", "INVALID"],
+          ["env_preset", "UNKNOWN"],
         ])
       )
-    ).toThrowError(/NAME=value/);
+    ).toThrowError(/env_preset/);
+    // Presets must be own properties of the preset map.
     expect(() =>
       parseRunRequestFromURL(
         "/workflows/run",
@@ -101,9 +100,22 @@ describe("parseRunRequestFromURL", () => {
           ["repo_url", "https://github.com/foo/bar"],
           ["action_name", "Review"],
           ["branch", "main"],
-          ["env", " =hello"],
+          ["env_preset", "toString"],
         ])
       )
-    ).toThrowError(/names must not be empty/);
+    ).toThrowError(/env_preset/);
+  });
+
+  it("does not allow arbitrary environment variables", () => {
+    const result = parseRunRequestFromURL(
+      "/workflows/run",
+      new URLSearchParams([
+        ["repo_url", "https://github.com/foo/bar"],
+        ["action_name", "Review"],
+        ["branch", "main"],
+        ["env", "MALICIOUS=1"],
+      ])
+    );
+    expect(result?.env).toEqual({});
   });
 });
