@@ -371,6 +371,11 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 	}
 	defer removeConnectedExecutor()
 
+	// Canceled when Serve returns, so that the receive goroutine doesn't
+	// block forever trying to hand off a request or error that nobody will
+	// read (e.g. if Serve returned because the server is shutting down).
+	recvCtx, cancelRecv := context.WithCancel(ctx)
+	defer cancelRecv()
 	requestChan := make(chan *scpb.RegisterAndStreamWorkRequest, 1)
 	errChan := make(chan error)
 	go func() {
@@ -378,13 +383,20 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 			req, err := h.stream.Recv()
 			if err == io.EOF {
 				close(requestChan)
-				break
+				return
 			}
 			if err != nil {
-				errChan <- err
-				break
+				select {
+				case errChan <- err:
+				case <-recvCtx.Done():
+				}
+				return
 			}
-			requestChan <- req
+			select {
+			case requestChan <- req:
+			case <-recvCtx.Done():
+				return
+			}
 		}
 	}()
 
