@@ -4608,15 +4608,19 @@ type quorumTestCache struct {
 	interfaces.Cache
 	mu             sync.Mutex
 	lookups        map[string]int
+	batches        [][]string
 	findMissingErr error
 	writeErr       error
 }
 
 func (c *quorumTestCache) FindMissing(ctx context.Context, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
 	c.mu.Lock()
+	batch := make([]string, 0, len(rns))
 	for _, r := range rns {
 		c.lookups[r.GetDigest().GetHash()]++
+		batch = append(batch, r.GetDigest().GetHash())
 	}
+	c.batches = append(c.batches, batch)
 	c.mu.Unlock()
 	if c.findMissingErr != nil {
 		return nil, c.findMissingErr
@@ -4691,6 +4695,13 @@ func TestFindMissingQuorum(t *testing.T) {
 			require.ElementsMatch(t, expectedMissing, missing)
 			for i, c := range caches {
 				c.mu.Lock()
+				// If all peers have or don't have the digest, the cache should've only received a single
+				// FindMissing RPC. If some peers have the digest and some don't, peers missing the digest will receive additional RPCs
+				// for repair.
+				if tc.present == 0 || tc.present == 3 {
+					require.Len(t, c.batches, 1, "peer %d must receive one packed request", i)
+				}
+				require.ElementsMatch(t, []string{rn.GetDigest().GetHash(), absent.GetDigest().GetHash()}, c.batches[0])
 				require.GreaterOrEqual(t, c.lookups[rn.GetDigest().GetHash()], 1, "peer %d must be checked", i)
 				require.GreaterOrEqual(t, c.lookups[absent.GetDigest().GetHash()], 1)
 				if tc.present == 3 {

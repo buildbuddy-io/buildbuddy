@@ -1374,6 +1374,60 @@ func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metri
 	return nil, nil, status.NotFoundErrorf("Exhausted all peers attempting to GetWithMetadata %q.", d.GetHash())
 }
 
+// findMissingOnAllReplicas checks all peers in the peerset concurrently, packing
+// all digests destined for a peer into one RPC. It does not check fallback peers.
+//
+// This differs from checking peers in the peerset one by one, and exiting early
+// if the digest is found on any peer.
+func (c *Cache) findMissingOnAllReplicas(ctx context.Context, hashResources map[string][]*rspb.ResourceName, peerMap map[string]*peerset.PeerSet) (map[string][]string, map[string][]string, error) {
+	peerRequests := make(map[string][]*rspb.ResourceName)
+	for h, rns := range hashResources {
+		for _, peer := range peerMap[h].PreferredPeers {
+			peerRequests[peer] = append(peerRequests[peer], rns[0])
+		}
+	}
+
+	// Protects `present` and `missing`.
+	var mu sync.Mutex
+	// Maps track digest -> peers that have / are missing the digest.
+	present := make(map[string][]string)
+	missing := make(map[string][]string)
+
+	eg, gCtx := errgroup.WithContext(ctx)
+	for peer, rns := range peerRequests {
+		eg.Go(func() error {
+			peerMissing, err := c.remoteFindMissing(gCtx, peer, rns)
+			if err != nil {
+				// Don't try to repair peers that we failed to reach,
+				// so don't add them to `missing`.
+				return nil
+			}
+			missingHashes := make(map[string]struct{}, len(peerMissing))
+			for _, d := range peerMissing {
+				missingHashes[d.GetHash()] = struct{}{}
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, r := range rns {
+				h := r.GetDigest().GetHash()
+				if _, absent := missingHashes[h]; absent {
+					missing[h] = append(missing[h], peer)
+				} else {
+					present[h] = append(present[h], peer)
+				}
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	return present, missing, nil
+}
+
 func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	if len(resources) == 0 {
 		return nil, nil
@@ -1421,17 +1475,27 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		metrics.HitStatusLabel,
 	)
 	lookups := 0
-	for {
+	if requireQuorum {
+		present, missing, err := c.findMissingOnAllReplicas(ctx, hashResources, peerMap)
+		if err != nil {
+			return nil, err
+		}
+		peersMissingData = missing
+		for h, peers := range present {
+			digestToPeersWithData[h] = &peersWithDataMetadata{
+				peers: peers, numPeersConsulted: len(peerMap[h].PreferredPeers),
+			}
+		}
+		lookups = 1
+	}
+	for !requireQuorum {
 		// Each iteration through this outer loop sends a "batch" of requests in
 		// parallel, until all digests have been found or we have exhausted all
 		// peers.
 		peerRequests := make(map[string][]*rspb.ResourceName, 0)
 		for h, perHashResources := range hashResources {
 			// If a previous request has already found this digest, skip it.
-			//
-			// If quorum is requested, continue visiting every replica even after reaching quorum, so
-			// every copy's atime can be refreshed and missing copies can be repaired.
-			if _, ok := digestToPeersWithData[h]; ok && !requireQuorum {
+			if _, ok := digestToPeersWithData[h]; ok {
 				continue
 			}
 
@@ -1443,14 +1507,11 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 				continue
 			}
 			peerRequests[peer] = append(peerRequests[peer], perHashResources[0])
-			if metadata := digestToPeersWithData[h]; metadata != nil {
-				metadata.numPeersConsulted++
-			}
 		}
 		if len(peerRequests) == 0 {
 			stillMissing := make([]string, 0)
 			for h := range hashResources {
-				if peersWithData := digestToPeersWithData[h]; peersWithData == nil || len(peersWithData.peers) < requiredReplicas {
+				if _, ok := digestToPeersWithData[h]; !ok {
 					stillMissing = append(stillMissing, h)
 				}
 			}
@@ -1480,12 +1541,9 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 				for _, r := range resources {
 					hash := r.GetDigest().GetHash()
 					if _, ok := peerMissingHashes[hash]; !ok {
-						if digestToPeersWithData[hash] == nil {
-							digestToPeersWithData[hash] = &peersWithDataMetadata{numPeersConsulted: lookups}
+						digestToPeersWithData[hash] = &peersWithDataMetadata{
+							peers: []string{peer}, numPeersConsulted: lookups,
 						}
-						digestToPeersWithData[hash].peers = append(digestToPeersWithData[hash].peers, peer)
-					} else if requireQuorum {
-						peersMissingData[hash] = append(peersMissingData[hash], peer)
 					}
 				}
 				return nil
@@ -1498,6 +1556,10 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 				c.log.CtxDebugf(ctx, "Error checking contains batch; will retry: %s", err)
 			}
 			continue
+		}
+		if len(digestToPeersWithData) == len(hashResources) {
+			// If we've found everything, we can exit now.
+			break
 		}
 	}
 
