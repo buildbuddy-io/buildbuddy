@@ -158,7 +158,7 @@ func installTunHelper(cfg *tunnelconfig.Config, owner string, uid int) error {
 		return err
 	}
 	// The daemon attaches right after this, so wait until the helper answers.
-	if err := retry(helperStartTimeout, func() error { return pingTunHelper() }); err != nil {
+	if err := retry(helperStartTimeout, pingTunHelper); err != nil {
 		return fmt.Errorf("the device helper did not start within %s (%s); the end of %s:\n%s", helperStartTimeout, err, helperLogPath, logTail(helperLogPath))
 	}
 	fmt.Printf("Created a utun device for %s, routing %s; %s recreates it at boot\n", owner, cfg.FakeCIDR, launchdLabel)
