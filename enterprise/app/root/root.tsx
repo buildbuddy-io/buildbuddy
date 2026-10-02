@@ -442,7 +442,6 @@ export default class EnterpriseRootComponent extends React.Component {
                   {usage && this.state.user && (
                     <UsageComponent path={this.state.path} user={this.state.user} search={this.state.search} />
                   )}
-                  {usage && this.state.user && <UsageComponent path={this.state.path} user={this.state.user} />}
                   {auditLogs && this.state.user && (
                     <AuditLogsComponent user={this.state.user} search={this.state.search} />
                   )}
