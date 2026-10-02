@@ -9,6 +9,7 @@ import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
 import ExecutionMenuButtonComponent, { getExecutionPath } from "./execution_menu_button";
 import SingleActionChartComponent from "./single_action_chart";
+import moment from "moment";
 
 interface Props {
   target: string;
@@ -31,11 +32,15 @@ interface TimingPhase {
   className: string;
 }
 
+interface DerivedSummaryStats {
+  longestExecutionUsec: number;
+}
+
 // A column of the sampled executions table.
 interface Column {
   name: string;
   className: string;
-  render: (e: execution_stats.ExecutionTimelineEntry) => React.ReactNode;
+  render: (e: execution_stats.ExecutionTimelineEntry, s: DerivedSummaryStats) => React.ReactNode;
 }
 
 interface StatSet {
@@ -44,14 +49,12 @@ interface StatSet {
   stats: ExecStat[];
   // The columns shown in the table.
   columns: Column[];
-  // Phases to show a color legend for, if any of the columns are color-coded.
-  legend?: TimingPhase[];
 }
 
 const START_TIME: ExecStat = {
   name: "Start time",
   extractor: (e) => +e.startTimeUsec,
-  formatter: (v) => format.formatTimestampUsec(v),
+  formatter: (v) => moment(+v / 1000).format("YYYY-MM-DD [at] hh:mm:ss a"),
 };
 
 const WALL_TIME: ExecStat = { name: "Wall time", extractor: (e) => +e.durationUsec, formatter: format.durationUsec };
@@ -107,14 +110,21 @@ function renderTimingTooltip(e: execution_stats.ExecutionTimelineEntry): React.R
 
 // Renders a bar split into one segment per phase, each sized in proportion to
 // the share of the execution's total phase time that it accounts for.
-function renderTimingBar(e: execution_stats.ExecutionTimelineEntry): React.ReactNode {
-  const segments = TIMING_PHASES.map((p) => ({ phase: p, usec: p.stat.extractor(e) })).filter((s) => s.usec > 0);
+function renderTimingBar(e: execution_stats.ExecutionTimelineEntry, d: DerivedSummaryStats): React.ReactNode {
+  let totalUsec = 0;
+  const segments = TIMING_PHASES.map((p) => ({ phase: p, usec: p.stat.extractor(e) })).filter((s) => {
+    if (s.usec > 0) {
+      totalUsec += s.usec;
+    }
+    return s.usec > 0;
+  });
   return (
     <Tooltip className="timing-bar" pin={pinBottomLeftOffsetFromMouse} renderContent={() => renderTimingTooltip(e)}>
       <div className={`timing-track ${segments.length ? "" : "empty"}`}>
         {segments.map((s) => (
           <div key={s.phase.stat.name} className={`timing-segment ${s.phase.className}`} style={{ flexGrow: s.usec }} />
         ))}
+        <div className="timing-segment" style={{ flexGrow: d.longestExecutionUsec - totalUsec }}></div>
       </div>
     </Tooltip>
   );
@@ -197,6 +207,19 @@ export default class SingleActionComponent extends React.Component<Props, State>
     this.setState({ tableStats, orderBy });
   }
 
+  private isSampled(): boolean {
+    return +(this.props.timeline.summary?.totalExecutions ?? 0) > this.props.timeline.executionSamples.length;
+  }
+
+  private tableRowSummary(shown: number, total: number): string {
+    const noun = total === 1 ? "execution" : "executions";
+    if (this.isSampled()) {
+      return `Showing ${shown} of ${total} sampled ${noun} (${+(this.props.timeline.summary?.totalExecutions ?? 0) - total} more not in sample)`;
+    } else {
+      return `Showing ${shown} of ${total} ${noun}`;
+    }
+  }
+
   private renderExecutionTable() {
     const samples = this.props.timeline.executionSamples;
     const rows = [...samples]
@@ -204,6 +227,14 @@ export default class SingleActionComponent extends React.Component<Props, State>
         (a, b) => (this.state.ascending ? 1 : -1) * (this.state.orderBy.extractor(a) - this.state.orderBy.extractor(b))
       )
       .slice(0, this.state.resultLimit);
+
+    const derivedStats: DerivedSummaryStats = {
+      longestExecutionUsec: 0,
+    };
+
+    this.props.timeline.executionSamples.forEach((e) => {
+      derivedStats.longestExecutionUsec = Math.max(+e.durationUsec, derivedStats.longestExecutionUsec);
+    });
 
     const sortOptions = [START_TIME, ...this.state.tableStats.stats];
 
@@ -261,7 +292,7 @@ export default class SingleActionComponent extends React.Component<Props, State>
                   <div className="date-column">{START_TIME.formatter(+e.startTimeUsec)}</div>
                   {this.state.tableStats.columns.map((c) => (
                     <div key={c.name} className={c.className}>
-                      {c.render(e)}
+                      {c.render(e, derivedStats)}
                     </div>
                   ))}
                   <div className="compare-column">
@@ -271,10 +302,7 @@ export default class SingleActionComponent extends React.Component<Props, State>
               ))}
             </div>
           </div>
-          <div className="table-summary">
-            Showing {format.formatWithCommas(rows.length)} of {format.formatWithCommas(samples.length)} sampled{" "}
-            {samples.length === 1 ? "execution" : "executions"}
-          </div>
+          <div className="table-summary">{this.tableRowSummary(rows.length, samples.length)}</div>
           {this.state.resultLimit < samples.length && (
             <div className="table-footer-controls">
               <FilledButton
@@ -334,7 +362,7 @@ export default class SingleActionComponent extends React.Component<Props, State>
         <div className="card">
           <div className="content">
             <div className="title target-data-card-title">
-              <List /> Sampled executions
+              <List /> {this.isSampled() ? "Sampled executions" : "Executions"}
             </div>
             <div className="details">{this.renderExecutionTable()}</div>
           </div>

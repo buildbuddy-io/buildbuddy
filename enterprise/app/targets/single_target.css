@@ -377,9 +377,8 @@
 .target-data .timing-track {
   display: flex;
   /* Gaps show the card background, separating adjacent segments. */
-  gap: 2px;
+  gap: 1px;
   height: 12px;
-  border-radius: 4px;
   overflow: hidden;
 }
 
@@ -390,6 +389,14 @@
 .target-data .timing-segment {
   flex-basis: 0;
   min-width: 2px;
+}
+
+.target-data .timing-segment:first-of-type {
+  border-radius: 4px 0 0 4px;
+}
+
+.target-data .timing-segment:nth-last-of-type(2) {
+  border-radius: 0 4px 4px 0;
 }
 
 .target-data .timing-bar:hover .timing-segment {
