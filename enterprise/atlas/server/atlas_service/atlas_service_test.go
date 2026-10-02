@@ -172,6 +172,7 @@ func TestRelationsDeploymentFindsPodsAcrossReplicaSets(t *testing.T) {
 
 func TestDebugPageLinks(t *testing.T) {
 	flags.Set(t, "atlas.pod_zone", "pod.example")
+	flags.Set(t, "atlas.svc_zone", "svc.example")
 	c := cluster.NewWithClients("uswest1", nil, nil, nil, nil)
 	names := func(links []*atlaspb.PortLink) (out []string) {
 		for _, l := range links {
@@ -213,13 +214,33 @@ func TestDebugPageLinks(t *testing.T) {
 	other := &summaries.Entry{
 		Kind: "Pod", Namespace: "prod", Name: "exporter-1", IPs: []string{"10.1.2.4"},
 		Images: []string{"quay.example/exporter:1"},
-		Ports:  []summaries.Port{{Name: "metrics", Port: 9100}, {Name: "web", Port: 9090}},
+		Ports: []summaries.Port{
+			{Name: "metrics", Port: 9100},
+			{Name: "web", Port: 9090},
+			{Name: "metrics", Port: 9125, Protocol: "UDP"},
+			{Name: "admin", Port: 8081, Protocol: "TCP"}, // spelled out, still TCP
+			{Name: "https-metrics", Port: 10250},         // a TLS listener, as on kubelets
+		},
 	}
 	require.Equal(t, []string{
 		"metrics http://10-1-2-4.prod.pod.example:9100",
 		"web http://10-1-2-4.prod.pod.example:9090",
+		"admin http://10-1-2-4.prod.pod.example:8081",
+		"https-metrics https://10-1-2-4.prod.pod.example:10250",
 		"metrics http://10-1-2-4.prod.pod.example:9100/metrics",
-	}, names(portLinks(c, other, nil)), "a metrics port keeps its own link; the /metrics page link follows the ports")
+		"metrics https://10-1-2-4.prod.pod.example:10250/metrics",
+	}, names(portLinks(c, other, nil)), "page links use the port's scheme; the UDP port gets neither kind")
+
+	// A Service has no image; on its page the pods behind it tell, in search
+	// results nothing does.
+	svc := &summaries.Entry{Kind: "Service", Namespace: "prod", Name: "app", Ports: []summaries.Port{{Name: "monitoring", Port: 9091}, {Name: "http", Port: 8080}}}
+	withPods := names(portLinks(c, svc, &relations{Pods: []*summaries.Entry{bb}}))
+	require.Len(t, withPods, 2+len(buildBuddyDebugPages))
+	require.Equal(t, "statusz http://app.prod.svc.example:9091/statusz", withPods[2])
+	require.Equal(t, []string{
+		"monitoring http://app.prod.svc.example:9091",
+		"http http://app.prod.svc.example:8080",
+	}, names(portLinks(c, svc, nil)))
 }
 
 func TestSearch(t *testing.T) {
