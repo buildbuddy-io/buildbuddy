@@ -64,12 +64,44 @@ func TestSummarizePod(t *testing.T) {
 	require.Equal(t, "ReplicaSet/web-7d9f", e.Owner)
 	require.Equal(t, "Running", e.Phase)
 	require.Equal(t, "1/1", e.Ready)
+	require.Equal(t, summaries.HealthOK, e.Health)
 	require.EqualValues(t, 2, e.Restarts)
 	require.Equal(t, "node-a", e.Node)
 	require.Equal(t, []string{"10.24.3.7"}, e.IPs)
 	require.Equal(t, []string{"registry.example/web:1.2.3"}, e.Images)
 	require.Equal(t, []string{"app"}, e.Containers)
 	require.Equal(t, []summaries.Port{{Name: "http", Port: 8080}, {Name: "grpc", Port: 1985}}, e.Ports)
+}
+
+func TestSummarizePodHealth(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status map[string]any
+		health summaries.Health
+	}{
+		{"pending", map[string]any{"phase": "Pending"}, summaries.HealthWarn},
+		{"running but not ready", map[string]any{"phase": "Running", "containerStatuses": []any{map[string]any{"name": "app", "ready": false}}}, summaries.HealthWarn},
+		{"succeeded", map[string]any{"phase": "Succeeded"}, summaries.HealthOK},
+		{"evicted", map[string]any{"phase": "Failed", "reason": "Evicted"}, summaries.HealthBad},
+		{"lost node", map[string]any{"phase": "Unknown"}, summaries.HealthBad},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pod := testPod("web", "prod")
+			pod.Object["status"] = tc.status
+			e, err := Summarize(podRes, pod)
+			require.NoError(t, err)
+			require.Equal(t, tc.health, e.Health)
+		})
+	}
+
+	// A deleting pod is on its way out, whatever its containers say.
+	pod := testPod("web", "prod")
+	now := metav1.Now()
+	pod.SetDeletionTimestamp(&now)
+	e, err := Summarize(podRes, pod)
+	require.NoError(t, err)
+	require.Equal(t, "Terminating", e.Phase)
+	require.Equal(t, summaries.HealthWarn, e.Health)
 }
 
 func TestSummarizePodWaitingReasonWins(t *testing.T) {
@@ -84,6 +116,7 @@ func TestSummarizePodWaitingReasonWins(t *testing.T) {
 	e, err := Summarize(podRes, pod)
 	require.NoError(t, err)
 	require.Equal(t, "CrashLoopBackOff", e.Phase)
+	require.Equal(t, summaries.HealthBad, e.Health)
 	require.Equal(t, "0/1", e.Ready)
 }
 
@@ -108,6 +141,7 @@ func TestSummarizePodInitContainerFailing(t *testing.T) {
 	e, err := Summarize(podRes, pod)
 	require.NoError(t, err)
 	require.Equal(t, "Init:CrashLoopBackOff", e.Phase)
+	require.Equal(t, summaries.HealthBad, e.Health)
 	require.EqualValues(t, 4, e.Restarts)
 	require.Equal(t, "0/1", e.Ready)
 	require.Equal(t, []string{"app"}, e.Containers, "plain init containers are not listed")
@@ -133,6 +167,7 @@ func TestSummarizePodSidecar(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Running", e.Phase)
 	require.Equal(t, "2/2", e.Ready, "the sidecar counts like a regular container")
+	require.Equal(t, summaries.HealthOK, e.Health)
 	require.EqualValues(t, 3, e.Restarts, "sidecar 1 + app 2; the finished init container's are dropped")
 	require.Equal(t, []string{"proxy", "app"}, e.Containers)
 	require.Equal(t, []string{"registry.example/proxy:2", "registry.example/web:1.2.3"}, e.Images)
@@ -155,6 +190,7 @@ func TestSummarizeDeployment(t *testing.T) {
 	e, err := Summarize(depRes, dep)
 	require.NoError(t, err)
 	require.Equal(t, "2/3", e.Ready)
+	require.Equal(t, summaries.HealthWarn, e.Health)
 	require.Equal(t, map[string]string{"app": "web"}, e.Selector)
 	require.Equal(t, []string{"registry.example/web:1.2.3"}, e.Images)
 }
@@ -171,6 +207,7 @@ func TestSummarizeDaemonSet(t *testing.T) {
 	e, err := Summarize(dsRes, ds)
 	require.NoError(t, err)
 	require.Equal(t, "4/5", e.Ready, "daemonsets count from status, not spec.replicas")
+	require.Equal(t, summaries.HealthWarn, e.Health)
 	require.Equal(t, map[string]string{"app": "node-exporter"}, e.Selector)
 }
 
@@ -192,6 +229,7 @@ func TestSummarizeService(t *testing.T) {
 	e, err := Summarize(svcRes, svc)
 	require.NoError(t, err)
 	require.Equal(t, "ClusterIP", e.Phase)
+	require.Equal(t, summaries.HealthOK, e.Health)
 	require.Equal(t, []string{"10.0.0.5"}, e.IPs)
 	require.Equal(t, []summaries.Port{{Name: "http", Port: 80}, {Name: "dns", Port: 53, Protocol: "UDP"}}, e.Ports)
 	require.Equal(t, map[string]string{"app": "web"}, e.Selector)
@@ -252,10 +290,18 @@ func TestSummarizeNode(t *testing.T) {
 	e, err := Summarize(summaries.ResourceType{Cluster: "sjc", Version: "v1", Resource: "nodes", Kind: "Node"}, node)
 	require.NoError(t, err)
 	require.Equal(t, "Ready", e.Phase)
+	require.Equal(t, summaries.HealthOK, e.Health)
 	require.Equal(t, "sjc-prod-abc", e.Key(), "cluster-scoped keys have no namespace")
 	require.Equal(t, []string{"205.164.0.82"}, e.IPs)
 	require.Equal(t, "v1.31.2", e.Extra["kubelet"])
 	require.Equal(t, "control-plane", e.Extra["roles"])
+
+	// Cordoned: still serving, but worth a look.
+	node.Object["spec"] = map[string]any{"unschedulable": true}
+	e, err = Summarize(summaries.ResourceType{Cluster: "sjc", Version: "v1", Resource: "nodes", Kind: "Node"}, node)
+	require.NoError(t, err)
+	require.Equal(t, "Ready,SchedulingDisabled", e.Phase)
+	require.Equal(t, summaries.HealthWarn, e.Health)
 }
 
 func TestSummarizeJob(t *testing.T) {
@@ -274,22 +320,24 @@ func TestSummarizeJob(t *testing.T) {
 		name         string
 		spec, status map[string]any
 		phase, ready string
+		health       summaries.Health
 	}{
-		{"running", one, map[string]any{"active": int64(1)}, "Active", "0/1"},
-		{"in backoff between retries", one, map[string]any{"failed": int64(1)}, "Retrying", "0/1"},
-		{"failed for good", one, map[string]any{"failed": int64(3), "conditions": []any{map[string]any{"type": "Failed", "status": "True"}}}, "Failed", "0/1"},
-		{"complete", one, map[string]any{"succeeded": int64(1), "conditions": complete}, "Complete", "1/1"},
-		{"not started", one, map[string]any{}, "", "0/1"},
-		{"suspended", map[string]any{"completions": int64(1), "suspend": true}, map[string]any{}, "Suspended", "0/1"},
-		{"fixed completion count", map[string]any{"completions": int64(3)}, map[string]any{"active": int64(1), "succeeded": int64(2)}, "Active", "2/3"},
-		{"work queue", map[string]any{"parallelism": int64(5)}, map[string]any{"succeeded": int64(5), "conditions": complete}, "Complete", "5/1 of 5"},
-		{"single-worker queue", map[string]any{"parallelism": int64(1)}, map[string]any{"active": int64(1)}, "Active", "0/1"},
+		{"running", one, map[string]any{"active": int64(1)}, "Active", "0/1", summaries.HealthOK},
+		{"in backoff between retries", one, map[string]any{"failed": int64(1)}, "Retrying", "0/1", summaries.HealthWarn},
+		{"failed for good", one, map[string]any{"failed": int64(3), "conditions": []any{map[string]any{"type": "Failed", "status": "True"}}}, "Failed", "0/1", summaries.HealthBad},
+		{"complete", one, map[string]any{"succeeded": int64(1), "conditions": complete}, "Complete", "1/1", summaries.HealthOK},
+		{"not started", one, map[string]any{}, "", "0/1", ""},
+		{"suspended", map[string]any{"completions": int64(1), "suspend": true}, map[string]any{}, "Suspended", "0/1", summaries.HealthWarn},
+		{"fixed completion count", map[string]any{"completions": int64(3)}, map[string]any{"active": int64(1), "succeeded": int64(2)}, "Active", "2/3", summaries.HealthOK},
+		{"work queue", map[string]any{"parallelism": int64(5)}, map[string]any{"succeeded": int64(5), "conditions": complete}, "Complete", "5/1 of 5", summaries.HealthOK},
+		{"single-worker queue", map[string]any{"parallelism": int64(1)}, map[string]any{"active": int64(1)}, "Active", "0/1", summaries.HealthOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e, err := Summarize(jobRes, job(tc.spec, tc.status))
 			require.NoError(t, err)
 			require.Equal(t, tc.phase, e.Phase)
 			require.Equal(t, tc.ready, e.Ready)
+			require.Equal(t, tc.health, e.Health)
 		})
 	}
 }
