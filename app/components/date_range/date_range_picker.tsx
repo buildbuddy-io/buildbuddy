@@ -1,4 +1,4 @@
-import { addDays, isSameDay, startOfDay, startOfMonth } from "date-fns";
+import { addDays, endOfMonth, isSameDay, startOfDay, startOfMonth, subMonths } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import React from "react";
 import { formatDateOnly, formatDateRange } from "../../format/format";
@@ -123,6 +123,34 @@ export class DateRangePicker extends React.Component<DateRangePickerProps, State
     this.setState({ step: "start", preview: null });
   }
 
+  /** Renders a sidebar option that selects the given range. */
+  private renderPreset(label: string, preset: Range & { startDate: Date; endDate: Date }) {
+    const { range } = this.props;
+    const selected =
+      !!range.startDate &&
+      isSameDay(range.startDate, preset.startDate) &&
+      isSameDay(range.endDate ?? new Date(), preset.endDate);
+    const onSelect = () => this.props.onChange(preset);
+    return (
+      <div
+        key={label}
+        role="button"
+        tabIndex={0}
+        className={`preset-option ${selected ? "selected" : ""}`}
+        onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
+        onMouseEnter={() => this.setState({ preview: preset })}
+        onMouseLeave={() => this.setState({ preview: null })}>
+        {label}
+      </div>
+    );
+  }
+
   render() {
     const { range } = this.props;
     const { shownMonth, preview, dragStart, dragEnd } = this.state;
@@ -146,27 +174,16 @@ export class DateRangePicker extends React.Component<DateRangePickerProps, State
         <div className="preset-picker">
           {LAST_N_DAYS_OPTIONS.map((lastNDays) => {
             const startDate = startOfDay(addDays(now, 1 - lastNDays));
-            const selected =
-              !!range.startDate && isSameDay(range.startDate, startDate) && isSameDay(range.endDate ?? now, now);
-            const onSelect = () => this.props.onChange({ startDate, endDate: now, lastNDays });
-            return (
-              <div
-                key={lastNDays}
-                role="button"
-                tabIndex={0}
-                className={`preset-option ${selected ? "selected" : ""}`}
-                onClick={onSelect}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onSelect();
-                  }
-                }}
-                onMouseEnter={() => this.setState({ preview: { startDate, endDate: now } })}
-                onMouseLeave={() => this.setState({ preview: null })}>
-                {formatDateRange(startDate, undefined, { now })}
-              </div>
-            );
+            return this.renderPreset(formatDateRange(startDate, undefined, { now }), {
+              startDate,
+              endDate: now,
+              lastNDays,
+            });
+          })}
+          {this.renderPreset("Current month", { startDate: startOfMonth(now), endDate: endOfMonth(now) })}
+          {this.renderPreset("Last month", {
+            startDate: startOfMonth(subMonths(now, 1)),
+            endDate: endOfMonth(subMonths(now, 1)),
           })}
         </div>
         <div className="calendar-picker">

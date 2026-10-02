@@ -9,11 +9,9 @@ import HelpTooltip from "../../../app/components/tooltip/help_tooltip";
 import errorService from "../../../app/errors/error_service";
 import { bytes, count, formatWithCommas } from "../../../app/format/format";
 import router, { Path, TrendsChartId } from "../../../app/router/router";
-import { END_DATE_PARAM_NAME, LAST_N_DAYS_PARAM_NAME, START_DATE_PARAM_NAME } from "../../../app/router/router_params";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { usage } from "../../../proto/usage_ts_proto";
 import DateRangePickerButton from "../filter/date_range_picker_button";
-import { getDateRangeForPicker } from "../filter/filter_util";
 import TrendsChartComponent, { ChartColor, SeriesType } from "../trends/trends_chart";
 import UsageAlertsComponent from "./usage_alerts";
 import UsageBillCard from "./usage_bill";
@@ -42,6 +40,8 @@ interface State {
 // workflows, etc.  Prior months will still show the "old" charts.
 const FIRST_DETAILED_MONTH = "2025-08";
 const OLAP_QUERY_PARAM = "olap";
+/** URL params holding the selected date range. They are specific to this page. */
+const USAGE_DATE_PARAMS = { start: "usage_start", end: "usage_end" };
 
 function shouldShowDetailedView(periodStart: string): boolean {
   return new Date(periodStart) >= new Date(FIRST_DETAILED_MONTH);
@@ -107,7 +107,6 @@ export default class UsageComponent extends React.Component<UsageProps> {
       <>
         <div className="usage-header">
           <div className="usage-title">Usage</div>
-          {this.activeTab() === "report" && <DateRangePickerButton search={usageDateRange(this.props.search).search} />}
         </div>
         {this.renderTabs()}
       </>
@@ -119,8 +118,8 @@ export default class UsageComponent extends React.Component<UsageProps> {
 
     return (
       <div className="usage-page">
-        <div className="container">{this.renderHeader()}</div>
         <div className="container usage-page-container">
+          {this.renderHeader()}
           {activeTab === "report" && <UsageReport user={this.props.user} search={this.props.search} />}
           {activeTab === "alerting" && <UsageAlertsComponent />}
         </div>
@@ -647,6 +646,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
           <div className="selected-period-label">BuildBuddy usage (UTC)</div>
         </div>
         <div className="usage-period-controls">
+          <DateRangePickerButton search={range.search} paramNames={USAGE_DATE_PARAMS} />
           {capabilities.config.usageExportEnabled && (
             <OutlinedLinkButton
               href={this.usageExportUrl()}
@@ -835,34 +835,19 @@ function currentMonth(): { start: string; end: string } {
 /**
  * The inclusive "YYYY-MM-DD" date range selected in the URL, defaulting to the
  * current month. Also returns the URL params with that default filled in, for
- * the date range picker. Unlike the Trends page, "last N days" ends on the
- * current UTC day, since that's how usage is bucketed.
+ * the date range picker.
  */
 function usageDateRange(search: URLSearchParams): { search: URLSearchParams; start: string; end: string } {
-  const today = moment.utc();
-  const days = Number(search.get(LAST_N_DAYS_PARAM_NAME));
-  if (days) {
-    return {
-      search,
-      start: today
-        .clone()
-        .subtract(days - 1, "days")
-        .format("YYYY-MM-DD"),
-      end: today.format("YYYY-MM-DD"),
-    };
+  const start = search.get(USAGE_DATE_PARAMS.start);
+  const end = search.get(USAGE_DATE_PARAMS.end);
+  if (start && end) {
+    return { search, start, end };
   }
-  if (!search.get(START_DATE_PARAM_NAME) && !search.get(END_DATE_PARAM_NAME)) {
-    const month = currentMonth();
-    search = new URLSearchParams(search);
-    search.set(START_DATE_PARAM_NAME, month.start);
-    search.set(END_DATE_PARAM_NAME, month.end);
-  }
-  const { startDate, endDate } = getDateRangeForPicker(search);
-  return {
-    search,
-    start: moment(startDate).format("YYYY-MM-DD"),
-    end: endDate ? moment(endDate).format("YYYY-MM-DD") : today.format("YYYY-MM-DD"),
-  };
+  const month = currentMonth();
+  search = new URLSearchParams(search);
+  search.set(USAGE_DATE_PARAMS.start, month.start);
+  search.set(USAGE_DATE_PARAMS.end, month.end);
+  return { search, ...month };
 }
 
 function formatBytes(bytes: Long | number, totalBytes: Long | number) {
