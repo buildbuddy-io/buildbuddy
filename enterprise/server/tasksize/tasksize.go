@@ -47,7 +47,8 @@ var (
 )
 
 const (
-	testSizeEnvVar = "TEST_SIZE"
+	testSizeEnvVar          = "TEST_SIZE"
+	gpuSizingExperimentName = "remote_execution.task_gpu_sizing_enabled"
 
 	// Definitions for BCU ("BuildBuddy Compute Unit")
 
@@ -169,8 +170,10 @@ func (s *taskSizer) Get(ctx context.Context, cmd *repb.Command, props *platform.
 	if !*useMeasuredSizes {
 		return nil
 	}
-	// If a task size is explicitly requested, measured task size is not used.
-	if props.EstimatedComputeUnits != 0 {
+	gpuEnabled := gpuSizingEnabled(ctx, s.env.GetExperimentFlagProvider())
+	// Compute units override measured CPU and RAM, but have no corresponding
+	// GPU allocation. GPU measurements remain useful when compute units are set.
+	if props.EstimatedComputeUnits != 0 && !gpuEnabled {
 		return nil
 	}
 	// TODO(bduffany): Remove or hide behind a dev-only flag once measured task sizing
@@ -206,10 +209,20 @@ func (s *taskSizer) Get(ctx context.Context, cmd *repb.Command, props *platform.
 		// executor run this task once to estimate the size.
 		return nil
 	}
-	return ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), cmd, props, &scpb.TaskSize{
+	if props.EstimatedComputeUnits != 0 && recordedSize.EstimatedGpuMemoryBytes == nil {
+		return nil
+	}
+	size := &scpb.TaskSize{
 		EstimatedMemoryBytes: recordedSize.EstimatedMemoryBytes,
 		EstimatedMilliCpu:    recordedSize.EstimatedMilliCpu,
-	})
+	}
+	if gpuEnabled {
+		size.EstimatedGpuMemoryBytes = recordedSize.EstimatedGpuMemoryBytes
+	}
+	if props.EstimatedComputeUnits != 0 {
+		return ApplyLimitsWithRequestedSize(ctx, s.env.GetExperimentFlagProvider(), cmd, props, size, requested(props))
+	}
+	return ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), cmd, props, size)
 }
 
 func (s *taskSizer) Predict(ctx context.Context, action *repb.Action, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
@@ -269,6 +282,11 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, props *platfo
 	// Apply the configured max CPU limit for computed task sizes. Sizes larger
 	// than this amount must be manually requested.
 	size.EstimatedMilliCpu = min(size.EstimatedMilliCpu, *milliCPULimit)
+	if gpuSizingEnabled(ctx, s.env.GetExperimentFlagProvider()) && stats.GetGpuUsage() != nil {
+		// Preserve a measured zero so it can be distinguished from executions
+		// without GPU tracking. Store the measurement before applying user hints.
+		size.EstimatedGpuMemoryBytes = new(max(stats.GetGpuUsage().GetPeakTotalMemoryBytes(), int64(0)))
+	}
 
 	b, err := proto.Marshal(size)
 	if err != nil {
@@ -600,17 +618,22 @@ func testSize(cmd *repb.Command) (s string, ok bool) {
 	return "", false
 }
 
-// Requested returns the explictily requested task size as described in
+// Requested returns the explicitly requested task size as described in
 // https://www.buildbuddy.io/docs/rbe-platforms#runner-resource-allocation.
 // There is no validation or clamping of the values so we can save exactly what
 // the user requested. EstimatedMemory and EstimatedCPU override
-// EstimatedComputeUnits.
+// EstimatedComputeUnits. EstimatedGPUMemory is only a fallback, and compute
+// units do not imply a GPU allocation.
 func Requested(task *repb.ExecutionTask) *scpb.TaskSize {
 	props, err := platform.ParseProperties(task)
 	if err != nil {
 		log.Infof("Failed to parse task properties, using empty requested size: %s", err)
 		return new(scpb.TaskSize)
 	}
+	return requested(props)
+}
+
+func requested(props *platform.Properties) *scpb.TaskSize {
 	cpu := int64(props.EstimatedComputeUnits * ComputeUnitsToMilliCPU)
 	mem := int64(props.EstimatedComputeUnits * ComputeUnitsToRAMBytes)
 	if props.EstimatedMilliCPU > 0 {
@@ -619,12 +642,16 @@ func Requested(task *repb.ExecutionTask) *scpb.TaskSize {
 	if props.EstimatedMemoryBytes > 0 {
 		mem = props.EstimatedMemoryBytes
 	}
-	return &scpb.TaskSize{
+	size := &scpb.TaskSize{
 		EstimatedMemoryBytes:   mem,
 		EstimatedMilliCpu:      cpu,
 		EstimatedFreeDiskBytes: props.EstimatedFreeDiskBytes,
 		CustomResources:        props.CustomResources,
 	}
+	if props.EstimatedGPUMemoryBytes > 0 {
+		size.EstimatedGpuMemoryBytes = new(props.EstimatedGPUMemoryBytes)
+	}
+	return size
 }
 
 // Default returns the default task size estimate for a task. This depends on
@@ -664,6 +691,7 @@ func Default(task *repb.ExecutionTask) *scpb.TaskSize {
 }
 
 // Override uses all non-empty values from over to override values in base.
+// A present GPU estimate overrides the base even when its value is zero.
 // Both arguments are unmodified. Values are NOT clamped within allowed ranges,
 // so ApplyLimits should be called before using this size.
 func Override(base, over *scpb.TaskSize) *scpb.TaskSize {
@@ -673,6 +701,9 @@ func Override(base, over *scpb.TaskSize) *scpb.TaskSize {
 	}
 	if over.GetEstimatedMilliCpu() > 0 {
 		res.EstimatedMilliCpu = over.GetEstimatedMilliCpu()
+	}
+	if over != nil && over.EstimatedGpuMemoryBytes != nil {
+		res.EstimatedGpuMemoryBytes = new(over.GetEstimatedGpuMemoryBytes())
 	}
 	if over.GetEstimatedFreeDiskBytes() > 0 {
 		res.EstimatedFreeDiskBytes = over.GetEstimatedFreeDiskBytes()
@@ -686,9 +717,13 @@ func Override(base, over *scpb.TaskSize) *scpb.TaskSize {
 // ApplyLimitsWithRequestedSize applies the requested size to size, then clamps
 // the result to within an allowed range. Explicit CPU and memory requests
 // override the corresponding test-size minimums but remain subject to the
-// global minimums.
+// global minimums. A GPU request is only used if size has no GPU estimate.
 func ApplyLimitsWithRequestedSize(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd *repb.Command, props *platform.Properties, size, requestedSize *scpb.TaskSize) *scpb.TaskSize {
-	return applyLimits(ctx, efp, cmd, props, Override(size, requestedSize), requestedSize)
+	combined := Override(size, requestedSize)
+	if size.EstimatedGpuMemoryBytes != nil {
+		combined.EstimatedGpuMemoryBytes = new(size.GetEstimatedGpuMemoryBytes())
+	}
+	return applyLimits(ctx, efp, cmd, props, combined, requestedSize)
 }
 
 // ApplyLimits clamps each value in size to within an allowed range.
@@ -723,6 +758,21 @@ func applyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd
 	if clone.EstimatedMemoryBytes < minMemoryBytes {
 		clone.EstimatedMemoryBytes = minMemoryBytes
 	}
+	if gpuSizingEnabled(ctx, efp) {
+		if clone.GetEstimatedGpuMemoryBytes() < 0 {
+			clone.EstimatedGpuMemoryBytes = new(int64(0))
+		}
+		if props != nil {
+			if clone.EstimatedGpuMemoryBytes == nil && props.EstimatedGPUMemoryBytes > 0 {
+				clone.EstimatedGpuMemoryBytes = new(props.EstimatedGPUMemoryBytes)
+			}
+			if props.MinGPUMemoryBytes > 0 {
+				clone.EstimatedGpuMemoryBytes = new(max(clone.GetEstimatedGpuMemoryBytes(), props.MinGPUMemoryBytes))
+			}
+		}
+	} else {
+		clone.EstimatedGpuMemoryBytes = nil
+	}
 
 	limitMaxDisk := true
 	if efp != nil {
@@ -741,6 +791,10 @@ func applyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd
 		log.CtxInfof(ctx, "Task requested %d free disk, capped at %d", request, clone.EstimatedFreeDiskBytes)
 	}
 	return clone
+}
+
+func gpuSizingEnabled(ctx context.Context, efp interfaces.ExperimentFlagProvider) bool {
+	return efp != nil && efp.Boolean(ctx, gpuSizingExperimentName, false)
 }
 
 // GetCgroupSettings returns cgroup settings for a task, based on server
@@ -830,10 +884,14 @@ func DiskComputeUnits(diskBytes int64) float64 {
 	return float64(diskBytes) / ComputeUnitsToDiskBytes
 }
 
+// String summarizes the CPU, RAM, GPU memory, and custom resources in size.
 func String(size *scpb.TaskSize) string {
 	resources := []string{
 		fmt.Sprintf("milli_cpu=%d", size.GetEstimatedMilliCpu()),
 		fmt.Sprintf("memory_bytes=%d", size.GetEstimatedMemoryBytes()),
+	}
+	if size != nil && size.EstimatedGpuMemoryBytes != nil {
+		resources = append(resources, fmt.Sprintf("gpu_memory_bytes=%d", size.GetEstimatedGpuMemoryBytes()))
 	}
 	for _, r := range size.GetCustomResources() {
 		resources = append(resources, fmt.Sprintf("%s=%f", r.GetName(), r.GetValue()))
