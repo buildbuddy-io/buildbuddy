@@ -307,7 +307,6 @@ ts_library(
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/rxjs",
-        "//:node_modules/tslib",
         "//app/components/button",
         "//app/components/menu",
         "//app/components/popup",
