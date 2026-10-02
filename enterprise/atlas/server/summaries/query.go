@@ -18,7 +18,7 @@ type Query struct {
 	Namespace string
 	Cluster   string
 	Labels    []string // "k=v" (exact) or "k" (presence)
-	Health    string   // ok, warn or bad
+	Health    string   // prefix of ok, warn, bad or unknown
 }
 
 // ParseQuery splits a search string into terms and filters.
@@ -66,7 +66,8 @@ func (q Query) matches(e *Entry) bool {
 	if q.Namespace != "" && !strings.HasPrefix(strings.ToLower(e.Namespace), q.Namespace) {
 		return false
 	}
-	if q.Health != "" && string(e.Health) != q.Health {
+	// No verdict reads as "unknown", the name the proto gives it.
+	if q.Health != "" && !strings.HasPrefix(cmp.Or(string(e.Health), "unknown"), q.Health) {
 		return false
 	}
 	for _, l := range q.Labels {

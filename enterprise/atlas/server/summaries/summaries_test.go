@@ -153,11 +153,16 @@ func TestSearch(t *testing.T) {
 		fine.Health, broken.Health = HealthOK, HealthBad
 		pods.Put(fine)
 		pods.Put(broken)
+		pods.Put(podEntry("unjudged", "prod"))
 		res := ix.Search("health:bad", 10)
 		require.Equal(t, 1, res.Total)
 		require.Equal(t, "broken", res.Groups[0].Items[0].Name)
+		require.Equal(t, 1, ix.Search("health:b", 10).Total, "a prefix, like the other filters")
 		require.Equal(t, 1, ix.Search("health:ok", 10).Total)
 		require.Equal(t, 0, ix.Search("health:warn", 10).Total)
+		res = ix.Search("health:unknown", 10)
+		require.Equal(t, 1, res.Total)
+		require.Equal(t, "unjudged", res.Groups[0].Items[0].Name)
 	})
 
 	t.Run("empty query returns nothing", func(t *testing.T) {
