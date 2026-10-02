@@ -167,7 +167,7 @@ func TestSearch(t *testing.T) {
 func TestSearchRanksWholeWords(t *testing.T) {
 	ix := New()
 	pods := ix.NewStore(podRes)
-	for _, name := range []string{"webhooks-0", "web-canary-0", "web", "buildbuddy-app-7d9f-abcde"} {
+	for _, name := range []string{"webhooks-0", "web-canary-0", "web", "buildbuddy-app-7d9f-abcde", "buildbuddy-apps-0", "prod-buildbuddy-app-7d9f"} {
 		pods.Put(podEntry(name, "prod"))
 	}
 	crdRes := ResourceType{Cluster: "uswest1", Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions", Kind: "CustomResourceDefinition"}
@@ -189,7 +189,15 @@ func TestSearchRanksWholeWords(t *testing.T) {
 	for _, e := range ix.Search("web kind:pod", 10).Groups[0].Items {
 		names = append(names, e.Name)
 	}
-	require.Equal(t, []string{"web", "web-canary-0", "webhooks-0", "buildbuddy-app-7d9f-abcde"}, names)
+	require.Equal(t, []string{"web", "web-canary-0", "webhooks-0", "buildbuddy-app-7d9f-abcde", "buildbuddy-apps-0", "prod-buildbuddy-app-7d9f"}, names)
+
+	// A term spanning words is a whole-word match too, wherever it sits, and
+	// beats a prefix of a longer word.
+	names = names[:0]
+	for _, e := range ix.Search("buildbuddy-app kind:pod", 10).Groups[0].Items {
+		names = append(names, e.Name)
+	}
+	require.Equal(t, []string{"buildbuddy-app-7d9f-abcde", "prod-buildbuddy-app-7d9f", "buildbuddy-apps-0"}, names)
 }
 
 func TestSelectorMatches(t *testing.T) {

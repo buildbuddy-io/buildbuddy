@@ -108,11 +108,23 @@ func (q Query) score(e *Entry) int {
 	return s
 }
 
-// hasWord reports whether term is one of name's dash- or dot-separated words.
+// hasWord reports whether term occurs in name on word boundaries.
+// The term may itself span words, e.g. "buildbuddy-app" in "prod-buildbuddy-app-7d9f".
 func hasWord(name, term string) bool {
-	words := strings.FieldsFunc(name, func(r rune) bool { return r == '-' || r == '.' })
-	return slices.Contains(words, term)
+	for from := 0; ; {
+		i := strings.Index(name[from:], term)
+		if i < 0 {
+			return false
+		}
+		i += from
+		if j := i + len(term); (i == 0 || isWordSep(name[i-1])) && (j == len(name) || isWordSep(name[j])) {
+			return true
+		}
+		from = i + 1
+	}
 }
+
+func isWordSep(c byte) bool { return c == '-' || c == '.' }
 
 // kindWeight breaks ties between kinds based on how likely it's a resource
 // someone is looking for.
