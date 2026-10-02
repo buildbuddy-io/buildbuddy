@@ -345,6 +345,15 @@ func main() {
 	// fetch data from MMDS, which makes network requests.
 	if *setDefaultRoute {
 		die(configureDefaultRoute("eth0", "192.168.241.1"))
+	} else {
+		// With network=off, the host omits the ip= boot parameter, so the
+		// kernel skips loopback setup. Bring it up here so localhost works.
+		lo, err := net.InterfaceByName("lo")
+		die(err)
+		nlConn, err := rtnl.Dial(nil)
+		die(err)
+		die(nlConn.LinkUp(lo))
+		die(nlConn.Close())
 	}
 
 	die(mkdirp("/etc", 0755))
