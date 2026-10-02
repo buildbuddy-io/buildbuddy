@@ -164,6 +164,34 @@ func TestSearch(t *testing.T) {
 	})
 }
 
+func TestSearchRanksWholeWords(t *testing.T) {
+	ix := New()
+	pods := ix.NewStore(podRes)
+	for _, name := range []string{"webhooks-0", "web-canary-0", "web", "buildbuddy-app-7d9f-abcde"} {
+		pods.Put(podEntry(name, "prod"))
+	}
+	crdRes := ResourceType{Cluster: "uswest1", Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions", Kind: "CustomResourceDefinition"}
+	crds := ix.NewStore(crdRes)
+	for _, name := range []string{"applications.argoproj.example", "adapters.config.istio.example"} {
+		crds.Put(&Entry{Cluster: "uswest1", Group: crdRes.Group, Version: "v1", Resource: crdRes.Resource, Kind: crdRes.Kind, Name: name, Labels: map[string]string{"app": "mixer"}})
+	}
+
+	// A whole word beats a prefix of a longer word: the pods of buildbuddy-app
+	// outrank the CRD group that "applications" lifts.
+	res := ix.Search("app", 10)
+	require.Equal(t, "Pod", res.Groups[0].Kind)
+	require.Equal(t, "buildbuddy-app-7d9f-abcde", res.Groups[0].Items[0].Name)
+	require.Equal(t, "CustomResourceDefinition", res.Groups[1].Kind)
+
+	// Exact, then whole word, then prefix; a hit outside the name (the
+	// app=web label) comes last.
+	names := []string{}
+	for _, e := range ix.Search("web kind:pod", 10).Groups[0].Items {
+		names = append(names, e.Name)
+	}
+	require.Equal(t, []string{"web", "web-canary-0", "webhooks-0", "buildbuddy-app-7d9f-abcde"}, names)
+}
+
 func TestSelectorMatches(t *testing.T) {
 	require.True(t, SelectorMatches(map[string]string{"app": "web"}, map[string]string{"app": "web", "tier": "fe"}))
 	require.False(t, SelectorMatches(map[string]string{"app": "web", "x": "y"}, map[string]string{"app": "web"}))

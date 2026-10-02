@@ -85,7 +85,9 @@ func (q Query) matches(e *Entry) bool {
 	return true
 }
 
-// score ranks a matched entry. For now we only prioritize hits on the name.
+// score ranks a matched entry by how well each term matches its name: the
+// whole name, a whole word of it ("app" in "buildbuddy-app-7d9f"), a prefix,
+// a substring, or not at all (the term hit a label, an image, ...).
 func (q Query) score(e *Entry) int {
 	s := kindWeight(e.Kind)
 	name := strings.ToLower(e.Name)
@@ -93,6 +95,8 @@ func (q Query) score(e *Entry) int {
 		switch {
 		case name == t:
 			s += 100
+		case hasWord(name, t):
+			s += 80
 		case strings.HasPrefix(name, t):
 			s += 60
 		case strings.Contains(name, t):
@@ -102,6 +106,12 @@ func (q Query) score(e *Entry) int {
 		}
 	}
 	return s
+}
+
+// hasWord reports whether term is one of name's dash- or dot-separated words.
+func hasWord(name, term string) bool {
+	words := strings.FieldsFunc(name, func(r rune) bool { return r == '-' || r == '.' })
+	return slices.Contains(words, term)
 }
 
 // kindWeight breaks ties between kinds based on how likely it's a resource
