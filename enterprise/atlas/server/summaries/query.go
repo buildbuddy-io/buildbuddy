@@ -8,7 +8,8 @@ import (
 
 // Query is a parsed search input.
 //
-// Filters use a "key:value" syntax (kind:, ns:/namespace:, cluster:, label:).
+// Filters use a "key:value" syntax (kind:, ns:/namespace:, cluster:, label:,
+// health:).
 // Any other token containing a colon is a plain term, so image references like
 // "redis:7.2" search as expected.
 type Query struct {
@@ -17,6 +18,7 @@ type Query struct {
 	Namespace string
 	Cluster   string
 	Labels    []string // "k=v" (exact) or "k" (presence)
+	Health    string   // ok, warn or bad
 }
 
 // ParseQuery splits a search string into terms and filters.
@@ -32,6 +34,8 @@ func ParseQuery(s string) Query {
 			q.Namespace = strings.TrimPrefix(tok, "namespace:")
 		case strings.HasPrefix(tok, "cluster:"):
 			q.Cluster = strings.TrimPrefix(tok, "cluster:")
+		case strings.HasPrefix(tok, "health:"):
+			q.Health = strings.TrimPrefix(tok, "health:")
 		case strings.HasPrefix(tok, "label:"):
 			if v := strings.TrimPrefix(tok, "label:"); v != "" {
 				q.Labels = append(q.Labels, v)
@@ -45,7 +49,7 @@ func ParseQuery(s string) Query {
 
 // IsEmpty reports whether the query would match everything.
 func (q Query) IsEmpty() bool {
-	return len(q.Terms) == 0 && q.Kind == "" && q.Namespace == "" && q.Cluster == "" && len(q.Labels) == 0
+	return len(q.Terms) == 0 && q.Kind == "" && q.Namespace == "" && q.Cluster == "" && len(q.Labels) == 0 && q.Health == ""
 }
 
 // matchesResourceType checks whether the query filters by resource type and
@@ -60,6 +64,9 @@ func (q Query) matchesResourceType(r ResourceType) bool {
 
 func (q Query) matches(e *Entry) bool {
 	if q.Namespace != "" && !strings.HasPrefix(strings.ToLower(e.Namespace), q.Namespace) {
+		return false
+	}
+	if q.Health != "" && string(e.Health) != q.Health {
 		return false
 	}
 	for _, l := range q.Labels {
