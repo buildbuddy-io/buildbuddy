@@ -97,6 +97,30 @@ go_library(
     }),
 )
 
+filegroup(
+    name = "licenses",
+    data = [
+        "//enterprise:licenses",
+    ],
+)
+
+filegroup(
+    name = "runfiles",
+    data = [
+        "//enterprise/app:app_bundle",
+        "//enterprise/app:sha",
+        "//enterprise/app:style",
+        "//static",
+    ],
+)
+
+filegroup(
+    name = "config_files",
+    data = [
+        "//enterprise/config:config_files",
+    ],
+)
+
 go_binary(
     name = "executor",
     args = [
@@ -106,8 +130,7 @@ go_binary(
         "--max_shutdown_duration=3s",
     ],
     data = [
-        "//enterprise:licenses",
-        "//enterprise/config:config_files",
+        ":config_files",
     ],
     embed = [":executor_lib"],
 )
@@ -175,16 +198,15 @@ windows_arm64_alias(
     visibility = ["//visibility:public"],
 )
 
-alias(
-    name = "tini",
-    actual = select({
-        "@platforms//cpu:arm64": "@com_github_krallin_tini_tini-linux-arm64//file:tini",
-        "//conditions:default": "@com_github_krallin_tini_tini-linux-amd64//file:tini",
-    }),
-)
-
-container_layer(
+image_layer(
     name = "tini_layer",
+    annotations = {
+        "org.opencontainers.image.title": "`tini`"
+        "org.opencontainers.image.description": (
+            "Contains a symlink from `/buildbuddy` to `/tmp`."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
     directory = "/",
     files = [":tini"],
     tags = ["manual"],
@@ -377,6 +399,24 @@ container_image(
 container_image(
     name = "default_base_image",
     base = "@default_execution_image//image:dockerfile_image.tar",
+    tags = ["manual"],
+)
+
+image_load(
+    name = "image",
+    # Explicitly use containerd for clarity. The container will be accessible
+    # via `nerdctl` in the "moby" namespace.
+    #
+    # We use containerd, as advised by `rules_img`, to avoid `docker load`,
+    # which, if the host system is not using the containerd backend for docker,
+    # will create a custom docker manifest.
+    # Loading into containerd allows us to load the exact OCI image we've built
+    # with the expected digest.
+    daemon = "containerd",
+    image = ":image_manifest",
+    registry = "buildbuddy.io",
+    repository = "enterprise/executor",
+    tag = "latest",
     tags = ["manual"],
 )
 
