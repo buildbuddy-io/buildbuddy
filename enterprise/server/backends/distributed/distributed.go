@@ -1439,10 +1439,14 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	requiredReplicas := 1
 	if requireQuorum {
 		requiredReplicas = c.opts.ReplicationFactor/2 + 1
+		// Required replicas should not equal or be greater than the replication factor, so that the cache can tolerate a replica restart.
+		if requiredReplicas >= c.opts.ReplicationFactor {
+			return nil, status.FailedPreconditionError("Quorum availability checks are not supported by the current cache configuration")
+		}
 	}
 	purpose := findmissing.PurposeFromContext(ctx)
 
-	mu := sync.RWMutex{} // protects peer results
+	mu := sync.RWMutex{} // protects digestToPeersWithData and failure updates to PeerSets in peerMap
 	hashResources := make(map[string][]*rspb.ResourceName, 0)
 	peerMap := make(map[string]*peerset.PeerSet, len(resources))
 	type peersWithDataMetadata struct {
@@ -1470,10 +1474,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		}
 	}
 
-	hitMetric := metrics.DistributedCachePeerLookups.WithLabelValues(
-		"FindMissing",
-		metrics.HitStatusLabel,
-	)
 	lookups := 0
 	if requireQuorum {
 		present, missing, err := c.findMissingOnAllReplicas(ctx, hashResources, peerMap)
@@ -1563,6 +1563,10 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		}
 	}
 
+	hitMetric := metrics.DistributedCachePeerLookups.WithLabelValues(
+		"FindMissing",
+		metrics.HitStatusLabel,
+	)
 	for _, peersWithData := range digestToPeersWithData {
 		if len(peersWithData.peers) >= requiredReplicas {
 			hitMetric.Observe(float64(peersWithData.numPeersConsulted))
@@ -1579,7 +1583,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			if *enableBackfill && peersWithData != nil && len(peersMissingData[h]) > 0 {
 				backfills = append(backfills, &backfillOrder{r: r, source: peersWithData.peers[0], dests: peersMissingData[h]})
 			}
-		} else if peersWithData != nil {
+		} else {
 			backfills = append(backfills, c.getBackfillOrders(r, peerMap[h])...)
 		}
 	}
