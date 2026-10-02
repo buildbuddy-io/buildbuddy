@@ -12,6 +12,10 @@
   position: absolute;
   top: 100%;
 
+  /* Keep scroll gestures inside the popup. */
+  overflow: auto;
+  overscroll-behavior: contain;
+
   z-index: 6;
 
   border-radius: 4px;
