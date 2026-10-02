@@ -122,7 +122,7 @@ diff --git a/internal/transport/controlbuf.go b/internal/transport/controlbuf.go
  type dataFrame struct {
  	streamID   uint32
  	endStream  bool
-@@ -172,50 +171,58 @@ type dataFrame struct {
+@@ -172,71 +171,82 @@ type dataFrame struct {
  	onEachWrite func()
  }
  
@@ -190,7 +190,11 @@ diff --git a/internal/transport/controlbuf.go b/internal/transport/controlbuf.go
  	resp chan uint32
  }
  
-@@ -225,18 +232,20 @@ type outFlowControlSizeRequest struct {
++func (*outFlowControlSizeRequest) isTransportResponseFrame() bool { return false }
++
+ // outStreamRequestForTesting is used by tests to retrieve a pointer to an outStream
+ // safely inside the loopyWriter goroutine without racing on loopyWriter.estdStreams.
+ // By holding the *outStream pointer while streams and transports close down, tests
  // can inspect settled accounting values (such as bytesOutStanding) after loopyWriter
  // has run to completion without any data races.
  type outStreamRequestForTesting struct {
@@ -199,8 +203,7 @@ diff --git a/internal/transport/controlbuf.go b/internal/transport/controlbuf.go
  	resp     chan *outStream
  }
  
-+func (*outFlowControlSizeRequest) isTransportResponseFrame() bool { return false }
-+
++func (*outStreamRequestForTesting) isTransportResponseFrame() bool { return false }
 +
  // closeConnection is an instruction to tell the loopy writer to flush the
  // framer and exit, which will cause the transport's connection to be closed
@@ -215,7 +218,7 @@ diff --git a/internal/transport/controlbuf.go b/internal/transport/controlbuf.go
  
  type outStreamState int
  
-@@ -390,9 +399,9 @@ func (c *controlBuffer) executeAndPut(f func() bool, it cbItem) (bool, error) {
+@@ -390,9 +400,9 @@ func (c *controlBuffer) executeAndPut(f func() bool, it cbItem) (bool, error) {
  		c.consumerWaiting = false
  	}
  	c.list.enqueue(it)
@@ -227,7 +230,7 @@ diff --git a/internal/transport/controlbuf.go b/internal/transport/controlbuf.go
  			// We are adding the frame that puts us over the threshold; create
  			// a throttling channel.
  			ch := make(chan struct{})
-@@ -447,8 +456,8 @@ func (c *controlBuffer) getOnceLocked() (any, error) {
+@@ -447,8 +457,8 @@ func (c *controlBuffer) getOnceLocked() (any, error) {
  		return nil, nil
  	}
  	h := c.list.dequeue().(cbItem)
@@ -239,7 +242,6 @@ diff --git a/internal/transport/controlbuf.go b/internal/transport/controlbuf.go
  			// threshold; close and clear the throttling channel.
  			ch := c.trfChan.Swap(nil)
 diff --git a/internal/transport/controlbuf_test.go b/internal/transport/controlbuf_test.go
-index eb71ddf2..00000000
 --- a/internal/transport/controlbuf_test.go
 +++ /dev/null
 @@ -1,85 +0,0 @@
