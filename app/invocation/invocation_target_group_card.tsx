@@ -16,7 +16,9 @@ import React from "react";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { target } from "../../proto/target_ts_proto";
+import alert_service from "../alert/alert_service";
 import capabilities from "../capabilities/capabilities";
+import { OutlinedButton } from "../components/button/button";
 import DigestComponent from "../components/digest/digest";
 import Link, { TextLink } from "../components/link/link";
 import Spinner from "../components/spinner/spinner";
@@ -25,6 +27,7 @@ import format from "../format/format";
 import rpcService, { CancelablePromise } from "../service/rpc_service";
 import FlakyTargetChipComponent from "../target/flaky_target_chip";
 import { copyToClipboard } from "../util/clipboard";
+import { quote } from "../util/shlex";
 import { renderDuration, renderTestSize } from "./target_util";
 
 export interface TargetGroupCardProps {
@@ -42,6 +45,9 @@ interface State {
 }
 
 const Status = api_common.v1.Status;
+
+// Keep in sync with the patch artifact name in cli/agent/fix/patch.go
+const AGENT_FIX_PATCH_REGEXP = /(^|\/)bb-agent-fix-[^\/]*\.patch$/;
 
 /**
  * Renders a single `target.TargetGroup`, with the ability to fetch more pages
@@ -133,6 +139,23 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
     callback();
   }
 
+  private onCopyArtifactsDownloadCommand() {
+    const outputDir = `/tmp/bb-artifacts-${this.props.invocationId}`;
+    let command = `bb download artifacts ${this.props.invocationId} --output_directory=${outputDir}`;
+    // `bb agent fix` uploads its diff as a patch artifact when run on a remote
+    // runner. Apply it to the local workspace after downloading.
+    const patches = this.props.group.targets
+      .concat(this.state.fetchedTargets)
+      .flatMap((target) => target.files)
+      .filter((file) => AGENT_FIX_PATCH_REGEXP.test(file.name))
+      .map((file) => quote(`${outputDir}/${file.name}`));
+    if (patches.length) {
+      command += ` && git apply ${patches.join(" ")}`;
+    }
+    copyToClipboard(command);
+    alert_service.success("Download command copied to clipboard");
+  }
+
   render() {
     let targets = this.props.group.targets.concat(this.state.fetchedTargets);
     let className = "";
@@ -207,11 +230,17 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
           <div className="title">
             {format.formatWithCommas(this.props.group.totalCount)}
             {this.props.filter ? " matching" : ""} {pastVerb}{" "}
-            {this.state.copied ? (
-              <Check className="copy-icon green" onClick={() => this.onCopyClicked()} />
-            ) : (
-              <Copy className="copy-icon" onClick={() => this.onCopyClicked()} />
-            )}{" "}
+            <OutlinedButton className="small-button" onClick={() => this.onCopyClicked()}>
+              {this.state.copied ? <Check className="icon green" /> : <Copy className="icon" />}
+              {this.state.copied ? "Copied target labels" : "Copy target labels"}
+            </OutlinedButton>{" "}
+            {this.props.group.status === 0 && (
+              <OutlinedButton
+                className="artifacts-download-button small-button"
+                onClick={() => this.onCopyArtifactsDownloadCommand()}>
+                <Copy className="icon" /> Copy command to download artifacts
+              </OutlinedButton>
+            )}
             {Boolean(this.props.repo && renderFlakyChip && capabilities.config.targetFlakesUiEnabled) && (
               <div className="invocation-flaky-chip-alignment-hack">
                 <FlakyTargetChipComponent labels={targetLabels} repo={this.props.repo}></FlakyTargetChipComponent>
