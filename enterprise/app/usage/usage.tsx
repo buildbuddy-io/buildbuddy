@@ -835,10 +835,23 @@ function currentMonth(): { start: string; end: string } {
 /**
  * The inclusive "YYYY-MM-DD" date range selected in the URL, defaulting to the
  * current month. Also returns the URL params with that default filled in, for
- * the date range picker.
+ * the date range picker. Unlike the Trends page, "last N days" ends on the
+ * current UTC day, since that's how usage is bucketed.
  */
 function usageDateRange(search: URLSearchParams): { search: URLSearchParams; start: string; end: string } {
-  if (![START_DATE_PARAM_NAME, END_DATE_PARAM_NAME, LAST_N_DAYS_PARAM_NAME].some((name) => search.get(name))) {
+  const today = moment.utc();
+  const days = Number(search.get(LAST_N_DAYS_PARAM_NAME));
+  if (days) {
+    return {
+      search,
+      start: today
+        .clone()
+        .subtract(days - 1, "days")
+        .format("YYYY-MM-DD"),
+      end: today.format("YYYY-MM-DD"),
+    };
+  }
+  if (!search.get(START_DATE_PARAM_NAME) && !search.get(END_DATE_PARAM_NAME)) {
     const month = currentMonth();
     search = new URLSearchParams(search);
     search.set(START_DATE_PARAM_NAME, month.start);
@@ -848,7 +861,7 @@ function usageDateRange(search: URLSearchParams): { search: URLSearchParams; sta
   return {
     search,
     start: moment(startDate).format("YYYY-MM-DD"),
-    end: moment(endDate ?? new Date()).format("YYYY-MM-DD"),
+    end: endDate ? moment(endDate).format("YYYY-MM-DD") : today.format("YYYY-MM-DD"),
   };
 }
 
