@@ -17,8 +17,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/markdown"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -26,6 +29,7 @@ import (
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const usage = `
@@ -35,6 +39,7 @@ Fetches the cached execution response for an execution ID.
 
 By default (--output=markdown), returns a summary including:
   - RPC status and message
+  - Action and command details
   - Exit code and output counts (files, directories, symlinks)
   - Stdout/stderr details (inline size or digest)
   - Server logs (name and digest)
@@ -61,6 +66,13 @@ type getFlags struct {
 	target string
 	apiKey string
 	output string
+}
+
+type actionDetails struct {
+	actionDigest      *repb.Digest
+	action            *repb.Action
+	command           *repb.Command
+	platformOverrides []*repb.Platform_Property
 }
 
 // HandleExecution handles the bb execution command tree.
@@ -108,7 +120,13 @@ func handleGet(args []string) (int, error) {
 	}
 
 	executionID := Flags.Arg(0)
-	executeResponse, err := fetchExecuteResponse(ctx, flags.target, executionID)
+	conn, err := grpc_client.DialSimple(flags.target)
+	if err != nil {
+		return -1, fmt.Errorf("dial %q: %w", flags.target, err)
+	}
+	defer conn.Close()
+
+	executeResponse, err := rexec.GetCachedExecuteResponse(ctx, repb.NewActionCacheClient(conn), executionID)
 	if err != nil {
 		return -1, err
 	}
@@ -122,27 +140,73 @@ func handleGet(args []string) (int, error) {
 		return 0, err
 	}
 
+	actionInfo, err := fetchActionDetails(ctx, bspb.NewByteStreamClient(conn), executionID, executeResponse)
+	if err != nil {
+		return -1, err
+	}
 	markdownWriter := markdown.Writer(os.Stdout, nil)
-	if err := WriteMarkdown(markdownWriter, executionID, executeResponse); err != nil {
+	if err := writeMarkdown(markdownWriter, executionID, executeResponse, nil, actionInfo); err != nil {
 		return 0, err
 	}
 	return 0, nil
 }
 
-func fetchExecuteResponse(ctx context.Context, target, executionID string) (*repb.ExecuteResponse, error) {
-	conn, err := grpc_client.DialSimple(target)
+func fetchActionDetails(ctx context.Context, bsClient bspb.ByteStreamClient, executionID string, executeResponse *repb.ExecuteResponse) (*actionDetails, error) {
+	actionResourceName, err := digest.ParseUploadResourceName(strings.TrimPrefix(executionID, "/"))
 	if err != nil {
-		return nil, fmt.Errorf("dial %q: %w", target, err)
+		return nil, fmt.Errorf("parse execution ID as action resource name: %w", err)
 	}
-	defer conn.Close()
 
-	acClient := repb.NewActionCacheClient(conn)
-	return rexec.GetCachedExecuteResponse(ctx, acClient, executionID)
+	details := &actionDetails{
+		actionDigest: actionResourceName.GetDigest(),
+		action:       &repb.Action{},
+	}
+	if err := cachetools.GetBlobAsProto(ctx, bsClient, actionResourceName, details.action); err != nil {
+		return nil, fmt.Errorf("get action %s: %w", digestString(details.actionDigest), err)
+	}
+
+	if commandDigest := details.action.GetCommandDigest(); commandDigest != nil {
+		details.command = &repb.Command{}
+		commandResourceName := digest.NewCASResourceName(commandDigest, actionResourceName.GetInstanceName(), actionResourceName.GetDigestFunction())
+		if err := cachetools.GetBlobAsProto(ctx, bsClient, commandResourceName, details.command); err != nil {
+			return nil, fmt.Errorf("get command %s: %w", digestString(commandDigest), err)
+		}
+	}
+
+	auxiliaryMetadata := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(executeResponse.GetResult().GetExecutionMetadata(), auxiliaryMetadata)
+	if err != nil {
+		return nil, fmt.Errorf("read platform overrides: %w", err)
+	}
+	if !ok {
+		return details, nil
+	}
+
+	// A Platform permits duplicate property names, while the UI presents the
+	// last override for each name. Keep the first occurrence's position so the
+	// output order also matches the UI's Map iteration order.
+	propertyIndexes := make(map[string]int, len(auxiliaryMetadata.GetPlatformOverrides().GetProperties()))
+	for _, property := range auxiliaryMetadata.GetPlatformOverrides().GetProperties() {
+		name := property.GetName()
+		value := property.GetValue()
+		nameLower := strings.ToLower(name)
+		if strings.Contains(nameLower, "username") || strings.Contains(nameLower, "password") || strings.Contains(nameLower, "env-overrides") {
+			value = "<REDACTED>"
+		}
+		override := &repb.Platform_Property{Name: name, Value: value}
+		if index, ok := propertyIndexes[name]; ok {
+			details.platformOverrides[index] = override
+			continue
+		}
+		propertyIndexes[name] = len(details.platformOverrides)
+		details.platformOverrides = append(details.platformOverrides, override)
+	}
+	return details, nil
 }
 
 // WriteMarkdown writes a human-friendly markdown summary of an ExecuteResponse.
 func WriteMarkdown(w io.Writer, executionID string, executeResponse *repb.ExecuteResponse) error {
-	return WriteMarkdownWithDetails(w, executionID, executeResponse, nil)
+	return writeMarkdown(w, executionID, executeResponse, nil, nil)
 }
 
 type jsonOutput struct {
@@ -203,6 +267,10 @@ func WriteJSONOutput(w io.Writer, executionID string, executeResponse *repb.Exec
 // WriteMarkdownWithDetails writes a human-friendly markdown summary of an
 // ExecuteResponse, optionally including fetched stdout/stderr details.
 func WriteMarkdownWithDetails(w io.Writer, executionID string, executeResponse *repb.ExecuteResponse, details *rexec.ExecutionLogs) error {
+	return writeMarkdown(w, executionID, executeResponse, details, nil)
+}
+
+func writeMarkdown(w io.Writer, executionID string, executeResponse *repb.ExecuteResponse, details *rexec.ExecutionLogs, actionInfo *actionDetails) error {
 	statusCode := codes.Code(executeResponse.GetStatus().GetCode())
 	statusColor := colorForStatus(statusCode)
 	var stdout, stderr []byte
@@ -211,7 +279,7 @@ func WriteMarkdownWithDetails(w io.Writer, executionID string, executeResponse *
 		stderr = details.Stderr
 	}
 	io.WriteString(w, "# Execution details\n")
-	fmt.Fprintf(w, "- Execution ID: `%s`\n", executionID)
+	fmt.Fprintf(w, "- Execution ID: %s\n", markdownCode(executionID))
 	io.WriteString(w, "- Stage: Completed\n")
 	fmt.Fprintf(w, "- RPC status: %s%s (%d)%s", statusColor, statusCode.String(), statusCode, terminal.Esc())
 	if msg := executeResponse.GetStatus().GetMessage(); msg != "" {
@@ -221,6 +289,10 @@ func WriteMarkdownWithDetails(w io.Writer, executionID string, executeResponse *
 	fmt.Fprintf(w, "- Served from cache: %s\n", yesNo(executeResponse.GetCachedResult()))
 	if msg := executeResponse.GetMessage(); msg != "" {
 		fmt.Fprintf(w, "- Message: %s\n", msg)
+	}
+	if actionInfo != nil {
+		writeActionDetails(w, actionInfo)
+		writeCommandDetails(w, actionInfo)
 	}
 
 	result := executeResponse.GetResult()
@@ -248,7 +320,7 @@ func WriteMarkdownWithDetails(w io.Writer, executionID string, executeResponse *
 			slices.Sort(logNames)
 			for _, name := range logNames {
 				logFile := executeResponse.GetServerLogs()[name]
-				fmt.Fprintf(w, "  - %s: %s\n", name, digestString(logFile.GetDigest()))
+				fmt.Fprintf(w, "  - %s: %s\n", name, markdownCode(digestString(logFile.GetDigest())))
 			}
 		}
 
@@ -288,6 +360,81 @@ func WriteMarkdownWithDetails(w io.Writer, executionID string, executeResponse *
 	return writerErr(w)
 }
 
+func writeActionDetails(w io.Writer, details *actionDetails) {
+	io.WriteString(w, "\n")
+	io.WriteString(w, "# Action Details\n")
+	fmt.Fprintf(w, "- Digest: %s\n", markdownCode(digestString(details.actionDigest)))
+	if details.action.GetInputRootDigest() != nil {
+		fmt.Fprintf(w, "- Input root digest: %s\n", markdownCode(digestString(details.action.GetInputRootDigest())))
+	}
+	fmt.Fprintf(w, "- Cacheable: %s\n", yesNo(!details.action.GetDoNotCache()))
+	if details.action.GetTimeout() == nil {
+		io.WriteString(w, "- Timeout: None\n")
+	} else {
+		fmt.Fprintf(w, "- Timeout: %s\n", details.action.GetTimeout().AsDuration())
+	}
+}
+
+func writeCommandDetails(w io.Writer, details *actionDetails) {
+	io.WriteString(w, "\n")
+	io.WriteString(w, "# Command Details\n")
+	if details.command == nil {
+		io.WriteString(w, "No command details were found.\n")
+		return
+	}
+
+	if len(details.command.GetArguments()) == 0 {
+		io.WriteString(w, "- Command line: None found\n")
+	} else {
+		fmt.Fprintf(w, "- Command line: %s\n", markdownCode(shlex.Quote(details.command.GetArguments()...)))
+	}
+
+	if len(details.command.GetEnvironmentVariables()) == 0 {
+		io.WriteString(w, "- Environment variables: None\n")
+	} else {
+		io.WriteString(w, "- Environment variables:\n")
+		for _, variable := range details.command.GetEnvironmentVariables() {
+			fmt.Fprintf(w, "  - %s\n", markdownCode(variable.GetName()+"="+variable.GetValue()))
+		}
+	}
+
+	overriddenPropertyNames := make(map[string]struct{}, len(details.platformOverrides))
+	for _, property := range details.platformOverrides {
+		overriddenPropertyNames[property.GetName()] = struct{}{}
+	}
+	if len(details.command.GetPlatform().GetProperties()) == 0 {
+		io.WriteString(w, "- Platform properties: None\n")
+	} else {
+		io.WriteString(w, "- Platform properties:\n")
+		for _, property := range details.command.GetPlatform().GetProperties() {
+			fmt.Fprintf(w, "  - %s", markdownCode(property.GetName()+"="+property.GetValue()))
+			if _, ok := overriddenPropertyNames[property.GetName()]; ok {
+				io.WriteString(w, " (overridden)")
+			}
+			io.WriteString(w, "\n")
+		}
+	}
+
+	if len(details.platformOverrides) > 0 {
+		io.WriteString(w, "- Platform overrides:\n")
+		for _, property := range details.platformOverrides {
+			fmt.Fprintf(w, "  - %s\n", markdownCode(property.GetName()+"="+property.GetValue()))
+		}
+	}
+}
+
+func markdownCode(value string) string {
+	fence := "`"
+	for strings.Contains(value, fence) {
+		fence += "`"
+	}
+	padding := ""
+	if strings.HasPrefix(value, "`") || strings.HasSuffix(value, "`") {
+		padding = " "
+	}
+	return fence + padding + value + padding + fence
+}
+
 func colorForStatus(code codes.Code) string {
 	if code == codes.OK {
 		return terminal.Esc(32)
@@ -316,7 +463,7 @@ func outputSummary(rawLen int, d *repb.Digest) string {
 	if d == nil {
 		return "None"
 	}
-	return digestString(d)
+	return markdownCode(digestString(d))
 }
 
 func digestString(d *repb.Digest) string {
@@ -392,7 +539,7 @@ func writeServerLogsSection(w io.Writer, executeResponse *repb.ExecuteResponse, 
 	slices.Sort(logNames)
 	for _, name := range logNames {
 		logFile := executeResponse.GetServerLogs()[name]
-		fmt.Fprintf(w, "- %s: %s\n", name, digestString(logFile.GetDigest()))
+		fmt.Fprintf(w, "- %s: %s\n", name, markdownCode(digestString(logFile.GetDigest())))
 	}
 }
 
