@@ -3,7 +3,6 @@ import React from "react";
 import { Subscription } from "rxjs";
 import Menu, { MenuItem } from "../../../app/components/menu/menu";
 import Popup from "../../../app/components/popup/popup";
-import { getCompareActionsPath } from "../../../app/invocation/action_compare_button";
 import actionComparisonService, { ActionComparisonData } from "../../../app/invocation/action_comparison_service";
 import router, { Path } from "../../../app/router/router";
 
@@ -68,13 +67,11 @@ export default class ExecutionMenuButtonComponent extends React.Component<Props,
     if (!selected?.invocationId || !selected?.actionDigest) {
       return;
     }
-    router.navigateTo(
-      getCompareActionsPath(
-        selected.invocationId,
-        selected.actionDigest,
-        this.props.invocationId,
-        this.props.actionDigest
-      )
+    router.navigateToCompareActionsPath(
+      selected.invocationId,
+      selected.actionDigest,
+      this.props.invocationId,
+      this.props.actionDigest
     );
     actionComparisonService.clearComparisonAction();
     this.setState({ isDropdownOpen: false });

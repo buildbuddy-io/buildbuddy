@@ -402,6 +402,19 @@ class Router {
     };
   }
 
+  /** Returns the path of the page comparing action `a` against action `b`. */
+  navigateToCompareActionsPath(
+    invocationIdA: string,
+    actionDigestA: string,
+    invocationIdB: string,
+    actionDigestB: string
+  ) {
+    this.navigateTo(
+      Path.compareActionsPath +
+        `${invocationIdA}:${encodeURIComponent(actionDigestA)}...${invocationIdB}:${encodeURIComponent(actionDigestB)}`
+    );
+  }
+
   getHistoryUser(path: string) {
     return this.getLastPathComponent(path, Path.userHistoryPath);
   }
