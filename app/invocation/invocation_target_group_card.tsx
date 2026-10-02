@@ -27,6 +27,7 @@ import format from "../format/format";
 import rpcService, { CancelablePromise } from "../service/rpc_service";
 import FlakyTargetChipComponent from "../target/flaky_target_chip";
 import { copyToClipboard } from "../util/clipboard";
+import { quote } from "../util/shlex";
 import { renderDuration, renderTestSize } from "./target_util";
 
 export interface TargetGroupCardProps {
@@ -44,6 +45,9 @@ interface State {
 }
 
 const Status = api_common.v1.Status;
+
+// Keep in sync with the patch artifact name in cli/agent/fix/patch.go
+const AGENT_FIX_PATCH_REGEXP = /(^|\/)bb-agent-fix-[^\/]*\.patch$/;
 
 /**
  * Renders a single `target.TargetGroup`, with the ability to fetch more pages
@@ -136,7 +140,19 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
   }
 
   private onCopyArtifactsDownloadCommand() {
-    copyToClipboard(`bb download artifacts ${this.props.invocationId}`);
+    const outputDir = `/tmp/bb-artifacts-${this.props.invocationId}`;
+    let command = `bb download artifacts ${this.props.invocationId} --output_directory=${outputDir}`;
+    // `bb agent fix` uploads its diff as a patch artifact when run on a remote
+    // runner. Apply it to the local workspace after downloading.
+    const patches = this.props.group.targets
+      .concat(this.state.fetchedTargets)
+      .flatMap((target) => target.files)
+      .filter((file) => AGENT_FIX_PATCH_REGEXP.test(file.name))
+      .map((file) => quote(`${outputDir}/${file.name}`));
+    if (patches.length) {
+      command += ` && git apply ${patches.join(" ")}`;
+    }
+    copyToClipboard(command);
     alert_service.success("Download command copied to clipboard");
   }
 

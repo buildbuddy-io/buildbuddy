@@ -805,6 +805,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/target:flaky_target_chip",
         "//app/util:clipboard",
+        "//app/util:shlex",
         "//proto:build_event_stream_ts_proto",
         "//proto:target_ts_proto",
         "//proto/api/v1:common_ts_proto",

@@ -39,8 +39,7 @@ choose the destination, pass `--output_directory`:
 bb download artifacts <INVOCATION_ID_OR_URL> --output_directory=/tmp/artifacts
 ```
 
-If the downloaded artifacts include Git patches, the command also prints a
-`git apply` command that can be used to apply them.
+If the downloaded artifacts include Git patches, `git apply` can be used to apply them.
 
 You can also fetch artifacts using the BuildBuddy API:
 
