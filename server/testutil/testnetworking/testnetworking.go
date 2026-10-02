@@ -43,18 +43,7 @@ func Setup(t testing.TB) {
 		require.NoError(t, err, "enable IPv4 forwarding")
 	}
 
-	// Allow ping sockets, which userspace networks use to forward pings.
-	b, err = os.ReadFile("/proc/sys/net/ipv4/ping_group_range")
-	require.NoError(t, err)
-	var minGID, maxGID int
-	_, err = fmt.Sscan(string(b), &minGID, &maxGID)
-	require.NoError(t, err)
-	if gid := os.Getgid(); gid < minGID || gid > maxGID {
-		err = os.WriteFile("/proc/sys/net/ipv4/ping_group_range", []byte(fmt.Sprintf("%d %d", gid, gid)), 0)
-		require.NoError(t, err, "allow ping sockets")
-	}
-
-	// Set up default hostNetAllocator
+	// Set up default hostNetAllocator and allow ping sockets
 	err = networking.Configure(context.Background())
 	require.NoError(t, err)
 }

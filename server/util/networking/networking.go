@@ -1575,6 +1575,12 @@ func Configure(ctx context.Context) error {
 	}
 	hostNetAllocator = a
 
+	// Userspace networks forward pings using ping sockets, which the executor
+	// can only open if its group is in ping_group_range.
+	if err := allowPingSockets(); err != nil {
+		log.Warningf("Could not allow ping sockets; pings from userspace networks will fail: %s", err)
+	}
+
 	if IsSecondaryNetworkEnabled() {
 		// Adds a new routing table
 		if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
@@ -1583,6 +1589,31 @@ func Configure(ctx context.Context) error {
 		return configurePolicyBasedRoutingForSecondaryNetwork(ctx)
 	}
 	return nil
+}
+
+func allowPingSockets() error {
+	const path = "/proc/sys/net/ipv4/ping_group_range"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var minGID, maxGID int
+	if _, err := fmt.Sscan(string(b), &minGID, &maxGID); err != nil {
+		return status.InternalErrorf("parse %s: %s", path, err)
+	}
+	gid := os.Getgid()
+	if minGID <= gid && gid <= maxGID {
+		return nil
+	}
+	// The setting is shared with everything else in the net namespace, so
+	// widen the range rather than replacing it. An empty range (min > max,
+	// like the kernel default "1 0") is replaced.
+	if minGID <= maxGID {
+		minGID, maxGID = min(minGID, gid), max(maxGID, gid)
+	} else {
+		minGID, maxGID = gid, gid
+	}
+	return os.WriteFile(path, []byte(fmt.Sprintf("%d %d", minGID, maxGID)), 0)
 }
 
 // configurePolicyBasedRoutingForNetworkWIthRoutePrefix configures policy routing for secondary
