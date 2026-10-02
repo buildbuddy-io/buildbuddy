@@ -10,10 +10,8 @@ import (
 )
 
 // Open is unimplemented outside Linux and macOS.
-func Open(name string) (tun.Device, error) {
-	return nil, fmt.Errorf("the tunnel is not supported on %s", runtime.GOOS)
+func Open(name string) (tun.Device, <-chan struct{}, error) {
+	return nil, nil, fmt.Errorf("the tunnel is not supported on %s", runtime.GOOS)
 }
 
-func EnsureConfigured(dev tun.Device, cidr string) error { return nil }
-
-func RequiresRoot() bool { return false }
+func Describe(configured string) string { return configured }

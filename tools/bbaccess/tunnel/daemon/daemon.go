@@ -59,12 +59,12 @@ func Run(cfg *tunnelconfig.Config, creds tunnelmgr.Credentials) error {
 	}
 	defer d.close()
 
-	dev, err := tundev.Open(cfg.TUNName)
+	// Defer to platform-specific code. On mac we need to talk to the
+	// privileged tunhelper to be able to use the tun device. For that same
+	// reason it's possible for the tun device to go away if the tunhelper
+	// goes away. The lost channel is used to signal if this happens.
+	dev, lost, err := tundev.Open(cfg.TUNName)
 	if err != nil {
-		return err
-	}
-	if err := tundev.EnsureConfigured(dev, cfg.FakeCIDR); err != nil {
-		dev.Close()
 		return err
 	}
 	name, _ := dev.Name()
@@ -109,6 +109,8 @@ func Run(cfg *tunnelconfig.Config, creds tunnelmgr.Credentials) error {
 		case <-stop:
 			log.Infof("Shutting down...")
 			return nil
+		case <-lost:
+			return fmt.Errorf("the tunnel device is gone; start again to attach to its replacement")
 		}
 	}
 }
@@ -140,7 +142,7 @@ func PrintStatus(cfg *tunnelconfig.Config, names []string) {
 	fmt.Printf("Config:\n")
 	fmt.Printf("  DNS listener:  %s\n", cfg.DNSListen)
 	fmt.Printf("  Fake range:    %s\n", cfg.FakeCIDR)
-	fmt.Printf("  TUN interface: %s\n", cfg.TUNName)
+	fmt.Printf("  TUN interface: %s\n", tundev.Describe(cfg.TUNName))
 	fmt.Printf("  Idle timeout:  %s\n", cfg.IdleTimeout)
 	fmt.Printf("\nZones:\n")
 	if len(cfg.Zones) == 0 {

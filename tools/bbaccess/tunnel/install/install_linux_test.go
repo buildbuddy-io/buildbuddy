@@ -1,9 +1,8 @@
-//go:build !android
+//go:build linux && !android
 
 package install
 
 import (
-	"net/netip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,13 +37,8 @@ func TestDeviceOwner(t *testing.T) {
 }
 
 func TestDeviceUnitRenders(t *testing.T) {
-	unit, err := deviceUnit(deviceUnitParams{
-		IPCommand: "/usr/sbin/ip",
-		User:      "someone",
-		Dev:       "bbtun0",
-		Addr:      netip.MustParsePrefix("198.18.0.1/16"),
-		MTU:       tunMTU,
-	})
+	unit, err := deviceUnit(deviceUnitParams{Helper: "/opt/helper", UID: 1000, CIDR: "198.18.0.0/16", Dev: "bbtun0"})
 	require.NoError(t, err)
-	require.Contains(t, unit, "mode tun user someone")
+	require.Contains(t, unit, "\nExecStart=/opt/helper --uid 1000 --cidr 198.18.0.0/16 --dev bbtun0\n")
+	require.Contains(t, unit, "\nExecStop=/opt/helper --down --dev bbtun0\n")
 }

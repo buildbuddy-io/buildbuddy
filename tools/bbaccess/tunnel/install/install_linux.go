@@ -1,10 +1,11 @@
-//go:build !android
+//go:build linux && !android
 
-// Package install performs the privileged setup the tunnel needs:
-//   - a systemd unit that creates the TUN device through which relayed traffic
-//     flows so that it survives reboots.
-//   - a systemd-resolved drop-in routing the relayed suffix to the bbaccess
-//     DNS resolver.
+// Package install performs the privileged setup the tunnel needs on Linux:
+//   - installs the tun device helper, a small embedded binary that configures
+//     the tun device as root and a systemd unit that runs it at boot to create
+//     the TUN device through which relayed traffic flows.
+//   - writes a systemd-resolved drop-in routing the relayed suffix to the
+//     bbaccess DNS resolver.
 package install
 
 import (
@@ -21,6 +22,7 @@ import (
 	"text/template"
 
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/daemon"
+	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/tunhelperutil"
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/tunnelconfig"
 )
 
@@ -30,41 +32,39 @@ const (
 	deviceUnitPath = "/etc/systemd/system/" + deviceUnitName
 )
 
+// helperPath is where the helper is installed, owned by root.
+// Can be modified by tests.
+var helperPath = "/usr/local/libexec/bbaccess-tunnel-helper"
+
 func Install(cfg *tunnelconfig.Config) error {
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("this must run as root: sudo bbaccess tunnel install")
 	}
 	// The TUN device belongs to the person who ran sudo, not to root.
-	user := os.Getenv("SUDO_USER")
-	if user == "" {
+	owner := os.Getenv("SUDO_USER")
+	if owner == "" {
 		return fmt.Errorf("cannot tell which user should own the TUN device: run this through sudo")
 	}
-	// Sanity check values before we write the unit file.
-	if !unitWord.MatchString(user) {
-		return fmt.Errorf("SUDO_USER %q is not a plain user name", user)
+	u, err := user.Lookup(owner)
+	if err != nil {
+		return err
 	}
+	uid, err := strconv.Atoi(u.Uid)
+	if err != nil {
+		return err
+	}
+	// Sanity check values before we write the unit file.
 	if !unitWord.MatchString(cfg.TUNName) || len(cfg.TUNName) > maxIfaceName {
 		return fmt.Errorf("tun_name %q must be 1-%d characters from [A-Za-z0-9._-]", cfg.TUNName, maxIfaceName)
 	}
-
-	prefix, err := netip.ParsePrefix(cfg.FakeCIDR)
-	if err != nil {
-		return fmt.Errorf("parsing fake_cidr %q: %w", cfg.FakeCIDR, err)
-	}
-	if !prefix.Addr().Is4() {
-		return fmt.Errorf("fake_cidr %q must be an IPv4 range", cfg.FakeCIDR)
-	}
-	addr := netip.PrefixFrom(firstAddr(prefix), prefix.Bits())
-
-	// The unit needs an absolute path.
-	// ip lives in /sbin or /usr/sbin depending on the distribution.
-	ipPath, err := exec.LookPath("ip")
-	if err != nil {
-		return fmt.Errorf("finding the ip command: %w", err)
-	}
-	unit, err := deviceUnit(deviceUnitParams{IPCommand: ipPath, User: user, Dev: cfg.TUNName, Addr: addr, MTU: tunMTU})
+	unit, err := deviceUnitFor(cfg, uid)
 	if err != nil {
 		return fmt.Errorf("rendering %s: %w", deviceUnitName, err)
+	}
+	if tunHelperOutdated() != "" {
+		if err := writeTunHelper(); err != nil {
+			return err
+		}
 	}
 	if err := os.WriteFile(deviceUnitPath, []byte(unit), 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", deviceUnitPath, err)
@@ -78,12 +78,12 @@ func Install(cfg *tunnelconfig.Config) error {
 			return fmt.Errorf("systemctl %s: %w: %s", strings.Join(args, " "), err, out)
 		}
 	}
-	fmt.Printf("Created %s (owner %s), routing %s; %s recreates it at boot\n", cfg.TUNName, user, cfg.FakeCIDR, deviceUnitName)
+	fmt.Printf("Created %s (owner %s), routing %s; %s recreates it at boot\n", cfg.TUNName, owner, cfg.FakeCIDR, deviceUnitName)
 
 	if err := installResolved(cfg); err != nil {
 		return err
 	}
-	fmt.Printf("\nInstalled. Start the daemon with:\n\n    bbaccess tunnel run\n\n")
+	fmt.Printf("\nInstalled. Start the daemon with:\n\n    bbaccess tunnel start\n\n")
 	return nil
 }
 
@@ -124,7 +124,10 @@ func Uninstall(cfg *tunnelconfig.Config) error {
 		return fmt.Errorf("removing %s: %w", resolvedDropIn, err)
 	}
 	run("systemctl", "restart", "systemd-resolved")
-	fmt.Printf("Removed %s, %s and %s\n", cfg.TUNName, deviceUnitPath, resolvedDropIn)
+	if err := os.Remove(helperPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing %s: %w", helperPath, err)
+	}
+	fmt.Printf("Removed %s, %s, %s and %s\n", cfg.TUNName, deviceUnitPath, resolvedDropIn, helperPath)
 	return nil
 }
 
@@ -170,9 +173,9 @@ func needed(cfg *tunnelconfig.Config) (string, error) {
 		}
 		uid, _ = strconv.Atoi(u.Uid)
 	}
-	prefix, err := netip.ParsePrefix(cfg.FakeCIDR)
-	if err != nil || !prefix.Addr().Is4() {
-		return "", fmt.Errorf("fake_cidr %q must be an IPv4 range", cfg.FakeCIDR)
+	addr, err := tunhelperutil.LocalAddr(cfg.FakeCIDR)
+	if err != nil {
+		return "", fmt.Errorf("fake_cidr: %w", err)
 	}
 
 	ifc, err := net.InterfaceByName(cfg.TUNName)
@@ -188,7 +191,7 @@ func needed(cfg *tunnelconfig.Config) (string, error) {
 		// Error out on user mismatch.
 		return "", fmt.Errorf("the TUN device %s is owned by %s, not by you; the tunnel supports a single user per machine", cfg.TUNName, userName(owner))
 	}
-	want := netip.PrefixFrom(firstAddr(prefix), prefix.Bits()).String()
+	want := netip.PrefixFrom(addr, netip.MustParsePrefix(cfg.FakeCIDR).Bits()).String()
 	addrs, err := ifc.Addrs()
 	if err != nil {
 		return "", err
@@ -202,34 +205,35 @@ func needed(cfg *tunnelconfig.Config) (string, error) {
 	if !hasAddr {
 		return fmt.Sprintf("the TUN device %s does not carry %s", cfg.TUNName, want), nil
 	}
-	if _, err := os.Stat(deviceUnitPath); err != nil {
+	unit, err := deviceUnitFor(cfg, uid)
+	if err != nil {
+		return "", err
+	}
+	got, err := os.ReadFile(deviceUnitPath)
+	if err != nil {
 		return "the device would not survive a reboot", nil
+	}
+	if string(got) != unit {
+		return fmt.Sprintf("%s is out of date", deviceUnitPath), nil
+	}
+	if reason := tunHelperOutdated(); reason != "" {
+		return reason, nil
 	}
 
 	host, port, err := splitListen(cfg.DNSListen)
 	if err != nil {
 		return "", err
 	}
-	got, err := os.ReadFile(resolvedDropIn)
+	got, err = os.ReadFile(resolvedDropIn)
 	if err != nil || string(got) != resolvedDropInContent(host, port, daemon.ResolverDomains(cfg)) {
 		return fmt.Sprintf("DNS for %s is not routed to the daemon", tunnelconfig.Parent), nil
 	}
 	return "", nil
 }
 
-// userName describes a uid for an error message.
-func userName(uid int) string {
-	if u, err := user.LookupId(strconv.Itoa(uid)); err == nil {
-		return u.Username
-	}
-	return fmt.Sprintf("uid %d", uid)
-}
-
 func run(name string, args ...string) {
 	exec.Command(name, args...).Run()
 }
-
-const tunMTU = 1400
 
 // maxIfaceName is IFNAMSIZ minus the terminator.
 const maxIfaceName = 15
@@ -239,11 +243,10 @@ var unitWord = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // deviceUnitParams fills the systemd unit that creates the TUN device.
 type deviceUnitParams struct {
-	IPCommand string       // absolute path of the ip command
-	User      string       // owner of the device
-	Dev       string       // interface name
-	Addr      netip.Prefix // the device's address
-	MTU       int
+	Helper string // the installed helper
+	UID    int    // owner of the device
+	CIDR   string // the range routed to it
+	Dev    string // interface name
 }
 
 // deviceUnitTemplate is the template for the systemd unit that sets up the
@@ -256,11 +259,8 @@ Before=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStartPre=-{{.IPCommand}} link del {{.Dev}}
-ExecStart={{.IPCommand}} tuntap add dev {{.Dev}} mode tun user {{.User}}
-ExecStart={{.IPCommand}} link set dev {{.Dev}} mtu {{.MTU}} up
-ExecStart={{.IPCommand}} addr add {{.Addr}} dev {{.Dev}}
-ExecStop={{.IPCommand}} link del {{.Dev}}
+ExecStart={{.Helper}} --uid {{.UID}} --cidr {{.CIDR}} --dev {{.Dev}}
+ExecStop={{.Helper}} --down --dev {{.Dev}}
 
 [Install]
 WantedBy=multi-user.target
@@ -274,9 +274,12 @@ func deviceUnit(p deviceUnitParams) (string, error) {
 	return b.String(), nil
 }
 
-func firstAddr(prefix netip.Prefix) netip.Addr {
-	b := prefix.Masked().Addr().As4()
-	return netip.AddrFrom4([4]byte{b[0], b[1], b[2], b[3] | 1})
+// deviceUnitFor renders the unit for cfg's device, owned by uid.
+func deviceUnitFor(cfg *tunnelconfig.Config, uid int) (string, error) {
+	if _, err := tunhelperutil.LocalAddr(cfg.FakeCIDR); err != nil {
+		return "", fmt.Errorf("fake_cidr: %w", err)
+	}
+	return deviceUnit(deviceUnitParams{Helper: helperPath, UID: uid, CIDR: cfg.FakeCIDR, Dev: cfg.TUNName})
 }
 
 func splitListen(listen string) (host, port string, err error) {
