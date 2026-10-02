@@ -1,18 +1,4 @@
-import { parseEnvironmentVariablesInput, parseRunRequestFromURL } from "./run_workflow_deep_link";
-
-describe("parseEnvironmentVariablesInput", () => {
-  it("preserves commas in environment variable values", () => {
-    expect(parseEnvironmentVariablesInput("LIST=a,b, MODE=thorough")).toEqual({
-      LIST: "a,b",
-      MODE: "thorough",
-    });
-  });
-
-  it("allows empty values but rejects empty names", () => {
-    expect(parseEnvironmentVariablesInput("KEY=")).toEqual({ KEY: "" });
-    expect(() => parseEnvironmentVariablesInput(" =hello")).toThrowError(/names must not be empty/);
-  });
-});
+import { parseRunRequestFromURL } from "./run_workflow_deep_link";
 
 describe("parseRunRequestFromURL", () => {
   it("parses a valid run-workflow link", () => {
@@ -27,14 +13,13 @@ describe("parseRunRequestFromURL", () => {
       ])
     );
 
-    expect(result?.pushedRepoUrl).toBe("https://github.com/buildbuddy-io/buildbuddy");
-    expect(result?.targetRepoUrl).toBe("https://github.com/buildbuddy-io/buildbuddy");
-    expect(result?.actionNames).toEqual(["Code review"]);
-    expect(result?.pushedBranch).toBe("feature/review");
-    expect(result?.targetBranch).toBe("feature/review");
-    expect(result?.commitSha).toBe("0123456789abcdef0123456789abcdef01234567");
-    expect(result?.env).toEqual({ AGENT_REVIEW_FORCE: "1" });
-    expect(result?.async).toBeTrue();
+    expect(result).toEqual({
+      repoUrl: "https://github.com/buildbuddy-io/buildbuddy",
+      actionName: "Code review",
+      branch: "feature/review",
+      commit: "0123456789abcdef0123456789abcdef01234567",
+      env: [{ name: "AGENT_REVIEW_FORCE", value: "1" }],
+    });
   });
 
   it("ignores the normal workflows route", () => {
@@ -116,6 +101,6 @@ describe("parseRunRequestFromURL", () => {
         ["env", "MALICIOUS=1"],
       ])
     );
-    expect(result?.env).toEqual({});
+    expect(result?.env).toEqual([]);
   });
 });

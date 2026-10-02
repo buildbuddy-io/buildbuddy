@@ -1,12 +1,25 @@
 import { normalizeRepoURL } from "../../../app/util/git";
-import { workflow } from "../../../proto/workflow_ts_proto";
 
 const RUN_WORKFLOW_PATH = "/workflows/run";
 
+export type EnvVar = {
+  name: string;
+  value: string;
+};
+
+// Values parsed from a run-workflow link, used to pre-fill the run workflow form.
+export type RunWorkflowParams = {
+  repoUrl: string;
+  actionName: string;
+  branch: string;
+  commit: string;
+  env: EnvVar[];
+};
+
 // Links may only select from a fixed set of env var presets, rather than
 // setting arbitrary env vars.
-const ENV_PRESETS: Record<string, Record<string, string>> = {
-  AGENT_REVIEW: { AGENT_REVIEW_FORCE: "1" },
+const ENV_PRESETS: Record<string, EnvVar[]> = {
+  AGENT_REVIEW: [{ name: "AGENT_REVIEW_FORCE", value: "1" }],
 };
 
 function requiredParameter(search: URLSearchParams, name: string): string {
@@ -30,43 +43,19 @@ function validateRepositoryURL(value: string): string {
   return normalized;
 }
 
-function parseEnvPreset(search: URLSearchParams): Record<string, string> {
+function parseEnvPreset(search: URLSearchParams): EnvVar[] {
   const preset = search.get("env_preset")?.trim() ?? "";
-  if (!preset) return {};
+  if (!preset) return [];
   if (!Object.prototype.hasOwnProperty.call(ENV_PRESETS, preset)) {
     throw new Error(`invalid env_preset parameter`);
   }
-  return { ...ENV_PRESETS[preset] };
+  return ENV_PRESETS[preset].map((envVar) => ({ ...envVar }));
 }
 
-export function parseEnvironmentVariablesInput(value: string): Record<string, string> {
-  return Object.fromEntries(
-    value
-      // A comma starts a new assignment only when followed by another variable name and `=`.
-      .split(/,(?=\s*[A-Za-z_][A-Za-z0-9_]*\s*=)/)
-      .map((assignment) => assignment.trim())
-      .filter(Boolean)
-      .map((assignment) => {
-        const separatorIndex = assignment.indexOf("=");
-        if (separatorIndex < 0) {
-          throw new Error("Environment variables must use the format NAME=value");
-        }
-        const name = assignment.slice(0, separatorIndex).trim();
-        if (!name) {
-          throw new Error("Environment variable names must not be empty");
-        }
-        return [name, assignment.slice(separatorIndex + 1).trim()];
-      })
-  );
-}
-
-export function parseRunRequestFromURL(
-  path: string,
-  search: URLSearchParams
-): workflow.ExecuteWorkflowRequest | undefined {
+export function parseRunRequestFromURL(path: string, search: URLSearchParams): RunWorkflowParams | undefined {
   if (path !== RUN_WORKFLOW_PATH && path !== `${RUN_WORKFLOW_PATH}/`) return undefined;
 
-  const repoURL = validateRepositoryURL(requiredParameter(search, "repo_url"));
+  const repoUrl = validateRepositoryURL(requiredParameter(search, "repo_url"));
   const actionName = requiredParameter(search, "action_name");
   const branch = search.get("branch")?.trim() ?? "";
   const commit = search.get("commit")?.trim() ?? "";
@@ -74,16 +63,7 @@ export function parseRunRequestFromURL(
   if (!branch && !commit) {
     throw new Error("At least one of branch or commit must be set");
   }
-  const parsedEnv = parseEnvPreset(search);
+  const env = parseEnvPreset(search);
 
-  return new workflow.ExecuteWorkflowRequest({
-    pushedRepoUrl: repoURL,
-    targetRepoUrl: repoURL,
-    pushedBranch: branch,
-    targetBranch: branch,
-    commitSha: commit,
-    actionNames: [actionName],
-    env: parsedEnv,
-    async: true,
-  });
+  return { repoUrl, actionName, branch, commit, env };
 }
