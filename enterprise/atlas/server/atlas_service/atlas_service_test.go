@@ -243,6 +243,32 @@ func TestDebugPageLinks(t *testing.T) {
 	}, names(portLinks(c, svc, nil)))
 }
 
+func TestStatefulSetPodLinks(t *testing.T) {
+	flags.Set(t, "atlas.pod_zone", "pod.example")
+	flags.Set(t, "atlas.svc_zone", "svc.example")
+	ix := summaries.New()
+	services := ix.NewStore(svcRes)
+	headless := &summaries.Entry{Cluster: "uswest1", Version: "v1", Resource: "services", Kind: "Service", Namespace: "data", Name: "redis", Phase: "ClusterIP"}
+	services.Put(headless)
+	c := cluster.NewWithClients("uswest1", ix, nil, nil, nil)
+	pod := &summaries.Entry{
+		Cluster: "uswest1", Kind: "Pod", Namespace: "data", Name: "redis-0", IPs: []string{"10.52.25.24"},
+		Hostname: "redis-0", Subdomain: "redis",
+		Ports: []summaries.Port{{Name: "redis", Port: 6379}},
+	}
+	hostPort := func() string { return portLinks(c, pod, nil)[0].GetHostPort() }
+	require.Equal(t, "redis-0.redis.data.svc.example:6379", hostPort(), "the headless service's per-pod record, not the pod IP")
+
+	// Without the record's preconditions, the pod record.
+	pod.Hostname = ""
+	require.Equal(t, "10-52-25-24.data.pod.example:6379", hostPort(), "a subdomain alone makes no per-pod record")
+	pod.Hostname = "redis-0"
+	services.Put(&summaries.Entry{Cluster: "uswest1", Version: "v1", Resource: "services", Kind: "Service", Namespace: "data", Name: "redis", Phase: "ClusterIP", IPs: []string{"10.0.0.9"}})
+	require.Equal(t, "10-52-25-24.data.pod.example:6379", hostPort(), "a service with a cluster IP is not headless")
+	services.Delete("data/redis")
+	require.Equal(t, "10-52-25-24.data.pod.example:6379", hostPort(), "no service by that name")
+}
+
 func TestSearch(t *testing.T) {
 	s, _ := newTestService(t)
 	rsp, err := s.Search(context.Background(), &atlaspb.SearchRequest{Query: "web kind:pod"})

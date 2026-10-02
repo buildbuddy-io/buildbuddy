@@ -385,6 +385,12 @@ func (s *AtlasService) relationsFor(e *summaries.Entry) *relations {
 	return rel
 }
 
+// hasHeadlessService reports whether the index contains the given headless service.
+func hasHeadlessService(ix *summaries.Index, cluster, namespace, name string) bool {
+	svc, ok := ix.GetEntry(cluster, "", "services", namespace, name)
+	return ok && svc.Phase == "ClusterIP" && len(svc.IPs) == 0
+}
+
 // dashedIP renders an IP the way pod DNS records expect ("10-2-3-4").
 func dashedIP(ip string) string {
 	return strings.NewReplacer(".", "-", ":", "-").Replace(ip)
@@ -447,7 +453,14 @@ func portLinks(c *cluster.Cluster, e *summaries.Entry, rel *relations) []*atlasp
 	switch e.Kind {
 	case "Pod":
 		host := ""
-		if podZone != "" && len(e.IPs) > 0 && e.Namespace != "" {
+		switch {
+		case e.Hostname != "" && e.Subdomain != "" && svcZone != "" && e.Namespace != "" &&
+			hasHeadlessService(c.Index(), e.Cluster, e.Namespace, e.Subdomain):
+			// If a pod is part of a headless statefulset service, return the
+			// stable pod name DNS instead of an unstable IP reference. The
+			// record exists only while that headless service does.
+			host = e.Hostname + "." + e.Subdomain + "." + e.Namespace + "." + svcZone
+		case podZone != "" && len(e.IPs) > 0 && e.Namespace != "":
 			host = dashedIP(e.IPs[0]) + "." + e.Namespace + "." + podZone
 		}
 		for _, p := range e.Ports {
