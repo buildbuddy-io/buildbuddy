@@ -57,6 +57,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -1202,6 +1203,14 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			VmExecInitDurationUsec:  4003,
 			VmExecDialDurationUsec:  4004,
 		}
+		// The executor reports the experiment flags it received with the
+		// task. Flags with an empty or "default" variant should not be
+		// recorded.
+		aux.ExperimentFlags = []*expb.EvaluatedFlag{
+			{Name: "executor.some_experiment", Variant: "treatment", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true}},
+			{Name: "executor.default_experiment", Variant: "default", Value: &expb.EvaluatedFlag_StringValue{StringValue: ""}},
+			{Name: "executor.unconfigured_experiment", Value: &expb.EvaluatedFlag_StringValue{StringValue: ""}},
+		}
 	} else if !test.omitSchedulingMetadata {
 		effectivePool := "test-pool"
 		if test.useDefaultPool {
@@ -1464,6 +1473,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.VmDnsWaitDurationUsec = 4002
 		expectedExecution.VmExecInitDurationUsec = 4003
 		expectedExecution.VmExecDialDurationUsec = 4004
+		expectedExecution.ExperimentVariants = map[string]string{"executor.some_experiment": "treatment"}
 	}
 	require.Empty(t, cmp.Diff(
 		expectedExecution,
