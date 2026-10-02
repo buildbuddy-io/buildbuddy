@@ -170,6 +170,79 @@ func TestRelationsDeploymentFindsPodsAcrossReplicaSets(t *testing.T) {
 	require.Equal(t, "web-7d9f-abcde", rel.Pods[0].Name)
 }
 
+func TestDebugPageLinks(t *testing.T) {
+	flags.Set(t, "atlas.pod_zone", "pod.example")
+	flags.Set(t, "atlas.svc_zone", "svc.example")
+	c := cluster.NewWithClients("uswest1", nil, nil, nil, nil)
+	names := func(links []*atlaspb.PortLink) (out []string) {
+		for _, l := range links {
+			if l.GetUrl() != "" {
+				out = append(out, l.GetName()+" "+l.GetUrl())
+			}
+		}
+		return out
+	}
+
+	// A BuildBuddy binary's monitoring port serves the whole debug set.
+	bb := &summaries.Entry{
+		Kind: "Pod", Namespace: "prod", Name: "app-1", IPs: []string{"10.1.2.3"},
+		Images: []string{"registry.example/buildbuddy-app:v2"},
+		Ports:  []summaries.Port{{Name: "http", Port: 8080}, {Name: "monitoring", Port: 9091}, {Name: "https", Port: 8443}},
+	}
+	links := portLinks(c, bb, nil)
+	require.Equal(t, []string{
+		"http http://10-1-2-3.prod.pod.example:8080",
+		"monitoring http://10-1-2-3.prod.pod.example:9091",
+		"https https://10-1-2-3.prod.pod.example:8443",
+		"statusz http://10-1-2-3.prod.pod.example:9091/statusz",
+		"metrics http://10-1-2-3.prod.pod.example:9091/metrics",
+		"pprof http://10-1-2-3.prod.pod.example:9091/debug/pprof/",
+		"flagz http://10-1-2-3.prod.pod.example:9091/flagz",
+		"rpcz http://10-1-2-3.prod.pod.example:9091/rpcz",
+		"channelz http://10-1-2-3.prod.pod.example:9091/channelz/",
+	}, names(links), "ports first, in spec order, then pages")
+	var paths []string
+	for _, l := range links {
+		if l.GetPath() != "" {
+			paths = append(paths, l.GetPath())
+		}
+	}
+	require.Equal(t, []string{"/statusz", "/metrics", "/debug/pprof/", "/flagz", "/rpcz", "/channelz/"}, paths, "page links say which page")
+
+	// Any image: a port named for metrics links to /metrics; 9090 alone is
+	// not a BuildBuddy signal.
+	other := &summaries.Entry{
+		Kind: "Pod", Namespace: "prod", Name: "exporter-1", IPs: []string{"10.1.2.4"},
+		Images: []string{"quay.example/exporter:1"},
+		Ports: []summaries.Port{
+			{Name: "metrics", Port: 9100},
+			{Name: "web", Port: 9090},
+			{Name: "metrics", Port: 9125, Protocol: "UDP"},
+			{Name: "admin", Port: 8081, Protocol: "TCP"}, // spelled out, still TCP
+			{Name: "https-metrics", Port: 10250},         // a TLS listener, as on kubelets
+		},
+	}
+	require.Equal(t, []string{
+		"metrics http://10-1-2-4.prod.pod.example:9100",
+		"web http://10-1-2-4.prod.pod.example:9090",
+		"admin http://10-1-2-4.prod.pod.example:8081",
+		"https-metrics https://10-1-2-4.prod.pod.example:10250",
+		"metrics http://10-1-2-4.prod.pod.example:9100/metrics",
+		"metrics https://10-1-2-4.prod.pod.example:10250/metrics",
+	}, names(portLinks(c, other, nil)), "page links use the port's scheme; the UDP port gets neither kind")
+
+	// A Service has no image; on its page the pods behind it tell, in search
+	// results nothing does.
+	svc := &summaries.Entry{Kind: "Service", Namespace: "prod", Name: "app", Ports: []summaries.Port{{Name: "monitoring", Port: 9091}, {Name: "http", Port: 8080}}}
+	withPods := names(portLinks(c, svc, &relations{Pods: []*summaries.Entry{bb}}))
+	require.Len(t, withPods, 2+len(buildBuddyDebugPages))
+	require.Equal(t, "statusz http://app.prod.svc.example:9091/statusz", withPods[2])
+	require.Equal(t, []string{
+		"monitoring http://app.prod.svc.example:9091",
+		"http http://app.prod.svc.example:8080",
+	}, names(portLinks(c, svc, nil)))
+}
+
 func TestSearch(t *testing.T) {
 	s, _ := newTestService(t)
 	rsp, err := s.Search(context.Background(), &atlaspb.SearchRequest{Query: "web kind:pod"})

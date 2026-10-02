@@ -108,6 +108,12 @@ message PortLink {
   Via via = 7;
   // The service's name when via is SERVICE on a pod page.
   string via_name = 8;
+  // This field is populated if this link represents a specific debug page on
+  // a port.
+  // A single port may have multiple debug pages (e.g. /statusz, /flagz, etc)
+  // and each will be sent as its own PortLink.
+  // A plain port will not have a path set.
+  string path = 9;
 }
 
 message Relations {
