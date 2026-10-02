@@ -430,6 +430,10 @@
   background-color: var(--color-timing-queue);
 }
 
+.timing-phase-runner-setup {
+  background-color: var(--color-timing-runner-setup);
+}
+
 .timing-phase-input-download {
   background-color: var(--color-timing-input-download);
 }
