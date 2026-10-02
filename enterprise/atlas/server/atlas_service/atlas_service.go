@@ -213,6 +213,18 @@ func resourceProto(r summaries.ResourceType) *atlaspb.ResourceType {
 	}
 }
 
+func healthProto(h summaries.Health) atlaspb.Health {
+	switch h {
+	case summaries.HealthOK:
+		return atlaspb.Health_HEALTH_OK
+	case summaries.HealthWarn:
+		return atlaspb.Health_HEALTH_WARN
+	case summaries.HealthBad:
+		return atlaspb.Health_HEALTH_BAD
+	}
+	return atlaspb.Health_HEALTH_UNKNOWN
+}
+
 func entryProto(e *summaries.Entry) *atlaspb.Entry {
 	if e == nil {
 		return nil
@@ -230,6 +242,7 @@ func entryProto(e *summaries.Entry) *atlaspb.Entry {
 		Labels:     e.Labels,
 		Owner:      e.Owner,
 		Phase:      e.Phase,
+		Health:     healthProto(e.Health),
 		Ready:      e.Ready,
 		Restarts:   e.Restarts,
 		Node:       e.Node,

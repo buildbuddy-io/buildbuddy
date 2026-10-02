@@ -50,6 +50,7 @@ func Summarize(res summaries.ResourceType, obj any) (*summaries.Entry, error) {
 	}
 	if m.GetDeletionTimestamp() != nil {
 		e.Phase = "Terminating"
+		e.Health = summaries.HealthWarn
 	}
 	return e, nil
 }
@@ -71,6 +72,9 @@ func enrich(e *summaries.Entry, u *unstructured.Unstructured) {
 		enrichCronJob(e, u)
 	case "Namespace":
 		e.Phase, _, _ = unstructured.NestedString(u.Object, "status", "phase")
+		if e.Phase == "Active" {
+			e.Health = summaries.HealthOK
+		}
 	}
 }
 
@@ -132,7 +136,7 @@ func enrichPod(e *summaries.Entry, u *unstructured.Unstructured) {
 		}
 	}
 
-	ready := 0
+	ready, waiting := 0, false
 	initStatuses, _, _ := unstructured.NestedSlice(u.Object, "status", "initContainerStatuses")
 	for _, s := range initStatuses {
 		sm, ok := s.(map[string]any)
@@ -151,7 +155,7 @@ func enrichPod(e *summaries.Entry, u *unstructured.Unstructured) {
 			e.Restarts += n
 		}
 		if reason := waitingReason(sm); reason != "" {
-			e.Phase = "Init:" + reason
+			e.Phase, waiting = "Init:"+reason, true
 		}
 	}
 	statuses, _, _ := unstructured.NestedSlice(u.Object, "status", "containerStatuses")
@@ -167,11 +171,19 @@ func enrichPod(e *summaries.Entry, u *unstructured.Unstructured) {
 			e.Restarts += n
 		}
 		if reason := waitingReason(sm); reason != "" {
-			e.Phase = reason
+			e.Phase, waiting = reason, true
 		}
 	}
 	if len(containers) > 0 {
 		e.Ready = fmt.Sprintf("%d/%d", ready, len(containers))
+	}
+	switch {
+	case waiting, e.Phase == "Failed", e.Phase == "Unknown":
+		e.Health = summaries.HealthBad
+	case e.Phase == "Succeeded", e.Phase == "Running" && ready == len(containers):
+		e.Health = summaries.HealthOK
+	default: // Pending, or Running with containers not ready
+		e.Health = summaries.HealthWarn
 	}
 }
 
@@ -199,6 +211,10 @@ func enrichWorkload(e *summaries.Entry, u *unstructured.Unstructured) {
 		}
 	}
 	e.Ready = fmt.Sprintf("%d/%d", ready, desired)
+	e.Health = summaries.HealthOK
+	if ready < desired {
+		e.Health = summaries.HealthWarn
+	}
 	e.Selector, _, _ = unstructured.NestedStringMap(u.Object, "spec", "selector", "matchLabels")
 
 	containers, _, _ := unstructured.NestedSlice(u.Object, "spec", "template", "spec", "containers")
@@ -213,6 +229,7 @@ func enrichWorkload(e *summaries.Entry, u *unstructured.Unstructured) {
 
 func enrichService(e *summaries.Entry, u *unstructured.Unstructured) {
 	e.Phase, _, _ = unstructured.NestedString(u.Object, "spec", "type")
+	e.Health = summaries.HealthOK // a service has no failing state of its own
 	e.Selector, _, _ = unstructured.NestedStringMap(u.Object, "spec", "selector")
 	// clusterIPs has both families of a dual-stack service; objects from
 	// before it existed only have clusterIP.
@@ -261,7 +278,7 @@ func enrichService(e *summaries.Entry, u *unstructured.Unstructured) {
 }
 
 func enrichNode(e *summaries.Entry, u *unstructured.Unstructured) {
-	e.Phase = "NotReady"
+	e.Phase, e.Health = "NotReady", summaries.HealthBad
 	conditions, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
 	for _, c := range conditions {
 		cm, ok := c.(map[string]any)
@@ -271,11 +288,14 @@ func enrichNode(e *summaries.Entry, u *unstructured.Unstructured) {
 		typ, _, _ := unstructured.NestedString(cm, "type")
 		st, _, _ := unstructured.NestedString(cm, "status")
 		if typ == "Ready" && st == "True" {
-			e.Phase = "Ready"
+			e.Phase, e.Health = "Ready", summaries.HealthOK
 		}
 	}
 	if unschedulable, _, _ := unstructured.NestedBool(u.Object, "spec", "unschedulable"); unschedulable {
 		e.Phase += ",SchedulingDisabled"
+		if e.Health == summaries.HealthOK {
+			e.Health = summaries.HealthWarn
+		}
 	}
 	addrs, _, _ := unstructured.NestedSlice(u.Object, "status", "addresses")
 	for _, a := range addrs {
@@ -311,15 +331,15 @@ func enrichJob(e *summaries.Entry, u *unstructured.Unstructured) {
 	suspended, _, _ := unstructured.NestedBool(u.Object, "spec", "suspend")
 	switch {
 	case conditionTrue(u, "Complete"):
-		e.Phase = "Complete"
+		e.Phase, e.Health = "Complete", summaries.HealthOK
 	case conditionTrue(u, "Failed"):
-		e.Phase = "Failed"
+		e.Phase, e.Health = "Failed", summaries.HealthBad
 	case suspended:
-		e.Phase = "Suspended"
+		e.Phase, e.Health = "Suspended", summaries.HealthWarn
 	case active > 0:
-		e.Phase = "Active"
+		e.Phase, e.Health = "Active", summaries.HealthOK
 	case failed > 0:
-		e.Phase = "Retrying"
+		e.Phase, e.Health = "Retrying", summaries.HealthWarn
 	}
 	// Same as kubectl's COMPLETIONS column. Without spec.completions the job
 	// is a work queue, done once any one pod succeeds.
@@ -355,7 +375,7 @@ func enrichCronJob(e *summaries.Entry, u *unstructured.Unstructured) {
 		e.SetExtra("schedule", schedule)
 	}
 	if suspended, _, _ := unstructured.NestedBool(u.Object, "spec", "suspend"); suspended {
-		e.Phase = "Suspended"
+		e.Phase, e.Health = "Suspended", summaries.HealthWarn
 	}
 }
 
