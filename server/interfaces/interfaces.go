@@ -1071,6 +1071,7 @@ type FileCache interface {
 type CacheProxyRegistryService interface {
 	RegisterAndStreamHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatServer) error
 	GetCacheProxies(ctx context.Context, req *cppb.GetCacheProxiesRequest) (*cppb.GetCacheProxiesResponse, error)
+	ListCacheProxies(ctx context.Context, req *cppb.ListCacheProxiesRequest) (*cppb.ListCacheProxiesResponse, error)
 }
 
 type SchedulerService interface {
