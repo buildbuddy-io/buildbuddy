@@ -316,6 +316,7 @@ type timelineStatsRow struct {
 	DownloadedBytesTotal   int64
 	UploadedBytesTotal     int64
 	WorkerQueueUsecTotal   int64
+	RunnerSetupUsecTotal   int64
 	InputDownloadUsecTotal int64
 	ExecutionUsecTotal     int64
 	OutputUploadUsecTotal  int64
@@ -327,6 +328,7 @@ type timelineStatsRow struct {
 	DownloadedBytesQuantiles   []int64 `gorm:"type:int64[]"`
 	UploadedBytesQuantiles     []int64 `gorm:"type:int64[]"`
 	WorkerQueueUsecQuantiles   []int64 `gorm:"type:int64[]"`
+	RunnerSetupUsecQuantiles   []int64 `gorm:"type:int64[]"`
 	InputDownloadUsecQuantiles []int64 `gorm:"type:int64[]"`
 	ExecutionUsecQuantiles     []int64 `gorm:"type:int64[]"`
 	OutputUploadUsecQuantiles  []int64 `gorm:"type:int64[]"`
@@ -354,6 +356,8 @@ func (r *timelineStatsRow) toSummaryProto() *expb.ExecutionTimelineSummary {
 		UploadedBytes:          makeQuantiles(r.UploadedBytesQuantiles),
 		WorkerQueueUsecTotal:   r.WorkerQueueUsecTotal,
 		WorkerQueueUsec:        makeQuantiles(r.WorkerQueueUsecQuantiles),
+		RunnerSetupUsecTotal:   r.RunnerSetupUsecTotal,
+		RunnerSetupUsec:        makeQuantiles(r.RunnerSetupUsecQuantiles),
 		InputDownloadUsecTotal: r.InputDownloadUsecTotal,
 		InputDownloadUsec:      makeQuantiles(r.InputDownloadUsecQuantiles),
 		OutputUploadUsecTotal:  r.OutputUploadUsecTotal,
@@ -386,6 +390,10 @@ func (s *ExecutionSearchService) queryTimelineStats(ctx context.Context, req *ex
 	if err != nil {
 		return nil, err
 	}
+	runnerSetupUsec, err := filter.ExecutionMetricToDbField(stat_filter.ExecutionMetricType_RUNNER_SETUP_TIME_EXECUTION_METRIC)
+	if err != nil {
+		return nil, err
+	}
 	inputDownloadUsec, err := filter.ExecutionMetricToDbField(stat_filter.ExecutionMetricType_INPUT_DOWNLOAD_TIME_EXECUTION_METRIC)
 	if err != nil {
 		return nil, err
@@ -408,6 +416,7 @@ func (s *ExecutionSearchService) queryTimelineStats(ctx context.Context, req *ex
 			`+bucketExpr+` AS bucket_start_time_usec,
 			SUM(`+durationUsec+`) AS duration_usec_total,
 			SUM(`+queuedUsec+`) AS worker_queue_usec_total,
+			SUM(`+runnerSetupUsec+`) AS runner_setup_usec_total,
 			SUM(`+inputDownloadUsec+`) AS input_download_usec_total,
 			SUM(`+executionUsec+`) AS execution_usec_total,
 			SUM(`+outputUploadUsec+`) AS output_upload_usec_total,
@@ -416,6 +425,7 @@ func (s *ExecutionSearchService) queryTimelineStats(ctx context.Context, req *ex
 			SUM(file_upload_size_bytes) AS uploaded_bytes_total,
 			quantilesExactLow(`+quantileQString+`)(`+durationUsec+`) AS duration_usec_quantiles,
 			quantilesExactLow(`+quantileQString+`)(`+queuedUsec+`) AS worker_queue_usec_quantiles,
+			quantilesExactLow(`+quantileQString+`)(`+runnerSetupUsec+`) AS runner_setup_usec_quantiles,
 			quantilesExactLow(`+quantileQString+`)(`+inputDownloadUsec+`) AS input_download_usec_quantiles,
 			quantilesExactLow(`+quantileQString+`)(`+executionUsec+`) AS execution_usec_quantiles,
 			quantilesExactLow(`+quantileQString+`)(`+outputUploadUsec+`) AS output_upload_usec_quantiles,
@@ -568,6 +578,7 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 			DurationUsec:      clampedDuration(ex.QueuedTimestampUsec, ex.WorkerCompletedTimestampUsec),
 			CpuNanos:          ex.CPUNanos,
 			WorkerQueueUsec:   clampedDuration(ex.QueuedTimestampUsec, ex.WorkerStartTimestampUsec),
+			RunnerSetupUsec:   clampedDuration(ex.WorkerStartTimestampUsec, ex.InputFetchStartTimestampUsec),
 			InputDownloadUsec: clampedDuration(ex.InputFetchStartTimestampUsec, ex.InputFetchCompletedTimestampUsec),
 			ExecutionUsec:     clampedDuration(ex.ExecutionStartTimestampUsec, ex.ExecutionCompletedTimestampUsec),
 			OutputUploadUsec:  clampedDuration(ex.OutputUploadStartTimestampUsec, ex.OutputUploadCompletedTimestampUsec),

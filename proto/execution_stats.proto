@@ -452,13 +452,14 @@ message ExecutionTimelineEntry {
   int64 duration_usec = 4;
   int64 cpu_nanos = 5;
   int64 worker_queue_usec = 6;
-  int64 input_download_usec = 7;
-  int64 execution_usec = 8;
-  int64 output_upload_usec = 9;
+  int64 runner_setup_usec = 7;
+  int64 input_download_usec = 8;
+  int64 execution_usec = 9;
+  int64 output_upload_usec = 10;
 
-  int64 peak_memory_bytes = 10;
-  int64 downloaded_bytes = 11;
-  int64 uploaded_bytes = 12;
+  int64 peak_memory_bytes = 11;
+  int64 downloaded_bytes = 12;
+  int64 uploaded_bytes = 13;
 }
 
 message AggregatedExecutionTimelineEntry {
@@ -491,14 +492,17 @@ message ExecutionTimelineSummary {
   int64 worker_queue_usec_total = 10;
   repeated Quantile worker_queue_usec = 11;
 
-  int64 input_download_usec_total = 12;
-  repeated Quantile input_download_usec = 13;
+  int64 runner_setup_usec_total = 12;
+  repeated Quantile runner_setup_usec = 13;
 
-  int64 execution_usec_total = 14;
-  repeated Quantile execution_usec = 15;
+  int64 input_download_usec_total = 14;
+  repeated Quantile input_download_usec = 15;
 
-  int64 output_upload_usec_total = 16;
-  repeated Quantile output_upload_usec = 17;
+  int64 execution_usec_total = 16;
+  repeated Quantile execution_usec = 17;
+
+  int64 output_upload_usec_total = 18;
+  repeated Quantile output_upload_usec = 19;
 }
 
 message ExecutionTimeline {
