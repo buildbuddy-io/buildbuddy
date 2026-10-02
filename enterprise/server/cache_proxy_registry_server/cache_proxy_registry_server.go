@@ -396,3 +396,64 @@ func (s *CacheProxyRegistryServer) ListCacheProxies(ctx context.Context, req *cp
 	resp.Summary = summaries
 	return &resp, nil
 }
+
+// TODO(iain): fetch real details from the cache proxy over its registration
+// stream. This returns fake data so the UI can be built in the meantime.
+func (s *CacheProxyRegistryServer) GetCacheProxy(ctx context.Context, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error) {
+	if _, err := s.authenticator.AuthenticatedUser(ctx); err != nil {
+		return nil, err
+	}
+	proxyID := req.GetSelector().GetProxyId()
+	if proxyID == "" {
+		return nil, status.InvalidArgumentError("selector.proxy_id is required")
+	}
+
+	now := s.clock.Now()
+	details := &cppb.CacheProxyDetails{
+		Summary: &cppb.CacheProxySummary{
+			Host:                 "cache-proxy-7f9c4d-x2k8p",
+			ProxyId:              proxyID,
+			ProxyHostId:          "23894af6-a540-430a-962e-a14b1f398472",
+			OsFamily:             "linux",
+			Arch:                 "amd64",
+			Version:              "v2.301.0",
+			StartTime:            timestamppb.New(now.Add(-73 * time.Hour)),
+			Labels:               map[string]string{"cloud": "gcp", "region": "us-west1"},
+			AllocatedCpuMillis:   4000,
+			AllocatedMemoryBytes: 16 << 30,
+			LastCheckInTime:      timestamppb.New(now.Add(-12 * time.Second)),
+		},
+	}
+	if req.GetIncludeConfiguredFlags() {
+		details.ConfiguredFlags = []string{
+			"--cache_proxy.api_key=<redacted>",
+			"--cache_proxy.app_target=grpcs://app.buildbuddy.io",
+			"--cache_proxy.labels=region=us-east1,environment=prod,track=canary",
+			"--cache_proxy.remote_cache_target=grpcs://remote.buildbuddy.io",
+			"--cache.disk.root_directory=/data/cache",
+			"--cache.max_size_bytes=500000000000",
+			"--monitoring_port=9090",
+		}
+	}
+	if req.GetIncludeStatistics() {
+		details.Statistics = &cppb.Statistics{
+			AcReadHits:   1_284_331,
+			AcReadMisses: 97_402,
+			// AcReadUncacheable:       3_120,
+			AcReadHitBytes:  412 << 20,
+			AcReadMissBytes: 31 << 20,
+			// AcReadUncacheableBytes: 1 << 20,
+			CasReadHits:   8_920_114,
+			CasReadMisses: 611_873,
+			// CasReadUncacheable:      0,
+			CasReadHitBytes:  1_870 << 30,
+			CasReadMissBytes: 142 << 30,
+			// CasReadUncacheableBytes: 0,
+			AcWrites:      101_877,
+			AcWriteBytes:  33 << 20,
+			CasWrites:     640_219,
+			CasWriteBytes: 151 << 30,
+		}
+	}
+	return &cppb.GetCacheProxyResponse{Details: details}, nil
+}

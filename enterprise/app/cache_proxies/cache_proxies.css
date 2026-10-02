@@ -165,3 +165,164 @@
   font-family: monospace;
   overflow-wrap: anywhere;
 }
+
+/* CACHE PROXY DETAILS PAGE */
+
+.cache-proxy-page .cache-proxy-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* Pulled up into the shelf's top padding so the button sits near the top of
+ * the header without making the breadcrumb row taller. */
+.cache-proxy-page .cache-proxy-debug-button {
+  margin-top: -24px;
+  padding: 8px 12px 8px 12px;
+  min-height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cache-proxy-page .cache-proxy-debug-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.cache-proxy-page .cache-proxy-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cache-proxy-page .cache-proxy-chip {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+.cache-proxy-page .cache-proxy-detail-page {
+  padding-top: 24px;
+  padding-bottom: 32px;
+}
+
+.cache-proxy-page .cache-proxy-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.cache-proxy-page .cache-proxy-panel {
+  background-color: var(--color-bg-card);
+  box-shadow: var(--shadow-4);
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.cache-proxy-page .cache-proxy-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.cache-proxy-page .cache-proxy-panel-title svg {
+  width: 14px;
+  height: 14px;
+}
+
+.cache-proxy-page .cache-proxy-kv {
+  display: flex;
+  gap: 16px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-border-muted);
+}
+
+.cache-proxy-page .cache-proxy-kv:last-child {
+  border-bottom: none;
+}
+
+.cache-proxy-page .cache-proxy-kv-label {
+  width: 160px;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+
+.cache-proxy-page .cache-proxy-kv-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cache-proxy-page .mono {
+  font-family: monospace;
+}
+
+.cache-proxy-page .cache-proxy-muted {
+  color: var(--color-text-secondary);
+}
+
+.cache-proxy-page .cache-proxy-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* --label-hue is derived from the label key, and the lightness variable
+ * (shared with digest hashes) adapts the color to light and dark themes. */
+.cache-proxy-page .cache-proxy-label {
+  display: inline-flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid hsl(var(--label-hue), 50%, var(--color-digest-color-lightness));
+  font-size: 13px;
+}
+
+.cache-proxy-page .cache-proxy-label-key {
+  padding: 2px 8px;
+  background-color: hsl(var(--label-hue), 50%, var(--color-digest-color-lightness));
+  font-weight: 600;
+}
+
+.cache-proxy-page .cache-proxy-label-value {
+  padding: 2px 8px;
+}
+
+.cache-proxy-page .cache-proxy-flag-filter {
+  margin-bottom: 12px;
+}
+
+.cache-proxy-page .cache-proxy-flags {
+  font-family: monospace;
+  font-size: 13px;
+  background-color: var(--color-bg-code);
+  border-radius: 6px;
+  padding: 12px 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.cache-proxy-page .cache-proxy-flag {
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.cache-proxy-page .cache-proxy-flag-name {
+  color: var(--color-link);
+}
+
+.cache-proxy-page .cache-proxy-flag-value {
+  color: var(--color-code-text);
+}

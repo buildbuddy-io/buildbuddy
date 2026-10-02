@@ -6,7 +6,7 @@ import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import LinkButton from "../../../app/components/button/link_button";
 import UpgradePrompt, { mostUrgent } from "../../../app/components/upgrade/upgrade";
 import ViewModeToggle, { ViewMode } from "../../../app/components/view_mode_toggle/view_mode_toggle";
-import router from "../../../app/router/router";
+import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { api_key } from "../../../proto/api_key_ts_proto";
@@ -67,6 +67,7 @@ class CacheProxySetup extends React.Component<CacheProxySetupProps> {
 interface CacheProxiesListProps {
   regions: RegionalCacheProxyResponse[];
   summary: boolean;
+  canViewDetails: boolean;
 }
 
 class CacheProxiesList extends React.Component<CacheProxiesListProps> {
@@ -121,6 +122,12 @@ class CacheProxiesList extends React.Component<CacheProxiesListProps> {
                   lastCheckInTime={p.proxy.lastCheckInTime}
                   statistics={p.proxy.statistics}
                   summary={this.props.summary}
+                  href={
+                    this.props.canViewDetails
+                      ? `${Path.cacheProxyPath}${encodeURIComponent(p.summary.proxyId)}` +
+                        (p.region ? `?region=${encodeURIComponent(p.region)}` : "")
+                      : undefined
+                  }
                 />
               ))}
             </React.Fragment>
@@ -333,7 +340,11 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                       </div>
                     )}
                     {hasProxies && (
-                      <CacheProxiesList regions={this.state.regions} summary={this.state.viewMode === "summary"} />
+                      <CacheProxiesList
+                        regions={this.state.regions}
+                        summary={this.state.viewMode === "summary"}
+                        canViewDetails={this.props.user.canCall("getCacheProxy")}
+                      />
                     )}
                   </>
                 )}

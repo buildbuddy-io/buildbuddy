@@ -2,6 +2,7 @@ import Long from "long";
 import { Cloud } from "lucide-react";
 import React from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
+import { Link } from "../../../app/components/link/link";
 import format from "../../../app/format/format";
 import { cache_proxy } from "../../../proto/cache_proxy_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
@@ -32,19 +33,21 @@ interface Props {
   // When true, the card is in summary mode and the statistics divider and
   // rings are hidden.
   summary?: boolean;
+  // When set, the hostname links to this proxy's details page.
+  href?: string;
 }
 
 // toNumber accepts the int64-as-number-or-Long values that protobuf-ts
 // produces and returns a plain number. Total cache counts could in theory
 // exceed Number.MAX_SAFE_INTEGER, but for the purposes of a percentage
 // readout that's fine.
-function toNumber(value: number | Long | null | undefined): number {
+export function toNumber(value: number | Long | null | undefined): number {
   if (value === null || value === undefined) return 0;
   if (typeof value === "number") return value;
   return value.toNumber();
 }
 
-function hitRate(hits: number, misses: number): string {
+export function hitRate(hits: number, misses: number): string {
   const total = hits + misses;
   if (total === 0) return "—";
   return format.percent(hits / total) + "%";
@@ -57,7 +60,7 @@ function hitRate(hits: number, misses: number): string {
 // most recent heartbeat is stale-ish."
 const freshThresholdMs = 60 * 1000;
 
-function isFresh(t?: google_timestamp.protobuf.Timestamp | null): boolean {
+export function isFresh(t?: google_timestamp.protobuf.Timestamp | null): boolean {
   if (!t) return false;
   const ms = +(t.seconds || 0) * 1000 + +(t.nanos || 0) / 1_000_000;
   return Date.now() - ms < freshThresholdMs;
@@ -66,8 +69,20 @@ function isFresh(t?: google_timestamp.protobuf.Timestamp | null): boolean {
 export default class CacheProxyCardComponent extends React.Component<Props> {
   render() {
     const fresh = isFresh(this.props.lastCheckInTime);
+    const className = `card ${fresh ? "card-success" : "card-neutral"}`;
+    if (this.props.href) {
+      return (
+        <Link className={className} href={this.props.href}>
+          {this.renderContent()}
+        </Link>
+      );
+    }
+    return <div className={className}>{this.renderContent()}</div>;
+  }
+
+  renderContent() {
     return (
-      <div className={`card ${fresh ? "card-success" : "card-neutral"}`}>
+      <>
         <Cloud />
         <div className="content">
           <div className="details">
@@ -140,7 +155,7 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
             {!this.props.summary && this.props.statistics && this.renderStatistics(this.props.statistics)}
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -188,59 +203,86 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
   }
 
   renderReadRing(title: string, hits: number, misses: number, uncacheable: number, formatValue: (v: number) => string) {
-    return (
-      <div className="cache-proxy-stat-ring">
-        <div className="cache-proxy-stat-ring-title">{title}</div>
-        <div className="cache-proxy-stat-ring-row">
-          {drawReadRing(hits, misses, uncacheable)}
-          <div className="cache-proxy-stat-ring-labels">
-            <div className="cache-proxy-stat-ring-rate">{hitRate(hits, misses)}</div>
-            <div className="cache-chart-label">
-              <span className="color-swatch cache-hit-color-swatch"></span>
-              <span className="cache-stat">{formatValue(hits)}</span>
-              &nbsp;hits
-            </div>
-            <div className="cache-chart-label">
-              <span className="color-swatch cache-miss-color-swatch"></span>
-              <span className="cache-stat">{formatValue(misses)}</span>
-              &nbsp;misses
-            </div>
-            {uncacheable > 0 && (
-              <div className="cache-chart-label">
-                <span className="color-swatch cache-uncacheable-color-swatch"></span>
-                <span className="cache-stat">{formatValue(uncacheable)}</span>
-                &nbsp;uncacheable
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
+    return <ReadRing title={title} hits={hits} misses={misses} uncacheable={uncacheable} formatValue={formatValue} />;
   }
 
   renderReadWriteRing(title: string, reads: number, writes: number, formatValue: (v: number) => string) {
-    return (
-      <div className="cache-proxy-stat-ring">
-        <div className="cache-proxy-stat-ring-title">{title}</div>
-        <div className="cache-proxy-stat-ring-row">
-          {drawReadWriteRing(reads, writes)}
-          <div className="cache-proxy-stat-ring-labels">
-            <div className="cache-proxy-stat-ring-rate">{readWriteRatio(reads, writes)} read:write</div>
-            <div className="cache-chart-label">
-              <span className="color-swatch cache-read-color-swatch"></span>
-              <span className="cache-stat">{formatValue(reads)}</span>
-              &nbsp;read
-            </div>
-            <div className="cache-chart-label">
-              <span className="color-swatch cache-write-color-swatch"></span>
-              <span className="cache-stat">{formatValue(writes)}</span>
-              &nbsp;written
-            </div>
+    return <ReadWriteRing title={title} reads={reads} writes={writes} formatValue={formatValue} />;
+  }
+}
+
+interface ReadWriteRingProps {
+  title: string;
+  reads: number;
+  writes: number;
+  formatValue: (v: number) => string;
+}
+
+// ReadWriteRing renders a donut chart of cache reads vs. writes, with a legend
+// and the read:write ratio.
+export function ReadWriteRing({ title, reads, writes, formatValue }: ReadWriteRingProps) {
+  return (
+    <div className="cache-proxy-stat-ring">
+      <div className="cache-proxy-stat-ring-title">{title}</div>
+      <div className="cache-proxy-stat-ring-row">
+        {drawReadWriteRing(reads, writes)}
+        <div className="cache-proxy-stat-ring-labels">
+          <div className="cache-proxy-stat-ring-rate">{readWriteRatio(reads, writes)} read:write</div>
+          <div className="cache-chart-label">
+            <span className="color-swatch cache-read-color-swatch"></span>
+            <span className="cache-stat">{formatValue(reads)}</span>
+            &nbsp;read
+          </div>
+          <div className="cache-chart-label">
+            <span className="color-swatch cache-write-color-swatch"></span>
+            <span className="cache-stat">{formatValue(writes)}</span>
+            &nbsp;written
           </div>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+interface ReadRingProps {
+  title: string;
+  hits: number;
+  misses: number;
+  uncacheable: number;
+  formatValue: (v: number) => string;
+}
+
+// ReadRing renders a donut chart of cache read hits, misses, and uncacheable
+// reads, with a legend and the hit rate.
+export function ReadRing({ title, hits, misses, uncacheable, formatValue }: ReadRingProps) {
+  return (
+    <div className="cache-proxy-stat-ring">
+      <div className="cache-proxy-stat-ring-title">{title}</div>
+      <div className="cache-proxy-stat-ring-row">
+        {drawReadRing(hits, misses, uncacheable)}
+        <div className="cache-proxy-stat-ring-labels">
+          <div className="cache-proxy-stat-ring-rate">{hitRate(hits, misses)}</div>
+          <div className="cache-chart-label">
+            <span className="color-swatch cache-hit-color-swatch"></span>
+            <span className="cache-stat">{formatValue(hits)}</span>
+            &nbsp;hits
+          </div>
+          <div className="cache-chart-label">
+            <span className="color-swatch cache-miss-color-swatch"></span>
+            <span className="cache-stat">{formatValue(misses)}</span>
+            &nbsp;misses
+          </div>
+          {uncacheable > 0 && (
+            <div className="cache-chart-label">
+              <span className="color-swatch cache-uncacheable-color-swatch"></span>
+              <span className="cache-stat">{formatValue(uncacheable)}</span>
+              &nbsp;uncacheable
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function readWriteRatio(reads: number, writes: number): string {
