@@ -35,13 +35,14 @@ func TestBazelVersion(t *testing.T) {
 	// Note: this test makes sure that the version output appears in stdout
 	// (not stderr), so that tools can do things like `bb version | grep ...`
 	// the same way they can with vanilla bazel.
-	b, err := testcli.Output(cmd)
-	output := string(b)
-	require.NoError(t, err, "output: %s", string(b))
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	output := string(stdout)
+	require.NoError(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
 
 	require.Contains(t, output, "Build label: "+testbazel.Version)
-	// Make sure we don't print any warnings.
+	// Make sure we don't print any warnings. The CLI logs warnings to stderr.
 	require.NotContains(t, output, log.WarningPrefix)
+	require.NotContains(t, string(stderr), log.WarningPrefix)
 }
 
 func TestBazelRun(t *testing.T) {
@@ -67,9 +68,9 @@ sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 	})
 	testfs.MakeExecutable(t, ws, "print_args.sh")
 	cmd := testcli.BazelCommand(t, ws, "run", ":print_args", "--", "--before", "--verbose", "hello", "--after")
-	b, err := testcli.Output(cmd)
-	require.NoError(t, err, "output: %s", string(b))
-	require.Equal(t, "--before --verbose hello --after\n", string(b))
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	require.NoError(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
+	require.Equal(t, "--before --verbose hello --after\n", string(stdout))
 }
 
 func TestInvokeViaBazelisk(t *testing.T) {
@@ -135,9 +136,9 @@ func TestBazelHelp(t *testing.T) {
 	// Note: this test makes sure that the help output appears in stdout (not
 	// stderr), so that tools can do things like `eval $(bb help completion)`
 	// the same way they can with vanilla bazel.
-	b, err := testcli.Output(cmd)
-	output := string(b)
-	require.NoError(t, err, "output: %s", string(b))
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	output := string(stdout)
+	require.NoError(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
 
 	require.Contains(t, output, `BAZEL_STARTUP_OPTIONS="`)
 }
@@ -640,10 +641,10 @@ plugins:
 `,
 	})
 	cmd := testcli.Command(t, ws, "mod", "dump_repo_mapping", "")
-	b, err := testcli.Output(cmd)
-	require.NoErrorf(t, err, "output: %s", string(b))
+	stdout, stderr, err := testcli.SplitOutput(cmd)
+	require.NoErrorf(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
 	// stdout should look like a JSON object
-	require.Regexp(t, `^\{.*\}$`, strings.TrimSpace(string(b)))
+	require.Regexp(t, `^\{.*\}$`, strings.TrimSpace(string(stdout)))
 }
 
 func retryUntilSuccess(t *testing.T, f func() error) {
