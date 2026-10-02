@@ -5,13 +5,13 @@ import React from "react";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import { OutlinedLinkButton } from "../../../app/components/button/link_button";
-import Select, { Option } from "../../../app/components/select/select";
 import HelpTooltip from "../../../app/components/tooltip/help_tooltip";
 import errorService from "../../../app/errors/error_service";
 import { bytes, count, formatWithCommas } from "../../../app/format/format";
 import router, { Path, TrendsChartId } from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { usage } from "../../../proto/usage_ts_proto";
+import DateRangePickerButton from "../filter/date_range_picker_button";
 import TrendsChartComponent, { ChartColor, SeriesType } from "../trends/trends_chart";
 import UsageAlertsComponent from "./usage_alerts";
 import UsageBillCard from "./usage_bill";
@@ -19,17 +19,18 @@ import UsageBillCard from "./usage_bill";
 export interface UsageProps {
   user?: User;
   path: string;
+  search: URLSearchParams;
 }
 
 type UsageTab = "report" | "alerting";
 
 interface UsageReportProps {
   user?: User;
+  search: URLSearchParams;
 }
 
 interface State {
   response?: usage.GetUsageResponse;
-  selectedPeriod: string;
   loading?: boolean;
   /** Undefined until the bill request settles, null if the group has no bill. */
   bill?: usage.IBill | null;
@@ -39,6 +40,8 @@ interface State {
 // workflows, etc.  Prior months will still show the "old" charts.
 const FIRST_DETAILED_MONTH = "2025-08";
 const OLAP_QUERY_PARAM = "olap";
+/** URL params holding the selected date range. They are specific to this page. */
+const USAGE_DATE_PARAMS = { start: "usage_start", end: "usage_end" };
 
 function shouldShowDetailedView(periodStart: string): boolean {
   return new Date(periodStart) >= new Date(FIRST_DETAILED_MONTH);
@@ -117,7 +120,7 @@ export default class UsageComponent extends React.Component<UsageProps> {
       <div className="usage-page">
         <div className="container usage-page-container">
           {this.renderHeader()}
-          {activeTab === "report" && <UsageReport user={this.props.user} />}
+          {activeTab === "report" && <UsageReport user={this.props.user} search={this.props.search} />}
           {activeTab === "alerting" && <UsageAlertsComponent />}
         </div>
       </div>
@@ -127,14 +130,12 @@ export default class UsageComponent extends React.Component<UsageProps> {
 
 /** UsageReport renders the usage report tab contents. */
 class UsageReport extends React.Component<UsageReportProps, State> {
-  // TODO: remove getDefaultTimePeriodString() after the server
-  // is updated to unconditionally send the current period
-  state: State = { selectedPeriod: getDefaultTimePeriodString() };
+  state: State = { loading: true };
   pendingRequest?: CancelablePromise<any>;
 
   componentDidMount() {
     document.title = "Usage | BuildBuddy";
-    this.fetchUsageForPeriod(this.state.selectedPeriod);
+    this.fetchUsage();
     if (capabilities.config.usageBillEnabled) {
       rpcService.service
         .getCurrentBill(new usage.GetCurrentBillRequest())
@@ -146,28 +147,33 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     }
   }
 
-  private onChangePeriod(e: React.ChangeEvent<HTMLSelectElement>) {
-    const period = e.target.value;
-    this.setState({
-      selectedPeriod: period,
-    });
-    this.fetchUsageForPeriod(period);
+  componentDidUpdate(prevProps: UsageReportProps) {
+    const prev = usageDateRange(prevProps.search);
+    const next = usageDateRange(this.props.search);
+    if (prev.start !== next.start || prev.end !== next.end) {
+      this.fetchUsage();
+    }
   }
 
-  private fetchUsageForPeriod(period: string) {
+  private fetchUsage() {
     this.pendingRequest?.cancel();
     this.setState({ loading: true });
 
+    const { start, end } = usageDateRange(this.props.search);
     rpcService.service
-      .getUsage(new usage.GetUsageRequest({ usagePeriod: period, useOlap: useOLAPFromURL() }))
+      .getUsage(new usage.GetUsageRequest({ startDate: start, endDate: end, useOlap: useOLAPFromURL() }))
       .then((response) => {
         console.log(response);
         if (!response.usage) {
           throw new Error("Server did not return usage data.");
         }
-        this.setState({ response, selectedPeriod: period });
+        this.setState({ response });
       })
-      .catch((e) => errorService.handleError(e))
+      .catch((e) => {
+        errorService.handleError(e);
+        // Don't leave the previous range's data on screen.
+        this.setState({ response: undefined });
+      })
       .finally(() => this.setState({ loading: false }));
   }
 
@@ -185,14 +191,10 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     if (this.state.loading || !this.state.response?.dailyUsage) {
       return undefined;
     }
-    const daysInMonth = moment(this.state.selectedPeriod, "YYYY-MM").daysInMonth();
+    const { start, end } = usageDateRange(this.props.search);
     const dates: number[] = [];
-    for (let i = 1; i <= daysInMonth; i++) {
-      dates.push(
-        moment(this.state.selectedPeriod + i.toString().padStart(2, "0"), "YYYY-MM-DD")
-          .startOf("day")
-          .unix()
-      );
+    for (const day = moment(start, "YYYY-MM-DD"); day.isSameOrBefore(moment(end, "YYYY-MM-DD")); day.add(1, "day")) {
+      dates.push(day.unix());
     }
     return (
       <>
@@ -624,42 +626,27 @@ class UsageReport extends React.Component<UsageReportProps, State> {
   }
 
   private usageExportUrl(): string {
-    const start = moment.utc(this.state.selectedPeriod, "YYYY-MM");
-    return rpcService.getAuthenticatedUrl("/usage/download", {
-      start: start.format("YYYY-MM-DD"),
-      end: start.clone().add(1, "month").format("YYYY-MM-DD"),
-    });
+    const { start, end } = usageDateRange(this.props.search);
+    return rpcService.getAuthenticatedUrl("/usage/download", { start, end });
   }
 
   render() {
-    if (!this.state.response) return null;
     // Wait for the bill so the top panel does not switch after it renders.
     if (capabilities.config.usageBillEnabled && this.state.bill === undefined) return null;
 
     const orgName = this.props.user?.selectedGroup.name;
     // Selected period may not be found because of a pending or failed RPC.
-    const selection = this.state.response.usage;
-    const detailed = shouldShowDetailedView(this.state.selectedPeriod);
+    const selection = this.state.response?.usage;
+    const range = usageDateRange(this.props.search);
+    const detailed = shouldShowDetailedView(range.start);
     const periodHeader = (
       <div className="usage-period-header">
         <div>
           {orgName && <div className="org-name">{orgName}</div>}
-          <div className="selected-period-label">
-            BuildBuddy usage for <span className="usage-period">{this.state.selectedPeriod} (UTC)</span>
-          </div>
+          <div className="selected-period-label">BuildBuddy usage (UTC)</div>
         </div>
         <div className="usage-period-controls">
-          <Select
-            title="Usage period"
-            defaultValue={this.state.selectedPeriod}
-            onChange={this.onChangePeriod.bind(this)}>
-            {this.state.response.availableUsagePeriods.map((period, i) => (
-              <Option key={period} value={period}>
-                {period}
-                {i === 0 ? " (Current period)" : ""}
-              </Option>
-            ))}
-          </Select>
+          <DateRangePickerButton search={range.search} paramNames={USAGE_DATE_PARAMS} />
           {capabilities.config.usageExportEnabled && (
             <OutlinedLinkButton
               href={this.usageExportUrl()}
@@ -672,9 +659,9 @@ class UsageReport extends React.Component<UsageReportProps, State> {
         </div>
       </div>
     );
-    // The bill covers the current period only, and replaces the usage summary for it.
-    const isCurrentPeriod = this.state.selectedPeriod === this.state.response.availableUsagePeriods[0];
-    if (this.state.bill && isCurrentPeriod) {
+    // The bill covers the current month only, and replaces the usage summary for it.
+    const month = currentMonth();
+    if (this.state.bill && range.start === month.start && range.end === month.end) {
       return (
         <>
           <UsageBillCard bill={this.state.bill} periodHeader={periodHeader} />
@@ -839,8 +826,28 @@ class UsageReport extends React.Component<UsageReportProps, State> {
   }
 }
 
-function getDefaultTimePeriodString(): string {
-  return moment.utc().format("YYYY-MM");
+/** The current UTC month's first and last days. */
+function currentMonth(): { start: string; end: string } {
+  const now = moment.utc();
+  return { start: now.format("YYYY-MM-01"), end: now.endOf("month").format("YYYY-MM-DD") };
+}
+
+/**
+ * The inclusive "YYYY-MM-DD" date range selected in the URL, defaulting to the
+ * current month. Also returns the URL params with that default filled in, for
+ * the date range picker.
+ */
+function usageDateRange(search: URLSearchParams): { search: URLSearchParams; start: string; end: string } {
+  const start = search.get(USAGE_DATE_PARAMS.start);
+  const end = search.get(USAGE_DATE_PARAMS.end);
+  if (start && end) {
+    return { search, start, end };
+  }
+  const month = currentMonth();
+  search = new URLSearchParams(search);
+  search.set(USAGE_DATE_PARAMS.start, month.start);
+  search.set(USAGE_DATE_PARAMS.end, month.end);
+  return { search, ...month };
 }
 
 function formatBytes(bytes: Long | number, totalBytes: Long | number) {

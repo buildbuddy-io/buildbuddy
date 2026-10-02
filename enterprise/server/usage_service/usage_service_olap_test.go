@@ -604,7 +604,7 @@ func TestUsageExport(t *testing.T) {
 		return rec
 	}
 
-	rec := export(authCtx, "/usage/download?start=2024-02-01&end=2024-03-01")
+	rec := export(authCtx, "/usage/download?start=2024-02-01&end=2024-02-29")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, "text/csv; charset=utf-8", rec.Header().Get("Content-Type"))
 	assert.Equal(t, `attachment; filename="usage-2024-02-01-2024-02-29.csv"`, rec.Header().Get("Content-Disposition"))
@@ -628,5 +628,5 @@ func TestUsageExport(t *testing.T) {
 	} {
 		assert.Equal(t, http.StatusBadRequest, export(authCtx, url).Code, url)
 	}
-	assert.Equal(t, http.StatusUnauthorized, export(ctx, "/usage/download?start=2024-02-01&end=2024-03-01").Code)
+	assert.Equal(t, http.StatusUnauthorized, export(ctx, "/usage/download?start=2024-02-01&end=2024-02-29").Code)
 }

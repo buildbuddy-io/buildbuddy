@@ -1,5 +1,5 @@
 import Long from "long";
-import format from "./format";
+import format, { formatDateRange } from "./format";
 
 describe("percent", () => {
   it("should handle zero", () => {
@@ -162,5 +162,25 @@ describe("count", () => {
     expect(format.count(1.5e6)).toEqual("1.5M");
     expect(format.count(1e9 - 1)).toEqual("1000M");
     expect(format.count(1e9)).toEqual("1B");
+  });
+});
+
+describe("formatDateRange", () => {
+  // The date picker's URL helpers pass an exclusive end.
+  const october = [new Date(2026, 9, 1), new Date(2026, 10, 1)] as const;
+
+  it("should name the current month throughout the month", () => {
+    for (const now of [new Date(2026, 9, 1), new Date(2026, 9, 15), new Date(2026, 9, 31)]) {
+      expect(formatDateRange(...october, { now })).toEqual("Current month");
+    }
+  });
+  it("should name the last month", () => {
+    expect(formatDateRange(...october, { now: new Date(2026, 10, 15) })).toEqual("Last month");
+  });
+  it("should spell out other months and partial months", () => {
+    expect(formatDateRange(...october, { now: new Date(2026, 11, 15) })).toMatch(/^October 1st/);
+    expect(formatDateRange(new Date(2026, 9, 1), new Date(2026, 9, 31), { now: new Date(2026, 9, 31) })).toMatch(
+      /^October 1st/
+    );
   });
 });
