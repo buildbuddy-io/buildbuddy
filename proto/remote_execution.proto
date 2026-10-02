@@ -1893,6 +1893,12 @@ message GetActionResultRequest {
   // `digest_function`.  If the ActionResult matches this digest, then the
   // response will only have the `action_result_digest` field filled.
   Digest cached_action_result_digest = 1001;
+
+  // Retry temporarily missing CAS references when validating this result.
+  // Intended for snapshot lookups; normal action cache lookups do not retry.
+  // The server bounds the total validation time. An absent ActionResult is
+  // still returned as NOT_FOUND immediately.
+  bool retry_missing_blobs = 1002;
 }
 
 // A request message for

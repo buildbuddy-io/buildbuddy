@@ -45,6 +45,29 @@ type failingGetActionCacheClient struct {
 	repb.ActionCacheClient
 }
 
+type snapshotRequestClient struct {
+	repb.ActionCacheClient
+	request *repb.GetActionResultRequest
+}
+
+func (c *snapshotRequestClient) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	c.request = req
+	return nil, status.NotFoundError("snapshot manifest absent")
+}
+
+func TestFetchRemoteManifest_RequestsMissingBlobRetries(t *testing.T) {
+	env := setupEnv(t)
+	client := &snapshotRequestClient{}
+	env.SetActionCacheClient(client)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	_, _, err = loader.FetchRemoteManifest(context.Background(), &fcpb.SnapshotKey{InstanceName: "snapshot-instance"})
+	require.True(t, status.IsNotFoundError(err), "got %v", err)
+	require.NotNil(t, client.request)
+	require.True(t, client.request.GetRetryMissingBlobs())
+	require.Equal(t, "snapshot-instance", client.request.GetInstanceName())
+}
+
 func (f failingGetActionCacheClient) GetActionResult(context.Context, *repb.GetActionResultRequest, ...grpc.CallOption) (*repb.ActionResult, error) {
 	return nil, status.InternalError("action cache lookup failed")
 }

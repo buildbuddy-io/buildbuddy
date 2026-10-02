@@ -830,7 +830,15 @@ func UploadFromReaderWithCompression(ctx context.Context, bsClient bspb.ByteStre
 	}
 }
 
-func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *digest.ACResourceName) (*repb.ActionResult, error) {
+type GetActionResultOption func(*repb.GetActionResultRequest)
+
+// WithMissingBlobRetries asks the server to retry missing CAS references during
+// validation, without retrying absent action results.
+func WithMissingBlobRetries() GetActionResultOption {
+	return func(req *repb.GetActionResultRequest) { req.RetryMissingBlobs = true }
+}
+
+func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *digest.ACResourceName, opts ...GetActionResultOption) (*repb.ActionResult, error) {
 	if acClient == nil {
 		return nil, status.FailedPreconditionError("ActionCacheClient not configured")
 	}
@@ -838,6 +846,9 @@ func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *d
 		ActionDigest:   ar.GetDigest(),
 		InstanceName:   ar.GetInstanceName(),
 		DigestFunction: ar.GetDigestFunction(),
+	}
+	for _, opt := range opts {
+		opt(req)
 	}
 	return retry.Do(ctx, retryOptions("GetActionResult"), func(ctx context.Context) (*repb.ActionResult, error) {
 		ctx, cancel := context.WithTimeout(ctx, *acRPCTimeout)

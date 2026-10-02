@@ -606,7 +606,7 @@ func (l *FileCacheLoader) FetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 	// Modify the context for snapshot fetch.
 	ctx = snaputil.GetSnapshotAccessContext(ctx)
 
-	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
+	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn, cachetools.WithMissingBlobRetries())
 	if err != nil {
 		return nil, nil, err
 	}
