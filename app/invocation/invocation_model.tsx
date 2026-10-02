@@ -344,6 +344,35 @@ export default class InvocationModel {
     return rawVal;
   }
 
+  /** Endpoint for execution state, including the enclosing remote runner. */
+  getRemoteExecutorEndpoint(): string {
+    const runner = this.getRole() === CI_RUNNER_ROLE || this.getRole() === HOSTED_BAZEL_ROLE;
+    const options = runner ? ["rbe_backend", "remote_executor"] : ["remote_executor", "rbe_backend"];
+    return options.map((name) => this.stringCommandLineOption(name)).find(Boolean) || "";
+  }
+
+  /** Input directories for an enclosing runner live in its execution CAS. */
+  getActionInputEndpoint(): string {
+    const runner = this.getRole() === CI_RUNNER_ROLE || this.getRole() === HOSTED_BAZEL_ROLE;
+    return runner ? this.getRemoteExecutorEndpoint() || this.getCacheEndpoint() : this.getCacheEndpoint();
+  }
+
+  /** Cache-control endpoint; artifact URI prefixes are resolved separately. */
+  getCacheEndpoint(): string {
+    const runner = this.getRole() === CI_RUNNER_ROLE || this.getRole() === HOSTED_BAZEL_ROLE;
+    // Unknown Bazel flags can be recorded on a runner command line even though
+    // the runner ignores them. Its own backend options remain authoritative.
+    const options = runner
+      ? ["cache_backend", "rbe_backend", "remote_cache", "remote_executor"]
+      : ["remote_cache", "remote_executor", "cache_backend", "rbe_backend"];
+    return options.map((name) => this.stringCommandLineOption(name)).find(Boolean) || "";
+  }
+
+  /** Live invocation/log state belongs to the build event service region. */
+  getBESBackendEndpoint(): string {
+    return this.stringCommandLineOption("bes_backend");
+  }
+
   isCacheCompressionEnabled() {
     return (
       this.optionsMap.get("experimental_remote_cache_compression") === "1" ||
@@ -436,15 +465,8 @@ export default class InvocationModel {
       return prefix.host;
     }
 
-    const orderedOptions = ["remote_cache", "remote_executor", "cache_backend", "rbe_backend"];
-
-    for (const optionName of orderedOptions) {
-      const option = this.optionsMap.get(optionName);
-      if (!option) continue;
-      return option.replace("grpc://", "").replace("grpcs://", "");
-    }
-
-    return undefined;
+    const endpoint = this.getCacheEndpoint();
+    return endpoint ? endpoint.replace("grpc://", "").replace("grpcs://", "") : undefined;
   }
 
   getRemoteInstanceName() {
@@ -487,24 +509,45 @@ export default class InvocationModel {
    * Returns a URL pointing to a CAS artifact associated with this invocation.
    * The returned URL can be used with RpcService to fetch the blob.
    */
-  getBytestreamURL(digest: build.bazel.remote.execution.v2.IDigest): string {
-    return resourceNameToString(this.getCacheAddress() ?? "", {
+  getBytestreamURL(digest: build.bazel.remote.execution.v2.IDigest, address = this.getCacheAddress() ?? ""): string {
+    return resourceNameToString(address, {
       ...this.getCacheBaseResourceName(),
       cacheType: resource.CacheType.CAS,
       digest: new build.bazel.remote.execution.v2.Digest(digest),
     });
   }
 
+  /** Artifacts of an enclosing runner are separate from its nested build cache. */
+  getActionBytestreamURL(digest: build.bazel.remote.execution.v2.IDigest): string {
+    const runner = this.getRole() === CI_RUNNER_ROLE || this.getRole() === HOSTED_BAZEL_ROLE;
+    return runner ? this.getExecutionBytestreamURL(digest) : this.getBytestreamURL(digest);
+  }
+
+  /** CAS artifacts uploaded by the service launching an execution. */
+  getExecutionBytestreamURL(digest: build.bazel.remote.execution.v2.IDigest): string {
+    return this.getBytestreamURL(digest, this.getExecutionCacheAddress());
+  }
+
+  private getExecutionCacheAddress(): string {
+    const endpoint = this.getRemoteExecutorEndpoint();
+    return endpoint ? endpoint.replace(/^(grpcs?|https?):\/\//, "") : (this.getCacheAddress() ?? "");
+  }
+
   /**
    * Returns a URL pointing to an AC artifact associated with this invocation.
    * The returned URL can be used with RpcService to fetch the ActionResult.
    */
-  getActionCacheURL(digest: build.bazel.remote.execution.v2.IDigest): string {
-    return resourceNameToString(this.getCacheAddress() ?? "", {
+  getActionCacheURL(digest: build.bazel.remote.execution.v2.IDigest, address = this.getCacheAddress() ?? ""): string {
+    return resourceNameToString(address, {
       ...this.getCacheBaseResourceName(),
       cacheType: resource.CacheType.AC,
       digest: new build.bazel.remote.execution.v2.Digest(digest),
     });
+  }
+
+  /** Full execution responses live in the executor's cache, not a separate remote cache. */
+  getExecuteResponseURL(digest: build.bazel.remote.execution.v2.IDigest): string {
+    return this.getActionCacheURL(digest, this.getExecutionCacheAddress());
   }
 
   getIsRBEEnabled() {
