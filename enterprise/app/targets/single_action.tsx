@@ -27,7 +27,6 @@ interface ExecStat {
 
 interface TimingPhase {
   stat: ExecStat;
-  // CSS class that colors the phase's bar segment and legend swatch.
   className: string;
 }
 
@@ -88,6 +87,26 @@ const RESOURCE_STATS: ExecStat[] = [
   { name: "Uploaded", extractor: (e) => +e.uploadedBytes, formatter: format.bytes },
 ];
 
+// Groups of columns that can be shown in the sampled executions table.
+const STAT_SETS: StatSet[] = [
+  {
+    name: "Timing",
+    stats: [WALL_TIME, ...TIMING_PHASES.map((p) => p.stat)],
+    columns: [statColumn(WALL_TIME), { name: "Timing", className: "timing-column", render: renderTimingBar }],
+  },
+  {
+    name: "Resources",
+    stats: RESOURCE_STATS,
+    columns: RESOURCE_STATS.map(statColumn),
+  },
+];
+
+// The number of sampled executions shown in the table before "Show more".
+const MORE_RESULTS_LIMIT = 20;
+
+// The number of leading characters of an action digest shown in the table.
+const DIGEST_PREFIX_LENGTH = 8;
+
 function statColumn(stat: ExecStat): Column {
   return { name: stat.name, className: "stat-column", render: (e) => stat.formatter(stat.extractor(e)) };
 }
@@ -130,32 +149,12 @@ function renderTimingBar(e: execution_stats.ExecutionTimelineEntry, d: DerivedSu
   );
 }
 
-// Groups of columns that can be shown in the sampled executions table.
-const STAT_SETS: StatSet[] = [
-  {
-    name: "Timing",
-    stats: [WALL_TIME, ...TIMING_PHASES.map((p) => p.stat)],
-    columns: [statColumn(WALL_TIME), { name: "Timing", className: "timing-column", render: renderTimingBar }],
-  },
-  {
-    name: "Resources",
-    stats: RESOURCE_STATS,
-    columns: RESOURCE_STATS.map(statColumn),
-  },
-];
-
 interface State {
   resultLimit: number;
   orderBy: ExecStat;
   ascending: boolean;
   tableStats: StatSet;
 }
-
-// The number of sampled executions shown in the table before "Show more".
-const MORE_RESULTS_LIMIT = 20;
-
-// The number of leading characters of an action digest shown in the table.
-const DIGEST_PREFIX_LENGTH = 8;
 
 export default class SingleActionComponent extends React.Component<Props, State> {
   state: State = {
