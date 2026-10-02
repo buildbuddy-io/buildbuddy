@@ -119,6 +119,11 @@ message RegisterCacheProxyRequest {
   // remove this cache proxy from its registry immediately rather than waiting
   // for the heartbeat staleness TTL.
   bool shutting_down = 3;
+
+  // When this message answers a RegisterCacheProxyResponse from the server,
+  // this will be the request_id from that RegisterCacheProxyResponse. Empty for
+  // heartbeats.
+  string request_id = 5;
 }
 
 // RegisterCacheProxyResponse is sent on the stream from the server to the
@@ -128,6 +133,14 @@ message RegisterCacheProxyResponse {
   // with a RegisterCacheProxyRequest with the requested details fields set. The
   // "selector" field of this GetCacheProxyRequest is ignored.
   GetCacheProxyRequest details_request = 1;
+
+  // A unique identifier for this request. This is necessary because the
+  // registration stream contains heartbeat updates along with details requests,
+  // and the registry server may not be able to distinguish between them. The
+  // request_id lets the registration server associate the details it receives
+  // with the response message it sent requesting them (and this, the request it
+  // is serving).
+  string request_id = 2;
 }
 
 // TODO(go/b/8433): remove
