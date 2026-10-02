@@ -1240,20 +1240,29 @@ type schedulerClientCache struct {
 	localServer         *SchedulerServer
 }
 
-func newSchedulerClientCache(env environment.Env, localServerHostPort string, localServer *SchedulerServer) *schedulerClientCache {
+func newSchedulerClientCache(env environment.Env, localServerHostPort string, localServer *SchedulerServer, shuttingDown <-chan struct{}) *schedulerClientCache {
 	cache := &schedulerClientCache{
 		env:                 env,
 		clients:             make(map[string]*schedulerClient),
 		localServerHostPort: localServerHostPort,
 		localServer:         localServer,
 	}
-	cache.startExpirer()
+	cache.startExpirer(shuttingDown)
 	return cache
 }
 
-func (c *schedulerClientCache) startExpirer() {
+// startExpirer periodically closes clients that haven't been used recently,
+// until the server starts shutting down.
+func (c *schedulerClientCache) startExpirer(shuttingDown <-chan struct{}) {
 	go func() {
+		ticker := time.NewTicker(unusedSchedulerClientCheckInterval)
+		defer ticker.Stop()
 		for {
+			select {
+			case <-shuttingDown:
+				return
+			case <-ticker.C:
+			}
 			c.mu.Lock()
 			for addr, client := range c.clients {
 				if time.Since(client.lastAccess) > unusedSchedulerClientExpiration {
@@ -1265,7 +1274,6 @@ func (c *schedulerClientCache) startExpirer() {
 				}
 			}
 			c.mu.Unlock()
-			time.Sleep(unusedSchedulerClientCheckInterval)
 		}
 	}()
 }
@@ -1433,7 +1441,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		detector:                          options.UpgradeDetector,
 		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
 	}
-	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
+	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s, shuttingDown)
 	return s, nil
 }
 
