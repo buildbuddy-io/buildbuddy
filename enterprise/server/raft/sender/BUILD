@@ -36,8 +36,13 @@ go_test(
     srcs = ["sender_test.go"],
     exec_properties = {
         "test.EstimatedComputeUnits": "8",
-        "test.workload-isolation-type": "firecracker",
-    },
+        "test.EstimatedMemory": "8GB",
+    } | select({
+        "@io_bazel_rules_go//go/platform:linux": {
+            "test.workload-isolation-type": "firecracker",
+        },
+        "//conditions:default": {},
+    }),
     tags = ["block-network"],
     deps = [
         ":sender",
