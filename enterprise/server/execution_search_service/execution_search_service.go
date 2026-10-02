@@ -311,6 +311,7 @@ type timelineStatsRow struct {
 	OS                     string
 	Arch                   string
 	BucketStartTimeUsec    int64
+	TotalExecutions        int64
 	DurationUsecTotal      int64
 	CPUNanosTotal          int64
 	DownloadedBytesTotal   int64
@@ -345,6 +346,7 @@ func makeQuantiles(in []int64) []*expb.Quantile {
 
 func (r *timelineStatsRow) toSummaryProto() *expb.ExecutionTimelineSummary {
 	return &expb.ExecutionTimelineSummary{
+		TotalExecutions:        r.TotalExecutions,
 		DurationUsecTotal:      r.DurationUsecTotal,
 		DurationUsec:           makeQuantiles(r.DurationUsecQuantiles),
 		CpuNanosTotal:          r.CPUNanosTotal,
@@ -414,6 +416,7 @@ func (s *ExecutionSearchService) queryTimelineStats(ctx context.Context, req *ex
 			os,
 			arch,
 			`+bucketExpr+` AS bucket_start_time_usec,
+			count() AS total_executions,
 			SUM(`+durationUsec+`) AS duration_usec_total,
 			SUM(`+queuedUsec+`) AS worker_queue_usec_total,
 			SUM(`+runnerSetupUsec+`) AS runner_setup_usec_total,
