@@ -122,6 +122,7 @@ package expflag
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -273,7 +274,9 @@ func Float64(name string, defaultValue float64, help string, opts ...any) *Flag[
 // have its keys interpreted as flag names nested under the object flag's name.
 type objectValue map[string]any
 
-// Object declares an experiment flag whose value is a JSON object.
+// Object declares an experiment flag whose value is a JSON object. The map
+// returned by Get may be shared with other callers, so callers must not modify
+// it.
 func Object(name string, defaultValue map[string]any, help string, opts ...any) *Flag[map[string]any] {
 	deprecatedName, flagTags := parseOptions(opts)
 	value := flag.New(flag.CommandLine, name, objectValue(defaultValue), help, flagTags...)
@@ -299,26 +302,22 @@ func (f *Flag[T]) Name() string {
 }
 
 // Get evaluates the flag and returns its value. Options are passed through to
-// the provider, for example experiments.WithContext.
+// the provider, for example experiments.WithContext. For Object flags, the
+// returned map may be shared with other callers, so callers must not modify it.
 func (f *Flag[T]) Get(ctx context.Context, opts ...any) T {
-	value, _ := f.GetWithDetails(ctx, opts...)
+	value, _ := f.get(ctx, opts...)
 	return value
 }
 
 // GetWithDetails evaluates the flag and returns its value along with the
-// evaluation details, which include the selected variant.
+// evaluation details, which include the selected variant. For Object flags,
+// the returned map may be shared with other callers, so callers must not
+// modify it.
 func (f *Flag[T]) GetWithDetails(ctx context.Context, opts ...any) (T, *expb.EvaluatedFlag) {
-	value := *f.defaultValue
+	value, details := f.get(ctx, opts...)
 	evaluated := &expb.EvaluatedFlag{Name: f.name}
-	if p := provider.Load(); p != nil {
-		var details interfaces.ExperimentFlagDetails
-		value, details = f.evaluate(*p, ctx, f.name, value, opts...)
-		if nf, ok := details.(flagNotFoundReporter); ok && nf.FlagNotFound() && f.deprecatedExperimentName != "" {
-			value, details = f.evaluate(*p, ctx, f.deprecatedExperimentName, *f.defaultValue, opts...)
-		}
-		if details != nil {
-			evaluated.Variant = details.Variant()
-		}
+	if details != nil {
+		evaluated.Variant = details.Variant()
 	}
 	if err := f.setValue(evaluated, value); err != nil {
 		log.CtxWarningf(ctx, "Experiment flag %q value could not be converted to a proto: %s", f.name, err)
@@ -334,15 +333,47 @@ func (f *Flag[T]) GetProto(ctx context.Context, opts ...any) *expb.EvaluatedFlag
 	return evaluated
 }
 
+func (f *Flag[T]) get(ctx context.Context, opts ...any) (T, interfaces.ExperimentFlagDetails) {
+	p := provider.Load()
+	if p == nil {
+		return *f.defaultValue, nil
+	}
+	value, details := f.evaluate(*p, ctx, f.name, *f.defaultValue, opts...)
+	if nf, ok := details.(flagNotFoundReporter); ok && nf.FlagNotFound() && f.deprecatedExperimentName != "" {
+		value, details = f.evaluate(*p, ctx, f.deprecatedExperimentName, *f.defaultValue, opts...)
+	}
+	return value, details
+}
+
 type evaluatedFlagsKey struct{}
+
+// contextFlag is a flag attached to a context by ContextWithEvaluatedFlags.
+type contextFlag struct {
+	proto *expb.EvaluatedFlag
+	// object is set if the value is an object.
+	object *lazyObject
+}
+
+// lazyObject converts an object flag's value to a map on the first read and
+// reuses it afterwards, so that tasks pay for the conversion only if they read
+// the flag, and only once.
+type lazyObject struct {
+	once  sync.Once
+	proto *structpb.Struct
+	value map[string]any
+}
 
 // ContextWithEvaluatedFlags attaches flags evaluated by another process to
 // ctx, for use by the provider returned by NewContextProvider. Flags attached
 // to ctx previously are replaced, so an empty list leaves ctx with no flags.
 func ContextWithEvaluatedFlags(ctx context.Context, flags []*expb.EvaluatedFlag) context.Context {
-	byName := make(map[string]*expb.EvaluatedFlag, len(flags))
+	byName := make(map[string]contextFlag, len(flags))
 	for _, f := range flags {
-		byName[f.GetName()] = f
+		cf := contextFlag{proto: f}
+		if v, ok := f.GetValue().(*expb.EvaluatedFlag_ObjectValue); ok {
+			cf.object = &lazyObject{proto: v.ObjectValue}
+		}
+		byName[f.GetName()] = cf
 	}
 	return context.WithValue(ctx, evaluatedFlagsKey{}, byName)
 }
@@ -361,59 +392,74 @@ func NewContextProvider() FlagProvider {
 }
 
 func (contextProvider) BooleanDetails(ctx context.Context, name string, defaultValue bool, _ ...any) (bool, interfaces.ExperimentFlagDetails) {
-	f := evaluatedFlagFromContext(ctx, name)
+	f := evaluatedFlagFromContext(ctx, name).proto
 	if v, ok := f.GetValue().(*expb.EvaluatedFlag_BoolValue); ok {
-		return v.BoolValue, details{variant: f.GetVariant()}
+		return v.BoolValue, evaluatedFlagDetails{f}
 	}
-	return defaultValue, details{flagNotFound: f == nil}
+	return defaultValue, unusableFlagDetails(f)
 }
 
 func (contextProvider) StringDetails(ctx context.Context, name string, defaultValue string, _ ...any) (string, interfaces.ExperimentFlagDetails) {
-	f := evaluatedFlagFromContext(ctx, name)
+	f := evaluatedFlagFromContext(ctx, name).proto
 	if v, ok := f.GetValue().(*expb.EvaluatedFlag_StringValue); ok {
-		return v.StringValue, details{variant: f.GetVariant()}
+		return v.StringValue, evaluatedFlagDetails{f}
 	}
-	return defaultValue, details{flagNotFound: f == nil}
+	return defaultValue, unusableFlagDetails(f)
 }
 
 func (contextProvider) Int64Details(ctx context.Context, name string, defaultValue int64, _ ...any) (int64, interfaces.ExperimentFlagDetails) {
-	f := evaluatedFlagFromContext(ctx, name)
+	f := evaluatedFlagFromContext(ctx, name).proto
 	if v, ok := f.GetValue().(*expb.EvaluatedFlag_Int64Value); ok {
-		return v.Int64Value, details{variant: f.GetVariant()}
+		return v.Int64Value, evaluatedFlagDetails{f}
 	}
-	return defaultValue, details{flagNotFound: f == nil}
+	return defaultValue, unusableFlagDetails(f)
 }
 
 func (contextProvider) Float64Details(ctx context.Context, name string, defaultValue float64, _ ...any) (float64, interfaces.ExperimentFlagDetails) {
-	f := evaluatedFlagFromContext(ctx, name)
+	f := evaluatedFlagFromContext(ctx, name).proto
 	if v, ok := f.GetValue().(*expb.EvaluatedFlag_Float64Value); ok {
-		return v.Float64Value, details{variant: f.GetVariant()}
+		return v.Float64Value, evaluatedFlagDetails{f}
 	}
-	return defaultValue, details{flagNotFound: f == nil}
+	return defaultValue, unusableFlagDetails(f)
 }
 
 func (contextProvider) ObjectDetails(ctx context.Context, name string, defaultValue map[string]any, _ ...any) (map[string]any, interfaces.ExperimentFlagDetails) {
 	f := evaluatedFlagFromContext(ctx, name)
-	if v, ok := f.GetValue().(*expb.EvaluatedFlag_ObjectValue); ok {
-		return v.ObjectValue.AsMap(), details{variant: f.GetVariant()}
+	if o := f.object; o != nil {
+		o.once.Do(func() { o.value = o.proto.AsMap() })
+		return o.value, evaluatedFlagDetails{f.proto}
 	}
-	return defaultValue, details{flagNotFound: f == nil}
+	return defaultValue, unusableFlagDetails(f.proto)
 }
 
-func evaluatedFlagFromContext(ctx context.Context, name string) *expb.EvaluatedFlag {
-	flags, _ := ctx.Value(evaluatedFlagsKey{}).(map[string]*expb.EvaluatedFlag)
+func evaluatedFlagFromContext(ctx context.Context, name string) contextFlag {
+	flags, _ := ctx.Value(evaluatedFlagsKey{}).(map[string]contextFlag)
 	return flags[name]
 }
 
-type details struct {
-	variant      string
-	flagNotFound bool
+// evaluatedFlagDetails implements interfaces.ExperimentFlagDetails for the
+// context provider. It holds the proto pointer rather than the variant string,
+// because returning a non-empty string as an interface allocates. A nil flag
+// means that the flag is not attached to the context.
+type evaluatedFlagDetails struct {
+	flag *expb.EvaluatedFlag
 }
 
-func (d details) Variant() string {
-	return d.variant
+func (d evaluatedFlagDetails) Variant() string {
+	return d.flag.GetVariant()
 }
 
-func (d details) FlagNotFound() bool {
-	return d.flagNotFound
+func (d evaluatedFlagDetails) FlagNotFound() bool {
+	return d.flag == nil
+}
+
+// unusableFlagDetails returns details for a flag whose value the context
+// provider cannot use. Only a flag missing from the context is reported as not
+// found, so that an unset value or a value of the wrong type does not fall back
+// to a deprecated experiment name.
+func unusableFlagDetails(f *expb.EvaluatedFlag) interfaces.ExperimentFlagDetails {
+	if f == nil {
+		return evaluatedFlagDetails{}
+	}
+	return nil
 }
