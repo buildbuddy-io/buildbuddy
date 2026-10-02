@@ -204,12 +204,7 @@ func (i *InvocationStatService) flattenTrendsQuery(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-type queryFilterOptions struct {
-	includeExecutionFilters bool
-	excludeMergedExecutions bool
-}
-
-func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, opts queryFilterOptions, reqCtx *ctxpb.RequestContext) error {
+func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, isExecutionQuery bool, reqCtx *ctxpb.RequestContext) error {
 
 	if user := tq.GetUser(); user != "" {
 		q.AddWhereClause("\"user\" = ?", user)
@@ -289,7 +284,7 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		q.AddWhereClause(str, args...)
 	}
 	for _, f := range tq.GetDimensionFilter() {
-		if !opts.includeExecutionFilters && f.GetDimension().Execution != nil {
+		if !isExecutionQuery && f.GetDimension().Execution != nil {
 			continue
 		}
 		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
@@ -298,14 +293,14 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		}
 		q.AddWhereClause(str, args...)
 	}
-	if opts.excludeMergedExecutions {
-		// Merged links reuse work rather than adding executions to Drilldown.
+	if isExecutionQuery {
+		// Merged links reuse work rather than adding executions to aggregates.
 		// If the original link is missing or outside the query, these aggregates
 		// intentionally omit the execution; selected examples retain merged links.
 		q.AddWhereClause("invocation_link_type != ?", int(sipb.StoredInvocationLink_MERGED))
 	}
 	queryObjects := sfpb.ObjectTypes_INVOCATION_OBJECTS
-	if opts.includeExecutionFilters {
+	if isExecutionQuery {
 		queryObjects = sfpb.ObjectTypes_EXECUTION_OBJECTS
 	}
 
@@ -346,7 +341,7 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
     `)
 
 	reqCtx := req.GetRequestContext()
-	if err := i.addWhereClauses(q, req.GetQuery(), queryFilterOptions{}, reqCtx); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), false, reqCtx); err != nil {
 		return nil, err
 	}
 	qStr, qArgs := q.Build()
@@ -362,7 +357,7 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQueryWithArgs(i.getTrendBasicQuery(req.GetQuery(), timeSettings, reqCtx.GetTimezoneOffsetMinutes()))
-	if err := i.addWhereClauses(q, req.GetQuery(), queryFilterOptions{}, reqCtx); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), false, reqCtx); err != nil {
 		return nil, err
 	}
 	if i.finerTimeBucketsEnabled() {
@@ -446,7 +441,7 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQueryWithArgs(i.getExecutionTrendQuery(timeSettings, reqCtx.GetTimezoneOffsetMinutes()))
-	if err := i.addWhereClauses(q, req.GetQuery(), queryFilterOptions{includeExecutionFilters: true}, req.GetRequestContext()); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), true, req.GetRequestContext()); err != nil {
 		return nil, err
 	}
 	if i.finerTimeBucketsEnabled() {
@@ -889,10 +884,7 @@ func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table s
 
 func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []any, error) {
 	placeholderQuery := query_builder.NewQuery("")
-	if err := i.addWhereClauses(placeholderQuery, q, queryFilterOptions{
-		includeExecutionFilters: m.Execution != nil,
-		excludeMergedExecutions: m.Execution != nil,
-	}, reqCtx); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, q, m.Execution != nil, reqCtx); err != nil {
 		return "", nil, err
 	}
 	if m.GetInvocation() == sfpb.InvocationMetricType_DURATION_USEC_INVOCATION_METRIC {
@@ -1243,10 +1235,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	}
 	placeholderQuery := query_builder.NewQuery("")
 
-	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), queryFilterOptions{
-		includeExecutionFilters: req.GetDrilldownMetric().Execution != nil,
-		excludeMergedExecutions: req.GetDrilldownMetric().Execution != nil,
-	}, req.GetRequestContext()); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetDrilldownMetric().Execution != nil, req.GetRequestContext()); err != nil {
 		return "", nil, err
 	}
 
@@ -1364,7 +1353,7 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 		FROM "Executions"`, metric))
 
 	// Add where clauses from the trend query, including execution dimension filters
-	if err := i.addWhereClauses(innerQ, req.GetQuery(), queryFilterOptions{includeExecutionFilters: true}, req.GetRequestContext()); err != nil {
+	if err := i.addWhereClauses(innerQ, req.GetQuery(), true, req.GetRequestContext()); err != nil {
 		return nil, err
 	}
 

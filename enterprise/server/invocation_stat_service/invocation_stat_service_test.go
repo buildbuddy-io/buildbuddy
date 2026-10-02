@@ -138,10 +138,11 @@ func TestGetStatDrilldown(t *testing.T) {
 	require.True(t, status.IsInvalidArgumentError(err))
 }
 
-func TestExecutionDrilldownExcludesMergedExecutions(t *testing.T) {
+func TestExecutionStatsExcludeMergedExecutions(t *testing.T) {
 	flags.Set(t, "testenv.use_clickhouse", true)
 	flags.Set(t, "app.trends_heatmap_enabled", true)
 	flags.Set(t, "app.enable_target_trends", true)
+	flags.Set(t, "app.enable_execution_trends", true)
 	te := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	te.SetAuthenticator(ta)
@@ -156,38 +157,78 @@ func TestExecutionDrilldownExcludesMergedExecutions(t *testing.T) {
 		{ExecutionUUID: "00000000-0000-0000-0000-000000000002", InvocationUUID: "00000000000000000000000000000003", User: "merged", PeakMemoryBytes: 20, InvocationLinkType: int8(sipb.StoredInvocationLink_MERGED)},
 		{ExecutionUUID: "00000000-0000-0000-0000-000000000003", InvocationUUID: "00000000000000000000000000000004", User: "merged", PeakMemoryBytes: 1000, InvocationLinkType: int8(sipb.StoredInvocationLink_MERGED)},
 	}
+	var invocations []olaptables.Invocation
 	for i := range executions {
 		executions[i].GroupID = "GR1"
 		executions[i].TargetLabel = "//:target"
 		executions[i].UpdatedAtUsec = updatedAt
+		executions[i].WorkerStartTimestampUsec = updatedAt
+		executions[i].WorkerCompletedTimestampUsec = updatedAt + executions[i].PeakMemoryBytes
+		invocations = append(invocations, olaptables.Invocation{
+			GroupID: "GR1", InvocationUUID: executions[i].InvocationUUID,
+			User: executions[i].User, UpdatedAtUsec: updatedAt,
+		})
 	}
 	err = te.GetOLAPDBHandle().GORM(ctx, "test_create_executions").Create(executions).Error
+	require.NoError(t, err)
+	err = te.GetOLAPDBHandle().GORM(ctx, "test_create_invocations").Create(invocations).Error
 	require.NoError(t, err)
 	iss := NewInvocationStatService(te, te.GetDBHandle(), te.GetOLAPDBHandle())
 	peakMemory := sfpb.ExecutionMetricType_PEAK_MEMORY_EXECUTION_METRIC
 	metric := &sfpb.Metric{Execution: &peakMemory}
 	selectionMin := int64(20)
-	for _, user := range []string{"", "merged"} {
-		t.Run("user="+user, func(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		user                string
+		wantInvocationCount int64
+		wantExecutionCount  int
+		wantTargetStats     []*statspb.TargetStats
+		wantCount           int64
+		wantTotal           int64
+		wantBase            int64
+		wantSelection       int64
+		wantUsers           []*statspb.DrilldownEntry
+	}{
+		{
+			name: "all invocation links", wantInvocationCount: 4, wantExecutionCount: 1,
+			wantTargetStats: []*statspb.TargetStats{{Target: "//:target", Value: 30}},
+			wantCount:       2, wantTotal: 30, wantBase: 1, wantSelection: 1,
+			wantUsers: []*statspb.DrilldownEntry{
+				{Label: "new", SelectionValue: 1},
+				{Label: "legacy", BaseValue: 1},
+			},
+		},
+		{
+			name: "only merged invocation links match", user: "merged", wantInvocationCount: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			query := &statspb.TrendQuery{
-				User:          user,
+				User:          tc.user,
 				UpdatedAfter:  timestamppb.New(windowStart),
 				UpdatedBefore: timestamppb.New(windowStart.Add(2 * time.Hour)),
 			}
-			t.Run("target trends retain merged-only executions", func(t *testing.T) {
-				// Target trends already deduplicate by execution UUID, independently
-				// of Drilldown's policy of excluding merged invocation links.
+			t.Run("target trends", func(t *testing.T) {
 				rsp, err := iss.GetTargetTrends(ctx, &statspb.GetTargetTrendsRequest{
 					RequestContext: reqCtx, Query: query, Metric: peakMemory,
 					Agg: statspb.TargetAggregation_SUM_TARGET_AGGREGATION,
 				})
 				require.NoError(t, err)
-				require.Len(t, rsp.GetTargetStats(), 1)
-				want := int64(1030)
-				if user == "merged" {
-					want = 1020
+				require.Empty(t, cmp.Diff(tc.wantTargetStats, rsp.GetTargetStats(), protocmp.Transform()))
+			})
+			t.Run("trends", func(t *testing.T) {
+				rsp, err := iss.GetTrend(ctx, &statspb.GetTrendRequest{
+					RequestContext: reqCtx, Query: query,
+				})
+				require.NoError(t, err)
+				// Invocation stats still include invocations that merged into other work.
+				require.Equal(t, tc.wantInvocationCount, rsp.GetCurrentSummary().GetNumBuilds())
+				require.Len(t, rsp.GetExecutionStat(), tc.wantExecutionCount)
+				var total int64
+				for _, stat := range rsp.GetExecutionStat() {
+					total += stat.GetTotalBuildTimeUsec()
 				}
-				require.Equal(t, want, rsp.GetTargetStats()[0].GetValue())
+				require.Equal(t, tc.wantTotal, total)
 			})
 			t.Run("heatmap", func(t *testing.T) {
 				rsp, err := iss.GetStatHeatmap(ctx, &statspb.GetStatHeatmapRequest{
@@ -203,13 +244,11 @@ func TestExecutionDrilldownExcludesMergedExecutions(t *testing.T) {
 						total += v
 					}
 				}
-				if user == "merged" {
-					require.Zero(t, count)
-					require.Zero(t, total)
+				require.Equal(t, tc.wantCount, count)
+				require.Equal(t, tc.wantTotal, total)
+				if tc.wantCount == 0 {
 					return
 				}
-				require.Equal(t, int64(2), count)
-				require.Equal(t, int64(30), total)
 				// Merged rows must not expand the heatmap's metric range either.
 				require.NotEmpty(t, rsp.GetBucketBracket())
 				require.Less(t, rsp.GetBucketBracket()[len(rsp.GetBucketBracket())-1], int64(1000))
@@ -220,23 +259,15 @@ func TestExecutionDrilldownExcludesMergedExecutions(t *testing.T) {
 					Filter: []*sfpb.StatFilter{{Metric: metric, Min: &selectionMin}},
 				})
 				require.NoError(t, err)
-				if user == "merged" {
-					require.Zero(t, rsp.GetTotalInBase())
-					require.Zero(t, rsp.GetTotalInSelection())
-					return
-				}
-				require.Equal(t, int64(1), rsp.GetTotalInBase())
-				require.Equal(t, int64(1), rsp.GetTotalInSelection())
+				require.Equal(t, tc.wantBase, rsp.GetTotalInBase())
+				require.Equal(t, tc.wantSelection, rsp.GetTotalInSelection())
 				var users []*statspb.DrilldownEntry
 				for _, chart := range rsp.GetChart() {
 					if chart.GetDrilldownType() == statspb.DrilldownType_USER_DRILLDOWN_TYPE {
 						users = chart.GetEntry()
 					}
 				}
-				require.Empty(t, cmp.Diff([]*statspb.DrilldownEntry{
-					{Label: "new", SelectionValue: 1},
-					{Label: "legacy", BaseValue: 1},
-				}, users, protocmp.Transform()))
+				require.Empty(t, cmp.Diff(tc.wantUsers, users, protocmp.Transform()))
 			})
 		})
 	}
