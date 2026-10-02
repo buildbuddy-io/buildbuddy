@@ -56,7 +56,7 @@ export default class DateRangePickerButton extends React.Component<DateRangePick
   }
 
   /** The selection under the global filter's param names, which the date helpers read. */
-  private selection(): URLSearchParams {
+  private globalFilterParams(): URLSearchParams {
     const { search, paramNames } = this.props;
     if (!paramNames) return search;
     const selection = new URLSearchParams();
@@ -66,7 +66,7 @@ export default class DateRangePickerButton extends React.Component<DateRangePick
   }
 
   render() {
-    const selection = this.selection();
+    const selection = this.globalFilterParams();
     const { startDate, endDate } = getDateRangeForPicker(selection);
     return (
       <div className="popup-wrapper">
