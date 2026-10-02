@@ -195,7 +195,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
 		groupStatus = u.GetGroupStatus()
 	}
-	runnerTimeout, err := ci_runner_util.RunnerTimeout(ctx, r.env.GetExperimentFlagProvider(), requestedTimeout, "remote_bazel", groupStatus)
+	runnerTimeout, err := ci_runner_util.RunnerTimeout(ctx, requestedTimeout, "remote_bazel", groupStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -230,13 +230,10 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	for _, patchURI := range patchURIs {
 		args = append(args, "--patch_uri="+patchURI)
 	}
-	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
-		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "", experiments.WithContext("workflow-name", "remote-bazel"))
-		if bazelCommandOverride != "" {
-			args = append(args, "--bazel_command="+bazelCommandOverride)
-		}
-		args = append(args, ci_runner_util.GitFetchLowSpeedRetryFlags(ctx, efp, experiments.WithContext("workflow_action_name", "remote_bazel"))...)
+	if bazelCommandOverride := ci_runner_util.BazelCommandOverride.Get(ctx, experiments.WithContext("workflow-name", "remote-bazel")); bazelCommandOverride != "" {
+		args = append(args, "--bazel_command="+bazelCommandOverride)
 	}
+	args = append(args, ci_runner_util.GitFetchLowSpeedRetryFlags(ctx, experiments.WithContext("workflow_action_name", "remote_bazel"))...)
 	args = append(args, req.GetRunnerFlags()...)
 
 	affinityKey := req.GetSessionAffinityKey()
@@ -280,12 +277,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	retry := !req.GetDisableRetry()
 
 	pool := r.env.GetWorkflowService().WorkflowsPoolName()
-	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
-		poolOverride := efp.String(ctx, "remote-runner-pool", "",
-			experiments.WithContext("workflow-name", "remote-bazel"))
-		if poolOverride != "" {
-			pool = poolOverride
-		}
+	if poolOverride := ci_runner_util.PoolOverride.Get(ctx, experiments.WithContext("workflow-name", "remote-bazel")); poolOverride != "" {
+		pool = poolOverride
 	}
 
 	// Hosted Bazel shares the same pool with workflows.

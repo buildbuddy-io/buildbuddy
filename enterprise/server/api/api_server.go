@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -57,6 +58,9 @@ var (
 	enableCache          = flag.Bool("api.enable_cache", false, "Whether or not to enable the API cache.")
 	enableCacheDeleteAPI = flag.Bool("enable_cache_delete_api", false, "If true, enable access to cache delete API.")
 	enableMetricsAPI     = flag.Bool("api.enable_metrics_api", false, "If true, enable access to metrics API.")
+
+	metricsFederationEnabled         = expflag.Bool("api.metrics_federation.enabled", false, "Whether to include federated metrics in the metrics API response.")
+	metricsFederationMatchParameters = expflag.Object("api.metrics_federation.match_parameters", nil, "Label filters for federated metrics. A job filter is required.")
 )
 
 const (
@@ -757,11 +761,10 @@ func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 
 	// If enabled, also fetch federated metrics matching the authenticated group
-	fp := s.env.GetExperimentFlagProvider()
-	if fp != nil && fp.Boolean(ctx, "api.metrics_federation.enabled", false) {
+	if metricsFederationEnabled.Get(ctx) {
 		// Get configured match parameters for filtering federated metrics, e.g.
 		// {"__name__": "remote_execution_.*", "jobs": "(mac-executor|mac-node)"}
-		paramsObj := fp.Object(ctx, "api.metrics_federation.match_parameters", nil)
+		paramsObj := metricsFederationMatchParameters.Get(ctx)
 		params := map[string]string{}
 		for k, v := range paramsObj {
 			s, ok := v.(string)

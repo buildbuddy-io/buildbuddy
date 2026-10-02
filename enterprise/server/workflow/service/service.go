@@ -44,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -86,6 +87,9 @@ var (
 	workflowsMaxRetries           = flag.Int("remote_execution.workflows_max_execute_retries", 4, "Number of times to retry a workflow action if it fails to start.")
 	_                             = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.", flag.Deprecated("kythe is deprecated: do not use this flag"))
 	enableCodesearchIndexing      = flag.Bool("remote_execution.enable_codesearch_indexing", false, "If set, and codesearch is enabled, automatically run an incremental indexing action.")
+
+	suppressWorkflowExecution = expflag.Bool("remote_execution.suppress_workflow_execution", false, "If true, workflow execution is suppressed.")
+	enableScheduledWorkflows  = expflag.Bool("remote_execution.enable_scheduled_workflows", false, "Whether to scan for and execute scheduled workflows.")
 
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
@@ -142,8 +146,6 @@ const (
 
 	// Minimum interval between cron triggers for scheduled workflows.
 	scheduledWorkflowMinInterval = 15 * time.Minute
-
-	suppressWorkflowExecutionExperimentName = "remote_execution.suppress_workflow_execution"
 )
 
 var (
@@ -588,19 +590,15 @@ func (ws *workflowService) filterActions(ctx context.Context, wf *tables.Workflo
 
 // suppressActions removes actions whose execution is suppressed via experiment.
 func (ws *workflowService) suppressActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actions []*config.Action) []*config.Action {
-	efp := ws.env.GetExperimentFlagProvider()
-	if efp == nil {
-		return actions
-	}
 	return slices.DeleteFunc(actions, func(a *config.Action) bool {
-		suppressWorkflowExecution := efp.Boolean(ctx, suppressWorkflowExecutionExperimentName, false,
+		suppress := suppressWorkflowExecution.Get(ctx,
 			experiments.WithContext("group_id", wf.GroupID),
 			experiments.WithContext("workflow_action_name", a.Name),
 			experiments.WithContext("workflow_event_name", wd.EventName),
 			experiments.WithContext("pushed_repo_url", wd.PushedRepoURL),
 			experiments.WithContext("target_repo_url", wd.TargetRepoURL),
 		)
-		if suppressWorkflowExecution {
+		if suppress {
 			log.CtxInfof(ctx, "Suppressing workflow execution via experiment (WFID: %q, Repo: %q, Event: %s, Action: %q)", wf.WorkflowID, wf.RepoURL, wd.EventName, a.Name)
 			return true
 		}
@@ -1159,7 +1157,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if c, err := claims.ClaimsFromContext(ctx); err == nil {
 		groupStatus = c.GetGroupStatus()
 	}
-	runnerTimeout, err := ci_runner_util.RunnerTimeout(ctx, ws.env.GetExperimentFlagProvider(), workflowAction.Timeout, workflowAction.Name, groupStatus)
+	runnerTimeout, err := ci_runner_util.RunnerTimeout(ctx, workflowAction.Timeout, workflowAction.Name, groupStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -1211,7 +1209,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if workflowAction.GitFetchDepth != nil {
 		args = append(args, fmt.Sprintf("--git_fetch_depth=%d", *workflowAction.GitFetchDepth))
 	}
-	args = append(args, ci_runner_util.GitFetchLowSpeedRetryFlags(ctx, ws.env.GetExperimentFlagProvider(), experiments.WithContext("workflow_action_name", workflowAction.Name))...)
+	args = append(args, ci_runner_util.GitFetchLowSpeedRetryFlags(ctx, experiments.WithContext("workflow_action_name", workflowAction.Name))...)
 	for _, path := range workflowAction.GitCleanExclude {
 		args = append(args, "--git_clean_exclude="+path)
 	}
@@ -1305,12 +1303,8 @@ func (ws *workflowService) poolForAction(ctx context.Context, action *config.Act
 	if action.SelfHosted && action.Pool != "" {
 		return action.Pool
 	}
-	if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
-		poolOverride := efp.String(ctx, "remote-runner-pool", "",
-			experiments.WithContext("workflow-name", action.Name))
-		if poolOverride != "" {
-			return poolOverride
-		}
+	if poolOverride := ci_runner_util.PoolOverride.Get(ctx, experiments.WithContext("workflow-name", action.Name)); poolOverride != "" {
+		return poolOverride
 	}
 	return ws.WorkflowsPoolName()
 }
@@ -1355,11 +1349,8 @@ func (ws *workflowService) ciRunnerDebugMode() bool {
 }
 
 func (ws *workflowService) ciRunnerBazelCommand(ctx context.Context, wf *tables.Workflow, workflowAction *config.Action) string {
-	if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
-		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "", experiments.WithContext("workflow-name", workflowAction.Name))
-		if bazelCommandOverride != "" {
-			return bazelCommandOverride
-		}
+	if bazelCommandOverride := ci_runner_util.BazelCommandOverride.Get(ctx, experiments.WithContext("workflow-name", workflowAction.Name)); bazelCommandOverride != "" {
+		return bazelCommandOverride
 	}
 
 	useCLI := false
@@ -2022,7 +2013,7 @@ func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariab
 }
 
 func (ws *workflowService) startScheduleScanner() {
-	if efp := ws.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ws.env.GetServerContext(), "remote_execution.enable_scheduled_workflows", false) {
+	if !enableScheduledWorkflows.Get(ws.env.GetServerContext()) {
 		return
 	}
 
@@ -2057,7 +2048,7 @@ func (ws *workflowService) startScheduleScanner() {
 }
 
 func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
-	if efp := ws.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "remote_execution.enable_scheduled_workflows", false) {
+	if !enableScheduledWorkflows.Get(ctx) {
 		return nil
 	}
 

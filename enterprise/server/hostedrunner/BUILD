@@ -45,7 +45,6 @@ go_test(
     srcs = ["hostedrunner_test.go"],
     embed = [":hostedrunner"],
     deps = [
-        "//enterprise/server/experiments",
         "//enterprise/server/githubapp",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
@@ -67,8 +66,6 @@ go_test(
         "//server/util/authutil",
         "//server/util/platform",
         "//server/util/testing/flags",
-        "@com_github_open_feature_go_sdk//openfeature",
-        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//require",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

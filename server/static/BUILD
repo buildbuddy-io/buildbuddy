@@ -21,6 +21,7 @@ go_library(
         "//server/remote_cache/hit_tracker",
         "//server/remote_execution/config",
         "//server/scheduling/scheduler_server/config",
+        "//server/util/expflag",
         "//server/util/flag",
         "//server/util/region",
         "//server/util/status",

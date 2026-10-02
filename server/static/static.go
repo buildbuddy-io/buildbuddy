@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -80,6 +81,8 @@ var (
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
 	autoRefresh      = flag.Bool("auto_refresh", false, "If set, the web UI reloads itself when the server restarts. Intended for local development.", flag.Internal)
+
+	flipLogoOnHover = expflag.Bool("app.flip_logo_on_hover", false, "Whether to flip the logo on hover.", expflag.DeprecatedExperimentName("flip-logo-on-hover"))
 )
 
 var (
@@ -284,12 +287,9 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		TargetsPageEnabled:                     *targetsPageEnabled && env.GetOLAPDBHandle() != nil,
 		UserListsUiEnabled:                     *userListsUIEnabled,
 		DarkModeEnabled:                        *darkModeEnabled,
-	}
-
-	if efp := env.GetExperimentFlagProvider(); efp != nil {
-		config.FlipLogoOnHover = efp.Boolean(ctx, "flip-logo-on-hover", false /*=default*/)
 		// Global experiments can be handled here, but experiments that are user or group specific
 		// should be included in the experiments field of GetUserResponse instead.
+		FlipLogoOnHover: flipLogoOnHover.Get(ctx),
 	}
 
 	configJSON, err := protojson.Marshal(&config)

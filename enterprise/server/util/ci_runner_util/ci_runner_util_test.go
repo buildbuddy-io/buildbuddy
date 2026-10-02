@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
@@ -17,8 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -88,54 +85,23 @@ func TestRunnerTimeout(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := contextWithGroupStatus(tc.groupStatus)
+			ctx := t.Context()
 			if tc.defaultTimeout != 0 {
 				flags.Set(t, "remote_execution.ci_runner_default_timeout", tc.defaultTimeout)
 			}
 
-			var efp interfaces.ExperimentFlagProvider
-			if tc.experimentTimeout != "" {
-				env := enterprise_testenv.New(t)
-				configureDefaultTimeoutExperiment(t, env, tc.experimentTimeout)
-				efp = env.GetExperimentFlagProvider()
-			}
+			flags.Set(t, "remote_execution.remote_runner_default_timeout", tc.experimentTimeout)
 
 			var requestedTimeout *time.Duration
 			if tc.requestedTimeoutPresent {
 				requestedTimeout = &tc.requestedTimeout
 			}
-			timeout, err := RunnerTimeout(ctx, efp, requestedTimeout, "test-action", tc.groupStatus)
+			timeout, err := RunnerTimeout(ctx, requestedTimeout, "test-action", tc.groupStatus)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedTimeout, timeout.Duration)
 			require.Equal(t, tc.expectedReason, timeout.Reason)
 		})
 	}
-}
-
-func contextWithGroupStatus(groupStatus grpb.Group_GroupStatus) context.Context {
-	if groupStatus == grpb.Group_UNKNOWN_GROUP_STATUS {
-		return context.Background()
-	}
-	u := testauth.User("user1", "group1")
-	u.GroupStatus = groupStatus
-	return testauth.WithAuthenticatedUserInfo(context.Background(), u)
-}
-
-func configureDefaultTimeoutExperiment(t *testing.T, env *testenv.TestEnv, timeout string) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		DefaultTimeoutExperimentName: {
-			State:          memprovider.Enabled,
-			DefaultVariant: "on",
-			Variants: map[string]any{
-				"on": timeout,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
 }
 
 func TestSetTaskRepositoryToken(t *testing.T) {
@@ -271,29 +237,9 @@ func TestGitFetchLowSpeedRetryFlags(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			env := enterprise_testenv.New(t)
-			configureLowSpeedRetryExperiment(t, env, tc.experiment)
-			flags := GitFetchLowSpeedRetryFlags(t.Context(), env.GetExperimentFlagProvider())
+			flags.Set(t, "remote_execution.ci_runner.low_speed_retry_config", tc.experiment)
+			flags := GitFetchLowSpeedRetryFlags(t.Context())
 			require.Equal(t, tc.expectedFlags, flags)
 		})
 	}
-}
-
-func configureLowSpeedRetryExperiment(t *testing.T, env *testenv.TestEnv, config map[string]any) {
-	memFlags := map[string]memprovider.InMemoryFlag{}
-	if config != nil {
-		memFlags[LowSpeedRetryConfigExperimentName] = memprovider.InMemoryFlag{
-			State:          memprovider.Enabled,
-			DefaultVariant: "on",
-			Variants: map[string]any{
-				"on": config,
-			},
-		}
-	}
-	testProvider := memprovider.NewInMemoryProvider(memFlags)
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
 }
