@@ -309,6 +309,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		if cmdResult != nil && cmdResult.DoNotRecycle {
 			reuseRunner = false
 		}
+		// Report segfaults as action failures without retrying, but discard the
+		// runner in case its state contributed to the crash. An explicit exit
+		// 139 is indistinguishable from SIGSEGV for some container runtimes.
+		if cmdResult != nil && cmdResult.ExitCode == commandutil.SegmentationFaultExitCode {
+			reuseRunner = false
+		}
 		// Note: recycling is done in the foreground here in order to ensure
 		// that the runner is fully cleaned up (if applicable) before its
 		// resource claims are freed up by the priority_task_scheduler.
