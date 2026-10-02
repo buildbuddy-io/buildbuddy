@@ -131,7 +131,7 @@ export default class UsageComponent extends React.Component<UsageProps> {
 
 /** UsageReport renders the usage report tab contents. */
 class UsageReport extends React.Component<UsageReportProps, State> {
-  state: State = {};
+  state: State = { loading: true };
   pendingRequest?: CancelablePromise<any>;
 
   componentDidMount() {
@@ -170,7 +170,11 @@ class UsageReport extends React.Component<UsageReportProps, State> {
         }
         this.setState({ response });
       })
-      .catch((e) => errorService.handleError(e))
+      .catch((e) => {
+        errorService.handleError(e);
+        // Don't leave the previous range's data on screen.
+        this.setState({ response: undefined });
+      })
       .finally(() => this.setState({ loading: false }));
   }
 
@@ -628,13 +632,12 @@ class UsageReport extends React.Component<UsageReportProps, State> {
   }
 
   render() {
-    if (!this.state.response) return null;
     // Wait for the bill so the top panel does not switch after it renders.
     if (capabilities.config.usageBillEnabled && this.state.bill === undefined) return null;
 
     const orgName = this.props.user?.selectedGroup.name;
     // Selected period may not be found because of a pending or failed RPC.
-    const selection = this.state.response.usage;
+    const selection = this.state.response?.usage;
     const range = usageDateRange(this.props.search);
     const detailed = shouldShowDetailedView(range.start);
     const periodHeader = (
