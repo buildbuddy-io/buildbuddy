@@ -104,10 +104,13 @@ message Statistics {
   int64 cas_write_bytes = 12;
 }
 
-// RegisterCacheProxyRequest is sent on the client-side stream from the proxy
-// to the server, both initially and as a periodic heartbeat.
+// RegisterCacheProxyRequest is sent on the stream from the proxy to the server.
+// It is sent in response to the initial connection, as a periodic heartbeat,
+// and in response to GetCacheProxyResponses from the server.
 message RegisterCacheProxyRequest {
+  // TODO(go/b/8433): remove (use the summary in "details" instead)
   CacheProxySummary summary = 1;
+  CacheProxyDetails details = 4;
 
   // TODO(go/b/8433): remove
   Statistics statistics = 2;
@@ -118,10 +121,14 @@ message RegisterCacheProxyRequest {
   bool shutting_down = 3;
 }
 
-// RegisterCacheProxyResponse is returned by the server once the cache proxy
-// closes the stream (or the stream is broken). Empty for now but kept as a
-// message so we can add fields later without changing the RPC signature.
-message RegisterCacheProxyResponse {}
+// RegisterCacheProxyResponse is sent on the stream from the server to the
+// proxy to request information from the proxy.
+message RegisterCacheProxyResponse {
+  // Set when the server is requesting details from the proxy. The proxy answers
+  // with a RegisterCacheProxyRequest with the requested details fields set. The
+  // "selector" field of this GetCacheProxyRequest is ignored.
+  GetCacheProxyRequest details_request = 1;
+}
 
 // TODO(go/b/8433): remove
 message GetCacheProxiesRequest {
@@ -207,9 +214,11 @@ service CacheProxyRegistry {
   // cache proxy sends an initial RegisterCacheProxyRequest with its identifying
   // info, then re-sends the same message periodically as a heartbeat. The
   // server uses these heartbeats to maintain a TTL-backed registry of live
-  // cache proxies, scoped to the group identified by the proxy's API key. The
-  // server returns a single RegisterCacheProxyResponse once the cache proxy
-  // closes the stream (or the connection drops).
+  // cache proxies, scoped to the group identified by the proxy's API key.
+  //
+  // While the stream is open, the server may send RegisterCacheProxyResponses
+  // to request information from the cache proxy, which the cache proxy
+  // answers with RegisterCacheProxyRequests.
   rpc RegisterAndStreamHeartbeat(stream RegisterCacheProxyRequest)
-      returns (RegisterCacheProxyResponse) {}
+      returns (stream RegisterCacheProxyResponse) {}
 }

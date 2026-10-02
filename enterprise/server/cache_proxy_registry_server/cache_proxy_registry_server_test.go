@@ -352,6 +352,23 @@ func startGRPCRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*Cac
 
 	return s, cppb.NewCacheProxyRegistryClient(conn)
 }
+
+// closeAndWait closes the stream and waits for the server to finish it,
+// returning the stream's final status (nil if the server returned OK).
+func closeAndWait(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient) error {
+	if err := stream.CloseSend(); err != nil {
+		return err
+	}
+	for {
+		if _, err := stream.Recv(); err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
 func TestStreamHeartbeat_PersistsRegistration(t *testing.T) {
 	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": user})
@@ -363,9 +380,7 @@ func TestStreamHeartbeat_PersistsRegistration(t *testing.T) {
 			Host: "proxy-1", ProxyId: "id-1", Version: "v1",
 		},
 	}))
-	resp, err := stream.CloseAndRecv()
-	require.NoError(t, err)
-	require.NotNil(t, resp)
+	require.NoError(t, closeAndWait(stream))
 
 	// The heartbeat should be visible via ListCacheProxies (which uses the
 	// AuthenticatedUser context, so we build one directly).
@@ -391,8 +406,7 @@ func TestStreamHeartbeat_ShutDown(t *testing.T) {
 	keepStream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_ = keepStream.CloseSend()
-		_, _ = keepStream.CloseAndRecv()
+		_ = closeAndWait(keepStream)
 	})
 	require.NoError(t, keepStream.Send(&cppb.RegisterCacheProxyRequest{
 		Summary: &cppb.CacheProxySummary{Host: "h-keep", ProxyId: "id-keep"},
@@ -420,7 +434,7 @@ func TestStreamHeartbeat_ShutDown(t *testing.T) {
 		Summary:      &cppb.CacheProxySummary{Host: "h-bye", ProxyId: "id-bye"},
 		ShuttingDown: true,
 	}))
-	_, err = shutdownStream.CloseAndRecv()
+	err = closeAndWait(shutdownStream)
 	require.NoError(t, err)
 
 	// Wait for the registry to reflect the removal of only the shutting-down
@@ -441,7 +455,7 @@ func TestStreamHeartbeat_Anonymous(t *testing.T) {
 
 	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey(""))
 	require.NoError(t, err)
-	_, err = stream.CloseAndRecv()
+	err = closeAndWait(stream)
 	require.Error(t, err)
 	assert.True(t, status.IsUnauthenticatedError(err), "expected unauthenticated, got: %v", err)
 }
@@ -452,7 +466,7 @@ func TestStreamHeartbeat_Unauthorized(t *testing.T) {
 
 	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("NOCAP_KEY"))
 	require.NoError(t, err)
-	_, err = stream.CloseAndRecv()
+	err = closeAndWait(stream)
 	require.Error(t, err)
 	assert.True(t, status.IsPermissionDeniedError(err), "expected permission denied, got: %v", err)
 }
@@ -464,7 +478,7 @@ func TestStreamHeartbeat_MissingSummary(t *testing.T) {
 	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
 	require.NoError(t, err)
 	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{}))
-	_, err = stream.CloseAndRecv()
+	err = closeAndWait(stream)
 	require.Error(t, err)
 	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument, got: %v", err)
 }
@@ -478,7 +492,7 @@ func TestStreamHeartbeat_MissingID(t *testing.T) {
 	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
 		Summary: &cppb.CacheProxySummary{Host: "h", ProxyId: ""},
 	}))
-	_, err = stream.CloseAndRecv()
+	err = closeAndWait(stream)
 	require.Error(t, err)
 	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument, got: %v", err)
 }
@@ -547,7 +561,7 @@ func TestStreamHeartbeat_AccessRevoked(t *testing.T) {
 		}) == io.EOF
 	}, 5*time.Second, 25*time.Millisecond, "server did not terminate stream after revocation")
 
-	_, err = stream.CloseAndRecv()
+	err = closeAndWait(stream)
 	require.Error(t, err)
 	assert.True(t, status.IsUnauthenticatedError(err), "expected unauthenticated, got: %v", err)
 }

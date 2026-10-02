@@ -3,13 +3,13 @@
 // CacheProxyRegistry service.
 //
 // On startup the cache proxy dials the app target, authenticates with its
-// configured API key (which must have the REGISTER_CACHE_PROXY capability),
-// and opens a client-streaming RegisterAndStreamHeartbeat RPC. It then
-// re-sends its registration on a fixed interval. If the stream or
-// connection breaks for any reason — including the app revoking the API key
-// — the goroutine retries with a fixed backoff. Cache traffic continues to
-// flow regardless of registration state; this package only affects whether
-// the proxy shows up on the app's /cache-proxies admin page.
+// configured API key (which must have the REGISTER_CACHE_PROXY capability), and
+// opens a bidirectional streaming RegisterAndStreamHeartbeat RPC. It then
+// re-sends its registration on a fixed interval and answers requests sent by
+// the app over the same stream. If the stream or connection breaks for any
+// reason — including the app revoking the API key — the goroutine retries with
+// a fixed backoff. Cache traffic continues to flow regardless of registration
+// state; this package only affects whether the proxy shows up in the UI.
 package cache_proxy_registration
 
 import (
@@ -200,30 +200,88 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 	defer cleanup()
 	log.Infof("Successfully registered Cache Proxy %q with the app", summary.GetProxyId())
 
+	// gRPC streams don't support concurrent Recv calls, so all receives
+	// happen on this goroutine. The stream's ctx is cancelled by cleanup when
+	// we return, which unblocks Recv.
+	rspCh := make(chan *cppb.RegisterCacheProxyResponse)
+	recvErrCh := make(chan error, 1)
+	go func() {
+		for {
+			rsp, err := stream.Recv()
+			if err != nil {
+				recvErrCh <- err
+				return
+			}
+			select {
+			case rspCh <- rsp:
+			case <-stream.Context().Done():
+				return
+			}
+		}
+	}()
+
+	waitForRecvErr := func() error {
+		for {
+			select {
+			case <-rspCh:
+			case err := <-recvErrCh:
+				return err
+			}
+		}
+	}
+
+	// send writes a message to the stream. If the server has already
+	// terminated the stream, Send returns io.EOF and the real status
+	// (PermissionDenied, etc.) is surfaced by Recv.
+	send := func(req *cppb.RegisterCacheProxyRequest) error {
+		err := sendHeartbeat(stream, req)
+		if err == io.EOF {
+			return waitForRecvErr()
+		}
+		return err
+	}
+
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			// Best-effort close — the server returns
-			// RegisterCacheProxyResponse on EOF, but we don't care about
-			// its contents.
-			stream.CloseAndRecv()
 			return nil
 		case <-shutdownCh:
 			// Best-effort goodbye. If the send fails the server will
 			// eventually drop us via the staleness TTL anyway.
 			if err := sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary, ShuttingDown: true}); err == nil {
-				// Send succeeded; close the stream cleanly. On send
-				// failure (io.EOF) sendHeartbeat has already drained
-				// the trailer via its own CloseAndRecv, so we skip it
-				// here to avoid the redundant call.
-				stream.CloseAndRecv()
+				// Send succeeded; half-close and wait for the server to close
+				// so the goodbye is processed before we tear down the stream.
+				stream.CloseSend()
+				waitForRecvErr()
 			}
 			return nil
+		case err := <-recvErrCh:
+			return err
+		case rsp := <-rspCh:
+			if detailsReq := rsp.GetDetailsRequest(); detailsReq != nil {
+				details := &cppb.CacheProxyDetails{}
+				if detailsReq.GetIncludeConfiguredFlags() {
+					if flags := configuredFlagsCache.Load(); flags != nil {
+						details.ConfiguredFlags = *flags
+					}
+				}
+				// The server stores the top-level statistics from every
+				// message, so they must always be set to avoid clobbering
+				// the stored stats.
+				// TODO(go/b/8433): remove once the server reads details.
+				stats := collectStatistics()
+				if detailsReq.GetIncludeStatistics() {
+					details.Statistics = stats
+				}
+				if err := send(&cppb.RegisterCacheProxyRequest{Summary: summary, Statistics: stats, Details: details}); err != nil {
+					return err
+				}
+			}
 		case <-ticker.C:
 			req := &cppb.RegisterCacheProxyRequest{Summary: summary, Statistics: collectStatistics()}
-			if err := sendHeartbeat(stream, req); err != nil {
+			if err := send(req); err != nil {
 				return err
 			}
 		}
@@ -327,28 +385,33 @@ func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, summa
 		return nil, nil, fail(err)
 	}
 	if err := sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary, Statistics: collectStatistics()}); err != nil {
+		// If the server has already terminated the stream, Recv surfaces
+		// the real status (PermissionDenied, etc.) instead of a bare EOF.
+		// The server may have sent messages before closing, so drain them
+		// until Recv returns an error.
+		if err == io.EOF {
+			for _, err = stream.Recv(); err == nil; _, err = stream.Recv() {
+			}
+		}
 		return nil, nil, fail(err)
 	}
 	setupTimer.Stop()
 	return stream, cancelSetup, nil
 }
 
-// sendHeartbeat writes one heartbeat to the stream. If Send sees the server
-// has already terminated (io.EOF), it drains the trailer via CloseAndRecv to
-// surface the real status (PermissionDenied, etc.) instead of a bare EOF.
+// sendHeartbeat writes one message to the stream.
 func sendHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, req *cppb.RegisterCacheProxyRequest) error {
-	if summary := req.GetSummary(); summary != nil {
+	summary := req.GetSummary()
+	if summary != nil {
 		if flags := configuredFlagsCache.Load(); flags != nil {
 			summary.ConfiguredFlags = *flags
 		}
 	}
-	err := stream.Send(req)
-	if err == io.EOF {
-		if _, recvErr := stream.CloseAndRecv(); recvErr != nil {
-			return recvErr
-		}
+	if req.Details == nil {
+		req.Details = &cppb.CacheProxyDetails{}
 	}
-	return err
+	req.Details.Summary = summary
+	return stream.Send(req)
 }
 
 // getProxyHostID returns an ID that identifies the host this cache proxy

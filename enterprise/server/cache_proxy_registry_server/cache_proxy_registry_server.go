@@ -2,7 +2,7 @@
 // proxies connected to the app, scoped by group.
 //
 // Cache proxies authenticate using an API key (which must have the
-// REGISTER_CACHE_PROXY capability) and open a client-streaming RPC
+// REGISTER_CACHE_PROXY capability) and open a bidirectional streaming RPC
 // (RegisterAndStreamHeartbeat). The server persists each heartbeat as a
 // RegisteredCacheProxy entry in a per-group Redis hash, along with an ACL
 // scoped to that group. Registrations live in the remote execution Redis
@@ -192,7 +192,7 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 		case req, ok := <-requestChan:
 			if !ok {
 				log.CtxInfof(ctx, "Cache proxy %q (group %q) closed its registration stream", proxyID, groupID)
-				return stream.SendAndClose(&cppb.RegisterCacheProxyResponse{})
+				return nil
 			}
 			summary := req.GetSummary()
 			if summary == nil {
@@ -209,7 +209,7 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 					log.CtxWarningf(ctx, "Could not remove shutting-down cache proxy %q (group %q): %s", summary.GetProxyId(), groupID, err)
 					return err
 				}
-				return stream.SendAndClose(&cppb.RegisterCacheProxyResponse{})
+				return nil
 			}
 			if err := s.insertOrUpdateProxy(ctx, groupID, summary, req.GetStatistics()); err != nil {
 				log.CtxInfof(ctx, "Closing cache proxy registration stream for proxy %q (group %q): could not store registration: %s", summary.GetProxyId(), groupID, err)
