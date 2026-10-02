@@ -230,6 +230,16 @@ ts_library(
     ],
 )
 
+ts_jasmine_node_test(
+    name = "rpc_test",
+    srcs = ["rpc_test.ts"],
+    deps = [
+        ":errors",
+        ":rpc",
+        "//app/service:rpc_service",
+    ],
+)
+
 ts_library(
     name = "remote_runner",
     srcs = ["remote_runner.tsx"],
