@@ -38,6 +38,11 @@ type Options struct {
 	// GRPCServer has Service registered on it; streaming RPCs over HTTP are
 	// routed through it.
 	GRPCServer *grpc.Server
+	// ClusterName is the cluster this instance indexes.
+	ClusterName string
+	// ClusterLinks lists every instance, this one included, for the UI's
+	// cluster picker.
+	ClusterLinks []*atlaspb.ClusterLink
 }
 
 type templateData struct {
@@ -68,6 +73,8 @@ func Handler(env environment.Env, opts Options) (http.Handler, error) {
 	configJSON, err := protojson.Marshal(&atlaspb.FrontendConfig{
 		AppBundleHash: bundleHash,
 		Version:       version.Tag(),
+		ClusterName:   opts.ClusterName,
+		ClusterLinks:  opts.ClusterLinks,
 	})
 	if err != nil {
 		return nil, err

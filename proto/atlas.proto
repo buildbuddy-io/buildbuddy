@@ -190,10 +190,20 @@ message StreamLogsResponse {
   bytes data = 1;
 }
 
+// ClusterLink is one atlas instance, for the UI's cluster picker.
+message ClusterLink {
+  string name = 1;
+  string url = 2;
+}
+
 // FrontendConfig is rendered into the page by the server for the UI to read.
 message FrontendConfig {
   string app_bundle_hash = 1;
   string version = 2;
+  // The cluster this instance indexes.
+  string cluster_name = 3;
+  // All available atlas instances, including this one, for the instance picker.
+  repeated ClusterLink cluster_links = 4;
 }
 
 service AtlasService {
