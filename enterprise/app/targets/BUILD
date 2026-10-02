@@ -129,7 +129,6 @@ ts_library(
         "//:node_modules/rxjs",
         "//app/components/menu",
         "//app/components/popup",
-        "//app/invocation:action_compare_button",
         "//app/invocation:action_comparison_service",
         "//app/router",
     ],
