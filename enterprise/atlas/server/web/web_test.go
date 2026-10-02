@@ -156,7 +156,7 @@ func TestUnaryRPCOverHTTP(t *testing.T) {
 	rsp := &atlaspb.SearchResponse{}
 	require.NoError(t, proto.Unmarshal(body, rsp))
 	require.EqualValues(t, 1, rsp.GetTotal())
-	require.Equal(t, "web-7d9f-abcde", rsp.GetGroups()[0].GetEntries()[0].GetName())
+	require.Equal(t, "web-7d9f-abcde", rsp.GetGroups()[0].GetResults()[0].GetEntry().GetName())
 
 	// JSON too, which is what curl wants.
 	resp, err = srv.Client().Post(srv.URL+"/rpc/AtlasService/Search", "application/json", strings.NewReader(`{"query":"web"}`))
