@@ -171,6 +171,7 @@ type envOpts struct {
 	cacheSize        int64
 	filecacheRootDir string
 	runProxy         bool
+	disableCPULeaser bool
 }
 
 func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEnv {
@@ -283,14 +284,16 @@ func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEn
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
 
-	leaser, err := cpuset.NewLeaser(cpuset.LeaserOpts{})
-	require.NoError(t, err)
-	env.SetCPULeaser(leaser)
-	flags.Set(t, "executor.cpu_leaser.enable", true)
-	t.Cleanup(func() {
-		orphanedLeases := leaser.TestOnlyGetOpenLeases()
-		require.Equal(t, 0, len(orphanedLeases))
-	})
+	if !opts.disableCPULeaser {
+		leaser, err := cpuset.NewLeaser(cpuset.LeaserOpts{})
+		require.NoError(t, err)
+		env.SetCPULeaser(leaser)
+		flags.Set(t, "executor.cpu_leaser.enable", true)
+		t.Cleanup(func() {
+			orphanedLeases := leaser.TestOnlyGetOpenLeases()
+			require.Equal(t, 0, len(orphanedLeases))
+		})
+	}
 
 	return env
 }
@@ -381,6 +384,42 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	}
 
 	assertCommandResult(t, expectedResult, res)
+}
+
+func TestFirecrackerRunWithoutCPULeaser(t *testing.T) {
+	ctx := t.Context()
+	// Disable the CPU leaser, which is the default executor configuration.
+	// The jailer then gets no cpuset settings, but should still place the VM
+	// in its own cgroup.
+	env := getTestEnv(ctx, t, envOpts{disableCPULeaser: true})
+	workDir := testfs.MakeDirAll(t, testfs.MakeTempDir(t), "work")
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	// Run a command that burns some CPU.
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", "cat /dev/zero | head -c 100000000 >/dev/null"},
+	}
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+
+	// CPU usage is measured from the VM's cgroup on the host, so it should
+	// include the CPU burned by the command. If the VM ran outside of its
+	// cgroup, the measured usage would be zero.
+	cpuNanos := res.UsageStats.GetCpuNanos()
+	assert.Greater(t, cpuNanos, int64(0))
 }
 
 func TestFirecrackerLifecycle(t *testing.T) {

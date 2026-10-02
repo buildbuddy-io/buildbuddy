@@ -1845,6 +1845,21 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		cgroupArgs = append(cgroupArgs, fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(cpus...)))
 	}
 
+	// When given cgroup args, the jailer creates the VM cgroup by appending
+	// three path components:
+	// 1. The cgroup FS root: "/sys/fs/cgroup"
+	// 2. The ParentCgroup setting
+	// 3. The ID setting
+	// Without cgroup args, the jailer on cgroup v2 instead moves the VM
+	// directly into ParentCgroup. That would leave the VM outside of the
+	// cgroup configured by setupCgroup, or fail with EBUSY if the parent has
+	// controllers enabled for its children. So in that case, point
+	// ParentCgroup at the VM cgroup, which setupCgroup already created.
+	parentCgroup := c.cgroupParent
+	if len(cgroupArgs) == 0 {
+		parentCgroup = filepath.Join(c.cgroupParent, c.id)
+	}
+
 	return &fcclient.JailerConfig{
 		JailerBinary:   c.executorConfig.JailerBinaryPath,
 		ChrootBaseDir:  c.jailerRoot,
@@ -1858,12 +1873,7 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		Stderr:         c.vmLogWriter(),
 		CgroupVersion:  cgroupVersion,
 		CgroupArgs:     cgroupArgs,
-		// The jailer computes the full cgroup path by appending three path
-		// components:
-		// 1. The cgroup FS root: "/sys/fs/cgroup"
-		// 2. This ParentCgroup setting
-		// 3. The ID setting
-		ParentCgroup: fcclient.String(c.cgroupParent),
+		ParentCgroup:   fcclient.String(parentCgroup),
 	}, nil
 }
 
