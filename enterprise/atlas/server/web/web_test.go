@@ -78,7 +78,14 @@ func newTestServer(t *testing.T) *httptest.Server {
 		"style.css":         {Data: []byte("body {}")},
 	}
 	env := real_environment.NewRealEnv(healthcheck.NewHealthChecker("atlas-test"))
-	h, err := Handler(env, Options{AppFS: appFS, Service: svc, GRPCServer: grpcServer})
+	h, err := Handler(env, Options{
+		AppFS: appFS, Service: svc, GRPCServer: grpcServer,
+		ClusterName: "uswest1",
+		ClusterLinks: []*atlaspb.ClusterLink{
+			{Name: "uswest1", Url: "https://atlas.example"},
+			{Name: "sjc", Url: "https://atlas.sjc.example"},
+		},
+	})
 	require.NoError(t, err)
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
@@ -121,7 +128,11 @@ func TestIndexAndAssets(t *testing.T) {
 		resp, body := get(t, srv, path)
 		require.Equal(t, 200, resp.StatusCode, path)
 		require.Contains(t, resp.Header.Get("Content-Type"), "text/html")
-		require.Equal(t, "abc123", frontendConfig(t, body).GetAppBundleHash())
+		cfg := frontendConfig(t, body)
+		require.Equal(t, "abc123", cfg.GetAppBundleHash())
+		require.Equal(t, "uswest1", cfg.GetClusterName())
+		require.Len(t, cfg.GetClusterLinks(), 2, "the picker's instances ride along")
+		require.Equal(t, "https://atlas.sjc.example", cfg.GetClusterLinks()[1].GetUrl())
 		require.Contains(t, body, `src="/app/app_bundle/app.js?hash=abc123"`)
 		require.Contains(t, body, `href="/app/style.css?hash=abc123"`)
 	}
