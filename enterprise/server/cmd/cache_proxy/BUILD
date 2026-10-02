@@ -1,6 +1,6 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
@@ -133,4 +133,30 @@ oci_image(
     target_compatible_with = ["@platforms//os:linux"],
     tars = [":tar"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "cache_proxy_test",
+    srcs = ["cache_proxy_test.go"],
+    embed = [":cache_proxy_lib"],
+    deps = [
+        "//enterprise/server/byte_stream_server_proxy",
+        "//enterprise/server/util/proxy_util",
+        "//proto:remote_execution_go_proto",
+        "//server/interfaces",
+        "//server/real_environment",
+        "//server/remote_cache/byte_stream_server",
+        "//server/remote_cache/digest",
+        "//server/ssl",
+        "//server/testutil/testenv",
+        "//server/util/grpc_server",
+        "//server/util/prefix",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//connectivity",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//metadata",
+    ],
 )
