@@ -48,7 +48,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
-	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
@@ -2522,11 +2521,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	}
 
 	if supportsExperimentFlags {
-		// When adding a new flag to execution_experiments, update this list to
-		// ensure the experiment propagates to executors at lease time.
-		taskProto.ExperimentFlags = []*expb.EvaluatedFlag{
-			execution_experiments.PersistentVolumes.GetProto(ctx, expOptions...),
-		}
+		taskProto.ExperimentFlags = execution_experiments.Evaluate(ctx, expOptions...)
 	}
 
 	return taskProto

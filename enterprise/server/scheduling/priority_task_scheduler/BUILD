@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler",
     deps = [
         "//enterprise/server/auth",
+        "//enterprise/server/remote_execution/execution_experiments",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/tasksize",
         "//proto:remote_execution_go_proto",
@@ -24,6 +25,7 @@ go_library(
         "//server/util/log",
         "//server/util/priority_queue",
         "//server/util/proto",
+        "//server/util/rexec",
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/usageutil",

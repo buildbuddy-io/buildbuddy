@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"runtime"
 	"testing"
 	"time"
 
@@ -48,6 +49,52 @@ func TestPropagateExecutionTaskValuesToContext_ExperimentFlags(t *testing.T) {
 	value, details := testExperiment.GetWithDetails(ctx)
 	require.True(t, value)
 	require.Equal(t, "treatment", details.GetVariant())
+}
+
+func TestApplyTestCPUWeightMultiplier(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("The test CPU weight multiplier is only defined on Linux.")
+	}
+	testEnv := []*repb.Command_EnvironmentVariable{{Name: "TEST_SIZE", Value: "medium"}}
+	for _, testCase := range []struct {
+		name           string
+		multiplier     float64
+		env            []*repb.Command_EnvironmentVariable
+		weight         *int64
+		expectedWeight int64
+	}{
+		{name: "scales and rounds test weight", multiplier: 2.5, env: testEnv, weight: new(int64(39)), expectedWeight: 98},
+		{name: "clamps to max weight", multiplier: 1000, env: testEnv, weight: new(int64(39)), expectedWeight: 10_000},
+		{name: "clamps to min weight", multiplier: 0.001, env: testEnv, weight: new(int64(39)), expectedWeight: 1},
+		{name: "ignores non-test actions", multiplier: 4, weight: new(int64(39)), expectedWeight: 39},
+		{name: "ignores non-positive multiplier", multiplier: -1, env: testEnv, weight: new(int64(39)), expectedWeight: 39},
+		{name: "leaves unset weight unset", multiplier: 4, env: testEnv, expectedWeight: 0},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "executor.test_cpu_weight_multiplier", testCase.multiplier)
+			reservationMetadata := &scpb.SchedulingMetadata{
+				CgroupSettings: &scpb.CgroupSettings{CpuWeight: testCase.weight},
+			}
+			originalWeight := reservationMetadata.GetCgroupSettings().GetCpuWeight()
+			st := &repb.ScheduledTask{
+				ExecutionTask: &repb.ExecutionTask{
+					Command: &repb.Command{EnvironmentVariables: testCase.env},
+				},
+				SchedulingMetadata: reservationMetadata,
+			}
+
+			applyTestCPUWeightMultiplier(t.Context(), st)
+
+			// The task should run with the expected weight.
+			weight := st.GetSchedulingMetadata().GetCgroupSettings().GetCpuWeight()
+			require.Equal(t, testCase.expectedWeight, weight)
+			// The metadata in the queued reservation should be left alone, so
+			// that the multiplier isn't applied again if the reservation is
+			// read later.
+			reservationWeight := reservationMetadata.GetCgroupSettings().GetCpuWeight()
+			require.Equal(t, originalWeight, reservationWeight)
+		})
+	}
 }
 
 func newTaskReservationRequest(taskID, taskGroupID string, priority int32) *scpb.EnqueueTaskReservationRequest {
