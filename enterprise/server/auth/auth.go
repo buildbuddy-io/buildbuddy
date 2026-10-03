@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
 	"github.com/golang-jwt/jwt/v4"
 )
 
@@ -177,14 +176,51 @@ func (a *authenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserI
 // that has already verified its authenticity.
 func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
 	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		claims := &claims.Claims{}
-		parser := jwt.Parser{}
-		_, _, err := parser.ParseUnverified(tokenString, claims)
+		// Use the claims parsed by ContextWithTrustedJWT, unless the JWT in the
+		// context has since been replaced.
+		if cached, ok := ctx.Value(trustedJWTClaimsKey{}).(*trustedJWTClaims); ok && cached.tokenString == tokenString {
+			return cached.claims, nil
+		}
+		c, err := parseTrustedJWT(tokenString)
 		if err != nil {
 			return nil, err
 		}
-		return claims, nil
+		return c, nil
 	}
 	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 	return nil, authutil.AnonymousUserError(authutil.UserNotFoundMsg)
+}
+
+// trustedJWTClaims holds the claims that ContextWithTrustedJWT parsed from a
+// JWT, along with the JWT they were parsed from.
+type trustedJWTClaims struct {
+	tokenString string
+	claims      *claims.Claims
+}
+
+type trustedJWTClaimsKey struct{}
+
+// ContextWithTrustedJWT returns a context containing the given JWT, which must
+// come from a trusted source that has already verified it. The JWT's claims are
+// parsed once here and stored in the context, so that UserFromTrustedJWT can
+// return them without parsing the JWT again. Executors call UserFromTrustedJWT
+// for every input file linked from the filecache, which makes re-parsing the
+// JWT a significant share of executor CPU.
+func ContextWithTrustedJWT(ctx context.Context, tokenString string) context.Context {
+	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tokenString)
+	c, err := parseTrustedJWT(tokenString)
+	if err != nil {
+		// Leave it to UserFromTrustedJWT to return the error.
+		return ctx
+	}
+	return context.WithValue(ctx, trustedJWTClaimsKey{}, &trustedJWTClaims{tokenString: tokenString, claims: c})
+}
+
+func parseTrustedJWT(tokenString string) (*claims.Claims, error) {
+	c := &claims.Claims{}
+	parser := jwt.Parser{}
+	if _, _, err := parser.ParseUnverified(tokenString, c); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
