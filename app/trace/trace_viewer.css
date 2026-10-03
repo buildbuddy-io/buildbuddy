@@ -1,5 +1,6 @@
 :root {
   --trace-event-chroma: 80;
+  --trace-event-faded-chroma: 24;
   --trace-event-lightness: 65%;
   --color-trace-border: var(--color-gray-200);
   --color-trace-button-active-text: var(--color-black);
@@ -26,6 +27,7 @@
 
 .dark {
   --trace-event-chroma: 55;
+  --trace-event-faded-chroma: 18;
   --trace-event-lightness: 40%;
   --color-trace-border: var(--color-gray-900);
   --color-trace-button-active-text: var(--color-white);
