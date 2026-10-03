@@ -293,21 +293,17 @@ func (s *CacheProxyRegistryServer) getNewestVersion(ctx context.Context) *semver
 }
 
 // upgradePrompt returns a Prompt carrying the newest registered proxy version
-// if any of the given proxies meets one of the configured upgrade triggers
-// (see the --cache_proxy.upgrade_prompt_* flags), and nil otherwise. The
-// urgency reflects the most-outdated proxy in the list.
-func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []*cppb.GetCacheProxiesResponse_CacheProxy) *uppb.Prompt {
-	if s.detector == nil || len(proxies) == 0 {
+// if any of the given proxy versions meets one of the configured upgrade
+// triggers (see the --cache_proxy.upgrade_prompt_* flags), and nil otherwise.
+// The urgency reflects the most-outdated version in the list.
+func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, versions []string) *uppb.Prompt {
+	if s.detector == nil || len(versions) == 0 {
 		return nil
 	}
 	newestVersion := s.getNewestVersion(ctx)
 	newestVersionString := "unknown"
 	if newestVersion != nil {
 		newestVersionString = newestVersion.String()
-	}
-	versions := make([]string, 0, len(proxies))
-	for _, p := range proxies {
-		versions = append(versions, p.GetSummary().GetVersion())
 	}
 	return s.detector.Detect(newestVersion, versions, fmt.Sprintf(upgradePromptMessage, newestVersionString))
 }
@@ -374,9 +370,13 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 		return strings.Compare(a.GetSummary().GetProxyId(), b.GetSummary().GetProxyId())
 	})
 
+	versions := make([]string, 0, len(proxies))
+	for _, p := range proxies {
+		versions = append(versions, p.GetSummary().GetVersion())
+	}
 	return &cppb.GetCacheProxiesResponse{
 		CacheProxy:    proxies,
-		UpgradePrompt: s.upgradePrompt(ctx, proxies),
+		UpgradePrompt: s.upgradePrompt(ctx, versions),
 	}, nil
 }
 
@@ -395,4 +395,61 @@ func (s *CacheProxyRegistryServer) ListCacheProxies(ctx context.Context, req *cp
 	}
 	resp.Summary = summaries
 	return &resp, nil
+}
+
+// GetCacheProxy returns details about a single cache proxy, read from its
+// most recent registration heartbeat.
+func (s *CacheProxyRegistryServer) GetCacheProxy(ctx context.Context, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error) {
+	// As in GetCacheProxies, the group comes from the request context and
+	// perms.AuthorizeRead below verifies the caller can read it.
+	groupID := req.GetRequestContext().GetGroupId()
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("group not specified")
+	}
+	proxyID := req.GetSelector().GetProxyId()
+	if proxyID == "" {
+		return nil, status.InvalidArgumentError("selector.proxy_id is required")
+	}
+	user, err := s.authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	notFound := status.NotFoundErrorf("cache proxy %q not found", proxyID)
+	data, err := s.rdb.HGet(ctx, redisKeyForCacheProxies(groupID), proxyID).Result()
+	if err == redis.Nil {
+		return nil, notFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	reg := &cppb.RegisteredCacheProxy{}
+	if err := proto.Unmarshal([]byte(data), reg); err != nil {
+		return nil, err
+	}
+	if s.clock.Since(reg.GetLastPingTime().AsTime()) > maxRegistrationStaleness || reg.GetSummary() == nil {
+		return nil, notFound
+	}
+	// Return NotFound rather than PermissionDenied for unreadable entries so
+	// the response doesn't reveal whether the proxy exists.
+	if err := perms.AuthorizeRead(user, reg.GetAcl()); err != nil {
+		return nil, notFound
+	}
+
+	summary := reg.GetSummary()
+	summary.LastCheckInTime = reg.GetLastPingTime()
+	// Flags are returned in details.configured_flags, and only on request.
+	configuredFlags := summary.GetConfiguredFlags()
+	summary.ConfiguredFlags = nil
+	details := &cppb.CacheProxyDetails{Summary: summary}
+	if req.GetIncludeConfiguredFlags() {
+		details.ConfiguredFlags = configuredFlags
+	}
+	if req.GetIncludeStatistics() {
+		details.Statistics = reg.GetStatistics()
+	}
+	return &cppb.GetCacheProxyResponse{
+		Details:       details,
+		UpgradePrompt: s.upgradePrompt(ctx, []string{summary.GetVersion()}),
+	}, nil
 }
