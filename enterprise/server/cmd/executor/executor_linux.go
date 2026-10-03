@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -25,8 +27,10 @@ import (
 )
 
 var (
-	childCgroupsEnabled  = flag.Bool("executor.child_cgroups_enabled", false, "On startup, sets up separate child cgroups for the executor process and any action processes that it starts. When using this flag, the executor's starting cgroup must not have any other processes besides the executor.")
-	childCgroupsMoveTini = flag.Bool("executor.child_cgroups_move_tini", false, "If true, and child_cgroups_enabled is true, and the parent process is tini (pid 1), move tini into the child cgroup as well. This is needed to avoid violating the 'no internal process constraint' of cgroups when running the executor under tini.")
+	childCgroupsEnabled                  = flag.Bool("executor.child_cgroups_enabled", false, "On startup, sets up separate child cgroups for the executor process and any action processes that it starts. When using this flag, the executor's starting cgroup must not have any other processes besides the executor.")
+	childCgroupsMoveTini                 = flag.Bool("executor.child_cgroups_move_tini", false, "If true, and child_cgroups_enabled is true, and the parent process is tini (pid 1), move tini into the child cgroup as well. This is needed to avoid violating the 'no internal process constraint' of cgroups when running the executor under tini.")
+	childCgroupsTaskCPUControllerEnabled = flag.Bool("executor.child_cgroups_task_cpu_controller_enabled", true, "If false, the cpu cgroup controller is not enabled for task cgroups, so per-task CPU settings such as cpu.weight and cpu.max are not applied, and the threads of all tasks share CPU evenly per thread. Per-task CPU usage and CPU pressure are still recorded. Requires executor.child_cgroups_enabled and the crun runtime.")
+	childCgroupsExecutorCPU              = flag.String("executor.child_cgroups_executor_cpu", "", `CPU to reserve for the executor when tasks compete with it for CPU, as cores (e.g. "2"), milliCPU ("2000m"), or a percentage ("5%"). Cores and milliCPU are a share of the CPU limit of the executor's starting cgroup. This sets cgroup CPU weights, not a limit. Requires executor.child_cgroups_enabled.`)
 )
 
 const (
@@ -57,6 +61,14 @@ const (
 // would be "kubepods.slice/pod-abc/container-123" and
 // "kubepods.slice/pod-abc/container-123/buildbuddy.executor.tasks".
 func setupCgroups() (*Cgroups, error) {
+	if !*childCgroupsEnabled && *childCgroupsExecutorCPU != "" {
+		return nil, fmt.Errorf("executor.child_cgroups_executor_cpu requires executor.child_cgroups_enabled")
+	}
+	if !*childCgroupsEnabled && !*childCgroupsTaskCPUControllerEnabled {
+		return nil, fmt.Errorf("disabling executor.child_cgroups_task_cpu_controller_enabled requires executor.child_cgroups_enabled")
+	}
+	ociruntime.SetTaskCPUControllerEnabled(*childCgroupsTaskCPUControllerEnabled)
+
 	// Get the cgroup that the executor process was originally started in.
 	// On k8s this will be something like "kubepods.slice/pod-abc/container-123"
 	startingCgroup, err := cgroup.GetCurrent()
@@ -116,6 +128,12 @@ func setupCgroups() (*Cgroups, error) {
 		return nil, fmt.Errorf("inherit subtree control: %w", err)
 	}
 
+	if *childCgroupsExecutorCPU != "" {
+		if err := setExecutorCPUWeights(filepath.Join(cgroup.RootPath, startingCgroup), executorCgroupPath, taskCgroupPath); err != nil {
+			return nil, err
+		}
+	}
+
 	// Also enable controllers for task cgroups up front. We could alternatively
 	// do this lazily during task setup, but it's more complicated because there
 	// are potential race conditions around reading/writing
@@ -129,6 +147,73 @@ func setupCgroups() (*Cgroups, error) {
 		StartingCgroup: startingCgroup,
 		CgroupParent:   taskCgroup,
 	}, nil
+}
+
+// setExecutorCPUWeights sets the CPU weights of the executor cgroup and the
+// task parent cgroup to split contended CPU between them, as configured by
+// executor.child_cgroups_executor_cpu. The weights only take effect when the
+// executor and tasks compete for CPU. They're scaled up to the maximum weight
+// so that a small share stays precise.
+func setExecutorCPUWeights(startingCgroupPath, executorCgroupPath, taskCgroupPath string) error {
+	cpuLimit, err := cgroup.ReadEffectiveCPULimit(startingCgroupPath)
+	if err != nil {
+		return fmt.Errorf("read CPU limit of starting cgroup: %w", err)
+	}
+	executorCPUFraction, err := resolveExecutorCPUFraction(*childCgroupsExecutorCPU, cpuLimit)
+	if err != nil {
+		return fmt.Errorf("invalid executor.child_cgroups_executor_cpu: %w", err)
+	}
+	if executorCPUFraction == 0 {
+		return nil
+	}
+	controllers, err := cgroup.EnabledControllers(executorCgroupPath)
+	if err != nil {
+		return fmt.Errorf("read enabled controllers for executor cgroup: %w", err)
+	}
+	if !controllers["cpu"] {
+		return fmt.Errorf("executor.child_cgroups_executor_cpu requires the cpu cgroup controller, which is not available in %s", executorCgroupPath)
+	}
+	executorWeight := max(1, int64(math.Round(cgroup.MaxCPUWeight*executorCPUFraction)))
+	taskWeight := max(1, int64(math.Round(cgroup.MaxCPUWeight*(1-executorCPUFraction))))
+	if err := os.WriteFile(filepath.Join(executorCgroupPath, "cpu.weight"), []byte(strconv.FormatInt(executorWeight, 10)), 0); err != nil {
+		return fmt.Errorf("set executor cgroup CPU weight: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(taskCgroupPath, "cpu.weight"), []byte(strconv.FormatInt(taskWeight, 10)), 0); err != nil {
+		return fmt.Errorf("set task cgroup CPU weight: %w", err)
+	}
+	log.Infof("Set CPU weight to %d for the executor cgroup and %d for the task cgroup, giving the executor %.1f%% of contended CPU (CPU limit: %d milliCPU)", executorWeight, taskWeight, 100*executorCPUFraction, cpuLimit)
+	return nil
+}
+
+// resolveExecutorCPUFraction converts a value of
+// executor.child_cgroups_executor_cpu to the fraction of contended CPU that
+// the executor cgroup should get relative to the task parent cgroup. A
+// percentage is used as is. A number of cores or milliCPU is taken as a share
+// of cpuLimit, the CPU that the executor and tasks can use together, in
+// milliCPU. It returns 0 if the value is unset.
+func resolveExecutorCPUFraction(value string, cpuLimit int64) (float64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	if pctString, ok := strings.CutSuffix(value, "%"); ok {
+		pct, err := strconv.ParseFloat(strings.TrimSpace(pctString), 64)
+		if err != nil || math.IsNaN(pct) || pct <= 0 || pct >= 100 {
+			return 0, fmt.Errorf("percentage %q must be greater than 0%% and less than 100%%", value)
+		}
+		return pct / 100, nil
+	}
+	milliCPU, err := resources.ParseCPU(value)
+	if err != nil || milliCPU < 0 {
+		return 0, fmt.Errorf("%q is not a number of cores (e.g. \"2\"), milliCPU (e.g. \"2000m\"), or a percentage (e.g. \"5%%\")", value)
+	}
+	if milliCPU == 0 {
+		return 0, nil
+	}
+	if milliCPU >= cpuLimit {
+		return 0, fmt.Errorf("%q must be less than the CPU limit of %dm", value, cpuLimit)
+	}
+	return float64(milliCPU) / float64(cpuLimit), nil
 }
 
 // enableTaskCgroupControllers makes a best-effort attempt to enable each
@@ -149,6 +234,11 @@ func enableTaskCgroupControllers(path string) error {
 	}
 
 	for _, controller := range cgroup.SetupControllers {
+		if controller == "cpu" && !*childCgroupsTaskCPUControllerEnabled {
+			// Without the cpu controller, task cgroup setup skips per-task CPU
+			// settings, and the threads of all tasks share CPU per thread.
+			continue
+		}
 		if err := cgroup.WriteSubtreeControl(path, map[string]bool{controller: true}); err != nil {
 			if flagName, ok := requiredBy[controller]; ok {
 				return fmt.Errorf("enable cgroup controller %q (required by %s): %w", controller, flagName, err)
