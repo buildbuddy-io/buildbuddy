@@ -565,3 +565,131 @@ func TestStreamHeartbeat_AccessRevoked(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, status.IsUnauthenticatedError(err), "expected unauthenticated, got: %v", err)
 }
+
+func getCacheProxy(t *testing.T, s *CacheProxyRegistryServer, user interfaces.UserInfo, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error) {
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	if req.RequestContext == nil {
+		req.RequestContext = &ctxpb.RequestContext{GroupId: testGroupID}
+	}
+	return s.GetCacheProxy(ctx, req)
+}
+
+func TestGetCacheProxy(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	stats := &cppb.Statistics{AcReadHits: 7, CasWrites: 3}
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
+		Host:            "host",
+		ProxyId:         "id",
+		Version:         "v1.0.0",
+		ConfiguredFlags: []string{"--foo=bar"},
+	}, stats))
+
+	for _, tc := range []struct {
+		name          string
+		includeFlags  bool
+		includeStats  bool
+		expectedFlags []string
+		expectedStats *cppb.Statistics
+	}{
+		{name: "summary only"},
+		{name: "with flags", includeFlags: true, expectedFlags: []string{"--foo=bar"}},
+		{name: "with statistics", includeStats: true, expectedStats: stats},
+		{name: "with everything", includeFlags: true, includeStats: true, expectedFlags: []string{"--foo=bar"}, expectedStats: stats},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := getCacheProxy(t, s, user, &cppb.GetCacheProxyRequest{
+				Selector:               &cppb.CacheProxySelector{ProxyId: "id"},
+				IncludeConfiguredFlags: tc.includeFlags,
+				IncludeStatistics:      tc.includeStats,
+			})
+			require.NoError(t, err)
+			details := resp.GetDetails()
+			assert.Equal(t, "host", details.GetSummary().GetHost())
+			assert.Equal(t, "id", details.GetSummary().GetProxyId())
+			assert.NotNil(t, details.GetSummary().GetLastCheckInTime())
+			assert.Empty(t, details.GetSummary().GetConfiguredFlags(), "flags should only be returned in details")
+			assert.Equal(t, tc.expectedFlags, details.GetConfiguredFlags())
+			assert.True(t, proto.Equal(tc.expectedStats, details.GetStatistics()), "got statistics %v", details.GetStatistics())
+		})
+	}
+}
+
+func TestGetCacheProxy_InvalidRequests(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	_, err := getCacheProxy(t, s, user, &cppb.GetCacheProxyRequest{
+		RequestContext: &ctxpb.RequestContext{},
+		Selector:       &cppb.CacheProxySelector{ProxyId: "id"},
+	})
+	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument for missing group, got: %v", err)
+
+	_, err = getCacheProxy(t, s, user, &cppb.GetCacheProxyRequest{})
+	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument for missing proxy ID, got: %v", err)
+}
+
+func TestGetCacheProxy_NotFound(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	_, err := getCacheProxy(t, s, user, &cppb.GetCacheProxyRequest{
+		Selector: &cppb.CacheProxySelector{ProxyId: "missing"},
+	})
+	assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+}
+
+func TestGetCacheProxy_Stale(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	stale := &cppb.RegisteredCacheProxy{
+		Summary:      &cppb.CacheProxySummary{Host: "stale", ProxyId: "stale"},
+		GroupId:      testGroupID,
+		LastPingTime: timestamppb.New(time.Now().Add(-2 * maxRegistrationStaleness)),
+	}
+	b, err := proto.Marshal(stale)
+	require.NoError(t, err)
+	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies(testGroupID), "stale", b).Err())
+
+	_, err = getCacheProxy(t, s, user, &cppb.GetCacheProxyRequest{
+		Selector: &cppb.CacheProxySelector{ProxyId: "stale"},
+	})
+	assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+}
+
+func TestGetCacheProxy_Isolation(t *testing.T) {
+	const otherGroupID = "GR2"
+	other := userWithCapabilities("U2", otherGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"OTHER_KEY": other})
+
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
+		Host: "host", ProxyId: "id",
+	}, nil))
+
+	// A user in another group asks for a proxy in testGroupID. The ACL check
+	// must reject it, and without revealing that the proxy exists.
+	_, err := getCacheProxy(t, s, other, &cppb.GetCacheProxyRequest{
+		Selector: &cppb.CacheProxySelector{ProxyId: "id"},
+	})
+	assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+}
+
+func TestGetCacheProxy_UpgradePrompt(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxySummary{
+		Host: "shared", ProxyId: "shared", Version: "v2.50.0",
+	}, nil))
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
+		Host: "old", ProxyId: "old", Version: "v2.35.0",
+	}, nil))
+
+	resp, err := getCacheProxy(t, s, user, &cppb.GetCacheProxyRequest{
+		Selector: &cppb.CacheProxySelector{ProxyId: "old"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, uppb.Prompt_LOW, resp.GetUpgradePrompt().GetUrgency())
+}
