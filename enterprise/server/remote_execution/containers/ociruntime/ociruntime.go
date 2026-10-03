@@ -129,6 +129,10 @@ const (
 var (
 	versionDirRegexp = regexp.MustCompile(`^v\d+$`)
 
+	// Whether task cgroups use the cpu cgroup controller. Set by
+	// SetTaskCPUControllerEnabled.
+	taskCPUControllerEnabled = true
+
 	// Fake /proc/cgroups content to mount into the container.
 	fakeProcCgroupsContent = getFakeProcCgroupsContent()
 )
@@ -191,6 +195,22 @@ var (
 // enabled via the executor.oci.enable_cgroup_memory_limit flag.
 func CgroupMemoryLimitEnabled() bool {
 	return *enableCgroupMemoryLimit
+}
+
+// SetTaskCPUControllerEnabled sets whether task cgroups use the cpu cgroup
+// controller. The executor calls it at startup, before creating any containers.
+func SetTaskCPUControllerEnabled(enabled bool) {
+	taskCPUControllerEnabled = enabled
+}
+
+// crunManagesCgroups returns whether crun creates and manages task cgroups.
+// When creating a container's cgroup, crun enables every available controller
+// in the cgroup.subtree_control file of each ancestor, which would re-enable
+// the cpu controller for task cgroups when it's meant to be disabled. In that
+// case crun runs without a cgroup manager, and the executor starts crun inside
+// the task's cgroup and handles freezing, signaling, and cleanup itself.
+func crunManagesCgroups() bool {
+	return taskCPUControllerEnabled
 }
 
 type provider struct {
@@ -299,6 +319,9 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	}
 	if rt == "" {
 		return nil, status.FailedPreconditionError("could not find a usable container runtime in PATH")
+	}
+	if !crunManagesCgroups() && filepath.Base(rt) != "crun" {
+		return nil, status.FailedPreconditionErrorf("disabling the cpu controller for task cgroups requires the crun runtime, but the runtime is %s", rt)
 	}
 	log.Infof("Located OCI runtime binary at %s", rt)
 
@@ -863,11 +886,66 @@ func (c *ociContainer) Signal(ctx context.Context, sig syscall.Signal) error {
 	if c.cid == "" {
 		return status.FailedPreconditionError("container is not created")
 	}
-	return c.invokeRuntimeSimple(ctx, "kill", "--all", c.cid, fmt.Sprintf("%d", sig))
+	if crunManagesCgroups() {
+		return c.invokeRuntimeSimple(ctx, "kill", "--all", c.cid, fmt.Sprintf("%d", sig))
+	}
+	// Without a cgroup manager, "crun kill --all" does nothing.
+	return c.signalContainerProcesses(sig)
+}
+
+// signalContainerProcesses sends a signal to the processes in the task's
+// cgroup, which is what "crun kill --all" does when crun manages the cgroup.
+// Since crun runs inside the task's cgroup when it doesn't manage it, crun's
+// own processes are skipped, so that they keep waiting on the container and
+// reporting its exit status. The cgroup is frozen while signaling so that
+// processes can't fork new ones that would be missed.
+func (c *ociContainer) signalContainerProcesses(sig syscall.Signal) error {
+	runtimePath, err := exec.LookPath(c.runtime)
+	if err != nil {
+		return status.UnavailableErrorf("look up runtime: %s", err)
+	}
+	runtimeInfo, err := os.Stat(runtimePath)
+	if err != nil {
+		return status.UnavailableErrorf("stat runtime: %s", err)
+	}
+	path := c.cgroupPath()
+	if err := cgroup.SetFrozen(path, true); err != nil {
+		return status.UnavailableErrorf("freeze cgroup: %s", err)
+	}
+	defer func() {
+		if err := cgroup.SetFrozen(path, false); err != nil {
+			log.Warningf("Failed to thaw cgroup %s after signaling: %s", path, err)
+		}
+	}()
+	pids, err := cgroup.ReadCgroupProcs(path)
+	if err != nil {
+		return status.UnavailableErrorf("read cgroup processes: %s", err)
+	}
+	for pid := range pids {
+		// crun's own processes run the crun binary. A process whose executable
+		// can't be read, because it already exited, is signaled anyway, and
+		// the resulting ESRCH is ignored.
+		exeInfo, err := os.Stat(fmt.Sprintf("/proc/%d/exe", pid))
+		isRuntime := err == nil && os.SameFile(exeInfo, runtimeInfo)
+		if isRuntime {
+			continue
+		}
+		if err := syscall.Kill(pid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
+			return status.UnavailableErrorf("signal process %d: %s", pid, err)
+		}
+	}
+	return nil
 }
 
 func (c *ociContainer) Pause(ctx context.Context) error {
-	err := c.invokeRuntimeSimple(ctx, "pause", c.cid)
+	var err error
+	if crunManagesCgroups() {
+		err = c.invokeRuntimeSimple(ctx, "pause", c.cid)
+	} else {
+		// crun can't pause a container without a cgroup, so freeze the
+		// cgroup the same way crun would.
+		err = cgroup.SetFrozen(c.cgroupPath(), true)
+	}
 
 	if c.releaseCPUs != nil {
 		c.releaseCPUs()
@@ -882,6 +960,9 @@ func (c *ociContainer) Unpause(ctx context.Context) error {
 		return fmt.Errorf("setup cgroup: %w", err)
 	}
 
+	if !crunManagesCgroups() {
+		return cgroup.SetFrozen(c.cgroupPath(), false)
+	}
 	return c.invokeRuntimeSimple(ctx, "resume", c.cid)
 }
 
@@ -902,6 +983,18 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 
 	if err := c.invokeRuntimeSimple(ctx, "delete", "--force", c.cid); err != nil {
 		firstErr = status.UnavailableErrorf("delete container: %s", err)
+	}
+
+	if !crunManagesCgroups() {
+		// Without a cgroup manager, crun doesn't kill the processes left in
+		// the cgroup or wait for them to exit, which has to happen before the
+		// cgroup can be removed.
+		killCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		err := cgroup.KillAll(killCtx, c.cgroupPath())
+		cancel()
+		if err != nil && firstErr == nil {
+			firstErr = status.UnavailableErrorf("kill cgroup processes: %s", err)
+		}
 	}
 
 	if len(c.mergedMounts) > 0 {
@@ -1472,7 +1565,11 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	}
 	runtimeName := filepath.Base(c.runtime)
 	if runtimeName == "crun" {
-		globalArgs = append(globalArgs, "--cgroup-manager=cgroupfs")
+		if crunManagesCgroups() {
+			globalArgs = append(globalArgs, "--cgroup-manager=cgroupfs")
+		} else {
+			globalArgs = append(globalArgs, "--cgroup-manager=disabled")
+		}
 	}
 	if *runtimeRoot != "" {
 		globalArgs = append(globalArgs, "--root="+*runtimeRoot)
@@ -1524,6 +1621,18 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	// TODO: figure out why this is only needed for run and not exec.
 	if args[0] == "run" {
 		cmd.SysProcAttr.Cloneflags = syscall.CLONE_NEWPID
+	}
+	// Without a cgroup manager, crun leaves container processes in the cgroup
+	// that crun runs in. So start the commands that create container
+	// processes directly in the task's cgroup.
+	if !crunManagesCgroups() && (args[0] == "run" || args[0] == "create" || args[0] == "exec") {
+		cgroupDir, err := os.Open(c.cgroupPath())
+		if err != nil {
+			return commandutil.ErrorResult(status.UnavailableErrorf("open task cgroup: %s", err))
+		}
+		defer cgroupDir.Close()
+		cmd.SysProcAttr.UseCgroupFD = true
+		cmd.SysProcAttr.CgroupFD = int(cgroupDir.Fd())
 	}
 
 	cmd.WaitDelay = waitDelay

@@ -35,6 +35,9 @@ const (
 
 	// Placeholder value representing the container ID in cgroup path templates.
 	cidPlaceholder = "{{.ContainerID}}"
+
+	// MaxCPUWeight is the maximum value of a cgroup v2 cpu.weight file.
+	MaxCPUWeight = 10_000
 )
 
 var (
@@ -377,6 +380,59 @@ func (p *Paths) Stats(ctx context.Context, name string, blockDevice *block_io.De
 	return Stats(ctx, p.V2Dir(name), blockDevice)
 }
 
+// SetFrozen freezes or thaws all processes in the cgroup at the given
+// directory by writing its cgroup.freeze file. It returns without waiting for
+// the processes to reach the requested state.
+func SetFrozen(dir string, frozen bool) error {
+	value := "0"
+	if frozen {
+		value = "1"
+	}
+	return writeFile(filepath.Join(dir, "cgroup.freeze"), []byte(value))
+}
+
+// KillAll sends SIGKILL to every process in the cgroup at the given directory,
+// including processes in descendant cgroups, and waits until the cgroup has no
+// processes left. It returns nil if the cgroup doesn't exist.
+func KillAll(ctx context.Context, dir string) error {
+	if err := writeFile(filepath.Join(dir, "cgroup.kill"), []byte("1")); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("write cgroup.kill: %w", err)
+		}
+		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		// cgroup.kill requires Linux 5.14, so fall back to signaling each
+		// process.
+		pids, err := ReadCgroupProcs(dir)
+		if err != nil {
+			return fmt.Errorf("read cgroup processes: %w", err)
+		}
+		for pid := range pids {
+			if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+				return fmt.Errorf("kill process %d: %w", pid, err)
+			}
+		}
+	}
+	for {
+		events, err := readAllInt64Fields(filepath.Join(dir, "cgroup.events"))
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return fmt.Errorf("read cgroup.events: %w", err)
+		}
+		if events["populated"] == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for cgroup processes to exit: %w", ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
 // ReadCgroupProcs returns the process IDs of the processes in the cgroup at
 // the given path, including processes in descendant cgroups. Descendants are
 // included because a cgroup with child cgroups usually has no processes of
@@ -420,6 +476,90 @@ func ReadCgroupProcs(path string) (map[int]struct{}, error) {
 		return nil, err
 	}
 	return pids, nil
+}
+
+// ReadEffectiveCPULimit returns how much CPU the processes in the given cgroup
+// can use, in milliCPU. This is the smallest of the cpu.max quotas on the path
+// from the cgroup up to the cgroupfs root and the number of CPUs in the
+// cgroup's effective cpuset. If the cpuset controller isn't available, all
+// online CPUs count. The directory should be an absolute path, including the
+// /sys/fs/cgroup prefix.
+func ReadEffectiveCPULimit(dir string) (int64, error) {
+	b, err := os.ReadFile("/sys/devices/system/cpu/online")
+	if err != nil {
+		return 0, fmt.Errorf("read online CPUs: %w", err)
+	}
+	onlineCPUs, err := countCPUs(strings.TrimSpace(string(b)))
+	if err != nil {
+		return 0, fmt.Errorf("parse online CPUs: %w", err)
+	}
+	return readEffectiveCPULimit(RootPath, dir, onlineCPUs)
+}
+
+func readEffectiveCPULimit(root, dir string, onlineCPUs int) (int64, error) {
+	// The effective cpuset is always a subset of the online CPUs.
+	limit := int64(onlineCPUs) * 1000
+	cpusetFound := false
+	for p := filepath.Clean(dir); ; p = filepath.Dir(p) {
+		// cpu.max only exists where the cpu controller is enabled, and any
+		// quota on an ancestor also limits this cgroup.
+		if b, err := os.ReadFile(filepath.Join(p, "cpu.max")); err != nil {
+			if !os.IsNotExist(err) {
+				return 0, fmt.Errorf("read cpu.max: %w", err)
+			}
+		} else if quota, period, ok := strings.Cut(strings.TrimSpace(string(b)), " "); !ok {
+			return 0, fmt.Errorf("invalid cpu.max value %q in %s", b, p)
+		} else if quota != "max" {
+			quotaUsec, err := strconv.ParseInt(quota, 10, 64)
+			if err != nil {
+				return 0, fmt.Errorf("parse cpu.max quota in %s: %w", p, err)
+			}
+			periodUsec, err := strconv.ParseInt(period, 10, 64)
+			if err != nil || periodUsec <= 0 {
+				return 0, fmt.Errorf("invalid cpu.max period %q in %s", period, p)
+			}
+			limit = min(limit, quotaUsec*1000/periodUsec)
+		}
+		// cpuset.cpus.effective only exists where the cpuset controller is
+		// enabled. Otherwise the cgroup inherits its nearest ancestor's cpuset.
+		if !cpusetFound {
+			if b, err := os.ReadFile(filepath.Join(p, "cpuset.cpus.effective")); err != nil {
+				if !os.IsNotExist(err) {
+					return 0, fmt.Errorf("read cpuset.cpus.effective: %w", err)
+				}
+			} else if cpus := strings.TrimSpace(string(b)); cpus != "" {
+				n, err := countCPUs(cpus)
+				if err != nil {
+					return 0, fmt.Errorf("parse cpuset.cpus.effective in %s: %w", p, err)
+				}
+				limit = min(limit, int64(n)*1000)
+				cpusetFound = true
+			}
+		}
+		if p == root || p == filepath.Dir(p) {
+			return limit, nil
+		}
+	}
+}
+
+// countCPUs returns the number of CPUs in a cpuset list like "0-3,8".
+func countCPUs(list string) (int, error) {
+	n := 0
+	for part := range strings.SplitSeq(list, ",") {
+		first, last, isRange := strings.Cut(part, "-")
+		start, err := strconv.Atoi(first)
+		if err != nil {
+			return 0, fmt.Errorf("invalid CPU %q", first)
+		}
+		end := start
+		if isRange {
+			if end, err = strconv.Atoi(last); err != nil || end < start {
+				return 0, fmt.Errorf("invalid CPU range %q", part)
+			}
+		}
+		n += end - start + 1
+	}
+	return n, nil
 }
 
 // ReadMemoryEvents reads the "memory.events" file under the given cgroup
