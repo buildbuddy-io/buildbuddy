@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -43,6 +44,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -110,7 +112,31 @@ type schedulerOpts struct {
 	preferredExecutors []string
 }
 
+// knownLeaks lists goroutines that are known to outlive the tests in this
+// package. Fixing a leak should remove its entry here, so that the leak can't
+// come back unnoticed.
+var knownLeaks = []goleak.Option{
+	// Redis clients created by the test environment are never closed.
+	goleak.IgnoreAnyFunction("github.com/go-redis/redis/v8/internal/pool.(*ConnPool).reaper"),
+	// The experiments provider used by the group check tests is never shut
+	// down.
+	goleak.IgnoreAnyFunction("github.com/open-feature/go-sdk-contrib/providers/flagd/pkg.(*Provider).handleEvents"),
+	goleak.IgnoreAnyFunction("github.com/open-feature/go-sdk-contrib/providers/flagd/pkg/service/in_process.(*InProcess).runDataSyncListener"),
+	goleak.IgnoreAnyFunction("github.com/open-feature/flagd/core/pkg/sync/file.(*Sync).Sync"),
+	goleak.IgnoreAnyFunction("github.com/open-feature/go-sdk/openfeature.(*eventExecutor).startListeningAndShutdownOld.func1"),
+	goleak.IgnoreAnyFunction("github.com/fsnotify/fsnotify.(*inotify).readEvents"),
+	goleak.IgnoreAnyFunction("github.com/fsnotify/fsnotify.(*kqueue).readEvents"),
+	// The scheduler client cache's expirer is never stopped.
+	goleak.IgnoreAnyFunction("github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server.(*schedulerClientCache).startExpirer.func1"),
+	// Shutdown doesn't wait for LeaseTask handlers or the reservation
+	// retries they start.
+	goleak.IgnoreAnyFunction("github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server.(*SchedulerServer).LeaseTask"),
+	goleak.IgnoreAnyFunction("github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server.(*SchedulerServer).enqueueTaskReservations"),
+	goleak.IgnoreAnyFunction("github.com/buildbuddy-io/buildbuddy/server/util/background.ExtendContextForFinalization.func1"),
+}
+
 func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, context.Context) {
+	testleak.Check(t, knownLeaks...)
 	redisTarget := testredis.Start(t).Target
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
@@ -144,6 +170,7 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	t.Cleanup(cancel)
 	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
 	require.NoError(t, err)
+	t.Cleanup(func() { clientConn.Close() })
 	sc := scpb.NewSchedulerClient(clientConn)
 	env.SetSchedulerClient(sc)
 
