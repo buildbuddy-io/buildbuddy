@@ -292,7 +292,7 @@ def main():
     parser.add_argument('--allow_dirty', default=False, action='store_true')
     parser.add_argument('--force', default=False, action='store_true')
     parser.add_argument('--bump_version_type', default='minor', choices=['major', 'minor', 'patch', 'none'])
-    parser.add_argument('--base_version', default='', help='Existing version tag to bump, like v2.12.8. Defaults to the latest version tag.')
+    parser.add_argument('--base_version', default='', help='Existing version tag to bump, like v2.12.8, e.g. from tools/repo_highest_version.sh for a minor bump or tools/branch_highest_version.sh for a patch. Defaults to the latest version tag.')
     parser.add_argument('--update_app_image', default=False, action='store_true')
     parser.add_argument('--update_enterprise_app_image', default=False, action='store_true')
     parser.add_argument('--update_executor_image', default=False, action='store_true')
@@ -319,9 +319,10 @@ def main():
     old_version = args.base_version or get_latest_version()
     if not tag_exists(old_version):
         die(f"Version tag {old_version} does not exist.")
-    # The latest version tag isn't always an ancestor of HEAD (release tags may
-    # be on cherry-picks), so only check an explicitly requested base.
-    if args.base_version and not is_ancestor(old_version, 'HEAD'):
+    # A patch bumps a version from this branch, so check that HEAD contains it.
+    # Other bases needn't be ancestors: the latest version tag, or the highest
+    # version in the repo, is often on a cherry-pick that HEAD doesn't contain.
+    if args.base_version and args.bump_version_type == 'patch' and not is_ancestor(old_version, 'HEAD'):
         die(f"HEAD does not contain {old_version}. Is --base_version from this branch, and is the full history fetched?")
     is_old_version_published = is_published_release(old_version)
 
