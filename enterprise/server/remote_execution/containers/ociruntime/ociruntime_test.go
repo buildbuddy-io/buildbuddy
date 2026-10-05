@@ -3520,14 +3520,10 @@ func TestTaskCPUControllerDisabled_CreateExec(t *testing.T) {
 
 	// Pausing should freeze the task's cgroup, and unpausing should thaw it.
 	waitForFrozen := func(frozen int64) {
-		for {
+		require.Eventually(t, func() bool {
 			b, err := os.ReadFile(filepath.Join(taskCgroup, "cgroup.events"))
-			require.NoError(t, err)
-			if strings.Contains(string(b), fmt.Sprintf("frozen %d", frozen)) {
-				return
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
+			return err == nil && strings.Contains(string(b), fmt.Sprintf("frozen %d", frozen))
+		}, 10*time.Second, 10*time.Millisecond)
 	}
 	err = c.Pause(ctx)
 	require.NoError(t, err)

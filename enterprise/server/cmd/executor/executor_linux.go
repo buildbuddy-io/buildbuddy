@@ -76,6 +76,9 @@ func setupCgroups() (*Cgroups, error) {
 		if *childCgroupsExecutorCPU != "" {
 			return nil, fmt.Errorf("get current cgroup (required by executor.child_cgroups_executor_cpu): %w", err)
 		}
+		if !*childCgroupsTaskCPUControllerEnabled {
+			return nil, fmt.Errorf("get current cgroup (required to disable executor.child_cgroups_task_cpu_controller_enabled): %w", err)
+		}
 		if errors.Is(err, cgroup.ErrV1NotSupported) {
 			log.Warningf("Note: executor is running under cgroup v1, which has limited support. Some functionality may not work as expected.")
 		} else {
@@ -242,6 +245,11 @@ func enableTaskCgroupControllers(path string) error {
 		if controller == "cpu" && !*childCgroupsTaskCPUControllerEnabled {
 			// Without the cpu controller, task cgroup setup skips per-task CPU
 			// settings, and the threads of all tasks share CPU per thread.
+			// Disable it explicitly, since the task cgroup may be left over
+			// from an executor that enabled it.
+			if err := cgroup.WriteSubtreeControl(path, map[string]bool{"cpu": false}); err != nil {
+				return fmt.Errorf("disable cgroup controller %q (required to disable executor.child_cgroups_task_cpu_controller_enabled): %w", controller, err)
+			}
 			continue
 		}
 		if err := cgroup.WriteSubtreeControl(path, map[string]bool{controller: true}); err != nil {

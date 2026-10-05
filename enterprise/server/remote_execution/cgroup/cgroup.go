@@ -391,46 +391,115 @@ func SetFrozen(dir string, frozen bool) error {
 	return writeFile(filepath.Join(dir, "cgroup.freeze"), []byte(value))
 }
 
-// KillAll sends SIGKILL to every process in the cgroup at the given directory,
-// including processes in descendant cgroups, and waits until the cgroup has no
-// processes left. It returns nil if the cgroup doesn't exist.
-func KillAll(ctx context.Context, dir string) error {
-	if err := writeFile(filepath.Join(dir, "cgroup.kill"), []byte("1")); err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("write cgroup.kill: %w", err)
-		}
-		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+// SignalAll sends a signal to every process in the cgroup at the given
+// directory, including processes in descendant cgroups, except those for which
+// skip returns true. skip may be nil. It returns nil if the cgroup doesn't
+// exist.
+//
+// It works like "crun kill --all" does when crun manages the cgroup. SIGKILL
+// with nothing to skip uses cgroup.kill, which requires Linux 5.14. Otherwise,
+// the cgroup is frozen while its processes are signaled, so that they're less
+// likely to fork new processes that would be missed, and then thawed. Like
+// crun, it doesn't wait for the freeze to take effect, ignores errors from
+// freezing and thawing, and thaws the cgroup even if it was frozen before.
+func SignalAll(dir string, sig syscall.Signal, skip func(pid int) bool) error {
+	if sig == syscall.SIGKILL && skip == nil {
+		if err := writeFile(filepath.Join(dir, "cgroup.kill"), []byte("1")); err == nil {
 			return nil
-		}
-		// cgroup.kill requires Linux 5.14, so fall back to signaling each
-		// process.
-		pids, err := ReadCgroupProcs(dir)
-		if err != nil {
-			return fmt.Errorf("read cgroup processes: %w", err)
-		}
-		for pid := range pids {
-			if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
-				return fmt.Errorf("kill process %d: %w", pid, err)
-			}
 		}
 	}
-	for {
-		events, err := readAllInt64Fields(filepath.Join(dir, "cgroup.events"))
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return fmt.Errorf("read cgroup.events: %w", err)
-		}
-		if events["populated"] == 0 {
+	_ = SetFrozen(dir, true)
+	defer func() {
+		_ = SetFrozen(dir, false)
+	}()
+	pids, err := ReadCgroupProcs(dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
+		}
+		return fmt.Errorf("read cgroup processes: %w", err)
+	}
+	for pid := range pids {
+		if skip != nil && skip(pid) {
+			continue
+		}
+		if err := syscall.Kill(pid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
+			return fmt.Errorf("signal process %d: %w", pid, err)
+		}
+	}
+	return nil
+}
+
+// Destroy kills the processes in the cgroup at the given directory and
+// removes it, along with any descendant cgroups.
+//
+// It works like crun's cgroupfs manager does when deleting a container. It
+// sends SIGKILL to every process and tries to remove the cgroup. While the
+// cgroup is busy, it kills the processes in each busy descendant cgroup and
+// removes the descendants, then retries every 10ms with another SIGKILL, up
+// to 500 times. Like crun, it treats errors other than EBUSY, such as the
+// cgroup not existing, as success.
+func Destroy(ctx context.Context, dir string) error {
+	_ = SignalAll(dir, syscall.SIGKILL, nil)
+	for attempt := 0; ; attempt++ {
+		if err := syscall.Rmdir(dir); !errors.Is(err, syscall.EBUSY) {
+			return nil
+		}
+		err := removeAll(dir)
+		if err == nil {
+			return nil
+		}
+		if attempt >= 500 {
+			return fmt.Errorf("remove cgroup: %w", err)
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("wait for cgroup processes to exit: %w", ctx.Err())
+			return fmt.Errorf("remove cgroup: %w", ctx.Err())
 		case <-time.After(10 * time.Millisecond):
 		}
+		_ = SignalAll(dir, syscall.SIGKILL, nil)
 	}
+}
+
+// removeAll removes the descendant cgroups of the cgroup at the given
+// directory, then the cgroup itself, like crun's rmdir_all.
+func removeAll(dir string) error {
+	if err := removeDescendants(dir); err != nil {
+		return err
+	}
+	return syscall.Rmdir(dir)
+}
+
+// removeDescendants removes the descendant cgroups of the cgroup at the given
+// directory. If a child cgroup is busy, the processes in it and its
+// descendants get SIGKILL, and its own descendants are removed before it's
+// removed again. Like crun, it ignores errors from removing cgroups.
+func removeDescendants(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		child := filepath.Join(dir, entry.Name())
+		if err := syscall.Rmdir(child); !errors.Is(err, syscall.EBUSY) {
+			continue
+		}
+		pids, err := ReadCgroupProcs(child)
+		if err != nil {
+			continue
+		}
+		for pid := range pids {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+		if err := removeDescendants(child); err != nil {
+			return err
+		}
+		_ = syscall.Rmdir(child)
+	}
+	return nil
 }
 
 // ReadCgroupProcs returns the process IDs of the processes in the cgroup at

@@ -568,6 +568,11 @@ type ociContainer struct {
 	releaseCPUs            func()
 	isPersistentWorker     bool
 
+	// PIDs of the runtime processes started in the task's cgroup, when crun
+	// doesn't manage cgroups, so that Signal can skip them.
+	runtimePIDsMu sync.Mutex
+	runtimePIDs   map[int]struct{}
+
 	imageRef         string
 	networkEnabled   bool
 	userspaceNetwork bool
@@ -889,50 +894,19 @@ func (c *ociContainer) Signal(ctx context.Context, sig syscall.Signal) error {
 	if crunManagesCgroups() {
 		return c.invokeRuntimeSimple(ctx, "kill", "--all", c.cid, fmt.Sprintf("%d", sig))
 	}
-	// Without a cgroup manager, "crun kill --all" does nothing.
-	return c.signalContainerProcesses(sig)
-}
-
-// signalContainerProcesses sends a signal to the processes in the task's
-// cgroup, which is what "crun kill --all" does when crun manages the cgroup.
-// Since crun runs inside the task's cgroup when it doesn't manage it, crun's
-// own processes are skipped, so that they keep waiting on the container and
-// reporting its exit status. The cgroup is frozen while signaling so that
-// processes can't fork new ones that would be missed.
-func (c *ociContainer) signalContainerProcesses(sig syscall.Signal) error {
-	runtimePath, err := exec.LookPath(c.runtime)
+	// Without a cgroup manager, "crun kill --all" does nothing, so signal the
+	// task's cgroup the way it would. crun's own processes are skipped, since
+	// they run in the task's cgroup in this mode but would be outside the
+	// container's cgroup if crun managed it. They keep waiting on the
+	// container to report its exit status.
+	c.runtimePIDsMu.Lock()
+	defer c.runtimePIDsMu.Unlock()
+	err := cgroup.SignalAll(c.cgroupPath(), sig, func(pid int) bool {
+		_, ok := c.runtimePIDs[pid]
+		return ok
+	})
 	if err != nil {
-		return status.UnavailableErrorf("look up runtime: %s", err)
-	}
-	runtimeInfo, err := os.Stat(runtimePath)
-	if err != nil {
-		return status.UnavailableErrorf("stat runtime: %s", err)
-	}
-	path := c.cgroupPath()
-	if err := cgroup.SetFrozen(path, true); err != nil {
-		return status.UnavailableErrorf("freeze cgroup: %s", err)
-	}
-	defer func() {
-		if err := cgroup.SetFrozen(path, false); err != nil {
-			log.Warningf("Failed to thaw cgroup %s after signaling: %s", path, err)
-		}
-	}()
-	pids, err := cgroup.ReadCgroupProcs(path)
-	if err != nil {
-		return status.UnavailableErrorf("read cgroup processes: %s", err)
-	}
-	for pid := range pids {
-		// crun's own processes run the crun binary. A process whose executable
-		// can't be read, because it already exited, is signaled anyway, and
-		// the resulting ESRCH is ignored.
-		exeInfo, err := os.Stat(fmt.Sprintf("/proc/%d/exe", pid))
-		isRuntime := err == nil && os.SameFile(exeInfo, runtimeInfo)
-		if isRuntime {
-			continue
-		}
-		if err := syscall.Kill(pid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
-			return status.UnavailableErrorf("signal process %d: %s", pid, err)
-		}
+		return status.UnavailableErrorf("signal container processes: %s", err)
 	}
 	return nil
 }
@@ -986,14 +960,11 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 	}
 
 	if !crunManagesCgroups() {
-		// Without a cgroup manager, crun doesn't kill the processes left in
-		// the cgroup or wait for them to exit, which has to happen before the
-		// cgroup can be removed.
-		killCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		err := cgroup.KillAll(killCtx, c.cgroupPath())
-		cancel()
-		if err != nil && firstErr == nil {
-			firstErr = status.UnavailableErrorf("kill cgroup processes: %s", err)
+		// Without a cgroup manager, "crun delete" doesn't kill the processes
+		// left in the cgroup or remove it, so do what its cgroupfs manager
+		// would.
+		if err := cgroup.Destroy(ctx, c.cgroupPath()); err != nil && firstErr == nil {
+			firstErr = status.UnavailableErrorf("destroy container cgroup: %s", err)
 		}
 	}
 
@@ -1625,7 +1596,8 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	// Without a cgroup manager, crun leaves container processes in the cgroup
 	// that crun runs in. So start the commands that create container
 	// processes directly in the task's cgroup.
-	if !crunManagesCgroups() && (args[0] == "run" || args[0] == "create" || args[0] == "exec") {
+	startInCgroup := !crunManagesCgroups() && (args[0] == "run" || args[0] == "create" || args[0] == "exec")
+	if startInCgroup {
 		cgroupDir, err := os.Open(c.cgroupPath())
 		if err != nil {
 			return commandutil.ErrorResult(status.UnavailableErrorf("open task cgroup: %s", err))
@@ -1636,7 +1608,12 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	}
 
 	cmd.WaitDelay = waitDelay
-	runError := cmd.Run()
+	var runError error
+	if startInCgroup {
+		runError = c.runInTaskCgroup(cmd)
+	} else {
+		runError = cmd.Run()
+	}
 	if errors.Is(runError, exec.ErrWaitDelay) {
 		// The stdio streams were forcibly closed after a non-zero waitDelay. Any error from the
 		// process takes precedence over ErrWaitDelay, so we can ignore the error here without
@@ -1664,6 +1641,31 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		result.Stderr = stderr.Bytes()
 	}
 	return result
+}
+
+// runInTaskCgroup runs a runtime command that starts in the task's cgroup,
+// and records its PID while it runs so that Signal skips it. The PID is
+// recorded under the same lock that Signal holds, so Signal can't see the
+// process in the cgroup before it's recorded.
+func (c *ociContainer) runInTaskCgroup(cmd *exec.Cmd) error {
+	c.runtimePIDsMu.Lock()
+	err := cmd.Start()
+	if err == nil {
+		if c.runtimePIDs == nil {
+			c.runtimePIDs = make(map[int]struct{})
+		}
+		c.runtimePIDs[cmd.Process.Pid] = struct{}{}
+	}
+	c.runtimePIDsMu.Unlock()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		c.runtimePIDsMu.Lock()
+		delete(c.runtimePIDs, cmd.Process.Pid)
+		c.runtimePIDsMu.Unlock()
+	}()
+	return cmd.Wait()
 }
 
 func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserProp string, dockerForceRootProp bool) (*specs.User, error) {
