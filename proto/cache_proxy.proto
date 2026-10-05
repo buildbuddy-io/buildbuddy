@@ -218,6 +218,8 @@ message RegisteredCacheProxy {
   acl.ACL acl = 3;
   google.protobuf.Timestamp last_ping_time = 4;
   Statistics statistics = 5;
+  // host:port of the app instance holding this proxy's registration stream.
+  string app_host_port = 6;
 }
 
 // CacheProxyRegistry runs on the main BuildBuddy app and tracks the set of
