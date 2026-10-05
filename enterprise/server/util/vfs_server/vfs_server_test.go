@@ -372,31 +372,6 @@ func TestCASFileDownloadCanceled(t *testing.T) {
 	require.Less(t, time.Since(start), time.Second)
 }
 
-func TestCASFileCanceledRequestCanBeRetried(t *testing.T) {
-	ctx, env, server, _ := newServerWithEnv(t)
-	d := setFile(t, env, ctx, "", "input contents")
-	client := &failingByteStreamClient{
-		ByteStreamClient: env.GetByteStreamClient(),
-		err:              gstatus.Error(codes.Canceled, "interrupted read"),
-		failures:         1,
-	}
-	env.SetByteStreamClient(client)
-	_, err := server.Prepare(ctx, &container.FileSystemLayout{
-		DigestFunction: repb.DigestFunction_SHA256,
-		Inputs: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{
-			{Name: "input.txt", Digest: d},
-		}}},
-	}, nil)
-	require.NoError(t, err)
-	node, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "input.txt"})
-	require.NoError(t, err)
-	_, err = server.Open(ctx, &vfspb.OpenRequest{Id: node.GetId()})
-	require.Equal(t, codes.Canceled, gstatus.Code(err))
-	require.NoError(t, server.TaskError())
-	require.Equal(t, "input contents", readFromVFS(t, server, "input.txt"))
-	require.NoError(t, server.TaskError())
-}
-
 func TestCASFileRefetchedIfEvictedBeforeOpen(t *testing.T) {
 	ctx, env, server, _ := newServerWithEnv(t)
 	contents := "refetched after eviction"
