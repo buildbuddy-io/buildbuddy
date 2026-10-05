@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -38,8 +37,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-github/v59/github"
 	"github.com/jonboulle/clockwork"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -221,45 +218,6 @@ func getExecutedActionName(t *testing.T, ctx context.Context, te *testenv.TestEn
 	}
 	t.Fatalf("no action name found in execute request: %+v", executeRequest)
 	return ""
-}
-
-func configureExperiments(t *testing.T, env *testenv.TestEnv, flags map[string]bool) {
-	inMemoryFlags := make(map[string]memprovider.InMemoryFlag, len(flags))
-	for name, enabled := range flags {
-		inMemoryFlags[name] = memprovider.InMemoryFlag{
-			State:          memprovider.Enabled,
-			DefaultVariant: "default",
-			Variants:       map[string]any{"default": enabled},
-		}
-	}
-	testProvider := memprovider.NewInMemoryProvider(inMemoryFlags)
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
-}
-
-func enableCIRunnerDefaultTimeoutExperiment(t *testing.T, env *testenv.TestEnv, groupStatus grpb.Group_GroupStatus, timeout string) {
-	t.Helper()
-
-	evaluator := func(_ memprovider.InMemoryFlag, flatCtx openfeature.FlattenedContext) (any, openfeature.ProviderResolutionDetail) {
-		if flatCtx["group_status"] == grpb.Group_GroupStatus_name[int32(groupStatus)] {
-			return timeout, openfeature.ProviderResolutionDetail{Reason: openfeature.TargetingMatchReason}
-		}
-		return "", openfeature.ProviderResolutionDetail{Reason: openfeature.DefaultReason}
-	}
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		ci_runner_util.DefaultTimeoutExperimentName: {
-			State:            memprovider.Enabled,
-			ContextEvaluator: &evaluator,
-		},
-	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
 }
 
 // pingLegacyWorkflowWebhook makes an empty request to the given webhook URL. The fake git
@@ -800,6 +758,7 @@ func TestWebhook_SlashCommandSuppressedByExperiment(t *testing.T) {
 	u, lis := testhttp.NewServer(t)
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	flags.Set(t, "remote_execution.suppress_workflow_execution", true)
 	te := newTestEnv(t)
 	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
@@ -812,9 +771,6 @@ func TestWebhook_SlashCommandSuppressedByExperiment(t *testing.T) {
 	provider.TrustedUsers = []string{"acme-inc-user-1", "acme-inc-user-2"}
 	provider.WebhookData = slashCommandWebhookData("acme-inc-user-2")
 	provider.PullRequestData = forkPullRequestData("acme-inc-user-1")
-	configureExperiments(t, te, map[string]bool{
-		"remote_execution.suppress_workflow_execution": true,
-	})
 
 	// The command is from a trusted commenter on a trusted pull request, but the
 	// experiment suppresses workflow execution.
@@ -876,6 +832,7 @@ func TestWebhook_WorkflowSuppressedByExperiment(t *testing.T) {
 	u, lis := testhttp.NewServer(t)
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	flags.Set(t, "remote_execution.suppress_workflow_execution", true)
 	te := newTestEnv(t)
 	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
@@ -897,9 +854,6 @@ func TestWebhook_WorkflowSuppressedByExperiment(t *testing.T) {
 		IsTargetRepoPublic: true,
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
-	configureExperiments(t, te, map[string]bool{
-		"remote_execution.suppress_workflow_execution": true,
-	})
 
 	// The webhook has a matching workflow action, but the experiment suppresses
 	// workflow execution.
@@ -1398,6 +1352,8 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 
 func TestScheduledWorkflow_SuppressedByExperiment(t *testing.T) {
 	ctx := context.Background()
+	flags.Set(t, "remote_execution.enable_scheduled_workflows", true)
+	flags.Set(t, "remote_execution.suppress_workflow_execution", true)
 	te := newTestEnv(t)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
@@ -1429,11 +1385,6 @@ actions:
 		NextRunUsec: now.UnixMicro(),
 	})
 
-	configureExperiments(t, te, map[string]bool{
-		"remote_execution.enable_scheduled_workflows":  true,
-		"remote_execution.suppress_workflow_execution": true,
-	})
-
 	// The matching scheduled action exists, but the experiment suppresses
 	// workflow execution.
 	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
@@ -1450,8 +1401,8 @@ actions:
 
 func TestScheduledWorkflow_SharesInstanceNameWithWebhookEvent(t *testing.T) {
 	ctx := context.Background()
+	flags.Set(t, "remote_execution.enable_scheduled_workflows", true)
 	te := newTestEnv(t)
-	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 	authCtx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	provider := setupFakeGitProvider(t, te)
@@ -1506,8 +1457,8 @@ actions:
 
 func TestScheduledWorkflow(t *testing.T) {
 	ctx := context.Background()
+	flags.Set(t, "remote_execution.enable_scheduled_workflows", true)
 	te := newTestEnv(t)
-	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	provider := setupFakeGitProvider(t, te)
@@ -1680,8 +1631,8 @@ func TestScheduledWorkflow_NoEligibleSchedules(t *testing.T) {
 
 func TestScheduledWorkflow_ConcurrentServers(t *testing.T) {
 	ctx := context.Background()
+	flags.Set(t, "remote_execution.enable_scheduled_workflows", true)
 	te := newTestEnv(t)
-	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 	authCtx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
@@ -2286,8 +2237,8 @@ actions:
 
 func TestScheduledWorkflow_DispatchFailure(t *testing.T) {
 	ctx := context.Background()
+	flags.Set(t, "remote_execution.enable_scheduled_workflows", true)
 	te := newTestEnv(t)
-	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 	authCtx, _, gid := authenticate(t, ctx, te)
 	repoURL := makeTempRepo(t)
 	provider := setupFakeGitProvider(t, te)
@@ -2364,8 +2315,8 @@ actions:
 
 func TestScheduledWorkflow_FailedMaxAttempts(t *testing.T) {
 	ctx := context.Background()
+	flags.Set(t, "remote_execution.enable_scheduled_workflows", true)
 	te := newTestEnv(t)
-	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 	_ = runBBServer(ctx, t, te)
 
 	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
@@ -2396,8 +2347,8 @@ func TestScheduledWorkflow_FailedMaxAttempts(t *testing.T) {
 
 func TestScheduledWorkflow_MaxConsecutiveFailures(t *testing.T) {
 	ctx := context.Background()
+	flags.Set(t, "remote_execution.enable_scheduled_workflows", true)
 	te := newTestEnv(t)
-	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 	_ = runBBServer(ctx, t, te)
 
 	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
@@ -2467,8 +2418,8 @@ actions:
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
+			flags.Set(t, "remote_execution.enable_scheduled_workflows", true)
 			te := newTestEnv(t)
-			configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 			provider := setupFakeGitProvider(t, te)
 			repoURL := makeTempRepo(t)
 			_ = runBBServer(ctx, t, te)
@@ -2506,8 +2457,8 @@ actions:
 
 func TestScheduledWorkflow_GitProviderError_Retries(t *testing.T) {
 	ctx := context.Background()
+	flags.Set(t, "remote_execution.enable_scheduled_workflows", true)
 	te := newTestEnv(t)
-	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 	authCtx, _, gid := authenticate(t, ctx, te)
 	repoURL := makeTempRepo(t)
 	provider := setupFakeGitProvider(t, te)
@@ -2569,10 +2520,11 @@ func TestTimeout(t *testing.T) {
 	tests := []struct {
 		name                  string
 		groupStatus           grpb.Group_GroupStatus
+		experimentTimeout     string
 		expectedTimeout       time.Duration
 		expectedTimeoutReason string
 	}{
-		{name: "timeout configured in experiment", groupStatus: grpb.Group_FREE_TIER_GROUP_STATUS, expectedTimeout: 1 * time.Hour, expectedTimeoutReason: ci_runner_util.FreeTierTimeoutReason},
+		{name: "timeout configured in experiment", groupStatus: grpb.Group_FREE_TIER_GROUP_STATUS, experimentTimeout: "1h", expectedTimeout: 1 * time.Hour, expectedTimeoutReason: ci_runner_util.FreeTierTimeoutReason},
 		{name: "timeout not configured in experiment", groupStatus: grpb.Group_ENTERPRISE_GROUP_STATUS, expectedTimeout: 2 * time.Hour},
 	}
 
@@ -2582,6 +2534,7 @@ func TestTimeout(t *testing.T) {
 			u, lis := testhttp.NewServer(t)
 			flags.Set(t, "app.build_buddy_url", *u)
 			flags.Set(t, "remote_execution.enable_remote_exec", true)
+			flags.Set(t, "remote_execution.remote_runner_default_timeout", tc.experimentTimeout)
 			te := newTestEnv(t)
 			ctx, _, gid := authenticate(t, ctx, te)
 
@@ -2594,7 +2547,6 @@ func TestTimeout(t *testing.T) {
 			repo := createWorkflow(t, te, repoURL, gid, false)
 
 			updateGroupStatus(t, te, gid, tc.groupStatus)
-			enableCIRunnerDefaultTimeoutExperiment(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
 
 			config := `
 actions:

@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -25,14 +24,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
-	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -47,7 +44,6 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
-	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -773,47 +769,11 @@ func TestCreateUserApiKey(t *testing.T) {
 
 func TestMetrics(t *testing.T) {
 	flags.Set(t, "api.enable_metrics_api", true)
-	const testFlags = `{
-  "$schema": "https://flagd.dev/schema/v0/flags.json",
-  "flags": {
-    "api.metrics_federation.enabled": {
-      "state": "ENABLED",
-      "defaultVariant": "false",
-      "variants": {
-        "true": true,
-        "false": false
-      },
-      "targeting": {
-        "if": [
-			{"==": [ {"var": "group_id"}, "GR1" ]},
-			"true",
-			"false"
-		]
-      }
-    },
-	"api.metrics_federation.match_parameters": {
-      "state": "ENABLED",
-      "defaultVariant": "mac_metrics",
-      "variants": {
-        "mac_metrics": {
-			"job": "(mac-executor|mac-node)"
-		}
-      }
-    }
-  }
-}
-`
+	flags.Set(t, "api.metrics_federation.enabled", true)
+	flags.Set(t, "api.metrics_federation.match_parameters", map[string]any{"job": "(mac-executor|mac-node)"})
 	env := enterprise_testenv.New(t)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
-	tmp := testfs.MakeTempDir(t)
-	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", testFlags)
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
-	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
 	fakeProm := &fakePromQuerier{}
 	env.SetPromQuerier(fakeProm)
 	s := NewAPIServer(env)

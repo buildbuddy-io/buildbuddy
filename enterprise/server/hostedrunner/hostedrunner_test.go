@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -23,8 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -167,26 +164,6 @@ func setGroupStatus(t *testing.T, te *testenv.TestEnv, ctx context.Context, grou
 	return metadata.AppendToOutgoingContext(authCtx, authutil.ContextTokenStringKey, jwt)
 }
 
-func configureTimeout(t *testing.T, env *testenv.TestEnv, groupStatus grpb.Group_GroupStatus, timeout string) {
-	evaluator := func(_ memprovider.InMemoryFlag, flatCtx openfeature.FlattenedContext) (any, openfeature.ProviderResolutionDetail) {
-		if flatCtx["group_status"] == grpb.Group_GroupStatus_name[int32(groupStatus)] {
-			return timeout, openfeature.ProviderResolutionDetail{Reason: openfeature.TargetingMatchReason}
-		}
-		return "", openfeature.ProviderResolutionDetail{Reason: openfeature.DefaultReason}
-	}
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		ci_runner_util.DefaultTimeoutExperimentName: {
-			State:            memprovider.Enabled,
-			ContextEvaluator: &evaluator,
-		},
-	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
-}
-
 func TestRun_WithoutRepoURL(t *testing.T) {
 	te, ctx := getEnv(t)
 
@@ -206,16 +183,17 @@ func TestTimeout(t *testing.T) {
 	tests := []struct {
 		name                  string
 		groupStatus           grpb.Group_GroupStatus
+		experimentTimeout     string
 		expectedTimeout       time.Duration
 		expectedTimeoutReason string
 	}{
-		{name: "timeout configured in experiment", groupStatus: grpb.Group_FREE_TIER_GROUP_STATUS, expectedTimeout: 1 * time.Hour, expectedTimeoutReason: ci_runner_util.FreeTierTimeoutReason},
+		{name: "timeout configured in experiment", groupStatus: grpb.Group_FREE_TIER_GROUP_STATUS, experimentTimeout: "1h", expectedTimeout: 1 * time.Hour, expectedTimeoutReason: ci_runner_util.FreeTierTimeoutReason},
 		{name: "timeout not configured in experiment", groupStatus: grpb.Group_ENTERPRISE_GROUP_STATUS, expectedTimeout: 24 * time.Hour},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.remote_runner_default_timeout", tc.experimentTimeout)
 			te, ctx := getEnv(t)
-			configureTimeout(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
 
 			ctx = setGroupStatus(t, te, ctx, tc.groupStatus)
 

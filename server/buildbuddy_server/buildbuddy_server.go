@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -97,10 +98,9 @@ import (
 var (
 	disableCertConfig   = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
 	paginateInvocations = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
-)
 
-const (
-	maxGroupsPerUserExperiment = "app.max_groups_per_user"
+	codesearchAllowed = expflag.Bool("app.codesearch_ui_enabled", false, "Whether codesearch functionality is enabled in the UI. Requires enabling an org setting in addition to setting the flag.", expflag.DeprecatedExperimentName("codesearch-allowed"))
+	maxGroupsPerUser  = expflag.Int64("app.max_groups_per_user", 0, "Maximum number of non-enterprise organizations a user can own. Zero disables the limit.")
 )
 
 const (
@@ -446,18 +446,11 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		return nil, err
 	}
 
-	cs := false
-	if efp := s.env.GetExperimentFlagProvider(); efp != nil {
-		// HACK: On an initial page load, the group id may not be set in the claims yet.
-		// Add it in here so the experiment flags are resolved correctly.
-		clm, err := claims.ClaimsFromContext(ctx)
-		if err == nil {
-			if clm.GetGroupID() == "" {
-				clm.GroupID = selectedGroupID
-				ctx = claims.AuthContext(ctx, clm)
-			}
-		}
-		cs = efp.Boolean(ctx, "codesearch-allowed", false /*=default*/)
+	// HACK: On an initial page load, the group id may not be set in the claims yet.
+	// Add it in here so the experiment flags are resolved correctly.
+	if clm, err := claims.ClaimsFromContext(ctx); err == nil && clm.GetGroupID() == "" {
+		clm.GroupID = selectedGroupID
+		ctx = claims.AuthContext(ctx, clm)
 	}
 	allowedRPCs := capabilities_filter.AllowedRPCs(ctx, s.env, selectedGroupID)
 	// Keep GetUserResponse.allowed_rpc in its legacy bare-method format so the
@@ -480,7 +473,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		SubdomainGroupId: subdomainGroupID,
 		IsImpersonating:  u.IsImpersonating(),
 		Experiments: &uspb.Experiments{
-			CodesearchAllowed: cs,
+			CodesearchAllowed: codesearchAllowed.Get(ctx),
 		},
 	}, nil
 }
@@ -577,12 +570,12 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 	return &grpb.UpdateGroupUsersResponse{}, nil
 }
 
-func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp interfaces.ExperimentFlagProvider, u interfaces.UserInfo) (*tables.User, error) {
+func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, u interfaces.UserInfo) (*tables.User, error) {
 	isEnterprise := u.GetGroupStatus() == grpb.Group_ENTERPRISE_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS
-	if isEnterprise || efp == nil {
+	if isEnterprise {
 		return nil, nil
 	}
-	maxGroupsPerUser := efp.Int64(ctx, maxGroupsPerUserExperiment, 0)
+	maxGroups := maxGroupsPerUser.Get(ctx)
 
 	// User-owned API keys retain a user ID, so the API key ID is the reliable
 	// way to distinguish both user- and org-owned API keys from browser users.
@@ -609,7 +602,7 @@ func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp inter
 		return nil, status.PermissionDeniedError("Error creating organization. Please contact support@buildbuddy.io.")
 	}
 
-	if maxGroupsPerUser > 0 && ownedNonEnterpriseGroupCount >= maxGroupsPerUser {
+	if maxGroups > 0 && ownedNonEnterpriseGroupCount >= maxGroups {
 		return nil, status.PermissionDeniedError("You've reached the limit on non-enterprise organizations. Please contact support@buildbuddy.io to upgrade to an enterprise plan.")
 	}
 	return user, nil
@@ -629,7 +622,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		return nil, status.InvalidArgumentError("Group name cannot be empty")
 	}
 
-	user, err := createGroupAllowed(ctx, userDB, s.env.GetExperimentFlagProvider(), u)
+	user, err := createGroupAllowed(ctx, userDB, u)
 	if err != nil {
 		return nil, err
 	}
