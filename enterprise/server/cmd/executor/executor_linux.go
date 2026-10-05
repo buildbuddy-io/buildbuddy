@@ -172,7 +172,7 @@ func setExecutorCPUWeights(startingCgroupPath, executorCgroupPath, taskCgroupPat
 		return fmt.Errorf("executor.child_cgroups_executor_cpu requires the cpu cgroup controller, which is not available in %s", executorCgroupPath)
 	}
 	executorWeight := max(1, int64(math.Round(cgroup.MaxCPUWeight*executorCPUFraction)))
-	taskWeight := max(1, int64(math.Round(cgroup.MaxCPUWeight*(1-executorCPUFraction))))
+	taskWeight := max(1, cgroup.MaxCPUWeight-executorWeight)
 	if err := os.WriteFile(filepath.Join(executorCgroupPath, "cpu.weight"), []byte(strconv.FormatInt(executorWeight, 10)), 0); err != nil {
 		return fmt.Errorf("set executor cgroup CPU weight: %w", err)
 	}
@@ -205,8 +205,10 @@ func resolveExecutorCPUFraction(value string, cpuLimit int64) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("%q is not a number of cores (e.g. \"2\"), milliCPU (e.g. \"2000m\"), or a percentage (e.g. \"5%%\")", value)
 	}
-	if milliCPU < 1 {
-		return 0, fmt.Errorf("%q must be at least 1m", value)
+	// Less than a tenth of a core is too little for the executor to be useful
+	// when tasks compete with it for CPU.
+	if milliCPU < 100 {
+		return 0, fmt.Errorf("%q must be at least 100m", value)
 	}
 	if milliCPU >= cpuLimit {
 		return 0, fmt.Errorf("%q must be less than the CPU limit of %dm", value, cpuLimit)
