@@ -196,11 +196,19 @@ message GetCacheProxyRequest {
 
   CacheProxySelector selector = 2;
 
+  // If set, the server handling this request only serves it from cache proxies
+  // whose registration streams it holds and never forwards it to a peer. Peers
+  // should set this bit when forwarding a request to the instance that owns the
+  // registration to prevent forwarding loops. If a server receives a request
+  // with do_not_forward, but it does not own the registration stream with the
+  // requested proxy, it will return an error.
+  bool do_not_forward = 3;
+
   // Whether to include the cache proxy's configured flags in the response.
-  bool include_configured_flags = 3;
+  bool include_configured_flags = 4;
 
   // Whether to include the cache proxy's statistics in the response.
-  bool include_statistics = 4;
+  bool include_statistics = 5;
 }
 
 message GetCacheProxyResponse {
