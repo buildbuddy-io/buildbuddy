@@ -1319,3 +1319,29 @@ func TestMknod(t *testing.T) {
 	rs = rawStat(t, testCharDevice)
 	require.EqualValues(t, unix.S_IFCHR, rs.Mode&unix.S_IFMT)
 }
+
+func TestTruncateUnlinkedOpenFile(t *testing.T) {
+	_, _, mount := setupVFSWithInputTreeAndClient(t, setupEnv(t), &repb.Tree{}, &vfs.Options{}, nil)
+	f, err := os.CreateTemp(mount, "capture-")
+	require.NoError(t, err)
+	defer f.Close()
+	_, err = f.WriteString("captured output")
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(f.Name()))
+	require.NoFileExists(t, f.Name())
+	// Reusing the name must not redirect ftruncate to the new file.
+	require.NoError(t, os.WriteFile(f.Name(), []byte("replacement"), 0600))
+	for _, size := range []int64{4, 0, 8} {
+		require.NoError(t, f.Truncate(size))
+		info, err := f.Stat()
+		require.NoError(t, err)
+		require.Equal(t, size, info.Size())
+	}
+	data := make([]byte, 8)
+	_, err = f.ReadAt(data, 0)
+	require.NoError(t, err)
+	require.Equal(t, make([]byte, 8), data)
+	replacement, err := os.ReadFile(f.Name())
+	require.NoError(t, err)
+	require.Equal(t, "replacement", string(replacement))
+}

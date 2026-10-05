@@ -228,6 +228,9 @@ message SetAttrRequest {
     string name = 1;
   }
   RemoveExtendedAttr remove_extended = 7;
+
+  // Set when the attributes are changed through an open file handle.
+  optional uint64 handle_id = 8;
 }
 
 message SetAttrResponse {
