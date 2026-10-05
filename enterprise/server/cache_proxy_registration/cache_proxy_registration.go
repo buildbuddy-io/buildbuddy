@@ -275,7 +275,13 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 				if detailsReq.GetIncludeStatistics() {
 					details.Statistics = stats
 				}
-				if err := send(&cppb.RegisterCacheProxyRequest{Summary: summary, Statistics: stats, Details: details}); err != nil {
+				req := &cppb.RegisterCacheProxyRequest{
+					Summary:    summary,
+					Statistics: stats,
+					Details:    details,
+					RequestId:  rsp.GetRequestId(),
+				}
+				if err := send(req); err != nil {
 					return err
 				}
 			}
