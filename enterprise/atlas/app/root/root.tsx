@@ -54,6 +54,9 @@ export default class RootComponent extends React.Component<{}, State> {
   }
 
   private onRouteChange = () => {
+    // A query still waiting to reach the URL must not replace the page just
+    // navigated to.
+    window.clearTimeout(this.searchTimeout);
     const route = router.current();
     this.setState((state) => ({
       route,
@@ -143,7 +146,8 @@ export default class RootComponent extends React.Component<{}, State> {
           />
         );
       case "object":
-        return <ObjectComponent objectRef={route.ref} />;
+        // Keyed, so a response for one object can never render on another's page.
+        return <ObjectComponent key={paths.object(route.ref)} objectRef={route.ref} />;
       case "clusters":
         return <ClustersComponent />;
       case "unknown":

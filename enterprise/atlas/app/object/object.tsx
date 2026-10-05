@@ -19,19 +19,11 @@ interface State {
   errorMessage?: string;
 }
 
-/** The detail page for one object: live YAML plus everything the index knows around it. */
 export default class ObjectComponent extends React.Component<Props, State> {
   state: State = {};
 
   componentDidMount() {
     this.fetch();
-  }
-
-  componentDidUpdate(prevProps: Props) {
-    if (paths.object(prevProps.objectRef) !== paths.object(this.props.objectRef)) {
-      this.setState({ response: undefined, errorMessage: undefined });
-      this.fetch();
-    }
   }
 
   private fetch() {
@@ -88,7 +80,7 @@ export default class ObjectComponent extends React.Component<Props, State> {
           )}
         </div>
 
-        <PortsSection key={paths.object(ref)} ports={response.ports} />
+        <PortsSection ports={response.ports} />
 
         {related.length > 0 && (
           <div className="atlas-section">
@@ -136,7 +128,7 @@ export default class ObjectComponent extends React.Component<Props, State> {
           </div>
         )}
 
-        {entry.kind === "Pod" && response.entry && <LogsComponent key={paths.object(entry)} pod={response.entry} />}
+        {entry.kind === "Pod" && response.entry && <LogsComponent pod={response.entry} />}
 
         <EventsSection events={response.events} error={response.eventsError} />
 
@@ -151,8 +143,14 @@ export default class ObjectComponent extends React.Component<Props, State> {
   }
 }
 
-/** A port and everything reachable on it: a link to the port itself and its known pages. */
-type PortRow = { name: string; port: number; protocol: string; hostPort: string; url: string; pages: atlas.PortLink[] };
+type PortRow = {
+  name: string;
+  port: number;
+  protocols: string[];
+  hostPort: string;
+  url: string;
+  pages: atlas.PortLink[];
+};
 
 /** Ports grouped by how they are reached: the pod itself, or a service in front of it. */
 type ViaGroup = { key: string; label: string; rows: PortRow[] };
@@ -169,13 +167,18 @@ function groupPorts(ports: atlas.PortLink[]): ViaGroup[] {
     }
     let row = group.rows.find((r) => r.port === p.port);
     if (!row) {
-      row = { name: p.name, port: p.port, protocol: p.protocol, hostPort: p.hostPort, url: "", pages: [] };
+      row = { name: p.name, port: p.port, protocols: [], hostPort: p.hostPort, url: "", pages: [] };
       group.rows.push(row);
+    }
+    const protocol = p.protocol || "TCP";
+    if (!row.protocols.includes(protocol)) {
+      row.protocols.push(protocol);
     }
     if (p.path) {
       row.pages.push(p);
     } else {
-      row.url = p.url;
+      // Only TCP ports get a link, so a UDP twin must not blank it.
+      row.url = row.url || p.url;
     }
   }
   return [...groups.values()];
@@ -208,7 +211,7 @@ function PortsSection({ ports }: { ports: atlas.PortLink[] }) {
             <span className="atlas-port-name">
               {r.name && `${r.name} `}
               {r.port}
-              {r.protocol && <span className="atlas-muted atlas-small"> {r.protocol}</span>}
+              <span className="atlas-muted atlas-small"> {r.protocols.join("/")}</span>
             </span>
             <span className="atlas-port-links">
               {r.url && (
