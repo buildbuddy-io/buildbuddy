@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_key_cache"
@@ -36,8 +37,14 @@ type RemoteCrypter struct {
 	clientIdentityService interfaces.ClientIdentityService
 }
 
+// SupportsEncryption returns a function reporting whether the proxy's local
+// cache can store data for groups with encryption enabled.
 func SupportsEncryption(env environment.Env) func(ctx context.Context) bool {
 	return func(ctx context.Context) bool {
+		// The local cache stores such data in plaintext, so no keys are needed.
+		if pebble_cache.EncryptionDisabled() {
+			return true
+		}
 		if env.GetCrypter() == nil {
 			return false
 		}

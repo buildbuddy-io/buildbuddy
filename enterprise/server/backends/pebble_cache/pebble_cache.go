@@ -100,6 +100,9 @@ var (
 	groupSizeSampleDecayRate  = flag.Float64("cache.pebble.group_size_sample_decay_rate", .95, "Constant factor used to decay away partition size estimates.")
 	maxOpenFiles              = flag.Int("cache.pebble.max_open_files", 4000, "Maximum number of open SST files in Pebble. Must be lower than the open fd limit for the process. The buildbuddy_remote_cache_pebble_cache_pebble_level_num_files metric can be used to observe the number of SST files in pebble at different levels.")
 
+	// Encryption related flags
+	disableEncryption = flag.Bool("cache.pebble.disable_encryption", false, "If true, store data for groups with customer-managed encryption keys in plaintext rather than encrypting it. Intended for customer-run cache proxies, which can't fetch encryption keys from the app. Do not enable this in the app.")
+
 	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UnspecifiedKeyVersion), "The key version new data will be written with. If negative, will write to the highest existing version in the database, or the highest known version if a new database is created.")
 	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
 
@@ -1835,10 +1838,16 @@ func (p *PebbleCache) lookupPartitionID(remoteInstanceName, groupID string) stri
 	return DefaultPartitionID
 }
 
+// EncryptionDisabled returns true if the pebble cache is configured to store
+// data for groups with encryption enabled in plaintext.
+func EncryptionDisabled() bool {
+	return *disableEncryption
+}
+
 // activeEncryption selects the key metadata for file records and encryptors so
 // that a write uses the same key for both. It returns nil if encryption is disabled.
 func (p *PebbleCache) activeEncryption(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
-	if !authutil.EncryptionEnabled(ctx, p.env.GetAuthenticator()) {
+	if *disableEncryption || !authutil.EncryptionEnabled(ctx, p.env.GetAuthenticator()) {
 		return nil, nil
 	}
 	if p.env.GetCrypter() == nil {

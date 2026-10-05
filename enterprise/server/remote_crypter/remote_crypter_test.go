@@ -338,6 +338,18 @@ func TestActiveKey(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err))
 }
 
+func TestSupportsEncryptionWithPebbleEncryptionDisabled(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
+	te.SetAuthenticator(authenticator)
+	ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
+	require.NoError(t, err)
+
+	require.False(t, remote_crypter.SupportsEncryption(te)(ctx))
+	flags.Set(t, "cache.pebble.disable_encryption", true)
+	require.True(t, remote_crypter.SupportsEncryption(te)(ctx))
+}
+
 func TestUnauthorizedIdentity(t *testing.T) {
 	authenticator, crypter, clock, service := setupWithIdentity(t, "some-other-client")
 	group1Key := "group1key"

@@ -2459,6 +2459,51 @@ func TestEncryptionUsesSameKeyForFileRecordAndEncryptor(t *testing.T) {
 	require.Equal(t, int64(1), nKeysGenerated.Load())
 }
 
+func TestDisableEncryption(t *testing.T) {
+	flags.Set(t, "cache.pebble.disable_encryption", true)
+	te := testenv.GetTestEnv(t)
+
+	groupID := "GR123"
+	encryptedUser := testauth.User("US1", groupID)
+	encryptedUser.CacheEncryptionEnabled = true
+	unencryptedUser := testauth.User("US2", groupID)
+	auther := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		"US1": encryptedUser,
+		"US2": unencryptedUser,
+	})
+	te.SetAuthenticator(auther)
+	encryptedCtx, err := auther.WithAuthenticatedUser(t.Context(), "US1")
+	require.NoError(t, err)
+	unencryptedCtx, err := auther.WithAuthenticatedUser(t.Context(), "US2")
+	require.NoError(t, err)
+
+	// Don't configure a crypter: reads and writes should succeed without one.
+	require.Nil(t, te.GetCrypter())
+
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		Partitions: []disk.Partition{{
+			ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: 1_000_000_000,
+		}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(encryptedCtx, rn, buf))
+
+	got, err := pc.Get(encryptedCtx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, got)
+
+	// Unencrypted entries are keyed without an encryption key ID, so a
+	// non-encrypted user in the same group sees the same entry.
+	got, err = pc.Get(unencryptedCtx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, got)
+}
+
 func TestEncryption(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	testCases := []struct {

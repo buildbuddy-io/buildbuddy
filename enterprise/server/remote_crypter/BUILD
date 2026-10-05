@@ -7,6 +7,7 @@ go_library(
     srcs = ["remote_crypter.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter",
     deps = [
+        "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/clientidentity",
         "//enterprise/server/crypter",
         "//enterprise/server/crypter_key_cache",
