@@ -134,10 +134,10 @@ func retryOptions(name string) *retry.Options {
 }
 
 func maybeRetryable(err error) error {
-	if status.IsNotFoundError(err) {
-		return retry.NonRetryableError(err)
+	if err == nil || status.IsUnavailableError(err) {
+		return err
 	}
-	return err
+	return retry.NonRetryableError(err)
 }
 
 func downloadArtifacts(ctx context.Context, client apipb.ApiServiceClient, invocationID, outputDir string) error {
