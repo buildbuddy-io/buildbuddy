@@ -3486,8 +3486,6 @@ func TestTaskCPUControllerDisabled_CreateExec(t *testing.T) {
 	require.NoError(t, err)
 	err = c.Create(ctx, wd)
 	require.NoError(t, err)
-	// If the test fails before removing the container, remove it so that the
-	// parent cgroup can be cleaned up.
 	removed := false
 	t.Cleanup(func() {
 		if !removed {
@@ -3528,6 +3526,20 @@ func TestTaskCPUControllerDisabled_CreateExec(t *testing.T) {
 	err = c.Pause(ctx)
 	require.NoError(t, err)
 	waitForFrozen(1)
+
+	// Exec should fail right away while the container is paused, as crun's
+	// exec does, instead of blocking until the container is unpaused.
+	pausedResults := make(chan *interfaces.CommandResult, 1)
+	go func() {
+		pausedResults <- c.Exec(ctx, &repb.Command{Arguments: []string{"true"}}, &interfaces.Stdio{})
+	}()
+	select {
+	case pausedRes := <-pausedResults:
+		require.True(t, status.IsFailedPreconditionError(pausedRes.Error), "unexpected error: %v", pausedRes.Error)
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "Exec blocked while the container was paused")
+	}
+
 	err = c.Unpause(ctx)
 	require.NoError(t, err)
 	waitForFrozen(0)

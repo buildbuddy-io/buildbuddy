@@ -198,17 +198,14 @@ func CgroupMemoryLimitEnabled() bool {
 }
 
 // SetTaskCPUControllerEnabled sets whether task cgroups use the cpu cgroup
-// controller. The executor calls it at startup, before creating any containers.
+// controller. Should be called on startup, before creating any containers.
 func SetTaskCPUControllerEnabled(enabled bool) {
 	taskCPUControllerEnabled = enabled
 }
 
 // crunManagesCgroups returns whether crun creates and manages task cgroups.
-// When creating a container's cgroup, crun enables every available controller
-// in the cgroup.subtree_control file of each ancestor, which would re-enable
-// the cpu controller for task cgroups when it's meant to be disabled. In that
-// case crun runs without a cgroup manager, and the executor starts crun inside
-// the task's cgroup and handles freezing, signaling, and cleanup itself.
+// This is false when the task CPU controller is disabled, because crun would
+// otherwise try to re-enable the CPU controller undesirably.
 func crunManagesCgroups() bool {
 	return taskCPUControllerEnabled
 }
@@ -532,6 +529,8 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		milliCPU:      args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
 		memoryBytes:   args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
 		useOCIFetcher: args.Props.UseOCIFetcher,
+
+		runtimePIDs: map[int]struct{}{},
 	}
 	if settings := args.Task.GetSchedulingMetadata().GetCgroupSettings(); settings != nil {
 		container.cgroupSettings = settings
@@ -568,10 +567,10 @@ type ociContainer struct {
 	releaseCPUs            func()
 	isPersistentWorker     bool
 
-	// PIDs of the runtime processes started in the task's cgroup, when crun
-	// doesn't manage cgroups, so that Signal can skip them.
-	runtimePIDsMu sync.Mutex
-	runtimePIDs   map[int]struct{}
+	// cgroupMu serializes access to the cgroup freezer, as well as runtimePIDs.
+	// Only used when the runtime's cgroup manager is disabled.
+	cgroupMu    sync.Mutex
+	runtimePIDs map[int]struct{}
 
 	imageRef         string
 	networkEnabled   bool
@@ -894,15 +893,11 @@ func (c *ociContainer) Signal(ctx context.Context, sig syscall.Signal) error {
 	if crunManagesCgroups() {
 		return c.invokeRuntimeSimple(ctx, "kill", "--all", c.cid, fmt.Sprintf("%d", sig))
 	}
-	// Without a cgroup manager, "crun kill --all" does nothing, so signal the
-	// task's cgroup the way it would. crun's own processes are skipped, since
-	// they run in the task's cgroup in this mode but would be outside the
-	// container's cgroup if crun managed it. They keep waiting on the
-	// container to report its exit status.
-	c.runtimePIDsMu.Lock()
-	defer c.runtimePIDsMu.Unlock()
+
+	c.cgroupMu.Lock()
+	defer c.cgroupMu.Unlock()
 	err := cgroup.SignalAll(c.cgroupPath(), sig, func(pid int) bool {
-		_, ok := c.runtimePIDs[pid]
+		_, ok := c.runtimePIDs[pid] // Don't signal crun itself.
 		return ok
 	})
 	if err != nil {
@@ -916,9 +911,9 @@ func (c *ociContainer) Pause(ctx context.Context) error {
 	if crunManagesCgroups() {
 		err = c.invokeRuntimeSimple(ctx, "pause", c.cid)
 	} else {
-		// crun can't pause a container without a cgroup, so freeze the
-		// cgroup the same way crun would.
+		c.cgroupMu.Lock()
 		err = cgroup.SetFrozen(c.cgroupPath(), true)
+		c.cgroupMu.Unlock()
 	}
 
 	if c.releaseCPUs != nil {
@@ -935,6 +930,8 @@ func (c *ociContainer) Unpause(ctx context.Context) error {
 	}
 
 	if !crunManagesCgroups() {
+		c.cgroupMu.Lock()
+		defer c.cgroupMu.Unlock()
 		return cgroup.SetFrozen(c.cgroupPath(), false)
 	}
 	return c.invokeRuntimeSimple(ctx, "resume", c.cid)
@@ -960,9 +957,6 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 	}
 
 	if !crunManagesCgroups() {
-		// Without a cgroup manager, "crun delete" doesn't kill the processes
-		// left in the cgroup or remove it, so do what its cgroupfs manager
-		// would.
 		if err := cgroup.Destroy(ctx, c.cgroupPath()); err != nil && firstErr == nil {
 			firstErr = status.UnavailableErrorf("destroy container cgroup: %s", err)
 		}
@@ -1597,20 +1591,15 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	// that crun runs in. So start the commands that create container
 	// processes directly in the task's cgroup.
 	startInCgroup := !crunManagesCgroups() && (args[0] == "run" || args[0] == "create" || args[0] == "exec")
-	if startInCgroup {
-		cgroupDir, err := os.Open(c.cgroupPath())
-		if err != nil {
-			return commandutil.ErrorResult(status.UnavailableErrorf("open task cgroup: %s", err))
-		}
-		defer cgroupDir.Close()
-		cmd.SysProcAttr.UseCgroupFD = true
-		cmd.SysProcAttr.CgroupFD = int(cgroupDir.Fd())
-	}
 
 	cmd.WaitDelay = waitDelay
 	var runError error
 	if startInCgroup {
 		runError = c.runInTaskCgroup(cmd)
+		if status.IsFailedPreconditionError(runError) {
+			// The container is paused, so the command wasn't started.
+			return commandutil.ErrorResult(runError)
+		}
 	} else {
 		runError = cmd.Run()
 	}
@@ -1643,29 +1632,42 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	return result
 }
 
-// runInTaskCgroup runs a runtime command that starts in the task's cgroup,
-// and records its PID while it runs so that Signal skips it. The PID is
-// recorded under the same lock that Signal holds, so Signal can't see the
-// process in the cgroup before it's recorded.
+// runInTaskCgroup runs a runtime command in the task's cgroup.
 func (c *ociContainer) runInTaskCgroup(cmd *exec.Cmd) error {
-	c.runtimePIDsMu.Lock()
-	err := cmd.Start()
-	if err == nil {
-		if c.runtimePIDs == nil {
-			c.runtimePIDs = make(map[int]struct{})
-		}
-		c.runtimePIDs[cmd.Process.Pid] = struct{}{}
-	}
-	c.runtimePIDsMu.Unlock()
-	if err != nil {
+	if err := c.startInTaskCgroup(cmd); err != nil {
 		return err
 	}
 	defer func() {
-		c.runtimePIDsMu.Lock()
+		c.cgroupMu.Lock()
 		delete(c.runtimePIDs, cmd.Process.Pid)
-		c.runtimePIDsMu.Unlock()
+		c.cgroupMu.Unlock()
 	}()
 	return cmd.Wait()
+}
+
+// startInTaskCgroup starts a runtime command in the task's cgroup.
+func (c *ociContainer) startInTaskCgroup(cmd *exec.Cmd) error {
+	c.cgroupMu.Lock()
+	defer c.cgroupMu.Unlock()
+	frozen, err := cgroup.IsFrozen(c.cgroupPath())
+	if err != nil {
+		return fmt.Errorf("read cgroup freezer state: %w", err)
+	}
+	if frozen {
+		return status.FailedPreconditionError("container is paused")
+	}
+	cgroupDir, err := os.Open(c.cgroupPath())
+	if err != nil {
+		return fmt.Errorf("open task cgroup: %w", err)
+	}
+	defer cgroupDir.Close()
+	cmd.SysProcAttr.UseCgroupFD = true
+	cmd.SysProcAttr.CgroupFD = int(cgroupDir.Fd())
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	c.runtimePIDs[cmd.Process.Pid] = struct{}{}
+	return nil
 }
 
 func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserProp string, dockerForceRootProp bool) (*specs.User, error) {

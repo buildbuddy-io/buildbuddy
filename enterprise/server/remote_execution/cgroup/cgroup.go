@@ -391,6 +391,18 @@ func SetFrozen(dir string, frozen bool) error {
 	return writeFile(filepath.Join(dir, "cgroup.freeze"), []byte(value))
 }
 
+// IsFrozen returns whether the cgroup at the given directory is set to be
+// frozen, by reading its cgroup.freeze file. This is the check that crun uses
+// to tell whether a container is paused. The cgroup's processes may still be
+// running if the freeze hasn't taken effect yet.
+func IsFrozen(dir string) (bool, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "cgroup.freeze"))
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(b)) == "1", nil
+}
+
 // SignalAll sends a signal to every process in the cgroup at the given
 // directory, including processes in descendant cgroups, except those for which
 // skip returns true. skip may be nil. It returns nil if the cgroup doesn't
