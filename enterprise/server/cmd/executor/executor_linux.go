@@ -27,9 +27,10 @@ import (
 )
 
 var (
-	childCgroupsEnabled     = flag.Bool("executor.child_cgroups_enabled", false, "On startup, sets up separate child cgroups for the executor process and any action processes that it starts. When using this flag, the executor's starting cgroup must not have any other processes besides the executor.")
-	childCgroupsMoveTini    = flag.Bool("executor.child_cgroups_move_tini", false, "If true, and child_cgroups_enabled is true, and the parent process is tini (pid 1), move tini into the child cgroup as well. This is needed to avoid violating the 'no internal process constraint' of cgroups when running the executor under tini.")
-	childCgroupsExecutorCPU = flag.String("executor.child_cgroups_executor_cpu", "", `CPU to reserve for the executor when tasks compete with it for CPU, as cores (e.g. "2"), milliCPU ("2000m"), or a percentage ("5%"). Cores and milliCPU are a share of the CPU limit of the executor's starting cgroup. This sets cgroup CPU weights, not a limit. Requires executor.child_cgroups_enabled.`)
+	childCgroupsEnabled                  = flag.Bool("executor.child_cgroups_enabled", false, "On startup, sets up separate child cgroups for the executor process and any action processes that it starts. When using this flag, the executor's starting cgroup must not have any other processes besides the executor.")
+	childCgroupsMoveTini                 = flag.Bool("executor.child_cgroups_move_tini", false, "If true, and child_cgroups_enabled is true, and the parent process is tini (pid 1), move tini into the child cgroup as well. This is needed to avoid violating the 'no internal process constraint' of cgroups when running the executor under tini.")
+	childCgroupsTaskCPUControllerEnabled = flag.Bool("executor.child_cgroups_task_cpu_controller_enabled", true, "If false, the cpu cgroup controller is not enabled for task cgroups, so per-task CPU settings such as cpu.weight and cpu.max are not applied, and the threads of all tasks share CPU evenly per thread. Per-task CPU usage and CPU pressure are still recorded. Requires executor.child_cgroups_enabled and the bundled patched crun runtime.", flag.Internal)
+	childCgroupsExecutorCPU              = flag.String("executor.child_cgroups_executor_cpu", "", `CPU to reserve for the executor when tasks compete with it for CPU, as cores (e.g. "2"), milliCPU ("2000m"), or a percentage ("5%"). Cores and milliCPU are a share of the CPU limit of the executor's starting cgroup. This sets cgroup CPU weights, not a limit. Requires executor.child_cgroups_enabled.`)
 )
 
 const (
@@ -63,6 +64,9 @@ func setupCgroups() (*Cgroups, error) {
 	if !*childCgroupsEnabled && *childCgroupsExecutorCPU != "" {
 		return nil, fmt.Errorf("executor.child_cgroups_executor_cpu requires executor.child_cgroups_enabled")
 	}
+	if !*childCgroupsEnabled && !*childCgroupsTaskCPUControllerEnabled {
+		return nil, fmt.Errorf("disabling executor.child_cgroups_task_cpu_controller_enabled requires executor.child_cgroups_enabled")
+	}
 
 	// Get the cgroup that the executor process was originally started in.
 	// On k8s this will be something like "kubepods.slice/pod-abc/container-123"
@@ -70,6 +74,9 @@ func setupCgroups() (*Cgroups, error) {
 	if err != nil {
 		if *childCgroupsExecutorCPU != "" {
 			return nil, fmt.Errorf("get current cgroup (required by executor.child_cgroups_executor_cpu): %w", err)
+		}
+		if !*childCgroupsTaskCPUControllerEnabled {
+			return nil, fmt.Errorf("get current cgroup (required to disable executor.child_cgroups_task_cpu_controller_enabled): %w", err)
 		}
 		if errors.Is(err, cgroup.ErrV1NotSupported) {
 			log.Warningf("Note: executor is running under cgroup v1, which has limited support. Some functionality may not work as expected.")
@@ -234,6 +241,16 @@ func enableTaskCgroupControllers(path string) error {
 	}
 
 	for _, controller := range cgroup.SetupControllers {
+		if controller == "cpu" && !*childCgroupsTaskCPUControllerEnabled {
+			// Without the cpu controller, task cgroup setup skips per-task CPU
+			// settings, and the threads of all tasks share CPU per thread.
+			// Disable it explicitly, since the task cgroup may be left over
+			// from an executor that enabled it.
+			if err := cgroup.WriteSubtreeControl(path, map[string]bool{"cpu": false}); err != nil {
+				return fmt.Errorf("disable cgroup controller %q (required to disable executor.child_cgroups_task_cpu_controller_enabled): %w", controller, err)
+			}
+			continue
+		}
 		if err := cgroup.WriteSubtreeControl(path, map[string]bool{controller: true}); err != nil {
 			if flagName, ok := requiredBy[controller]; ok {
 				return fmt.Errorf("enable cgroup controller %q (required by %s): %w", controller, flagName, err)

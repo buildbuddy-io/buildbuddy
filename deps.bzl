@@ -350,19 +350,17 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = PODMAN_STATIC_SHA256_ARM64,
     )
 
-    http_file(
-        name = "com_github_containers_crun_crun-linux-amd64",
-        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28-linux-amd64-disable-systemd"],
-        sha256 = "137bce17e4a102683e9b6974f4141cf6c30da61c8ade43c8f2b2d6961a8b858b",
-        downloaded_file_path = "crun",
-        executable = True,
-    )
-    http_file(
-        name = "com_github_containers_crun_crun-linux-arm64",
-        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28-linux-arm64-disable-systemd"],
-        sha256 = "decac16cacbc570a1d7739d2ba47da4ffe0d3918adb10e47712bd1da0a110a78",
-        downloaded_file_path = "crun",
-        executable = True,
+    http_archive(
+        name = "crun",
+        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28.tar.gz"],
+        sha256 = "eb8fe73ffe44d868b14bb94fa6c295bd57e8bf023de43b61579da826c07cc406",
+        strip_prefix = "crun-1.28",
+        patches = ["//buildpatches:crun_no_enable_controllers.patch"],
+        patch_args = ["-p1"],
+        build_file_content = """
+package(default_visibility = ["//visibility:public"])
+filegroup(name = "srcs", srcs = glob(["**"]))
+""",
     )
 
     # busybox static builds (see tools/build_busybox.sh)

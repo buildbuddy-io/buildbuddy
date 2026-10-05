@@ -1,0 +1,13 @@
+--- a/src/libcrun/cgroup-utils.c
++++ b/src/libcrun/cgroup-utils.c
+@@ -795,6 +795,10 @@
+ static int
+ write_controller_file (const char *path, int controllers_to_enable, libcrun_error_t *err)
+ {
++  /* BuildBuddy enables controllers at executor startup. Preserve that choice
++     while allowing enable_controllers to create the cgroup directories.  */
++  return read_available_controllers (path, err);
++
+   cleanup_free char *subtree_control = NULL;
+   cleanup_free char *controllers = NULL;
+   size_t controllers_len = 0;
