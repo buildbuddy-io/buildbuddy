@@ -51,3 +51,31 @@ ssl:
   client_ca_cert_file: your_ca.crt
   client_ca_key_file: your_ca.pem
 ```
+
+## Scheduler peer TLS
+
+To encrypt scheduler-to-scheduler task reservations, configure a server certificate
+and enable GRPCS advertisement:
+
+```yaml title="config.yaml"
+ssl:
+  enable_ssl: true
+  cert_file: /certs/tls.crt
+  key_file: /certs/tls.key
+remote_execution:
+  scheduler_rpc_scheme: grpcs
+```
+
+`scheduler_rpc_scheme` defaults to `grpc` and selects the endpoint this scheduler
+advertises in Redis. Peers dial the advertised scheme. The certificate must cover
+`MY_HOSTNAME` (or the process hostname), and peer processes must trust its issuer
+through their system CA store; `ssl.client_ca_*` does not configure peer trust.
+The advertised port defaults to `grpcs_port` (1986) for TLS or `grpc_port` (1985)
+for plaintext. **`MY_PORT` overrides either default** and must reach the matching
+listener.
+
+Upgrade every scheduler to a version supporting endpoint advertisement before
+enabling `grpcs`, and provision TLS listeners and trust on all replicas first.
+Before downgrading binaries, restore `grpc` and allow executor registrations to
+refresh. TLS registrations cannot be consumed by older schedulers. This option
+covers scheduler peer RPCs; other backend connections are configured separately.

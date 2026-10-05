@@ -13,7 +13,6 @@ go_library(
         "//proto:scheduler_go_proto",
         "//server/util/disk",
         "//server/util/flag",
-        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
         "@com_github_elastic_gosigar//:gosigar",
