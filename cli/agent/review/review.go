@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
@@ -98,6 +99,12 @@ Rules:
 
 REVIEW:
 `
+
+// reviewLinkMarker identifies the comment posted by postReviewLink, so that
+// it's only posted once per PR.
+const reviewLinkMarker = "<!-- bb-agent-review-link -->"
+
+const reviewDocsURL = "https://www.buildbuddy.io/docs/cli-commands#bb-agent-review"
 
 var (
 	hunkRe = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
@@ -210,7 +217,7 @@ func HandleReview(args []string) (int, error) {
 	review, err := structureReview(ctx, reviewText)
 	if err != nil {
 		log.Warnf("Failed to structure review (%s); posting it as a single body comment.", err)
-		return postReview(ctx, gh, owner, repo, pr.GetNumber(), headSHA, reviewText, nil)
+		return postReview(ctx, gh, owner, repo, pr, reviewText, nil)
 	}
 	log.Printf("    Found %d candidate line-level comment(s).", len(review.Comments))
 
@@ -244,7 +251,7 @@ func HandleReview(args []string) (int, error) {
 	}
 	log.Printf("    %d inline comment(s), %d folded into body.", len(inlineComments), len(overflowLines))
 
-	return postReview(ctx, gh, owner, repo, pr.GetNumber(), headSHA, fullBody, inlineComments)
+	return postReview(ctx, gh, owner, repo, pr, fullBody, inlineComments)
 }
 
 // isFork reports whether the PR's head branch lives in the given repo. If it doesn't,
@@ -255,22 +262,105 @@ func isFork(pr *github.PullRequest, owner, repo string) bool {
 
 // shouldSkip reports whether the PR is a draft or already has a bot review.
 func shouldSkip(ctx context.Context, gh *github.Client, owner, repo string, pr *github.PullRequest) (bool, error) {
-	if pr.GetDraft() {
-		log.Printf("PR #%d is a draft — skipping (pass --force or set AGENT_REVIEW_FORCE=1 to override).", pr.GetNumber())
-		return true, nil
-	}
 	log.Printf("Checking for existing reviews...")
+	// Only the first page of reviews is checked.
 	reviews, _, err := gh.PullRequests.ListReviews(ctx, owner, repo, pr.GetNumber(), nil)
 	if err != nil {
 		return false, fmt.Errorf("fetch existing reviews: %w", err)
 	}
+	hasBotReview, hasReviewLink := false, false
 	for _, r := range reviews {
-		if r.GetUser().GetType() == "Bot" {
-			log.Printf("PR #%d already has a bot review — skipping (pass --force or set AGENT_REVIEW_FORCE=1 to override).", pr.GetNumber())
-			return true, nil
+		if hasReviewLink && hasBotReview {
+			break
+		}
+		if strings.Contains(r.GetBody(), reviewLinkMarker) {
+			// The review link posted on drafts doesn't count as a review of the code.
+			hasReviewLink = true
+		} else if r.GetUser().GetType() == "Bot" {
+			hasBotReview = true
 		}
 	}
+
+	if pr.GetDraft() {
+		log.Printf("PR #%d is a draft — skipping (pass --force or set AGENT_REVIEW_FORCE=1 to override).", pr.GetNumber())
+		// Only post the review link if it hasn't been posted and the PR hasn't
+		// already been reviewed (e.g. by a forced run).
+		if !hasReviewLink && !hasBotReview {
+			if err := postReviewLink(ctx, gh, owner, repo, pr); err != nil {
+				log.Warnf("Failed to post review link comment: %s", err)
+			}
+		}
+		return true, nil
+	}
+	if hasBotReview {
+		log.Printf("PR #%d already has a bot review — skipping (pass --force or set AGENT_REVIEW_FORCE=1 to override).", pr.GetNumber())
+		return true, nil
+	}
 	return false, nil
+}
+
+// postReviewLink posts a comment with a link to trigger a review.
+func postReviewLink(ctx context.Context, gh *github.Client, owner, repo string, pr *github.PullRequest) error {
+	// Keep these in sync with the env var names in ci_runner_env.
+	actionName := os.Getenv("BUILDBUDDY_ACTION_NAME")
+	if actionName == "" || os.Getenv("BUILDBUDDY_TRIGGER_EVENT") != "pull_request" {
+		return nil
+	}
+
+	runURL, err := runReviewURL(pr, actionName)
+	if err != nil {
+		return err
+	}
+	body := reviewLinkMarker + "\n" +
+		"**Agent code review** · Get feedback on this pull request before a teammate reviews it.\n" +
+		"**[Run review](" + runURL + ")**\n\n" +
+		"<sub>Runs [`bb agent review`](" + reviewDocsURL + ") on BuildBuddy Workflows</sub>"
+
+	if *dryRun {
+		fmt.Println("Dry run — review link comment that would be posted:")
+		fmt.Println(body)
+		return nil
+	}
+	req := &github.PullRequestReviewRequest{
+		CommitID: new(pr.GetHead().GetSHA()),
+		Event:    new("COMMENT"),
+		Body:     new(body),
+	}
+	if _, _, err := gh.PullRequests.CreateReview(ctx, owner, repo, pr.GetNumber(), req); err != nil {
+		return fmt.Errorf("post review: %w", err)
+	}
+	log.Printf("Posted review link comment to PR #%d.", pr.GetNumber())
+	return nil
+}
+
+// runReviewURL returns a link that runs the given workflow action on the PR's
+// branch with AGENT_REVIEW_FORCE=1.
+func runReviewURL(pr *github.PullRequest, actionName string) (string, error) {
+	runURL, err := url.JoinPath(*agentflags.HTTPTarget, "workflows", "run")
+	if err != nil {
+		return "", fmt.Errorf("build run review URL: %w", err)
+	}
+	return runURL + "?" + url.Values{
+		"repo_url":    {pr.GetBase().GetRepo().GetHTMLURL()},
+		"action_name": {actionName},
+		"branch":      {pr.GetHead().GetRef()},
+		"env_preset":  {"AGENT_REVIEW"},
+	}.Encode(), nil
+}
+
+func reviewFooter(pr *github.PullRequest) string {
+	// Keep this in sync with the env var name in ci_runner_env.
+	actionName := os.Getenv("BUILDBUDDY_ACTION_NAME")
+	if actionName == "" {
+		return "<sub>Reviewed with [`bb agent review`](" + reviewDocsURL + ")</sub>"
+	}
+	footer := "<sub>Reviewed with [`bb agent review`](" + reviewDocsURL + ") on BuildBuddy Workflows</sub>"
+	runURL, err := runReviewURL(pr, actionName)
+	if err != nil {
+		log.Warnf("Omitting re-run link from review: %s", err)
+		return footer
+	}
+	return "**[Re-run review](" + runURL + ")**\n\n" + footer
 }
 
 // structureReview has the agent convert a free-form review into reviewJSON.
@@ -375,11 +465,13 @@ func fetchRepoInfo() (owner, repo, branch string, err error) {
 }
 
 // postReview posts the review to the PR, or prints it when --dry_run is set.
-func postReview(ctx context.Context, gh *github.Client, owner, repo string, prNumber int, headSHA, body string, comments []*github.DraftReviewComment) (int, error) {
+func postReview(ctx context.Context, gh *github.Client, owner, repo string, pr *github.PullRequest, body string, comments []*github.DraftReviewComment) (int, error) {
+	prNumber := pr.GetNumber()
+	footer := reviewFooter(pr)
 	req := &github.PullRequestReviewRequest{
-		CommitID: new(headSHA),
+		CommitID: new(pr.GetHead().GetSHA()),
 		Event:    new("COMMENT"),
-		Body:     new(body),
+		Body:     new(body + "\n\n" + footer),
 		Comments: comments,
 	}
 	if *dryRun {
@@ -402,6 +494,7 @@ func postReview(ctx context.Context, gh *github.Client, owner, repo string, prNu
 		for _, c := range comments {
 			fmt.Fprintf(&fallbackBody, "- `%s:%d` — %s\n", c.GetPath(), c.GetLine(), c.GetBody())
 		}
+		fallbackBody.WriteString("\n" + footer)
 		req.Comments = nil
 		req.Body = new(fallbackBody.String())
 		posted, _, err = gh.PullRequests.CreateReview(ctx, owner, repo, prNumber, req)
