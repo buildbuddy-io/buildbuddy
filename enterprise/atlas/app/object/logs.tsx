@@ -7,6 +7,7 @@ import Select, { Option } from "../../../../app/components/select/select";
 import { BuildBuddyError } from "../../../../app/util/errors";
 import { atlas } from "../../../../proto/atlas_ts_proto";
 import rpcService, { ServerStream } from "../lib/rpc_service";
+import { LogLine, clockTime, parseLogLine, severityTone } from "../lib/structured_log";
 
 interface Props {
   pod: atlas.Entry;
@@ -17,7 +18,11 @@ interface State {
   tailLines: string;
   follow: boolean;
   previous: boolean;
+  /** Show lines as written instead of the readable form of structured ones. */
+  raw: boolean;
   text: string;
+  /** Every complete line, parsed; the tail still arriving is `partial`. */
+  lines: LogLine[];
   errorMessage?: string;
   streaming: boolean;
 }
@@ -34,11 +39,14 @@ export default class LogsComponent extends React.Component<Props, State> {
     tailLines: TAIL_OPTIONS[0],
     follow: false,
     previous: false,
+    raw: false,
     text: "",
+    lines: [],
     streaming: false,
   };
   private stream?: ServerStream<atlas.StreamLogsResponse>;
   private decoder = new TextDecoder();
+  private partial = "";
   private pane = React.createRef<HTMLPreElement>();
 
   componentDidMount() {
@@ -68,7 +76,8 @@ export default class LogsComponent extends React.Component<Props, State> {
   private start() {
     this.stop();
     this.decoder = new TextDecoder();
-    this.setState({ text: "", errorMessage: undefined, streaming: true });
+    this.partial = "";
+    this.setState({ text: "", lines: [], errorMessage: undefined, streaming: true });
     const pod = this.props.pod;
     this.stream = rpcService.service.streamLogs(
       new atlas.StreamLogsRequest({
@@ -92,17 +101,32 @@ export default class LogsComponent extends React.Component<Props, State> {
     // Stick to the bottom only if the reader is already there.
     const pane = this.pane.current;
     const pinned = !pane || pane.scrollHeight - pane.scrollTop - pane.clientHeight < 40;
+    // Chunks end anywhere; only complete lines are parsed.
+    const parts = (this.partial + text).split("\n");
+    this.partial = parts.pop() ?? "";
+    const lines = parts.map(parseLogLine);
     this.setState(
-      (state) => ({ text: state.text + text }),
+      (state) => ({ text: state.text + text, lines: state.lines.concat(lines) }),
       () => {
         if (pinned && this.pane.current) this.pane.current.scrollTop = this.pane.current.scrollHeight;
       }
     );
   }
 
+  private renderLines(lines: LogLine[]) {
+    return (
+      <>
+        {lines.map((line, i) => (
+          <LogLineView key={i} line={line} />
+        ))}
+        {this.partial && <div className="atlas-logline">{this.partial}</div>}
+      </>
+    );
+  }
+
   render() {
     const containers = this.props.pod.containers;
-    const { text, errorMessage, streaming } = this.state;
+    const { text, lines, raw, errorMessage, streaming } = this.state;
     return (
       <div className="atlas-section">
         <h3>Logs</h3>
@@ -134,15 +158,43 @@ export default class LogsComponent extends React.Component<Props, State> {
               <Checkbox checked={this.state.previous} onChange={(e) => this.setState({ previous: e.target.checked })} />{" "}
               previous run
             </label>
+            <label>
+              <Checkbox checked={raw} onChange={(e) => this.setState({ raw: e.target.checked })} /> raw
+            </label>
             <OutlinedButton className="atlas-small-button" onClick={() => this.start()}>
               <RefreshCw className="icon" /> reload
             </OutlinedButton>
           </div>
           <pre ref={this.pane} className="atlas-logpane">
-            {errorMessage ?? (text || (streaming ? "…" : "(no output)"))}
+            {errorMessage ?? (text ? (raw ? text : this.renderLines(lines)) : streaming ? "…" : "(no output)")}
           </pre>
         </div>
       </div>
     );
   }
+}
+
+/** One line: structured entries get a time, a severity column and dimmed details. */
+function LogLineView({ line }: { line: LogLine }) {
+  if (line.kind === "text") {
+    return <div className="atlas-logline">{line.text || " "}</div>;
+  }
+  return (
+    <div className={`atlas-logline ${severityTone(line.severity)}`}>
+      {line.time && (
+        <span className="atlas-log-time" title={line.time.toISOString()}>
+          {clockTime(line.time)}
+        </span>
+      )}
+      <span className="atlas-log-severity">{line.severity.slice(0, 5)}</span>
+      <span className="atlas-log-message">{line.message}</span>
+      {line.source && <span className="atlas-log-source">{line.source}</span>}
+      {line.fields.map(([k, v]) => (
+        <span className="atlas-log-field" key={k}>
+          <span className="atlas-log-key">{k}=</span>
+          {v}
+        </span>
+      ))}
+    </div>
+  );
 }
