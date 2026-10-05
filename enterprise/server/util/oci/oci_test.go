@@ -825,12 +825,13 @@ func TestResolve_WithCache(t *testing.T) {
 
 				// Initially, nothing is cached, and we expect to make requests
 				// to resolve the manifest, as well as to fetch the manifest and
-				// layer contents.
+				// layer contents (and the layer size, for caching).
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":             1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/latest":              1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":              1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/latest":               1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String():  1,
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 
@@ -884,13 +885,15 @@ func TestResolve_WithCache(t *testing.T) {
 				// layer contents. Note that we have one more GET request here
 				// compared to the non-index manifest case, since the index
 				// manifest points to the platform-specific image manifest.
+				// The HEAD request for the tag proves access to the repository,
+				// so the platform-specific manifest doesn't need its own.
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                   1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():      1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():    1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():     1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
@@ -900,8 +903,7 @@ func TestResolve_WithCache(t *testing.T) {
 				// digest.
 				expected = map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest": 1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
@@ -1027,6 +1029,9 @@ func TestResolve_Concurrency(t *testing.T) {
 		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
 	}
 	for digest := range pushedDigestToFiles {
+		// The OCI fetcher makes a HEAD request for the layer's size, which it
+		// needs to write the layer to the cache.
+		expected[http.MethodHead+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.Reset()
@@ -1168,8 +1173,8 @@ func TestResolveImageDigest_TagExists(t *testing.T) {
 	nameWithDigest, err := newResolver(t, te).ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
-		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false, /*=useOCIFetcher*/
 	)
 	require.NoError(t, err)
 
@@ -1188,8 +1193,8 @@ func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
 	_, err := newResolver(t, te).ResolveImageDigest(
 		context.Background(),
 		nonexistent,
-		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false, /*=useOCIFetcher*/
 	)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
@@ -1219,8 +1224,8 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 	nameWithDigest, err := resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
-		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false, /*=useOCIFetcher*/
 	)
 	require.NoError(t, err)
 	resolvedDigest, err := name.NewDigest(nameWithDigest)
@@ -1255,8 +1260,8 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 		nameWithDigest, err := resolver.ResolveImageDigest(
 			context.Background(),
 			nameToResolve,
-			oci.RuntimePlatform(),
 			oci.Credentials{},
+			false, /*=useOCIFetcher*/
 		)
 		require.NoError(t, err)
 		resolvedDigest, err := name.NewDigest(nameWithDigest)
@@ -1275,8 +1280,8 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 		nameWithDigest, err := resolver.ResolveImageDigest(
 			context.Background(),
 			nameToResolve,
-			oci.RuntimePlatform(),
 			oci.Credentials{},
+			false, /*=useOCIFetcher*/
 		)
 		require.NoError(t, err)
 
@@ -1295,8 +1300,8 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 		nameWithDigest, err := resolver.ResolveImageDigest(
 			context.Background(),
 			registryAndRepoNoTag,
-			oci.RuntimePlatform(),
 			oci.Credentials{},
+			false, /*=useOCIFetcher*/
 		)
 		require.NoError(t, err)
 
@@ -1334,8 +1339,8 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	nameWithDigest, err := resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
-		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false, /*=useOCIFetcher*/
 	)
 	require.NoError(t, err)
 	resolvedDigest, err := name.NewDigest(nameWithDigest)
@@ -1353,8 +1358,8 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	nameWithDigest, err = resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
-		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false, /*=useOCIFetcher*/
 	)
 	require.NoError(t, err)
 	resolvedDigest, err = name.NewDigest(nameWithDigest)
@@ -1368,8 +1373,8 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	nameWithDigest, err = resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
-		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false, /*=useOCIFetcher*/
 	)
 	require.NoError(t, err)
 	resolvedDigest, err = name.NewDigest(nameWithDigest)
@@ -1377,14 +1382,15 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 	require.Empty(t, counter.Snapshot())
 
-	// Advance past TTL; expect cache refresh (HEAD manifest).
+	// Advance past TTL; expect cache refresh (HEAD manifest). The OCI fetcher
+	// reuses its puller, so there is no need to ping /v2/ again.
 	fakeClock.Advance(2 * time.Second)
 	counter.Reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
 		context.Background(),
 		nameToResolve,
-		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false, /*=useOCIFetcher*/
 	)
 	require.NoError(t, err)
 	resolvedDigest, err = name.NewDigest(nameWithDigest)
@@ -1392,7 +1398,6 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
 	expectedRefresh := map[string]int{
-		http.MethodGet + " /v2/":                                    1,
 		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expectedRefresh, counter.Snapshot()))
@@ -1928,6 +1933,121 @@ func TestResolveWithOCIFetcher_NoDirectCacheAccess(t *testing.T) {
 	}, counter.Snapshot())
 	require.Equal(t, int32(0), acClient.calls.Load(), "executor made direct ActionCache calls with useOCIFetcher=true")
 	require.Equal(t, int32(0), bsClient.calls.Load(), "executor made direct ByteStream calls with useOCIFetcher=true")
+}
+
+// countingOCIFetcherClient counts calls made through an OCIFetcherClient.
+type countingOCIFetcherClient struct {
+	ofpb.OCIFetcherClient
+	calls atomic.Int32
+}
+
+func (c *countingOCIFetcherClient) FetchManifest(ctx context.Context, in *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
+	c.calls.Add(1)
+	return c.OCIFetcherClient.FetchManifest(ctx, in, opts...)
+}
+
+func (c *countingOCIFetcherClient) FetchManifestMetadata(ctx context.Context, in *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
+	c.calls.Add(1)
+	return c.OCIFetcherClient.FetchManifestMetadata(ctx, in, opts...)
+}
+
+func (c *countingOCIFetcherClient) FetchBlob(ctx context.Context, in *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ofpb.FetchBlobResponse], error) {
+	c.calls.Add(1)
+	return c.OCIFetcherClient.FetchBlob(ctx, in, opts...)
+}
+
+func (c *countingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, in *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	c.calls.Add(1)
+	return c.OCIFetcherClient.FetchBlobMetadata(ctx, in, opts...)
+}
+
+// TestFetchLocation verifies that --executor.oci_fetch_location decides
+// whether images are fetched by the remote OCI fetcher service or in the
+// executor process, for every Resolver method that contacts a registry.
+func TestFetchLocation(t *testing.T) {
+	for _, tc := range []struct {
+		location      string
+		useOCIFetcher bool
+		wantRemote    bool
+	}{
+		{location: "executor", useOCIFetcher: false, wantRemote: false},
+		{location: "executor", useOCIFetcher: true, wantRemote: true},
+		{location: "remote", useOCIFetcher: false, wantRemote: true},
+	} {
+		t.Run(fmt.Sprintf("%s/use_oci_fetcher_%t", tc.location, tc.useOCIFetcher), func(t *testing.T) {
+			te := setupTestEnvWithCache(t)
+			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+			flags.Set(t, "executor.oci_fetch_location", tc.location)
+			remoteFetcher := &countingOCIFetcherClient{OCIFetcherClient: te.GetOCIFetcherClient()}
+			te.SetOCIFetcherClient(remoteFetcher)
+			registry := testregistry.Run(t, testregistry.Opts{})
+			registry.PushNamedImage(t, "fetch_location", nil)
+			imageAddress := registry.ImageAddress("fetch_location")
+			ctx := contextWithUnverifiedJWT(&claims.Claims{UserID: "US123"})
+			resolver := newResolver(t, te)
+
+			err := resolver.AuthenticateWithRegistry(ctx, imageAddress, oci.Credentials{}, tc.useOCIFetcher)
+			require.NoError(t, err)
+			_, err = resolver.ResolveImageDigest(ctx, imageAddress, oci.Credentials{}, tc.useOCIFetcher)
+			require.NoError(t, err)
+			img, err := resolver.Resolve(ctx, imageAddress, oci.RuntimePlatform(), oci.Credentials{}, tc.useOCIFetcher)
+			require.NoError(t, err)
+			layers, err := img.Layers()
+			require.NoError(t, err)
+			require.Len(t, layers, 1)
+			rc, err := layers[0].Compressed()
+			require.NoError(t, err)
+			_, err = io.ReadAll(rc)
+			require.NoError(t, err)
+			require.NoError(t, rc.Close())
+
+			if tc.wantRemote {
+				// One call each for the auth check, digest resolution,
+				// manifest and layer.
+				require.Equal(t, int32(4), remoteFetcher.calls.Load())
+			} else {
+				require.Zero(t, remoteFetcher.calls.Load())
+			}
+		})
+	}
+}
+
+func TestNewResolver_InvalidFetchLocation(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.oci_fetch_location", "elsewhere")
+	_, err := oci.NewResolver(te)
+	require.True(t, status.IsInvalidArgumentError(err), "error: %v", err)
+}
+
+// TestResolve_BypassRegistryWithoutCache verifies that a registry bypass
+// still pulls from the registry when images aren't cached, since there is
+// nothing to serve them from otherwise.
+func TestResolve_BypassRegistryWithoutCache(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry.use_cache_percent", 0)
+	registry := testregistry.Run(t, testregistry.Opts{})
+	files := map[string][]byte{"/name": []byte("bypass")}
+	registry.PushNamedImageWithFiles(t, "bypass_without_cache", files, nil)
+	imageAddress := registry.ImageAddress("bypass_without_cache")
+	creds, err := oci.CredentialsFromProperties(&platform.Properties{
+		ContainerImage:          imageAddress,
+		ContainerRegistryBypass: true,
+	})
+	require.NoError(t, err)
+
+	img, err := newResolver(t, te).Resolve(
+		context.Background(),
+		imageAddress,
+		oci.RuntimePlatform(),
+		creds,
+		false, /*=useOCIFetcher*/
+	)
+	require.NoError(t, err)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+	require.Empty(t, cmp.Diff(files, layerFiles(t, layers[0])))
 }
 
 func TestRegistryETLDPlusOne(t *testing.T) {

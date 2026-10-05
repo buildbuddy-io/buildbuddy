@@ -449,6 +449,11 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		if err != nil {
 			return nil, err
 		}
+		if !s.cacheEnabled() {
+			// Metadata is only needed for caching, and fetching the size
+			// takes an extra HEAD request.
+			return layer.Compressed()
+		}
 		// Best-effort metadata for read-through caching.
 		if mt, err := layer.MediaType(); err != nil {
 			log.CtxWarningf(ctx, "Could not get media type for layer: %s", err)
@@ -472,8 +477,8 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		return s.streamBlob(r, stream)
 	}
 
-	// Skip caching when it's disabled or metadata is unavailable.
-	if !s.cacheEnabled() || mediaType == "" || size == 0 {
+	// Skip caching when metadata is unavailable.
+	if mediaType == "" || size == 0 {
 		return 0, streamAndClose(rc)
 	}
 

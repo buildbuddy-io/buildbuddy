@@ -39,7 +39,10 @@ go_library(
 
 go_test(
     name = "ocifetcher_test",
-    srcs = ["ocifetcher_test.go"],
+    srcs = [
+        "inprocess_test.go",
+        "ocifetcher_test.go",
+    ],
     deps = [
         ":ocifetcher",
         "//enterprise/server/oci/ocicache",
