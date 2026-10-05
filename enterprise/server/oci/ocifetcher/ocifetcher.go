@@ -77,8 +77,13 @@ type ociFetcherServer struct {
 	allowedPrivateIPs []*net.IPNet
 	mirrors           []interfaces.MirrorConfig
 
+	// bsClient and acClient are nil if caching is disabled.
 	bsClient bspb.ByteStreamClient
 	acClient repb.ActionCacheClient
+
+	// trustBypassRegistry skips the server admin check for requests that set
+	// bypass_registry.
+	trustBypassRegistry bool
 
 	mu        sync.Mutex
 	pullerLRU lru.LRU[*pullerLRUEntry]
@@ -110,6 +115,27 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 	if acClient == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherServer requires a non-nil action cache client")
 	}
+	return newServer(bsClient, acClient, false /*=trustBypassRegistry*/)
+}
+
+// NewInProcessServer constructs an OCIFetcherServer that runs in the
+// executor process and is called through NewInProcessClient.
+//
+// If bsClient and acClient are both nil, the server does not cache anything,
+// and every request goes to the remote registry.
+//
+// The server trusts bypass_registry on requests without checking for server
+// admin claims, since the executor can't verify claims itself and the
+// execution server has already authorized the platform property that sets
+// it. Without a cache, bypass_registry is ignored.
+func NewInProcessServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) (ofpb.OCIFetcherServer, error) {
+	if (bsClient == nil) != (acClient == nil) {
+		return nil, status.FailedPreconditionError("OCIFetcherServer requires both or neither of the byte stream and action cache clients")
+	}
+	return newServer(bsClient, acClient, true /*=trustBypassRegistry*/)
+}
+
+func newServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, trustBypassRegistry bool) (*ociFetcherServer, error) {
 	allowedPrivateIPs, err := ParseAllowedPrivateIPs()
 	if err != nil {
 		return nil, err
@@ -131,13 +157,18 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 		return nil, status.InternalErrorf("error initializing access proof cache: %s", err)
 	}
 	return &ociFetcherServer{
-		allowedPrivateIPs: allowedPrivateIPs,
-		mirrors:           Mirrors(),
-		bsClient:          bsClient,
-		acClient:          acClient,
-		pullerLRU:         pullerLRU,
-		accessProofCache:  accessProofCache,
+		allowedPrivateIPs:   allowedPrivateIPs,
+		mirrors:             Mirrors(),
+		bsClient:            bsClient,
+		acClient:            acClient,
+		trustBypassRegistry: trustBypassRegistry,
+		pullerLRU:           pullerLRU,
+		accessProofCache:    accessProofCache,
 	}, nil
+}
+
+func (s *ociFetcherServer) cacheEnabled() bool {
+	return s.bsClient != nil && s.acClient != nil
 }
 
 func RegisterServer(env *real_environment.RealEnv) error {
@@ -167,7 +198,7 @@ func RegisterServer(env *real_environment.RealEnv) error {
 func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
-	if err := validateBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+	if err := s.validateBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return err
 	}
 	digestRef, hash, err := parseBlobDigestRef(req.GetRef())
@@ -175,6 +206,12 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return err
 	}
 
+	if !s.cacheEnabled() {
+		// Without a cache, waiting on another request for the same blob
+		// wouldn't save a registry request, so don't deduplicate.
+		_, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, digestRef.Context(), hash, req.GetCredentials(), stream)
+		return err
+	}
 	if req.GetBypassRegistry() {
 		err := s.streamBlobFromCache(ctx, stream, digestRef.Context(), hash)
 		if err == nil {
@@ -197,7 +234,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 // Server admins can bypass the registry: the metadata will be served from the action cache
 // if present. If not present, FetchBlobMetadata will not fall back to the remote registry.
 func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
-	if err := validateBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+	if err := s.validateBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return nil, err
 	}
 	digestRef, hash, err := parseBlobDigestRef(req.GetRef())
@@ -207,7 +244,7 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 	repo := digestRef.Context()
 
 	accessKey := repoAccessKey(repo, req.GetCredentials())
-	if req.GetBypassRegistry() || s.accessProofCache.Contains(accessKey) {
+	if s.cacheEnabled() && (req.GetBypassRegistry() || s.accessProofCache.Contains(accessKey)) {
 		if resp, err := s.fetchBlobMetadataFromCache(ctx, digestRef, hash); err == nil {
 			return resp, nil
 		} else if !status.IsNotFoundError(err) {
@@ -235,12 +272,17 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 // Server admins can bypass the registry: the manifest will be served from the action cache
 // if present. If not present, FetchManifest will not fall back to the remote registry.
 func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
-	if err := validateBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+	if err := s.validateBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return nil, err
 	}
 	imageRef, err := parseManifestRef(req.GetRef())
 	if err != nil {
 		return nil, err
+	}
+	if !s.cacheEnabled() {
+		// Fetching the manifest proves access and resolves any tag, so there
+		// is no need for a separate HEAD request.
+		return s.fetchManifestFromRemote(ctx, imageRef, req.GetCredentials())
 	}
 	hash, err := s.resolveManifestDigest(ctx, imageRef, req.GetCredentials(), req.GetBypassRegistry())
 	if err != nil {
@@ -284,8 +326,8 @@ func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.
 // validateBypassRegistry checks if bypass_registry is enabled and if so,
 // verifies the caller has server admin permissions. Returns an error if
 // bypass_registry is true but the caller is not a server admin.
-func validateBypassRegistry(ctx context.Context, bypassRegistry bool) error {
-	if !bypassRegistry {
+func (s *ociFetcherServer) validateBypassRegistry(ctx context.Context, bypassRegistry bool) error {
+	if !bypassRegistry || s.trustBypassRegistry {
 		return nil
 	}
 	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
@@ -430,8 +472,8 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		return s.streamBlob(r, stream)
 	}
 
-	// Skip caching when metadata is unavailable.
-	if mediaType == "" || size == 0 {
+	// Skip caching when it's disabled or metadata is unavailable.
+	if !s.cacheEnabled() || mediaType == "" || size == 0 {
 		return 0, streamAndClose(rc)
 	}
 
@@ -582,14 +624,22 @@ func (s *ociFetcherServer) fetchManifestFromCache(ctx context.Context, imageRef 
 }
 
 func (s *ociFetcherServer) fetchManifestFromRemoteWriteToCache(ctx context.Context, imageRef ctrname.Reference, hash ctr.Hash, creds *rgpb.Credentials) (*ofpb.FetchManifestResponse, error) {
+	resp, err := s.fetchManifestFromRemote(ctx, imageRef, creds)
+	if err != nil {
+		return nil, err
+	}
+	if err := ocicache.WriteManifestToAC(ctx, resp.GetManifest(), s.acClient, imageRef.Context(), hash, resp.GetMediaType(), imageRef); err != nil {
+		log.CtxWarningf(ctx, "Error writing manifest to cache: %s", err)
+	}
+	return resp, nil
+}
+
+func (s *ociFetcherServer) fetchManifestFromRemote(ctx context.Context, imageRef ctrname.Reference, creds *rgpb.Credentials) (*ofpb.FetchManifestResponse, error) {
 	remoteDesc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*remote.Descriptor, error) {
 		return puller.Get(ctx, imageRef)
 	})
 	if err != nil {
 		return nil, err
-	}
-	if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, s.acClient, imageRef.Context(), hash, string(remoteDesc.MediaType), imageRef); err != nil {
-		log.CtxWarningf(ctx, "Error writing manifest to cache: %s", err)
 	}
 	return &ofpb.FetchManifestResponse{
 		Digest:    remoteDesc.Digest.String(),

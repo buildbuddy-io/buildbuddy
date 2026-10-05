@@ -1021,7 +1021,7 @@ func (p *pool) resolveImageDigest(ctx context.Context, props *platform.Propertie
 	if err != nil {
 		return err
 	}
-	imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
+	imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, creds, props.UseOCIFetcher)
 	if err != nil {
 		return err
 	}
