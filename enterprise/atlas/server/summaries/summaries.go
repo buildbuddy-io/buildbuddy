@@ -31,6 +31,16 @@ func (r ResourceType) String() string {
 	return fmt.Sprintf("%s %s (%s)", r.Cluster, r.Resource, gv)
 }
 
+// Health is the verdict on an entry's Phase and Ready, decided by the
+// ingester.
+type Health string
+
+const (
+	HealthOK   Health = "ok"
+	HealthWarn Health = "warn"
+	HealthBad  Health = "bad"
+)
+
 // Port is a named port on a pod or service.
 type Port struct {
 	Name     string
@@ -59,6 +69,8 @@ type Entry struct {
 
 	// Phase is a short display status.
 	Phase string
+	// Health judges Phase and Ready.
+	Health Health
 	// Ready is "ready/desired" for workloads and pods.
 	Ready    string
 	Restarts int64

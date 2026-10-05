@@ -52,7 +52,10 @@ func podU(name string) *unstructured.Unstructured {
 				},
 			}},
 		},
-		"status": map[string]any{"phase": "Running", "podIP": "10.24.3.7"},
+		"status": map[string]any{
+			"phase": "Running", "podIP": "10.24.3.7",
+			"containerStatuses": []any{map[string]any{"name": "app", "ready": true}},
+		},
 	}}
 }
 
@@ -278,6 +281,7 @@ func TestSearch(t *testing.T) {
 	require.Equal(t, "Pod", rsp.GetGroups()[0].GetKind())
 	require.Equal(t, "web-7d9f-abcde", rsp.GetGroups()[0].GetResults()[0].GetEntry().GetName())
 	require.NotNil(t, rsp.GetGroups()[0].GetResults()[0].GetEntry().GetCreated(), "timestamps are carried as protos")
+	require.Equal(t, atlaspb.Health_HEALTH_OK, rsp.GetGroups()[0].GetResults()[0].GetEntry().GetHealth(), "a running, ready pod")
 	links := rsp.GetGroups()[0].GetResults()[0].GetLinks()
 	require.Len(t, links, 2, "a result carries its own port links")
 	require.Equal(t, "http://10-24-3-7.prod.pod.uswest1.buildbuddy.internal:8080", links[0].GetUrl())

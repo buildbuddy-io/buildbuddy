@@ -50,10 +50,19 @@ message Entry {
   map<string, string> selector = 20;
   // Kind-specific display pairs (schedule, kubelet version, ...).
   map<string, string> extra = 21;
+  // The verdict on phase and ready; UNKNOWN for kinds with nothing to judge.
+  Health health = 22;
+}
+
+enum Health {
+  HEALTH_UNKNOWN = 0;
+  HEALTH_OK = 1;
+  HEALTH_WARN = 2;
+  HEALTH_BAD = 3;
 }
 
 message SearchRequest {
-  // Free text plus kind:/ns:/cluster:/label: filters.
+  // Free text plus kind:/ns:/cluster:/label:/health: filters.
   string query = 1;
   // Maximum entries returned per kind. Zero means the server default.
   int32 group_limit = 2;
