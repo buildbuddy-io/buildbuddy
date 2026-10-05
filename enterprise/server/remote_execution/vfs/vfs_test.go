@@ -32,6 +32,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
@@ -131,6 +132,24 @@ func (c *countingFileSystemClient) GetAttr(ctx context.Context, req *vfspb.GetAt
 func (c *countingFileSystemClient) GetDirectoryContents(ctx context.Context, req *vfspb.GetDirectoryContentsRequest, opts ...grpc.CallOption) (*vfspb.GetDirectoryContentsResponse, error) {
 	c.getDirectoryContentsCount.Add(1)
 	return c.FileSystemClient.GetDirectoryContents(ctx, req, opts...)
+}
+
+type contextCheckingFileSystemClient struct {
+	vfspb.FileSystemClient
+}
+
+func (c *contextCheckingFileSystemClient) Read(ctx context.Context, req *vfspb.ReadRequest, opts ...grpc.CallOption) (*vfspb.ReadResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	return c.FileSystemClient.Read(ctx, req, opts...)
+}
+
+func (c *contextCheckingFileSystemClient) Write(ctx context.Context, req *vfspb.WriteRequest, opts ...grpc.CallOption) (*vfspb.WriteResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	return c.FileSystemClient.Write(ctx, req, opts...)
 }
 
 type blockingGetDirectoryContentsClient struct {
@@ -1318,4 +1337,60 @@ func TestMknod(t *testing.T) {
 	require.NoError(t, err)
 	rs = rawStat(t, testCharDevice)
 	require.EqualValues(t, unix.S_IFCHR, rs.Mode&unix.S_IFMT)
+}
+
+func TestFileHandleRequestContext(t *testing.T) {
+	for _, open := range []bool{false, true} {
+		name := "Create"
+		if open {
+			name = "Open"
+		}
+		t.Run(name, func(t *testing.T) {
+			env := setupEnv(t)
+			_, client, _ := setupVFSWithInputTreeAndClient(t, env, &repb.Tree{Root: &repb.Directory{}}, &vfs.Options{}, func(base vfspb.FileSystemClient) vfspb.FileSystemClient {
+				return &contextCheckingFileSystemClient{FileSystemClient: base}
+			})
+			inode, err := client.GetInode(1)
+			require.NoError(t, err)
+			root := inode.Operations().(*vfs.Node)
+			cancelRequest := make(chan struct{})
+			requestCtx := &fuse.Context{Cancel: cancelRequest}
+			var fh fusefs.FileHandle
+			if open {
+				child, errno := root.Mknod(t.Context(), "file", unix.S_IFREG|0644, 0, &fuse.EntryOut{})
+				require.Zero(t, errno)
+				fh, _, errno = child.Operations().(*vfs.Node).Open(requestCtx, unix.O_RDWR)
+				require.Zero(t, errno)
+			} else {
+				_, handle, _, errno := root.Create(requestCtx, "file", unix.O_RDWR|unix.O_CREAT, 0644, &fuse.EntryOut{})
+				require.Zero(t, errno)
+				fh = handle
+			}
+			defer fh.(fusefs.FileReleaser).Release(t.Context())
+			written, errno := fh.(fusefs.FileWriter).Write(t.Context(), []byte("hello"), 0)
+			require.Zero(t, errno)
+			require.EqualValues(t, 5, written)
+			// go-fuse pools request cancellation channels, so a later interrupt
+			// may close the channel that belonged to Open/Create.
+			close(cancelRequest)
+			buf := make([]byte, 5)
+			result, errno := fh.(fusefs.FileReader).Read(t.Context(), buf, 0)
+			require.Zero(t, errno)
+			data, code := result.Bytes(buf)
+			result.Done()
+			require.Equal(t, fuse.OK, code)
+			require.Equal(t, "hello", string(data))
+			_, errno = fh.(fusefs.FileWriter).Write(t.Context(), []byte("hello"), 0)
+			require.Zero(t, errno)
+
+			// Cancellation of the current operation must still be respected.
+			_, errno = fh.(fusefs.FileWriter).Write(requestCtx, []byte("x"), 0)
+			require.Equal(t, syscall.EINTR, errno)
+			result, errno = fh.(fusefs.FileReader).Read(requestCtx, buf, 0)
+			require.Zero(t, errno)
+			_, code = result.Bytes(buf)
+			result.Done()
+			require.Equal(t, fuse.Status(syscall.EINTR), code)
+		})
+	}
 }
