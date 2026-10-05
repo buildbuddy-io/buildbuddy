@@ -2,7 +2,6 @@ package scheduler_server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"slices"
@@ -29,7 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -42,7 +41,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -52,7 +53,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
-	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
 const (
@@ -111,6 +111,7 @@ type schedulerOpts struct {
 }
 
 func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, context.Context) {
+	testleak.Check(t)
 	redisTarget := testredis.Start(t).Target
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
@@ -127,7 +128,9 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	err = redis_execution_collector.Register(env)
 	require.NoError(t, err)
 
-	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	// Like GracefulStop in production, wait for handlers to return when the
+	// server stops, including any work they do on the way out.
+	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env, grpc.WaitForHandlers(true))
 	testcache.Setup(t, env, lis)
 
 	err = execution_server.Register(env)
@@ -144,6 +147,7 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	t.Cleanup(cancel)
 	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
 	require.NoError(t, err)
+	t.Cleanup(func() { clientConn.Close() })
 	sc := scpb.NewSchedulerClient(clientConn)
 	env.SetSchedulerClient(sc)
 
@@ -161,6 +165,30 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 		ctx = authenticatedCtx
 	}
 	return env, ctx
+}
+
+// newTestFlagProvider returns a flag provider that serves the given flags.
+func newTestFlagProvider(t *testing.T, flags map[string]memprovider.InMemoryFlag) *experiments.FlagProvider {
+	require.NoError(t, openfeature.SetProviderAndWait(memprovider.NewInMemoryProvider(flags)))
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	return fp
+}
+
+// targeted returns an evaluator that serves the variant returned by pick, or
+// the flag's default variant if pick returns "".
+func targeted(pick func(ctx openfeature.FlattenedContext) string) memprovider.ContextEvaluator {
+	eval := func(flag memprovider.InMemoryFlag, ctx openfeature.FlattenedContext) (any, openfeature.ProviderResolutionDetail) {
+		variant, reason := flag.DefaultVariant, openfeature.DefaultReason
+		if v := pick(ctx); v != "" {
+			variant, reason = v, openfeature.TargetingMatchReason
+		}
+		return flag.Variants[variant], openfeature.ProviderResolutionDetail{Variant: variant, Reason: reason}
+	}
+	return &eval
 }
 
 func getScheduleServer(t *testing.T, userOwnedEnabled, groupOwnedEnabled bool, user string) (*SchedulerServer, context.Context) {
@@ -298,39 +326,23 @@ func TestSchedulerServerGetPoolInfoSelfHostedByDefault(t *testing.T) {
 }
 
 func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
-	tmp := testfs.MakeTempDir(t)
 	overridePool := "experimental-linux-amd64-pool"
-	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
-	"$schema": "https://flagd.dev/schema/v0/flags.json",
-	"flags": {
+	fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
 		"remote_execution.pool_override": {
-			"state": "ENABLED",
-			"defaultVariant": "default",
-			"variants": {
-				"experimentalPool": {
-					"pool": "`+overridePool+`"
-				},
-				"default": {}
+			State:          memprovider.Enabled,
+			DefaultVariant: "default",
+			Variants: map[string]any{
+				"experimentalPool": map[string]any{"pool": overridePool},
+				"default":          map[string]any{},
 			},
-			"targeting": {
-				"if": [
-					{
-						"and": [
-							{ "==": [{ "var": "os" }, "linux"] },
-							{ "==": [{ "var": "arch" }, "amd64"] }
-						]
-					},
-					"experimentalPool"
-				]
-			}
-		}
-	}
-}`)
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
-	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
+			ContextEvaluator: targeted(func(ctx openfeature.FlattenedContext) string {
+				if ctx["os"] == "linux" && ctx["arch"] == "amd64" {
+					return "experimentalPool"
+				}
+				return ""
+			}),
+		},
+	})
 
 	env, ctx := getEnv(t, &schedulerOpts{userOwnedEnabled: true}, "user1")
 	env.SetExperimentFlagProvider(fp)
@@ -362,31 +374,16 @@ func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
 }
 
 func TestSchedulerServerPersistentVolumes(t *testing.T) {
-	tmp := testfs.MakeTempDir(t)
-	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
-	"$schema": "https://flagd.dev/schema/v0/flags.json",
-	"flags": {
+	fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
 		"executor.persistent_volumes": {
-			"state": "ENABLED",
-			"defaultVariant": "default",
-			"variants": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "tmp-cache",
+			Variants: map[string]any{
 				"tmp-cache": "cache:/tmp/.cache",
-				"default": ""
+				"default":   "",
 			},
-			"targeting": {
-				"fractional": [
-					["tmp-cache", 50],
-					["default", 0]
-				]
-			}
-		}
-	}
-}`)
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
-	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
+		},
+	})
 	expflag.SetFlagProvider(fp)
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 
@@ -415,24 +412,13 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
 	// Note: persistent_volumes is just used as an example here. The scheduler
 	// should handle all experiments the same way.
-	tmp := testfs.MakeTempDir(t)
-	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
-	"$schema": "https://flagd.dev/schema/v0/flags.json",
-	"flags": {
+	fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
 		"executor.persistent_volumes": {
-			"state": "ENABLED",
-			"defaultVariant": "enabled",
-			"variants": {
-				"enabled": "cache:/tmp/.cache"
-			}
-		}
-	}
-}`)
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
-	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
+			State:          memprovider.Enabled,
+			DefaultVariant: "enabled",
+			Variants:       map[string]any{"enabled": "cache:/tmp/.cache"},
+		},
+	})
 	expflag.SetFlagProvider(fp)
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 
@@ -797,6 +783,17 @@ func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, err
 		task:    task,
 		leaseID: rsp.GetLeaseId(),
 	}
+	// Like a real executor, close the lease while still registered, so that
+	// the scheduler can promptly re-enqueue a task that is still claimed.
+	// Wait for the scheduler to finish with the lease.
+	e.t.Cleanup(func() {
+		stream.CloseSend()
+		for {
+			if _, err := stream.Recv(); err != nil {
+				return
+			}
+		}
+	})
 	return lease, nil
 }
 
@@ -1274,30 +1271,19 @@ func configureLeaseTaskGroupCheck(t *testing.T, env *testenv.TestEnv, enforce bo
 	if enforce {
 		defaultVariant = "on"
 	}
-	targeting := ""
-	if len(excludedGroupIDs) > 0 {
-		excluded, err := json.Marshal(excludedGroupIDs)
-		require.NoError(t, err)
-		targeting = `,
-			"targeting": {
-				"if": [{"in": [{"var": "group_id"}, ` + string(excluded) + `]}, "off"]
-			}`
-	}
-	configFile := testfs.WriteFile(t, testfs.MakeTempDir(t), "config.flagd.json", `{
-	"$schema": "https://flagd.dev/schema/v0/flags.json",
-	"flags": {
-		"`+checkTaskAccessExperiment+`": {
-			"state": "ENABLED",
-			"defaultVariant": "`+defaultVariant+`",
-			"variants": {"on": true, "off": false}`+targeting+`
-		}
-	}
-}`)
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
-	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
+	fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
+		checkTaskAccessExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: defaultVariant,
+			Variants:       map[string]any{"on": true, "off": false},
+			ContextEvaluator: targeted(func(ctx openfeature.FlattenedContext) string {
+				if groupID, ok := ctx["group_id"].(string); ok && slices.Contains(excludedGroupIDs, groupID) {
+					return "off"
+				}
+				return ""
+			}),
+		},
+	})
 	env.SetExperimentFlagProvider(fp)
 }
 
@@ -2384,4 +2370,15 @@ func TestGetNewestVersion_ScopedToSharedPoolGroup(t *testing.T) {
 	v := s.getNewestVersion(ctx)
 	require.NotNil(t, v)
 	require.Equal(t, "2.153.0", v.String())
+}
+
+func TestShutdown_StopsBackgroundGoroutines(t *testing.T) {
+	// getEnv checks for leaked goroutines, which catches any goroutines (such
+	// as an executor's stream receiver) still running after shutdown.
+	env, _ := getEnv(t, &schedulerOpts{}, "user1")
+	executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
+	executor.Register()
+
+	env.GetHealthChecker().Shutdown()
+	env.GetHealthChecker().WaitForGracefulShutdown()
 }
