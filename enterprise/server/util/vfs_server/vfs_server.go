@@ -973,6 +973,7 @@ func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, pare
 	}
 
 	parentNode.mu.Lock()
+	inheritSetgid(parentNode, node.attrs, false)
 	if parentNode.children == nil {
 		parentNode.children = make(map[string]*fsNode)
 	}
@@ -980,6 +981,35 @@ func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, pare
 	parentNode.mu.Unlock()
 	p.addNode(node)
 	return node, nil
+}
+
+// inheritSetgid gives a new child the group of a setgid parent directory, and
+// propagates the setgid bit to child directories. parent.mu must be held.
+func inheritSetgid(parent *fsNode, attrs *vfspb.Attrs, isDir bool) {
+	if parent.attrs.GetPerm()&syscall.S_ISGID == 0 {
+		return
+	}
+	attrs.Gid = parent.attrs.GetGid()
+	if isDir {
+		attrs.Perm |= syscall.S_ISGID
+	}
+}
+
+// checkChown applies the Linux rules for changing ownership: only root may
+// change the owner, and the owner may only change the group to its own.
+func checkChown(request *vfspb.SetAttrRequest, attrs *vfspb.Attrs) error {
+	caller := request.GetCaller()
+	if caller.GetUid() == 0 {
+		return nil
+	}
+	isOwner := caller.GetUid() == attrs.GetUid()
+	if request.Uid != nil && (!isOwner || request.GetUid() != attrs.GetUid()) {
+		return syscall.EPERM
+	}
+	if request.Gid != nil && (!isOwner || (request.GetGid() != attrs.GetGid() && request.GetGid() != caller.GetGid())) {
+		return syscall.EPERM
+	}
+	return nil
 }
 
 func (p *Server) createFile(ctx context.Context, mode uint32, parentNode *fsNode, name string, owner *vfspb.Owner) (*fsNode, error) {
@@ -1473,6 +1503,9 @@ func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*v
 
 func (p *Server) processSetAttr(node *fsNode, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
 	// Ownership is tracked virtually; backing files are owned by the executor.
+	if err := checkChown(request, newAttrs); err != nil {
+		return err
+	}
 	if request.Uid != nil {
 		newAttrs.Uid = request.GetUid()
 	}
@@ -1666,6 +1699,7 @@ func (p *Server) Mkdir(ctx context.Context, request *vfspb.MkdirRequest) (*vfspb
 		},
 		parent: parentNode,
 	}
+	inheritSetgid(parentNode, newNode.attrs, true)
 	parentNode.children[request.GetName()] = newNode
 	p.addNode(newNode)
 
@@ -1740,6 +1774,7 @@ func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*v
 	node := newSymlinkNode(parentNode, request.GetName(), request.GetTarget())
 	node.attrs.Uid = request.GetOwner().GetUid()
 	node.attrs.Gid = request.GetOwner().GetGid()
+	inheritSetgid(parentNode, node.attrs, false)
 	parentNode.children[request.GetName()] = node
 	id := p.addNode(node)
 	return &vfspb.SymlinkResponse{Id: id, Attrs: node.attrs}, nil

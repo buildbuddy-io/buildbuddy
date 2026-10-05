@@ -1329,6 +1329,9 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 	if gid, ok := in.GetGID(); ok {
 		req.Gid = &gid
 	}
+	if req.Uid != nil || req.Gid != nil {
+		req.Caller = callerOwner(ctx)
+	}
 	if s, ok := in.GetSize(); ok {
 		req.SetSize = &vfspb.SetAttrRequest_SetSize{Size: int64(s)}
 	}

@@ -241,6 +241,8 @@ message SetAttrRequest {
 
   optional uint32 uid = 9;
   optional uint32 gid = 10;
+  // The process changing uid or gid, used to check permissions.
+  Owner caller = 11;
 }
 
 message SetAttrResponse {

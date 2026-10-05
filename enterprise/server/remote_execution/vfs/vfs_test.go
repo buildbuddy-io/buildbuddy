@@ -1359,6 +1359,36 @@ func TestOwnership(t *testing.T) {
 		require.Equal(t, uint32(65534), out.Uid)
 		require.Equal(t, uint32(65533), out.Gid)
 	})
+	rootCtx := &fuse.Context{}
+	setattr := func(ctx *fuse.Context, inode *fusefs.Inode, in *fuse.SetAttrIn) syscall.Errno {
+		return inode.Operations().(*vfs.Node).Setattr(ctx, nil, in, &fuse.AttrOut{})
+	}
+	t.Run("setgid", func(t *testing.T) {
+		shared, errno := root.Mkdir(ctx, "shared", 0775, &fuse.EntryOut{})
+		require.Zero(t, errno)
+		require.Zero(t, setattr(rootCtx, shared, &fuse.SetAttrIn{Valid: fuse.FATTR_MODE | fuse.FATTR_GID, Mode: 02775, Gid: 1234}))
+		var dirOut fuse.EntryOut
+		_, errno = shared.Operations().(*vfs.Node).Mkdir(ctx, "subdir", 0775, &dirOut)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(1234), dirOut.Gid)
+		require.NotZero(t, dirOut.Mode&syscall.S_ISGID)
+		var fileOut fuse.EntryOut
+		_, handle, _, errno := shared.Operations().(*vfs.Node).Create(ctx, "file", uint32(os.O_CREATE|os.O_RDWR), 0644, &fileOut)
+		require.Zero(t, errno)
+		defer handle.(fusefs.FileReleaser).Release(ctx)
+		require.Equal(t, uint32(1234), fileOut.Gid)
+	})
+	t.Run("chown_permissions", func(t *testing.T) {
+		file, handle, _, errno := root.Create(ctx, "perm-file", uint32(os.O_CREATE|os.O_RDWR), 0644, &fuse.EntryOut{})
+		require.Zero(t, errno)
+		defer handle.(fusefs.FileReleaser).Release(ctx)
+		require.Equal(t, syscall.EPERM, setattr(ctx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_UID, Uid: 0}))
+		require.Equal(t, syscall.EPERM, setattr(ctx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_GID, Gid: 0}))
+		otherCtx := &fuse.Context{Uid: 1000, Gid: 1000}
+		require.Equal(t, syscall.EPERM, setattr(otherCtx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_GID, Gid: 1000}))
+		require.Zero(t, setattr(rootCtx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_GID, Gid: 1234}))
+		require.Zero(t, setattr(ctx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_GID, Gid: 65533}))
+	})
 	t.Run("chown", func(t *testing.T) {
 		path := filepath.Join(mount, "chowned")
 		require.NoError(t, os.WriteFile(path, nil, 0600))
