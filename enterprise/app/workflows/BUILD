@@ -15,6 +15,7 @@ ts_library(
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
+        "//app/components/banner",
         "//app/components/breadcrumbs",
         "//app/components/button",
         "//app/components/button:link_button",
@@ -45,7 +46,6 @@ ts_library(
     deps = [
         "//:node_modules/tslib",
         "//app/util:git",
-        "//proto:workflow_ts_proto",
     ],
 )
 
@@ -55,7 +55,6 @@ ts_jasmine_node_test(
     deps = [
         ":run_workflow_deep_link",
         "//:node_modules/tslib",
-        "//proto:workflow_ts_proto",
     ],
 )
 
