@@ -47,12 +47,11 @@ export default class SingleActionChartComponent extends React.Component<Props> {
     if (timeUsec === undefined) {
       return undefined;
     }
-    let bucket: execution_stats.AggregatedExecutionTimelineEntry | undefined;
     for (const entry of this.props.timeline.aggregatedStats) {
       const start = +entry.bucketStartTimeUsec;
       const end = intervalEndUsec(this.props.interval, start);
       if (start <= timeUsec && end > timeUsec) {
-        return bucket;
+        return entry;
       }
     }
     return undefined;
