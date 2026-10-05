@@ -57,7 +57,6 @@ go_test(
         "//server/util/proto",
         "//server/util/status",
         "//server/util/uuid",
-        "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//config",
         "@com_github_lni_dragonboat_v4//statemachine",

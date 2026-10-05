@@ -505,7 +505,7 @@ func (sm *Replica) prepareTransaction(wb pebble.Batch, txid []byte, batchReq *rf
 
 	buf, err := proto.Marshal(batchReq)
 	if err != nil {
-		return nil, nil, err
+		return nil, &rfpb.BatchCmdResponse{Status: statusProto(err)}, nil
 	}
 
 	txn, batchRsp, err := sm.buildTransaction(txid, batchReq)

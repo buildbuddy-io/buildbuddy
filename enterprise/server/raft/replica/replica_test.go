@@ -33,7 +33,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
-	cpebble "github.com/cockroachdb/pebble"
 	dbconfig "github.com/lni/dragonboat/v4/config"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 
@@ -2072,14 +2071,14 @@ type txnFaultBatch struct {
 	db *txnFaultDB
 }
 
-func (b *txnFaultBatch) Apply(other pebble.Batch, opts *cpebble.WriteOptions) error {
+func (b *txnFaultBatch) Apply(other pebble.Batch, opts *pebble.WriteOptions) error {
 	if wrapped, ok := other.(*txnFaultBatch); ok {
 		other = wrapped.Batch
 	}
 	return b.Batch.Apply(other, opts)
 }
 
-func (b *txnFaultBatch) Commit(opts *cpebble.WriteOptions) error {
+func (b *txnFaultBatch) Commit(opts *pebble.WriteOptions) error {
 	if b.db.beforeCommit != nil {
 		if err := b.db.beforeCommit(); err != nil {
 			return err
@@ -2565,7 +2564,7 @@ func TestRollbackMarkerGCFiltersByTimestamp(t *testing.T) {
 	oldTxid := []byte("old-tx")
 	newTxid := []byte("new-tx")
 
-	require.NoError(t, applyTransaction(t, em, repl.Replica, oldTxid, &rfpb.BatchCmdRequest{FinalizeOperation: rfpb.FinalizeOperation_ROLLBACK.Enum(), TxnFinalizedAtUsec: now.Add(-4*24*time.Hour).UnixMicro()}))
+	require.NoError(t, applyTransaction(t, em, repl.Replica, oldTxid, &rfpb.BatchCmdRequest{FinalizeOperation: rfpb.FinalizeOperation_ROLLBACK.Enum(), TxnFinalizedAtUsec: now.Add(-4 * 24 * time.Hour).UnixMicro()}))
 	require.NoError(t, applyTransaction(t, em, repl.Replica, newTxid, &rfpb.BatchCmdRequest{FinalizeOperation: rfpb.FinalizeOperation_ROLLBACK.Enum(), TxnFinalizedAtUsec: now.UnixMicro()}))
 
 	hasMarkers, err := repl.HasTxnRollbackMarkersBeforeForTest(now.Add(-3 * 24 * time.Hour).UnixMicro())
