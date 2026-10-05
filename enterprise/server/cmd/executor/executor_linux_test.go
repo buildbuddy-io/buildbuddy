@@ -17,8 +17,6 @@ func TestResolveExecutorCPUFraction(t *testing.T) {
 		expectedError bool
 	}{
 		{name: "unset", value: "", cpuLimit: 64_000, expected: 0},
-		{name: "zero cores", value: "0", cpuLimit: 64_000, expected: 0},
-		{name: "zero milliCPU", value: "0m", cpuLimit: 64_000, expected: 0},
 		// Cores and milliCPU are a share of the CPU limit: 4000 / 64000.
 		{name: "cores", value: "4", cpuLimit: 64_000, expected: 0.0625},
 		{name: "fractional cores", value: "1.5", cpuLimit: 64_000, expected: 1500.0 / 64_000},
@@ -30,6 +28,10 @@ func TestResolveExecutorCPUFraction(t *testing.T) {
 		{name: "more than the CPU limit", value: "65000m", cpuLimit: 64_000, expectedError: true},
 		{name: "negative cores", value: "-1", cpuLimit: 64_000, expectedError: true},
 		{name: "negative milliCPU", value: "-500m", cpuLimit: 64_000, expectedError: true},
+		// Like "0%", zero cores and values that round down to 0m are errors.
+		{name: "zero cores", value: "0", cpuLimit: 64_000, expectedError: true},
+		{name: "zero milliCPU", value: "0m", cpuLimit: 64_000, expectedError: true},
+		{name: "less than 1 milliCPU", value: "0.0004", cpuLimit: 64_000, expectedError: true},
 		{name: "NaN cores", value: "NaN", cpuLimit: 64_000, expectedError: true},
 		{name: "fractional milliCPU", value: "1.5m", cpuLimit: 64_000, expectedError: true},
 		{name: "zero percent", value: "0%", cpuLimit: 64_000, expectedError: true},

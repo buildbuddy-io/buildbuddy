@@ -135,7 +135,9 @@ func ParseCPU(v string) (cpuMillis int64, _ error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid CPU core count: parse float: %w", err)
 	}
-	if math.IsNaN(f) || math.IsInf(f, 0) {
+	// Reject values that don't fit in int64 milliCPU. Converting them would
+	// overflow, with a result that differs between platforms.
+	if math.IsNaN(f) || math.Abs(f) > math.MaxInt64/1000 {
 		return 0, fmt.Errorf("invalid CPU core count %q", v)
 	}
 

@@ -384,6 +384,7 @@ go_test(
     name = "executor_test",
     srcs = ["executor_linux_test.go"],
     embed = [":executor_lib"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = select({
         "@io_bazel_rules_go//go/platform:linux": [
             "@com_github_stretchr_testify//require",

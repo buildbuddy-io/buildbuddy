@@ -68,6 +68,9 @@ func setupCgroups() (*Cgroups, error) {
 	// On k8s this will be something like "kubepods.slice/pod-abc/container-123"
 	startingCgroup, err := cgroup.GetCurrent()
 	if err != nil {
+		if *childCgroupsExecutorCPU != "" {
+			return nil, fmt.Errorf("get current cgroup (required by executor.child_cgroups_executor_cpu): %w", err)
+		}
 		if errors.Is(err, cgroup.ErrV1NotSupported) {
 			log.Warningf("Note: executor is running under cgroup v1, which has limited support. Some functionality may not work as expected.")
 		} else {
@@ -199,11 +202,11 @@ func resolveExecutorCPUFraction(value string, cpuLimit int64) (float64, error) {
 		return pct / 100, nil
 	}
 	milliCPU, err := resources.ParseCPU(value)
-	if err != nil || milliCPU < 0 {
+	if err != nil {
 		return 0, fmt.Errorf("%q is not a number of cores (e.g. \"2\"), milliCPU (e.g. \"2000m\"), or a percentage (e.g. \"5%%\")", value)
 	}
-	if milliCPU == 0 {
-		return 0, nil
+	if milliCPU < 1 {
+		return 0, fmt.Errorf("%q must be at least 1m", value)
 	}
 	if milliCPU >= cpuLimit {
 		return 0, fmt.Errorf("%q must be less than the CPU limit of %dm", value, cpuLimit)
