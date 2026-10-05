@@ -366,6 +366,9 @@ func (rc *Server) Stop(ctx context.Context) error {
 		}
 		rc.store.Stop(ctx)
 		log.Infof("raft cache store stopped")
+		if rc.clusterStarter != nil {
+			rc.clusterStarter.Close()
+		}
 		rc.conf.GossipManager.Leave()
 		rc.conf.GossipManager.Shutdown()
 
