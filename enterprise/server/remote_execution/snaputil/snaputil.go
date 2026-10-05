@@ -305,6 +305,7 @@ func IsChunkedSnapshotSharingEnabled() bool {
 // network transfer. Snapshots can't be shared across different machine types,
 // so there's not always a need to support snapshot sharing across clusters.
 func GetSnapshotAccessContext(ctx context.Context) context.Context {
+	// TODO: Set the FindMissing quorum header for workflow snapshots.
 	if *storeSnapshotsInLocalClusterOnly {
 		return proxy_util.SetSkipRemote(ctx)
 	}

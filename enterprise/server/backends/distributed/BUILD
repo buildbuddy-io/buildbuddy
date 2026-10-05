@@ -67,6 +67,7 @@ go_test(
         "//server/testutil/testmetrics",
         "//server/testutil/testport",
         "//server/util/compression",
+        "//server/util/findmissing",
         "//server/util/grpc_client",
         "//server/util/kubediscovery",
         "//server/util/log",
@@ -87,5 +88,6 @@ go_test(
         "@io_k8s_client_go//kubernetes/fake",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
     ],
 )

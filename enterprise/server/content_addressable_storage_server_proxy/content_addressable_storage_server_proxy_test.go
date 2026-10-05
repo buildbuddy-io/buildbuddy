@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
@@ -1043,4 +1044,27 @@ func BenchmarkGetTree(b *testing.B) {
 		require.Equal(b, int32(0), streamRequests.Load())
 	}
 
+}
+
+func TestFindMissingBlobs_QuorumBypassesPresenceCache(t *testing.T) {
+	flags.Set(t, "cache_proxy.find_missing_blobs_cache_ttl", 30*time.Second)
+	ctx := testContext()
+	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	require.NoError(t, atime_updater.Register(proxyEnv))
+	proxy := repb.NewContentAddressableStorageClient(runCASProxy(ctx, conn, proxyEnv, t))
+	ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, "US1")
+	d := digestProto(barDigest, 3)
+	update(ctx, proxy, map[*repb.Digest]string{d: "bar"}, t)
+	requestCount.Store(0)
+	findMissing(ctx, proxy, []*repb.Digest{d}, nil, t)
+	findMissing(ctx, proxy, []*repb.Digest{d}, nil, t)
+	require.Equal(t, int32(1), requestCount.Load())
+	// A cached presence result cannot establish or refresh replica quorum.
+	for i := int32(2); i <= 4; i++ {
+		findMissing(findmissing.WithQuorum(ctx), proxy, []*repb.Digest{d}, nil, t)
+		require.Equal(t, i, requestCount.Load())
+	}
 }

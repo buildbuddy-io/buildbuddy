@@ -921,11 +921,13 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.
 
 	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
 	for _, r := range rns {
-		if _, found := c.getLookasideEntry(ctx, r); found {
-			continue
-		} else {
-			stillMissing = append(stillMissing, r)
+		// If quorum is requested, skip the lookaside cache to make sure the required number of replicas have the artifact.
+		if !findmissing.RequiresQuorum(ctx) {
+			if _, found := c.getLookasideEntry(ctx, r); found {
+				continue
+			}
 		}
+		stillMissing = append(stillMissing, r)
 	}
 	if len(stillMissing) == 0 {
 		return nil, nil
@@ -1372,37 +1374,128 @@ func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metri
 	return nil, nil, status.NotFoundErrorf("Exhausted all peers attempting to GetWithMetadata %q.", d.GetHash())
 }
 
+// findMissingOnAllReplicas checks all peers in the peerset concurrently, packing
+// all digests destined for a peer into one RPC. It does not check fallback peers.
+//
+// This differs from checking peers in the peerset one by one, and exiting early
+// if the digest is found on any peer.
+func (c *Cache) findMissingOnAllReplicas(ctx context.Context, hashResources map[string][]*rspb.ResourceName, peerMap map[string]*peerset.PeerSet) (map[string][]string, map[string][]string, error) {
+	peerRequests := make(map[string][]*rspb.ResourceName)
+	for h, rns := range hashResources {
+		for _, peer := range peerMap[h].PreferredPeers {
+			peerRequests[peer] = append(peerRequests[peer], rns[0])
+		}
+	}
+
+	// Protects `present` and `missing`.
+	var mu sync.Mutex
+	// Maps track digest -> peers that have / are missing the digest.
+	present := make(map[string][]string)
+	missing := make(map[string][]string)
+
+	eg, gCtx := errgroup.WithContext(ctx)
+	for peer, rns := range peerRequests {
+		eg.Go(func() error {
+			peerMissing, err := c.remoteFindMissing(gCtx, peer, rns)
+			if err != nil {
+				// Don't try to repair peers that we failed to reach,
+				// so don't add them to `missing`.
+				return nil
+			}
+			missingHashes := make(map[string]struct{}, len(peerMissing))
+			for _, d := range peerMissing {
+				missingHashes[d.GetHash()] = struct{}{}
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, r := range rns {
+				h := r.GetDigest().GetHash()
+				if _, absent := missingHashes[h]; absent {
+					missing[h] = append(missing[h], peer)
+				} else {
+					present[h] = append(present[h], peer)
+				}
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	return present, missing, nil
+}
+
 func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	if len(resources) == 0 {
 		return nil, nil
 	}
+	// During node migrations, disable quorum requirements so that
+	// reads are respected from both the old and new replica sets,
+	// until data has fully migrated to the new nodes.
+	requireQuorum := findmissing.RequiresQuorum(ctx) && len(c.opts.NewNodes) == 0
+	requiredReplicas := 1
+	if requireQuorum {
+		requiredReplicas = c.opts.ReplicationFactor/2 + 1
+		// Required replicas should not equal or be greater than the replication factor, so that the cache can tolerate a replica restart.
+		if requiredReplicas >= c.opts.ReplicationFactor {
+			return nil, status.FailedPreconditionError("Quorum availability checks are not supported by the current cache configuration")
+		}
+	}
 	purpose := findmissing.PurposeFromContext(ctx)
 
-	mu := sync.RWMutex{} // protects(foundMap)
+	mu := sync.RWMutex{} // protects digestToPeersWithData and failure updates to PeerSets in peerMap
 	hashResources := make(map[string][]*rspb.ResourceName, 0)
-	foundMap := make(map[string]struct{}, len(resources))
 	peerMap := make(map[string]*peerset.PeerSet, len(resources))
+	type peersWithDataMetadata struct {
+		peers             []string
+		numPeersConsulted int
+	}
+	digestToPeersWithData := make(map[string]*peersWithDataMetadata, len(resources))
+	peersMissingData := make(map[string][]string)
+
 	for _, r := range resources {
 		hash := r.GetDigest().GetHash()
 		hashResources[hash] = append(hashResources[hash], r)
 		if _, ok := peerMap[hash]; !ok {
-			peerMap[hash] = c.readPeers(r)
+			if requireQuorum {
+				// If quorum is requested, don't consider fallback peers.
+				// Only check the peers that were expected to write the data.
+				ps, err := c.writePeers(r)
+				if err != nil {
+					return nil, err
+				}
+				peerMap[hash] = peerset.New(ps.PreferredPeers, nil)
+			} else {
+				peerMap[hash] = c.readPeers(r)
+			}
 		}
 	}
 
-	hitMetric := metrics.DistributedCachePeerLookups.WithLabelValues(
-		"FindMissing",
-		metrics.HitStatusLabel,
-	)
 	lookups := 0
-	for {
+	if requireQuorum {
+		present, missing, err := c.findMissingOnAllReplicas(ctx, hashResources, peerMap)
+		if err != nil {
+			return nil, err
+		}
+		peersMissingData = missing
+		for h, peers := range present {
+			digestToPeersWithData[h] = &peersWithDataMetadata{
+				peers: peers, numPeersConsulted: len(peerMap[h].PreferredPeers),
+			}
+		}
+		lookups = 1
+	}
+	for !requireQuorum {
 		// Each iteration through this outer loop sends a "batch" of requests in
 		// parallel, until all digests have been found or we have exhausted all
 		// peers.
 		peerRequests := make(map[string][]*rspb.ResourceName, 0)
 		for h, perHashResources := range hashResources {
 			// If a previous request has already found this digest, skip it.
-			if _, ok := foundMap[h]; ok {
+			if _, ok := digestToPeersWithData[h]; ok {
 				continue
 			}
 
@@ -1418,7 +1511,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		if len(peerRequests) == 0 {
 			stillMissing := make([]string, 0)
 			for h := range hashResources {
-				if _, ok := foundMap[h]; !ok {
+				if _, ok := digestToPeersWithData[h]; !ok {
 					stillMissing = append(stillMissing, h)
 				}
 			}
@@ -1448,8 +1541,9 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 				for _, r := range resources {
 					hash := r.GetDigest().GetHash()
 					if _, ok := peerMissingHashes[hash]; !ok {
-						foundMap[hash] = struct{}{}
-						hitMetric.Observe(float64(lookups))
+						digestToPeersWithData[hash] = &peersWithDataMetadata{
+							peers: []string{peer}, numPeersConsulted: lookups,
+						}
 					}
 				}
 				return nil
@@ -1463,26 +1557,44 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			}
 			continue
 		}
-		if len(foundMap) == len(hashResources) {
+		if len(digestToPeersWithData) == len(hashResources) {
 			// If we've found everything, we can exit now.
 			break
+		}
+	}
+
+	hitMetric := metrics.DistributedCachePeerLookups.WithLabelValues(
+		"FindMissing",
+		metrics.HitStatusLabel,
+	)
+	for _, peersWithData := range digestToPeersWithData {
+		if len(peersWithData.peers) >= requiredReplicas {
+			hitMetric.Observe(float64(peersWithData.numPeersConsulted))
 		}
 	}
 
 	// For every digest we found, if we did not find it
 	// on the first peer in our list, we want to backfill it.
 	backfills := make([]*backfillOrder, 0)
-	for h := range foundMap {
+	for h, peersWithData := range digestToPeersWithData {
 		r := hashResources[h][0]
-		ps := peerMap[h]
-		backfills = append(backfills, c.getBackfillOrders(r, ps)...)
+		if requireQuorum {
+			// If quorum is requested, backfill any replicas that are missing data.
+			if *enableBackfill && peersWithData != nil && len(peersMissingData[h]) > 0 {
+				backfills = append(backfills, &backfillOrder{r: r, source: peersWithData.peers[0], dests: peersMissingData[h]})
+			}
+		} else {
+			backfills = append(backfills, c.getBackfillOrders(r, peerMap[h])...)
+		}
 	}
 	c.backfillPeers(ctx, backfills)
 
 	var missing []*repb.Digest
 	for _, r := range resources {
 		d := r.GetDigest()
-		if _, ok := foundMap[d.GetHash()]; !ok {
+		// Report the quorum observed before repair; a repair attempt alone
+		// does not turn an under-replicated digest into a hit.
+		if peersWithData := digestToPeersWithData[d.GetHash()]; peersWithData == nil || len(peersWithData.peers) < requiredReplicas {
 			missing = append(missing, d)
 		}
 	}
