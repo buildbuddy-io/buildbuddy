@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Tests for repo_highest_version.sh, run against temporary git repositories.
+set -euo pipefail
+
+SCRIPT="$PWD/$REPO_HIGHEST_VERSION"
+
+# Bazel sets TEST_TMPDIR to a per-test directory inside the sandbox.
+TMP="${TEST_TMPDIR:?run this with bazel test}"
+# Keep this compatible with older git (the Linux RBE image has git 2.25), and
+# isolated from the host's git config.
+export HOME="$TMP" XDG_CONFIG_HOME="$TMP/xdg" GIT_CONFIG_NOSYSTEM=1
+export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
+export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
+
+failures=0
+fail() {
+  echo "FAIL: $*" >&2
+  failures=$((failures + 1))
+}
+# expect_output DESCRIPTION EXPECTED
+expect_output() {
+  local desc=$1 want=$2 got
+  if ! got=$("$SCRIPT" 2>/dev/null); then
+    fail "$desc: command failed, want '$want'"
+  elif [[ "$got" != "$want" ]]; then
+    fail "$desc: got '$got', want '$want'"
+  fi
+}
+# expect_failure DESCRIPTION
+expect_failure() {
+  local desc=$1 got
+  if got=$("$SCRIPT" 2>/dev/null); then
+    fail "$desc: succeeded with '$got', want failure"
+  elif [[ -n "$got" ]]; then
+    fail "$desc: printed '$got' on failure, want no output"
+  fi
+}
+# Give every commit and tag a later timestamp than the last, so creation-date
+# order is well defined (and differs from version order where it matters).
+now=1700000000
+tick() {
+  now=$((now + 60))
+  export GIT_AUTHOR_DATE="@$now +0000" GIT_COMMITTER_DATE="@$now +0000"
+}
+commit() {
+  tick
+  git commit -q --allow-empty -m "$1"
+}
+tag() {
+  tick
+  git tag -a "$1" -m "$1"
+}
+
+git init -q "$TMP/repo"
+cd "$TMP/repo"
+git symbolic-ref HEAD refs/heads/master
+
+expect_failure "no commits"
+commit a
+expect_failure "no tags"
+
+tag v2.9.0
+commit b
+tag v2.10.0
+tag not-a-version
+tag v2.11.0-rc1
+tag cli-v5.0.0
+expect_output "versions sort numerically, non-vX.Y.Z tags ignored" v2.10.0
+
+# Cut and tag two release branches.
+commit c
+git checkout -q -b bb_release_1
+commit cherry-pick-1
+tag v2.11.0
+git checkout -q master
+commit d
+git checkout -q -b bb_release_2
+commit cherry-pick-2
+tag v2.12.0
+expect_output "newest release" v2.12.0
+
+# Patching the older branch creates the newest tag by creation date, but the
+# next minor release must still bump from v2.12.0.
+git checkout -q bb_release_1
+commit cherry-pick-3
+tag v2.11.1
+expect_output "patch to an older branch doesn't win" v2.12.0
+
+# Tags on other branches count, even when they aren't in HEAD's history.
+git checkout -q master
+expect_output "tags on other branches count" v2.12.0
+
+# Only tags are needed, not history.
+git clone -q --depth 1 --branch master "file://$TMP/repo" "$TMP/shallow"
+cd "$TMP/shallow"
+git fetch -q --tags
+expect_output "shallow clone with fetched tags" v2.12.0
+
+if ((failures > 0)); then
+  echo "$failures failure(s)" >&2
+  exit 1
+fi
+echo "PASS"

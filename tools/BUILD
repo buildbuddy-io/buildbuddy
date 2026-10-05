@@ -23,3 +23,10 @@ sh_test(
     data = ["branch_highest_version.sh"],
     env = {"BRANCH_HIGHEST_VERSION": "$(rootpath :branch_highest_version.sh)"},
 )
+
+sh_test(
+    name = "repo_highest_version_test",
+    srcs = ["repo_highest_version_test.sh"],
+    data = ["repo_highest_version.sh"],
+    env = {"REPO_HIGHEST_VERSION": "$(rootpath :repo_highest_version.sh)"},
+)
