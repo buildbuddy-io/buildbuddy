@@ -92,6 +92,25 @@ export function computeTimeKeys(
   return { timeKeys: keys, ticks: keys };
 }
 
+function intervalUnit(t: stats.IntervalType): moment.unitOfTime.DurationConstructor {
+  switch (t) {
+    case stats.IntervalType.INTERVAL_TYPE_MINUTE:
+      return "minutes";
+    case stats.IntervalType.INTERVAL_TYPE_HOUR:
+      return "hours";
+    default:
+      return "days";
+  }
+}
+
+export function intervalEndUsec(interval: stats.StatsInterval, startUsec: number): number {
+  return (
+    moment(startUsec / 1000)
+      .add(+interval.count, intervalUnit(interval.type))
+      .valueOf() * 1000
+  );
+}
+
 export function renderMetricValue(m: stat_filter.Metric, v: number) {
   if (isExecutionMetric(m)) {
     switch (m.execution) {

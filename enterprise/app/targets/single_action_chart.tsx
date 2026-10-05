@@ -4,7 +4,7 @@ import format from "../../../app/format/format";
 import ActionCompareButtonComponent from "../../../app/invocation/action_compare_button";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
-import { computeTimeKeys } from "../trends/common";
+import { computeTimeKeys, intervalEndUsec } from "../trends/common";
 import TrendsChartComponent, {
   ChartColor,
   ChartDataSeries,
@@ -22,8 +22,9 @@ interface Props {
   domain: [Date, Date];
 }
 
-// Sampled executions farther than this from the mouse don't get a tooltip.
-const NEAREST_POINT_MAX_DISTANCE_PX = 15;
+// The user's mouse pointer must be at least this close to a scatter point
+// before we'll consider showing it as a tooltip.
+const SCATTER_TOOLTIP_RADIUS_PX = 15;
 
 const LOWER_QUANTILE = 10;
 const MIDDLE_QUANTILE = 50;
@@ -33,33 +34,15 @@ function getQuantile(quantiles: execution_stats.Quantile[], target: number): num
   return +(quantiles.find((v) => v.quantile === target)?.value ?? 0);
 }
 
-function intervalUnit(interval: stats.StatsInterval): moment.unitOfTime.DurationConstructor {
-  switch (interval.type) {
-    case stats.IntervalType.INTERVAL_TYPE_MINUTE:
-      return "minutes";
-    case stats.IntervalType.INTERVAL_TYPE_HOUR:
-      return "hours";
-    default:
-      return "days";
-  }
-}
-
 /**
- * Plots a single metric of one action over time: the median as a line, the
- * p10-p90 range as a band, and every sampled execution as a scatter point.
+ * Plots a single metric of one action over time, with the median as a solid line,
+ * the p10-p90 range as a shaded band, and a collection of representative executions
+ * (sampled or otherwise) shown in a scatter plot.
  */
 export default class SingleActionChartComponent extends React.Component<Props> {
-  // Returns the (exclusive) end of the aggregation bucket starting at
-  // `startUsec`, in microseconds.
-  private bucketEndUsec(startUsec: number): number {
-    return (
-      moment(startUsec / 1000)
-        .add(+this.props.interval.count, intervalUnit(this.props.interval))
-        .valueOf() * 1000
-    );
-  }
-
-  // Returns the aggregated stats for the bucket containing `timeUsec`, if any.
+  // Finds the time bucket that contains a given timestamp.  When we are showing
+  // a tooltip for a single scatter plot point, we use this to find and show the
+  // corresponding aggregate statistics of the bucket that the point belongs to.
   private findBucket(timeUsec: number | undefined): execution_stats.AggregatedExecutionTimelineEntry | undefined {
     if (timeUsec === undefined) {
       return undefined;
@@ -67,16 +50,12 @@ export default class SingleActionChartComponent extends React.Component<Props> {
     let bucket: execution_stats.AggregatedExecutionTimelineEntry | undefined;
     for (const entry of this.props.timeline.aggregatedStats) {
       const start = +entry.bucketStartTimeUsec;
-      if (start <= timeUsec && (!bucket || start > +bucket.bucketStartTimeUsec)) {
-        bucket = entry;
+      const end = intervalEndUsec(this.props.interval, start);
+      if (start <= timeUsec && end > timeUsec) {
+        return bucket;
       }
     }
-    // Buckets without executions aren't returned, so a time past the end of
-    // the latest bucket that starts before it isn't covered by any bucket.
-    if (!bucket?.summary || timeUsec >= this.bucketEndUsec(+bucket.bucketStartTimeUsec)) {
-      return undefined;
-    }
-    return bucket;
+    return undefined;
   }
 
   private formatBucketRange(bucket: execution_stats.AggregatedExecutionTimelineEntry): string {
@@ -84,7 +63,7 @@ export default class SingleActionChartComponent extends React.Component<Props> {
     if (this.props.interval.type === stats.IntervalType.INTERVAL_TYPE_DAY) {
       return start.format("dddd, MMMM Do");
     }
-    const end = moment(this.bucketEndUsec(+bucket.bucketStartTimeUsec) / 1000);
+    const end = moment(intervalEndUsec(this.props.interval, +bucket.bucketStartTimeUsec) / 1000);
     const endFormat = start.isSame(end, "day") ? "h:mm a" : "MMM D, h:mm a";
     return `${start.format("MMM D, h:mm a")} – ${end.format(endFormat)}`;
   }
@@ -117,7 +96,7 @@ export default class SingleActionChartComponent extends React.Component<Props> {
           <div className="tooltip-section">
             <div className="trend-chart-hover-label">{this.formatBucketRange(bucket)}</div>
             <div className="tooltip-row">
-              <span>p10</span>
+              <span>p{LOWER_QUANTILE}</span>
               <span className="tooltip-value">{this.props.formatValue(getQuantile(quantiles, LOWER_QUANTILE))}</span>
             </div>
             <div className="tooltip-row">
@@ -125,7 +104,7 @@ export default class SingleActionChartComponent extends React.Component<Props> {
               <span className="tooltip-value">{this.props.formatValue(getQuantile(quantiles, MIDDLE_QUANTILE))}</span>
             </div>
             <div className="tooltip-row">
-              <span>p90</span>
+              <span>p{UPPER_QUANTILE}</span>
               <span className="tooltip-value">{this.props.formatValue(getQuantile(quantiles, UPPER_QUANTILE))}</span>
             </div>
           </div>
@@ -185,9 +164,6 @@ export default class SingleActionChartComponent extends React.Component<Props> {
 
     const series: ChartDataSeries[] = [];
 
-    // TODO: This isn't a journal article and we value aesthetics a bit.  Extend
-    // the line and area components out to the edge of whatever the minimum
-    // observed scatter points are so that the chart looks nice.
     series.push({
       name: this.props.title + "line",
       type: SeriesType.LINE,
@@ -237,7 +213,7 @@ export default class SingleActionChartComponent extends React.Component<Props> {
         hideLegend={true}
         standaloneChart={true}
         pointTooltip={{
-          maxDistancePx: NEAREST_POINT_MAX_DISTANCE_PX,
+          maxDistancePx: SCATTER_TOOLTIP_RADIUS_PX,
           render: this.renderTooltip,
           pinnable: true,
         }}
