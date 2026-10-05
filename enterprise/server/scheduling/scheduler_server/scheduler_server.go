@@ -2194,6 +2194,10 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		case msg := <-msgs:
 			req = msg.req
 			err = msg.err
+		case <-ctx.Done():
+			// The receive goroutine stops without reporting an error once
+			// the stream is done, so check for that here.
+			err = ctx.Err()
 		case <-livenessTicker.Chan():
 			if s.clock.Since(lastCheckin) > (s.leaseDuration + s.leaseGracePeriod) {
 				err = status.DeadlineExceededErrorf("lease was not renewed by executor and expired (last renewal: %s)", lastCheckin)
