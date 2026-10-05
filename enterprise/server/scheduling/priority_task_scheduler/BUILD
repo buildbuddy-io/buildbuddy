@@ -17,7 +17,6 @@ go_library(
         "//server/metrics",
         "//server/resources",
         "//server/util/alert",
-        "//server/util/authutil",
         "//server/util/bazel_request",
         "//server/util/expflag",
         "//server/util/flag",

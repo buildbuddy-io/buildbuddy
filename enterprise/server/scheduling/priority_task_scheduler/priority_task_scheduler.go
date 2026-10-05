@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -623,7 +622,7 @@ func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx contex
 	ctx = usageutil.WithLocalServerLabels(ctx)
 
 	if execTask.GetJwt() != "" {
-		ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, execTask.GetJwt())
+		ctx = auth.ContextWithTrustedJWT(ctx, execTask.GetJwt())
 	}
 	rmd := execTask.GetRequestMetadata()
 	if rmd == nil {
@@ -969,7 +968,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 	ctx := log.EnrichContext(q.rootContext, log.ExecutionIDKey, reservation.GetTaskId())
 	ctx, cancel := context.WithCancel(ctx)
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, reservation.GetTraceMetadata())
-	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, reservation.GetJwt())
+	ctx = auth.ContextWithTrustedJWT(ctx, reservation.GetJwt())
 	log.CtxDebugf(ctx, "Scheduling task of size %s", tasksize.String(nextTask.GetTaskSize()))
 
 	q.trackTask(reservation.EnqueueTaskReservationRequest, &cancel)
