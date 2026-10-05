@@ -23,6 +23,13 @@ message Attrs {
   int64 blocks = 7;
   int64 block_size = 8;
   repeated ExtendedAttr extended = 9;
+  uint32 uid = 10;
+  uint32 gid = 11;
+}
+
+message Owner {
+  uint32 uid = 1;
+  uint32 gid = 2;
 }
 
 message SymlinkEntry {
@@ -86,6 +93,7 @@ message MknodRequest {
   string name = 2;
   uint32 mode = 3;
   uint32 dev = 4;
+  Owner owner = 5;
 }
 
 message MknodResponse {
@@ -98,11 +106,13 @@ message CreateRequest {
   string name = 2;
   uint32 flags = 3;
   uint32 mode = 4;
+  Owner owner = 5;
 }
 
 message CreateResponse {
   uint64 id = 1;
   uint64 handle_id = 2;
+  Attrs attrs = 3;
 }
 
 message OpenRequest {
@@ -228,6 +238,9 @@ message SetAttrRequest {
     string name = 1;
   }
   RemoveExtendedAttr remove_extended = 7;
+
+  optional uint32 uid = 9;
+  optional uint32 gid = 10;
 }
 
 message SetAttrResponse {
@@ -250,6 +263,7 @@ message MkdirRequest {
   uint64 parent_id = 1;
   string name = 2;
   uint32 perms = 3;
+  Owner owner = 4;
 }
 
 message MkdirResponse {
@@ -268,10 +282,12 @@ message SymlinkRequest {
   uint64 parent_id = 1;
   string name = 2;
   string target = 3;
+  Owner owner = 4;
 }
 
 message SymlinkResponse {
   uint64 id = 1;
+  Attrs attrs = 2;
 }
 
 message LinkRequest {

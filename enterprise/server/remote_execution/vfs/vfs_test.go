@@ -1319,3 +1319,61 @@ func TestMknod(t *testing.T) {
 	rs = rawStat(t, testCharDevice)
 	require.EqualValues(t, unix.S_IFCHR, rs.Mode&unix.S_IFMT)
 }
+
+func TestOwnership(t *testing.T) {
+	_, client, mount := setupVFSWithInputTreeAndClient(t, setupEnv(t), &repb.Tree{}, &vfs.Options{}, nil)
+	rootInode, err := client.GetInode(1)
+	require.NoError(t, err)
+	root := rootInode.Operations().(*vfs.Node)
+	ctx := &fuse.Context{Uid: 65534, Gid: 65533}
+	t.Run("mkdir", func(t *testing.T) {
+		var out fuse.EntryOut
+		_, errno := root.Mkdir(ctx, "owned-dir", 0700, &out)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+	})
+	t.Run("create", func(t *testing.T) {
+		var out fuse.EntryOut
+		inode, handle, _, errno := root.Create(ctx, "owned-file", uint32(os.O_CREATE|os.O_RDWR), 0600, &out)
+		require.Zero(t, errno)
+		defer handle.(fusefs.FileReleaser).Release(ctx)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+		var attr fuse.AttrOut
+		require.Zero(t, inode.Operations().(*vfs.Node).Getattr(ctx, handle, &attr))
+		require.Equal(t, uint32(65534), attr.Uid)
+		require.Equal(t, uint32(65533), attr.Gid)
+	})
+	t.Run("mknod", func(t *testing.T) {
+		var out fuse.EntryOut
+		_, errno := root.Mknod(ctx, "owned-node", unix.S_IFREG|0600, 0, &out)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+	})
+	t.Run("symlink", func(t *testing.T) {
+		var out fuse.EntryOut
+		_, errno := root.Symlink(ctx, "owned-file", "owned-link", &out)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+	})
+	t.Run("chown", func(t *testing.T) {
+		path := filepath.Join(mount, "chowned")
+		require.NoError(t, os.WriteFile(path, nil, 0600))
+		require.NoError(t, os.Chown(path, 65534, 65533))
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		st := info.Sys().(*syscall.Stat_t)
+		require.Equal(t, uint32(65534), st.Uid)
+		require.Equal(t, uint32(65533), st.Gid)
+		// Changing only the uid must preserve the gid.
+		require.NoError(t, os.Chown(path, 0, -1))
+		info, err = os.Stat(path)
+		require.NoError(t, err)
+		st = info.Sys().(*syscall.Stat_t)
+		require.Zero(t, st.Uid)
+		require.Equal(t, uint32(65533), st.Gid)
+	})
+}
