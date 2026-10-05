@@ -67,6 +67,8 @@ var (
 	apiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
 
 	enableUserLists = flag.Bool("auth.enable_user_lists", false, "If enabled, check indirect group membership via user lists.", flag.Internal)
+
+	disableLocalCacheEncryption = flag.Bool("crypter.disable_local_cache_encryption", false, "If true, all data in the local cache is stored in plaintext (unencrypted). This is intended for use in customer-run proxies which can not access the derived encryption key.")
 )
 
 func UserListsEnabled() bool {
@@ -225,6 +227,9 @@ func ValidateRestrictedACAccess(ctx context.Context, env environment.Env, instan
 }
 
 func EncryptionEnabled(ctx context.Context, authenticator interfaces.Authenticator) bool {
+	if *disableLocalCacheEncryption {
+		return false
+	}
 	u, err := authenticator.AuthenticatedUser(ctx)
 	if err != nil {
 		return false
