@@ -2412,3 +2412,14 @@ func TestGetNewestVersion_ScopedToSharedPoolGroup(t *testing.T) {
 	require.NotNil(t, v)
 	require.Equal(t, "2.153.0", v.String())
 }
+
+func TestShutdown_StopsExecutorStreamReceiver(t *testing.T) {
+	// getEnv checks for leaked goroutines, which catches a receiver goroutine
+	// that is still running after the scheduler shuts down.
+	env, _ := getEnv(t, &schedulerOpts{}, "user1")
+	executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
+	executor.Register()
+
+	env.GetHealthChecker().Shutdown()
+	env.GetHealthChecker().WaitForGracefulShutdown()
+}
