@@ -380,6 +380,59 @@ func (p *Paths) Stats(ctx context.Context, name string, blockDevice *block_io.De
 	return Stats(ctx, p.V2Dir(name), blockDevice)
 }
 
+// SetFrozen freezes or thaws all processes in the cgroup at the given
+// directory by writing its cgroup.freeze file. It returns without waiting for
+// the processes to reach the requested state.
+func SetFrozen(dir string, frozen bool) error {
+	value := "0"
+	if frozen {
+		value = "1"
+	}
+	return writeFile(filepath.Join(dir, "cgroup.freeze"), []byte(value))
+}
+
+// KillAll sends SIGKILL to every process in the cgroup at the given directory,
+// including processes in descendant cgroups, and waits until the cgroup has no
+// processes left. It returns nil if the cgroup doesn't exist.
+func KillAll(ctx context.Context, dir string) error {
+	if err := writeFile(filepath.Join(dir, "cgroup.kill"), []byte("1")); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("write cgroup.kill: %w", err)
+		}
+		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		// cgroup.kill requires Linux 5.14, so fall back to signaling each
+		// process.
+		pids, err := ReadCgroupProcs(dir)
+		if err != nil {
+			return fmt.Errorf("read cgroup processes: %w", err)
+		}
+		for pid := range pids {
+			if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+				return fmt.Errorf("kill process %d: %w", pid, err)
+			}
+		}
+	}
+	for {
+		events, err := readAllInt64Fields(filepath.Join(dir, "cgroup.events"))
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return fmt.Errorf("read cgroup.events: %w", err)
+		}
+		if events["populated"] == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for cgroup processes to exit: %w", ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
 // ReadCgroupProcs returns the process IDs of the processes in the cgroup at
 // the given path, including processes in descendant cgroups. Descendants are
 // included because a cgroup with child cgroups usually has no processes of

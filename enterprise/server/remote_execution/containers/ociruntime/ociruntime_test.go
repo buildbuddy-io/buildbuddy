@@ -3433,3 +3433,180 @@ func TestExecrootPath_InvalidRelativePath(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must be an absolute path")
 }
+
+// makeTaskCgroupParentWithoutCPU creates a parent cgroup for task cgroups
+// that makes every controller except cpu available to them, the way the
+// executor sets up its task cgroup when
+// executor.child_cgroups_task_cpu_controller_enabled is false. It returns the
+// path relative to the cgroupfs root.
+func makeTaskCgroupParentWithoutCPU(t *testing.T) string {
+	controllers := map[string]bool{"cpuset": true, "memory": true, "pids": true}
+	require.NoError(t, cgroup.WriteSubtreeControl(cgroup.RootPath, controllers))
+	parent := "ociruntime-test-" + uuid.New()
+	parentPath := filepath.Join(cgroup.RootPath, parent)
+	require.NoError(t, os.Mkdir(parentPath, 0755))
+	t.Cleanup(func() {
+		err := os.Remove(parentPath)
+		require.NoError(t, err)
+	})
+	require.NoError(t, cgroup.WriteSubtreeControl(parentPath, controllers))
+	return parent
+}
+
+func requireCPUControllerDisabled(t *testing.T, cgroupPath string) {
+	b, err := os.ReadFile(filepath.Join(cgroupPath, "cgroup.subtree_control"))
+	require.NoError(t, err)
+	controllers := strings.Fields(string(b))
+	require.NotContains(t, controllers, "cpu")
+}
+
+func TestTaskCPUControllerDisabled_CreateExec(t *testing.T) {
+	setupNetworking(t)
+	ociruntime.SetTaskCPUControllerEnabled(false)
+	t.Cleanup(func() { ociruntime.SetTaskCPUControllerEnabled(true) })
+	image := busyboxImage(t)
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	parent := makeTaskCgroupParentWithoutCPU(t)
+	parentPath := filepath.Join(cgroup.RootPath, parent)
+
+	c, err := provider.New(ctx, &container.Init{
+		Props:        &platform.Properties{ContainerImage: image},
+		CgroupParent: parent,
+	})
+	require.NoError(t, err)
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+	// If the test fails before removing the container, remove it so that the
+	// parent cgroup can be cleaned up.
+	removed := false
+	t.Cleanup(func() {
+		if !removed {
+			err := c.Remove(context.Background())
+			require.NoError(t, err)
+		}
+	})
+
+	// crun runs without a cgroup manager, so it shouldn't have re-enabled the
+	// cpu controller for task cgroups when it created the container.
+	requireCPUControllerDisabled(t, parentPath)
+	entries, err := os.ReadDir(parentPath)
+	require.NoError(t, err)
+	var taskCgroups []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			taskCgroups = append(taskCgroups, filepath.Join(parentPath, entry.Name()))
+		}
+	}
+	require.Len(t, taskCgroups, 1)
+	taskCgroup := taskCgroups[0]
+	_, err = os.Stat(filepath.Join(taskCgroup, "cpu.weight"))
+	require.ErrorIs(t, err, fs.ErrNotExist)
+
+	// The container's init process should be in the task's cgroup, since crun
+	// was started there.
+	pids, err := cgroup.ReadCgroupProcs(taskCgroup)
+	require.NoError(t, err)
+	require.NotEmpty(t, pids)
+
+	// Pausing should freeze the task's cgroup, and unpausing should thaw it.
+	waitForFrozen := func(frozen int64) {
+		for {
+			b, err := os.ReadFile(filepath.Join(taskCgroup, "cgroup.events"))
+			require.NoError(t, err)
+			if strings.Contains(string(b), fmt.Sprintf("frozen %d", frozen)) {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+	waitForFrozen(1)
+	err = c.Unpause(ctx)
+	require.NoError(t, err)
+	waitForFrozen(0)
+
+	// Signal should reach the command started by Exec, while crun keeps
+	// running so that it can report the command's output and exit code.
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		trap 'echo "Got SIGTERM" && exit 3' TERM
+		touch .STARTED
+		while true; do sleep 0.1; done
+	`}}
+	go func() {
+		err := disk.WaitUntilExists(ctx, filepath.Join(wd, ".STARTED"), disk.WaitOpts{Timeout: -1})
+		require.NoError(t, err)
+		err = c.Signal(ctx, syscall.SIGTERM)
+		require.NoError(t, err)
+	}()
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	require.Equal(t, "Got SIGTERM\n", string(res.Stdout))
+	require.Equal(t, 3, res.ExitCode)
+
+	// Removing the container should kill its processes and remove its cgroup.
+	err = c.Remove(ctx)
+	removed = true
+	require.NoError(t, err)
+	_, err = os.Stat(taskCgroup)
+	require.ErrorIs(t, err, fs.ErrNotExist)
+}
+
+func TestTaskCPUControllerDisabled_RunSignal(t *testing.T) {
+	setupNetworking(t)
+	ociruntime.SetTaskCPUControllerEnabled(false)
+	t.Cleanup(func() { ociruntime.SetTaskCPUControllerEnabled(true) })
+	image := busyboxImage(t)
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	parent := makeTaskCgroupParentWithoutCPU(t)
+
+	c, err := provider.New(ctx, &container.Init{
+		Props:        &platform.Properties{ContainerImage: image},
+		CgroupParent: parent,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(context.Background())
+		require.NoError(t, err)
+	})
+
+	// Run a command that traps SIGTERM, and signal it once it starts. The
+	// command should get the signal, and crun should report its output.
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		trap 'echo "Got SIGTERM" && exit 1' TERM
+		touch .STARTED
+		sleep 999999999
+	`}}
+	go func() {
+		err := disk.WaitUntilExists(ctx, filepath.Join(wd, ".STARTED"), disk.WaitOpts{Timeout: -1})
+		require.NoError(t, err)
+		err = c.Signal(ctx, syscall.SIGTERM)
+		require.NoError(t, err)
+	}()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Equal(t, "Got SIGTERM\n", string(res.Stdout))
+	require.Empty(t, string(res.Stderr))
+
+	// crun shouldn't have re-enabled the cpu controller for task cgroups when
+	// it created the container.
+	requireCPUControllerDisabled(t, filepath.Join(cgroup.RootPath, parent))
+}
