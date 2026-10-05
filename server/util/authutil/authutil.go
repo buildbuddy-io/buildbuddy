@@ -68,7 +68,7 @@ var (
 
 	enableUserLists = flag.Bool("auth.enable_user_lists", false, "If enabled, check indirect group membership via user lists.", flag.Internal)
 
-	disableLocalCacheEncryption = flag.Bool("crypter.disable_local_cache_encryption", false, "If true, all data in the local cache is stored in plaintext (unencrypted). This is intended for use in customer-run proxies which can not access to the derived encryption key.")
+	disableLocalCacheEncryption = flag.Bool("crypter.disable_local_cache_encryption", false, "If true, all data in the local cache is stored in plaintext (unencrypted). This is intended for use in customer-run proxies which can not access the derived encryption key.")
 )
 
 func UserListsEnabled() bool {
