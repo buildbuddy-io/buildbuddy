@@ -255,6 +255,9 @@ message TargetStatsData {
   int64 failed_runs = 6;
   // The total amount of time spent on flaky runs:
   int64 total_flake_runtime_usec = 7;
+  // The number of passed runs in which a test attempt took at least 95% of the
+  // test's timeout.
+  int64 nearly_timed_out_runs = 8;
 }
 
 message AggregateTargetStats {

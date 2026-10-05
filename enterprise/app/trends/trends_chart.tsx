@@ -24,6 +24,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import HelpTooltip from "../../../app/components/tooltip/help_tooltip";
 import { TrendsChartId } from "../../../app/router/router";
 import { getHiddenSeriesAfterLegendClick } from "./chart_series";
 import { ScatterCustomizedShape } from "recharts/types/cartesian/Scatter";
@@ -62,6 +63,7 @@ interface ChartYAxis {
 
 interface Props {
   title: string;
+  titleHelp?: React.ReactNode;
   data: number[];
   ticks: number[];
   id?: TrendsChartId;
@@ -108,6 +110,7 @@ export enum ChartColor {
   RED = "#F44336",
   ORANGE = "#FF6F00",
   BLUE = "#03A9F4",
+  PURPLE = "#9C27B0",
   GREY = "#AAAAAA",
   BASICALLY_BLACK = "#212121",
 }
@@ -379,7 +382,10 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""} ${
           this.props.standaloneChart ? "standalone" : ""
         }`}>
-        <div className="trend-chart-title">{this.props.title}</div>
+        <div className="trend-chart-title">
+          {this.props.title}
+          {this.props.titleHelp && <HelpTooltip className="trend-chart-title-help">{this.props.titleHelp}</HelpTooltip>}
+        </div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
             onClick={topLevelClickHandler ? (_, e) => topLevelClickHandler(e) : undefined}

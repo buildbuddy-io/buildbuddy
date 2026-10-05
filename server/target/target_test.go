@@ -234,6 +234,64 @@ func TestGetTargetHistory(t *testing.T) {
 	}
 }
 
+func TestGetTargetStats_NearlyTimedOutRuns(t *testing.T) {
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "app.enable_read_target_statuses_from_olap_db", true)
+
+	env := testenv.GetTestEnv(t)
+	testAuth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US3", "GR3"))
+	env.SetAuthenticator(testAuth)
+	ctx, err := testAuth.WithAuthenticatedUser(t.Context(), "US3")
+	require.NoError(t, err)
+
+	const repoURL = "https://github.com/gr3/repo1"
+	iid, _ := makeInvocationID('a')
+	start := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	for _, run := range []struct {
+		label              string
+		maxAttemptDuration time.Duration
+	}{
+		{"//:slow_test", 96 * time.Second},
+		{"//:fast_test", 50 * time.Second},
+	} {
+		err := env.GetOLAPDBHandle().GORM(ctx, "insert_test_target_status").Create(&olaptables.TestTargetStatus{
+			GroupID:                 "GR3",
+			RepoURL:                 repoURL,
+			CommitSHA:               "commit1",
+			Label:                   run.label,
+			InvocationUUID:          iid,
+			InvocationStartTimeUsec: start.UnixMicro(),
+			Status:                  int32(bespb.TestStatus_PASSED),
+			TestTimeoutUsec:         (100 * time.Second).Microseconds(),
+			MaxAttemptDurationUsec:  run.maxAttemptDuration.Microseconds(),
+		}).Error
+		require.NoError(t, err)
+	}
+
+	targetStats, err := target.GetTargetStats(ctx, env, &trpb.GetTargetStatsRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: "GR3"},
+		Repo:           repoURL,
+		StartedAfter:   timestamppb.New(start.Add(-time.Hour)),
+	})
+	require.NoError(t, err)
+	diff := cmp.Diff(&trpb.GetTargetStatsResponse{Stats: []*trpb.AggregateTargetStats{
+		{Label: "//:slow_test", Data: &trpb.TargetStatsData{TotalRuns: 1, NearlyTimedOutRuns: 1}},
+	}}, targetStats, protocmp.Transform())
+	require.Empty(t, diff)
+
+	dailyTargetStats, err := target.GetDailyTargetStats(ctx, env, &trpb.GetDailyTargetStatsRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: "GR3"},
+		Repo:           repoURL,
+		StartedAfter:   timestamppb.New(start.Add(-time.Hour)),
+	})
+	require.NoError(t, err)
+	diff = cmp.Diff(&trpb.GetDailyTargetStatsResponse{Stats: []*trpb.DailyTargetStats{
+		{Date: "2026-01-15", Data: &trpb.TargetStatsData{TotalRuns: 2, NearlyTimedOutRuns: 1}},
+	}}, dailyTargetStats, protocmp.Transform())
+	require.Empty(t, diff)
+}
+
 func timingUsec(startUsec, durationUsec int64) *common.Timing {
 	return &common.Timing{
 		StartTime: timestamppb.New(time.UnixMicro(startUsec)),
