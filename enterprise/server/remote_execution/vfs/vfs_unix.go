@@ -1535,14 +1535,9 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 		log.CtxDebugf(n.vfs.rpcCtx, "Symlink %q -> %q", src, target)
 	}
 
-	reqTarget := target
-	if after, ok := strings.CutPrefix(target, n.vfs.mountDir); ok {
-		reqTarget = after
-	}
-
 	n.beginDirectoryMutation()
 	defer n.endDirectoryMutation()
-	rsp, err := n.vfs.vfsClient.Symlink(n.vfs.getRPCContext(), &vfspb.SymlinkRequest{ParentId: n.StableAttr().Ino, Name: name, Target: reqTarget})
+	rsp, err := n.vfs.vfsClient.Symlink(n.vfs.getRPCContext(), &vfspb.SymlinkRequest{ParentId: n.StableAttr().Ino, Name: name, Target: target})
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}

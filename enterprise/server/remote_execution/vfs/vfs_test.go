@@ -38,6 +38,40 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
+func TestSymlinkTargetAfterRemount(t *testing.T) {
+	for _, absolute := range []bool{false, true} {
+		name := "relative"
+		if absolute {
+			name = "absolute"
+		}
+		t.Run(name, func(t *testing.T) {
+			server, client, mount := setupVFSWithInputTreeAndClient(t, setupEnv(t), &repb.Tree{Root: &repb.Directory{}}, &vfs.Options{}, nil)
+			target := "target"
+			if absolute {
+				target = filepath.Join(mount, target)
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(mount, "target"), []byte("contents"), 0644))
+			link := filepath.Join(mount, "link")
+			require.NoError(t, os.Symlink(target, link))
+			got, err := os.Readlink(link)
+			require.NoError(t, err)
+			require.Equal(t, target, got)
+
+			// Force Lookup to recover the target from the server, not the cached inode.
+			require.NoError(t, client.Unmount())
+			client = vfs.New(vfs_server.NewDirectClient(server), mount, &vfs.Options{})
+			require.NoError(t, client.Mount())
+			t.Cleanup(func() { require.NoError(t, client.Unmount()) })
+			got, err = os.Readlink(link)
+			require.NoError(t, err)
+			require.Equal(t, target, got)
+			data, err := os.ReadFile(link)
+			require.NoError(t, err)
+			require.Equal(t, "contents", string(data))
+		})
+	}
+}
+
 func setupEnv(t *testing.T) environment.Env {
 	tmp := testfs.MakeTempDir(t)
 	env := testenv.GetTestEnv(t)
