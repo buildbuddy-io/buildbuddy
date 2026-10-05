@@ -2,6 +2,7 @@ package resources
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"regexp"
@@ -101,7 +102,7 @@ func setSysMilliCPUCapacityFromEnvOrSystem() error {
 	}
 
 	if v := os.Getenv(cpuEnvVarName); v != "" {
-		millis, err := parseCPU(v)
+		millis, err := ParseCPU(v)
 		if err != nil {
 			return fmt.Errorf("parse %s: %w", cpuEnvVarName, err)
 		}
@@ -118,9 +119,9 @@ func setSysMilliCPUCapacityFromEnvOrSystem() error {
 	return nil
 }
 
-// Parses a CPU string like "1.5" (fractional core count) or "1500m"
-// (milli-CPU).
-func parseCPU(v string) (cpuMillis int64, _ error) {
+// ParseCPU parses a CPU string like "1.5" (fractional core count) or "1500m"
+// (milli-CPU) and returns the amount in milli-CPU.
+func ParseCPU(v string) (cpuMillis int64, _ error) {
 	if s, ok := strings.CutSuffix(v, "m"); ok {
 		// Parse as milli-CPU
 		m, err := strconv.Atoi(s)
@@ -133,6 +134,11 @@ func parseCPU(v string) (cpuMillis int64, _ error) {
 	f, err := strconv.ParseFloat(v, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid CPU core count: parse float: %w", err)
+	}
+	// Reject values that don't fit in int64 milliCPU. Converting them would
+	// overflow, with a result that differs between platforms.
+	if math.IsNaN(f) || math.Abs(f) > math.MaxInt64/1000 {
+		return 0, fmt.Errorf("invalid CPU core count %q", v)
 	}
 
 	return int64(f * 1000), nil
