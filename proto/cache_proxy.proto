@@ -134,12 +134,12 @@ message RegisterCacheProxyResponse {
   // "selector" field of this GetCacheProxyRequest is ignored.
   GetCacheProxyRequest details_request = 1;
 
-  // A unique identifier for this request. This is necessary because the
-  // registration stream contains heartbeat updates along with details requests,
-  // and the registry server may not be able to distinguish between them. The
-  // request_id lets the registration server associate the details it receives
-  // with the response message it sent requesting them (and this, the request it
-  // is serving).
+  // A unique (within the stream) identifier for this request. This is necessary
+  // because the registration stream contains heartbeat updates along with
+  // details requests, and the registry server may not be able to distinguish
+  // between them. The request_id lets the registration server associate the
+  // details it receives with the response message it sent requesting them (and
+  // this, the request it is serving).
   string request_id = 2;
 }
 
