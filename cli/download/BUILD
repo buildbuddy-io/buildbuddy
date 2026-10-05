@@ -21,6 +21,7 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/mdutil",
         "//server/util/proto",
+        "//server/util/retry",
         "//server/util/status",
         "//server/util/uuid",
         "@com_github_docker_go_units//:go-units",
@@ -37,6 +38,8 @@ go_test(
     embed = [":download"],
     deps = [
         "//proto/api/v1:api_v1_go_proto",
+        "//server/util/status",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
     ],
 )
