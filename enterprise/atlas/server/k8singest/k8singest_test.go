@@ -72,6 +72,16 @@ func TestSummarizePod(t *testing.T) {
 	require.Equal(t, []summaries.Port{{Name: "http", Port: 8080}, {Name: "grpc", Port: 1985}}, e.Ports)
 }
 
+func TestSummarizeStatefulSetPod(t *testing.T) {
+	pod := testPod("redis-0", "data")
+	require.NoError(t, unstructured.SetNestedField(pod.Object, "redis-0", "spec", "hostname"))
+	require.NoError(t, unstructured.SetNestedField(pod.Object, "redis", "spec", "subdomain"))
+	e, err := Summarize(podRes, pod)
+	require.NoError(t, err)
+	require.Equal(t, "redis-0", e.Hostname)
+	require.Equal(t, "redis", e.Subdomain)
+}
+
 func TestSummarizePodWaitingReasonWins(t *testing.T) {
 	pod := testPod("web-1", "prod")
 	statuses := []any{
