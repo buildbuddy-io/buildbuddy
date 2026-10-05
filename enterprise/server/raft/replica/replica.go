@@ -426,18 +426,23 @@ func (sm *Replica) releaseLocks(wb pebble.Batch, txid []byte) {
 			delete(sm.lockedKeys, keyString)
 		}
 	}
-	sm.mappedRangeLockingTXID = nil
+	if bytes.Equal(sm.mappedRangeLockingTXID, txid) {
+		sm.mappedRangeLockingTXID = nil
+	}
 }
 
-func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+// buildTransaction evaluates a prepare without publishing its locks or batch.
+// The caller owns the returned batch until it calls
+// installPreparedTransaction.
+func (sm *Replica) buildTransaction(txid []byte, batchReq *rfpb.BatchCmdRequest) (pebble.Batch, *rfpb.BatchCmdResponse, error) {
 	db, err := sm.leaser.DB()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer db.Close()
 	txn := db.NewIndexedBatch()
 
-	// Ensure the txn is cleaned up if not prepared succesfully.
+	// Close the batch unless ownership is transferred to the caller.
 	loaded := false
 	defer func() {
 		if !loaded {
@@ -449,110 +454,117 @@ func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest
 	batchRsp := &rfpb.BatchCmdResponse{}
 	for _, union := range batchReq.GetUnion() {
 		rsp := sm.handlePropose(txn, union)
-		if err := gstatus.FromProto(rsp.GetStatus()).Err(); err != nil {
-			// An "normal" error could be returned here if a cas()
-			// request finds a value it does not expect. In this
-			// case we want the transaction to fail (in the prepare
-			// step).
-			return nil, err
+		if rsp.GetStatus().GetCode() != 0 {
+			// Request errors, such as CAS mismatches, reject prepare.
+			return nil, &rfpb.BatchCmdResponse{Status: rsp.GetStatus()}, nil
 		}
 		batchRsp.Union = append(batchRsp.Union, rsp)
 	}
 
 	// Check if there are any locked keys conflicting.
 	if err := sm.checkLocks(txn, txid); err != nil {
-		return nil, err
+		return nil, &rfpb.BatchCmdResponse{Status: statusProto(err)}, nil
 	}
 
-	// If not, acquire locks for all changed keys.
+	loaded = true
+	return txn, batchRsp, nil
+}
+
+func (sm *Replica) installPreparedTransaction(txid []byte, txn pebble.Batch, lockMappedRange bool) {
 	sm.acquireLocks(txn, txid)
 
-	if batchReq.GetLockMappedRange() {
+	if lockMappedRange {
 		sm.mappedRangeLockingTXID = txid
 	}
 
-	// Save the txn batch in memory.
 	sm.prepared[string(txid)] = txn
-	loaded = true
-	return batchRsp, nil
 }
 
-// PrepareTransaction processes all of the writes from `req` into a new batch
-// and attempts to lock all keys modified in the batch. If any error is
-// encountered, an error is returned; otherwise the batch is retained in memory
-// so it can be applied or reverted via CommitTransaction or
-// RollbackTransaction.
-func (sm *Replica) PrepareTransaction(wb pebble.Batch, txid []byte, batchReq *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest) error {
+	txn, rsp, err := sm.buildTransaction(txid, batchReq)
+	if err != nil {
+		return err
+	}
+	if err := gstatus.FromProto(rsp.GetStatus()).Err(); err != nil {
+		return err
+	}
+	sm.installPreparedTransaction(txid, txn, batchReq.GetLockMappedRange())
+	return nil
+}
+
+// prepareTransaction stages the recovery record in wb. Locks and prepared state
+// are installed after wb commits, together with the session and applied index.
+func (sm *Replica) prepareTransaction(wb pebble.Batch, txid []byte, batchReq *rfpb.BatchCmdRequest) (pebble.Batch, *rfpb.BatchCmdResponse, error) {
 	markerKey := keys.MakeKey(constants.LocalTxnRollbackMarkerPrefix, txid)
 	if _, err := sm.lookup(wb, markerKey); err == nil {
-		return nil, status.FailedPreconditionErrorf("%s: [%s] txid=%q", constants.TxnRolledBackMessage, sm.name(), txid)
+		err := status.FailedPreconditionErrorf("%s: [%s] txid=%q", constants.TxnRolledBackMessage, sm.name(), txid)
+		return nil, &rfpb.BatchCmdResponse{Status: statusProto(err)}, nil
 	} else if !status.IsNotFoundError(err) {
-		return nil, err
-	}
-
-	// Save the txn batch in memory and acquire locks.
-	batchRsp, err := sm.loadTxnIntoMemory(txid, batchReq)
-	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	buf, err := proto.Marshal(batchReq)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	txn, batchRsp, err := sm.buildTransaction(txid, batchReq)
+	if err != nil || txn == nil {
+		return nil, batchRsp, err
 	}
 
 	// Save the txn batch on-disk in case of a restart.
 	txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
-	wb.Set(sm.replicaLocalKey(txKey), buf, nil /*ignored write options*/)
+	if err := wb.Set(sm.replicaLocalKey(txKey), buf, nil); err != nil {
+		txn.Close()
+		return nil, nil, err
+	}
 
-	return batchRsp, nil
+	return txn, batchRsp, nil
 }
 
-func (sm *Replica) CommitTransaction(txid []byte) error {
+// commitTransaction stages the prepared writes and recovery-record deletion in
+// wb. The caller must commit wb with the session and applied index before
+// calling finalizeTransaction to release the locks and prepared state.
+func (sm *Replica) commitTransaction(wb pebble.Batch, txid []byte) (*rfpb.BatchCmdResponse, error) {
 	txn, ok := sm.prepared[string(txid)]
 	if !ok {
-		return status.NotFoundErrorf("%s: [%s] txid=%q", constants.TxnNotFoundMessage, sm.name(), txid)
+		err := status.NotFoundErrorf("%s: [%s] txid=%q", constants.TxnNotFoundMessage, sm.name(), txid)
+		return &rfpb.BatchCmdResponse{Status: statusProto(err)}, nil
 	}
-	defer txn.Close()
-	delete(sm.prepared, string(txid))
-
-	sm.releaseLocks(txn, txid)
-
+	if err := wb.Apply(txn, nil); err != nil {
+		return nil, err
+	}
 	txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
-	txKey = sm.replicaLocalKey(txKey)
-
-	txn.Delete(txKey, nil /*ignore write options*/)
-
-	if err := txn.Commit(pebble.Sync); err != nil {
-		return err
+	if err := wb.Delete(sm.replicaLocalKey(txKey), nil); err != nil {
+		return nil, err
 	}
-	sm.updateInMemoryState(txn)
-
-	return nil
+	return &rfpb.BatchCmdResponse{}, nil
 }
 
-// RollbackTransaction releases any prepared state for txid and writes a
-// participant-local rollback marker that fences future PrepareTransaction calls
-// for txid. finalizedAtUsec is the marker's retention timestamp and must be a
+// rollbackTransaction stages deletion of the prepared record and a rollback
+// marker that fences future prepareTransaction calls for txid. Prepared state
+// and locks remain unchanged until wb commits. finalizedAtUsec must be a
 // real (positive) proposer-stamped time: GC only deletes markers whose
 // timestamp is positive and at or before its cutoff, so a non-positive value is
 // never collected (safe — fencing is preserved, never prematurely dropped).
-func (sm *Replica) RollbackTransaction(wb pebble.Batch, txid []byte, finalizedAtUsec int64) error {
+func (sm *Replica) rollbackTransaction(wb pebble.Batch, txid []byte, finalizedAtUsec int64) error {
 	markerKey := keys.MakeKey(constants.LocalTxnRollbackMarkerPrefix, txid)
-	txn, ok := sm.prepared[string(txid)]
-	if ok {
-		defer txn.Close()
-		delete(sm.prepared, string(txid))
-
-		sm.releaseLocks(txn, txid)
-		txn.Reset()
-
+	if _, ok := sm.prepared[string(txid)]; ok {
 		txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
 		if err := wb.Delete(sm.replicaLocalKey(txKey), nil /*ignore write options*/); err != nil {
 			return err
 		}
 	}
 	return wb.Set(sm.replicaLocalKey(markerKey), uint64ToBytes(uint64(finalizedAtUsec)), nil /*ignored write options*/)
+}
+
+func (sm *Replica) finalizeTransaction(txid []byte) {
+	if txn, ok := sm.prepared[string(txid)]; ok {
+		sm.releaseLocks(txn, txid)
+		delete(sm.prepared, string(txid))
+		txn.Close()
+	}
 }
 
 func rollbackMarkerFinalizedAtUsec(val []byte) (int64, error) {
@@ -564,7 +576,7 @@ func rollbackMarkerFinalizedAtUsec(val []byte) (int64, error) {
 
 // HasTxnRollbackMarkersBeforeForTest scans this replica's local rollback markers
 // and returns true if any has a positive timestamp at or before cutoffUsec.
-// Non-positive timestamps are skipped (see RollbackTransaction). Exported only
+// Non-positive timestamps are skipped (see rollbackTransaction). Exported only
 // for tests, which can't reach the node-local marker keyspace directly.
 func (sm *Replica) HasTxnRollbackMarkersBeforeForTest(cutoffUsec int64) (bool, error) {
 	db, err := sm.leaser.DB()
@@ -590,7 +602,7 @@ func (sm *Replica) HasTxnRollbackMarkersBeforeForTest(cutoffUsec int64) (bool, e
 			continue
 		}
 		// Skip non-positive timestamps so a marker never expires before its real
-		// finalize time; see RollbackTransaction.
+		// finalize time; see rollbackTransaction.
 		if finalizedAtUsec > 0 && finalizedAtUsec <= cutoffUsec {
 			return true, nil
 		}
@@ -617,7 +629,7 @@ func (sm *Replica) deleteTxnRollbackMarkersBefore(wb pebble.Batch, req *rfpb.Del
 			continue
 		}
 		// Skip non-positive timestamps so a marker never expires before its real
-		// finalize time; see RollbackTransaction.
+		// finalize time; see rollbackTransaction.
 		if finalizedAtUsec > 0 && finalizedAtUsec <= cutoffUsec {
 			if err := wb.Delete(iter.Key(), nil /* ignore write options */); err != nil {
 				return nil, err
@@ -656,7 +668,7 @@ func (sm *Replica) loadInflightTransactions(db ReplicaReader) error {
 			return err
 		}
 		sm.log.Warningf("txid: %q, batchReq: %+v", txid, batchReq)
-		if _, err := sm.loadTxnIntoMemory(txid, batchReq); err != nil {
+		if err := sm.loadTxnIntoMemory(txid, batchReq); err != nil {
 			return err
 		}
 	}
@@ -1643,27 +1655,36 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 			return sm.rejectEntry(db, entry, err), nil
 		}
 	}
-	if txid := batchReq.GetTransactionId(); len(txid) > 0 {
+	var preparedTxn pebble.Batch
+	defer func() {
+		if preparedTxn != nil {
+			preparedTxn.Close()
+		}
+	}()
+	txid := batchReq.GetTransactionId()
+	if len(txid) > 0 {
 		// Check that request is not malformed.
 		if len(batchReq.GetUnion()) > 0 && batchReq.GetFinalizeOperation() != rfpb.FinalizeOperation_UNKNOWN_OPERATION {
-			batchRsp.Status = statusProto(status.InvalidArgumentErrorf("Batch must be empty when finalizing transaction"))
+			err := status.InvalidArgumentError("Batch must be empty when finalizing transaction")
+			return sm.rejectEntry(db, entry, err), nil
 		}
 
 		switch batchReq.GetFinalizeOperation() {
 		case rfpb.FinalizeOperation_COMMIT:
-			if err := sm.CommitTransaction(txid); err != nil {
-				batchRsp.Status = statusProto(err)
+			var err error
+			batchRsp, err = sm.commitTransaction(wb, txid)
+			if err != nil {
+				return entry, err
 			}
 		case rfpb.FinalizeOperation_ROLLBACK:
-			if err := sm.RollbackTransaction(wb, txid, batchReq.GetTxnFinalizedAtUsec()); err != nil {
-				batchRsp.Status = statusProto(err)
+			if err := sm.rollbackTransaction(wb, txid, batchReq.GetTxnFinalizedAtUsec()); err != nil {
+				return entry, err
 			}
 		default:
-			txnRsp, err := sm.PrepareTransaction(wb, txid, batchReq)
+			var err error
+			preparedTxn, batchRsp, err = sm.prepareTransaction(wb, txid, batchReq)
 			if err != nil {
-				batchRsp.Status = statusProto(err)
-			} else {
-				batchRsp = txnRsp
+				return entry, err
 			}
 		}
 	} else {
@@ -1691,6 +1712,15 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	if err := sm.commitIndexBatch(wb, entry.Index); err != nil {
 		entry.Result = errorEntry(err)
 		return entry, nil
+	}
+	if len(txid) > 0 && batchRsp.GetStatus().GetCode() == 0 {
+		switch batchReq.GetFinalizeOperation() {
+		case rfpb.FinalizeOperation_COMMIT, rfpb.FinalizeOperation_ROLLBACK:
+			sm.finalizeTransaction(txid)
+		default:
+			sm.installPreparedTransaction(txid, preparedTxn, batchReq.GetLockMappedRange())
+			preparedTxn = nil // Ownership transferred to sm.prepared.
+		}
 	}
 	// Run post commit hooks, if any are set.
 	for _, hook := range batchReq.GetPostCommitHooks() {
