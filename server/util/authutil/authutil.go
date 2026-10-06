@@ -226,8 +226,6 @@ func ValidateRestrictedACAccess(ctx context.Context, env environment.Env, instan
 	return status.UnauthenticatedError("Cannot access restricted ActionResult from untrusted client")
 }
 
-// LocalCacheEncryptionEnabled returns the value of
-// --crypter.enable_local_cache_encryption.
 func LocalCacheEncryptionEnabled() bool {
 	return *enableLocalCacheEncryption
 }
