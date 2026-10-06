@@ -182,7 +182,7 @@ var UsageFields = []UsageField{
 	},
 	{
 		Name:                "linux_execution_duration_usec",
-		PrimaryDBExpression: "SUM(linux_execution_duration_usec)",
+		PrimaryDBExpression: "SUM(CASE WHEN origin = 'internal' THEN linux_execution_duration_usec ELSE 0 END)",
 		OLAPExpression: rawUsageSumUsec(
 			sku.RemoteExecutionExecuteWorkerDurationNanos,
 			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
