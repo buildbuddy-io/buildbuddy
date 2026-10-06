@@ -16,11 +16,13 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/util/authutil",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_x_crypto//hkdf",
     ],
 )
 
@@ -32,6 +34,7 @@ go_test(
         "//enterprise/server/clientidentity",
         "//proto:encryption_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:storage_go_proto",
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testdata",

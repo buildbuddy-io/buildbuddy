@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"strings"
@@ -25,6 +26,7 @@ import (
 
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
 const (
@@ -336,6 +338,192 @@ func TestActiveKey(t *testing.T) {
 
 	_, err = crypter.ActiveKey(user2Ctx)
 	require.True(t, status.IsNotFoundError(err))
+}
+
+func randomLocalKey(t *testing.T) string {
+	key := make([]byte, 32)
+	_, err := rand.Read(key)
+	require.NoError(t, err)
+	return base64.StdEncoding.EncodeToString(key)
+}
+
+func setupLocalKey(t *testing.T, localKey string, version int64) (*testauth.TestAuthenticator, interfaces.Crypter) {
+	flags.Set(t, "crypter.local_key", localKey)
+	flags.Set(t, "crypter.local_key_version", version)
+	te := testenv.GetTestEnv(t)
+	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1, user2, group2))
+	te.SetAuthenticator(authenticator)
+	require.NoError(t, remote_crypter.Register(te))
+	require.NotNil(t, te.GetCrypter())
+	return authenticator, te.GetCrypter()
+}
+
+func TestRegisterLocalKey(t *testing.T) {
+	for _, tc := range []struct {
+		name                        string
+		localKey                    string
+		localKeyVersion             int64
+		remoteTarget                string
+		disableLocalCacheEncryption bool
+		wantErr                     bool
+	}{
+		{name: "valid key", localKey: randomLocalKey(t), localKeyVersion: 1},
+		{name: "valid key with later version", localKey: randomLocalKey(t), localKeyVersion: 7},
+		{name: "invalid base64", localKey: "not base64!", localKeyVersion: 1, wantErr: true},
+		{name: "key too short", localKey: base64.StdEncoding.EncodeToString(make([]byte, 16)), localKeyVersion: 1, wantErr: true},
+		{name: "key too long", localKey: base64.StdEncoding.EncodeToString(make([]byte, 64)), localKeyVersion: 1, wantErr: true},
+		{name: "zero version", localKey: randomLocalKey(t), localKeyVersion: 0, wantErr: true},
+		{name: "negative version", localKey: randomLocalKey(t), localKeyVersion: -1, wantErr: true},
+		{name: "remote target set", localKey: randomLocalKey(t), localKeyVersion: 1, remoteTarget: "grpc://localhost:1234", wantErr: true},
+		{name: "local cache encryption disabled", localKey: randomLocalKey(t), localKeyVersion: 1, disableLocalCacheEncryption: true, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "crypter.local_key", tc.localKey)
+			flags.Set(t, "crypter.local_key_version", tc.localKeyVersion)
+			flags.Set(t, "crypter.remote_target", tc.remoteTarget)
+			flags.Set(t, "crypter.enable_local_cache_encryption", !tc.disableLocalCacheEncryption)
+			te := testenv.GetTestEnv(t)
+			authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
+			te.SetAuthenticator(authenticator)
+			ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
+			require.NoError(t, err)
+
+			err = remote_crypter.Register(te)
+			if tc.wantErr {
+				require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+				require.Nil(t, te.GetCrypter())
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, te.GetCrypter())
+			md, err := te.GetCrypter().ActiveKey(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "local", md.GetEncryptionKeyId())
+			require.Equal(t, tc.localKeyVersion, md.GetVersion())
+			// Encryption with a local key doesn't depend on the remote
+			// encryption experiment.
+			require.True(t, remote_crypter.SupportsEncryption(te)(ctx))
+		})
+	}
+}
+
+func TestLocalKeyEncryptDecrypt(t *testing.T) {
+	authenticator, crypter := setupLocalKey(t, randomLocalKey(t), 1)
+	ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
+	require.NoError(t, err)
+
+	md, err := crypter.ActiveKey(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "local", md.GetEncryptionKeyId())
+	require.EqualValues(t, 1, md.GetVersion())
+
+	testData := make([]byte, 1000)
+	_, err = rand.Read(testData)
+	require.NoError(t, err)
+	out := bytes.NewBuffer(nil)
+	encryptor, err := crypter.NewEncryptor(ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out), md)
+	require.NoError(t, err)
+	testdata.WriteInRandomChunks(t, encryptor, testData)
+	require.NotContains(t, out.String(), string(testData))
+
+	decryptor, err := crypter.NewDecryptor(ctx, fooDigest, io.NopCloser(bytes.NewReader(out.Bytes())), encryptor.Metadata())
+	require.NoError(t, err)
+	decrypted, err := io.ReadAll(decryptor)
+	require.NoError(t, err)
+	require.Equal(t, testData, decrypted)
+}
+
+func TestLocalKeyAuth(t *testing.T) {
+	authenticator, crypter := setupLocalKey(t, randomLocalKey(t), 1)
+	user1Ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
+	require.NoError(t, err)
+	user2Ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user2)
+	require.NoError(t, err)
+
+	md, err := crypter.ActiveKey(user1Ctx)
+	require.NoError(t, err)
+	out := bytes.NewBuffer(nil)
+	encryptor, err := crypter.NewEncryptor(user1Ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out), md)
+	require.NoError(t, err)
+	_, err = encryptor.Write([]byte("123456789"))
+	require.NoError(t, err)
+	require.NoError(t, encryptor.Commit())
+
+	// Each group gets its own derived key, so user2 can't decrypt user1's
+	// data.
+	decryptor, err := crypter.NewDecryptor(user2Ctx, fooDigest, io.NopCloser(bytes.NewReader(out.Bytes())), encryptor.Metadata())
+	require.NoError(t, err)
+	_, err = io.ReadAll(decryptor)
+	require.Error(t, err)
+}
+
+func TestLocalKeyChange(t *testing.T) {
+	authenticator, oldCrypter := setupLocalKey(t, randomLocalKey(t), 1)
+	_, newCrypter := setupLocalKey(t, randomLocalKey(t), 1)
+	ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
+	require.NoError(t, err)
+
+	md, err := oldCrypter.ActiveKey(ctx)
+	require.NoError(t, err)
+	out := bytes.NewBuffer(nil)
+	encryptor, err := oldCrypter.NewEncryptor(ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out), md)
+	require.NoError(t, err)
+	_, err = encryptor.Write([]byte("hello"))
+	require.NoError(t, err)
+	require.NoError(t, encryptor.Commit())
+
+	// The key ID doesn't depend on the key, so data written with the old key
+	// is found under the same cache keys, but fails to decrypt.
+	decryptor, err := newCrypter.NewDecryptor(ctx, fooDigest, io.NopCloser(bytes.NewReader(out.Bytes())), encryptor.Metadata())
+	require.NoError(t, err)
+	_, err = io.ReadAll(decryptor)
+	require.Error(t, err)
+}
+
+func TestLocalKeyRotation(t *testing.T) {
+	oldKey := randomLocalKey(t)
+	authenticator, oldCrypter := setupLocalKey(t, oldKey, 1)
+	ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
+	require.NoError(t, err)
+
+	md, err := oldCrypter.ActiveKey(ctx)
+	require.NoError(t, err)
+	out := bytes.NewBuffer(nil)
+	encryptor, err := oldCrypter.NewEncryptor(ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out), md)
+	require.NoError(t, err)
+	_, err = encryptor.Write([]byte("hello"))
+	require.NoError(t, err)
+	require.NoError(t, encryptor.Commit())
+
+	for _, tc := range []struct {
+		name string
+		key  string
+	}{
+		{name: "new key", key: randomLocalKey(t)},
+		{name: "same key", key: oldKey},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, newCrypter := setupLocalKey(t, tc.key, 2)
+			newMD, err := newCrypter.ActiveKey(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "local", newMD.GetEncryptionKeyId())
+			require.EqualValues(t, 2, newMD.GetVersion())
+
+			// Entries written with the old version are reported as not
+			// found, so that the proxy re-fetches them.
+			_, err = newCrypter.NewDecryptor(ctx, fooDigest, io.NopCloser(bytes.NewReader(out.Bytes())), encryptor.Metadata())
+			require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+		})
+	}
+}
+
+func TestLocalKeyUnknownKeyID(t *testing.T) {
+	authenticator, crypter := setupLocalKey(t, randomLocalKey(t), 1)
+	ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
+	require.NoError(t, err)
+
+	_, err = crypter.NewDecryptor(ctx, fooDigest, io.NopCloser(bytes.NewReader(nil)), &sgpb.EncryptionMetadata{EncryptionKeyId: "EK123", Version: 1})
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
 }
 
 func TestUnauthorizedIdentity(t *testing.T) {

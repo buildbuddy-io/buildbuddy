@@ -68,7 +68,7 @@ var (
 
 	enableUserLists = flag.Bool("auth.enable_user_lists", false, "If enabled, check indirect group membership via user lists.", flag.Internal)
 
-	disableLocalCacheEncryption = flag.Bool("crypter.disable_local_cache_encryption", false, "If true, all data in the local cache is stored in plaintext (unencrypted). This is intended for use in customer-run proxies which can not access the derived encryption key.")
+	enableLocalCacheEncryption = flag.Bool("crypter.enable_local_cache_encryption", true, "If false, all data in the local cache is stored in plaintext (unencrypted). This is intended for use in customer-run proxies which can not access the derived encryption key.")
 )
 
 func UserListsEnabled() bool {
@@ -226,8 +226,14 @@ func ValidateRestrictedACAccess(ctx context.Context, env environment.Env, instan
 	return status.UnauthenticatedError("Cannot access restricted ActionResult from untrusted client")
 }
 
+// LocalCacheEncryptionEnabled returns the value of
+// --crypter.enable_local_cache_encryption.
+func LocalCacheEncryptionEnabled() bool {
+	return *enableLocalCacheEncryption
+}
+
 func EncryptionEnabled(ctx context.Context, authenticator interfaces.Authenticator) bool {
-	if *disableLocalCacheEncryption {
+	if !*enableLocalCacheEncryption {
 		return false
 	}
 	u, err := authenticator.AuthenticatedUser(ctx)
