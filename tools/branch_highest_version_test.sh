@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 # Tests for branch_highest_version.sh, run against temporary git repositories.
-set -euo pipefail
 
-SCRIPT="$PWD/$BRANCH_HIGHEST_VERSION"
+# --- begin runfiles.bash initialization v3 ---
+# Copy-pasted from the Bazel Bash runfiles library v3.
+set -uo pipefail; set +e; f=bazel_tools/tools/bash/runfiles/runfiles.bash
+source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$0.runfiles/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  { echo>&2 "ERROR: cannot find $f"; exit 1; }; f=; set -e
+# --- end runfiles.bash initialization v3 ---
+
+SCRIPT=$(rlocation "$BRANCH_HIGHEST_VERSION")
 
 # Bazel sets TEST_TMPDIR to a per-test directory inside the sandbox.
 TMP="${TEST_TMPDIR:?run this with bazel test}"

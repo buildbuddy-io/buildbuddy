@@ -21,5 +21,6 @@ sh_test(
     name = "branch_highest_version_test",
     srcs = ["branch_highest_version_test.sh"],
     data = ["branch_highest_version.sh"],
-    env = {"BRANCH_HIGHEST_VERSION": "$(rootpath :branch_highest_version.sh)"},
+    env = {"BRANCH_HIGHEST_VERSION": "$(rlocationpath :branch_highest_version.sh)"},
+    deps = ["@bazel_tools//tools/bash/runfiles"],
 )
