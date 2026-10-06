@@ -28,5 +28,6 @@ sh_test(
     name = "repo_highest_version_test",
     srcs = ["repo_highest_version_test.sh"],
     data = ["repo_highest_version.sh"],
-    env = {"REPO_HIGHEST_VERSION": "$(rootpath :repo_highest_version.sh)"},
+    env = {"REPO_HIGHEST_VERSION": "$(rlocationpath :repo_highest_version.sh)"},
+    deps = ["@bazel_tools//tools/bash/runfiles"],
 )
