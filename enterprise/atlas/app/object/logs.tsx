@@ -92,9 +92,21 @@ export default class LogsComponent extends React.Component<Props, State> {
       {
         next: (chunk) => this.append(this.decoder.decode(chunk.data, { stream: true })),
         error: (e) => this.setState({ errorMessage: BuildBuddyError.parse(e).description, streaming: false }),
-        complete: () => this.setState({ streaming: false }),
+        complete: () => this.finish(),
       }
     );
+  }
+
+  /** The stream is done, consume partial text. */
+  private finish() {
+    const flushed = this.decoder.decode();
+    const rest = this.partial + flushed;
+    this.partial = "";
+    this.setState((state) => ({
+      streaming: false,
+      text: state.text + flushed,
+      lines: rest ? state.lines.concat(parseLogLine(rest)) : state.lines,
+    }));
   }
 
   private append(text: string) {
@@ -174,8 +186,11 @@ export default class LogsComponent extends React.Component<Props, State> {
   }
 }
 
-/** One line: structured entries get a time, a severity column and dimmed details. */
-function LogLineView({ line }: { line: LogLine }) {
+/**
+ * One line: structured entries get a time, a severity column and dimmed
+ * details. A line never changes once parsed, so memo skips it on later chunks.
+ */
+const LogLineView = React.memo(function LogLineView({ line }: { line: LogLine }) {
   if (line.kind === "text") {
     return <div className="atlas-logline">{line.text || " "}</div>;
   }
@@ -197,4 +212,4 @@ function LogLineView({ line }: { line: LogLine }) {
       ))}
     </div>
   );
-}
+});
