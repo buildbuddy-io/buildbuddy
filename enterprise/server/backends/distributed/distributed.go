@@ -916,7 +916,9 @@ func (c *Cache) remoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 		return res, md, err
 	}
 	res, md, err := c.distributedProxy.RemoteGetWithMetadata(ctx, peer, r)
-	recordRead(metricsLabel, "peer", r.GetDigest())
+	if err == nil {
+		recordRead(metricsLabel, "peer", r.GetDigest())
+	}
 	return res, md, err
 }
 
