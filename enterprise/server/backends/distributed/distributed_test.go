@@ -119,6 +119,35 @@ func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache,
 	assert.Equal(t, r.GetDigest().GetHash(), d1.GetHash())
 }
 
+type readMetrics struct {
+	readThroughCount, readThroughBytes, peerCount float64
+}
+
+// readMetricsFor snapshots the distributed cache read counters for op.
+func readMetricsFor(t *testing.T, op string) readMetrics {
+	labels := func(source string) prometheus.Labels {
+		return prometheus.Labels{
+			metrics.DistributedCacheOperation:  op,
+			metrics.DistributedCacheReadSource: source,
+		}
+	}
+	return readMetrics{
+		readThroughCount: testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadCount, labels("read_through")),
+		readThroughBytes: testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadDigestSize, labels("read_through")),
+		peerCount:        testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadCount, labels("peer")),
+	}
+}
+
+// assertReadThroughServed asserts that since the before snapshot, exactly
+// count objects totalling sizeBytes were served from the local read-through
+// cache for op, and none from a remote peer.
+func assertReadThroughServed(t *testing.T, op string, before readMetrics, count, sizeBytes int) {
+	after := readMetricsFor(t, op)
+	assert.Equal(t, before.readThroughCount+float64(count), after.readThroughCount, "read_through object count")
+	assert.Equal(t, before.readThroughBytes+float64(sizeBytes), after.readThroughBytes, "read_through bytes")
+	assert.Equal(t, before.peerCount, after.peerCount, "peer object count")
+}
+
 func TestBasicReadWrite(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	metrics.DistributedCachePeerLookups.Reset()
@@ -2779,6 +2808,8 @@ func TestReadThroughLocalCache(t *testing.T) {
 		peer3: len(memoryCache3.ops),
 	}
 
+	readMetricsBefore := readMetricsFor(t, "Reader")
+
 	// Now read all of the digests again -- all should be served
 	// directly from the local cache.
 	for _, rn := range allResources {
@@ -2791,6 +2822,10 @@ func TestReadThroughLocalCache(t *testing.T) {
 	assert.Equal(t, opCountBefore[peer2]+len(allResources), len(memoryCache2.ops))
 	assert.Equal(t, opCountBefore[peer3]+len(allResources), len(memoryCache3.ops))
 
+	// Every one of those reads was counted as served from the local
+	// read-through cache, and none from a peer.
+	readsServed := len(allResources) * len(distributedCaches)
+	assertReadThroughServed(t, "Reader", readMetricsBefore, readsServed, readsServed*100)
 }
 
 func TestGetMultiReadThroughLocalCache(t *testing.T) {
@@ -2855,6 +2890,8 @@ func TestGetMultiReadThroughLocalCache(t *testing.T) {
 		peer3: len(memoryCache3.ops),
 	}
 
+	readMetricsBefore := readMetricsFor(t, "GetMulti")
+
 	// Read everything again via GetMulti -- every resource should now be
 	// served directly from the local read-through cache, so each peer
 	// observes exactly one local op per call (the batched GetMulti).
@@ -2871,6 +2908,11 @@ func TestGetMultiReadThroughLocalCache(t *testing.T) {
 	assert.Equal(t, opCountBefore[peer1]+len(allResources), len(memoryCache1.ops))
 	assert.Equal(t, opCountBefore[peer2]+len(allResources), len(memoryCache2.ops))
 	assert.Equal(t, opCountBefore[peer3]+len(allResources), len(memoryCache3.ops))
+
+	// Every one of those reads was counted as served from the local
+	// read-through cache, and none from a peer.
+	readsServed := len(allResources) * len(distributedCaches)
+	assertReadThroughServed(t, "GetMulti", readMetricsBefore, readsServed, readsServed*100)
 }
 
 func TestGetMultiReadThroughLocalCacheSkipsMutableAC(t *testing.T) {
