@@ -156,6 +156,12 @@ proto_library(
 )
 
 proto_library(
+    name = "bytestream_proto",
+    srcs = ["bytestream.proto"],
+    deps = [],
+)
+
+proto_library(
     name = "cache_proto",
     srcs = [
         "cache.proto",
@@ -1146,6 +1152,13 @@ go_proto_library(
     deps = [
         ":build_status_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "bytestream_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/bytestream",
+    mode = "messages_and_services",
+    proto = ":bytestream_proto",
 )
 
 go_proto_library(
