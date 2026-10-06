@@ -1,5 +1,5 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -17,10 +17,18 @@ py_library(
     deps = ["@pypi//requests"],
 )
 
-sh_test(
-    name = "branch_highest_version_test",
-    srcs = ["branch_highest_version_test.sh"],
+go_test(
+    name = "tools_test",
+    srcs = [
+        "branch_highest_version_test.go",
+        "version_script_helpers_test.go",
+    ],
     data = ["branch_highest_version.sh"],
-    env = {"BRANCH_HIGHEST_VERSION": "$(rlocationpath :branch_highest_version.sh)"},
-    deps = ["@bazel_tools//tools/bash/runfiles"],
+    x_defs = {"branchHighestVersionRlocationpath": "$(rlocationpath :branch_highest_version.sh)"},
+    deps = [
+        "//server/testutil/testfs",
+        "//server/testutil/testgit",
+        "//server/testutil/testshell",
+        "@com_github_stretchr_testify//require",
+    ],
 )
