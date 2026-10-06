@@ -28,7 +28,9 @@ interface State {
   hoveredTimeline?: string;
 }
 
-// The number of actions shown in the legend table on a single page.
+// The number of actions shown in the legend table on a single page.  The legend
+// is paginated so that the user can keep the chart on the screen while going
+// through the legend.
 const LEGEND_PAGE_SIZE = 5;
 
 export default class TargetChartComponent extends React.Component<Props, State> {
@@ -41,8 +43,6 @@ export default class TargetChartComponent extends React.Component<Props, State> 
     return Math.max(1, Math.ceil(this.props.series.length / LEGEND_PAGE_SIZE));
   }
 
-  // The current page, clamped in case the series list shrank (e.g. because a
-  // filter changed) since the user last paged.
   private getPage(): number {
     return Math.max(0, Math.min(this.state.legendPage, this.getPageCount() - 1));
   }
