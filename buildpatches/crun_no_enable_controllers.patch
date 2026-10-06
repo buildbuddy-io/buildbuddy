@@ -1,11 +1,16 @@
 --- a/src/libcrun/cgroup-utils.c
 +++ b/src/libcrun/cgroup-utils.c
-@@ -795,6 +795,10 @@
+@@ -795,6 +795,15 @@
  static int
  write_controller_file (const char *path, int controllers_to_enable, libcrun_error_t *err)
  {
-+  /* BuildBuddy enables controllers at executor startup. Preserve that choice
-+     while allowing enable_controllers to create the cgroup directories.  */
++  /* BuildBuddy's executor configures cgroup.subtree_control for task cgroups
++     itself, and can leave the cpu controller off so that tasks share CPU per
++     thread. crun would otherwise enable every available controller on each
++     ancestor of the container's cgroup, turning cpu back on. Skip the write
++     and report success, since callers only check for a negative return.
++     enable_controllers still creates the cgroup directories. The code below
++     is left in place to keep this patch small.  */
 +  return controllers_to_enable;
 +
    cleanup_free char *subtree_control = NULL;
