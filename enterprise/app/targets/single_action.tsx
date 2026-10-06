@@ -325,7 +325,7 @@ export default class SingleActionComponent extends React.Component<Props, State>
       <div className="container">
         <div className="card">
           <div className="content">
-            <div className="title target-data-card-title">
+            <div className="title single-action-card-title">
               <BarChart2 /> Execution history
             </div>
             <div className="details">
@@ -360,7 +360,7 @@ export default class SingleActionComponent extends React.Component<Props, State>
         </div>
         <div className="card">
           <div className="content">
-            <div className="title target-data-card-title">
+            <div className="title single-action-card-title">
               <List /> {this.isSampled() ? "Sampled executions" : "Executions"}
             </div>
             <div className="details">{this.renderExecutionTable()}</div>

@@ -337,7 +337,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     return (
       <div className="card">
         <div className="content">
-          <div className="title target-data-card-title">
+          <div className="title single-target-card-title">
             <BarChart2 /> Action history
           </div>
           {this.renderTimelineFilters()}
@@ -652,7 +652,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
           <>
             <div className="card">
               <div className="content">
-                <div className="title target-data-card-title">
+                <div className="title single-target-card-title">
                   <PieChart />
                   Stats overview
                 </div>
@@ -760,7 +760,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     }
 
     return (
-      <div className="target-data" ref={this.rootRef}>
+      <div className="single-target" ref={this.rootRef}>
         {this.renderHeader()}
         {pageContent}
       </div>

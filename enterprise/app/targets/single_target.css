@@ -1,22 +1,17 @@
-.target-data .target-data-header {
+.single-target .single-target-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
 }
 
-.target-data .target-data-title {
+.single-target .single-target-title {
   font-size: 32px;
   font-weight: 700;
   word-break: break-all;
 }
 
-.target-data .target-data-card-title {
-  display: flex;
-  align-items: center;
-}
-
-.target-data .target-data-filters {
+.single-target .single-target-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -24,72 +19,75 @@
   margin-bottom: 16px;
 }
 
-.target-data .target-data-filter {
+.single-target .single-target-filter {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.target-data .target-data-filter-label {
+.single-target .single-target-filter-label {
   font-weight: 600;
 }
 
-.target-data .target-data-actions-card {
+.single-target .single-target-actions-card {
   display: flex;
   flex-direction: column;
   gap: 16px;
   margin-bottom: 16px;
 }
 
-.target-data .target-data-card-title {
+.single-target .single-target-card-title,
+.single-target .single-action-card-title {
+  display: flex;
+  align-items: center;
   font-size: 20px;
   font-weight: 700;
 }
 
-.target-data .target-data-filters {
+.single-target .single-target-filters {
   margin-bottom: 0;
 }
 
-.target-data .target-data-table-wrapper {
+.single-target .single-target-table-wrapper {
   overflow-x: auto;
   width: 100%;
 }
 
-.target-data .target-data-table {
+.single-target .single-target-table {
   width: 100%;
   position: relative;
   border-collapse: collapse;
 }
 
-.target-data .target-data-table th,
-.target-data .target-data-table td {
+.single-target .single-target-table th,
+.single-target .single-target-table td {
   text-align: left;
   padding: 8px 12px;
   border-bottom: 1px solid #eee;
   white-space: nowrap;
 }
 
-.target-data .target-data-table th {
+.single-target .single-target-table th {
   font-weight: 600;
   color: #666;
   cursor: pointer;
   user-select: none;
 }
 
-.target-data .target-data-table th:hover {
+.single-target .single-target-table th:hover {
   color: #333;
 }
 
 /* Non-path columns shrink to fit their content... */
-.target-data .target-data-table th:not(.output-path-column),
-.target-data .target-data-table td:not(.output-path-column) {
+.single-target .single-target-table th:not(.output-path-column),
+.single-target .single-target-table td:not(.output-path-column) {
   width: 1%;
   white-space: nowrap;
 }
 
 /* ...so the output path column absorbs all the remaining width, ellipsizing
    when it overflows. */
-.target-data .target-data-table .output-path-column {
+.single-target .single-target-table .output-path-column {
   max-width: 1px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -98,27 +96,27 @@
   white-space: nowrap;
 }
 
-.target-data .target-data-table-row {
+.single-target .single-target-table-row {
   cursor: pointer;
 }
 
-.target-data .target-data-table-row:hover {
+.single-target .single-target-table-row:hover {
   background-color: #f7f7f7;
 }
 
-.target-data .target-donuts {
+.single-target .target-donuts {
   display: flex;
   flex-wrap: wrap;
   max-width: 1200px;
 }
-.target-data .target-donut {
+.single-target .target-donut {
   min-width: 350px;
   width: calc(50% - 32px);
   margin-bottom: 32px;
   margin-right: 32px;
 }
 
-.target-data .top-bar {
+.single-target .top-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -131,63 +129,63 @@
 
 /* TABLE JUNK */
 
-.target-data .chart-table-container .results-table {
+.single-target .chart-table-container .results-table {
   border: 1px solid var(--color-border-primary);
   border-radius: 4px;
   overflow: hidden;
   line-height: 20px;
 }
 
-.target-data .chart-table-container .row {
+.single-target .chart-table-container .row {
   display: flex;
   &:not(:last-child) {
     border-bottom: 1px solid var(--color-border-primary);
   }
 }
 
-.target-data .chart-table-container .column-headers {
+.single-target .chart-table-container .column-headers {
   font-weight: 600;
 }
 
-.target-data .chart-table-container .result-row {
+.single-target .chart-table-container .result-row {
   transition: background-color 0.2s ease;
 }
 
-.target-data .chart-table-container .result-row.clickable {
+.single-target .chart-table-container .result-row.clickable {
   cursor: pointer;
 }
 
-.target-data .chart-table-container .result-row.clickable:hover {
+.single-target .chart-table-container .result-row.clickable:hover {
   background-color: var(--color-bg-hover);
 }
 
-.target-data .chart-table-container .legend-column {
+.single-target .chart-table-container .legend-column {
   width: 12px;
   padding: 9px 8px 9px 12px;
 }
 
-.target-data .chart-table-container .legend-column .legend-square {
+.single-target .chart-table-container .legend-column .legend-square {
   width: 12px;
   height: 12px;
 }
 
-.target-data .chart-table-container .empty-row {
+.single-target .chart-table-container .empty-row {
   height: 30px;
 }
 
-.target-data .chart-table-container .action-column {
+.single-target .chart-table-container .action-column {
   flex-grow: 1;
   width: 100px;
   padding: 4px;
 }
 
-.target-data .chart-table-container .stat-column {
+.single-target .chart-table-container .stat-column {
   width: 100px;
   padding: 4px;
   text-align: right;
 }
 
-.target-data .chart-table-container .compare-column {
+.single-target .chart-table-container .compare-column {
   width: 32px;
   padding: 4px;
 }
@@ -195,17 +193,17 @@
 /* The row menus open below their rows, so they must not be clipped by the
    table.  This table's rows have no backgrounds, so nothing needs clipping to
    the table's rounded corners. */
-.target-data .chart-table-container .results-table.executions-table {
+.single-target .chart-table-container .results-table.executions-table {
   overflow: visible;
 }
 
 /* Anchors the menu popup to the button. */
-.target-data .execution-menu {
+.single-target .execution-menu {
   position: relative;
 }
 
 /* Sized to the row's line height so that it doesn't make the row taller. */
-.target-data .execution-menu-button {
+.single-target .execution-menu-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -219,52 +217,52 @@
   cursor: pointer;
 }
 
-.target-data .execution-menu-button:hover {
+.single-target .execution-menu-button:hover {
   background: var(--color-bg-hover);
 }
 
-.target-data .execution-menu-button svg {
+.single-target .execution-menu-button svg {
   width: 16px;
   height: 16px;
 }
 
-.target-data .table-footer-controls {
+.single-target .table-footer-controls {
   display: flex;
   justify-content: center;
   padding: 16px;
 }
 
-.target-data .load-more-button {
+.single-target .load-more-button {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.target-data .targets-table-target {
+.single-target .targets-table-target {
   word-break: break-all;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.target-data .targets-table-value {
+.single-target .targets-table-value {
   font-weight: 500;
   white-space: nowrap;
 }
 
-.target-data .targets-empty {
+.single-target .targets-empty {
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 80px 40px;
 }
 
-.target-data .empty-message {
+.single-target .empty-message {
   color: var(--color-text-secondary);
   font-size: 16px;
   text-align: center;
 }
 
-.target-data .loading-section {
+.single-target .loading-section {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -273,14 +271,14 @@
 
 /* HEADER */
 
-.target-data .shelf .detail svg {
+.single-target .shelf .detail svg {
   margin-right: 8px;
   flex-shrink: 0;
 }
 
 /* FILTER AND SORT CONTROLS */
 
-.target-data .controls.row {
+.single-target .controls.row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -288,11 +286,11 @@
   margin: 16px 0;
 }
 
-.target-data .controls.row label {
+.single-target .controls.row label {
   font-weight: 600;
 }
 
-.target-data .controls.row .separator {
+.single-target .controls.row .separator {
   border-left: 1px solid var(--color-border-primary);
   align-self: stretch;
   margin: 0 8px;
@@ -300,50 +298,50 @@
 
 /* SINGLE ACTION PAGE */
 
-.target-data .single-action-charts {
+.single-target .single-action-charts {
   display: flex;
   flex-direction: column;
   gap: 32px;
 }
 
-.target-data .single-action-chart-tooltip {
+.single-target .single-action-chart-tooltip {
   min-width: 220px;
   font-size: 13px;
   line-height: 20px;
 }
 
-.target-data .single-action-chart-tooltip .tooltip-section + .tooltip-section {
+.single-target .single-action-chart-tooltip .tooltip-section + .tooltip-section {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--color-border-primary);
 }
 
-.target-data .single-action-chart-tooltip .tooltip-row {
+.single-target .single-action-chart-tooltip .tooltip-row {
   display: flex;
   justify-content: space-between;
   gap: 24px;
 }
 
-.target-data .single-action-chart-tooltip .tooltip-value {
+.single-target .single-action-chart-tooltip .tooltip-value {
   font-variant-numeric: tabular-nums;
 }
 
-.target-data .single-action-chart-tooltip .tooltip-hint {
+.single-target .single-action-chart-tooltip .tooltip-hint {
   font-size: 12px;
   color: var(--color-hovercard-muted);
 }
 
-.target-data .chart-table-container {
+.single-target .chart-table-container {
   margin-top: 12px;
 }
 
-.target-data .chart-table-container .digest-column {
+.single-target .chart-table-container .digest-column {
   width: 96px;
   padding: 4px;
 }
 
 /* Matches the look of the DigestComponent hash bubble, but wraps a link. */
-.target-data .digest-bubble {
+.single-target .digest-bubble {
   display: inline-block;
   padding: 0 8px;
   border-radius: 4px;
@@ -352,7 +350,7 @@
   background-color: hsl(var(--digest-hue), 50%, var(--color-digest-color-lightness));
 }
 
-.target-data .chart-table-container .date-column {
+.single-target .chart-table-container .date-column {
   flex-grow: 1;
   width: 240px;
   padding: 4px;
@@ -360,7 +358,7 @@
 
 /* TIMING BAR */
 
-.target-data .chart-table-container .timing-column {
+.single-target .chart-table-container .timing-column {
   display: flex;
   align-items: center;
   flex-grow: 1;
@@ -369,12 +367,12 @@
 }
 
 /* The hover target is taller than the bar itself so it's easy to hit. */
-.target-data .timing-bar {
+.single-target .timing-bar {
   width: 100%;
   padding: 8px 0;
 }
 
-.target-data .timing-track {
+.single-target .timing-track {
   display: flex;
   /* Gaps show the card background, separating adjacent segments. */
   gap: 1px;
@@ -382,28 +380,28 @@
   overflow: hidden;
 }
 
-.target-data .timing-track.empty {
+.single-target .timing-track.empty {
   background-color: var(--color-bg-tertiary);
 }
 
-.target-data .timing-segment {
+.single-target .timing-segment {
   flex-basis: 0;
   min-width: 2px;
 }
 
-.target-data .timing-segment:first-of-type {
+.single-target .timing-segment:first-of-type {
   border-radius: 4px 0 0 4px;
 }
 
-.target-data .timing-segment:nth-last-of-type(2) {
+.single-target .timing-segment:nth-last-of-type(2) {
   border-radius: 0 4px 4px 0;
 }
 
-.target-data .timing-bar:hover .timing-segment {
+.single-target .timing-bar:hover .timing-segment {
   filter: brightness(1.15);
 }
 
-.target-data .controls.row .timing-legend {
+.single-target .controls.row .timing-legend {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -413,13 +411,13 @@
   color: var(--color-text-secondary);
 }
 
-.target-data .timing-legend-item {
+.single-target .timing-legend-item {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-/* The tooltip and swatches are rendered outside of .target-data, so the
+/* The tooltip and swatches are rendered outside of .single-target, so the
    following rules are not scoped to it. */
 
 .timing-swatch {
@@ -476,7 +474,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.target-data .table-summary {
+.single-target .table-summary {
   margin-top: 8px;
   font-size: 13px;
   color: var(--color-text-secondary);
@@ -484,7 +482,7 @@
 
 /* TABLE PAGER */
 
-.target-data .table-pager {
+.single-target .table-pager {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -494,18 +492,18 @@
   color: var(--color-text-secondary);
 }
 
-.target-data .table-pager .table-pager-buttons {
+.single-target .table-pager .table-pager-buttons {
   display: flex;
   gap: 4px;
 }
 
-.target-data .table-pager .icon-button {
+.single-target .table-pager .icon-button {
   width: 32px;
   height: 32px;
   min-height: 32px;
 }
 
-.target-data .table-pager .icon-button svg {
+.single-target .table-pager .icon-button svg {
   width: 16px;
   height: 16px;
 }
