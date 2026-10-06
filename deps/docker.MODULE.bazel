@@ -22,6 +22,16 @@ container_pull(
     repository = "distroless/java17-debian12",
 )
 
+# Base for //dockerfiles/run_script:image. The official bash image is alpine
+# with bash installed, so the run-script image can be built without docker.
+container_pull(
+    name = "bash_image",
+    # digest is the linux/amd64 image from the "5" tag (bash 5.3.20, alpine 3.24)
+    digest = "sha256:95c29f8731a464ff4938d565dcc5eabfcdbd249cbe268c6919706c51ef3e7531",
+    registry = "mirror.gcr.io",
+    repository = "bash",
+)
+
 dockerfile_image = use_repo_rule("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
 
 dockerfile_image(
@@ -74,6 +84,8 @@ dockerfile_image(
     visibility = ["//visibility:public"],
 )
 
+# Deprecated: use //dockerfiles/run_script:image, which doesn't need docker.
+# Remove once buildbuddy-internal no longer depends on this.
 dockerfile_image(
     name = "run_script_image",
     dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/run_script:Dockerfile",
