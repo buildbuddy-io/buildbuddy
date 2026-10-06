@@ -442,11 +442,10 @@ func TestActionCacheProxy_TTLServesFreshLocalResult(t *testing.T) {
 	cache := newLocalOnlyCache()
 	seedLocalActionResult(t, cache, req, localResult, env.GetClock().Now().Add(-time.Second).UnixMicro())
 	proxy := &ActionCacheServerProxy{
-		supportsEncryption: func(context.Context) bool { return false },
-		env:                env,
-		authenticator:      env.GetAuthenticator(),
-		localCache:         cache,
-		remoteACClient:     &unexpectedActionCacheClient{t: t},
+		env:            env,
+		authenticator:  env.GetAuthenticator(),
+		localCache:     cache,
+		remoteACClient: &unexpectedActionCacheClient{t: t},
 	}
 	rsp, err := proxy.GetActionResult(ctx, req)
 	require.NoError(t, err)
@@ -493,11 +492,10 @@ func TestActionCacheProxy_TTLExpiredValidatesWithRemote(t *testing.T) {
 	oldMTime := env.GetClock().Now().Add(-2 * time.Minute).UnixMicro()
 	localKey := seedLocalActionResult(t, cache, req, localResult, oldMTime)
 	proxy := &ActionCacheServerProxy{
-		supportsEncryption: func(context.Context) bool { return false },
-		env:                env,
-		authenticator:      env.GetAuthenticator(),
-		localCache:         cache,
-		remoteACClient:     countingClient,
+		env:            env,
+		authenticator:  env.GetAuthenticator(),
+		localCache:     cache,
+		remoteACClient: countingClient,
 	}
 
 	rsp, err := proxy.GetActionResult(ctx, req)
@@ -549,11 +547,10 @@ func TestActionCacheProxy_DoesNotCacheHashOnlyRemoteResponse(t *testing.T) {
 	require.NoError(t, err)
 
 	proxy := &ActionCacheServerProxy{
-		supportsEncryption: func(context.Context) bool { return false },
-		env:                env,
-		authenticator:      env.GetAuthenticator(),
-		localCache:         newLocalOnlyCache(),
-		remoteACClient:     countingClient,
+		env:            env,
+		authenticator:  env.GetAuthenticator(),
+		localCache:     newLocalOnlyCache(),
+		remoteACClient: countingClient,
 	}
 
 	hashOnlyResp, err := proxy.GetActionResult(ctx, &repb.GetActionResultRequest{
@@ -600,11 +597,10 @@ func TestActionCacheProxy_UpdateActionResultRefreshesLocalResultWithinTTL(t *tes
 	cache := newLocalOnlyCache()
 	seedLocalActionResult(t, cache, getReq, &repb.ActionResult{ExitCode: 1}, env.GetClock().Now().Add(-time.Second).UnixMicro())
 	proxy := &ActionCacheServerProxy{
-		supportsEncryption: func(context.Context) bool { return false },
-		env:                env,
-		authenticator:      env.GetAuthenticator(),
-		localCache:         cache,
-		remoteACClient:     countingClient,
+		env:            env,
+		authenticator:  env.GetAuthenticator(),
+		localCache:     cache,
+		remoteACClient: countingClient,
 	}
 
 	rsp, err := proxy.GetActionResult(ctx, getReq)
@@ -655,11 +651,10 @@ func TestActionCacheProxy_UpdateActionResultDoesNotLeaveFreshRequestVariantStale
 	cache := newLocalOnlyCache()
 	seedLocalActionResult(t, cache, getReq, &repb.ActionResult{ExitCode: 1}, env.GetClock().Now().Add(-time.Second).UnixMicro())
 	proxy := &ActionCacheServerProxy{
-		supportsEncryption: func(context.Context) bool { return false },
-		env:                env,
-		authenticator:      env.GetAuthenticator(),
-		localCache:         cache,
-		remoteACClient:     countingClient,
+		env:            env,
+		authenticator:  env.GetAuthenticator(),
+		localCache:     cache,
+		remoteACClient: countingClient,
 	}
 
 	_, err = proxy.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{

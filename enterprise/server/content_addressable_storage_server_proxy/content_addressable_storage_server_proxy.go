@@ -38,7 +38,7 @@ var (
 )
 
 type CASServerProxy struct {
-	supportsEncryption func(context.Context) bool
+	supportsEncryption bool
 	authenticator      interfaces.Authenticator
 	efp                interfaces.ExperimentFlagProvider
 	local              repb.ContentAddressableStorageServer
@@ -342,7 +342,7 @@ func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUp
 
 	recordMetrics("BatchUpdateBlobs", metrics.MissStatusLabel, newCacheMetrics().addUpdateMetrics(req.Requests))
 
-	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
 		return s.remote.BatchUpdateBlobs(ctx, req)
 	}
 
@@ -394,7 +394,7 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	mergedResp := repb.BatchReadBlobsResponse{}
 	mergedDigests := []*repb.Digest{}
 	localResp := &repb.BatchReadBlobsResponse{}
-	remoteOnly := authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx)
+	remoteOnly := authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption
 	if !remoteOnly {
 		resp, err := s.local.BatchReadBlobs(ctx, req)
 		if err != nil {
@@ -490,7 +490,7 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 			Compressor: response.Compressor,
 		})
 	}
-	if !authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption(ctx) {
+	if !authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption {
 		if _, err := s.local.BatchUpdateBlobs(ctx, &updateReq); err != nil {
 			log.CtxWarningf(ctx, "Error locally updating blobs: %s", err)
 		}

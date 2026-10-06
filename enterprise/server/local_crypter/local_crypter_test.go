@@ -114,9 +114,7 @@ func TestRegister(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "local", md.GetEncryptionKeyId())
 			require.Equal(t, tc.localKeyVersion, md.GetVersion())
-			// The remote encryption experiment only applies to remotely-
-			// fetched keys.
-			require.True(t, remote_crypter.SupportsEncryption(te)(ctx))
+			require.True(t, remote_crypter.SupportsEncryption(te))
 		})
 	}
 }
