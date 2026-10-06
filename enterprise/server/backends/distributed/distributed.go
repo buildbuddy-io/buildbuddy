@@ -907,11 +907,17 @@ func (c *Cache) remoteMetadata(ctx context.Context, peer string, r *rspb.Resourc
 	return c.distributedProxy.RemoteMetadata(ctx, peer, r)
 }
 
-func (c *Cache) remoteGetWithMetadata(ctx context.Context, peer string, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+func (c *Cache) remoteGetWithMetadata(ctx context.Context, peer string, r *rspb.ResourceName, metricsLabel string) ([]byte, *interfaces.CacheMetadata, error) {
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
-		return c.local.GetWithMetadata(ctx, r)
+		res, md, err := c.local.GetWithMetadata(ctx, r)
+		if err == nil {
+			recordRead(metricsLabel, "local", r.GetDigest())
+		}
+		return res, md, err
 	}
-	return c.distributedProxy.RemoteGetWithMetadata(ctx, peer, r)
+	res, md, err := c.distributedProxy.RemoteGetWithMetadata(ctx, peer, r)
+	recordRead(metricsLabel, "peer", r.GetDigest())
+	return res, md, err
 }
 
 func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
@@ -1004,7 +1010,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.Res
 
 	for _, r := range stillMissing {
 		buf, ok := remoteResults[r.GetDigest()]
-		if !ok {
+		if !ok || len(buf) == 0 {
 			continue
 		}
 		recordRead("GetMulti", "peer", r.GetDigest())
@@ -1373,13 +1379,8 @@ func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metri
 	lookups := 0
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		lookups++
-		data, md, err := c.remoteGetWithMetadata(ctx, peer, r)
+		data, md, err := c.remoteGetWithMetadata(ctx, peer, r, metricsLabel)
 		if err == nil {
-			source := "peer"
-			if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
-				source = "local"
-			}
-			recordRead(metricsLabel, source, d)
 			c.backfillPeers(ctx, c.getBackfillOrders(r, ps))
 			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) found on peer %q", d, peer)
 			metrics.DistributedCachePeerLookups.WithLabelValues(metricsLabel, metrics.HitStatusLabel).Observe(float64(lookups))
