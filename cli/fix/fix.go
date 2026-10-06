@@ -259,6 +259,12 @@ func walk(moduleOrWorkspaceFile string) error {
 		}
 	}
 
+	// Format whatever was appended to the module/workspace file above, so
+	// that the next run doesn't find anything to change.
+	if len(foundLanguages) > 0 {
+		errs = append(errs, runBuildifier(moduleOrWorkspaceFile))
+	}
+
 	return joinErrors(errs)
 }
 

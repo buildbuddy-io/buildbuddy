@@ -19,7 +19,7 @@ include("//deps:bazel_dep.MODULE.bazel")
 		"deps/bazel_dep.MODULE.bazel": `
 bazel_dep(name = "rules_go", version = "0.63.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "gazelle", repo_name = "bazel_gazelle")
-include(":more.MODULE.bazel")
+include("//deps:more.MODULE.bazel")
 `,
 		"deps/more.MODULE.bazel": `bazel_dep(name = "rules_shell", version = "0.4.1")`,
 	})
@@ -36,7 +36,7 @@ include(":more.MODULE.bazel")
 	require.True(t, ok)
 	require.Equal(t, "", version)
 
-	// Relative includes are resolved relative to the including file.
+	// Includes are followed transitively.
 	_, ok = m.BazelDep("rules_shell")
 	require.True(t, ok)
 
@@ -51,6 +51,18 @@ func TestLoad_MissingInclude(t *testing.T) {
 	})
 	_, err := bzlmod.Load(ws)
 	require.Error(t, err)
+}
+
+func TestLoad_RejectsLabelsBazelRejects(t *testing.T) {
+	for _, label := range []string{":x.MODULE.bazel", "@//:x.MODULE.bazel", "@repo//:x.MODULE.bazel", "//x.MODULE.bazel"} {
+		ws := testfs.MakeTempDir(t)
+		testfs.WriteAllFileContents(t, ws, map[string]string{
+			"MODULE.bazel":   `include("` + label + `")`,
+			"x.MODULE.bazel": "",
+		})
+		_, err := bzlmod.Load(ws)
+		require.Error(t, err, "label %q", label)
+	}
 }
 
 func TestUsesExtension(t *testing.T) {

@@ -12,21 +12,63 @@ index 860cc7e..327f7b5 100644
          "main.buildVersion": "{STABLE_buildVersion}",
          "main.buildScmRevision": "{STABLE_buildScmRevision}",
 diff --git a/buildifier/buildifier.go b/buildifier/buildifier.go
-index 9d0a677..ff49cc0 100644
 --- a/buildifier/buildifier.go
 +++ b/buildifier/buildifier.go
-@@ -95,6 +95,10 @@ with -config=off.
+@@ -96,6 +96,13 @@
  }
  
  func main() {
 +	os.Exit(Run())
 +}
 +
++// Run runs buildifier with os.Args, like main, but returns the exit code
++// instead of exiting, so that it can be embedded in other tools (e.g.
++// `bb fix`). Invalid flags still exit, via flag.ExitOnError.
 +func Run() int {
  	c := config.New()
  
  	flags := c.FlagSet("buildifier", flag.ExitOnError)
-@@ -159,7 +163,7 @@ func main() {
+@@ -108,13 +115,13 @@
+ 		flag.CommandLine.SetOutput(os.Stdout)
+ 		usage()
+ 		fmt.Println()
+-		os.Exit(0)
++		return 0
+ 	}
+ 
+ 	if c.Version {
+ 		fmt.Printf("buildifier version: %s \n", buildVersion)
+ 		fmt.Printf("buildifier scm revision: %s \n", buildScmRevision)
+-		os.Exit(0)
++		return 0
+ 	}
+ 
+ 	if c.ConfigPath == "" {
+@@ -123,12 +130,12 @@
+ 	if c.ConfigPath != "" {
+ 		if c.ConfigPath == "example" {
+ 			fmt.Println(config.Example().String())
+-			os.Exit(0)
++			return 0
+ 		}
+ 		if c.ConfigPath != "off" {
+ 			if err := c.LoadFile(); err != nil {
+ 				fmt.Fprintf(os.Stderr, "buildifier: %s\n", err)
+-				os.Exit(2)
++				return 2
+ 			}
+ 			// re-parse with new possibly new defaults
+ 			flags = c.FlagSet("buildifier", flag.ExitOnError)
+@@ -140,7 +147,7 @@
+ 
+ 	if err := c.Validate(args); err != nil {
+ 		fmt.Fprintf(os.Stderr, "buildifier: %s\n", err)
+-		os.Exit(2)
++		return 2
+ 	}
+ 
+ 	// Pass down debug flags into build package
+@@ -161,7 +168,7 @@
  	b := buildifier{c, differ}
  	exitCode := b.run(args)
  

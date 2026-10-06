@@ -59,7 +59,7 @@ func (m *Module) load(workspaceDir, relPath string, seen map[string]bool) error 
 		if !ok {
 			return fmt.Errorf("%s: include() must be given a string label", relPath)
 		}
-		includePath, err := labelToPath(label, filepath.Dir(relPath))
+		includePath, err := labelToPath(label)
 		if err != nil {
 			return fmt.Errorf("%s: %w", relPath, err)
 		}
@@ -70,24 +70,14 @@ func (m *Module) load(workspaceDir, relPath string, seen map[string]bool) error 
 	return nil
 }
 
-// labelToPath converts an include() label in the main repo ("//pkg:file" or
-// ":file") to a workspace-relative path. Relative labels are relative to the
-// package of the including file.
-func labelToPath(label, includingDir string) (string, error) {
-	label = strings.TrimPrefix(label, "@@")
-	label = strings.TrimPrefix(label, "@")
-	switch {
-	case strings.HasPrefix(label, "//"):
-		pkg, name, ok := strings.Cut(strings.TrimPrefix(label, "//"), ":")
-		if !ok {
-			return "", fmt.Errorf("include label %q must name a file (//pkg:file)", label)
-		}
-		return filepath.Join(pkg, name), nil
-	case strings.HasPrefix(label, ":"):
-		return filepath.Join(includingDir, strings.TrimPrefix(label, ":")), nil
-	default:
-		return "", fmt.Errorf("unsupported include label %q: must start with // or :", label)
+// labelToPath converts an include() label to a workspace-relative path.
+// Bazel only accepts labels of the form "//pkg:file" in include().
+func labelToPath(label string) (string, error) {
+	pkg, name, ok := strings.Cut(strings.TrimPrefix(label, "//"), ":")
+	if !strings.HasPrefix(label, "//") || !ok {
+		return "", fmt.Errorf("bad include label %q: include() must be called with labels of the form //pkg:file", label)
 	}
+	return filepath.Join(pkg, name), nil
 }
 
 // BazelDep returns the version of the bazel_dep with the given module name, if
