@@ -78,11 +78,11 @@ func actionMnemonicForMetrics(ctx context.Context) string {
 }
 
 func (s *ByteStreamServerProxy) shouldBypassLocalCacheForEncryption(ctx context.Context) bool {
-	return authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx)
+	return authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption
 }
 
 type ByteStreamServerProxy struct {
-	supportsEncryption func(context.Context) bool
+	supportsEncryption bool
 	authenticator      interfaces.Authenticator
 	local              interfaces.ByteStreamServer
 	remote             bspb.ByteStreamClient
