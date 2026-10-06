@@ -249,6 +249,13 @@ func enableTaskCgroupControllers(path string) error {
 			if err := cgroup.WriteSubtreeControl(path, map[string]bool{"cpu": false}); err != nil {
 				return fmt.Errorf("disable cgroup controller %q (required to disable executor.child_cgroups_task_cpu_controller_enabled): %w", controller, err)
 			}
+			// crun enables every available controller on the ancestors of
+			// each container cgroup it creates, which would turn cpu back on.
+			// The bundled crun is patched to skip that when this variable is
+			// set, and inherits it from the executor.
+			if err := os.Setenv("BUILDBUDDY_CRUN_SKIP_ENABLE_CONTROLLERS", "1"); err != nil {
+				return fmt.Errorf("set BUILDBUDDY_CRUN_SKIP_ENABLE_CONTROLLERS: %w", err)
+			}
 			continue
 		}
 		if err := cgroup.WriteSubtreeControl(path, map[string]bool{controller: true}); err != nil {

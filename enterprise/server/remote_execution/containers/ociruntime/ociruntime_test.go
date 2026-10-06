@@ -3449,7 +3449,10 @@ func TestTaskCPUControllerDisabled(t *testing.T) {
 			require.NoError(t, err)
 			wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-			// Mirror executor startup with CPU disabled only for task cgroups.
+			// Mirror executor startup with CPU disabled only for task cgroups,
+			// including the variable that keeps the bundled crun from turning
+			// it back on.
+			t.Setenv("BUILDBUDDY_CRUN_SKIP_ENABLE_CONTROLLERS", "1")
 			parent := "ociruntime-test-" + uuid.New()
 			parentPath := filepath.Join(cgroup.RootPath, parent)
 			require.NoError(t, os.Mkdir(parentPath, 0755))
