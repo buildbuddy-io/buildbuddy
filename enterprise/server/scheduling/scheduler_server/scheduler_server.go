@@ -1459,6 +1459,10 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	}
 	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s, shutdownCtx.Done())
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		// cancelShutdown is safe to call concurrently on its own. The lock
+		// makes sure that a goBackground call that has already checked
+		// isShuttingDown finishes adding to s.background before we Wait,
+		// so we don't miss its goroutine (and don't race Add with Wait).
 		s.backgroundMu.Lock()
 		cancelShutdown()
 		s.backgroundMu.Unlock()
