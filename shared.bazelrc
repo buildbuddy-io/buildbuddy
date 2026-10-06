@@ -435,9 +435,11 @@ common:workflows --config=buildbuddy_remote_cache
 common:workflows --config=buildbuddy_experimental_remote_downloader
 common:workflows --noexperimental_remote_downloader_local_fallback
 
-common:workflows-disk-minimal --config=download-minimal
-common:workflows-disk-minimal --repository_cache=
-common:workflows-disk-minimal --repo_contents_cache=
+# Keep the disk small on Firecracker-snapshotted runners, to keep snapshots
+# small. An empty --repository_cache also disables the repo contents cache.
+# Rely on the remote downloader to cache downloads via the Remote Asset API.
+common:firecracker-disk-minimal --config=download-minimal
+common:firecracker-disk-minimal --repository_cache=
 
 # Configuration used for Linux workflows
 common:linux-workflows --config=remote-shared
@@ -445,7 +447,7 @@ common:linux-workflows --config=target-linux-x86
 common:linux-workflows --config=workflows
 common:linux-workflows --config=buildbuddy_remote_executor
 common:linux-workflows --build_metadata=TAGS=linux-workflow
-common:linux-workflows --config=workflows-disk-minimal
+common:linux-workflows --config=firecracker-disk-minimal
 
 # Configuration used for Linux ARM64 workflows. The workflow runner itself is
 # x86_64; only build actions are scheduled on ARM64 executors.
@@ -457,7 +459,7 @@ common:linux-arm64-workflows --config=target-linux-arm64
 common:linux-arm64-workflows --config=workflows
 common:linux-arm64-workflows --config=buildbuddy_remote_executor
 common:linux-arm64-workflows --build_metadata=TAGS=linux-arm64-workflow
-common:linux-arm64-workflows --config=workflows-disk-minimal
+common:linux-arm64-workflows --config=firecracker-disk-minimal
 # TODO(vanja) turn on once https://github.com/buildbuddy-io/buildbuddy-internal/issues/6247 is fixed
 # common:linux-workflows --remote_header=x-buildbuddy-platform.enable-vfs=true
 
