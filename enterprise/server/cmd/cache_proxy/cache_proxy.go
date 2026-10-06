@@ -122,8 +122,6 @@ func main() {
 	}
 
 	hit_tracker_client.Register(env)
-	// Register the local crypter first, so that registering the remote
-	// crypter fails if both are configured.
 	if err := local_crypter.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
