@@ -95,6 +95,24 @@ func (m *Module) BazelDep(name string) (version string, ok bool) {
 	return "", false
 }
 
+// BazelDepRepoName returns the name that the main module uses for the repo of
+// the bazel_dep with the given module name: its repo_name if it sets one, or
+// else the module name.
+func (m *Module) BazelDepRepoName(name string) (repoName string, ok bool) {
+	for _, f := range m.Files {
+		for _, call := range calls(f) {
+			r := &build.Rule{Call: call}
+			if r.Kind() == "bazel_dep" && r.AttrString("name") == name {
+				if repoName := r.AttrString("repo_name"); repoName != "" {
+					return repoName, true
+				}
+				return name, true
+			}
+		}
+	}
+	return "", false
+}
+
 // UsesExtension reports whether any use_extension() call refers to the given
 // extension name defined in a file whose label ends with bzlFileSuffix (e.g.
 // "//:extensions.bzl"). The repo part of the label is ignored, since it

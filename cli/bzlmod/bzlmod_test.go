@@ -42,6 +42,13 @@ include("//deps:more.MODULE.bazel")
 
 	_, ok = m.BazelDep("rules_python")
 	require.False(t, ok)
+
+	repoName, ok := m.BazelDepRepoName("gazelle")
+	require.True(t, ok)
+	require.Equal(t, "bazel_gazelle", repoName)
+	repoName, ok = m.BazelDepRepoName("rules_shell")
+	require.True(t, ok)
+	require.Equal(t, "rules_shell", repoName)
 }
 
 func TestLoad_MissingInclude(t *testing.T) {

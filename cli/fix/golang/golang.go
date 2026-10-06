@@ -117,7 +117,7 @@ func appendToFile(fileName, contents string) error {
 }
 
 const goDepsSnippet = `
-go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps = use_extension("@%s//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:%s")
 
 use_repo(
@@ -155,5 +155,10 @@ func (g *Golang) RegisterDeps(path string, modulePath string) error {
 		}
 		imports = imports + `    "` + label.ImportPathToBazelRepoName(m.Mod.Path) + "\",\n"
 	}
-	return appendToFile(modulePath, fmt.Sprintf(goDepsSnippet, path, imports))
+	// Refer to gazelle by whatever repo name the module gave it.
+	gazelleRepo, ok := module.BazelDepRepoName("gazelle")
+	if !ok {
+		gazelleRepo = "gazelle"
+	}
+	return appendToFile(modulePath, fmt.Sprintf(goDepsSnippet, gazelleRepo, path, imports))
 }

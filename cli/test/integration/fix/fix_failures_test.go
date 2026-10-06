@@ -121,6 +121,26 @@ func TestFix_BootstrapsGoProject(t *testing.T) {
 	require.Equal(t, before, snapshot(t, ws))
 }
 
+func TestFix_RegistersGoDepsWithGazellesRepoName(t *testing.T) {
+	// Uses the network. gazelle is already a dep, under a repo_name, but
+	// there's no go_deps yet.
+	contents := map[string]string{
+		"MODULE.bazel": `module(name = "x")
+
+bazel_dep(name = "rules_go", version = "0.50.1", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "gazelle", version = "0.40.0", repo_name = "bazel_gazelle")
+`,
+	}
+	maps.Copy(contents, goProject)
+	ws := fixWorkspace(t, contents)
+
+	out, err := runFix(t, ws)
+	require.NoError(t, err, "output: %s", out)
+	b, err := os.ReadFile(filepath.Join(ws, "MODULE.bazel"))
+	require.NoError(t, err)
+	require.Contains(t, string(b), `use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")`)
+}
+
 func TestFix_LeavesIncludedModuleDepsAlone(t *testing.T) {
 	// Uses the network. Like the BuildBuddy repos: the bazel_deps and go_deps
 	// live in include()d files that MODULE.bazel doesn't mention by content.
