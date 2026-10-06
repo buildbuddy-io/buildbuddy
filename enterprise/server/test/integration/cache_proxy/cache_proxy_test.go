@@ -26,7 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/local_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
@@ -407,7 +407,7 @@ func TestLocalKeyEncryption(t *testing.T) {
 			cacheDir := testfs.MakeTempDir(t)
 			proxy := rbe.AddCacheProxyWithOptions(&rbetest.CacheProxyOptions{
 				EnvModifier: func(env *testenv.TestEnv) {
-					require.NoError(t, remote_crypter.Register(env))
+					require.NoError(t, local_crypter.Register(env))
 					pc, err := pebble_cache.NewPebbleCache(env, &pebble_cache.Options{
 						RootDirectory: cacheDir,
 						MaxSizeBytes:  1_000_000_000,
@@ -504,7 +504,7 @@ func TestLocalKeyRotation(t *testing.T) {
 		var pc *pebble_cache.PebbleCache
 		proxy := rbe.AddCacheProxyWithOptions(&rbetest.CacheProxyOptions{
 			EnvModifier: func(env *testenv.TestEnv) {
-				require.NoError(t, remote_crypter.Register(env))
+				require.NoError(t, local_crypter.Register(env))
 				var err error
 				pc, err = pebble_cache.NewPebbleCache(env, &pebble_cache.Options{
 					RootDirectory: cacheDir,

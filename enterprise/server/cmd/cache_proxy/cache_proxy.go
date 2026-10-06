@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/local_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ocifetcher_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
@@ -121,6 +122,11 @@ func main() {
 	}
 
 	hit_tracker_client.Register(env)
+	// Register the local crypter first, so that registering the remote
+	// crypter fails if both are configured.
+	if err := local_crypter.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := remote_crypter.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
