@@ -33,6 +33,7 @@ var filterLabels = []filterLabel{
 	},
 	{
 		name:        "job",
+		displayName: "Server Job",
 		description: "Prometheus scrape job, i.e. the kind of BuildBuddy server that handled the RPC (app, cache proxy).",
 	},
 	{
@@ -47,10 +48,12 @@ var filterLabels = []filterLabel{
 	},
 	{
 		name:        "group_id",
+		displayName: "Group ID",
 		description: `BuildBuddy group of the authenticated client. "unknown" for unauthenticated RPCs.`,
 	},
 }
 
+// selector matches the series picked by the filter variables.
 func selector() string {
 	matchers := make([]string, 0, len(filterLabels))
 	for _, l := range filterLabels {
@@ -75,13 +78,15 @@ func bytesRatePanel(title, description, metric string) *timeseries.PanelBuilder 
 		WithTarget(dash.PromQuery(fmt.Sprintf(`sum by(${group_by}) (rate(%s{%s}[${window}]))`, metric, selector()), "{{${group_by}}}"))
 }
 
+// filterVariable returns a multi-select variable over one label of the egress
+// metric. Every label other than region is narrowed to the selected regions.
 func filterVariable(l filterLabel) *dashboard.QueryVariableBuilder {
 	metric := "buildbuddy_grpc_server_egress_bytes"
 	if l.name != "region" {
 		metric += `{region=~"${region}"}`
 	}
 	query := fmt.Sprintf("label_values(%s, %s)", metric, l.name)
-	v := dash.QueryVar(l.name, query).
+	return dash.QueryVar(l.name, query).
 		Description(l.description).
 		Refresh(dashboard.VariableRefreshOnDashboardLoad).
 		Multi(true).
@@ -90,7 +95,6 @@ func filterVariable(l filterLabel) *dashboard.QueryVariableBuilder {
 		Current(dash.SelectedOption("All", "$__all")).
 		Definition(query).
 		Label(l.text())
-	return v
 }
 
 func groupByVariable() *dashboard.CustomVariableBuilder {
@@ -106,6 +110,9 @@ func groupByVariable() *dashboard.CustomVariableBuilder {
 		if l.name == "provider" {
 			current = dash.SelectedOption(l.text(), l.name)
 		}
+	}
+	if *(current.Text.String) == "" {
+		panic("provider label not found in filterLabels")
 	}
 	return dashboard.NewCustomVariableBuilder("group_by").
 		Label("Group By").
