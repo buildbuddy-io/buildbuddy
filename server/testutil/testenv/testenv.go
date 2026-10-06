@@ -80,16 +80,16 @@ http:
 `
 
 // RegisterLocalGRPCServer registers a local gRPC server to the environment and
-// returns the server.
+// returns the server. opts are added to the server's options.
 //
 // Register services to the server, then call LocalGRPCConn to get a connection
 // to the returned server.
-func RegisterLocalGRPCServer(t testing.TB, te *real_environment.RealEnv) (*grpc.Server, func(), *bufconn.Listener) {
+func RegisterLocalGRPCServer(t testing.TB, te *real_environment.RealEnv, opts ...grpc.ServerOption) (*grpc.Server, func(), *bufconn.Listener) {
 	if te.GetGRPCServer() != nil {
 		log.Fatal("GRPCServer is already registered")
 	}
 	lis := bufconn.Listen(1024 * 1024)
-	srv, run := GRPCServer(te, lis)
+	srv, run := GRPCServer(te, lis, opts...)
 	te.SetGRPCServer(srv)
 	t.Cleanup(srv.Stop)
 
@@ -133,8 +133,8 @@ func localGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.Dial
 }
 
 // gRPCServer starts a gRPC server with standard BuildBuddy filters that uses the given listener.
-func GRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
-	srv := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
+func GRPCServer(env environment.Env, lis net.Listener, opts ...grpc.ServerOption) (*grpc.Server, func()) {
+	srv := grpc.NewServer(append(grpc_server.CommonGRPCServerOptions(env), opts...)...)
 	runFunc := func() {
 		if err := srv.Serve(lis); err != nil && err != grpc.ErrServerStopped {
 			log.Fatal(err.Error())

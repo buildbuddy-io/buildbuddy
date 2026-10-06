@@ -120,8 +120,12 @@ func (h *Handle) Shutdown() {
 	<-h.done
 }
 
+// Client returns a new client for the Redis server, which is closed when the
+// test ends.
 func (h *Handle) Client() redis.UniversalClient {
-	return redis.NewClient(redisutil.TargetToOptions(h.Target))
+	c := redis.NewClient(redisutil.TargetToOptions(h.Target))
+	h.t.Cleanup(func() { c.Close() })
+	return c
 }
 
 func (h *Handle) KeyCount(pattern string) int {
@@ -243,6 +247,7 @@ func waitUntilHealthy(t testing.TB, target string) {
 	start := time.Now()
 	ctx := context.Background()
 	r := redis.NewClient(redisutil.TargetToOptions(target))
+	defer r.Close()
 	for {
 		err := r.Ping(ctx).Err()
 		if err == nil {

@@ -34,6 +34,13 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 	redisClient := opts.RedisClient
 	if redisClient == nil && opts.RedisTarget != "" {
 		redisClient = redisutil.NewSimpleClient(opts.RedisTarget, env.GetHealthChecker(), "cache_redis")
+		t.Cleanup(func() {
+			// Shut the server down first, since it may use the client
+			// while shutting down.
+			env.GetHealthChecker().Shutdown()
+			env.GetHealthChecker().WaitForGracefulShutdown()
+			redisClient.Close()
+		})
 		if flag.Lookup("cache.distributed_cache.redis_target") != nil {
 			flags.Set(t, "cache.distributed_cache.redis_target", opts.RedisTarget)
 		}
