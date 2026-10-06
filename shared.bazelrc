@@ -386,13 +386,25 @@ common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 # TODO(vanja) turn on once https://github.com/buildbuddy-io/buildbuddy-internal/issues/6247 is fixed
 # common:untrusted-ci --remote_header=x-buildbuddy-platform.enable-vfs=true
 
-# Disabled RBE for Windows
+# Windows CI: cross-compile pure Go on Linux RBE and execute tests on Windows.
 common:ci-windows-shared --config=ci-shared
 common:ci-windows-shared --config=tests-windows
 common:ci-windows-shared --repository_cache=C:/bazel/repo-cache/
 common:ci-windows-shared --bes_results_url=https://app.buildbuddy.io/invocation/
 common:ci-windows-shared --bes_backend=grpcs://remote.buildbuddy.io
 common:ci-windows-shared --remote_cache=grpcs://remote.buildbuddy.io
+common:ci-windows-shared --remote_executor=grpcs://remote.buildbuddy.io
+common:ci-windows-shared --config=remote-shared
+# Build actions run on Linux; tests use the native Windows test runner.
+common:ci-windows-shared --shell_executable=/bin/bash
+common:ci-windows-shared --action_env=PATH=/usr/bin:/bin
+common:ci-windows-shared --test_env=PATH
+common:ci-windows-shared --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64,@toolchains_buildbuddy//platforms:darwin_arm64,@toolchains_buildbuddy//platforms:darwin_x86_64,//platforms:local_windows_amd64
+# Target pure-Go Windows (no cgo), matching the executor_windows_* aliases.
+# The auto-detected host platform would build cgo with hermetic LLVM, which
+# doesn't support Windows well yet.
+common:ci-windows-shared --platforms=//platforms:local_windows_amd64
+common:ci-windows-shared --experimental_remote_downloader=grpcs://remote.buildbuddy.io
 
 # Windows CI for PRs.
 common:untrusted-ci-windows --config=ci-windows-shared
