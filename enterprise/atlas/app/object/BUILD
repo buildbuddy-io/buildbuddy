@@ -36,6 +36,7 @@ ts_library(
         "//app/components/select",
         "//app/util:errors",
         "//enterprise/atlas/app/lib:rpc_service",
+        "//enterprise/atlas/app/lib:structured_log",
         "//proto:atlas_ts_proto",
     ],
 )

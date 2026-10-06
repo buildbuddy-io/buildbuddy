@@ -535,6 +535,38 @@ html.dark .atlas-badge.cluster {
   word-break: break-all;
 }
 
+.atlas-logline.warn .atlas-log-severity {
+  color: var(--color-status-warning);
+}
+
+.atlas-logline.bad .atlas-log-severity,
+.atlas-logline.bad .atlas-log-message {
+  color: var(--color-status-error);
+}
+
+.atlas-log-time {
+  margin-right: 8px;
+  color: var(--color-text-muted);
+}
+
+.atlas-log-severity {
+  display: inline-block;
+  width: 5ch;
+  margin-right: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.atlas-log-source,
+.atlas-log-field {
+  margin-left: 10px;
+  color: var(--color-text-muted);
+}
+
+.atlas-log-key {
+  opacity: 0.7;
+}
+
 /* Clusters */
 
 .atlas-cluster-card {
