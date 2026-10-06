@@ -1805,7 +1805,11 @@ func (s *BuildBuddyServer) ListCacheProxies(ctx context.Context, req *cppb.ListC
 }
 
 func (s *BuildBuddyServer) GetCacheProxy(ctx context.Context, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error) {
-	return nil, status.UnimplementedError("Not implemented")
+	cps := s.env.GetCacheProxyRegistryService()
+	if cps == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return cps.GetCacheProxy(ctx, req)
 }
 
 func (s *BuildBuddyServer) SearchExecution(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error) {
