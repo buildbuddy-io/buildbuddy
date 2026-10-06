@@ -2,7 +2,7 @@ package(default_visibility = ["//visibility:public"])
 
 genrule(
     name = "crun",
-    srcs = ["@crun//:srcs"],
+    srcs = ["@com_github_containers_crun//:srcs"],
     outs = ["bin/crun"],
     cmd = """
         set -euo pipefail

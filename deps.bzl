@@ -351,7 +351,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
 
     http_archive(
-        name = "crun",
+        name = "com_github_containers_crun",
         urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28.tar.gz"],
         sha256 = "eb8fe73ffe44d868b14bb94fa6c295bd57e8bf023de43b61579da826c07cc406",
         strip_prefix = "crun-1.28",
