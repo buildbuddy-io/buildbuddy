@@ -504,6 +504,64 @@ func TestHitTracking(t *testing.T) {
 	}
 }
 
+// Inlined output files are tracked as separate CAS downloads, so the
+// ActionResult download must not count their bytes again.
+func TestInlineHitTrackingDoesNotDoubleCountInlinedBytes(t *testing.T) {
+	flags.Set(t, "cache.detailed_stats_enabled", true)
+	resetMetrics()
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	clientConn := runACServer(ctx, t, te)
+	acClient := repb.NewActionCacheClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	metricsCollector, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	require.NoError(t, err)
+	te.SetMetricsCollector(metricsCollector)
+
+	contents := []byte("hello world")
+	outputDigest, err := cachetools.UploadBlobToCAS(ctx, bsClient, "", repb.DigestFunction_SHA256, contents)
+	require.NoError(t, err)
+	update(t, ctx, acClient, []*repb.OutputFile{
+		{
+			Path:   "my/pkg/file",
+			Digest: outputDigest,
+		},
+	})
+
+	invocationID := "f5b5e1f7-7e91-4e3f-88f6-2f925e521aa0"
+	acCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		ActionId:         strings.Repeat("a", 64),
+		ActionMnemonic:   "GoCompile",
+		TargetId:         "//my/pkg:file",
+	})
+	require.NoError(t, err)
+	actionResult := getWithInlining(t, acCtx, acClient, []string{"my/pkg/file"}, nil)
+	require.Len(t, actionResult.OutputFiles, 1)
+	require.Equal(t, contents, actionResult.OutputFiles[0].Contents)
+
+	// The ActionResult download should be charged for the response minus the
+	// inlined contents, which are charged to the CAS download below.
+	expectedACTransferSize := int64(proto.Size(actionResult) - len(contents))
+
+	results := hit_tracker.ScoreCard(ctx, te, invocationID).GetResults()
+	require.Len(t, results, 2)
+	byCacheType := map[rspb.CacheType]*capb.ScoreCard_Result{}
+	for _, r := range results {
+		byCacheType[r.GetCacheType()] = r
+	}
+	ac, ok := byCacheType[rspb.CacheType_AC]
+	require.True(t, ok, "missing AC result in scorecard: %v", results)
+	assert.Equal(t, int32(gcodes.OK), ac.GetStatus().GetCode())
+	assert.Equal(t, expectedACTransferSize, ac.GetTransferredSizeBytes())
+	cas, ok := byCacheType[rspb.CacheType_CAS]
+	require.True(t, ok, "missing CAS result in scorecard: %v", results)
+	assert.Equal(t, int32(gcodes.OK), cas.GetStatus().GetCode())
+	assert.Empty(t, cmp.Diff(outputDigest, cas.GetDigest(), protocmp.Transform()))
+	assert.Equal(t, int64(len(contents)), cas.GetTransferredSizeBytes())
+}
+
 func update(t *testing.T, ctx context.Context, client repb.ActionCacheClient, outputFiles []*repb.OutputFile) {
 	req := repb.UpdateActionResultRequest{
 		ActionDigest: &repb.Digest{
