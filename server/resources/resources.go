@@ -423,6 +423,11 @@ func GetOSDisplayName() string {
 
 func GetMyHostname() (string, error) {
 	if v := os.Getenv(hostnameEnvVarName); v != "" {
+		// Strip brackets from IPv6 literals like "[::1]" so callers can
+		// safely use net.JoinHostPort.
+		if strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]") {
+			v = v[1 : len(v)-1]
+		}
 		return v, nil
 	}
 	return os.Hostname()
