@@ -41,10 +41,10 @@ func SupportsEncryption(env environment.Env) func(ctx context.Context) bool {
 		if env.GetCrypter() == nil {
 			return false
 		}
-		// The experiment only gates encryption using remotely-fetched keys.
 		if _, ok := env.GetCrypter().(*RemoteCrypter); !ok {
 			return true
 		}
+		// TODO(iain): delete this experiment (it's been live for a while).
 		if env.GetExperimentFlagProvider() == nil {
 			return false
 		}
