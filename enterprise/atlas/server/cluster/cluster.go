@@ -72,7 +72,13 @@ type Cluster struct {
 	watchers      map[schema.GroupVersionResource]*watcher
 	discoveryErr  error
 	lastDiscovery time.Time
+	// ready flips to true after initial discovery is done.
+	ready bool
 }
+
+// discoveryRetry is how soon discovery is tried again while it has found
+// nothing to watch, rather than waiting a whole interval with an empty index.
+const discoveryRetry = 15 * time.Second
 
 // New connects the configured cluster.
 func New(ix *summaries.Index) (*Cluster, error) {
@@ -143,12 +149,48 @@ func (c *Cluster) Index() *summaries.Index  { return c.ix }
 func (c *Cluster) Run(ctx context.Context) {
 	for {
 		c.discover(ctx)
+		delay := *discoveryInterval
+		if c.watching() == 0 {
+			delay = min(delay, discoveryRetry)
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(*discoveryInterval):
+		case <-time.After(delay):
 		}
 	}
+}
+
+func (c *Cluster) watching() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.watchers)
+}
+
+// Ready reports whether the initial cluster discovery run has finished.
+func (c *Cluster) Ready() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.ready {
+		return nil
+	}
+	if len(c.watchers) == 0 {
+		if c.discoveryErr != nil {
+			return fmt.Errorf("API discovery failed: %w", c.discoveryErr)
+		}
+		return errors.New("waiting for API discovery")
+	}
+	syncing := 0
+	for _, w := range c.watchers {
+		if !w.store.Synced() && !w.failed() {
+			syncing++
+		}
+	}
+	if syncing > 0 {
+		return fmt.Errorf("%d of %d resource types still syncing", syncing, len(c.watchers))
+	}
+	c.ready = true
+	return nil
 }
 
 func (c *Cluster) discover(ctx context.Context) {
@@ -298,6 +340,13 @@ func (c *Cluster) startWatcher(ctx context.Context, r discoveredResource) *watch
 
 	go w.run(ctx, lw, example)
 	return w
+}
+
+// failed reports whether the watcher's list or watch has ever errored.
+func (w *watcher) failed() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.lastErr != nil
 }
 
 func (w *watcher) run(ctx context.Context, lw cache.ListerWatcher, example runtime.Object) {

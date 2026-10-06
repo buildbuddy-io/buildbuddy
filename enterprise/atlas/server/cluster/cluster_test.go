@@ -2,16 +2,19 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/atlas/server/summaries"
 	"github.com/stretchr/testify/require"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
@@ -165,6 +168,61 @@ func TestWatchFeedsIndex(t *testing.T) {
 	st := c.Status()
 	require.Equal(t, "test", st.Name)
 	require.NotEmpty(t, st.Resources)
+}
+
+func TestReady(t *testing.T) {
+	ix := summaries.New()
+	c := newFakeCluster(t, ix, podU("web-1", "prod"))
+	require.ErrorContains(t, c.Ready(), "waiting for API discovery")
+
+	// Deployments are refused by the server (a type the service account may
+	// not read), and configmaps take their time to list.
+	var forbidDeployments atomic.Bool
+	forbidDeployments.Store(true)
+	deploymentsMayList := make(chan struct{})
+	t.Cleanup(func() { close(deploymentsMayList) })
+	c.dyn.(*dynamicfake.FakeDynamicClient).PrependReactor("list", "deployments", func(clienttesting.Action) (bool, runtime.Object, error) {
+		if forbidDeployments.Load() {
+			return true, nil, apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "deployments"}, "", errors.New("no"))
+		}
+		<-deploymentsMayList
+		return false, nil, nil
+	})
+	configmapsMayList := make(chan struct{})
+	c.meta.(*metadatafake.FakeMetadataClient).PrependReactor("list", "configmaps", func(clienttesting.Action) (bool, runtime.Object, error) {
+		<-configmapsMayList
+		return false, nil, nil
+	})
+	ctx := t.Context()
+	c.discover(ctx)
+
+	// Pods sync and deployments fail; configmaps are what is still missing.
+	require.Eventually(t, func() bool {
+		err := c.Ready()
+		return err != nil && err.Error() == "1 of 3 resource types still syncing"
+	}, 10*time.Second, 10*time.Millisecond, "last: %v", c.Ready())
+	close(configmapsMayList)
+	require.Eventually(t, func() bool { return c.Ready() == nil }, 10*time.Second, 10*time.Millisecond)
+
+	// Later rediscovery brings deployments back as a type that never finishes
+	// listing. The instance stays ready; the new type syncs in the background.
+	forbidDeployments.Store(false)
+	disco := c.disco.(*fakedisco.FakeDiscovery)
+	var without []*metav1.APIResourceList
+	for _, list := range testResources() {
+		list.APIResources = slices.DeleteFunc(list.APIResources, func(r metav1.APIResource) bool { return r.Name == "deployments" })
+		without = append(without, list)
+	}
+	disco.Resources = without
+	c.discover(ctx)
+	disco.Resources = testResources()
+	c.discover(ctx)
+	require.NoError(t, c.Ready())
+	for _, r := range c.Status().Resources {
+		if r.Resource == "deployments" {
+			require.False(t, r.Synced, "deployments really are still listing")
+		}
+	}
 }
 
 func TestRediscoveryDropsVanishedTypes(t *testing.T) {
