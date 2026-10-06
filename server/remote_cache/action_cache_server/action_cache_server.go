@@ -250,21 +250,20 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
 		return nil, nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
 	}
-	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
-	// change it.
-	inlinedBytes, err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-
 	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
 		rsp.GetExecutionMetadata().GetUsageStats().Timeline = nil
 	}
 
-	// Inlined output files are tracked as individual CAS downloads by
-	// maybeInlineOutputFiles, so exclude their bytes from the ActionResult
-	// download size to avoid counting them twice.
-	resultSizeBytes := int64(proto.Size(rsp)) - inlinedBytes
+	// Measure the ActionResult before inlining output files: inlined files are
+	// tracked as individual CAS downloads, so their bytes must not also count
+	// towards the ActionResult download.
+	resultSizeBytes := int64(proto.Size(rsp))
+
+	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
+	// change it.
+	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
+		return nil, nil, 0, err
+	}
 
 	// See if the caller specified a cached value.  If they did and it matches
 	// the full response that we just computed, then we won't bother sending the
@@ -421,10 +420,10 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 // Inlines the contents of output files requested to be inlined as long as the
 // total size of the ActionResult is below maxResultSize. Each inlined file is
-// tracked as a CAS download. Returns the number of inlined bytes.
-func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) (int64, error) {
+// tracked as a CAS download.
+func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) error {
 	if ar == nil || len(req.InlineOutputFiles) == 0 {
-		return 0, nil
+		return nil
 	}
 	requestedFiles := make(map[string]struct{}, len(req.InlineOutputFiles))
 	for _, f := range req.InlineOutputFiles {
@@ -460,7 +459,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 	metrics.CacheRequestedInlineSizeBytes.With(prometheus.Labels{}).Observe(float64(inlinedBytes))
 
 	if len(filesToInline) == 0 {
-		return 0, nil
+		return nil
 	}
 
 	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
@@ -478,18 +477,14 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 		}
 		// Don't track misses here as GetMulti doesn't tell us which blobs
 		// were missing.
-		return 0, status.NotFoundErrorf("Not all requested CAS entries (%s) were found: %s", strings.Join(resourcesStr, ", "), err)
+		return status.NotFoundErrorf("Not all requested CAS entries (%s) were found: %s", strings.Join(resourcesStr, ", "), err)
 	}
-	// The inlined contents are tracked here as CAS downloads, so report their
-	// size for the caller to exclude from the ActionResult download.
-	inlinedBytes = 0
 	for i, f := range filesToInline {
 		blob := blobs[resourcesToInline[i].Digest]
 		f.Contents = blob
-		inlinedBytes += int64(len(blob))
 		if err := downloadTrackers[i].CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server"); err != nil {
 			log.Debugf("GetActionResult: download tracker error: %s", err)
 		}
 	}
-	return inlinedBytes, nil
+	return nil
 }

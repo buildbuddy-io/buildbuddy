@@ -541,9 +541,11 @@ func TestInlineHitTrackingDoesNotDoubleCountInlinedBytes(t *testing.T) {
 	require.Len(t, actionResult.OutputFiles, 1)
 	require.Equal(t, contents, actionResult.OutputFiles[0].Contents)
 
-	// The ActionResult download should be charged for the response minus the
+	// The ActionResult download should be charged for the response without the
 	// inlined contents, which are charged to the CAS download below.
-	expectedACTransferSize := int64(proto.Size(actionResult) - len(contents))
+	withoutContents := proto.Clone(actionResult).(*repb.ActionResult)
+	withoutContents.OutputFiles[0].Contents = nil
+	expectedACTransferSize := int64(proto.Size(withoutContents))
 
 	results := hit_tracker.ScoreCard(ctx, te, invocationID).GetResults()
 	require.Len(t, results, 2)
