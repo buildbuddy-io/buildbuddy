@@ -391,6 +391,15 @@ func TestStreamHeartbeat_PersistsRegistration(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, listResp.GetSummary(), 1)
 	assert.Equal(t, "id-1", listResp.GetSummary()[0].GetProxyId())
+
+	// The stored registration should record which app instance holds the
+	// stream, so other instances can route requests to it.
+	data, err := s.rdb.HGet(ctx, redisKeyForCacheProxies(testGroupID), "id-1").Result()
+	require.NoError(t, err)
+	reg := &cppb.RegisteredCacheProxy{}
+	require.NoError(t, proto.Unmarshal([]byte(data), reg))
+	assert.Equal(t, s.ownHostPort, reg.GetAppHostPort())
+	assert.NotEmpty(t, s.ownHostPort)
 }
 
 func TestStreamHeartbeat_ShutDown(t *testing.T) {

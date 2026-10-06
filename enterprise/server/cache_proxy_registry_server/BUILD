@@ -16,6 +16,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/resources",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/perms",

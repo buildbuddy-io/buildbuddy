@@ -22,7 +22,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -75,6 +78,10 @@ type CacheProxyRegistryServer struct {
 	rdb           redis.UniversalClient
 	quit          chan struct{}
 	detector      *upgrade.Detector
+	// host:port at which this app instance can be reached. Stored with each
+	// registration so other app instances can route requests for a proxy to
+	// the instance holding its registration stream.
+	ownHostPort string
 
 	mu                  sync.Mutex
 	newestVersion       *semver.Version
@@ -110,6 +117,14 @@ func NewCacheProxyRegistryServer(env environment.Env, detector *upgrade.Detector
 	if authenticator == nil {
 		return nil, status.FailedPreconditionError("Authenticator is required for cache proxy registration")
 	}
+	ownHostname, err := resources.GetMyHostname()
+	if err != nil {
+		return nil, status.UnknownErrorf("Could not determine own hostname: %s", err)
+	}
+	ownPort, err := resources.GetMyPort()
+	if err != nil {
+		return nil, status.UnknownErrorf("Could not determine own port: %s", err)
+	}
 	quit := make(chan struct{})
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		close(quit)
@@ -121,6 +136,7 @@ func NewCacheProxyRegistryServer(env environment.Env, detector *upgrade.Detector
 		rdb:           rdb,
 		quit:          quit,
 		detector:      detector,
+		ownHostPort:   net.JoinHostPort(ownHostname, strconv.Itoa(int(ownPort))),
 	}, nil
 }
 
@@ -238,6 +254,7 @@ func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, grou
 		Acl:          acl,
 		LastPingTime: timestamppb.Now(),
 		Statistics:   stats,
+		AppHostPort:  s.ownHostPort,
 	}
 	b, err := proto.Marshal(r)
 	if err != nil {
