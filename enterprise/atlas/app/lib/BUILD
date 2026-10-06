@@ -42,3 +42,9 @@ ts_library(
     name = "theme",
     srcs = ["theme.ts"],
 )
+
+ts_library(
+    name = "structured_log",
+    srcs = ["structured_log.ts"],
+    deps = ["//:node_modules/tslib"],
+)
