@@ -1096,3 +1096,18 @@ func TestV2LayoutMigration(t *testing.T) {
 	require.NoError(t, err)
 	testfs.AssertExactFileContents(t, rootDir, expectedContents)
 }
+
+func TestNewDiskCache_InvalidPartitionStopsStartedPartitions(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, err := disk_cache.NewDiskCache(te, &disk_cache.Options{
+		ForceV1Layout: true,
+		RootDirectory: testfs.MakeTempDir(t),
+		Partitions: []disk.Partition{
+			{ID: "default", MaxSizeBytes: 10_000_000},
+			// Non-default partitions must have an ID.
+			{ID: "", MaxSizeBytes: 10_000_000},
+		},
+	}, 10_000_000)
+	require.True(t, status.IsInvalidArgumentError(err), "got %v", err)
+	// TestMain fails if the default partition's goroutines are still running.
+}

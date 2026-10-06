@@ -171,9 +171,10 @@ type DiskCache struct {
 	defaultPartition  *partition
 
 	// quit is closed by Stop to stop the background goroutines, which
-	// goroutines tracks.
+	// goroutines tracks. stopMu guards closing quit and starting goroutines,
+	// so that none start after Stop.
+	stopMu     sync.Mutex
 	quit       chan struct{}
-	stopOnce   sync.Once
 	goroutines sync.WaitGroup
 }
 
@@ -204,7 +205,7 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64) (*DiskCache, error) {
+func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64) (_ *DiskCache, err error) {
 	if opts.RootDirectory == "" {
 		return nil, status.FailedPreconditionError("Disk cache root directory must be set")
 	}
@@ -250,6 +251,12 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 		useV2Layout:       useV2Layout,
 		quit:              make(chan struct{}),
 	}
+	// Stop the goroutines of any partitions that were started if we fail.
+	defer func() {
+		if err != nil {
+			c.Stop()
+		}
+	}()
 
 	partitions := make(map[string]*partition)
 	var defaultPartition *partition
@@ -268,7 +275,6 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 
 		p, err := c.newPartition(pc.ID, rootDir, pc.MaxSizeBytes, useV2Layout)
 		if err != nil {
-			c.Stop()
 			return nil, err
 		}
 		partitions[pc.ID] = p
@@ -283,7 +289,6 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 		}
 		p, err := c.newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, useV2Layout)
 		if err != nil {
-			c.Stop()
 			return nil, err
 		}
 		defaultPartition = p
@@ -303,13 +308,32 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 
 // Stop stops the cache's background goroutines and waits for them to exit.
 func (c *DiskCache) Stop() error {
-	c.stopOnce.Do(func() { close(c.quit) })
+	c.stopMu.Lock()
+	if !c.isStopped() {
+		close(c.quit)
+	}
+	c.stopMu.Unlock()
 	c.goroutines.Wait()
 	return nil
 }
 
-// every runs f every period until the cache is stopped.
+func (c *DiskCache) isStopped() bool {
+	select {
+	case <-c.quit:
+		return true
+	default:
+		return false
+	}
+}
+
+// every runs f every period until the cache is stopped. It does nothing if
+// the cache is already stopped.
 func (c *DiskCache) every(period time.Duration, f func()) {
+	c.stopMu.Lock()
+	defer c.stopMu.Unlock()
+	if c.isStopped() {
+		return
+	}
 	c.goroutines.Go(func() {
 		for {
 			select {
@@ -570,7 +594,7 @@ func (c *DiskCache) newPartition(id string, rootDir string, maxSizeBytes int64, 
 		return nil, err
 	}
 	c.every(janitorCheckPeriod, func() {
-		for p.reduceCacheSize() {
+		for !c.isStopped() && p.reduceCacheSize() {
 		}
 	})
 	c.every(refreshMetricsPeriod, p.refreshMetrics)
