@@ -61,5 +61,6 @@ go_test(
         "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
+        "@org_uber_go_goleak//:goleak",
     ],
 )

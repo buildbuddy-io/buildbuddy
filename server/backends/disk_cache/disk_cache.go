@@ -169,6 +169,12 @@ type DiskCache struct {
 	partitions        map[string]*partition
 	partitionMappings []disk.PartitionMapping
 	defaultPartition  *partition
+
+	// quit is closed by Stop to stop the background goroutines, which
+	// goroutines tracks.
+	quit       chan struct{}
+	stopOnce   sync.Once
+	goroutines sync.WaitGroup
 }
 
 // Register registers the disk cache for use in a real environment.
@@ -242,6 +248,7 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 		env:               env,
 		partitionMappings: opts.PartitionMappings,
 		useV2Layout:       useV2Layout,
+		quit:              make(chan struct{}),
 	}
 
 	partitions := make(map[string]*partition)
@@ -259,8 +266,9 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 			rootDir = filepath.Join(rootDir, PartitionDirectoryPrefix+pc.ID)
 		}
 
-		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes, useV2Layout)
+		p, err := c.newPartition(pc.ID, rootDir, pc.MaxSizeBytes, useV2Layout)
 		if err != nil {
+			c.Stop()
 			return nil, err
 		}
 		partitions[pc.ID] = p
@@ -273,8 +281,9 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 		if useV2Layout {
 			rootDir = filepath.Join(rootDir, V2Dir, PartitionDirectoryPrefix+DefaultPartitionID)
 		}
-		p, err := newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, useV2Layout)
+		p, err := c.newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, useV2Layout)
 		if err != nil {
+			c.Stop()
 			return nil, err
 		}
 		defaultPartition = p
@@ -284,23 +293,45 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 	c.partitions = partitions
 	c.defaultPartition = defaultPartition
 
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		return c.Stop()
+	})
+
 	statusz.AddSection(cacheName, "On disk LRU cache", c)
 	return c, nil
 }
 
-func (c *DiskCache) startRefreshMetrics(rootDirectory string) {
-	go func() {
+// Stop stops the cache's background goroutines and waits for them to exit.
+func (c *DiskCache) Stop() error {
+	c.stopOnce.Do(func() { close(c.quit) })
+	c.goroutines.Wait()
+	return nil
+}
+
+// every runs f every period until the cache is stopped.
+func (c *DiskCache) every(period time.Duration, f func()) {
+	c.goroutines.Go(func() {
 		for {
-			<-time.After(refreshMetricsPeriod)
-			fsu := gosigar.FileSystemUsage{}
-			if err := fsu.Get(rootDirectory); err != nil {
-				log.Warningf("could not retrieve filesystem stats: %s", err)
-			} else {
-				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Total))
-				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Avail))
+			select {
+			case <-c.quit:
+				return
+			case <-time.After(period):
 			}
+			f()
 		}
-	}()
+	})
+}
+
+func (c *DiskCache) startRefreshMetrics(rootDirectory string) {
+	c.every(refreshMetricsPeriod, func() {
+		fsu := gosigar.FileSystemUsage{}
+		if err := fsu.Get(rootDirectory); err != nil {
+			log.Warningf("could not retrieve filesystem stats: %s", err)
+		} else {
+			metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Total))
+			metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Avail))
+		}
+	})
 }
 
 func (c *DiskCache) IsV2Layout() bool {
@@ -510,7 +541,7 @@ type partition struct {
 	internedStrings  map[string]string
 }
 
-func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
+func (c *DiskCache) newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
 	targetSizeBytes := int64(float64(maxSizeBytes) * janitorCutoffThreshold)
 	p := &partition{
 		id:               id,
@@ -538,8 +569,11 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 	if err := p.initializeCache(); err != nil {
 		return nil, err
 	}
-	p.startJanitor()
-	p.startRefreshMetrics()
+	c.every(janitorCheckPeriod, func() {
+		for p.reduceCacheSize() {
+		}
+	})
+	c.every(refreshMetricsPeriod, p.refreshMetrics)
 	return p, nil
 }
 
@@ -698,28 +732,6 @@ func (p *partition) reduceCacheSize() bool {
 	log.Debugf("Delete thread removed item from cache with key %v.", fr.key)
 	p.lastGCTime = time.Now()
 	return true
-}
-
-func (p *partition) startJanitor() {
-	go func() {
-		for {
-			<-time.After(janitorCheckPeriod)
-			for {
-				if !p.reduceCacheSize() {
-					break
-				}
-			}
-		}
-	}()
-}
-
-func (p *partition) startRefreshMetrics() {
-	go func() {
-		for {
-			<-time.After(refreshMetricsPeriod)
-			p.refreshMetrics()
-		}
-	}()
 }
 
 func (p *partition) refreshMetrics() {
