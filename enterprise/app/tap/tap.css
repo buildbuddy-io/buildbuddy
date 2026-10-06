@@ -290,8 +290,8 @@
   min-height: 6px;
 }
 
-.tap-block svg {
-  color: var(--color-text-inverted);
+.tap-block .lucide {
+  stroke: var(--color-icon-inverted);
   width: 50%;
   height: 50%;
 }
