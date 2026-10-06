@@ -22,7 +22,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -134,7 +136,7 @@ func NewCacheProxyRegistryServer(env environment.Env, detector *upgrade.Detector
 		rdb:           rdb,
 		quit:          quit,
 		detector:      detector,
-		ownHostPort:   fmt.Sprintf("%s:%d", ownHostname, ownPort),
+		ownHostPort:   net.JoinHostPort(ownHostname, strconv.Itoa(int(ownPort))),
 	}, nil
 }
 
