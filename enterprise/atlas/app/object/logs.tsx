@@ -20,14 +20,19 @@ interface State {
   previous: boolean;
   /** Show lines as written instead of the readable form of structured ones. */
   raw: boolean;
-  text: string;
-  /** Every complete line, parsed; the tail still arriving is `partial`. */
+  /** The newest complete lines, parsed; the tail still arriving is `partial`. */
   lines: LogLine[];
+  /** How many older lines were let go to stay under MAX_LINES. */
+  dropped: number;
   errorMessage?: string;
   streaming: boolean;
 }
 
 const TAIL_OPTIONS = ["200", "1000", "5000"];
+// A followed pod can log thousands of lines a second. Render them in batches,
+// and keep only the newest, so the page's work per second stays bounded.
+const FLUSH_MS = 100;
+const MAX_LINES = 5000;
 
 /**
  * A pod's logs, streamed from the StreamLogs RPC. With follow on, the stream
@@ -40,13 +45,16 @@ export default class LogsComponent extends React.Component<Props, State> {
     follow: false,
     previous: false,
     raw: false,
-    text: "",
     lines: [],
+    dropped: 0,
     streaming: false,
   };
   private stream?: ServerStream<atlas.StreamLogsResponse>;
   private decoder = new TextDecoder();
   private partial = "";
+  /** Parsed lines not yet rendered, and the timer that will render them. */
+  private pending: LogLine[] = [];
+  private flushTimer?: number;
   private pane = React.createRef<HTMLPreElement>();
 
   componentDidMount() {
@@ -66,6 +74,7 @@ export default class LogsComponent extends React.Component<Props, State> {
 
   componentWillUnmount() {
     this.stop();
+    window.clearTimeout(this.flushTimer);
   }
 
   private stop() {
@@ -77,7 +86,10 @@ export default class LogsComponent extends React.Component<Props, State> {
     this.stop();
     this.decoder = new TextDecoder();
     this.partial = "";
-    this.setState({ text: "", lines: [], errorMessage: undefined, streaming: true });
+    this.pending = [];
+    window.clearTimeout(this.flushTimer);
+    this.flushTimer = undefined;
+    this.setState({ lines: [], dropped: 0, errorMessage: undefined, streaming: true });
     const pod = this.props.pod;
     this.stream = rpcService.service.streamLogs(
       new atlas.StreamLogsRequest({
@@ -99,37 +111,58 @@ export default class LogsComponent extends React.Component<Props, State> {
 
   /** The stream is done, consume partial text. */
   private finish() {
-    const flushed = this.decoder.decode();
-    const rest = this.partial + flushed;
+    const rest = this.partial + this.decoder.decode();
     this.partial = "";
-    this.setState((state) => ({
-      streaming: false,
-      text: state.text + flushed,
-      lines: rest ? state.lines.concat(parseLogLine(rest)) : state.lines,
-    }));
+    if (rest) {
+      this.pending.push(parseLogLine(rest));
+    }
+    this.flush();
+    this.setState({ streaming: false });
   }
 
   private append(text: string) {
-    // Stick to the bottom only if the reader is already there.
-    const pane = this.pane.current;
-    const pinned = !pane || pane.scrollHeight - pane.scrollTop - pane.clientHeight < 40;
     // Chunks end anywhere; only complete lines are parsed.
     const parts = (this.partial + text).split("\n");
     this.partial = parts.pop() ?? "";
-    const lines = parts.map(parseLogLine);
+    for (const part of parts) {
+      this.pending.push(parseLogLine(part));
+    }
+    if (this.flushTimer === undefined) {
+      this.flushTimer = window.setTimeout(this.flush, FLUSH_MS);
+    }
+  }
+
+  /** Renders what arrived since the last flush, letting the oldest lines go. */
+  private flush = () => {
+    window.clearTimeout(this.flushTimer);
+    this.flushTimer = undefined;
+    const pending = this.pending;
+    this.pending = [];
+    // Stick to the bottom only if the reader is already there.
+    const pane = this.pane.current;
+    const pinned = !pane || pane.scrollHeight - pane.scrollTop - pane.clientHeight < 40;
     this.setState(
-      (state) => ({ text: state.text + text, lines: state.lines.concat(lines) }),
+      (state) => {
+        const all = state.lines.concat(pending);
+        const excess = Math.max(0, all.length - MAX_LINES);
+        return { lines: excess ? all.slice(excess) : all, dropped: state.dropped + excess };
+      },
       () => {
         if (pinned && this.pane.current) this.pane.current.scrollTop = this.pane.current.scrollHeight;
       }
     );
-  }
+  };
 
-  private renderLines(lines: LogLine[]) {
+  private renderLines(lines: LogLine[], dropped: number) {
     return (
       <>
+        {dropped > 0 && (
+          <div className="atlas-logline atlas-muted">… {dropped.toLocaleString()} earlier lines dropped</div>
+        )}
         {lines.map((line, i) => (
-          <LogLineView key={i} line={line} />
+          // Keys follow the line, not its position, so dropping old lines
+          // does not remount the rest.
+          <LogLineView key={dropped + i} line={line} />
         ))}
         {this.partial && <div className="atlas-logline">{this.partial}</div>}
       </>
@@ -138,7 +171,8 @@ export default class LogsComponent extends React.Component<Props, State> {
 
   render() {
     const containers = this.props.pod.containers;
-    const { text, lines, raw, errorMessage, streaming } = this.state;
+    const { lines, dropped, raw, errorMessage, streaming } = this.state;
+    const empty = lines.length === 0 && !this.partial;
     return (
       <div className="atlas-section">
         <h3>Logs</h3>
@@ -178,12 +212,24 @@ export default class LogsComponent extends React.Component<Props, State> {
             </OutlinedButton>
           </div>
           <pre ref={this.pane} className="atlas-logpane">
-            {errorMessage ?? (text ? (raw ? text : this.renderLines(lines)) : streaming ? "…" : "(no output)")}
+            {errorMessage ??
+              (empty
+                ? streaming
+                  ? "…"
+                  : "(no output)"
+                : raw
+                  ? rawText(lines, this.partial)
+                  : this.renderLines(lines, dropped))}
           </pre>
         </div>
       </div>
     );
   }
+}
+
+/** The kept lines as they were written. */
+function rawText(lines: LogLine[], partial: string): string {
+  return lines.map((l) => l.text).join("\n") + (partial ? "\n" + partial : "");
 }
 
 /**
