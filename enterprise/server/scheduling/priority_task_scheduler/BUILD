@@ -47,6 +47,7 @@ go_test(
         "//server/interfaces",
         "//server/resources",
         "//server/testutil/testenv",
+        "//server/testutil/testleak",
         "//server/util/expflag",
         "//server/util/log",
         "//server/util/status",

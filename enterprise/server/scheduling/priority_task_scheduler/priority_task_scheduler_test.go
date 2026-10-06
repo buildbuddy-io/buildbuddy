@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -37,6 +38,7 @@ var (
 )
 
 func TestPropagateExecutionTaskValuesToContext_ExperimentFlags(t *testing.T) {
+	testleak.Check(t)
 	expflag.SetFlagProvider(expflag.NewContextProvider())
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 	scheduler := &PriorityTaskScheduler{exec: NewFakeExecutor()}
@@ -61,6 +63,7 @@ func newTaskReservationRequest(taskID, taskGroupID string, priority int32) *scpb
 }
 
 func TestTaskQueue_SingleGroup(t *testing.T) {
+	testleak.Check(t)
 	ctx := t.Context()
 	q := newTaskQueue(clockwork.NewRealClock())
 	require.Equal(t, 0, q.Len())
@@ -97,6 +100,7 @@ func TestTaskQueue_SingleGroup(t *testing.T) {
 }
 
 func TestTaskQueue_MultipleGroups(t *testing.T) {
+	testleak.Check(t)
 	ctx := t.Context()
 	q := newTaskQueue(clockwork.NewRealClock())
 
@@ -122,6 +126,7 @@ func TestTaskQueue_MultipleGroups(t *testing.T) {
 }
 
 func TestTaskQueue_PrioritizesByAppQueuedTimestamp(t *testing.T) {
+	testleak.Check(t)
 	ctx := t.Context()
 	startTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	clock := clockwork.NewFakeClockAt(startTime)
@@ -163,6 +168,7 @@ func TestTaskQueue_PrioritizesByAppQueuedTimestamp(t *testing.T) {
 }
 
 func TestTaskQueue_DedupesTasks(t *testing.T) {
+	testleak.Check(t)
 	ctx := t.Context()
 	q := newTaskQueue(clockwork.NewRealClock())
 
@@ -176,6 +182,7 @@ func TestTaskQueue_DedupesTasks(t *testing.T) {
 }
 
 func TestPriorityTaskScheduler_CanFitTaskWithGPUMemory(t *testing.T) {
+	testleak.Check(t)
 	for _, testCase := range []struct {
 		name     string
 		capacity int64
@@ -217,6 +224,7 @@ func (d fakeGPUMemoryDetector) GetTotalGPUMemoryBytes() (int64, error) {
 }
 
 func TestPriorityTaskScheduler_GPUMemoryAccounting(t *testing.T) {
+	testleak.Check(t)
 	t.Cleanup(func() {
 		require.NoError(t, resources.ConfigureGPU(nil))
 	})
@@ -254,6 +262,7 @@ func TestPriorityTaskScheduler_GPUMemoryAccounting(t *testing.T) {
 }
 
 func TestPriorityTaskScheduler_QueueSkipping_GPUMemory(t *testing.T) {
+	testleak.Check(t)
 	for _, testCase := range []struct {
 		name             string
 		used             resourceCounts
@@ -300,6 +309,7 @@ func TestPriorityTaskScheduler_QueueSkipping_GPUMemory(t *testing.T) {
 }
 
 func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t *testing.T) {
+	testleak.Check(t)
 	env := testenv.GetTestEnv(t)
 	env.SetRemoteExecutionClient(&FakeExecutionClient{})
 
@@ -397,6 +407,7 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 }
 
 func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefinitelyBlocked(t *testing.T) {
+	testleak.Check(t)
 	env := testenv.GetTestEnv(t)
 	env.SetRemoteExecutionClient(&FakeExecutionClient{})
 
@@ -493,6 +504,7 @@ func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefini
 }
 
 func TestPriorityTaskScheduler_CustomResourceParentAccountingCeil(t *testing.T) {
+	testleak.Check(t)
 	env := testenv.GetTestEnv(t)
 	env.SetRemoteExecutionClient(&FakeExecutionClient{})
 
@@ -588,6 +600,7 @@ func TestPriorityTaskScheduler_CustomResourceParentAccountingCeil(t *testing.T) 
 }
 
 func TestPriorityTaskScheduler_CanFitTaskWithParentResources(t *testing.T) {
+	testleak.Check(t)
 	q := &PriorityTaskScheduler{
 		resourceCapacity: &resourceCounts{
 			RAMBytes:  100,
@@ -673,6 +686,7 @@ func TestPriorityTaskScheduler_CanFitTaskWithParentResources(t *testing.T) {
 }
 
 func TestPriorityTaskScheduler_CustomResourceParentAccountingModes(t *testing.T) {
+	testleak.Check(t)
 	for _, test := range []struct {
 		name      string
 		modeA     string
@@ -714,6 +728,7 @@ func TestPriorityTaskScheduler_CustomResourceParentAccountingModes(t *testing.T)
 }
 
 func TestPriorityTaskScheduler_MaxConcurrentTasks(t *testing.T) {
+	testleak.Check(t)
 	env := testenv.GetTestEnv(t)
 	env.SetRemoteExecutionClient(&FakeExecutionClient{})
 
@@ -790,6 +805,7 @@ func TestPriorityTaskScheduler_MaxConcurrentTasks(t *testing.T) {
 }
 
 func TestPriorityTaskScheduler_MaxConcurrentTasks_PreventsQueueSkipping(t *testing.T) {
+	testleak.Check(t)
 	env := testenv.GetTestEnv(t)
 	env.SetRemoteExecutionClient(&FakeExecutionClient{})
 
@@ -888,6 +904,7 @@ func TestPriorityTaskScheduler_MaxConcurrentTasks_PreventsQueueSkipping(t *testi
 }
 
 func TestPriorityTaskScheduler_ExclusiveTaskScheduling(t *testing.T) {
+	testleak.Check(t)
 	env := testenv.GetTestEnv(t)
 	env.SetRemoteExecutionClient(&FakeExecutionClient{})
 
@@ -958,6 +975,7 @@ func TestPriorityTaskScheduler_ExclusiveTaskScheduling(t *testing.T) {
 }
 
 func TestNewPriorityTaskScheduler_RejectsInvalidConcurrencyLimit(t *testing.T) {
+	testleak.Check(t)
 	for _, testCase := range []struct {
 		name                    string
 		exclusiveTaskScheduling bool
@@ -983,6 +1001,7 @@ func TestNewPriorityTaskScheduler_RejectsInvalidConcurrencyLimit(t *testing.T) {
 }
 
 func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
+	testleak.Check(t)
 	for _, test := range []struct {
 		name string
 
@@ -1056,6 +1075,7 @@ func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 }
 
 func TestLocalEnqueueTimestamp(t *testing.T) {
+	testleak.Check(t)
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	startTime := time.Now().UTC()
@@ -1086,6 +1106,7 @@ func TestLocalEnqueueTimestamp(t *testing.T) {
 }
 
 func TestTotalRunningTaskExecutionDuration(t *testing.T) {
+	testleak.Check(t)
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	startTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -1147,6 +1168,7 @@ func TestTotalRunningTaskExecutionDuration(t *testing.T) {
 }
 
 func TestRemoveTaskFromQueue(t *testing.T) {
+	testleak.Check(t)
 	ctx := t.Context()
 	// Try a few runs where we enqueue several tasks, cancel a few tasks, then
 	// after dequeueing the remaining tasks, we should only dequeue the tasks
