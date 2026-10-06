@@ -31,6 +31,7 @@ var (
 	EnableBalloon                    = flag.Bool("executor.firecracker_enable_balloon", true, "Enable memory balloon support when snapshotting firecracker VMs.")
 	VerboseLogging                   = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
 	storeSnapshotsInLocalClusterOnly = flag.Bool("executor.store_snapshots_in_local_cluster_only", false, "If true, snapshots are only stored in the cache proxy in the cluster where this executor is running.")
+	requireQuorumForSnapshots        = flag.Bool("executor.require_quorum_for_snapshots", true, "Require quorum for snapshot availability checks.")
 	enableUploadCompresssion         = flag.Bool("executor.enable_snapshot_chunk_upload_compression", true, "If true, snapshot chunks will be sent to the remote cache compressed.")
 	ThrottleSnapshotWrites           = flag.Bool("executor.throttle_snapshot_writes", false, "If true, snapshot writes will be throttled to avoid high IO pressure.")
 )
@@ -307,9 +308,12 @@ func IsChunkedSnapshotSharingEnabled() bool {
 // so there's not always a need to support snapshot sharing across clusters.
 func GetSnapshotAccessContext(ctx context.Context) context.Context {
 	// Certain snapshot chunks may rarely be read/written, so they won't be replicated
-	// with read repair. So we must explicitly require quorum during FindMissing to ensure
-	// the desired replication factor is met.
-	ctx = findmissing.WithQuorum(ctx)
+	// with read repair. We should explicitly require quorum during FindMissing to ensure
+	// the desired replication factor is met. (It is not always enabled, for backwards
+	// compatibility for on-prem clusters with replication factor <3.)
+	if *requireQuorumForSnapshots {
+		ctx = findmissing.WithQuorum(ctx)
+	}
 	if *storeSnapshotsInLocalClusterOnly {
 		return proxy_util.SetSkipRemote(ctx)
 	}
