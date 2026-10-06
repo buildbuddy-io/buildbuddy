@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -3452,7 +3453,9 @@ func TestTaskCPUControllerDisabled(t *testing.T) {
 			// Mirror executor startup with CPU disabled only for task cgroups,
 			// including the variable that keeps the bundled crun from turning
 			// it back on.
-			t.Setenv("BUILDBUDDY_CRUN_SKIP_ENABLE_CONTROLLERS", "1")
+			runtimeEnv := maps.Clone(ociruntime.RuntimeEnv)
+			t.Cleanup(func() { ociruntime.RuntimeEnv = runtimeEnv })
+			ociruntime.RuntimeEnv["BUILDBUDDY_CRUN_SKIP_ENABLE_CONTROLLERS"] = "1"
 			parent := "ociruntime-test-" + uuid.New()
 			parentPath := filepath.Join(cgroup.RootPath, parent)
 			require.NoError(t, os.Mkdir(parentPath, 0755))
