@@ -1,6 +1,12 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
-load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@rules_distroless//distroless:defs.bzl", "flatten")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_img//img:image.bzl", "image_manifest")
+load("@rules_img//img:layer.bzl", "image_layer", "layer_from_tar")
+load("@rules_img//img:load.bzl", "image_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//images:common.bzl", "EXECUTOR_PACKAGE_ROOT")
 load(
     "//rules:platform_transitions.bzl",
     "linux_arm64_alias",
@@ -97,20 +103,12 @@ go_library(
     }),
 )
 
+BINARY_NAME = "executor"
+
 filegroup(
     name = "licenses",
     data = [
         "//enterprise:licenses",
-    ],
-)
-
-filegroup(
-    name = "runfiles",
-    data = [
-        "//enterprise/app:app_bundle",
-        "//enterprise/app:sha",
-        "//enterprise/app:style",
-        "//static",
     ],
 )
 
@@ -122,7 +120,7 @@ filegroup(
 )
 
 go_binary(
-    name = "executor",
+    name = BINARY_NAME,
     args = [
         "--config_file=enterprise/config/executor.local.yaml",
         "--port=8888",
@@ -198,185 +196,285 @@ windows_arm64_alias(
     visibility = ["//visibility:public"],
 )
 
+alias(
+    name = "tini",
+    actual = select({
+        "@platforms//cpu:arm64": "@com_github_krallin_tini_tini-linux-arm64//file:tini",
+        "//conditions:default": "@com_github_krallin_tini_tini-linux-amd64//file:tini",
+    }),
+)
+
 image_layer(
-    name = "tini_layer",
+    name = "binary_layer",
+    srcs = {EXECUTOR_PACKAGE_ROOT + "/" + BINARY_NAME: ":" + BINARY_NAME},
     annotations = {
-        "org.opencontainers.image.title": "`tini`"
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Executor",
         "org.opencontainers.image.description": (
-            "Contains a symlink from `/buildbuddy` to `/tmp`."
+            "Contains the enterprise BuildBuddy executor binary."
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
-    directory = "/",
-    files = [":tini"],
+    # Do not include runfiles so that we can separate configuration files out
+    # into a separate layer. This lets us use a base image without those files
+    # when building our production images.
+    include_runfiles = False,
     tags = ["manual"],
 )
 
-container_layer(
+[
+    flatten(
+        name = "apt_tar_%s" % arch,
+        tags = ["manual"],
+        target_compatible_with = [
+            "@platforms//os:linux",
+            "@platforms//cpu:%s" % {
+                "amd64": "x86_64",
+                "arm64": "aarch64",
+            }[arch],
+        ],
+        tars = [
+        # debian packages
+        "@debian13//tini/%s" % arch,
+        "@debian13//e2fsprogs/%s" % arch,
+        "@debian13//fuse/%s" % arch,
+        "@debian13//iproute2/%s" % arch,
+        "@debian13//conntrack/%s" % arch,
+        "@debian13//amazon-ecr-credential-helper/%s" % arch,
+        "@debian13//lxcfs/%s" % arch,
+        "@debian13//rootlesskit/%s" % arch,
+        "@debian13//runc/%s" % arch,
+
+        # nvidia packages
+        "@debian13//nvidia_container_toolkit_base/%s" % arch,
+        
+        # docker packages
+        "@debian13//docker-ce/%s" % arch,
+        "@debian13//docker-ce-cli/%s" % arch,
+        "@debian13//docker-ce-rootless-extras/%s" % arch,
+        "@debian13//containerd.io/%s" % arch,
+        "@debian13//docker-buildx-plugin/%s" % arch,
+        "@debian13//docker-compose-plugin/%s" % arch,
+        ],
+    )
+    for arch in [
+        "amd64",
+        "arm64",
+    ]
+]
+
+[
+    layer_from_tar(
+        name = "apt_layer_%s" % arch,
+        src = "apt_tar_%s" % arch,
+        annotations = {
+            "org.opencontainers.image.title": "Distroless executor deps (debian13)",
+            "org.opencontainers.image.description": (
+                "debian13 environment with executor dependencies installed"
+            ),
+            "org.opencontainers.image.vendor": "BuildBuddy",
+        },
+        optimize = True,
+        tags = ["manual"],
+        target_compatible_with = [
+            "@platforms//os:linux",
+            "@platforms//cpu:%s" % {
+                "amd64": "x86_64",
+                "arm64": "aarch64",
+            }[arch],
+        ],
+    )
+    for arch in [
+        "amd64",
+        "arm64",
+    ]
+]
+
+image_layer(
     name = "docker_credential_gcr_layer",
-    directory = "/usr/bin",
-    files = ["//enterprise/server/cmd/executor/docker_credential_gcr_config:docker-credential-gcr-optional"] + select({
-        "@platforms//cpu:x86_64": [
-            "@com_github_googlecloudplatform_docker-credential-gcr-linux-amd64//:docker-credential-gcr.bin",
-        ],
-        "@platforms//cpu:arm64": [
-            "@com_github_googlecloudplatform_docker-credential-gcr-linux-arm64//:docker-credential-gcr.bin",
-        ],
-        "//conditions:default": [],
-    }),
-    tags = ["manual"],
-)
-
-container_layer(
-    name = "docker_credential_gcr_docker_config_layer",
-    directory = "/root/.docker",
-    files = [
-        "//enterprise/server/cmd/executor/docker_credential_gcr_config:config.json",
-    ],
-    tags = ["manual"],
-)
-
-container_layer(
-    name = "containerd_layer",
-    directory = "/usr/bin",
-    files = select({
-        "@platforms//cpu:x86_64": [
-            "@com_github_containerd_containerd-linux-amd64//:containerd.bin",
-            "@com_github_containerd_containerd-linux-amd64//:containerd-shim-runc-v2.bin",
-            "@com_github_containerd_containerd-linux-amd64//:ctr.bin",
-        ],
-        "@platforms//cpu:arm64": [
-            "@com_github_containerd_containerd-linux-arm64//:containerd.bin",
-            "@com_github_containerd_containerd-linux-arm64//:containerd-shim-runc-v2.bin",
-            "@com_github_containerd_containerd-linux-arm64//:ctr.bin",
-        ],
-        "//conditions:default": [],
-    }),
-    tags = ["manual"],
-)
-
-container_layer(
-    name = "rootlesskit_layer",
-    directory = "/usr/bin",
-    files = select({
-        "@platforms//cpu:x86_64": [
-            # "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlessctl.bin",
-            "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlesskit.bin",
-        ],
-        "@platforms//cpu:arm64": [
-            # "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlessctl.bin",
-            "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlesskit.bin",
-        ],
-        "//conditions:default": [],
-    }),
-    tags = ["manual"],
-)
-
-container_layer(
-    name = "runc_layer",
-    directory = "/usr/bin",
-    files = select({
-        "@platforms//cpu:x86_64": [
-            "@com_github_opencontainers_runc_runc-linux-amd64//file:runc",
-        ],
-        "@platforms//cpu:arm64": [
-            "@com_github_opencontainers_runc_runc-linux-arm64//file:runc",
-        ],
-        "//conditions:default": [],
-    }),
-    tags = ["manual"],
-)
-
-# Executor expects "firecracker" and "jailer" binaries in $PATH,
-# and they can't be symlinks (otherwise the VM will not start).
-# Rename the firecracker/jailer binaries so that we can place
-# those into /usr/bin as regular files.
-
-genrule(
-    name = "firecracker_rename",
     srcs = select({
-        "@platforms//cpu:arm64": ["@com_github_firecracker_microvm_firecracker_arm64//:firecracker"],
-        "//conditions:default": ["@com_github_firecracker_microvm_firecracker//:firecracker"],
+        "@platforms//cpu:x86_64": {
+            "/usr/bin/docker-credential-gcr": "@com_github_googlecloudplatform_docker-credential-gcr-linux-amd64//:docker-credential-gcr.bin",
+            "/root/.docker/config.json": "//enterprise/server/cmd/executor/docker_credential_gcr_config:config.json",
+        },
+        "@platforms//cpu:arm64": {
+            "/usr/bin/docker-credential-gcr": "@com_github_googlecloudplatform_docker-credential-gcr-linux-arm64//:docker-credential-gcr.bin",
+            "/root/.docker/config.json": "//enterprise/server/cmd/executor/docker_credential_gcr_config:config.json",
+        },
     }),
-    outs = ["firecracker"],
-    cmd = "cp $(SRCS) $@",
+    tags = ["manual"],
 )
 
-genrule(
-    name = "jailer_rename",
+image_layer(
+    name = "containerd_patch_layer",
     srcs = select({
-        "@platforms//cpu:arm64": ["@com_github_firecracker_microvm_firecracker_arm64//:jailer"],
-        "//conditions:default": ["@com_github_firecracker_microvm_firecracker//:jailer"],
+        "@platforms//cpu:x86_64": {
+            "/usr/bin/containerd.bin": "@com_github_containerd_containerd-linux-amd64//:containerd.bin",
+            "/usr/bin/containerd-shim-runc-v2.bin": "@com_github_containerd_containerd-linux-amd64//:containerd-shim-runc-v2.bin",
+            "/usr/bin/ctr.bin": "@com_github_containerd_containerd-linux-amd64//:ctr.bin",
+        },
+        "@platforms//cpu:arm64": {
+            "/usr/bin/containerd.bin": "@com_github_containerd_containerd-linux-arm64//:containerd.bin",
+            "/usr/bin/containerd-shim-runc-v2.bin": "@com_github_containerd_containerd-linux-arm64//:containerd-shim-runc-v2.bin",
+            "/usr/bin/ctr.bin": "@com_github_containerd_containerd-linux-arm64//:ctr.bin",
+        },
+        "//conditions:default": {},
     }),
-    outs = ["jailer"],
-    cmd = "cp $(SRCS) $@",
+    tags = ["manual"],
 )
 
-container_layer(
+image_layer(
+    name = "rootlesskit_patch_layer",
+    srcs = select({
+        "@platforms//cpu:x86_64": {
+            # "/usr/bin/rootlessctl.bin": "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlessctl.bin",
+            "/usr/bin/rootlesskit.bin": "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlesskit.bin",
+        },
+        "@platforms//cpu:arm64": {
+            # "/usr/bin/rootlessctl.bin": "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlessctl.bin",
+            "/usr/bin/rootlesskit.bin": "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlesskit.bin",
+        },
+        "//conditions:default": {},
+    }),
+    tags = ["manual"],
+)
+
+image_layer(
+    name = "runc_patch_layer",
+    srcs = select({
+        "@platforms//cpu:x86_64": {
+            "/usr/bin/runc": "@com_github_opencontainers_runc_runc-linux-amd64//file:runc",
+        },
+        "@platforms//cpu:arm64": {
+            "/usr/bin/runc": "@com_github_opencontainers_runc_runc-linux-arm64//file:runc",
+        },
+        "//conditions:default": {},
+    }),
+    tags = ["manual"],
+)
+
+image_layer(
     name = "executor_tools_layer",
-    directory = "/usr/bin",
-    files = select({
-        "@platforms//cpu:x86_64": [
-            ":firecracker",
-            ":jailer",
-            "@com_github_containers_crun_crun-linux-amd64//file:crun",
-        ],
-        "@platforms//cpu:aarch64": [
-            ":firecracker",
-            ":jailer",
-            "@com_github_containers_crun_crun-linux-arm64//file:crun",
-        ],
-        "//conditions:default": [],
+    srcs = select({
+        "@platforms//cpu:x86_64": {
+            "/usr/bin/firecracker": "@com_github_firecracker_microvm_firecracker//:firecracker",
+            "/usr/bin/jailer": "@com_github_firecracker_microvm_firecracker//:jailer",
+            "/usr/bin/crun": "@com_github_containers_crun_crun-linux-amd64//file:crun",
+        },
+        "@platforms//cpu:aarch64": {
+            "/usr/bin/firecracker": "@com_github_firecracker_microvm_firecracker_arm64//:firecracker",
+            "/usr/bin/jailer": "@com_github_firecracker_microvm_firecracker_arm64//:jailer",
+            "/usr/bin/crun": "@com_github_containers_crun_crun-linux-arm64//file:crun",
+        },
+        "//conditions:default": {},
     }),
     tags = ["manual"],
 )
 
-container_layer(
+layer_from_tar(
     name = "podman_static_layer",
-    directory = "/",
+    src = "//enterprise/server/remote_execution/containers/podman:podman-static.tar.gz",
+    optimize = True,
     tags = ["manual"],
-    tars = ["//enterprise/server/remote_execution/containers/podman:podman-static.tar.gz"],
 )
 
-container_image(
-    name = "base_image",
-    architecture = select({
-        "@platforms//cpu:arm64": "arm64",
-        "//conditions:default": "amd64",
-    }),
-    base = "@executor_image//image:dockerfile_image.tar",
+image_manifest(
+    name = "base_image_manifest",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server (unconfigured)",
+        "org.opencontainers.image.description": (
+            "Contains the BuildBuddy binary, runfiles, and symlinks " +
+            "necessary to run the enterprise BuildBuddy server. Does not " +
+            "include configuration files."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    base = "//images/distroless/base-nossl:manifest",
+    entrypoint = [
+        "/tini",
+        "--",
+        "/%s/%s" % (
+            EXECUTOR_PACKAGE_ROOT,
+            BINARY_NAME,
+        ),
+    ],
     layers = [
-        ":tini_layer",
+        # ":apt_layer_amd64",
         ":docker_credential_gcr_layer",
-        ":docker_credential_gcr_docker_config_layer",
-        ":containerd_layer",
-        ":runc_layer",
+        ":containerd_patch_layer",
+        ":runc_patch_layer",
         # Updating these layers does not currently afford us any vulnerability
         # fixes; leave them out for now.
-        # ":rootlesskit_layer",
+        # ":rootlesskit_patch_layer",
         ":executor_tools_layer",
         ":podman_static_layer",
+        ":binary_layer",
     ],
-    symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/%s/enterprise/config/executor.release.yaml" % runfiles_directory(),
-    },
     tags = ["manual"],
-    visibility = ["//visibility:public"],
 )
 
-# Build a docker image similar to the go_binary above, but use the "go_image"
-# rule from @io_bazel_rules_docker instead, which creates a docker image.
-#
-# This target can be run locally with enterprise/tools/run_executor_image.sh
-go_image(
-    name = "executor_go_image",
-    architecture = select({
-        "@platforms//cpu:arm64": "arm64",
-        "//conditions:default": "amd64",
-    }),
-    base = ":base_image",
-    binary = ":executor",
+
+pkg_tar(
+    name = "config_files_tar",
+    srcs = [
+        ":config_files",
+    ],
+    include_runfiles = True,
+    package_dir = EXECUTOR_PACKAGE_ROOT,
+    remap_paths = {
+        ".runfiles/%s/enterprise" % runfiles_directory(): "",
+    },
     tags = ["manual"],
+)
+
+pkg_tar(
+    name = "config_symlink_tar",
+    mode = "0755",
+    symlinks = {
+        "config.yaml": "%s/config/executor.local.yaml" % EXECUTOR_PACKAGE_ROOT,
+    },
+    tags = ["manual"],
+)
+
+flatten(
+    name = "config_tar",
+    tags = ["manual"],
+    tars = [
+        ":config_files_tar",
+        ":config_symlink_tar",
+    ],
+)
+
+layer_from_tar(
+    name = "config_layer",
+    src = "config_tar",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Executor Configuration (FOSS)",
+        "org.opencontainers.image.description": (
+            "Contains the FOSS enterprise BuildBuddy executor configuration files."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    optimize = True,
+    tags = ["manual"],
+)
+
+image_manifest(
+    name = "image_manifest",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Executor",
+        "org.opencontainers.image.description": (
+            "Contains the BuildBuddy executor binary, runfiles, configuration " +
+            "files, and symlinks necessary to run the enterprise BuildBuddy " +
+            "executor."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    base = ":base_image_manifest",
+    layers = [
+        ":config_layer",
+    ],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
 )
 
 container_image(
@@ -391,14 +489,6 @@ container_image(
         "--",
         "/app/enterprise/server/cmd/executor/executor",
     ],
-    tags = ["manual"],
-)
-
-# This image is the docker image used by the executor to run actions that do not
-# already have a docker image specified.
-container_image(
-    name = "default_base_image",
-    base = "@default_execution_image//image:dockerfile_image.tar",
     tags = ["manual"],
 )
 
@@ -417,6 +507,14 @@ image_load(
     registry = "buildbuddy.io",
     repository = "enterprise/executor",
     tag = "latest",
+    tags = ["manual"],
+)
+
+# This image is the docker image used by the executor to run actions that do not
+# already have a docker image specified.
+container_image(
+    name = "default_base_image",
+    base = "@default_execution_image//image:dockerfile_image.tar",
     tags = ["manual"],
 )
 
