@@ -131,6 +131,11 @@ var (
 
 	// Fake /proc/cgroups content to mount into the container.
 	fakeProcCgroupsContent = getFakeProcCgroupsContent()
+
+	// RuntimeEnv holds environment variables that are set for every OCI
+	// runtime invocation, in addition to the executor's own environment. It
+	// must only be modified before any containers are created.
+	RuntimeEnv = map[string]string{}
 )
 
 // Set via x_defs from the BUILD file
@@ -1491,6 +1496,10 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 
 	cmd := exec.CommandContext(ctx, runtimeArgs[0], runtimeArgs[1:]...)
 	cmd.Dir = wd
+	cmd.Env = os.Environ()
+	for key, value := range RuntimeEnv {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
 	var stdout *bytes.Buffer
 	var stderr *bytes.Buffer
 	// If stdio is nil, the output will be discarded.
