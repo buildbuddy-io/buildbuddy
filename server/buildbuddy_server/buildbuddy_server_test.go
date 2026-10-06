@@ -422,6 +422,20 @@ func (f *fakeAuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.
 	return f.keys, nil
 }
 
+func (f *fakeAuthDB) GetUserOwnedKeysEnabled() bool {
+	return true
+}
+
+func (f *fakeAuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]*tables.APIKey, error) {
+	var keys []*tables.APIKey
+	for _, k := range f.keys {
+		if k.UserID == userID {
+			keys = append(keys, k)
+		}
+	}
+	return keys, nil
+}
+
 type fakeUserDB struct {
 	interfaces.UserDB
 	users map[string]*tables.User
@@ -552,6 +566,58 @@ func TestGetApiKeys_CreationMetadata(t *testing.T) {
 		for id, k := range keys {
 			require.Nil(t, k.GetCreationMetadata(), id)
 		}
+	})
+}
+
+func TestGetUserApiKeys_CreationMetadata(t *testing.T) {
+	const (
+		adminID = "ADMIN"
+		ownerID = "OWNER"
+		otherID = "OTHER"
+	)
+	createdAt := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	model := tables.Model{CreatedAtUsec: createdAt.UnixMicro()}
+
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		adminID: testUserWithCapabilities(adminID, group1, cappb.Capability_ORG_ADMIN),
+		ownerID: testUserWithCapabilities(ownerID, group1, cappb.Capability_CACHE_WRITE),
+		otherID: testUserWithCapabilities(otherID, group1, cappb.Capability_CACHE_WRITE),
+	})
+	te.SetAuthenticator(auth)
+	te.SetAuthDB(&fakeAuthDB{keys: []*tables.APIKey{
+		{APIKeyID: "owned", UserID: ownerID, Model: model, CreatedByUserID: ownerID},
+	}})
+	te.SetUserDB(&fakeUserDB{users: map[string]*tables.User{
+		ownerID: tableUser(ownerID, "Olive", "Owner", "olive@example.com"),
+	}})
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	// getKey fetches the owner's single key as the given user.
+	getKey := func(t *testing.T, userID string) *akpb.ApiKey {
+		ctx, err := auth.WithAuthenticatedUser(context.Background(), userID)
+		require.NoError(t, err)
+		rsp, err := server.GetUserApiKeys(ctx, &akpb.GetApiKeysRequest{
+			RequestContext: testauth.RequestContext(userID, group1),
+			UserId:         ownerID,
+		})
+		require.NoError(t, err)
+		require.Len(t, rsp.GetApiKey(), 1)
+		return rsp.GetApiKey()[0]
+	}
+
+	for _, userID := range []string{ownerID, adminID} {
+		t.Run(userID, func(t *testing.T) {
+			md := getKey(t, userID).GetCreationMetadata()
+			require.NotNil(t, md)
+			require.Equal(t, "Olive Owner", md.GetCreatedBy())
+			require.Equal(t, createdAt.UnixMicro(), md.GetCreatedAt().AsTime().UnixMicro())
+		})
+	}
+
+	t.Run("non_owner", func(t *testing.T) {
+		require.Nil(t, getKey(t, otherID).GetCreationMetadata())
 	})
 }
 
