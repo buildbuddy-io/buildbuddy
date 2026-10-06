@@ -43,24 +43,26 @@ apt.sources_list(
     types = ["deb"],
     uris = ["https://snapshot.debian.org/archive/debian-security/{}".format(snapshot)],
 )
+
 apt.sources_list(
     architectures = [
         "amd64",
         "arm64",
     ],
-    components = ["stable"],
-    suites = [""],
+    components = ["deb"],
+    suites = ["stable"],
     types = ["deb"],
     uris = ["https://nvidia.github.io/libnvidia-container"],
     # gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
 )
+
 apt.sources_list(
     architectures = [
         "amd64",
         "arm64",
     ],
     components = ["stable"],
-    suites = [""],
+    suites = ["trixie"],
     types = ["deb"],
     uris = ["https://download.docker.com/linux/debian"],
     # gpg_keys = ["//apt/keys:docker.asc"],
@@ -69,7 +71,7 @@ apt.sources_list(
 # Configure Debian debian13 packages
 apt.install(
     dependency_set = "debian13",
-    include_transitive = False,
+    include_transitive = True,
     mergedusr = True,
     package_template = "apt/package.BUILD.tmpl",
     packages = [
@@ -94,19 +96,22 @@ apt.install(
         "conntrack",
         "amazon-ecr-credential-helper",
         "lxcfs",
+        "rootlesskit",
+        "runc",
 
         # nvidia packages
-        "nvidia_container_toolkit_base",
+        # "nvidia_container_toolkit_base",
         
         # docker packages
-        "docker-ce",
-        "docker-ce-cli",
-        "docker-ce-rootless-extras",
-        "containerd.io",
-        "docker-buildx-plugin",
-        "docker-compose-plugin",
+        # "docker-ce",
+        # "docker-ce-cli",
+        # "docker-ce-rootless-extras",
+        # "containerd.io",
+        # "docker-buildx-plugin",
+        # "docker-compose-plugin",
     ],
     suites = [
+        "",
         "trixie",
         "trixie-updates",
         "trixie-security",

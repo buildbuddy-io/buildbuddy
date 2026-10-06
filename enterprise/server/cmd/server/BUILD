@@ -1,5 +1,3 @@
-load("@io_bazel_rules_docker//container:container.bzl", "container_image")
-load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_distroless//distroless:defs.bzl", "flatten")
 load("@rules_img//img:image.bzl", "image_manifest")
@@ -163,7 +161,7 @@ image_layer(
 
 image_layer(
     name = "binary_layer",
-    srcs = {APP_PACKAGE_ROOT + "/buildbuddy": ":buildbuddy"},
+    srcs = {APP_PACKAGE_ROOT + "/" + BINARY_NAME: ":" + BINARY_NAME},
     annotations = {
         "org.opencontainers.image.title": "Enterprise BuildBuddy Server",
         "org.opencontainers.image.description": (
@@ -284,7 +282,7 @@ image_manifest(
         "org.opencontainers.image.title": "Enterprise BuildBuddy Server",
         "org.opencontainers.image.description": (
             "Contains the BuildBuddy binary, runfiles, configuration files, " +
-            "and symlinks necessary to run the enterprise BuildBuddy server.",
+            "and symlinks necessary to run the enterprise BuildBuddy server."
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
