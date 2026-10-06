@@ -350,17 +350,19 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = PODMAN_STATIC_SHA256_ARM64,
     )
 
+    # crun static builds with buildpatches/crun_no_enable_controllers.patch
+    # applied (see tools/build_crun.sh)
     http_file(
         name = "com_github_containers_crun_crun-linux-amd64",
-        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28-linux-amd64-disable-systemd"],
-        sha256 = "137bce17e4a102683e9b6974f4141cf6c30da61c8ade43c8f2b2d6961a8b858b",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/crun/crun-1.28-buildbuddy.1_linux-amd64"],
+        sha256 = "0a7befed3ee49dd77022277990abea30600c25432e12fe5f8fba2e6396c5274c",
         downloaded_file_path = "crun",
         executable = True,
     )
     http_file(
         name = "com_github_containers_crun_crun-linux-arm64",
-        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28-linux-arm64-disable-systemd"],
-        sha256 = "decac16cacbc570a1d7739d2ba47da4ffe0d3918adb10e47712bd1da0a110a78",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/crun/crun-1.28-buildbuddy.1_linux-arm64"],
+        sha256 = "eb08c7acaf159d7786719437415b0d3311c67a10ca7dee9366271bda3e902ca8",
         downloaded_file_path = "crun",
         executable = True,
     )
