@@ -123,7 +123,6 @@ type readMetrics struct {
 	readThroughCount, readThroughBytes, peerCount float64
 }
 
-// readMetricsFor snapshots the distributed cache read counters for op.
 func readMetricsFor(t *testing.T, op string) readMetrics {
 	labels := func(source string) prometheus.Labels {
 		return prometheus.Labels{
@@ -138,9 +137,6 @@ func readMetricsFor(t *testing.T, op string) readMetrics {
 	}
 }
 
-// assertReadThroughServed asserts that since the before snapshot, exactly
-// count objects totalling sizeBytes were served from the local read-through
-// cache for op, and none from a remote peer.
 func assertReadThroughServed(t *testing.T, op string, before readMetrics, count, sizeBytes int) {
 	after := readMetricsFor(t, op)
 	assert.Equal(t, before.readThroughCount+float64(count), after.readThroughCount, "read_through object count")
