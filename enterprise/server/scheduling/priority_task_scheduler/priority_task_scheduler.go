@@ -1081,6 +1081,11 @@ func (q *PriorityTaskScheduler) Start() error {
 // exit. Queued tasks are no longer scheduled after Stop is called. Shutdown
 // calls Stop once active tasks have finished.
 func (q *PriorityTaskScheduler) Stop() error {
+	// Keep the scheduling loop from starting a queued task if it receives a
+	// buffered signal before it sees that the scheduler is stopped.
+	q.mu.Lock()
+	q.shuttingDown = true
+	q.mu.Unlock()
 	q.stopOnce.Do(func() { close(q.stopped) })
 	q.loopsDone.Wait()
 	return nil
