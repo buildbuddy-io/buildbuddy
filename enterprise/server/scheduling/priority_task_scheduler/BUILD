@@ -47,7 +47,6 @@ go_test(
         "//server/interfaces",
         "//server/resources",
         "//server/testutil/testenv",
-        "//server/testutil/testleak",
         "//server/util/expflag",
         "//server/util/log",
         "//server/util/status",
@@ -58,5 +57,6 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_uber_go_goleak//:goleak",
     ],
 )
