@@ -126,16 +126,48 @@ func (p *ClientConnPool) Close() error {
 	return nil
 }
 
-// getConn returns a connection from the pool.
+// getConn prefers Ready connections, falling back to the full pool when none
+// are ready so initial connection attempts and fail-fast behavior are preserved.
 //
 // Under the "least-pending-rpcs" policy it uses the power of two random
 // choices: it samples two distinct connections and returns whichever has fewer
 // in-flight RPCs. This steers new RPCs away from connections that are backed up
 // (for example, one stalled behind the load balancer's HTTP/2 flow-control or
-// max-concurrent-stream limits) and toward idle ones. Otherwise it falls back
+// max-concurrent-stream limits) and toward less-loaded ones. Otherwise it falls back
 // to round-robin, cycling through connections in order.
 func (p *ClientConnPool) getConn() *clientConn {
-	n := len(p.conns)
+	if len(p.conns) == 1 {
+		return p.conns[0]
+	}
+	// Keep the full pool when all connections are Ready. Only build a filtered
+	// snapshot after seeing an unready member, using stack space for usual sizes.
+	var readyBuf [16]*clientConn
+	ready := readyBuf[:0]
+	filtering := false
+	for i, conn := range p.conns {
+		switch conn.GetState() {
+		case connectivity.Ready:
+			if filtering {
+				ready = append(ready, conn)
+			}
+			continue
+		case connectivity.Idle:
+			// Idle connections need a nudge to rejoin selection even while
+			// other connections can serve RPCs.
+			conn.Connect()
+		case connectivity.Connecting, connectivity.TransientFailure, connectivity.Shutdown:
+			// These connections cannot currently serve an RPC.
+		}
+		if !filtering {
+			ready = append(ready, p.conns[:i]...)
+			filtering = true
+		}
+	}
+	conns := p.conns
+	if filtering && len(ready) > 0 {
+		conns = ready
+	}
+	n := len(conns)
 	if *connPickPolicy == connPickLeastPendingRPCs && n > 1 {
 		// Sample two distinct connections and take the less-loaded one.
 		i := rand.IntN(n)
@@ -143,14 +175,14 @@ func (p *ClientConnPool) getConn() *clientConn {
 		if j >= i {
 			j++
 		}
-		a, b := p.conns[i], p.conns[j]
+		a, b := conns[i], conns[j]
 		if b.pending.Load() < a.pending.Load() {
 			return b
 		}
 		return a
 	}
 	idx := p.idx.Add(1)
-	return p.conns[idx%uint64(len(p.conns))]
+	return conns[idx%uint64(n)]
 }
 
 func (p *ClientConnPool) WaitForConn() *grpc.ClientConn {

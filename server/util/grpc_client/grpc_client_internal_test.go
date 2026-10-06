@@ -1,20 +1,34 @@
 package grpc_client
 
 import (
+	"context"
+	"net"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
-// testPool builds a pool of connections with the given in-flight counts. The
-// connections have no underlying grpc.ClientConn, which is fine because getConn
-// only reads the pending counter and index.
-func testPool(pending ...int64) *ClientConnPool {
+// testPool builds Ready connections with the given in-flight counts, so these
+// tests exercise the selection policies over the Ready subset.
+func testPool(t *testing.T, pending ...int64) *ClientConnPool {
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	server := grpc.NewServer()
+	go server.Serve(listener)
+	t.Cleanup(server.Stop)
 	conns := make([]*clientConn, len(pending))
 	for i, n := range pending {
-		c := &clientConn{index: strconv.Itoa(i)}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		conn, err := grpc.DialContext(ctx, listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+		cancel()
+		require.NoError(t, err)
+		t.Cleanup(func() { conn.Close() })
+		c := &clientConn{ClientConn: conn, index: strconv.Itoa(i)}
 		c.pending.Store(n)
 		conns[i] = c
 	}
@@ -23,7 +37,7 @@ func testPool(pending ...int64) *ClientConnPool {
 
 func TestGetConn_LeastPending_PicksLessLoadedOfTwo(t *testing.T) {
 	flags.Set(t, "grpc_client.conn_pick_policy", connPickLeastPendingRPCs)
-	p := testPool(10, 3)
+	p := testPool(t, 10, 3)
 	for range 100 {
 		require.Same(t, p.conns[1], p.getConn())
 	}
@@ -32,7 +46,7 @@ func TestGetConn_LeastPending_PicksLessLoadedOfTwo(t *testing.T) {
 func TestGetConn_LeastPending_AvoidsBackedUpConnection(t *testing.T) {
 	flags.Set(t, "grpc_client.conn_pick_policy", connPickLeastPendingRPCs)
 	// Connection 2 is badly backed up; the rest are idle.
-	p := testPool(0, 0, 1000, 0, 0)
+	p := testPool(t, 0, 0, 1000, 0, 0)
 	counts := make([]int, len(p.conns))
 	for range 10_000 {
 		idx, err := strconv.Atoi(p.getConn().index)
@@ -56,7 +70,7 @@ func TestGetConn_RoundRobinByDefault(t *testing.T) {
 	// order and ignores the pending counts entirely (connection 1 is heavily
 	// loaded but still gets its turn).
 	flags.Set(t, "grpc_client.conn_pick_policy", connPickRoundRobin)
-	p := testPool(0, 100, 0, 0)
+	p := testPool(t, 0, 100, 0, 0)
 	want := []int{1, 2, 3, 0, 1, 2, 3, 0}
 	for _, w := range want {
 		require.Equal(t, strconv.Itoa(w), p.getConn().index)
@@ -66,7 +80,7 @@ func TestGetConn_RoundRobinByDefault(t *testing.T) {
 func TestGetConn_SingleConnection(t *testing.T) {
 	for _, policy := range []string{connPickRoundRobin, connPickLeastPendingRPCs} {
 		flags.Set(t, "grpc_client.conn_pick_policy", policy)
-		p := testPool(5)
+		p := testPool(t, 5)
 		require.Same(t, p.conns[0], p.getConn())
 	}
 }
