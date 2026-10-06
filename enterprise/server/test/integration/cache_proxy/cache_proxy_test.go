@@ -265,12 +265,12 @@ func TestFindMissing_Encryption(t *testing.T) {
 	require.Equal(t, 1, len(resp.MissingBlobDigests))
 }
 
-func TestDisableLocalCacheEncryption(t *testing.T) {
-	for _, disable := range []bool{false, true} {
-		t.Run(fmt.Sprintf("disable_local_cache_encryption=%t", disable), func(t *testing.T) {
-			// This flag is process-wide, so it also disables encryption
-			// in the app, but this test only checks the proxy's behavior.
-			flags.Set(t, "crypter.disable_local_cache_encryption", disable)
+func TestAllowLocalCacheEncryption(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		t.Run(fmt.Sprintf("allow_local_cache_encryption=%t", allow), func(t *testing.T) {
+			// This flag is process-wide, so it also controls encryption in the
+			// app, but this test only checks the proxy's behavior.
+			flags.Set(t, "crypter.allow_local_cache_encryption", allow)
 			// The proxy needs to authenticate requests locally to read from
 			// and write to its local cache, which requires ES256 JWTs.
 			keyPair := testkeys.GenerateES256KeyPair(t)
@@ -310,7 +310,7 @@ func TestDisableLocalCacheEncryption(t *testing.T) {
 			})
 			cas := proxy.GetContentAddressableStorageClient()
 
-			blob := []byte("hello, disable-local-cache-encryption test")
+			blob := []byte("hello, enable-local-cache-encryption test")
 			h := sha256.Sum256(blob)
 			d := &repb.Digest{
 				Hash:      hex.EncodeToString(h[:]),
@@ -335,10 +335,10 @@ func TestDisableLocalCacheEncryption(t *testing.T) {
 			require.EqualValues(t, 0, readResp.Responses[0].GetStatus().GetCode())
 			require.Equal(t, blob, readResp.Responses[0].GetData())
 
-			if disable {
-				require.Zero(t, backendReads.Load(), "expected the read to be served from the proxy's local cache")
-			} else {
+			if allow {
 				require.Positive(t, backendReads.Load(), "expected the read to bypass the proxy's local cache")
+			} else {
+				require.Zero(t, backendReads.Load(), "expected the read to be served from the proxy's local cache")
 			}
 		})
 	}
