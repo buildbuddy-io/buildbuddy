@@ -191,6 +191,7 @@ type apiKeyGroup struct {
 	EnforceIPRules         bool
 	Impersonation          bool
 	Status                 int32
+	ExpiryUsec             int64
 }
 
 func (g *apiKeyGroup) GetAPIKeyID() string {
@@ -237,6 +238,10 @@ func (g *apiKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
 	return grpb.Group_GroupStatus(g.Status)
 }
 
+func (g *apiKeyGroup) GetExpiryUsec() int64 {
+	return g.ExpiryUsec
+}
+
 // apiKeyGroupRow contains a single row from a DB lookup for an API key.
 // The data contains columns from both the APIKey and Group tables.
 // toAPIKeyGroup converts the data to the more compact apiKeyGroup
@@ -269,6 +274,7 @@ func (r *apiKeyGroupRow) toAPIKeyGroup() *apiKeyGroup {
 		EnforceIPRules:         r.EnforceIPRules,
 		Impersonation:          r.Impersonation,
 		Status:                 r.GroupStatus,
+		ExpiryUsec:             r.ExpiryUsec,
 	}
 }
 

@@ -3,6 +3,7 @@ package claims_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -105,6 +106,7 @@ type fakeAPIKeyGroup struct {
 	enforceIPRules         bool
 	impersonation          bool
 	groupStatus            grpb.Group_GroupStatus
+	expiryUsec             int64
 }
 
 func (f *fakeAPIKeyGroup) GetCapabilities() int32 {
@@ -145,6 +147,10 @@ func (f *fakeAPIKeyGroup) IsImpersonating() bool {
 
 func (f *fakeAPIKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
 	return f.groupStatus
+}
+
+func (f *fakeAPIKeyGroup) GetExpiryUsec() int64 {
+	return f.expiryUsec
 }
 
 func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
@@ -336,6 +342,58 @@ func TestAssembleJWT_ES256(t *testing.T) {
 	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, &claims.Claims{})
 	require.NoError(t, err)
 	require.Equal(t, "ES256", token.Method.Alg())
+}
+
+func TestAssembleJWT_CappedAtAPIKeyExpiry(t *testing.T) {
+	flags.Set(t, "auth.jwt_duration", 6*time.Hour)
+	for _, test := range []struct {
+		name      string
+		expiresIn time.Duration // 0 means the key never expires.
+		wantExp   func(keyExpiry time.Time) time.Time
+	}{
+		{
+			name: "no_expiry",
+			wantExp: func(time.Time) time.Time {
+				return time.Now().Add(6 * time.Hour)
+			},
+		},
+		{
+			name:      "expires_before_jwt",
+			expiresIn: 1 * time.Hour,
+			wantExp:   func(keyExpiry time.Time) time.Time { return keyExpiry },
+		},
+		{
+			name:      "expires_after_jwt",
+			expiresIn: 24 * time.Hour,
+			wantExp: func(time.Time) time.Time {
+				return time.Now().Add(6 * time.Hour)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			akg := &fakeAPIKeyGroup{apiKeyID: "AK123", groupID: "GR456"}
+			var keyExpiry time.Time
+			if test.expiresIn > 0 {
+				keyExpiry = time.Now().Add(test.expiresIn)
+				akg.expiryUsec = keyExpiry.UnixMicro()
+			}
+			c, err := claims.APIKeyGroupClaims(context.Background(), akg)
+			require.NoError(t, err)
+			require.Equal(t, akg.expiryUsec, c.APIKeyExpiryUsec)
+
+			// The minted JWT must carry the key expiry, so that re-minting
+			// from parsed claims stays capped too.
+			parsed, err := claims.ClaimsFromContext(contextWithUnverifiedJWT(c))
+			require.NoError(t, err)
+			require.Equal(t, akg.expiryUsec, parsed.APIKeyExpiryUsec)
+
+			// JWT expiry is truncated to the second (and, without a key
+			// expiry, rounded down to the minute).
+			exp := time.Unix(parsed.ExpiresAt, 0)
+			require.False(t, exp.After(test.wantExp(keyExpiry)), "JWT expires at %s, want no later than %s", exp, test.wantExp(keyExpiry))
+			require.WithinDuration(t, test.wantExp(keyExpiry), exp, time.Minute)
+		})
+	}
 }
 
 func TestAssembleJWT_ES256_UsesNewKeyWhenSet(t *testing.T) {

@@ -523,6 +523,7 @@ type APIKeyGroup interface {
 	GetEnforceIPRules() bool
 	IsImpersonating() bool
 	GetGroupStatus() grpb.Group_GroupStatus
+	GetExpiryUsec() int64
 }
 
 type AuthDB interface {

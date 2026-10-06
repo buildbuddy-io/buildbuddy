@@ -148,7 +148,12 @@ type Claims struct {
 	// using an API key.
 	// The GroupID field above should be used in most cases!
 	APIKeyOwnerGroupID string `json:"api_key_owner_group_id,omitempty"`
-	Impersonating      bool   `json:"impersonating"`
+	// APIKeyExpiryUsec is the time at which the API key used for authentication
+	/// expires, in microseconds since the Unix epoch, or 0 if the key does not
+	// expire (or another authentication mechanism was used). JWTs minted from
+	// these claims never outlive the key.
+	APIKeyExpiryUsec int64 `json:"api_key_expiry_usec,omitempty"`
+	Impersonating    bool  `json:"impersonating"`
 	// TODO(bduffany): remove this field
 	AllowedGroups          []string                      `json:"allowed_groups"`
 	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
@@ -321,6 +326,7 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		GroupID:                    effectiveGroup,
 		ExperimentTargetingGroupID: experimentTargetingGroup,
 		APIKeyOwnerGroupID:         akg.GetGroupID(),
+		APIKeyExpiryUsec:           akg.GetExpiryUsec(),
 		AllowedGroups:              allowedGroups,
 		GroupMemberships:           groupMemberships,
 		Capabilities:               capabilities.FromInt(akg.GetCapabilities()),
@@ -442,6 +448,9 @@ func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
 	// Round expiration times down to the nearest minute to improve stability
 	// of JWTs for caching purposes.
 	expiresAt -= (expiresAt % 60)
+	if c.APIKeyExpiryUsec > 0 {
+		expiresAt = min(expiresAt, time.UnixMicro(c.APIKeyExpiryUsec).Unix())
+	}
 	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
 	token := jwt.NewWithClaims(method, c)
 	if method == jwt.SigningMethodHS256 {
