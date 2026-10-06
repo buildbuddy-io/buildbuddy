@@ -20,9 +20,15 @@
 //
 // The --diff flag previews buildifier and Gazelle changes without writing
 // them; other fixes (dep additions, update-repos) are skipped in diff mode.
+//
+// `bb fix` exits non-zero if any step fails (e.g. a BUILD file doesn't parse,
+// Gazelle errors, or a dependency can't be added), and with --diff, also if
+// there are changes to apply. It still runs the remaining steps after a
+// failure, and reports all failures at the end.
 package fix
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -40,6 +46,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 
+	gazelleUpdate "github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/update"
 	buildifier "github.com/bazel-contrib/buildtools/v10/buildifier"
 	gazelle "github.com/bazelbuild/bazel-gazelle/cmd/gazelle"
 )
@@ -62,6 +69,9 @@ Use the --diff flag to print suggested fixes without applying.
 
 var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9 ]+`)
 
+// errDiff is returned in --diff mode by steps that found changes to apply.
+var errDiff = errors.New("found changes to apply; run `bb fix` without --diff to apply them")
+
 func HandleFix(args []string) (exitCode int, err error) {
 	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {
@@ -78,14 +88,13 @@ func HandleFix(args []string) (exitCode int, err error) {
 		return 1, err
 	}
 
-	if err := walk(baseFile); err != nil {
-		log.Printf("Error fixing: %s", err)
-	}
-
-	if err := runGazelle(path, baseFile); err != nil {
+	// Run Gazelle even if the walk failed, so that one bad file doesn't stop
+	// everything else from being fixed.
+	walkErr := walk(baseFile)
+	gazelleErr := runGazelle(path, baseFile)
+	if err := joinErrors([]error{walkErr, gazelleErr}); err != nil {
 		return 1, err
 	}
-
 	return 0, nil
 }
 
@@ -111,8 +120,15 @@ func runRepoGazelle() error {
 	if *diff {
 		args = append(args, "-mode=diff")
 	}
-	_, err := bazelisk.Run(args, &bazelisk.RunOpts{})
-	return err
+	exitCode, err := bazelisk.Run(args, &bazelisk.RunOpts{})
+	if err != nil {
+		return fmt.Errorf("run %s: %w", gazelleTarget, err)
+	}
+	if exitCode != 0 {
+		// In diff mode, Gazelle exits 1 both for diffs and for errors.
+		return fmt.Errorf("`bazel run %s` exited with code %d", gazelleTarget, exitCode)
+	}
+	return nil
 }
 
 func runBuiltinGazelle(repoRoot, baseFile string) error {
@@ -132,11 +148,25 @@ func runBuiltinGazelle(repoRoot, baseFile string) error {
 		os.Args = append(os.Args, "-mode=diff")
 	}
 	log.Debugf("Calling gazelle with args: %+v", os.Args)
-	gazelle.Run()
+	return gazelleError(gazelle.Run())
+}
+
+// gazelleError converts an error from the embedded Gazelle into one to report.
+func gazelleError(err error) error {
+	if errors.Is(err, gazelleUpdate.ErrDiff) {
+		return errDiff
+	}
+	if err != nil {
+		return fmt.Errorf("gazelle: %w", err)
+	}
 	return nil
 }
 
+// walk formats build files and, outside of --diff mode, adds and registers the
+// dependencies of the languages used in the repo. It returns all the errors it
+// encountered.
 func walk(moduleOrWorkspaceFile string) error {
+	var errs []error
 	languages := getLanguages()
 	foundLanguages := map[language.Language]bool{}
 	depFiles := map[string][]string{}
@@ -156,7 +186,7 @@ func walk(moduleOrWorkspaceFile string) error {
 			}
 			// .bzl files are formatted directly by buildifier.
 			if strings.HasSuffix(path, ".bzl") {
-				runBuildifier(path)
+				errs = append(errs, runBuildifier(path))
 				return nil
 			}
 
@@ -186,25 +216,30 @@ func walk(moduleOrWorkspaceFile string) error {
 			if fileToFormat == "" {
 				return nil
 			}
-			runBuildifier(fileToFormat)
+			errs = append(errs, runBuildifier(fileToFormat))
 			return nil
 		})
 	if err != nil {
-		return err
+		errs = append(errs, err)
+		return joinErrors(errs)
 	}
 
 	if *diff {
 		// TODO: support diff mode for other fixes
-		return nil
+		return joinErrors(errs)
 	}
 
 	// Add any necessary dependencies for languages that are used in the repo.
 	for l := range foundLanguages {
 		for _, d := range l.Deps() {
 			log.Debugf("Adding %s", d)
-			_, err := add.HandleAdd([]string{d})
+			result, err := add.Add(d)
 			if err != nil {
-				log.Debugf("Failed adding %s: %s", d, err)
+				errs = append(errs, fmt.Errorf("add %s: %w", d, err))
+				continue
+			}
+			if result.AlreadyPresent {
+				log.Debugf("%s already depends on %s", result.File, result.Module)
 			}
 		}
 		depFiles = l.ConsolidateDepFiles(depFiles)
@@ -213,16 +248,47 @@ func walk(moduleOrWorkspaceFile string) error {
 	// Run update-repos on any dependency files we found.
 	for _, paths := range depFiles {
 		for _, path := range paths {
-			runUpdateRepos(path, moduleOrWorkspaceFile)
+			errs = append(errs, runUpdateRepos(path, moduleOrWorkspaceFile))
 			for l := range foundLanguages {
 				if l.IsDepFile(path) {
-					l.RegisterDeps(path, moduleOrWorkspaceFile)
+					if err := l.RegisterDeps(path, moduleOrWorkspaceFile); err != nil {
+						errs = append(errs, fmt.Errorf("register deps from %s: %w", path, err))
+					}
 				}
 			}
 		}
 	}
 
-	return nil
+	return joinErrors(errs)
+}
+
+// joinErrors is errors.Join, except that errDiff appears at most once.
+func joinErrors(errs []error) error {
+	var out []error
+	sawDiff := false
+	for _, err := range flatten(errs) {
+		if err == errDiff {
+			if sawDiff {
+				continue
+			}
+			sawDiff = true
+		}
+		out = append(out, err)
+	}
+	return errors.Join(out...)
+}
+
+// flatten expands errors created by errors.Join into their parts.
+func flatten(errs []error) []error {
+	var out []error
+	for _, err := range errs {
+		if joined, ok := err.(interface{ Unwrap() []error }); ok {
+			out = append(out, flatten(joined.Unwrap())...)
+		} else if err != nil {
+			out = append(out, err)
+		}
+	}
+	return out
 }
 
 // Collect the languages that support auto-generating WORKSPACE files.
@@ -236,7 +302,8 @@ func getLanguages() []language.Language {
 	return languages
 }
 
-func runBuildifier(path string) {
+// runBuildifier formats (or with --diff, diffs) the given file.
+func runBuildifier(path string) error {
 	originalArgs := os.Args
 	defer func() {
 		os.Args = originalArgs
@@ -251,13 +318,21 @@ func runBuildifier(path string) {
 		)
 	}
 	os.Args = append(os.Args, path)
-	buildifier.Run()
+	switch exitCode := buildifier.Run(); {
+	case exitCode == 0:
+		return nil
+	case exitCode == 4 && *diff:
+		// Exit code 4 means the file needs reformatting.
+		return errDiff
+	default:
+		return fmt.Errorf("buildifier %s: exit code %d", path, exitCode)
+	}
 }
 
-func runUpdateRepos(path string, moduleOrWorkspaceFile string) {
+func runUpdateRepos(path string, moduleOrWorkspaceFile string) error {
 	// Don't run update-repos on MODULE.bazel files.
 	if moduleOrWorkspaceFile == workspace.ModuleFileName {
-		return
+		return nil
 	}
 
 	originalArgs := os.Args
@@ -266,5 +341,5 @@ func runUpdateRepos(path string, moduleOrWorkspaceFile string) {
 	}()
 	os.Args = []string{"gazelle", "update-repos", "-prune", "--from_file=" + path, fmt.Sprintf("--to_macro=deps.bzl%%install_%s_dependencies", nonAlphanumericRegex.ReplaceAllString(path, "_"))}
 	log.Debugf("Calling gazelle with args: %+v", os.Args)
-	gazelle.Run()
+	return gazelleError(gazelle.Run())
 }

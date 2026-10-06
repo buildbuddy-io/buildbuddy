@@ -13,14 +13,43 @@ diff --git a/cmd/gazelle/BUILD.bazel b/cmd/gazelle/BUILD.bazel
 diff --git a/cmd/gazelle/main.go b/cmd/gazelle/main.go
 --- a/cmd/gazelle/main.go
 +++ b/cmd/gazelle/main.go
-@@ -56,6 +56,10 @@ func (cmd command) String() string {
+@@ -61,6 +61,18 @@
  }
  
  func main() {
-+	Run()
++	if err := Run(); err != nil {
++		if errors.Is(err, update.ErrDiff) {
++			os.Exit(1)
++		}
++		log.Fatal(err)
++	}
 +}
 +
-+func Run() {
++// Run runs gazelle with os.Args, like main, but returns errors instead of
++// exiting, so that it can be embedded in other tools (e.g. `bb fix`). It
++// returns update.ErrDiff if -mode=diff found changes.
++func Run() error {
  	log.SetPrefix("gazelle: ")
  	log.SetFlags(0) // don't print timestamps
  
+@@ -75,17 +87,14 @@
+ 	} else {
+ 		var err error
+ 		if wd, err = os.Getwd(); err != nil {
+-			log.Fatal(err)
++			return err
+ 		}
+ 	}
+ 
+ 	if err := run(wd, os.Args[1:]); err != nil && err != flag.ErrHelp {
+-		if errors.Is(err, update.ErrDiff) {
+-			os.Exit(1)
+-		} else {
+-			log.Fatal(err)
+-		}
++		return err
+ 	}
++	return nil
+ }
+ 
+ func run(wd string, args []string) error {
