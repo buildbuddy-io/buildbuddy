@@ -297,12 +297,12 @@ container_layer(
         "@platforms//cpu:x86_64": [
             ":firecracker",
             ":jailer",
-            "//third_party/crun",
+            "@com_github_containers_crun_crun-linux-amd64//file:crun",
         ],
         "@platforms//cpu:aarch64": [
             ":firecracker",
             ":jailer",
-            "//third_party/crun",
+            "@com_github_containers_crun_crun-linux-arm64//file:crun",
         ],
         "//conditions:default": [],
     }),
