@@ -73,9 +73,9 @@ export interface NearestScatterPoint {
 }
 
 /**
- * Configures a tooltip that follows the scatter point nearest to the mouse
- * instead of the default tooltip, which is shared across every series at the
- * x-axis datum under the mouse.
+ * Configures a tooltip that shows the scatter point nearest to the mouse
+ * (within a threshold of `maxDistancePx`). When provided, this replaces
+ * a normal tooltip.
  */
 export interface PointTooltipConfig {
   // Scatter points farther than this many pixels from the mouse are ignored.
@@ -113,6 +113,7 @@ interface Props {
   // that `data` entries are positioned by their value rather than by their
   // index.  Otherwise the x axis is categorical, with one equally sized slot
   // per `data` entry.
+  // TODO(jdhollen): make all charts set this value and simplify.
   xAxisDomain?: [number, number];
 
   onZoomSelection?: (startDate: number, endDate: number) => void;
@@ -154,31 +155,6 @@ function getResolvedColor(color: ChartColor | string): string {
     return getComputedStyle(document.documentElement).getPropertyValue("--color-chart-black").trim() || color;
   }
   return color;
-}
-
-/**
- * Creates a scatter dot with a bigger clickable area.  This overrides recharts'
- * (infuriating) default behavior, which only looks at the X axis when deciding
- * hover in composed charts.
- */
-function customScatterDot(
-  p: ScatterShapeProps,
-  extractor: (datum: number) => any,
-  color: string,
-  clickable: boolean
-): ScatterCustomizedShape {
-  if (!p.payload || !extractor(p.payload)) {
-    return <></>;
-  }
-  if (clickable) {
-    return (
-      <g cursor="pointer" className="trend-chart-dot" fill={color}>
-        <circle cx={p.cx} cy={p.cy} r={15} fill="transparent" stroke="transparent" />
-        <circle cx={p.cx} cy={p.cy} r={3} stroke={color} fill="inherit" />
-      </g>
-    );
-  }
-  return <Dot cx={p.cx} cy={p.cy} className="trend-chart-dot" r={3} fill={color} stroke={color} />;
 }
 
 function TrendsChartTooltip({
@@ -325,9 +301,6 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
           dataKey={ds.extractValue}
           isAnimationActive={false}
           hide={hidden}
-          stroke={scatterColor}
-          fill={"#fff"}
-          fillOpacity={1}
           onClick={
             clickHandler
               ? (d: ScatterPointItem, _, e) => {
@@ -335,7 +308,9 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
                 }
               : undefined
           }
-          shape={(props, _) => customScatterDot(props, ds.extractValue, scatterColor, Boolean(clickHandler))}
+          shape={(p, _) => (
+            <Dot cx={p.cx} cy={p.cy} className="trend-chart-dot" r={3} fill={scatterColor} stroke={scatterColor} />
+          )}
         />
       );
     case SeriesType.AREA:
