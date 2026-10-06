@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -305,7 +306,10 @@ func IsChunkedSnapshotSharingEnabled() bool {
 // network transfer. Snapshots can't be shared across different machine types,
 // so there's not always a need to support snapshot sharing across clusters.
 func GetSnapshotAccessContext(ctx context.Context) context.Context {
-	// TODO: Set the FindMissing quorum header for workflow snapshots.
+	// Certain snapshot chunks may rarely be read/written, so they won't be replicated
+	// with read repair. So we must explicitly require quorum during FindMissing to ensure
+	// the desired replication factor is met.
+	ctx = findmissing.WithQuorum(ctx)
 	if *storeSnapshotsInLocalClusterOnly {
 		return proxy_util.SetSkipRemote(ctx)
 	}
