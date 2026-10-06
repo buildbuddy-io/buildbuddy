@@ -419,8 +419,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 }
 
 // Inlines the contents of output files requested to be inlined as long as the
-// total size of the ActionResult is below maxResultSize. Each inlined file is
-// tracked as a CAS download.
+// total size of the ActionResult is below maxResultSize.
 func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) error {
 	if ar == nil || len(req.InlineOutputFiles) == 0 {
 		return nil
