@@ -1313,13 +1313,10 @@ type persistedTask struct {
 }
 
 type schedulerClient struct {
-	// either localServer or rpc* fields will be populated depending on whether the destination is local or remote.
+	// either localServer or rpcClient will be populated depending on whether the destination is local or remote.
 
 	localServer *SchedulerServer
 	rpcClient   scpb.SchedulerClient
-	rpcConn     *grpc_client.ClientConnPool
-
-	lastAccess time.Time
 }
 
 func (c *schedulerClient) EnqueueTaskReservation(ctx context.Context, request *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
@@ -1330,74 +1327,46 @@ func (c *schedulerClient) EnqueueTaskReservation(ctx context.Context, request *s
 }
 
 type schedulerClientCache struct {
-	env environment.Env
+	// Cache holding connections to peers.
+	conns *grpc_client.ConnCache
 
-	mu      sync.Mutex
-	clients map[string]*schedulerClient
-	// Address of this app instance. If the destination address matches the address of this instance, we call into
-	// the local scheduler server instance directly instead of using RPCs.
+	// Address of this app instance. If the destination address matches the
+	// address of this instance, we call into the local scheduler server
+	// instance directly instead of using RPCs.
 	localServerHostPort string
 	localServer         *SchedulerServer
 }
 
-func newSchedulerClientCache(env environment.Env, localServerHostPort string, localServer *SchedulerServer, shuttingDown <-chan struct{}) *schedulerClientCache {
-	cache := &schedulerClientCache{
-		env:                 env,
-		clients:             make(map[string]*schedulerClient),
+func newSchedulerClientCache(env environment.Env, clock clockwork.Clock, localServerHostPort string, localServer *SchedulerServer) (*schedulerClientCache, error) {
+	conns, err := grpc_client.NewConnCache(env, grpc_client.ConnCacheOpts{
+		PoolSize:      2,
+		Expiration:    unusedSchedulerClientExpiration,
+		CheckInterval: unusedSchedulerClientCheckInterval,
+		Clock:         clock,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &schedulerClientCache{
+		conns:               conns,
 		localServerHostPort: localServerHostPort,
 		localServer:         localServer,
-	}
-	cache.startExpirer(shuttingDown)
-	return cache
-}
-
-// startExpirer periodically closes clients that haven't been used recently,
-// until the server starts shutting down.
-func (c *schedulerClientCache) startExpirer(shuttingDown <-chan struct{}) {
-	go func() {
-		ticker := time.NewTicker(unusedSchedulerClientCheckInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-shuttingDown:
-				return
-			case <-ticker.C:
-			}
-			c.mu.Lock()
-			for addr, client := range c.clients {
-				if time.Since(client.lastAccess) > unusedSchedulerClientExpiration {
-					if client.rpcConn != nil {
-						log.Debugf("Expiring unused scheduler client for %q", addr)
-						_ = client.rpcConn.Close()
-					}
-					delete(c.clients, addr)
-				}
-			}
-			c.mu.Unlock()
-		}
-	}()
+	}, nil
 }
 
 func (c *schedulerClientCache) get(hostPort string) (*schedulerClient, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	client, ok := c.clients[hostPort]
-	if !ok {
-		log.Infof("Creating new scheduler client for %q", hostPort)
-		if hostPort == c.localServerHostPort {
-			client = &schedulerClient{localServer: c.localServer}
-		} else {
-			// This is non-blocking so it's OK to hold the lock.
-			conn, err := grpc_client.DialInternalWithPoolSize(c.env, "grpc://"+hostPort, 2)
-			if err != nil {
-				return nil, status.UnavailableErrorf("could not dial scheduler: %s", err)
-			}
-			client = &schedulerClient{rpcClient: scpb.NewSchedulerClient(conn), rpcConn: conn}
-		}
-		c.clients[hostPort] = client
+	if hostPort == c.localServerHostPort {
+		return &schedulerClient{localServer: c.localServer}, nil
 	}
-	client.lastAccess = time.Now()
-	return client, nil
+	conn, err := c.conns.Get(hostPort)
+	if err != nil {
+		return nil, err
+	}
+	return &schedulerClient{rpcClient: scpb.NewSchedulerClient(conn)}, nil
+}
+
+func (c *schedulerClientCache) stop() {
+	c.conns.StopExpiring()
 }
 
 // Options for overriding server behavior needed for testing.
@@ -1547,7 +1516,11 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
 		unclaimedTasksJanitor:             newUnclaimedTasksJanitor(env.GetRemoteExecutionRedisClient(), clock),
 	}
-	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s, shutdownCtx.Done())
+	s.schedulerClientCache, err = newSchedulerClientCache(env, clock, s.ownHostPort, s)
+	if err != nil {
+		cancelShutdown()
+		return nil, err
+	}
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		// cancelShutdown is safe to call concurrently on its own. The lock
 		// makes sure that a goBackground call that has already checked
@@ -1556,6 +1529,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		s.backgroundMu.Lock()
 		cancelShutdown()
 		s.backgroundMu.Unlock()
+		s.schedulerClientCache.stop()
 
 		done := make(chan struct{})
 		go func() {
