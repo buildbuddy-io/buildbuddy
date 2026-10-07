@@ -82,10 +82,13 @@ func TestParseQuery(t *testing.T) {
 	// A colon in a non-filter token stays part of the term (image tags).
 	require.Equal(t, []string{"redis:7.2", "cache"}, q.Terms)
 	require.Equal(t, "prod", ParseQuery("namespace:prod").Namespace, "the alias parses")
+	// Every key the parser takes is offered, with a hint, the alias included.
+	var offered []string
 	for _, k := range FilterKeys {
-		require.NotEqual(t, "namespace", k.Key, "completion does not offer the alias")
-		require.NotEmpty(t, k.Hint)
+		require.NotEmpty(t, k.Hint, k.Key)
+		offered = append(offered, k.Key)
 	}
+	require.Equal(t, []string{"kind", "ns", "namespace", "label", "health", "cluster"}, offered)
 }
 
 func TestSearch(t *testing.T) {

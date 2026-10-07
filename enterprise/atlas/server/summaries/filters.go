@@ -7,7 +7,6 @@ type filter struct {
 	// key is the field key, without the colon (e.g. "kind", "health", etc)
 	key string
 	// hint is the text description shown in the auto-complete for this field.
-	// An empty hint hides the type from auto-complete (for aliases).
 	hint string
 
 	// parse applies the value to a query.
@@ -33,7 +32,7 @@ var filters = []filter{
 	},
 	{key: "ns", hint: "a namespace prefix, e.g. ns:prod", parse: setNamespace, values: namespaces},
 	// Alias for "ns".
-	{key: "namespace", parse: setNamespace, values: namespaces},
+	{key: "namespace", hint: "same as ns:", parse: setNamespace, values: namespaces},
 	{
 		key:  "label",
 		hint: "a label, or label=value, e.g. label:app=web",
@@ -78,13 +77,12 @@ type FilterKey struct {
 	Key, Hint string
 }
 
-// FilterKeys are the filters shown in the auto-complete popup.
+// FilterKeys are the filters shown in the auto-complete popup, aliases
+// included, so the UI learns every key the parser takes from here.
 var FilterKeys = func() []FilterKey {
 	var keys []FilterKey
 	for _, f := range filters {
-		if f.hint != "" {
-			keys = append(keys, FilterKey{f.key, f.hint})
-		}
+		keys = append(keys, FilterKey{f.key, f.hint})
 	}
 	return keys
 }()

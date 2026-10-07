@@ -1,5 +1,5 @@
 import React from "react";
-import TextInput from "../../../../app/components/input/input";
+import SearchBox from "../../../../app/components/search_box/search_box";
 import { atlas } from "../../../../proto/atlas_ts_proto";
 import ClustersComponent from "../clusters/clusters";
 import ClusterPicker from "../components/cluster_picker";
@@ -7,6 +7,7 @@ import Link from "../components/link";
 import ThemeToggle from "../components/theme_toggle";
 import router, { Route, paths } from "../lib/router";
 import rpcService from "../lib/rpc_service";
+import { complete } from "../lib/suggest";
 import * as theme from "../lib/theme";
 import ObjectComponent from "../object/object";
 import SearchComponent from "../search/search";
@@ -18,7 +19,6 @@ interface State {
   /** Keyboard selection within the current results; -1 for none. */
   selectedIndex: number;
   results: atlas.Entry[];
-  searchMeta: string;
   status?: { text: string; error: boolean };
 }
 
@@ -31,7 +31,6 @@ export default class RootComponent extends React.Component<{}, State> {
     query: queryOf(router.current()),
     selectedIndex: -1,
     results: [],
-    searchMeta: "",
   };
   private input = React.createRef<HTMLInputElement>();
   private main = React.createRef<HTMLElement>();
@@ -128,13 +127,12 @@ export default class RootComponent extends React.Component<{}, State> {
     }));
   }
 
-  private onResults = (response: atlas.SearchResponse | undefined, results: atlas.Entry[]) => {
+  private onResults = (results: atlas.Entry[]) => {
     this.setState({
       results,
       // The top hit is selected from the start, so Enter opens what is
       // highlighted.
       selectedIndex: results.length ? 0 : -1,
-      searchMeta: response ? `${response.total} in ${(Number(response.tookUsec) / 1000).toFixed(1)}ms` : "",
     });
   };
 
@@ -178,7 +176,6 @@ export default class RootComponent extends React.Component<{}, State> {
   }
 
   render() {
-    const showMeta = this.state.route.kind === "search" || this.state.route.kind === "home";
     return (
       <div className="atlas-root">
         <header className="atlas-header">
@@ -187,18 +184,16 @@ export default class RootComponent extends React.Component<{}, State> {
               🗺️ <span>atlas</span>
             </Link>
             <div className="atlas-searchbox">
-              <TextInput
-                ref={this.input}
+              <SearchBox
+                inputRef={this.input}
                 className="atlas-search-input"
+                complete={complete}
+                autoFocus
                 value={this.state.query}
                 placeholder="Search everything…   (try: kind:pod ns:executor cluster:sjc label:app=web crashloop)"
-                autoFocus
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(e) => this.onQueryChange(e.target.value)}
+                onChange={this.onQueryChange}
                 onKeyDown={this.onInputKeyDown}
               />
-              {showMeta && <span className="atlas-search-meta">{this.state.searchMeta}</span>}
             </div>
             <Link to={paths.clusters} className={`atlas-navlink ${this.state.status?.error ? "error" : ""}`}>
               {this.state.status?.text ?? "clusters"}
