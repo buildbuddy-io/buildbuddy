@@ -2382,3 +2382,74 @@ func TestShutdown_StopsBackgroundGoroutines(t *testing.T) {
 	env.GetHealthChecker().Shutdown()
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }
+
+func TestWatchTaskLiveness(t *testing.T) {
+	// Use a fake clock so that the background loop never checks liveness,
+	// letting the test decide when checks happen.
+	env, _ := getEnv(t, &schedulerOpts{options: Options{Clock: clockwork.NewFakeClock()}}, "")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	rdb := env.GetRemoteExecutionRedisClient()
+	ctx := t.Context()
+	taskKey := s.redisKeyForTask("task1")
+	err := rdb.Set(ctx, taskKey, "1", 0).Err()
+	require.NoError(t, err)
+	lost := s.WatchTaskLiveness(ctx, "task1")
+	isLost := func() bool {
+		select {
+		case <-lost:
+			return true
+		default:
+			return false
+		}
+	}
+
+	// While the task exists, checks leave the channel open.
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+
+	// After the task is deleted, a single missed check is not enough to
+	// report it lost. Cancellation and giving up on a task (out of attempts,
+	// not retryable, or failed to schedule) delete the task before publishing
+	// its final update, so a check can land in between.
+	err = rdb.Del(ctx, taskKey).Err()
+	require.NoError(t, err)
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+
+	// A second missed check in a row reports the task lost, and the task is
+	// no longer watched.
+	s.checkTaskLivenessOnce(ctx)
+	require.True(t, isLost())
+	s.livenessMu.Lock()
+	defer s.livenessMu.Unlock()
+	require.Empty(t, s.livenessWatches)
+}
+
+func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
+	env, _ := getEnv(t, &schedulerOpts{options: Options{Clock: clockwork.NewFakeClock()}}, "")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	watchers := func() int {
+		s.livenessMu.Lock()
+		defer s.livenessMu.Unlock()
+		if w, ok := s.livenessWatches["task1"]; ok {
+			return w.watchers
+		}
+		return 0
+	}
+
+	// Two clients watch the same task, so they share a single check.
+	ctx1, cancel1 := context.WithCancel(t.Context())
+	ctx2, cancel2 := context.WithCancel(t.Context())
+	s.WatchTaskLiveness(ctx1, "task1")
+	s.WatchTaskLiveness(ctx2, "task1")
+	require.Equal(t, 2, watchers())
+
+	// The task stays watched until both clients are done.
+	cancel1()
+	require.Eventually(t, func() bool { return watchers() == 1 }, 5*time.Second, time.Millisecond)
+	cancel2()
+	require.Eventually(t, func() bool { return watchers() == 0 }, 5*time.Second, time.Millisecond)
+	s.livenessMu.Lock()
+	defer s.livenessMu.Unlock()
+	require.Empty(t, s.livenessWatches)
+}
