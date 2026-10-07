@@ -3,6 +3,7 @@ package scheduler_server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"sort"
@@ -37,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
+	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
@@ -1915,7 +1917,13 @@ func TestSampleUnclaimedTasks_Concurrent(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			rdb := testredis.Start(t).Client()
 			t.Cleanup(func() { rdb.Close() })
-			np := &nodePool{rdb: rdb, clock: clockwork.NewFakeClock(), unclaimedTasksTTL: testCase.cacheTTL}
+			clock := clockwork.NewFakeClock()
+			np := &nodePool{
+				rdb:                   rdb,
+				clock:                 clock,
+				unclaimedTasksTTL:     testCase.cacheTTL,
+				unclaimedTasksJanitor: newUnclaimedTasksJanitor(rdb, clock),
+			}
 			tasks := []string{"a", "b", "c", "d", "e"}
 			for _, task := range tasks {
 				require.NoError(t, np.AddUnclaimedTask(t.Context(), task))
@@ -1948,6 +1956,81 @@ func TestSampleUnclaimedTasks_Concurrent(t *testing.T) {
 			require.ElementsMatch(t, tasks, sample)
 		})
 	}
+}
+
+func TestAddUnclaimedTask_SetsAndRefreshesTTL(t *testing.T) {
+	rdb := testredis.Start(t).Client()
+	clock := clockwork.NewFakeClock()
+	np := &nodePool{
+		rdb:                   rdb,
+		clock:                 clock,
+		unclaimedTasksJanitor: newUnclaimedTasksJanitor(rdb, clock),
+	}
+	key := np.key.redisUnclaimedTasksKey()
+
+	require.NoError(t, np.AddUnclaimedTask(t.Context(), "first"))
+	ttl, err := rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Greater(t, ttl, unclaimedTaskSetTTL-time.Minute)
+
+	// Adding to an existing set must renew its TTL before returning.
+	require.NoError(t, rdb.Expire(t.Context(), key, time.Minute).Err())
+	require.NoError(t, np.AddUnclaimedTask(t.Context(), "second"))
+	ttl, err = rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Greater(t, ttl, unclaimedTaskSetTTL-time.Minute)
+}
+
+func TestUnclaimedTasksJanitor(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", 3)
+	// Use a fake clock so that the janitor waits forever after being woken
+	// up, letting the test decide when its passes run.
+	env, _ := getEnv(t, &schedulerOpts{options: Options{Clock: clockwork.NewFakeClock()}}, "")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	rdb := env.GetRemoteExecutionRedisClient()
+	np := s.getOrCreatePool(nodePoolKey{os: defaultOS, arch: defaultArch, pool: "defaultPoolName"})
+	key := np.key.redisUnclaimedTasksKey()
+
+	// Add a task older than the max age, followed by more new tasks than the
+	// set can hold.
+	staleScore := float64(time.Now().Add(-unclaimedTaskMaxAge - time.Minute).Unix())
+	err := rdb.ZAdd(t.Context(), key, &redis.Z{Member: "stale", Score: staleScore}).Err()
+	require.NoError(t, err)
+	for i := range 5 {
+		err := np.AddUnclaimedTask(t.Context(), fmt.Sprintf("task-%d", i))
+		require.NoError(t, err)
+	}
+
+	// Adding tasks sets the TTL but leaves trimming to the janitor.
+	tasks, err := rdb.ZRange(t.Context(), key, 0, -1).Result()
+	require.NoError(t, err)
+	require.Equal(t, []string{"stale", "task-0", "task-1", "task-2", "task-3", "task-4"}, tasks)
+	ttl, err := rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Greater(t, ttl, time.Duration(0))
+
+	// Removing the TTL lets us check that the janitor does not set it.
+	require.NoError(t, rdb.Persist(t.Context(), key).Err())
+	// A janitor pass removes the stale task and the oldest tasks beyond the
+	// max set size.
+	err = s.unclaimedTasksJanitor.clean(t.Context())
+	require.NoError(t, err)
+	tasks, err = rdb.ZRange(t.Context(), key, 0, -1).Result()
+	require.NoError(t, err)
+	require.Equal(t, []string{"task-2", "task-3", "task-4"}, tasks)
+	ttl, err = rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Equal(t, time.Duration(-1), ttl)
+
+	// Without new tasks added through AddUnclaimedTask, the next pass skips
+	// the set, so a stale entry inserted directly is not trimmed.
+	err = rdb.ZAdd(t.Context(), key, &redis.Z{Member: "stale", Score: staleScore}).Err()
+	require.NoError(t, err)
+	err = s.unclaimedTasksJanitor.clean(t.Context())
+	require.NoError(t, err)
+	score, err := rdb.ZScore(t.Context(), key, "stale").Result()
+	require.NoError(t, err)
+	require.Equal(t, staleScore, score)
 }
 
 func BenchmarkSampleUnclaimedTasks(b *testing.B) {
