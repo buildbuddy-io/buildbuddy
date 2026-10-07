@@ -58,10 +58,21 @@ export default class RootComponent extends React.Component<{}, State> {
     // navigated to.
     window.clearTimeout(this.searchTimeout);
     const route = router.current();
-    this.setState((state) => ({
-      route,
-      query: route.kind === "search" ? route.query : route.kind === "home" ? "" : state.query,
-    }));
+    this.setState((state) => {
+      // Reset the selected index when navigating away from search results so
+      // that hitting enter doesn't navigate to an unexpected page.
+      // Don't reset the index when staying on the search results page so that
+      // the selection doesn't flicker when updating the search results.
+      // The completion of the search takes care of updating the selected
+      // index.
+      const showsResults = route.kind === "search" || route.kind === "home";
+      return {
+        route,
+        query: route.kind === "search" ? route.query : route.kind === "home" ? "" : state.query,
+        results: showsResults ? state.results : [],
+        selectedIndex: showsResults ? state.selectedIndex : -1,
+      };
+    });
   };
 
   private onQueryChange = (query: string) => {
