@@ -16,7 +16,6 @@ import {
   ResponsiveContainer,
   Scatter,
   ScatterPointItem,
-  ScatterShapeProps,
   Tooltip,
   TooltipContentProps,
   useChartHeight,
@@ -29,7 +28,6 @@ import {
 } from "recharts";
 import { TrendsChartId } from "../../../app/router/router";
 import { getHiddenSeriesAfterLegendClick } from "./chart_series";
-import { ScatterCustomizedShape } from "recharts/types/cartesian/Scatter";
 
 export enum SeriesType {
   BAR,
@@ -48,7 +46,7 @@ export interface ClickCoordinateInfo {
 export interface ChartDataSeries {
   name: string;
   formatHoverValue?: (datum: number) => string | JSX.Element;
-  extractValue: (datum: number) => any;
+  extractValue: (datum: number) => number | null;
   onClick?: (datum: number, e: React.MouseEvent<SVGElement>, s: ClickCoordinateInfo) => void;
   type: SeriesType;
   color: ChartColor | string;
@@ -308,9 +306,7 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
                 }
               : undefined
           }
-          shape={(p, _) => (
-            <Dot cx={p.cx} cy={p.cy} className="trend-chart-dot" r={3} fill={scatterColor} stroke={scatterColor} />
-          )}
+          shape={(p, _) => <Dot cx={p.cx} cy={p.cy} r={3} fill={scatterColor} stroke={scatterColor} />}
         />
       );
     case SeriesType.AREA:
@@ -390,14 +386,18 @@ function pointTooltipPosition(
 }
 
 /**
- * Renders a tooltip that tracks the scatter point nearest to the mouse.
+ * Renders a tooltip that shows the scatter point nearest to the mouse.
  *
- * Recharts' own tooltip snaps to the x-axis datum under the mouse and reports
- * every series at that datum, which is a poor fit for dense scatter plots.
- * This component instead listens to the chart's SVG directly, uses the axis
- * scales to locate every scatter point in pixel space, and lets the caller
- * render whatever it likes for the closest one.  The tooltip itself is
- * rendered into the chart wrapper via a portal, just like recharts' tooltip.
+ * Recharts' own tooltip only snaps to the x-axis.  With scatter plots,
+ * this means it can highlight a point waaaay at the bottom of the chart
+ * instead of one 2 pixels away from the mouse at the top of the chart.
+ * This component instead listens to the chart's SVG directly and passes
+ * the actual closest data point for rendering.
+ *
+ * The tooltip itself is rendered into the chart wrapper with a portal,
+ * just like the normal recharts tooltip.  This is all implemented as a
+ * function component, because recharts uses stateful functions to grant
+ * access to positioning data.
  */
 function PointTooltipLayer({ config, data, dataSeries }: PointTooltipLayerProps) {
   const anchorRef = useRef<SVGGElement>(null);
@@ -428,23 +428,23 @@ function PointTooltipLayer({ config, data, dataSeries }: PointTooltipLayerProps)
       if (!yScale) {
         continue;
       }
-      for (const datum of data) {
-        const value = series.extractValue(datum);
+      for (const d of data) {
+        const value = series.extractValue(d);
         if (value === null || value === undefined) {
           continue;
         }
-        const x = xScale(datum, { position: "middle" });
+        const x = xScale(d, { position: "middle" });
         const y = yScale(value);
         if (x === undefined || y === undefined) {
           continue;
         }
-        located.push({ series, datum, value, x, y });
+        located.push({ series, datum: d, value, x, y });
       }
     }
     return located;
   }, [data, dataSeries, xScale, primaryScale, secondaryScale]);
 
-  const findNearestPoint = (position: PixelPosition): LocatedScatterPoint | undefined => {
+  const findNearestScatterPoint = (position: PixelPosition): LocatedScatterPoint | undefined => {
     let nearest: LocatedScatterPoint | undefined;
     let nearestDistance = config.maxDistancePx;
     for (const point of points) {
@@ -457,7 +457,11 @@ function PointTooltipLayer({ config, data, dataSeries }: PointTooltipLayerProps)
     return nearest;
   };
 
-  const findNearestDatum = (position: PixelPosition): number | undefined => {
+  // This finds the closest data point in *any* series in the chart. In cases
+  // where the user's mouse isn't close enough to a scatter point to show it
+  // in the tooltip, the caller may still wish to show a tooltip with other
+  // data from the chart.  This lets them do that.
+  const findNearestXValueInAnySeries = (position: PixelPosition): number | undefined => {
     if (!xScale) {
       return undefined;
     }
@@ -484,8 +488,9 @@ function PointTooltipLayer({ config, data, dataSeries }: PointTooltipLayerProps)
     if (!config.pinnable) {
       return;
     }
-    const point = findNearestPoint(position);
+    const point = findNearestScatterPoint(position);
     setPinned((current) => {
+      // Clear the pinned point if the user clicks it again.
       if (!point || (current && current.seriesName === point.series.name && current.datum === point.datum)) {
         return undefined;
       }
@@ -514,8 +519,9 @@ function PointTooltipLayer({ config, data, dataSeries }: PointTooltipLayerProps)
     };
   }, []);
 
-  // Re-locate the pinned point on every render so that it follows resizes, and
-  // forget it if the data changed underneath it.
+  // On every render, re-find the point so that we handle resizes.
+  // This effect also ensures that we drop the pinned point if the data changes
+  // out from under us.
   const pinnedPoint = pinned
     ? points.find((p) => p.series.name === pinned.seriesName && p.datum === pinned.datum)
     : undefined;
@@ -540,8 +546,8 @@ function PointTooltipLayer({ config, data, dataSeries }: PointTooltipLayerProps)
     mouse.y >= plotArea.y &&
     mouse.y <= plotArea.y + plotArea.height
   ) {
-    point = findNearestPoint(mouse);
-    datum = point ? point.datum : findNearestDatum(mouse);
+    point = findNearestScatterPoint(mouse);
+    datum = point ? point.datum : findNearestXValueInAnySeries(mouse);
     anchor = mouse;
   }
   const isPinned = Boolean(pinnedPoint);
@@ -556,7 +562,7 @@ function PointTooltipLayer({ config, data, dataSeries }: PointTooltipLayerProps)
   }, [config.pinnable, point, isPinned]);
 
   // Measure the rendered tooltip so it can be kept inside the chart.  Layout
-  // effects run before paint, so the corrected position is what gets drawn.
+  // effects run before paint, so we draw in the corrected position.
   useLayoutEffect(() => {
     const el = tooltipRef.current;
     if (el && (el.offsetWidth !== tooltipSize.width || el.offsetHeight !== tooltipSize.height)) {
