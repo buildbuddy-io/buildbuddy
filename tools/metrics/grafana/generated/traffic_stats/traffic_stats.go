@@ -11,15 +11,53 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/timeseries"
 )
 
-// filterLabels are the traffic metric labels the dashboard can filter and
-// group by. Each one gets a filter variable and a "Group By" option.
-var filterLabels = []string{"region", "job", "provider", "remote_region", "group_id"}
+// filterLabel is a metric label that gets a filter variable and a "Group By" option.
+type filterLabel struct {
+	name        string
+	displayName string // shown instead of name when set
+	description string // selector tooltip
+}
+
+func (l filterLabel) text() string {
+	if l.displayName != "" {
+		return l.displayName
+	}
+	return l.name
+}
+
+var filterLabels = []filterLabel{
+	{
+		name:        "region",
+		displayName: "Server Region",
+		description: "Region of the BuildBuddy server that handled the RPC.",
+	},
+	{
+		name:        "job",
+		displayName: "Server Job",
+		description: "Prometheus scrape job, i.e. the kind of BuildBuddy server that handled the RPC (app, cache proxy).",
+	},
+	{
+		name:        "provider",
+		displayName: "Client Cloud Provider",
+		description: `Cloud provider the client connected from, inferred from its peer IP. "internal" is a private IP inside our own network, "other" is a public IP outside every known provider range.`,
+	},
+	{
+		name:        "remote_region",
+		displayName: "Client Region",
+		description: `Cloud region the client connected from, inferred from its peer IP. "unknown" when the provider could not be identified; empty for internal traffic.`,
+	},
+	{
+		name:        "group_id",
+		displayName: "Group ID",
+		description: `BuildBuddy group of the authenticated client. "unknown" for unauthenticated RPCs.`,
+	},
+}
 
 // selector matches the series picked by the filter variables.
 func selector() string {
 	matchers := make([]string, 0, len(filterLabels))
-	for _, label := range filterLabels {
-		matchers = append(matchers, fmt.Sprintf(`%s=~"${%s}"`, label, label))
+	for _, l := range filterLabels {
+		matchers = append(matchers, fmt.Sprintf(`%s=~"${%s}"`, l.name, l.name))
 	}
 	return strings.Join(matchers, ",")
 }
@@ -42,26 +80,45 @@ func bytesRatePanel(title, description, metric string) *timeseries.PanelBuilder 
 
 // filterVariable returns a multi-select variable over one label of the egress
 // metric. Every label other than region is narrowed to the selected regions.
-func filterVariable(label string) *dashboard.QueryVariableBuilder {
+func filterVariable(l filterLabel) *dashboard.QueryVariableBuilder {
 	metric := "buildbuddy_grpc_server_egress_bytes"
-	if label != "region" {
+	if l.name != "region" {
 		metric += `{region=~"${region}"}`
 	}
-	query := fmt.Sprintf("label_values(%s, %s)", metric, label)
-	return dash.QueryVar(label, query).
+	query := fmt.Sprintf("label_values(%s, %s)", metric, l.name)
+	return dash.QueryVar(l.name, query).
+		Description(l.description).
 		Refresh(dashboard.VariableRefreshOnDashboardLoad).
 		Multi(true).
 		IncludeAll(true).
 		AllValue(".*").
 		Current(dash.SelectedOption("All", "$__all")).
-		Definition(query)
+		Definition(query).
+		Label(l.text())
 }
 
 func groupByVariable() *dashboard.CustomVariableBuilder {
+	options := make([]string, 0, len(filterLabels))
+	var current dashboard.VariableOption
+	for _, l := range filterLabels {
+		// Grafana's "text : value" syntax shows the display name but queries get the label name.
+		option := l.name
+		if l.displayName != "" {
+			option = l.displayName + " : " + l.name
+		}
+		options = append(options, option)
+		if l.name == "provider" {
+			current = dash.SelectedOption(l.text(), l.name)
+		}
+	}
+	if *(current.Text.String) == "" {
+		panic("provider label not found in filterLabels")
+	}
 	return dashboard.NewCustomVariableBuilder("group_by").
 		Label("Group By").
-		Values(dashboard.StringOrMap{String: new(strings.Join(filterLabels, ", "))}).
-		Current(dash.SelectedOption("provider", "provider"))
+		Description("Label each series is split by. The other selectors still filter which series are included.").
+		Values(dashboard.StringOrMap{String: new(strings.Join(options, ", "))}).
+		Current(current)
 }
 
 func windowVariable() *dashboard.CustomVariableBuilder {
@@ -81,8 +138,8 @@ func build() (dashboard.Dashboard, error) {
 		Time("now-6h", "now").
 		Timepicker(dashboard.NewTimePickerBuilder().
 			RefreshIntervals([]string{"10s", "30s", "1m", "5m", "15m", "30m", "1h"}))
-	for _, label := range filterLabels {
-		builder.WithVariable(filterVariable(label))
+	for _, l := range filterLabels {
+		builder.WithVariable(filterVariable(l))
 	}
 	return builder.
 		WithVariable(groupByVariable()).
