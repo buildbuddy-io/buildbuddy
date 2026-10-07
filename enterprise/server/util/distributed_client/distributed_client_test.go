@@ -1134,7 +1134,7 @@ func BenchmarkWrite(b *testing.B) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
 	c := distributed_client.New(te, te.GetCache(), peer)
-	t.Cleanup(func() { stopProxy(c) })
+	b.Cleanup(func() { stopProxy(c) })
 	err = c.StartListening()
 	require.NoError(b, err)
 	waitUntilServerIsAlive(peer)
@@ -1272,7 +1272,7 @@ func BenchmarkRead(b *testing.B) {
 			te := getTestEnv(b, emptyUserMap)
 			peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
 			c := distributed_client.New(te, te.GetCache(), peer)
-			t.Cleanup(func() { stopProxy(c) })
+			b.Cleanup(func() { stopProxy(c) })
 
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(b, err)
