@@ -1293,6 +1293,18 @@ func (c *schedulerClientCache) startExpirer(shuttingDown <-chan struct{}) {
 	}()
 }
 
+// closeAll closes the connections to all cached schedulers.
+func (c *schedulerClientCache) closeAll() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for addr, client := range c.clients {
+		if client.rpcConn != nil {
+			_ = client.rpcConn.Close()
+		}
+		delete(c.clients, addr)
+	}
+}
+
 func (c *schedulerClientCache) get(hostPort string) (*schedulerClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -1475,6 +1487,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		}()
 		select {
 		case <-done:
+			s.schedulerClientCache.closeAll()
 			return nil
 		case <-ctx.Done():
 			return status.DeadlineExceededError("timed out waiting for scheduler background work to finish")
