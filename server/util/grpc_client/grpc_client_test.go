@@ -41,6 +41,7 @@ func startServer(t *testing.T, env environment.Env) *TestService {
 	require.NoError(t, server.Start())
 	client, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", port))
 	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
 	ts.client = client
 	return &ts
 }
@@ -142,6 +143,7 @@ func TestCheck(t *testing.T) {
 	// connections cycle through CONNECTING and TRANSIENT_FAILURE.
 	deadPool, err := grpc_client.DialSimpleWithPoolSize(fmt.Sprintf("grpc://localhost:%d", testport.FindFree(t)), 2)
 	require.NoError(t, err)
+	t.Cleanup(func() { deadPool.Close() })
 	require.Never(t, func() bool { return deadPool.Check(ctx) != nil }, 2*time.Second, 100*time.Millisecond)
 
 	// Once a connection has been ready, losing the server makes the pool
@@ -153,6 +155,7 @@ func TestCheck(t *testing.T) {
 	require.NoError(t, server.Start())
 	pool, err := grpc_client.DialInternalWithPoolSize(te, fmt.Sprintf("grpc://localhost:%d", port), 1)
 	require.NoError(t, err)
+	t.Cleanup(func() { pool.Close() })
 	_, err = pspb.NewApiClient(pool).Ping(ctx, &pspb.PingRequest{})
 	require.NoError(t, err)
 	// This Check observes the connection in the Ready state, which is what
