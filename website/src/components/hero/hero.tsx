@@ -28,8 +28,8 @@ function Component(props) {
           <div className={common.subtitle}>
             {props.subtitle || (
               <>
-                Build and test your software 10x faster while reducing compute costs with remote caching, remote execution,
-                analytics, and more.
+                Build and test your software 10x faster while reducing compute costs with remote caching, remote
+                execution, analytics, and more.
               </>
             )}
           </div>
