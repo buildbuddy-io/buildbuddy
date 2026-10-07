@@ -1003,6 +1003,12 @@ func (j *unclaimedTasksJanitor) run(ctx context.Context) {
 			return
 		case <-j.clock.After(unclaimedTaskSetMaintenanceDelay):
 		}
+		// This pass also covers tasks added during the delay, so drop the
+		// wakeup they sent rather than running another pass for them.
+		select {
+		case <-j.wake:
+		default:
+		}
 		if err := j.clean(ctx); err != nil {
 			log.CtxWarningf(ctx, "Could not maintain unclaimed task sets: %s", err)
 		}
@@ -1210,9 +1216,6 @@ func (np *nodePool) FindConnectedExecutorByID(executorID string) *executionNode 
 	return nil
 }
 
-// AddUnclaimedTask adds a task to the pool's unclaimed task set. Trimming the
-// set and refreshing its TTL are left to the unclaimedTasksJanitor, so that
-// the cost of that maintenance doesn't scale with the task enqueue rate.
 func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
