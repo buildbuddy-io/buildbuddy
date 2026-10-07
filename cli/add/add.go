@@ -158,7 +158,7 @@ func addToModule(workspacePath, basename, requestedVersion string, resp *Registr
 	if strings.TrimSpace(snippet) == "" {
 		return nil, fmt.Errorf("the registry has no MODULE.bazel snippet for %s", resp.Repo.FullName)
 	}
-	name, version, err := bzlmod.ParseBazelDep(snippet)
+	name, _, err := bzlmod.ParseBazelDep(snippet)
 	if err != nil {
 		return nil, fmt.Errorf("parse MODULE.bazel snippet for %s: %w", resp.Repo.FullName, err)
 	}
@@ -180,6 +180,16 @@ func addToModule(workspacePath, basename, requestedVersion string, resp *Registr
 		return result, nil
 	}
 
+	// The registry's snippet uses the module's latest release, which may be a
+	// pre-release, so pick the version from the BCR instead.
+	version, err := pickBCRVersion(name, requestedVersion)
+	if err != nil {
+		return nil, err
+	}
+	snippet, err = bzlmod.SetBazelDepVersion(snippet, name, version)
+	if err != nil {
+		return nil, err
+	}
 	if err := appendToFile(filepath.Join(workspacePath, basename), "\n"+snippet); err != nil {
 		return nil, err
 	}

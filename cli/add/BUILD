@@ -4,7 +4,10 @@ package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
     name = "add",
-    srcs = ["add.go"],
+    srcs = [
+        "add.go",
+        "bcr.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/add",
     deps = [
         "//cli/arg",

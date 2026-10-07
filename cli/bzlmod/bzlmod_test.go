@@ -66,7 +66,7 @@ func TestLoad_RejectsLabelsBazelRejects(t *testing.T) {
 	}
 }
 
-func TestParseBazelDep(t *testing.T) {
+func TestParseAndSetBazelDepVersion(t *testing.T) {
 	snippet := `bazel_dep(name = "rules_go", version = "0.64.1")
 
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
@@ -75,4 +75,11 @@ go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 	require.NoError(t, err)
 	require.Equal(t, "rules_go", name)
 	require.Equal(t, "0.64.1", version)
+
+	updated, err := bzlmod.SetBazelDepVersion(snippet, "rules_go", "0.50.1")
+	require.NoError(t, err)
+	_, version, err = bzlmod.ParseBazelDep(updated)
+	require.NoError(t, err)
+	require.Equal(t, "0.50.1", version)
+	require.Contains(t, updated, "go_sdk = use_extension")
 }

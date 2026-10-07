@@ -111,6 +111,27 @@ func ParseBazelDep(snippet string) (name, version string, err error) {
 	return "", "", fmt.Errorf("no bazel_dep found in snippet:\n%s", snippet)
 }
 
+// SetBazelDepVersion returns the snippet with the version of its bazel_dep
+// for the given module set to version.
+func SetBazelDepVersion(snippet, name, version string) (string, error) {
+	f, err := build.ParseModule("snippet", []byte(snippet))
+	if err != nil {
+		return "", err
+	}
+	found := false
+	for _, call := range calls(f) {
+		r := &build.Rule{Call: call}
+		if r.Kind() == "bazel_dep" && r.AttrString("name") == name {
+			r.SetAttr("version", &build.StringExpr{Value: version})
+			found = true
+		}
+	}
+	if !found {
+		return "", fmt.Errorf("no bazel_dep for %q found in snippet:\n%s", name, snippet)
+	}
+	return string(build.Format(f)), nil
+}
+
 // calls returns the top-level function calls in f, including calls whose
 // result is assigned (e.g. `go_deps = use_extension(...)`).
 func calls(f *build.File) []*build.CallExpr {

@@ -1,8 +1,8 @@
 // Package add_test contains end-to-end integration tests for `bb add`.
 //
 // These run the real `bb` binary against scratch workspaces, and hit
-// registry.build over the network, since looking modules up there is what
-// `bb add` does.
+// registry.build and the Bazel Central Registry over the network, since
+// looking modules up there is what `bb add` does.
 package add_test
 
 import (
@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/bzlmod"
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
@@ -45,6 +46,41 @@ func readFiles(t *testing.T, ws string, files map[string]string) map[string]stri
 	return out
 }
 
+func bazelDepVersion(t *testing.T, ws, module string) string {
+	m, err := bzlmod.Load(ws)
+	require.NoError(t, err)
+	version, ok := m.BazelDep(module)
+	require.True(t, ok, "MODULE.bazel should depend on %s", module)
+	return version
+}
+
+func TestAdd_AddsLatestStableVersion(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{"MODULE.bazel": `module(name = "x")` + "\n"})
+
+	// registry.build's latest gazelle release is a pre-release, so this checks
+	// that we pick the latest stable version instead.
+	out, err := runAdd(t, ws, "github/bazel-contrib/bazel-gazelle")
+	require.NoError(t, err, "output: %s", out)
+
+	version := bazelDepVersion(t, ws, "gazelle")
+	require.NotEmpty(t, version)
+	require.NotContains(t, version, "-", "should not pick a pre-release")
+}
+
+func TestAdd_PinsRequestedVersion(t *testing.T) {
+	for _, requested := range []string{"0.50.1", "v0.50.1"} {
+		t.Run(requested, func(t *testing.T) {
+			ws := testfs.MakeTempDir(t)
+			testfs.WriteAllFileContents(t, ws, map[string]string{"MODULE.bazel": `module(name = "x")` + "\n"})
+
+			out, err := runAdd(t, ws, "github/bazel-contrib/rules_go@"+requested)
+			require.NoError(t, err, "output: %s", out)
+			require.Equal(t, "0.50.1", bazelDepVersion(t, ws, "rules_go"))
+		})
+	}
+}
+
 func TestAdd_NoOpWhenDepIsInIncludedFile(t *testing.T) {
 	for _, module := range []string{
 		"github/bazel-contrib/rules_go",
@@ -73,6 +109,18 @@ func TestAdd_FailsOnConflictingVersion(t *testing.T) {
 	require.Error(t, err, "output: %s", out)
 	require.Contains(t, out, "0.50.1")
 	require.Equal(t, includedDeps, readFiles(t, ws, includedDeps))
+}
+
+func TestAdd_FailsOnYankedVersion(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	contents := map[string]string{"MODULE.bazel": `module(name = "x")` + "\n"}
+	testfs.WriteAllFileContents(t, ws, contents)
+
+	// gazelle 0.26.0 is yanked in the BCR.
+	out, err := runAdd(t, ws, "github/bazel-contrib/bazel-gazelle@0.26.0")
+	require.Error(t, err, "output: %s", out)
+	require.Contains(t, out, "yanked")
+	require.Equal(t, contents, readFiles(t, ws, contents))
 }
 
 func TestAdd_FailsOnUnknownModule(t *testing.T) {
