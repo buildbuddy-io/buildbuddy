@@ -412,7 +412,8 @@ common:workflows --config=buildbuddy_experimental_remote_downloader
 common:workflows --noexperimental_remote_downloader_local_fallback
 
 # Keep the disk small on Firecracker-snapshotted runners, to keep snapshots
-# small. An empty --repository_cache also disables the repo contents cache.
+# small. An empty --repository_cache also disables the local repo contents
+# cache, but not the remote one (--experimental_remote_repo_contents_cache).
 # Rely on the remote downloader to cache downloads via the Remote Asset API.
 common:firecracker-disk-minimal --config=download-minimal
 common:firecracker-disk-minimal --repository_cache=

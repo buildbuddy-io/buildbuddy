@@ -24,3 +24,36 @@ diff --git a/cmd/gazelle/main.go b/cmd/gazelle/main.go
  	log.SetPrefix("gazelle: ")
  	log.SetFlags(0) // don't print timestamps
  
+diff --git a/internal/go_repository_tools.bzl b/internal/go_repository_tools.bzl
+--- a/internal/go_repository_tools.bzl
++++ b/internal/go_repository_tools.bzl
+@@ -40,8 +40,19 @@
+ """
+ 
+ def _go_repository_tools_impl(ctx):
+-    for src in ctx.attr._go_repository_tools_srcs:
+-        watch(ctx, src)
++    gazelle_dir = str(ctx.path(Label("//:MODULE.bazel")).dirname)
++
++    # Watch the whole Gazelle source tree as a single input rather than each of
++    # the ~200 files in _go_repository_tools_srcs. Every watched file is a
++    # separate recorded input, and Bazel checks recorded inputs in external
++    # repos one Skyframe request at a time, so per-file watches serialize ~200
++    # dependency round trips every time this repo is fetched or looked up in
++    # the remote repo contents cache.
++    if hasattr(ctx, "watch_tree"):
++        ctx.watch_tree(gazelle_dir)
++    else:
++        for src in ctx.attr._go_repository_tools_srcs:
++            watch(ctx, src)
+ 
+     env = read_go_env_file(ctx, ctx.attr.go_cache)
+     extension = executable_extension(ctx)
+@@ -62,7 +73,6 @@
+         env["GOPROXY"] = ctx.os.environ["GOPROXY"]
+ 
+     bin_dir = str(ctx.path("bin"))
+-    gazelle_dir = str(ctx.path(Label("//:MODULE.bazel")).dirname)
+ 
+     # Make sure the list of source is up to date.
+     # We don't want to run the script, then resolve each source file it returns.
