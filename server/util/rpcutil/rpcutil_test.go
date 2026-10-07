@@ -347,7 +347,6 @@ func TestSender_ExternalCancelReturnsStreamError(t *testing.T) {
 // attributes silently disables the coarse buckets and the attribute
 // allowlist. This test fails in that case.
 func TestMeterProviderGRPCViews(t *testing.T) {
-	t.Skip("Skip until upgrading gRPC")
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()))),

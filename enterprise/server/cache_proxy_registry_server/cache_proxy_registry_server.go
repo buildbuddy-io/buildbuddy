@@ -16,13 +16,22 @@
 // The companion GetCacheProxies RPC reads that hash, drops entries that
 // haven't checked in for a while, applies ACL filtering, and returns the
 // survivors.
+//
+// GetCacheProxy fetches details from a single cache proxy by sending a details
+// request on its registration stream with the requested cache proxy and waiting
+// for the response. Only the app instance holding the stream can do this, so
+// each instance tracks the streams it holds in memory and the mapping between
+// app and registration stream is stored in Redis so other apps can forward
+// requests to the correct peer for that cache proxy.
 package cache_proxy_registry_server
 
 import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -59,6 +69,9 @@ const (
 	// in-process cache before the Redis registry is scanned again.
 	newestVersionCacheTTL = 5 * time.Minute
 
+	// How long GetCacheProxy waits for a cache proxy to respond.
+	getDetailsTimeout = 15 * time.Second
+
 	// Message attached to upgrade prompts returned by GetCacheProxies.
 	upgradePromptMessage = "One or more of your cache proxies are running an outdated version. The newest available version is %s."
 )
@@ -75,10 +88,40 @@ type CacheProxyRegistryServer struct {
 	rdb           redis.UniversalClient
 	quit          chan struct{}
 	detector      *upgrade.Detector
+	// host:port at which this app instance can be reached. Stored with each
+	// registration so other app instances can route requests for a proxy to
+	// the instance holding its registration stream.
+	ownHostPort string
 
 	mu                  sync.Mutex
 	newestVersion       *semver.Version
 	newestVersionExpiry time.Time
+
+	// The registration streams held by this app instance.
+	streamsMu sync.Mutex
+	streams   map[proxyKey]*registrationStream
+}
+
+type proxyKey struct {
+	groupID string
+	proxyID string
+}
+
+// registrationStream is a handle on a registration stream held by this app
+// instance. Only the stream's RegisterAndStreamHeartbeat loop sends on the
+// stream, so other goroutines pass details requests to it over a channel.
+type registrationStream struct {
+	detailsRequests chan *detailsRequest
+	// Closed when RegisterAndStreamHeartbeat returns.
+	done chan struct{}
+}
+
+type detailsRequest struct {
+	ctx context.Context
+	req *cppb.GetCacheProxyRequest
+	// Receives the proxy's answer. Buffered so the stream loop never blocks
+	// on a caller that has given up.
+	rsp chan *cppb.CacheProxyDetails
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -110,6 +153,14 @@ func NewCacheProxyRegistryServer(env environment.Env, detector *upgrade.Detector
 	if authenticator == nil {
 		return nil, status.FailedPreconditionError("Authenticator is required for cache proxy registration")
 	}
+	ownHostname, err := resources.GetMyHostname()
+	if err != nil {
+		return nil, status.UnknownErrorf("Could not determine own hostname: %s", err)
+	}
+	ownPort, err := resources.GetMyPort()
+	if err != nil {
+		return nil, status.UnknownErrorf("Could not determine own port: %s", err)
+	}
 	quit := make(chan struct{})
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		close(quit)
@@ -121,6 +172,8 @@ func NewCacheProxyRegistryServer(env environment.Env, detector *upgrade.Detector
 		rdb:           rdb,
 		quit:          quit,
 		detector:      detector,
+		ownHostPort:   net.JoinHostPort(ownHostname, strconv.Itoa(int(ownPort))),
+		streams:       make(map[proxyKey]*registrationStream),
 	}, nil
 }
 
@@ -180,7 +233,22 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 	checkCredentialsTicker := s.clock.NewTicker(checkRegistrationCredentialsInterval)
 	defer checkCredentialsTicker.Stop()
 
+	handle := &registrationStream{
+		detailsRequests: make(chan *detailsRequest),
+		done:            make(chan struct{}),
+	}
+	defer close(handle.done)
+
+	// Details requests sent to the proxy and not yet answered, by request ID.
+	pending := make(map[string]*detailsRequest)
+	var lastRequestID int64
+
 	var proxyID string
+	defer func() {
+		if proxyID != "" {
+			s.untrackStream(groupID, proxyID, handle)
+		}
+	}()
 	for {
 		select {
 		case <-s.quit:
@@ -203,6 +271,10 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 				log.CtxInfof(ctx, "Rejecting cache proxy heartbeat from group %q: missing proxy_id", groupID)
 				return status.InvalidArgumentError("registration request missing proxy_id")
 			}
+			if proxyID != "" && summary.GetProxyId() != proxyID {
+				log.CtxInfof(ctx, "Rejecting cache proxy heartbeat from group %q: proxy_id changed mid-stream from %q to %q", groupID, proxyID, summary.GetProxyId())
+				return status.InvalidArgumentError("proxy_id changed during registration stream")
+			}
 			if req.GetShuttingDown() {
 				log.CtxInfof(ctx, "Cache proxy %q (group %q) signalled shutdown; removing from registry", summary.GetProxyId(), groupID)
 				if err := s.removeProxy(ctx, groupID, summary.GetProxyId()); err != nil {
@@ -215,8 +287,39 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 				log.CtxInfof(ctx, "Closing cache proxy registration stream for proxy %q (group %q): could not store registration: %s", summary.GetProxyId(), groupID, err)
 				return err
 			}
-			proxyID = summary.GetProxyId()
+			if proxyID == "" {
+				proxyID = summary.GetProxyId()
+				s.trackStream(groupID, proxyID, handle)
+			}
 			log.CtxDebugf(ctx, "Cache proxy %q (host ID %q, host %q) checked in", proxyID, summary.GetProxyHostId(), summary.GetHost())
+			if id := req.GetRequestId(); id != "" {
+				if p, ok := pending[id]; ok {
+					delete(pending, id)
+					p.rsp <- req.GetDetails()
+				}
+			}
+		case p := <-handle.detailsRequests:
+			// Drop requests whose callers have given up, so pending can't
+			// grow without bound if the proxy never answers.
+			for id, old := range pending {
+				if old.ctx.Err() != nil {
+					delete(pending, id)
+				}
+			}
+			lastRequestID++
+			id := strconv.FormatInt(lastRequestID, 10)
+			rsp := &cppb.RegisterCacheProxyResponse{
+				DetailsRequest: &cppb.GetCacheProxyRequest{
+					IncludeConfiguredFlags: p.req.GetIncludeConfiguredFlags(),
+					IncludeStatistics:      p.req.GetIncludeStatistics(),
+				},
+				RequestId: id,
+			}
+			if err := stream.Send(rsp); err != nil {
+				log.CtxWarningf(ctx, "Closing cache proxy registration stream for proxy %q (group %q): send failed: %s", proxyID, groupID, err)
+				return err
+			}
+			pending[id] = p
 		case <-checkCredentialsTicker.Chan():
 			if _, err := s.authorize(ctx); err != nil {
 				if status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err) {
@@ -229,6 +332,29 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 	}
 }
 
+func (s *CacheProxyRegistryServer) trackStream(groupID, proxyID string, handle *registrationStream) {
+	s.streamsMu.Lock()
+	defer s.streamsMu.Unlock()
+	// If the proxy reconnected, replace the old stream with the new one.
+	s.streams[proxyKey{groupID, proxyID}] = handle
+}
+
+func (s *CacheProxyRegistryServer) untrackStream(groupID, proxyID string, handle *registrationStream) {
+	s.streamsMu.Lock()
+	defer s.streamsMu.Unlock()
+	key := proxyKey{groupID, proxyID}
+	// Leave the entry alone if a newer stream for the same proxy replaced it.
+	if s.streams[key] == handle {
+		delete(s.streams, key)
+	}
+}
+
+func (s *CacheProxyRegistryServer) lookupStream(groupID, proxyID string) *registrationStream {
+	s.streamsMu.Lock()
+	defer s.streamsMu.Unlock()
+	return s.streams[proxyKey{groupID, proxyID}]
+}
+
 func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, groupID string, summary *cppb.CacheProxySummary, stats *cppb.Statistics) error {
 	acl := perms.ToACLProto(nil /*=userID*/, groupID, perms.GROUP_WRITE|perms.GROUP_READ)
 
@@ -238,6 +364,7 @@ func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, grou
 		Acl:          acl,
 		LastPingTime: timestamppb.Now(),
 		Statistics:   stats,
+		AppHostPort:  s.ownHostPort,
 	}
 	b, err := proto.Marshal(r)
 	if err != nil {
@@ -395,4 +522,68 @@ func (s *CacheProxyRegistryServer) ListCacheProxies(ctx context.Context, req *cp
 	}
 	resp.Summary = summaries
 	return &resp, nil
+}
+
+func (s *CacheProxyRegistryServer) GetCacheProxy(ctx context.Context, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error) {
+	// As in GetCacheProxies, the group comes from the request context and
+	// the caller's access to it is checked below.
+	groupID := req.GetRequestContext().GetGroupId()
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("group not specified")
+	}
+	proxyID := req.GetSelector().GetProxyId()
+	if proxyID == "" {
+		return nil, status.InvalidArgumentError("proxy_id not specified")
+	}
+	user, err := s.authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Registrations are stored with this ACL, so check against it.
+	acl := perms.ToACLProto(nil /*=userID*/, groupID, perms.GROUP_WRITE|perms.GROUP_READ)
+	if err := perms.AuthorizeRead(user, acl); err != nil {
+		return nil, err
+	}
+
+	handle := s.lookupStream(groupID, proxyID)
+	if handle == nil {
+		// TODO(go/b/8433): handle the peer case.
+		return nil, status.NotFoundErrorf("cache proxy %q is not connected to this server", proxyID)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, getDetailsTimeout)
+	defer cancel()
+	p := &detailsRequest{
+		ctx: ctx,
+		req: req,
+		rsp: make(chan *cppb.CacheProxyDetails, 1),
+	}
+	select {
+	case handle.detailsRequests <- p:
+	case <-handle.done:
+		return nil, status.UnavailableErrorf("registration stream for cache proxy %q closed", proxyID)
+	case <-ctx.Done():
+		return nil, status.FromContextError(ctx)
+	}
+	var details *cppb.CacheProxyDetails
+	select {
+	case details = <-p.rsp:
+	case <-handle.done:
+		return nil, status.UnavailableErrorf("registration stream for cache proxy %q closed", proxyID)
+	case <-ctx.Done():
+		return nil, status.FromContextError(ctx)
+	}
+	if details == nil {
+		details = &cppb.CacheProxyDetails{}
+	}
+	if details.GetSummary() != nil {
+		// The proxy just answered, so it has just checked in.
+		details.GetSummary().LastCheckInTime = timestamppb.New(s.clock.Now())
+	}
+	return &cppb.GetCacheProxyResponse{
+		Details: details,
+		UpgradePrompt: s.upgradePrompt(ctx, []*cppb.GetCacheProxiesResponse_CacheProxy{
+			{Summary: details.GetSummary()},
+		}),
+	}, nil
 }

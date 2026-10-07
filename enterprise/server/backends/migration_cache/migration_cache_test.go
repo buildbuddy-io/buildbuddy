@@ -30,6 +30,7 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -45,6 +46,10 @@ const (
 var (
 	emptyUserMap = testauth.TestUsers()
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
+}
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)

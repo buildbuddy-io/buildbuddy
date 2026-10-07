@@ -391,6 +391,15 @@ func TestStreamHeartbeat_PersistsRegistration(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, listResp.GetSummary(), 1)
 	assert.Equal(t, "id-1", listResp.GetSummary()[0].GetProxyId())
+
+	// The stored registration should record which app instance holds the
+	// stream, so other instances can route requests to it.
+	data, err := s.rdb.HGet(ctx, redisKeyForCacheProxies(testGroupID), "id-1").Result()
+	require.NoError(t, err)
+	reg := &cppb.RegisteredCacheProxy{}
+	require.NoError(t, proto.Unmarshal([]byte(data), reg))
+	assert.Equal(t, s.ownHostPort, reg.GetAppHostPort())
+	assert.NotEmpty(t, s.ownHostPort)
 }
 
 func TestStreamHeartbeat_ShutDown(t *testing.T) {
@@ -564,4 +573,218 @@ func TestStreamHeartbeat_AccessRevoked(t *testing.T) {
 	err = closeAndWait(stream)
 	require.Error(t, err)
 	assert.True(t, status.IsUnauthenticatedError(err), "expected unauthenticated, got: %v", err)
+}
+
+// registerProxy opens a registration stream for the given proxy, sends an
+// initial heartbeat, and waits until the server is tracking the stream.
+func registerProxy(t *testing.T, s *CacheProxyRegistryServer, client cppb.CacheProxyRegistryClient, proxyID string) cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient {
+	ctx, cancel := context.WithCancel(ctxWithOutgoingAPIKey("CP_KEY"))
+	t.Cleanup(cancel)
+	stream, err := client.RegisterAndStreamHeartbeat(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
+		Summary: &cppb.CacheProxySummary{Host: "host", ProxyId: proxyID},
+	}))
+	require.Eventually(t, func() bool {
+		return s.lookupStream(testGroupID, proxyID) != nil
+	}, 2*time.Second, 10*time.Millisecond, "server did not track registration stream")
+	return stream
+}
+
+func getCacheProxyRequest(proxyID string) *cppb.GetCacheProxyRequest {
+	return &cppb.GetCacheProxyRequest{
+		RequestContext:         &ctxpb.RequestContext{GroupId: testGroupID},
+		Selector:               &cppb.CacheProxySelector{ProxyId: proxyID},
+		IncludeConfiguredFlags: true,
+		IncludeStatistics:      true,
+	}
+}
+
+func TestGetCacheProxy_ReturnsDetails(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	// A UI user: a member of the proxy's group with no capabilities.
+	readerUser := userWithCapabilities("U2", testGroupID)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+	stream := registerProxy(t, s, client, "id-1")
+
+	// Play the proxy: answer the details request, interleaved with a
+	// heartbeat that the server must not mistake for the answer.
+	proxyErr := make(chan error, 1)
+	go func() {
+		rsp, err := stream.Recv()
+		if err != nil {
+			proxyErr <- err
+			return
+		}
+		summary := &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"}
+		if err := stream.Send(&cppb.RegisterCacheProxyRequest{Summary: summary}); err != nil {
+			proxyErr <- err
+			return
+		}
+		details := &cppb.CacheProxyDetails{Summary: summary}
+		if rsp.GetDetailsRequest().GetIncludeConfiguredFlags() {
+			details.ConfiguredFlags = []string{"--foo=bar"}
+		}
+		if rsp.GetDetailsRequest().GetIncludeStatistics() {
+			details.Statistics = &cppb.Statistics{AcReadHits: 42}
+		}
+		proxyErr <- stream.Send(&cppb.RegisterCacheProxyRequest{
+			Summary:   summary,
+			Details:   details,
+			RequestId: rsp.GetRequestId(),
+		})
+	}()
+
+	ctx := claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil)
+	rsp, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.NoError(t, err)
+	require.NoError(t, <-proxyErr)
+	assert.Equal(t, "id-1", rsp.GetDetails().GetSummary().GetProxyId())
+	assert.NotNil(t, rsp.GetDetails().GetSummary().GetLastCheckInTime())
+	assert.Equal(t, []string{"--foo=bar"}, rsp.GetDetails().GetConfiguredFlags())
+	assert.Equal(t, int64(42), rsp.GetDetails().GetStatistics().GetAcReadHits())
+}
+
+func TestGetCacheProxy_NotConnected(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	// The proxy is registered in Redis, but its stream is held elsewhere.
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
+		Host: "host", ProxyId: "id-1",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	for _, doNotForward := range []bool{false, true} {
+		req := getCacheProxyRequest("id-1")
+		req.DoNotForward = doNotForward
+		_, err := s.GetCacheProxy(ctx, req)
+		require.Error(t, err)
+		assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+	}
+}
+
+func TestGetCacheProxy_OtherGroup(t *testing.T) {
+	const otherGroupID = "GR2"
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	other := userWithCapabilities("U2", otherGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+	registerProxy(t, s, client, "id-1")
+
+	ctx := claims.AuthContextWithJWT(context.Background(), other.(*claims.Claims), nil)
+	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsPermissionDeniedError(err), "expected permission denied, got: %v", err)
+
+	// Asking for the proxy under the caller's own group must not find it
+	// either.
+	req := getCacheProxyRequest("id-1")
+	req.RequestContext.GroupId = otherGroupID
+	_, err = s.GetCacheProxy(ctx, req)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+}
+
+func TestGetCacheProxy_StreamClosed(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	// A UI user: a member of the proxy's group with no capabilities.
+	readerUser := userWithCapabilities("U2", testGroupID)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+	stream := registerProxy(t, s, client, "id-1")
+
+	// The proxy receives the details request, then disconnects without
+	// answering.
+	go func() {
+		if _, err := stream.Recv(); err != nil {
+			return
+		}
+		_ = closeAndWait(stream)
+	}()
+
+	ctx := claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil)
+	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsUnavailableError(err), "expected unavailable, got: %v", err)
+	assert.Nil(t, s.lookupStream(testGroupID, "id-1"))
+}
+
+func TestGetCacheProxy_Reconnect(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	oldStream := registerProxy(t, s, client, "id-1")
+	oldHandle := s.lookupStream(testGroupID, "id-1")
+
+	// The proxy reconnects before the old stream is torn down.
+	newStream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = closeAndWait(newStream) })
+	require.NoError(t, newStream.Send(&cppb.RegisterCacheProxyRequest{
+		Summary: &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"},
+	}))
+	require.Eventually(t, func() bool {
+		return s.lookupStream(testGroupID, "id-1") != oldHandle
+	}, 2*time.Second, 10*time.Millisecond, "server did not track new registration stream")
+	newHandle := s.lookupStream(testGroupID, "id-1")
+
+	// Closing the old stream must not untrack the new one.
+	require.NoError(t, closeAndWait(oldStream))
+	assert.Same(t, newHandle, s.lookupStream(testGroupID, "id-1"))
+}
+
+func TestStreamHeartbeat_ProxyIDChanged(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	stream := registerProxy(t, s, client, "id-1")
+	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
+		Summary: &cppb.CacheProxySummary{Host: "host", ProxyId: "id-2"},
+	}))
+	err := closeAndWait(stream)
+	require.Error(t, err)
+	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument, got: %v", err)
+}
+
+func TestStreamHeartbeat_ShutDownWithChangedProxyID(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
+		Host: "host", ProxyId: "id-2",
+	}, nil))
+
+	// A stream registered as id-1 must not be able to remove id-2.
+	stream := registerProxy(t, s, client, "id-1")
+	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
+		Summary:      &cppb.CacheProxySummary{Host: "host", ProxyId: "id-2"},
+		ShuttingDown: true,
+	}))
+	err := closeAndWait(stream)
+	require.Error(t, err)
+	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument, got: %v", err)
+
+	exists, err := s.rdb.HExists(context.Background(), redisKeyForCacheProxies(testGroupID), "id-2").Result()
+	require.NoError(t, err)
+	assert.True(t, exists, "id-2's registration should not have been removed")
+}
+
+func TestGetCacheProxy_CallerCanceled(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	// A UI user: a member of the proxy's group with no capabilities.
+	readerUser := userWithCapabilities("U2", testGroupID)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+	stream := registerProxy(t, s, client, "id-1")
+
+	ctx, cancel := context.WithCancel(claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil))
+	// The proxy receives the details request but never answers; the caller
+	// gives up.
+	go func() {
+		if _, err := stream.Recv(); err == nil {
+			cancel()
+		}
+	}()
+
+	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsCanceledError(err), "expected canceled, got: %v", err)
 }
