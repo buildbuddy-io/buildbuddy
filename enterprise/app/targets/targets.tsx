@@ -280,7 +280,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
   };
 
   handleBarClick = (data: TargetChartData) => {
-    this.navigateToTargetDrilldown(data.target);
+    if (capabilities.config.singleTargetStatsEnabled) {
+      router.navigateToSingleTarget(data.target);
+    } else {
+      this.navigateToTargetDrilldown(data.target);
+    }
   };
 
   handleTableRowClick = (target: string) => {
