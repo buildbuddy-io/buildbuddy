@@ -82,7 +82,8 @@ var (
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
 	autoRefresh      = flag.Bool("auto_refresh", false, "If set, the web UI reloads itself when the server restarts. Intended for local development.", flag.Internal)
 
-	flipLogoOnHover = expflag.Bool("app.flip_logo_on_hover", false, "Whether to flip the logo on hover.", expflag.DeprecatedExperimentName("flip-logo-on-hover"))
+	flipLogoOnHover   = expflag.Bool("app.flip_logo_on_hover", false, "Whether to flip the logo on hover.", expflag.DeprecatedExperimentName("flip-logo-on-hover"))
+	singleTargetStats = expflag.Bool("app.single_target_stats", false, "Whether the new target stat page is enabled instead of linking to drilldowns.")
 )
 
 var (
@@ -290,7 +291,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		// Global experiments can be handled here, but experiments that are user or group specific
 		// should be included in the experiments field of GetUserResponse instead.
 		FlipLogoOnHover:          flipLogoOnHover.Get(ctx),
-		SingleTargetStatsEnabled: true, // efp.Boolean(ctx, "single-target-stats", false /*=default*/) && env.GetOLAPDBHandle() != nil
+		SingleTargetStatsEnabled: singleTargetStats.Get(ctx) && env.GetOLAPDBHandle() != nil,
 	}
 
 	configJSON, err := protojson.Marshal(&config)
