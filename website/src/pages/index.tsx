@@ -18,6 +18,7 @@ function Index() {
     <Layout title="Bazel at Enterprise Scale">
       <div className={common.page}>
         <Hero
+          homepage={true}
           image={require("../../static/img/ui.png")}
           bigImage={true}
           lessPadding={true}

@@ -14,12 +14,16 @@
   max-width: 640px;
 }
 
-.hero h1.homepageTitle {
+.homepageTitle {
   width: 100%;
   max-width: 100%;
-  font-size: clamp(36px, 10.625cqi, 68px);
-  line-height: 1.1;
-  text-wrap: wrap;
+}
+
+@media (min-width: 601px) {
+  .hero .homepageTitle {
+    font-size: clamp(36px, 10.625cqi, 68px);
+    line-height: 1.1;
+  }
 }
 
 .bazel {
@@ -157,8 +161,11 @@
   }
 
   .cropImageOnSmallScreens .image {
-    /* Hide the bottom 33% of the 3248 × 1964 homepage screenshot. */
-    margin-bottom: calc(-33% * 1964 / 3248);
+    /* Show the top 67% using the image's intrinsic aspect ratio. */
+    width: 100%;
+    min-height: 0;
+    aspect-ratio: calc(var(--image-aspect-ratio) / 0.67);
+    overflow: hidden;
   }
 
   .hero > div {

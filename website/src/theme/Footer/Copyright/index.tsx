@@ -1,15 +1,14 @@
 import Link from "@docusaurus/Link";
 import OriginalCopyright from "@theme-original/Footer/Copyright";
 import type { Props } from "@theme/Footer/Copyright";
-import { Linkedin, Slack, Twitter } from "lucide-react";
+import { Github, Linkedin, Slack, Twitter } from "lucide-react";
 import React from "react";
-import { GithubIcon } from "../../../../../app/icons/github";
 
 const socialLinks = [
-  { label: "Slack", href: "http://community.buildbuddy.io/", Icon: Slack },
+  { label: "Slack", href: "https://community.buildbuddy.io/", Icon: Slack },
   { label: "Twitter", href: "https://twitter.com/buildbuddy", Icon: Twitter },
-  { label: "LinkedIn", href: "http://linkedin.com/company/buildbuddy", Icon: Linkedin },
-  { label: "GitHub", href: "https://github.com/buildbuddy-io", Icon: GithubIcon },
+  { label: "LinkedIn", href: "https://linkedin.com/company/buildbuddy", Icon: Linkedin },
+  { label: "GitHub", href: "https://github.com/buildbuddy-io", Icon: Github },
 ];
 
 export default function FooterCopyright(props: Props) {
