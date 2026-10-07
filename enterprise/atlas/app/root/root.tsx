@@ -61,7 +61,6 @@ export default class RootComponent extends React.Component<{}, State> {
     this.setState((state) => ({
       route,
       query: route.kind === "search" ? route.query : route.kind === "home" ? "" : state.query,
-      selectedIndex: -1,
     }));
   };
 
