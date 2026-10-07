@@ -1,8 +1,26 @@
 .footer--dark {
   --ifm-footer-background-color: #212121;
-  --ifm-footer-link-color: rgba(255, 255, 255, 0.5);
-  --ifm-footer-link-hover-color: rgba(255, 255, 255, 0.8);
-  font-weight: 600;
+  --ifm-footer-link-color: #a8a8a2;
+  --ifm-footer-link-hover-color: #f5f5f3;
+  font-weight: 500;
+  padding-bottom: 24px;
+}
+
+.footer--dark .footer__title {
+  margin-bottom: 16px;
+  color: #f5f5f3;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.footer--dark .footer__link-item {
+  font-size: 15px;
+  line-height: 1.9;
+}
+
+.footer a:hover,
+.footer a:focus-visible {
+  text-decoration: none;
 }
 
 .footer-logo {
@@ -11,11 +29,93 @@
   max-width: inherit;
 }
 
+.footer-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 128px;
+  text-align: left;
+}
+
 .footer__copyright {
-  margin-top: 124px;
-  color: rgba(255, 255, 255, 0.2);
+  color: #8a8a84;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.footer-legal,
+.footer-legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+}
+
+.footer-legal-links {
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+.footer-legal-links a {
+  color: var(--ifm-footer-link-color);
+}
+
+.footer-legal-links a:hover,
+.footer-legal-links a:focus-visible {
+  color: var(--ifm-footer-link-hover-color);
+}
+
+.footer-social-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.footer-social-links a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  color: var(--ifm-footer-link-color);
+}
+
+.footer-social-links .footer-social-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.footer-social-links a:hover,
+.footer-social-links a:focus-visible {
+  color: var(--ifm-footer-link-hover-color);
+}
+
+.footer-social-links a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 .footer .col:first-of-type .footer__title {
   display: none;
+}
+
+@media (max-width: 767px) {
+  .footer-bottom-row {
+    flex-direction: column;
+    gap: 16px;
+    text-align: center;
+  }
+
+  .footer-legal {
+    flex-direction: column;
+  }
+
+  .footer-legal-links {
+    justify-content: center;
+  }
 }

@@ -5,7 +5,37 @@
 }
 
 .hero:nth-of-type(even) {
-  background-color: #f5f5f7;
+  background-color: #f5f5f3;
+}
+
+.hero .homepageText {
+  container-type: inline-size;
+  width: 100%;
+  max-width: 640px;
+}
+
+.hero h1.homepageTitle {
+  width: 100%;
+  max-width: 100%;
+  font-size: clamp(36px, 10.625cqi, 68px);
+  line-height: 1.1;
+  text-wrap: wrap;
+}
+
+.bazel {
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+}
+
+.bazel::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -0.1em -0.38em -0.16em;
+  background: url("../../../static/img/highlighter-stroke.svg") center / 100% 100% no-repeat;
+  transform: rotate(-0.5deg);
+  pointer-events: none;
 }
 
 .buttons {
@@ -119,6 +149,16 @@
 @media (max-width: 1020px) {
   .hero.hero {
     padding: 96px 0;
+  }
+
+  .hero.cropImageOnSmallScreens {
+    min-height: 0;
+    padding-bottom: 0;
+  }
+
+  .cropImageOnSmallScreens .image {
+    /* Hide the bottom 33% of the 3248 × 1964 homepage screenshot. */
+    margin-bottom: calc(-33% * 1964 / 3248);
   }
 
   .hero > div {

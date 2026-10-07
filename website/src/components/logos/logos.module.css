@@ -5,13 +5,13 @@
   flex-direction: column;
   padding: 64px 0 48px 0;
   width: 100%;
-  background-color: #f5f5f7;
+  background-color: #f5f5f3;
 }
 
 .header {
   font-weight: 700;
   text-align: center;
-  color: rgba(154, 154, 154, 1);
+  color: #707168;
 }
 
 .customers {

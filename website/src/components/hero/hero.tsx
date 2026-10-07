@@ -13,21 +13,21 @@ function Component(props) {
       style={props.style}
       className={`${common.section} ${styles.hero} ${props.lessPadding ? styles.lessPadding : ""} ${
         props.noImage ? styles.noImage : ""
-      }`}>
+      } ${props.cropImageOnSmallScreens ? styles.cropImageOnSmallScreens : ""}`}>
       <div className={`${common.container} ${common.splitContainer} ${props.flipped ? styles.flipped : ""}`}>
-        <div className={common.text}>
-          <h1 className={common.title}>
+        <div className={`${common.text} ${!props.title ? styles.homepageText : ""}`}>
+          <h1 className={`${common.title} ${!props.title ? styles.homepageTitle : ""}`}>
             {props.title || (
               <>
-                Faster builds. <br /> Happier developers.
+                The engineering acceleration platform <span className={styles.bazel}>built for Bazel</span>
               </>
             )}
           </h1>
           <div className={common.subtitle}>
             {props.subtitle || (
               <>
-                BuildBuddy is the developer productivity platform built for Bazel — the open source build system that
-                allows you to build and test software 10x faster.
+                Build and test your software 10x faster while reducing compute costs with remote caching, remote execution,
+                analytics, and more.
               </>
             )}
           </div>

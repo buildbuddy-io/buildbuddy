@@ -25,7 +25,7 @@
 }
 
 .section.sectionGray {
-  background-color: #f5f5f7;
+  background-color: #f5f5f3;
 }
 
 .section.sectionRounded {
@@ -67,12 +67,12 @@
 }
 
 .section.sectionRounded .container {
-  padding: 0 64px;
+  padding: 0 var(--section-horizontal-padding, 64px);
 }
 
 @media (max-width: 460px) {
   div.section.sectionRounded .container {
-    padding: 0 32px;
+    padding: 0 var(--section-horizontal-padding, 32px);
   }
 }
 
