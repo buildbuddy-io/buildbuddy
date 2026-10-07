@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"net/url"
@@ -129,8 +130,10 @@ type Env struct {
 	rootDataDir                   string
 	buildBuddyServers             map[*BuildBuddyServer]struct{}
 	shutdownBuildBuddyServersOnce sync.Once
-	executors                     map[string]*Executor
-	testCommandController         *testCommandController
+	// conns are closed once the executors and apps have shut down.
+	conns                 []io.Closer
+	executors             map[string]*Executor
+	testCommandController *testCommandController
 	// Used to generate executor names when not specified.
 	executorNameCounter atomic.Uint64
 	envOpts             *enterprise_testenv.Options
@@ -321,6 +324,11 @@ func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
 	flags.Set(t, "app.events_api_url", *u)
 	flags.Set(t, "app.cache_api_url", *u)
 
+	t.Cleanup(func() {
+		for _, conn := range rbe.conns {
+			conn.Close()
+		}
+	})
 	t.Cleanup(func() {
 		log.Warningf("Shutting down executors...")
 		var wg sync.WaitGroup
@@ -1072,6 +1080,12 @@ type CacheProxy struct {
 	conn *grpc_client.ClientConnPool
 }
 
+// Conn returns a connection to the cache proxy, which is closed when the test
+// ends.
+func (cp *CacheProxy) Conn() grpc.ClientConnInterface {
+	return cp.conn
+}
+
 func (cp *CacheProxy) GetByteStreamClient() bspb.ByteStreamClient {
 	return bspb.NewByteStreamClient(cp.conn)
 }
@@ -1148,7 +1162,7 @@ func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 	// Finally, create the client connection.
 	conn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", port))
 	require.NoError(r.t, err)
-	r.t.Cleanup(func() { conn.Close() })
+	r.conns = append(r.conns, conn)
 	return &CacheProxy{t: r.t, env: proxyEnv, Port: port, conn: conn}
 }
 
