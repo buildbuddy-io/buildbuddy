@@ -1917,7 +1917,13 @@ func TestSampleUnclaimedTasks_Concurrent(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			rdb := testredis.Start(t).Client()
 			t.Cleanup(func() { rdb.Close() })
-			np := &nodePool{rdb: rdb, clock: clockwork.NewFakeClock(), unclaimedTasksTTL: testCase.cacheTTL}
+			clock := clockwork.NewFakeClock()
+			np := &nodePool{
+				rdb:                   rdb,
+				clock:                 clock,
+				unclaimedTasksTTL:     testCase.cacheTTL,
+				unclaimedTasksJanitor: newUnclaimedTasksJanitor(rdb, clock),
+			}
 			tasks := []string{"a", "b", "c", "d", "e"}
 			for _, task := range tasks {
 				require.NoError(t, np.AddUnclaimedTask(t.Context(), task))
@@ -1952,11 +1958,10 @@ func TestSampleUnclaimedTasks_Concurrent(t *testing.T) {
 	}
 }
 
-func TestMaintainUnclaimedTaskSets(t *testing.T) {
+func TestUnclaimedTasksJanitor(t *testing.T) {
 	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", 3)
-	// Use a fake clock so that the background maintenance loop waits forever
-	// after being woken up, letting the test decide when maintenance passes
-	// run.
+	// Use a fake clock so that the janitor waits forever after being woken
+	// up, letting the test decide when its passes run.
 	env, _ := getEnv(t, &schedulerOpts{options: Options{Clock: clockwork.NewFakeClock()}}, "")
 	s := env.GetSchedulerService().(*SchedulerServer)
 	rdb := env.GetRemoteExecutionRedisClient()
@@ -1973,8 +1978,8 @@ func TestMaintainUnclaimedTaskSets(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Adding tasks leaves maintenance to the background loop, so the set
-	// still has every task and no TTL.
+	// Adding tasks leaves maintenance to the janitor, so the set still has
+	// every task and no TTL.
 	tasks, err := rdb.ZRange(t.Context(), key, 0, -1).Result()
 	require.NoError(t, err)
 	require.Equal(t, []string{"stale", "task-0", "task-1", "task-2", "task-3", "task-4"}, tasks)
@@ -1982,9 +1987,9 @@ func TestMaintainUnclaimedTaskSets(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, time.Duration(-1), ttl)
 
-	// A maintenance pass removes the stale task and the oldest tasks beyond
-	// the max set size, and sets a TTL.
-	err = s.maintainUnclaimedTaskSetsOnce(t.Context())
+	// A janitor pass removes the stale task and the oldest tasks beyond the
+	// max set size, and sets a TTL.
+	err = s.unclaimedTasksJanitor.clean(t.Context())
 	require.NoError(t, err)
 	tasks, err = rdb.ZRange(t.Context(), key, 0, -1).Result()
 	require.NoError(t, err)
@@ -1997,7 +2002,7 @@ func TestMaintainUnclaimedTaskSets(t *testing.T) {
 	// is not undone.
 	err = rdb.Persist(t.Context(), key).Err()
 	require.NoError(t, err)
-	err = s.maintainUnclaimedTaskSetsOnce(t.Context())
+	err = s.unclaimedTasksJanitor.clean(t.Context())
 	require.NoError(t, err)
 	ttl, err = rdb.TTL(t.Context(), key).Result()
 	require.NoError(t, err)
