@@ -34,11 +34,14 @@ export default class RootComponent extends React.Component<{}, State> {
     searchMeta: "",
   };
   private input = React.createRef<HTMLInputElement>();
+  private main = React.createRef<HTMLElement>();
   private searchTimeout?: number;
   private statusTimer?: number;
   private unsubscribe?: () => void;
 
   componentDidMount() {
+    this.measureScrollbar();
+    window.addEventListener("resize", this.measureScrollbar);
     this.unsubscribe = router.subscribe(this.onRouteChange);
     document.addEventListener("keydown", this.onDocumentKeyDown);
     theme.apply();
@@ -47,11 +50,20 @@ export default class RootComponent extends React.Component<{}, State> {
   }
 
   componentWillUnmount() {
+    window.removeEventListener("resize", this.measureScrollbar);
     this.unsubscribe?.();
     document.removeEventListener("keydown", this.onDocumentKeyDown);
     window.clearInterval(this.statusTimer);
     window.clearTimeout(this.searchTimeout);
   }
+
+  // CSS uses the width of the gutter to keep the header contents aligned with the body contents.
+  private measureScrollbar = () => {
+    const main = this.main.current;
+    if (main) {
+      document.documentElement.style.setProperty("--atlas-scrollbar", `${main.offsetWidth - main.clientWidth}px`);
+    }
+  };
 
   private onRouteChange = () => {
     // A query still waiting to reach the URL must not replace the page just
@@ -160,30 +172,34 @@ export default class RootComponent extends React.Component<{}, State> {
     return (
       <div className="atlas-root">
         <header className="atlas-header">
-          <Link to={paths.home} className="atlas-logo">
-            🗺️ <span>atlas</span>
-          </Link>
-          <div className="atlas-searchbox">
-            <TextInput
-              ref={this.input}
-              className="atlas-search-input"
-              value={this.state.query}
-              placeholder="Search everything…   (try: kind:pod ns:executor cluster:sjc label:app=web crashloop)"
-              autoFocus
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => this.onQueryChange(e.target.value)}
-              onKeyDown={this.onInputKeyDown}
-            />
-            {showMeta && <span className="atlas-search-meta">{this.state.searchMeta}</span>}
+          <div className="atlas-header-inner">
+            <Link to={paths.home} className="atlas-logo">
+              🗺️ <span>atlas</span>
+            </Link>
+            <div className="atlas-searchbox">
+              <TextInput
+                ref={this.input}
+                className="atlas-search-input"
+                value={this.state.query}
+                placeholder="Search everything…   (try: kind:pod ns:executor cluster:sjc label:app=web crashloop)"
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => this.onQueryChange(e.target.value)}
+                onKeyDown={this.onInputKeyDown}
+              />
+              {showMeta && <span className="atlas-search-meta">{this.state.searchMeta}</span>}
+            </div>
+            <Link to={paths.clusters} className={`atlas-navlink ${this.state.status?.error ? "error" : ""}`}>
+              {this.state.status?.text ?? "clusters"}
+            </Link>
+            <ClusterPicker />
+            <ThemeToggle />
           </div>
-          <Link to={paths.clusters} className={`atlas-navlink ${this.state.status?.error ? "error" : ""}`}>
-            {this.state.status?.text ?? "clusters"}
-          </Link>
-          <ClusterPicker />
-          <ThemeToggle />
         </header>
-        <main className="atlas-main">{this.renderRoute()}</main>
+        <main className="atlas-main" ref={this.main}>
+          <div className="atlas-column">{this.renderRoute()}</div>
+        </main>
       </div>
     );
   }

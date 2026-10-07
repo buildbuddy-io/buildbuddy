@@ -2,11 +2,6 @@ html.dark {
   color-scheme: dark;
 }
 
-/* Avoid shifting the page left/right depending on whether search results exceed the page. */
-html {
-  scrollbar-gutter: stable;
-}
-
 body {
   margin: 0;
   background: var(--color-bg-primary);
@@ -39,18 +34,30 @@ pre,
 
 /* Layout */
 
+.atlas-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
 .atlas-header {
+  flex: none;
+  /* width of the body gutter so that header contents is aligned with body contents */
+  padding-right: var(--atlas-scrollbar, 0px);
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border-primary);
+  position: relative;
+  z-index: 10;
+}
+
+/* The same 1100px column as .atlas-column, so the two line up. */
+.atlas-header-inner {
   display: flex;
   align-items: center;
   gap: 16px;
-  /* Line the contents up with the 1100px column of .atlas-main (content-box
-     plus its 20px padding) on wide screens. */
-  padding: 10px max(20px, calc(50% - 550px));
-  background: var(--color-bg-secondary);
-  border-bottom: 1px solid var(--color-border-primary);
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 10px 20px;
 }
 
 .atlas-logo {
@@ -136,6 +143,13 @@ pre,
 }
 
 .atlas-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.atlas-column {
   max-width: 1100px;
   margin: 0 auto;
   padding: 20px;
