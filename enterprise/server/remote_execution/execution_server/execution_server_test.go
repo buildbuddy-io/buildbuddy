@@ -77,6 +77,9 @@ type schedulerServerMock struct {
 	canceledCount int
 	scheduleReqs  []*scpb.ScheduleTaskRequest
 	scheduleErr   error
+	// taskLost is returned by WatchTaskLiveness for every task. Tests close it
+	// to simulate the scheduler losing a task.
+	taskLost chan struct{}
 }
 
 func (s *schedulerServerMock) GetPoolInfo(_ context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
@@ -110,6 +113,10 @@ func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.Schedu
 func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bool, error) {
 	s.canceledCount++
 	return true, nil
+}
+
+func (s *schedulerServerMock) WatchTaskLiveness(ctx context.Context, taskID string) <-chan struct{} {
+	return s.taskLost
 }
 
 type taskSizerMock struct {
@@ -153,7 +160,7 @@ func setupEnvWithClock(t *testing.T, clock clockwork.Clock) (*testenv.TestEnv, *
 	env.SetRemoteExecutionRedisClient(rdb)
 	env.SetRemoteExecutionRedisPubSubClient(rdb)
 
-	scheduler := &schedulerServerMock{}
+	scheduler := &schedulerServerMock{taskLost: make(chan struct{})}
 	env.SetSchedulerService(scheduler)
 
 	tasksize.Register(env)
@@ -2507,6 +2514,41 @@ func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
 	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), rows[0].ExecutionID)
 	require.NoError(t, err)
 	require.Contains(t, executeResponse.GetStatus().GetMessage(), "Secrets requested but secret service not available")
+}
+
+func TestExecute_LostTaskEndsWait(t *testing.T) {
+	env, conn, _ := setupEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(t.Context(), "US1")
+	require.NoError(t, err)
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, &repb.Action{})
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	// Start an execution and wait for the server's initial update.
+	client := repb.NewExecutionClient(conn)
+	stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	op, err := stream.Recv()
+	require.NoError(t, err)
+	require.False(t, op.GetDone())
+
+	// Have the scheduler report the task as lost without a final update being
+	// published, as happens when a Redis error prevents publishing the
+	// failure of the task's last attempt. The server ends the wait with a
+	// completed operation carrying a NOT_FOUND error, which tells Bazel to
+	// retry the execution, instead of leaving Bazel waiting forever.
+	close(env.GetSchedulerService().(*schedulerServerMock).taskLost)
+	op, err = stream.Recv()
+	require.NoError(t, err)
+	require.True(t, op.GetDone())
+	rsp := operation.ExtractExecuteResponse(op)
+	require.Equal(t, int32(codes.NotFound), rsp.GetStatus().GetCode(), "status: %v", rsp.GetStatus())
 }
 
 func TestExecute_RejectAnonymousExecutionsExperiment(t *testing.T) {

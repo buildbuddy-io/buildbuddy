@@ -1367,8 +1367,21 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 	metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
 	defer metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Dec()
 
+	// Set up a watcher so that if the scheduler loses the task, the client
+	// receives an error rather than hanging indefinitely.
+	//
+	// The monitoredPubSub stream is also periodically re-checked for existence,
+	// but this is not sufficient to guarantee that the task will make progress.
+	taskLost := s.env.GetSchedulerService().WatchTaskLiveness(ctx, req.GetName())
+
 	for {
-		msg, ok := <-streamPubSubChan
+		var msg *pubsub.Message
+		ok := true
+		select {
+		case msg, ok = <-streamPubSubChan:
+		case <-taskLost:
+			msg = &pubsub.Message{Err: status.NotFoundErrorf("task %q was lost", req.GetName())}
+		}
 		if !ok {
 			if ctx.Err() != nil {
 				log.CtxInfof(ctx, "WaitExecution %q: client disconnected before action completed: %s", req.GetName(), ctx.Err())
@@ -1376,8 +1389,9 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 			return status.UnavailableErrorf("Stream PubSub channel closed for %q", req.GetName())
 		}
 		var data string
-		// If there's an error maintaining the subscription (e.g. because a Redis node went away) send a
-		// NOT FOUND error to Bazel so that it retries the execution.
+		// If there's an error maintaining the subscription (e.g. because a
+		// Redis node went away or the task was lost) send a NOT FOUND error to
+		// Bazel so that it retries the execution.
 		if msg.Err != nil {
 			op, err := operation.Assemble(
 				req.GetName(),
