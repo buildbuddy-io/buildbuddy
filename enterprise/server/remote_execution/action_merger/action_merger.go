@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -344,23 +345,9 @@ func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, sche
 	// The action merging state is recorded prior to scheduling the task. Verify
 	// that the task is created in the scheduler before merging to avoid a
 	// scenario where we reuse an execution ID that fails to schedule.
-	err = retry.DoVoid(ctx, &retry.Options{
-		InitialBackoff:        5 * time.Millisecond,
-		MaxBackoff:            3 * time.Second,
-		Multiplier:            2,
-		DontLogFailedAttempts: true,
-	}, func(ctx context.Context) error {
-		existsInScheduler, err := schedulerService.ExistsTask(ctx, executionID)
-		if err != nil {
-			return retry.NonRetryableError(err)
-		}
-		if !existsInScheduler {
-			return fmt.Errorf("pending execution does not exist in the scheduler yet")
-		}
-		return nil
-	})
+	err = waitForTaskToExist(ctx, schedulerService, executionID)
 	if err != nil {
-		log.CtxWarningf(ctx, "Failed to check if pending execution %q exists in the scheduler: %s", newExecutionID, err)
+		log.CtxWarningf(ctx, "Failed to check if pending execution %q exists in the scheduler: %s", executionID, err)
 		return newExecutionID, New
 	}
 
@@ -369,6 +356,33 @@ func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, sche
 	} else {
 		return executionID, Merge
 	}
+}
+
+// Execution IDs are globally unique and scheduler task existence does not
+// depend on caller identity. Share the retry loop within an app process so a
+// burst of requests for one pending execution does not create a polling burst.
+var pendingTaskWaits singleflight.Group[string, struct{}]
+
+func waitForTaskToExist(ctx context.Context, schedulerService interfaces.SchedulerService, executionID string) error {
+	_, _, err := pendingTaskWaits.Do(ctx, executionID, func(ctx context.Context) (struct{}, error) {
+		err := retry.DoVoid(ctx, &retry.Options{
+			InitialBackoff:        5 * time.Millisecond,
+			MaxBackoff:            3 * time.Second,
+			Multiplier:            2,
+			DontLogFailedAttempts: true,
+		}, func(ctx context.Context) error {
+			existsInScheduler, err := schedulerService.ExistsTask(ctx, executionID)
+			if err != nil {
+				return retry.NonRetryableError(err)
+			}
+			if !existsInScheduler {
+				return fmt.Errorf("pending execution does not exist in the scheduler yet")
+			}
+			return nil
+		})
+		return struct{}{}, err
+	})
+	return err
 }
 
 // Returns true if a hedged execution should be run given the provided

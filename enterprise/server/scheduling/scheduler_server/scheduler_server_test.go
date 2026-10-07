@@ -6,6 +6,7 @@ import (
 	"io"
 	"slices"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -37,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
+	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
@@ -1859,6 +1861,54 @@ func TestAskForMoreWork_RespectRequestedExecutorID(t *testing.T) {
 	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
 }
 
+func TestAddUnclaimedTaskAppliesRetention(t *testing.T) {
+	now := time.Now()
+	for _, testCase := range []struct {
+		name    string
+		maxSize int64
+		members []*redis.Z
+		want    []string
+	}{
+		{
+			name:    "maximum size",
+			maxSize: 3,
+			members: []*redis.Z{
+				{Score: float64(now.Add(-3 * time.Minute).Unix()), Member: "oldest"},
+				{Score: float64(now.Add(-2 * time.Minute).Unix()), Member: "older"},
+				{Score: float64(now.Add(-time.Minute).Unix()), Member: "newer"},
+			},
+			want: []string{"older", "newer", "new"},
+		},
+		{
+			name:    "maximum age",
+			maxSize: 10,
+			members: []*redis.Z{
+				{Score: float64(now.Add(-unclaimedTaskMaxAge - time.Minute).Unix()), Member: "stale"},
+				{Score: float64(now.Add(-time.Minute).Unix()), Member: "recent"},
+			},
+			want: []string{"recent", "new"},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", testCase.maxSize)
+			rdb := testredis.StartSharded(t, 2).Client()
+			np := &nodePool{rdb: rdb}
+			key := np.key.redisUnclaimedTasksKey()
+			require.NoError(t, rdb.ZAdd(t.Context(), key, testCase.members...).Err())
+			require.NoError(t, rdb.Expire(t.Context(), key, time.Second).Err())
+
+			require.NoError(t, np.AddUnclaimedTask(t.Context(), "new"))
+			members, err := rdb.ZRange(t.Context(), key, 0, -1).Result()
+			require.NoError(t, err)
+			require.Equal(t, testCase.want, members)
+			ttl, err := rdb.TTL(t.Context(), key).Result()
+			require.NoError(t, err)
+			require.GreaterOrEqual(t, ttl, unclaimedTaskSetTTL-2*time.Second)
+			require.LessOrEqual(t, ttl, unclaimedTaskSetTTL)
+		})
+	}
+}
+
 func TestSampleUnclaimedTasks(t *testing.T) {
 	for _, testCase := range []struct {
 		name     string
@@ -1983,6 +2033,37 @@ func BenchmarkSampleUnclaimedTasks(b *testing.B) {
 			}
 		})
 	}
+}
+
+func BenchmarkUnclaimedTaskUpdates(b *testing.B) {
+	// Exercise ring routing while all updates for the pool share one shard.
+	rdb := testredis.StartShardedTCP(b, 2).Client()
+	np := &nodePool{rdb: rdb}
+	ctx := b.Context()
+
+	// Keep a busy pool resident while measuring the add/remove lifecycle.
+	members := make([]*redis.Z, 10_000)
+	for i := range members {
+		members[i] = &redis.Z{Score: float64(time.Now().Unix()), Member: "resident-" + strconv.Itoa(i)}
+	}
+	require.NoError(b, rdb.ZAdd(ctx, np.key.redisUnclaimedTasksKey(), members...).Err())
+
+	var nextTaskID atomic.Uint64
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			taskID := "benchmark-" + strconv.FormatUint(nextTaskID.Add(1), 10)
+			if err := np.AddUnclaimedTask(ctx, taskID); err != nil {
+				b.Errorf("add unclaimed task: %s", err)
+				return
+			}
+			if err := np.RemoveUnclaimedTask(ctx, taskID); err != nil {
+				b.Errorf("remove unclaimed task: %s", err)
+				return
+			}
+		}
+	})
 }
 
 func TestAskForMoreWork_CachesResultsToReduceRedisLoad(t *testing.T) {

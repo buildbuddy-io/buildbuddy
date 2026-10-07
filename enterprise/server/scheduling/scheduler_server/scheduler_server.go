@@ -1109,45 +1109,42 @@ func (np *nodePool) FindConnectedExecutorByID(executorID string) *executionNode 
 	return nil
 }
 
+// Each pool uses one Redis key. Group the update and retention checks into one
+// server operation to reduce network round trips during scheduling bursts.
+var addUnclaimedTaskScript = redis.NewScript(`
+	local key = KEYS[1]
+	local taskID = ARGV[1]
+	local score = ARGV[2]
+	local ttl = ARGV[3]
+	local maxSize = tonumber(ARGV[4])
+	local cutoff = ARGV[5]
+
+	redis.call("ZADD", key, score, taskID)
+	redis.call("EXPIRE", key, ttl)
+	local size = redis.call("ZCARD", key)
+	if size > maxSize then
+		-- Ranks are inclusive, so remove through size - maxSize - 1.
+		redis.call("ZREMRANGEBYRANK", key, 0, size - maxSize - 1)
+	end
+	redis.call("ZREMRANGEBYSCORE", key, "0", cutoff)
+	return 1
+`)
+
 func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	key := np.key.redisUnclaimedTasksKey()
-	m := &redis.Z{
-		Member: taskID,
-		Score:  float64(time.Now().Unix()),
-	}
-	err := np.rdb.ZAdd(ctx, key, m).Err()
-	if err != nil {
-		return err
-	}
-	err = np.rdb.Expire(ctx, key, unclaimedTaskSetTTL).Err()
-	if err != nil {
-		return err
-	}
-
-	// Trim the set if necessary.
-	// The next 2 commands are not atomic but it's okay if the list length is not exactly what we want.
-	n, err := np.rdb.ZCard(ctx, key).Result()
-	if err != nil {
-		return err
-	}
-	if n > *unclaimedTasksSetMaxSize {
-		// Trim the oldest tasks. We use the task insertion timestamp as the score so the oldest task is at rank 0, next
-		// oldest is at rank 1 and so on. We subtract 1 because the indexes are inclusive.
-		if err := np.rdb.ZRemRangeByRank(ctx, key, 0, n-(*unclaimedTasksSetMaxSize)-1).Err(); err != nil {
-			log.CtxWarningf(ctx, "Error trimming unclaimed tasks: %s", err)
-		}
-	}
-
-	// Also trim any stale tasks from the set. The data is stored in score order so this is a cheap operation.
-	cutoff := time.Now().Add(-unclaimedTaskMaxAge).Unix()
-	if err := np.rdb.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(cutoff, 10)).Err(); err != nil {
-		log.CtxWarningf(ctx, "Error deleting old unclaimed tasks: %s", err)
-	}
-
-	return nil
+	now := time.Now()
+	return addUnclaimedTaskScript.Run(
+		ctx,
+		np.rdb,
+		[]string{np.key.redisUnclaimedTasksKey()},
+		taskID,
+		now.Unix(),
+		int64(unclaimedTaskSetTTL/time.Second),
+		*unclaimedTasksSetMaxSize,
+		now.Add(-unclaimedTaskMaxAge).Unix(),
+	).Err()
 }
 
 func (np *nodePool) RemoveUnclaimedTask(ctx context.Context, taskID string) error {
