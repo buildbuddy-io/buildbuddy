@@ -206,7 +206,7 @@ actions:
       - run: |
           enterprise/tools/agents/setup-gh.sh
           tools/agents/claude/setup.sh
-          bb agent review
+          bb agent review --effort=xhigh
 
 plugins:
   - path: cli/plugins/go-deps
