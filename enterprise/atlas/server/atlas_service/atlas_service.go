@@ -48,6 +48,18 @@ func (s *AtlasService) cluster(name string) (*cluster.Cluster, bool) {
 	return s.c, true
 }
 
+func (s *AtlasService) GetFilterValues(ctx context.Context, req *atlaspb.GetFilterValuesRequest) (*atlaspb.GetFilterValuesResponse, error) {
+	values, err := s.c.Index().GetFilterValues(req.GetField(), req.GetKey(), req.GetPrefix(), int(req.GetLimit()))
+	if err != nil {
+		return nil, status.InvalidArgumentError(err.Error())
+	}
+	rsp := &atlaspb.GetFilterValuesResponse{}
+	for _, v := range values {
+		rsp.Values = append(rsp.Values, &atlaspb.FilterValue{Value: v.Value, Count: int32(v.Count)})
+	}
+	return rsp, nil
+}
+
 func (s *AtlasService) Search(ctx context.Context, req *atlaspb.SearchRequest) (*atlaspb.SearchResponse, error) {
 	start := time.Now()
 	res := s.c.Index().Search(req.GetQuery(), int(req.GetGroupLimit()))

@@ -90,6 +90,29 @@ message SearchResponse {
   int64 took_usec = 3;
 }
 
+message GetFilterValuesRequest {
+  // The field to retrieve values for (e.g. "kind", "health", etc)
+  string field = 1;
+  // For fields that contain key-value pairs (e.g. "label"), this determines
+  // whether the keys or values are returned. If key is not specified, all
+  // keys are returned, otherwise values for the given key are returned.
+  string key = 2;
+  // Optionally filter matching values by the given prefix.
+  string prefix = 3;
+  // Zero means the server default.
+  int32 limit = 4;
+}
+
+message FilterValue {
+  string value = 1;
+  // Number of resources that match this value.
+  int32 count = 2;
+}
+
+message GetFilterValuesResponse {
+  repeated FilterValue values = 1;
+}
+
 message GetObjectRequest {
   string cluster = 1;
   string group = 2;
@@ -213,10 +236,22 @@ message FrontendConfig {
   string cluster_name = 3;
   // All available atlas instances, including this one, for the instance picker.
   repeated ClusterLink cluster_links = 4;
+  // List of fields that search can match on.
+  repeated FilterKey filter_keys = 5;
+}
+
+message FilterKey {
+  // The search key (e.g. "kind", "health", etc)
+  string key = 1;
+  // A description of the key.
+  string hint = 2;
 }
 
 service AtlasService {
   rpc Search(SearchRequest) returns (SearchResponse);
+  // GetFilterValues powers the search auto-complete input by providing possible
+  // values for a search term.
+  rpc GetFilterValues(GetFilterValuesRequest) returns (GetFilterValuesResponse);
   rpc GetObject(GetObjectRequest) returns (GetObjectResponse);
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
   rpc StreamLogs(StreamLogsRequest) returns (stream StreamLogsResponse);

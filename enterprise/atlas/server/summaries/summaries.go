@@ -221,6 +221,9 @@ func (s *Store) scan(fn func(*Entry)) {
 type Index struct {
 	mu     sync.RWMutex
 	stores []*Store
+
+	catalogMu sync.Mutex
+	cat       *catalog
 }
 
 func New() *Index { return &Index{} }

@@ -220,6 +220,57 @@ func TestSearchRanksWholeWords(t *testing.T) {
 	require.Equal(t, []string{"buildbuddy-app-7d9f-abcde", "prod-buildbuddy-app-7d9f", "buildbuddy-apps-0"}, names)
 }
 
+func TestValues(t *testing.T) {
+	ix := New()
+	pods := ix.NewStore(podRes)
+	pods.Put(podEntry("web-1", "prod"))
+	pods.Put(podEntry("web-2", "prod"))
+	cache := podEntry("cache-0", "staging")
+	cache.Labels = map[string]string{"app": "cache"}
+	cache.Health = HealthBad
+	pods.Put(cache)
+	ix.NewStore(cmRes).Put(cmEntry("app-config", "prod"))
+	values := func(field, key, prefix string, limit int) []string {
+		vs, err := ix.GetFilterValues(field, key, prefix, limit)
+		require.NoError(t, err)
+		var out []string
+		for _, v := range vs {
+			out = append(out, v.Value)
+		}
+		return out
+	}
+
+	// Most common first, matched case-insensitively.
+	require.Equal(t, []string{"pod", "configmap"}, values("kind", "", "", 0))
+	require.Equal(t, []string{"pod"}, values("Kind", "", "P", 0))
+	require.Equal(t, []string{"prod", "staging"}, values("ns", "", "", 0))
+	require.Equal(t, []string{"prod"}, values("namespace", "", "", 1), "the alias works and the limit holds")
+	require.Equal(t, []string{"uswest1", "sjc"}, values("cluster", "", "", 0))
+	require.Equal(t, []string{"unknown", "bad"}, values("health", "", "", 0))
+	vs, err := ix.GetFilterValues("health", "", "u", 0)
+	require.NoError(t, err)
+	require.Equal(t, 3, vs[0].Count)
+
+	// Label keys, or one label's values, in the cluster's spelling however
+	// the key was typed.
+	require.Equal(t, []string{"app", "app.kubernetes.io/managed-by"}, values("label", "", "ap", 0))
+	require.Equal(t, []string{"web", "cache"}, values("label", "app", "", 0))
+	require.Equal(t, []string{"web"}, values("label", "APP", "W", 0))
+	require.Equal(t, []string{"Helm"}, values("label", "app.kubernetes.io/managed-by", "h", 0))
+	require.Empty(t, values("label", "nosuch", "", 0))
+
+	_, err = ix.GetFilterValues("bogus", "", "", 0)
+	require.ErrorContains(t, err, `unknown filter "bogus"`)
+
+	// The catalog is reused for a while, then rebuilt.
+	first := ix.catalog()
+	require.Same(t, first, ix.catalog())
+	pods.Put(podEntry("web-3", "qa"))
+	require.Equal(t, []string{"prod", "staging"}, values("ns", "", "", 0), "still the cached catalog")
+	ix.cat = nil
+	require.Equal(t, []string{"prod", "qa", "staging"}, values("ns", "", "", 0))
+}
+
 func TestSelectorMatches(t *testing.T) {
 	require.True(t, SelectorMatches(map[string]string{"app": "web"}, map[string]string{"app": "web", "tier": "fe"}))
 	require.False(t, SelectorMatches(map[string]string{"app": "web", "x": "y"}, map[string]string{"app": "web"}))

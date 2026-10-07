@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "query.go",
         "summaries.go",
+        "values.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/atlas/server/summaries",
     visibility = ["//visibility:public"],
