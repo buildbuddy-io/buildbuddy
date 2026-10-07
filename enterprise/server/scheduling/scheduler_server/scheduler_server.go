@@ -131,8 +131,8 @@ const (
 	// Unclaimed tasks older than this are removed from the unclaimed tasks list.
 	unclaimedTaskMaxAge = 2 * time.Hour
 	// How long to wait after a task is added to an unclaimed task set before
-	// trimming the set and refreshing its TTL. Tasks added to any pool during
-	// the wait are handled in the same pass.
+	// trimming the set. Tasks added to any pool during the wait are handled in
+	// the same pass.
 	unclaimedTaskSetMaintenanceDelay = 250 * time.Millisecond
 	// Bounds a maintenance pass, so that an unresponsive Redis shard can't
 	// stall maintenance of every pool's unclaimed task set.
@@ -949,11 +949,11 @@ func (k *nodePoolKey) redisUnclaimedTasksKey() string {
 	return "unclaimedTasks/" + k.redisKeySuffix()
 }
 
-// unclaimedTasksJanitor trims the unclaimed task sets and refreshes their
-// TTLs in the background, so that the cost of this maintenance doesn't scale
-// with the task enqueue rate. It only maintains the sets that have had tasks
-// added since its last pass, and handles all of them in a single pipelined
-// Redis round trip, at most once per unclaimedTaskSetMaintenanceDelay.
+// unclaimedTasksJanitor trims the unclaimed task sets in the background, so
+// that the cost of trimming doesn't scale with the task enqueue rate. It only
+// trims the sets that have had tasks added since its last pass, and handles
+// all of them in a single pipelined Redis round trip, at most once per
+// unclaimedTaskSetMaintenanceDelay.
 type unclaimedTasksJanitor struct {
 	rdb   redis.UniversalClient
 	clock clockwork.Clock
@@ -1031,7 +1031,6 @@ func (j *unclaimedTasksJanitor) clean(ctx context.Context) error {
 	cutoff := strconv.FormatInt(time.Now().Add(-unclaimedTaskMaxAge).Unix(), 10)
 	pipe := j.rdb.Pipeline()
 	for key := range keys {
-		pipe.Expire(ctx, key, unclaimedTaskSetTTL)
 		// Remove stale tasks. Task scores are their insertion timestamps, and
 		// sorted sets are ordered by score, so this is cheap.
 		pipe.ZRemRangeByScore(ctx, key, "0", cutoff)
@@ -1225,7 +1224,11 @@ func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 		Score:  float64(time.Now().Unix()),
 	}
 	key := np.key.redisUnclaimedTasksKey()
-	if err := np.rdb.ZAdd(ctx, key, m).Err(); err != nil {
+	pipe := np.rdb.Pipeline()
+	// Create the set before setting its TTL, since EXPIRE ignores missing keys.
+	pipe.ZAdd(ctx, key, m)
+	pipe.Expire(ctx, key, unclaimedTaskSetTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
 		return err
 	}
 	np.unclaimedTasksJanitor.add(key)
