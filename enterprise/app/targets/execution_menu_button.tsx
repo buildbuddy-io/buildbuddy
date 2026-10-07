@@ -1,16 +1,14 @@
 import { MoreVertical } from "lucide-react";
 import React from "react";
 import { Subscription } from "rxjs";
-import { OutlinedButton } from "../components/button/button";
-import Menu, { MenuItem } from "../components/menu/menu";
-import Popup from "../components/popup/popup";
-import router, { Path } from "../router/router";
-import actionComparisonService, { ActionComparisonData } from "./action_comparison_service";
+import Menu, { MenuItem } from "../../../app/components/menu/menu";
+import Popup from "../../../app/components/popup/popup";
+import actionComparisonService, { ActionComparisonData } from "../../../app/invocation/action_comparison_service";
+import router, { Path } from "../../../app/router/router";
 
-export interface ActionCompareButtonComponentProps {
+interface Props {
   invocationId: string;
   actionDigest: string;
-  mini?: boolean;
 }
 
 interface State {
@@ -18,7 +16,17 @@ interface State {
   isDropdownOpen: boolean;
 }
 
-export default class ActionCompareButtonComponent extends React.Component<ActionCompareButtonComponentProps, State> {
+/** Returns the path of the page showing the given execution. */
+export function getExecutionPath(invocationId: string, actionDigest: string): string {
+  return `${Path.invocationPath}${invocationId}?actionDigest=${actionDigest}#action`;
+}
+
+/**
+ * A compact menu button that fits within a row of the sampled executions
+ * table.  It offers the same comparison options as ActionCompareButtonComponent
+ * plus a link to the execution's page.
+ */
+export default class ExecutionMenuButtonComponent extends React.Component<Props, State> {
   state: State = {
     isDropdownOpen: false,
     comparisonActionData: actionComparisonService.getComparisonData(),
@@ -27,19 +35,22 @@ export default class ActionCompareButtonComponent extends React.Component<Action
   private subscription = new Subscription();
 
   componentDidMount() {
-    this.subscription.add(actionComparisonService.subscribe(this.onComparisonDataUpdate.bind(this)));
+    this.subscription.add(actionComparisonService.subscribe((data) => this.setState({ comparisonActionData: data })));
   }
 
   componentWillUnmount() {
     this.subscription.unsubscribe();
   }
 
-  private onComparisonDataUpdate(data: ActionComparisonData) {
-    this.setState({ comparisonActionData: data });
-  }
-
   private onClick = (event: React.MouseEvent<HTMLElement>) => {
     this.setState({ isDropdownOpen: true });
+    event.stopPropagation();
+    event.preventDefault();
+  };
+
+  private onClickViewExecution = (event: React.MouseEvent<HTMLElement>) => {
+    router.navigateTo(getExecutionPath(this.props.invocationId, this.props.actionDigest));
+    this.setState({ isDropdownOpen: false });
     event.stopPropagation();
     event.preventDefault();
   };
@@ -52,19 +63,16 @@ export default class ActionCompareButtonComponent extends React.Component<Action
   };
 
   private onClickCompareWithSelected = (event: React.MouseEvent<HTMLElement>) => {
-    const comparisonData = this.state.comparisonActionData;
-    if (!comparisonData?.invocationId || !comparisonData?.actionDigest) {
+    const selected = this.state.comparisonActionData;
+    if (!selected?.invocationId || !selected?.actionDigest) {
       return;
     }
-
     router.navigateToCompareActionsPath(
-      comparisonData.invocationId,
-      comparisonData.actionDigest,
+      selected.invocationId,
+      selected.actionDigest,
       this.props.invocationId,
       this.props.actionDigest
     );
-
-    // Clear the comparison selection
     actionComparisonService.clearComparisonAction();
     this.setState({ isDropdownOpen: false });
     event.stopPropagation();
@@ -79,27 +87,14 @@ export default class ActionCompareButtonComponent extends React.Component<Action
 
   render() {
     const canCompare = actionComparisonService.canCompareWith(this.props.invocationId, this.props.actionDigest);
-
     return (
-      <div
-        className={
-          this.props.mini ? "invocation-compare-button-container-mini" : "invocation-compare-button-container"
-        }>
-        {!this.props.mini && (
-          <>
-            <OutlinedButton onClick={this.onClick}>
-              <ComparisonBufferIllustration isBuffered={Boolean(this.state.comparisonActionData?.actionDigest)} />
-              <div>Compare</div>
-            </OutlinedButton>
-          </>
-        )}
-        {this.props.mini && (
-          <OutlinedButton className="icon-button invocation-menu-button" onClick={this.onClick}>
-            <MoreVertical />
-          </OutlinedButton>
-        )}
+      <div className="execution-menu">
+        <button className="execution-menu-button" title="More options" onClick={this.onClick}>
+          <MoreVertical />
+        </button>
         <Popup isOpen={this.state.isDropdownOpen} onRequestClose={this.onRequestCloseDropdown}>
           <Menu>
+            <MenuItem onClick={this.onClickViewExecution}>View execution</MenuItem>
             <MenuItem onClick={this.onClickSelectForComparison}>Select for comparison</MenuItem>
             <MenuItem disabled={!canCompare} onClick={this.onClickCompareWithSelected}>
               Compare with selected
@@ -109,13 +104,4 @@ export default class ActionCompareButtonComponent extends React.Component<Action
       </div>
     );
   }
-}
-
-function ComparisonBufferIllustration({ isBuffered }: { isBuffered: boolean }) {
-  return (
-    <div className={`comparison-buffer-illustration ${isBuffered ? "buffered" : ""}`}>
-      <div className="comparison-buffer-icon comparison-buffer-icon-a" />
-      <div className="comparison-buffer-icon comparison-buffer-icon-b" />
-    </div>
-  );
 }

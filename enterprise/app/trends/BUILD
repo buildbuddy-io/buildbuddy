@@ -54,6 +54,7 @@ ts_library(
         "//:node_modules/tslib",
         "//app/format",
         "//enterprise/app/filter:filter_util",
+        "//proto:execution_stats_ts_proto",
         "//proto:stat_filter_ts_proto",
         "//proto:stats_ts_proto",
     ],
@@ -184,7 +185,9 @@ ts_library(
     srcs = ["trends_chart.tsx"],
     deps = [
         "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
+        "//:node_modules/react-dom",
         "//:node_modules/recharts",
         "//:node_modules/tslib",
         "//app/router",
