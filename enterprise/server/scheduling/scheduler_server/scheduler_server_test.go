@@ -3,6 +3,7 @@ package scheduler_server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"sort"
@@ -37,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
+	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
@@ -1948,6 +1950,58 @@ func TestSampleUnclaimedTasks_Concurrent(t *testing.T) {
 			require.ElementsMatch(t, tasks, sample)
 		})
 	}
+}
+
+func TestMaintainUnclaimedTaskSets(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", 3)
+	// Use a fake clock so that the background maintenance loop waits forever
+	// after being woken up, letting the test decide when maintenance passes
+	// run.
+	env, _ := getEnv(t, &schedulerOpts{options: Options{Clock: clockwork.NewFakeClock()}}, "")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	rdb := env.GetRemoteExecutionRedisClient()
+	np := s.getOrCreatePool(nodePoolKey{os: defaultOS, arch: defaultArch, pool: "defaultPoolName"})
+	key := np.key.redisUnclaimedTasksKey()
+
+	// Add a task older than the max age, followed by more new tasks than the
+	// set can hold.
+	staleScore := float64(time.Now().Add(-unclaimedTaskMaxAge - time.Minute).Unix())
+	err := rdb.ZAdd(t.Context(), key, &redis.Z{Member: "stale", Score: staleScore}).Err()
+	require.NoError(t, err)
+	for i := range 5 {
+		err := np.AddUnclaimedTask(t.Context(), fmt.Sprintf("task-%d", i))
+		require.NoError(t, err)
+	}
+
+	// Adding tasks leaves maintenance to the background loop, so the set
+	// still has every task and no TTL.
+	tasks, err := rdb.ZRange(t.Context(), key, 0, -1).Result()
+	require.NoError(t, err)
+	require.Equal(t, []string{"stale", "task-0", "task-1", "task-2", "task-3", "task-4"}, tasks)
+	ttl, err := rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Equal(t, time.Duration(-1), ttl)
+
+	// A maintenance pass removes the stale task and the oldest tasks beyond
+	// the max set size, and sets a TTL.
+	err = s.maintainUnclaimedTaskSetsOnce(t.Context())
+	require.NoError(t, err)
+	tasks, err = rdb.ZRange(t.Context(), key, 0, -1).Result()
+	require.NoError(t, err)
+	require.Equal(t, []string{"task-2", "task-3", "task-4"}, tasks)
+	ttl, err = rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Greater(t, ttl, time.Duration(0))
+
+	// Without new tasks, the next pass skips the set, so removing the TTL
+	// is not undone.
+	err = rdb.Persist(t.Context(), key).Err()
+	require.NoError(t, err)
+	err = s.maintainUnclaimedTaskSetsOnce(t.Context())
+	require.NoError(t, err)
+	ttl, err = rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Equal(t, time.Duration(-1), ttl)
 }
 
 func BenchmarkSampleUnclaimedTasks(b *testing.B) {

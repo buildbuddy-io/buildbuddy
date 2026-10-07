@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
@@ -130,6 +131,10 @@ const (
 	unclaimedTaskSetTTL = 1 * time.Hour
 	// Unclaimed tasks older than this are removed from the unclaimed tasks list.
 	unclaimedTaskMaxAge = 2 * time.Hour
+	// How long to wait after a task is added to an unclaimed task set before
+	// trimming the set and refreshing its TTL. Tasks added to any pool during
+	// the wait are handled in the same pass.
+	unclaimedTaskSetMaintenanceDelay = 250 * time.Millisecond
 
 	unusedSchedulerClientExpiration    = 5 * time.Minute
 	unusedSchedulerClientCheckInterval = 1 * time.Minute
@@ -959,14 +964,21 @@ type nodePool struct {
 	unclaimedTasksMu     sync.Mutex
 	unclaimedTasks       []string
 	unclaimedTasksExpiry time.Time
+
+	// Set when a task is added to the unclaimed task set, so that the next
+	// maintenance pass trims the set and refreshes its TTL.
+	unclaimedTaskSetNeedsMaintenance atomic.Bool
+	// Wakes up SchedulerServer.maintainUnclaimedTaskSets.
+	unclaimedTaskSetMaintenanceSignal chan<- struct{}
 }
 
-func newNodePool(env environment.Env, key nodePoolKey) *nodePool {
+func newNodePool(env environment.Env, key nodePoolKey, unclaimedTaskSetMaintenanceSignal chan<- struct{}) *nodePool {
 	np := &nodePool{
-		key:               key,
-		rdb:               env.GetRemoteExecutionRedisClient(),
-		clock:             env.GetClock(),
-		unclaimedTasksTTL: *unclaimedTasksCacheTTL,
+		key:                               key,
+		rdb:                               env.GetRemoteExecutionRedisClient(),
+		clock:                             env.GetClock(),
+		unclaimedTasksTTL:                 *unclaimedTasksCacheTTL,
+		unclaimedTaskSetMaintenanceSignal: unclaimedTaskSetMaintenanceSignal,
 	}
 	return np
 }
@@ -1109,44 +1121,26 @@ func (np *nodePool) FindConnectedExecutorByID(executorID string) *executionNode 
 	return nil
 }
 
+// AddUnclaimedTask adds a task to the pool's unclaimed task set. Trimming the
+// set and refreshing its TTL are left to maintainUnclaimedTaskSets, so that
+// the cost of that maintenance doesn't scale with the task enqueue rate.
 func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	key := np.key.redisUnclaimedTasksKey()
 	m := &redis.Z{
 		Member: taskID,
 		Score:  float64(time.Now().Unix()),
 	}
-	err := np.rdb.ZAdd(ctx, key, m).Err()
-	if err != nil {
+	if err := np.rdb.ZAdd(ctx, np.key.redisUnclaimedTasksKey(), m).Err(); err != nil {
 		return err
 	}
-	err = np.rdb.Expire(ctx, key, unclaimedTaskSetTTL).Err()
-	if err != nil {
-		return err
+	np.unclaimedTaskSetNeedsMaintenance.Store(true)
+	// If a wakeup is already pending, it will also cover this set.
+	select {
+	case np.unclaimedTaskSetMaintenanceSignal <- struct{}{}:
+	default:
 	}
-
-	// Trim the set if necessary.
-	// The next 2 commands are not atomic but it's okay if the list length is not exactly what we want.
-	n, err := np.rdb.ZCard(ctx, key).Result()
-	if err != nil {
-		return err
-	}
-	if n > *unclaimedTasksSetMaxSize {
-		// Trim the oldest tasks. We use the task insertion timestamp as the score so the oldest task is at rank 0, next
-		// oldest is at rank 1 and so on. We subtract 1 because the indexes are inclusive.
-		if err := np.rdb.ZRemRangeByRank(ctx, key, 0, n-(*unclaimedTasksSetMaxSize)-1).Err(); err != nil {
-			log.CtxWarningf(ctx, "Error trimming unclaimed tasks: %s", err)
-		}
-	}
-
-	// Also trim any stale tasks from the set. The data is stored in score order so this is a cheap operation.
-	cutoff := time.Now().Add(-unclaimedTaskMaxAge).Unix()
-	if err := np.rdb.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(cutoff, 10)).Err(); err != nil {
-		log.CtxWarningf(ctx, "Error deleting old unclaimed tasks: %s", err)
-	}
-
 	return nil
 }
 
@@ -1377,6 +1371,12 @@ type SchedulerServer struct {
 	versionMu           sync.Mutex
 	newestVersion       *semver.Version
 	newestVersionExpiry time.Time
+
+	// Wakes up maintainUnclaimedTaskSets after a task is added to any pool's
+	// unclaimed task set. The buffer holds a pending wakeup, so that a task
+	// added while a pass is in progress still triggers another pass, and
+	// senders skip sending when a wakeup is already pending.
+	unclaimedTaskSetMaintenanceSignal chan struct{}
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -1457,6 +1457,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		leaseGracePeriod:                  options.LeaseGracePeriod,
 		detector:                          options.UpgradeDetector,
 		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
+		unclaimedTaskSetMaintenanceSignal: make(chan struct{}, 1),
 	}
 	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s, shutdownCtx.Done())
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
@@ -1480,6 +1481,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 			return status.DeadlineExceededError("timed out waiting for scheduler background work to finish")
 		}
 	})
+	s.goBackground(context.Background(), s.maintainUnclaimedTaskSets)
 	return s, nil
 }
 
@@ -2014,9 +2016,61 @@ func (s *SchedulerServer) getOrCreatePool(key nodePoolKey) *nodePool {
 	if ok {
 		return nodePool
 	}
-	nodePool = newNodePool(s.env, key)
+	nodePool = newNodePool(s.env, key, s.unclaimedTaskSetMaintenanceSignal)
 	s.pools[key] = nodePool
 	return nodePool
+}
+
+// maintainUnclaimedTaskSets trims the unclaimed task sets that have had tasks
+// added since the last pass, and refreshes their TTLs. It handles all pools in
+// a single loop so that each pass costs one pipelined Redis round trip, and
+// passes happen at most once per unclaimedTaskSetMaintenanceDelay.
+func (s *SchedulerServer) maintainUnclaimedTaskSets(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.unclaimedTaskSetMaintenanceSignal:
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.clock.After(unclaimedTaskSetMaintenanceDelay):
+		}
+		if err := s.maintainUnclaimedTaskSetsOnce(ctx); err != nil {
+			log.CtxWarningf(ctx, "Could not maintain unclaimed task sets: %s", err)
+		}
+	}
+}
+
+func (s *SchedulerServer) maintainUnclaimedTaskSetsOnce(ctx context.Context) error {
+	var keys []string
+	s.mu.RLock()
+	for _, np := range s.pools {
+		if np.unclaimedTaskSetNeedsMaintenance.Swap(false) {
+			keys = append(keys, np.key.redisUnclaimedTasksKey())
+		}
+	}
+	s.mu.RUnlock()
+	if len(keys) == 0 {
+		return nil
+	}
+
+	cutoff := strconv.FormatInt(time.Now().Add(-unclaimedTaskMaxAge).Unix(), 10)
+	pipe := s.rdb.Pipeline()
+	for _, key := range keys {
+		pipe.Expire(ctx, key, unclaimedTaskSetTTL)
+		// Remove stale tasks. Task scores are their insertion timestamps, and
+		// sorted sets are ordered by score, so this is cheap.
+		pipe.ZRemRangeByScore(ctx, key, "0", cutoff)
+		// Remove the oldest tasks beyond the max set size. A negative rank
+		// counts back from the newest task, so this removes everything except
+		// the newest unclaimedTasksSetMaxSize tasks, and nothing if the set is
+		// within the limit.
+		pipe.ZRemRangeByRank(ctx, key, 0, -(*unclaimedTasksSetMaxSize + 1))
+	}
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, nodePoolKey nodePoolKey, node *scpb.ExecutionNode) ([]*persistedTask, error) {
