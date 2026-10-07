@@ -21,10 +21,10 @@
 // The --diff flag previews buildifier and Gazelle changes without writing
 // them; other fixes (dep additions, update-repos) are skipped in diff mode.
 //
-// `bb fix` exits non-zero if buildifier or Gazelle fails (e.g. a BUILD file
-// doesn't parse), and with --diff, also if there are changes to apply. It
-// still runs Gazelle after a buildifier failure, and reports all failures at
-// the end.
+// `bb fix` exits non-zero if any step fails (e.g. a BUILD file doesn't parse,
+// Gazelle errors, or a dependency can't be added), and with --diff, also if
+// there are changes to apply. It still runs the remaining steps after a
+// failure, and reports all failures at the end.
 package fix
 
 import (
@@ -233,9 +233,13 @@ func walk(moduleOrWorkspaceFile string) error {
 	for l := range foundLanguages {
 		for _, d := range l.Deps() {
 			log.Debugf("Adding %s", d)
-			_, err := add.HandleAdd([]string{d})
+			result, err := add.Add(d)
 			if err != nil {
-				log.Debugf("Failed adding %s: %s", d, err)
+				errs = append(errs, fmt.Errorf("add %s: %w", d, err))
+				continue
+			}
+			if result.AlreadyPresent {
+				log.Debugf("%s already depends on %s", result.File, result.Module)
 			}
 		}
 		depFiles = l.ConsolidateDepFiles(depFiles)
@@ -247,10 +251,18 @@ func walk(moduleOrWorkspaceFile string) error {
 			errs = append(errs, runUpdateRepos(path, moduleOrWorkspaceFile))
 			for l := range foundLanguages {
 				if l.IsDepFile(path) {
-					l.RegisterDeps(path, moduleOrWorkspaceFile)
+					if err := l.RegisterDeps(path, moduleOrWorkspaceFile); err != nil {
+						errs = append(errs, fmt.Errorf("register deps from %s: %w", path, err))
+					}
 				}
 			}
 		}
+	}
+
+	// Format whatever was appended to the module/workspace file above, so
+	// that the next run doesn't find anything to change.
+	if len(foundLanguages) > 0 {
+		errs = append(errs, runBuildifier(moduleOrWorkspaceFile))
 	}
 
 	return joinErrors(errs)

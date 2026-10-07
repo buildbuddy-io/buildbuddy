@@ -9,6 +9,7 @@ import (
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/label"
 	"github.com/bazelbuild/bazel-gazelle/language"
+	"github.com/buildbuddy-io/buildbuddy/cli/bzlmod"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"golang.org/x/mod/modfile"
@@ -22,11 +23,8 @@ const (
 	goWorkFileName   = "go.work"
 	gazellePrefix    = "gazelle:prefix"
 
-	// TODO(siggisim): Make these configurable or infer them from the repo
-	defaultGoVersion         = "1.20"
-	defaultRulesGoVersion    = "0.36.0"
-	defaultGazelleVersion    = "0.26.0"
-	defaultRulesProtoVersion = "5.3.0-21.7"
+	// TODO(siggisim): Make this configurable or infer it from the repo
+	defaultGoVersion = "1.20"
 )
 
 type Golang struct {
@@ -46,11 +44,13 @@ func NewLanguage() language.Language {
 	}
 }
 
+// Deps returns registry.build paths without versions, so that `bb add` picks
+// the latest stable version of each.
 func (g *Golang) Deps() []string {
 	return []string{
-		"github/bazelbuild/rules_go@" + defaultRulesGoVersion,
-		"github/bazelbuild/bazel-gazelle@" + defaultGazelleVersion,
-		"~github/bazelbuild/rules_proto@" + defaultRulesProtoVersion, // Transitive
+		"github/bazel-contrib/rules_go",
+		"github/bazel-contrib/bazel-gazelle",
+		"~github/bazelbuild/rules_proto", // Transitive
 	}
 }
 
@@ -117,7 +117,7 @@ func appendToFile(fileName, contents string) error {
 }
 
 const goDepsSnippet = `
-go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps = use_extension("@%s//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:%s")
 
 use_repo(
@@ -125,34 +125,40 @@ use_repo(
 %s)
 `
 
-func (g *Golang) RegisterDeps(path string, modulePath string) {
-	moduleFileContents, err := os.ReadFile(modulePath)
+func (g *Golang) RegisterDeps(path string, modulePath string) error {
+	// go_deps is a module extension, so there's nothing to register in a
+	// WORKSPACE file.
+	if filepath.Base(modulePath) != workspace.ModuleFileName {
+		return nil
+	}
+	module, err := bzlmod.Load(filepath.Dir(modulePath))
 	if err != nil {
-		log.Warnf("error reading module file %q: %s", modulePath, err)
-		return
+		return fmt.Errorf("read %s: %w", modulePath, err)
+	}
+	// TODO(siggisim): merge with existing deps
+	if module.UsesExtension("//:extensions.bzl", "go_deps") {
+		return nil
 	}
 	goModContents, err := os.ReadFile(path)
 	if err != nil {
-		log.Warnf("error reading go.mod file %q: %s", path, err)
-		return
+		return err
+	}
+	mod, err := modfile.Parse(path, goModContents, nil)
+	if err != nil {
+		return err
 	}
 
-	// TODO(siggisim): merge with existing deps
-	if !strings.Contains(string(moduleFileContents), "go_deps") {
-		mod, err := modfile.Parse("go.mod", goModContents, nil)
-		if err != nil {
-			log.Warnf("error parsing go.mod file %q: %s", path, err)
-			return
+	imports := ""
+	for _, m := range mod.Require {
+		if m.Indirect {
+			continue
 		}
-
-		imports := ""
-		for _, m := range mod.Require {
-			if m.Indirect {
-				continue
-			}
-			imports = imports + `    "` + label.ImportPathToBazelRepoName(m.Mod.Path) + "\",\n"
-		}
-		appendToFile(modulePath, fmt.Sprintf(goDepsSnippet, path, imports))
+		imports = imports + `    "` + label.ImportPathToBazelRepoName(m.Mod.Path) + "\",\n"
 	}
-
+	// Refer to gazelle by whatever repo name the module gave it.
+	gazelleRepo, ok := module.BazelDepRepoName("gazelle")
+	if !ok {
+		gazelleRepo = "gazelle"
+	}
+	return appendToFile(modulePath, fmt.Sprintf(goDepsSnippet, gazelleRepo, path, imports))
 }

@@ -9,11 +9,13 @@ go_test(
         "fix_test.go",
     ],
     exec_properties = {
-        # Mirror cli/test/integration/cli: bb may reach the network during
-        # startup (e.g. for version checks). Tests themselves are network-free.
+        # bb may reach the network during startup (e.g. for version checks),
+        # and the Go project tests add rules_go and gazelle with `bb add`,
+        # which looks them up on registry.build and the BCR.
         "test.dockerNetwork": "bridge",
     },
     deps = [
+        "//cli/bzlmod",
         "//cli/testutil/testcli",
         "//server/testutil/quarantine",
         "//server/testutil/testfs",

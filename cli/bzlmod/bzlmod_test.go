@@ -43,6 +43,12 @@ include("//deps:more.MODULE.bazel")
 	_, ok = m.BazelDep("rules_python")
 	require.False(t, ok)
 
+	repoName, ok := m.BazelDepRepoName("gazelle")
+	require.True(t, ok)
+	require.Equal(t, "bazel_gazelle", repoName)
+	repoName, ok = m.BazelDepRepoName("rules_shell")
+	require.True(t, ok)
+	require.Equal(t, "rules_shell", repoName)
 }
 
 func TestLoad_MissingInclude(t *testing.T) {
@@ -64,6 +70,21 @@ func TestLoad_RejectsLabelsBazelRejects(t *testing.T) {
 		_, err := bzlmod.Load(ws)
 		require.Error(t, err, "label %q", label)
 	}
+}
+
+func TestUsesExtension(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"MODULE.bazel": `include("//deps:go_deps.MODULE.bazel")`,
+		"deps/go_deps.MODULE.bazel": `
+go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//:go.mod")
+`,
+	})
+	m, err := bzlmod.Load(ws)
+	require.NoError(t, err)
+	require.True(t, m.UsesExtension("//:extensions.bzl", "go_deps"))
+	require.False(t, m.UsesExtension("//:extensions.bzl", "go_sdk"))
 }
 
 func TestParseAndSetBazelDepVersion(t *testing.T) {

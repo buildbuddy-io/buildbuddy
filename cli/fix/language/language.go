@@ -10,5 +10,5 @@ type Language interface {
 	// Gives the language an opportunity to consolidate multiple dep files before update-repos is called.
 	ConsolidateDepFiles(deps map[string][]string) map[string][]string
 	// Allows the language to register any dependencies in the module file.
-	RegisterDeps(path string, modulePath string)
+	RegisterDeps(path string, modulePath string) error
 }

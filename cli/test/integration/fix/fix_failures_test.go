@@ -1,10 +1,12 @@
 package fix_test
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/bzlmod"
 	"github.com/stretchr/testify/require"
 )
 
@@ -81,4 +83,85 @@ filegroup(
 	out, err := runFix(t, ws)
 	require.Error(t, err, "output: %s", out)
 	require.Contains(t, out, `multiple rules have the name "a"`)
+}
+
+// goProject is a minimal Go module with no Bazel setup.
+var goProject = map[string]string{
+	"go.mod": "module example.com/hello\n\ngo 1.24\n",
+	"main.go": `package main
+
+import "fmt"
+
+func main() { fmt.Println("hello") }
+`,
+}
+
+func TestFix_BootstrapsGoProject(t *testing.T) {
+	// Uses the network: `bb fix` adds rules_go and gazelle with `bb add`.
+	ws := fixWorkspace(t, goProject)
+
+	out, err := runFix(t, ws)
+	require.NoError(t, err, "output: %s", out)
+
+	m, err := bzlmod.Load(ws)
+	require.NoError(t, err)
+	for _, dep := range []string{"rules_go", "gazelle"} {
+		version, ok := m.BazelDep(dep)
+		require.True(t, ok, "MODULE.bazel should depend on %s", dep)
+		require.NotContains(t, version, "-", "should not pick a pre-release of %s", dep)
+	}
+	require.True(t, m.UsesExtension("//:extensions.bzl", "go_deps"))
+	require.FileExists(t, filepath.Join(ws, "BUILD.bazel"), "gazelle should generate a BUILD file")
+
+	// Running again changes nothing (in particular, doesn't add the deps
+	// again).
+	before := snapshot(t, ws)
+	out, err = runFix(t, ws)
+	require.NoError(t, err, "second run output: %s", out)
+	require.Equal(t, before, snapshot(t, ws))
+}
+
+func TestFix_RegistersGoDepsWithGazellesRepoName(t *testing.T) {
+	// Uses the network. gazelle is already a dep, under a repo_name, but
+	// there's no go_deps yet.
+	contents := map[string]string{
+		"MODULE.bazel": `module(name = "x")
+
+bazel_dep(name = "rules_go", version = "0.50.1", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "gazelle", version = "0.40.0", repo_name = "bazel_gazelle")
+`,
+	}
+	maps.Copy(contents, goProject)
+	ws := fixWorkspace(t, contents)
+
+	out, err := runFix(t, ws)
+	require.NoError(t, err, "output: %s", out)
+	b, err := os.ReadFile(filepath.Join(ws, "MODULE.bazel"))
+	require.NoError(t, err)
+	require.Contains(t, string(b), `use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")`)
+}
+
+func TestFix_LeavesIncludedModuleDepsAlone(t *testing.T) {
+	// Uses the network. Like the BuildBuddy repos: the bazel_deps and go_deps
+	// live in include()d files that MODULE.bazel doesn't mention by content.
+	contents := map[string]string{
+		"MODULE.bazel": "module(name = \"x\")\n\ninclude(\"//deps:deps.MODULE.bazel\")\n",
+		"deps/BUILD":   "",
+		"deps/deps.MODULE.bazel": `bazel_dep(name = "rules_go", version = "0.50.1", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "gazelle", version = "0.40.0", repo_name = "bazel_gazelle")
+
+deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
+deps.from_file(go_mod = "//:go.mod")
+`,
+	}
+	maps.Copy(contents, goProject)
+	ws := fixWorkspace(t, contents)
+
+	out, err := runFix(t, ws)
+	require.NoError(t, err, "output: %s", out)
+	for _, f := range []string{"MODULE.bazel", "deps/deps.MODULE.bazel"} {
+		b, err := os.ReadFile(filepath.Join(ws, f))
+		require.NoError(t, err)
+		require.Equal(t, contents[f], string(b), "%s should be unchanged", f)
+	}
 }
