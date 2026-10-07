@@ -401,7 +401,11 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 
 	// The scheduler should send the experiment's value with the leased task,
 	// and leave it to the executor to apply the value to the task's platform.
-	gotFlags := lease.task.GetExperimentFlags()
+	// Other execution experiments are also sent with their default values, so
+	// only look at persistent_volumes.
+	gotFlags := slices.DeleteFunc(lease.task.GetExperimentFlags(), func(f *expb.EvaluatedFlag) bool {
+		return f.GetName() != "executor.persistent_volumes"
+	})
 	require.Empty(t, cmp.Diff([]*expb.EvaluatedFlag{
 		{Name: "executor.persistent_volumes", Variant: "tmp-cache", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
 	}, gotFlags, protocmp.Transform()))
@@ -453,7 +457,11 @@ func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
 			lease := fe.Claim(taskID)
 			defer lease.Finalize()
 
-			gotFlags := lease.task.GetExperimentFlags()
+			// Other execution experiments are also sent with their default
+			// values, so only look at persistent_volumes.
+			gotFlags := slices.DeleteFunc(lease.task.GetExperimentFlags(), func(f *expb.EvaluatedFlag) bool {
+				return f.GetName() != "executor.persistent_volumes"
+			})
 			require.Empty(t, cmp.Diff(tc.wantFlags, gotFlags, protocmp.Transform()))
 		})
 	}

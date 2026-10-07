@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -25,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -651,6 +653,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 
 	execTask := st.ExecutionTask
 	ctx = q.propagateExecutionTaskValuesToContext(ctx, execTask)
+	applyTestCPUWeightMultiplier(ctx, st)
 	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
 		ctx = log.EnrichContext(ctx, "group_id", u.GetGroupID())
 	}
@@ -1210,4 +1213,32 @@ func (r *resourceCounts) AllGTE(other *resourceCounts) bool {
 		}
 	}
 	return true
+}
+
+// applyTestCPUWeightMultiplier scales the cgroup CPU weight of test actions by
+// the executor.test_cpu_weight_multiplier experiment. When CPU is contended,
+// most actions just run slower, but tests can fail by exceeding their timeout
+// or deadlines that they assert on. A higher weight gives tests a larger share
+// of contended CPU.
+func applyTestCPUWeightMultiplier(ctx context.Context, st *repb.ScheduledTask) {
+	weight := st.GetSchedulingMetadata().GetCgroupSettings().GetCpuWeight()
+	if weight == 0 {
+		// The weight is unset, so the task keeps the cgroup default.
+		return
+	}
+	// Bazel sets TEST_SIZE for test actions. The task sizer uses the same
+	// check to give tests a larger default size.
+	if _, ok := rexec.LookupEnv(st.GetExecutionTask().GetCommand().GetEnvironmentVariables(), "TEST_SIZE"); !ok {
+		return
+	}
+	multiplier := execution_experiments.TestCPUWeightMultiplier(ctx)
+	if multiplier <= 0 || multiplier == 1 {
+		return
+	}
+	// The scheduling metadata is shared with the task reservation, so modify a
+	// copy.
+	md := st.GetSchedulingMetadata().CloneVT()
+	// cgroup2 only accepts cpu.weight values from 1 to 10000.
+	md.CgroupSettings.CpuWeight = new(int64(min(max(math.Round(float64(weight)*multiplier), 1), 10_000)))
+	st.SchedulingMetadata = md
 }

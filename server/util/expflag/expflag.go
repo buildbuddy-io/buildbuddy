@@ -56,9 +56,15 @@
 //
 // # Executors
 //
-// This package is not yet ready for use with executors.
-// For now, only use expflag on the apps and cache proxies.
-// TODO: update documentation here once executors support expflag.
+// Executors don't evaluate experiments themselves. Instead, the scheduler
+// evaluates the experiments declared in the execution_experiments package
+// (enterprise/server/remote_execution/execution_experiments) when an executor
+// leases a task, and sends the values with the task. Declare experiments that
+// executors read in that package, and add them to its Evaluate function.
+//
+// Executors only use the values sent with the task when
+// executor.scheduler_controlled_experiments_enabled is set. Otherwise, they
+// use their own configured defaults.
 //
 // # Options and renamed flags
 //
