@@ -28,7 +28,6 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:color",
-        "//app/util:diff",
         "//app/util:proto",
         "//enterprise/app/filter",
         "//enterprise/app/filter:filter_util",

@@ -140,8 +140,14 @@ export default class SingleActionChartComponent extends React.Component<Props> {
     }
 
     const scatterData = new Map<number, number>();
+    // TODO(jdhollen): this obliterates points with matching start times, and
+    // relies on iteration order to make sure that we pick the same point for
+    // the scatter and the tooltip. Recharts would accept multiple data points,
+    // so maybe we can do something better here some day.
     for (const e of this.props.timeline.executionSamples) {
-      scatterData.set(+e.startTimeUsec, this.props.getScatterValue(e));
+      if (!scatterData.has(+e.startTimeUsec)) {
+        scatterData.set(+e.startTimeUsec, this.props.getScatterValue(e));
+      }
     }
 
     // Every series reads its values from the chart's data entries, so there

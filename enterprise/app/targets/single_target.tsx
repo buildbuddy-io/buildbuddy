@@ -26,7 +26,6 @@ import * as format from "../../../app/format/format";
 import router, { Path } from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { getChartColor } from "../../../app/util/color";
-import { computeDiffs } from "../../../app/util/diff";
 import * as proto from "../../../app/util/proto";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
@@ -43,15 +42,6 @@ const ALL_VALUES = "all";
 
 const OS_ARCH_SEPARATOR = "&&";
 
-/**
- * Formats an output path for display.
- *
- * By default (no `comparePath`), the full path is returned unchanged. When a
- * `comparePath` is supplied, the path is abbreviated relative to it by diffing
- * the two: parts unique to `outputPath` are kept, shared directory segments
- * collapse to "...", and the file name is always shown in full. For example,
- * abbreviating "output/path/b.o" against "output/path/a.o" yields ".../b.o".
- */
 function formatPlatform(timeline: execution_stats.ExecutionTimeline): string {
   return [timeline.os, timeline.arch].filter(Boolean).join("/") || "Unknown platform";
 }
@@ -76,15 +66,6 @@ interface Props {
 interface State {
   loading: boolean;
   timeline?: execution_stats.GetExecutionTimelineResponse;
-  // Selected value for each filter dimension, keyed by dimension key. A missing
-  // entry or `ALL_VALUES` means the dimension is not being filtered.
-  filters: Record<string, string>;
-  // The table column currently used for sorting, and whether it's ascending.
-  sortColumn: string;
-  sortAscending: boolean;
-  // Once the user clicks "Show all", we show every matching action for the rest
-  // of their time in this view, even as the filter set changes.
-  showAllRows: boolean;
   filterText: string;
   mnemonic?: string;
   os?: string;
@@ -97,10 +78,6 @@ const OUTPUT_PATH_COLUMN = "output_path";
 export default class SingleTargetComponent extends React.Component<Props, State> {
   state: State = {
     loading: false,
-    filters: {},
-    sortColumn: OUTPUT_PATH_COLUMN,
-    sortAscending: true,
-    showAllRows: false,
     filterText: "",
   };
 
@@ -163,7 +140,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
 
     const target = this.getTarget();
     if (!target) {
-      this.setState({ loading: false, timeline: undefined, filters: {} });
+      this.setState({ loading: false, timeline: undefined });
       return;
     }
 
@@ -191,7 +168,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
       query,
     });
 
-    this.setState({ loading: true, timeline: undefined, filters: {} });
+    this.setState({ loading: true, timeline: undefined });
     this.pendingTimelineRequest = rpcService.service
       .getExecutionTimeline(request)
       .then((response) => {
@@ -386,10 +363,6 @@ export default class SingleTargetComponent extends React.Component<Props, State>
 
   getOutputPath() {
     return this.props.search.get("output_path");
-  }
-
-  isActionPage() {
-    return Boolean(this.getOutputPath());
   }
 
   // Summarizes every remote action of the target that matched the filters.

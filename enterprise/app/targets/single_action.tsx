@@ -143,7 +143,7 @@ function renderTimingBar(e: execution_stats.ExecutionTimelineEntry, d: DerivedSu
         {segments.map((s) => (
           <div key={s.phase.stat.name} className={`timing-segment ${s.phase.className}`} style={{ flexGrow: s.usec }} />
         ))}
-        <div className="timing-segment" style={{ flexGrow: d.longestExecutionUsec - totalUsec }}></div>
+        <div className="timing-segment" style={{ flexGrow: Math.max(0, d.longestExecutionUsec - totalUsec) }}></div>
       </div>
     </Tooltip>
   );

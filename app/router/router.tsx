@@ -402,7 +402,6 @@ class Router {
     };
   }
 
-  /** Returns the path of the page comparing action `a` against action `b`. */
   navigateToCompareActionsPath(
     invocationIdA: string,
     actionDigestA: string,
