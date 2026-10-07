@@ -46,6 +46,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 
+	gazelleUpdate "github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/update"
 	buildifier "github.com/bazel-contrib/buildtools/v10/buildifier"
 	gazelle "github.com/bazelbuild/bazel-gazelle/cmd/gazelle"
 )
@@ -147,13 +148,23 @@ func runBuiltinGazelle(repoRoot, baseFile string) error {
 		os.Args = append(os.Args, "-mode=diff")
 	}
 	log.Debugf("Calling gazelle with args: %+v", os.Args)
-	gazelle.Run()
+	return gazelleError(gazelle.Run())
+}
+
+// gazelleError converts an error from the embedded Gazelle into one to report.
+func gazelleError(err error) error {
+	if errors.Is(err, gazelleUpdate.ErrDiff) {
+		return errDiff
+	}
+	if err != nil {
+		return fmt.Errorf("gazelle: %w", err)
+	}
 	return nil
 }
 
 // walk formats build files and, outside of --diff mode, adds and registers the
-// dependencies of the languages used in the repo. It returns the errors from
-// formatting.
+// dependencies of the languages used in the repo. It returns all the errors it
+// encountered.
 func walk(moduleOrWorkspaceFile string) error {
 	var errs []error
 	languages := getLanguages()
@@ -233,7 +244,7 @@ func walk(moduleOrWorkspaceFile string) error {
 	// Run update-repos on any dependency files we found.
 	for _, paths := range depFiles {
 		for _, path := range paths {
-			runUpdateRepos(path, moduleOrWorkspaceFile)
+			errs = append(errs, runUpdateRepos(path, moduleOrWorkspaceFile))
 			for l := range foundLanguages {
 				if l.IsDepFile(path) {
 					l.RegisterDeps(path, moduleOrWorkspaceFile)
@@ -312,10 +323,10 @@ func runBuildifier(path string) error {
 	}
 }
 
-func runUpdateRepos(path string, moduleOrWorkspaceFile string) {
+func runUpdateRepos(path string, moduleOrWorkspaceFile string) error {
 	// Don't run update-repos on MODULE.bazel files.
 	if moduleOrWorkspaceFile == workspace.ModuleFileName {
-		return
+		return nil
 	}
 
 	originalArgs := os.Args
@@ -324,5 +335,5 @@ func runUpdateRepos(path string, moduleOrWorkspaceFile string) {
 	}()
 	os.Args = []string{"gazelle", "update-repos", "-prune", "--from_file=" + path, fmt.Sprintf("--to_macro=deps.bzl%%install_%s_dependencies", nonAlphanumericRegex.ReplaceAllString(path, "_"))}
 	log.Debugf("Calling gazelle with args: %+v", os.Args)
-	gazelle.Run()
+	return gazelleError(gazelle.Run())
 }

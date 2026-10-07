@@ -17,6 +17,7 @@ go_library(
         "//cli/translate",
         "//cli/workspace",
         "//server/util/flag",
+        "@bazel_gazelle//v2/cmd/gazelle/update",
         "@com_github_bazel_contrib_buildtools_v10//buildifier:buildifier_lib",
         "@com_github_bazel_contrib_buildtools_v10//edit",
     ],

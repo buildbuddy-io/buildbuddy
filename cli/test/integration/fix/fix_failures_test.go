@@ -28,6 +28,22 @@ func TestFix_FailsOnUnparseableBuildFile(t *testing.T) {
 	require.NotEqual(t, poorlyFormatted, string(b), "BUILD.bazel should still have been reformatted")
 }
 
+func TestFix_KeepsGoingWhenBuildifierConfigIsBad(t *testing.T) {
+	ws := fixWorkspace(t, map[string]string{
+		"MODULE.bazel":     "module(name = \"x\")\n",
+		"BUILD.bazel":      poorlyFormatted,
+		"defs.bzl":         "def  f(): pass\n",
+		".buildifier.json": "{not json",
+	})
+
+	out, err := runFix(t, ws)
+	require.Error(t, err, "output: %s", out)
+	// Buildifier fails for every file, rather than the first failure ending
+	// `bb fix`.
+	require.Contains(t, out, "buildifier BUILD.bazel")
+	require.Contains(t, out, "buildifier defs.bzl")
+}
+
 func TestFix_DiffExitCode(t *testing.T) {
 	ws := fixWorkspace(t, map[string]string{
 		"MODULE.bazel": "module(name = \"x\")\n",
