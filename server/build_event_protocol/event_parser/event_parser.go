@@ -26,7 +26,7 @@ const (
 )
 
 var (
-	tagsEnabled = flag.Bool("app.tags_enabled", false, "Enable setting tags on invocations via build_metadata")
+	tagsEnabled = flag.Bool("app.tags_enabled", true, "Enable setting tags on invocations via build_metadata")
 )
 
 const (
