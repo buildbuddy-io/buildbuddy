@@ -183,12 +183,9 @@ func TestES256Auth_RemoteExecution(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
 	proxy := rbe.AddCacheProxy()
-	conn, err := grpc_client.DialSimple(
-		fmt.Sprintf("grpc://localhost:%d", proxy.Port))
-	require.NoError(t, err)
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
 		Name:      "executor",
-		CacheConn: conn,
+		CacheConn: proxy.Conn(),
 	})
 
 	cmd := rbe.Execute(&repb.Command{

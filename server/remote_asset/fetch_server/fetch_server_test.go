@@ -61,8 +61,12 @@ func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *gr
 	require.NoError(t, err)
 	err = buildbuddy_server.Register(env)
 	require.NoError(t, err)
-	err = content_addressable_storage_server.Register(env)
+	// Register only the CAS server: content_addressable_storage_server.Register
+	// also dials a CAS client at the app's gRPC port, which nothing listens on
+	// here. The CAS client is set to the local server below.
+	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	require.NoError(t, err)
+	env.SetCASServer(casServer)
 	err = cache_server.Register(env)
 	require.NoError(t, err)
 
@@ -1395,9 +1399,9 @@ func runRemoteCacheServers(t testing.TB, ctx context.Context, localEnv *testenv.
 	if err := buildbuddy_server.Register(remoteEnv); err != nil {
 		t.Fatal(err)
 	}
-	if err := content_addressable_storage_server.Register(remoteEnv); err != nil {
-		t.Fatal(err)
-	}
+	remoteCASServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+	require.NoError(t, err)
+	remoteEnv.SetCASServer(remoteCASServer)
 
 	remoteGRPCServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
 	bspb.RegisterByteStreamServer(remoteGRPCServer, remoteEnv.GetByteStreamServer())

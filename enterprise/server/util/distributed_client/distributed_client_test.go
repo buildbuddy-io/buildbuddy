@@ -89,6 +89,12 @@ var (
 	emptyUserMap = testauth.TestUsers()
 )
 
+// stopProxy stops the proxy's server and closes its connections to peers.
+func stopProxy(c *distributed_client.Proxy) {
+	c.Shutdown(context.Background())
+	c.CloseInactiveClients(set.From[string]())
+}
+
 func getTestEnv(t testing.TB, users map[string]interfaces.UserInfo) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
@@ -152,6 +158,7 @@ func TestReaderMaxOffset(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -224,6 +231,7 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, &sc, peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -276,6 +284,7 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, &sc, peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -325,6 +334,7 @@ func TestReader(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -382,6 +392,7 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -416,6 +427,7 @@ func TestWriter(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -483,6 +495,7 @@ func TestWriteAlreadyExists(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, &sc, peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -561,6 +574,7 @@ func TestReadWrite_Compressed(t *testing.T) {
 		peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 		te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
 		c := distributed_client.New(te, te.GetCache(), peer)
+		t.Cleanup(func() { stopProxy(c) })
 		if err := c.StartListening(); err != nil {
 			t.Fatalf("Error setting up distributed_client: %s", err)
 		}
@@ -613,6 +627,7 @@ func TestContains(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -685,6 +700,7 @@ func TestOversizeBlobs(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -760,6 +776,7 @@ func TestFindMissing(t *testing.T) {
 
 	peer := net.JoinHostPort("localhost", fmt.Sprintf("%d", testport.FindFree(t)))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error starting cache proxy: %s", err)
 	}
@@ -831,6 +848,7 @@ func TestGetMulti(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -894,6 +912,7 @@ func TestEmptyRead(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -938,6 +957,7 @@ func TestDelete(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -973,6 +993,7 @@ func TestMetadata(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -1012,6 +1033,7 @@ func TestGetWithMetadata(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
 
@@ -1040,6 +1062,7 @@ func TestRemoteGetWithMetadata(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
 
@@ -1072,6 +1095,7 @@ func TestRemoteGetWithMetadata_NotFound(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
 
@@ -1110,6 +1134,7 @@ func BenchmarkWrite(b *testing.B) {
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	b.Cleanup(func() { stopProxy(c) })
 	err = c.StartListening()
 	require.NoError(b, err)
 	waitUntilServerIsAlive(peer)
@@ -1172,6 +1197,7 @@ func TestWriteTimeout(t *testing.T) {
 	waitUntilServerIsAlive(hangingPeer)
 	localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), localPeer)
+	t.Cleanup(func() { stopProxy(c) })
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(localPeer)
 
@@ -1212,6 +1238,7 @@ func TestCommitTimeout(t *testing.T) {
 	waitUntilServerIsAlive(hangingPeer)
 	localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), localPeer)
+	t.Cleanup(func() { stopProxy(c) })
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(localPeer)
 
@@ -1245,6 +1272,7 @@ func BenchmarkRead(b *testing.B) {
 			te := getTestEnv(b, emptyUserMap)
 			peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
 			c := distributed_client.New(te, te.GetCache(), peer)
+			b.Cleanup(func() { stopProxy(c) })
 
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(b, err)
@@ -1291,6 +1319,7 @@ func setupCompressedReadProxy(t *testing.T, enabled bool) (*testenv.TestEnv, *di
 	te.SetCache(spy)
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, te.GetCache(), peer)
+	t.Cleanup(func() { stopProxy(c) })
 	c.SetEnableCompressedReads(enabled)
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
@@ -1522,6 +1551,7 @@ func newReferenceTestProxy(t *testing.T, te *testenv.TestEnv, blobs map[string][
 	localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	cache := &fakeReferenceCache{Cache: te.GetCache(), blobs: blobs}
 	c := distributed_client.New(te, cache, localPeer)
+	t.Cleanup(func() { stopProxy(c) })
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(localPeer)
 	return c, cache
@@ -1677,6 +1707,7 @@ func TestRemoteGetMultiReference(t *testing.T) {
 		peer := startGetMultiServer(t, inlineKV, refKV(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
 		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 		c := distributed_client.New(te, te.GetCache(), localPeer)
+		t.Cleanup(func() { stopProxy(c) })
 		require.NoError(t, c.StartListening())
 		waitUntilServerIsAlive(localPeer)
 		before := getMultiResponseCount(t, "reference", "FailedPrecondition")
@@ -1689,6 +1720,7 @@ func TestRemoteGetMultiReference(t *testing.T) {
 		peer := startGetMultiServer(t, inlineKV)
 		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 		c := distributed_client.New(te, te.GetCache(), localPeer)
+		t.Cleanup(func() { stopProxy(c) })
 		require.NoError(t, c.StartListening())
 		waitUntilServerIsAlive(localPeer)
 		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{inlineRN})
@@ -1806,6 +1838,7 @@ func TestRemoteReadReference(t *testing.T) {
 		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY))
 		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 		c := distributed_client.New(te, te.GetCache(), localPeer)
+		t.Cleanup(func() { stopProxy(c) })
 		require.NoError(t, c.StartListening())
 		waitUntilServerIsAlive(localPeer)
 		_, err := c.RemoteReader(ctx, peer, rn, 0, 0)
@@ -1901,6 +1934,7 @@ func TestRemoteGetWithMetadataReference(t *testing.T) {
 		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY))
 		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 		c := distributed_client.New(te, te.GetCache(), localPeer)
+		t.Cleanup(func() { stopProxy(c) })
 		require.NoError(t, c.StartListening())
 		waitUntilServerIsAlive(localPeer)
 		_, _, err := c.RemoteGetWithMetadata(ctx, peer, rn)
@@ -2077,6 +2111,7 @@ func TestReadReferenceExperiments(t *testing.T) {
 	}
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, cache, peer)
+	t.Cleanup(func() { stopProxy(c) })
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
 	require.NoError(t, te.GetCache().Set(ctx, rn, buf))
@@ -2152,6 +2187,7 @@ func TestGetWithMetadataReferenceExperiment(t *testing.T) {
 	}
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, cache, peer)
+	t.Cleanup(func() { stopProxy(c) })
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
 	require.NoError(t, te.GetCache().Set(ctx, rn, buf))
@@ -2233,6 +2269,7 @@ func TestGetMultiReferenceExperiment(t *testing.T) {
 	}
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, cache, peer)
+	t.Cleanup(func() { stopProxy(c) })
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
 	require.NoError(t, te.GetCache().Set(ctx, rn, buf))
@@ -2298,6 +2335,7 @@ func TestWriteReferenceAccept(t *testing.T) {
 	cache := &serverReferenceCache{Cache: te.GetCache()}
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	c := distributed_client.New(te, cache, peer)
+	t.Cleanup(func() { stopProxy(c) })
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
 
@@ -2437,6 +2475,7 @@ func TestWriteReferenceAccept(t *testing.T) {
 	t.Run("cache that cannot accept references is rejected", func(t *testing.T) {
 		plainPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 		plain := distributed_client.New(te, te.GetCache(), plainPeer)
+		t.Cleanup(func() { stopProxy(plain) })
 		require.NoError(t, plain.StartListening())
 		waitUntilServerIsAlive(plainPeer)
 		_, err := writeRawRequests(t, plainPeer, []*dcpb.WriteRequest{{
@@ -2472,12 +2511,14 @@ func TestRemoteReferenceWriter(t *testing.T) {
 		cache := &serverReferenceCache{Cache: te.GetCache()}
 		peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 		c := distributed_client.New(te, cache, peer)
+		t.Cleanup(func() { stopProxy(c) })
 		require.NoError(t, c.StartListening())
 		waitUntilServerIsAlive(peer)
 		return peer, cache, c
 	}
 	clientAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	client := distributed_client.New(te, te.GetCache(), clientAddr)
+	t.Cleanup(func() { stopProxy(client) })
 	require.NoError(t, client.StartListening())
 	waitUntilServerIsAlive(clientAddr)
 
@@ -2622,13 +2663,16 @@ func TestCloseInactiveClients(t *testing.T) {
 	// Two peers, plus a local proxy that holds client pools to them.
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	p1 := distributed_client.New(te, te.GetCache(), peer1)
+	t.Cleanup(func() { stopProxy(p1) })
 	require.NoError(t, p1.StartListening())
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	p2 := distributed_client.New(te, te.GetCache(), peer2)
+	t.Cleanup(func() { stopProxy(p2) })
 	require.NoError(t, p2.StartListening())
 	waitUntilServerIsAlive(peer1)
 	waitUntilServerIsAlive(peer2)
 	local := distributed_client.New(te, te.GetCache(), fmt.Sprintf("localhost:%d", testport.FindFree(t)))
+	t.Cleanup(func() { stopProxy(local) })
 
 	// The gauge's target label is the dial target, which prefixes the peer.
 	target1 := "grpc://" + peer1
