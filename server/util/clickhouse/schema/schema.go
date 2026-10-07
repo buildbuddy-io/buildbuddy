@@ -312,7 +312,13 @@ type Execution struct {
 	// enabled.
 	BuildrootDiskUsageBytes int64 `gorm:"codec:T64,ZSTD(1)"`
 
+	// Deprecated: use ExperimentVariants instead.
+	//
+	// TODO(bduffany): Drop this column after migrating executors to use expflag
 	Experiments []string `gorm:"type:Array(LowCardinality(String))"`
+
+	// Maps experiment flag names to the variant selected for the execution.
+	ExperimentVariants map[string]string `gorm:"type:Map(LowCardinality(String), LowCardinality(String))"`
 
 	// Long string fields
 	OutputPath     string `gorm:"codec:ZSTD(1)"`
@@ -434,6 +440,7 @@ func (e *Execution) AdditionalFields() []string {
 		"BuildrootDiskUsageBytes",
 		"ExecutorHostname",
 		"Experiments",
+		"ExperimentVariants",
 		"ClientIP",
 	}
 }

@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:experiments_go_proto",
         "//proto:group_go_proto",
         "//server/interfaces",
         "//server/real_environment",
