@@ -3,6 +3,8 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["repo_highest_version.sh"])
+
 py_binary(
     name = "check_release_assets_uploaded",
     srcs = ["check_release_assets_uploaded.py"],
