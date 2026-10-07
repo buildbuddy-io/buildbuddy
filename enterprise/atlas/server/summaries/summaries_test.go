@@ -230,9 +230,12 @@ func TestValues(t *testing.T) {
 	cache.Health = HealthBad
 	pods.Put(cache)
 	ix.NewStore(cmRes).Put(cmEntry("app-config", "prod"))
-	values := func(field, key, prefix string, limit int) []string {
-		vs, err := ix.GetFilterValues(field, key, prefix, limit)
+	must := func(vs []FilterValue, err error) []FilterValue {
 		require.NoError(t, err)
+		return vs
+	}
+	values := func(field, key, prefix string, limit int) []string {
+		vs := must(ix.GetFilterValues(field, key, prefix, limit))
 		var out []string
 		for _, v := range vs {
 			out = append(out, v.Value)
@@ -251,11 +254,17 @@ func TestValues(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 3, vs[0].Count)
 
-	// Label keys, or one label's values, in the cluster's spelling however
-	// the key was typed.
+	// Label keys, or one label's values. Keys fold case, as the query does,
+	// so a key spelled two ways lists every value of both; values keep their
+	// spelling.
+	odd := podEntry("odd-0", "staging")
+	odd.Labels = map[string]string{"App": "Web"}
+	pods.Put(odd)
+	ix.cat = nil // past the catalog's few seconds
 	require.Equal(t, []string{"app", "app.kubernetes.io/managed-by"}, values("label", "", "ap", 0))
-	require.Equal(t, []string{"web", "cache"}, values("label", "app", "", 0))
-	require.Equal(t, []string{"web"}, values("label", "APP", "W", 0))
+	require.Equal(t, 4, must(ix.GetFilterValues("label", "", "app", 0))[0].Count, "all four pods count for app")
+	require.Equal(t, []string{"web", "Web", "cache"}, values("label", "app", "", 0))
+	require.Equal(t, []string{"web", "Web"}, values("label", "APP", "W", 0))
 	require.Equal(t, []string{"Helm"}, values("label", "app.kubernetes.io/managed-by", "h", 0))
 	require.Empty(t, values("label", "nosuch", "", 0))
 
@@ -268,7 +277,7 @@ func TestValues(t *testing.T) {
 	pods.Put(podEntry("web-3", "qa"))
 	require.Equal(t, []string{"prod", "staging"}, values("ns", "", "", 0), "still the cached catalog")
 	ix.cat = nil
-	require.Equal(t, []string{"prod", "qa", "staging"}, values("ns", "", "", 0))
+	require.Equal(t, []string{"prod", "staging", "qa"}, values("ns", "", "", 0), "staging now has two pods")
 }
 
 func TestSelectorMatches(t *testing.T) {

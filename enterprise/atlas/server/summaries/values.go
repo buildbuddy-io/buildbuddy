@@ -57,7 +57,7 @@ func (ix *Index) GetFilterValues(field, key, prefix string, limit int) ([]Filter
 		if key == "" {
 			counts = c.labelKeys
 		} else {
-			counts = c.labelValues[c.labelKey(key)]
+			counts = c.labelValues[strings.ToLower(key)]
 		}
 	default:
 		return nil, fmt.Errorf("unknown filter %q", field)
@@ -119,6 +119,7 @@ func (ix *Index) catalog() *catalog {
 			}
 			c.health[cmp.Or(string(e.Health), "unknown")]++
 			for k, v := range e.Labels {
+				k = strings.ToLower(k)
 				c.labelKeys[k]++
 				vals := c.labelValues[k]
 				if vals == nil {
@@ -131,14 +132,4 @@ func (ix *Index) catalog() *catalog {
 	}
 	ix.cat = c
 	return c
-}
-
-// labelKey returns the key's own spelling for one typed in any case.
-func (c *catalog) labelKey(typed string) string {
-	for k := range c.labelKeys {
-		if strings.EqualFold(k, typed) {
-			return k
-		}
-	}
-	return ""
 }
