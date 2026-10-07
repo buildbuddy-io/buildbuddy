@@ -22,8 +22,10 @@ interface Props {
   domain: [Date, Date];
 }
 
-// The user's mouse pointer must be at least this close to a scatter point
-// before we'll consider showing it as a tooltip.
+/**
+ * The user's mouse pointer must be at least this close to a scatter point
+ * before we'll consider showing it as a tooltip.
+ */
 const SCATTER_TOOLTIP_RADIUS_PX = 15;
 
 const LOWER_QUANTILE = 10;
@@ -36,9 +38,11 @@ const UPPER_QUANTILE = 90;
  * (sampled or otherwise) shown in a scatter plot.
  */
 export default class SingleActionChartComponent extends React.Component<Props> {
-  // Finds the time bucket that contains a given timestamp.  When we are showing
-  // a tooltip for a single scatter plot point, we use this to find and show the
-  // corresponding aggregate statistics of the bucket that the point belongs to.
+  /**
+   * Finds the time bucket that contains a given timestamp.  When we are showing
+   * a tooltip for a single scatter plot point, we use this to find and show the
+   * corresponding aggregate statistics of the bucket that the point belongs to.
+   */
   private findBucket(timeUsec: number | undefined): execution_stats.AggregatedExecutionTimelineEntry | undefined {
     if (timeUsec === undefined) {
       return undefined;

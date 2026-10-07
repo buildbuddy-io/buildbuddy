@@ -29,9 +29,11 @@ interface State {
   hoveredTimeline?: string;
 }
 
-// The number of actions shown in the legend table on a single page.  The legend
-// is paginated so that the user can keep the chart on the screen while going
-// through the legend.
+/**
+ * The number of actions shown in the legend table on a single page.  The legend
+ * is paginated so that the user can keep the chart on the screen while going
+ * through the legend.
+ */
 const LEGEND_PAGE_SIZE = 5;
 
 export default class TargetChartComponent extends React.Component<Props, State> {

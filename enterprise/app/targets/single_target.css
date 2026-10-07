@@ -1,3 +1,11 @@
+.single-target {
+  --color-timing-execution: var(--color-green-600);
+  --color-timing-input-download: var(--color-blue-600);
+  --color-timing-output-upload: var(--color-purple-600);
+  --color-timing-runner-setup: var(--color-orange-500);
+  --color-timing-queue: var(--color-red-500);
+}
+
 .single-target .single-target-card-title,
 .single-target .single-action-card-title {
   display: flex;

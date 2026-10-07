@@ -34,7 +34,7 @@ interface DerivedSummaryStats {
   longestExecutionUsec: number;
 }
 
-// A column of the sampled executions table.
+/** A column of the sampled executions table. */
 interface Column {
   name: string;
   className: string;
@@ -43,9 +43,9 @@ interface Column {
 
 interface StatSet {
   name: string;
-  // The stats that the table can be sorted by.
+  /** The stats that the table can be sorted by. */
   stats: ExecStat[];
-  // The columns shown in the table.
+  /** The columns shown in the table. */
   columns: Column[];
 }
 
@@ -87,7 +87,7 @@ const RESOURCE_STATS: ExecStat[] = [
   { name: "Uploaded", extractor: (e) => +e.uploadedBytes, formatter: format.bytes },
 ];
 
-// Groups of columns that can be shown in the sampled executions table.
+/** Groups of columns that can be shown in the sampled executions table. */
 const STAT_SETS: StatSet[] = [
   {
     name: "Timing",
@@ -101,10 +101,10 @@ const STAT_SETS: StatSet[] = [
   },
 ];
 
-// The number of sampled executions shown in the table before "Show more".
+/** The number of sampled executions shown in the table before "Show more". */
 const MORE_RESULTS_LIMIT = 20;
 
-// The number of leading characters of an action digest shown in the table.
+/** The number of leading characters of an action digest shown in the table. */
 const DIGEST_PREFIX_LENGTH = 8;
 
 function statColumn(stat: ExecStat): Column {
@@ -125,10 +125,12 @@ function renderTimingTooltip(e: execution_stats.ExecutionTimelineEntry): React.R
   );
 }
 
-// Renders a segmented bar where each segment represents an execution phase.
-// The total width of the bar is set based on the longest execution, so that
-// an execution that is about half as long takes up about half as much
-// horizontal space.
+/**
+ * Renders a segmented bar where each segment represents an execution phase.
+ * The total width of the bar is set based on the longest execution, so that
+ * an execution that is about half as long takes up about half as much
+ * horizontal space.
+ */
 function renderTimingBar(e: execution_stats.ExecutionTimelineEntry, d: DerivedSummaryStats): React.ReactNode {
   let totalUsec = 0;
   const segments = TIMING_PHASES.map((p) => ({ phase: p, usec: p.stat.extractor(e) })).filter((s) => {

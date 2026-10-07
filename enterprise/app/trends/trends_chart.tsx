@@ -335,8 +335,8 @@ interface PixelPosition {
   y: number;
 }
 
+/** Pixel position relative to the top-left corner of the chart's SVG. */
 interface LocatedScatterPoint extends NearestScatterPoint {
-  // Pixel position relative to the top-left corner of the chart's SVG.
   x: number;
   y: number;
 }
@@ -347,7 +347,7 @@ interface PointTooltipLayerProps {
   dataSeries: ChartDataSeries[];
 }
 
-// Gap between the tooltip and the mouse (or the pinned point).
+/** Gap between the tooltip and the mouse (or the pinned point). */
 const POINT_TOOLTIP_OFFSET_PX = 12;
 
 /**

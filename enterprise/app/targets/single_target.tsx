@@ -35,8 +35,10 @@ import { SeriesType } from "../trends/trends_chart";
 import SingleActionComponent from "./single_action";
 import TargetChartComponent, { TimelineDataSeries } from "./target_chart";
 
-// Sentinel value used by the filter dropdowns to indicate that no filtering
-// should be applied for that dimension.
+/**
+ * Sentinel value used by the filter dropdowns to indicate that no filtering
+ * should be applied for that dimension.
+ */
 const ALL_VALUES = "all";
 
 const OS_ARCH_SEPARATOR = "&&";
@@ -49,9 +51,11 @@ function formatPlatform(os: string, arch: string): string {
   return [os, arch].filter(Boolean).join("/") || "Unknown platform";
 }
 
-// Scrolls `el` and every scrollable ancestor of it back to the top.  The
-// enterprise layout scrolls the main content area rather than the window, so
-// scrolling the window alone isn't enough.
+/**
+ * Scrolls `el` and every scrollable ancestor of it back to the top.  The
+ * enterprise layout scrolls the main content area rather than the window, so
+ * scrolling the window alone isn't enough.
+ */
 function scrollToTop(el: HTMLElement | null) {
   for (let node: HTMLElement | null = el; node; node = node.parentElement) {
     if (node.scrollTop > 0) {
@@ -75,9 +79,6 @@ interface State {
   arch?: string;
 }
 
-// Identifies the output path column for sorting; the filter dimensions use
-// their own keys and the p50 columns use the keys below.
-const OUTPUT_PATH_COLUMN = "output_path";
 export default class SingleTargetComponent extends React.Component<Props, State> {
   state: State = {
     loading: false,
@@ -121,9 +122,11 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     this.pendingTimelineRequest?.cancel();
   }
 
-  // Returns the URL params that affect the timeline request.  The output path
-  // only selects which of the returned timelines to display, so moving between
-  // the target overview and a single action doesn't need a new request.
+  /**
+   * Returns the URL params that affect the timeline request.  The output path
+   * only selects which of the returned timelines to display, so moving between
+   * the target overview and a single action doesn't need a new request.
+   */
   private getRequestKey(): string {
     const params = new URLSearchParams(this.props.search);
     params.delete("output_path");
@@ -208,9 +211,11 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     return this.state.timeline?.timelines.find((tl) => tl.outputPath === outputPath);
   }
 
-  // Returns the timelines that match every active (non-"all") filter selection.
-  // An unset selection means "all"; an empty string is a real value that only
-  // matches timelines with that field empty.
+  /**
+   * Returns the timelines that match every active (non-"all") filter selection.
+   * An unset selection means "all"; an empty string is a real value that only
+   * matches timelines with that field empty.
+   */
   private getFilteredTimelines(rsp: execution_stats.GetExecutionTimelineResponse): execution_stats.ExecutionTimeline[] {
     return rsp.timelines.filter((tl) => {
       if (this.state.mnemonic !== undefined && tl.mnemonic !== this.state.mnemonic) {
@@ -366,7 +371,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     return this.props.search.get("output_path");
   }
 
-  // Summarizes every remote action of the target that matched the filters.
+  /** Summarizes every remote action of the target that matched the filters. */
   private renderTargetDetails(): React.ReactNode {
     const timelines = this.state.timeline?.timelines ?? [];
     if (timelines.length === 0) {
@@ -415,7 +420,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     );
   }
 
-  // Summarizes the single action being viewed.
+  /** Summarizes the single action being viewed. */
   private renderActionDetails(): React.ReactNode {
     const timeline = this.getSingleActionTimeline();
     if (!timeline) {
