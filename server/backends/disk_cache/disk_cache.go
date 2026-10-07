@@ -205,7 +205,7 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64) (_ *DiskCache, err error) {
+func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64) (*DiskCache, error) {
 	if opts.RootDirectory == "" {
 		return nil, status.FailedPreconditionError("Disk cache root directory must be set")
 	}
@@ -251,31 +251,41 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 		useV2Layout:       useV2Layout,
 		quit:              make(chan struct{}),
 	}
-	// Stop the goroutines of any partitions that were started if we fail.
-	defer func() {
-		if err != nil {
-			c.Stop()
-		}
-	}()
+	if err := c.initPartitions(opts, defaultMaxSizeBytes); err != nil {
+		// Stop the goroutines of any partitions that were started.
+		c.Stop()
+		return nil, err
+	}
 
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		return c.Stop()
+	})
+
+	statusz.AddSection(cacheName, "On disk LRU cache", c)
+	return c, nil
+}
+
+// initPartitions creates the cache's partitions, which start background
+// goroutines.
+func (c *DiskCache) initPartitions(opts *Options, defaultMaxSizeBytes int64) error {
 	partitions := make(map[string]*partition)
 	var defaultPartition *partition
 	for _, pc := range opts.Partitions {
 		rootDir := opts.RootDirectory
-		if useV2Layout {
+		if c.useV2Layout {
 			rootDir = filepath.Join(rootDir, V2Dir)
 		}
 
-		if pc.ID != DefaultPartitionID || useV2Layout {
+		if pc.ID != DefaultPartitionID || c.useV2Layout {
 			if pc.ID == "" {
-				return nil, status.InvalidArgumentError("Non-default partition %q must have a valid ID")
+				return status.InvalidArgumentError("Non-default partition %q must have a valid ID")
 			}
 			rootDir = filepath.Join(rootDir, PartitionDirectoryPrefix+pc.ID)
 		}
 
-		p, err := c.newPartition(pc.ID, rootDir, pc.MaxSizeBytes, useV2Layout)
+		p, err := c.newPartition(pc.ID, rootDir, pc.MaxSizeBytes, c.useV2Layout)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		partitions[pc.ID] = p
 		if pc.ID == DefaultPartitionID {
@@ -284,12 +294,12 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 	}
 	if defaultPartition == nil {
 		rootDir := opts.RootDirectory
-		if useV2Layout {
+		if c.useV2Layout {
 			rootDir = filepath.Join(rootDir, V2Dir, PartitionDirectoryPrefix+DefaultPartitionID)
 		}
-		p, err := c.newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, useV2Layout)
+		p, err := c.newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, c.useV2Layout)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		defaultPartition = p
 		partitions[DefaultPartitionID] = p
@@ -297,13 +307,7 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 
 	c.partitions = partitions
 	c.defaultPartition = defaultPartition
-
-	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		return c.Stop()
-	})
-
-	statusz.AddSection(cacheName, "On disk LRU cache", c)
-	return c, nil
+	return nil
 }
 
 // Stop stops the cache's background goroutines and waits for them to exit.
