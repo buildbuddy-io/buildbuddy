@@ -72,13 +72,19 @@ type Cluster struct {
 	watchers      map[schema.GroupVersionResource]*watcher
 	discoveryErr  error
 	lastDiscovery time.Time
-	// ready flips to true after initial discovery is done.
+	// ready becomes true and stays true once the initial discovery attempt has
+	// finished.
 	ready bool
 }
 
-// discoveryRetry is how soon discovery is tried again while it has found
-// nothing to watch, rather than waiting a whole interval with an empty index.
+// discoveryRetry is how long we wait to retry the initial discovery if we
+// didn't find any resources. Once the initial discovery finishes the discovery
+// happens based on the interval of the discoveryInterval flag.
 const discoveryRetry = 15 * time.Second
+
+// watcherReadyTimeout is how long we wait for a single resource type watcher
+// to be ready before we unblock the overall readiness check.
+var watcherReadyTimeout = time.Minute
 
 // New connects the configured cluster.
 func New(ix *summaries.Index) (*Cluster, error) {
@@ -167,27 +173,39 @@ func (c *Cluster) watching() int {
 	return len(c.watchers)
 }
 
-// Ready reports whether the initial cluster discovery run has finished.
+// Ready reports whether the initial discovery has finished. It does not succeed
+// until we have made a reasonable attempt to sync the state of all resource
+// types. It may succeed earlier if some resources could not be synced in a
+// timely manner to avoid the server from being unready indefinitely.
 func (c *Cluster) Ready() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.ready {
 		return nil
 	}
+	if c.lastDiscovery.IsZero() {
+		return errors.New("waiting for API discovery")
+	}
 	if len(c.watchers) == 0 {
 		if c.discoveryErr != nil {
 			return fmt.Errorf("API discovery failed: %w", c.discoveryErr)
 		}
-		return errors.New("waiting for API discovery")
+		return errors.New("API discovery found nothing to watch")
 	}
-	syncing := 0
+	synced, syncing := 0, 0
 	for _, w := range c.watchers {
-		if !w.store.Synced() && !w.failed() {
+		switch {
+		case w.store.Synced():
+			synced++
+		case !w.givenUp():
 			syncing++
 		}
 	}
 	if syncing > 0 {
 		return fmt.Errorf("%d of %d resource types still syncing", syncing, len(c.watchers))
+	}
+	if synced == 0 {
+		return errors.New("no resource type has synced")
 	}
 	c.ready = true
 	return nil
@@ -310,6 +328,9 @@ type watcher struct {
 	mu      sync.Mutex
 	lastErr error
 	errTime time.Time
+	// failingSince records the first time lastErr was set, in order to gauge
+	// how long the watcher has been unhealthy on an initial sync.
+	failingSince time.Time
 }
 
 func (c *Cluster) startWatcher(ctx context.Context, r discoveredResource) *watcher {
@@ -342,11 +363,12 @@ func (c *Cluster) startWatcher(ctx context.Context, r discoveredResource) *watch
 	return w
 }
 
-// failed reports whether the watcher's list or watch has ever errored.
-func (w *watcher) failed() bool {
+// givenUp reports whether the watcher has been failing for long enough that
+// readiness should stop waiting for it.
+func (w *watcher) givenUp() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.lastErr != nil
+	return !w.failingSince.IsZero() && time.Since(w.failingSince) >= watcherReadyTimeout
 }
 
 func (w *watcher) run(ctx context.Context, lw cache.ListerWatcher, example runtime.Object) {
@@ -364,6 +386,9 @@ func (w *watcher) run(ctx context.Context, lw cache.ListerWatcher, example runti
 			w.mu.Lock()
 			w.lastErr = err
 			w.errTime = time.Now()
+			if w.failingSince.IsZero() {
+				w.failingSince = w.errTime
+			}
 			w.mu.Unlock()
 			log.Warningf("Watch %s failed: %s", w.res, err)
 		}
