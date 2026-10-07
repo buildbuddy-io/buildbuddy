@@ -18,7 +18,9 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
@@ -35,6 +37,10 @@ const (
 var (
 	testExperiment = expflag.Bool("priority_task_scheduler_test.experiment", false, "Exercises experiment flag propagation from the task to the execution context.")
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
+}
 
 func TestPropagateExecutionTaskValuesToContext_ExperimentFlags(t *testing.T) {
 	expflag.SetFlagProvider(expflag.NewContextProvider())
@@ -320,8 +326,6 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -417,8 +421,6 @@ func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefini
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -515,8 +517,6 @@ func TestPriorityTaskScheduler_CustomResourceParentAccountingCeil(t *testing.T) 
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -734,8 +734,6 @@ func TestPriorityTaskScheduler_MaxConcurrentTasks(t *testing.T) {
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -815,8 +813,6 @@ func TestPriorityTaskScheduler_MaxConcurrentTasks_PreventsQueueSkipping(t *testi
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -908,8 +904,6 @@ func TestPriorityTaskScheduler_ExclusiveTaskScheduling(t *testing.T) {
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -1022,8 +1016,6 @@ func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 			scheduler.Start()
 			ctx := context.Background()
 			t.Cleanup(func() {
-				err := scheduler.Stop()
-				require.NoError(t, err)
 				assert.NoError(t, scheduler.Shutdown(ctx))
 			})
 
@@ -1069,8 +1061,6 @@ func TestLocalEnqueueTimestamp(t *testing.T) {
 	require.NoError(t, err)
 	scheduler.Start()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -1100,8 +1090,6 @@ func TestTotalRunningTaskExecutionDuration(t *testing.T) {
 	require.NoError(t, err)
 	scheduler.Start()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -1324,4 +1312,32 @@ type FakePublishOperationClient struct {
 
 func (f *FakePublishOperationClient) CloseAndRecv() (*repb.PublishOperationResponse, error) {
 	return nil, f.CloseAndRecvErr
+}
+
+func TestStartAfterStopFails(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	scheduler, err := NewPriorityTaskScheduler(env, NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{})
+	require.NoError(t, err)
+	require.NoError(t, scheduler.Start())
+	require.NoError(t, scheduler.Stop())
+
+	err = scheduler.Start()
+	require.True(t, status.IsFailedPreconditionError(err), "got %v", err)
+}
+
+func TestStopCancelsDelayedEnqueue(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	scheduler, err := NewPriorityTaskScheduler(env, NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{})
+	require.NoError(t, err)
+	require.NoError(t, scheduler.Start())
+
+	req := newTaskReservationRequest(fakeTaskID("delayed"), "group1", 0)
+	req.Delay = durationpb.New(time.Hour)
+	_, err = scheduler.EnqueueTaskReservation(context.Background(), req)
+	require.NoError(t, err)
+
+	// Stop returns without waiting for the delay, and TestMain fails if the
+	// delayed enqueue's goroutine is still running.
+	require.NoError(t, scheduler.Stop())
+	require.Empty(t, scheduler.GetQueuedTaskReservations())
 }
