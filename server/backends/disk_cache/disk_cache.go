@@ -169,6 +169,13 @@ type DiskCache struct {
 	partitions        map[string]*partition
 	partitionMappings []disk.PartitionMapping
 	defaultPartition  *partition
+
+	// quit is closed by Stop to stop the background goroutines, which
+	// goroutines tracks. stopMu guards closing quit and starting goroutines,
+	// so that none start after Stop.
+	stopMu     sync.Mutex
+	quit       chan struct{}
+	goroutines sync.WaitGroup
 }
 
 // Register registers the disk cache for use in a real environment.
@@ -242,26 +249,43 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 		env:               env,
 		partitionMappings: opts.PartitionMappings,
 		useV2Layout:       useV2Layout,
+		quit:              make(chan struct{}),
+	}
+	if err := c.initPartitions(opts, defaultMaxSizeBytes); err != nil {
+		// Stop the goroutines of any partitions that were started.
+		c.Stop()
+		return nil, err
 	}
 
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		return c.Stop()
+	})
+
+	statusz.AddSection(cacheName, "On disk LRU cache", c)
+	return c, nil
+}
+
+// initPartitions creates the cache's partitions, which start background
+// goroutines.
+func (c *DiskCache) initPartitions(opts *Options, defaultMaxSizeBytes int64) error {
 	partitions := make(map[string]*partition)
 	var defaultPartition *partition
 	for _, pc := range opts.Partitions {
 		rootDir := opts.RootDirectory
-		if useV2Layout {
+		if c.useV2Layout {
 			rootDir = filepath.Join(rootDir, V2Dir)
 		}
 
-		if pc.ID != DefaultPartitionID || useV2Layout {
+		if pc.ID != DefaultPartitionID || c.useV2Layout {
 			if pc.ID == "" {
-				return nil, status.InvalidArgumentError("Non-default partition %q must have a valid ID")
+				return status.InvalidArgumentError("Non-default partition %q must have a valid ID")
 			}
 			rootDir = filepath.Join(rootDir, PartitionDirectoryPrefix+pc.ID)
 		}
 
-		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes, useV2Layout)
+		p, err := c.newPartition(pc.ID, rootDir, pc.MaxSizeBytes, c.useV2Layout)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		partitions[pc.ID] = p
 		if pc.ID == DefaultPartitionID {
@@ -270,12 +294,12 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 	}
 	if defaultPartition == nil {
 		rootDir := opts.RootDirectory
-		if useV2Layout {
+		if c.useV2Layout {
 			rootDir = filepath.Join(rootDir, V2Dir, PartitionDirectoryPrefix+DefaultPartitionID)
 		}
-		p, err := newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, useV2Layout)
+		p, err := c.newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, c.useV2Layout)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		defaultPartition = p
 		partitions[DefaultPartitionID] = p
@@ -283,24 +307,59 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 
 	c.partitions = partitions
 	c.defaultPartition = defaultPartition
+	return nil
+}
 
-	statusz.AddSection(cacheName, "On disk LRU cache", c)
-	return c, nil
+// Stop stops the cache's background goroutines and waits for them to exit.
+func (c *DiskCache) Stop() error {
+	c.stopMu.Lock()
+	if !c.isStopped() {
+		close(c.quit)
+	}
+	c.stopMu.Unlock()
+	c.goroutines.Wait()
+	return nil
+}
+
+func (c *DiskCache) isStopped() bool {
+	select {
+	case <-c.quit:
+		return true
+	default:
+		return false
+	}
+}
+
+// every runs f every period until the cache is stopped. It does nothing if
+// the cache is already stopped.
+func (c *DiskCache) every(period time.Duration, f func()) {
+	c.stopMu.Lock()
+	defer c.stopMu.Unlock()
+	if c.isStopped() {
+		return
+	}
+	c.goroutines.Go(func() {
+		for {
+			select {
+			case <-c.quit:
+				return
+			case <-time.After(period):
+			}
+			f()
+		}
+	})
 }
 
 func (c *DiskCache) startRefreshMetrics(rootDirectory string) {
-	go func() {
-		for {
-			<-time.After(refreshMetricsPeriod)
-			fsu := gosigar.FileSystemUsage{}
-			if err := fsu.Get(rootDirectory); err != nil {
-				log.Warningf("could not retrieve filesystem stats: %s", err)
-			} else {
-				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Total))
-				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Avail))
-			}
+	c.every(refreshMetricsPeriod, func() {
+		fsu := gosigar.FileSystemUsage{}
+		if err := fsu.Get(rootDirectory); err != nil {
+			log.Warningf("could not retrieve filesystem stats: %s", err)
+		} else {
+			metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Total))
+			metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Avail))
 		}
-	}()
+	})
 }
 
 func (c *DiskCache) IsV2Layout() bool {
@@ -510,7 +569,7 @@ type partition struct {
 	internedStrings  map[string]string
 }
 
-func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
+func (c *DiskCache) newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
 	targetSizeBytes := int64(float64(maxSizeBytes) * janitorCutoffThreshold)
 	p := &partition{
 		id:               id,
@@ -538,8 +597,11 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 	if err := p.initializeCache(); err != nil {
 		return nil, err
 	}
-	p.startJanitor()
-	p.startRefreshMetrics()
+	c.every(janitorCheckPeriod, func() {
+		for !c.isStopped() && p.reduceCacheSize() {
+		}
+	})
+	c.every(refreshMetricsPeriod, p.refreshMetrics)
 	return p, nil
 }
 
@@ -698,28 +760,6 @@ func (p *partition) reduceCacheSize() bool {
 	log.Debugf("Delete thread removed item from cache with key %v.", fr.key)
 	p.lastGCTime = time.Now()
 	return true
-}
-
-func (p *partition) startJanitor() {
-	go func() {
-		for {
-			<-time.After(janitorCheckPeriod)
-			for {
-				if !p.reduceCacheSize() {
-					break
-				}
-			}
-		}
-	}()
-}
-
-func (p *partition) startRefreshMetrics() {
-	go func() {
-		for {
-			<-time.After(refreshMetricsPeriod)
-			p.refreshMetrics()
-		}
-	}()
 }
 
 func (p *partition) refreshMetrics() {
