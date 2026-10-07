@@ -52,6 +52,18 @@ func NewPooledByteStreamClient(env environment.Env) *pooledByteStreamClient {
 	}
 }
 
+// Close closes the cached connection pools.
+func (p *pooledByteStreamClient) Close() {
+	p.connMutex.Lock()
+	defer p.connMutex.Unlock()
+	for target, conn := range p.connPoolMap {
+		if c, ok := conn.(interface{ Close() error }); ok {
+			c.Close()
+		}
+		delete(p.connPoolMap, target)
+	}
+}
+
 func (p *pooledByteStreamClient) FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error) {
 	r, err := digest.ParseDownloadResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
 	if err != nil {
