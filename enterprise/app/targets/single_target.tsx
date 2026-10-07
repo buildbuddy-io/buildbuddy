@@ -42,8 +42,12 @@ const ALL_VALUES = "all";
 
 const OS_ARCH_SEPARATOR = "&&";
 
-function formatPlatform(timeline: execution_stats.ExecutionTimeline): string {
-  return [timeline.os, timeline.arch].filter(Boolean).join("/") || "Unknown platform";
+function formatMnemonic(mnemonic: string): string {
+  return mnemonic || "Unknown mnemonic";
+}
+
+function formatPlatform(os: string, arch: string): string {
+  return [os, arch].filter(Boolean).join("/") || "Unknown platform";
 }
 
 // Scrolls `el` and every scrollable ancestor of it back to the top.  The
@@ -206,13 +210,15 @@ export default class SingleTargetComponent extends React.Component<Props, State>
   }
 
   // Returns the timelines that match every active (non-"all") filter selection.
+  // An unset selection means "all"; an empty string is a real value that only
+  // matches timelines with that field empty.
   private getFilteredTimelines(rsp: execution_stats.GetExecutionTimelineResponse): execution_stats.ExecutionTimeline[] {
     return rsp.timelines.filter((tl) => {
-      if (this.state.mnemonic && tl.mnemonic !== this.state.mnemonic) {
+      if (this.state.mnemonic !== undefined && tl.mnemonic !== this.state.mnemonic) {
         return false;
-      } else if (this.state.os && tl.os !== this.state.os) {
+      } else if (this.state.os !== undefined && tl.os !== this.state.os) {
         return false;
-      } else if (this.state.arch && tl.arch !== this.state.arch) {
+      } else if (this.state.arch !== undefined && tl.arch !== this.state.arch) {
         return false;
       }
       return tl.outputPath.indexOf(this.state.filterText) >= 0;
@@ -371,8 +377,8 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     if (timelines.length === 0) {
       return null;
     }
-    const mnemonics = Array.from(new Set(timelines.map((tl) => tl.mnemonic || "Unknown mnemonic"))).sort();
-    const platforms = Array.from(new Set(timelines.map(formatPlatform))).sort();
+    const mnemonics = Array.from(new Set(timelines.map((tl) => formatMnemonic(tl.mnemonic)))).sort();
+    const platforms = Array.from(new Set(timelines.map((tl) => formatPlatform(tl.os, tl.arch)))).sort();
     const total = (get: (summary: execution_stats.ExecutionTimelineSummary) => number) =>
       timelines.reduce((sum, tl) => sum + (tl.summary ? get(tl.summary) : 0), 0);
     const totalExecutions = total((s) => +s.totalExecutions);
@@ -426,11 +432,11 @@ export default class SingleTargetComponent extends React.Component<Props, State>
       <>
         <div className="detail" title="Action mnemonic">
           <Terminal />
-          {timeline.mnemonic || "Unknown mnemonic"}
+          {formatMnemonic(timeline.mnemonic)}
         </div>
         <div className="detail" title="Execution platform">
           <Monitor />
-          {formatPlatform(timeline)}
+          {formatPlatform(timeline.os, timeline.arch)}
         </div>
         {+timeline.shard > 0 && (
           <div className="detail" title="Test shard">
@@ -556,7 +562,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
             onChange={this.onMnemonicChange.bind(this)}>
             {mnemonics.map((m) => (
               <Option key={m} value={m}>
-                {m === ALL_VALUES ? "All" : m}
+                {m === ALL_VALUES ? "All" : formatMnemonic(m)}
               </Option>
             ))}
           </Select>
@@ -570,11 +576,14 @@ export default class SingleTargetComponent extends React.Component<Props, State>
                 : ALL_VALUES
             }
             onChange={this.onPlatformChange.bind(this)}>
-            {platforms.map((p) => (
-              <Option key={p} value={p}>
-                {p === ALL_VALUES ? "All" : p.replace(OS_ARCH_SEPARATOR, "/")}
-              </Option>
-            ))}
+            {platforms.map((p) => {
+              const [os, arch] = p.split(OS_ARCH_SEPARATOR);
+              return (
+                <Option key={p} value={p}>
+                  {p === ALL_VALUES ? "All" : formatPlatform(os, arch)}
+                </Option>
+              );
+            })}
           </Select>
         </div>
         <div className="controls row">
