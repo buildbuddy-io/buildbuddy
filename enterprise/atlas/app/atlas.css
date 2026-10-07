@@ -2,6 +2,11 @@ html.dark {
   color-scheme: dark;
 }
 
+/* Avoid shifting the page left/right depending on whether search results exceed the page. */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   background: var(--color-bg-primary);
