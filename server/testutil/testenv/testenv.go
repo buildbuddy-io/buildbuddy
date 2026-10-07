@@ -211,7 +211,15 @@ func GetTestEnv(t testing.TB, opts ...TestEnvOption) *real_environment.RealEnv {
 		t.Fatal(err)
 	}
 	te.SetCache(c)
-	byte_stream_client.RegisterPooledBytestreamClient(te)
+	bsClient := byte_stream_client.NewPooledByteStreamClient(te)
+	te.SetPooledByteStreamClient(bsClient)
+	t.Cleanup(func() {
+		// Shut the env down first, since it may use the client while
+		// shutting down.
+		healthChecker.Shutdown()
+		healthChecker.WaitForGracefulShutdown()
+		bsClient.Close()
+	})
 
 	dbHandle := dbHandleOpt.dbh
 	if dbHandle == nil {

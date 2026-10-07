@@ -37,7 +37,9 @@ var (
 type pooledByteStreamClient struct {
 	env         environment.Env
 	connMutex   sync.Mutex
-	connPoolMap map[string]grpc.ClientConnInterface
+	connPoolMap map[string]*grpc_client.ClientConnPool
+	// closed is set by Close. Once it's set, new pools aren't cached.
+	closed bool
 }
 
 func RegisterPooledBytestreamClient(env *real_environment.RealEnv) {
@@ -48,20 +50,24 @@ func RegisterPooledBytestreamClient(env *real_environment.RealEnv) {
 func NewPooledByteStreamClient(env environment.Env) *pooledByteStreamClient {
 	return &pooledByteStreamClient{
 		env:         env,
-		connPoolMap: make(map[string]grpc.ClientConnInterface),
+		connPoolMap: make(map[string]*grpc_client.ClientConnPool),
 	}
 }
 
-// Close closes the cached connection pools.
-func (p *pooledByteStreamClient) Close() {
+// Close closes the cached connection pools. Callers should stop using the
+// client before closing it: Close doesn't wait for requests in progress, which
+// may fail if they're using a pool it closes. Requests made after Close use a
+// new connection for each request instead of caching pools.
+func (p *pooledByteStreamClient) Close() error {
 	p.connMutex.Lock()
 	defer p.connMutex.Unlock()
-	for target, conn := range p.connPoolMap {
-		if c, ok := conn.(interface{ Close() error }); ok {
-			c.Close()
-		}
-		delete(p.connPoolMap, target)
+	p.closed = true
+	var errs []error
+	for _, connPool := range p.connPoolMap {
+		errs = append(errs, connPool.Close())
 	}
+	clear(p.connPoolMap)
+	return errors.Join(errs...)
 }
 
 func (p *pooledByteStreamClient) FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error) {
@@ -252,11 +258,12 @@ func (p *pooledByteStreamClient) streamFromUrl(ctx context.Context, url *url.URL
 	}
 
 	var conn grpc.ClientConnInterface
-	if *enablePoolCache {
-		conn, err = p.getGrpcClientConnPoolForURL(target)
-		if err != nil {
-			return err
-		}
+	connPool, err := p.getGrpcClientConnPoolForURL(target)
+	if err != nil {
+		return err
+	}
+	if connPool != nil {
+		conn = connPool
 	} else {
 		closeableConn, err := grpc_client.DialInternalWithoutPooling(p.env, target)
 		if err != nil {
@@ -322,16 +329,25 @@ func (p *pooledByteStreamClient) streamFromUrl(ctx context.Context, url *url.URL
 	return nil
 }
 
-func (p *pooledByteStreamClient) getGrpcClientConnPoolForURL(target string) (conn grpc.ClientConnInterface, err error) {
+// getGrpcClientConnPoolForURL returns the cached connection pool for target,
+// creating it if needed. It returns nil if pools shouldn't be cached, because
+// the pool cache is disabled or the client is closed.
+func (p *pooledByteStreamClient) getGrpcClientConnPoolForURL(target string) (*grpc_client.ClientConnPool, error) {
+	if !*enablePoolCache {
+		return nil, nil
+	}
 	p.connMutex.Lock()
 	defer p.connMutex.Unlock()
+	if p.closed {
+		return nil, nil
+	}
 	connPool, ok := p.connPoolMap[target]
 	if ok && connPool != nil {
 		return connPool, nil
 	}
 
 	// We didn't find a connection pool, so we'll make one.
-	connPool, err = grpc_client.DialInternalWithPoolSize(p.env, target, 2)
+	connPool, err := grpc_client.DialInternalWithPoolSize(p.env, target, 2)
 	if err != nil {
 		return nil, err
 	}
