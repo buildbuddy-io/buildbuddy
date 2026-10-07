@@ -56,6 +56,7 @@ import (
 	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config"
+	xxhash "github.com/cespare/xxhash/v2"
 )
 
 var (
@@ -69,8 +70,9 @@ var (
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
 	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", true, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
 	debugExecutorLabelsKey       = flag.String("remote_execution.debug_executor_labels_key", "", "If set, requests using the 'debug-executor-labels' platform property must also set the 'debug-executor-labels-key' platform property to this value, otherwise the requested labels are ignored. If empty, anyone can use 'debug-executor-labels'.", flag.Secret)
-	unclaimedTasksSetMaxSize     = flag.Int64("remote_execution.unclaimed_tasks_set_max_size", 100_000, "Max number of unclaimed tasks to track in redis per executor pool. This set of tasks is used for eager work assignments (when executors newly join a pool) and work-stealing requests (when executors are nearly idle).")
+	unclaimedTasksSetMaxSize     = flag.Int64("remote_execution.unclaimed_tasks_set_max_size", 100_000, "Max number of unclaimed tasks to track in redis per executor pool, per shard (see remote_execution.unclaimed_tasks_shard_count). This set of tasks is used for eager work assignments (when executors newly join a pool) and work-stealing requests (when executors are nearly idle).")
 	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
+	unclaimedTasksShardCount     = flag.Int("remote_execution.unclaimed_tasks_shard_count", 1, "Number of Redis sets that each executor pool's unclaimed tasks are split across. With a sharded Redis client, this spreads the load of large pools across Redis shards. If the unclaimedTasks/* keys become a source of contention, try setting this value to twice the number of Redis shards. Since remote_execution.unclaimed_tasks_set_max_size applies to each set, consider lowering it when raising this.")
 
 	upgradePromptMaxLags     = flag.Map("remote_execution.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) an executor may fall behind the newest registered version before GetExecutionNodes prompts an upgrade at that urgency.")
 	upgradePromptMinVersions = flag.Map("remote_execution.upgrade_prompt_min_versions", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the minimum version (semver) below which GetExecutionNodes prompts an upgrade at that urgency.")
@@ -170,6 +172,8 @@ const (
 )
 
 var (
+	unclaimedTasksReadLog = log.NamedSubLogger("unclaimed_tasks").EveryDuration(time.Second)
+
 	queueWaitTimeMs = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "queue_wait_time_ms",
 		Help:    "WorkQueue wait time [milliseconds]",
@@ -945,8 +949,17 @@ func (k *nodePoolKey) redisPoolKey() string {
 	return "executorPool/" + k.redisKeySuffix()
 }
 
-func (k *nodePoolKey) redisUnclaimedTasksKey() string {
-	return "unclaimedTasks/" + k.redisKeySuffix()
+func (k *nodePoolKey) redisUnclaimedTasksKeys(shardCount int) []string {
+	if shardCount == 1 {
+		// For backwards compatibility, omit the shard index for non-sharded
+		// unclaimedTasks sets.
+		return []string{"unclaimedTasks/" + k.redisKeySuffix()}
+	}
+	keys := make([]string, 0, shardCount)
+	for i := range shardCount {
+		keys = append(keys, fmt.Sprintf("unclaimedTasks/%d/%s", i, k.redisKeySuffix()))
+	}
+	return keys
 }
 
 // unclaimedTasksJanitor trims the unclaimed task sets in the background, so
@@ -1057,12 +1070,14 @@ type nodePool struct {
 
 	unclaimedTasksSingleFlight singleflight.Group[string, []string]
 	unclaimedTasksTTL          time.Duration
+	// Redis keys constituting the sharded unclaimedTasks ZSet
+	unclaimedTasksKeys []string
 
 	unclaimedTasksMu     sync.Mutex
 	unclaimedTasks       []string
 	unclaimedTasksExpiry time.Time
 
-	// Maintains the unclaimed task set.
+	// Maintains the unclaimed task sets.
 	unclaimedTasksJanitor *unclaimedTasksJanitor
 }
 
@@ -1071,6 +1086,7 @@ func newNodePool(env environment.Env, key nodePoolKey, unclaimedTasksJanitor *un
 		key:                   key,
 		rdb:                   env.GetRemoteExecutionRedisClient(),
 		clock:                 env.GetClock(),
+		unclaimedTasksKeys:    key.redisUnclaimedTasksKeys(*unclaimedTasksShardCount),
 		unclaimedTasksTTL:     *unclaimedTasksCacheTTL,
 		unclaimedTasksJanitor: unclaimedTasksJanitor,
 	}
@@ -1223,7 +1239,7 @@ func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 		Member: taskID,
 		Score:  float64(time.Now().Unix()),
 	}
-	key := np.key.redisUnclaimedTasksKey()
+	key := np.unclaimedTasksKey(taskID)
 	pipe := np.rdb.Pipeline()
 	// Create the set before setting its TTL, since EXPIRE ignores missing keys.
 	pipe.ZAdd(ctx, key, m)
@@ -1236,7 +1252,15 @@ func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 }
 
 func (np *nodePool) RemoveUnclaimedTask(ctx context.Context, taskID string) error {
-	return np.rdb.ZRem(ctx, np.key.redisUnclaimedTasksKey(), taskID).Err()
+	return np.rdb.ZRem(ctx, np.unclaimedTasksKey(taskID), taskID).Err()
+}
+
+// unclaimedTasksKey returns the Redis key of the set that stores the given
+// task ID. The key is chosen by hashing the task ID, so that a task is removed
+// from the same set that it was added to.
+func (np *nodePool) unclaimedTasksKey(taskID string) string {
+	i := xxhash.Sum64String(taskID) % uint64(len(np.unclaimedTasksKeys))
+	return np.unclaimedTasksKeys[i]
 }
 
 func (np *nodePool) SampleUnclaimedTasks(ctx context.Context, n int) ([]string, error) {
@@ -1278,9 +1302,37 @@ func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
 			return np.unclaimedTasks, nil
 		}
 		np.unclaimedTasksMu.Unlock()
-		unclaimed, err := np.rdb.ZRange(ctx, np.key.redisUnclaimedTasksKey(), 0, -1).Result()
-		if err != nil {
-			return nil, err
+		// Read every shard of the set in one pipeline.
+		pipe := np.rdb.Pipeline()
+		cmds := make([]*redis.StringSliceCmd, 0, len(np.unclaimedTasksKeys))
+		for _, key := range np.unclaimedTasksKeys {
+			cmds = append(cmds, pipe.ZRange(ctx, key, 0, -1))
+		}
+		// Ignore errors from the pipe and look at errors from individual reads
+		// instead, so that we collect results from any available shards.
+		_, _ = pipe.Exec(ctx)
+		var readErr error
+		failed := 0
+		total := 0
+		for _, cmd := range cmds {
+			if err := cmd.Err(); err != nil {
+				readErr = err
+				failed++
+				continue
+			}
+			total += len(cmd.Val())
+		}
+		if failed == len(cmds) {
+			return nil, readErr
+		}
+		if failed > 0 {
+			unclaimedTasksReadLog.CtxWarningf(ctx, "Could not read %d of %d unclaimed task sets for pool %+v: %s", failed, len(cmds), np.key, readErr)
+		}
+		unclaimed := make([]string, 0, total)
+		for _, cmd := range cmds {
+			if cmd.Err() == nil {
+				unclaimed = append(unclaimed, cmd.Val()...)
+			}
 		}
 		if np.unclaimedTasksTTL <= 0 {
 			return unclaimed, nil
@@ -1490,6 +1542,9 @@ func NewSchedulerServer(env environment.Env) (*SchedulerServer, error) {
 func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*SchedulerServer, error) {
 	if env.GetRemoteExecutionRedisClient() == nil {
 		return nil, status.FailedPreconditionErrorf("Redis is required for remote execution")
+	}
+	if *unclaimedTasksShardCount < 1 {
+		return nil, status.InvalidArgumentErrorf("remote_execution.unclaimed_tasks_shard_count must be at least 1, got %d", *unclaimedTasksShardCount)
 	}
 
 	taskRouter := env.GetTaskRouter()

@@ -319,3 +319,57 @@ func (c *CommandCounter) AfterProcessPipeline(ctx context.Context, cmds []redis.
 	}
 	return nil
 }
+
+// Hook is a Redis hook built from funcs, so that a test only needs to write
+// the ones it cares about. Hook methods whose func is nil do nothing.
+//
+// Example usage:
+//
+//	rdb.AddHook(testredis.Hook{
+//		AfterProcessPipelineFunc: func(ctx context.Context, cmds []redis.Cmder) error {
+//			for _, cmd := range cmds {
+//				cmd.SetErr(errors.New("redis shard is down"))
+//			}
+//			return nil
+//		},
+//	})
+type Hook struct {
+	// BeforeProcessFunc is called before a command that is sent on its own.
+	// Returning an error fails the command without sending it.
+	BeforeProcessFunc func(ctx context.Context, cmd redis.Cmder) (context.Context, error)
+	// AfterProcessFunc is called after Redis processes a command that was sent
+	// on its own. Returning an error fails the command with that error.
+	AfterProcessFunc func(ctx context.Context, cmd redis.Cmder) error
+	// BeforeProcessPipelineFunc is called before the commands of a pipeline
+	// are sent. Returning an error fails all of them without sending them.
+	BeforeProcessPipelineFunc func(ctx context.Context, cmds []redis.Cmder) (context.Context, error)
+	// AfterProcessPipelineFunc is called after Redis processes the commands of
+	// a pipeline. Returning an error fails all of them with that error. To
+	// fail only some, call SetErr on those commands instead.
+	AfterProcessPipelineFunc func(ctx context.Context, cmds []redis.Cmder) error
+}
+
+func (h Hook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+	if h.BeforeProcessFunc == nil {
+		return ctx, nil
+	}
+	return h.BeforeProcessFunc(ctx, cmd)
+}
+func (h Hook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
+	if h.AfterProcessFunc == nil {
+		return nil
+	}
+	return h.AfterProcessFunc(ctx, cmd)
+}
+func (h Hook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	if h.BeforeProcessPipelineFunc == nil {
+		return ctx, nil
+	}
+	return h.BeforeProcessPipelineFunc(ctx, cmds)
+}
+func (h Hook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	if h.AfterProcessPipelineFunc == nil {
+		return nil
+	}
+	return h.AfterProcessPipelineFunc(ctx, cmds)
+}

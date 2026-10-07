@@ -1921,6 +1921,7 @@ func TestSampleUnclaimedTasks_Concurrent(t *testing.T) {
 			np := &nodePool{
 				rdb:                   rdb,
 				clock:                 clock,
+				unclaimedTasksKeys:    []string{"unclaimedTasks/test"},
 				unclaimedTasksTTL:     testCase.cacheTTL,
 				unclaimedTasksJanitor: newUnclaimedTasksJanitor(rdb, clock),
 			}
@@ -1964,9 +1965,10 @@ func TestAddUnclaimedTask_SetsAndRefreshesTTL(t *testing.T) {
 	np := &nodePool{
 		rdb:                   rdb,
 		clock:                 clock,
+		unclaimedTasksKeys:    []string{"unclaimedTasks/test"},
 		unclaimedTasksJanitor: newUnclaimedTasksJanitor(rdb, clock),
 	}
-	key := np.key.redisUnclaimedTasksKey()
+	key := np.unclaimedTasksKeys[0]
 
 	require.NoError(t, np.AddUnclaimedTask(t.Context(), "first"))
 	ttl, err := rdb.TTL(t.Context(), key).Result()
@@ -1989,7 +1991,7 @@ func TestUnclaimedTasksJanitor(t *testing.T) {
 	s := env.GetSchedulerService().(*SchedulerServer)
 	rdb := env.GetRemoteExecutionRedisClient()
 	np := s.getOrCreatePool(nodePoolKey{os: defaultOS, arch: defaultArch, pool: "defaultPoolName"})
-	key := np.key.redisUnclaimedTasksKey()
+	key := np.unclaimedTasksKeys[0]
 
 	// Add a task older than the max age, followed by more new tasks than the
 	// set can hold.
@@ -2031,6 +2033,155 @@ func TestUnclaimedTasksJanitor(t *testing.T) {
 	score, err := rdb.ZScore(t.Context(), key, "stale").Result()
 	require.NoError(t, err)
 	require.Equal(t, staleScore, score)
+}
+
+func TestUnclaimedTasksSharding(t *testing.T) {
+	for _, testCase := range []struct {
+		name         string
+		shardCount   int
+		expectedKeys []string
+	}{
+		{
+			name:         "single shard uses unsharded key",
+			shardCount:   1,
+			expectedKeys: []string{"unclaimedTasks/GR1-linux-amd64-pool"},
+		},
+		{
+			name:       "multiple shards",
+			shardCount: 3,
+			expectedKeys: []string{
+				"unclaimedTasks/0/GR1-linux-amd64-pool",
+				"unclaimedTasks/1/GR1-linux-amd64-pool",
+				"unclaimedTasks/2/GR1-linux-amd64-pool",
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.unclaimed_tasks_shard_count", testCase.shardCount)
+			flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+			rdb := testredis.Start(t).Client()
+			t.Cleanup(func() { rdb.Close() })
+			env := testenv.GetTestEnv(t)
+			env.SetRemoteExecutionRedisClient(rdb)
+			np := newNodePool(env, nodePoolKey{groupID: "GR1", os: "linux", arch: "amd64", pool: "pool"}, newUnclaimedTasksJanitor(rdb, env.GetClock()))
+
+			// Add enough tasks that every shard receives some of them.
+			var tasks []string
+			for i := range 30 {
+				tasks = append(tasks, fmt.Sprintf("task-%d", i))
+			}
+			for _, task := range tasks {
+				require.NoError(t, np.AddUnclaimedTask(t.Context(), task))
+			}
+
+			// Each task should be stored in exactly one of the expected keys,
+			// and no shard should be left empty.
+			keys, err := rdb.Keys(t.Context(), "unclaimedTasks/*").Result()
+			require.NoError(t, err)
+			require.ElementsMatch(t, testCase.expectedKeys, keys)
+			var stored []string
+			for _, key := range testCase.expectedKeys {
+				members, err := rdb.ZRange(t.Context(), key, 0, -1).Result()
+				require.NoError(t, err)
+				require.NotEmpty(t, members)
+				stored = append(stored, members...)
+			}
+			require.ElementsMatch(t, tasks, stored)
+
+			// A sample large enough to hold every task should collect tasks
+			// from all shards.
+			sample, err := np.SampleUnclaimedTasks(t.Context(), len(tasks))
+			require.NoError(t, err)
+			require.ElementsMatch(t, tasks, sample)
+
+			// Removing tasks should remove them from whichever shard they were
+			// added to, so they no longer show up in samples.
+			for _, task := range tasks[:10] {
+				require.NoError(t, np.RemoveUnclaimedTask(t.Context(), task))
+			}
+			sample, err = np.SampleUnclaimedTasks(t.Context(), len(tasks))
+			require.NoError(t, err)
+			require.ElementsMatch(t, tasks[10:], sample)
+		})
+	}
+}
+
+func TestUnclaimedTasksSharding_MaxSize(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_shard_count", 3)
+	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", 2)
+	rdb := testredis.Start(t).Client()
+	t.Cleanup(func() { rdb.Close() })
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionRedisClient(rdb)
+	janitor := newUnclaimedTasksJanitor(rdb, env.GetClock())
+	np := newNodePool(env, nodePoolKey{os: "linux", arch: "amd64", pool: "pool"}, janitor)
+
+	// Add many more tasks than the max size, so that every shard is over it.
+	for i := range 30 {
+		require.NoError(t, np.AddUnclaimedTask(t.Context(), fmt.Sprintf("task-%d", i)))
+	}
+
+	// The max size applies to each shard, so a janitor pass should trim each
+	// of the 3 shards down to the max size.
+	err := janitor.clean(t.Context())
+	require.NoError(t, err)
+	for _, key := range np.unclaimedTasksKeys {
+		size, err := rdb.ZCard(t.Context(), key).Result()
+		require.NoError(t, err)
+		require.Equal(t, int64(2), size)
+	}
+}
+
+func TestUnclaimedTasksSharding_FailedShard(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_shard_count", 3)
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	rdb := testredis.Start(t).Client()
+	t.Cleanup(func() { rdb.Close() })
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionRedisClient(rdb)
+	np := newNodePool(env, nodePoolKey{os: "linux", arch: "amd64", pool: "pool"}, newUnclaimedTasksJanitor(rdb, env.GetClock()))
+
+	// Add enough tasks that every shard receives some of them.
+	var tasks []string
+	for i := range 30 {
+		task := fmt.Sprintf("task-%d", i)
+		tasks = append(tasks, task)
+		require.NoError(t, np.AddUnclaimedTask(t.Context(), task))
+	}
+
+	// Make reads of the first shard fail, as if its Redis shard were down.
+	failedKey := np.unclaimedTasksKeys[0]
+	failedKeys := []string{failedKey}
+	rdb.AddHook(testredis.Hook{
+		AfterProcessPipelineFunc: func(ctx context.Context, cmds []redis.Cmder) error {
+			for _, cmd := range cmds {
+				if cmd.Name() != "zrange" {
+					continue
+				}
+				if key, ok := cmd.Args()[1].(string); ok && slices.Contains(failedKeys, key) {
+					cmd.SetErr(errors.New("redis shard is down"))
+				}
+			}
+			return nil
+		},
+	})
+
+	// Sampling should still return the tasks stored in the other shards.
+	var expected []string
+	for _, task := range tasks {
+		if np.unclaimedTasksKey(task) != failedKey {
+			expected = append(expected, task)
+		}
+	}
+	sample, err := np.SampleUnclaimedTasks(t.Context(), len(tasks))
+	require.NoError(t, err)
+	require.ElementsMatch(t, expected, sample)
+
+	// If reads of every shard fail, sampling should return an error rather
+	// than an empty sample.
+	failedKeys = np.unclaimedTasksKeys
+	_, err = np.SampleUnclaimedTasks(t.Context(), len(tasks))
+	require.Error(t, err)
 }
 
 func BenchmarkSampleUnclaimedTasks(b *testing.B) {
