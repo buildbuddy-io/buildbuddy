@@ -40,6 +40,9 @@ func Register(env *real_environment.RealEnv) error {
 	if *target == "" {
 		return nil
 	}
+	if env.GetCrypter() != nil {
+		return status.FailedPreconditionError("crypter.remote_target is set, but a crypter is already registered")
+	}
 
 	// Installing the client identity service in the environment causes it to
 	// parse the incoming client identity for all incoming RPCs and set a
