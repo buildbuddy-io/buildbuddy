@@ -199,6 +199,7 @@ func (r *Env) shutdownBuildBuddyServers() {
 		wg.Go(func() {
 			log.Infof("Waiting for buildbuddy server with port %d to shut down.", app.port)
 			app.env.GetHealthChecker().WaitForGracefulShutdown()
+			app.selfConn.Close()
 			log.Infof("Shut down for buildbuddy server with port %d completed.", app.port)
 		})
 	}
@@ -373,6 +374,9 @@ type BuildBuddyServer struct {
 	buildBuddyServiceServer *buildbuddy_server.BuildBuddyServer
 	buildEventServer        *build_event_server.BuildEventProtocolServer
 	olapDBHandle            *testolapdb.Handle
+	// selfConn is the server's connection to itself, used as its
+	// RemoteExecutionClient.
+	selfConn *grpc_client.ClientConnPool
 }
 
 func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBuddyServerOptions) *BuildBuddyServer {
@@ -453,6 +457,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	if err != nil {
 		assert.FailNowf(t, "could not connect to BuildBuddy server", err.Error())
 	}
+	server.selfConn = clientConn
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 
 	return server
@@ -714,6 +719,7 @@ func newTestCommandController(t *testing.T, env environment.Env) *testCommandCon
 	server := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
 	retpb.RegisterCommandControllerServer(server, controller)
 	go server.Serve(listener)
+	t.Cleanup(server.Stop)
 
 	return controller
 }
@@ -805,6 +811,7 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 func (r *Env) RemoveBuildBuddyServer(server *BuildBuddyServer) {
 	server.env.GetHealthChecker().Shutdown()
 	server.env.GetHealthChecker().WaitForGracefulShutdown()
+	server.selfConn.Close()
 	delete(r.buildBuddyServers, server)
 	r.updateAppProxy()
 }
@@ -1141,6 +1148,7 @@ func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 	// Finally, create the client connection.
 	conn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", port))
 	require.NoError(r.t, err)
+	r.t.Cleanup(func() { conn.Close() })
 	return &CacheProxy{t: r.t, env: proxyEnv, Port: port, conn: conn}
 }
 
