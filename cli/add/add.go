@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/bzlmod"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
@@ -22,15 +23,16 @@ var (
 	flags = flag.NewFlagSet("add", flag.ContinueOnError)
 	Flags = flags
 	usage = `
-usage: bb ` + flags.Name() + ` rules_go
+usage: bb ` + flags.Name() + ` <module>[@<version>]
 
-Adds the given dependency to your WORKSPACE file.
+Adds the given dependency to your MODULE.bazel (or WORKSPACE) file, e.g.
+"bb add rules_go" or "bb add github/bazel-contrib/rules_go@0.50.1".
+Does nothing if the workspace already depends on it.
 `
 	headerTemplate = "###### Begin auto-generated section for %s ######"
 	footerTemplate = "###### End auto-generated section for %s ######"
 
 	headerRegex = regexp.MustCompile(`##### Begin auto-generated section for \[https://registry\.build/(.+?)@(.+?)\]`)
-	moduleRegex = regexp.MustCompile(`bazel_dep\(name = "([^"]+?)", version = "([^"]+?)".*?\)`)
 )
 
 const (
@@ -51,7 +53,39 @@ func HandleAdd(args []string) (int, error) {
 		return 1, nil
 	}
 
-	input := flags.Args()[0]
+	result, err := Add(flags.Args()[0])
+	if err != nil {
+		return 1, err
+	}
+	if result.AlreadyPresent {
+		log.Printf("%s already depends on %s; nothing to do.", result.File, result.Module)
+	} else if result.Added {
+		log.Printf("Added %s@%s to %s.", result.Module, result.Version, result.File)
+	}
+	return 0, nil
+}
+
+// Result describes what Add did.
+type Result struct {
+	// File is the basename of the MODULE.bazel or WORKSPACE file.
+	File string
+	// Module is the module name (for MODULE.bazel) or registry path (for
+	// WORKSPACE).
+	Module  string
+	Version string
+	// Added is true if a dependency was added.
+	Added bool
+	// AlreadyPresent is true if the workspace already had the dependency, so
+	// nothing was changed.
+	AlreadyPresent bool
+}
+
+// Add adds the dependency described by input (a registry.build module path or
+// name, optionally with an @version suffix, and optionally prefixed with ~ to
+// only add it to WORKSPACE files) to the workspace's MODULE.bazel or WORKSPACE
+// file. It's not an error if the workspace already has the dependency, unless
+// a different version was explicitly requested.
+func Add(input string) (*Result, error) {
 	transitive := strings.HasPrefix(input, "~")
 	if transitive {
 		input = strings.TrimPrefix(input, "~")
@@ -59,103 +93,110 @@ func HandleAdd(args []string) (int, error) {
 
 	module, version, resp, err := FetchModuleOrDisambiguate(input)
 	if err != nil {
-		return 1, err
+		return nil, err
 	}
 
+	workspacePath, basename, err := workspace.CreateModuleIfNotExists()
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.HasPrefix(strings.ToUpper(basename), "MODULE") {
+		if transitive {
+			// Bzlmod resolves transitive deps on its own.
+			return &Result{File: basename}, nil
+		}
+		return addToModule(workspacePath, basename, version, resp)
+	}
+	return addToWorkspace(filepath.Join(workspacePath, basename), module, version, resp)
+}
+
+func addToWorkspace(path, module, requestedVersion string, resp *RegistryResponse) (*Result, error) {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	version := requestedVersion
 	if version == "" {
 		version = resp.LatestReleaseWithWorkspaceSnippet
 	}
-
-	f, err := openOrCreateWorkspaceFile()
-	if err != nil {
-		return 1, err
-	}
-	defer f.Close()
-
-	if strings.HasPrefix(strings.ToUpper(filepath.Base(f.Name())), "MODULE") {
-		if transitive {
-			return 0, nil
-		}
-		if err := addToModule(f, module, version, resp); err != nil {
-			return 1, err
-		}
-	} else {
-		if err := addToWorkspace(f, module, version, resp); err != nil {
-			return 1, err
-		}
-	}
-
-	return 0, nil
-}
-
-func addToWorkspace(f *os.File, module, version string, resp *RegistryResponse) error {
-	contents, err := io.ReadAll(f)
-	if err != nil {
-		return err
-	}
+	result := &Result{File: filepath.Base(path), Module: module, Version: version}
 
 	matches := headerRegex.FindAllStringSubmatch(string(contents), -1)
 	for _, m := range matches {
 		existingModule := m[1]
 		existingVersion := m[2]
-		if module == existingModule && version == existingVersion {
-			return fmt.Errorf("WORKSPACE already contains %s at the requested version (%s)",
-				existingModule, existingVersion)
+		if module != existingModule {
+			continue
 		}
-		if module == existingModule {
-			return fmt.Errorf("WORKSPACE already contains %s at version %s (the requested version is %s)",
-				existingModule, existingVersion, version)
+		if requestedVersion != "" && existingVersion != requestedVersion {
+			return nil, fmt.Errorf("%s already contains %s at version %s (the requested version is %s)",
+				result.File, existingModule, existingVersion, requestedVersion)
 		}
+		result.Version = existingVersion
+		result.AlreadyPresent = true
+		return result, nil
 	}
 	if strings.Contains(string(contents), resp.Repo.FullName) {
-		return fmt.Errorf("WORKSPACE already contains %s which is likely %s manually installed",
-			resp.Repo.FullName, module)
+		// Likely installed by hand.
+		result.Version = ""
+		result.AlreadyPresent = true
+		return result, nil
 	}
 
 	addition := GenerateWorkspaceSnippet(module, version, resp)
-
-	if _, err := f.WriteString(addition); err != nil {
-		return err
+	if err := appendToFile(path, addition); err != nil {
+		return nil, err
 	}
-
-	log.Debugf("Added the following snippet to %s:\n%s\n\n", filepath.Base(f.Name()), addition)
-	return nil
+	log.Debugf("Added the following snippet to %s:\n%s\n\n", result.File, addition)
+	result.Added = true
+	return result, nil
 }
 
-func addToModule(f *os.File, module, version string, resp *RegistryResponse) error {
-	contents, err := io.ReadAll(f)
+func addToModule(workspacePath, basename, requestedVersion string, resp *RegistryResponse) (*Result, error) {
+	snippet := resp.ModuleSnippet
+	if strings.TrimSpace(snippet) == "" {
+		return nil, fmt.Errorf("the registry has no MODULE.bazel snippet for %s", resp.Repo.FullName)
+	}
+	name, version, err := bzlmod.ParseBazelDep(snippet)
+	if err != nil {
+		return nil, fmt.Errorf("parse MODULE.bazel snippet for %s: %w", resp.Repo.FullName, err)
+	}
+	result := &Result{File: basename, Module: name}
+
+	// Look at MODULE.bazel and everything it include()s.
+	module, err := bzlmod.Load(workspacePath)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", basename, err)
+	}
+	if existingVersion, ok := module.BazelDep(name); ok {
+		if requestedVersion != "" && existingVersion != "" &&
+			existingVersion != requestedVersion && existingVersion != strings.TrimPrefix(requestedVersion, "v") {
+			return nil, fmt.Errorf("%s already depends on %s at version %s (the requested version is %s)",
+				basename, name, existingVersion, requestedVersion)
+		}
+		result.Version = existingVersion
+		result.AlreadyPresent = true
+		return result, nil
+	}
+
+	if err := appendToFile(filepath.Join(workspacePath, basename), "\n"+snippet); err != nil {
+		return nil, err
+	}
+	log.Debugf("Added the following snippet to %s:\n%s\n\n", basename, snippet)
+	result.Version = version
+	result.Added = true
+	return result, nil
+}
+
+func appendToFile(path, contents string) error {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
-
-	moduleSnippet := GenerateModuleSnippet(module, version, resp)
-	registryMatches := moduleRegex.FindStringSubmatch(moduleSnippet)
-	if registryMatches == nil {
-		return fmt.Errorf("MODULE %s not found: %s", module, moduleSnippet)
-	}
-	newModule := registryMatches[1]
-	newVersion := registryMatches[2]
-
-	matches := moduleRegex.FindAllStringSubmatch(string(contents), -1)
-	for _, m := range matches {
-		existingModule := m[1]
-		existingVersion := m[2]
-		if newModule == existingModule && newVersion == existingVersion {
-			return fmt.Errorf("MODULE already contains %s at the requested version (%s)",
-				existingModule, existingVersion)
-		}
-		if newModule == existingModule {
-			return fmt.Errorf("MODULE already contains %s at version %s (the requested version is %s)",
-				existingModule, existingVersion, newVersion)
-		}
-	}
-
-	if _, err := f.WriteString(moduleSnippet); err != nil {
-		return err
-	}
-
-	log.Debugf("Added the following snippet to %s:\n%s\n\n", filepath.Base(f.Name()), moduleSnippet)
-	return nil
+	defer f.Close()
+	_, err = f.WriteString(contents)
+	return err
 }
 
 func FetchModuleOrDisambiguate(moduleInput string) (string, string, *RegistryResponse, error) {
@@ -273,14 +314,6 @@ func showPicker(modules []Disambiguation) (string, error) {
 		return "", fmt.Errorf("failed to select module: %v", err)
 	}
 	return modules[index].Path, nil
-}
-
-func openOrCreateWorkspaceFile() (*os.File, error) {
-	workspacePath, basename, err := workspace.CreateModuleIfNotExists()
-	if err != nil {
-		return nil, err
-	}
-	return os.OpenFile(filepath.Join(workspacePath, basename), os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 }
 
 type RegistryResponse struct {
