@@ -54,7 +54,7 @@ func TestStreamPubSub(t *testing.T) {
 
 	channel1 := pubSub.UnmonitoredChannel(channel1Name)
 
-	subscriber := pubSub.SubscribeHead(ctx, channel1)
+	subscriber := pubSub.SubscribeHead(ctx, channel1, SubscribeOptions{})
 	defer subscriber.Close()
 	requireNoMessages(t, subscriber)
 
@@ -72,11 +72,11 @@ func TestStreamPubSub(t *testing.T) {
 	requireMessages(t, subscriber, message2)
 
 	// Create a new "head" subscriber which should see both previously published messages.
-	subscriber2 := pubSub.SubscribeHead(ctx, channel1)
+	subscriber2 := pubSub.SubscribeHead(ctx, channel1, SubscribeOptions{})
 	requireMessages(t, subscriber2, message1, message2)
 
 	// Create a "tail" subscriber which should only see the last message.
-	tailSubscriber := pubSub.SubscribeTail(ctx, channel1)
+	tailSubscriber := pubSub.SubscribeTail(ctx, channel1, SubscribeOptions{})
 	requireMessages(t, tailSubscriber, message2)
 
 	// Publish another message which should be seen by all subscribers,
@@ -104,7 +104,7 @@ func TestMonitoredPubSub(t *testing.T) {
 			require.NoError(t, err)
 			channel1 := pubSub.MonitoredChannel(channel1Name)
 
-			subscriber := pubSub.SubscribeHead(ctx, channel1)
+			subscriber := pubSub.SubscribeHead(ctx, channel1, SubscribeOptions{})
 			defer subscriber.Close()
 			requireNoMessages(t, subscriber)
 
@@ -142,7 +142,7 @@ func TestDeleteMonitoredChannel(t *testing.T) {
 			require.NoError(t, err)
 			channel1 := pubSub.MonitoredChannel(channel1Name)
 
-			subscriber := pubSub.SubscribeHead(ctx, channel1)
+			subscriber := pubSub.SubscribeHead(ctx, channel1, SubscribeOptions{})
 			defer subscriber.Close()
 
 			err = pubSub.Publish(ctx, channel1, message1)
@@ -167,6 +167,37 @@ func TestDeleteMonitoredChannel(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestSubscribeHead_LivenessKey(t *testing.T) {
+	flags.Set(t, "remote_execution.pubsub_monitored_stream_check_interval", 10*time.Millisecond)
+	flags.Set(t, "remote_execution.pubsub_liveness_check_interval", 50*time.Millisecond)
+	rdb := testredis.Start(t).Client()
+	pubSub := NewStreamPubSub(rdb)
+	ctx := t.Context()
+	channel := pubSub.UnmonitoredChannel(channel1Name)
+	const livenessKey = "liveness-key"
+	err := rdb.Set(ctx, livenessKey, "1", 0).Err()
+	require.NoError(t, err)
+
+	subscriber := pubSub.SubscribeHead(ctx, channel, SubscribeOptions{LivenessKey: livenessKey})
+	defer subscriber.Close()
+
+	// While the liveness key exists, messages arrive as usual and the
+	// subscription stays open across many liveness checks.
+	err = pubSub.Publish(ctx, channel, message1)
+	require.NoError(t, err)
+	requireMessages(t, subscriber, message1)
+	requireNoMessages(t, subscriber)
+
+	// Once the key is gone, the subscription delivers the latest message
+	// again, in case the subscriber missed it, and then ends with an error.
+	err = rdb.Del(ctx, livenessKey).Err()
+	require.NoError(t, err)
+	requireMessages(t, subscriber, message1)
+	err = requireError(t, subscriber)
+	require.True(t, status.IsNotFoundError(err), "expected NOT_FOUND error but got %s", err)
+	require.Contains(t, err.Error(), "liveness key")
 }
 
 func TestStreamExistenceChecker(t *testing.T) {

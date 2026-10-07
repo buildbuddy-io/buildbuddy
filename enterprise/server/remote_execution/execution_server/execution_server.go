@@ -1340,13 +1340,19 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 	}
 
 	subChan := s.pubSubChannelForExecutionID(req.GetName())
+	// Bazel waits for as long as the subscription stays open, so if the task
+	// ends without a final update being published (for example, because a
+	// Redis error prevented publishing it), Bazel would wait forever. The
+	// scheduler deletes its key for the task once no executor will run the
+	// task again, so end the subscription if the key disappears.
+	subOpts := pubsub.SubscribeOptions{LivenessKey: s.env.GetSchedulerService().RedisKeyForTask(req.GetName())}
 
 	var subscriber *pubsub.StreamSubscription
 	if opts.isExecuteRequest {
-		subscriber = s.streamPubSub.SubscribeHead(ctx, subChan)
+		subscriber = s.streamPubSub.SubscribeHead(ctx, subChan, subOpts)
 	} else {
 		// If this is a WaitExecution RPC, start the subscription from the last published status, inclusive.
-		subscriber = s.streamPubSub.SubscribeTail(ctx, subChan)
+		subscriber = s.streamPubSub.SubscribeTail(ctx, subChan, subOpts)
 	}
 	defer subscriber.Close()
 	streamPubSubChan := subscriber.Chan()
@@ -1375,8 +1381,8 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 			return status.UnavailableErrorf("Stream PubSub channel closed for %q", req.GetName())
 		}
 		var data string
-		// If there's an error maintaining the subscription (e.g. because a Redis node went away) send a
-		// NOT FOUND error to Bazel so that it retries the execution.
+		// If there's an error maintaining the subscription (e.g. because a Redis node went away or the task
+		// was lost) send a NOT FOUND error to Bazel so that it retries the execution.
 		if msg.Err != nil {
 			op, err := operation.Assemble(
 				req.GetName(),

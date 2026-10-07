@@ -1775,7 +1775,8 @@ func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executor
 	return numEnqueued, nil
 }
 
-func (s *SchedulerServer) redisKeyForTask(taskID string) string {
+// RedisKeyForTask returns the Redis key that stores the task.
+func (s *SchedulerServer) RedisKeyForTask(taskID string) string {
 	if s.enableRedisAvailabilityMonitoring {
 		// Use the taskID as the input to the Redis consistent hash function so that task information and pubsub
 		// channels end up on the same Redis shard.
@@ -1863,14 +1864,14 @@ func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadat
 		redisTaskAttempCountField: 0,
 		redisTaskJWTField:         jwt,
 	}
-	c, err := s.rdb.HSet(ctx, s.redisKeyForTask(taskID), props).Result()
+	c, err := s.rdb.HSet(ctx, s.RedisKeyForTask(taskID), props).Result()
 	if err != nil {
 		return err
 	}
 	if c == 0 {
 		return status.AlreadyExistsErrorf("task %s already exists", taskID)
 	}
-	ok, err := s.rdb.Expire(ctx, s.redisKeyForTask(taskID), taskTTL).Result()
+	ok, err := s.rdb.Expire(ctx, s.RedisKeyForTask(taskID), taskTTL).Result()
 	if err != nil {
 		return err
 	}
@@ -1881,14 +1882,14 @@ func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadat
 }
 
 func (s *SchedulerServer) deleteTask(ctx context.Context, taskID string) (bool, error) {
-	key := s.redisKeyForTask(taskID)
+	key := s.RedisKeyForTask(taskID)
 	n, err := s.rdb.Del(ctx, key).Result()
 	return n == 1, err
 }
 
 func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) error {
 	// The script will return 1 if the task is claimed & has been deleted.
-	r, err := redisDeleteClaimedTask.Run(ctx, s.rdb, []string{s.redisKeyForTask(taskID)}).Result()
+	r, err := redisDeleteClaimedTask.Run(ctx, s.rdb, []string{s.RedisKeyForTask(taskID)}).Result()
 	if err != nil {
 		return err
 	}
@@ -1916,7 +1917,7 @@ func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, leaseID, reco
 	// The script will return 1 if the task is claimed & claim has been released.
 	r, err := redisReleaseClaim.Run(
 		ctx, s.rdb,
-		[]string{s.redisKeyForTask(taskID)},
+		[]string{s.RedisKeyForTask(taskID)},
 		reconnectToken, reconnectPeriodEnd.UnixNano(), leaseID,
 	).Result()
 	if err != nil {
@@ -1941,7 +1942,7 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken 
 	checkTaskReconnectToken := *leaseReconnectGracePeriod > 0 && clientSupportsReconnect
 	r, err := redisAcquireClaim.Run(
 		ctx, s.rdb,
-		[]string{s.redisKeyForTask(taskID)},
+		[]string{s.RedisKeyForTask(taskID)},
 		strconv.FormatBool(checkTaskReconnectToken), reconnectToken, time.Now().UnixNano(), leaseId,
 	).Result()
 	if err != nil {
@@ -2106,7 +2107,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		redisTaskReconnectPeriodEndField,
 		redisTaskJWTField,
 	}
-	key := s.redisKeyForTask(taskID)
+	key := s.RedisKeyForTask(taskID)
 	vals, err := s.rdb.HMGet(ctx, key, fields...).Result()
 	if err != nil {
 		return nil, status.InternalErrorf("could not read task from redis: %v", err)
@@ -2898,7 +2899,7 @@ func (s *SchedulerServer) CancelTask(ctx context.Context, taskID string) (bool, 
 }
 
 func (s *SchedulerServer) ExistsTask(ctx context.Context, taskID string) (bool, error) {
-	key := s.redisKeyForTask(taskID)
+	key := s.RedisKeyForTask(taskID)
 	n, err := s.rdb.Exists(ctx, key).Result()
 	return n == 1, err
 }

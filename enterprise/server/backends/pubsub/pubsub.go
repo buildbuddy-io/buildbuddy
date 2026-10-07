@@ -44,6 +44,7 @@ const (
 var (
 	batchMonitoredStreamChecks             = flag.Bool("remote_execution.pubsub_batch_monitored_stream_checks", false, "Check the monitored pubsub streams of all subscriptions with one pipeline per interval, split by shard, instead of one read per subscription per interval.")
 	monitoredChannelExistenceCheckInterval = flag.Duration("remote_execution.pubsub_monitored_stream_check_interval", time.Second, "How often to check whether monitored PubSub streams still exist in Redis.")
+	livenessCheckInterval                  = flag.Duration("remote_execution.pubsub_liveness_check_interval", 30*time.Second, "How often a PubSub subscription with a liveness key checks that the key still exists. The subscription ends once the key is missing for two checks in a row. 0 disables liveness checks.")
 )
 
 type PubSub struct {
@@ -164,6 +165,20 @@ type Message struct {
 	Data string
 }
 
+// SubscribeOptions configures a stream subscription.
+type SubscribeOptions struct {
+	// LivenessKey, if set, is a Redis key that exists for as long as a
+	// publisher may still publish to the channel. Without it, a subscriber
+	// whose publisher went away without publishing a final message would wait
+	// forever. The subscription periodically checks the key, batched into the
+	// same pipeline as monitored stream checks, and once the key is missing
+	// for two checks in a row, it delivers the channel's latest message
+	// again, followed by an error. Redelivering the latest message makes sure that the subscriber
+	// sees a final message published just before the key was deleted, even if
+	// the subscription's own read has stalled.
+	LivenessKey string
+}
+
 type StreamSubscription struct {
 	cancel context.CancelFunc
 	ch     <-chan *Message
@@ -257,8 +272,13 @@ func checkMonitoredStreamResult(channel *Channel, result []redis.XStream, err er
 	return nil
 }
 
-func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startFromTail bool) *StreamSubscription {
+func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startFromTail bool, opts SubscribeOptions) *StreamSubscription {
 	ctx, cancel := context.WithCancel(ctx)
+
+	liveChan := make(chan *Message)
+	if opts.LivenessKey != "" && *livenessCheckInterval > 0 {
+		go p.watchLivenessKey(ctx, psChannel, opts.LivenessKey, liveChan)
+	}
 
 	// If this is a monitored channel, start a goroutine that will periodically check that the stream still exists or
 	// publish an error if it does not.
@@ -355,6 +375,11 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 					return
 				}
 				ch <- msg
+			case msg, ok := <-liveChan:
+				if !ok {
+					return
+				}
+				ch <- msg
 			case <-ctx.Done():
 				return
 			}
@@ -367,16 +392,59 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 	}
 }
 
+// watchLivenessKey ends a subscription once the subscription's liveness key
+// is missing for two checks in a row. See SubscribeOptions.LivenessKey.
+func (p *StreamPubSub) watchLivenessKey(ctx context.Context, channel *Channel, key string, out chan *Message) {
+	defer close(out)
+	ticker := time.NewTicker(*livenessCheckInterval)
+	defer ticker.Stop()
+	// A publisher may delete the key just before publishing its final message
+	// (task cancellation does this, for example), so wait for a second check
+	// before ending the subscription, which gives that message time to land.
+	missing := false
+	for {
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return
+		}
+		exists, err := p.checker.exists(ctx, key)
+		if err != nil {
+			// The check is inconclusive. Ending subscriptions here would make
+			// a slow or unreachable shard end every subscription whose key is
+			// on it, so check again on the next tick instead.
+			continue
+		}
+		if exists {
+			missing = false
+			continue
+		}
+		if !missing {
+			missing = true
+			continue
+		}
+		msgs, err := p.rdb.XRevRangeN(ctx, channel.name, "+", "-", 1).Result()
+		if err != nil {
+			log.CtxWarningf(ctx, "Unable to retrieve last element of stream %q after its liveness key %q disappeared: %s", channel.name, key, err)
+		} else if len(msgs) == 1 && !p.deliverMsg(ctx, channel, out, &msgs[0]) {
+			return
+		}
+		err = status.NotFoundErrorf("liveness key %q of PubSub channel %q no longer exists", key, channel.name)
+		deliverError(ctx, out, status.WithReason(err, pubsubChannelErrorReason))
+		return
+	}
+}
+
 // SubscribeHead returns a subscription for all previous and future message on the stream.
-func (p *StreamPubSub) SubscribeHead(ctx context.Context, channel *Channel) *StreamSubscription {
+func (p *StreamPubSub) SubscribeHead(ctx context.Context, channel *Channel, opts SubscribeOptions) *StreamSubscription {
 	// Subscribe from the beginning of the stream.
-	return p.subscribe(ctx, channel, false /*startFromTail=*/)
+	return p.subscribe(ctx, channel, false /*startFromTail=*/, opts)
 }
 
 // SubscribeTail returns a subscription for messages starting from the last message already on the stream, if any.
-func (p *StreamPubSub) SubscribeTail(ctx context.Context, channel *Channel) *StreamSubscription {
+func (p *StreamPubSub) SubscribeTail(ctx context.Context, channel *Channel, opts SubscribeOptions) *StreamSubscription {
 	// Subscribe from the last elements of the stream, if any.
-	return p.subscribe(ctx, channel, true /*startFromTail=*/)
+	return p.subscribe(ctx, channel, true /*startFromTail=*/, opts)
 }
 
 func (p *StreamPubSub) Publish(ctx context.Context, channel *Channel, message string) error {
@@ -394,11 +462,11 @@ func (p *StreamPubSub) Expire(ctx context.Context, channel *Channel, d time.Dura
 	return p.rdb.Expire(ctx, channel.name, d).Err()
 }
 
-// streamExistenceChecker batches the stream existence checks of many
-// subscriptions into shared pipelines. A check queues its read on the current
-// pipeline and waits for it to be executed, which happens once per interval,
-// so a shard sees one pipeline per interval per app instead of a read per
-// subscription.
+// streamExistenceChecker batches the existence checks of many subscriptions,
+// for both monitored streams and liveness keys, into shared pipelines. A check
+// queues its read on the current pipeline and waits for it to be executed,
+// which happens once per interval, so a shard sees one pipeline per interval
+// per app instead of a read per subscription.
 type streamExistenceChecker struct {
 	rdb redis.UniversalClient
 
@@ -427,29 +495,51 @@ func (c *streamExistenceChecker) check(ctx context.Context, channel *Channel) er
 // checkOnce schedules a single existence check as part of a batch, and waits
 // for the batch to complete before its result is returned. It does not retry.
 func (c *streamExistenceChecker) checkOnce(ctx context.Context, streamName string) ([]redis.XStream, error) {
-	// Schedule a new pipeline if none is scheduled and add the XRead op to the
-	// pipeline.
-	c.mu.Lock()
-	if c.pipe == nil {
-		c.pipe = c.rdb.Pipeline()
-		c.executed = make(chan struct{})
-		time.AfterFunc(*monitoredChannelExistenceCheckInterval, c.execute)
-	}
-	read := c.pipe.XRead(context.Background(), &redis.XReadArgs{
-		Streams: []string{streamName, "0"},
-		Count:   1,
-		Block:   -1, // No blocking.
+	var read *redis.XStreamSliceCmd
+	executed := c.enqueue(func(pipe redis.Pipeliner) {
+		read = pipe.XRead(context.Background(), &redis.XReadArgs{
+			Streams: []string{streamName, "0"},
+			Count:   1,
+			Block:   -1, // No blocking.
+		})
 	})
-	executed := c.executed
-	c.mu.Unlock()
-
-	// Wait for batch to complete.
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-executed:
 		return read.Result()
 	}
+}
+
+// exists reports whether the key exists, checking it as part of a batch. It
+// does not retry.
+func (c *streamExistenceChecker) exists(ctx context.Context, key string) (bool, error) {
+	var cmd *redis.IntCmd
+	executed := c.enqueue(func(pipe redis.Pipeliner) {
+		cmd = pipe.Exists(context.Background(), key)
+	})
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case <-executed:
+		n, err := cmd.Result()
+		return n == 1, err
+	}
+}
+
+// enqueue adds a command to the current pipeline, scheduling the pipeline's
+// execution if it is new, and returns a channel that is closed once the
+// pipeline has been executed.
+func (c *streamExistenceChecker) enqueue(addCmd func(pipe redis.Pipeliner)) <-chan struct{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.pipe == nil {
+		c.pipe = c.rdb.Pipeline()
+		c.executed = make(chan struct{})
+		time.AfterFunc(*monitoredChannelExistenceCheckInterval, c.execute)
+	}
+	addCmd(c.pipe)
+	return c.executed
 }
 
 // execute runs the current pipeline and releases the checks waiting on it.
@@ -466,7 +556,7 @@ func (c *streamExistenceChecker) execute() {
 		// Log retryable errors here; otherwise they may never end up getting
 		// logged if retry attempts are successful.
 		if err := cmd.Err(); retryable(err) {
-			log.Warningf("Batched pubsub stream check of %d streams could not reach Redis: %s", len(cmds), err)
+			log.Warningf("Batched pubsub check of %d keys could not reach Redis: %s", len(cmds), err)
 			break
 		}
 	}

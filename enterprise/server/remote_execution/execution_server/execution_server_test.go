@@ -111,6 +111,10 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 	return true, nil
 }
 
+func (s *schedulerServerMock) RedisKeyForTask(taskID string) string {
+	return "task/" + taskID
+}
+
 type taskSizerMock struct {
 	interfaces.TaskSizer
 
@@ -2502,6 +2506,68 @@ func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
 	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), rows[0].ExecutionID)
 	require.NoError(t, err)
 	require.Contains(t, executeResponse.GetStatus().GetMessage(), "Secrets requested but secret service not available")
+}
+
+func TestExecute_LostTaskEndsWait(t *testing.T) {
+	flags.Set(t, "remote_execution.pubsub_monitored_stream_check_interval", 10*time.Millisecond)
+	flags.Set(t, "remote_execution.pubsub_liveness_check_interval", 200*time.Millisecond)
+	env, conn, _ := setupEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(t.Context(), "US1")
+	require.NoError(t, err)
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, &repb.Action{})
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	// Start an execution. The server's first update is named after the
+	// execution, so use it to create the task's key in Redis, the way the
+	// scheduler would have when scheduling the task. The subscription only
+	// ends after two liveness checks in a row miss the key, so creating the
+	// key after the first update still comes before the first check.
+	client := repb.NewExecutionClient(conn)
+	stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	op, err := stream.Recv()
+	require.NoError(t, err)
+	rdb := env.GetRemoteExecutionRedisClient()
+	taskKey := env.GetSchedulerService().RedisKeyForTask(op.GetName())
+	err = rdb.Set(ctx, taskKey, "1", 0).Err()
+	require.NoError(t, err)
+
+	// While the task exists, the server keeps waiting for an update.
+	recvErr := make(chan error, 1)
+	go func() {
+		var err error
+		op, err = stream.Recv()
+		recvErr <- err
+	}()
+	select {
+	case err := <-recvErr:
+		require.FailNow(t, "wait ended while the task still existed", "op: %v, err: %v", op, err)
+	case <-time.After(time.Second):
+	}
+
+	// Delete the task without publishing a final update, as happens when a
+	// Redis error prevents publishing the failure of the task's last attempt.
+	// The server ends the wait with a completed operation carrying a
+	// NOT_FOUND error, which tells Bazel to retry the execution, instead of
+	// leaving Bazel waiting forever.
+	err = rdb.Del(ctx, taskKey).Err()
+	require.NoError(t, err)
+	select {
+	case err := <-recvErr:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "wait did not end after the task was deleted")
+	}
+	require.True(t, op.GetDone())
+	rsp := operation.ExtractExecuteResponse(op)
+	require.Equal(t, int32(codes.NotFound), rsp.GetStatus().GetCode(), "status: %v", rsp.GetStatus())
 }
 
 func TestExecute_RejectAnonymousExecutionsExperiment(t *testing.T) {
