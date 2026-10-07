@@ -46,7 +46,7 @@ export interface ClickCoordinateInfo {
 export interface ChartDataSeries {
   name: string;
   formatHoverValue?: (datum: number) => string | JSX.Element;
-  extractValue: (datum: number) => any;
+  extractValue: (datum: number) => number | [number, number] | null;
   onClick?: (datum: number, e: React.MouseEvent<SVGElement>, s: ClickCoordinateInfo) => void;
   type: SeriesType;
   color: ChartColor | string;
@@ -438,7 +438,12 @@ function PointTooltipLayer({ config, data, dataSeries }: PointTooltipLayerProps)
         if (x === undefined || y === undefined) {
           continue;
         }
-        located.push({ series, datum: d, value, x, y });
+        // For scatters, the extracted value should always be a number, so
+        // we just skip non-number values to satisfy typescript type checks
+        // without getting into a whole mess with generics.
+        if (typeof value === "number") {
+          located.push({ series, datum: d, value, x, y });
+        }
       }
     }
     return located;
