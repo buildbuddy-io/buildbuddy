@@ -1073,6 +1073,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	if err != nil {
 		return 1, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
 	}
+	defer conn.Close()
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 	execClient := repb.NewExecutionClient(conn)
 
@@ -1268,6 +1269,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			if err != nil {
 				return 1, fmt.Errorf("dial sidecar: %w", err)
 			}
+			defer conn.Close()
 			env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
