@@ -108,12 +108,13 @@ func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []s
 		return fmt.Errorf("find go in runfiles: %w", err)
 	}
 	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+os.Getenv("PATH"))
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("run bb fix: %w", err)
-	}
-	// In diff mode, fail if the diff is non-empty.
+	// bb fix exits non-zero if anything fails, or (in diff mode) if there are
+	// changes to apply. Older versions exit 0 in both cases, so in diff mode
+	// also fail if it printed a diff. Either way, still run buildifier below.
 	var fixErr error
-	if !fix && stdoutCounter.Count() > 0 {
+	if err := cmd.Run(); err != nil {
+		fixErr = fmt.Errorf("bb fix found lint errors: %w", err)
+	} else if !fix && stdoutCounter.Count() > 0 {
 		fixErr = fmt.Errorf("bb fix found lint errors")
 	}
 	return errors.Join(fixErr, runBuildifier(ctx, stdout, stderr, fix, files))

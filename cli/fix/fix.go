@@ -20,9 +20,15 @@
 //
 // The --diff flag previews buildifier and Gazelle changes without writing
 // them; other fixes (dep additions, update-repos) are skipped in diff mode.
+//
+// `bb fix` exits non-zero if buildifier or Gazelle fails (e.g. a BUILD file
+// doesn't parse), and with --diff, also if there are changes to apply. It
+// still runs Gazelle after a buildifier failure, and reports all failures at
+// the end.
 package fix
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -62,6 +68,9 @@ Use the --diff flag to print suggested fixes without applying.
 
 var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9 ]+`)
 
+// errDiff is returned in --diff mode by steps that found changes to apply.
+var errDiff = errors.New("found changes to apply; run `bb fix` without --diff to apply them")
+
 func HandleFix(args []string) (exitCode int, err error) {
 	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {
@@ -78,14 +87,13 @@ func HandleFix(args []string) (exitCode int, err error) {
 		return 1, err
 	}
 
-	if err := walk(baseFile); err != nil {
-		log.Printf("Error fixing: %s", err)
-	}
-
-	if err := runGazelle(path, baseFile); err != nil {
+	// Run Gazelle even if the walk failed, so that one bad file doesn't stop
+	// everything else from being fixed.
+	walkErr := walk(baseFile)
+	gazelleErr := runGazelle(path, baseFile)
+	if err := joinErrors([]error{walkErr, gazelleErr}); err != nil {
 		return 1, err
 	}
-
 	return 0, nil
 }
 
@@ -111,8 +119,15 @@ func runRepoGazelle() error {
 	if *diff {
 		args = append(args, "-mode=diff")
 	}
-	_, err := bazelisk.Run(args, &bazelisk.RunOpts{})
-	return err
+	exitCode, err := bazelisk.Run(args, &bazelisk.RunOpts{})
+	if err != nil {
+		return fmt.Errorf("run %s: %w", gazelleTarget, err)
+	}
+	if exitCode != 0 {
+		// In diff mode, Gazelle exits 1 both for diffs and for errors.
+		return fmt.Errorf("`bazel run %s` exited with code %d", gazelleTarget, exitCode)
+	}
+	return nil
 }
 
 func runBuiltinGazelle(repoRoot, baseFile string) error {
@@ -136,7 +151,11 @@ func runBuiltinGazelle(repoRoot, baseFile string) error {
 	return nil
 }
 
+// walk formats build files and, outside of --diff mode, adds and registers the
+// dependencies of the languages used in the repo. It returns the errors from
+// formatting.
 func walk(moduleOrWorkspaceFile string) error {
+	var errs []error
 	languages := getLanguages()
 	foundLanguages := map[language.Language]bool{}
 	depFiles := map[string][]string{}
@@ -156,7 +175,7 @@ func walk(moduleOrWorkspaceFile string) error {
 			}
 			// .bzl files are formatted directly by buildifier.
 			if strings.HasSuffix(path, ".bzl") {
-				runBuildifier(path)
+				errs = append(errs, runBuildifier(path))
 				return nil
 			}
 
@@ -186,16 +205,17 @@ func walk(moduleOrWorkspaceFile string) error {
 			if fileToFormat == "" {
 				return nil
 			}
-			runBuildifier(fileToFormat)
+			errs = append(errs, runBuildifier(fileToFormat))
 			return nil
 		})
 	if err != nil {
-		return err
+		errs = append(errs, err)
+		return joinErrors(errs)
 	}
 
 	if *diff {
 		// TODO: support diff mode for other fixes
-		return nil
+		return joinErrors(errs)
 	}
 
 	// Add any necessary dependencies for languages that are used in the repo.
@@ -222,7 +242,36 @@ func walk(moduleOrWorkspaceFile string) error {
 		}
 	}
 
-	return nil
+	return joinErrors(errs)
+}
+
+// joinErrors is errors.Join, except that errDiff appears at most once.
+func joinErrors(errs []error) error {
+	var out []error
+	sawDiff := false
+	for _, err := range flatten(errs) {
+		if err == errDiff {
+			if sawDiff {
+				continue
+			}
+			sawDiff = true
+		}
+		out = append(out, err)
+	}
+	return errors.Join(out...)
+}
+
+// flatten expands errors created by errors.Join into their parts.
+func flatten(errs []error) []error {
+	var out []error
+	for _, err := range errs {
+		if joined, ok := err.(interface{ Unwrap() []error }); ok {
+			out = append(out, flatten(joined.Unwrap())...)
+		} else if err != nil {
+			out = append(out, err)
+		}
+	}
+	return out
 }
 
 // Collect the languages that support auto-generating WORKSPACE files.
@@ -236,7 +285,8 @@ func getLanguages() []language.Language {
 	return languages
 }
 
-func runBuildifier(path string) {
+// runBuildifier formats (or with --diff, diffs) the given file.
+func runBuildifier(path string) error {
 	originalArgs := os.Args
 	defer func() {
 		os.Args = originalArgs
@@ -251,7 +301,15 @@ func runBuildifier(path string) {
 		)
 	}
 	os.Args = append(os.Args, path)
-	buildifier.Run()
+	switch exitCode := buildifier.Run(); {
+	case exitCode == 0:
+		return nil
+	case exitCode == 4 && *diff:
+		// Exit code 4 means the file needs reformatting.
+		return errDiff
+	default:
+		return fmt.Errorf("buildifier %s: exit code %d", path, exitCode)
+	}
 }
 
 func runUpdateRepos(path string, moduleOrWorkspaceFile string) {

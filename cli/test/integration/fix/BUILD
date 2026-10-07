@@ -4,7 +4,10 @@ package(default_visibility = ["//cli:__subpackages__"])
 
 go_test(
     name = "fix_test",
-    srcs = ["fix_test.go"],
+    srcs = [
+        "fix_failures_test.go",
+        "fix_test.go",
+    ],
     exec_properties = {
         # Mirror cli/test/integration/cli: bb may reach the network during
         # startup (e.g. for version checks). Tests themselves are network-free.
