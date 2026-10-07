@@ -54,6 +54,7 @@ ts_library(
         "//:node_modules/tslib",
         "//app/format",
         "//enterprise/app/filter:filter_util",
+        "//proto:execution_stats_ts_proto",
         "//proto:stat_filter_ts_proto",
         "//proto:stats_ts_proto",
     ],

@@ -4,6 +4,7 @@ import React from "react";
 import { OutlinedButton } from "../../../app/components/button/button";
 import router from "../../../app/router/router";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
+import { getQuantile } from "../trends/common";
 import TrendsChartComponent, { ChartDataSeries } from "../trends/trends_chart";
 
 export interface TimelineDataSeries {
@@ -48,13 +49,11 @@ export default class TargetChartComponent extends React.Component<Props, State> 
   }
 
   private renderResults() {
-    const p10 = (s: execution_stats.ExecutionTimelineSummary) =>
-      +(this.props.getQuantiles(s).find((q) => q.quantile === 10)?.value ?? 0);
-    const p50 = (s: execution_stats.ExecutionTimelineSummary) =>
-      +(this.props.getQuantiles(s).find((q) => q.quantile === 50)?.value ?? 0);
-    const p90 = (s: execution_stats.ExecutionTimelineSummary) =>
-      +(this.props.getQuantiles(s).find((q) => q.quantile === 90)?.value ?? 0);
-    let sortedTimelines = [...this.props.series].sort((a, b) => p50(b.timeline.summary!) - p50(a.timeline.summary!));
+    const quantile = (s: execution_stats.ExecutionTimelineSummary, q: number) =>
+      getQuantile(this.props.getQuantiles(s), q);
+    let sortedTimelines = [...this.props.series].sort(
+      (a, b) => quantile(b.timeline.summary!, 50) - quantile(a.timeline.summary!, 50)
+    );
     const page = this.getPage();
     const pageStart = page * LEGEND_PAGE_SIZE;
     sortedTimelines = sortedTimelines.slice(pageStart, pageStart + LEGEND_PAGE_SIZE);
@@ -74,9 +73,9 @@ export default class TargetChartComponent extends React.Component<Props, State> 
           <div className="action-column" title={s.timeline.outputPath}>
             {s.timeline.outputPath}
           </div>
-          <div className="stat-column">{fv(p10(s.timeline.summary))}</div>
-          <div className="stat-column">{fv(p50(s.timeline.summary))}</div>
-          <div className="stat-column">{fv(p90(s.timeline.summary))}</div>
+          <div className="stat-column">{fv(quantile(s.timeline.summary, 10))}</div>
+          <div className="stat-column">{fv(quantile(s.timeline.summary, 50))}</div>
+          <div className="stat-column">{fv(quantile(s.timeline.summary, 90))}</div>
           {Boolean(this.props.getTotal) && (
             <div className="stat-column">{fv(this.props.getTotal!(s.timeline.summary))}</div>
           )}

@@ -15,7 +15,6 @@ import {
 import React from "react";
 import { User } from "../../../app/auth/user";
 import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
-import { OutlinedButton } from "../../../app/components/button/button";
 import DonutChart, { makeColorPicker, NamedValue } from "../../../app/components/chart/donut_chart";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import Link from "../../../app/components/link/link";
@@ -31,7 +30,7 @@ import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
 import FilterComponent from "../filter/filter";
 import { getProtoFilterParams } from "../filter/filter_util";
-import { computeTimeKeys } from "../trends/common";
+import { computeTimeKeys, getQuantile } from "../trends/common";
 import { SeriesType } from "../trends/trends_chart";
 import SingleActionComponent from "./single_action";
 import TargetChartComponent, { TimelineDataSeries } from "./target_chart";
@@ -225,10 +224,6 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     });
   }
 
-  private getP50(q?: execution_stats.Quantile[]): number {
-    return +(q?.find((v) => v.quantile === 50)?.value ?? 0);
-  }
-
   private renderTimelineCard(
     interval: stats.StatsInterval,
     domain: [Date, Date],
@@ -255,9 +250,9 @@ export default class SingleTargetComponent extends React.Component<Props, State>
       }
       const endOfPathElement = () => <span>{endOfPath}</span>;
       for (const e of timeline.aggregatedStats) {
-        durationByStartTime.set(+(e.bucketStartTimeUsec ?? 0), this.getP50(e.summary?.durationUsec));
-        memoryByStartTime.set(+(e.bucketStartTimeUsec ?? 0), this.getP50(e.summary?.peakMemory));
-        cpuByStartTime.set(+(e.bucketStartTimeUsec ?? 0), this.getP50(e.summary?.cpuNanos));
+        durationByStartTime.set(+(e.bucketStartTimeUsec ?? 0), getQuantile(e.summary?.durationUsec, 50));
+        memoryByStartTime.set(+(e.bucketStartTimeUsec ?? 0), getQuantile(e.summary?.peakMemory, 50));
+        cpuByStartTime.set(+(e.bucketStartTimeUsec ?? 0), getQuantile(e.summary?.cpuNanos, 50));
       }
       const color = colorPicker(timeline);
       durationSeries.push({
@@ -452,15 +447,15 @@ export default class SingleTargetComponent extends React.Component<Props, State>
             </div>
             <div className="detail" title="Median wall time">
               <Clock />
-              {format.durationUsec(this.getP50(summary.durationUsec))} median wall time
+              {format.durationUsec(getQuantile(summary.durationUsec, 50))} median wall time
             </div>
             <div className="detail" title="Median CPU time">
               <Cpu />
-              {format.durationMillis(this.getP50(summary.cpuNanos) / 1e6)} median CPU time
+              {format.durationMillis(getQuantile(summary.cpuNanos, 50) / 1e6)} median CPU time
             </div>
             <div className="detail" title="Median peak memory">
               <MemoryStick />
-              {format.bytes(this.getP50(summary.peakMemory))} median peak memory
+              {format.bytes(getQuantile(summary.peakMemory, 50))} median peak memory
             </div>
             <div className="detail" title="Total inputs downloaded">
               <Download />

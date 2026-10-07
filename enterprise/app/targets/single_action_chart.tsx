@@ -4,7 +4,7 @@ import format from "../../../app/format/format";
 import ActionCompareButtonComponent from "../../../app/invocation/action_compare_button";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
-import { computeTimeKeys, intervalEndUsec } from "../trends/common";
+import { computeTimeKeys, getQuantile, intervalEndUsec } from "../trends/common";
 import TrendsChartComponent, {
   ChartColor,
   ChartDataSeries,
@@ -29,10 +29,6 @@ const SCATTER_TOOLTIP_RADIUS_PX = 15;
 const LOWER_QUANTILE = 10;
 const MIDDLE_QUANTILE = 50;
 const UPPER_QUANTILE = 90;
-
-function getQuantile(quantiles: execution_stats.Quantile[], target: number): number {
-  return +(quantiles.find((v) => v.quantile === target)?.value ?? 0);
-}
 
 /**
  * Plots a single metric of one action over time, with the median as a solid line,

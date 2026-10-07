@@ -1,6 +1,7 @@
 import { timeDay, timeMinute } from "d3-time";
 import moment from "moment";
 import format from "../../../app/format/format";
+import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
 import { isExecutionMetric } from "../filter/filter_util";
@@ -229,4 +230,12 @@ export function getTotal(stats: stats.ITrendStat[], fn: (stat: stats.ITrendStat)
 
 export function getAverage(stats: stats.ITrendStat[], fn: (stat: stats.ITrendStat) => number): number {
   return stats.map(fn).reduce((a, b) => a + b, 0) / stats.length;
+}
+
+/**
+ * Returns the value of the requested quantile (e.g. 50 for p50) from a list of
+ * execution timeline quantiles, or 0 if that quantile isn't present.
+ */
+export function getQuantile(quantiles: execution_stats.Quantile[] | undefined, quantile: number): number {
+  return +(quantiles?.find((q) => q.quantile === quantile)?.value ?? 0);
 }
