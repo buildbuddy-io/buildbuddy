@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/metrics",
         "//server/util/log/gcp",
+        "//server/util/lru",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_rs_zerolog//:zerolog",

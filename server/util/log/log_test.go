@@ -1,7 +1,10 @@
 package log_test
 
 import (
+	"bytes"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -60,4 +63,27 @@ func TestConfigureEnableStructuredLogging(t *testing.T) {
 	// Check that Configure changed these vars to conform with GCP logging.
 	assert.Equal(t, zl.LevelFieldName, "severity")
 	assert.Equal(t, zl.TimestampFieldName, "timestamp")
+}
+
+func TestEveryDurationPerKey(t *testing.T) {
+	// Capture the output of loggers derived from the global logger.
+	buf := &bytes.Buffer{}
+	originalLogger := zllog.Logger
+	zllog.Logger = zl.New(buf)
+	t.Cleanup(func() { zllog.Logger = originalLogger })
+
+	const d = 50 * time.Millisecond
+	l := log.NamedSubLogger("test").EveryDurationPerKey(d)
+	count := func(msg string) int { return strings.Count(buf.String(), msg) }
+
+	l.ForKey("a").Warningf("msg-a")
+	l.ForKey("a").Warningf("msg-a")
+	l.ForKey("b").Warningf("msg-b")
+	assert.Equal(t, 1, count("msg-a"), "repeat for the same key within the duration is suppressed")
+	assert.Equal(t, 1, count("msg-b"), "keys are sampled independently")
+
+	time.Sleep(d + 10*time.Millisecond)
+	l.ForKey("a").Warningf("msg-a")
+	l.ForKey("a").Warningf("msg-a")
+	assert.Equal(t, 2, count("msg-a"), "logs again once the duration has passed")
 }
