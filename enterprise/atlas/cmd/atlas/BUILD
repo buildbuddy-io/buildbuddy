@@ -16,6 +16,7 @@ go_library(
         "//enterprise/server/backends/configsecrets",
         "//proto:atlas_go_proto",
         "//server/config",
+        "//server/interfaces",
         "//server/nullauth",
         "//server/real_environment",
         "//server/util/flag",

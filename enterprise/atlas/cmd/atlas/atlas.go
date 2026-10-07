@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/atlas/server/web"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -74,6 +75,7 @@ func main() {
 		log.Fatalf("Could not set up the cluster: %s", err)
 	}
 	go c.Run(context.Background())
+	healthChecker.AddHealthCheck("index", interfaces.CheckerFunc(func(context.Context) error { return c.Ready() }))
 	service := atlas_service.New(c)
 
 	// The API is served as gRPC, and over HTTP for the UI via protolet, which
