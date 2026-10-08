@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
@@ -145,9 +146,18 @@ func (ht *testHitTracker) casDownloadExpectation(key string, expectation int64) 
 }
 
 func setup(t testing.TB) (interfaces.Authenticator, *HitTrackerFactory, *testHitTracker) {
+	return setupWithClock(t, nil)
+}
+
+// setupWithClock is like setup, but installs the given clock in the test env
+// so that tests control when the hit-tracker-client sender ticks.
+func setupWithClock(t testing.TB, clock clockwork.Clock) (interfaces.Authenticator, *HitTrackerFactory, *testHitTracker) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	te := testenv.GetTestEnv(t)
+	if clock != nil {
+		te.SetClock(clock)
+	}
 	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
 	te.SetAuthenticator(authenticator)
 	hitTrackerService := newTestHitTracker(t, authenticator)
@@ -356,6 +366,58 @@ func TestCASHitTracker_DropsUpdates(t *testing.T) {
 	expectation = hitTrackerService.casDownloadExpectation(group1Key, 2)
 	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 2 cache hits for group 1")
 	require.Equal(t, int64(4_000_000), hitTrackerService.casBytesDownloaded[group1Key].Load())
+}
+
+// pendingHitsExpectation returns a function reporting whether exactly
+// expected hits are batched and waiting to be sent for the given collection.
+func pendingHitsExpectation(f *HitTrackerFactory, key string, expected int) func() bool {
+	return func() bool {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		c, ok := f.hitsByCollection[key]
+		if !ok {
+			return expected == 0
+		}
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return len(c.hits) == expected
+	}
+}
+
+func TestCASHitTracker_AcceptsHitsWhileSplitOverflowIsPending(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_hit_tracker.max_hits_per_update", 10)
+	flags.Set(t, "cache_proxy.remote_hit_tracker.max_pending_hits_per_key", 100)
+	clock := clockwork.NewFakeClock()
+	authenticator, hitTrackerFactory, hitTrackerService := setupWithClock(t, clock)
+
+	anonTracker := hitTrackerFactory.NewCASHitTracker(context.Background(), &repb.RequestMetadata{})
+	for range 25 {
+		anonTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
+	}
+	require.Eventually(t, pendingHitsExpectation(hitTrackerFactory, anonKey, 25), 10*time.Second, 10*time.Millisecond)
+
+	// Block Track RPCs and fire the sender once: it sends the first 10 hits
+	// and re-queues the other 15, which stay pending while that RPC is blocked.
+	hitTrackerService.wg.Add(1)
+	clock.BlockUntil(1)
+	clock.Advance(*remoteHitTrackerPollInterval)
+	require.Eventually(t, pendingHitsExpectation(hitTrackerFactory, anonKey, 15), 10*time.Second, 10*time.Millisecond)
+
+	// Hits that arrive while the re-queued overflow is pending must be batched
+	// onto it rather than dropped.
+	for range 5 {
+		anonTracker.TrackDownload(bDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
+	}
+	// The batcher handles hits in order, so once this later hit for another
+	// collection is pending, the five above have been handled too.
+	group1Tracker := hitTrackerFactory.NewCASHitTracker(authenticatedContext(user1, authenticator), &repb.RequestMetadata{})
+	group1Tracker.TrackDownload(fDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
+	require.Eventually(t, pendingHitsExpectation(hitTrackerFactory, group1Key, 1), 10*time.Second, 10*time.Millisecond)
+	require.True(t, pendingHitsExpectation(hitTrackerFactory, anonKey, 20)(), "hits enqueued while the split overflow was pending were dropped")
+
+	hitTrackerService.wg.Done()
+	require.Eventually(t, hitTrackerService.casDownloadExpectation(anonKey, 30), 10*time.Second, 100*time.Millisecond, "Expected 30 updates for group ANON")
+	require.Eventually(t, hitTrackerService.casDownloadExpectation(group1Key, 1), 10*time.Second, 100*time.Millisecond, "Expected 1 update for group 1")
 }
 
 func BenchmarkEnqueue(b *testing.B) {

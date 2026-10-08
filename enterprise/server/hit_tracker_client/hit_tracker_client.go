@@ -278,9 +278,10 @@ func (h *HitTrackerFactory) batch(enqueuedHit *enqueuedCacheHit) {
 		h.hitsByCollection[k] = usageKeyHits
 		h.hitsQueue = append(h.hitsQueue, usageKeyHits)
 	}
+	enqueued := usageKeyHits.enqueue(enqueuedHit.hit, enqueuedHit.authHeaders)
 	h.mu.Unlock()
 
-	if usageKeyHits.enqueue(enqueuedHit.hit, enqueuedHit.authHeaders) {
+	if enqueued {
 		metrics.RemoteHitTrackerUpdates.WithLabelValues(
 			string(c.GroupID),
 			"enqueued",
@@ -404,6 +405,7 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 		delete(h.hitsByCollection, hitsToSend.encodedCollection)
 	} else {
 		hitsToEnqueue := cacheHits{
+			maxPendingHits:    h.maxPendingHitsPerKey,
 			encodedCollection: hitsToSend.encodedCollection,
 			authHeaders:       hitsToSend.authHeaders,
 			hits:              hitsToSend.hits[h.maxHitsPerUpdate:],

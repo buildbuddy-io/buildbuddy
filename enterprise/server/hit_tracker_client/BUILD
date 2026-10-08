@@ -47,6 +47,7 @@ go_test(
         "//server/util/log",
         "//server/util/testing/flags",
         "//server/util/usageutil",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
     ],
