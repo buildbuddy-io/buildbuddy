@@ -44,6 +44,7 @@ go_library(
         "//server/util/tracing",
         "//server/util/upgrade",
         "//third_party/singleflight",
+        "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_masterminds_semver_v3//:semver",
