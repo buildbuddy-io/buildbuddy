@@ -87,6 +87,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			SplitBlobSupport:                true,
 			SpliceBlobSupport:               true,
 			FastCdc_2020Params:              chunking.FastCDCParams(),
+			RepMaxCdcParams:                 chunking.RepMaxCDCParams(),
 		}
 	}
 	if s.supportRemoteExec {

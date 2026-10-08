@@ -966,9 +966,23 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		uploadOutputsChunked = efp.Boolean(ctx, "executor.upload_outputs_chunked", uploadOutputsChunked)
 		downloadInputsChunked = efp.Boolean(ctx, "executor.download_inputs_chunked", downloadInputsChunked)
 	}
+	chunkingFunction := repb.ChunkingFunction_UNKNOWN
+	if uploadOutputsChunked || downloadInputsChunked {
+		requestedFunction, err := chunking.ChunkingFunctionFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		chunkingFunction = chunking.EffectiveChunkingFunction(requestedFunction)
+		executionTask.ChunkingFunction = chunkingFunction
+	}
 	if uploadOutputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
-		executionTask.FastCdc_2020Params = chunking.FastCDCWriteParams(ctx, efp)
+		switch chunkingFunction {
+		case repb.ChunkingFunction_UNKNOWN, repb.ChunkingFunction_FAST_CDC_2020:
+			executionTask.FastCdc_2020Params = chunking.FastCDCWriteParams(ctx, efp)
+		case repb.ChunkingFunction_REP_MAX_CDC:
+			executionTask.RepMaxCdcParams = chunking.RepMaxCDCWriteParams(ctx, efp)
+		}
 		if efp != nil && efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false) {
 			executionTask.Experiments = append(executionTask.Experiments, cdc.SpliceWithoutValidationExperiment)
 		}

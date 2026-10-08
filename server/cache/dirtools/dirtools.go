@@ -462,7 +462,7 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 	return nil
 }
 
-func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, addToFileCache bool, chunkingParams *repb.FastCdc2020Params) (*TransferInfo, error) {
+func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, addToFileCache bool, chunkingParams *chunking.WriteParams) (*TransferInfo, error) {
 	startTime := time.Now()
 	outputDirectoryPaths := make([]string, 0)
 	filesToUpload := make([]*fileToUpload, 0)
@@ -1126,10 +1126,14 @@ func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
 }
 
 func (ff *BatchFileFetcher) shouldDownloadChunked(fileNode *repb.FileNode) bool {
+	chunkingThresholdBytes := chunking.MaxSupportedChunkSizeBytes()
+	if ff.opts != nil && ff.opts.ChunkingFunction == repb.ChunkingFunction_REP_MAX_CDC {
+		chunkingThresholdBytes = chunking.MaxChunkSizeBytesForFunction(ff.opts.ChunkingFunction)
+	}
 	return ff.opts != nil &&
 		ff.opts.ChunkedInputFiles &&
 		ff.env.GetContentAddressableStorageClient() != nil &&
-		fileNode.GetDigest().GetSizeBytes() > chunking.MaxSupportedChunkSizeBytes()
+		fileNode.GetDigest().GetSizeBytes() > chunkingThresholdBytes
 }
 
 // downloadBlobToFile writes fileNode into path, creating or truncating it.
@@ -1152,7 +1156,7 @@ func (ff *BatchFileFetcher) downloadBlobToFile(ctx context.Context, bsClient bsp
 			}
 			return nil, os.ErrNotExist
 		}
-		err = cachetools.GetBlobChunked(ctx, bsClient, cas, rn, fileNode, f, openLocal)
+		err = cachetools.GetBlobChunked(ctx, bsClient, cas, rn, ff.opts.ChunkingFunction, fileNode, f, openLocal)
 		if err == nil {
 			if err := f.Close(); err != nil {
 				return err
@@ -1381,6 +1385,8 @@ type DownloadTreeOpts struct {
 	TrackTransfers bool
 	// ChunkedInputFiles enables SplitBlob-based input downloads for large files.
 	ChunkedInputFiles bool
+	// ChunkingFunction selects the manifest namespace for chunked downloads.
+	ChunkingFunction repb.ChunkingFunction_Value
 	// RecordInputFetchMetadata controls whether to record which inputs were
 	// fetched from remote CAS while materializing the tree.
 	RecordInputFetchMetadata bool

@@ -29,6 +29,7 @@ var (
 		usageutil.OriginHeaderName,
 		bazel_request.RequestMetadataKey,
 		cdc.ChunkedHeaderName,
+		cdc.ChunkingFunctionHeaderName,
 		findmissing.RequireQuorumHeader,
 		cdc.SpliceWithoutValidationHeaderName,
 		// Forward the client's opt-in for local AC caching so it survives

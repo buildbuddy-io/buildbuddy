@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
@@ -675,7 +676,7 @@ func TestGetBlobChunked_FallsBackWithoutManifest(t *testing.T) {
 		splitBlobFn: func(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
 			return nil, gstatus.Error(codes.Unimplemented, "no manifest")
 		},
-	}, rn, &repb.FileNode{Digest: blobDigest}, out, nil)
+	}, rn, repb.ChunkingFunction_UNKNOWN, &repb.FileNode{Digest: blobDigest}, out, nil)
 	require.Equal(t, codes.Unimplemented, gstatus.Code(err))
 
 	got, err := os.ReadFile(out.Name())
@@ -702,6 +703,7 @@ func TestGetBlobChunked_ReusesWholeFileChunks_ZstdBLAKE3(t *testing.T) {
 			require.Equal(t, blobDigest.GetHash(), req.GetBlobDigest().GetHash())
 			require.Equal(t, blobDigest.GetSizeBytes(), req.GetBlobDigest().GetSizeBytes())
 			require.Equal(t, repb.DigestFunction_BLAKE3, req.GetDigestFunction())
+			require.Equal(t, repb.ChunkingFunction_REP_MAX_CDC, req.GetChunkingFunction())
 			return &repb.SplitBlobResponse{ChunkDigests: chunkDigests}, nil
 		},
 	}
@@ -730,7 +732,7 @@ func TestGetBlobChunked_ReusesWholeFileChunks_ZstdBLAKE3(t *testing.T) {
 		return os.Open(sourcePath)
 	}
 
-	err = cachetools.GetBlobChunked(ctx, bs, cas, rn, sourceNode, source, openLocal)
+	err = cachetools.GetBlobChunked(ctx, bs, cas, rn, repb.ChunkingFunction_REP_MAX_CDC, sourceNode, source, openLocal)
 	require.NoError(t, err)
 	require.NoError(t, source.Close())
 	got, err := os.ReadFile(sourcePath)
@@ -741,7 +743,7 @@ func TestGetBlobChunked_ReusesWholeFileChunks_ZstdBLAKE3(t *testing.T) {
 	target, err := os.CreateTemp(t.TempDir(), "target-*")
 	require.NoError(t, err)
 	targetNode := &repb.FileNode{Digest: blobDigest}
-	err = cachetools.GetBlobChunked(ctx, nil, cas, rn, targetNode, target, openLocal)
+	err = cachetools.GetBlobChunked(ctx, nil, cas, rn, repb.ChunkingFunction_REP_MAX_CDC, targetNode, target, openLocal)
 	require.NoError(t, err)
 	require.NoError(t, target.Close())
 	got, err = os.ReadFile(target.Name())
@@ -821,7 +823,7 @@ func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
 	localOut, err := os.CreateTemp(t.TempDir(), "local-out-*")
 	require.NoError(t, err)
 	localRN := digest.NewCASResourceName(localDigest, testInstance, repb.DigestFunction_BLAKE3)
-	require.NoError(t, cachetools.GetBlobChunked(ctx, bs, cas, localRN, localNode, localOut, openLocal))
+	require.NoError(t, cachetools.GetBlobChunked(ctx, bs, cas, localRN, repb.ChunkingFunction_UNKNOWN, localNode, localOut, openLocal))
 	require.NoError(t, localOut.Close())
 
 	priorBSReads := bs.readCount
@@ -831,7 +833,7 @@ func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
 	require.NoError(t, err)
 	targetNode := &repb.FileNode{Digest: blobDigest}
 	blobRN := digest.NewCASResourceName(blobDigest, testInstance, repb.DigestFunction_BLAKE3)
-	require.NoError(t, cachetools.GetBlobChunked(ctx, bs, cas, blobRN, targetNode, target, openLocal))
+	require.NoError(t, cachetools.GetBlobChunked(ctx, bs, cas, blobRN, repb.ChunkingFunction_UNKNOWN, targetNode, target, openLocal))
 	require.NoError(t, target.Close())
 
 	got, err := os.ReadFile(target.Name())
@@ -1465,7 +1467,7 @@ func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
 	blobSize := int64(5 * 1024 * 1024)
 	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
 
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.FastCDCParams())
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.NewWriteParams(chunking.FastCDCParams(), nil))
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Wait())
 
@@ -1474,6 +1476,35 @@ func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
 	err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
 	require.NoError(t, err)
 	require.Equal(t, buf, out.Bytes())
+}
+
+func TestBatchCASUploader_RepMaxChunkedUpload(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	ctx := metadata.AppendToOutgoingContext(t.Context(), cdc.ChunkingFunctionHeaderName, "rep_max_cdc")
+	rn, buf := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
+	params := chunking.NewWriteParams(nil, chunking.RepMaxCDCParams())
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), params)
+	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
+	require.NoError(t, ul.Wait())
+
+	casRN := digest.NewCASResourceName(rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	out := &bytes.Buffer{}
+	require.NoError(t, cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out))
+	require.Equal(t, buf, out.Bytes())
+
+	rsp, err := te.GetContentAddressableStorageClient().SplitBlob(ctx, &repb.SplitBlobRequest{
+		InstanceName:     rn.GetInstanceName(),
+		BlobDigest:       rn.GetDigest(),
+		DigestFunction:   rn.GetDigestFunction(),
+		ChunkingFunction: repb.ChunkingFunction_REP_MAX_CDC,
+	})
+	require.NoError(t, err)
+	require.Equal(t, repb.ChunkingFunction_REP_MAX_CDC, rsp.GetChunkingFunction())
+	require.Greater(t, len(rsp.GetChunkDigests()), 1)
 }
 
 func TestBatchCASUploader_ChunkedUploadDetectsConcurrentMutation(t *testing.T) {
@@ -1487,7 +1518,7 @@ func TestBatchCASUploader_ChunkedUploadDetectsConcurrentMutation(t *testing.T) {
 	require.NoError(t, err)
 	buf[0] = 'x'
 
-	ul := cachetools.NewBatchCASUploader(t.Context(), te, "", repb.DigestFunction_SHA256, chunking.FastCDCParams())
+	ul := cachetools.NewBatchCASUploader(t.Context(), te, "", repb.DigestFunction_SHA256, chunking.NewWriteParams(chunking.FastCDCParams(), nil))
 	require.NoError(t, ul.Upload(d, cachetools.NewBytesReadSeekCloser(buf)))
 	err = ul.Wait()
 	require.Error(t, err)
@@ -1507,7 +1538,7 @@ func TestBatchCASUploader_SkipsChunkedUploadAboveMaxSize(t *testing.T) {
 
 	chunkingParams := chunking.FastCDCParams()
 	chunkingParams.BuildbuddyMaxChunkedWriteSizeBytes = 2 * 1024 * 1024
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunkingParams)
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.NewWriteParams(chunkingParams, nil))
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Wait())
 

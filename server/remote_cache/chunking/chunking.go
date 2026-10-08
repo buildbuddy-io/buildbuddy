@@ -2,6 +2,7 @@
 package chunking
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/hex"
@@ -13,9 +14,11 @@ import (
 	"strings"
 	"sync"
 
+	buildbarn_cdc "github.com/buildbarn/go-cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -28,6 +31,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	"google.golang.org/grpc/metadata"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -38,9 +42,12 @@ var (
 )
 
 const (
-	chunkedManifestPrefix        = "_bb_chunked_manifest_v3_/"
+	fastCDCManifestPrefix        = "_bb_chunked_manifest_v3_/"
+	repMaxCDCManifestPrefix      = "_bb_chunked_manifest_v4_rep_max_cdc_/"
 	chunkOutputFilePrefix        = "chunk_"
 	sharedValidationMarkerDomain = "cas-validation-marker-v1"
+	repMaxMinChunkSizeBytes      = 1024 * 1024
+	repMaxHorizonSizeBytes       = 8 * 1024 * 1024
 
 	// Default max blob size eligible for chunked writes. Values <= 0 mean no maximum.
 	defaultMaxChunkedWriteSizeBytes = -1
@@ -70,8 +77,28 @@ func FastCDCWriteParams(ctx context.Context, efp interfaces.ExperimentFlagProvid
 	return params
 }
 
+func RepMaxCDCParams() *repb.RepMaxCdcParams {
+	return &repb.RepMaxCdcParams{
+		MinChunkSizeBytes: repMaxMinChunkSizeBytes,
+		HorizonSizeBytes:  repMaxHorizonSizeBytes,
+	}
+}
+
+func RepMaxCDCWriteParams(ctx context.Context, efp interfaces.ExperimentFlagProvider) *repb.RepMaxCdcParams {
+	params := RepMaxCDCParams()
+	params.BuildbuddyMaxChunkedWriteSizeBytes = MaxWriteSizeBytes(ctx, efp)
+	return params
+}
+
 func MaxChunkSizeBytes() int64 {
 	return AvgChunkSizeBytes() * 4
+}
+
+func MaxChunkSizeBytesForFunction(chunkingFunction repb.ChunkingFunction_Value) int64 {
+	if EffectiveChunkingFunction(chunkingFunction) == repb.ChunkingFunction_REP_MAX_CDC {
+		return 2*repMaxMinChunkSizeBytes - 1
+	}
+	return MaxChunkSizeBytes()
 }
 
 // MaxSupportedChunkSizeBytes is the process-wide chunk size buffer consumers
@@ -89,11 +116,11 @@ func MaxCompressedChunkReadSizeBytes() int64 {
 // MinChunkedReadFallbackSizeBytes can be configured independently from the
 // write threshold so server-side miss fallback paths can still read older
 // chunked blobs that were written with a smaller chunk size, but is clamped to
-// at most MaxChunkSizeBytes(). Presence and AC validation should instead use
-// MaxChunkSizeBytes(), so blobs below the current write threshold are not
+// the selected function's maximum chunk size. Presence and AC validation use
+// the selected function's current write threshold, so smaller blobs are not
 // accepted as manifest-only.
-func MinChunkedReadFallbackSizeBytes() int64 {
-	return min(*minChunkedReadFallbackSizeBytes, MaxChunkSizeBytes())
+func MinChunkedReadFallbackSizeBytes(chunkingFunction repb.ChunkingFunction_Value) int64 {
+	return min(*minChunkedReadFallbackSizeBytes, MaxChunkSizeBytesForFunction(chunkingFunction))
 }
 
 func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
@@ -127,17 +154,104 @@ func ValidateConfig() error {
 	return nil
 }
 
-func ShouldReadChunked(digestSizeBytes, offset, limit int64) bool {
-	return digestSizeBytes > MinChunkedReadFallbackSizeBytes() && limit == 0
+func ShouldReadChunked(chunkingFunction repb.ChunkingFunction_Value, digestSizeBytes, offset, limit int64) bool {
+	return digestSizeBytes > MinChunkedReadFallbackSizeBytes(chunkingFunction) && limit == 0
 }
 
-func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
-	return digestSizeBytes > MaxChunkSizeBytes() &&
+func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlagProvider, chunkingFunction repb.ChunkingFunction_Value, digestSizeBytes, offset, limit int64) bool {
+	return digestSizeBytes > MaxChunkSizeBytesForFunction(chunkingFunction) &&
 		limit == 0 &&
 		(efp == nil || efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", true))
 }
 
+func ChunkingFunctionFromContext(ctx context.Context) (repb.ChunkingFunction_Value, error) {
+	value := ""
+	if values := metadata.ValueFromIncomingContext(ctx, cdc.ChunkingFunctionHeaderName); len(values) > 0 {
+		value = values[0]
+	}
+	switch value {
+	case "", "auto":
+		return repb.ChunkingFunction_UNKNOWN, nil
+	case "fast_cdc_2020":
+		return repb.ChunkingFunction_FAST_CDC_2020, nil
+	case "rep_max_cdc":
+		return repb.ChunkingFunction_REP_MAX_CDC, nil
+	default:
+		return repb.ChunkingFunction_UNKNOWN, status.InvalidArgumentErrorf("invalid %s header %q", cdc.ChunkingFunctionHeaderName, value)
+	}
+}
+
+func EffectiveChunkingFunction(chunkingFunction repb.ChunkingFunction_Value) repb.ChunkingFunction_Value {
+	if chunkingFunction == repb.ChunkingFunction_UNKNOWN {
+		return repb.ChunkingFunction_FAST_CDC_2020
+	}
+	return chunkingFunction
+}
+
 type WriteFunc func([]byte) error
+
+type WriteParams struct {
+	fastCDC   *repb.FastCdc2020Params
+	repMaxCDC *repb.RepMaxCdcParams
+}
+
+func NewWriteParams(fastCDC *repb.FastCdc2020Params, repMaxCDC *repb.RepMaxCdcParams) *WriteParams {
+	if fastCDC == nil && repMaxCDC == nil {
+		return nil
+	}
+	return &WriteParams{fastCDC: fastCDC, repMaxCDC: repMaxCDC}
+}
+
+func (p *WriteParams) ChunkingFunction() (repb.ChunkingFunction_Value, error) {
+	if p == nil {
+		return repb.ChunkingFunction_UNKNOWN, status.InvalidArgumentError("chunking parameters are not configured")
+	}
+	switch {
+	case p.fastCDC != nil && p.repMaxCDC == nil:
+		return repb.ChunkingFunction_FAST_CDC_2020, nil
+	case p.fastCDC == nil && p.repMaxCDC != nil:
+		return repb.ChunkingFunction_REP_MAX_CDC, nil
+	default:
+		return repb.ChunkingFunction_UNKNOWN, status.InvalidArgumentError("exactly one chunking function must be configured")
+	}
+}
+
+func (p *WriteParams) ShouldUpload(d *repb.Digest) (bool, error) {
+	chunkingFunction, err := p.ChunkingFunction()
+	if err != nil {
+		return false, err
+	}
+	var threshold, maxWriteSizeBytes int64
+	switch chunkingFunction {
+	case repb.ChunkingFunction_UNKNOWN:
+		return false, status.InvalidArgumentError("chunking function is not configured")
+	case repb.ChunkingFunction_FAST_CDC_2020:
+		avgChunkSizeBytes := int64(p.fastCDC.GetAvgChunkSizeBytes())
+		if avgChunkSizeBytes <= 0 {
+			return false, nil
+		}
+		threshold = 4 * avgChunkSizeBytes
+		maxWriteSizeBytes = p.fastCDC.GetBuildbuddyMaxChunkedWriteSizeBytes()
+	case repb.ChunkingFunction_REP_MAX_CDC:
+		minChunkSizeBytes := int64(p.repMaxCDC.GetMinChunkSizeBytes())
+		if minChunkSizeBytes <= 0 {
+			return false, nil
+		}
+		threshold = 2*minChunkSizeBytes - 1
+		maxWriteSizeBytes = p.repMaxCDC.GetBuildbuddyMaxChunkedWriteSizeBytes()
+	}
+	sizeBytes := d.GetSizeBytes()
+	return sizeBytes > threshold && (maxWriteSizeBytes <= 0 || sizeBytes <= maxWriteSizeBytes), nil
+}
+
+type fastCDCChunkReader struct {
+	chunker *fastcdc.Chunker
+}
+
+func (r *fastCDCChunkReader) ReadNextChunk() ([]byte, error) {
+	chunk, err := r.chunker.Next()
+	return chunk.Data, err
+}
 
 type Chunker struct {
 	pw *io.PipeWriter
@@ -165,51 +279,65 @@ func (c *Chunker) Close() error {
 	return c.err
 }
 
-// NewChunker returns an io.WriteCloser that split file into chunks of average size.
-// averageSize is typically a power of 2. It must be in the range 256B to 256MB.
-// The minimum allowed chunk size is averageSize / 4, and the maximum allowed
-// chunk size is averageSize * 4.
-func NewChunker(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker, error) {
-	pr, pw := io.Pipe()
-	c := &Chunker{
-		pw:   pw,
-		done: make(chan struct{}),
-	}
-	chunker, err := fastcdc.NewChunker(
-		pr,
-		averageSize,
-
-		// Min and Max size should always be 1/4x and 4x of the
-		// avg size respectively. Explicitly declare these to prevent
-		// the library modifying them unknowningly.
-		fastcdc.WithMinSize(averageSize/4),
-		fastcdc.WithMaxSize(averageSize*4),
-
-		// We want to keep the rolling hash the same to ensure that given the same
-		// file, the library will chunk the file in the same way.
-		fastcdc.WithSeed(0),
-
-		// Normalization defaults to 2 from testing using Bazel build
-		// artifacts, since it provided the best balance of deduplication
-		// and chunk size consistency.
-		//
-		// Stats:
-		// Algorithm         │ Dedup%   │ Saved        │ Chunks/File avg
-		// ─────────────────────────────────────────────────────────────
-		// normalization-0  │   30.37% │     93.87 GB │     33.4 │
-		// normalization-1  │   31.30% │     96.73 GB │     34.4 │
-		// normalization-2  │   32.09% │     99.19 GB │     38.3 │
-		// normalization-3  │   32.07% │     99.10 GB │     41.4 │
-		fastcdc.WithNormalization(2),
-	)
+// NewChunker returns an io.WriteCloser that splits its input according to params.
+func NewChunker(ctx context.Context, params *WriteParams, writeChunkFn WriteFunc) (*Chunker, error) {
+	chunkingFunction, err := params.ChunkingFunction()
 	if err != nil {
 		return nil, err
 	}
 
+	pr, pw := io.Pipe()
+	var reader buildbarn_cdc.ChunkReader
+	switch chunkingFunction {
+	case repb.ChunkingFunction_UNKNOWN:
+		return nil, status.InvalidArgumentError("chunking function is not configured")
+	case repb.ChunkingFunction_FAST_CDC_2020:
+		averageSize := int(params.fastCDC.GetAvgChunkSizeBytes())
+		fastCDCChunker, err := fastcdc.NewChunker(
+			pr,
+			averageSize,
+
+			// Keep the chunk size range and rolling hash identical to the
+			// existing FastCDC implementation.
+			fastcdc.WithMinSize(averageSize/4),
+			fastcdc.WithMaxSize(averageSize*4),
+			fastcdc.WithSeed(0),
+
+			// Normalization 2 provided the best balance of deduplication and
+			// chunk size consistency when tested with Bazel build artifacts.
+			fastcdc.WithNormalization(2),
+		)
+		if err != nil {
+			return nil, err
+		}
+		reader = &fastCDCChunkReader{chunker: fastCDCChunker}
+	case repb.ChunkingFunction_REP_MAX_CDC:
+		minSize := int(params.repMaxCDC.GetMinChunkSizeBytes())
+		horizonSize := int(params.repMaxCDC.GetHorizonSizeBytes())
+		if minSize < 64 {
+			return nil, status.InvalidArgumentErrorf("RepMaxCDC minimum chunk size must be at least 64 bytes, got %d", minSize)
+		}
+		if horizonSize < 0 {
+			return nil, status.InvalidArgumentErrorf("RepMaxCDC horizon size must be non-negative, got %d", horizonSize)
+		}
+		repMaxChunker := buildbarn_cdc.NewRepMaxContentDefinedChunker(
+			&buildbarn_cdc.FastContentDefinedChunkerGearTable,
+			minSize,
+			horizonSize,
+		)
+		reader = repMaxChunker.NewChunkReader(bufio.NewReaderSize(pr, repMaxChunker.GetMaximumPeekSizeBytes()))
+	default:
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v", chunkingFunction)
+	}
+
+	c := &Chunker{
+		pw:   pw,
+		done: make(chan struct{}),
+	}
 	go func() {
 		defer close(c.done)
 		for {
-			chunk, err := chunker.Next()
+			chunk, err := reader.ReadNextChunk()
 			if err == io.EOF {
 				return
 			}
@@ -223,7 +351,7 @@ func NewChunker(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*
 				}
 				return
 			}
-			if err := writeChunkFn(chunk.Data); err != nil {
+			if err := writeChunkFn(chunk); err != nil {
 				err = status.InternalErrorf("writeChunkFn failed: %s", err)
 				pr.CloseWithError(err)
 				c.mu.Lock()
@@ -254,16 +382,17 @@ func NewChunker(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*
 }
 
 type Manifest struct {
-	BlobDigest     *repb.Digest
-	ChunkDigests   []*repb.Digest
-	InstanceName   string
-	DigestFunction repb.DigestFunction_Value
+	BlobDigest       *repb.Digest
+	ChunkDigests     []*repb.Digest
+	InstanceName     string
+	DigestFunction   repb.DigestFunction_Value
+	ChunkingFunction repb.ChunkingFunction_Value
 }
 
 func (cm *Manifest) ToSplitBlobResponse() *repb.SplitBlobResponse {
 	return &repb.SplitBlobResponse{
 		ChunkDigests:     cm.ChunkDigests,
-		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+		ChunkingFunction: EffectiveChunkingFunction(cm.ChunkingFunction),
 	}
 }
 
@@ -281,7 +410,7 @@ func (cm *Manifest) ToSpliceBlobRequest() *repb.SpliceBlobRequest {
 		ChunkDigests:     cm.ChunkDigests,
 		InstanceName:     cm.InstanceName,
 		DigestFunction:   cm.DigestFunction,
-		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+		ChunkingFunction: EffectiveChunkingFunction(cm.ChunkingFunction),
 	}
 }
 
@@ -389,7 +518,7 @@ func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {
 		return status.InternalErrorf("marshal chunked manifest to ActionResult: %w", err)
 	}
 
-	acRNProto, err := acResourceName(cm.BlobDigest, cm.InstanceName, cm.DigestFunction)
+	acRNProto, _, err := manifestResourceName(cm.BlobDigest, cm.InstanceName, cm.DigestFunction, cm.ChunkingFunction)
 	if err != nil {
 		return err
 	}
@@ -403,11 +532,12 @@ func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {
 	return nil
 }
 
-// LoadManifest retrieves a chunked manifest from the cache. It returns an error
-// if the blob does not have a chunked representation and does not validate the
-// existence of the chunks.
-func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*Manifest, error) {
-	rn, err := acResourceName(blobDigest, instanceName, digestFunction)
+// LoadManifest retrieves a chunked manifest for the requested function and
+// does not validate the existence of its chunks. UNKNOWN selects FastCDC for
+// backward compatibility.
+func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, chunkingFunction repb.ChunkingFunction_Value) (*Manifest, error) {
+	chunkingFunction = EffectiveChunkingFunction(chunkingFunction)
+	rn, manifestPrefix, err := manifestResourceName(blobDigest, instanceName, digestFunction, chunkingFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -415,7 +545,8 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 	if err != nil {
 		return nil, err
 	}
-	metrics.ChunkedManifestLoadCount.WithLabelValues(chunkedManifestPrefix).Inc()
+	manifest.ChunkingFunction = chunkingFunction
+	metrics.ChunkedManifestLoadCount.WithLabelValues(manifestPrefix).Inc()
 	return manifest, nil
 }
 
@@ -423,8 +554,8 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 // batches. It validates the manifest's declared sizes and, for identity reads,
 // the reconstructed size. It returns an error if the blob does not have a
 // chunked representation.
-func GetBlob(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, compressor repb.Compressor_Value) ([]byte, error) {
-	manifest, err := LoadManifest(ctx, cache, blobDigest, instanceName, digestFunction)
+func GetBlob(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, chunkingFunction repb.ChunkingFunction_Value, compressor repb.Compressor_Value) ([]byte, error) {
+	manifest, err := LoadManifest(ctx, cache, blobDigest, instanceName, digestFunction, chunkingFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -659,8 +790,16 @@ func sharedValidationResourceName(cm *Manifest) (*rspb.ResourceName, []byte, err
 	return digest.NewCASResourceName(d, "", cm.DigestFunction).ToProto(), content, nil
 }
 
-func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*rspb.ResourceName, error) {
-	acInstanceName := chunkedManifestPrefix + instanceName
+func manifestResourceName(blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, chunkingFunction repb.ChunkingFunction_Value) (*rspb.ResourceName, string, error) {
+	manifestPrefix := fastCDCManifestPrefix
+	switch EffectiveChunkingFunction(chunkingFunction) {
+	case repb.ChunkingFunction_FAST_CDC_2020:
+	case repb.ChunkingFunction_REP_MAX_CDC:
+		manifestPrefix = repMaxCDCManifestPrefix
+	default:
+		return nil, "", status.InvalidArgumentErrorf("unsupported chunking function %v", chunkingFunction)
+	}
+	acInstanceName := manifestPrefix + instanceName
 	acDigest := &repb.Digest{
 		Hash:      blobDigest.GetHash(),
 		SizeBytes: blobToManifestSize(blobDigest.GetSizeBytes()),
@@ -673,7 +812,7 @@ func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction
 	if *chunkedManifestSalt != "" {
 		saltedDigest, err := digest.Compute(strings.NewReader(*chunkedManifestSalt+":"+blobDigest.GetHash()), digestFunction)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		saltedDigest.SizeBytes = acDigest.SizeBytes
 		acDigest = saltedDigest
@@ -681,9 +820,9 @@ func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction
 
 	acRN := digest.NewACResourceName(acDigest, acInstanceName, digestFunction)
 	if err := acRN.Validate(); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return acRN.ToProto(), nil
+	return acRN.ToProto(), manifestPrefix, nil
 }
 
 // blobToManifestSize estimates manifest size from blob size by dividing by 4096.

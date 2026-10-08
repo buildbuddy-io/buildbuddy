@@ -2750,6 +2750,10 @@ message RepMaxCdcParams {
   // Setting to 0 produces uniform chunks of min_chunk_size_bytes.
   // The recommended value is 8 * min_chunk_size_bytes.
   uint64 horizon_size_bytes = 2;
+
+  // BuildBuddy-only: maximum blob size eligible for chunked writes.
+  // If unset or <= 0, no maximum is applied.
+  int64 buildbuddy_max_chunked_write_size_bytes = 1000;
 }
 
 // Capabilities of the remote execution system.
@@ -2889,7 +2893,7 @@ message OriginMetadata {
   string invocation_id = 1;
 }
 
-// Next tag: 13
+// Next tag: 15
 message ExecutionTask {
   ExecuteRequest execute_request = 1;
   Action action = 4;
@@ -2908,6 +2912,10 @@ message ExecutionTask {
   // these instead of evaluating experiments itself, so that both sides see the
   // same values. See server/util/expflag.
   repeated experiments.EvaluatedFlag experiment_flags = 12;
+
+  // The chunking function executors should use for input and output transfers.
+  ChunkingFunction.Value chunking_function = 13;
+  RepMaxCdcParams rep_max_cdc_params = 14;
 }
 
 // ScheduledTask encapsulates a task based on a client's ExecuteRequest as well

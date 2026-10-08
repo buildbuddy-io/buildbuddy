@@ -1035,24 +1035,33 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 	_, err = casClient.BatchUpdateBlobs(ctx, batchReq)
 	require.NoError(t, err)
 
-	spliceResp, err := casClient.SpliceBlob(ctx, spliceReq)
-	require.NoError(t, err)
-	require.Equal(t, blobDigest.Hash, spliceResp.BlobDigest.Hash)
-	require.Equal(t, blobDigest.SizeBytes, spliceResp.BlobDigest.SizeBytes)
+	for _, chunkingFunction := range []repb.ChunkingFunction_Value{
+		repb.ChunkingFunction_UNKNOWN,
+		repb.ChunkingFunction_FAST_CDC_2020,
+		repb.ChunkingFunction_REP_MAX_CDC,
+	} {
+		t.Run(chunkingFunction.String(), func(t *testing.T) {
+			spliceReq.ChunkingFunction = chunkingFunction
+			spliceResp, err := casClient.SpliceBlob(ctx, spliceReq)
+			require.NoError(t, err)
+			require.Equal(t, blobDigest.Hash, spliceResp.BlobDigest.Hash)
+			require.Equal(t, blobDigest.SizeBytes, spliceResp.BlobDigest.SizeBytes)
 
-	splitReq := &repb.SplitBlobRequest{
-		BlobDigest:     blobDigest,
-		DigestFunction: repb.DigestFunction_BLAKE3,
-	}
+			splitResp, err := casClient.SplitBlob(ctx, &repb.SplitBlobRequest{
+				BlobDigest:       blobDigest,
+				DigestFunction:   repb.DigestFunction_BLAKE3,
+				ChunkingFunction: chunkingFunction,
+			})
+			require.NoError(t, err)
+			require.Equal(t, chunking.EffectiveChunkingFunction(chunkingFunction), splitResp.GetChunkingFunction())
+			require.Equal(t, len(chunkDigests), len(splitResp.ChunkDigests))
 
-	splitResp, err := casClient.SplitBlob(ctx, splitReq)
-	require.NoError(t, err)
-	require.Equal(t, len(chunkDigests), len(splitResp.ChunkDigests))
-
-	for i, expectedDigest := range chunkDigests {
-		actualDigest := splitResp.ChunkDigests[i]
-		assert.Equal(t, expectedDigest.Hash, actualDigest.Hash)
-		assert.Equal(t, expectedDigest.SizeBytes, actualDigest.SizeBytes)
+			for i, expectedDigest := range chunkDigests {
+				actualDigest := splitResp.ChunkDigests[i]
+				assert.Equal(t, expectedDigest.Hash, actualDigest.Hash)
+				assert.Equal(t, expectedDigest.SizeBytes, actualDigest.SizeBytes)
+			}
+		})
 	}
 }
 
@@ -1225,7 +1234,7 @@ func TestSpliceBlobWithoutValidation(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			manifest, err := chunking.LoadManifest(ctx, env.GetCache(), blobDigest, "", repb.DigestFunction_SHA256)
+			manifest, err := chunking.LoadManifest(ctx, env.GetCache(), blobDigest, "", repb.DigestFunction_SHA256, repb.ChunkingFunction_FAST_CDC_2020)
 			require.NoError(t, err)
 			require.Equal(t, chunkDigests, manifest.ChunkDigests)
 		})
@@ -1455,6 +1464,60 @@ func TestChunkedBlobAtCurrentWriteThresholdIsMissingButReadable(t *testing.T) {
 	var downloaded bytes.Buffer
 	rn := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
 	require.NoError(t, cachetools.GetBlob(ctx, bsClient, rn, &downloaded))
+	require.Equal(t, fullBlob, downloaded.Bytes())
+}
+
+func TestRepMaxChunkedBlobBetweenChunkingThresholdsIsPresentAndReadable(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	cache := te.GetCache()
+
+	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	fullBlob := bytes.Join([][]byte{chunk1, chunk2, chunk3}, nil)
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
+	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2))
+	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3))
+	manifest := &chunking.Manifest{
+		BlobDigest:       blobDigest,
+		ChunkDigests:     []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_REP_MAX_CDC,
+	}
+	require.NoError(t, manifest.Store(ctx, cache))
+
+	rsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{BlobDigests: []*repb.Digest{blobDigest}})
+	require.NoError(t, err)
+	require.Equal(t, []*repb.Digest{blobDigest}, rsp.GetMissingBlobDigests())
+
+	repMaxCtx := metadata.AppendToOutgoingContext(ctx, cdc.ChunkingFunctionHeaderName, "rep_max_cdc")
+	rsp, err = casClient.FindMissingBlobs(repMaxCtx, &repb.FindMissingBlobsRequest{BlobDigests: []*repb.Digest{blobDigest}})
+	require.NoError(t, err)
+	require.Empty(t, rsp.GetMissingBlobDigests())
+
+	rsp, err = casClient.FindMissingBlobs(cdc.ContextWithChunked(repMaxCtx), &repb.FindMissingBlobsRequest{BlobDigests: []*repb.Digest{blobDigest}})
+	require.NoError(t, err)
+	require.Equal(t, []*repb.Digest{blobDigest}, rsp.GetMissingBlobDigests())
+
+	rn := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
+	err = cachetools.GetBlob(ctx, bsClient, rn, &bytes.Buffer{})
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got %s", err)
+
+	var downloaded bytes.Buffer
+	require.NoError(t, cachetools.GetBlob(repMaxCtx, bsClient, rn, &downloaded))
 	require.Equal(t, fullBlob, downloaded.Bytes())
 }
 

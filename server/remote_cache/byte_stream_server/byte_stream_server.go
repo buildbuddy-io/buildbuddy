@@ -203,8 +203,14 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	}
 	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
 	if err != nil {
-		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
-			reader, err = s.attemptReadChunked(ctx, cacheRN, offset)
+		if status.IsNotFoundError(err) {
+			chunkingFunction, functionErr := chunking.ChunkingFunctionFromContext(ctx)
+			if functionErr != nil {
+				return functionErr
+			}
+			if chunking.ShouldReadChunked(chunkingFunction, cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
+				reader, err = s.attemptReadChunked(ctx, cacheRN, offset, chunkingFunction)
+			}
 		}
 		if err != nil {
 			if htErr := ht.TrackMiss(r.GetDigest()); htErr != nil {
@@ -261,8 +267,8 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	return err
 }
 
-func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CASResourceName, offset int64) (io.ReadCloser, error) {
-	manifest, err := chunking.LoadManifest(ctx, s.cache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CASResourceName, offset int64, chunkingFunction repb.ChunkingFunction_Value) (io.ReadCloser, error) {
+	manifest, err := chunking.LoadManifest(ctx, s.cache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction(), chunkingFunction)
 	if err != nil {
 		return nil, err
 	}

@@ -80,7 +80,7 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, maxChunkSizeBytes int64, digests []*rspb.ResourceName) error {
+func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingFunction repb.ChunkingFunction_Value, digests []*rspb.ResourceName) error {
 	missing, err := cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_AC_VALIDATION), digests)
 	if err != nil {
 		return err
@@ -88,8 +88,9 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 	if len(missing) == 0 {
 		return nil
 	}
+	chunkingThresholdBytes := chunking.MaxChunkSizeBytesForFunction(chunkingFunction)
 	for _, d := range missing {
-		if d.GetSizeBytes() <= maxChunkSizeBytes {
+		if d.GetSizeBytes() <= chunkingThresholdBytes {
 			return status.NotFoundErrorf("ActionResult output file %q not found in cache", digest.String(d))
 		}
 	}
@@ -98,7 +99,7 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 	eg.SetLimit(chunkCheckConcurrency)
 	for _, d := range missing {
 		eg.Go(func() error {
-			manifest, err := chunking.LoadManifest(egCtx, cache, d, instanceName, digestFunction)
+			manifest, err := chunking.LoadManifest(egCtx, cache, d, instanceName, digestFunction, chunkingFunction)
 			if err != nil {
 				return status.WrapErrorf(err, "ActionResult output file %q: load chunk manifest", digest.String(d))
 			}
@@ -115,14 +116,15 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 	return eg.Wait()
 }
 
-func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, maxChunkSizeBytes int64, chunkedReadLimiter *semaphore.Weighted, treeDigest *repb.Digest) (*repb.Tree, error) {
+func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingFunction repb.ChunkingFunction_Value, chunkedReadLimiter *semaphore.Weighted, treeDigest *repb.Digest) (*repb.Tree, error) {
 	rn := digest.NewResourceName(treeDigest, instanceName, rspb.CacheType_CAS, digestFunction).ToProto()
 	blob, err := cache.Get(ctx, rn)
 	if err != nil {
 		isNotFound := status.IsNotFoundError(err) || os.IsNotExist(err)
 		treeSizeBytes := treeDigest.GetSizeBytes()
+		chunkingThresholdBytes := chunking.MaxChunkSizeBytesForFunction(chunkingFunction)
 		if !isNotFound ||
-			treeSizeBytes <= maxChunkSizeBytes ||
+			treeSizeBytes <= chunkingThresholdBytes ||
 			treeSizeBytes > rpcutil.GRPCMaxSizeBytes {
 			return nil, err
 		}
@@ -131,7 +133,7 @@ func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName st
 			return nil, err
 		}
 		defer chunkedReadLimiter.Release(1)
-		blob, err = chunking.GetBlob(ctx, cache, treeDigest, instanceName, rn.GetDigestFunction(), repb.Compressor_IDENTITY)
+		blob, err = chunking.GetBlob(ctx, cache, treeDigest, instanceName, rn.GetDigestFunction(), chunkingFunction, repb.Compressor_IDENTITY)
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +153,10 @@ func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName st
 }
 
 func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, r *repb.ActionResult) error {
-	maxChunkSizeBytes := chunking.MaxChunkSizeBytes()
+	chunkingFunction, err := chunking.ChunkingFunctionFromContext(ctx)
+	if err != nil {
+		return err
+	}
 	outputFileDigests := make([]*rspb.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
@@ -171,7 +176,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			tree, err := readOutputTree(gCtx, cache, remoteInstanceName, digestFunction, maxChunkSizeBytes, chunkedTreeReadLimiter, dc.GetTreeDigest())
+			tree, err := readOutputTree(gCtx, cache, remoteInstanceName, digestFunction, chunkingFunction, chunkedTreeReadLimiter, dc.GetTreeDigest())
 			if err != nil {
 				return err
 			}
@@ -190,7 +195,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 		return err
 	}
 
-	return checkFilesExist(ctx, cache, remoteInstanceName, digestFunction, maxChunkSizeBytes, outputFileDigests)
+	return checkFilesExist(ctx, cache, remoteInstanceName, digestFunction, chunkingFunction, outputFileDigests)
 }
 
 func setWorkerMetadata(ar *repb.ActionResult) {

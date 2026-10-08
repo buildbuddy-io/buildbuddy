@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -36,6 +37,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -965,44 +967,58 @@ func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
 	assert.True(t, status.IsNotFoundError(err))
 }
 
-func TestValidateActionResult_DiscardsChunkedOutputFileBelowCurrentWriteThreshold(t *testing.T) {
+func TestValidateActionResult_ChunkedOutputFileBetweenChunkingThresholds(t *testing.T) {
 	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
 
-	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
-	require.NoError(t, err)
-	cache := te.GetCache()
+	for _, tc := range []struct {
+		name             string
+		chunkingFunction repb.ChunkingFunction_Value
+		headerValue      string
+		wantPresent      bool
+	}{
+		{name: "Unknown", chunkingFunction: repb.ChunkingFunction_UNKNOWN},
+		{name: "FastCDC", chunkingFunction: repb.ChunkingFunction_FAST_CDC_2020, headerValue: "fast_cdc_2020"},
+		{name: "RepMaxCDC", chunkingFunction: repb.ChunkingFunction_REP_MAX_CDC, headerValue: "rep_max_cdc", wantPresent: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			require.NoError(t, err)
+			if tc.headerValue != "" {
+				ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(cdc.ChunkingFunctionHeaderName, tc.headerValue))
+			}
+			cache := te.GetCache()
 
-	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 1024*1024)
-	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 1024*1024)
-	chunk3RN, chunk3Data := testdigest.RandomCASResourceBuf(t, 1024*1024)
-	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
-	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
-	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3Data))
+			chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 1024*1024)
+			chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 1024*1024)
+			chunk3RN, chunk3Data := testdigest.RandomCASResourceBuf(t, 1024*1024)
+			require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
+			require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
+			require.NoError(t, cache.Set(ctx, chunk3RN, chunk3Data))
 
-	allData := append(append(chunk1Data, chunk2Data...), chunk3Data...)
-	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
+			allData := append(append(chunk1Data, chunk2Data...), chunk3Data...)
+			blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			cm := &chunking.Manifest{
+				BlobDigest:       blobDigest,
+				ChunkDigests:     []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+				DigestFunction:   repb.DigestFunction_SHA256,
+				ChunkingFunction: tc.chunkingFunction,
+			}
+			require.NoError(t, cm.Store(ctx, cache))
 
-	cm := &chunking.Manifest{
-		BlobDigest:     blobDigest,
-		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
-		InstanceName:   "",
-		DigestFunction: repb.DigestFunction_SHA256,
+			ar := &repb.ActionResult{OutputFiles: []*repb.OutputFile{{Path: "output.bin", Digest: blobDigest}}}
+			err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
+			if tc.wantPresent {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.True(t, status.IsNotFoundError(err))
+			}
+		})
 	}
-	require.NoError(t, cm.Store(ctx, cache))
-
-	ar := &repb.ActionResult{
-		OutputFiles: []*repb.OutputFile{
-			{Path: "output.bin", Digest: blobDigest},
-		},
-	}
-
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
-	require.Error(t, err)
-	assert.True(t, status.IsNotFoundError(err))
 }
 
 func TestRecordOriginScorecard(t *testing.T) {

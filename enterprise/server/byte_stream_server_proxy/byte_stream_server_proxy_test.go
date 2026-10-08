@@ -1373,7 +1373,7 @@ func TestReadChunked(t *testing.T) {
 		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, chunking.NewWriteParams(&repb.FastCdc2020Params{AvgChunkSizeBytes: 64 * 1024}, nil), writeChunkFn)
 	require.NoError(t, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(t, err)
@@ -1616,7 +1616,7 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, chunking.NewWriteParams(&repb.FastCdc2020Params{AvgChunkSizeBytes: 64 * 1024}, nil), writeChunkFn)
 	require.NoError(t, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(t, err)
@@ -1770,7 +1770,7 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 		return remoteEnv.GetCache().Set(anonCtx, chunkRN.ToProto(), chunkDataCopy)
 	}
-	cdcChunker, err := chunking.NewChunker(anonCtx, 64*1024, writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(anonCtx, chunking.NewWriteParams(&repb.FastCdc2020Params{AvgChunkSizeBytes: 64 * 1024}, nil), writeChunkFn)
 	require.NoError(t, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(t, err)
@@ -2277,7 +2277,7 @@ func TestReadChunkedWithOffset(t *testing.T) {
 		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, chunking.NewWriteParams(&repb.FastCdc2020Params{AvgChunkSizeBytes: 64 * 1024}, nil), writeChunkFn)
 	require.NoError(t, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(t, err)
@@ -2515,7 +2515,7 @@ func TestReadChunkedPartialLocalFailure(t *testing.T) {
 		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, chunking.NewWriteParams(&repb.FastCdc2020Params{AvgChunkSizeBytes: 64 * 1024}, nil), writeChunkFn)
 	require.NoError(t, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(t, err)
@@ -3476,7 +3476,7 @@ func prepareChunkedReadBenchmarkData(b *testing.B, ctx context.Context, size int
 		})
 		return nil
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, chunking.NewWriteParams(chunking.FastCDCParams(), nil), writeChunkFn)
 	require.NoError(b, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(b, err)

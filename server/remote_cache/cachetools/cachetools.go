@@ -332,6 +332,7 @@ func GetBlobChunked(
 	bsClient bspb.ByteStreamClient,
 	casClient repb.ContentAddressableStorageClient,
 	r *digest.CASResourceName,
+	chunkingFunction repb.ChunkingFunction_Value,
 	parent *repb.FileNode,
 	f *os.File,
 	openLocal func(context.Context, *repb.FileNode) (*os.File, error),
@@ -341,9 +342,10 @@ func GetBlobChunked(
 	}
 
 	resp, err := casClient.SplitBlob(ctx, &repb.SplitBlobRequest{
-		BlobDigest:     r.GetDigest(),
-		InstanceName:   r.GetInstanceName(),
-		DigestFunction: r.GetDigestFunction(),
+		BlobDigest:       r.GetDigest(),
+		InstanceName:     r.GetInstanceName(),
+		DigestFunction:   r.GetDigestFunction(),
+		ChunkingFunction: chunkingFunction,
 	})
 	if err != nil {
 		return err
@@ -635,12 +637,21 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	return r.GetDigest(), bytesUploaded, nil
 }
 
-// uploadFromReaderWithChunking uploads a blob to the CAS using FastCDC if
-// the blob is large enough. Missing chunks are uploaded and then SpliceBlob
-// is used to tell the server how to reassemble them. Blobs outside the chunked
-// upload size range are uploaded normally.
-func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *digest.CASResourceName, in readAtSeeker, chunkingParams *repb.FastCdc2020Params) (*repb.Digest, int64, error) {
-	if !shouldUploadChunked(env, r.GetDigest(), chunkingParams) {
+// uploadFromReaderWithChunking uploads a blob to the CAS as chunks if it is
+// large enough. Missing chunks are uploaded and then SpliceBlob records the
+// manifest. Blobs outside the chunked upload size range are uploaded normally.
+func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *digest.CASResourceName, in readAtSeeker, chunkingParams *chunking.WriteParams) (*repb.Digest, int64, error) {
+	if env == nil {
+		return nil, 0, status.FailedPreconditionError("environment is not configured")
+	}
+	if env.GetByteStreamClient() == nil || env.GetContentAddressableStorageClient() == nil {
+		return UploadFromReader(ctx, env.GetByteStreamClient(), r, in)
+	}
+	shouldUpload, err := chunkingParams.ShouldUpload(r.GetDigest())
+	if err != nil {
+		return nil, 0, err
+	}
+	if !shouldUpload {
 		return UploadFromReader(ctx, env.GetByteStreamClient(), r, in)
 	}
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
@@ -653,7 +664,7 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 	}
 	var chunkedBlobSize int64
 	var chunkDigests []*repb.Digest
-	chunker, err := chunking.NewChunker(ctx, int(chunkingParams.GetAvgChunkSizeBytes()), func(chunkData []byte) error {
+	chunker, err := chunking.NewChunker(ctx, chunkingParams, func(chunkData []byte) error {
 		if _, err := blobHasher.Write(chunkData); err != nil {
 			return err
 		}
@@ -685,12 +696,17 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 	if len(chunkDigests) <= 1 {
 		return nil, 0, status.InternalErrorf("chunking produced %d chunk(s) for blob size %d", len(chunkDigests), r.GetDigest().GetSizeBytes())
 	}
+	chunkingFunction, err := chunkingParams.ChunkingFunction()
+	if err != nil {
+		return nil, 0, err
+	}
 
 	manifest := &chunking.Manifest{
-		BlobDigest:     r.GetDigest(),
-		ChunkDigests:   chunkDigests,
-		InstanceName:   r.GetInstanceName(),
-		DigestFunction: r.GetDigestFunction(),
+		BlobDigest:       r.GetDigest(),
+		ChunkDigests:     chunkDigests,
+		InstanceName:     r.GetInstanceName(),
+		DigestFunction:   r.GetDigestFunction(),
+		ChunkingFunction: chunkingFunction,
 	}
 	// Tag all outgoing calls for individual chunks so the server skips the
 	// chunked-manifest fallback lookup on FindMissingBlobs (safe even during
@@ -766,22 +782,6 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 		return nil, uploadedBytes.Load(), status.WrapErrorf(err, "splice chunked blob with %d total bytes failed after %v", r.GetDigest().GetSizeBytes(), time.Since(spliceStart))
 	}
 	return r.GetDigest(), uploadedBytes.Load(), nil
-}
-
-func shouldUploadChunked(env environment.Env, d *repb.Digest, chunkingParams *repb.FastCdc2020Params) bool {
-	if env == nil || env.GetByteStreamClient() == nil || env.GetContentAddressableStorageClient() == nil {
-		return false
-	}
-	avgChunkSizeBytes := int64(chunkingParams.GetAvgChunkSizeBytes())
-	if avgChunkSizeBytes <= 0 {
-		return false
-	}
-	sizeBytes := d.GetSizeBytes()
-	if sizeBytes <= avgChunkSizeBytes*4 {
-		return false
-	}
-	maxWriteSizeBytes := chunkingParams.GetBuildbuddyMaxChunkedWriteSizeBytes()
-	return maxWriteSizeBytes <= 0 || sizeBytes <= maxWriteSizeBytes
 }
 
 type uploadRetryResult = struct {
@@ -1057,12 +1057,12 @@ type BatchCASUploader struct {
 	digestFunction  repb.DigestFunction_Value
 	unsentBatchSize int64
 	stats           UploadStats
-	chunkingParams  *repb.FastCdc2020Params
+	chunkingParams  *chunking.WriteParams
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
 // context (it should not be used outside the lifecycle of the request).
-func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, chunkingParams *repb.FastCdc2020Params) *BatchCASUploader {
+func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, chunkingParams *chunking.WriteParams) *BatchCASUploader {
 	eg, ctx := errgroup.WithContext(ctx)
 	return &BatchCASUploader{
 		ctx:             ctx,
@@ -1105,7 +1105,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		resourceName := digest.NewCASResourceName(d, ul.instanceName, ul.digestFunction)
 		resourceName.SetCompressor(compressor)
 
-		if ras, ok := rsc.(readAtSeeker); ok && ul.chunkingParams.GetAvgChunkSizeBytes() > 0 {
+		if ras, ok := rsc.(readAtSeeker); ok && ul.chunkingParams != nil {
 			ul.eg.Go(func() error {
 				defer r.Close()
 				_, _, err := uploadFromReaderWithChunking(ul.ctx, ul.env, resourceName, ras, ul.chunkingParams)

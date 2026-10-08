@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -351,6 +352,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		opts.RootDir = ws.inputRoot()
 	}
 	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
+	opts.ChunkingFunction = ws.task.GetChunkingFunction()
 	opts.RecordInputFetchMetadata = *recordInputFetchMetadata && slices.Contains(ws.task.GetExperiments(), "remote_execution.record_input_fetch_metadata")
 	if ws.Opts.Preserve {
 		opts.KnownInputs = ws.Inputs
@@ -560,7 +562,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			cmd,
 			executeResponse.Result,
 			addToFileCache,
-			ws.task.GetFastCdc_2020Params(),
+			chunking.NewWriteParams(ws.task.GetFastCdc_2020Params(), ws.task.GetRepMaxCdcParams()),
 		)
 		return err
 	})

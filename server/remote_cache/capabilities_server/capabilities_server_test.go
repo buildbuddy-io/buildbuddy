@@ -37,4 +37,6 @@ func TestGetCapabilities_CDCDoesNotVaryWithExperiments(t *testing.T) {
 	assert.True(t, rsp.GetCacheCapabilities().GetSplitBlobSupport())
 	assert.True(t, rsp.GetCacheCapabilities().GetSpliceBlobSupport())
 	assert.Equal(t, uint64(1024*1024), rsp.GetCacheCapabilities().GetFastCdc_2020Params().GetAvgChunkSizeBytes())
+	assert.Equal(t, uint64(1024*1024), rsp.GetCacheCapabilities().GetRepMaxCdcParams().GetMinChunkSizeBytes())
+	assert.Equal(t, uint64(8*1024*1024), rsp.GetCacheCapabilities().GetRepMaxCdcParams().GetHorizonSizeBytes())
 }

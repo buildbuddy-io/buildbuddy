@@ -59,6 +59,7 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/util/cdc",
         "//server/util/compression",
         "//server/util/prefix",
         "//server/util/rpcutil",

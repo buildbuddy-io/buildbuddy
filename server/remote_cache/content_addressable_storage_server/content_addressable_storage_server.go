@@ -151,8 +151,12 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	// write threshold. Blobs at or below the threshold should be uploaded as
 	// whole blobs.
 	if len(missing) > 0 && !cdc.IsChunked(ctx) {
+		chunkingFunction, err := chunking.ChunkingFunctionFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
 		checker := chunking.NewMissingChunkChecker(s.cache, repb.FindMissingBlobsRequest_FMB_CHUNK_VALIDATION)
-		maxChunkSizeBytes := chunking.MaxChunkSizeBytes()
+		chunkingThresholdBytes := chunking.MaxChunkSizeBytesForFunction(chunkingFunction)
 		efp := s.env.GetExperimentFlagProvider()
 
 		var mu sync.Mutex
@@ -172,12 +176,12 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		eg, egCtx := errgroup.WithContext(ctx)
 		eg.SetLimit(concurrency)
 		for _, d := range missing {
-			if d.GetSizeBytes() <= maxChunkSizeBytes {
+			if d.GetSizeBytes() <= chunkingThresholdBytes {
 				markMissing(d)
 				continue
 			}
 			eg.Go(func() error {
-				manifest, err := chunking.LoadManifest(egCtx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
+				manifest, err := chunking.LoadManifest(egCtx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction(), chunkingFunction)
 				if err != nil {
 					// Not stored as a chunked manifest, so it's genuinely missing.
 					markMissing(d)
@@ -437,7 +441,11 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	cacheRequest := make([]*rspb.ResourceName, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	clientAcceptsZstd := remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
-	chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes()
+	chunkingFunction, err := chunking.ChunkingFunctionFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(chunkingFunction)
 	readZstd := clientAcceptsZstd && s.cache.SupportsCompressor(repb.Compressor_ZSTD)
 
 	requestedResources := make([]*digest.ResourceName, 0, len(req.GetDigests()))
@@ -478,7 +486,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		// large enough to be chunked. If the blob was not found and it's large
 		// enough to be chunked, try to reassemble it from CDC chunks.
 		if (!ok || os.IsNotExist(err)) && rn.GetDigest().GetSizeBytes() > chunkedReadFallbackSizeBytes {
-			if assembled, assembleErr := s.readChunkedBlob(ctx, rn.GetDigest(), req.GetInstanceName(), req.GetDigestFunction(), readZstd); assembleErr == nil {
+			if assembled, assembleErr := s.readChunkedBlob(ctx, rn.GetDigest(), req.GetInstanceName(), req.GetDigestFunction(), chunkingFunction, readZstd); assembleErr == nil {
 				data = assembled
 				ok = true
 			}
@@ -1283,7 +1291,7 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 		}, nil
 	}
 
-	if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+	if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 && cf != repb.ChunkingFunction_REP_MAX_CDC {
 		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v in request %s", cf, req)
 	}
 
@@ -1297,10 +1305,11 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 	}
 
 	manifest := &chunking.Manifest{
-		BlobDigest:     req.GetBlobDigest(),
-		ChunkDigests:   req.GetChunkDigests(),
-		InstanceName:   req.GetInstanceName(),
-		DigestFunction: req.GetDigestFunction(),
+		BlobDigest:       req.GetBlobDigest(),
+		ChunkDigests:     req.GetChunkDigests(),
+		InstanceName:     req.GetInstanceName(),
+		DigestFunction:   req.GetDigestFunction(),
+		ChunkingFunction: req.GetChunkingFunction(),
 	}
 
 	efp := s.env.GetExperimentFlagProvider()
@@ -1356,7 +1365,7 @@ func (s *ContentAddressableStorageServer) isTrustedSpliceClient(ctx context.Cont
 		identity.Client == interfaces.ClientIdentityCacheProxy
 }
 
-func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, readZstd bool) ([]byte, error) {
+func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, chunkingFunction repb.ChunkingFunction_Value, readZstd bool) ([]byte, error) {
 	if blobDigest.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
 		return nil, status.NotFoundErrorf("blob %s not found", blobDigest.GetHash())
 	}
@@ -1364,7 +1373,7 @@ func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, b
 	if readZstd {
 		compressor = repb.Compressor_ZSTD
 	}
-	return chunking.GetBlob(ctx, s.cache, blobDigest, instanceName, digestFunction, compressor)
+	return chunking.GetBlob(ctx, s.cache, blobDigest, instanceName, digestFunction, chunkingFunction, compressor)
 }
 
 // SplitBlob is used to get the digests of the chunks that make up a blob. Clients can then see if
@@ -1399,7 +1408,7 @@ func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *re
 	}
 
 	cf := req.GetChunkingFunction()
-	if cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
+	if cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 && cf != repb.ChunkingFunction_REP_MAX_CDC {
 		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v in request %s", cf, req)
 	}
 
@@ -1407,7 +1416,7 @@ func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *re
 		return nil, status.InvalidArgumentErrorf("blob_digest is required in request %s", req)
 	}
 
-	manifest, err := chunking.LoadManifest(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
+	manifest, err := chunking.LoadManifest(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction(), req.GetChunkingFunction())
 	if err != nil {
 		return nil, err
 	}

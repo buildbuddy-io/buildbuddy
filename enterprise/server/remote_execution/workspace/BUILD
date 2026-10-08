@@ -22,6 +22,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/cachetools",
+        "//server/remote_cache/chunking",
         "//server/remote_cache/digest",
         "//server/util/bb",
         "//server/util/disk",

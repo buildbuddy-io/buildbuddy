@@ -221,7 +221,14 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 		}, nil
 	}
 
-	if s.shouldReadChunked(ctx, req, rn) {
+	shouldReadChunked, err := s.shouldReadChunked(ctx, req, rn)
+	if err != nil {
+		return readMetrics{
+			cacheStatus: metrics.MissStatusLabel,
+			compressor:  rn.GetCompressor().String(),
+		}, err
+	}
+	if shouldReadChunked {
 		chunkMetrics, err := s.readChunked(ctx, req, stream, rn, remoteOnly)
 		if err == nil {
 			cacheStatus := metrics.MissStatusLabel
@@ -281,12 +288,16 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 	}
 }
 
-func (s *ByteStreamServerProxy) shouldReadChunked(ctx context.Context, req *bspb.ReadRequest, rn *digest.CASResourceName) bool {
+func (s *ByteStreamServerProxy) shouldReadChunked(ctx context.Context, req *bspb.ReadRequest, rn *digest.CASResourceName) (bool, error) {
 	if *disableCDC {
-		return false
+		return false, nil
+	}
+	chunkingFunction, err := chunking.ChunkingFunctionFromContext(ctx)
+	if err != nil {
+		return false, err
 	}
 	return s.localCache != nil && s.remoteCAS != nil &&
-		chunking.ShouldReadChunkedOnProxy(ctx, s.efp, rn.GetDigest().GetSizeBytes(), req.GetReadOffset(), req.GetReadLimit())
+		chunking.ShouldReadChunkedOnProxy(ctx, s.efp, chunkingFunction, rn.GetDigest().GetSizeBytes(), req.GetReadOffset(), req.GetReadLimit()), nil
 }
 
 type chunkedReadMetrics struct {
@@ -323,7 +334,11 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 		return m, err
 	}
 
-	chunkDigests, err := s.chunkDigests(ctx, rn, remoteOnly)
+	chunkingFunction, err := chunking.ChunkingFunctionFromContext(ctx)
+	if err != nil {
+		return m, err
+	}
+	chunkDigests, err := s.chunkDigests(ctx, rn, chunkingFunction, remoteOnly)
 	if err != nil {
 		return m, err
 	}
@@ -421,17 +436,18 @@ func sendChunkFrames(stream bspb.ByteStream_ReadServer, data []byte) error {
 	return nil
 }
 
-func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CASResourceName, remoteOnly bool) ([]*repb.Digest, error) {
+func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CASResourceName, chunkingFunction repb.ChunkingFunction_Value, remoteOnly bool) ([]*repb.Digest, error) {
 	fastPathEnabled := s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.cdc_read_fast_path", false)
 	if fastPathEnabled && !remoteOnly {
-		if chunkDigests, ok := s.localChunkDigests(ctx, rn); ok {
+		if chunkDigests, ok := s.localChunkDigests(ctx, rn, chunkingFunction); ok {
 			return chunkDigests, nil
 		}
 	}
 	splitResp, err := s.remoteCAS.SplitBlob(ctx, &repb.SplitBlobRequest{
-		BlobDigest:     rn.GetDigest(),
-		InstanceName:   rn.GetInstanceName(),
-		DigestFunction: rn.GetDigestFunction(),
+		BlobDigest:       rn.GetDigest(),
+		InstanceName:     rn.GetInstanceName(),
+		DigestFunction:   rn.GetDigestFunction(),
+		ChunkingFunction: chunkingFunction,
 	})
 	if err != nil {
 		metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
@@ -442,13 +458,13 @@ func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CAS
 	}
 	chunkDigests := splitResp.GetChunkDigests()
 	if !remoteOnly {
-		s.storeLocalChunkedManifest(ctx, rn, chunkDigests)
+		s.storeLocalChunkedManifest(ctx, rn, splitResp.GetChunkingFunction(), chunkDigests)
 	}
 	return chunkDigests, nil
 }
 
-func (s *ByteStreamServerProxy) localChunkDigests(ctx context.Context, rn *digest.CASResourceName) ([]*repb.Digest, bool) {
-	manifest, err := chunking.LoadManifest(ctx, s.localCache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+func (s *ByteStreamServerProxy) localChunkDigests(ctx context.Context, rn *digest.CASResourceName, chunkingFunction repb.ChunkingFunction_Value) ([]*repb.Digest, bool) {
+	manifest, err := chunking.LoadManifest(ctx, s.localCache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction(), chunkingFunction)
 	if err != nil {
 		outcome := "manifest_error"
 		if status.IsNotFoundError(err) {
@@ -474,12 +490,13 @@ func (s *ByteStreamServerProxy) localChunkDigests(ctx context.Context, rn *diges
 	return manifest.ChunkDigests, true
 }
 
-func (s *ByteStreamServerProxy) storeLocalChunkedManifest(ctx context.Context, rn *digest.CASResourceName, chunkDigests []*repb.Digest) {
+func (s *ByteStreamServerProxy) storeLocalChunkedManifest(ctx context.Context, rn *digest.CASResourceName, chunkingFunction repb.ChunkingFunction_Value, chunkDigests []*repb.Digest) {
 	manifest := &chunking.Manifest{
-		BlobDigest:     rn.GetDigest(),
-		ChunkDigests:   chunkDigests,
-		InstanceName:   rn.GetInstanceName(),
-		DigestFunction: rn.GetDigestFunction(),
+		BlobDigest:       rn.GetDigest(),
+		ChunkDigests:     chunkDigests,
+		InstanceName:     rn.GetInstanceName(),
+		DigestFunction:   rn.GetDigestFunction(),
+		ChunkingFunction: chunkingFunction,
 	}
 	err := manifest.StoreWithoutVerification(ctx, s.localCache)
 	metrics.ByteStreamChunkedReadLocalManifestStoreAttempts.With(prometheus.Labels{
@@ -1350,7 +1367,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		return nil
 	}
 
-	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), chunkWriteFn)
+	chunker, err := chunking.NewChunker(ctx, chunking.NewWriteParams(chunking.FastCDCParams(), nil), chunkWriteFn)
 	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("creating chunker: %s", err)
 	}

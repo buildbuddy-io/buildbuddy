@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -32,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -273,10 +275,57 @@ func TestDispatch_ChunkingConfigWithNoopExperimentProvider(t *testing.T) {
 			assert.Equal(t, enabled, slices.Contains(task.GetExperiments(), "executor.upload_outputs_chunked"))
 			assert.Equal(t, enabled, slices.Contains(task.GetExperiments(), "executor.download_inputs_chunked"))
 			if enabled {
+				assert.Equal(t, repb.ChunkingFunction_FAST_CDC_2020, task.GetChunkingFunction())
 				require.NotNil(t, task.GetFastCdc_2020Params())
 				assert.Equal(t, uint64(1024*1024), task.GetFastCdc_2020Params().GetAvgChunkSizeBytes())
+				assert.Nil(t, task.GetRepMaxCdcParams())
 			} else {
+				assert.Equal(t, repb.ChunkingFunction_UNKNOWN, task.GetChunkingFunction())
 				assert.Nil(t, task.GetFastCdc_2020Params())
+				assert.Nil(t, task.GetRepMaxCdcParams())
+			}
+		})
+	}
+}
+
+func TestDispatch_ChunkingFunctionHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		headerValue          string
+		wantChunkingFunction repb.ChunkingFunction_Value
+	}{
+		{name: "FastCDC", headerValue: "fast_cdc_2020", wantChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020},
+		{name: "RepMaxCDC", headerValue: "rep_max_cdc", wantChunkingFunction: repb.ChunkingFunction_REP_MAX_CDC},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.chunking_enabled", true)
+			env, _, _ := setupEnv(t)
+			ctx := withIncomingMetadata(t, t.Context(), &repb.RequestMetadata{
+				ToolInvocationId: "10243d8a-a329-4f46-abfb-bfbceed12baa",
+			})
+			md, _ := metadata.FromIncomingContext(ctx)
+			ctx = metadata.NewIncomingContext(ctx, metadata.Join(md, metadata.Pairs(cdc.ChunkingFunctionHeaderName, tc.headerValue)))
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			action := &repb.Action{}
+			arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, action)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			require.NoError(t, env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString()))
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Len(t, sched.scheduleReqs, 1)
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+			require.Equal(t, tc.wantChunkingFunction, task.GetChunkingFunction())
+			if tc.wantChunkingFunction == repb.ChunkingFunction_REP_MAX_CDC {
+				require.Nil(t, task.GetFastCdc_2020Params())
+				require.Equal(t, chunking.RepMaxCDCParams().GetMinChunkSizeBytes(), task.GetRepMaxCdcParams().GetMinChunkSizeBytes())
+				require.Equal(t, chunking.RepMaxCDCParams().GetHorizonSizeBytes(), task.GetRepMaxCdcParams().GetHorizonSizeBytes())
+			} else {
+				require.NotNil(t, task.GetFastCdc_2020Params())
+				require.Nil(t, task.GetRepMaxCdcParams())
 			}
 		})
 	}

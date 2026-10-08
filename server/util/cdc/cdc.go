@@ -20,8 +20,12 @@ const (
 	// or payloads are individual content-defined chunks, not whole blobs.
 	ChunkedHeaderName = "build.bazel.remote.execution.v2.chunked"
 
-	// ChunkedHeaderValue names the chunking function used to produce the chunk.
+	// ChunkedHeaderValue is the legacy non-empty marker for individual chunks.
 	ChunkedHeaderValue = "FAST_CDC_2020"
+
+	// ChunkingFunctionHeaderName selects the chunking function for requests
+	// that do not carry one in their proto.
+	ChunkingFunctionHeaderName = "chunking_function"
 
 	// SpliceWithoutValidationHeaderName is the gRPC header requesting that
 	// SpliceBlob skip content verification. The internal prefix makes the

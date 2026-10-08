@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -21,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -36,6 +38,33 @@ func TestAvgChunkSizeDefault(t *testing.T) {
 	require.Equal(t, int64(1024*1024), chunking.AvgChunkSizeBytes())
 	require.Equal(t, uint64(1024*1024), chunking.FastCDCParams().GetAvgChunkSizeBytes())
 	require.Equal(t, int64(4*1024*1024), chunking.MaxChunkSizeBytes())
+	require.Equal(t, uint64(1024*1024), chunking.RepMaxCDCParams().GetMinChunkSizeBytes())
+	require.Equal(t, uint64(8*1024*1024), chunking.RepMaxCDCParams().GetHorizonSizeBytes())
+	require.Equal(t, chunking.MaxChunkSizeBytes(), chunking.MaxChunkSizeBytesForFunction(repb.ChunkingFunction_UNKNOWN))
+	require.Equal(t, chunking.MaxChunkSizeBytes(), chunking.MaxChunkSizeBytesForFunction(repb.ChunkingFunction_FAST_CDC_2020))
+	require.Equal(t, int64(2*1024*1024-1), chunking.MaxChunkSizeBytesForFunction(repb.ChunkingFunction_REP_MAX_CDC))
+}
+
+func TestChunkingFunctionFromContext(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  repb.ChunkingFunction_Value
+	}{
+		{value: "", want: repb.ChunkingFunction_UNKNOWN},
+		{value: "auto", want: repb.ChunkingFunction_UNKNOWN},
+		{value: "fast_cdc_2020", want: repb.ChunkingFunction_FAST_CDC_2020},
+		{value: "rep_max_cdc", want: repb.ChunkingFunction_REP_MAX_CDC},
+	} {
+		ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(cdc.ChunkingFunctionHeaderName, tc.value))
+		got, err := chunking.ChunkingFunctionFromContext(ctx)
+		require.NoError(t, err)
+		require.Equal(t, tc.want, got)
+	}
+
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(cdc.ChunkingFunctionHeaderName, "invalid"))
+	_, err := chunking.ChunkingFunctionFromContext(ctx)
+	require.True(t, status.IsInvalidArgumentError(err))
+
 }
 
 func (c *getMultiBatchRecordingCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -62,7 +91,7 @@ func TestChunker_ReassemblesOriginalData(t *testing.T) {
 	}
 
 	const averageSize = 64 * 1024
-	c, err := chunking.NewChunker(ctx, averageSize, writeChunkFn)
+	c, err := chunking.NewChunker(ctx, chunking.NewWriteParams(&repb.FastCdc2020Params{AvgChunkSizeBytes: uint64(averageSize)}, nil), writeChunkFn)
 	require.NoError(t, err)
 
 	_, err = c.Write(originalData)
@@ -87,6 +116,35 @@ func TestChunker_ReassemblesOriginalData(t *testing.T) {
 		reassembled.Write(chunk)
 	}
 	require.Equal(t, originalData, reassembled.Bytes(), "reassembled data should match original")
+}
+
+func TestRepMaxChunker_ReassemblesOriginalData(t *testing.T) {
+	const (
+		minSize     = 64 * 1024
+		horizonSize = 8 * minSize
+	)
+	originalData := make([]byte, 2*1024*1024)
+	_, err := rand.Read(originalData)
+	require.NoError(t, err)
+
+	var chunks [][]byte
+	c, err := chunking.NewChunker(t.Context(), chunking.NewWriteParams(nil, &repb.RepMaxCdcParams{
+		MinChunkSizeBytes: uint64(minSize),
+		HorizonSizeBytes:  uint64(horizonSize),
+	}), func(data []byte) error {
+		chunks = append(chunks, bytes.Clone(data))
+		return nil
+	})
+	require.NoError(t, err)
+	_, err = c.Write(originalData)
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
+	require.Greater(t, len(chunks), 1)
+	for _, chunk := range chunks {
+		require.GreaterOrEqual(t, len(chunk), minSize)
+		require.Less(t, len(chunk), 2*minSize)
+	}
+	require.Equal(t, originalData, bytes.Join(chunks, nil))
 }
 
 func TestShouldUploadChunkedWithMax(t *testing.T) {
@@ -139,19 +197,73 @@ func TestShouldReadChunkedUsesReadFallbackThreshold(t *testing.T) {
 		Hash:      "hash",
 		SizeBytes: 3 * 1024 * 1024,
 	}))
-	assert.True(t, chunking.ShouldReadChunked(3*1024*1024, 0, 0))
-	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 3*1024*1024, 0, 0))
-	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 5*1024*1024, 0, 0))
-	assert.False(t, chunking.ShouldReadChunked(2*1024*1024, 0, 0))
-	assert.False(t, chunking.ShouldReadChunked(3*1024*1024, 0, 1024))
+	assert.True(t, chunking.ShouldReadChunked(repb.ChunkingFunction_UNKNOWN, 3*1024*1024, 0, 0))
+	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, repb.ChunkingFunction_UNKNOWN, 3*1024*1024, 0, 0))
+	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, repb.ChunkingFunction_UNKNOWN, 5*1024*1024, 0, 0))
+	assert.False(t, chunking.ShouldReadChunked(repb.ChunkingFunction_UNKNOWN, 2*1024*1024, 0, 0))
+	assert.True(t, chunking.ShouldReadChunked(repb.ChunkingFunction_REP_MAX_CDC, 2*1024*1024, 0, 0))
+	assert.False(t, chunking.ShouldReadChunked(repb.ChunkingFunction_REP_MAX_CDC, 2*1024*1024-1, 0, 0))
+	assert.False(t, chunking.ShouldReadChunked(repb.ChunkingFunction_UNKNOWN, 3*1024*1024, 0, 1024))
 }
 
-func TestReadFallbackThresholdClampsToMaxChunkSize(t *testing.T) {
+func TestReadFallbackThresholdClampsToChunkingFunctionThreshold(t *testing.T) {
 	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 4*1024*1024+1)
 
 	require.NoError(t, chunking.ValidateConfig())
-	require.Equal(t, chunking.MaxChunkSizeBytes(), chunking.MinChunkedReadFallbackSizeBytes())
+	require.Equal(t, chunking.MaxChunkSizeBytes(), chunking.MinChunkedReadFallbackSizeBytes(repb.ChunkingFunction_UNKNOWN))
+	require.Equal(t, int64(2*1024*1024-1), chunking.MinChunkedReadFallbackSizeBytes(repb.ChunkingFunction_REP_MAX_CDC))
+}
+
+func TestManifestNamespacesByChunkingFunction(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	blobRN, _ := testdigest.RandomCASResourceBuf(t, 1024)
+	fastChunkRN, _ := testdigest.RandomCASResourceBuf(t, 512)
+	repMaxChunkRN, _ := testdigest.RandomCASResourceBuf(t, 256)
+	fastManifest := &chunking.Manifest{
+		BlobDigest:       blobRN.GetDigest(),
+		ChunkDigests:     []*repb.Digest{fastChunkRN.GetDigest()},
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_FAST_CDC_2020,
+	}
+	repMaxManifest := &chunking.Manifest{
+		BlobDigest:       blobRN.GetDigest(),
+		ChunkDigests:     []*repb.Digest{repMaxChunkRN.GetDigest()},
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_REP_MAX_CDC,
+	}
+	require.NoError(t, fastManifest.StoreWithoutVerification(ctx, cache))
+	require.NoError(t, repMaxManifest.StoreWithoutVerification(ctx, cache))
+
+	loadedFast, err := chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256, repb.ChunkingFunction_FAST_CDC_2020)
+	require.NoError(t, err)
+	require.Equal(t, fastChunkRN.GetDigest(), loadedFast.ChunkDigests[0])
+	require.Equal(t, repb.ChunkingFunction_FAST_CDC_2020, loadedFast.ChunkingFunction)
+
+	loadedRepMax, err := chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256, repb.ChunkingFunction_REP_MAX_CDC)
+	require.NoError(t, err)
+	require.Equal(t, repMaxChunkRN.GetDigest(), loadedRepMax.ChunkDigests[0])
+	require.Equal(t, repb.ChunkingFunction_REP_MAX_CDC, loadedRepMax.ChunkingFunction)
+
+	loadedPreferred, err := chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256, repb.ChunkingFunction_UNKNOWN)
+	require.NoError(t, err)
+	require.Equal(t, fastChunkRN.GetDigest(), loadedPreferred.ChunkDigests[0])
+
+	repMaxOnlyBlobRN, _ := testdigest.RandomCASResourceBuf(t, 1024)
+	repMaxOnlyManifest := &chunking.Manifest{
+		BlobDigest:       repMaxOnlyBlobRN.GetDigest(),
+		ChunkDigests:     []*repb.Digest{repMaxChunkRN.GetDigest()},
+		DigestFunction:   repb.DigestFunction_SHA256,
+		ChunkingFunction: repb.ChunkingFunction_REP_MAX_CDC,
+	}
+	require.NoError(t, repMaxOnlyManifest.StoreWithoutVerification(ctx, cache))
+	_, err = chunking.LoadManifest(ctx, cache, repMaxOnlyBlobRN.GetDigest(), "", repb.DigestFunction_SHA256, repb.ChunkingFunction_UNKNOWN)
+	require.True(t, status.IsNotFoundError(err))
 }
 
 func TestGetBlobRejectsForgedManifestSizes(t *testing.T) {
@@ -191,7 +303,7 @@ func TestGetBlobRejectsForgedManifestSizes(t *testing.T) {
 	require.NoError(t, manifest.StoreWithoutVerification(ctx, cache))
 
 	recordingCache := &getMultiBatchRecordingCache{Cache: cache}
-	_, err = chunking.GetBlob(ctx, recordingCache, forgedBlobDigest, "", repb.DigestFunction_SHA256, repb.Compressor_IDENTITY)
+	_, err = chunking.GetBlob(ctx, recordingCache, forgedBlobDigest, "", repb.DigestFunction_SHA256, repb.ChunkingFunction_FAST_CDC_2020, repb.Compressor_IDENTITY)
 	require.Error(t, err)
 	require.True(t, status.IsDataLossError(err), "expected DataLoss, got %s", err)
 	require.Equal(t, []int{20, 1}, recordingCache.batchSizes)
@@ -219,7 +331,7 @@ func TestChunker_DeterministicChunking(t *testing.T) {
 			return nil
 		}
 
-		c, err := chunking.NewChunker(ctx, averageSize, writeChunkFn)
+		c, err := chunking.NewChunker(ctx, chunking.NewWriteParams(&repb.FastCdc2020Params{AvgChunkSizeBytes: uint64(averageSize)}, nil), writeChunkFn)
 		require.NoError(t, err)
 
 		_, err = c.Write(originalData)
@@ -245,7 +357,7 @@ func TestChunker_ContextCancellation(t *testing.T) {
 	}
 
 	const averageSize = 16 * 1024
-	c, err := chunking.NewChunker(ctx, averageSize, writeChunkFn)
+	c, err := chunking.NewChunker(ctx, chunking.NewWriteParams(&repb.FastCdc2020Params{AvgChunkSizeBytes: uint64(averageSize)}, nil), writeChunkFn)
 	require.NoError(t, err)
 
 	cancel()
@@ -278,7 +390,7 @@ func TestStoreAndLoad(t *testing.T) {
 			require.NoError(t, err)
 
 			var chunkDigests []*repb.Digest
-			c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
+			c, err := chunking.NewChunker(ctx, chunking.NewWriteParams(chunking.FastCDCParams(), nil), func(data []byte) error {
 				d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
 				if err != nil {
 					return err
@@ -313,7 +425,7 @@ func TestStoreAndLoad(t *testing.T) {
 
 			require.NoError(t, cm.Store(ctx, cache))
 
-			loaded, err := chunking.LoadManifest(ctx, cache, blobDigest, "", repb.DigestFunction_SHA256)
+			loaded, err := chunking.LoadManifest(ctx, cache, blobDigest, "", repb.DigestFunction_SHA256, repb.ChunkingFunction_FAST_CDC_2020)
 			require.NoError(t, err)
 			assert.Equal(t, cm.BlobDigest.GetHash(), loaded.BlobDigest.GetHash())
 			assert.Equal(t, cm.BlobDigest.GetSizeBytes(), loaded.BlobDigest.GetSizeBytes())
@@ -341,7 +453,7 @@ func TestStore_MissingChunk(t *testing.T) {
 	require.NoError(t, err)
 
 	var chunkDigests []*repb.Digest
-	c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
+	c, err := chunking.NewChunker(ctx, chunking.NewWriteParams(chunking.FastCDCParams(), nil), func(data []byte) error {
 		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
 		if err != nil {
 			return err
@@ -381,7 +493,7 @@ func TestLoadWithoutManifest_BlobMissing(t *testing.T) {
 
 	blobRN, _ := testdigest.RandomCASResourceBuf(t, 500)
 
-	_, err = chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256)
+	_, err = chunking.LoadManifest(ctx, cache, blobRN.GetDigest(), "", repb.DigestFunction_SHA256, repb.ChunkingFunction_FAST_CDC_2020)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 }
@@ -401,7 +513,7 @@ func TestLoadWithoutManifest_SaltedHashNotLeaked(t *testing.T) {
 	saltedDigest, err := digest.Compute(bytes.NewReader([]byte(salt+":"+blobDigest.GetHash())), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
-	_, err = chunking.LoadManifest(ctx, te.GetCache(), blobDigest, "", repb.DigestFunction_SHA256)
+	_, err = chunking.LoadManifest(ctx, te.GetCache(), blobDigest, "", repb.DigestFunction_SHA256, repb.ChunkingFunction_FAST_CDC_2020)
 
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
@@ -663,10 +775,10 @@ func (p booleanFlagProvider) Boolean(ctx context.Context, flagName string, defau
 func TestShouldReadChunkedOnProxy_UsesExperimentFlag(t *testing.T) {
 	ctx := context.Background()
 	size := chunking.MaxChunkSizeBytes() + 1
-	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, size, 0, 0))
+	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, repb.ChunkingFunction_UNKNOWN, size, 0, 0))
 	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, booleanFlagProvider{
 		values: map[string]bool{"cache_proxy.attempt_chunked_reads": false},
-	}, size, 0, 0))
+	}, repb.ChunkingFunction_UNKNOWN, size, 0, 0))
 }
 
 func BenchmarkStore(b *testing.B) {
