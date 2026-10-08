@@ -4,8 +4,9 @@ import React from "react";
 import { OutlinedButton } from "../../../app/components/button/button";
 import router from "../../../app/router/router";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
-import { getQuantile } from "../trends/common";
+import { getQuantile, longFormatTsForInterval, shortFormatTsForAxis } from "../trends/common";
 import TrendsChartComponent, { ChartDataSeries } from "../trends/trends_chart";
+import { stats } from "../../../proto/stats_ts_proto";
 
 export interface TimelineDataSeries {
   series: ChartDataSeries;
@@ -17,6 +18,7 @@ interface Props {
   target: string;
   timeKeys: number[];
   ticks: number[];
+  interval: stats.IntervalType;
   formatValues: (datum: number) => string;
   series: TimelineDataSeries[];
   getQuantiles: (tl: execution_stats.ExecutionTimelineSummary) => execution_stats.Quantile[];
@@ -163,10 +165,8 @@ export default class TargetChartComponent extends React.Component<Props, State> 
             formatTickValue: this.props.formatValues,
             allowDecimals: false,
           }}
-          formatXAxisLabel={(startTimeUsec) => moment(startTimeUsec / 1000).format("MMM D, h:mm a")}
-          formatHoverXAxisLabel={(startTimeUsec) =>
-            moment(startTimeUsec / 1000).format("dddd, MMMM Do YYYY, h:mm:ss a")
-          }
+          formatXAxisLabel={(startTimeUsec) => shortFormatTsForAxis(startTimeUsec / 1000)}
+          formatHoverXAxisLabel={(startTimeUsec) => longFormatTsForInterval(this.props.interval, startTimeUsec / 1000)}
           hideLegend={true}
           standaloneChart={true}
           tooltipEntryLimit={3}

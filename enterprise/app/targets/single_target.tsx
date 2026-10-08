@@ -331,6 +331,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
               timeKeys={timeKeys}
               ticks={ticks}
               series={durationSeries}
+              interval={interval.type}
               formatValues={format.durationUsec}
               getQuantiles={(tl) => tl.durationUsec}
               getTotal={(tl) => +tl.durationUsecTotal}
@@ -342,6 +343,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
               timeKeys={timeKeys}
               ticks={ticks}
               series={cpuSeries}
+              interval={interval.type}
               formatValues={(v) => format.durationUsec(v / 1e3)}
               getQuantiles={(tl) => tl.cpuNanos}
               getTotal={(tl) => +tl.cpuNanosTotal}
@@ -353,6 +355,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
               timeKeys={timeKeys}
               ticks={ticks}
               series={memorySeries}
+              interval={interval.type}
               formatValues={(value) => format.bytes(value)}
               getQuantiles={(tl) => tl.peakMemory}
               colorPicker={colorPicker}

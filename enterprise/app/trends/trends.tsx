@@ -12,7 +12,7 @@ import { stats } from "../../../proto/stats_ts_proto";
 import FilterComponent from "../filter/filter";
 import { getEndDate, getProtoFilterParams } from "../filter/filter_util";
 import CacheChartComponent from "./cache_chart";
-import { computeTimeKeys, getAverage, getTotal } from "./common";
+import { computeTimeKeys, getAverage, getTotal, longFormatTsForInterval, shortFormatTsForAxis } from "./common";
 import DrilldownPageComponent from "./drilldown_page";
 import PercentilesChartComponent from "./percentile_chart";
 import TrendsSummaryCard from "./summary_card";
@@ -216,23 +216,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
     return this.state.timeKeys.map((tsMillis) => this.getExecutionStat(tsMillis));
   }
 
-  formatLongDate(timestampMillis: number) {
-    if (this.state.interval == stats.IntervalType.INTERVAL_TYPE_DAY) {
-      return moment(timestampMillis).format("dddd, MMMM Do YYYY");
-    }
-    return moment(timestampMillis).format("dddd, MMMM Do YYYY HH:mm");
-  }
-
-  formatShortDate(timestampMillis: number) {
-    const time = moment(timestampMillis);
-
-    if (time.hour() === 0) {
-      return time.format("MMM D");
-    }
-
-    return time.format("HH:mm");
-  }
-
   onBarClicked(hash: string, sortBy: string, tsMillis: number) {
     const date = new Date(tsMillis).toISOString().split("T")[0];
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
@@ -360,8 +343,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatTickValue: format.durationSec,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
                 onZoomSelection={this.onChartZoomed.bind(this, "")}
               />
@@ -371,8 +354,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   id="duration"
                   data={this.state.timeKeys}
                   ticks={this.state.ticks}
-                  extractLabel={this.formatShortDate.bind(this)}
-                  formatHoverLabel={this.formatLongDate.bind(this)}
+                  extractLabel={shortFormatTsForAxis}
+                  formatHoverLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                   extractP50={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP75={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP75 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP90={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
@@ -412,8 +395,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     formatTickValue: format.durationSec,
                     allowDecimals: false,
                   }}
-                  formatXAxisLabel={this.formatShortDate.bind(this)}
-                  formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                  formatXAxisLabel={shortFormatTsForAxis}
+                  formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                   ticks={this.state.ticks}
                   onZoomSelection={this.onChartZoomed.bind(this, "duration")}
                 />
@@ -423,9 +406,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 title="Action Cache"
                 id="cache"
                 data={this.state.timeKeys}
-                extractLabel={this.formatShortDate.bind(this)}
+                extractLabel={shortFormatTsForAxis}
                 ticks={this.state.ticks}
-                formatHoverLabel={this.formatLongDate.bind(this)}
+                formatHoverLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 extractHits={(tsMillis) => +(this.getStat(tsMillis).actionCacheHits ?? 0)}
                 totalHits={getTotal(this.getStats(), (stat) => +(stat.actionCacheHits ?? 0))}
                 secondaryBarName="misses"
@@ -444,9 +427,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 title="Content Addressable Store"
                 id="cas"
                 data={this.state.timeKeys}
-                extractLabel={this.formatShortDate.bind(this)}
+                extractLabel={shortFormatTsForAxis}
                 ticks={this.state.ticks}
-                formatHoverLabel={this.formatLongDate.bind(this)}
+                formatHoverLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 extractHits={(tsMillis) => +(this.getStat(tsMillis).casCacheHits ?? 0)}
                 totalHits={getTotal(this.getStats(), (stat) => +(stat.casCacheHits ?? 0))}
                 secondaryBarName="writes"
@@ -491,8 +474,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatTickValue: format.bitsPerSecond,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
                 onZoomSelection={this.onChartZoomed.bind(this, "")}
               />
@@ -529,8 +512,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatTickValue: format.bitsPerSecond,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
                 onZoomSelection={this.onChartZoomed.bind(this, "")}
               />
@@ -554,8 +537,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     formatTickValue: format.durationSec,
                     allowDecimals: false,
                   }}
-                  formatXAxisLabel={this.formatShortDate.bind(this)}
-                  formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                  formatXAxisLabel={shortFormatTsForAxis}
+                  formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                   ticks={this.state.ticks}
                   onZoomSelection={this.onChartZoomed.bind(this, "")}
                 />
@@ -577,8 +560,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatTickValue: format.count,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
               />
               <TrendsChartComponent
@@ -598,8 +581,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatTickValue: format.count,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
               />
               <TrendsChartComponent
@@ -619,8 +602,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatTickValue: format.count,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
               />
               <TrendsChartComponent
@@ -640,8 +623,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatTickValue: format.count,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
               />
               <TrendsChartComponent
@@ -661,8 +644,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatTickValue: format.count,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
               />
               {this.state.timeToExecutionStatMap.size > 0 && (
@@ -687,17 +670,17 @@ export default class TrendsComponent extends React.Component<Props, State> {
                       formatTickValue: format.count,
                       allowDecimals: false,
                     }}
-                    formatXAxisLabel={this.formatShortDate.bind(this)}
-                    formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                    formatXAxisLabel={shortFormatTsForAxis}
+                    formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                     ticks={this.state.ticks}
                     onZoomSelection={this.onChartZoomed.bind(this, "")}
                   />
                   <PercentilesChartComponent
                     title="Remote Execution Queue Duration"
                     data={this.state.timeKeys}
-                    extractLabel={this.formatShortDate.bind(this)}
+                    extractLabel={shortFormatTsForAxis}
                     ticks={this.state.ticks}
-                    formatHoverLabel={this.formatLongDate.bind(this)}
+                    formatHoverLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                     extractP50={(tsMillis) =>
                       +(this.getExecutionStat(tsMillis).queueDurationUsecP50 ?? 0) * SECONDS_PER_MICROSECOND
                     }
