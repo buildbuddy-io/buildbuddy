@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
@@ -62,6 +63,7 @@ var (
 	connWindowSize     = flag.Int("cache.distributed_cache.conn_window_size", 64*1024*1024, "Static HTTP/2 window size of each connection in bytes")
 	streamWindowSize   = flag.Int("cache.distributed_cache.stream_window_size", 8*1024*1024, "Static HTTP/2 Window size of each stream in bytes")
 	poolSize           = flag.Int("cache.distributed_cache.client_pool_size", 4, "Number of connections to open per peer.")
+	maxReconnectDelay  = flag.Duration("cache.distributed_cache.max_reconnect_delay", 1*time.Second, "The longest to wait between attempts to reconnect to a peer. gRPC's default backoff grows to two minutes, which leaves a restarted peer unreachable long after it's back up.")
 )
 
 type Proxy struct {
@@ -201,10 +203,17 @@ func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCac
 
 	// Disable dynamic windows. Bursty traffic can undersize the window and
 	// cause flow control to kick in prematurely.
+	backoffConfig := backoff.DefaultConfig
+	backoffConfig.BaseDelay = min(backoffConfig.BaseDelay, *maxReconnectDelay)
+	backoffConfig.MaxDelay = *maxReconnectDelay
 	conn, err := grpc_client.DialInternalWithPoolSize(c.env, resolverPrefix+peer,
 		*poolSize,
 		grpc.WithStaticConnWindowSize(int32(*connWindowSize)),
-		grpc.WithStaticStreamWindowSize(int32(*streamWindowSize)))
+		grpc.WithStaticStreamWindowSize(int32(*streamWindowSize)),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff:           backoffConfig,
+			MinConnectTimeout: 20 * time.Second,
+		}))
 	if err != nil {
 		return nil, err
 	}
@@ -527,12 +536,18 @@ func (c *Proxy) writeReference(ctx context.Context, stream dcpb.DistributedCache
 	return c.finishWrite(ctx, stream, req, req.GetReference().GetMetadata().GetStoredSizeBytes())
 }
 
-func (c *Proxy) finishWrite(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, committedSize int64) error {
+// queueHintedHandoff passes req's hinted handoff, if it has one, to the
+// hinted handoff callback.
+func (c *Proxy) queueHintedHandoff(ctx context.Context, req *dcpb.WriteRequest) {
 	if req.GetHandoffPeer() != "" && c.hintedHandoffCallback != nil {
 		// Because the hinted handoff callback might hold on to the resource
 		// in a queue, and we're pooling WriteRequest protos, clone it.
 		c.hintedHandoffCallback(ctx, req.GetHandoffPeer(), req.GetResource().CloneVT())
 	}
+}
+
+func (c *Proxy) finishWrite(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, committedSize int64) error {
+	c.queueHintedHandoff(ctx, req)
 	return stream.SendAndClose(&dcpb.WriteResponse{
 		CommittedSize: committedSize,
 	})
