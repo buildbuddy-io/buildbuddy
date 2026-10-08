@@ -58,6 +58,8 @@ var (
 
 	serverType = flag.String("server_type", "cache", "The server type to match on health checks")
 
+	remoteCache = flag.String("remote_hit_tracker.target", "", "The gRPC target of the remote cache (app) to report cache hits to. If empty, hit tracking is disabled.")
+
 	headersToPropagate = []string{
 		authutil.APIKeyHeader,
 		authutil.ContextTokenStringKey,
@@ -93,7 +95,9 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	hit_tracker_client.Register(env)
+	if err := hit_tracker_client.Register(env, *remoteCache); err != nil {
+		log.Fatal(err.Error())
+	}
 
 	// Configure a local cache.
 	if err := gcs_cache.Register(env); err != nil {

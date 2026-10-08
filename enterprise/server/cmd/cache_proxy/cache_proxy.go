@@ -120,7 +120,9 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	hit_tracker_client.Register(env)
+	if err := hit_tracker_client.Register(env, *remoteCache); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := remote_crypter.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
