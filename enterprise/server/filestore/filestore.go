@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -578,7 +577,6 @@ type Store interface {
 	DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata) error
 	UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, t time.Time) error
 
-	DeleteStoredFile(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) error
 	FileExists(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) bool
 }
 
@@ -947,15 +945,6 @@ func (fs *fileStorer) UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetada
 		log.Debugf("Failed to update gcs blob %q atime to %d: %s", b.GetBlobName(), t.UnixMicro(), err)
 	}
 	return err
-}
-
-func (fs *fileStorer) DeleteStoredFile(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) error {
-	switch {
-	case md.GetFileMetadata() != nil:
-		return os.Remove(fs.FilePath(fileDir, md.GetFileMetadata()))
-	default:
-		return nil
-	}
 }
 
 func (fs *fileStorer) FileExists(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) bool {
