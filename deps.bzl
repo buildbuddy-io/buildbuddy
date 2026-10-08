@@ -11,7 +11,7 @@ PODMAN_VERSION = "v5.7.0"
 PODMAN_STATIC_SHA256_AMD64 = "6a1c06b78d7dad15d8d7155a180874939a04bd39ce2f64726c7f11142ab7aa7d"
 PODMAN_STATIC_SHA256_ARM64 = "703ffad8972aa2db70a173c80804a88185e6c2dc8a88a247a8ebffeac424b0ba"
 
-# The bb CLI version used by //tools/lint for `bb fix` and `bb mod deps`.
+# The bb CLI version used by //tools/lint for `bb mod deps`.
 BB_CLI_VERSION = "5.0.466"
 
 # Manually created

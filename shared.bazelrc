@@ -82,6 +82,10 @@ common --downloader_config=bazel_downloader.cfg
 common --@rules_img//img/settings:compress=zstd
 common --@rules_img//img/settings:compression_level=4
 
+# Have //tools/lint build and run this repo's gazelle directly, instead of
+# shelling out to `bb fix`, which runs a nested `bazel run //:gazelle`.
+common --@com_github_buildbuddy_io_buildbuddy//tools/lint:gazelle=//:gazelle
+
 common:race --@io_bazel_rules_go//go/config:race
 common:race --test_timeout=120,600,-1,-1
 
