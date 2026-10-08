@@ -46,6 +46,11 @@ var (
 	gazelleRlocationpaths string
 )
 
+// changedPaths holds all paths changed since the diff base (see
+// changedPathsSince), for tools that need to know about more than the files
+// they lint. It's nil with -force.
+var changedPaths []string
+
 var (
 	// Available tools
 	tools = []Tool{
@@ -55,9 +60,8 @@ var (
 		{Name: "ProtoFormat", Run: runClangFormat},
 		// Fixes frontend-related files, configs, and docs.
 		{Name: "PrettierFormat", Run: runPrettier},
-		// tools/fix_go_deps.sh fixes go.mod, go.sum, deps.bzl, and MODULE.bzl.
-		// Runs exclusively because this might change deps.bzl which BuildFiles
-		// might also change.
+		// tools/fix_go_deps.sh runs `go mod tidy`, which fixes go.mod and go.sum.
+		// Runs exclusively in -fix mode, since UpdateLockfile reads go.mod.
 		{Name: "GoModulesFix", Run: runFixGoDeps, WriteLock: true},
 		// Fixes BUILD file deps, using the repo's gazelle.
 		// Runs exclusively in -fix mode, since it rewrites BUILD files.
@@ -185,10 +189,18 @@ func runBuildifierPass(ctx context.Context, stdout, stderr io.Writer, mode, lint
 func runFixGoDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
 	// fix_go_deps.sh doesn't exist when run from the internal repo, which is
 	// fine since we only want to run it from the external repo anyway.
-	if _, err := os.Stat("tools/fix_go_deps.sh"); os.IsNotExist(err) {
+	if _, err := os.Stat(fixGoDepsScript); os.IsNotExist(err) {
 		return nil
 	}
-	cmd := exec.CommandContext(ctx, "tools/fix_go_deps.sh")
+	// `go mod tidy` can only change go.mod/go.sum if they or Go imports
+	// changed. Skip it otherwise, since on a cold machine it downloads every
+	// module in go.sum, which takes minutes. But always run it if it was
+	// explicitly requested with -tool.
+	if changedPaths != nil && !slices.ContainsFunc(changedPaths, isGoModulesInput) && !slices.Contains(*tool, "GoModulesFix") {
+		log.Infof("[GoModulesFix] skipping `go mod tidy`: no Go files, go.mod/go.sum/go.work files, or %s changed", fixGoDepsScript)
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, fixGoDepsScript)
 	if !fix {
 		cmd.Args = append(cmd.Args, "--diff")
 	}
@@ -214,6 +226,56 @@ func runFixGoDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 		return fmt.Errorf("run go deps: %w", err)
 	}
 	return nil
+}
+
+// changedPathsSince returns every path that differs from the given revision:
+// added, modified, deleted, and renamed paths (both the old and new name), and
+// untracked files that aren't ignored. Unlike the files passed to tools, this
+// includes deleted and untracked paths, since e.g. `go mod tidy` looks at every
+// Go file on disk. The result is non-nil even if nothing changed.
+func changedPathsSince(base string) ([]string, error) {
+	diff, err := gitPaths("diff", "--name-only", "--no-renames", base)
+	if err != nil {
+		return nil, fmt.Errorf("get changed paths: %w", err)
+	}
+	untracked, err := gitPaths("ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, fmt.Errorf("get untracked paths: %w", err)
+	}
+	return append(append([]string{}, diff...), untracked...), nil
+}
+
+// gitPaths runs a git command that lists paths, with -z so that paths with
+// unusual characters aren't quoted.
+func gitPaths(args ...string) ([]string, error) {
+	cmd := exec.Command("git", append(args, "-z")...)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, stderr.String())
+	}
+	var paths []string
+	for p := range strings.SplitSeq(string(out), "\x00") {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
+}
+
+const fixGoDepsScript = "tools/fix_go_deps.sh"
+
+// isGoModulesInput reports whether file can affect what GoModulesFix does.
+func isGoModulesInput(file string) bool {
+	if file == fixGoDepsScript {
+		return true
+	}
+	switch filepath.Base(file) {
+	case "go.mod", "go.sum", "go.work", "go.work.sum":
+		return true
+	}
+	return filepath.Ext(file) == ".go"
 }
 
 func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
@@ -411,6 +473,10 @@ func run() error {
 			return fmt.Errorf("get changed files: %w", err)
 		}
 		files = lines(fileDiff)
+		changedPaths, err = changedPathsSince(diffBaseRev)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Start lint tools.

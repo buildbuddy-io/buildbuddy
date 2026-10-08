@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "lint_lib",
@@ -33,6 +33,18 @@ go_library(
         "//server/util/log",
         "@io_bazel_rules_go//go/runfiles",
         "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_test(
+    name = "lint_test",
+    size = "small",
+    srcs = ["lint_test.go"],
+    embed = [":lint_lib"],
+    deps = [
+        "//server/testutil/testgit",
+        "//server/testutil/testshell",
+        "@com_github_stretchr_testify//require",
     ],
 )
 
