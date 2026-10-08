@@ -56,7 +56,7 @@ func (q Query) matches(e *Entry) bool {
 		return false
 	}
 	// No verdict reads as "unknown", the name the proto gives it.
-	if q.Health != "" && !strings.HasPrefix(cmp.Or(string(e.Health), "unknown"), q.Health) {
+	if q.Health != "" && !strings.HasPrefix(e.healthName(), q.Health) {
 		return false
 	}
 	for _, l := range q.Labels {

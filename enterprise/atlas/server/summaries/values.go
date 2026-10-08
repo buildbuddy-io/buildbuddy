@@ -87,7 +87,7 @@ func (ix *Index) catalog() *catalog {
 			if e.Namespace != "" {
 				c.namespaces[e.Namespace]++
 			}
-			c.health[cmp.Or(string(e.Health), "unknown")]++
+			c.health[e.healthName()]++
 			for k, v := range e.Labels {
 				k = strings.ToLower(k)
 				c.labelKeys[k]++
