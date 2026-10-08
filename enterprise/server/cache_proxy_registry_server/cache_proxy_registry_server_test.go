@@ -3,6 +3,7 @@ package cache_proxy_registry_server
 import (
 	"context"
 	"io"
+	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -43,7 +45,10 @@ const (
 // env.GetClock() at construction, so everything the test needs from env
 // must be set before calling this.
 func newServer(t *testing.T, users map[string]interfaces.UserInfo) (*CacheProxyRegistryServer, *testenv.TestEnv) {
-	redisTarget := testredis.Start(t).Target
+	return newServerWithRedis(t, testredis.Start(t).Target, users)
+}
+
+func newServerWithRedis(t *testing.T, redisTarget string, users map[string]interfaces.UserInfo) (*CacheProxyRegistryServer, *testenv.TestEnv) {
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
 	})
@@ -339,7 +344,10 @@ func TestListCacheProxies_Expiration(t *testing.T) {
 
 func startGRPCRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*CacheProxyRegistryServer, cppb.CacheProxyRegistryClient) {
 	s, env := newServer(t, users)
+	return s, serveRegistry(t, s, env)
+}
 
+func serveRegistry(t *testing.T, s *CacheProxyRegistryServer, env *testenv.TestEnv) cppb.CacheProxyRegistryClient {
 	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	cppb.RegisterCacheProxyRegistryServer(server, s)
 	go runFunc()
@@ -350,7 +358,7 @@ func startGRPCRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*Cac
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
-	return s, cppb.NewCacheProxyRegistryClient(conn)
+	return cppb.NewCacheProxyRegistryClient(conn)
 }
 
 // closeAndWait closes the stream and waits for the server to finish it,
@@ -787,4 +795,171 @@ func TestGetCacheProxy_CallerCanceled(t *testing.T) {
 	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
 	require.Error(t, err)
 	assert.True(t, status.IsCanceledError(err), "expected canceled, got: %v", err)
+}
+
+// peerBuildBuddyService serves GetCacheProxy for a peer app instance.
+type peerBuildBuddyService struct {
+	bbspb.UnimplementedBuildBuddyServiceServer
+	s         *CacheProxyRegistryServer
+	forwarded chan *cppb.GetCacheProxyRequest
+}
+
+func (p *peerBuildBuddyService) GetCacheProxy(ctx context.Context, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error) {
+	p.forwarded <- req
+	return p.s.GetCacheProxy(ctx, req)
+}
+
+// startPeer starts a registry server sharing the given Redis that serves
+// GetCacheProxy over TCP, as a peer app instance would.
+func startPeer(t *testing.T, redisTarget string, users map[string]interfaces.UserInfo) (*CacheProxyRegistryServer, cppb.CacheProxyRegistryClient, *peerBuildBuddyService) {
+	s, env := newServerWithRedis(t, redisTarget, users)
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	// Registrations record this as the address of the app holding the
+	// stream, so it must be set before any proxy registers.
+	s.ownHostPort = lis.Addr().String()
+	peer := &peerBuildBuddyService{s: s, forwarded: make(chan *cppb.GetCacheProxyRequest, 10)}
+	server, runFunc := testenv.GRPCServer(env, lis)
+	bbspb.RegisterBuildBuddyServiceServer(server, peer)
+	go runFunc()
+	t.Cleanup(server.Stop)
+	return s, serveRegistry(t, s, env), peer
+}
+
+// answerDetailsRequest plays the proxy: it answers one details request on the
+// stream with the given summary and statistics.
+func answerDetailsRequest(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, summary *cppb.CacheProxySummary, stats *cppb.Statistics) <-chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		rsp, err := stream.Recv()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		errCh <- stream.Send(&cppb.RegisterCacheProxyRequest{
+			Summary:   summary,
+			Details:   &cppb.CacheProxyDetails{Summary: summary, Statistics: stats},
+			RequestId: rsp.GetRequestId(),
+		})
+	}()
+	return errCh
+}
+
+func TestGetCacheProxy_ForwardsToPeer(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	// GetCacheProxy is admin-only, which the peer's RPC filter enforces.
+	readerUser := userWithCapabilities("U2", testGroupID, cappb.Capability_ORG_ADMIN)
+	users := map[string]interfaces.UserInfo{"CP_KEY": streamUser}
+	redisTarget := testredis.Start(t).Target
+	peerServer, peerClient, peer := startPeer(t, redisTarget, users)
+	s, _ := newServerWithRedis(t, redisTarget, users)
+
+	stream := registerProxy(t, peerServer, peerClient, "id-1")
+	summary := &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"}
+	proxyErr := answerDetailsRequest(stream, summary, &cppb.Statistics{AcReadHits: 42})
+
+	ctx := claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil)
+	rsp, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.NoError(t, err)
+	require.NoError(t, <-proxyErr)
+	assert.Equal(t, "id-1", rsp.GetDetails().GetSummary().GetProxyId())
+	assert.Equal(t, int64(42), rsp.GetDetails().GetStatistics().GetAcReadHits())
+
+	fwd := <-peer.forwarded
+	assert.True(t, fwd.GetDoNotForward())
+	assert.Equal(t, "id-1", fwd.GetSelector().GetProxyId())
+	assert.True(t, fwd.GetIncludeStatistics())
+}
+
+func TestGetCacheProxy_ForwardedProxyDoesNotRespond(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	readerUser := userWithCapabilities("U2", testGroupID, cappb.Capability_ORG_ADMIN)
+	users := map[string]interfaces.UserInfo{"CP_KEY": streamUser}
+	redisTarget := testredis.Start(t).Target
+	peerServer, peerClient, _ := startPeer(t, redisTarget, users)
+	s, _ := newServerWithRedis(t, redisTarget, users)
+	// The proxy never answers the details request.
+	registerProxy(t, peerServer, peerClient, "id-1")
+
+	ctx, cancel := context.WithTimeout(claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil), time.Second)
+	defer cancel()
+	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsDeadlineExceededError(err), "expected deadline exceeded, got: %v", err)
+	assert.Contains(t, err.Error(), "did not respond")
+}
+
+func TestGetCacheProxy_DoNotForward(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	users := map[string]interfaces.UserInfo{"CP_KEY": streamUser}
+	redisTarget := testredis.Start(t).Target
+	peerServer, peerClient, peer := startPeer(t, redisTarget, users)
+	s, _ := newServerWithRedis(t, redisTarget, users)
+	registerProxy(t, peerServer, peerClient, "id-1")
+
+	ctx := claims.AuthContextWithJWT(context.Background(), streamUser.(*claims.Claims), nil)
+	req := getCacheProxyRequest("id-1")
+	req.DoNotForward = true
+	_, err := s.GetCacheProxy(ctx, req)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+	assert.Empty(t, peer.forwarded)
+}
+
+func TestGetCacheProxy_NotRegistered(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+}
+
+func TestGetCacheProxy_StaleRegistration(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	users := map[string]interfaces.UserInfo{"CP_KEY": user}
+	redisTarget := testredis.Start(t).Target
+	peerServer, _, peer := startPeer(t, redisTarget, users)
+	s, _ := newServerWithRedis(t, redisTarget, users)
+
+	writeRegistration(t, s, &cppb.RegisteredCacheProxy{
+		Summary:      &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"},
+		GroupId:      testGroupID,
+		LastPingTime: timestamppb.New(time.Now().Add(-2 * maxRegistrationStaleness)),
+		AppHostPort:  peerServer.ownHostPort,
+	})
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+	assert.Empty(t, peer.forwarded)
+}
+
+func TestGetCacheProxy_PeerUnreachable(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	deadAddr := lis.Addr().String()
+	require.NoError(t, lis.Close())
+	writeRegistration(t, s, &cppb.RegisteredCacheProxy{
+		Summary:      &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"},
+		GroupId:      testGroupID,
+		LastPingTime: timestamppb.Now(),
+		AppHostPort:  deadAddr,
+	})
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	_, err = s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsUnavailableError(err), "expected unavailable, got: %v", err)
+}
+
+func writeRegistration(t *testing.T, s *CacheProxyRegistryServer, reg *cppb.RegisteredCacheProxy) {
+	b, err := proto.Marshal(reg)
+	require.NoError(t, err)
+	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies(reg.GetGroupId()), reg.GetSummary().GetProxyId(), b).Err())
 }

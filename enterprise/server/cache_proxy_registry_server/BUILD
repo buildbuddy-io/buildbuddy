@@ -10,6 +10,7 @@ go_library(
     srcs = ["cache_proxy_registry_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_registry_server",
     deps = [
+        "//proto:buildbuddy_service_go_proto",
         "//proto:cache_proxy_go_proto",
         "//proto:capability_go_proto",
         "//proto:upgrade_go_proto",
@@ -18,6 +19,7 @@ go_library(
         "//server/real_environment",
         "//server/resources",
         "//server/util/flag",
+        "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/proto",
@@ -37,6 +39,7 @@ go_test(
     deps = [
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testredis",
+        "//proto:buildbuddy_service_go_proto",
         "//proto:cache_proxy_go_proto",
         "//proto:capability_go_proto",
         "//proto:context_go_proto",
