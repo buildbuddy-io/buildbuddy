@@ -52,10 +52,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/useragent"
+	"github.com/jonboulle/clockwork"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -1223,6 +1225,7 @@ func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApi
 		Label:               req.GetLabel(),
 		Capabilities:        capabilities.ToInt(req.GetCapability()),
 		VisibleToDevelopers: req.GetVisibleToDevelopers(),
+		ExpiryUsec:          apiKeyExpiryUsec(s.env.GetClock(), req.GetExpiresIn()),
 	}
 	if err := authDB.UpdateAPIKey(ctx, tk); err != nil {
 		return nil, err
@@ -1433,6 +1436,7 @@ func (s *BuildBuddyServer) UpdateUserApiKey(ctx context.Context, req *akpb.Updat
 		Label:               req.GetLabel(),
 		Capabilities:        capabilities.ToInt(req.GetCapability()),
 		VisibleToDevelopers: req.GetVisibleToDevelopers(),
+		ExpiryUsec:          apiKeyExpiryUsec(s.env.GetClock(), req.GetExpiresIn()),
 	}
 	if err := authDB.UpdateAPIKey(ctx, updates); err != nil {
 		return nil, err
@@ -1531,6 +1535,13 @@ func assembleURL(host, scheme, port string) string {
 		url = url + ":" + port
 	}
 	return url
+}
+
+func apiKeyExpiryUsec(clock clockwork.Clock, expiresIn *durationpb.Duration) int64 {
+	if expiresIn.AsDuration() <= 0 {
+		return 0
+	}
+	return clock.Now().Add(expiresIn.AsDuration()).UnixMicro()
 }
 
 func toProtoAPIKeys(tableKeys []*tables.APIKey) []*akpb.ApiKey {

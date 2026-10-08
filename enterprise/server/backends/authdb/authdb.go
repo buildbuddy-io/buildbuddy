@@ -1180,6 +1180,9 @@ func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 	if existingKey.UserID != "" && key.VisibleToDevelopers {
 		return status.InvalidArgumentError(`"visible_to_developers" field should not be set for user-owned keys`)
 	}
+	if existingKey.Impersonation && key.ExpiryUsec != existingKey.ExpiryUsec {
+		return status.InvalidArgumentError("the expiration of impersonation keys cannot be changed")
+	}
 	// When updating capabilities, make sure the user has the appropriate
 	// permissions to set them.
 	if err := d.authorizeNewAPIKeyCapabilities(ctx, existingKey.UserID, existingKey.GroupID, capabilities.FromInt(key.Capabilities)); err != nil {
@@ -1191,13 +1194,15 @@ func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 			label = ?,
 			capabilities = ?,
 			visible_to_developers = ?,
-			visibility = ?
+			visibility = ?,
+			expiry_usec = ?
 		WHERE
 			api_key_id = ?`,
 		key.Label,
 		key.Capabilities,
 		key.VisibleToDevelopers,
 		apiKeyVisibility(key.VisibleToDevelopers, existingKey.Impersonation),
+		key.ExpiryUsec,
 		key.APIKeyID,
 	).Exec().Error
 }

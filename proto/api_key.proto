@@ -93,7 +93,8 @@ message CreateApiKeyRequest {
   // Deprecated: use visibility instead.
   bool visible_to_developers = 5;
 
-  // Optional. Duration after which the API key should no longer be valid.
+  // Optional. Duration after which the API key should no longer be valid. If
+  // absent or set to 0, the API key will not expire.
   google.protobuf.Duration expires_in = 7;
 
   // Optional. Who can see this API key. If empty (during migration), the key is
@@ -170,6 +171,10 @@ message UpdateApiKeyRequest {
   // Optional. Who can see this API key. If empty (during migration), the key is
   // visible to group admins, and to developers if visible_to_developers is set.
   repeated Visibility visibility = 6;
+
+  // Optional. Duration after which the API key should no longer be valid.  If
+  // absent or set to 0, the API key will not expire.
+  google.protobuf.Duration expires_in = 7;
 }
 
 message UpdateApiKeyResponse {
