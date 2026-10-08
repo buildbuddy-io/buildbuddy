@@ -81,6 +81,11 @@ func TestParseQuery(t *testing.T) {
 	require.Equal(t, []string{"app=web"}, q.Labels)
 	// A colon in a non-filter token stays part of the term (image tags).
 	require.Equal(t, []string{"redis:7.2", "cache"}, q.Terms)
+	require.Equal(t, "prod", ParseQuery("namespace:prod").Namespace, "the alias parses")
+	for _, k := range FilterKeys {
+		require.NotEqual(t, "namespace", k.Key, "completion does not offer the alias")
+		require.NotEmpty(t, k.Hint)
+	}
 }
 
 func TestSearch(t *testing.T) {

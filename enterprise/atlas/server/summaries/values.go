@@ -8,20 +8,6 @@ import (
 	"time"
 )
 
-// FilterKey is a key that a search can match on, with a description shown
-// in the UI.
-type FilterKey struct {
-	Key, Hint string
-}
-
-var FilterKeys = []FilterKey{
-	{"kind", "a resource type, e.g. kind:pod"},
-	{"ns", "a namespace prefix, e.g. ns:prod"},
-	{"label", "a label, or label=value, e.g. label:app=web"},
-	{"health", "ok, warn, bad or unknown"},
-	{"cluster", "a cluster name prefix"},
-}
-
 type FilterValue struct {
 	Value string
 	Count int
@@ -42,27 +28,11 @@ func (ix *Index) GetFilterValues(field, key, prefix string, limit int) ([]Filter
 		limit = defaultValuesLimit
 	}
 	limit = min(limit, maxValuesLimit)
-	var counts map[string]int
-	switch strings.ToLower(field) {
-	case "kind":
-		counts = ix.kindCounts()
-	case "ns", "namespace":
-		counts = ix.catalog().namespaces
-	case "cluster":
-		counts = ix.catalog().clusters
-	case "health":
-		counts = ix.catalog().health
-	case "label":
-		c := ix.catalog()
-		if key == "" {
-			counts = c.labelKeys
-		} else {
-			counts = c.labelValues[strings.ToLower(key)]
-		}
-	default:
+	f := filterByKey[strings.ToLower(field)]
+	if f == nil {
 		return nil, fmt.Errorf("unknown filter %q", field)
 	}
-	return filterAndRank(counts, prefix, limit), nil
+	return filterAndRank(f.values(ix, key), prefix, limit), nil
 }
 
 // filterAndRank keeps the values starting with prefix, most common first.
