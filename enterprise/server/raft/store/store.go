@@ -124,9 +124,6 @@ type Store struct {
 	evictionSession *client.Session
 	// session for StartShard
 	shardStarterSession *client.Session
-	// lkSession is the leaseKeeper's session. The store owns it so Stop can
-	// close it.
-	lkSession *client.Session
 
 	log log.Logger
 
@@ -372,7 +369,6 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 		session:             session,
 		evictionSession:     evictionSession,
 		shardStarterSession: shardStarterSession,
-		lkSession:           lkSession,
 		log:                 nhLog,
 
 		rangeMu:    sync.RWMutex{},
@@ -1025,8 +1021,6 @@ func (s *Store) Stop(ctx context.Context) error {
 	s.session.Close()
 	s.evictionSession.Close()
 	s.shardStarterSession.Close()
-	s.lkSession.Close()
-	s.rangeGCWorker.session.Close()
 
 	return s.db.Close()
 }
@@ -2916,6 +2910,12 @@ func newRangeGCWorker(clock clockwork.Clock, store *Store, clientSessionTTL, txn
 		handleFn: res.gcExpiredRangeState,
 	}
 	return res
+}
+
+// Start runs the worker until ctx is done, then closes its session.
+func (w *rangeGCWorker) Start(ctx context.Context) {
+	defer w.session.Close()
+	w.replicaWorker.Start(ctx)
 }
 
 // gcExpiredRangeState runs on the leaseholder and deletes expired per-range
