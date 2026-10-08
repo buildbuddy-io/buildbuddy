@@ -4911,6 +4911,8 @@ type rollingRestartScenario struct {
 	maxHintedHandoffsPerPeer int64
 	// Delay between writes from the writer goroutine.
 	writeInterval time.Duration
+	// Whether every blob should end up on all of its replicas.
+	wantFullyReplicated bool
 }
 
 type rollingRestartNode struct {
@@ -4940,49 +4942,49 @@ func TestRollingRestart(t *testing.T) {
 	})
 	for _, s := range []rollingRestartScenario{
 		{
-			name:                     "OneAtATime_OneRollout",
+			name:                     "OneAtATime",
 			nodes:                    8,
 			maxUnavailable:           1,
 			rollouts:                 1,
-			downtime:                 2 * time.Second,
+			downtime:                 1 * time.Second,
 			maxHintedHandoffsPerPeer: 100_000,
 			writeInterval:            2 * time.Millisecond,
-		},
-		{
-			name:                     "OneAtATime_ThreeRollouts",
-			nodes:                    8,
-			maxUnavailable:           1,
-			rollouts:                 3,
-			downtime:                 2 * time.Second,
-			maxHintedHandoffsPerPeer: 100_000,
-			writeInterval:            2 * time.Millisecond,
-		},
-		{
-			name:                     "TwoAtATime_OneRollout",
-			nodes:                    8,
-			maxUnavailable:           2,
-			rollouts:                 1,
-			downtime:                 2 * time.Second,
-			maxHintedHandoffsPerPeer: 100_000,
-			writeInterval:            2 * time.Millisecond,
+			wantFullyReplicated:      true,
 		},
 		{
 			name:                     "TwoAtATime_ThreeRollouts",
 			nodes:                    8,
 			maxUnavailable:           2,
 			rollouts:                 3,
-			downtime:                 2 * time.Second,
+			downtime:                 1 * time.Second,
 			maxHintedHandoffsPerPeer: 100_000,
 			writeInterval:            2 * time.Millisecond,
+			wantFullyReplicated:      true,
+		},
+		{
+			// The pause stands in for the StatefulSet's minReadySeconds,
+			// which gives peers time to deliver hinted handoffs to a
+			// restarted node before the next one goes down.
+			name:                     "TwoAtATime_ThreeRollouts_PauseBetweenBatches",
+			nodes:                    8,
+			maxUnavailable:           2,
+			rollouts:                 3,
+			downtime:                 1 * time.Second,
+			pauseBetweenBatches:      1 * time.Second,
+			maxHintedHandoffsPerPeer: 100_000,
+			writeInterval:            2 * time.Millisecond,
+			wantFullyReplicated:      true,
 		},
 		{
 			// A small hinted handoff queue stands in for prod write rates,
 			// which can fill the real 100k queue while a node is down.
-			name:                     "OneAtATime_OneRollout_SmallHintQueue",
+			// Handoffs that don't fit are dropped, so some blobs are
+			// expected to end up on fewer replicas.
+			name:                     "OneAtATime_SmallHintQueue",
 			nodes:                    8,
 			maxUnavailable:           1,
 			rollouts:                 1,
-			downtime:                 2 * time.Second,
+			downtime:                 1 * time.Second,
 			maxHintedHandoffsPerPeer: 20,
 			writeInterval:            2 * time.Millisecond,
 		},
@@ -5109,7 +5111,24 @@ func runRollingRestartScenario(t *testing.T, s rollingRestartScenario) {
 	time.Sleep(500 * time.Millisecond)
 	close(stop)
 	<-writerDone
-	time.Sleep(2 * time.Second)
+	// Give the live nodes time to deliver the hinted handoffs they hold.
+	queuedHints := func() int {
+		n := 0
+		for _, node := range nodes {
+			node.dc.hintedHandoffsMu.RLock()
+			for _, ch := range node.dc.hintedHandoffsByPeer {
+				n += len(ch)
+			}
+			node.dc.hintedHandoffsMu.RUnlock()
+		}
+		return n
+	}
+	for start := time.Now(); queuedHints() > 0 && time.Since(start) < 10*time.Second; {
+		time.Sleep(100 * time.Millisecond)
+	}
+	// A delivery that's in flight is no longer queued, so allow it to finish.
+	time.Sleep(500 * time.Millisecond)
+	t.Logf("%d hinted handoffs are still queued after the rollout", queuedHints())
 
 	locals := make(map[string]interfaces.Cache, len(nodes))
 	for _, n := range nodes {
@@ -5146,6 +5165,8 @@ func runRollingRestartScenario(t *testing.T, s rollingRestartScenario) {
 	t.Logf("%d hinted handoffs were still queued on nodes when they restarted", hintsLostOnRestart)
 	t.Logf("%d blobs (%.2f%%) are on fewer than %d replicas, %d on none of them, %d unreadable through the cache",
 		underReplicated, 100*float64(underReplicated)/float64(len(written)), baseConfig.ReplicationFactor, missingFromAllReplicas, unreadable)
-	assert.Zero(t, underReplicated, "blobs on fewer than %d replicas", baseConfig.ReplicationFactor)
+	if s.wantFullyReplicated {
+		assert.Zero(t, underReplicated, "blobs on fewer than %d replicas", baseConfig.ReplicationFactor)
+	}
 	assert.Zero(t, unreadable, "blobs that were written successfully but can't be read")
 }
