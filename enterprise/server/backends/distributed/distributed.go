@@ -649,9 +649,28 @@ func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *r
 	select {
 	case c.hintedHandoffsByPeer[peer] <- order:
 		c.log.CtxDebugf(ctx, "Wrote order %+v to %q's hinted handoff channel", order, peer)
-		// write was sucessful
+		recordHintedHandoff("queued", 1)
 	default:
 		c.log.CtxWarningf(ctx, "Buffer full: unable to store hinted handoff for %q", peer)
+		recordHintedHandoff("dropped_queue_full", 1)
+	}
+}
+
+func recordHintedHandoff(event string, n int) {
+	metrics.DistributedCacheHintedHandoffCount.With(prometheus.Labels{
+		metrics.DistributedCacheHintedHandoffEvent: event,
+	}).Add(float64(n))
+}
+
+// requeueHintedHandoff puts a handoff whose delivery failed back on its
+// peer's queue, so that a later attempt can deliver it.
+func (c *Cache) requeueHintedHandoff(peer string, handoffs chan *hintedHandoffOrder, order *hintedHandoffOrder) {
+	select {
+	case handoffs <- order:
+		recordHintedHandoff("requeued", 1)
+	default:
+		c.log.CtxWarningf(order.ctx, "Buffer full: unable to requeue hinted handoff for %q", peer)
+		recordHintedHandoff("dropped_queue_full", 1)
 	}
 }
 
@@ -665,9 +684,11 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 			err := c.sendFile(handoffOrder.ctx, handoffOrder.r, peer)
 			if err != nil {
 				c.log.CtxWarningf(handoffOrder.ctx, "unable to complete hinted handoff to peer: %q: %s (order %s)", peer, err, handoffOrder)
+				c.requeueHintedHandoff(peer, handoffs, handoffOrder)
 				return
 			}
 			c.log.CtxDebugf(handoffOrder.ctx, "completed hinted handoff to peer: %q", peer)
+			recordHintedHandoff("delivered", 1)
 		default:
 			// read was unsuccessful -- no more handoffOrders to process.
 			return
@@ -738,7 +759,95 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	}
 	close(c.shutDownChan)
 	c.finishedShutdown = true
-	return c.distributedProxy.Shutdown(ctx)
+	err := c.distributedProxy.Shutdown(ctx)
+	// Deliver hinted handoffs once this node has stopped accepting writes,
+	// so that no new ones are queued after delivery finishes.
+	c.deliverHintedHandoffsBeforeShutdown(ctx)
+	return err
+}
+
+// How long to keep retrying hinted handoffs to a peer during shutdown before
+// forwarding them to another peer instead. Long enough for connections to a
+// peer that just restarted to come back (see
+// cache.distributed_cache.max_reconnect_delay).
+const hintedHandoffShutdownRetryPeriod = 2 * time.Second
+
+// deliverHintedHandoffsBeforeShutdown tries to deliver every queued hinted
+// handoff, since the queues are only in memory and a restart loses them.
+// Failed deliveries are retried for a short while, since a peer that just
+// restarted can take a moment to accept connections again. Handoffs for a
+// peer that stays unreachable are forwarded to another peer, which holds
+// them until that peer is back.
+func (c *Cache) deliverHintedHandoffsBeforeShutdown(ctx context.Context) {
+	c.hintedHandoffsMu.RLock()
+	queues := maps.Clone(c.hintedHandoffsByPeer)
+	c.hintedHandoffsMu.RUnlock()
+
+	var wg sync.WaitGroup
+	for peer, handoffs := range queues {
+		wg.Go(func() {
+			retryUntil := time.Now().Add(hintedHandoffShutdownRetryPeriod)
+			for ctx.Err() == nil {
+				var order *hintedHandoffOrder
+				select {
+				case order = <-handoffs:
+				default:
+					return
+				}
+				for {
+					err := c.sendFile(order.ctx, order.r, peer)
+					if err == nil {
+						recordHintedHandoff("delivered", 1)
+						break
+					}
+					if time.Now().After(retryUntil) {
+						c.forwardHintedHandoff(ctx, peer, order)
+						break
+					}
+					c.log.CtxDebugf(order.ctx, "unable to complete hinted handoff to peer before shutdown, will retry: %q: %s (order %s)", peer, err, order)
+					select {
+					case <-ctx.Done():
+						c.log.CtxWarningf(order.ctx, "unable to complete hinted handoff to peer before shutdown: %q: %s (order %s)", peer, err, order)
+						recordHintedHandoff("dropped_at_shutdown", 1)
+						return
+					case <-time.After(100 * time.Millisecond):
+					}
+				}
+			}
+		})
+	}
+	wg.Wait()
+
+	dropped := 0
+	for _, handoffs := range queues {
+		dropped += len(handoffs)
+	}
+	if dropped > 0 {
+		c.log.Warningf("Dropping %d undelivered hinted handoffs at shutdown", dropped)
+		recordHintedHandoff("dropped_at_shutdown", dropped)
+	}
+}
+
+// forwardHintedHandoff writes order's blob to a peer other than this node and
+// the unreachable peer, along with a hinted handoff to the unreachable peer,
+// so that the handoff survives this node shutting down.
+func (c *Cache) forwardHintedHandoff(ctx context.Context, peer string, order *hintedHandoffOrder) {
+	var lastErr error
+	for _, dest := range c.consistentHash.GetAllReplicas(order.r.GetDigest().GetHash()) {
+		if ctx.Err() != nil {
+			break
+		}
+		if dest == c.opts.ListenAddr || dest == peer {
+			continue
+		}
+		if lastErr = c.sendFileWithHandoff(order.ctx, order.r, dest, peer); lastErr == nil {
+			c.log.CtxDebugf(order.ctx, "forwarded hinted handoff for %q to %q", peer, dest)
+			recordHintedHandoff("forwarded", 1)
+			return
+		}
+	}
+	c.log.CtxWarningf(order.ctx, "unable to forward hinted handoff for peer before shutdown: %q: %v (order %s)", peer, lastErr, order)
+	recordHintedHandoff("dropped_at_shutdown", 1)
 }
 
 func (c *Cache) peerZone(peer string) string {
@@ -1133,10 +1242,20 @@ func (c *Cache) remoteDelete(ctx context.Context, peer string, r *rspb.ResourceN
 }
 
 func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string) error {
+	return c.sendFileWithHandoff(ctx, rn, dest, "")
+}
+
+// sendFileWithHandoff copies rn from the local cache to dest. If handoffPeer
+// is set, dest also queues a hinted handoff of rn to handoffPeer.
+func (c *Cache) sendFileWithHandoff(ctx context.Context, rn *rspb.ResourceName, dest, handoffPeer string) error {
 	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	defer cancel()
-	if exists, err := c.distributedProxy.RemoteContains(ctx, dest, rn); err == nil && exists {
-		return nil
+	// dest only queues the hinted handoff when it receives the write, so
+	// don't skip the write when it's forwarding one.
+	if handoffPeer == "" {
+		if exists, err := c.distributedProxy.RemoteContains(ctx, dest, rn); err == nil && exists {
+			return nil
+		}
 	}
 
 	r, err := c.local.Reader(ctx, rn, 0, 0)
@@ -1144,7 +1263,7 @@ func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string
 		return err
 	}
 	defer r.Close()
-	w, err := c.distributedProxy.RemoteWriter(ctx, dest, "", rn)
+	w, err := c.distributedProxy.RemoteWriter(ctx, dest, handoffPeer, rn)
 	if err != nil {
 		return err
 	}

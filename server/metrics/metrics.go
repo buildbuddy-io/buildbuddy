@@ -331,6 +331,13 @@ const (
 	// replica), "read_through" (local read-through cache), "lookaside" or "peer".
 	DistributedCacheReadSource = "source"
 
+	// What happened to a distributed cache hinted handoff: "queued",
+	// "delivered", "requeued" (a delivery failed and will be retried),
+	// "forwarded" (handed to another node at shutdown because the peer was
+	// unreachable), "dropped_queue_full", or "dropped_at_shutdown" (couldn't
+	// be delivered or forwarded before the node shut down).
+	DistributedCacheHintedHandoffEvent = "event"
+
 	// ContentAddressableStorage Server operation: "FindMissingBlobs",
 	// "BatchUpdateBlobs", "BatchReadBlobs", or "GetTree".
 	CASOperation = "op"
@@ -1044,6 +1051,19 @@ var (
 	}, []string{
 		DistributedCacheWriteRequestType,
 		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheHintedHandoffCount counts hinted handoffs held by this
+	// node for peers that were unavailable when a write went to them, by what
+	// happened to each one. Hinted handoffs are kept in memory, so any that
+	// are dropped leave the blob on fewer replicas than intended.
+	DistributedCacheHintedHandoffCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_hinted_handoff_count",
+		Help:      "Count of distributed cache hinted handoffs, by what happened to them: queued, delivered, requeued, forwarded, dropped_queue_full or dropped_at_shutdown.",
+	}, []string{
+		DistributedCacheHintedHandoffEvent,
 	})
 
 	// DistributedCacheBackfillSizeBytes totals the sizes of the blobs
