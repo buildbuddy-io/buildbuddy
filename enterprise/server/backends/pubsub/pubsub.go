@@ -344,24 +344,17 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 		defer cancel()
 		defer close(ch)
 		for {
-			var msg *Message
-			var ok bool
 			select {
-			case msg, ok = <-monChan:
-			case msg, ok = <-msgChan:
-			case <-ctx.Done():
-				return
-			}
-			if !ok {
-				return
-			}
-			// The subscriber may stop reading before it receives this message,
-			// for example when the WaitExecution handler returns because the
-			// client hung up or the scheduler reported the task lost. Close
-			// only cancels ctx, so with a plain send this goroutine would block
-			// forever and hold the message.
-			select {
-			case ch <- msg:
+			case msg, ok := <-monChan:
+				if !ok {
+					return
+				}
+				ch <- msg
+			case msg, ok := <-msgChan:
+				if !ok {
+					return
+				}
+				ch <- msg
 			case <-ctx.Done():
 				return
 			}

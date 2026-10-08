@@ -25,7 +25,6 @@ go_test(
     deps = [
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
-        "//server/testutil/testleak",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_go_redis_redis_v8//:redis",

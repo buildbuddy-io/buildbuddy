@@ -2690,7 +2690,7 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 	flags.Set(t, "remote_execution.task_liveness_check_interval", 999*time.Hour)
 	env, _ := getEnv(t, &schedulerOpts{options: Options{Clock: clockwork.NewFakeClock()}}, "")
 	s := env.GetSchedulerService().(*SchedulerServer)
-	watchers := func() int {
+	watcherCount := func() int {
 		s.livenessMu.Lock()
 		defer s.livenessMu.Unlock()
 		if w, ok := s.livenessWatches["task1"]; ok {
@@ -2704,13 +2704,13 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 	ctx2, cancel2 := context.WithCancel(t.Context())
 	s.WatchTaskLiveness(ctx1, "task1")
 	s.WatchTaskLiveness(ctx2, "task1")
-	require.Equal(t, 2, watchers())
+	require.Equal(t, 2, watcherCount())
 
 	// The scheduler keeps watching the task until both clients are done.
 	cancel1()
-	require.Eventually(t, func() bool { return watchers() == 1 }, 5*time.Second, time.Millisecond)
+	require.Eventually(t, func() bool { return watcherCount() == 1 }, 5*time.Second, time.Millisecond)
 	cancel2()
-	require.Eventually(t, func() bool { return watchers() == 0 }, 5*time.Second, time.Millisecond)
+	require.Eventually(t, func() bool { return watcherCount() == 0 }, 5*time.Second, time.Millisecond)
 	s.livenessMu.Lock()
 	defer s.livenessMu.Unlock()
 	require.Empty(t, s.livenessWatches)

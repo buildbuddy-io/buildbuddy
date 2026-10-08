@@ -3095,8 +3095,9 @@ func (s *SchedulerServer) TaskExists(ctx context.Context, req *scpb.TaskExistsRe
 // example because of a Redis error), those clients wait forever unless
 // something else ends the wait.
 //
-// In rare cases the scheduler reports a task lost while its final update is
-// still on the way (see checkTaskLivenessOnce).
+// In rare cases (e.g. stalled lease renewals, or apps with different views of
+// the Redis ring) the scheduler may report a task lost while an executor is
+// still running it (see checkTaskLivenessOnce).
 func (s *SchedulerServer) WatchTaskLiveness(ctx context.Context, taskID string) <-chan struct{} {
 	if *taskLivenessCheckInterval <= 0 {
 		return nil
@@ -3139,8 +3140,9 @@ func (s *SchedulerServer) checkTaskLiveness(ctx context.Context) {
 // that has been missing for the lease duration plus grace period. By then, any
 // executor running the task has most likely failed a lease renewal and stopped,
 // and the client has received any final update the scheduler published right
-// after deleting the task. The timing is not exact, so in rare cases the
-// scheduler reports a task lost early, and the client retries.
+// after deleting the task. In rare cases (e.g. stalled lease renewals, or apps
+// with different views of the Redis ring) the scheduler may report a task lost
+// early, and the client retries.
 func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 	type check struct {
 		taskID string
