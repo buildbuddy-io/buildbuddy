@@ -58,7 +58,7 @@ var (
 
 	serverType = flag.String("server_type", "cache", "The server type to match on health checks")
 
-	remoteCache = flag.String("remote_hit_tracker.target", "", "The gRPC target of the remote cache (app) to report cache hits to. If empty, hit tracking is disabled.")
+	remoteHitTracker = flag.String("remote_hit_tracker.target", "", "The gRPC target of the remote cache (app) to report cache hits to. If empty, hit tracking is disabled.")
 
 	headersToPropagate = []string{
 		authutil.APIKeyHeader,
@@ -95,7 +95,7 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	if err := hit_tracker_client.Register(env, *remoteCache); err != nil {
+	if err := hit_tracker_client.Register(env, *remoteHitTracker); err != nil {
 		log.Fatal(err.Error())
 	}
 
