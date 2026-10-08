@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
@@ -89,7 +88,7 @@ func RegisterLocalGRPCServer(t testing.TB, te *real_environment.RealEnv, opts ..
 	if te.GetGRPCServer() != nil {
 		log.Fatal("GRPCServer is already registered")
 	}
-	lis := listenLocal(t)
+	lis := bufconn.Listen(1024 * 1024)
 	srv, run := GRPCServer(te, lis, opts...)
 	te.SetGRPCServer(srv)
 	t.Cleanup(srv.Stop)
@@ -106,37 +105,26 @@ func RegisterLocalInternalGRPCServer(t testing.TB, te *real_environment.RealEnv)
 	if te.GetInternalGRPCServer() != nil {
 		log.Fatal("Internal GRPCServer is already registered")
 	}
-	lis := listenLocal(t)
+	lis := bufconn.Listen(1024 * 1024)
 	srv, run := GRPCServer(te, lis)
 	te.SetInternalGRPCServer(srv)
 	t.Cleanup(srv.Stop)
 	return srv, run, lis
 }
 
-// localListenerTests maps each listener returned by RegisterLocalGRPCServer
-// or RegisterLocalInternalGRPCServer to the test that created it, so that
-// connections to it can be closed when that test ends.
-var localListenerTests sync.Map // *bufconn.Listener -> testing.TB
-
-func listenLocal(t testing.TB) *bufconn.Listener {
-	lis := bufconn.Listen(1024 * 1024)
-	localListenerTests.Store(lis, t)
-	t.Cleanup(func() { localListenerTests.Delete(lis) })
-	return lis
+// LocalGRPCConn returns a connection to the server listening on lis, which is
+// closed when the test ends.
+func LocalGRPCConn(t testing.TB, ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return localGRPCConn(t, ctx, lis, opts...)
 }
 
-// LocalGRPCConn returns a connection to the server listening on lis. If lis
-// came from RegisterLocalGRPCServer or RegisterLocalInternalGRPCServer, the
-// connection is closed when the test that registered the server ends.
-func LocalGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return localGRPCConn(ctx, lis, opts...)
+// LocalInternalGRPCConn returns a connection to the internal server listening
+// on lis, which is closed when the test ends.
+func LocalInternalGRPCConn(t testing.TB, ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return localGRPCConn(t, ctx, lis, opts...)
 }
 
-func LocalInternalGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return localGRPCConn(ctx, lis, opts...)
-}
-
-func localGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+func localGRPCConn(t testing.TB, ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	bufDialer := func(context.Context, string) (net.Conn, error) {
 		return lis.Dial()
 	}
@@ -149,9 +137,7 @@ func localGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.Dial
 	if err != nil {
 		return nil, err
 	}
-	if t, ok := localListenerTests.Load(lis); ok {
-		t.(testing.TB).Cleanup(func() { conn.Close() })
-	}
+	t.Cleanup(func() { conn.Close() })
 	return conn, nil
 }
 

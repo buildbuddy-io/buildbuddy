@@ -46,7 +46,7 @@ func runByteStreamServer(ctx context.Context, t testing.TB, env *testenv.TestEnv
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
 
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)))
+	clientConn, err := testenv.LocalGRPCConn(t, ctx, lis, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)))
 	require.NoError(t, err)
 	return clientConn
 }

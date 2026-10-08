@@ -871,7 +871,7 @@ func TestWriteEventLog(t *testing.T) {
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, bbServer)
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	client := bbspb.NewBuildBuddyServiceClient(conn)
@@ -946,7 +946,7 @@ func TestWriteEventLog_ServerTimeout(t *testing.T) {
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, bbServer)
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	client := bbspb.NewBuildBuddyServiceClient(conn)

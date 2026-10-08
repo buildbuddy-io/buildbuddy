@@ -157,7 +157,7 @@ func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
 	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	authpb.RegisterAuthServiceServer(grpcServer, &fakeAuthService)
 	go runServer()
-	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
+	conn, err := testenv.LocalGRPCConn(t, t.Context(), lis)
 	require.NoError(t, err)
 	authenticator, err := NewWithTarget(te, conn)
 	require.NoError(t, err)

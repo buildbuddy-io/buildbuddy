@@ -52,24 +52,6 @@ type Proxy struct {
 // takes ownership of the returned conn and closes it when the RPC finishes.
 type Director func(ctx context.Context, fullMethodName string) (ctxOut context.Context, conn *grpc.ClientConn, err error)
 
-// backendConnKey is the context key for the *backendConn slot in which the
-// proxy records the conn that the director dialed for an RPC.
-type backendConnKey struct{}
-
-type backendConn struct {
-	conn *grpc.ClientConn
-}
-
-// proxyStream overrides a server stream's context.
-type proxyStream struct {
-	grpc.ServerStream
-	ctx context.Context
-}
-
-func (s *proxyStream) Context() context.Context {
-	return s.ctx
-}
-
 // StartProxy runs a test-scoped gRPC proxy. The given director func decides how
 // to connect a client request to a backend. If needed, the func can be nil
 // initially and reconfigured later by setting Director on the returned proxy.
@@ -81,26 +63,27 @@ func StartProxy(t *testing.T) *Proxy {
 		Addr:     lis.Addr(),
 		director: nil,
 	}
-	director := func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		require.NotNil(t, p.director, "Proxy.Director is nil")
-		outCtx, conn, err := p.director(ctx, fullMethodName)
-		if err != nil {
-			return nil, nil, err
-		}
-		ctx.Value(backendConnKey{}).(*backendConn).conn = conn
-		return outCtx, conn, nil
-	}
-	proxyHandler := proxy.TransparentHandler(director)
+	// Each RPC gets its own handler so that it can close the conn the
+	// director returned once the RPC finishes.
 	handler := func(srv any, stream grpc.ServerStream) error {
-		bc := &backendConn{}
-		ctx := context.WithValue(stream.Context(), backendConnKey{}, bc)
-		err := proxyHandler(srv, &proxyStream{ServerStream: stream, ctx: ctx})
-		if bc.conn != nil {
-			bc.conn.Close()
+		var conn *grpc.ClientConn
+		director := func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			require.NotNil(t, p.director, "Proxy.Director is nil")
+			outCtx, c, err := p.director(ctx, fullMethodName)
+			if err != nil {
+				return nil, nil, err
+			}
+			conn = c
+			return outCtx, c, nil
 		}
-		return err
+		defer func() {
+			if conn != nil {
+				conn.Close()
+			}
+		}()
+		return proxy.TransparentHandler(director)(srv, stream)
 	}
 	server := grpc.NewServer(grpc.UnknownServiceHandler(handler))
 	go server.Serve(lis)

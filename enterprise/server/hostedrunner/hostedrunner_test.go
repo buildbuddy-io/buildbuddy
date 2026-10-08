@@ -59,7 +59,7 @@ func getEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 
 	go runFunc()
 
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
+	clientConn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { clientConn.Close() })
 

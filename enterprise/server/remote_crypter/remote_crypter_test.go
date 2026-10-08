@@ -184,7 +184,7 @@ func setupWithIdentity(t *testing.T, identity string) (*testauth.TestAuthenticat
 	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	enpb.RegisterEncryptionServiceServer(grpcServer, encryptionService)
 	go runServer()
-	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
+	conn, err := testenv.LocalGRPCConn(t, t.Context(), lis)
 	require.NoError(t, err)
 	crypter := remote_crypter.New(te, authenticator, clientIdentityService, clock, conn)
 	return authenticator, crypter, clock, encryptionService

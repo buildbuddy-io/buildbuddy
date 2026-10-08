@@ -74,7 +74,7 @@ func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *gr
 	flags.Set(t, "remote_asset.allowed_private_ips", []string{"127.0.0.0/8"})
 
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
+	clientConn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 
 	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
@@ -1409,7 +1409,7 @@ func runRemoteCacheServers(t testing.TB, ctx context.Context, localEnv *testenv.
 	bbspb.RegisterBuildBuddyServiceServer(remoteGRPCServer, remoteEnv.GetBuildBuddyServer())
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 
@@ -1446,7 +1446,7 @@ func runFetchServerWithCacheProxy(ctx context.Context, env *testenv.TestEnv, t t
 	cspb.RegisterCacheServer(grpcServer, localCacheServer)
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 

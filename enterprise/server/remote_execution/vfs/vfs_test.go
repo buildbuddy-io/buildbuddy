@@ -88,7 +88,7 @@ func setupEnv(t *testing.T) environment.Env {
 
 	go runFunc()
 
-	clientConn, err := testenv.LocalGRPCConn(context.Background(), lis)
+	clientConn, err := testenv.LocalGRPCConn(t, context.Background(), lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { clientConn.Close() })
 

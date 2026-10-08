@@ -72,7 +72,7 @@ func startTestRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*cac
 
 	dialCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	conn, err := testenv.LocalGRPCConn(dialCtx, lis)
+	conn, err := testenv.LocalGRPCConn(t, dialCtx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -385,7 +385,7 @@ func TestStreamHeartbeats_AnswersDetailsRequestWithRequestID(t *testing.T) {
 	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	cppb.RegisterCacheProxyRegistryServer(server, registry)
 	go runFunc()
-	conn, err := testenv.LocalGRPCConn(context.Background(), lis)
+	conn, err := testenv.LocalGRPCConn(t, context.Background(), lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
