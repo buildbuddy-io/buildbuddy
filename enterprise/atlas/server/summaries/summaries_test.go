@@ -81,6 +81,11 @@ func TestParseQuery(t *testing.T) {
 	require.Equal(t, []string{"app=web"}, q.Labels)
 	// A colon in a non-filter token stays part of the term (image tags).
 	require.Equal(t, []string{"redis:7.2", "cache"}, q.Terms)
+	require.Equal(t, "prod", ParseQuery("namespace:prod").Namespace, "the alias parses")
+	for _, k := range FilterKeys {
+		require.NotEqual(t, "namespace", k.Key, "completion does not offer the alias")
+		require.NotEmpty(t, k.Hint)
+	}
 }
 
 func TestSearch(t *testing.T) {
@@ -218,6 +223,68 @@ func TestSearchRanksWholeWords(t *testing.T) {
 		names = append(names, e.Name)
 	}
 	require.Equal(t, []string{"buildbuddy-app-7d9f-abcde", "prod-buildbuddy-app-7d9f", "buildbuddy-apps-0"}, names)
+}
+
+func TestValues(t *testing.T) {
+	ix := New()
+	pods := ix.NewStore(podRes)
+	pods.Put(podEntry("web-1", "prod"))
+	pods.Put(podEntry("web-2", "prod"))
+	cache := podEntry("cache-0", "staging")
+	cache.Labels = map[string]string{"app": "cache"}
+	cache.Health = HealthBad
+	pods.Put(cache)
+	ix.NewStore(cmRes).Put(cmEntry("app-config", "prod"))
+	must := func(vs []FilterValue, err error) []FilterValue {
+		require.NoError(t, err)
+		return vs
+	}
+	values := func(field, key, prefix string, limit int) []string {
+		vs := must(ix.GetFilterValues(field, key, prefix, limit))
+		var out []string
+		for _, v := range vs {
+			out = append(out, v.Value)
+		}
+		return out
+	}
+
+	// Most common first, matched case-insensitively.
+	require.Equal(t, []string{"pod", "configmap"}, values("kind", "", "", 0))
+	require.Equal(t, []string{"pod"}, values("Kind", "", "P", 0))
+	require.Equal(t, []string{"prod", "staging"}, values("ns", "", "", 0))
+	require.Equal(t, []string{"prod"}, values("namespace", "", "", 1), "the alias works and the limit holds")
+	require.Equal(t, []string{"uswest1", "sjc"}, values("cluster", "", "", 0))
+	require.Equal(t, []string{"unknown", "bad"}, values("health", "", "", 0))
+	vs, err := ix.GetFilterValues("health", "", "u", 0)
+	require.NoError(t, err)
+	require.Equal(t, 3, vs[0].Count)
+
+	// Label keys, or one label's values. Keys fold case, as the query does,
+	// so a key spelled two ways lists every value of both; values keep their
+	// spelling.
+	odd := podEntry("odd-0", "staging")
+	odd.Labels = map[string]string{"App": "Web", "node-role.kubernetes.io/control-plane": ""}
+	pods.Put(odd)
+	ix.cat = nil // past the catalog's few seconds
+	require.Equal(t, []string{"app", "app.kubernetes.io/managed-by"}, values("label", "", "ap", 0))
+	require.Equal(t, 4, must(ix.GetFilterValues("label", "", "app", 0))[0].Count, "all four pods count for app")
+	require.Equal(t, []string{"web", "Web", "cache"}, values("label", "app", "", 0))
+	require.Equal(t, []string{"web", "Web"}, values("label", "APP", "W", 0))
+	require.Equal(t, []string{"node-role.kubernetes.io/control-plane"}, values("label", "", "node", 0), "a marker label is a key")
+	require.Empty(t, values("label", "node-role.kubernetes.io/control-plane", "", 0), "with no value to offer")
+	require.Equal(t, []string{"Helm"}, values("label", "app.kubernetes.io/managed-by", "h", 0))
+	require.Empty(t, values("label", "nosuch", "", 0))
+
+	_, err = ix.GetFilterValues("bogus", "", "", 0)
+	require.ErrorContains(t, err, `unknown filter "bogus"`)
+
+	// The catalog is reused for a while, then rebuilt.
+	first := ix.catalog()
+	require.Same(t, first, ix.catalog())
+	pods.Put(podEntry("web-3", "qa"))
+	require.Equal(t, []string{"prod", "staging"}, values("ns", "", "", 0), "still the cached catalog")
+	ix.cat = nil
+	require.Equal(t, []string{"prod", "staging", "qa"}, values("ns", "", "", 0), "staging now has two pods")
 }
 
 func TestSelectorMatches(t *testing.T) {
