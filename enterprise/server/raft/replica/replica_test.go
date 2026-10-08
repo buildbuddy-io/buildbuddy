@@ -1164,6 +1164,18 @@ func TestRejectedEntryAdvancesLastAppliedIndex(t *testing.T) {
 			},
 			wantCounter: 1,
 		},
+		{
+			name: "malformed stored session",
+			makeEntry: func(t *testing.T, em *entryMaker, repl *replica.Replica) dbsm.Entry {
+				id := []byte("malformed-session")
+				rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+					Kv: &rfpb.KV{Key: keys.MakeKey(constants.SessionPrefix, id), Value: []byte{0xff}},
+				}))})
+				require.NoError(t, err)
+				require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+				return em.makeEntry(increment().SetSession(&rfpb.Session{Id: id, Index: 1}))
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repl := testutil.NewTestingReplica(t, 1, 1)
@@ -2056,6 +2068,17 @@ type txnFaultDB struct {
 	pebble.IPebbleDB
 	beforeCommit func() error
 	afterCommit  func()
+	// getErr, if set, is checked before each Get on the DB or its batches.
+	getErr func(key []byte) error
+}
+
+func (db *txnFaultDB) Get(key []byte) ([]byte, io.Closer, error) {
+	if db.getErr != nil {
+		if err := db.getErr(key); err != nil {
+			return nil, nil, err
+		}
+	}
+	return db.IPebbleDB.Get(key)
 }
 
 func (db *txnFaultDB) NewBatch() pebble.Batch {
@@ -2069,6 +2092,15 @@ func (db *txnFaultDB) NewIndexedBatch() pebble.Batch {
 type txnFaultBatch struct {
 	pebble.Batch
 	db *txnFaultDB
+}
+
+func (b *txnFaultBatch) Get(key []byte) ([]byte, io.Closer, error) {
+	if b.db.getErr != nil {
+		if err := b.db.getErr(key); err != nil {
+			return nil, nil, err
+		}
+	}
+	return b.Batch.Get(key)
 }
 
 func (b *txnFaultBatch) Apply(other pebble.Batch, opts *pebble.WriteOptions) error {
@@ -2188,14 +2220,9 @@ func TestTransactionPersistenceFailure(t *testing.T) {
 			entry := em.makeEntry(batch.SetSession(&rfpb.Session{Id: []byte("failed-session"), Index: 1}))
 			injected := errors.New("injected transaction commit failure")
 			db.beforeCommit = func() error { return injected }
-			failed, err := repl.Update([]dbsm.Entry{entry})
-			require.NoError(t, err)
-			// Commit failures are reported in the entry result.
-			// Update returns no error.
-			require.EqualValues(t, constants.EntryErrorValue, failed[0].Result.Value)
-			failure := &statuspb.Status{}
-			require.NoError(t, proto.Unmarshal(failed[0].Result.Data, failure))
-			require.Contains(t, failure.GetMessage(), injected.Error())
+			// Commit failures are local, so Update returns them.
+			_, err := repl.Update([]dbsm.Entry{entry})
+			require.ErrorIs(t, err, injected)
 			db.beforeCommit = nil
 			index, err := repl.LastAppliedIndex()
 			require.NoError(t, err)
@@ -2261,6 +2288,193 @@ func TestTransactionMalformedFinalization(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 		})
+	}
+}
+
+// Non-deterministic failures stop apply: Update returns the error and the
+// stored applied index does not advance.
+func TestUpdateReturnsStorageErrors(t *testing.T) {
+	incrKey := keys.MakeKey(constants.SystemPrefix, []byte("incr-key"))
+	increment := func() *rbuilder.BatchBuilder {
+		return rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{Key: incrKey, Delta: 1})
+	}
+	injected := errors.New("injected storage failure")
+	failCommit := func(db *txnFaultDB) {
+		db.beforeCommit = func() error { return injected }
+	}
+	failGet := func(match []byte) func(db *txnFaultDB) {
+		return func(db *txnFaultDB) {
+			db.getErr = func(key []byte) error {
+				if bytes.Contains(key, match) {
+					return injected
+				}
+				return nil
+			}
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		// setup may apply entries before the fault is injected.
+		setup  func(t *testing.T, em *entryMaker, repl *replica.Replica)
+		batch  *rbuilder.BatchBuilder
+		inject func(db *txnFaultDB)
+	}{
+		{
+			name:   "ordinary commit",
+			batch:  increment().SetSession(&rfpb.Session{Id: []byte("s"), Index: 1}),
+			inject: failCommit,
+		},
+		{
+			name: "duplicate commit",
+			setup: func(t *testing.T, em *entryMaker, repl *replica.Replica) {
+				rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(increment().SetSession(&rfpb.Session{Id: []byte("s"), Index: 1}))})
+				require.NoError(t, err)
+				require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+			},
+			batch:  increment().SetSession(&rfpb.Session{Id: []byte("s"), Index: 1}),
+			inject: failCommit,
+		},
+		{
+			name:   "rejected commit",
+			batch:  increment().SetHeader(&rfpb.Header{RangeId: 1, Generation: 0}),
+			inject: failCommit,
+		},
+		{
+			name:   "session read",
+			batch:  increment().SetSession(&rfpb.Session{Id: []byte("s"), Index: 1}),
+			inject: failGet(constants.SessionPrefix),
+		},
+		{
+			name:   "operation read",
+			batch:  increment(),
+			inject: failGet(incrKey),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repl, db, _ := openTxnFaultReplica(t, testfs.MakeTempDir(t))
+			em := newEntryMaker(t)
+			writeDefaultRangeDescriptor(t, em, repl.Replica)
+			if tc.setup != nil {
+				tc.setup(t, em, repl.Replica)
+			}
+			before, err := repl.LastAppliedIndex()
+			require.NoError(t, err)
+
+			tc.inject(db)
+			_, err = repl.Update([]dbsm.Entry{em.makeEntry(tc.batch)})
+			require.ErrorIs(t, err, injected)
+			*db = txnFaultDB{IPebbleDB: db.IPebbleDB}
+
+			after, err := repl.LastAppliedIndex()
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+		})
+	}
+}
+
+// A non-deterministic failure stops the remaining entries in the same Update.
+func TestUpdateStopsAtFirstFatalError(t *testing.T) {
+	repl, db, _ := openTxnFaultReplica(t, testfs.MakeTempDir(t))
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+	incrKey := keys.MakeKey(constants.SystemPrefix, []byte("incr-key"))
+	entries := make([]dbsm.Entry, 3)
+	for i := range entries {
+		entries[i] = em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{Key: incrKey, Delta: 1}))
+	}
+
+	injected := errors.New("injected commit failure")
+	commits := 0
+	db.beforeCommit = func() error {
+		commits++
+		if commits == 2 {
+			return injected
+		}
+		return nil
+	}
+	_, err := repl.Update(entries)
+	require.ErrorIs(t, err, injected)
+	db.beforeCommit = nil
+
+	index, err := repl.LastAppliedIndex()
+	require.NoError(t, err)
+	require.Equal(t, entries[0].Index, index)
+	rsp, err := directRead(t, repl, incrKey)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), binary.LittleEndian.Uint64(rsp.GetKv().GetValue()))
+}
+
+func TestOpenFailsOnBadRangeState(t *testing.T) {
+	openWith := func(t *testing.T, dir string, getErr func([]byte) error) error {
+		db, err := pebble.Open(dir, "bad-range-state-test", &pebble.Options{})
+		require.NoError(t, err)
+		leaser := pebble.NewDBLeaser(&txnFaultDB{IPebbleDB: db, getErr: getErr})
+		repl := testutil.NewTestingReplicaWithLeaser(t, 1, 1, leaser)
+		_, openErr := repl.Open(make(chan struct{}))
+		require.NoError(t, repl.Close())
+		leaser.Close()
+		require.NoError(t, db.Close())
+		return openErr
+	}
+
+	t.Run("unreadable descriptor", func(t *testing.T) {
+		dir := testfs.MakeTempDir(t)
+		repl, _, closeReplica := openTxnFaultReplica(t, dir)
+		writeDefaultRangeDescriptor(t, newEntryMaker(t), repl.Replica)
+		closeReplica()
+
+		injected := errors.New("injected read failure")
+		err := openWith(t, dir, func(key []byte) error {
+			if bytes.HasSuffix(key, constants.LocalRangeKey) {
+				return injected
+			}
+			return nil
+		})
+		require.ErrorIs(t, err, injected)
+	})
+
+	t.Run("malformed descriptor", func(t *testing.T) {
+		dir := testfs.MakeTempDir(t)
+		repl, db, closeReplica := openTxnFaultReplica(t, dir)
+		writeDefaultRangeDescriptor(t, newEntryMaker(t), repl.Replica)
+		// Simulate local corruption below the state machine.
+		key := append(replica.LocalKeyPrefix(1, 1), constants.LocalRangeKey...)
+		require.NoError(t, db.IPebbleDB.Set(key, []byte{0xff}, pebble.Sync))
+		closeReplica()
+
+		require.Error(t, openWith(t, dir, nil))
+	})
+
+	t.Run("no range state", func(t *testing.T) {
+		require.NoError(t, openWith(t, testfs.MakeTempDir(t), nil))
+	})
+}
+
+// A malformed range descriptor or lease is deterministic: reject the write
+// instead of committing state that cannot load.
+func TestRejectMalformedLocalState(t *testing.T) {
+	for _, key := range [][]byte{constants.LocalRangeKey, constants.LocalRangeLeaseKey} {
+		for _, req := range []proto.Message{
+			&rfpb.DirectWriteRequest{Kv: &rfpb.KV{Key: key, Value: []byte{0xff}}},
+			&rfpb.CASRequest{Kv: &rfpb.KV{Key: key, Value: []byte{0xff}}},
+			&rfpb.IncrementRequest{Key: key, Delta: 1},
+		} {
+			t.Run(fmt.Sprintf("%s/%T", key, req), func(t *testing.T) {
+				repl := testutil.NewTestingReplica(t, 1, 1)
+				_, err := repl.Open(make(chan struct{}))
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, repl.Close()) })
+				entry := newEntryMaker(t).makeEntry(rbuilder.NewBatchBuilder().Add(req))
+				rsp, err := repl.Update([]dbsm.Entry{entry})
+				require.NoError(t, err)
+				err = rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError()
+				require.True(t, status.IsInvalidArgumentError(err), err)
+				index, err := repl.LastAppliedIndex()
+				require.NoError(t, err)
+				require.Equal(t, entry.Index, index)
+			})
+		}
 	}
 }
 
