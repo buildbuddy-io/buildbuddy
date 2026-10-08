@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:experiments_go_proto",
         "//server/interfaces",
+        "//server/util/alert",
         "//server/util/flag",
         "//server/util/flagutil/types/autoflags/tags",
         "//server/util/log",
