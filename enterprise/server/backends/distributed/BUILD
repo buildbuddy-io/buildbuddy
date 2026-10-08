@@ -2,6 +2,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+# gazelle:go_test file
+
 go_library(
     name = "distributed",
     srcs = ["distributed.go"],
@@ -45,10 +47,7 @@ go_library(
 go_test(
     name = "distributed_test",
     size = "small",
-    srcs = [
-        "distributed_test.go",
-        "rolling_restart_test.go",
-    ],
+    srcs = ["distributed_test.go"],
     embed = [":distributed"],
     shard_count = 1,
     tags = ["block-network"],
