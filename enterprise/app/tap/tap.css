@@ -491,16 +491,19 @@ SKIPPED = 13;
 }
 
 .tap .chart-card {
-  margin-top: 0;
+  margin: 32px 0;
   display: block;
-}
-
-.tap .flakes-chart-header {
-  margin: 0 0 16px;
 }
 
 .tap .flakes-list-header {
   margin: 16px 0;
+}
+
+.tap .targets-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  --icon-size: 20px;
 }
 
 .tap .flake-table {
@@ -524,12 +527,29 @@ SKIPPED = 13;
 .tap .flake-table-row.flake-table-summary-row {
   border: none;
   background: transparent;
-  padding-top: 0;
+  padding: 0 25px;
 }
 
-.tap .flake-table-row-image {
-  margin-left: 4px;
-  margin-right: 16px;
+.tap .flake-table-summary-row .flake-stat {
+  font-weight: 600;
+}
+
+.tap .flake-target-table {
+  border: 1px solid var(--color-border-primary);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tap .flake-target-table .flake-table-row {
+  padding: 16px 24px;
+}
+
+.tap .flake-target-table .flake-table-row:first-child {
+  border-top: none;
+}
+
+.tap .flake-target-table .flake-table-row:last-child {
+  border-bottom: none;
 }
 
 .tap .flake-table-row-header {
@@ -541,14 +561,15 @@ SKIPPED = 13;
 }
 
 .tap .flake-table-row-stats {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(max-content, 1fr));
+  column-gap: 16px;
 }
 
 .tap .flake-stat {
-  width: 160px;
-  margin: 8px 0;
+  margin-top: 8px;
   font-size: 16px;
+  white-space: nowrap;
 }
 
 .tap .flake-stat-value {

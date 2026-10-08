@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -805,4 +806,76 @@ func assertTestTargetStatusesMatchPrimaryDB(t *testing.T, ctx context.Context, t
 	err = te.GetDBHandle().NewQuery(ctx, "get_target_statuses").Raw(query).Take(&got)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, got, expected)
+}
+
+func TestTrackTargetForEvents_OLAPRecordsTestTimeouts(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "app.enable_write_test_target_statuses_to_olap_db", true)
+	te := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(ta)
+	flags.Set(t, "app.enable_target_tracking", true)
+	ctx, err := ta.WithAuthenticatedUser(t.Context(), "USER1")
+	require.NoError(t, err)
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	tracker := target_tracker.NewTargetTracker(te, newFakeAccumulator(t, testUUID.String()))
+
+	const label = "//server:timeout_test"
+	for _, event := range []*build_event_stream.BuildEvent{
+		{
+			Children: []*build_event_stream.BuildEventId{targetConfiguredId(label)},
+			Payload:  &build_event_stream.BuildEvent_Expanded{},
+		},
+		{
+			Id:       targetConfiguredId(label),
+			Children: []*build_event_stream.BuildEventId{targetCompletedId(label)},
+			Payload: &build_event_stream.BuildEvent_Configured{
+				Configured: &build_event_stream.TargetConfigured{TargetKind: "go_test rule", TestSize: build_event_stream.TestSize_MEDIUM},
+			},
+		},
+		{Payload: &build_event_stream.BuildEvent_WorkspaceStatus{}},
+		{
+			Id:       targetCompletedId(label),
+			Children: []*build_event_stream.BuildEventId{testResultId(label), testSummaryId(label)},
+			Payload: &build_event_stream.BuildEvent_Completed{
+				Completed: &build_event_stream.TargetComplete{Success: true, TestTimeout: durationpb.New(100 * time.Second)},
+			},
+		},
+		{
+			Id: testResultId(label),
+			Payload: &build_event_stream.BuildEvent_TestResult{
+				TestResult: &build_event_stream.TestResult{TestAttemptDuration: durationpb.New(30 * time.Second)},
+			},
+		},
+		{
+			Id: testResultId(label),
+			Payload: &build_event_stream.BuildEvent_TestResult{
+				TestResult: &build_event_stream.TestResult{TestAttemptDuration: durationpb.New(96 * time.Second)},
+			},
+		},
+		{
+			Id: testSummaryId(label),
+			Payload: &build_event_stream.BuildEvent_TestSummary{
+				TestSummary: &build_event_stream.TestSummary{OverallStatus: build_event_stream.TestStatus_PASSED},
+			},
+		},
+		{LastMessage: true},
+	} {
+		tracker.TrackTargetsForEvent(ctx, event)
+	}
+
+	type timeoutRow struct {
+		TestTimeoutUsec        int64
+		MaxAttemptDurationUsec int64
+	}
+	var got []timeoutRow
+	err = te.GetOLAPDBHandle().NewQuery(ctx, "get_target_status").Raw(
+		`SELECT test_timeout_usec, max_attempt_duration_usec FROM "TestTargetStatuses" WHERE label = ?`, label,
+	).Take(&got)
+	require.NoError(t, err)
+	require.Equal(t, []timeoutRow{{
+		TestTimeoutUsec:        (100 * time.Second).Microseconds(),
+		MaxAttemptDurationUsec: (96 * time.Second).Microseconds(),
+	}}, got)
 }
