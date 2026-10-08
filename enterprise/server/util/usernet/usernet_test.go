@@ -6,7 +6,9 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"runtime"
 	"slices"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -226,6 +228,22 @@ func TestCleanupClosesForwardedConnections(t *testing.T) {
 	remote.SetReadDeadline(time.Now().Add(5 * time.Second))
 	_, err = remote.Read(make([]byte, 1))
 	require.ErrorIs(t, err, io.EOF)
+}
+
+func TestCleanupStopsGoroutines(t *testing.T) {
+	testnetworking.Setup(t)
+	ctx := context.Background()
+	goroutines := func() int {
+		buf := make([]byte, 16<<20)
+		return strings.Count(string(buf[:runtime.Stack(buf, true)]), "gvisor.dev/gvisor/")
+	}
+	before := goroutines()
+	for range 3 {
+		n, err := NewContainerNetwork(ctx)
+		require.NoError(t, err)
+		require.NoError(t, n.Cleanup(ctx))
+	}
+	require.Eventually(t, func() bool { return goroutines() <= before }, 5*time.Second, 10*time.Millisecond)
 }
 
 func TestOneWayUDPFlowStaysOpen(t *testing.T) {

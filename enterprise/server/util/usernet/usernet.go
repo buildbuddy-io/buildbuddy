@@ -265,7 +265,10 @@ func (n *Network) startStack(prefixLen int) error {
 		EthernetHeader:     true,
 		Address:            gatewayLinkAddress,
 		PacketDispatchMode: fdbased.RecvMMsg,
-		GSOMaxSize:         gsoMaxSize,
+		// More processors don't improve throughput, and with RecvMMsg, fdbased
+		// leaks the processor goroutines of a dispatcher it discards.
+		ProcessorsPerChannel: 1,
+		GSOMaxSize:           gsoMaxSize,
 		// Guests leave checksums partial on offloaded frames.
 		RXChecksumOffload: true,
 	})
