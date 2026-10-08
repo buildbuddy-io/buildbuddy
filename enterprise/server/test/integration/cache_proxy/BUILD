@@ -15,6 +15,7 @@ go_test(
         "//enterprise/server/clientidentity",
         "//enterprise/server/content_addressable_storage_server_proxy",
         "//enterprise/server/experiments",
+        "//enterprise/server/local_crypter",
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//proto:buildbuddy_service_go_proto",
         "//proto:context_go_proto",
