@@ -378,8 +378,6 @@ func pendingHitsExpectation(f *HitTrackerFactory, key string, expected int) func
 		if !ok {
 			return expected == 0
 		}
-		c.mu.Lock()
-		defer c.mu.Unlock()
 		return len(c.hits) == expected
 	}
 }
@@ -399,7 +397,9 @@ func TestCASHitTracker_AcceptsHitsWhileSplitOverflowIsPending(t *testing.T) {
 	// Block Track RPCs and fire the sender once: it sends the first 10 hits
 	// and re-queues the other 15, which stay pending while that RPC is blocked.
 	hitTrackerService.wg.Add(1)
-	clock.BlockUntil(1)
+	blockCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, clock.BlockUntilContext(blockCtx, 1), "sender never started waiting on its ticker")
 	clock.Advance(*remoteHitTrackerPollInterval)
 	require.Eventually(t, pendingHitsExpectation(hitTrackerFactory, anonKey, 15), 10*time.Second, 10*time.Millisecond)
 
