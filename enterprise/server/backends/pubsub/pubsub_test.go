@@ -97,11 +97,16 @@ func TestStreamPubSub_CloseWithUndeliveredMessage(t *testing.T) {
 	// Subscribe to a channel that already has a message, and never read it.
 	err := pubSub.Publish(ctx, channel, message1)
 	require.NoError(t, err)
-	subscriber := pubSub.SubscribeHead(ctx, channel)
+	// Use context.Background() rather than t.Context(), because Go cancels
+	// t.Context() before testleak checks for leaks, which would release the
+	// subscription's goroutines even if Close() did nothing.
+	subscriber := pubSub.SubscribeHead(context.Background(), channel)
 
 	// Give the subscription a moment to pick up the message and block
 	// delivering it, then close. All of the subscription's goroutines should
-	// exit, which testleak checks during cleanup.
+	// exit, which testleak checks during cleanup. The sleep is best effort, so
+	// under heavy load the test can miss a regression, but it never fails
+	// spuriously.
 	time.Sleep(50 * time.Millisecond)
 	err = subscriber.Close()
 	require.NoError(t, err)
