@@ -981,10 +981,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.Experiments = append(executionTask.Experiments, "remote_execution.publish_post_completion_stats")
 	}
 
-	if efp != nil && efp.Boolean(ctx, "executor.userspace_networking", false) {
-		executionTask.Experiments = append(executionTask.Experiments, "executor.userspace_networking")
-	}
-
 	if efp != nil && platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType {
 		if efp.Boolean(ctx, "executor.remote_container_image_reads_enabled", false) {
 			executionTask.Experiments = append(executionTask.Experiments, "executor.remote_container_image_reads_enabled")

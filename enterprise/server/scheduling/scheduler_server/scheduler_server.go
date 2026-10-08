@@ -2698,13 +2698,9 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		taskProto.PlatformOverrides = &repb.Platform{}
 	}
 
-	// TODO(bduffany): migrate these to use execution_experiments instead
+	// TODO(bduffany): migrate this to use execution_experiments instead
 	if shouldUpgrade := fp.Boolean(ctx, "upgrade-fc-guest-kernel", false, expOptions...); shouldUpgrade {
 		taskProto.Experiments = append(taskProto.Experiments, "upgrade-fc-guest-kernel")
-	}
-	const recordInputFetchMetadataExperimentName = "remote_execution.record_input_fetch_metadata"
-	if fp.Boolean(ctx, recordInputFetchMetadataExperimentName, false, expOptions...) {
-		taskProto.Experiments = append(taskProto.Experiments, recordInputFetchMetadataExperimentName)
 	}
 
 	if supportsExperimentFlags {
@@ -2712,6 +2708,8 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		// ensure the experiment propagates to executors at lease time.
 		taskProto.ExperimentFlags = []*expb.EvaluatedFlag{
 			execution_experiments.PersistentVolumes.GetProto(ctx, expOptions...),
+			execution_experiments.UserspaceNetworking.GetProto(ctx, expOptions...),
+			execution_experiments.RecordInputFetchMetadata.GetProto(ctx, expOptions...),
 		}
 	}
 

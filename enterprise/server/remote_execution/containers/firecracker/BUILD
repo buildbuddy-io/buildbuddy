@@ -52,6 +52,7 @@ go_library(
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
+        "//enterprise/server/remote_execution/execution_experiments",
         "//enterprise/server/remote_execution/snaploader",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/remote_execution/uffd",
