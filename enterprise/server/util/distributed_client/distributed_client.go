@@ -120,9 +120,11 @@ func (c *Proxy) StartListening() error {
 	dcpb.RegisterDistributedCacheServer(grpcServer, c)
 	c.server = grpcServer
 
+	// Shutdown sets c.server to nil, possibly before this goroutine runs, so
+	// don't read it here.
 	go func() {
 		log.Printf("Listening on %s", c.listenAddr)
-		if err := c.server.Serve(lis); err != nil {
+		if err := grpcServer.Serve(lis); err != nil {
 			log.Warningf("Error serving: %s", err)
 		}
 	}()
