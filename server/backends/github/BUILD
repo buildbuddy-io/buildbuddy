@@ -6,6 +6,7 @@ go_test(
     deps = [
         ":github",
         "//server/testutil/testenv",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )

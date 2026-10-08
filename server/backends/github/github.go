@@ -1,9 +1,9 @@
 package github
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -548,37 +548,47 @@ func (c *GithubClient) CreateStatus(ctx context.Context, groupID string, ownerRe
 		return status.InvalidArgumentError("failed to create GitHub status: commitSHA argument is empty")
 	}
 
+	owner, repo, ok := strings.Cut(ownerRepo, "/")
+	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
+		return status.InvalidArgumentErrorf("invalid owner/repo %q", ownerRepo)
+	}
+
 	token, err := c.getToken(ctx, ownerRepo)
 	if err != nil {
 		return status.WrapErrorf(err, "failed to populate GitHub token")
 	}
 
-	url := fmt.Sprintf("https://%s/repos/%s/statuses/%s", apiEndpoint(), ownerRepo, commitSHA)
-	body := new(bytes.Buffer)
-	if err := json.NewEncoder(body).Encode(appendStatusNameSuffix(payload)); err != nil {
-		return status.UnknownErrorf("failed to encode payload: %s", err)
-	}
-
-	req, err := http.NewRequest("POST", url, body)
-	if err != nil {
-		return status.InternalErrorf("failed to create request: %s", err)
-	}
-
-	req.Header.Set("Authorization", "token "+token)
-	res, err := c.client.Do(req)
-	if err != nil {
-		return status.UnavailableErrorf("failed to send request: %s", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 400 {
-		b, err := io.ReadAll(res.Body)
+	client := github.NewClient(c.client)
+	if IsEnterpriseConfigured() {
+		host := fmt.Sprintf("https://%s/", *enterpriseHost)
+		client, err = client.WithEnterpriseURLs(host, host)
 		if err != nil {
-			return status.UnknownErrorf("HTTP %s: <failed to read response body>", res.Status)
+			return status.InvalidArgumentErrorf("invalid GitHub enterprise URL: %s", err)
 		}
-		return status.UnknownErrorf("HTTP %s: %q", res.Status, string(b))
 	}
+	payload = appendStatusNameSuffix(payload)
+
+	_, res, err := client.WithAuthToken(token).Repositories.CreateStatus(ctx, owner, repo, commitSHA, payload)
+	if err != nil {
+		if res == nil {
+			return status.UnavailableErrorf("failed to send request: %s", err)
+		}
+		if isStatusRateLimit(res.Response, err) {
+			log.CtxWarningf(ctx, "GitHub rate limited status delivery for %q @ commit %q (HTTP %d)", ownerRepo, commitSHA, res.StatusCode)
+		}
+		return status.UnknownErrorf("HTTP %s: %s", res.Status, err)
+	}
+
 	log.CtxInfof(ctx, "Successfully posted GitHub status for %q @ commit %q: %q (%s): %q", ownerRepo, commitSHA, payload.GetContext(), payload.GetState(), payload.GetDescription())
 	return nil
+}
+
+// isStatusRateLimit reports whether GitHub rejected a request due to a rate limit.
+func isStatusRateLimit(res *http.Response, err error) bool {
+	_, primary := errors.AsType[*github.RateLimitError](err)
+	_, secondary := errors.AsType[*github.AbuseRateLimitError](err)
+	return primary || secondary || res.StatusCode == http.StatusTooManyRequests ||
+		(res.StatusCode == http.StatusForbidden && (res.Header.Get("Retry-After") != "" || res.Header.Get("X-RateLimit-Remaining") == "0"))
 }
 
 func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo string) (*github.InstallationToken, error) {
