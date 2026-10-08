@@ -8,6 +8,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// CachedConnCountForTesting returns the number of cached gRPC connections to
+// the external grpc_client_test package, which can't be internal because it
+// depends on testenv, which depends on this package.
+func CachedConnCountForTesting(c *ConnCache) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.conns)
+}
+
+// CloseForTesting stops expiring connections and closes all cached
+// connections, so tests don't leak gRPC goroutines.
+func (c *ConnCache) CloseForTesting() {
+	c.StopExpiring()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key, cc := range c.conns {
+		cc.conn.Close()
+		delete(c.conns, key)
+	}
+}
+
 // testPool builds a pool of connections with the given in-flight counts. The
 // connections have no underlying grpc.ClientConn, which is fine because getConn
 // only reads the pending counter and index.
