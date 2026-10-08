@@ -5,13 +5,19 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,6 +59,10 @@ func TestCreateStatusSDK(t *testing.T) {
 		{name: "rate limit without delay", code: http.StatusTooManyRequests, wantError: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			metrics.GitHubStatusRequestDurationUsec.Reset()
+			metrics.GitHubStatusDeliveryDurationUsec.Reset()
+			clock := clockwork.NewFakeClock()
+			requestDuration := 25 * time.Millisecond
 			type receivedRequest struct {
 				method, path, authorization string
 				body                        []byte
@@ -65,6 +75,7 @@ func TestCreateStatusSDK(t *testing.T) {
 				body, err := io.ReadAll(r.Body)
 				requests <- receivedRequest{r.Method, r.URL.Path, r.Header.Get("Authorization"), body, err}
 				w.Header().Set("Content-Type", "application/json")
+				clock.Advance(requestDuration)
 				w.WriteHeader(tc.code)
 				io.WriteString(w, `{}`)
 			}))
@@ -75,7 +86,9 @@ func TestCreateStatusSDK(t *testing.T) {
 			flags.Set(t, "github.enterprise_host", strings.TrimPrefix(server.URL, "https://"))
 			flags.Set(t, "github.access_token", "test-token")
 			flags.Set(t, "github.status_name_suffix", "(dev)")
-			client := github.NewGithubClient(testenv.GetTestEnv(t), "")
+			te := testenv.GetTestEnv(t)
+			te.SetClock(clock)
+			client := github.NewGithubClient(te, "")
 			payload := github.NewGithubStatusPayload("Remote tests", "https://example.com/build", "Passed", github.SuccessState)
 			err := client.CreateStatus(t.Context(), "GR1", "example/project", "abc123", payload)
 			if tc.wantError {
@@ -84,6 +97,10 @@ func TestCreateStatusSDK(t *testing.T) {
 				require.NoError(t, err)
 			}
 			require.EqualValues(t, 1, calls.Load())
+			testmetrics.AssertHistogramSamples(t, metrics.GitHubStatusRequestDurationUsec, float64(requestDuration.Microseconds()))
+			testmetrics.AssertHistogramSamples(t, metrics.GitHubStatusDeliveryDurationUsec, float64(requestDuration.Microseconds()))
+			require.Equal(t, map[string]string{metrics.HTTPResponseCodeLabel: strconv.Itoa(tc.code)}, testmetrics.HistogramVecValues(t, metrics.GitHubStatusRequestDurationUsec)[0].Labels)
+			require.Equal(t, map[string]string{metrics.StatusHumanReadableLabel: status.MetricsLabel(err)}, testmetrics.HistogramVecValues(t, metrics.GitHubStatusDeliveryDurationUsec)[0].Labels)
 			request := <-requests
 			require.NoError(t, request.err)
 			require.Equal(t, "POST", request.method)

@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -531,7 +532,9 @@ func (c *OAuthHandler) handleInstallAppCallback(w http.ResponseWriter, r *http.R
 	return false, nil
 }
 
-func (c *GithubClient) CreateStatus(ctx context.Context, groupID string, ownerRepo string, commitSHA string, payload *GithubStatusPayload) error {
+func (c *GithubClient) CreateStatus(ctx context.Context, groupID string, ownerRepo string, commitSHA string, payload *GithubStatusPayload) (err error) {
+	clock := c.env.GetClock()
+	start := clock.Now()
 	if ownerRepo == "" {
 		return status.InvalidArgumentErrorf("failed to create GitHub status: ownerRepo argument is empty")
 	}
@@ -543,6 +546,9 @@ func (c *GithubClient) CreateStatus(ctx context.Context, groupID string, ownerRe
 	if !enabled {
 		return nil
 	}
+	defer func() {
+		metrics.GitHubStatusDeliveryDurationUsec.WithLabelValues(status.MetricsLabel(err)).Observe(float64(clock.Since(start).Microseconds()))
+	}()
 
 	if commitSHA == "" {
 		return status.InvalidArgumentError("failed to create GitHub status: commitSHA argument is empty")
@@ -568,7 +574,13 @@ func (c *GithubClient) CreateStatus(ctx context.Context, groupID string, ownerRe
 	}
 	payload = appendStatusNameSuffix(payload)
 
+	requestStart := clock.Now()
 	_, res, err := client.WithAuthToken(token).Repositories.CreateStatus(ctx, owner, repo, commitSHA, payload)
+	code := 0
+	if res != nil {
+		code = res.StatusCode
+	}
+	metrics.GitHubStatusRequestDurationUsec.WithLabelValues(strconv.Itoa(code)).Observe(float64(clock.Since(requestStart).Microseconds()))
 	if err != nil {
 		if res == nil {
 			return status.UnavailableErrorf("failed to send request: %s", err)
