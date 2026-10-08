@@ -2618,12 +2618,12 @@ func TestShutdown_StopsBackgroundGoroutines(t *testing.T) {
 }
 
 func TestWatchTaskLiveness(t *testing.T) {
-	// Check much less often than the test advances the fake clock, so that
-	// the background loop never checks liveness, letting the test decide when
-	// checks happen.
-	flags.Set(t, "remote_execution.task_liveness_check_interval", time.Hour)
-	// A task is lost once it has been missing for the lease duration plus
-	// grace period, 20s here.
+	// Set the check interval far beyond how far the test advances the fake
+	// clock, so that the scheduler never checks on its own and the test
+	// decides when checks happen.
+	flags.Set(t, "remote_execution.task_liveness_check_interval", 999*time.Hour)
+	// The scheduler reports a task lost once it has been missing for the
+	// lease duration plus grace period, 20s here.
 	clock := clockwork.NewFakeClock()
 	env, _ := getEnv(t, &schedulerOpts{options: Options{
 		Clock:            clock,
@@ -2646,13 +2646,13 @@ func TestWatchTaskLiveness(t *testing.T) {
 		}
 	}
 
-	// While the task exists, checks leave the channel open.
+	// While the task exists, the scheduler leaves the channel open.
 	s.checkTaskLivenessOnce(ctx)
 	require.False(t, isLost())
 
-	// After the task is deleted, it is not reported lost until it has been
-	// missing for 20s, since an executor that was running it may still
-	// publish its final update until a lease renewal finds the task missing.
+	// After the test deletes the task, the scheduler does not report it lost
+	// until it has been missing for 20s, since an executor running it may
+	// still publish its final update until it fails a lease renewal.
 	err = rdb.Del(ctx, taskKey).Err()
 	require.NoError(t, err)
 	s.checkTaskLivenessOnce(ctx)
@@ -2661,8 +2661,9 @@ func TestWatchTaskLiveness(t *testing.T) {
 	s.checkTaskLivenessOnce(ctx)
 	require.False(t, isLost())
 
-	// A check that finds the task again restarts the count, so the task must
-	// be missing continually for 20s to be reported lost.
+	// If the scheduler finds the task again, it restarts the count, so it
+	// reports the task lost only after the task has been missing continually
+	// for 20s.
 	err = rdb.Set(ctx, taskKey, "1", 0).Err()
 	require.NoError(t, err)
 	s.checkTaskLivenessOnce(ctx)
@@ -2673,8 +2674,8 @@ func TestWatchTaskLiveness(t *testing.T) {
 	s.checkTaskLivenessOnce(ctx)
 	require.False(t, isLost())
 
-	// Once the task has been missing for 20s, it is reported lost and no
-	// longer watched.
+	// Once the task has been missing for 20s, the scheduler reports it lost
+	// and stops watching it.
 	clock.Advance(time.Second)
 	s.checkTaskLivenessOnce(ctx)
 	require.True(t, isLost())
@@ -2684,6 +2685,9 @@ func TestWatchTaskLiveness(t *testing.T) {
 }
 
 func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
+	// Enable the check, which is off by default. The fake clock never
+	// advances, so the scheduler never runs it on its own.
+	flags.Set(t, "remote_execution.task_liveness_check_interval", 999*time.Hour)
 	env, _ := getEnv(t, &schedulerOpts{options: Options{Clock: clockwork.NewFakeClock()}}, "")
 	s := env.GetSchedulerService().(*SchedulerServer)
 	watchers := func() int {
@@ -2702,7 +2706,7 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 	s.WatchTaskLiveness(ctx2, "task1")
 	require.Equal(t, 2, watchers())
 
-	// The task stays watched until both clients are done.
+	// The scheduler keeps watching the task until both clients are done.
 	cancel1()
 	require.Eventually(t, func() bool { return watchers() == 1 }, 5*time.Second, time.Millisecond)
 	cancel2()

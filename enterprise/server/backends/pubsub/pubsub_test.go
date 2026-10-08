@@ -89,8 +89,6 @@ func TestStreamPubSub(t *testing.T) {
 }
 
 func TestStreamPubSub_CloseWithUndeliveredMessage(t *testing.T) {
-	// The subscription's goroutines must all exit once it is closed, so any
-	// goroutine still running at the end of the test is a leak.
 	testleak.Check(t)
 	redisHandle := testredis.Start(t)
 	rdb := redis.NewClient(redisutil.TargetToOptions(redisHandle.Target))
@@ -100,8 +98,8 @@ func TestStreamPubSub_CloseWithUndeliveredMessage(t *testing.T) {
 	channel := pubSub.UnmonitoredChannel(channel1Name)
 
 	// Publish two messages before subscribing, so that the subscription reads
-	// both at once and is already trying to deliver the second one when the
-	// first is received.
+	// both at once and is already delivering the second when the test
+	// receives the first.
 	err := pubSub.Publish(ctx, channel, message1)
 	require.NoError(t, err)
 	err = pubSub.Publish(ctx, channel, message2)
@@ -109,10 +107,10 @@ func TestStreamPubSub_CloseWithUndeliveredMessage(t *testing.T) {
 	subscriber := pubSub.SubscribeHead(ctx, channel)
 	requireMessages(t, subscriber, message1)
 
-	// Close the subscription without reading the second message, as
-	// WaitExecution does when it returns early. Give the subscription a
-	// moment to pick up the second message first, so that the test exercises
-	// a delivery that is blocked at close time.
+	// Close the subscription without reading the second message, as the
+	// WaitExecution handler does when it returns early. Give the subscription
+	// a moment to pick up the second message first, so that the test closes
+	// it while it is blocked delivering.
 	time.Sleep(50 * time.Millisecond)
 	err = subscriber.Close()
 	require.NoError(t, err)

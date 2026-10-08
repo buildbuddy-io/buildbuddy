@@ -355,11 +355,11 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 			if !ok {
 				return
 			}
-			// The subscriber may stop reading before this message is
-			// delivered, for example when WaitExecution returns because the
-			// client hung up or the task was lost. Close only cancels ctx, so
-			// a plain send here would block forever and leak this goroutine
-			// along with the message.
+			// The subscriber may stop reading before it receives this message,
+			// for example when the WaitExecution handler returns because the
+			// client hung up or the scheduler reported the task lost. Close
+			// only cancels ctx, so with a plain send this goroutine would block
+			// forever and hold the message.
 			select {
 			case ch <- msg:
 			case <-ctx.Done():

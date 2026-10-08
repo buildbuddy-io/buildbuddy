@@ -1367,20 +1367,16 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 	metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
 	defer metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Dec()
 
-	// Watch for the task being deleted from the scheduler without its final
-	// update ever being published, for example because a Redis error prevented
-	// publishing the failure of its last attempt. The client would otherwise
-	// wait forever. The monitored stream's existence check does not cover this
-	// case, because the stream remains after the task is deleted.
+	// End the wait if the scheduler loses the task, since nobody would publish
+	// a final update for it. See WatchTaskLiveness.
 	taskLost := s.env.GetSchedulerService().WatchTaskLiveness(ctx, req.GetName())
 
 	for {
 		var msg *pubsub.Message
 		ok := true
-		// waitErr is set when the wait cannot continue, either because there's
-		// an error maintaining the subscription (e.g. because a Redis node went
-		// away) or because the task was lost. Either way, send a NOT FOUND
-		// error to Bazel so that it retries the execution.
+		// Set waitErr when the subscription fails (for example because a Redis
+		// node went away) or the scheduler reports the task lost. Either way,
+		// send Bazel a NOT_FOUND error so that it retries the execution.
 		var waitErr error
 		select {
 		case msg, ok = <-streamPubSubChan:
@@ -1388,7 +1384,7 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 				waitErr = status.NotFoundErrorf("receive execution update: %s", msg.Err)
 			}
 		case <-taskLost:
-			waitErr = status.NotFoundErrorf("task %q was lost before it completed", req.GetName())
+			waitErr = status.NotFoundErrorf("the scheduler lost task %q before it completed", req.GetName())
 		}
 		if !ok {
 			if ctx.Err() != nil {

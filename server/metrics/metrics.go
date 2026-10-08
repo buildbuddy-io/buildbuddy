@@ -1628,13 +1628,13 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "lost_tasks",
-		Help:      "Number of tasks that disappeared from the scheduler without their final execution update being published, ending the waits of their clients with a retryable error.",
+		Help:      "Number of watched tasks that the scheduler reported lost because they went missing without anyone publishing their final execution update, ending the waits of their clients with a retryable error.",
 	})
 
 	// #### Examples
 	//
 	// ```promql
-	// # Rate at which clients are told to retry executions whose task was lost.
+	// # Rate at which the app tells clients to retry executions whose task the scheduler lost.
 	// rate(buildbuddy_remote_execution_lost_tasks[5m])
 	// ```
 

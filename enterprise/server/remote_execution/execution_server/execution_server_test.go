@@ -77,8 +77,8 @@ type schedulerServerMock struct {
 	canceledCount int
 	scheduleReqs  []*scpb.ScheduleTaskRequest
 	scheduleErr   error
-	// taskLost is returned by WatchTaskLiveness for every task. Tests close it
-	// to simulate the scheduler losing a task.
+	// WatchTaskLiveness returns taskLost for every task. Tests close it to
+	// simulate the scheduler losing a task.
 	taskLost chan struct{}
 }
 
@@ -2538,11 +2538,11 @@ func TestExecute_LostTaskEndsWait(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, op.GetDone())
 
-	// Have the scheduler report the task as lost without a final update being
-	// published, as happens when a Redis error prevents publishing the
-	// failure of the task's last attempt. The server ends the wait with a
-	// completed operation carrying a NOT_FOUND error, which tells Bazel to
-	// retry the execution, instead of leaving Bazel waiting forever.
+	// Have the scheduler report the task lost without anyone publishing a
+	// final update, as happens when the scheduler fails to publish the
+	// failure of the task's last attempt. The server then ends the wait with
+	// a completed operation carrying a NOT_FOUND error, which tells Bazel to
+	// retry the execution instead of waiting forever.
 	close(env.GetSchedulerService().(*schedulerServerMock).taskLost)
 	op, err = stream.Recv()
 	require.NoError(t, err)

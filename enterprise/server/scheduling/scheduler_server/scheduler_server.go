@@ -73,7 +73,7 @@ var (
 	unclaimedTasksSetMaxSize     = flag.Int64("remote_execution.unclaimed_tasks_set_max_size", 100_000, "Max number of unclaimed tasks to track in redis per executor pool, per shard (see remote_execution.unclaimed_tasks_shard_count). This set of tasks is used for eager work assignments (when executors newly join a pool) and work-stealing requests (when executors are nearly idle).")
 	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
 	unclaimedTasksShardCount     = flag.Int("remote_execution.unclaimed_tasks_shard_count", 1, "Number of Redis sets that each executor pool's unclaimed tasks are split across. With a sharded Redis client, this spreads the load of large pools across Redis shards. If the unclaimedTasks/* keys become a source of contention, try setting this value to twice the number of Redis shards. Since remote_execution.unclaimed_tasks_set_max_size applies to each set, consider lowering it when raising this. Changing this value is relatively safe, but it may temporarily increase Redis memory usage, failed task lease attempts, and execution latency in some cases.")
-	taskLivenessCheckInterval    = flag.Duration("remote_execution.task_liveness_check_interval", 30*time.Second, "How often to check that the tasks clients are waiting on still exist. A client's wait ends with a NOT_FOUND error, so that the client retries the execution, once its task has been missing for remote_execution.lease_duration plus remote_execution.lease_grace_period. 0 disables the check.")
+	taskLivenessCheckInterval    = flag.Duration("remote_execution.task_liveness_check_interval", 0, "How often the scheduler checks that the tasks clients are waiting on still exist. Once a task has been missing for remote_execution.lease_duration plus remote_execution.lease_grace_period, the app ends the clients' waits with a NOT_FOUND error so that they retry the execution. 0 (the default) disables the check.")
 
 	upgradePromptMaxLags     = flag.Map("remote_execution.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) an executor may fall behind the newest registered version before GetExecutionNodes prompts an upgrade at that urgency.")
 	upgradePromptMinVersions = flag.Map("remote_execution.upgrade_prompt_min_versions", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the minimum version (semver) below which GetExecutionNodes prompts an upgrade at that urgency.")
@@ -118,7 +118,7 @@ const (
 	taskTTL = 24 * time.Hour
 
 	// Deadline for the pipeline that checks whether watched tasks still
-	// exist, so that a slow shard delays the next check by a bounded amount.
+	// exist, so that a slow shard delays the next check by at most this much.
 	taskLivenessCheckTimeout = 3 * time.Second
 
 	// Names of task fields in Redis task hash.
@@ -1460,12 +1460,12 @@ func (c *schedulerClientCache) get(hostPort string) (*schedulerClient, error) {
 // taskLivenessWatch tracks the clients watching a task. See
 // SchedulerServer.WatchTaskLiveness.
 type taskLivenessWatch struct {
-	// lost is closed once the task is lost.
+	// The scheduler closes lost once it finds the task lost.
 	lost chan struct{}
-	// watchers is the number of watchers whose contexts are not done yet.
+	// watchers counts the clients whose contexts are not done yet.
 	watchers int
-	// missingSince is when a check first found the task missing, or zero if
-	// the most recent conclusive check found it.
+	// missingSince is when the scheduler first found the task missing, or zero
+	// if it found the task on its most recent conclusive check.
 	missingSince time.Time
 }
 
@@ -3084,19 +3084,19 @@ func (s *SchedulerServer) TaskExists(ctx context.Context, req *scpb.TaskExistsRe
 	}, nil
 }
 
-// WatchTaskLiveness returns a channel that is closed if the task is lost,
-// meaning that it no longer exists and so no executor will run it again. The
-// task is watched until ctx is done. If liveness checks are disabled, the
-// channel is never closed.
+// WatchTaskLiveness returns a channel that the scheduler closes if it loses
+// the task, meaning that the task no longer exists in Redis and so no executor
+// will run it again. The scheduler watches the task until ctx is done. With
+// liveness checks disabled, it never closes the channel.
 //
 // The execution server waits for an execution's final update with no deadline
-// of its own, and some clients, including Bazel, set none either. So without
-// this, a task that ends without its final update being published (for example,
-// because a Redis error prevented publishing it) leaves those clients waiting
-// forever.
+// of its own, and some clients, including Bazel, set none either. So when the
+// scheduler deletes a task and then fails to publish its final update (for
+// example because of a Redis error), those clients wait forever unless
+// something else ends the wait.
 //
-// In rare circumstances, this may occasionally report that the task is lost
-// while its final update is still on the way (see checkTaskLivenessOnce).
+// In rare cases the scheduler reports a task lost while its final update is
+// still on the way (see checkTaskLivenessOnce).
 func (s *SchedulerServer) WatchTaskLiveness(ctx context.Context, taskID string) <-chan struct{} {
 	if *taskLivenessCheckInterval <= 0 {
 		return nil
@@ -3138,9 +3138,9 @@ func (s *SchedulerServer) checkTaskLiveness(ctx context.Context) {
 // single pipeline for all active watchers, and closes the channel of each task
 // that has been missing for the lease duration plus grace period. By then, any
 // executor running the task has most likely failed a lease renewal and stopped,
-// and any final update published right after a deletion has reached the client.
-// The timing is not exact, so in rare cases a task may be reported lost early,
-// and the client retries.
+// and the client has received any final update the scheduler published right
+// after deleting the task. The timing is not exact, so in rare cases the
+// scheduler reports a task lost early, and the client retries.
 func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 	type check struct {
 		taskID string
@@ -3160,7 +3160,7 @@ func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 		return
 	}
 	// Exec returns the first failed command's error, but with a Redis ring,
-	// commands sent to healthy shards still succeed, so look at each command's
+	// healthy shards still answer their commands, so look at each command's
 	// own result below.
 	_, _ = pipe.Exec(ctx)
 	now := s.clock.Now()
@@ -3169,13 +3169,14 @@ func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 	defer s.livenessMu.Unlock()
 	for _, c := range checks {
 		if s.livenessWatches[c.taskID] != c.watch {
-			// All of the task's watchers finished while the check ran.
+			// All of the task's watchers finished while the scheduler was running
+			// this check.
 			continue
 		}
 		n, err := c.exists.Result()
 		if err != nil {
-			// Inconclusive, for example because the pipeline timed out, so
-			// leave missingSince as it was.
+			// Inconclusive, for example because a shard did not answer in
+			// time, so leave missingSince as it was.
 			continue
 		}
 		if n == 1 {
@@ -3189,7 +3190,7 @@ func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 			continue
 		}
 		metrics.RemoteExecutionLostTasks.Inc()
-		log.CtxWarningf(ctx, "Ending waits for task %q, which has been missing for %s without its final update being published", c.taskID, now.Sub(c.watch.missingSince))
+		log.CtxWarningf(ctx, "Ending waits for task %q, which has been missing for %s without anyone publishing its final update", c.taskID, now.Sub(c.watch.missingSince))
 		close(c.watch.lost)
 		delete(s.livenessWatches, c.taskID)
 	}
