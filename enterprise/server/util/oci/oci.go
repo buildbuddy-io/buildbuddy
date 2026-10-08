@@ -47,9 +47,11 @@ const (
 var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
-	useOCIFetcherEnabled   = flag.Bool("executor.use_oci_fetcher", false, "Whether to use the OCI fetcher service for pulling container images.")
+	useRemoteOCIFetcher    = flag.Bool("executor.use_remote_oci_fetcher", false, "If true, pull container images through the OCI fetcher service on the executor's cache target (the apps or a cache proxy), which talks to the registry on the executor's behalf. If false, the executor talks to the registry itself.")
+	_                      = flag.Alias[bool]("executor.use_remote_oci_fetcher", "executor.use_oci_fetcher")
 
-	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
+	useOCICache         = flag.Bool("executor.use_oci_cache", false, "If true, cache container image manifests and layers in the BuildBuddy remote cache.")
+	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.", flag.Deprecated("Use executor.use_oci_cache instead."))
 )
 
 type Registry struct {
@@ -278,7 +280,7 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 }
 
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials, useOCIFetcher bool) (ctr.Image, error) {
-	if !*useOCIFetcherEnabled {
+	if !*useRemoteOCIFetcher {
 		useOCIFetcher = false
 	}
 	ctx, span := tracing.StartSpan(ctx)
@@ -296,11 +298,9 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		return nil, status.InternalErrorf("error creating puller: %s", err)
 	}
 
-	cacheEnabled := false
-	if *cacheEnabledPercent >= 100 {
-		cacheEnabled = true
-	} else if *cacheEnabledPercent > 0 && *cacheEnabledPercent < 100 {
-		cacheEnabled = rand.Intn(100) < *cacheEnabledPercent
+	cacheEnabled := *useOCICache
+	if !cacheEnabled && *cacheEnabledPercent > 0 {
+		cacheEnabled = *cacheEnabledPercent >= 100 || rand.Intn(100) < *cacheEnabledPercent
 	}
 	isAnon := isAnonymousUser(ctx)
 	if cacheEnabled && isAnon {

@@ -228,7 +228,7 @@ func TestCredentialsToProto(t *testing.T) {
 }
 
 func newResolver(t *testing.T, te *testenv.TestEnv) *oci.Resolver {
-	flags.Set(t, "executor.use_oci_fetcher", true)
+	flags.Set(t, "executor.use_remote_oci_fetcher", true)
 	r, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	return r
@@ -796,7 +796,7 @@ func TestResolve_WithCache(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			te := setupTestEnvWithCache(t)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-			flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+			flags.Set(t, "executor.use_oci_cache", true)
 			counter := testhttp.NewRequestCounter()
 			registry := testregistry.Run(t, testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -920,12 +920,12 @@ func TestResolve_WithCache(t *testing.T) {
 }
 
 // TestResolveWithCacheRequiresValidCredentials verifies that the in-executor
-// cache path (use_oci_fetcher=false) does not serve a cached private image to
+// cache path (use_remote_oci_fetcher=false) does not serve a cached private image to
 // callers with missing or invalid credentials.
 func TestResolveWithCacheRequiresValidCredentials(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+	flags.Set(t, "executor.use_oci_cache", true)
 
 	imageFiles := map[string][]byte{"/private": []byte("private image contents")}
 	registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
@@ -991,7 +991,7 @@ func contextWithUnverifiedJWT(c *claims.Claims) context.Context {
 func TestResolve_Concurrency(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+	flags.Set(t, "executor.use_oci_cache", true)
 	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -1399,7 +1399,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 }
 
 func TestResolveWithOCIFetcher_DisabledByExecutor(t *testing.T) {
-	flags.Set(t, "executor.use_oci_fetcher", false)
+	flags.Set(t, "executor.use_remote_oci_fetcher", false)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	te := testenv.GetTestEnv(t)
 	registry := testregistry.Run(t, testregistry.Opts{})
@@ -1721,7 +1721,7 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+	flags.Set(t, "executor.use_oci_cache", true)
 	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -1872,7 +1872,7 @@ func (c *countingBSClient) Write(ctx context.Context, opts ...grpc.CallOption) (
 func TestResolveWithOCIFetcher_NoDirectCacheAccess(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+	flags.Set(t, "executor.use_oci_cache", true)
 	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
