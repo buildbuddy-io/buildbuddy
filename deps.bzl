@@ -405,6 +405,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "docker-credential-gcr.bin", srcs = ["docker-credential-gcr"])',
         ]),
         urls = ["https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.1.30/docker-credential-gcr_linux_amd64-2.1.30.tar.gz"],
+        # Note: make sure that updates to docker-credential-gcr do not break the string-matching logic in docker-credential-gcr-optional
         sha256 = "d5c90c03d90271873a8619b1f73023a0266ae3fc91965ce9c81d7903e4b54eb6",
     )
     http_archive(
@@ -414,6 +415,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "docker-credential-gcr.bin", srcs = ["docker-credential-gcr"])',
         ]),
         urls = ["https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.1.30/docker-credential-gcr_linux_arm64-2.1.30.tar.gz"],
+        # Note: make sure that updates to docker-credential-gcr do not break the string-matching logic in docker-credential-gcr-optional
         sha256 = "ac9c0237e40505f09796c2bf8a90377246a6fd3cb65e6eada77009ae0f2d3b00",
     )
 

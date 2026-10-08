@@ -193,7 +193,7 @@ container_layer(
 container_layer(
     name = "docker_credential_gcr_layer",
     directory = "/usr/bin",
-    files = select({
+    files = ["//enterprise/server/cmd/executor/docker_credential_gcr_config:docker-credential-gcr-optional"] + select({
         "@platforms//cpu:x86_64": [
             "@com_github_googlecloudplatform_docker-credential-gcr-linux-amd64//:docker-credential-gcr.bin",
         ],
