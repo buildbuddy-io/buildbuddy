@@ -43,11 +43,18 @@ const COMPLETE_DEBOUNCE_MS = 50;
 export default class SearchBox extends React.Component<SearchBoxProps, State> {
   state: State = { typed: "", showGhost: false, completions: [], selected: -1, open: false };
   private timer?: number;
+  private frame?: number;
   private latest = 0;
   private last = { value: "", caret: -1 };
   private list = React.createRef<HTMLUListElement>();
 
-  componentDidUpdate(_: SearchBoxProps, prev: State) {
+  componentDidUpdate(prevProps: SearchBoxProps, prev: State) {
+    // Reset if the search string changed through something other than the search box
+    // (e.g. navigation).
+    if (this.props.value !== prevProps.value && this.props.value !== this.last.value) {
+      this.last = { value: this.props.value, caret: -1 };
+      this.dismiss();
+    }
     // Make sure the selected row stays in view when scrolling with arrows.
     if (this.state.selected !== prev.selected && this.state.selected >= 0) {
       this.list.current?.querySelector(".selected")?.scrollIntoView({ block: "nearest" });
@@ -56,12 +63,39 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
 
   componentWillUnmount() {
     window.clearTimeout(this.timer);
+    // Cancel any pending caret placement animation.
+    if (this.frame !== undefined) window.cancelAnimationFrame(this.frame);
+    // An answer still on its way has nowhere to go.
+    this.latest++;
+  }
+
+  /** Where the caret is, or nothing while text is selected, which completion must not replace. */
+  private caretOf(el: HTMLInputElement): number | undefined {
+    if (el.selectionStart !== el.selectionEnd) return undefined;
+    return el.selectionStart ?? el.value.length;
+  }
+
+  /** Reads the caret and refreshes, or dismisses when there is nothing to complete there. */
+  private refreshFrom(el: HTMLInputElement) {
+    const caret = this.caretOf(el);
+    if (caret === undefined) {
+      this.dismiss();
+      return;
+    }
+    if (el.value !== this.last.value || caret !== this.last.caret) this.refresh(el.value, caret);
   }
 
   // Schedules the completer on a debounce timer to retrieve suggestions and display them to the user.
   private refresh(value: string, caret: number) {
     this.last = { value, caret };
     const { token, typed } = tokenAt(value, caret);
+    // Only the end of a token is completed; replacing a token someone has
+    // clicked into the middle of would throw away what follows the caret.
+    if (caret !== token.end) {
+      this.setState({ token, typed, showGhost: false });
+      this.dismiss();
+      return;
+    }
     // If the text is longer than the input box, stop showing the ghost text
     // since it won't line up anymore. We don't expect real queries to be this
     // long, and we can address it in the future if it actually turns out to
@@ -78,10 +112,13 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
           if (seq !== this.latest) return;
           // Don't show popup for a single result.
           const trivial = completions.length === 1 && completions[0].text.toLowerCase() === typed.toLowerCase();
+          // A row picked while the previous answer was showing stays picked
+          // if the new answer still has it.
+          const picked = this.applicableCompletions()[this.state.selected]?.text;
           this.setState({
             completions,
             fetchedFor: { token, typed },
-            selected: -1,
+            selected: picked === undefined ? -1 : completions.findIndex((c) => c.text === picked),
             open: completions.length > 0 && !trivial,
           });
         })
@@ -117,7 +154,8 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
     this.dismiss();
     // Once the new value has rendered, place the caret after the insertion
     // and ask what comes next.
-    window.requestAnimationFrame(() => {
+    this.frame = window.requestAnimationFrame(() => {
+      this.frame = undefined;
       this.props.inputRef.current?.setSelectionRange(next.caret, next.caret);
       this.refresh(next.value, next.caret);
     });
@@ -191,20 +229,18 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
           spellCheck={false}
           onChange={(e) => {
             this.props.onChange(e.target.value);
-            this.refresh(e.target.value, e.target.selectionStart ?? e.target.value.length);
+            this.refreshFrom(e.target);
           }}
           onKeyDown={this.onKeyDown}
-          onFocus={(e) => this.refresh(e.target.value, e.target.selectionStart ?? e.target.value.length)}
+          onFocus={(e) => this.refreshFrom(e.target)}
           // The caret moving to another token changes what is being completed.
-          onSelect={(e) => {
-            const el = e.currentTarget;
-            const caret = el.selectionStart ?? el.value.length;
-            if (el.value !== this.last.value || caret !== this.last.caret) this.refresh(el.value, caret);
-          }}
+          onSelect={(e) => this.refreshFrom(e.currentTarget)}
           onBlur={() => this.dismiss()}
         />
         {ghost && (
-          <div className="search-box-ghost" aria-hidden>
+          // Styled as the input itself, so it keeps the input's box however
+          // that is styled, with the typed part invisible.
+          <div className={`text-input search-box-ghost ${className ?? ""}`} aria-hidden>
             <span className="search-box-ghost-typed">{value}</span>
             <span className="search-box-ghost-rest">{ghost.rest}</span>
           </div>
@@ -212,14 +248,14 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
         {open && (
           // Mouse down anywhere on the list, its scrollbar included, must not
           // take focus from the input, which would close the list.
-          <ul className="search-box-list" role="listbox" ref={this.list} onMouseDown={(e) => e.preventDefault()}>
+          <ul className="search-box-list" ref={this.list} onMouseDown={(e) => e.preventDefault()}>
             {completions.map((c, i) => (
               <li
                 key={c.text}
                 className={`search-box-item ${i === selected ? "selected" : ""}`}
-                role="option"
-                aria-selected={i === selected}
-                onMouseDown={() => this.accept(c)}>
+                onMouseDown={(e) => {
+                  if (e.button === 0) this.accept(c);
+                }}>
                 <span className="search-box-item-text">{c.text}</span>
                 {c.detail && <span className="search-box-item-detail">{c.detail}</span>}
                 {c.count !== undefined && c.count > 0 && (

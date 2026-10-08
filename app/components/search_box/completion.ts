@@ -2,7 +2,7 @@
 export interface Completion {
   /** Replaces the token, e.g. "kind:deployment". */
   text: string;
-  /** How many things it matches, when known. */
+  /** How many things have exactly this value, when known. */
   count?: number;
   /** A line about it, shown muted after the text. */
   detail?: string;

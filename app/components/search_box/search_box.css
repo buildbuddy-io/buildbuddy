@@ -2,18 +2,17 @@
   position: relative;
 }
 
-/* The likeliest completion, in grey after what was typed. Laid over the
-   input with its exact box (see .text-input), the typed part invisible, so
-   the grey text starts where the caret is. */
+/* The likeliest completion, in grey after what was typed. The overlay is
+   styled as the input itself (it carries the text-input class) so the two
+   share a box, with the typed part drawn invisibly so the grey text starts
+   where the caret is. */
 .search-box-ghost {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
-  height: 40px;
-  padding: 8px 16px;
-  border: 1px solid transparent;
-  box-sizing: border-box;
+  border-color: transparent;
+  background: transparent;
   white-space: pre;
   overflow: hidden;
   pointer-events: none;

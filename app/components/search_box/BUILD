@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -17,5 +17,14 @@ ts_library(
         "//:node_modules/react",
         "//app/components/input",
         "//app/components/search_box:completion",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "completion_test",
+    srcs = ["completion_test.ts"],
+    deps = [
+        ":completion",
+        "//:node_modules/tslib",
     ],
 )

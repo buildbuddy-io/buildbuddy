@@ -101,7 +101,8 @@ export default class SearchComponent extends React.Component<Props, State> {
     return (
       <>
         <div className="atlas-search-meta">
-          {response.total.toLocaleString()} results in {(Number(response.tookUsec) / 1000).toFixed(1)} ms
+          {response.total.toLocaleString()} {response.total === 1 ? "result" : "results"} in{" "}
+          {(Number(response.tookUsec) / 1000).toFixed(1)} ms
         </div>
         {response.groups.map((group) => (
           <div className="atlas-group" key={`${group.group}/${group.kind}`}>

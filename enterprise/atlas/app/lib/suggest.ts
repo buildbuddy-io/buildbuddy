@@ -64,22 +64,22 @@ const cache = new Map<string, { at: number; result: Promise<atlas.FilterValue[]>
 
 /** Fetches completions via a backend RPC (may be served from locally cached data if data was recently fetched). */
 async function values(field: string, key: string, prefix: string): Promise<atlas.FilterValue[]> {
-  // We're fetching label values which can be high-cardinality.
-  // Always call through to the backend and let it do the filtering.
-  if (key !== "") return request(field, key, prefix);
-  // Otherwise try to use the local cache.
-  let entry = cache.get(field);
+  // A field's values, or one label's, are cached as a whole list.
+  const id = key ? `${field}:${key}` : field;
+  let entry = cache.get(id);
   if (!entry || Date.now() - entry.at > VALUES_MAX_AGE_MS) {
     // No cache, make an RPC and cache the results.
-    entry = { at: Date.now(), result: request(field, "", "") };
-    cache.set(field, entry);
+    entry = { at: Date.now(), result: request(field, key, "") };
+    cache.set(id, entry);
     const failed = entry;
     entry.result.catch(() => {
-      if (cache.get(field) === failed) cache.delete(field);
+      if (cache.get(id) === failed) cache.delete(id);
     });
   }
   const all = await entry.result;
-  if (all.length >= FETCH_LIMIT && prefix) return request(field, "", prefix);
+  // A list cut at the limit may be missing the rarer values (a label like
+  // pod-template-hash has thousands), so with a prefix ask the server.
+  if (all.length >= FETCH_LIMIT && prefix) return request(field, key, prefix);
   return all;
 }
 
