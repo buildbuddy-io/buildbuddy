@@ -74,8 +74,6 @@ type IStore interface {
 type Replica struct {
 	leaser pebble.Leaser
 
-	rootDir   string
-	fileDir   string
 	rangeID   uint64
 	replicaID uint64
 	// The ID of the node where this replica resided.
@@ -91,8 +89,6 @@ type Replica struct {
 	mappedRange     *rangemap.Range
 	leaseMu         sync.RWMutex
 	rangeLease      *rfpb.RangeLeaseRecord
-
-	fileStorer filestore.Store
 
 	broadcast chan<- events.Event
 
@@ -1186,9 +1182,6 @@ func (sm *Replica) delete(wb pebble.Batch, req *rfpb.DeleteRequest) (*rfpb.Delet
 	if req.GetMatchAtime() != 0 && req.GetMatchAtime() != fileMetadata.GetLastAccessUsec() {
 		return nil, status.FailedPreconditionErrorf("Atime mismatch, expect atime %d, got %d", req.GetMatchAtime(), fileMetadata.GetLastAccessUsec())
 	}
-	if err := sm.fileStorer.DeleteStoredFile(context.TODO(), sm.fileDir, fileMetadata.GetStorageMetadata()); err != nil {
-		return nil, err
-	}
 	if err := wb.Delete(req.GetKey(), nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
@@ -2272,7 +2265,6 @@ func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcas
 		store:                     store,
 		leaser:                    leaser,
 		lastUsageCheckIndex:       0,
-		fileStorer:                filestore.New(),
 		readQPS:                   qps.NewCounter(5*time.Second, clockwork.NewRealClock()),
 		raftProposeQPS:            qps.NewCounter(5*time.Second, clockwork.NewRealClock()),
 		broadcast:                 broadcast,
