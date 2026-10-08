@@ -76,7 +76,7 @@ type Proxy struct {
 	server                *grpc.Server
 	clients               map[string]*grpc_client.ClientConnPool
 	heartbeatCallback     func(ctx context.Context, peer string)
-	hintedHandoffCallback func(ctx context.Context, peer string, r *rspb.ResourceName)
+	hintedHandoffCallback func(ctx context.Context, peer string, r *rspb.ResourceName) bool
 	listenAddr            string
 	zone                  string
 	enableCompressedReads bool
@@ -148,7 +148,9 @@ func (c *Proxy) SetHeartbeatCallbackFunc(fn func(ctx context.Context, peer strin
 	c.heartbeatCallback = fn
 }
 
-func (c *Proxy) SetHintedHandoffCallbackFunc(fn func(ctx context.Context, peer string, r *rspb.ResourceName)) {
+// SetHintedHandoffCallbackFunc sets the function that queues a hinted handoff
+// of r to peer. It returns whether the handoff was queued.
+func (c *Proxy) SetHintedHandoffCallbackFunc(fn func(ctx context.Context, peer string, r *rspb.ResourceName) bool) {
 	c.hintedHandoffCallback = fn
 }
 
@@ -492,7 +494,9 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 					// The sender may be relying on this node to hand the blob
 					// off to a peer that missed the write, whether or not this
 					// node already had it.
-					c.queueHintedHandoff(ctx, req)
+					if !c.queueHintedHandoff(ctx, req) && req.GetRequireHandoffAccepted() {
+						return status.ResourceExhaustedErrorf("could not queue hinted handoff to %q", req.GetHandoffPeer())
+					}
 					return status.AlreadyExistsError("CAS digest already exists")
 				}
 			}
@@ -545,17 +549,21 @@ func (c *Proxy) writeReference(ctx context.Context, stream dcpb.DistributedCache
 }
 
 // queueHintedHandoff passes req's hinted handoff, if it has one, to the
-// hinted handoff callback.
-func (c *Proxy) queueHintedHandoff(ctx context.Context, req *dcpb.WriteRequest) {
-	if req.GetHandoffPeer() != "" && c.hintedHandoffCallback != nil {
-		// Because the hinted handoff callback might hold on to the resource
-		// in a queue, and we're pooling WriteRequest protos, clone it.
-		c.hintedHandoffCallback(ctx, req.GetHandoffPeer(), req.GetResource().CloneVT())
+// hinted handoff callback. It returns false if req has a hinted handoff that
+// wasn't queued.
+func (c *Proxy) queueHintedHandoff(ctx context.Context, req *dcpb.WriteRequest) bool {
+	if req.GetHandoffPeer() == "" || c.hintedHandoffCallback == nil {
+		return true
 	}
+	// Because the hinted handoff callback might hold on to the resource in a
+	// queue, and we're pooling WriteRequest protos, clone it.
+	return c.hintedHandoffCallback(ctx, req.GetHandoffPeer(), req.GetResource().CloneVT())
 }
 
 func (c *Proxy) finishWrite(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, committedSize int64) error {
-	c.queueHintedHandoff(ctx, req)
+	if !c.queueHintedHandoff(ctx, req) && req.GetRequireHandoffAccepted() {
+		return status.ResourceExhaustedErrorf("could not queue hinted handoff to %q", req.GetHandoffPeer())
+	}
 	return stream.SendAndClose(&dcpb.WriteResponse{
 		CommittedSize: committedSize,
 	})
@@ -1058,7 +1066,10 @@ type streamWriteCloser struct {
 	refMustBeCloned bool
 	peer            string
 	handoffPeer     string
-	alreadyExists   bool
+	// requireHandoffAccepted makes the write fail if the peer can't queue
+	// the hinted handoff to handoffPeer.
+	requireHandoffAccepted bool
+	alreadyExists          bool
 	// requestType records how this write's payload is sent, for metrics:
 	// "reference" for a reference-only write, "bytes" otherwise.
 	requestType string
@@ -1087,11 +1098,12 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 		return len(data), nil
 	}
 	req := &dcpb.WriteRequest{
-		Data:               data,
-		FinishWrite:        false,
-		CheckAlreadyExists: true,
-		HandoffPeer:        wc.handoffPeer,
-		Resource:           wc.r,
+		Data:                   data,
+		FinishWrite:            false,
+		CheckAlreadyExists:     true,
+		HandoffPeer:            wc.handoffPeer,
+		RequireHandoffAccepted: wc.requireHandoffAccepted,
+		Resource:               wc.r,
 	}
 	err := wc.send(req)
 	if err == io.EOF {
@@ -1127,12 +1139,13 @@ func (wc *streamWriteCloser) commit() error {
 	}
 
 	req := &dcpb.WriteRequest{
-		FinishWrite:           true,
-		CheckAlreadyExists:    true,
-		HandoffPeer:           wc.handoffPeer,
-		Resource:              wc.r,
-		Reference:             wc.ref,
-		ReferenceMustBeCloned: wc.refMustBeCloned,
+		FinishWrite:            true,
+		CheckAlreadyExists:     true,
+		HandoffPeer:            wc.handoffPeer,
+		RequireHandoffAccepted: wc.requireHandoffAccepted,
+		Resource:               wc.r,
+		Reference:              wc.ref,
+		ReferenceMustBeCloned:  wc.refMustBeCloned,
 	}
 	sendErr := wc.send(req)
 	if sendErr != nil && sendErr != io.EOF {
@@ -1168,6 +1181,18 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 	if err != nil {
 		return nil, err
 	}
+	return w, nil
+}
+
+// RemoteHandoffWriter is like RemoteWriter, but the write fails with
+// ResourceExhausted if the peer can't queue the hinted handoff to handoffPeer,
+// e.g. because its hinted handoff queue is full. The data is still written.
+func (c *Proxy) RemoteHandoffWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	w, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	if err != nil {
+		return nil, err
+	}
+	w.requireHandoffAccepted = true
 	return w, nil
 }
 

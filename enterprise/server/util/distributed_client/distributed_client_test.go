@@ -285,10 +285,11 @@ func TestWriteAlreadyExistsCAS_QueuesHintedHandoff(t *testing.T) {
 	c := newProxy(t, te, te.GetCache(), peer)
 	var mu sync.Mutex
 	var handoffs []string
-	c.SetHintedHandoffCallbackFunc(func(ctx context.Context, handoffPeer string, r *rspb.ResourceName) {
+	c.SetHintedHandoffCallbackFunc(func(ctx context.Context, handoffPeer string, r *rspb.ResourceName) bool {
 		mu.Lock()
 		defer mu.Unlock()
 		handoffs = append(handoffs, handoffPeer+"/"+r.GetDigest().GetHash())
+		return true
 	})
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
@@ -308,6 +309,40 @@ func TestWriteAlreadyExistsCAS_QueuesHintedHandoff(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	require.Equal(t, []string{handoffPeer + "/" + rn.GetDigest().GetHash()}, handoffs)
+}
+
+func TestRemoteHandoffWriter_FailsWhenHandoffNotQueued(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := newProxy(t, te, te.GetCache(), peer)
+	c.SetHintedHandoffCallbackFunc(func(ctx context.Context, handoffPeer string, r *rspb.ResourceName) bool {
+		return false
+	})
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+
+	const handoffPeer = "localhost:1"
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+
+	// RemoteWriter doesn't care whether the handoff was queued.
+	wc, err := c.RemoteWriter(ctx, peer, handoffPeer, rn)
+	require.NoError(t, err)
+	require.NoError(t, copyAndClose(wc, bytes.NewReader(buf)))
+
+	// RemoteHandoffWriter fails, whether or not the peer already has the blob.
+	for _, name := range []string{"already exists", "new blob"} {
+		if name == "new blob" {
+			rn, buf = testdigest.RandomCASResourceBuf(t, 1000)
+		}
+		wc, err = c.RemoteHandoffWriter(ctx, peer, handoffPeer, rn)
+		require.NoError(t, err)
+		err = copyAndClose(wc, bytes.NewReader(buf))
+		require.True(t, status.IsResourceExhaustedError(err), "%s: expected ResourceExhausted, got %v", name, err)
+	}
 }
 
 func TestWriteAlreadyExistsAC(t *testing.T) {
@@ -2379,11 +2414,12 @@ func TestWriteReferenceAccept(t *testing.T) {
 		var mu sync.Mutex
 		var handoffPeer string
 		var handoffRN *rspb.ResourceName
-		c.SetHintedHandoffCallbackFunc(func(ctx context.Context, peer string, r *rspb.ResourceName) {
+		c.SetHintedHandoffCallbackFunc(func(ctx context.Context, peer string, r *rspb.ResourceName) bool {
 			mu.Lock()
 			defer mu.Unlock()
 			handoffPeer = peer
 			handoffRN = r
+			return true
 		})
 		t.Cleanup(func() { c.SetHintedHandoffCallbackFunc(nil) })
 		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
@@ -2595,10 +2631,11 @@ func TestRemoteReferenceWriter(t *testing.T) {
 		peer, _, server := newPeer(t)
 		var mu sync.Mutex
 		var handoffPeer string
-		server.SetHintedHandoffCallbackFunc(func(ctx context.Context, peer string, r *rspb.ResourceName) {
+		server.SetHintedHandoffCallbackFunc(func(ctx context.Context, peer string, r *rspb.ResourceName) bool {
 			mu.Lock()
 			defer mu.Unlock()
 			handoffPeer = peer
+			return true
 		})
 		require.NoError(t, writeRef(t, peer, "handoff-peer", rn, ref, false))
 		mu.Lock()

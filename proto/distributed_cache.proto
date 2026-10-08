@@ -60,6 +60,13 @@ message WriteRequest {
   // distributed cache coordinator (the pod serving the client's write) to
   // indicate which peers must clone the provided reference.
   bool reference_must_be_cloned = 10;
+
+  // If true and handoff_peer is set, the server returns RESOURCE_EXHAUSTED
+  // instead of success (or ALREADY_EXISTS) if it couldn't queue the hinted
+  // handoff to handoff_peer, e.g. because its hinted handoff queue is full.
+  // The data is still written. Used when forwarding a hinted handoff, so that
+  // the sender can try another peer instead of losing it.
+  bool require_handoff_accepted = 11;
 }
 
 message WriteResponse {
