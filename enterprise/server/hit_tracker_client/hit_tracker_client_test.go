@@ -431,6 +431,31 @@ func TestCASHitTracker_AcceptsHitsWhileSplitOverflowIsPending(t *testing.T) {
 	require.Eventually(t, hitTrackerService.casDownloadExpectation(group1Key, 1), 10*time.Second, 100*time.Millisecond, "Expected 1 update for group 1")
 }
 
+// TestBatchAndSendAreSerialized exists for the race detector, which CI runs.
+// The batcher appends to a cacheHits while senders pop and read it, and both
+// must happen under HitTrackerFactory.mu. There is no per-cacheHits lock, so
+// if the append ever moves outside h.mu again, the detector reports the
+// batcher's write racing the sender's read here, even on runs where no hit is
+// actually lost.
+func TestBatchAndSendAreSerialized(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	_, hitTrackerFactory, hitTrackerService := setupWithClock(t, clock)
+	ctx := context.Background()
+	anonTracker := hitTrackerFactory.NewCASHitTracker(ctx, &repb.RequestMetadata{})
+
+	// The sender never ticks on the fake clock; send from here instead so that
+	// sends interleave with the batcher goroutine as tightly as possible.
+	const hits = 200
+	for range hits {
+		anonTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
+		hitTrackerFactory.sendTrackRequest(ctx)
+	}
+	require.Eventually(t, func() bool {
+		hitTrackerFactory.sendTrackRequest(ctx)
+		return hitTrackerService.casDownloads[anonKey].Load() == hits
+	}, 10*time.Second, 10*time.Millisecond, "Expected every hit to be sent exactly once")
+}
+
 func BenchmarkEnqueue(b *testing.B) {
 	*log.LogLevel = "error"
 	log.Configure()
