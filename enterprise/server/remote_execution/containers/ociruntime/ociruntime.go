@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime/seccomp"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/gpu"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -502,7 +503,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		cgroupSettings:     &scpb.CgroupSettings{},
 		imageRef:           args.Props.ContainerImage,
 		networkEnabled:     networkMode != "off",
-		userspaceNetwork:   slices.Contains(args.Task.GetExecutionTask().GetExperiments(), "executor.userspace_networking"),
+		userspaceNetwork:   execution_experiments.UserspaceNetworking.Get(ctx),
 		isPersistentWorker: args.Props.PersistentWorkerKey != "",
 		tiniEnabled:        args.Props.DockerInit || *enableTini,
 		user:               args.Props.DockerUser,

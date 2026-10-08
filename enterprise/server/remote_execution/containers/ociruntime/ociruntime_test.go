@@ -1143,7 +1143,7 @@ func TestNetworking(t *testing.T) {
 		name                       string
 		defaultNetworkFlag         string
 		dockerNetworkProp          string
-		experiments                []string
+		userspaceNetworking        bool
 		expectExternalConnectivity bool
 	}{
 		{
@@ -1168,13 +1168,13 @@ func TestNetworking(t *testing.T) {
 		},
 		{
 			name:                       "userspace networking",
-			experiments:                []string{"executor.userspace_networking"},
+			userspaceNetworking:        true,
 			expectExternalConnectivity: true,
 		},
 		{
 			name:                       "userspace networking disabled via flag",
 			defaultNetworkFlag:         "off",
-			experiments:                []string{"executor.userspace_networking"},
+			userspaceNetworking:        true,
 			expectExternalConnectivity: false,
 		},
 	} {
@@ -1190,6 +1190,7 @@ func TestNetworking(t *testing.T) {
 			if tc.defaultNetworkFlag != "" {
 				flags.Set(t, "executor.oci.default_network_mode", tc.defaultNetworkFlag)
 			}
+			flags.Set(t, "executor.userspace_networking", tc.userspaceNetworking)
 
 			buildRoot := testfs.MakeTempDir(t)
 			cacheRoot := testfs.MakeTempDir(t)
@@ -1203,7 +1204,7 @@ func TestNetworking(t *testing.T) {
 					ContainerImage: image,
 					DockerNetwork:  tc.dockerNetworkProp,
 				},
-				Task: &repb.ScheduledTask{ExecutionTask: &repb.ExecutionTask{Experiments: tc.experiments}},
+				Task: &repb.ScheduledTask{ExecutionTask: &repb.ExecutionTask{}},
 			})
 			require.NoError(t, err)
 			t.Cleanup(func() {

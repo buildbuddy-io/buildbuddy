@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//enterprise/server/cmd/ci_runner/bundle",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/execution_experiments",
         "//enterprise/server/remote_execution/overlayfs",
         "//enterprise/server/remote_execution/vfs",
         "//enterprise/server/util/ci_runner_util",

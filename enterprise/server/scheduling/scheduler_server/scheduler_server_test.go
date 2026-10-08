@@ -403,46 +403,72 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 
 	// The scheduler should send the experiment's value with the leased task,
 	// and leave it to the executor to apply the value to the task's platform.
-	gotFlags := lease.task.GetExperimentFlags()
-	require.Empty(t, cmp.Diff([]*expb.EvaluatedFlag{
-		{Name: "executor.persistent_volumes", Variant: "tmp-cache", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
-	}, gotFlags, protocmp.Transform()))
+	var gotFlag *expb.EvaluatedFlag
+	for _, f := range lease.task.GetExperimentFlags() {
+		if f.GetName() == "executor.persistent_volumes" {
+			gotFlag = f
+		}
+	}
+	require.Empty(t, cmp.Diff(&expb.EvaluatedFlag{
+		Name: "executor.persistent_volumes", Variant: "tmp-cache", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"},
+	}, gotFlag, protocmp.Transform()))
 	gotOverrides := lease.task.GetPlatformOverrides().GetProperties()
 	require.Empty(t, gotOverrides)
 }
 
 func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
-	// Note: persistent_volumes is just used as an example here. The scheduler
-	// should handle all experiments the same way.
-	fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
-		"executor.persistent_volumes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "enabled",
-			Variants:       map[string]any{"enabled": "cache:/tmp/.cache"},
-		},
-	})
-	expflag.SetFlagProvider(fp)
-	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
-
 	for _, tc := range []struct {
 		name                    string
 		supportsExperimentFlags bool
-		wantFlags               []*expb.EvaluatedFlag
+		flagdFlags              map[string]memprovider.InMemoryFlag
+		// Note: persistent_volumes is just used as an example here. The
+		// scheduler should handle all experiments the same way.
+		wantPersistentVolumesFlag *expb.EvaluatedFlag
 	}{
 		{
 			name:                    "ExecutorSupportsExperimentFlags",
 			supportsExperimentFlags: true,
-			wantFlags: []*expb.EvaluatedFlag{
-				{Name: "executor.persistent_volumes", Variant: "enabled", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
+			flagdFlags: map[string]memprovider.InMemoryFlag{
+				"executor.persistent_volumes": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "enabled",
+					Variants:       map[string]any{"enabled": "cache:/tmp/.cache"},
+				},
+			},
+			wantPersistentVolumesFlag: &expb.EvaluatedFlag{
+				Name:    "executor.persistent_volumes",
+				Variant: "enabled", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"},
+			},
+		},
+		{
+			name:                    "ExperimentNotDefinedInFlagd",
+			supportsExperimentFlags: true,
+			flagdFlags:              map[string]memprovider.InMemoryFlag{},
+			// If the flag is not defined in flagd explicitly, the scheduler
+			// should still send its configured (default) flag value.
+			wantPersistentVolumesFlag: &expb.EvaluatedFlag{
+				Name:  "executor.persistent_volumes",
+				Value: &expb.EvaluatedFlag_StringValue{StringValue: ""},
 			},
 		},
 		{
 			name:                    "ExecutorDoesNotSupportExperimentFlags",
 			supportsExperimentFlags: false,
-			wantFlags:               nil,
+			flagdFlags: map[string]memprovider.InMemoryFlag{
+				"executor.persistent_volumes": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "enabled",
+					Variants:       map[string]any{"enabled": "cache:/tmp/.cache"},
+				},
+			},
+			wantPersistentVolumesFlag: nil,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			fp := newTestFlagProvider(t, tc.flagdFlags)
+			expflag.SetFlagProvider(fp)
+			t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
 			env, ctx := getEnv(t, &schedulerOpts{}, "")
 			env.SetExperimentFlagProvider(fp)
 			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
@@ -455,8 +481,13 @@ func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
 			lease := fe.Claim(taskID)
 			defer lease.Finalize()
 
-			gotFlags := lease.task.GetExperimentFlags()
-			require.Empty(t, cmp.Diff(tc.wantFlags, gotFlags, protocmp.Transform()))
+			var gotFlag *expb.EvaluatedFlag
+			for _, f := range lease.task.GetExperimentFlags() {
+				if f.GetName() == "executor.persistent_volumes" {
+					gotFlag = f
+				}
+			}
+			require.Empty(t, cmp.Diff(tc.wantPersistentVolumesFlag, gotFlag, protocmp.Transform()))
 		})
 	}
 }
