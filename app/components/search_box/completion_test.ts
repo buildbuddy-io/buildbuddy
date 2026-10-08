@@ -14,8 +14,11 @@ describe("tokenAt", () => {
 });
 
 describe("apply", () => {
-  it("inserts a key as is, with the caret at its end", () => {
-    expect(apply("web ki", tokenAt("web ki", 6).token, c("kind:"))).toEqual({ value: "web kind:", caret: 9 });
+  it("inserts a partial completion as is, with the caret at its end", () => {
+    expect(apply("web ki", tokenAt("web ki", 6).token, c("kind:", { partial: true }))).toEqual({
+      value: "web kind:",
+      caret: 9,
+    });
   });
   it("follows a finished value with a space", () => {
     expect(apply("web kind:de", tokenAt("web kind:de", 11).token, c("kind:deployment"))).toEqual({
@@ -23,10 +26,10 @@ describe("apply", () => {
       caret: 20,
     });
   });
-  it("reuses a space already there", () => {
+  it("reuses a space already there, with the caret before it", () => {
     expect(apply("kind:po ns:prod", tokenAt("kind:po ns:prod", 7).token, c("kind:pod"))).toEqual({
       value: "kind:pod ns:prod",
-      caret: 9,
+      caret: 8,
     });
   });
   it("leaves a partial completion open", () => {
@@ -36,7 +39,13 @@ describe("apply", () => {
     });
   });
   it("replaces the whole token", () => {
-    expect(apply("kin web", tokenAt("kin web", 3).token, c("kind:"))).toEqual({ value: "kind: web", caret: 5 });
+    expect(apply("kin web", tokenAt("kin web", 3).token, c("kind:", { partial: true }))).toEqual({
+      value: "kind: web",
+      caret: 5,
+    });
+  });
+  it("does not read anything into the completion's punctuation", () => {
+    expect(apply("t", tokenAt("t", 1).token, c("time>="))).toEqual({ value: "time>= ", caret: 7 });
   });
 });
 

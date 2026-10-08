@@ -34,6 +34,9 @@ interface State {
 }
 
 const COMPLETE_DEBOUNCE_MS = 50;
+// A completer may answer with hundreds of rows; only this many are shown.
+// They come most relevant first, and the grey text only needs the first.
+const SHOWN_LIMIT = 50;
 
 /**
  * A text input that supports auto-complete. As the user-types text, the
@@ -52,7 +55,6 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
     // Reset if the search string changed through something other than the search box
     // (e.g. navigation).
     if (this.props.value !== prevProps.value && this.props.value !== this.last.value) {
-      this.last = { value: this.props.value, caret: -1 };
       this.dismiss();
     }
     // Make sure the selected row stays in view when scrolling with arrows.
@@ -62,10 +64,14 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
   }
 
   componentWillUnmount() {
+    this.cancelPending();
+  }
+
+  /** Stops everything scheduled: the debounce, the frame after an accept, and any answer on its way. */
+  private cancelPending() {
     window.clearTimeout(this.timer);
-    // Cancel any pending caret placement animation.
     if (this.frame !== undefined) window.cancelAnimationFrame(this.frame);
-    // An answer still on its way has nowhere to go.
+    this.frame = undefined;
     this.latest++;
   }
 
@@ -114,11 +120,10 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
           const trivial = completions.length === 1 && completions[0].text.toLowerCase() === typed.toLowerCase();
           // A row picked while the previous answer was showing stays picked
           // if the new answer still has it.
-          const picked = this.applicableCompletions()[this.state.selected]?.text;
           this.setState({
             completions,
             fetchedFor: { token, typed },
-            selected: picked === undefined ? -1 : completions.findIndex((c) => c.text === picked),
+            selected: -1,
             open: completions.length > 0 && !trivial,
           });
         })
@@ -130,20 +135,17 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
 
   /** Hides the auto-complete popup and clears completion state. */
   private dismiss() {
-    window.clearTimeout(this.timer);
-    this.latest++;
+    this.cancelPending();
+    // Forgotten too, so the next focus or caret event asks afresh even at
+    // the same spot.
+    this.last = { value: "", caret: -1 };
     this.setState({ completions: [], selected: -1, open: false });
   }
 
   /** Returns the completions that are meaningful for the current state. */
   private applicableCompletions(): Completion[] {
-    const { token, fetchedFor, completions } = this.state;
-    // Nothing if the fetched completions are not for the current token.
-    if (!token || !fetchedFor || token.start !== fetchedFor.token.start) return [];
-    const typed = this.state.typed.toLowerCase();
-    if (!typed.startsWith(fetchedFor.typed.toLowerCase())) return [];
-    // Filter the completions by the typed prefix.
-    return completions.filter((c) => c.text.toLowerCase().startsWith(typed));
+    const { token, typed, fetchedFor, completions } = this.state;
+    return applicable(token, typed, fetchedFor, completions);
   }
 
   private accept(c: Completion) {
@@ -161,9 +163,12 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
     });
   }
 
+  /** The grey completion: the highlighted row when it extends what was typed, else the first that does. */
   private ghost(completions: Completion[]) {
-    const { typed, showGhost } = this.state;
-    return showGhost ? ghostFor(typed, completions) : undefined;
+    const { typed, showGhost, selected } = this.state;
+    if (!showGhost) return undefined;
+    const picked = completions[selected];
+    return (picked && ghostFor(typed, [picked])) || ghostFor(typed, completions);
   }
 
   private onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -184,7 +189,9 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
       case "ArrowUp":
         if (open) {
           const delta = e.key === "ArrowDown" ? 1 : -1;
-          this.setState({ selected: Math.min(completions.length - 1, Math.max(0, selected + delta)) });
+          // Up from the first row is back to nothing highlighted, where Enter
+          // puts the list away rather than taking a row.
+          this.setState({ selected: Math.min(completions.length - 1, Math.max(-1, selected + delta)) });
           e.preventDefault();
           return;
         }
@@ -268,4 +275,21 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
       </div>
     );
   }
+}
+
+/**
+ * The completions that apply to what is typed now: those fetched for this
+ * very token, as long as it has only been extended since, narrowed to the
+ * ones starting with the typed text.
+ */
+function applicable(
+  token: Token | undefined,
+  typed: string,
+  fetchedFor: { token: Token; typed: string } | undefined,
+  completions: Completion[]
+): Completion[] {
+  if (!token || !fetchedFor || token.start !== fetchedFor.token.start) return [];
+  const lower = typed.toLowerCase();
+  if (!lower.startsWith(fetchedFor.typed.toLowerCase())) return [];
+  return completions.filter((c) => c.text.toLowerCase().startsWith(lower)).slice(0, SHOWN_LIMIT);
 }

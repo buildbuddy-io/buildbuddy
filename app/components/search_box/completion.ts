@@ -43,16 +43,14 @@ export function apply(value: string, token: Token, c: Completion): { value: stri
   const completionText = c.text;
   // Text after the token, will be left as-is.
   const after = value.slice(token.end);
-  // Determine if the completion popup should be opened again after the current
-  // one is applied. For example, typing "ki" and completing to "kind:" should
-  // open a completion popup for the kind values. In cases where another
-  // completion follows we don't add a space and leave the cursor positioned directly
-  // after the completion text.
-  const open = c.partial || completionText.endsWith(":") || completionText.endsWith("=");
+  const open = !!c.partial;
+  // A finished completion is followed by a space. When one is already there
+  // it is reused, and the caret stays before it, at the end of the completed
+  // text, so typing on never runs into the next token.
   const space = open || /^\s/.test(after) ? "" : " ";
   return {
     value: value.slice(0, token.start) + completionText + space + after,
-    caret: token.start + completionText.length + (open ? 0 : 1),
+    caret: token.start + completionText.length + space.length,
   };
 }
 

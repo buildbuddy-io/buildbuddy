@@ -7,7 +7,8 @@ const VALUES_MAX_AGE_MS = 5000;
 const FETCH_LIMIT = 500;
 
 /** The filter keys the server's query grammar knows, as typed: "kind:", "ns:", ... */
-const keys: Completion[] = config.filterKeys.map((k) => ({ text: k.key + ":", detail: k.hint }));
+// A key is only the start of a token; its value follows.
+const keys: Completion[] = config.filterKeys.map((k) => ({ text: k.key + ":", detail: k.hint, partial: true }));
 const fields = new Set(config.filterKeys.map((k) => k.key));
 
 /** Gets completion options for the token under the caret via backend RPC. */

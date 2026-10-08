@@ -5,8 +5,10 @@
 /* The likeliest completion, in grey after what was typed. The overlay is
    styled as the input itself (it carries the text-input class) so the two
    share a box, with the typed part drawn invisibly so the grey text starts
-   where the caret is. */
-.search-box-ghost {
+   where the caret is. Three classes, so this outranks the two-class variants
+   in input.css (.text-input.dark, .text-input.invalid) whatever the load
+   order, keeping the overlay see-through. */
+.search-box .text-input.search-box-ghost {
   position: absolute;
   inset: 0;
   display: flex;
