@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -24,12 +25,11 @@ import (
 )
 
 func TestGetTargetHistory(t *testing.T) {
-	flags.Set(t, "testenv.reuse_server", true)
-	flags.Set(t, "testenv.use_clickhouse", true)
 	flags.Set(t, "app.enable_read_target_statuses_from_olap_db", true)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	testAuth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(testAuth)
 
@@ -235,11 +235,10 @@ func TestGetTargetHistory(t *testing.T) {
 }
 
 func TestGetTargetStats_NearlyTimedOutRuns(t *testing.T) {
-	flags.Set(t, "testenv.reuse_server", true)
-	flags.Set(t, "testenv.use_clickhouse", true)
 	flags.Set(t, "app.enable_read_target_statuses_from_olap_db", true)
 
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	testAuth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US3", "GR3"))
 	env.SetAuthenticator(testAuth)
 	ctx, err := testAuth.WithAuthenticatedUser(t.Context(), "US3")

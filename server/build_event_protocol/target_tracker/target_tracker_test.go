@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
@@ -150,18 +151,20 @@ func newFakeAccumulator(t *testing.T, testInvocationID string) *fakeAccumulator 
 }
 
 func TestTrackTargetForEvents_OLAP(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
 	flags.Set(t, "app.enable_write_test_target_statuses_to_olap_db", true)
-	runTrackTargetsForEventsTest(t)
+	runTrackTargetsForEventsTest(t, true)
 }
 
 func TestTrackTargetForEvents_NonOLAP(t *testing.T) {
 	flags.Set(t, "app.enable_write_test_target_statuses_to_olap_db", false)
-	runTrackTargetsForEventsTest(t)
+	runTrackTargetsForEventsTest(t, false)
 }
 
-func runTrackTargetsForEventsTest(t *testing.T) {
+func runTrackTargetsForEventsTest(t *testing.T, useClickHouse bool) {
 	te := testenv.GetTestEnv(t)
+	if useClickHouse {
+		testclickhouse.Configure(t, te)
+	}
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(ta)
 	flags.Set(t, "app.enable_target_tracking", true)
@@ -809,9 +812,9 @@ func assertTestTargetStatusesMatchPrimaryDB(t *testing.T, ctx context.Context, t
 }
 
 func TestTrackTargetForEvents_OLAPRecordsTestTimeouts(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
 	flags.Set(t, "app.enable_write_test_target_statuses_to_olap_db", true)
 	te := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, te)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(ta)
 	flags.Set(t, "app.enable_target_tracking", true)

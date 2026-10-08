@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/go-redis/redis/v8"
@@ -54,11 +53,8 @@ func setupEnv(t *testing.T, opts ...testenv.TestEnvOption) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t, opts...)
 
 	if *clickhouseEnabled {
-		clickhouseDSN := testclickhouse.Start(t, true /*=reuseServer*/)
-		flags.Set(t, "olap_database.data_source", clickhouseDSN)
 		flags.Set(t, "app.write_usage_to_olap_db", true)
-		err := clickhouse.Register(te)
-		require.NoError(t, err)
+		testclickhouse.Configure(t, te)
 	}
 
 	redisTarget := testredis.Start(t).Target

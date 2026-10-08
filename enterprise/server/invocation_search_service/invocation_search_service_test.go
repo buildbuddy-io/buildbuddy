@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -249,9 +250,9 @@ func TestGroupIDDefaultsToAuthenticatedGroupID(t *testing.T) {
 
 func TestBlendedOLAPQuery(t *testing.T) {
 	flags.Set(t, "app.blended_invocation_search_enabled", true)
-	flags.Set(t, "testenv.use_clickhouse", true)
 	bgCtx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	ta := setUpDB(bgCtx, env, t)
 
 	testCtx, err := ta.WithAuthenticatedUser(bgCtx, "US1")
@@ -280,9 +281,9 @@ func TestBlendedOLAPQuery(t *testing.T) {
 
 func TestUnblendedOLAPQuery(t *testing.T) {
 	flags.Set(t, "app.olap_invocation_search_enabled", true)
-	flags.Set(t, "testenv.use_clickhouse", true)
 	bgCtx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	ta := setUpDB(bgCtx, env, t)
 
 	testCtx, err := ta.WithAuthenticatedUser(bgCtx, "US1")

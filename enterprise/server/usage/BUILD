@@ -48,7 +48,6 @@ go_test(
         "//server/testutil/testenv",
         "//server/usage/sku",
         "//server/util/claims",
-        "//server/util/clickhouse",
         "//server/util/clickhouse/schema",
         "//server/util/db",
         "//server/util/testing/flags",
@@ -74,14 +73,6 @@ go_test(
         # ClickHouse in prod.
         "-test.run=TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod|TestClickHouseUsageView_DedupesDuplicateRawUsageRows",
     ],
-    exec_properties = {
-        "test.workload-isolation-type": "firecracker",
-        "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622",
-        "test.init-dockerd": "true",
-        "test.recycle-runner": "true",
-        "test.runner-recycling-key": "clickhouse:25.3",
-    },
-    tags = ["docker"],
     deps = [
         ":usage",
         "//enterprise/server/backends/redis_metrics_collector",

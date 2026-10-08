@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -41,9 +42,6 @@ func getQuantileValueOrFail(t *testing.T, quantiles []*espb.Quantile, quantile i
 }
 
 func TestSearchExecutions(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
-
 	iid1 := uuid.New()
 	iid2 := uuid.New()
 
@@ -59,6 +57,7 @@ func TestSearchExecutions(t *testing.T) {
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
 
@@ -214,9 +213,6 @@ func TestSearchExecutions(t *testing.T) {
 }
 
 func TestSearchExecutions_SkipsEmptyInvocationUUID(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
-
 	iid1 := uuid.New()
 
 	actionDigest1 := &repb.Digest{Hash: "a948904f2f0f479b8f8564cbf12dac6b5c8c3c1f7e8b4d6a3c2e1f0a9b8c7d6e", SizeBytes: 512}
@@ -229,6 +225,7 @@ func TestSearchExecutions_SkipsEmptyInvocationUUID(t *testing.T) {
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
 
@@ -284,13 +281,11 @@ func TestSearchExecutions_SkipsEmptyInvocationUUID(t *testing.T) {
 }
 
 func TestSearchExecutions_Pagination(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
-
 	testTimestampUsec := time.Now().UnixMicro()
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
 
@@ -348,13 +343,11 @@ func TestSearchExecutions_Pagination(t *testing.T) {
 }
 
 func TestSearchExecutions_PaginationWithEmptyInvocationUUIDs(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
-
 	testTimestampUsec := time.Now().UnixMicro()
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
 
@@ -418,8 +411,6 @@ func TestSearchExecutions_PaginationWithEmptyInvocationUUIDs(t *testing.T) {
 }
 
 func TestGetExecutionTimeline(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	// Pin the aggregation to 1-day buckets so the bucket expectations below
 	// don't depend on the finer-time-buckets default.
 	flags.Set(t, "app.finer_time_buckets", false)
@@ -445,6 +436,7 @@ func TestGetExecutionTimeline(t *testing.T) {
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
 
@@ -587,11 +579,9 @@ func TestGetExecutionTimeline(t *testing.T) {
 }
 
 func TestGetExecutionTimeline_RequiresTarget(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
-
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
 
@@ -606,11 +596,9 @@ func TestGetExecutionTimeline_RequiresTarget(t *testing.T) {
 }
 
 func TestGetExecutionTimeline_RequiresAuth(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
-
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
 
@@ -621,11 +609,9 @@ func TestGetExecutionTimeline_RequiresAuth(t *testing.T) {
 }
 
 func TestSearchExecutions_RequiresAuth(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
-
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
 
