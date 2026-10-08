@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -93,8 +92,6 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 	return &factory
 }
 
-type groupID string
-
 // cacheHits holds the pending hits for one collection. It is guarded by
 // HitTrackerFactory.mu while it is reachable from hitsByCollection and
 // hitsQueue. Once a sender removes it from both, only that sender may touch it.
@@ -119,12 +116,13 @@ type HitTrackerFactory struct {
 
 	enqueueChan chan *enqueuedCacheHit
 
-	// mu guards the fields below and every cacheHits reachable from them.
-	mu                   sync.Mutex
 	maxPendingHitsPerKey int
 	maxHitsPerUpdate     int
-	hitsByCollection     map[string]*cacheHits
-	hitsQueue            []*cacheHits // Used to round-robin send collection keys
+
+	// mu guards the fields below and every cacheHits reachable from them.
+	mu               sync.Mutex
+	hitsByCollection map[string]*cacheHits
+	hitsQueue        []*cacheHits // Used to round-robin send collection keys
 
 	client hitpb.HitTrackerServiceClient
 }
@@ -216,14 +214,6 @@ func (h *HitTrackerClient) TrackMiss(d *repb.Digest) error {
 	return nil
 }
 
-func (h *HitTrackerFactory) groupID(ctx context.Context) string {
-	claims, err := claims.ClaimsFromContext(ctx)
-	if err != nil {
-		return interfaces.AuthAnonymousUser
-	}
-	return claims.GetGroupID()
-}
-
 func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 	if h.shouldFlushSynchronously() {
 		log.CtxInfof(ctx, "hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
@@ -277,7 +267,7 @@ func (h *HitTrackerFactory) batch(enqueuedHit *enqueuedCacheHit) {
 
 	if enqueued {
 		metrics.RemoteHitTrackerUpdates.WithLabelValues(
-			string(c.GroupID),
+			c.GroupID,
 			"enqueued",
 		).Add(1)
 		return
@@ -402,7 +392,9 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 			authHeaders:       hitsToSend.authHeaders,
 			hits:              hitsToSend.hits[h.maxHitsPerUpdate:],
 		}
-		hitsToSend.hits = hitsToSend.hits[:h.maxHitsPerUpdate]
+		// Drop the spare capacity so that an append to hitsToSend could never
+		// overwrite the overflow, which shares its backing array.
+		hitsToSend.hits = hitsToSend.hits[:h.maxHitsPerUpdate:h.maxHitsPerUpdate]
 		h.hitsQueue = append(h.hitsQueue, &hitsToEnqueue)
 		h.hitsByCollection[hitsToEnqueue.encodedCollection] = &hitsToEnqueue
 	}
@@ -414,7 +406,11 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 
 	c, _, err := usageutil.DecodeCollection(hitsToSend.encodedCollection)
 	if err != nil {
-		log.CtxWarningf(ctx, "Error decoding collection for remote usage tracking key %s: %v", hitsToSend.encodedCollection, err)
+		// Keys come from EncodeCollection, so this should not happen. Drop the
+		// batch instead of dereferencing the nil collection, and report its
+		// size so that the flush loop keeps draining the queue.
+		log.CtxWarningf(ctx, "Dropping %d cache hits: error decoding remote usage tracking key %s: %v", len(hitsToSend.hits), hitsToSend.encodedCollection, err)
+		return len(hitsToSend.hits)
 	}
 	ctx = usageutil.AddUsageHeadersToContext(ctx, c.Client, c.Origin, c.Proxy)
 	ctx = ip_rules_enforcer.SetBypassIPRules(ctx)
@@ -424,7 +420,7 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 
 	_, err = h.client.Track(ctx, &trackRequest)
 	metrics.RemoteHitTrackerRequests.WithLabelValues(
-		string(groupID),
+		groupID,
 		gstatus.Code(err).String(),
 	).Observe(float64(hitCount))
 	if err != nil {
