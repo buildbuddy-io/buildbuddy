@@ -46,5 +46,10 @@ go_test(
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_model//io/prometheus/client:go",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//connectivity",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
     ],
 )

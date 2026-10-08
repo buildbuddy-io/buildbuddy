@@ -879,12 +879,31 @@ func TestBackfill(t *testing.T) {
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
-	waitForReady(t, config1.ListenAddr)
-	waitForReady(t, config2.ListenAddr)
-	waitForReady(t, config3.ListenAddr)
-
 	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache3}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	// Probe the cached connections used by writes, not separate listener dials.
+	readyCtx, cancel := context.WithTimeout(ctx, maxWaitForReadyDuration)
+	defer cancel()
+	for _, cache := range []*Cache{dc1, dc2, dc3} {
+		for _, peer := range baseConfig.Nodes {
+			for {
+				err := cache.distributedProxy.SendHeartbeat(readyCtx, peer)
+				if err == nil {
+					break
+				}
+				if readyCtx.Err() != nil {
+					t.Fatalf("distributed cache peer %s -> %s did not become ready: %v", cache.opts.ListenAddr, peer, err)
+				}
+				if !status.IsUnavailableError(err) {
+					t.Fatalf("heartbeat %s -> %s failed: %v", cache.opts.ListenAddr, peer, err)
+				}
+				select {
+				case <-readyCtx.Done():
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+		}
+	}
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
 	for i := range 100 {

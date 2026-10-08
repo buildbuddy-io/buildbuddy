@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,8 +16,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/health"
+	hpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
 	dto "github.com/prometheus/client_model/go"
@@ -186,4 +192,236 @@ func TestClose_DeletesPendingRPCMetricSeries(t *testing.T) {
 
 	require.NoError(t, pool.Close())
 	require.Zero(t, pendingRPCSeriesCount(t, target))
+}
+
+func TestClientConnPool_SkipsUnavailableConnections(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		policy string
+	}{
+		{name: "round_robin", policy: "round-robin"},
+		{name: "least_pending_rpcs", policy: "least-pending-rpcs"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "grpc_client.conn_pick_policy", tc.policy)
+			listener, err := net.Listen("tcp", "localhost:0")
+			require.NoError(t, err)
+			server := grpc.NewServer()
+			pspb.RegisterApiServer(server, &TestService{})
+			hpb.RegisterHealthServer(server, health.NewServer())
+			go server.Serve(listener)
+			t.Cleanup(server.Stop)
+
+			// Hold every dial until we have observed all pool members. None can
+			// be Ready yet, so WaitForConn exposes the full pool under either policy.
+			dialGate := make(chan struct{})
+			var dialCount atomic.Int64
+			var allowRecovery atomic.Bool
+			const poolSize = 4
+			target := "grpc://" + listener.Addr().String()
+			pool, err := grpc_client.DialSimpleWithPoolSize(target, poolSize, grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
+				select {
+				case <-dialGate:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+				if dialCount.Add(1) != 1 && !allowRecovery.Load() {
+					return nil, status.UnavailableError("connection temporarily unavailable")
+				}
+				return (&net.Dialer{}).DialContext(ctx, "tcp", address)
+			}))
+			require.NoError(t, err)
+			t.Cleanup(func() { pool.Close() })
+			members := make(map[*grpc.ClientConn]bool)
+			require.Eventually(t, func() bool {
+				members[pool.WaitForConn()] = true
+				return len(members) == poolSize
+			}, 5*time.Second, time.Millisecond)
+			close(dialGate)
+			require.Eventually(t, func() bool {
+				ready, failed := 0, 0
+				for conn := range members {
+					switch conn.GetState() {
+					case connectivity.Ready:
+						ready++
+					case connectivity.TransientFailure:
+						failed++
+					case connectivity.Idle, connectivity.Connecting, connectivity.Shutdown:
+						return false
+					}
+				}
+				return ready == 1 && failed == poolSize-1
+			}, 5*time.Second, time.Millisecond)
+
+			client := pspb.NewApiClient(pool)
+			healthClient := hpb.NewHealthClient(pool)
+			for range 20 {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_, err := client.Ping(ctx, &pspb.PingRequest{})
+				cancel()
+				require.NoError(t, err, "unary RPC should use the Ready connection")
+				ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+				stream, err := healthClient.Watch(ctx, &hpb.HealthCheckRequest{})
+				if err == nil {
+					_, err = stream.Recv()
+				}
+				cancel()
+				require.NoError(t, err, "streaming RPC should use the Ready connection")
+			}
+
+			// Failed members reconnect normally and rejoin selection when Ready.
+			allowRecovery.Store(true)
+			for conn := range members {
+				conn.ResetConnectBackoff()
+			}
+			require.Eventually(t, func() bool {
+				for conn := range members {
+					if conn.GetState() != connectivity.Ready {
+						return false
+					}
+				}
+				return true
+			}, 5*time.Second, time.Millisecond)
+			metrics.PendingClientRPCsPerConnection.DeletePartialMatch(prometheus.Labels{metrics.GRPCTargetLabel: target})
+			for range 100 {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_, err := client.Ping(ctx, &pspb.PingRequest{})
+				cancel()
+				require.NoError(t, err)
+			}
+			require.Equal(t, poolSize, pendingRPCSeriesCount(t, target), "recovered connections should receive RPCs again")
+		})
+	}
+}
+
+func TestClientConnPool_ColdStart(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		policy string
+	}{
+		{name: "round_robin", policy: "round-robin"},
+		{name: "least_pending_rpcs", policy: "least-pending-rpcs"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "grpc_client.conn_pick_policy", tc.policy)
+			listener, err := net.Listen("tcp", "localhost:0")
+			require.NoError(t, err)
+			server := grpc.NewServer()
+			pspb.RegisterApiServer(server, &TestService{})
+			go server.Serve(listener)
+			t.Cleanup(server.Stop)
+			dialGate := make(chan struct{})
+			pool, err := grpc_client.DialSimpleWithPoolSize("grpc://"+listener.Addr().String(), 4, grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
+				select {
+				case <-dialGate:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+				return (&net.Dialer{}).DialContext(ctx, "tcp", address)
+			}))
+			require.NoError(t, err)
+			t.Cleanup(func() { pool.Close() })
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			result := make(chan error, 1)
+			go func() {
+				_, err := pspb.NewApiClient(pool).Ping(ctx, &pspb.PingRequest{}, grpc.WaitForReady(true))
+				result <- err
+			}()
+			// The RPC has been dispatched while no connection can be Ready.
+			target := "grpc://" + listener.Addr().String()
+			require.Eventually(t, func() bool { return pendingRPCSeriesCount(t, target) == 1 }, 5*time.Second, time.Millisecond)
+			close(dialGate)
+			require.NoError(t, <-result)
+		})
+	}
+}
+
+func TestClientConnPool_ReconnectsIdleConnections(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		policy string
+	}{
+		{name: "round_robin", policy: "round-robin"},
+		{name: "least_pending_rpcs", policy: "least-pending-rpcs"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "grpc_client.conn_pick_policy", tc.policy)
+			listener, err := net.Listen("tcp", "localhost:0")
+			require.NoError(t, err)
+			server := grpc.NewServer()
+			pspb.RegisterApiServer(server, &TestService{})
+			go server.Serve(listener)
+			t.Cleanup(server.Stop)
+
+			const poolSize = 4
+			initialGate := make(chan struct{})
+			reconnectGate := make(chan struct{})
+			transports := make(chan net.Conn, poolSize)
+			var dialCount atomic.Int64
+			pool, err := grpc_client.DialSimpleWithPoolSize("grpc://"+listener.Addr().String(), poolSize, grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
+				attempt := dialCount.Add(1)
+				gate := initialGate
+				if attempt > poolSize {
+					gate = reconnectGate
+				}
+				select {
+				case <-gate:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+				conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", address)
+				if err == nil && attempt <= poolSize {
+					transports <- conn
+				}
+				return conn, err
+			}))
+			require.NoError(t, err)
+			t.Cleanup(func() { pool.Close() })
+			members := make(map[*grpc.ClientConn]bool)
+			require.Eventually(t, func() bool {
+				members[pool.WaitForConn()] = true
+				return len(members) == poolSize
+			}, 5*time.Second, time.Millisecond)
+			close(initialGate)
+			require.Eventually(t, func() bool {
+				for conn := range members {
+					if conn.GetState() != connectivity.Ready {
+						return false
+					}
+				}
+				return true
+			}, 5*time.Second, time.Millisecond)
+
+			// Losing an unused transport leaves its connection Idle. Hold its
+			// redial so RPCs must continue using the other Ready members.
+			require.NoError(t, (<-transports).Close())
+			require.Eventually(t, func() bool {
+				for conn := range members {
+					if conn.GetState() == connectivity.Idle {
+						return true
+					}
+				}
+				return false
+			}, 5*time.Second, time.Millisecond)
+			client := pspb.NewApiClient(pool)
+			for range 20 {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_, err := client.Ping(ctx, &pspb.PingRequest{})
+				cancel()
+				require.NoError(t, err, "RPC should not wait for the Idle member's redial")
+			}
+			require.Eventually(t, func() bool { return dialCount.Load() > poolSize }, 5*time.Second, time.Millisecond,
+				"selection should initiate an Idle member's reconnection")
+			close(reconnectGate)
+			require.Eventually(t, func() bool {
+				for conn := range members {
+					if conn.GetState() != connectivity.Ready {
+						return false
+					}
+				}
+				return true
+			}, 5*time.Second, time.Millisecond)
+		})
+	}
 }
