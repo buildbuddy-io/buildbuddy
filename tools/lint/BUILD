@@ -27,10 +27,7 @@ go_library(
         "gazelleRlocationpaths": "$(rlocationpaths //:gazelle)",
     },
     deps = [
-        "//server/util/flag",
-        "//server/util/ioutil",
         "//server/util/lockingbuffer",
-        "//server/util/log",
         "@io_bazel_rules_go//go/runfiles",
         "@org_golang_x_sync//errgroup",
     ],

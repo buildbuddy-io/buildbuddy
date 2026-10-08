@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,22 +15,54 @@ import (
 	"sync"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"golang.org/x/sync/errgroup"
 )
 
+// This tool deliberately depends only on the standard library and a few tiny
+// packages (no //server/util/flag, //server/util/log etc.), since those pull in
+// grpc, protobuf and friends, which makes a cold `bazel run //tools/lint`
+// much slower.
+
 var (
 	fix      = flag.Bool("fix", false, "If true, attempt to fix lint errors automatically.")
-	tool     = flag.Slice("tool", []string{}, "If set, only run the given tool. Can be specified multiple times.")
-	exclude  = flag.Slice("exclude", []string{}, "If set, exclude the given tool. Can be specified multiple times.")
+	tool     = stringSliceFlag("tool", "If set, only run the given tool. Can be specified multiple times.")
+	exclude  = stringSliceFlag("exclude", "If set, exclude the given tool. Can be specified multiple times.")
 	force    = flag.Bool("force", false, "If true, run on all files, not just files changed since the diff base.")
 	diffBase = flag.String("diff_base", "", "If set, use the given git rev as the diff base when determining changed files.")
 
 	legacyAllFlag = flag.Bool("a", false, "Has no effect (kept for backwards compatibility but will be removed soon)")
 )
+
+// stringSlice is a flag value that can be specified multiple times, and also
+// accepts comma-separated values.
+type stringSlice []string
+
+func (s *stringSlice) String() string { return strings.Join(*s, ",") }
+
+func (s *stringSlice) Set(value string) error {
+	if value == "" {
+		return nil
+	}
+	*s = append(*s, strings.Split(value, ",")...)
+	return nil
+}
+
+func stringSliceFlag(name, usage string) *[]string {
+	s := &stringSlice{}
+	flag.Var(s, name, usage)
+	return (*[]string)(s)
+}
+
+// byteCounter counts the bytes written to it, discarding the bytes.
+type byteCounter struct{ n int64 }
+
+func (c *byteCounter) Write(p []byte) (int, error) {
+	c.n += int64(len(p))
+	return len(p), nil
+}
+
+func (c *byteCounter) Count() int64 { return c.n }
 
 // BB CLI version is now pinned in deps.bzl (BB_CLI_VERSION) and downloaded
 // as a prebuilt binary via //tools/bb.
@@ -197,7 +231,7 @@ func runFixGoDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	// module in go.sum, which takes minutes. But always run it if it was
 	// explicitly requested with -tool.
 	if changedPaths != nil && !slices.ContainsFunc(changedPaths, isGoModulesInput) && !slices.Contains(*tool, "GoModulesFix") {
-		log.Infof("[GoModulesFix] skipping `go mod tidy`: no Go files, go.mod/go.sum/go.work files, or %s changed", fixGoDepsScript)
+		log.Printf("INFO: [GoModulesFix] skipping `go mod tidy`: no Go files, go.mod/go.sum/go.work files, or %s changed", fixGoDepsScript)
 		return nil
 	}
 	cmd := exec.CommandContext(ctx, fixGoDepsScript)
@@ -293,7 +327,7 @@ func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 		cmd.Args = append(cmd.Args, "-d")
 	}
 	cmd.Args = append(cmd.Args, files...)
-	stdoutCounter := &ioutil.Counter{}
+	stdoutCounter := &byteCounter{}
 	cmd.Stdout = io.MultiWriter(stdout, stdoutCounter)
 	cmd.Stderr = stderr
 	// goimports requires 'go' to be in PATH.
@@ -414,16 +448,14 @@ func runBazelModDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, fi
 
 func main() {
 	flag.Parse()
+	log.SetFlags(log.Ltime)
 	if err := run(); err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("ERROR: %s", err)
 	}
 }
 
 func run() error {
 	ctx := context.Background()
-	if err := log.Configure(); err != nil {
-		return fmt.Errorf("configure logging: %w", err)
-	}
 	// Change to workspace root.
 	if wd := os.Getenv("BUILD_WORKSPACE_DIRECTORY"); wd != "" {
 		if err := os.Chdir(wd); err != nil {
@@ -436,7 +468,7 @@ func run() error {
 	// Let people continue to use "./buildfix.sh -a" for a bit, but log a
 	// warning.
 	if *legacyAllFlag {
-		log.Warningf("The -a flag now has no effect (all tools are now run by default)")
+		log.Printf("WARNING: The -a flag now has no effect (all tools are now run by default)")
 	}
 	// Validate tool flags.
 	toolNames := make([]string, len(tools))
@@ -467,7 +499,7 @@ func run() error {
 		}
 		files = lines(lsFiles)
 	} else {
-		log.Infof("Linting changes since base revision: %s", diffBaseRev)
+		log.Printf("INFO: Linting changes since base revision: %s", diffBaseRev)
 		fileDiff, err := sh(fmt.Sprintf("git diff --name-only --diff-filter=AMRCT %s", diffBaseRev))
 		if err != nil {
 			return fmt.Errorf("get changed files: %w", err)
@@ -498,15 +530,15 @@ func run() error {
 				mu.RLock()
 				defer mu.RUnlock()
 			}
-			log.Infof("[%s] starting", t.Name)
+			log.Printf("INFO: [%s] starting", t.Name)
 			out := lockingbuffer.New()
 			err := t.Run(ctx, out, out, *fix, files)
 			if err != nil {
 				// Wait until the end to print all the diffs.
-				log.Errorf("[%s] failed: %s: output:\n%s", t.Name, err, out.String())
+				log.Printf("ERROR: [%s] failed: %s: output:\n%s", t.Name, err, out.String())
 				return fmt.Errorf("one or more lint checks failed - run ./buildfix.sh to attempt automatic fixes")
 			} else {
-				log.Infof("[%s] done", t.Name)
+				log.Printf("INFO: [%s] done", t.Name)
 			}
 			return nil
 		})
