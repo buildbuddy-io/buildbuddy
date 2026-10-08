@@ -16,7 +16,7 @@ syntax = "proto3";
 
 package google.bytestream;
 
-option go_package = "google.golang.org/genproto/googleapis/bytestream;bytestream";
+option go_package = "bytestream";
 option java_outer_classname = "ByteStreamProto";
 option java_package = "com.google.bytestream";
 
