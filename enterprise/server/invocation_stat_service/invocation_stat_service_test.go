@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -23,9 +24,9 @@ import (
 )
 
 func TestGetInvocationStat(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, te)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	te.SetAuthenticator(ta)
 	err := te.GetOLAPDBHandle().GORM(ctx, "test_create_invocations").Create([]olaptables.Invocation{
@@ -118,9 +119,9 @@ func TestGetInvocationStat(t *testing.T) {
 }
 
 func TestGetStatDrilldown(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
 	flags.Set(t, "app.trends_heatmap_enabled", true)
 	te := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, te)
 
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	te.SetAuthenticator(ta)
@@ -138,10 +139,10 @@ func TestGetStatDrilldown(t *testing.T) {
 }
 
 func TestGetStatHeatmap_LogScale(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
 	flags.Set(t, "app.trends_heatmap_enabled", true)
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, te)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	te.SetAuthenticator(ta)
 

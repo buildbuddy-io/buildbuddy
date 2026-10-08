@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -28,8 +29,6 @@ import (
 )
 
 func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "app.read_usage_from_olap_db", true)
 
 	group := &tables.Group{
@@ -38,6 +37,7 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 	}
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	now := time.Date(2024, 2, 22, 12, 0, 0, 0, time.UTC)
 	service, err := usage_service.New(env, clockwork.NewFakeClockAt(now))
 	require.NoError(t, err)
@@ -489,12 +489,11 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 }
 
 func TestUsageExport(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "app.read_usage_from_olap_db", true)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(ta)
 	service, err := usage_service.New(env, clockwork.NewFakeClockAt(time.Date(2024, 2, 22, 12, 0, 0, 0, time.UTC)))

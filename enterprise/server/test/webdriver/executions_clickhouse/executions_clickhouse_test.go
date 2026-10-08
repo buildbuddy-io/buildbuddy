@@ -58,7 +58,7 @@ func testInvocationWithRemoteExecutionWithClickHouse(t *testing.T, tc executions
 	// execution via fifo pipes.
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 	ctx := t.Context()
-	clickhouseDSN := testclickhouse.Start(t, true /*=reuseServer*/)
+	clickhouseDSN := testclickhouse.Start(t)
 	bbFlags := append([]string{
 		"--olap_database.data_source=" + clickhouseDSN,
 		"--olap_database.async_insert=true",

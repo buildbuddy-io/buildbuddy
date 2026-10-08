@@ -18,11 +18,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpostgres"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -35,9 +33,8 @@ import (
 )
 
 var (
-	databaseType  = flag.String("testenv.database_type", "sqlite", "What database to use for tests.")
-	reuseServer   = flag.Bool("testenv.reuse_server", false, "If true, reuse database server between tests.")
-	useClickHouse = flag.Bool("testenv.use_clickhouse", false, "Whether to use Clickhouse in tests")
+	databaseType = flag.String("testenv.database_type", "sqlite", "What database to use for tests.")
+	reuseServer  = flag.Bool("testenv.reuse_server", false, "If true, reuse database server between tests.")
 )
 
 func init() {
@@ -229,13 +226,6 @@ func GetTestEnv(t testing.TB, opts ...TestEnvOption) *real_environment.RealEnv {
 	})
 	te.SetInvocationDB(invocationdb.NewInvocationDB(te, dbHandle))
 
-	if *useClickHouse {
-		flags.Set(t, "olap_database.data_source", testclickhouse.GetOrStart(t, *reuseServer))
-		err := clickhouse.Register(te)
-		if err != nil {
-			t.Fatalf("Error configuring ClickHouse: %s", err)
-		}
-	}
 	if err := blobstore.Register(te); err != nil {
 		t.Fatalf("Error configuring blobstore: %s", err)
 	}

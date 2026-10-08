@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/billing/metronome"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -352,10 +353,9 @@ func TestQueryUsageRows(t *testing.T) {
 }
 
 func setupClickHouseEnv(t *testing.T) *real_environment.RealEnv {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "olap_database.invocation_batch_insert_interval", 0*time.Second)
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	for id, status := range map[string]grpb.Group_GroupStatus{
 		"GR1": grpb.Group_USAGE_BASED_GROUP_STATUS,
 		"GR2": grpb.Group_FREE_TIER_GROUP_STATUS,
