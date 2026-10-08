@@ -117,6 +117,10 @@ const (
 	// Maximum task TTL in Redis.
 	taskTTL = 24 * time.Hour
 
+	// Deadline for the pipeline that checks whether watched tasks still
+	// exist, so that a slow shard delays the next check by a bounded amount.
+	taskLivenessCheckTimeout = 3 * time.Second
+
 	// Names of task fields in Redis task hash.
 	redisTaskProtoField              = "taskProto"
 	redisTaskMetadataField           = "schedulingMetadataProto"
@@ -3131,30 +3135,20 @@ func (s *SchedulerServer) checkTaskLiveness(ctx context.Context) {
 }
 
 // checkTaskLivenessOnce checks whether the watched tasks still exist, using a
-// single pipeline for all of them, and closes the lost channel of each task
-// that has been missing for the lease duration plus grace period.
-//
-// A missing task can still get a final update for a while, from either of
-// two sources. First, an executor running the task keeps publishing updates
-// for it until a lease renewal finds the task missing, at which point the
-// executor cancels the task along with its update stream. Executors renew
-// every lease duration, and a lease that goes unrenewed for the lease
-// duration plus grace period has expired, so by then an executor that was
-// running the task has normally stopped. Second, cancellation and giving up on
-// a task (out of attempts, not retryable, or failed to schedule) delete the
-// task just before publishing its final update, which takes far less time.
-//
-// This is a heuristic, not a guarantee. The executor and this check measure
-// time with their own clocks, and renewals and publishes can be delayed, so a
-// task is occasionally reported lost while its final update is still on the
-// way. The client then retries the execution, which at worst runs the action
-// again.
+// single pipeline for all active watchers, and closes the channel of each task
+// that has been missing for the lease duration plus grace period. By then, any
+// executor running the task has most likely failed a lease renewal and stopped,
+// and any final update published right after a deletion has reached the client.
+// The timing is not exact, so in rare cases a task may be reported lost early,
+// and the client retries.
 func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 	type check struct {
 		taskID string
 		watch  *taskLivenessWatch
 		exists *redis.IntCmd
 	}
+	ctx, cancel := context.WithTimeout(ctx, taskLivenessCheckTimeout)
+	defer cancel()
 	pipe := s.rdb.Pipeline()
 	var checks []check
 	s.livenessMu.Lock()
@@ -3180,8 +3174,8 @@ func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 		}
 		n, err := c.exists.Result()
 		if err != nil {
-			// The check is inconclusive. Treating it as a miss would let a
-			// slow or unreachable shard end the waits for every task on it.
+			// Inconclusive, for example because the pipeline timed out, so
+			// leave missingSince as it was.
 			continue
 		}
 		if n == 1 {
@@ -3194,7 +3188,8 @@ func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 		if now.Sub(c.watch.missingSince) < s.leaseDuration+s.leaseGracePeriod {
 			continue
 		}
-		log.CtxWarningf(ctx, "Task %q has been missing for %s without its final update being published; ending waits for it", c.taskID, now.Sub(c.watch.missingSince))
+		metrics.RemoteExecutionLostTasks.Inc()
+		log.CtxWarningf(ctx, "Ending waits for task %q, which has been missing for %s without its final update being published", c.taskID, now.Sub(c.watch.missingSince))
 		close(c.watch.lost)
 		delete(s.livenessWatches, c.taskID)
 	}

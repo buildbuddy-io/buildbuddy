@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/go-redis/redis/v8"
@@ -85,6 +86,36 @@ func TestStreamPubSub(t *testing.T) {
 	requireMessages(t, subscriber, message3)
 	requireMessages(t, subscriber2, message3)
 	requireMessages(t, tailSubscriber, message3)
+}
+
+func TestStreamPubSub_CloseWithUndeliveredMessage(t *testing.T) {
+	// The subscription's goroutines must all exit once it is closed, so any
+	// goroutine still running at the end of the test is a leak.
+	testleak.Check(t)
+	redisHandle := testredis.Start(t)
+	rdb := redis.NewClient(redisutil.TargetToOptions(redisHandle.Target))
+	t.Cleanup(func() { rdb.Close() })
+	pubSub := NewStreamPubSub(rdb)
+	ctx := t.Context()
+	channel := pubSub.UnmonitoredChannel(channel1Name)
+
+	// Publish two messages before subscribing, so that the subscription reads
+	// both at once and is already trying to deliver the second one when the
+	// first is received.
+	err := pubSub.Publish(ctx, channel, message1)
+	require.NoError(t, err)
+	err = pubSub.Publish(ctx, channel, message2)
+	require.NoError(t, err)
+	subscriber := pubSub.SubscribeHead(ctx, channel)
+	requireMessages(t, subscriber, message1)
+
+	// Close the subscription without reading the second message, as
+	// WaitExecution does when it returns early. Give the subscription a
+	// moment to pick up the second message first, so that the test exercises
+	// a delivery that is blocked at close time.
+	time.Sleep(50 * time.Millisecond)
+	err = subscriber.Close()
+	require.NoError(t, err)
 }
 
 func TestMonitoredPubSub(t *testing.T) {
