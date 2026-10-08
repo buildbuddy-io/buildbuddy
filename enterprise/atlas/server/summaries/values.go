@@ -121,6 +121,9 @@ func (ix *Index) catalog() *catalog {
 			for k, v := range e.Labels {
 				k = strings.ToLower(k)
 				c.labelKeys[k]++
+				if v == "" {
+					continue
+				}
 				vals := c.labelValues[k]
 				if vals == nil {
 					vals = map[string]int{}

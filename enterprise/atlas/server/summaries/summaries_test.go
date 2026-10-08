@@ -258,13 +258,15 @@ func TestValues(t *testing.T) {
 	// so a key spelled two ways lists every value of both; values keep their
 	// spelling.
 	odd := podEntry("odd-0", "staging")
-	odd.Labels = map[string]string{"App": "Web"}
+	odd.Labels = map[string]string{"App": "Web", "node-role.kubernetes.io/control-plane": ""}
 	pods.Put(odd)
 	ix.cat = nil // past the catalog's few seconds
 	require.Equal(t, []string{"app", "app.kubernetes.io/managed-by"}, values("label", "", "ap", 0))
 	require.Equal(t, 4, must(ix.GetFilterValues("label", "", "app", 0))[0].Count, "all four pods count for app")
 	require.Equal(t, []string{"web", "Web", "cache"}, values("label", "app", "", 0))
 	require.Equal(t, []string{"web", "Web"}, values("label", "APP", "W", 0))
+	require.Equal(t, []string{"node-role.kubernetes.io/control-plane"}, values("label", "", "node", 0), "a marker label is a key")
+	require.Empty(t, values("label", "node-role.kubernetes.io/control-plane", "", 0), "with no value to offer")
 	require.Equal(t, []string{"Helm"}, values("label", "app.kubernetes.io/managed-by", "h", 0))
 	require.Empty(t, values("label", "nosuch", "", 0))
 
