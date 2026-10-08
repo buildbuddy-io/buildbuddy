@@ -7,7 +7,7 @@ go_library(
     srcs = ["hit_tracker_client.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client",
     deps = [
-        "//enterprise/server/cache_proxy/config",
+        "//enterprise/server/cache_proxy_config",
         "//enterprise/server/ip_rules_enforcer",
         "//enterprise/server/util/proxy_util",
         "//proto:cache_go_proto",

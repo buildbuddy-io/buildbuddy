@@ -16,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
-	cache_proxy_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy/config"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_registration"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
@@ -119,6 +119,9 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
+	if cache_proxy_config.RemoteCacheTarget() == "" {
+		log.Fatalf("--cache_proxy.remote_cache must be set")
+	}
 	if err := hit_tracker_client.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
