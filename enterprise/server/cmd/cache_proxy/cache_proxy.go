@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
+	cache_proxy_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_registration"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
@@ -79,8 +80,6 @@ var (
 
 	serverType = flag.String("server_type", "cache-proxy", "The server type to match on health checks")
 
-	remoteCache = flag.String("cache_proxy.remote_cache", "grpcs://remote.buildbuddy.dev", "The backing remote cache.")
-
 	proxyType = flag.String("cache_proxy.proxy_type", sku.ProxyBuildBuddy, "Whether this is a BuildBuddy-run (\"buildbuddy\") or customer-run (\"customer\") cache proxy. Used for usage tracking/billing.")
 )
 
@@ -120,7 +119,9 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	hit_tracker_client.Register(env)
+	if err := hit_tracker_client.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := remote_crypter.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -306,7 +307,7 @@ func startInternalGRPCServers(env *real_environment.RealEnv) error {
 
 func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv) {
 	// Connect to the remote cache and initialize gRPC clients.
-	conn, err := grpc_client.DialInternal(env, *remoteCache)
+	conn, err := grpc_client.DialInternal(env, cache_proxy_config.RemoteCacheTarget())
 	if err != nil {
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}
@@ -386,7 +387,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
 	ofpb.RegisterOCIFetcherServer(grpcServer, env.GetOCIFetcherServer())
 	rapb.RegisterFetchServer(grpcServer, env.GetFetchServer())
-	log.Infof("Cache proxy proxying requests to %s", *remoteCache)
+	log.Infof("Cache proxy proxying requests to %s", cache_proxy_config.RemoteCacheTarget())
 }
 
 func registerInternalServices(env *real_environment.RealEnv) error {

@@ -93,7 +93,9 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	hit_tracker_client.Register(env)
+	if err := hit_tracker_client.Register(env); err != nil {
+		log.Fatal(err.Error())
+	}
 
 	// Configure a local cache.
 	if err := gcs_cache.Register(env); err != nil {
