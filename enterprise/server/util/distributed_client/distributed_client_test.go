@@ -275,6 +275,41 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 	}
 }
 
+func TestWriteAlreadyExistsCAS_QueuesHintedHandoff(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := newProxy(t, te, te.GetCache(), peer)
+	var mu sync.Mutex
+	var handoffs []string
+	c.SetHintedHandoffCallbackFunc(func(ctx context.Context, handoffPeer string, r *rspb.ResourceName) {
+		mu.Lock()
+		defer mu.Unlock()
+		handoffs = append(handoffs, handoffPeer+"/"+r.GetDigest().GetHash())
+	})
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+	wc, err := c.RemoteWriter(ctx, peer, noHandoff, rn)
+	require.NoError(t, err)
+	require.NoError(t, copyAndClose(wc, bytes.NewReader(buf)))
+
+	// Write the blob again with a hinted handoff. The peer already has the
+	// blob, but still needs to queue the handoff.
+	const handoffPeer = "localhost:1"
+	wc, err = c.RemoteWriter(ctx, peer, handoffPeer, rn)
+	require.NoError(t, err)
+	require.NoError(t, copyAndClose(wc, bytes.NewReader(buf)))
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{handoffPeer + "/" + rn.GetDigest().GetHash()}, handoffs)
+}
+
 func TestWriteAlreadyExistsAC(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
