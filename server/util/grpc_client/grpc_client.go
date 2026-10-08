@@ -449,7 +449,10 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 		rpcutil.ClientSizeMetricsDialOption(),
 		interceptors.GetUnaryClientInterceptor(),
 		interceptors.GetStreamClientInterceptor(),
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
+		// Some stubs (e.g. Bytestream) don't pass grpc.StaticMethod(), without
+		// which grpc-go's otel plugin records the method as "other".
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(math.MaxInt32), grpc.StaticMethod()),
 		experimental.WithBufferPool(mem.DefaultBufferPool()),
 		grpc.WithSharedWriteBuffer(true),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
