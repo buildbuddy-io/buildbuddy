@@ -46,8 +46,8 @@ var (
 	gazelleRlocationpaths string
 )
 
-// gazelleRunner is the rlocationpath of the gazelle runner that BuildFix runs.
-// It's set (by run) only if BuildFix is selected.
+// gazelleRunner is the rlocationpath of the gazelle runner that BuildDepsFix
+// runs. It's set (by run) only if BuildDepsFix is selected.
 var gazelleRunner string
 
 var (
@@ -63,10 +63,12 @@ var (
 		// Runs exclusively because this might change deps.bzl which BuildFiles
 		// might also change.
 		{Name: "GoModulesFix", Run: runFixGoDeps, WriteLock: true},
-		// Fixes BUILD file deps (gazelle) and build+starlark file formatting
-		// (buildifier).
+		// Fixes BUILD file deps, using the repo's gazelle.
 		// Runs exclusively in -fix mode, since it rewrites BUILD files.
-		{Name: "BuildFix", Run: runBuildFix, WriteLock: true},
+		{Name: "BuildDepsFix", Run: runGazelle, WriteLock: true},
+		// Fixes build+starlark file formatting and lint warnings (buildifier).
+		// Runs exclusively in -fix mode, since it rewrites BUILD and .bzl files.
+		{Name: "StarlarkFix", Run: runBuildifier, WriteLock: true},
 		// Ensures that MODULE.bazel.lock is up to date.
 		{Name: "UpdateLockfile", Run: runBazelModDeps, WriteLock: true},
 	}
@@ -97,28 +99,25 @@ type Tool struct {
 	Run func(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error
 }
 
-func runBuildFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	return errors.Join(runGazelle(ctx, stdout, stderr, fix, gazelleRunner), runBuildifier(ctx, stdout, stderr, fix, files))
-}
-
 // gazelleRunfile returns the rlocationpath of the gazelle runner selected by
 // the :gazelle label_flag.
 func gazelleRunfile() (string, error) {
 	gazelle, _, _ := strings.Cut(gazelleRlocationpaths, " ")
 	if strings.HasSuffix(gazelle, "/no_gazelle.txt") {
-		return "", errors.New(`BuildFix needs to know which gazelle target to run. Set it in your .bazelrc, e.g.:
+		return "", errors.New(`BuildDepsFix needs to know which gazelle target to run. Set it in your .bazelrc, e.g.:
 
   common --@com_github_buildbuddy_io_buildbuddy//tools/lint:gazelle=//:gazelle
 
-or pass -exclude=BuildFix to skip it`)
+or pass -exclude=BuildDepsFix to skip it`)
 	}
 	return gazelle, nil
 }
 
 // runGazelle runs the gazelle runner script from runfiles, which is built by
 // the same bazel invocation as lint (rather than by a nested `bazel run`).
-func runGazelle(ctx context.Context, stdout, stderr io.Writer, fix bool, rlocationpath string) error {
-	cmd, err := getRunfileToolCommand(ctx, rlocationpath)
+// Gazelle always looks at the whole repo, so files is unused.
+func runGazelle(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	cmd, err := getRunfileToolCommand(ctx, gazelleRunner)
 	if err != nil {
 		return fmt.Errorf("get gazelle command: %w", err)
 	}
@@ -398,9 +397,9 @@ func run() error {
 			selected = append(selected, t)
 		}
 	}
-	// Check BuildFix's config before starting any tools, so that a missing
+	// Check BuildDepsFix's config before starting any tools, so that a missing
 	// flag isn't buried among their output.
-	if slices.ContainsFunc(selected, func(t Tool) bool { return t.Name == "BuildFix" }) {
+	if slices.ContainsFunc(selected, func(t Tool) bool { return t.Name == "BuildDepsFix" }) {
 		var err error
 		if gazelleRunner, err = gazelleRunfile(); err != nil {
 			return err

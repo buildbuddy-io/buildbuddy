@@ -40,12 +40,12 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-# The gazelle target (a `gazelle` rule) that BuildFix runs. Lint runs it from
+# The gazelle target (a `gazelle` rule) that BuildDepsFix runs. Lint runs it from
 # runfiles so that it's built by the same invocation as lint (with the same
 # flags, e.g. --config=remote), rather than by a nested `bazel run //:gazelle`,
 # which would build it locally and discard bazel's analysis cache.
 #
-# There's no default: lint fails if this isn't set (unless BuildFix is
+# There's no default: lint fails if this isn't set (unless BuildDepsFix is
 # excluded). Repos set it in their .bazelrc to their own gazelle target, e.g.
 #   common --@com_github_buildbuddy_io_buildbuddy//tools/lint:gazelle=//:gazelle
 label_flag(
