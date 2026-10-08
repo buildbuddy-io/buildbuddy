@@ -232,6 +232,16 @@ func TestJSONMapFlag(t *testing.T) {
 	assert.Equal(t, "{}", reflect.New(reflect.TypeFor[JSONMapFlag[map[string]string]]()).Interface().(flag.Value).String())
 }
 
+func TestBoolFlagAliasWithoutValue(t *testing.T) {
+	flags := replaceFlagsForTesting(t)
+	b := flags.Bool("bool", false, "")
+	Alias[bool](flags, "bool", "bool_alias")
+	err := flags.Parse([]string{"--bool_alias", "arg"})
+	require.NoError(t, err)
+	assert.True(t, *b)
+	assert.Equal(t, []string{"arg"}, flags.Args())
+}
+
 func TestFlagAlias(t *testing.T) {
 	flags := replaceFlagsForTesting(t)
 	s := flags.String("string", "test", "")
