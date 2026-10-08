@@ -485,6 +485,10 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			if rn.GetCacheType() == rspb.CacheType_CAS && req.GetCheckAlreadyExists() {
 				missing, err := c.cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_WRITE_DEDUPE), []*rspb.ResourceName{rn})
 				if err == nil && len(missing) == 0 {
+					// The sender may be relying on this node to hand the blob
+					// off to a peer that missed the write, whether or not this
+					// node already had it.
+					c.queueHintedHandoff(ctx, req)
 					return status.AlreadyExistsError("CAS digest already exists")
 				}
 			}
