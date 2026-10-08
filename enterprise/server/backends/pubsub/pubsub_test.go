@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/go-redis/redis/v8"
@@ -85,6 +86,25 @@ func TestStreamPubSub(t *testing.T) {
 	requireMessages(t, subscriber, message3)
 	requireMessages(t, subscriber2, message3)
 	requireMessages(t, tailSubscriber, message3)
+}
+
+func TestStreamPubSub_CloseWithUndeliveredMessage(t *testing.T) {
+	testleak.Check(t)
+	pubSub := NewStreamPubSub(testredis.Start(t).Client())
+	ctx := t.Context()
+	channel := pubSub.UnmonitoredChannel(channel1Name)
+
+	// Subscribe to a channel that already has a message, and never read it.
+	err := pubSub.Publish(ctx, channel, message1)
+	require.NoError(t, err)
+	subscriber := pubSub.SubscribeHead(ctx, channel)
+
+	// Give the subscription a moment to pick up the message and block
+	// delivering it, then close. All of the subscription's goroutines should
+	// exit, which testleak checks during cleanup.
+	time.Sleep(50 * time.Millisecond)
+	err = subscriber.Close()
+	require.NoError(t, err)
 }
 
 func TestMonitoredPubSub(t *testing.T) {
