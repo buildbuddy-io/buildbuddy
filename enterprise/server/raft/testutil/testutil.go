@@ -76,10 +76,12 @@ func newStoreFactory(t *testing.T, rootDir string, clock clockwork.Clock) *Store
 	fileDir := filepath.Join(rootDir, "files")
 	err := disk.EnsureDirectoryExists(fileDir)
 	require.NoError(t, err)
+	session := client.NewSessionWithClock(clock)
+	t.Cleanup(session.Close)
 	return &StoreFactory{
 		rootDir: rootDir,
 		clock:   clock,
-		session: client.NewSessionWithClock(clock),
+		session: session,
 	}
 }
 
