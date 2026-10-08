@@ -266,7 +266,8 @@ func (n *Network) startStack(prefixLen int) error {
 		Address:            gatewayLinkAddress,
 		PacketDispatchMode: fdbased.RecvMMsg,
 		// More processors don't improve throughput, and with RecvMMsg, fdbased
-		// leaks the processor goroutines of a dispatcher it discards.
+		// leaks the processor goroutines of a dispatcher it discards:
+		// https://github.com/google/gvisor/blob/39ed1f5ac29cb9a2d99d41502de53b8f0e2d19b6/pkg/tcpip/link/fdbased/endpoint.go#L350-L398
 		ProcessorsPerChannel: 1,
 		GSOMaxSize:           gsoMaxSize,
 		// Guests leave checksums partial on offloaded frames.
