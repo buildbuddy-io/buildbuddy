@@ -3,6 +3,7 @@ package capabilities
 import (
 	"context"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -29,6 +30,7 @@ var (
 	UserAPIKeyCapabilitiesMask = ToInt([]cappb.Capability{
 		cappb.Capability_CACHE_WRITE,
 		cappb.Capability_CAS_WRITE,
+		cappb.Capability_EXECUTOR_CACHE_WRITE,
 	})
 )
 
@@ -78,6 +80,26 @@ func ForAuthenticatedUser(ctx context.Context, authenticator interfaces.Authenti
 		return nil, err
 	}
 	return u.GetCapabilities(), nil
+}
+
+// IsActionCacheWriteGranted requires both the task's permission and independent
+// executor proof for EXECUTOR_CACHE_WRITE. CACHE_WRITE remains unrestricted.
+func IsActionCacheWriteGranted(ctx context.Context, env environment.Env) (bool, error) {
+	a := env.GetAuthenticator()
+	if ok, err := IsGranted(ctx, a, cappb.Capability_CACHE_WRITE); err != nil || ok {
+		return ok, err
+	}
+	u, err := a.AuthenticatedUser(ctx)
+	if err != nil {
+		if authutil.IsAnonymousUserError(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !u.HasCapability(cappb.Capability_EXECUTOR_CACHE_WRITE) {
+		return false, nil
+	}
+	return authutil.IsExecutorForGroup(ctx, env, u.GetGroupID())
 }
 
 // ForAuthenticatedUserGroup returns the authenticated user's capabilities

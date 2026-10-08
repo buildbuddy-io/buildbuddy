@@ -90,7 +90,7 @@ var (
 	}
 
 	// Here we match 20 alphanumeric characters preceded by the api key header flag
-	apiKeyHeaderPattern = regexp.MustCompile("x-buildbuddy-api-key=[[:alnum:]]{20}")
+	apiKeyHeaderPattern = regexp.MustCompile("(x-buildbuddy-(?:executor-)?api-key=)[[:alnum:]]{20}")
 
 	// Match sequences that look like API keys immediately followed '@',
 	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
@@ -298,7 +298,7 @@ func sortByLengthDesc(values []string) []string {
 // This implementation depends on BuildBuddy API keys being exactly 20 alphanumeric characters.
 func redactBuildBuddyAPIKeys(txt string) string {
 	// Replace x-buildbuddy-api-key header.
-	txt = apiKeyHeaderPattern.ReplaceAllLiteralString(txt, "x-buildbuddy-api-key=<REDACTED>")
+	txt = apiKeyHeaderPattern.ReplaceAllString(txt, "${1}<REDACTED>")
 
 	// Replace sequences that look like API keys immediately followed by '@',
 	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"

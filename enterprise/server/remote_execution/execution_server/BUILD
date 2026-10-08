@@ -74,6 +74,7 @@ go_test(
     deps = [
         ":execution_server",
         "//enterprise/server/backends/redis_execution_collector",
+        "//enterprise/server/clientidentity",
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/oom",
         "//enterprise/server/remote_execution/operation",
@@ -81,6 +82,7 @@ go_test(
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/execution",
         "//enterprise/server/util/redisutil",
+        "//proto:capability_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:experiments_go_proto",
         "//proto:invocation_status_go_proto",
@@ -99,6 +101,7 @@ go_test(
         "//server/testutil/testfs",
         "//server/testutil/testusage",
         "//server/usage/sku",
+        "//server/util/authutil",
         "//server/util/bazel_request",
         "//server/util/clientip",
         "//server/util/db",

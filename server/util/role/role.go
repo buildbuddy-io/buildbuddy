@@ -19,7 +19,8 @@ const (
 	// as creating API keys and viewing usage data, but can perform most other
 	// common actions such as viewing invocation history.
 	//
-	// Developers have CAS write permissions and readonly AC permissions.
+	// Developers can write CAS blobs and allow remote executors to write AC
+	// entries, but cannot upload locally produced action results.
 	Developer Role = 1 << 0
 
 	// Admin means a user has unrestricted access within a group.
@@ -47,14 +48,17 @@ var (
 	AdminCapabilities = []cappb.Capability{
 		cappb.Capability_CACHE_WRITE,
 		cappb.Capability_CAS_WRITE,
+		cappb.Capability_EXECUTOR_CACHE_WRITE,
 		cappb.Capability_ORG_ADMIN,
 	}
 	DeveloperCapabilities = []cappb.Capability{
 		cappb.Capability_CAS_WRITE,
+		cappb.Capability_EXECUTOR_CACHE_WRITE,
 	}
 	WriterCapabilities = []cappb.Capability{
 		cappb.Capability_CACHE_WRITE,
 		cappb.Capability_CAS_WRITE,
+		cappb.Capability_EXECUTOR_CACHE_WRITE,
 	}
 	ReaderCapabilities []cappb.Capability
 )

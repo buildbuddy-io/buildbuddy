@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
@@ -31,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -56,6 +58,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -886,6 +889,19 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 	durationUsec := (5 * time.Second).Microseconds()
 	for _, test := range []publishTest{
 		{
+			name:                   "RBEKey_HostedExecutor",
+			rbeKey:                 true,
+			signedExecutorIdentity: true,
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+		},
+		{
+			name:                   "RBEKey_SelfHostedExecutor",
+			rbeKey:                 true,
+			platformOverrides:      map[string]string{"use-self-hosted-executors": "true"},
+			expectedSelfHosted:     true,
+			expectedExecutionUsage: tables.UsageCounts{SelfHostedLinuxExecutionDurationUsec: durationUsec},
+		},
+		{
 			name:                   "SharedExecutors",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 		},
@@ -1009,6 +1025,8 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 }
 
 type publishTest struct {
+	rbeKey                   bool
+	signedExecutorIdentity   bool
 	name                     string
 	instanceName             string
 	platformOverrides        map[string]string
@@ -1049,7 +1067,20 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
 	}
 	client := repb.NewExecutionClient(conn)
-	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	users := testauth.TestUsers("user1", "group1")
+	if test.rbeKey {
+		users["user1"].(*testauth.TestUser).Capabilities = []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE}
+		executor := testauth.User("executor", "group1")
+		executor.Capabilities = []cappb.Capability{cappb.Capability_REGISTER_EXECUTOR}
+		users["executor"] = executor
+	}
+	if test.signedExecutorIdentity {
+		flags.Set(t, "app.client_identity.key", "test-signing-key")
+		flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+		flags.Set(t, "app.client_identity.origin", interfaces.ClientIdentityInternalOrigin)
+		require.NoError(t, clientidentity.Register(env))
+	}
+	ta := testauth.NewTestAuthenticator(t, users)
 	env.SetAuthenticator(ta)
 	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
 	require.NoError(t, err)
@@ -1122,6 +1153,17 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	// Simulate execution: set up a PublishOperation stream and publish an
 	// ExecuteResponse to it.
 	executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
+	if test.rbeKey {
+		if test.signedExecutorIdentity {
+			header, err := env.GetClientIdentityService().NewIdentityHeader(&interfaces.ClientIdentity{
+				Client: interfaces.ClientIdentityExecutor, Origin: interfaces.ClientIdentityInternalOrigin,
+			}, time.Minute)
+			require.NoError(t, err)
+			executorCtx = metadata.AppendToOutgoingContext(executorCtx, authutil.ClientIdentityHeaderName, header)
+		} else {
+			executorCtx = metadata.AppendToOutgoingContext(executorCtx, authutil.ExecutorAPIKeyHeader, "executor")
+		}
+	}
 	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
 	require.NoError(t, err)
 	stream, err := client.PublishOperation(executorCtx)

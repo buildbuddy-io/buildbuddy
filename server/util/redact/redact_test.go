@@ -1036,6 +1036,11 @@ func TestRedactAPIKeys(t *testing.T) {
 		expected string
 	}{
 		{
+			name:     "executor API key header",
+			txt:      "x-buildbuddy-executor-api-key=apikeyexactly20chars",
+			expected: "x-buildbuddy-executor-api-key=<REDACTED>",
+		},
+		{
 			name:     "api key after equals",
 			txt:      "MY_SECRET_API_KEY=apikeyexactly20chars@mydomain.com",
 			expected: "MY_SECRET_API_KEY=<REDACTED>@mydomain.com",

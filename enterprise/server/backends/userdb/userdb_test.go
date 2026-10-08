@@ -1878,6 +1878,10 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 		Capabilities []cappb.Capability
 		OK           bool
 	}{
+		{Name: "Admin_RBE_OK", Role: role.Admin, Capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE}, OK: true},
+		{Name: "Developer_RBE_OK", Role: role.Developer, Capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE}, OK: true},
+		{Name: "Writer_RBE_OK", Role: role.Writer, Capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE}, OK: true},
+		{Name: "Reader_RBE_Fail", Role: role.Reader, Capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE}, OK: false},
 		{Name: "Admin_CASWrite_OK", Role: role.Admin, Capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE}, OK: true},
 		{Name: "Developer_CASWrite_OK", Role: role.Developer, Capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE}, OK: true},
 		{Name: "Admin_ACWrite_OK", Role: role.Admin, Capabilities: []cappb.Capability{cappb.Capability_CACHE_WRITE}, OK: true},
@@ -2611,6 +2615,7 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			UserRole: role.Developer,
 			ExpectedCapabilities: []cappb.Capability{
 				cappb.Capability_CAS_WRITE,
+				cappb.Capability_EXECUTOR_CACHE_WRITE,
 			},
 		},
 		{
@@ -2619,6 +2624,7 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			ExpectedCapabilities: []cappb.Capability{
 				cappb.Capability_CACHE_WRITE,
 				cappb.Capability_CAS_WRITE,
+				cappb.Capability_EXECUTOR_CACHE_WRITE,
 				cappb.Capability_ORG_ADMIN,
 			},
 		},
@@ -2628,6 +2634,7 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			ExpectedCapabilities: []cappb.Capability{
 				cappb.Capability_CACHE_WRITE,
 				cappb.Capability_CAS_WRITE,
+				cappb.Capability_EXECUTOR_CACHE_WRITE,
 			},
 		},
 		{
@@ -3223,7 +3230,7 @@ func TestUpdateUserListRole_DowngradeReflectedInUserAPIKeyCapabilities(t *testin
 	// Key should have capabilities constrained to Developer's max (CAS_WRITE).
 	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.NoError(t, err)
-	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
+	assert.Equal(t, int32(cappb.Capability_CAS_WRITE), akg.GetCapabilities())
 }
 
 func TestRemoveUserListFromGroup_InvalidatesKeysForIndirectOnlyUser(t *testing.T) {
@@ -3327,7 +3334,7 @@ func TestRemoveUserListFromGroup_UserAPIKeyStillWorksForDirectMember(t *testing.
 	// Key should still exist with capabilities constrained to Developer's max.
 	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.NoError(t, err, "key should still be valid via direct membership")
-	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
+	assert.Equal(t, int32(cappb.Capability_CAS_WRITE), akg.GetCapabilities())
 }
 
 func TestRemoveUserFromUserList_UserAPIKeyStillWorksForDirectMember(t *testing.T) {
@@ -3379,7 +3386,7 @@ func TestRemoveUserFromUserList_UserAPIKeyStillWorksForDirectMember(t *testing.T
 	// Key should still exist — Developer still grants CAS_WRITE.
 	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.NoError(t, err, "key should still be valid via direct membership")
-	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
+	assert.Equal(t, int32(cappb.Capability_CAS_WRITE), akg.GetCapabilities())
 }
 
 func TestDeleteUserList_InvalidatesUserAPIKeysForIndirectMembers(t *testing.T) {
@@ -3481,7 +3488,7 @@ func TestDeleteUserList_UserAPIKeyStillWorksForDirectMember(t *testing.T) {
 	// Key should still work but constrained to Developer's max.
 	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.NoError(t, err, "key should still be valid via direct membership")
-	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
+	assert.Equal(t, int32(cappb.Capability_CAS_WRITE), akg.GetCapabilities())
 }
 
 func TestGetUserBySubIDNoGroup(t *testing.T) {

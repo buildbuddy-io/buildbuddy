@@ -65,6 +65,22 @@ When creating new API keys, you can check the box that says **Read-only key (dis
 
 When creating API keys to link your self-hosted executors to your organization (if using **Bring Your Own Runners**), you'll need to check the box that says **Executor key (for self-hosted executors)**.
 
+### RBE-only keys
+
+Select **RBE-only key** to allow local clients to upload inputs to the content-addressable
+store (CAS), while allowing only remote executors to upload action cache (AC)
+entries. Locally executed actions cannot populate or overwrite the action cache
+with this key. Existing cached results can still be read.
+
+RBE-only keys work with BuildBuddy-hosted executors and your organization's self-hosted
+executors. Hosted executors authenticate using a signed executor identity.
+Self-hosted executors present their configured **Executor key** alongside the
+task's RBE credentials. The executor key must have `REGISTER_EXECUTOR` permission
+and belong to the same organization as the RBE-only key. Keep executor keys on the
+executor machines: anyone with both credentials can write action results.
+Executors and servers must support this authentication; without executor proof,
+the RBE-only key behaves like a CAS-only key.
+
 ## Personal API keys
 
 In addition to organization-level API keys, BuildBuddy also supports
@@ -131,6 +147,7 @@ The available roles and permissions are:
 - **Developer**:
   - Read and write to Content-Addressable Storage (CAS)
   - Read from Action Cache (AC)
+  - Create RBE-only keys that allow remote executors to write AC entries
 - **Reader**:
   - Read from Content-Addressable Storage (CAS)
   - Read from Action Cache (AC)

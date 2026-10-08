@@ -35,11 +35,13 @@ go_test(
     embed = [":remoteauth"],
     deps = [
         "//proto:auth_go_proto",
+        "//proto:capability_go_proto",
         "//server/interfaces",
         "//server/testutil/testenv",
         "//server/testutil/testgrpc",
         "//server/testutil/testkeys",
         "//server/util/authutil",
+        "//server/util/capabilities",
         "//server/util/claims",
         "//server/util/status",
         "//server/util/subdomain",

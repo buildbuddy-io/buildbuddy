@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
@@ -21,10 +22,12 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 )
 
 type fakeAuthService struct {
 	lastAuthRequest *authpb.AuthenticateRequest
+	lastAPIKeys     []string
 
 	nextHS256Jwt map[string]string
 	nextES256Jwt map[string]string
@@ -89,6 +92,7 @@ func (a *fakeAuthService) Authenticate(ctx context.Context, req *authpb.Authenti
 	defer a.mu.Unlock()
 	a.authenticateCalls++
 	a.lastAuthRequest = req
+	a.lastAPIKeys = metadata.ValueFromIncomingContext(ctx, authutil.APIKeyHeader)
 	sub := req.GetSubdomain()
 	if a.nextErr[sub] != nil {
 		err := a.nextErr[sub]
@@ -488,4 +492,44 @@ func TestHS256ReauthResultIsCached(t *testing.T) {
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, incomingHS256JWT))
 	require.Equal(t, remoteES256JWT, ctx.Value(authutil.ContextTokenStringKey))
 	require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+}
+
+func TestExecutorProofUsesIndependentAPIKey(t *testing.T) {
+	a, fakeAuth := setupES256(t)
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(a)
+	primary := &claims.Claims{GroupID: "group", Capabilities: []cappb.Capability{cappb.Capability_EXECUTOR_CACHE_WRITE, cappb.Capability_REGISTER_EXECUTOR}}
+	ctx := claims.AuthContextWithJWT(t.Context(), primary, nil)
+	originalJWT := a.TrustedJWTFromAuthContext(ctx)
+	// Populate every place a remote authenticator can find the primary JWT.
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ContextTokenStringKey, originalJWT, authutil.APIKeyHeader, "primary-key", authutil.ExecutorAPIKeyHeader, "executor-key"))
+	ctx = metadata.AppendToOutgoingContext(ctx, authutil.ContextTokenStringKey, originalJWT, authutil.APIKeyHeader, "primary-key")
+	executorJWT, err := claims.AssembleJWT(&claims.Claims{GroupID: "group", Capabilities: []cappb.Capability{cappb.Capability_REGISTER_EXECUTOR}}, jwt.SigningMethodES256)
+	require.NoError(t, err)
+	fakeAuth.setNextJwt(t, "", executorJWT)
+	allowed, err := capabilities.IsActionCacheWriteGranted(ctx, env)
+	require.NoError(t, err)
+	require.True(t, allowed)
+	require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+	fakeAuth.mu.Lock()
+	require.Equal(t, []string{"executor-key"}, fakeAuth.lastAPIKeys)
+	fakeAuth.mu.Unlock()
+	require.Equal(t, originalJWT, a.TrustedJWTFromAuthContext(ctx))
+	u, err := a.AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	require.False(t, u.HasCapability(cappb.Capability_CACHE_WRITE))
+
+	// Repeated proof checks should reuse the remote authenticator's cached JWT.
+	allowed, err = capabilities.IsActionCacheWriteGranted(ctx, env)
+	require.NoError(t, err)
+	require.True(t, allowed)
+	require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+
+	// An invalid secondary key must not fall back to the executor-capable primary.
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ExecutorAPIKeyHeader, "invalid-secret"))
+	fakeAuth.setNextErr(t, "", status.UnauthenticatedError("invalid-secret"))
+	allowed, err = capabilities.IsActionCacheWriteGranted(ctx, env)
+	require.True(t, status.IsUnauthenticatedError(err), "%v", err)
+	require.NotContains(t, err.Error(), "invalid-secret")
+	require.False(t, allowed)
 }

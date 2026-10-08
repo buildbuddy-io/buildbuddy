@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/gpu"
@@ -120,7 +121,7 @@ type cacheClient interface {
 
 func dialCacheOrDie(target string, env environment.Env) *grpc_client.ClientConnPool {
 	log.Infof("Connecting to cache target %q", target)
-	conn, err := grpc_client.DialInternal(env, target)
+	conn, err := grpc_client.DialInternal(env, target, executor_auth.GRPCDialOptions()...)
 	if err != nil {
 		log.Fatalf("Unable to connect to cache '%s': %s", target, err)
 	}
@@ -314,7 +315,7 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, filecacheSizeBytes int64, h
 	}
 
 	log.Infof("Connecting to app target: %s", *appTarget)
-	conn, err := grpc_client.DialInternal(realEnv, *appTarget)
+	conn, err := grpc_client.DialInternal(realEnv, *appTarget, executor_auth.GRPCDialOptions()...)
 	if err != nil {
 		log.Fatalf("Unable to connect to app '%s': %s", *appTarget, err)
 	}

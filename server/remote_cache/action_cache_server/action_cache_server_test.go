@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -36,6 +37,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -1071,4 +1073,71 @@ func TestRecordOriginScorecard(t *testing.T) {
 	result := scorecard.GetResults()[0]
 	assert.Equal(t, actionDigest.GetHash(), result.GetActionId())
 	assert.Equal(t, originInvocationID, result.GetOriginInvocationId())
+}
+
+// Exercise the public gRPC endpoint: RBE clients can upload CAS inputs, but AC
+// writes require an independently authenticated executor from the same group.
+func TestRBEKeyActionCacheWrites(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		capabilities []cappb.Capability
+		executorKeys []string
+		writeAllowed bool
+		invalidProof bool
+	}{
+		{name: "local RBE key", capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE}},
+		{name: "same org executor", capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE}, executorKeys: []string{"executor"}, writeAllowed: true},
+		{name: "other org executor", capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE}, executorKeys: []string{"other-executor"}},
+		{name: "non executor key", capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE}, executorKeys: []string{"writer"}},
+		{name: "CAS only with executor proof", capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE}, executorKeys: []string{"executor"}},
+		{name: "unrestricted writer", capabilities: []cappb.Capability{cappb.Capability_CACHE_WRITE}, writeAllowed: true},
+		{name: "invalid executor key", capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE}, executorKeys: []string{"invalid-secret"}, invalidProof: true},
+		{name: "multiple executor keys", capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE}, executorKeys: []string{"other-executor", "executor"}, invalidProof: true},
+		// Cached primary claims must never be reused while verifying the second key.
+		{name: "invalid proof with executor-capable primary", capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE, cappb.Capability_REGISTER_EXECUTOR}, executorKeys: []string{"invalid-secret"}, invalidProof: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			primary := testauth.User("client", "group")
+			primary.Capabilities = tc.capabilities
+			executor := testauth.User("executor", "group")
+			executor.Capabilities = []cappb.Capability{cappb.Capability_REGISTER_EXECUTOR}
+			other := testauth.User("other-executor", "other-group")
+			other.Capabilities = executor.Capabilities
+			ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+				"client": primary, "executor": executor, "other-executor": other, "writer": testauth.User("writer", "group"),
+			})
+			env.SetAuthenticator(ta)
+			conn := runACServer(t.Context(), t, env)
+			client := repb.NewActionCacheClient(conn)
+			clientCtx, err := ta.WithAuthenticatedUser(t.Context(), "client")
+			require.NoError(t, err)
+			// CAS writes work with the original client credentials.
+			_, err = cachetools.UploadBlobToCAS(clientCtx, bspb.NewByteStreamClient(conn), "", repb.DigestFunction_SHA256, []byte("input"))
+			require.NoError(t, err)
+			executorCtx := clientCtx
+			for _, key := range tc.executorKeys {
+				executorCtx = metadata.AppendToOutgoingContext(executorCtx, authutil.ExecutorAPIKeyHeader, key)
+			}
+			// An unsigned client label is not executor proof.
+			executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-client", "executor")
+			d := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}
+			_, err = client.UpdateActionResult(executorCtx, &repb.UpdateActionResultRequest{
+				ActionDigest: d, DigestFunction: repb.DigestFunction_SHA256, ActionResult: &repb.ActionResult{ExitCode: 7},
+			})
+			if tc.invalidProof {
+				require.True(t, status.IsUnauthenticatedError(err), "%v", err)
+				require.NotContains(t, err.Error(), "invalid-secret")
+			} else {
+				require.NoError(t, err)
+			}
+			result, err := client.GetActionResult(clientCtx, &repb.GetActionResultRequest{ActionDigest: d, DigestFunction: repb.DigestFunction_SHA256})
+			if tc.writeAllowed {
+				require.NoError(t, err)
+				require.Equal(t, int32(7), result.GetExitCode())
+			} else {
+				require.True(t, status.IsNotFoundError(err), "%v", err)
+			}
+		})
+	}
 }

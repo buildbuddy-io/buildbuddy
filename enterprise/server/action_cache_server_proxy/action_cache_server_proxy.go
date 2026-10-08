@@ -29,7 +29,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/metadata"
 
-	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
@@ -199,7 +198,7 @@ func (s *ActionCacheServerProxy) isLocalActionResultFresh(md *interfaces.CacheMe
 }
 
 func (s *ActionCacheServerProxy) shouldCacheUpdatedActionResult(ctx context.Context) bool {
-	canWrite, err := capabilities.IsGranted(ctx, s.authenticator, cappb.Capability_CACHE_WRITE)
+	canWrite, err := capabilities.IsActionCacheWriteGranted(ctx, s.env)
 	if err != nil || !canWrite {
 		return false
 	}
@@ -400,6 +399,10 @@ func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *re
 		return resp, err
 	}
 
+	ctx, err := authutil.ForwardExecutorCredentials(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := s.remoteACClient.UpdateActionResult(ctx, req)
 	labels := prometheus.Labels{
 		metrics.StatusLabel:           status.MetricsLabel(err),

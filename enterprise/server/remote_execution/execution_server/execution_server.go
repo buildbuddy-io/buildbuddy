@@ -1745,12 +1745,20 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	}
 	ar := &repb.ActionResult{StdoutRaw: b}
 
+	ctx, err = authutil.ForwardExecutorCredentials(ctx, s.env)
+	if err != nil {
+		return err
+	}
 	return cachetools.UploadActionResult(ctx, s.actionCacheClient, arn, ar)
 }
 
 func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ACResourceName, response *repb.ExecuteResponse, action *repb.Action) error {
 	if response.GetCachedResult() || action.GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
 		return nil
+	}
+	ctx, err := authutil.ForwardExecutorCredentials(ctx, s.env)
+	if err != nil {
+		return err
 	}
 	return cachetools.UploadActionResult(ctx, s.actionCacheClient, actionResourceName, response.GetResult())
 }

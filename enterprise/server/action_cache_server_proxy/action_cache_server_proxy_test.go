@@ -19,6 +19,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -31,6 +33,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
@@ -38,6 +41,7 @@ import (
 func runACServer(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticator) repb.ActionCacheClient {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(ta)
+	require.NoError(t, clientidentity.Register(env))
 
 	acServer, err := action_cache_server.NewActionCacheServer(env)
 	require.NoError(t, err)
@@ -50,9 +54,10 @@ func runACServer(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticat
 	return repb.NewActionCacheClient(conn)
 }
 
-func runACProxy(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticator, client repb.ActionCacheClient) repb.ActionCacheClient {
+func runACProxy(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticator, client repb.ActionCacheClient) (repb.ActionCacheClient, *ActionCacheServerProxy) {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(ta)
+	require.NoError(t, clientidentity.Register(env))
 	env.SetActionCacheClient(client)
 	env.SetLocalActionCacheServer(runLocalActionCacheServerForProxy(ctx, env, t))
 
@@ -64,7 +69,7 @@ func runACProxy(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticato
 	conn, err := testenv.LocalGRPCConn(ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	return repb.NewActionCacheClient(conn)
+	return repb.NewActionCacheClient(conn), proxyServer
 }
 
 func runLocalActionCacheServerForProxy(ctx context.Context, env *testenv.TestEnv, t *testing.T) repb.ActionCacheServer {
@@ -226,7 +231,7 @@ func TestActionCacheProxy(t *testing.T) {
 	ctx := context.Background()
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers())
 	ac := runACServer(ctx, t, ta)
-	proxy := runACProxy(ctx, t, ta, ac)
+	proxy, _ := runACProxy(ctx, t, ta, ac)
 
 	digestA := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
@@ -297,7 +302,7 @@ func TestActionCacheProxy_CachingAndEncryptionEnabled(t *testing.T) {
 	countingClient := &countingActionCacheClient{
 		realAC: ac,
 	}
-	proxy := runACProxy(ctx, t, ta, countingClient)
+	proxy, _ := runACProxy(ctx, t, ta, countingClient)
 
 	digestA := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
@@ -340,7 +345,7 @@ func TestActionCacheProxy_CachingEnabled(t *testing.T) {
 	countingClient := &countingActionCacheClient{
 		realAC: ac,
 	}
-	proxy := runACProxy(ctx, t, ta, countingClient)
+	proxy, _ := runACProxy(ctx, t, ta, countingClient)
 
 	digestA := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
@@ -682,7 +687,7 @@ func TestSkipRemote(t *testing.T) {
 	ctx = metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
 
 	ac := runACServer(ctx, t, ta)
-	proxy := runACProxy(ctx, t, ta, ac)
+	proxy, _ := runACProxy(ctx, t, ta, ac)
 
 	d := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
@@ -800,4 +805,74 @@ func TestRestrictedPrefixBypassViaProxy(t *testing.T) {
 	})
 	require.True(t, status.IsUnauthenticatedError(updateErr),
 		"UpdateActionResult with restricted prefix via proxy: expected UnauthenticatedError (bypass fixed), got: %v", updateErr)
+}
+
+func TestRBEKeyThroughProxy(t *testing.T) {
+	flags.Set(t, "app.client_identity.key", "test-identity-key")
+	flags.Set(t, "app.client_identity.origin", interfaces.ClientIdentityInternalOrigin)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityCacheProxy)
+	rbeUser := testauth.User("user", "group")
+	rbeUser.Capabilities = []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_EXECUTOR_CACHE_WRITE}
+	executor := testauth.User("executor", "group")
+	executor.Capabilities = []cappb.Capability{cappb.Capability_REGISTER_EXECUTOR}
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{"user": rbeUser, "executor": executor})
+	baseCtx, err := ta.WithAuthenticatedUser(t.Context(), "user")
+	require.NoError(t, err)
+	ac := runACServer(baseCtx, t, ta)
+	// Include two proxies to verify credentials survive repeated forwarding.
+	innerProxy, _ := runACProxy(baseCtx, t, ta, ac)
+	proxy, proxyServer := runACProxy(baseCtx, t, ta, innerProxy)
+	signingEnv := testenv.GetTestEnv(t)
+	require.NoError(t, clientidentity.Register(signingEnv))
+	cis := signingEnv.GetClientIdentityService()
+	for i, tc := range []struct {
+		name        string
+		identity    *interfaces.ClientIdentity
+		executorKey string
+		allowed     bool
+	}{
+		{name: "local client"},
+		{name: "self hosted executor", executorKey: "executor", allowed: true},
+		{name: "hosted executor", identity: &interfaces.ClientIdentity{Client: interfaces.ClientIdentityExecutor, Origin: interfaces.ClientIdentityInternalOrigin}, allowed: true},
+		{name: "app identity", identity: &interfaces.ClientIdentity{Client: interfaces.ClientIdentityApp, Origin: interfaces.ClientIdentityInternalOrigin}},
+		{name: "proxy identity", identity: &interfaces.ClientIdentity{Client: interfaces.ClientIdentityCacheProxy, Origin: interfaces.ClientIdentityInternalOrigin}},
+		{name: "external executor identity", identity: &interfaces.ClientIdentity{Client: interfaces.ClientIdentityExecutor, Origin: "external"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := baseCtx
+			if tc.executorKey != "" {
+				ctx = metadata.AppendToOutgoingContext(ctx, authutil.ExecutorAPIKeyHeader, tc.executorKey)
+			}
+			if tc.identity != nil {
+				header, err := cis.NewIdentityHeader(tc.identity, time.Minute)
+				require.NoError(t, err)
+				ctx = metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, header)
+			}
+			d := &repb.Digest{Hash: fmt.Sprintf("%064x", i+1), SizeBytes: 1}
+			update(ctx, proxy, d, int32(i+1), t)
+			req := &repb.GetActionResultRequest{ActionDigest: d, DigestFunction: repb.DigestFunction_SHA256}
+			localCtx, err := prefix.AttachUserPrefixToContext(baseCtx, ta)
+			require.NoError(t, err)
+			localKey, err := getACKeyForGetActionResultRequest(req)
+			require.NoError(t, err)
+			_, result, _, err := proxyServer.getActionResultFromLocalCAS(localCtx, localKey, false)
+			if tc.allowed {
+				require.NoError(t, err)
+				require.Equal(t, int32(i+1), result.GetExitCode())
+			} else {
+				require.True(t, status.IsNotFoundError(err), "%v", err)
+			}
+			// Check the authoritative cache and the proxy's local cache, so a dropped
+			// write cannot be cached by a proxy and later served as a successful write.
+			for _, client := range []repb.ActionCacheClient{ac, proxy} {
+				result, err := client.GetActionResult(baseCtx, req)
+				if tc.allowed {
+					require.NoError(t, err)
+					require.Equal(t, int32(i+1), result.GetExitCode())
+				} else {
+					require.True(t, status.IsNotFoundError(err), "%v", err)
+				}
+			}
+		})
+	}
 }

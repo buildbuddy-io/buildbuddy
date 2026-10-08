@@ -20,4 +20,8 @@ enum Capability {
   REGISTER_CACHE_PROXY = 32;  // 2^5
   // Allows sending notifications (such as email) via the notification API.
   SEND_NOTIFICATION = 64;  // 2^6
+  // Allows authenticated remote executors to write action results for this key.
+  // Combine with CAS_WRITE to allow clients to upload remote execution inputs
+  // without allowing them to upload locally produced action results.
+  EXECUTOR_CACHE_WRITE = 128;  // 2^7
 }

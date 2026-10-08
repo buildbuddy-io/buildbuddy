@@ -8,8 +8,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 
-	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	smpb "github.com/buildbuddy-io/buildbuddy/proto/semver"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
@@ -122,9 +122,10 @@ func (s *CapabilitiesServer) actionCacheUpdateEnabled(ctx context.Context) bool 
 	// making AC write requests that would just be dropped anyway. In other
 	// cases, we return true here and defer any auth error handling to the
 	// action cache server when the update is actually attempted.
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	_, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return true
 	}
-	return u.HasCapability(cappb.Capability_CACHE_WRITE)
+	canWrite, err := capabilities.IsActionCacheWriteGranted(ctx, s.env)
+	return err != nil || canWrite
 }

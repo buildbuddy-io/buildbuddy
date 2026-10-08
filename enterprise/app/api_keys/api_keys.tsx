@@ -318,6 +318,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange("capability", [capability.Capability.CACHE_WRITE]);
   }
 
+  private onSelectRBE(onChange: (name: string, value: any) => any) {
+    onChange("capability", [capability.Capability.CAS_WRITE, capability.Capability.EXECUTOR_CACHE_WRITE]);
+  }
+
   private onSelectExecutor(onChange: (name: string, value: any) => any) {
     onChange("capability", [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_EXECUTOR]);
   }
@@ -356,8 +360,9 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     // Org-level keys do not have capability restrictions.
     if (!this.props.userOwnedOnly) return true;
 
-    // If the new roles are not yet enabled, only let admins change capabilities.
-    if (!capabilities.config.readerWriterRolesEnabled) {
+    // Preserve the legacy restrictions for existing key types. RBE-only keys use
+    // the allowlist so developers can create them even before new roles launch.
+    if (!capabilities.config.readerWriterRolesEnabled && !caps.includes(capability.Capability.EXECUTOR_CACHE_WRITE)) {
       return this.props.user.isGroupAdmin();
     }
 
@@ -439,6 +444,26 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     />
                     <span>
                       CAS-only key <span className="field-description">(disable action cache uploads)</span>
+                    </span>
+                  </label>
+                </div>
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectRBE.bind(this, onChange)}
+                      checked={isRBEKey(request)}
+                      disabled={
+                        !this.canSetCapabilities([
+                          capability.Capability.CAS_WRITE,
+                          capability.Capability.EXECUTOR_CACHE_WRITE,
+                        ])
+                      }
+                      debug-id="rbe-radio-button"
+                    />
+                    <span>
+                      RBE-only key{" "}
+                      <span className="field-description">(allow action cache uploads only from remote executors)</span>
                     </span>
                   </label>
                 </div>
@@ -747,6 +772,10 @@ function isCASOnly<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, [capability.Capability.CAS_WRITE]);
 }
 
+function isRBEKey<T extends ApiKeyFields>(apiKey: T | null) {
+  return hasExactCapabilities(apiKey, [capability.Capability.CAS_WRITE, capability.Capability.EXECUTOR_CACHE_WRITE]);
+}
+
 function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_EXECUTOR]);
 }
@@ -777,6 +806,8 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities = "Read-only";
   } else if (isCASOnly(apiKey)) {
     capabilities = "CAS-only";
+  } else if (isRBEKey(apiKey)) {
+    capabilities = "RBE-only";
   } else if (isExecutorKey(apiKey)) {
     capabilities = "Executor";
   } else if (isCacheProxyKey(apiKey)) {

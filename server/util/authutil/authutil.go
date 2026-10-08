@@ -33,6 +33,10 @@ const (
 
 	APIKeyHeader = "x-buildbuddy-api-key"
 
+	// ExecutorAPIKeyHeader carries an executor's registration key separately
+	// from the task's credentials. It never replaces the authenticated user.
+	ExecutorAPIKeyHeader = "x-buildbuddy-executor-api-key"
+
 	// The key the JWT token string is stored under.
 	// NB: This value must match the value in
 	// bb/server/rpc/interceptors/interceptors.go which copies/reads this value
@@ -235,6 +239,70 @@ func EncryptionEnabled(ctx context.Context, authenticator interfaces.Authenticat
 		return false
 	}
 	return u.GetCacheEncryptionEnabled()
+}
+
+// contextWithoutValues retains cancellation and deadlines while hiding all
+// credentials, cached claims, peer certificates, and metadata. Authenticating a
+// second credential on the original context could reuse the primary identity.
+type contextWithoutValues struct{ context.Context }
+
+func (contextWithoutValues) Value(any) any { return nil }
+
+// IsExecutorForGroup checks independent executor credentials. Hosted executors
+// have a signed internal client identity; self-hosted executors must present a
+// registration key belonging to the task's organization.
+func IsExecutorForGroup(ctx context.Context, env environment.Env, groupID string) (bool, error) {
+	if groupID == "" {
+		return false, nil
+	}
+	if cis := env.GetClientIdentityService(); cis != nil {
+		if identity, err := cis.IdentityFromContext(ctx); err == nil &&
+			identity.Client == interfaces.ClientIdentityExecutor && identity.Origin == interfaces.ClientIdentityInternalOrigin {
+			return true, nil
+		}
+	}
+	keys := metadata.ValueFromIncomingContext(ctx, ExecutorAPIKeyHeader)
+	if len(keys) == 0 {
+		return false, nil
+	}
+	if len(keys) != 1 || keys[0] == "" {
+		return false, status.UnauthenticatedError("expected one executor API key")
+	}
+	a := env.GetAuthenticator()
+	// Authenticate directly to avoid minting a JWT just to inspect the key's
+	// permissions. Remote authenticators also need the key in outgoing metadata
+	// when their cached credentials expire and they call the auth service.
+	md := metadata.Pairs(APIKeyHeader, keys[0])
+	executorCtx := metadata.NewIncomingContext(contextWithoutValues{ctx}, md)
+	executorCtx = metadata.NewOutgoingContext(executorCtx, md)
+	u, err := a.AuthenticateGRPCRequest(executorCtx)
+	if err != nil {
+		// Authentication errors may contain the submitted key. Don't expose it.
+		return false, status.UnauthenticatedError("invalid executor API key")
+	}
+	return u.GetGroupID() == groupID && u.HasCapability(cappb.Capability_REGISTER_EXECUTOR), nil
+}
+
+// ForwardExecutorCredentials preserves executor proof when forwarding an AC
+// write, without changing the task's user or capabilities. Refresh signed
+// identities here: a PublishOperation stream can outlive its original header.
+func ForwardExecutorCredentials(ctx context.Context, env environment.Env) (context.Context, error) {
+	md, _ := metadata.FromOutgoingContext(ctx)
+	md = md.Copy()
+	if keys := metadata.ValueFromIncomingContext(ctx, ExecutorAPIKeyHeader); len(keys) > 0 {
+		md[ExecutorAPIKeyHeader] = keys
+	}
+	if cis := env.GetClientIdentityService(); cis != nil {
+		if identity, err := cis.IdentityFromContext(ctx); err == nil &&
+			identity.Client == interfaces.ClientIdentityExecutor && identity.Origin == interfaces.ClientIdentityInternalOrigin {
+			header, err := cis.CachedIdentityHeader(identity)
+			if err != nil {
+				return nil, err
+			}
+			md.Set(ClientIdentityHeaderName, header)
+		}
+	}
+	return metadata.NewOutgoingContext(ctx, md), nil
 }
 
 // Returns a context derived from the provided context that has the
