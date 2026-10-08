@@ -158,7 +158,6 @@ proto_library(
 proto_library(
     name = "bytestream_proto",
     srcs = ["bytestream.proto"],
-    deps = [],
 )
 
 proto_library(
