@@ -45,9 +45,7 @@ type Proxy struct {
 	t        *testing.T
 	Addr     net.Addr
 	director Director
-	mu       sync.Mutex // protects director and conns
-	conns    []*grpc.ClientConn
-	Conn     *grpc.ClientConn
+	mu       sync.Mutex // protects director
 }
 
 // Director decides how to connect a client request to a backend. The proxy
@@ -106,14 +104,7 @@ func StartProxy(t *testing.T) *Proxy {
 	}
 	server := grpc.NewServer(grpc.UnknownServiceHandler(handler))
 	go server.Serve(lis)
-	t.Cleanup(func() {
-		server.Stop()
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		for _, conn := range p.conns {
-			conn.Close()
-		}
-	})
+	t.Cleanup(server.Stop)
 	return p
 }
 
@@ -132,9 +123,7 @@ func (p *Proxy) GRPCTarget() string {
 func (p *Proxy) Dial() *grpc.ClientConn {
 	conn, err := grpc_client.DialSimpleWithoutPooling(p.GRPCTarget())
 	require.NoError(p.t, err)
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.conns = append(p.conns, conn)
+	p.t.Cleanup(func() { conn.Close() })
 	return conn
 }
 
