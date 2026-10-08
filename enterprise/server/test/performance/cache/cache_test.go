@@ -223,7 +223,7 @@ func getMetaCache(t testing.TB, te environment.Env) interfaces.Cache {
 	go runServer()
 	t.Cleanup(srv.Stop)
 
-	conn, err := testenv.LocalGRPCConn(
+	conn, err := testenv.LocalGRPCConn(t,
 		te.GetServerContext(),
 		lis,
 		interceptors.GetUnaryClientIdentityInterceptor(te),

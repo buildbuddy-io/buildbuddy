@@ -46,10 +46,10 @@ type Proxy struct {
 	Addr     net.Addr
 	director Director
 	mu       sync.Mutex // protects director
-	Conn     *grpc.ClientConn
 }
 
-// Director decides how to connect a client request to a backend.
+// Director decides how to connect a client request to a backend. The proxy
+// takes ownership of the returned conn and closes it when the RPC finishes.
 type Director func(ctx context.Context, fullMethodName string) (ctxOut context.Context, conn *grpc.ClientConn, err error)
 
 // StartProxy runs a test-scoped gRPC proxy. The given director func decides how
@@ -63,14 +63,29 @@ func StartProxy(t *testing.T) *Proxy {
 		Addr:     lis.Addr(),
 		director: nil,
 	}
-	director := func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		require.NotNil(t, p.director, "Proxy.Director is nil")
-		return p.director(ctx, fullMethodName)
+	// Each RPC gets its own handler so that it can close the conn the
+	// director returned once the RPC finishes.
+	handler := func(srv any, stream grpc.ServerStream) error {
+		var conn *grpc.ClientConn
+		director := func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			require.NotNil(t, p.director, "Proxy.Director is nil")
+			outCtx, c, err := p.director(ctx, fullMethodName)
+			if err != nil {
+				return nil, nil, err
+			}
+			conn = c
+			return outCtx, c, nil
+		}
+		defer func() {
+			if conn != nil {
+				conn.Close()
+			}
+		}()
+		return proxy.TransparentHandler(director)(srv, stream)
 	}
-	handler := grpc.UnknownServiceHandler(proxy.TransparentHandler(director))
-	server := grpc.NewServer(handler)
+	server := grpc.NewServer(grpc.UnknownServiceHandler(handler))
 	go server.Serve(lis)
 	t.Cleanup(server.Stop)
 	return p
@@ -86,9 +101,12 @@ func (p *Proxy) GRPCTarget() string {
 	return "grpc://" + p.Addr.String()
 }
 
+// Dial returns a connection to the proxy, which is closed when the test that
+// started the proxy ends.
 func (p *Proxy) Dial() *grpc.ClientConn {
 	conn, err := grpc_client.DialSimpleWithoutPooling(p.GRPCTarget())
 	require.NoError(p.t, err)
+	p.t.Cleanup(func() { conn.Close() })
 	return conn
 }
 

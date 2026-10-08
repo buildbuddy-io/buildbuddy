@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"net/url"
@@ -129,8 +130,10 @@ type Env struct {
 	rootDataDir                   string
 	buildBuddyServers             map[*BuildBuddyServer]struct{}
 	shutdownBuildBuddyServersOnce sync.Once
-	executors                     map[string]*Executor
-	testCommandController         *testCommandController
+	// conns are closed once the executors and apps have shut down.
+	conns                 []io.Closer
+	executors             map[string]*Executor
+	testCommandController *testCommandController
 	// Used to generate executor names when not specified.
 	executorNameCounter atomic.Uint64
 	envOpts             *enterprise_testenv.Options
@@ -199,6 +202,7 @@ func (r *Env) shutdownBuildBuddyServers() {
 		wg.Go(func() {
 			log.Infof("Waiting for buildbuddy server with port %d to shut down.", app.port)
 			app.env.GetHealthChecker().WaitForGracefulShutdown()
+			app.selfConn.Close()
 			log.Infof("Shut down for buildbuddy server with port %d completed.", app.port)
 		})
 	}
@@ -321,6 +325,11 @@ func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
 	flags.Set(t, "app.cache_api_url", *u)
 
 	t.Cleanup(func() {
+		for _, conn := range rbe.conns {
+			conn.Close()
+		}
+	})
+	t.Cleanup(func() {
 		log.Warningf("Shutting down executors...")
 		var wg sync.WaitGroup
 		for id, e := range rbe.executors {
@@ -373,6 +382,9 @@ type BuildBuddyServer struct {
 	buildBuddyServiceServer *buildbuddy_server.BuildBuddyServer
 	buildEventServer        *build_event_server.BuildEventProtocolServer
 	olapDBHandle            *testolapdb.Handle
+	// selfConn is the server's connection to itself, used as its
+	// RemoteExecutionClient.
+	selfConn *grpc_client.ClientConnPool
 }
 
 func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBuddyServerOptions) *BuildBuddyServer {
@@ -453,6 +465,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	if err != nil {
 		assert.FailNowf(t, "could not connect to BuildBuddy server", err.Error())
 	}
+	server.selfConn = clientConn
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 
 	return server
@@ -714,6 +727,7 @@ func newTestCommandController(t *testing.T, env environment.Env) *testCommandCon
 	server := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
 	retpb.RegisterCommandControllerServer(server, controller)
 	go server.Serve(listener)
+	t.Cleanup(server.Stop)
 
 	return controller
 }
@@ -805,6 +819,7 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 func (r *Env) RemoveBuildBuddyServer(server *BuildBuddyServer) {
 	server.env.GetHealthChecker().Shutdown()
 	server.env.GetHealthChecker().WaitForGracefulShutdown()
+	server.selfConn.Close()
 	delete(r.buildBuddyServers, server)
 	r.updateAppProxy()
 }
@@ -1065,6 +1080,12 @@ type CacheProxy struct {
 	conn *grpc_client.ClientConnPool
 }
 
+// Conn returns a connection to the cache proxy, which is closed when the test
+// ends.
+func (cp *CacheProxy) Conn() grpc.ClientConnInterface {
+	return cp.conn
+}
+
 func (cp *CacheProxy) GetByteStreamClient() bspb.ByteStreamClient {
 	return bspb.NewByteStreamClient(cp.conn)
 }
@@ -1141,6 +1162,7 @@ func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 	// Finally, create the client connection.
 	conn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", port))
 	require.NoError(r.t, err)
+	r.conns = append(r.conns, conn)
 	return &CacheProxy{t: r.t, env: proxyEnv, Port: port, conn: conn}
 }
 

@@ -346,7 +346,7 @@ func startGRPCRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*Cac
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -541,7 +541,7 @@ func TestStreamHeartbeat_AccessRevoked(t *testing.T) {
 
 	dialCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	conn, err := testenv.LocalGRPCConn(dialCtx, lis)
+	conn, err := testenv.LocalGRPCConn(t, dialCtx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	client := cppb.NewCacheProxyRegistryClient(conn)

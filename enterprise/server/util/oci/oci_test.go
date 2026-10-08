@@ -1123,7 +1123,7 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	go runServer()
 
 	// Create OCI fetcher client and set it on the env
-	conn, err := testenv.LocalGRPCConn(context.Background(), localGRPClis)
+	conn, err := testenv.LocalGRPCConn(t, context.Background(), localGRPClis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	te.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(conn))

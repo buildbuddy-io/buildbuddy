@@ -147,7 +147,7 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
+	clientConn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { clientConn.Close() })
 	sc := scpb.NewSchedulerClient(clientConn)

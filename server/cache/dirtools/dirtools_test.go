@@ -1903,7 +1903,7 @@ func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	if err != nil {
 		t.Error(err)
 	}

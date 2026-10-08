@@ -298,7 +298,7 @@ func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEn
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(
+	conn, err := testenv.LocalGRPCConn(t,
 		env.GetServerContext(),
 		lis,
 		interceptors.GetUnaryClientIdentityInterceptor(env),
@@ -332,7 +332,7 @@ func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEn
 		bspb.RegisterByteStreamServer(proxyGrpcServer, bsProxy)
 		go proxyRunFunc()
 
-		proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+		proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 		require.NoError(t, err)
 		t.Cleanup(func() { proxyConn.Close() })
 

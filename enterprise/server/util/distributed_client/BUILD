@@ -52,6 +52,7 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:storage_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/digest",

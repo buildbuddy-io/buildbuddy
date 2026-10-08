@@ -820,7 +820,7 @@ func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteSt
 	go runFunc()
 	t.Cleanup(func() { grpcServer.GracefulStop() })
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return ofpb.NewOCIFetcherClient(conn)
@@ -841,7 +841,7 @@ func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCI
 	go runFunc()
 	t.Cleanup(func() { grpcServer.GracefulStop() })
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return ofpb.NewOCIFetcherClient(conn)

@@ -169,7 +169,7 @@ func setupEnvWithClock(t *testing.T, clock clockwork.Clock) (*testenv.TestEnv, *
 	repb.RegisterExecutionServer(env.GetGRPCServer(), env.GetRemoteExecutionService())
 	go run()
 
-	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), lis)
+	conn, err := testenv.LocalGRPCConn(t, env.GetServerContext(), lis)
 	require.NoError(t, err)
 	return env, conn, r
 }

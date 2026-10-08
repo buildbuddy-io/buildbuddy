@@ -109,15 +109,19 @@ func RegisterLocalInternalGRPCServer(t testing.TB, te *real_environment.RealEnv)
 	return srv, run, lis
 }
 
-func LocalGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return localGRPCConn(ctx, lis, opts...)
+// LocalGRPCConn returns a connection to the server listening on lis, which is
+// closed when the test ends.
+func LocalGRPCConn(t testing.TB, ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return localGRPCConn(t, ctx, lis, opts...)
 }
 
-func LocalInternalGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return localGRPCConn(ctx, lis, opts...)
+// LocalInternalGRPCConn returns a connection to the internal server listening
+// on lis, which is closed when the test ends.
+func LocalInternalGRPCConn(t testing.TB, ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return localGRPCConn(t, ctx, lis, opts...)
 }
 
-func localGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+func localGRPCConn(t testing.TB, ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	bufDialer := func(context.Context, string) (net.Conn, error) {
 		return lis.Dial()
 	}
@@ -126,7 +130,12 @@ func localGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.Dial
 	dialOptions = append(dialOptions, grpc.WithContextDialer(bufDialer))
 	dialOptions = append(dialOptions, grpc.WithInsecure())
 	dialOptions = append(dialOptions, opts...)
-	return grpc.DialContext(ctx, "bufnet", dialOptions...)
+	conn, err := grpc.DialContext(ctx, "bufnet", dialOptions...)
+	if err != nil {
+		return nil, err
+	}
+	t.Cleanup(func() { conn.Close() })
+	return conn, nil
 }
 
 // gRPCServer starts a gRPC server with standard BuildBuddy filters that uses the given listener.

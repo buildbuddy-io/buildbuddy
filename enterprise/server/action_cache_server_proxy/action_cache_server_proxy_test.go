@@ -44,7 +44,7 @@ func runACServer(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticat
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	repb.RegisterActionCacheServer(grpcServer, acServer)
 	go runFunc()
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return repb.NewActionCacheClient(conn)
@@ -61,7 +61,7 @@ func runACProxy(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticato
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	repb.RegisterActionCacheServer(grpcServer, proxyServer)
 	go runFunc()
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return repb.NewActionCacheClient(conn)
@@ -757,7 +757,7 @@ func TestRestrictedPrefixBypassViaProxy(t *testing.T) {
 	proxyEnv.SetAuthenticator(ta)
 	require.NoError(t, clientidentity.Register(proxyEnv))
 
-	authConn, err := testenv.LocalGRPCConn(ctx, authLis,
+	authConn, err := testenv.LocalGRPCConn(t, ctx, authLis,
 		interceptors.GetUnaryClientIdentityInterceptor(proxyEnv),
 	)
 	require.NoError(t, err)
@@ -774,7 +774,7 @@ func TestRestrictedPrefixBypassViaProxy(t *testing.T) {
 
 	// External client: connects to the proxy without any client-identity
 	// interceptor, simulating a normal authenticated Bazel remote-cache client.
-	extConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	extConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { extConn.Close() })
 	extACClient := repb.NewActionCacheClient(extConn)
