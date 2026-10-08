@@ -1505,8 +1505,9 @@ func TestEntrypoint(t *testing.T) {
 	assert.Equal(t, "bar\n", string(res.Stdout))
 }
 
-func TestFileOwnership(t *testing.T) {
+func TestFileOwnershipAndModTime(t *testing.T) {
 	setupNetworking(t)
+	mtime := time.Unix(1700000000, 0)
 	// Load busybox oci image
 	busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
 	// Append a layer with a file, dir, and symlink that are owned by a
@@ -1517,6 +1518,7 @@ func TestFileOwnership(t *testing.T) {
 			{
 				Header: &tar.Header{
 					Name:     "/foo.txt",
+					ModTime:  mtime,
 					Gid:      1000,
 					Uid:      1000,
 					Mode:     0644,
@@ -1526,6 +1528,7 @@ func TestFileOwnership(t *testing.T) {
 			{
 				Header: &tar.Header{
 					Name:     "/bar",
+					ModTime:  mtime,
 					Gid:      1000,
 					Uid:      1000,
 					Mode:     0755,
@@ -1535,6 +1538,7 @@ func TestFileOwnership(t *testing.T) {
 			{
 				Header: &tar.Header{
 					Name:     "/baz.ln",
+					ModTime:  mtime,
 					Gid:      1000,
 					Uid:      1000,
 					Mode:     0644,
@@ -1578,14 +1582,14 @@ func TestFileOwnership(t *testing.T) {
 	})
 
 	res := c.Run(ctx, &repb.Command{
-		Arguments: []string{"stat", "-c", "%n: %u %g", "/foo.txt", "/bar", "/baz.ln", "/qux.hardlink"},
+		Arguments: []string{"stat", "-c", "%n: %u %g %Y", "/foo.txt", "/bar", "/baz.ln", "/qux.hardlink"},
 	}, wd, oci.Credentials{})
 
 	require.NoError(t, res.Error)
 	require.Empty(t, string(res.Stderr))
 	assert.Equal(
 		t,
-		"/foo.txt: 1000 1000\n/bar: 1000 1000\n/baz.ln: 1000 1000\n/qux.hardlink: 1000 1000\n",
+		"/foo.txt: 1000 1000 1700000000\n/bar: 1000 1000 1700000000\n/baz.ln: 1000 1000 1700000000\n/qux.hardlink: 1000 1000 1700000000\n",
 		string(res.Stdout),
 	)
 }
@@ -1701,10 +1705,10 @@ func TestImageStoreRejectsLayerSymlinkEscape(t *testing.T) {
 				escapeDir := filepath.Join(rootDir, "escape")
 				require.NoError(t, os.MkdirAll(escapeDir, 0755))
 				escapeFile := filepath.Join(escapeDir, "pwned.txt")
-				// Extracted layers are unpacked below v2/<algorithm>/<digest>.tmp.
+				// Extracted layers are unpacked below v3/<algorithm>/<digest>.tmp.
 				// Compute the relative symlink target from that depth so the test
 				// keeps pointing at the escape dir if the root path changes.
-				unpackDir := filepath.Join(layerDir, "v2", "sha256", "layer.tmp")
+				unpackDir := filepath.Join(layerDir, "v3", "sha256", "layer.tmp")
 				linkname, err := filepath.Rel(unpackDir, escapeFile)
 				require.NoError(t, err)
 				require.Equal(t, escapeFile, filepath.Clean(filepath.Join(unpackDir, linkname)))
@@ -1754,6 +1758,48 @@ func TestImageStoreRejectsLayerSymlinkEscape(t *testing.T) {
 			// destination, regardless of how the symlink target was spelled.
 			_, err = os.Stat(escapeFile)
 			assert.True(t, os.IsNotExist(err), "file outside layer destination should not be created")
+		})
+	}
+}
+
+func TestImageStorePreservesLayerModTimes(t *testing.T) {
+	setupNetworking(t)
+	mtime := time.Unix(1700000000, 123456789)
+	entries := []testtar.Entry{
+		{Header: &tar.Header{Name: "./", Typeflag: tar.TypeDir, ModTime: mtime}},
+		{Header: &tar.Header{Name: "pkg/", Typeflag: tar.TypeDir, ModTime: mtime.Add(time.Second)}},
+		{Header: &tar.Header{Name: "pkg/nested/", Typeflag: tar.TypeDir, ModTime: mtime.Add(2 * time.Second)}},
+		{Header: &tar.Header{Name: "pkg/nested/module.py", Typeflag: tar.TypeReg, ModTime: mtime.Add(3 * time.Second)}, Data: []byte("answer = 42\n")},
+		{Header: &tar.Header{Name: "epoch", Typeflag: tar.TypeReg, ModTime: time.Unix(0, 0)}},
+		{Header: &tar.Header{Name: "before-epoch", Typeflag: tar.TypeReg, ModTime: time.Unix(-1, 0)}},
+		{Header: &tar.Header{Name: "relative-link", Typeflag: tar.TypeSymlink, Linkname: "pkg/nested/module.py", ModTime: mtime.Add(4 * time.Second)}},
+		{Header: &tar.Header{Name: "absolute-link", Typeflag: tar.TypeSymlink, Linkname: "/pkg/nested/module.py", ModTime: mtime.Add(5 * time.Second)}},
+		{Header: &tar.Header{Name: "dangling-link", Typeflag: tar.TypeSymlink, Linkname: "missing", ModTime: mtime.Add(6 * time.Second)}},
+		{Header: &tar.Header{Name: "hardlink", Typeflag: tar.TypeLink, Linkname: "pkg/nested/module.py"}},
+		{Header: &tar.Header{Name: "symlink-hardlink", Typeflag: tar.TypeLink, Linkname: "absolute-link"}},
+	}
+	for _, entry := range entries {
+		entry.Header.Uid = os.Getuid()
+		entry.Header.Gid = os.Getgid()
+		entry.Header.Mode = 0755
+		entry.Header.Format = tar.FormatPAX
+	}
+	layer := testregistry.NewBytesLayer(t, testtar.EntriesBytes(t, entries))
+	image := pushSingleLayerImage(t, "test-layer-modtimes:latest", layer)
+	layerPath := singleLayerPath(t, pullSingleLayerImage(t, image))
+	for _, entry := range entries {
+		t.Run(entry.Name, func(t *testing.T) {
+			want := entry.ModTime
+			if entry.Typeflag == tar.TypeLink {
+				for _, target := range entries {
+					if target.Name == entry.Linkname {
+						want = target.ModTime
+					}
+				}
+			}
+			info, err := os.Lstat(filepath.Join(layerPath, entry.Name))
+			require.NoError(t, err)
+			assert.True(t, want.Equal(info.ModTime()), "mtime: got %s, want %s", info.ModTime(), want)
 		})
 	}
 }
@@ -2727,8 +2773,8 @@ func TestImageEvictionAfterContainerRemoval(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory path by scanning the image cache.
-	// The structure is: {cacheRoot}/images/oci/v2/sha256/{hash}/
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	// The structure is: {cacheRoot}/images/oci/v3/sha256/{hash}/
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
@@ -2831,7 +2877,7 @@ func TestImageEvictionWithMultipleContainers(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory path
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
@@ -2935,7 +2981,7 @@ func TestImageRePullAfterEviction(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory path
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
@@ -3040,7 +3086,7 @@ func TestFileCachePopulatedOnStartup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries)
@@ -3130,7 +3176,7 @@ func TestImageResurrection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries)
@@ -3194,7 +3240,7 @@ func TestImageResurrection(t *testing.T) {
 
 func TestPopulateFileCacheTracksLayerDirsNotAlgorithmDir(t *testing.T) {
 	// This test verifies that populateFileCache correctly tracks individual
-	// layer directories (e.g., /v2/sha256/abc123...), and not some higher level
+	// layer directories (e.g., /v3/sha256/abc123...), and not some higher level
 	// dir like /sha256/, which would result in all layer dirs being evicted at
 	// once (which would be bad).
 	setupNetworking(t)
@@ -3244,7 +3290,7 @@ func TestPopulateFileCacheTracksLayerDirsNotAlgorithmDir(t *testing.T) {
 
 	// Sanity check that the layer directories still exist after "shutting
 	// down" the executor
-	algorithmDir := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	algorithmDir := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(algorithmDir)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries, "expected at least one layer directory")

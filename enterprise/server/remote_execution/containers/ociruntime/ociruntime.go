@@ -117,7 +117,8 @@ const (
 	// are cleaned up automatically on startup.
 	//
 	// Must match the versionDirRegexp below ("v" followed by an integer).
-	imageCacheVersion = "v2"
+	// v3 preserves modification times from the layer archive.
+	imageCacheVersion = "v3"
 
 	// Maximum length of overlayfs mount options string.
 	maxMntOptsLength = 4095
@@ -1754,7 +1755,7 @@ func (s *ImageStore) populateFileCache() error {
 	ctx := context.Background()
 
 	// The layers directory structure is: {layersDir}/{version}/{algorithm}/{hash}/
-	// e.g., /cache/images/oci/v2/sha256/abc123.../
+	// e.g., /cache/images/oci/v3/sha256/abc123.../
 	// We only scan the current version directory.
 	versionDir := filepath.Join(s.layersDir, imageCacheVersion)
 	entries, err := os.ReadDir(versionDir)
@@ -2030,6 +2031,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64,
 
 	counter := &ioutil.Counter{}
 	tr := tar.NewReader(io.TeeReader(rc, counter))
+	directoryModTimes := make(map[string]time.Time)
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -2092,9 +2094,13 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64,
 			if err := root.Chmod(file, mode); err != nil {
 				return 0, status.UnavailableErrorf("chmod directory: %s", err)
 			}
+			// Creating children changes the directory mtime, so restore it only
+			// after the entire layer has been extracted.
+			directoryModTimes[file] = header.ModTime
+			continue
 		case tar.TypeReg:
 			mode := header.FileInfo().Mode()
-			if err := root.CreateFile(file, mode, tr, header.Uid, header.Gid); err != nil {
+			if err := root.CreateFile(file, mode, tr, header.Uid, header.Gid, header.ModTime); err != nil {
 				return 0, status.UnavailableErrorf("create file: %s", err)
 			}
 		case tar.TypeSymlink:
@@ -2106,6 +2112,9 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64,
 			if err := root.Lchown(file, header.Uid, header.Gid); err != nil {
 				return 0, status.UnavailableErrorf("lchown symlink: %s", err)
 			}
+			if err := root.Lchtimes(file, header.ModTime, header.ModTime); err != nil {
+				return 0, status.UnavailableErrorf("restore symlink mtime: %s", err)
+			}
 		case tar.TypeLink:
 			target, err := localLayerPath(header.Linkname)
 			if err != nil {
@@ -2116,6 +2125,14 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64,
 			if err := root.Link(target, file); err != nil {
 				return 0, status.UnavailableErrorf("create hard link: %s", err)
 			}
+			// Hard links share their target's inode, including its timestamps.
+			continue
+		}
+	}
+
+	for dir, modTime := range directoryModTimes {
+		if err := root.Chtimes(dir, modTime, modTime); err != nil {
+			return 0, status.UnavailableErrorf("restore directory mtime: %s", err)
 		}
 	}
 

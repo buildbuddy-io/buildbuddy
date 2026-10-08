@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -110,8 +111,52 @@ func (r *Root) Chmod(path string, mode os.FileMode) error {
 	return nil
 }
 
-// CreateFile creates a file, writes data to it, and sets ownership.
-func (r *Root) CreateFile(path string, mode os.FileMode, data io.Reader, uid, gid int) error {
+// Chtimes changes access and modification times of a file or directory.
+func (r *Root) Chtimes(path string, atime, mtime time.Time) error {
+	path = r.localPath(path)
+	if err := r.root.Chtimes(path, atime, mtime); err != nil {
+		return err
+	}
+	r.add(path)
+	return nil
+}
+
+// Lchtimes changes a symlink's access and modification times without following
+// it, and tracks its parent directory for syncing. Use Chtimes for regular files
+// and directories so their inodes are synced as well.
+func (r *Root) Lchtimes(path string, atime, mtime time.Time) error {
+	path = r.localPath(path)
+	// In particular, reject ".." before passing the final component directly
+	// to utimensat. os.Root only resolves the parent directory below.
+	if !filepath.IsLocal(path) {
+		return &os.PathError{Op: "chtimes", Path: path, Err: unix.EINVAL}
+	}
+	var ts [2]unix.Timespec
+	for i, t := range []time.Time{atime, mtime} {
+		var err error
+		ts[i], err = unix.TimeToTimespec(t)
+		if err != nil {
+			return err
+		}
+	}
+	// Resolve the parent through os.Root, then operate on only the final path
+	// component so archive symlinks cannot redirect the update outside the root.
+	f, err := r.root.OpenFile(filepath.Dir(path), os.O_RDONLY|unix.O_DIRECTORY, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := unix.UtimesNanoAt(int(f.Fd()), filepath.Base(path), ts[:], unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return &os.PathError{Op: "utimensat", Path: path, Err: err}
+	}
+	r.addParent(path)
+	return nil
+}
+
+// CreateFile creates a file, writes data to it, and sets ownership, mode, and
+// timestamps. If mtime is nonzero, both access and modification times are set to
+// it before closing the file.
+func (r *Root) CreateFile(path string, mode os.FileMode, data io.Reader, uid, gid int, mtime time.Time) error {
 	path = r.localPath(path)
 	f, err := r.root.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode.Perm())
 	if err != nil {
@@ -129,6 +174,12 @@ func (r *Root) CreateFile(path string, mode os.FileMode, data io.Reader, uid, gi
 	if err := f.Chmod(mode); err != nil {
 		f.Close()
 		return err
+	}
+	if !mtime.IsZero() {
+		if err := r.chtimesFile(f, path, mtime); err != nil {
+			f.Close()
+			return err
+		}
 	}
 	if err := f.Close(); err != nil {
 		return err

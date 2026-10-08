@@ -3,6 +3,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "fsync",
     srcs = [
+        "chtimes_linux.go",
+        "chtimes_other.go",
         "fsync.go",
         "mknod_linux.go",
         "mknod_unsupported.go",
