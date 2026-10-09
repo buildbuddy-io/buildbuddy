@@ -2407,6 +2407,13 @@ func TestReadThroughLookaside(t *testing.T) {
 
 	// Call FindMissing on all the digests -- this should also hit
 	// the lookaside cache.
+	statusCount := func(status string) float64 {
+		return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheFindMissingBlobStatusCount, prometheus.Labels{
+			metrics.PurposeLabel: repb.FindMissingBlobsRequest_UNKNOWN.String(),
+			metrics.StatusLabel:  status,
+		})
+	}
+	presentBefore, absentBefore := statusCount(metrics.PresentStatusLabel), statusCount(metrics.AbsentStatusLabel)
 	for _, distributedCache := range distributedCaches {
 		missing, err := distributedCache.FindMissing(ctx, allResources)
 		require.NoError(t, err)
@@ -2415,6 +2422,17 @@ func TestReadThroughLookaside(t *testing.T) {
 	assert.Equal(t, opCountBefore[peer1], len(memoryCache1.ops))
 	assert.Equal(t, opCountBefore[peer2], len(memoryCache2.ops))
 	assert.Equal(t, opCountBefore[peer3], len(memoryCache3.ops))
+	// Lookaside hits count as present.
+	assert.Equal(t, presentBefore+float64(3*len(allResources)), statusCount(metrics.PresentStatusLabel))
+	assert.Equal(t, absentBefore, statusCount(metrics.AbsentStatusLabel))
+
+	// Lookaside hits still count as present alongside an absent digest.
+	absent, _ := testdigest.RandomCASResourceBuf(t, 100)
+	missing, err := dc1.FindMissing(ctx, append(slices.Clone(allResources), absent))
+	require.NoError(t, err)
+	require.Equal(t, []*repb.Digest{absent.GetDigest()}, missing)
+	assert.Equal(t, presentBefore+float64(4*len(allResources)), statusCount(metrics.PresentStatusLabel))
+	assert.Equal(t, absentBefore+1, statusCount(metrics.AbsentStatusLabel))
 }
 
 func TestAbandonedReadDoesntWriteToLookaside(t *testing.T) {

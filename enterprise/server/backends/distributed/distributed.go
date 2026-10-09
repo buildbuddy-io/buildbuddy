@@ -1447,6 +1447,8 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	if len(resources) == 0 {
 		return nil, nil
 	}
+	// Includes lookaside hits, which the metric below counts as present.
+	requested := len(resources)
 	// During node migrations, disable quorum requirements so that
 	// reads are respected from both the old and new replica sets,
 	// until data has fully migrated to the new nodes.
@@ -1470,11 +1472,11 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			}
 		}
 		if len(stillMissing) == 0 {
+			recordFindMissingStatus(ctx, requested, 0)
 			return nil, nil
 		}
 		resources = stillMissing
 	}
-	purpose := findmissing.PurposeFromContext(ctx)
 
 	mu := sync.RWMutex{} // protects digestToPeersWithData and failure updates to PeerSets in peerMap
 	hashResources := make(map[string][]*rspb.ResourceName, 0)
@@ -1641,22 +1643,24 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		}
 	}
 
-	// Record the LOGICAL present/absent counts by purpose (deduplicated across
-	// replica retries), a complementary view to the per-node pebble metric.
-	if len(resources) > 0 {
-		purposeLabel := purpose.String()
-		if present := len(resources) - len(missing); present > 0 {
-			metrics.DistributedCacheFindMissingBlobStatusCount.
-				WithLabelValues(purposeLabel, metrics.PresentStatusLabel).
-				Add(float64(present))
-		}
-		if len(missing) > 0 {
-			metrics.DistributedCacheFindMissingBlobStatusCount.
-				WithLabelValues(purposeLabel, metrics.AbsentStatusLabel).
-				Add(float64(len(missing)))
-		}
-	}
+	recordFindMissingStatus(ctx, requested-len(missing), len(missing))
 	return missing, nil
+}
+
+// recordFindMissingStatus records the logical present/absent counts of a
+// FindMissing call by purpose, once per requested digest.
+func recordFindMissingStatus(ctx context.Context, present, absent int) {
+	purposeLabel := findmissing.PurposeFromContext(ctx).String()
+	if present > 0 {
+		metrics.DistributedCacheFindMissingBlobStatusCount.
+			WithLabelValues(purposeLabel, metrics.PresentStatusLabel).
+			Add(float64(present))
+	}
+	if absent > 0 {
+		metrics.DistributedCacheFindMissingBlobStatusCount.
+			WithLabelValues(purposeLabel, metrics.AbsentStatusLabel).
+			Add(float64(absent))
+	}
 }
 
 func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {
