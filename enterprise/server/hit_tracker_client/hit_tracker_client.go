@@ -38,8 +38,6 @@ var (
 	remoteHitTrackerWorkers      = flag.Int("cache_proxy.remote_hit_tracker.workers", 1, "The number of workers to use to send asynchronous remote cache-hit-tracking RPCs. Set to 0 to disable remote hit tracking.")
 )
 
-// Register configures a hit-tracker factory that reports cache hits to the
-// HitTrackerService at the backing remote cache (--cache_proxy.remote_cache).
 func Register(env *real_environment.RealEnv) error {
 	target := cache_proxy_config.RemoteCacheTarget()
 	if target == "" || *remoteHitTrackerWorkers < 1 {
