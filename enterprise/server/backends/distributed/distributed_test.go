@@ -4405,6 +4405,25 @@ func TestWriteByReference(t *testing.T) {
 		assertReplicated(t, locals, dcs, rn)
 	})
 
+	t.Run("dedupe probe ignores the lookaside cache", func(t *testing.T) {
+		setWriteReferenceExperiments(t, true)
+		_, dcs, locals, store := newCluster(t, 3, func(o *Options) { o.LookasideCacheSizeBytes = 1_000_000 })
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		require.Equal(t, 1, store.uploadCount())
+		createRefs, dedupeProbes := stagingTotals(locals)
+
+		// A lookaside hit on the coordinator says nothing about the write
+		// peers, so a repeated write still probes all of them.
+		dcs[0].addLookasideEntry(ctx, rn, buf)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		require.Equal(t, 1, store.uploadCount())
+		createRefsAfter, dedupeProbesAfter := stagingTotals(locals)
+		require.Equal(t, createRefs, createRefsAfter)
+		require.Equal(t, dedupeProbes+3, dedupeProbesAfter)
+		assertReplicated(t, locals, dcs, rn)
+	})
+
 	t.Run("coordinator outside the write peerset stages the blob", func(t *testing.T) {
 		setWriteReferenceExperiments(t, true)
 		peers, dcs, locals, store := newCluster(t, 4)
