@@ -1920,16 +1920,17 @@ func (c *Cache) writePeersContain(ctx context.Context, r *rspb.ResourceName) boo
 }
 
 func (c *Cache) referenceWriter(ctx context.Context, refCache interfaces.ReferenceCache, rn *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	if c.writePeersContain(ctx, rn) {
-		// Every write peer already has this blob, so don't pay to stage it in
-		// shared storage; the byte writers short-circuit when the peers
-		// respond with AlreadyExists.
-		return c.byteMultiWriter(ctx, rn)
-	}
 	refWriter, err := refCache.CreateReference(ctx, rn)
 	if err != nil {
 		// The blob can't be staged in shared storage (e.g. it's too small);
 		// fall back to streaming bytes to the peers.
+		return c.byteMultiWriter(ctx, rn)
+	}
+	if c.writePeersContain(ctx, rn) {
+		refWriter.Close()
+		// Every write peer already has this blob, so don't pay to stage it in
+		// shared storage; the byte writers short-circuit when the peers
+		// respond with AlreadyExists.
 		return c.byteMultiWriter(ctx, rn)
 	}
 	if _, err := c.writePeers(rn); err != nil {
