@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
@@ -20,6 +21,8 @@ import (
 )
 
 func TestPublishDownloadedExecutableWaitsForWriter(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	for _, tc := range []struct {
 		name   string
 		cancel bool
@@ -96,6 +99,8 @@ func TestPublishDownloadedExecutableWaitsForWriter(t *testing.T) {
 }
 
 func TestWaitForExecutableReadyReleasesLease(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	path := filepath.Join(t.TempDir(), "executable")
 	require.NoError(t, os.WriteFile(path, []byte("#!/bin/true\n"), 0755))
 	requireExecutableReadinessSupported(t, path)
@@ -107,6 +112,8 @@ func TestWaitForExecutableReadyReleasesLease(t *testing.T) {
 }
 
 func TestWaitForExecutableReadyContinuesOnLeaseError(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	path := filepath.Join(t.TempDir(), "executable")
 	require.NoError(t, os.WriteFile(path, []byte("#!/bin/true\n"), 0755))
 	for _, leaseErr := range []error{unix.EINVAL, unix.EOPNOTSUPP, unix.ENOSYS, unix.EACCES, unix.EIO} {
@@ -122,6 +129,8 @@ func TestWaitForExecutableReadyContinuesOnLeaseError(t *testing.T) {
 }
 
 func TestWaitForExecutableReadyTimesOut(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	path := filepath.Join(t.TempDir(), "executable")
 	require.NoError(t, os.WriteFile(path, []byte("#!/bin/true\n"), 0755))
 

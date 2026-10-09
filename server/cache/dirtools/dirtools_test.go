@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -43,6 +44,8 @@ import (
 )
 
 func TestUploadTree(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	for _, tc := range []struct {
 		name           string
 		cmd            *repb.Command
@@ -729,6 +732,8 @@ func getDigestForMsg(t *testing.T, in proto.Message) *repb.Digest {
 }
 
 func TestDownloadTree(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 	instanceName := "foo"
@@ -792,6 +797,8 @@ func TestDownloadTree(t *testing.T) {
 }
 
 func TestDownloadTreeEmptySymlinkTarget(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 
@@ -815,6 +822,8 @@ func TestDownloadTreeEmptySymlinkTarget(t *testing.T) {
 }
 
 func TestDownloadTreeDedupeInflight(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 
@@ -887,6 +896,8 @@ func TestDownloadTreeDedupeInflight(t *testing.T) {
 }
 
 func TestDownloadTreeBatchDownloadNotDeduped(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDirA := testfs.MakeTempDir(t)
 	tmpDirB := testfs.MakeTempDir(t)
@@ -946,6 +957,8 @@ func TestDownloadTreeBatchDownloadNotDeduped(t *testing.T) {
 }
 
 func TestDownloadTreeBytestreamDownloadDeduped(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDirA := testfs.MakeTempDir(t)
 	tmpDirB := testfs.MakeTempDir(t)
@@ -1019,6 +1032,8 @@ func TestDownloadTreeBytestreamDownloadDeduped(t *testing.T) {
 }
 
 func TestDownloadTreeWithFileCache(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 	instanceName := "foo"
@@ -1075,6 +1090,8 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 }
 
 func TestDownloadTree_InputFetchMetadataUsesDeterministicLeafOrder(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 	fileCacheTmpDir := testfs.MakeTempDir(t)
@@ -1170,6 +1187,8 @@ func TestDownloadTree_InputFetchMetadataUsesDeterministicLeafOrder(t *testing.T)
 }
 
 func TestDownloadTree_InputFetchMetadataTracksBytestreamDownloads(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 
@@ -1203,6 +1222,8 @@ func TestDownloadTree_InputFetchMetadataTracksBytestreamDownloads(t *testing.T) 
 }
 
 func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 	fileCacheTmpDir := testfs.MakeTempDir(t)
@@ -1273,6 +1294,8 @@ func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) 
 }
 
 func TestDownloadTreeReturnsEmptyFileWriteError(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 	emptyDigest, err := digest.Compute(strings.NewReader(""), repb.DigestFunction_SHA256)
@@ -1290,6 +1313,8 @@ func TestDownloadTreeReturnsEmptyFileWriteError(t *testing.T) {
 }
 
 func TestDownloadTreeEmptyDigest(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 	instanceName := "foo"
@@ -1357,6 +1382,8 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 }
 
 func TestDownloadTreeExistingCorrectSymlink(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 	instanceName := "foo"
@@ -1422,6 +1449,8 @@ func TestDownloadTreeExistingCorrectSymlink(t *testing.T) {
 }
 
 func TestDownloadTreeExistingIncorrectSymlink(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 	instanceName := "foo"
@@ -1566,6 +1595,8 @@ func (cc *controlledCache) InjectGetMultiPause(dk digest.Key) func() {
 }
 
 func TestDownloadTreeDirectlyToFileCache(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	env, ctx := testEnv(t)
 
 	instanceName := "foo"
@@ -1664,6 +1695,8 @@ func TestDownloadTreeDirectlyToFileCache(t *testing.T) {
 }
 
 func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	flags.Set(t, "cache.client.enable_download_compression", false)
 
 	env, ctx := testEnv(t)
@@ -1781,6 +1814,8 @@ func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t 
 }
 
 func TestDownloadTree_InputDownloadConcurrency(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	for _, limit := range []int{1, 4} {
 		t.Run(fmt.Sprint(limit), func(t *testing.T) {
 			flags.Set(t, "cache.client.input_download_concurrency", limit)
@@ -1828,6 +1863,8 @@ func TestDownloadTree_InputDownloadConcurrency(t *testing.T) {
 }
 
 func TestUploadTree_OutputUploadConcurrency(t *testing.T) {
+	testleak.Check(t)
+	testleak.CheckFDs(t)
 	for _, limit := range []int{1, 4} {
 		t.Run(fmt.Sprint(limit), func(t *testing.T) {
 			flags.Set(t, "cache.client.output_upload_concurrency", limit)
