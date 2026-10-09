@@ -83,7 +83,7 @@ The agent inspects the failure output and relevant source code, applies a minima
 Pass `--verify=false` to skip reproduction and verification for a faster fix.
 
 When run locally, the changes are applied to the current working tree.
-When run remotely, the diffset is uploaded to the 'Artifacts' tab of the remote `agent fix` run. It can be [fetched from the invocation](/docs/remote-runner-features#fetching-artifacts-programmatically) and applied to a local workspace using `git apply <DIFF_FILE>`.
+When run remotely, the diffset is uploaded to the 'Artifacts' tab of the remote `agent fix` run. It can be [downloaded from the invocation](/docs/remote-runner-features#downloading-artifacts) and applied to a local workspace using `git apply <DIFF_FILE>`.
 
 #### Usage
 

@@ -1172,6 +1172,17 @@ code .comment {
   margin-bottom: 8px;
 }
 
+.target-group-card .title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.artifacts-download-button {
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
 .scorecard-target-name {
   margin-top: 8px;
   color: var(--color-text-label);
