@@ -318,7 +318,7 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 	// Closing the GCS writer should only be done when committing the write, so
 	// we wrap it in a nopCloser to prevent cwc.Close() from closing it. The
 	// context is canceled in cwc.Close(), which aborts the GCS write.
-	cwc := ioutil.NewCustomCommitWriteCloser(struct{ io.Writer }{ow})
+	cwc := ioutil.NewCustomCommitWriteCloser(noCloseWriter{ow})
 	cwc.SetCommitFn(func(n int64) error {
 		err := ow.Close()
 		if gerr, ok := err.(*googleapi.Error); ok {
@@ -348,6 +348,8 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 	return cwc, nil
 }
 
+type noCloseWriter struct{ io.Writer }
+
 func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	start := time.Now()
@@ -364,7 +366,7 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 		zw = ow
 	}
 	// See comment in ConditionalWriter
-	cwc := ioutil.NewCustomCommitWriteCloser(struct{ io.Writer }{zw})
+	cwc := ioutil.NewCustomCommitWriteCloser(noCloseWriter{zw})
 	cwc.SetCommitFn(func(n int64) error {
 		err := zw.Close()
 		if err != nil {
