@@ -1923,9 +1923,10 @@ func TestUploadTree_SkipsPresentBlobs(t *testing.T) {
 		d, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
 		require.NoError(t, err)
 		require.True(t, client.checkedForMissing(d), "Directory proto %s should have been checked with FindMissingBlobs", d.GetHash())
-	}
-	for _, file := range tree.GetRoot().GetFiles() {
-		require.True(t, client.checkedForMissing(file.GetDigest()), "file %s should have been checked with FindMissingBlobs", file.GetName())
+		require.NotEmpty(t, dir.GetFiles())
+		for _, file := range dir.GetFiles() {
+			require.True(t, client.checkedForMissing(file.GetDigest()), "file %s should have been checked with FindMissingBlobs", file.GetName())
+		}
 	}
 
 	// Uploading the same outputs again should find the files and Directory
