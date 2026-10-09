@@ -45,6 +45,7 @@ go_test(
     tags = ["docker"],
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
+        "//server/testutil/testleak",
         "//server/testutil/testnetworking",
         "//server/util/networking",
         "//server/util/testing/flags",

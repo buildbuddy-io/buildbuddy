@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -25,6 +26,7 @@ import (
 )
 
 func TestContainerNetwork(t *testing.T) {
+	checkLeaks(t)
 	testnetworking.Setup(t)
 	// The test servers listen on the host's default IP, which may be private.
 	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
@@ -204,6 +206,7 @@ func TestIsAllowed(t *testing.T) {
 }
 
 func TestCleanupClosesForwardedConnections(t *testing.T) {
+	checkLeaks(t)
 	testnetworking.Setup(t)
 	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
 	ctx := context.Background()
@@ -233,6 +236,7 @@ func TestCleanupClosesForwardedConnections(t *testing.T) {
 }
 
 func TestCleanupStopsGoroutines(t *testing.T) {
+	checkLeaks(t)
 	testnetworking.Setup(t)
 	// fdbased only starts processor goroutines when GOMAXPROCS > 1.
 	prev := runtime.GOMAXPROCS(4)
@@ -261,6 +265,7 @@ func TestCleanupStopsGoroutines(t *testing.T) {
 }
 
 func TestOneWayUDPFlowStaysOpen(t *testing.T) {
+	checkLeaks(t)
 	testnetworking.Setup(t)
 	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
 	idleTimeout := udpIdleTimeout
@@ -297,4 +302,15 @@ func TestOneWayUDPFlowStaysOpen(t *testing.T) {
 		time.Sleep(udpIdleTimeout / 4)
 	}
 	require.Len(t, slices.Compact(sources), 1)
+}
+
+// checkLeaks fails the test if it leaves goroutines running or file
+// descriptors open.
+func checkLeaks(t *testing.T) {
+	testleak.CheckGoroutines(t)
+	// TODO: gVisor's fdbased endpoint never closes the eventfds it uses to
+	// stop its packet dispatchers, which leaks two per network: one for the
+	// dispatcher it discards and one for the dispatcher it uses. See
+	// https://github.com/google/gvisor/blob/39ed1f5ac29cb9a2d99d41502de53b8f0e2d19b6/pkg/tcpip/link/fdbased/endpoint.go#L347-L404
+	testleak.CheckFDs(t, testleak.IgnoreFDTarget("anon_inode:[eventfd]"))
 }

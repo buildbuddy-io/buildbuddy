@@ -89,7 +89,7 @@ func TestStreamPubSub(t *testing.T) {
 }
 
 func TestStreamPubSub_CloseWithUndeliveredMessage(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	pubSub := NewStreamPubSub(testredis.Start(t).Client())
 	ctx := t.Context()
 	channel := pubSub.UnmonitoredChannel(channel1Name)
