@@ -30,9 +30,9 @@ var filters = []filter{
 		parse:  func(q *Query, v string) { q.Kind = v },
 		values: func(ix *Index, _ string) map[string]int { return ix.kindCounts() },
 	},
-	{key: "ns", hint: "a namespace prefix, e.g. ns:prod", parse: setNamespace, values: namespaces},
-	// Alias for "ns".
-	{key: "namespace", hint: "same as ns:", parse: setNamespace, values: namespaces},
+	{key: "namespace", hint: "a namespace prefix, e.g. namespace:prod", parse: setNamespace, values: namespaces},
+	// Short form of "namespace".
+	{key: "ns", hint: "short for namespace:", parse: setNamespace, values: namespaces},
 	{
 		key:  "label",
 		hint: "a label, or label=value, e.g. label:app=web",

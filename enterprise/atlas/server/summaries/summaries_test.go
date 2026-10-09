@@ -88,7 +88,7 @@ func TestParseQuery(t *testing.T) {
 		require.NotEmpty(t, k.Hint, k.Key)
 		offered = append(offered, k.Key)
 	}
-	require.Equal(t, []string{"kind", "ns", "namespace", "label", "health", "cluster"}, offered)
+	require.Equal(t, []string{"kind", "namespace", "ns", "label", "health", "cluster"}, offered)
 }
 
 func TestSearch(t *testing.T) {
