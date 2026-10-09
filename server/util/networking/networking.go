@@ -257,7 +257,8 @@ func RetryDump[T any](list func() ([]T, error)) ([]T, error) {
 	const maxAttempts = 5
 	for i := 1; ; i++ {
 		res, err := list()
-		if !errors.Is(err, netlink.ErrDumpInterrupted) || i == maxAttempts {
+		// netlink.ErrDumpInterrupted matches EINTR and is only defined on Linux.
+		if !errors.Is(err, unix.EINTR) || i == maxAttempts {
 			return res, err
 		}
 	}
