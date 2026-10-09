@@ -3,6 +3,7 @@ package dirtools_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -31,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -578,17 +580,14 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				// This should includes:
+				// This should include:
 				//
+				//   Dir:  a
 				//   Dir:  a/b
 				//   Dir:  a/b/c
-				//   Dir:  a/b/c/d
 				//   Dir:  a/b/e
-				//   Dir:  a/b/e/g
 				//   File: a/b/c/fileA.txt
-				//
-				// plus the Tree for a/b. The empty Directory protos for
-				// the root, "a", and "a/f" are never uploaded.
+				//   And the output tree.
 				FileCount:        6,
 				BytesTransferred: 849,
 			},
@@ -1934,6 +1933,30 @@ func TestUploadTree_SkipsPresentBlobs(t *testing.T) {
 	info, _ = upload()
 	require.Equal(t, int64(1), info.FileCount)
 	require.Equal(t, treeDigest.GetSizeBytes(), info.BytesTransferred)
+}
+
+func TestUploadTree_CancelledContext(t *testing.T) {
+	env, ctx := testEnv(t)
+	ctx, cancel := context.WithCancel(ctx)
+	cancel()
+
+	// Only output files, so there is no Tree upload which would fail on the
+	// cancelled context regardless of whether the file batches were dropped.
+	cmd := &repb.Command{OutputFiles: []string{"fileA.txt"}}
+	// FindMissingBlobs batches are dropped nondeterministically once the
+	// context is cancelled, so try a few times to make sure a dropped batch
+	// is never reported as a successful upload.
+	for range 10 {
+		rootDir := testfs.MakeTempDir(t)
+		testfs.WriteAllFileContents(t, rootDir, map[string]string{"fileA.txt": "a"})
+		dirHelper := dirtools.NewDirHelper(rootDir, cmd, fs.FileMode(0o755))
+		_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, cmd, &repb.ActionResult{}, false /*=addToFileCache*/, nil /*=chunkingParams*/)
+		require.Error(t, err)
+		// Depending on whether the batch was dropped or handed to the
+		// uploader, the cancellation surfaces either as a Canceled status or
+		// as the raw context error.
+		require.True(t, status.IsCanceledError(err) || errors.Is(err, context.Canceled), "expected cancellation error, got %s", err)
+	}
 }
 
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {

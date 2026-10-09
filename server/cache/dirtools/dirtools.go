@@ -401,6 +401,13 @@ func uploadMissingBlobs(ctx context.Context, uploader *cachetools.BatchCASUpload
 			return 0, err
 		}
 	}
+	// Batches are silently dropped above once the context is cancelled, so
+	// don't report success in that case: the uploader may have nothing left
+	// to send and would otherwise never surface the cancellation. The local
+	// cancel has not fired yet, so this only reflects the parent context.
+	if ctx.Err() != nil {
+		return 0, status.FromContextError(ctx)
+	}
 	return alreadyPresentBytes, nil
 }
 
