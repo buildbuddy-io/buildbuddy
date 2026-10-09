@@ -315,7 +315,6 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 	}
 	ow.ObjectAttrs.CustomTime = customTime
 
-	gcsClosed := false
 	cwc := ioutil.NewCustomCommitWriteCloser(&nopCloser{ow})
 	cwc.SetCommitFn(func(n int64) error {
 		err := ow.Close()
@@ -337,17 +336,13 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 			}
 		}
 		util.RecordWriteMetrics(g.metricLabel, start, int(n), err)
-		gcsClosed = true
 		return err
 	})
 	cwc.SetCloseFn(func() error {
-		// Cancel the context before closing, to abort the write as per GCS
-		// docs.
+		// Cancel the context to abort an uncommitted upload. Canceling the
+		// context closes the GCS writer, so don't call ow.Close().
 		cancel()
-		if gcsClosed {
-			return nil
-		}
-		return ow.Close()
+		return nil
 	})
 	return cwc, nil
 }
@@ -375,7 +370,6 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 	} else {
 		zw = ow
 	}
-	gcsClosed := false
 	cwc := ioutil.NewCustomCommitWriteCloser(&nopCloser{zw})
 	cwc.SetCommitFn(func(n int64) error {
 		err := zw.Close()
@@ -386,15 +380,15 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 			err = ow.Close()
 		}
 		util.RecordWriteMetrics(g.metricLabel, start, int(n), err)
-		gcsClosed = true
 		return err
 	})
 	cwc.SetCloseFn(func() error {
+		// Cancel the context first so an uncommitted upload is aborted rather
+		// than finalized. zw.Close() then returns its pooled buffers; its
+		// flush fails because the context is canceled.
 		cancel()
-		if gcsClosed {
-			return nil
-		}
-		return ow.Close()
+		_ = zw.Close()
+		return nil
 	})
 	return cwc, nil
 }
