@@ -654,7 +654,7 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 	// concurrent compaction is added. This works "on top" of
 	// L0CompactionConcurrency, so the higher of the count of compaction
 	// concurrency slots as determined by the two options is chosen.
-	opts.Experimental.CompactionDebtConcurrency = 10 << 30
+	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
 	return opts
 }
