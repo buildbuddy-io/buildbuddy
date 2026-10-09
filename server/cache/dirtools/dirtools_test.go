@@ -61,7 +61,7 @@ func TestUploadTree(t *testing.T) {
 			symlinkPaths:   map[string]string{},
 			expectedResult: &repb.ActionResult{},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        1,
+				FileCount:        0,
 				BytesTransferred: 0,
 			},
 		},
@@ -87,8 +87,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        2,
-				BytesTransferred: 84,
+				FileCount:        1,
+				BytesTransferred: 1,
 			},
 		},
 		{
@@ -124,8 +124,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        4,
-				BytesTransferred: 244,
+				FileCount:        2,
+				BytesTransferred: 86,
 			},
 		},
 		{
@@ -161,8 +161,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        2,
-				BytesTransferred: 108,
+				FileCount:        1,
+				BytesTransferred: 1,
 			},
 		},
 		{
@@ -204,8 +204,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        2,
-				BytesTransferred: 108,
+				FileCount:        1,
+				BytesTransferred: 1,
 			},
 		},
 		{
@@ -245,8 +245,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        2,
-				BytesTransferred: 108,
+				FileCount:        1,
+				BytesTransferred: 1,
 			},
 		},
 		{
@@ -293,8 +293,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        4,
-				BytesTransferred: 256,
+				FileCount:        2,
+				BytesTransferred: 86,
 			},
 		},
 		{
@@ -347,8 +347,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        4,
-				BytesTransferred: 256,
+				FileCount:        2,
+				BytesTransferred: 86,
 			},
 		},
 		{
@@ -399,8 +399,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        4,
-				BytesTransferred: 256,
+				FileCount:        2,
+				BytesTransferred: 86,
 			},
 		},
 		{
@@ -437,8 +437,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        4,
-				BytesTransferred: 284,
+				FileCount:        2,
+				BytesTransferred: 106,
 			},
 		},
 		{
@@ -475,8 +475,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        4,
-				BytesTransferred: 284,
+				FileCount:        2,
+				BytesTransferred: 106,
 			},
 		},
 		{
@@ -496,8 +496,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        1,
-				BytesTransferred: 8,
+				FileCount:        0,
+				BytesTransferred: 0,
 			},
 		},
 		{
@@ -517,8 +517,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        1,
-				BytesTransferred: 8,
+				FileCount:        0,
+				BytesTransferred: 0,
 			},
 		},
 		{
@@ -543,8 +543,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        3,
-				BytesTransferred: 84,
+				FileCount:        1,
+				BytesTransferred: 1,
 			},
 		},
 		{
@@ -574,17 +574,16 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				// This should includes:
+				// This should include:
 				//
-				//   Dir:  a/b
+				//   Tree: a/b
 				//   Dir:  a/b/c
-				//   Dir:  a/b/c/d
+				//   Dir:  a/b/c/d and a/b/e/g (both empty, so they share a digest)
 				//   Dir:  a/b/e
-				//   Dir:  a/b/e/g
 				//   File: a/b/c/fileA.txt
 				//
-				FileCount:        7,
-				BytesTransferred: 849,
+				FileCount:        5,
+				BytesTransferred: 622,
 			},
 		},
 		{
@@ -620,8 +619,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        5,
-				BytesTransferred: 244,
+				FileCount:        2,
+				BytesTransferred: 86,
 			},
 		},
 		{
@@ -641,8 +640,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        1,
-				BytesTransferred: 8,
+				FileCount:        0,
+				BytesTransferred: 0,
 			},
 		},
 	} {

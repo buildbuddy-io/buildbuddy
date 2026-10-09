@@ -557,9 +557,15 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		return nil, err
 	}
 
-	// Upload Directory protos.
-	// TODO: skip uploading Directory protos which are not part of any tree?
+	// Upload Directory protos for directories nested inside output directories,
+	// because the UI fetches them by digest when browsing an output directory.
+	// Nothing reads the other visited Directory protos by digest. Output
+	// directory roots are read from their Tree, and the root dir and ancestors
+	// of output paths aren't part of any Tree.
 	for _, d := range visitedDirectories {
+		if _, ok := dirHelper.FindParentOutputPath(d.fullPath); !ok {
+			continue
+		}
 		rsc := cachetools.NewBytesReadSeekCloser(d.directoryBytes)
 		if err := uploader.Upload(d.directoryDigest, rsc); err != nil {
 			return nil, err
