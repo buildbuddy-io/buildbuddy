@@ -61,6 +61,12 @@ func IgnoreFDTarget(prefix string) FDOption {
 // called is still open once the test's other cleanups have finished. Like
 // Check, call it before setting up anything that registers a cleanup.
 //
+// It compares snapshots of the process's open file descriptors, so:
+//   - Tests that use it must not run in parallel with other tests.
+//   - A file descriptor that is closed and then reused for the same file, or
+//     for another anonymous inode of the same kind (such as an eventfd), isn't
+//     detected as a leak.
+//
 // CheckFDs only works on Linux. Elsewhere it does nothing.
 func CheckFDs(t testing.TB, opts ...FDOption) {
 	o := &fdOptions{}
@@ -88,11 +94,11 @@ func CheckFDs(t testing.TB, opts ...FDOption) {
 				return
 			}
 			leaked = leaked[:0]
-			for fd, target := range after {
-				if before[fd] == target || o.ignored(target) {
+			for num, fd := range after {
+				if b, ok := before[num]; (ok && os.SameFile(b.info, fd.info)) || o.ignored(fd.target) {
 					continue
 				}
-				leaked = append(leaked, fmt.Sprintf("%s -> %s", fd, target))
+				leaked = append(leaked, fmt.Sprintf("%s -> %s", num, fd.target))
 			}
 			if len(leaked) == 0 || time.Now().After(deadline) {
 				break
@@ -115,22 +121,37 @@ func (o *fdOptions) ignored(target string) bool {
 	return false
 }
 
-// openFDs returns the open file descriptors of the current process, mapped to
-// their link targets, e.g. "socket:[12345]". A file descriptor that is closed
-// and reused for a different file has a different target.
-func openFDs() (map[string]string, error) {
+// openFD describes an open file descriptor.
+type openFD struct {
+	// target is the fd's link target in /proc/self/fd, such as
+	// "socket:[12345]" or a path.
+	target string
+	// info identifies the file the fd refers to. Unlike target, it doesn't
+	// change when the file is renamed or deleted.
+	info os.FileInfo
+}
+
+// openFDs returns the open file descriptors of the current process, keyed by
+// fd number.
+func openFDs() (map[string]openFD, error) {
 	entries, err := os.ReadDir(fdDir)
 	if err != nil {
 		return nil, err
 	}
-	fds := make(map[string]string, len(entries))
+	fds := make(map[string]openFD, len(entries))
 	for _, e := range entries {
-		target, err := os.Readlink(fdDir + "/" + e.Name())
+		path := fdDir + "/" + e.Name()
+		target, err := os.Readlink(path)
 		if err != nil {
 			// The fd used by ReadDir itself is gone by now.
 			continue
 		}
-		fds[e.Name()] = target
+		// Stat follows the link to the open file itself.
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		fds[e.Name()] = openFD{target: target, info: info}
 	}
 	return fds, nil
 }
