@@ -944,7 +944,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	// Inject use-oci-fetcher platform property via experiment. The executor
-	// additionally gates this property on its executor.use_oci_fetcher flag.
+	// additionally gates this property on its executor.use_remote_oci_fetcher flag.
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
 		const disableOCIFetcherExperiment = "remote_execution.disable_oci_fetcher"
 		disableOCIFetcher, details := fp.BooleanDetails(ctx, disableOCIFetcherExperiment, true)
