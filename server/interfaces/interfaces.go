@@ -336,6 +336,10 @@ type ReferenceWriter interface {
 type ReferenceCache interface {
 	Cache
 
+	// IsReferenceable returns whether the cache may be able to create a
+	// reference for r.
+	IsReferenceable(ctx context.Context, r *rspb.ResourceName) bool
+
 	// Returns a writer that stages the written bytes as the resource named by
 	// r in shared storage, without writing r as an entry in this cache (so
 	// that the created reference can be claimed by another cache). The

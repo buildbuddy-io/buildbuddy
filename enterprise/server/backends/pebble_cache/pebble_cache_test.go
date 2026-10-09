@@ -3382,6 +3382,7 @@ func TestCreateReference(t *testing.T) {
 
 	// Blobs at or above minGCSFileSize are staged in GCS and referenceable.
 	gcsRN, gcsBuf := testdigest.RandomCASResourceBuf(t, 100)
+	require.True(t, pc.IsReferenceable(ctx, gcsRN))
 	w, err := pc.CreateReference(ctx, gcsRN)
 	require.NoError(t, err)
 	defer w.Close()
@@ -3416,10 +3417,23 @@ func TestCreateReference(t *testing.T) {
 	// Blobs below minGCSFileSize cannot be referenced, and nothing is
 	// written anywhere for them.
 	diskRN, _ := testdigest.RandomCASResourceBuf(t, 50)
+	require.False(t, pc.IsReferenceable(ctx, diskRN))
 	_, err = pc.CreateReference(ctx, diskRN)
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
 	_, err = pc.Get(ctx, diskRN)
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+
+	// A cache without shared storage can't reference anything.
+	localPC, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		MaxSizeBytes:  int64(1_000_000), // 1MB
+	})
+	require.NoError(t, err)
+	require.NoError(t, localPC.Start())
+	defer localPC.Stop()
+	require.False(t, localPC.IsReferenceable(ctx, gcsRN))
+	_, err = localPC.CreateReference(ctx, gcsRN)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got %v", err)
 }
 
 func TestGCSBlobStorageOverwriteObjects(t *testing.T) {

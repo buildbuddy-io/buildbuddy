@@ -1467,6 +1467,12 @@ type fakeReferenceCache struct {
 	lastLimit    int64
 }
 
+var _ interfaces.ReferenceCache = (*fakeReferenceCache)(nil)
+
+func (c *fakeReferenceCache) IsReferenceable(ctx context.Context, r *rspb.ResourceName) bool {
+	return false // CreateReference is not implemented.
+}
+
 func (c *fakeReferenceCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
 	return nil, status.UnimplementedError("not implemented")
 }
@@ -1975,6 +1981,12 @@ type serverReferenceCache struct {
 	writtenRN     *rspb.ResourceName
 	writtenCloned bool
 	writeRefErr   error
+}
+
+var _ interfaces.ReferenceCache = (*serverReferenceCache)(nil)
+
+func (c *serverReferenceCache) IsReferenceable(ctx context.Context, r *rspb.ResourceName) bool {
+	return false // CreateReference is not implemented.
 }
 
 func (c *serverReferenceCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
