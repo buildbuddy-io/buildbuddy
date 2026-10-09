@@ -539,8 +539,11 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
         })
       )
       .then((response) => {
-        if (response.actionStatuses.length > 0) {
-          this.setState({ runWorkflowActionStatuses: response.actionStatuses });
+        const statuses = response.actionStatuses;
+        if (statuses.length === 1 && (statuses[0].status?.code || 0) === 0) {
+          router.navigateTo(`/invocation/${statuses[0].invocationId}?queued=true`);
+        } else if (statuses.length > 0) {
+          this.setState({ runWorkflowActionStatuses: statuses });
         } else {
           errorService.handleError(`No actions to execute for ${this.props.repoUrl}.`);
         }
