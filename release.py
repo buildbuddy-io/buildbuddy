@@ -269,6 +269,10 @@ def get_highest_version():
     p = run_or_die("./tools/repo_highest_version.sh", capture_stdout=True)
     return p.stdout.strip()
 
+def get_branch_highest_version():
+    p = run_or_die("./tools/branch_highest_version.sh", capture_stdout=True)
+    return p.stdout.strip()
+
 def tag_exists(tag):
     p = subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/tags/{tag}'], stdout=subprocess.DEVNULL)
     return p.returncode == 0
@@ -316,7 +320,14 @@ def main():
             'Please run this in a clean workspace!')
 
     run_or_die('git fetch --all --tags')
-    old_version = args.base_version or get_highest_version()
+    # A patch bumps this branch's own version; anything else bumps the highest
+    # version in the repo.
+    if args.base_version:
+        old_version = args.base_version
+    elif args.bump_version_type == 'patch':
+        old_version = get_branch_highest_version()
+    else:
+        old_version = get_highest_version()
     if not tag_exists(old_version):
         die(f"Version tag {old_version} does not exist.")
     # The highest version tag isn't always an ancestor of HEAD (release tags may
