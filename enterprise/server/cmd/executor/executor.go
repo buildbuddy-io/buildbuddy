@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
@@ -181,6 +182,12 @@ func initializeCacheClientsOrDie(appTarget, cacheTarget string, cacheTargetTraff
 	realEnv.SetActionCacheClient(repb.NewActionCacheClient(client))
 	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(client))
 	realEnv.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(client))
+
+	localOCIFetcher, err := ocifetcher.NewLocalServer(realEnv.GetByteStreamClient(), realEnv.GetActionCacheClient())
+	if err != nil {
+		log.Fatalf("Error initializing local OCI fetcher: %s", err)
+	}
+	realEnv.SetLocalOCIFetcherClient(ocifetcher.NewLocalClient(localOCIFetcher))
 }
 
 func getExecutorHostID() string {

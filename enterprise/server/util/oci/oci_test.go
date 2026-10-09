@@ -884,13 +884,14 @@ func TestResolve_WithCache(t *testing.T) {
 				// layer contents. Note that we have one more GET request here
 				// compared to the non-index manifest case, since the index
 				// manifest points to the platform-specific image manifest.
+				// Resolving the tag proves access to the repo, so there's no
+				// HEAD request for the platform-specific manifest.
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                   1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():      1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():     1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
@@ -900,8 +901,7 @@ func TestResolve_WithCache(t *testing.T) {
 				// digest.
 				expected = map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest": 1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 

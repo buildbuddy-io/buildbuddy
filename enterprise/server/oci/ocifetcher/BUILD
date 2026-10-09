@@ -1,10 +1,15 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+# gazelle:go_test file
+
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "ocifetcher",
-    srcs = ["ocifetcher.go"],
+    srcs = [
+        "local_client.go",
+        "ocifetcher.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher",
     deps = [
         "//enterprise/server/oci/ocicache",
@@ -29,6 +34,8 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
@@ -57,6 +64,28 @@ go_test(
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
+    ],
+)
+
+go_test(
+    name = "local_client_test",
+    srcs = ["local_client_test.go"],
+    deps = [
+        ":ocifetcher",
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//enterprise/server/testutil/testregistry",
+        "//proto:oci_fetcher_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//server/interfaces",
+        "//server/testutil/testcache",
+        "//server/testutil/testenv",
+        "//server/testutil/testhttp",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
