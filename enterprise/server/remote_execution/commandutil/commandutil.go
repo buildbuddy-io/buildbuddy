@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -295,11 +296,23 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunOpts
 	}
 	statsCh := p.monitor(opts.StatsListener)
 
+	// Stop forwarding signals once the process exits, rather than when ctx is
+	// done, so that the forwarder doesn't outlive this call. This also narrows,
+	// but doesn't close, the window in which a signal could be sent to a
+	// process that has since reused the pid.
+	stopForwardingSignals := func() {}
 	if opts.Signal != nil {
-		go forwardSignals(ctx, p, opts.Signal)
+		done := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Go(func() { forwardSignals(ctx, done, p, opts.Signal) })
+		stopForwardingSignals = func() {
+			close(done)
+			wg.Wait()
+		}
 	}
 
 	rusage, err := p.wait()
+	stopForwardingSignals()
 	stats := <-statsCh
 	p.finalizeUsage(stats)
 	if cleanupErr := p.cleanup(); cleanupErr != nil {
@@ -327,9 +340,11 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunOpts
 	return stats, err
 }
 
-func forwardSignals(ctx context.Context, process *process, ch <-chan syscall.Signal) {
+func forwardSignals(ctx context.Context, done <-chan struct{}, process *process, ch <-chan syscall.Signal) {
 	for {
 		select {
+		case <-done:
+			return
 		case s := <-ch:
 			log.CtxDebugf(ctx, "Sending signal %d (%s) to pid %d", s, s, process.cmd.Process.Pid)
 			if err := process.signal(s); err != nil {
