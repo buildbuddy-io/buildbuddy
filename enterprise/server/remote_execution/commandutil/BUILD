@@ -58,9 +58,11 @@ go_test(
     ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [
             "//server/testutil/testfs",
+            "//server/testutil/testleak",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//server/testutil/testfs",
+            "//server/testutil/testleak",
         ],
         "@io_bazel_rules_go//go/platform:windows": [
             "//server/testutil/testfs",

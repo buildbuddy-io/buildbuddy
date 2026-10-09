@@ -3,6 +3,7 @@
 package commandutil_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,6 +40,44 @@ func TestRun_NormalExit_NoError(t *testing.T) {
 		assert.Greater(t, res.UsageStats.GetPeakMemoryBytes(), int64(0))
 		assert.Less(t, res.UsageStats.GetPeakMemoryBytes(), int64(1e6), "sh -c 'exit {code}' should not consume a lot of memory")
 	}
+}
+
+func TestRunWithOpts_ForwardsSignals(t *testing.T) {
+	ctx := context.Background()
+	stdout, stdoutWriter := io.Pipe()
+	signals := make(chan syscall.Signal, 1)
+	go func() {
+		// Wait for the trap to be set up before sending the signal.
+		scanner := bufio.NewScanner(stdout)
+		if scanner.Scan() && scanner.Text() == "ready" {
+			signals <- syscall.SIGTERM
+		}
+		io.Copy(io.Discard, stdout)
+	}()
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `trap 'exit 3' TERM; echo ready; while true; do sleep 0.1; done`}}
+	res := commandutil.RunWithOpts(ctx, cmd, &commandutil.RunOpts{
+		Dir:    ".",
+		Stdio:  &interfaces.Stdio{Stdout: stdoutWriter},
+		Signal: signals,
+	})
+	stdoutWriter.Close()
+
+	require.NoError(t, res.Error)
+	require.Equal(t, 3, res.ExitCode)
+}
+
+func TestRunWithOpts_StopsForwardingSignalsWhenCommandExits(t *testing.T) {
+	testleak.Check(t)
+	// The context outlives the command, so the forwarder must stop when the
+	// command exits.
+	ctx := context.Background()
+	cmd := &repb.Command{Arguments: []string{"true"}}
+	res := commandutil.RunWithOpts(ctx, cmd, &commandutil.RunOpts{
+		Dir:    ".",
+		Signal: make(chan syscall.Signal),
+	})
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
 }
 
 func TestRun_Stdio(t *testing.T) {
