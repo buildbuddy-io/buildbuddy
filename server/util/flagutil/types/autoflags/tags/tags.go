@@ -160,13 +160,6 @@ func (t *TaggedFlagValue[T, FV]) WrappedValue() flag.Value {
 	return t.Value()
 }
 
-// IsBoolFlag forwards to the wrapped value, so that a tagged bool flag can be
-// passed on the command line without a value, like an untagged one.
-func (t *TaggedFlagValue[T, FV]) IsBoolFlag() bool {
-	b, ok := t.WrappedValue().(interface{ IsBoolFlag() bool })
-	return ok && b.IsBoolFlag()
-}
-
 func (t *TaggedFlagValue[T, FV]) DesignateExpandFunc(expandFunc func(func(string) (string, error)) error) {
 	t.expandFunc = expandFunc
 }
