@@ -628,9 +628,8 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				// The directoryPath "a/b/c" effectively treats root and "a"
-				// directories as empty. This count therefore includes the file,
-				// "a/b", "a/b/c", and the tree.
+				// TODO(jdhollen): This will go down to 3 (dropping "a/b") when
+				// we stop uploading directories that aren't on an output path.
 				FileCount:        4,
 				BytesTransferred: 244,
 			},
