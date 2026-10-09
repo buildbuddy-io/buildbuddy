@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -31,20 +32,20 @@ import (
 var (
 	enqueueChanSize = flag.Int("cache_proxy.remote_hit_tracker.remote_hit_queue_size", 3_000_000, "The size of the channel to use for buffering enqueued hits.")
 
-	remoteHitTrackerTarget       = flag.String("cache_proxy.remote_hit_tracker.target", "", "The gRPC target of the remote cache-hit-tracking service.")
 	remoteHitTrackerPollInterval = flag.Duration("cache_proxy.remote_hit_tracker.update_interval", 250*time.Millisecond, "The time interval to wait between sending remote cache-hit-tracking RPCs.")
 	maxPendingHitsPerKey         = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_key", 3_000_000, "The maximum number of pending cache-hit updates to store in memory for a given (group, usagelabels) tuple.")
 	maxHitsPerUpdate             = flag.Int("cache_proxy.remote_hit_tracker.max_hits_per_update", 250_000, "The maximum number of cache-hit updates to send in one request to the hit-tracking backend.")
-	remoteHitTrackerWorkers      = flag.Int("cache_proxy.remote_hit_tracker.workers", 1, "The number of workers to use to send asynchronous remote cache-hit-tracking RPCs.")
+	remoteHitTrackerWorkers      = flag.Int("cache_proxy.remote_hit_tracker.workers", 1, "The number of workers to use to send asynchronous remote cache-hit-tracking RPCs. Set to 0 to disable remote hit tracking.")
 )
 
 func Register(env *real_environment.RealEnv) error {
-	if *remoteHitTrackerTarget == "" || *remoteHitTrackerWorkers < 1 {
+	target := cache_proxy_config.RemoteCacheTarget()
+	if target == "" || *remoteHitTrackerWorkers < 1 {
 		env.SetHitTrackerFactory(&NoOpHitTrackerFactory{})
 		return nil
 	}
 
-	conn, err := grpc_client.DialInternalWithPoolSize(env, *remoteHitTrackerTarget, *remoteHitTrackerWorkers)
+	conn, err := grpc_client.DialInternalWithPoolSize(env, target, *remoteHitTrackerWorkers)
 	if err != nil {
 		return err
 	}

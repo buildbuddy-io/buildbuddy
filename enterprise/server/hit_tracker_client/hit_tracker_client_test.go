@@ -445,3 +445,27 @@ func BenchmarkEnqueue(b *testing.B) {
 		wg.Wait()
 	}
 }
+
+func TestRegister(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		target     string
+		workers    int
+		expectNoOp bool
+	}{
+		{name: "no remote cache disables hit tracking", target: "", workers: 1, expectNoOp: true},
+		{name: "zero workers disables hit tracking", target: "grpc://localhost:1985", workers: 0, expectNoOp: true},
+		{name: "remote cache and workers enable hit tracking", target: "grpc://localhost:1985", workers: 1, expectNoOp: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "cache_proxy.remote_cache", tc.target)
+			flags.Set(t, "cache_proxy.remote_hit_tracker.workers", tc.workers)
+			te := testenv.GetTestEnv(t)
+			// Register hooks the factory's shutdown into the health checker,
+			// which the test env shuts down at cleanup.
+			require.NoError(t, Register(te))
+			_, isNoOp := te.GetHitTrackerFactory().(*NoOpHitTrackerFactory)
+			require.Equal(t, tc.expectNoOp, isNoOp)
+		})
+	}
+}
