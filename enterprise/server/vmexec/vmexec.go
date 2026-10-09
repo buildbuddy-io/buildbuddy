@@ -243,7 +243,7 @@ func clearARPCache() error {
 		return err
 	}
 	defer handle.Close()
-	links, err := netlink.LinkList()
+	links, err := networking.RetryDump(netlink.LinkList)
 	if err != nil {
 		return err
 	}
@@ -252,11 +252,15 @@ func clearARPCache() error {
 		if attrs == nil {
 			continue
 		}
-		neigbors, err := handle.NeighList(attrs.Index, netlink.FAMILY_V4)
+		neigbors, err := networking.RetryDump(func() ([]netlink.Neigh, error) {
+			return handle.NeighList(attrs.Index, netlink.FAMILY_V4)
+		})
 		if err != nil {
 			return err
 		}
-		v6neigbors, err := handle.NeighList(attrs.Index, netlink.FAMILY_V6)
+		v6neigbors, err := networking.RetryDump(func() ([]netlink.Neigh, error) {
+			return handle.NeighList(attrs.Index, netlink.FAMILY_V6)
+		})
 		if err != nil {
 			return err
 		}

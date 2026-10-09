@@ -8,8 +8,7 @@
 // executor.
 //
 // This is heavily inspired by gvisor-tap-vsock. It isn't used directly because
-// it pins a newer gVisor than we can build, and doesn't allow our private IP
-// policy or TCP tuning:
+// it doesn't allow our private IP policy or TCP tuning:
 // https://github.com/containers/gvisor-tap-vsock/tree/ad36eb20acfae43f5df9f0807201f5059073b881/pkg/services/forwarder
 //
 // N.B. Forwarding pings requires the executor's group to be in
@@ -266,9 +265,7 @@ func (n *Network) startStack(prefixLen int) error {
 		EthernetHeader:     true,
 		Address:            gatewayLinkAddress,
 		PacketDispatchMode: fdbased.RecvMMsg,
-		// More processors don't improve throughput, and with RecvMMsg, fdbased
-		// leaks the processor goroutines of a dispatcher it discards:
-		// https://github.com/google/gvisor/blob/39ed1f5ac29cb9a2d99d41502de53b8f0e2d19b6/pkg/tcpip/link/fdbased/endpoint.go#L350-L398
+		// More processors don't improve throughput.
 		ProcessorsPerChannel: 1,
 		GSOMaxSize:           gsoMaxSize,
 		// Guests leave checksums partial on offloaded frames.
