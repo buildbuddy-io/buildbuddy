@@ -1350,6 +1350,7 @@ func TestFileHandleRequestContext(t *testing.T) {
 			_, client, _ := setupVFSWithInputTreeAndClient(t, env, &repb.Tree{Root: &repb.Directory{}}, &vfs.Options{}, func(base vfspb.FileSystemClient) vfspb.FileSystemClient {
 				return &contextCheckingFileSystemClient{FileSystemClient: base}
 			})
+			require.NoError(t, client.PrepareForTask(t.Context(), "task", nil))
 			inode, err := client.GetInode(1)
 			require.NoError(t, err)
 			root := inode.Operations().(*vfs.Node)
@@ -1383,14 +1384,15 @@ func TestFileHandleRequestContext(t *testing.T) {
 			_, errno = fh.(fusefs.FileWriter).Write(t.Context(), []byte("hello"), 0)
 			require.Zero(t, errno)
 
-			// Cancellation of the current operation must still be respected.
+			// Interrupts are ignored so that writes don't fail with EINTR.
 			_, errno = fh.(fusefs.FileWriter).Write(requestCtx, []byte("x"), 0)
-			require.Equal(t, syscall.EINTR, errno)
+			require.Zero(t, errno)
 			result, errno = fh.(fusefs.FileReader).Read(requestCtx, buf, 0)
 			require.Zero(t, errno)
-			_, code = result.Bytes(buf)
+			data, code = result.Bytes(buf)
 			result.Done()
-			require.Equal(t, fuse.Status(syscall.EINTR), code)
+			require.Equal(t, fuse.OK, code)
+			require.Equal(t, "xello", string(data))
 		})
 	}
 }

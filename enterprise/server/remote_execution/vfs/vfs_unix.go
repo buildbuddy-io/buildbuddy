@@ -855,7 +855,7 @@ func (f *remoteFile) Allocate(ctx context.Context, off uint64, size uint64, mode
 		Offset:   int64(off),
 		NumBytes: int64(size),
 	}
-	if _, err := f.vfsClient.Allocate(ctx, allocReq); err != nil {
+	if _, err := f.vfsClient.Allocate(f.node.vfs.getRPCContext(), allocReq); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
 	return fs.OK
@@ -869,7 +869,7 @@ func (f *remoteFile) Flush(ctx context.Context) syscall.Errno {
 		f.mu.Unlock()
 	}
 
-	if _, err := f.vfsClient.Flush(ctx, &vfspb.FlushRequest{HandleId: f.id}); err != nil {
+	if _, err := f.vfsClient.Flush(f.node.vfs.getRPCContext(), &vfspb.FlushRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
 	return fs.OK
@@ -880,7 +880,7 @@ func (f *remoteFile) Fsync(ctx context.Context, flags uint32) syscall.Errno {
 	if f.node.vfs.verbose {
 		log.CtxDebugf(f.node.vfs.rpcCtx, "Fsync %q", f.path)
 	}
-	if _, err := f.vfsClient.Fsync(ctx, &vfspb.FsyncRequest{HandleId: f.id}); err != nil {
+	if _, err := f.vfsClient.Fsync(f.node.vfs.getRPCContext(), &vfspb.FsyncRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
 	return fs.OK
@@ -899,7 +899,7 @@ func (f *remoteFile) Release(ctx context.Context) syscall.Errno {
 	}
 	f.node.vfs.beginAttrsMutation()
 	defer f.node.vfs.endAttrsMutation()
-	if _, err := f.vfsClient.Release(ctx, &vfspb.ReleaseRequest{HandleId: f.id}); err != nil {
+	if _, err := f.vfsClient.Release(f.node.vfs.getRPCContext(), &vfspb.ReleaseRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
 	f.node.vfs.inodeCache.released(f.node.StableAttr().Ino)
@@ -907,7 +907,6 @@ func (f *remoteFile) Release(ctx context.Context) syscall.Errno {
 }
 
 type remoteFileReader struct {
-	ctx      context.Context
 	f        *remoteFile
 	offset   int64
 	numBytes int
@@ -934,7 +933,7 @@ func (r *remoteFileReader) Bytes(buf []byte) ([]byte, fuse.Status) {
 		Offset:   r.offset,
 		NumBytes: int32(numBytes),
 	}
-	rsp, err := r.f.vfsClient.Read(r.ctx, readReq)
+	rsp, err := r.f.vfsClient.Read(r.f.node.vfs.getRPCContext(), readReq)
 	if err != nil {
 		return nil, fuse.ToStatus(rpcErrToSyscallErrno(err))
 	}
@@ -954,7 +953,7 @@ func (r *remoteFileReader) Done() {
 
 func (f *remoteFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
 	f.startOP("Read")
-	res = &remoteFileReader{ctx: ctx, f: f, offset: off, numBytes: len(buf)}
+	res = &remoteFileReader{f: f, offset: off, numBytes: len(buf)}
 	return
 }
 
@@ -965,7 +964,7 @@ func (f *remoteFile) Write(ctx context.Context, data []byte, off int64) (uint32,
 		Data:     data,
 		Offset:   off,
 	}
-	rsp, err := f.vfsClient.Write(ctx, writeReq)
+	rsp, err := f.vfsClient.Write(f.node.vfs.getRPCContext(), writeReq)
 	if err != nil {
 		return 0, rpcErrToSyscallErrno(err)
 	}
@@ -983,7 +982,7 @@ func (f *remoteFile) Lseek(ctx context.Context, off uint64, whence uint32) (uint
 		Offset:   off,
 		Whence:   whence,
 	}
-	rsp, err := f.vfsClient.Lseek(ctx, writeReq)
+	rsp, err := f.vfsClient.Lseek(f.node.vfs.getRPCContext(), writeReq)
 	if err != nil {
 		return 0, rpcErrToSyscallErrno(err)
 	}
