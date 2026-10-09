@@ -130,13 +130,14 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 }
 
 func waitUntilServerIsAlive(addr string) {
-	for {
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		conn, err := net.DialTimeout("tcp", addr, 10*time.Millisecond)
 		if err == nil {
 			conn.Close()
 			return
 		}
 	}
+	panic(fmt.Sprintf("server at %s didn't come up within 30s", addr))
 }
 
 func copyAndClose(wc interfaces.CommittedWriteCloser, r io.Reader) error {
@@ -221,6 +222,18 @@ func (s *snitchCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	}
 	s.writeCount[r.GetDigest().GetHash()] += 1
 	return wc, nil
+}
+
+func TestShutdownRightAfterStartListening(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := newProxy(t, te, te.GetCache(), peer)
+	// Shutdown can run before StartListening's serving goroutine starts.
+	// Neither the goroutine nor a restart on the same address should fail.
+	for range 200 {
+		require.NoError(t, c.StartListening())
+		require.NoError(t, c.Shutdown(context.Background()))
+	}
 }
 
 func TestWriteAlreadyExistsCAS(t *testing.T) {
