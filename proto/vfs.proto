@@ -228,6 +228,11 @@ message SetAttrRequest {
     string name = 1;
   }
   RemoveExtendedAttr remove_extended = 7;
+
+  // Set when the size is changed through an open file handle (ftruncate).
+  // Truncation must modify the backing file, which is only reachable through
+  // the handle once the file has been unlinked.
+  optional uint64 handle_id = 8;
 }
 
 message SetAttrResponse {

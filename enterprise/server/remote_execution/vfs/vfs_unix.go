@@ -1309,6 +1309,9 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 	}
 	if s, ok := in.GetSize(); ok {
 		req.SetSize = &vfspb.SetAttrRequest_SetSize{Size: int64(s)}
+		if rf, ok := f.(*remoteFile); ok {
+			req.HandleId = &rf.id
+		}
 	}
 	if mt, ok := in.GetMTime(); ok {
 		req.SetMtime = &vfspb.SetAttrRequest_SetMTime{MtimeNanos: uint64(mt.UnixNano())}

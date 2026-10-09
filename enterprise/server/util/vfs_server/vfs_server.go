@@ -1469,16 +1469,20 @@ func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*v
 	return &vfspb.GetAttrResponse{Attrs: node.attrs}, nil
 }
 
-func (p *Server) processSetAttr(node *fsNode, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
+func (p *Server) processSetAttr(node *fsNode, file *os.File, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
 	if request.SetPerms != nil {
 		newAttrs.Perm = request.SetPerms.Perms
 	}
 
 	if request.SetSize != nil {
-		if node.backingPath == "" {
+		if file != nil {
+			// The backing path may no longer exist if the file was unlinked.
+			if err := file.Truncate(request.SetSize.GetSize()); err != nil {
+				return err
+			}
+		} else if node.backingPath == "" {
 			return syscall.EPERM
-		}
-		if err := os.Truncate(node.backingPath, request.SetSize.GetSize()); err != nil {
+		} else if err := os.Truncate(node.backingPath, request.SetSize.GetSize()); err != nil {
 			return err
 		}
 		newAttrs.Size = request.SetSize.GetSize()
@@ -1565,6 +1569,20 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 		return nil, err
 	}
 
+	var file *os.File
+	if request.HandleId != nil {
+		fh, err := p.getFileHandle(request.GetHandleId())
+		if err != nil {
+			return nil, err
+		}
+		fh.mu.Lock()
+		defer fh.mu.Unlock()
+		if fh.node != node {
+			return nil, syscallErrStatus(syscall.EBADF)
+		}
+		file = fh.f
+	}
+
 	node.mu.Lock()
 	defer node.mu.Unlock()
 
@@ -1577,7 +1595,7 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 			return nil, syscallErrStatus(err)
 		}
 	} else {
-		if err := p.processSetAttr(node, request, newAttrs); err != nil {
+		if err := p.processSetAttr(node, file, request, newAttrs); err != nil {
 			return nil, syscallErrStatus(err)
 		}
 	}
