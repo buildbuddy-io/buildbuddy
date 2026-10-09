@@ -315,6 +315,9 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 	}
 	ow.ObjectAttrs.CustomTime = customTime
 
+	// Closing the GCS writer should only be done when committing the write, so
+	// we wrap it in a nopCloser to prevent cwc.Close() from closing it. The
+	// context is canceled in cwc.Close(), which aborts the GCS write.
 	cwc := ioutil.NewCustomCommitWriteCloser(&nopCloser{ow})
 	cwc.SetCommitFn(func(n int64) error {
 		err := ow.Close()
@@ -339,8 +342,6 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 		return err
 	})
 	cwc.SetCloseFn(func() error {
-		// Cancel the context to abort an uncommitted upload. Canceling the
-		// context closes the GCS writer, so don't call ow.Close().
 		cancel()
 		return nil
 	})
@@ -383,11 +384,10 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 		return err
 	})
 	cwc.SetCloseFn(func() error {
-		// Cancel the context first so an uncommitted upload is aborted rather
-		// than finalized. zw.Close() then returns its pooled buffers; its
-		// flush fails because the context is canceled.
 		cancel()
-		_ = zw.Close()
+		if g.compress {
+			zw.Close() // return pooled buffers
+		}
 		return nil
 	})
 	return cwc, nil
