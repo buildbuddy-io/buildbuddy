@@ -51,7 +51,11 @@ const (
 	// they can take up a lot of memory. The build event handler will
 	// periodically refresh the TTL so that we don't lose executions if the
 	// invocation is still running.
-	executionExpiration = 1 * time.Hour
+	//
+	// Note: keep this in sync with invocationReconnectWindow in
+	// server/backends/invocationdb/invocationdb.go, so that executions from
+	// before a disconnect are still buffered if the invocation is retried.
+	executionExpiration = 4 * time.Hour
 )
 
 type collector struct {

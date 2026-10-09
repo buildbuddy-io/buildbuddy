@@ -872,9 +872,6 @@ func (e *EventChannel) startRedisRefresher(iid string) {
 		ticker := e.env.GetClock().NewTicker(redisRefreshInterval)
 		defer ticker.Stop()
 		for {
-			// Refresh immediately instead of waiting for the first tick. If
-			// this stream is a retry of an earlier attempt, the keys may be
-			// about to expire.
 			if err := collector.RefreshExecutions(ctx, iid); err != nil && ctx.Err() == nil {
 				log.CtxWarningf(ctx, "Failed to refresh buffered executions: %s", err)
 			}
@@ -892,9 +889,6 @@ func (e *EventChannel) startRedisRefresher(iid string) {
 }
 
 func (e *EventChannel) FinalizeInvocation(iid string) error {
-	// Stop refreshing now. After the stats recorder flushes the buffered
-	// Execution rows, it shortens their TTL, and a later refresh would extend
-	// the TTL again.
 	e.stopRedisRefresher()
 
 	if e.isVoid || !e.hasReceivedEventWithOptions {
