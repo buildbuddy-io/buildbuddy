@@ -1915,6 +1915,7 @@ func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { require.NoError(t, fc.Close()) })
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
 	return env, ctx
