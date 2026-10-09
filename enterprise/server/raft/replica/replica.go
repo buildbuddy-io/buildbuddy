@@ -715,6 +715,7 @@ func (sm *Replica) clearInMemoryReplicaState() {
 // clearRangeData clears data in range [start, end).
 func (sm *Replica) clearRangeData(db ReplicaWriter, rd *rfpb.RangeDescriptor) error {
 	wb := db.NewBatch()
+	defer wb.Close()
 	if rd.GetStart() != nil && rd.GetEnd() != nil {
 		if err := wb.DeleteRange(rd.GetStart(), rd.GetEnd(), nil /*ignored write options*/); err != nil {
 			return err
@@ -729,6 +730,7 @@ func (sm *Replica) clearRangeData(db ReplicaWriter, rd *rfpb.RangeDescriptor) er
 // clearReplica clears in-memory replica state, and local range data on the disk.
 func (sm *Replica) clearReplica(db ReplicaWriter) error {
 	wb := db.NewBatch()
+	defer wb.Close()
 
 	start, end := keys.Range(sm.replicaPrefix())
 	if err := wb.DeleteRange(start, end, nil /*ignored write options*/); err != nil {
@@ -870,6 +872,9 @@ func (sm *Replica) increment(wb pebble.Batch, req *rfpb.IncrementRequest) (*rfpb
 	var val uint64
 	if status.IsNotFoundError(err) {
 		val = 0
+	} else if len(buf) != uint64EncodingSizeBytes {
+		// DirectWrite and CAS can store any value at this key.
+		return nil, status.InvalidArgumentErrorf("[%s] value for key %q has length %d, expected %d", sm.name(), req.GetKey(), len(buf), uint64EncodingSizeBytes)
 	} else {
 		val = bytesToUint64(buf)
 	}
@@ -2277,7 +2282,10 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 		return err
 	}
 
-	sm.clearReplica(db)
+	if err := sm.clearReplica(db); err != nil {
+		db.Close()
+		return err
+	}
 	err = sm.applySnapshotFromReader(r, db)
 	db.Close() // close the DB before handling errors or checking keys.
 	if err != nil {
