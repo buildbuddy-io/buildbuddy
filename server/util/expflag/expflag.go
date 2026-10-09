@@ -124,7 +124,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"sync"
 	"sync/atomic"
 
@@ -307,10 +306,6 @@ type StructFlag[T any] struct {
 	// value is the configured value, which a command-line flag or YAML config
 	// replaces as a whole, exactly as for flag.Struct.
 	value *T
-	// defaultObject is handed to the provider as the default. The provider
-	// returns it as is when the flag is missing or cannot be evaluated, which
-	// is how Get tells that the configured value applies.
-	defaultObject map[string]any
 }
 
 // Struct declares an experiment flag whose value is a struct, decoded from a
@@ -322,7 +317,6 @@ func Struct[T any](name string, defaultValue T, help string, opts ...any) *Struc
 		name:                     name,
 		deprecatedExperimentName: deprecatedName,
 		value:                    flag.Struct(name, defaultValue, help, flagTags...),
-		defaultObject:            map[string]any{},
 	}
 }
 
@@ -370,11 +364,14 @@ func (f *StructFlag[T]) get(ctx context.Context, opts ...any) (T, interfaces.Exp
 	if p == nil {
 		return *f.value, nil
 	}
-	object, details := (*p).ObjectDetails(ctx, f.name, f.defaultObject, opts...)
+	// Providers return the default when the flag is missing or cannot be
+	// evaluated, while a variant is a non-nil map even when it is empty. So
+	// passing a nil default lets us tell when the configured value applies.
+	object, details := (*p).ObjectDetails(ctx, f.name, nil, opts...)
 	if nf, ok := details.(flagNotFoundReporter); ok && nf.FlagNotFound() && f.deprecatedExperimentName != "" {
-		object, details = (*p).ObjectDetails(ctx, f.deprecatedExperimentName, f.defaultObject, opts...)
+		object, details = (*p).ObjectDetails(ctx, f.deprecatedExperimentName, nil, opts...)
 	}
-	if object == nil || sameMap(object, f.defaultObject) {
+	if object == nil {
 		return *f.value, details
 	}
 	var value T
@@ -383,12 +380,6 @@ func (f *StructFlag[T]) get(ctx context.Context, opts ...any) (T, interfaces.Exp
 		return *f.value, details
 	}
 	return value, details
-}
-
-// sameMap reports whether a and b are the same map, as opposed to maps with
-// equal contents.
-func sameMap(a, b map[string]any) bool {
-	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
 
 // decodeObject decodes object into value through a JSON round trip. A key
