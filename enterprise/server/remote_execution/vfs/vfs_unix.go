@@ -1546,7 +1546,7 @@ func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, o
 		Mode: fuse.S_IFREG,
 		Ino:  target.EmbeddedInode().StableAttr().Ino,
 	})
-	out.Attr.FromStat(attrsToStat(res.GetAttrs()))
+	fillFuseAttr(&out.Attr, res.GetAttrs())
 	return inode, 0
 }
 

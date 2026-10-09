@@ -1359,6 +1359,26 @@ func TestOwnership(t *testing.T) {
 		require.Equal(t, uint32(65534), out.Uid)
 		require.Equal(t, uint32(65533), out.Gid)
 	})
+	t.Run("link", func(t *testing.T) {
+		file, handle, _, errno := root.Create(ctx, "link-src", uint32(os.O_CREATE|os.O_RDWR), 0600, &fuse.EntryOut{})
+		require.Zero(t, errno)
+		defer handle.(fusefs.FileReleaser).Release(ctx)
+		var out fuse.EntryOut
+		_, errno = root.Link(ctx, file.Operations(), "link-dst", &out)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+		require.NotZero(t, out.Mtime)
+
+		require.NoError(t, os.Chown(filepath.Join(mount, "link-dst"), 1000, 1001))
+		for _, name := range []string{"link-src", "link-dst"} {
+			info, err := os.Stat(filepath.Join(mount, name))
+			require.NoError(t, err)
+			st := info.Sys().(*syscall.Stat_t)
+			require.Equal(t, uint32(1000), st.Uid, name)
+			require.Equal(t, uint32(1001), st.Gid, name)
+		}
+	})
 	rootCtx := &fuse.Context{}
 	setattr := func(ctx *fuse.Context, inode *fusefs.Inode, in *fuse.SetAttrIn) syscall.Errno {
 		return inode.Operations().(*vfs.Node).Setattr(ctx, nil, in, &fuse.AttrOut{})
