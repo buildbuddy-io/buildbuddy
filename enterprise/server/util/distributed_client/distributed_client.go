@@ -65,13 +65,16 @@ var (
 )
 
 type Proxy struct {
-	env                   environment.Env
-	cache                 interfaces.Cache
-	log                   log.Logger
-	writeRefLogger        log.Logger
-	bufPool               *bytebufferpool.VariableSizePool
-	mu                    *sync.Mutex
-	server                *grpc.Server
+	env            environment.Env
+	cache          interfaces.Cache
+	log            log.Logger
+	writeRefLogger log.Logger
+	bufPool        *bytebufferpool.VariableSizePool
+	mu             *sync.Mutex
+	server         *grpc.Server
+	// listener is the server's listener. Shutdown closes it, because the
+	// server only closes it if Serve has started.
+	listener              net.Listener
 	clients               map[string]*grpc_client.ClientConnPool
 	heartbeatCallback     func(ctx context.Context, peer string)
 	hintedHandoffCallback func(ctx context.Context, peer string, r *rspb.ResourceName)
@@ -119,12 +122,13 @@ func (c *Proxy) StartListening() error {
 	reflection.Register(grpcServer)
 	dcpb.RegisterDistributedCacheServer(grpcServer, c)
 	c.server = grpcServer
+	c.listener = lis
 
 	// Shutdown sets c.server to nil, possibly before this goroutine runs, so
 	// don't read it here.
 	go func() {
 		log.Printf("Listening on %s", c.listenAddr)
-		if err := grpcServer.Serve(lis); err != nil {
+		if err := grpcServer.Serve(lis); err != nil && err != grpc.ErrServerStopped {
 			log.Warningf("Error serving: %s", err)
 		}
 	}()
@@ -133,12 +137,18 @@ func (c *Proxy) StartListening() error {
 
 func (c *Proxy) Shutdown(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.server == nil {
+	server, lis := c.server, c.listener
+	c.server, c.listener = nil, nil
+	c.mu.Unlock()
+	if server == nil {
 		return status.FailedPreconditionError("The server was already stopped.")
 	}
-	err := grpc_server.GRPCShutdown(ctx, c.server)
-	c.server = nil
+	// Don't hold c.mu while in-flight RPCs drain, since outgoing RPCs to
+	// peers need it to get a client.
+	err := grpc_server.GRPCShutdown(ctx, server)
+	// If Serve hasn't started yet, stopping the server doesn't close the
+	// listener, which would keep the port bound. It may already be closed.
+	lis.Close()
 	return err
 }
 
