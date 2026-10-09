@@ -1081,6 +1081,14 @@ type SchedulerService interface {
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
 	CancelTask(ctx context.Context, taskID string) (bool, error)
 	ExistsTask(ctx context.Context, taskID string) (bool, error)
+	// WatchTaskLiveness returns a channel that the scheduler closes if it
+	// loses the task, meaning that the task no longer exists and so no
+	// executor will run it again. The scheduler watches the task until ctx is
+	// done. In rare cases (e.g. stalled lease renewals, or apps with different
+	// views of the Redis ring) it may report a task lost while an executor is
+	// still running it, so callers should treat the signal as a reason to
+	// retry.
+	WatchTaskLiveness(ctx context.Context, taskID string) <-chan struct{}
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error)

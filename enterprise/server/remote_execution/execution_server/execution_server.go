@@ -1363,8 +1363,25 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 	metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
 	defer metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Dec()
 
+	// End the wait if the scheduler loses the task, since nobody would publish
+	// a final update for it. See WatchTaskLiveness.
+	taskLost := s.env.GetSchedulerService().WatchTaskLiveness(ctx, req.GetName())
+
 	for {
-		msg, ok := <-streamPubSubChan
+		var msg *pubsub.Message
+		ok := true
+		// Set waitErr when the subscription fails (for example because a Redis
+		// node went away) or the scheduler reports the task lost. Either way,
+		// send Bazel a NOT_FOUND error so that it retries the execution.
+		var waitErr error
+		select {
+		case msg, ok = <-streamPubSubChan:
+			if ok && msg.Err != nil {
+				waitErr = status.NotFoundErrorf("receive execution update: %s", msg.Err)
+			}
+		case <-taskLost:
+			waitErr = status.NotFoundErrorf("the scheduler lost task %q before it completed", req.GetName())
+		}
 		if !ok {
 			if ctx.Err() != nil {
 				log.CtxInfof(ctx, "WaitExecution %q: client disconnected before action completed: %s", req.GetName(), ctx.Err())
@@ -1372,13 +1389,11 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 			return status.UnavailableErrorf("Stream PubSub channel closed for %q", req.GetName())
 		}
 		var data string
-		// If there's an error maintaining the subscription (e.g. because a Redis node went away) send a
-		// NOT FOUND error to Bazel so that it retries the execution.
-		if msg.Err != nil {
+		if waitErr != nil {
 			op, err := operation.Assemble(
 				req.GetName(),
 				operation.Metadata(repb.ExecutionStage_COMPLETED, actionResource.GetDigest()),
-				operation.ErrorResponse(status.NotFoundErrorf("receive execution update: %s", msg.Err)),
+				operation.ErrorResponse(waitErr),
 			)
 			if err != nil {
 				return err
