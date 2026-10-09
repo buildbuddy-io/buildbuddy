@@ -314,3 +314,32 @@ func TestFetchFromRegistryDoesNotFallBackAfterSendingData(t *testing.T) {
 	require.Equal(t, []byte("partial"), got)
 	require.Zero(t, apps.calls.Load())
 }
+
+func TestFetchFromRegistryFallsBackWhenBlobBodyFails(t *testing.T) {
+	// After the image is pushed, the registry drops the connection after
+	// sending the headers for a blob, before any of its bytes.
+	var dropBlobs atomic.Bool
+	reg, _ := runCountingRegistry(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if dropBlobs.Load() && r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") {
+			// The server closes the connection after the headers, since
+			// the body is shorter than the declared length.
+			w.Header().Set("Content-Length", "1000")
+			w.WriteHeader(http.StatusOK)
+			return false
+		}
+		return true
+	})
+	_, layerRef, want := pushImage(t, reg)
+	dropBlobs.Store(true)
+	apps := &fakeAppsFetcher{blob: want}
+	proxy := newRegistryFetchingProxy(t, apps, true)
+	// The fetcher reports failing to read the blob as Internal.
+	readFailed := status.InternalError("")
+	fallbacks := fallbackCount(t, "FetchBlob", layerRef, readFailed)
+
+	got, err := readBlob(t, proxy, &ofpb.FetchBlobRequest{Ref: layerRef})
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.NotZero(t, apps.calls.Load())
+	require.Equal(t, fallbacks+1, fallbackCount(t, "FetchBlob", layerRef, readFailed))
+}
