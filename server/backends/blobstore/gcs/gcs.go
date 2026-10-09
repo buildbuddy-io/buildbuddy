@@ -317,7 +317,7 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 
 	// Closing the GCS writer should only be done when committing the write, so
 	// we wrap it in a nopCloser to prevent cwc.Close() from closing it. The
-	// context is canceled in cwc.Close(), which aborts the GCS write.
+	// context is canceled in cwc.Close() below, which aborts the GCS write.
 	cwc := ioutil.NewCustomCommitWriteCloser(noCloseWriter{ow})
 	cwc.SetCommitFn(func(n int64) error {
 		err := ow.Close()
