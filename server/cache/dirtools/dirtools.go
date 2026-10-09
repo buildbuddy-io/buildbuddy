@@ -338,10 +338,7 @@ func (f *fileToUpload) Open() (io.ReadSeekCloser, error) {
 	return file, nil
 }
 
-// uploadMissingBlobs uploads the given blobs which are not already present in
-// the CAS, as determined by FindMissingBlobs. It returns the total size of the
-// blobs which were skipped because they were already present.
-func uploadMissingBlobs(ctx context.Context, uploader *cachetools.BatchCASUploader, env environment.Env, blobsToUpload []uploadable, instanceName string, digestFunction repb.DigestFunction_Value, addToFileCache bool) (alreadyPresentBytes int64, _ error) {
+func uploadMissingBlobs(ctx context.Context, uploader *cachetools.BatchCASUploader, env environment.Env, blobsToUpload []uploadable, instanceName string, digestFunction repb.DigestFunction_Value, addToFileCache bool) (int64, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -397,6 +394,7 @@ func uploadMissingBlobs(ctx context.Context, uploader *cachetools.BatchCASUpload
 	}()
 
 	fc := env.GetFileCache()
+	alreadyPresentBytes := int64(0)
 	for batch := range batches {
 		alreadyPresentBytes += batch.presentBytes
 		if err := uploadBlobs(ctx, uploader, fc, batch.blobs, addToFileCache); err != nil {
