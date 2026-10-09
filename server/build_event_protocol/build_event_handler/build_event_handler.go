@@ -104,6 +104,12 @@ const (
 	// finalized data to Clickhouse, expire it after this TTL so that even if Clickhouse
 	// has replication lag, clients will still be able to read the data from Redis.
 	expireRedisExecutionsTTL = 5 * time.Minute
+
+	// How often to refresh the TTLs of an invocation's Redis keys while the
+	// invocation is still running. Keep this interval well under the TTLs, so
+	// that if a refresh fails, Redis does not expire the keys before the next
+	// refresh.
+	redisRefreshInterval = 15 * time.Minute
 )
 
 var errMissingAPIKey = errors.New("missing API key")
@@ -202,6 +208,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		requestedTerminalColumns:    eventlog.DefaultTerminalLineLength,
 		logWriter:                   nil,
 		onClose:                     onClose,
+		stopRedisRefresher:          func() {},
 		attempt:                     1,
 		groupIDForMetrics:           getGroupIDForMetrics(ctx, b.env),
 	}, nil
@@ -828,6 +835,7 @@ type EventChannel struct {
 	requestedTerminalLines           int
 	logWriter                        *eventlog.EventLogWriter
 	onClose                          func()
+	stopRedisRefresher               func()
 	attempt                          uint64
 	groupIDForMetrics                string
 
@@ -846,10 +854,49 @@ func (e *EventChannel) Context() context.Context {
 }
 
 func (e *EventChannel) Close() {
+	e.stopRedisRefresher()
 	e.onClose()
 }
 
+// startRedisRefresher periodically refreshes the TTLs of the invocation's
+// Redis keys until the build event stream is finalized or closed.
+func (e *EventChannel) startRedisRefresher(iid string) {
+	collector := e.env.GetExecutionCollector()
+	if collector == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(e.ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := e.env.GetClock().NewTicker(redisRefreshInterval)
+		defer ticker.Stop()
+		for {
+			// Refresh immediately instead of waiting for the first tick. If
+			// this stream is a retry of an earlier attempt, the keys may be
+			// about to expire.
+			if err := collector.RefreshExecutions(ctx, iid); err != nil && ctx.Err() == nil {
+				log.CtxWarningf(ctx, "Failed to refresh buffered executions: %s", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.Chan():
+			}
+		}
+	}()
+	e.stopRedisRefresher = func() {
+		cancel()
+		<-done
+	}
+}
+
 func (e *EventChannel) FinalizeInvocation(iid string) error {
+	// Stop refreshing now. After the stats recorder flushes the buffered
+	// Execution rows, it shortens their TTL, and a later refresh would extend
+	// the TTL again.
+	e.stopRedisRefresher()
+
 	if e.isVoid || !e.hasReceivedEventWithOptions {
 		return nil
 	}
@@ -1134,6 +1181,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		e.attempt = ti.Attempt
 		e.ctx = log.EnrichContext(e.ctx, "invocation_attempt", fmt.Sprintf("%d", e.attempt))
 		log.CtxInfof(e.ctx, "Created invocation %q, attempt %d", ti.InvocationID, ti.Attempt)
+		e.startRedisRefresher(iid)
 		chunkFileSizeBytes := *chunkFileSizeBytes
 		if chunkFileSizeBytes == 0 {
 			chunkFileSizeBytes = defaultChunkFileSizeBytes

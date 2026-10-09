@@ -45,8 +45,13 @@ const (
 	invocationExpiration              = 24 * time.Hour
 	executionInvocationLinkExpiration = 24 * time.Hour
 	invocationExecutionLinkExpiration = 24 * time.Hour
-	executionExpiration               = 24 * time.Hour
 	executionUpdatesExpiration        = 24 * time.Hour
+
+	// Expire buffered Execution rows after a relatively short duration, since
+	// they can take up a lot of memory. The build event handler will
+	// periodically refresh the TTL so that we don't lose executions if the
+	// invocation is still running.
+	executionExpiration = 1 * time.Hour
 )
 
 type collector struct {
@@ -265,6 +270,10 @@ func (c *collector) GetExecutions(ctx context.Context, iid string, start, stop i
 // up executions data after some delay.
 func (c *collector) ExpireExecutions(ctx context.Context, iid string, ttl time.Duration) error {
 	return c.rdb.Expire(ctx, getExecutionKey(iid), ttl).Err()
+}
+
+func (c *collector) RefreshExecutions(ctx context.Context, iid string) error {
+	return c.rdb.Expire(ctx, getExecutionKey(iid), executionExpiration).Err()
 }
 
 func (c *collector) DeleteExecutionInvocationLinks(ctx context.Context, executionID string) error {
