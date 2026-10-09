@@ -57,7 +57,15 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 		}
 		cache := redis_cache.NewCache(redisClient)
 		env.SetCache(cache)
-		byte_stream_client.RegisterPooledBytestreamClient(env)
+		bsClient := byte_stream_client.NewPooledByteStreamClient(env)
+		env.SetPooledByteStreamClient(bsClient)
+		t.Cleanup(func() {
+			// Shut the env down first, since it may use the client while
+			// shutting down.
+			env.GetHealthChecker().Shutdown()
+			env.GetHealthChecker().WaitForGracefulShutdown()
+			bsClient.Close()
+		})
 	}
 
 	// Use Cloud userdb settings by default.
