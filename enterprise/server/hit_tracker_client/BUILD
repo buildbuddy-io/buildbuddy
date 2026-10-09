@@ -19,7 +19,6 @@ go_library(
         "//server/real_environment",
         "//server/util/alert",
         "//server/util/authutil",
-        "//server/util/claims",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/status",

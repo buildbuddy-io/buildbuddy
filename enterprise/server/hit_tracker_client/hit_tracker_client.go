@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -94,26 +93,13 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 	return &factory
 }
 
-type groupID string
+// cacheHits holds the pending hits for one collection. It is guarded by
+// HitTrackerFactory.mu while it is reachable from hitsByCollection and
+// hitsQueue. Once a sender removes it from both, only that sender may touch it.
 type cacheHits struct {
-	maxPendingHits    int
 	encodedCollection string
-	mu                sync.Mutex
 	authHeaders       map[string][]string
 	hits              []*hitpb.CacheHit
-}
-
-func (c *cacheHits) enqueue(hit *hitpb.CacheHit, authHeaders map[string][]string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.hits) >= c.maxPendingHits {
-		return false
-	}
-
-	// Store the latest headers for this group for use in the async RPC.
-	c.authHeaders = authHeaders
-	c.hits = append(c.hits, hit)
-	return true
 }
 
 // An enqueued cache hit
@@ -131,11 +117,13 @@ type HitTrackerFactory struct {
 
 	enqueueChan chan *enqueuedCacheHit
 
-	mu                   sync.Mutex
 	maxPendingHitsPerKey int
 	maxHitsPerUpdate     int
-	hitsByCollection     map[string]*cacheHits
-	hitsQueue            []*cacheHits // Used to round-robin send collection keys
+
+	// mu guards the fields below and every cacheHits reachable from them.
+	mu               sync.Mutex
+	hitsByCollection map[string]*cacheHits
+	hitsQueue        []*cacheHits // Used to round-robin send collection keys
 
 	client hitpb.HitTrackerServiceClient
 }
@@ -227,14 +215,6 @@ func (h *HitTrackerClient) TrackMiss(d *repb.Digest) error {
 	return nil
 }
 
-func (h *HitTrackerFactory) groupID(ctx context.Context) string {
-	claims, err := claims.ClaimsFromContext(ctx)
-	if err != nil {
-		return interfaces.AuthAnonymousUser
-	}
-	return claims.GetGroupID()
-}
-
 func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 	if h.shouldFlushSynchronously() {
 		log.CtxInfof(ctx, "hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
@@ -271,20 +251,24 @@ func (h *HitTrackerFactory) batch(enqueuedHit *enqueuedCacheHit) {
 	h.mu.Lock()
 	usageKeyHits, ok := h.hitsByCollection[k]
 	if !ok {
-		usageKeyHits = &cacheHits{
-			maxPendingHits:    h.maxPendingHitsPerKey,
-			encodedCollection: k,
-			hits:              []*hitpb.CacheHit{},
-		}
+		usageKeyHits = &cacheHits{encodedCollection: k}
 		h.hitsByCollection[k] = usageKeyHits
 		h.hitsQueue = append(h.hitsQueue, usageKeyHits)
 	}
-	enqueued := usageKeyHits.enqueue(enqueuedHit.hit, enqueuedHit.authHeaders)
+	// Append while still holding h.mu. Once it is released, a sender may
+	// remove usageKeyHits from hitsByCollection and send it, and a hit
+	// appended after that would never be sent.
+	enqueued := len(usageKeyHits.hits) < h.maxPendingHitsPerKey
+	if enqueued {
+		// Store the latest headers for this group for use in the async RPC.
+		usageKeyHits.authHeaders = enqueuedHit.authHeaders
+		usageKeyHits.hits = append(usageKeyHits.hits, enqueuedHit.hit)
+	}
 	h.mu.Unlock()
 
 	if enqueued {
 		metrics.RemoteHitTrackerUpdates.WithLabelValues(
-			string(c.GroupID),
+			c.GroupID,
 			"enqueued",
 		).Add(1)
 		return
@@ -401,38 +385,43 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 	}
 	hitsToSend := h.hitsQueue[0]
 	h.hitsQueue = h.hitsQueue[1:]
-	hitsToSend.mu.Lock()
 	if len(hitsToSend.hits) <= h.maxHitsPerUpdate {
 		delete(h.hitsByCollection, hitsToSend.encodedCollection)
 	} else {
 		hitsToEnqueue := cacheHits{
-			maxPendingHits:    h.maxPendingHitsPerKey,
 			encodedCollection: hitsToSend.encodedCollection,
 			authHeaders:       hitsToSend.authHeaders,
 			hits:              hitsToSend.hits[h.maxHitsPerUpdate:],
 		}
-		hitsToSend.hits = hitsToSend.hits[:h.maxHitsPerUpdate]
+		// Drop the spare capacity so that an append to hitsToSend could never
+		// overwrite the overflow, which shares its backing array.
+		hitsToSend.hits = hitsToSend.hits[:h.maxHitsPerUpdate:h.maxHitsPerUpdate]
 		h.hitsQueue = append(h.hitsQueue, &hitsToEnqueue)
 		h.hitsByCollection[hitsToEnqueue.encodedCollection] = &hitsToEnqueue
 	}
 	h.mu.Unlock()
+	// hitsToSend is no longer reachable from hitsByCollection or hitsQueue,
+	// so it can be read without holding h.mu from here on.
 
 	ctx = authutil.AddAuthHeadersToContext(ctx, hitsToSend.authHeaders, h.authenticator)
 
 	c, _, err := usageutil.DecodeCollection(hitsToSend.encodedCollection)
 	if err != nil {
-		log.CtxWarningf(ctx, "Error decoding collection for remote usage tracking key %s: %v", hitsToSend.encodedCollection, err)
+		// Keys come from EncodeCollection, so this should not happen. Drop the
+		// batch instead of dereferencing the nil collection, and report its
+		// size so that the flush loop keeps draining the queue.
+		log.CtxWarningf(ctx, "Dropping %d cache hits: error decoding remote usage tracking key %s: %v", len(hitsToSend.hits), hitsToSend.encodedCollection, err)
+		return len(hitsToSend.hits)
 	}
 	ctx = usageutil.AddUsageHeadersToContext(ctx, c.Client, c.Origin, c.Proxy)
 	ctx = ip_rules_enforcer.SetBypassIPRules(ctx)
 	trackRequest := hitpb.TrackRequest{Hits: hitsToSend.hits, Server: usageutil.ServerName()}
 	groupID := c.GroupID
 	hitCount := len(hitsToSend.hits)
-	hitsToSend.mu.Unlock()
 
 	_, err = h.client.Track(ctx, &trackRequest)
 	metrics.RemoteHitTrackerRequests.WithLabelValues(
-		string(groupID),
+		groupID,
 		gstatus.Code(err).String(),
 	).Observe(float64(hitCount))
 	if err != nil {

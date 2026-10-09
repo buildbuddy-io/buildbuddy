@@ -133,6 +133,17 @@ func (ht *testHitTracker) Track(ctx context.Context, req *hitpb.TrackRequest) (*
 	return &hitpb.TrackResponse{}, nil
 }
 
+// pause blocks Track RPCs until the returned resume func is called. resume is
+// also run at test cleanup, so a failed assertion cannot leave handlers, and
+// with them the sender's shutdown, blocked forever.
+func (ht *testHitTracker) pause(t testing.TB) (resume func()) {
+	ht.wg.Add(1)
+	var once sync.Once
+	resume = func() { once.Do(ht.wg.Done) }
+	t.Cleanup(resume)
+	return resume
+}
+
 func (ht *testHitTracker) acDownloadExpectation(key string, expectation int64) func() bool {
 	return func() bool {
 		return ht.acDownloads[key] != nil && ht.acDownloads[key].Load() == expectation
@@ -280,7 +291,7 @@ func TestCASHitTracker_SplitsUpdates(t *testing.T) {
 
 	// Pause the hit-tracker RPC service and send an RPC that'll block the
 	// hit-tracker-client worker so updates are queued.
-	hitTrackerService.wg.Add(1)
+	resume := hitTrackerService.pause(t)
 	group1Ctx := authenticatedContext(user1, authenticator)
 	group1Tracker := hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
 	group1Tracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
@@ -307,7 +318,7 @@ func TestCASHitTracker_SplitsUpdates(t *testing.T) {
 	group1BazelCtx := authenticatedContextWithInternalBazelClient(user1, authenticator)
 	group1WithBazelClientTracker := hitTrackerFactory.NewCASHitTracker(group1BazelCtx, &repb.RequestMetadata{})
 	group1WithBazelClientTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_030_000, repb.Compressor_IDENTITY, "test")
-	hitTrackerService.wg.Done()
+	resume()
 
 	// Expect 10x [A, B, C, D, E] for ANON.
 	expectation := hitTrackerService.casDownloadExpectation(anonKey, 50)
@@ -337,7 +348,7 @@ func TestCASHitTracker_DropsUpdates(t *testing.T) {
 
 	// Pause the hit-tracker RPC service and send an RPC that'll block the
 	// hit-tracker-client worker so updates are queued.
-	hitTrackerService.wg.Add(1)
+	resume := hitTrackerService.pause(t)
 	group1Ctx := authenticatedContext(user1, authenticator)
 	hitTracker := hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
 	hitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
@@ -355,7 +366,7 @@ func TestCASHitTracker_DropsUpdates(t *testing.T) {
 
 	hitTracker = hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
 	hitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
-	hitTrackerService.wg.Done()
+	resume()
 
 	// Expect A, B, C, D, E, A, B, C, D, E to be sent for ANON.
 	expectation := hitTrackerService.casDownloadExpectation(anonKey, 10)
@@ -378,8 +389,6 @@ func pendingHitsExpectation(f *HitTrackerFactory, key string, expected int) func
 		if !ok {
 			return expected == 0
 		}
-		c.mu.Lock()
-		defer c.mu.Unlock()
 		return len(c.hits) == expected
 	}
 }
@@ -398,8 +407,10 @@ func TestCASHitTracker_AcceptsHitsWhileSplitOverflowIsPending(t *testing.T) {
 
 	// Block Track RPCs and fire the sender once: it sends the first 10 hits
 	// and re-queues the other 15, which stay pending while that RPC is blocked.
-	hitTrackerService.wg.Add(1)
-	clock.BlockUntil(1)
+	resume := hitTrackerService.pause(t)
+	blockCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, clock.BlockUntilContext(blockCtx, 1), "sender never started waiting on its ticker")
 	clock.Advance(*remoteHitTrackerPollInterval)
 	require.Eventually(t, pendingHitsExpectation(hitTrackerFactory, anonKey, 15), 10*time.Second, 10*time.Millisecond)
 
@@ -415,9 +426,34 @@ func TestCASHitTracker_AcceptsHitsWhileSplitOverflowIsPending(t *testing.T) {
 	require.Eventually(t, pendingHitsExpectation(hitTrackerFactory, group1Key, 1), 10*time.Second, 10*time.Millisecond)
 	require.True(t, pendingHitsExpectation(hitTrackerFactory, anonKey, 20)(), "hits enqueued while the split overflow was pending were dropped")
 
-	hitTrackerService.wg.Done()
+	resume()
 	require.Eventually(t, hitTrackerService.casDownloadExpectation(anonKey, 30), 10*time.Second, 100*time.Millisecond, "Expected 30 updates for group ANON")
 	require.Eventually(t, hitTrackerService.casDownloadExpectation(group1Key, 1), 10*time.Second, 100*time.Millisecond, "Expected 1 update for group 1")
+}
+
+// TestBatchAndSendAreSerialized exists for the race detector, which CI runs.
+// The batcher appends to a cacheHits while senders pop and read it, and both
+// must happen under HitTrackerFactory.mu. There is no per-cacheHits lock, so
+// if the append ever moves outside h.mu again, the detector reports the
+// batcher's write racing the sender's read here, even on runs where no hit is
+// actually lost.
+func TestBatchAndSendAreSerialized(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	_, hitTrackerFactory, hitTrackerService := setupWithClock(t, clock)
+	ctx := context.Background()
+	anonTracker := hitTrackerFactory.NewCASHitTracker(ctx, &repb.RequestMetadata{})
+
+	// The sender never ticks on the fake clock; send from here instead so that
+	// sends interleave with the batcher goroutine as tightly as possible.
+	const hits = 200
+	for range hits {
+		anonTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
+		hitTrackerFactory.sendTrackRequest(ctx)
+	}
+	require.Eventually(t, func() bool {
+		hitTrackerFactory.sendTrackRequest(ctx)
+		return hitTrackerService.casDownloads[anonKey].Load() == hits
+	}, 10*time.Second, 10*time.Millisecond, "Expected every hit to be sent exactly once")
 }
 
 func BenchmarkEnqueue(b *testing.B) {
