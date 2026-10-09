@@ -423,7 +423,7 @@ func uploadBlobs(ctx context.Context, uploader *cachetools.BatchCASUploader, fc 
 		if err != nil {
 			return err
 		}
-		// Note: uploader.Upload closes the reader after it is uploaded.
+		// Note: uploader.Upload will close the reader for us.
 		if err := uploader.Upload(b.Digest(), rsc); err != nil {
 			return err
 		}
