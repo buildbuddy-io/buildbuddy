@@ -542,10 +542,24 @@ func (c *Proxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) (*dcp
 	if req.GetSource() == "" {
 		return nil, status.InvalidArgumentError("A source is required.")
 	}
+	c.resetConnectBackoff(req.GetSource())
 	if c.heartbeatCallback != nil {
 		c.heartbeatCallback(ctx, req.GetSource())
 	}
 	return &dcpb.HeartbeatResponse{}, nil
+}
+
+// resetConnectBackoff makes connections to peer that are backing off after
+// failed connection attempts reconnect now. A heartbeat from peer shows that
+// it's up, and gRPC's backoff can otherwise leave a restarted peer
+// unreachable for up to two minutes.
+func (c *Proxy) resetConnectBackoff(peer string) {
+	c.mu.Lock()
+	client, ok := c.clients[peer]
+	c.mu.Unlock()
+	if ok {
+		client.ResetConnectBackoff()
+	}
 }
 
 func (c *Proxy) RemoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {

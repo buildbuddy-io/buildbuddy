@@ -615,6 +615,46 @@ func TestReadWrite_Compressed(t *testing.T) {
 	}
 }
 
+func TestHeartbeatFromRestartedPeerSkipsReconnectBackoff(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	addrA := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	addrB := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	a := newProxy(t, te, te.GetCache(), addrA)
+	require.NoError(t, a.StartListening())
+	waitUntilServerIsAlive(addrA)
+	b := newProxy(t, te, te.GetCache(), addrB)
+	require.NoError(t, b.StartListening())
+	waitUntilServerIsAlive(addrB)
+
+	heartbeat := func(from *distributed_client.Proxy, to string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		return from.SendHeartbeat(ctx, to)
+	}
+	require.NoError(t, heartbeat(a, addrB))
+
+	// Take B down long enough for A's connections to B to back off for
+	// several seconds, while A keeps heartbeating B like the distributed
+	// cache does.
+	require.NoError(t, b.Shutdown(context.Background()))
+	for start := time.Now(); time.Since(start) < 6*time.Second; time.Sleep(100 * time.Millisecond) {
+		heartbeat(a, addrB)
+	}
+
+	// When B comes back, it heartbeats A. That should make A reconnect to B
+	// right away instead of waiting out its backoff.
+	b = newProxy(t, te, te.GetCache(), addrB)
+	require.NoError(t, b.StartListening())
+	waitUntilServerIsAlive(addrB)
+	require.NoError(t, heartbeat(b, addrA))
+	start := time.Now()
+	for heartbeat(a, addrB) != nil {
+		require.Less(t, time.Since(start), 1500*time.Millisecond, "A still can't reach B after B heartbeated A")
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Logf("A reached B %s after B heartbeated A", time.Since(start))
+}
+
 func TestContains(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)

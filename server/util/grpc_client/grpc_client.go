@@ -113,6 +113,17 @@ func statesCount(conns []*clientConn) map[string]int {
 	return states
 }
 
+// ResetConnectBackoff makes connections that are waiting to retry after a
+// failed connection attempt retry now. Use it when there's evidence that the
+// target is reachable again, so the pool doesn't wait out the backoff.
+func (p *ClientConnPool) ResetConnectBackoff() {
+	for _, c := range p.conns {
+		if c.GetState() == connectivity.TransientFailure {
+			c.ClientConn.ResetConnectBackoff()
+		}
+	}
+}
+
 func (p *ClientConnPool) Close() error {
 	for _, c := range p.conns {
 		// In practice, this only errors out if you call Close twice.
