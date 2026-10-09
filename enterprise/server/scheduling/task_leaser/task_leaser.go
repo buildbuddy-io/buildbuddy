@@ -87,7 +87,7 @@ type TaskLease struct {
 	reconnectToken string
 	quit           chan struct{}
 	mu             sync.Mutex // protects stream
-	stream         scpb.Scheduler_LeaseTaskClient
+	stream         *leaseStream
 	ttl            time.Duration
 	cancelFunc     context.CancelFunc
 }
@@ -101,10 +101,21 @@ func (t *TaskLease) Task() *repb.ExecutionTask {
 }
 
 func (t *TaskLease) sendRequest(req *scpb.LeaseTaskRequest) (*scpb.LeaseTaskResponse, error) {
-	if err := t.stream.Send(req); err != nil {
-		return nil, err
+	if err := t.stream.send(req); err != nil {
+		if err != io.EOF {
+			return nil, err
+		}
+		// Read the terminal RPC status so pingServer can decide whether to
+		// reconnect. Send's io.EOF only tells us that the stream has ended.
+		if _, err := t.stream.nextResponse(); err != nil {
+			return nil, err
+		}
+		// A reply here is unexpected because each successful send consumes its
+		// reply before the next request. Return a retryable error so pingServer
+		// reconnects rather than treating the failed send as successful.
+		return nil, status.InternalError("unexpected EOF with unexpected message on stream")
 	}
-	return t.stream.Recv()
+	return t.stream.nextResponse()
 }
 
 func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
@@ -143,7 +154,7 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 		if err != nil {
 			return nil, status.WrapError(err, "reconnect lease")
 		}
-		t.stream = stream
+		t.stream = newLeaseStream(stream)
 		if r == nil {
 			ctx, cancel := context.WithTimeout(ctx, reconnectTimeout)
 			defer cancel()
@@ -176,15 +187,24 @@ func (t *TaskLease) reEnqueueTask(ctx context.Context, reason string) error {
 func (t *TaskLease) keepLease(ctx context.Context) {
 	go func() {
 		for {
+			t.mu.Lock()
+			stream := t.stream
+			t.mu.Unlock()
 			select {
 			case <-t.quit:
 				return
 			case <-time.After(t.ttl):
-				if _, err := t.pingServer(ctx); err != nil {
-					log.CtxErrorf(ctx, "Error updating lease for task: %q: %s", t.taskID, err)
-					t.cancelFunc()
+			case <-stream.done:
+				// In Close(), both t.quit and stream.done are closed.
+				if t.closed() {
 					return
 				}
+				log.CtxWarningf(ctx, "Lease stream ended early: %s", stream.err)
+			}
+			if _, err := t.pingServer(ctx); err != nil {
+				log.CtxErrorf(ctx, "Error updating lease: %s", err)
+				t.cancelFunc()
+				return
 			}
 		}
 	}()
@@ -198,7 +218,7 @@ func (t *TaskLease) claim(ctx context.Context) (context.Context, []byte, error) 
 	if err != nil {
 		return nil, nil, err
 	}
-	t.stream = stream
+	t.stream = newLeaseStream(stream)
 	serializedTask, err := t.pingServer(ctx)
 	if err == nil {
 		defer t.keepLease(ctx)
@@ -244,12 +264,12 @@ func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 		s, _ := gstatus.FromError(taskErr)
 		req.ReEnqueueReason = s.Proto()
 	}
-	if err := t.stream.Send(req); err != nil {
+	if err := t.stream.send(req); err != nil {
 		log.CtxWarningf(ctx, "Failed to send final message on task lease stream: %s", err)
 	}
 	closedCleanly := false
 	for {
-		rsp, err := t.stream.Recv()
+		rsp, err := t.stream.nextResponse()
 		if err == io.EOF {
 			break
 		}
@@ -278,4 +298,59 @@ func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 	} else {
 		log.CtxDebugf(ctx, "Task lease closed cleanly")
 	}
+}
+
+// leaseStream receives between keepalives so the executor can detect a dropped
+// stream and attempt to reconnect immediately. Waiting for the next keepalive
+// could miss the scheduler's short reconnection window.
+//
+// The background receiver buffers replies for nextResponse and closes done
+// when the stream ends, waking keepLease to handle the error.
+type leaseStream struct {
+	stream scpb.Scheduler_LeaseTaskClient
+	// Buffer the single reply per request so the receiver can read the stream's
+	// terminal status even before the caller consumes the reply. The receiver
+	// closes rsps when the stream ends.
+	rsps chan *scpb.LeaseTaskResponse
+	// The receiver sets err before closing done and rsps. Readers must wait for
+	// one of them to close before accessing err.
+	done chan struct{}
+	err  error
+}
+
+func newLeaseStream(stream scpb.Scheduler_LeaseTaskClient) *leaseStream {
+	s := &leaseStream{
+		stream: stream,
+		rsps:   make(chan *scpb.LeaseTaskResponse, 1),
+		done:   make(chan struct{}),
+	}
+	go s.receive()
+	return s
+}
+
+func (s *leaseStream) receive() {
+	for {
+		rsp, err := s.stream.Recv()
+		if err != nil {
+			s.err = err
+			close(s.done)
+			close(s.rsps)
+			return
+		}
+		s.rsps <- rsp
+	}
+}
+
+func (s *leaseStream) send(req *scpb.LeaseTaskRequest) error {
+	return s.stream.Send(req)
+}
+
+// nextResponse returns the next reply from the background receiver, or the
+// stream's error once the stream has ended and all replies have been returned.
+func (s *leaseStream) nextResponse() (*scpb.LeaseTaskResponse, error) {
+	rsp, ok := <-s.rsps
+	if !ok {
+		return nil, s.err
+	}
+	return rsp, nil
 }
