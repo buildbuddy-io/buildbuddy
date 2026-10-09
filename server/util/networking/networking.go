@@ -1385,7 +1385,14 @@ func findRoute(destination string) (route, error) {
 	}
 
 	for _, r := range rs {
-		if targetDst.String() == r.Dst.String() {
+		dst := r.Dst
+		// netlink reports default routes as 0.0.0.0/0 or ::/0 rather than nil.
+		if dst != nil {
+			if ones, _ := dst.Mask.Size(); ones == 0 {
+				dst = nil
+			}
+		}
+		if targetDst.String() == dst.String() {
 			l, err := netlink.LinkByIndex(r.LinkIndex)
 			if err != nil {
 				return route{}, status.UnknownErrorf("could not lookup interface for route: %s", err)

@@ -245,8 +245,9 @@ func (n *Network) startStack(prefixLen int) error {
 		n.forwardTCP(ctx, r)
 	})
 	n.stack.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := udp.NewForwarder(n.stack, func(r *udp.ForwarderRequest) {
+	udpForwarder := udp.NewForwarder(n.stack, func(r *udp.ForwarderRequest) bool {
 		n.forwardUDP(ctx, r)
+		return true
 	})
 	n.stack.SetTransportProtocolHandler(udp.ProtocolNumber, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
 		if !n.isAllowed(id.LocalAddress) {
@@ -406,9 +407,9 @@ func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuf
 	if len(h) < header.ICMPv4MinimumSize || h.Type() != header.ICMPv4Echo {
 		return false
 	}
-	// The stack answers echo requests to the gateway itself.
+	// Leave echo requests to the gateway unhandled so the stack answers them.
 	if id.LocalAddress == n.gateway {
-		return true
+		return false
 	}
 	if !n.isAllowed(id.LocalAddress) {
 		n.reject(pkt)
