@@ -1407,7 +1407,6 @@ func TestRefreshBufferedExecutionsWhileStreaming(t *testing.T) {
 	refreshedIID := <-collector.refreshes
 	require.Equal(t, testInvocationID, refreshedIID)
 
-	// No build events arrive during this interval, as with a long action.
 	clock.Advance(15 * time.Minute)
 	refreshedIID = <-collector.refreshes
 	require.Equal(t, testInvocationID, refreshedIID)
