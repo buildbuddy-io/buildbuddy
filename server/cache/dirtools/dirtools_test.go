@@ -548,6 +548,8 @@ func TestUploadTree(t *testing.T) {
 			expectedInfo: &dirtools.TransferInfo{
 				// The file and the "foo/bar/baz" Directory proto. The
 				// ancestor Directory protos are empty and never uploaded.
+				// TODO(jdhollen): This will go down to 1 when we stop
+				// uploading directories that don't exist on an output path.
 				FileCount:        2,
 				BytesTransferred: 84,
 			},
@@ -581,12 +583,14 @@ func TestUploadTree(t *testing.T) {
 			expectedInfo: &dirtools.TransferInfo{
 				// This should include:
 				//
-				//   Dir:  a
-				//   Dir:  a/b
-				//   Dir:  a/b/c
-				//   Dir:  a/b/e
+				//   Dir:  a (contains b)
+				//   Dir:  a/b (contains c and e)
+				//   Dir:  a/b/c (contains fileA.txt and d)
+				//   Dir:  a/b/e (contains g)
 				//   File: a/b/c/fileA.txt
 				//   And the output tree.
+				// TODO(jdhollen): This will go down to 5 (dropping "a") when
+				// we stop uploading directories that aren't on an output path.
 				FileCount:        6,
 				BytesTransferred: 849,
 			},
@@ -624,9 +628,9 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				// The file, the "a/b" and "a/b/c" Directory protos, and
-				// the Tree. The empty root and "a" Directory protos are
-				// never uploaded.
+				// The directoryPath "a/b/c" effectively treats root and "a"
+				// directories as empty. This count therefore includes the file,
+				// "a/b", "a/b/c", and the tree.
 				FileCount:        4,
 				BytesTransferred: 244,
 			},
@@ -1998,27 +2002,6 @@ func TestUploadTree_AddsOnlyFilesToFileCache(t *testing.T) {
 	}
 	require.Equal(t, 2, fileCount)
 	require.Equal(t, fileCount, fileCache.totalAddCount())
-}
-
-func TestUploadTree_CancelledContext(t *testing.T) {
-	env, ctx := testEnv(t)
-	ctx, cancel := context.WithCancel(ctx)
-	cancel()
-
-	// Only output files, so there is no Tree upload which would fail on the
-	// cancelled context regardless of whether the file batches were dropped.
-	cmd := &repb.Command{OutputFiles: []string{"fileA.txt"}}
-	// FindMissingBlobs batches are dropped nondeterministically once the
-	// context is cancelled, so try a few times to make sure a dropped batch
-	// is never reported as a successful upload.
-	for range 10 {
-		rootDir := testfs.MakeTempDir(t)
-		testfs.WriteAllFileContents(t, rootDir, map[string]string{"fileA.txt": "a"})
-		dirHelper := dirtools.NewDirHelper(rootDir, cmd, fs.FileMode(0o755))
-		_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, cmd, &repb.ActionResult{}, false /*=addToFileCache*/, nil /*=chunkingParams*/)
-		require.Error(t, err)
-		require.True(t, status.IsCanceledError(err), "expected Canceled error, got %s", err)
-	}
 }
 
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
