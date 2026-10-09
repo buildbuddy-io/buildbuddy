@@ -297,7 +297,8 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunOpts
 	statsCh := p.monitor(opts.StatsListener)
 
 	// Stop forwarding signals once the process exits, rather than when ctx is
-	// done, so that the forwarder doesn't outlive this call or signal a
+	// done, so that the forwarder doesn't outlive this call. This also narrows,
+	// but doesn't close, the window in which a signal could be sent to a
 	// process that has since reused the pid.
 	stopForwardingSignals := func() {}
 	if opts.Signal != nil {
