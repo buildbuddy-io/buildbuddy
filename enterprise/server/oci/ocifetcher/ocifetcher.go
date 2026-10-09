@@ -74,8 +74,10 @@ var (
 )
 
 type ociFetcherServer struct {
-	allowedPrivateIPs []*net.IPNet
-	mirrors           []interfaces.MirrorConfig
+	mirrors []interfaces.MirrorConfig
+	// httpClient is shared by all registry requests, so that they reuse
+	// connections.
+	httpClient *http.Client
 
 	bsClient bspb.ByteStreamClient
 	acClient repb.ActionCacheClient
@@ -131,12 +133,12 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 		return nil, status.InternalErrorf("error initializing access proof cache: %s", err)
 	}
 	return &ociFetcherServer{
-		allowedPrivateIPs: allowedPrivateIPs,
-		mirrors:           Mirrors(),
-		bsClient:          bsClient,
-		acClient:          acClient,
-		pullerLRU:         pullerLRU,
-		accessProofCache:  accessProofCache,
+		mirrors:          Mirrors(),
+		httpClient:       httpclient.New(allowedPrivateIPs, "oci_fetcher"),
+		bsClient:         bsClient,
+		acClient:         acClient,
+		pullerLRU:        pullerLRU,
+		accessProofCache: accessProofCache,
 	}, nil
 }
 
@@ -635,14 +637,16 @@ func (s *ociFetcherServer) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 		}))
 	}
 
-	client := httpclient.New(s.allowedPrivateIPs, "oci_fetcher")
+	// Copy the shared client, so that wrapping its transport doesn't affect
+	// other requests. The copy still shares the underlying connection pool.
+	client := *s.httpClient
 	// The mirror transport sits inside the client, below the blob HEAD fallback transport, so
 	// the fallback's allowlist check sees original registry hostnames rather than mirror
 	// hostnames and its ranged GETs get the same mirror rewriting as any other request.
 	if len(s.mirrors) > 0 {
 		client.Transport = NewMirrorTransport(client.Transport, s.mirrors)
 	}
-	opts = append(opts, remote.WithTransport(NewBlobHeadFallbackTransport(client)))
+	opts = append(opts, remote.WithTransport(NewBlobHeadFallbackTransport(&client)))
 
 	return opts
 }
