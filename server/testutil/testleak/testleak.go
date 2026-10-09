@@ -224,7 +224,8 @@ func describeSockets() map[string]string {
 			}
 			desc := "unix"
 			if len(f) >= 8 {
-				desc += " " + f[7]
+				// The path is the last column, and may contain spaces.
+				desc += " " + strings.Join(f[7:], " ")
 			}
 			sockets[f[6]] = desc
 		}

@@ -146,3 +146,15 @@ func TestCheckFDs_DescribesLeakedSockets(t *testing.T) {
 	require.Len(t, ft.errors, 1)
 	require.Contains(t, ft.errors[0], "tcp "+lis.Addr().String()+" -> 0.0.0.0:0 LISTEN")
 }
+
+func TestCheckFDs_DescribesLeakedUnixSockets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "my socket")
+	ft := &fakeTB{TB: t}
+	CheckFDs(ft)
+	lis, err := net.Listen("unix", path)
+	require.NoError(t, err)
+	defer lis.Close()
+	ft.runCleanups()
+	require.Len(t, ft.errors, 1)
+	require.Contains(t, ft.errors[0], "unix "+path)
+}
