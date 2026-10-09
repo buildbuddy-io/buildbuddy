@@ -61,7 +61,9 @@ func TestUploadTree(t *testing.T) {
 			symlinkPaths:   map[string]string{},
 			expectedResult: &repb.ActionResult{},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        1,
+				// The empty root Directory proto has the empty digest,
+				// which is never reported missing, so nothing is uploaded.
+				FileCount:        0,
 				BytesTransferred: 0,
 			},
 		},
@@ -543,7 +545,9 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        3,
+				// The file and the "foo/bar/baz" Directory proto. The
+				// ancestor Directory protos are empty and never uploaded.
+				FileCount:        2,
 				BytesTransferred: 84,
 			},
 		},
@@ -583,7 +587,9 @@ func TestUploadTree(t *testing.T) {
 				//   Dir:  a/b/e/g
 				//   File: a/b/c/fileA.txt
 				//
-				FileCount:        7,
+				// plus the Tree for a/b. The empty Directory protos for
+				// the root, "a", and "a/f" are never uploaded.
+				FileCount:        6,
 				BytesTransferred: 849,
 			},
 		},
@@ -620,7 +626,10 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        5,
+				// The file, the "a/b" and "a/b/c" Directory protos, and
+				// the Tree. The empty root and "a" Directory protos are
+				// never uploaded.
+				FileCount:        4,
 				BytesTransferred: 244,
 			},
 		},
@@ -1875,6 +1884,58 @@ func TestUploadTree_OutputUploadConcurrency(t *testing.T) {
 	}
 }
 
+func TestUploadTree_SkipsPresentBlobs(t *testing.T) {
+	env, ctx := testEnv(t)
+	client := &trackingClient{
+		ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+		ByteStreamClient:                env.GetByteStreamClient(),
+	}
+	env.SetContentAddressableStorageClient(client)
+	env.SetByteStreamClient(client)
+
+	cmd := &repb.Command{OutputPaths: []string{"out"}}
+	upload := func() (*dirtools.TransferInfo, *repb.ActionResult) {
+		rootDir := testfs.MakeTempDir(t)
+		testfs.WriteAllFileContents(t, rootDir, map[string]string{
+			"out/fileA.txt":     "a",
+			"out/sub/fileB.txt": "b",
+		})
+		dirHelper := dirtools.NewDirHelper(rootDir, cmd, fs.FileMode(0o755))
+		actionResult := &repb.ActionResult{}
+		info, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, cmd, actionResult, false /*=addToFileCache*/, nil /*=chunkingParams*/)
+		require.NoError(t, err)
+		return info, actionResult
+	}
+
+	// The first upload should transfer everything: two files, three
+	// Directory protos (the root, "out", and "out/sub"), and one Tree.
+	info, actionResult := upload()
+	require.Equal(t, int64(6), info.FileCount)
+	require.Len(t, actionResult.OutputDirectories, 1)
+	treeDigest := actionResult.OutputDirectories[0].GetTreeDigest()
+
+	// The Directory protos should have been checked with FindMissingBlobs
+	// along with the files.
+	tree := &repb.Tree{}
+	err := cachetools.GetBlobAsProto(ctx, env.GetByteStreamClient(), digest.NewCASResourceName(treeDigest, "", repb.DigestFunction_SHA256), tree)
+	require.NoError(t, err)
+	require.Len(t, tree.GetChildren(), 1)
+	for _, dir := range append([]*repb.Directory{tree.GetRoot()}, tree.GetChildren()...) {
+		d, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		require.True(t, client.checkedForMissing(d), "Directory proto %s should have been checked with FindMissingBlobs", d.GetHash())
+	}
+	for _, file := range tree.GetRoot().GetFiles() {
+		require.True(t, client.checkedForMissing(file.GetDigest()), "file %s should have been checked with FindMissingBlobs", file.GetName())
+	}
+
+	// Uploading the same outputs again should find the files and Directory
+	// protos already present, so only the Tree should be transferred.
+	info, _ = upload()
+	require.Equal(t, int64(1), info.FileCount)
+	require.Equal(t, treeDigest.GetSizeBytes(), info.BytesTransferred)
+}
+
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 
@@ -2026,6 +2087,27 @@ type trackingClient struct {
 	streamWrites int
 	inFlight     int
 	maxInFlight  int
+	// Hashes of all digests passed to FindMissingBlobs.
+	findMissingHashes map[string]struct{}
+}
+
+func (c *trackingClient) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest, opts ...grpc.CallOption) (*repb.FindMissingBlobsResponse, error) {
+	c.mu.Lock()
+	if c.findMissingHashes == nil {
+		c.findMissingHashes = make(map[string]struct{})
+	}
+	for _, d := range req.GetBlobDigests() {
+		c.findMissingHashes[d.GetHash()] = struct{}{}
+	}
+	c.mu.Unlock()
+	return c.ContentAddressableStorageClient.FindMissingBlobs(ctx, req, opts...)
+}
+
+func (c *trackingClient) checkedForMissing(d *repb.Digest) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, ok := c.findMissingHashes[d.GetHash()]
+	return ok
 }
 
 func (c *trackingClient) track(n int, calls *int) (done func()) {
