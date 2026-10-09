@@ -654,7 +654,7 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 	// concurrent compaction is added. This works "on top" of
 	// L0CompactionConcurrency, so the higher of the count of compaction
 	// concurrency slots as determined by the two options is chosen.
-	opts.Experimental.CompactionDebtConcurrency = 10 << 30
+	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
 	return opts
 }
@@ -2326,6 +2326,10 @@ func (w *referenceWriter) Commit() (*refpb.Reference, error) {
 		return nil, err
 	}
 	return &refpb.Reference{Metadata: w.md}, nil
+}
+
+func (p *PebbleCache) IsReferenceable(ctx context.Context, r *rspb.ResourceName) bool {
+	return p.gcsBlobstore != nil && p.storesInGCS(r.GetDigest().GetSizeBytes())
 }
 
 func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {

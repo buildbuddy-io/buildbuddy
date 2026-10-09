@@ -34,6 +34,7 @@ type fakeProvider struct {
 	opts         []any
 
 	value   bool
+	object  map[string]any
 	variant string
 }
 
@@ -44,6 +45,15 @@ func (p *fakeProvider) BooleanDetails(ctx context.Context, name string, defaultV
 		return defaultValue, fakeDetails{flagNotFound: true}
 	}
 	return p.value, fakeDetails{variant: p.variant}
+}
+
+func (p *fakeProvider) ObjectDetails(ctx context.Context, name string, defaultValue map[string]any, opts ...any) (map[string]any, interfaces.ExperimentFlagDetails) {
+	p.name, p.opts = name, opts
+	p.names = append(p.names, name)
+	if p.object == nil {
+		return defaultValue, fakeDetails{variant: p.variant}
+	}
+	return p.object, fakeDetails{variant: p.variant}
 }
 
 type fakeDetails struct {
@@ -73,6 +83,45 @@ func TestConstructorOptions(t *testing.T) {
 			require.Nil(t, flag.Lookup("expflag-test-"+name))
 		})
 	}
+}
+
+type widgetSettings struct {
+	Color   string `json:"color"`
+	Columns int64  `json:"columns"`
+	Animate bool   `json:"animate"`
+}
+
+var structExperiment = expflag.Struct("expflag_test.struct", widgetSettings{Color: "blue", Columns: 3}, "struct experiment")
+
+func TestStruct(t *testing.T) {
+	expflag.SetFlagProvider(nil)
+	require.Equal(t, widgetSettings{Color: "blue", Columns: 3}, structExperiment.Get(t.Context()))
+	require.Zero(t, testing.AllocsPerRun(100, func() { structExperiment.Get(t.Context()) }))
+
+	flags.Set(t, structExperiment.Name(), widgetSettings{Color: "blue", Columns: 3})
+	f := flag.Lookup(structExperiment.Name())
+	require.NotNil(t, f)
+	require.NoError(t, f.Value.Set(`{"columns":5,"animate":true}`))
+	require.Equal(t, widgetSettings{Columns: 5, Animate: true}, structExperiment.Get(t.Context()))
+
+	provider := &fakeProvider{variant: "default"}
+	expflag.SetFlagProvider(provider)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	require.Equal(t, widgetSettings{Columns: 5, Animate: true}, structExperiment.Get(t.Context()))
+	require.Equal(t, structExperiment.Name(), provider.name)
+
+	provider.object = map[string]any{"color": "red"}
+	provider.variant = "warning"
+	value, details := structExperiment.GetWithDetails(t.Context())
+	require.Equal(t, widgetSettings{Color: "red"}, value)
+	require.Equal(t, "warning", details.GetVariant())
+	require.Equal(t, "red", details.GetObjectValue().GetFields()["color"].GetStringValue())
+
+	provider.object = map[string]any{"columns": "many"}
+	require.Equal(t, widgetSettings{Columns: 5, Animate: true}, structExperiment.Get(t.Context()))
+
+	provider.object = map[string]any{"colour": "red"}
+	require.Equal(t, widgetSettings{Columns: 5, Animate: true}, structExperiment.Get(t.Context()))
 }
 
 func TestDefaults(t *testing.T) {

@@ -16,6 +16,7 @@ import (
 	_ "embed"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
@@ -49,8 +50,6 @@ var (
 	deleteParallelism = flag.Int("executor.delete_parallelism", 0, "Number of goroutines to use when deleting files.")
 	deleteWaitGroup   = errgroup.Group{}
 	deleteLimitSet    = sync.Once{}
-
-	recordInputFetchMetadata = flag.Bool("executor.record_input_fetch_metadata", true, "If true, and enabled by app experiments, record and report metadata describing which action inputs were fetched from remote CAS.")
 
 	vfsVerbose             = flag.Bool("executor.vfs.verbose", false, "Enables verbose logs for VFS operations.")
 	vfsVerboseFUSEOps      = flag.Bool("executor.vfs.verbose_fuse", false, "Enables low-level verbose logs in the go-fuse library.")
@@ -351,7 +350,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		opts.RootDir = ws.inputRoot()
 	}
 	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
-	opts.RecordInputFetchMetadata = *recordInputFetchMetadata && slices.Contains(ws.task.GetExperiments(), "remote_execution.record_input_fetch_metadata")
+	opts.RecordInputFetchMetadata = execution_experiments.RecordInputFetchMetadata.Get(ctx)
 	if ws.Opts.Preserve {
 		opts.KnownInputs = ws.Inputs
 		opts.TrackTransfers = true

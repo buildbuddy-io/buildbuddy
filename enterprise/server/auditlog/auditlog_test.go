@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -31,8 +32,6 @@ import (
 
 func TestGetLogs(t *testing.T) {
 	flags.Set(t, "app.audit_logs_enabled", true)
-	flags.Set(t, "testenv.reuse_server", true)
-	flags.Set(t, "testenv.use_clickhouse", true)
 
 	group1AdminID := "US1"
 	group1AdminFirstName := "FirstName"
@@ -48,6 +47,7 @@ func TestGetLogs(t *testing.T) {
 
 	ctx := context.Background()
 	env := enterprise_testenv.New(t)
+	testclickhouse.Configure(t, env)
 
 	err := env.GetUserDB().InsertUser(ctx, &tables.User{
 		UserID:    group1AdminID,
@@ -216,9 +216,8 @@ func TestChildGroupAuth(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
 	flags.Set(t, "app.audit_logs_enabled", true)
-	flags.Set(t, "testenv.reuse_server", true)
-	flags.Set(t, "testenv.use_clickhouse", true)
 	env := enterprise_testenv.New(t)
+	testclickhouse.Configure(t, env)
 	enterprise_testauth.Configure(t, env)
 	err := auditlog.Register(env)
 	require.NoError(t, err)
@@ -320,9 +319,8 @@ func TestFilterEntry_RedactsBuildBuddyUsers(t *testing.T) {
 	flags.Set(t, "app.audit_logs_enabled", true)
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
-	flags.Set(t, "testenv.reuse_server", true)
-	flags.Set(t, "testenv.use_clickhouse", true)
 	env := enterprise_testenv.New(t)
+	testclickhouse.Configure(t, env)
 	enterprise_testauth.Configure(t, env)
 	err := auditlog.Register(env)
 	require.NoError(t, err)
@@ -371,9 +369,8 @@ func TestFilterEntry_ServerAdminSeesUnfilteredLogs(t *testing.T) {
 	flags.Set(t, "app.audit_logs_enabled", true)
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
-	flags.Set(t, "testenv.reuse_server", true)
-	flags.Set(t, "testenv.use_clickhouse", true)
 	env := enterprise_testenv.New(t)
+	testclickhouse.Configure(t, env)
 	enterprise_testauth.Configure(t, env)
 	err := auditlog.Register(env)
 	require.NoError(t, err)

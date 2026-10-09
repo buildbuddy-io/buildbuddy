@@ -409,7 +409,7 @@ func TestChunkUploaderGroupsFindMissingAndDedupesWithinBlob(t *testing.T) {
 	repb.RegisterContentAddressableStorageServer(grpcServer, cas)
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis, grpc.WithUnaryInterceptor(recordCASUnaryInterceptor(rec)))
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis, grpc.WithUnaryInterceptor(recordCASUnaryInterceptor(rec)))
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	fp, err := experiments.NewFlagProvider(t.Name())
@@ -501,7 +501,7 @@ func runRemoteServices(ctx context.Context, env *testenv.TestEnv, t testing.TB) 
 	go runFunc()
 	unaryRequestCounter := atomic.Int32{}
 	streamRequestCounter := atomic.Int32{}
-	conn, err := testenv.LocalGRPCConn(ctx, lis,
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis,
 		grpc.WithUnaryInterceptor(requestCountingUnaryInterceptor(&unaryRequestCounter)),
 		grpc.WithStreamInterceptor(requestCountingStreamInterceptor(&streamRequestCounter)))
 	require.NoError(t, err)
@@ -519,7 +519,7 @@ func runBSProxy(ctx context.Context, client bspb.ByteStreamClient, env *testenv.
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return bspb.NewByteStreamClient(conn)
@@ -1333,7 +1333,7 @@ func TestReadChunked(t *testing.T) {
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
 	go remoteRun()
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { remoteConn.Close() })
 	bsClient := bspb.NewByteStreamClient(remoteConn)
@@ -1349,7 +1349,7 @@ func TestReadChunked(t *testing.T) {
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
@@ -1568,7 +1568,7 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 	go remoteRun()
 
 	var splitBlobCalls atomic.Int32
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis, grpc.WithUnaryInterceptor(func(
 		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
@@ -1591,7 +1591,7 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
@@ -1722,7 +1722,7 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 	go remoteRun()
 
 	var splitBlobCalls atomic.Int32
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis, grpc.WithUnaryInterceptor(func(
 		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
@@ -1744,7 +1744,7 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
@@ -1870,7 +1870,7 @@ func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 	go remoteRun()
 
 	var splitBlobCalls atomic.Int32
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis, grpc.WithUnaryInterceptor(func(
 		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
@@ -1891,7 +1891,7 @@ func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
@@ -1987,7 +1987,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
 	go remoteRun()
 	var splitBlobCalls atomic.Int32
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis, grpc.WithUnaryInterceptor(func(
 		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
@@ -2018,7 +2018,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
@@ -2233,7 +2233,7 @@ func TestReadChunkedWithOffset(t *testing.T) {
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
 	go remoteRun()
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { remoteConn.Close() })
 	bsClient := bspb.NewByteStreamClient(remoteConn)
@@ -2250,7 +2250,7 @@ func TestReadChunkedWithOffset(t *testing.T) {
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
@@ -2403,7 +2403,7 @@ func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
 	go remoteRun()
 
 	var splitBlobCalls atomic.Int32
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis, grpc.WithUnaryInterceptor(func(
 		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
@@ -2424,7 +2424,7 @@ func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
@@ -2486,7 +2486,7 @@ func TestReadChunkedPartialLocalFailure(t *testing.T) {
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
 	go remoteRun()
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { remoteConn.Close() })
 	bsClient := bspb.NewByteStreamClient(remoteConn)
@@ -2551,7 +2551,7 @@ func TestReadChunkedPartialLocalFailure(t *testing.T) {
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
@@ -2658,7 +2658,7 @@ func TestWriteChunked(t *testing.T) {
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
 	go remoteRun()
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { remoteConn.Close() })
 	bsClient := bspb.NewByteStreamClient(remoteConn)
@@ -2674,7 +2674,7 @@ func TestWriteChunked(t *testing.T) {
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
@@ -2832,7 +2832,7 @@ func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
 	go remoteRun()
 
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { remoteConn.Close() })
 
@@ -2848,7 +2848,7 @@ func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
 
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
@@ -2977,7 +2977,7 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
 	go remoteRun()
 
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(recordCASUnaryInterceptor(rec)))
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis, grpc.WithUnaryInterceptor(recordCASUnaryInterceptor(rec)))
 	require.NoError(t, err)
 	t.Cleanup(func() { remoteConn.Close() })
 
@@ -2993,7 +2993,7 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
 
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { proxyConn.Close() })
 
@@ -3124,7 +3124,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
 	go remoteRun()
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { remoteConn.Close() })
 	bsClient := bspb.NewByteStreamClient(remoteConn)
@@ -3140,7 +3140,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 	require.NoError(t, err)
 	t.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
@@ -3310,7 +3310,7 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
 	go remoteRun()
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis,
+	remoteConn, err := testenv.LocalGRPCConn(b, ctx, remoteLis,
 		grpc.WithChainUnaryInterceptor(networkLatencyUnaryInterceptor),
 		grpc.WithChainStreamInterceptor(networkSimStreamInterceptor),
 	)
@@ -3329,7 +3329,7 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(b, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(b, ctx, proxyLis)
 	require.NoError(b, err)
 	b.Cleanup(func() { proxyConn.Close() })
 	proxy := bspb.NewByteStreamClient(proxyConn)
@@ -3393,7 +3393,7 @@ func setupChunkedReadBenchmarkEnv(b *testing.B) *chunkedReadBenchmarkEnv {
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
 	go remoteRun()
-	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis,
+	remoteConn, err := testenv.LocalGRPCConn(b, ctx, remoteLis,
 		grpc.WithChainUnaryInterceptor(networkLatencyUnaryInterceptor),
 		grpc.WithChainStreamInterceptor(networkSimStreamInterceptor),
 	)
@@ -3411,7 +3411,7 @@ func setupChunkedReadBenchmarkEnv(b *testing.B) *chunkedReadBenchmarkEnv {
 	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(b, proxyEnv)
 	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
 	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	proxyConn, err := testenv.LocalGRPCConn(b, ctx, proxyLis)
 	require.NoError(b, err)
 	b.Cleanup(func() { proxyConn.Close() })
 

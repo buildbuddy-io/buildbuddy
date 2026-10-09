@@ -61,6 +61,9 @@ type target struct {
 	targetType     cmpb.TargetType
 	testSize       build_event_stream.TestSize
 	buildSuccess   bool
+
+	testTimeout        time.Duration
+	maxAttemptDuration time.Duration
 }
 
 func md5Int64(text string) int64 {
@@ -94,12 +97,14 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 		t.state = targetStateConfigured
 	case *build_event_stream.BuildEvent_Completed:
 		t.buildSuccess = p.Completed.GetSuccess()
+		t.testTimeout = p.Completed.GetTestTimeout().AsDuration()
 		if !p.Completed.GetSuccess() {
 			t.overallStatus = build_event_stream.TestStatus_FAILED_TO_BUILD
 		}
 		t.state = targetStateCompleted
 	case *build_event_stream.BuildEvent_TestResult:
 		t.cached = p.TestResult.GetCachedLocally() || p.TestResult.GetExecutionInfo().GetCachedRemotely()
+		t.maxAttemptDuration = max(t.maxAttemptDuration, p.TestResult.GetTestAttemptDuration().AsDuration())
 		t.state = targetStateResult
 	case *build_event_stream.BuildEvent_TestSummary:
 		ts := p.TestSummary
@@ -363,18 +368,20 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 			Label:                   target.label,
 			InvocationStartTimeUsec: invocationStartTime.UnixMicro(),
 
-			RuleType:       target.ruleType,
-			UserID:         permissions.UserID,
-			InvocationUUID: invocationUUID,
-			TargetType:     int32(target.targetType),
-			TestSize:       int32(target.testSize),
-			Status:         int32(target.overallStatus),
-			Cached:         target.cached,
-			StartTimeUsec:  testStartTimeUsec,
-			DurationUsec:   target.totalDuration.Microseconds(),
-			BranchName:     t.buildEventAccumulator.Invocation().GetBranchName(),
-			Role:           t.buildEventAccumulator.Invocation().GetRole(),
-			Command:        t.buildEventAccumulator.Invocation().GetCommand(),
+			RuleType:               target.ruleType,
+			UserID:                 permissions.UserID,
+			InvocationUUID:         invocationUUID,
+			TargetType:             int32(target.targetType),
+			TestSize:               int32(target.testSize),
+			Status:                 int32(target.overallStatus),
+			Cached:                 target.cached,
+			StartTimeUsec:          testStartTimeUsec,
+			DurationUsec:           target.totalDuration.Microseconds(),
+			TestTimeoutUsec:        target.testTimeout.Microseconds(),
+			MaxAttemptDurationUsec: target.maxAttemptDuration.Microseconds(),
+			BranchName:             t.buildEventAccumulator.Invocation().GetBranchName(),
+			Role:                   t.buildEventAccumulator.Invocation().GetRole(),
+			Command:                t.buildEventAccumulator.Invocation().GetCommand(),
 		})
 	}
 	err := t.env.GetOLAPDBHandle().FlushTestTargetStatuses(ctx, entries)

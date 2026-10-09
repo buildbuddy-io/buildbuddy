@@ -5,6 +5,7 @@ go_library(
     name = "networking",
     srcs = ["networking.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/networking",
+    target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",

@@ -119,6 +119,31 @@ func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache,
 	assert.Equal(t, r.GetDigest().GetHash(), d1.GetHash())
 }
 
+type readMetrics struct {
+	readThroughCount, readThroughBytes, peerCount float64
+}
+
+func readMetricsFor(t *testing.T, op string) readMetrics {
+	labels := func(source string) prometheus.Labels {
+		return prometheus.Labels{
+			metrics.DistributedCacheOperation:  op,
+			metrics.DistributedCacheReadSource: source,
+		}
+	}
+	return readMetrics{
+		readThroughCount: testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadCount, labels("read_through")),
+		readThroughBytes: testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadDigestSize, labels("read_through")),
+		peerCount:        testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadCount, labels("peer")),
+	}
+}
+
+func assertReadThroughServed(t *testing.T, op string, before readMetrics, count, sizeBytes int) {
+	after := readMetricsFor(t, op)
+	assert.Equal(t, before.readThroughCount+float64(count), after.readThroughCount, "read_through object count")
+	assert.Equal(t, before.readThroughBytes+float64(sizeBytes), after.readThroughBytes, "read_through bytes")
+	assert.Equal(t, before.peerCount, after.peerCount, "peer object count")
+}
+
 func TestBasicReadWrite(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	metrics.DistributedCachePeerLookups.Reset()
@@ -2779,6 +2804,8 @@ func TestReadThroughLocalCache(t *testing.T) {
 		peer3: len(memoryCache3.ops),
 	}
 
+	readMetricsBefore := readMetricsFor(t, "Reader")
+
 	// Now read all of the digests again -- all should be served
 	// directly from the local cache.
 	for _, rn := range allResources {
@@ -2791,6 +2818,10 @@ func TestReadThroughLocalCache(t *testing.T) {
 	assert.Equal(t, opCountBefore[peer2]+len(allResources), len(memoryCache2.ops))
 	assert.Equal(t, opCountBefore[peer3]+len(allResources), len(memoryCache3.ops))
 
+	// Every one of those reads was counted as served from the local
+	// read-through cache, and none from a peer.
+	readsServed := len(allResources) * len(distributedCaches)
+	assertReadThroughServed(t, "Reader", readMetricsBefore, readsServed, readsServed*100)
 }
 
 func TestGetMultiReadThroughLocalCache(t *testing.T) {
@@ -2855,6 +2886,8 @@ func TestGetMultiReadThroughLocalCache(t *testing.T) {
 		peer3: len(memoryCache3.ops),
 	}
 
+	readMetricsBefore := readMetricsFor(t, "GetMulti")
+
 	// Read everything again via GetMulti -- every resource should now be
 	// served directly from the local read-through cache, so each peer
 	// observes exactly one local op per call (the batched GetMulti).
@@ -2871,6 +2904,11 @@ func TestGetMultiReadThroughLocalCache(t *testing.T) {
 	assert.Equal(t, opCountBefore[peer1]+len(allResources), len(memoryCache1.ops))
 	assert.Equal(t, opCountBefore[peer2]+len(allResources), len(memoryCache2.ops))
 	assert.Equal(t, opCountBefore[peer3]+len(allResources), len(memoryCache3.ops))
+
+	// Every one of those reads was counted as served from the local
+	// read-through cache, and none from a peer.
+	readsServed := len(allResources) * len(distributedCaches)
+	assertReadThroughServed(t, "GetMulti", readMetricsBefore, readsServed, readsServed*100)
 }
 
 func TestGetMultiReadThroughLocalCacheSkipsMutableAC(t *testing.T) {
@@ -3939,16 +3977,27 @@ func testBlobName(r *rspb.ResourceName) string {
 type referenceMemoryCache struct {
 	interfaces.Cache
 	store *sharedBlobStore
+	// minReferenceableSizeBytes stands in for the real cache's shared-storage
+	// size threshold: smaller blobs are not referenceable.
+	minReferenceableSizeBytes int64
 
 	mu              sync.Mutex
 	byteCommits     int
 	refWrites       int
 	refWritesCloned int
 	refWritesShared int
+	// createRefs counts CreateReference calls: blobs this node (as the
+	// coordinator) set out to stage in shared storage.
+	createRefs int
+	// dedupeProbes counts the FindMissing calls a coordinator makes to decide
+	// whether a write needs staging at all.
+	dedupeProbes int
 	// shareReferences marks the references this node hands out as shared,
 	// standing in for a node whose records don't own their blobs.
 	shareReferences bool
 }
+
+var _ interfaces.ReferenceCache = (*referenceMemoryCache)(nil)
 
 func (c *referenceMemoryCache) setShareReferences(share bool) {
 	c.mu.Lock()
@@ -3966,6 +4015,12 @@ func (c *referenceMemoryCache) sharedRefWrites() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.refWritesShared
+}
+
+func (c *referenceMemoryCache) stagingCounts() (createRefs, dedupeProbes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.createRefs, c.dedupeProbes
 }
 
 func (c *referenceMemoryCache) makeReference(r *rspb.ResourceName, name string, sizeBytes int64) *refpb.Reference {
@@ -4009,7 +4064,23 @@ func (c *referenceMemoryCache) ReadReference(ctx context.Context, r *rspb.Resour
 	return ref, nil
 }
 
+func (c *referenceMemoryCache) IsReferenceable(ctx context.Context, r *rspb.ResourceName) bool {
+	return r.GetDigest().GetSizeBytes() >= c.minReferenceableSizeBytes
+}
+
+func (c *referenceMemoryCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+	if findmissing.PurposeFromContext(ctx) == repb.FindMissingBlobsRequest_REFERENCE_WRITE_DEDUPE {
+		c.mu.Lock()
+		c.dedupeProbes++
+		c.mu.Unlock()
+	}
+	return c.Cache.FindMissing(ctx, resources)
+}
+
 func (c *referenceMemoryCache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {
+	c.mu.Lock()
+	c.createRefs++
+	c.mu.Unlock()
 	// Like the real implementation, fail before accepting any bytes when no
 	// reference can be created.
 	c.store.mu.Lock()
@@ -4196,6 +4267,14 @@ func TestWriteByReference(t *testing.T) {
 		}
 		return
 	}
+	stagingTotals := func(locals []*referenceMemoryCache) (createRefs, dedupeProbes int) {
+		for _, l := range locals {
+			cr, dp := l.stagingCounts()
+			createRefs += cr
+			dedupeProbes += dp
+		}
+		return
+	}
 	assertReplicated := func(t *testing.T, locals []*referenceMemoryCache, dcs []*Cache, rn *rspb.ResourceName) {
 		for _, l := range locals {
 			exists, err := l.Contains(ctx, rn)
@@ -4291,14 +4370,20 @@ func TestWriteByReference(t *testing.T) {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, dcs[0].Set(ctx, rn, buf))
 		require.Equal(t, 1, store.uploadCount())
+		createRefs, dedupeProbes := stagingTotals(locals)
+		require.Equal(t, 1, createRefs)
 
-		// Every write peer already has the blob, so a repeated write skips
-		// staging and the peers dedupe the byte-path fallback.
+		// Every write peer already has the blob, so a repeated write probes
+		// all of them, skips staging, and the peers dedupe the byte-path
+		// fallback.
 		require.NoError(t, dcs[0].Set(ctx, rn, buf))
 		require.Equal(t, 1, store.uploadCount())
 		byteCommits, refWrites, _ := totals(locals)
 		require.Equal(t, 0, byteCommits)
 		require.Equal(t, 3, refWrites)
+		createRefsAfter, dedupeProbesAfter := stagingTotals(locals)
+		require.Equal(t, createRefs, createRefsAfter)
+		require.Equal(t, dedupeProbes+3, dedupeProbesAfter)
 		assertReplicated(t, locals, dcs, rn)
 	})
 
@@ -4348,6 +4433,39 @@ func TestWriteByReference(t *testing.T) {
 		require.Equal(t, 3, byteCommits)
 		require.Equal(t, 0, refWrites)
 		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("unreferenceable blobs skip the dedupe probe", func(t *testing.T) {
+		setWriteReferenceExperiments(t, true)
+		_, dcs, locals, _ := newCluster(t, 3)
+		for _, l := range locals {
+			l.minReferenceableSizeBytes = 100
+		}
+
+		// A blob below the threshold is written by bytes without asking the
+		// peers whether they already have it.
+		smallRN, smallBuf := testdigest.RandomCASResourceBuf(t, 50)
+		require.NoError(t, dcs[0].Set(ctx, smallRN, smallBuf))
+		byteCommits, refWrites, _ := totals(locals)
+		require.Equal(t, 3, byteCommits)
+		require.Equal(t, 0, refWrites)
+		createRefs, dedupeProbes := stagingTotals(locals)
+		require.Equal(t, 0, createRefs)
+		require.Equal(t, 0, dedupeProbes)
+		assertReplicated(t, locals, dcs, smallRN)
+
+		// A blob at the threshold is probed and staged as usual.
+		largeRN, largeBuf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, largeRN, largeBuf))
+		byteCommits, refWrites, _ = totals(locals)
+		require.Equal(t, 3, byteCommits)
+		require.Equal(t, 3, refWrites)
+		createRefs, dedupeProbes = stagingTotals(locals)
+		require.Equal(t, 1, createRefs)
+		// The probes share an errgroup, so the first "missing" answer can
+		// cancel the others before they reach their peer.
+		require.GreaterOrEqual(t, dedupeProbes, 1)
+		assertReplicated(t, locals, dcs, largeRN)
 	})
 
 	t.Run("experiments off leave the byte path alone", func(t *testing.T) {

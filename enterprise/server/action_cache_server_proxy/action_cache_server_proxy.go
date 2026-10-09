@@ -40,7 +40,7 @@ var (
 )
 
 type ActionCacheServerProxy struct {
-	supportsEncryption func(context.Context) bool
+	supportsEncryption bool
 	env                environment.Env
 	authenticator      interfaces.Authenticator
 	localCache         interfaces.Cache
@@ -203,7 +203,7 @@ func (s *ActionCacheServerProxy) shouldCacheUpdatedActionResult(ctx context.Cont
 	if err != nil || !canWrite {
 		return false
 	}
-	return s.supportsEncryption(ctx) || !authutil.EncryptionEnabled(ctx, s.authenticator)
+	return s.supportsEncryption || !authutil.EncryptionEnabled(ctx, s.authenticator)
 }
 
 func (s *ActionCacheServerProxy) recordLocalACHit(ctx context.Context, req *repb.GetActionResultRequest, resp *repb.ActionResult, sizeBytes int64) {
@@ -237,7 +237,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	if err := authutil.ValidateRestrictedACAccess(ctx, s.env, req.GetInstanceName()); err != nil {
 		return nil, err
 	}
-	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
 		resp, err := s.remoteACClient.GetActionResult(ctx, req)
 		labels := prometheus.Labels{
 			metrics.StatusLabel:            status.MetricsLabel(err),
@@ -386,7 +386,7 @@ func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *re
 		return nil, err
 	}
 	// Only if it's explicitly requested do we cache AC results locally.
-	if proxy_util.SkipRemote(ctx) && (!authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption(ctx)) {
+	if proxy_util.SkipRemote(ctx) && (!authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption) {
 		resp, err := s.localACServer.UpdateActionResult(ctx, req)
 
 		labels := prometheus.Labels{

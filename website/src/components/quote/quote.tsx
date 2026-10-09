@@ -126,7 +126,7 @@ function Component() {
     <section className={`${common.section} ${common.sectionDark} ${common.sectionRounded}`}>
       <div className={`${common.container} ${styles.container}`}>
         <div className={styles.heading}>
-          <div className={common.pillTitle}>From the community</div>
+          <div className={`${common.pillTitle} ${styles.pillTitle}`}>From the community</div>
           <h2 className={styles.title}>What developers are saying</h2>
         </div>
         <div className={styles.wall}>

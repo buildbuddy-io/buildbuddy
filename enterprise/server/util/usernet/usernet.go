@@ -8,8 +8,7 @@
 // executor.
 //
 // This is heavily inspired by gvisor-tap-vsock. It isn't used directly because
-// it pins a newer gVisor than we can build, and doesn't allow our private IP
-// policy or TCP tuning:
+// it doesn't allow our private IP policy or TCP tuning:
 // https://github.com/containers/gvisor-tap-vsock/tree/ad36eb20acfae43f5df9f0807201f5059073b881/pkg/services/forwarder
 //
 // N.B. Forwarding pings requires the executor's group to be in
@@ -245,8 +244,9 @@ func (n *Network) startStack(prefixLen int) error {
 		n.forwardTCP(ctx, r)
 	})
 	n.stack.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := udp.NewForwarder(n.stack, func(r *udp.ForwarderRequest) {
+	udpForwarder := udp.NewForwarder(n.stack, func(r *udp.ForwarderRequest) bool {
 		n.forwardUDP(ctx, r)
+		return true
 	})
 	n.stack.SetTransportProtocolHandler(udp.ProtocolNumber, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
 		if !n.isAllowed(id.LocalAddress) {
@@ -265,7 +265,9 @@ func (n *Network) startStack(prefixLen int) error {
 		EthernetHeader:     true,
 		Address:            gatewayLinkAddress,
 		PacketDispatchMode: fdbased.RecvMMsg,
-		GSOMaxSize:         gsoMaxSize,
+		// More processors don't improve throughput.
+		ProcessorsPerChannel: 1,
+		GSOMaxSize:           gsoMaxSize,
 		// Guests leave checksums partial on offloaded frames.
 		RXChecksumOffload: true,
 	})
@@ -402,9 +404,9 @@ func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuf
 	if len(h) < header.ICMPv4MinimumSize || h.Type() != header.ICMPv4Echo {
 		return false
 	}
-	// The stack answers echo requests to the gateway itself.
+	// Leave echo requests to the gateway unhandled so the stack answers them.
 	if id.LocalAddress == n.gateway {
-		return true
+		return false
 	}
 	if !n.isAllowed(id.LocalAddress) {
 		n.reject(pkt)

@@ -327,6 +327,10 @@ const (
 	// "bytes" (the blob's bytes, streamed inline).
 	DistributedCacheWriteRequestType = "request_type"
 
+	// Where a distributed cache read was served from: "local" (this node is a
+	// replica), "read_through" (local read-through cache), "lookaside" or "peer".
+	DistributedCacheReadSource = "source"
+
 	// ContentAddressableStorage Server operation: "FindMissingBlobs",
 	// "BatchUpdateBlobs", "BatchReadBlobs", or "GetTree".
 	CASOperation = "op"
@@ -1066,6 +1070,31 @@ var (
 	}, []string{
 		GroupID,
 		StatusLabel,
+	})
+
+	// DistributedCacheReadCount counts objects served by distributed cache
+	// reads, by operation and source. Failed reads are not counted.
+	DistributedCacheReadCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_read_count",
+		Help:      "Count of objects served by distributed cache reads, by operation and source.",
+	}, []string{
+		DistributedCacheOperation,
+		DistributedCacheReadSource,
+	})
+
+	// DistributedCacheReadDigestSize totals the digest sizes of objects counted
+	// by DistributedCacheReadCount. Ranged or abandoned reads count the
+	// full blob.
+	DistributedCacheReadDigestSize = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_read_digest_size",
+		Help:      "Total digest sizes of objects served by distributed cache reads, by operation and source.",
+	}, []string{
+		DistributedCacheOperation,
+		DistributedCacheReadSource,
 	})
 
 	// DistributedCacheReadResponseCount counts distributed cache peer reads

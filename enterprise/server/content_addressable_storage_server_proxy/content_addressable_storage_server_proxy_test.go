@@ -79,7 +79,7 @@ func runRemoteCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*gr
 	go runFunc()
 	unaryRequestCounter := atomic.Int32{}
 	streamRequestCounter := atomic.Int32{}
-	conn, err := testenv.LocalGRPCConn(ctx, lis,
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis,
 		grpc.WithUnaryInterceptor(requestCountingUnaryInterceptor(&unaryRequestCounter)),
 		grpc.WithStreamInterceptor(requestCountingStreamInterceptor(&streamRequestCounter)))
 	require.NoError(t, err)
@@ -110,7 +110,7 @@ func runCASProxy(ctx context.Context, clientConn *grpc.ClientConn, env *testenv.
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	bspb.RegisterByteStreamServer(grpcServer, bsServer)
 	go runFunc()
-	conn, err := testenv.LocalGRPCConn(ctx, lis, grpc.WithDefaultCallOptions())
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis, grpc.WithDefaultCallOptions())
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return conn

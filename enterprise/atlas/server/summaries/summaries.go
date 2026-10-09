@@ -5,6 +5,7 @@
 package summaries
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strconv"
@@ -40,6 +41,10 @@ const (
 	HealthWarn Health = "warn"
 	HealthBad  Health = "bad"
 )
+
+func (e *Entry) healthName() string {
+	return cmp.Or(string(e.Health), "unknown")
+}
 
 // Port is a named port on a pod or service.
 type Port struct {
@@ -221,6 +226,9 @@ func (s *Store) scan(fn func(*Entry)) {
 type Index struct {
 	mu     sync.RWMutex
 	stores []*Store
+
+	catalogMu sync.Mutex
+	cat       *catalog
 }
 
 func New() *Index { return &Index{} }

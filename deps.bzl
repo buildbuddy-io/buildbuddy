@@ -350,17 +350,19 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = PODMAN_STATIC_SHA256_ARM64,
     )
 
+    # crun static builds with buildpatches/crun_no_enable_controllers.patch
+    # applied (see tools/build_crun.sh)
     http_file(
         name = "com_github_containers_crun_crun-linux-amd64",
-        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28-linux-amd64-disable-systemd"],
-        sha256 = "137bce17e4a102683e9b6974f4141cf6c30da61c8ade43c8f2b2d6961a8b858b",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/crun/crun-1.28-buildbuddy.1_linux-amd64"],
+        sha256 = "0a7befed3ee49dd77022277990abea30600c25432e12fe5f8fba2e6396c5274c",
         downloaded_file_path = "crun",
         executable = True,
     )
     http_file(
         name = "com_github_containers_crun_crun-linux-arm64",
-        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28-linux-arm64-disable-systemd"],
-        sha256 = "decac16cacbc570a1d7739d2ba47da4ffe0d3918adb10e47712bd1da0a110a78",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/crun/crun-1.28-buildbuddy.1_linux-arm64"],
+        sha256 = "eb08c7acaf159d7786719437415b0d3311c67a10ca7dee9366271bda3e902ca8",
         downloaded_file_path = "crun",
         executable = True,
     )
@@ -403,6 +405,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "docker-credential-gcr.bin", srcs = ["docker-credential-gcr"])',
         ]),
         urls = ["https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.1.30/docker-credential-gcr_linux_amd64-2.1.30.tar.gz"],
+        # Note: make sure that updates to docker-credential-gcr do not break the string-matching logic in docker-credential-gcr-optional
         sha256 = "d5c90c03d90271873a8619b1f73023a0266ae3fc91965ce9c81d7903e4b54eb6",
     )
     http_archive(
@@ -412,6 +415,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "docker-credential-gcr.bin", srcs = ["docker-credential-gcr"])',
         ]),
         urls = ["https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.1.30/docker-credential-gcr_linux_arm64-2.1.30.tar.gz"],
+        # Note: make sure that updates to docker-credential-gcr do not break the string-matching logic in docker-credential-gcr-optional
         sha256 = "ac9c0237e40505f09796c2bf8a90377246a6fd3cb65e6eada77009ae0f2d3b00",
     )
 

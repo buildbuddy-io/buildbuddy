@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -37,6 +38,10 @@ const (
 	// filesystem with default settings.
 	defaultExt4BlockSize = 4096
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
+}
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
@@ -1090,4 +1095,19 @@ func TestV2LayoutMigration(t *testing.T) {
 	err = disk_cache.MigrateToV2Layout(rootDir)
 	require.NoError(t, err)
 	testfs.AssertExactFileContents(t, rootDir, expectedContents)
+}
+
+func TestNewDiskCache_InvalidPartitionStopsStartedPartitions(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, err := disk_cache.NewDiskCache(te, &disk_cache.Options{
+		ForceV1Layout: true,
+		RootDirectory: testfs.MakeTempDir(t),
+		Partitions: []disk.Partition{
+			{ID: "default", MaxSizeBytes: 10_000_000},
+			// Non-default partitions must have an ID.
+			{ID: "", MaxSizeBytes: 10_000_000},
+		},
+	}, 10_000_000)
+	require.True(t, status.IsInvalidArgumentError(err), "got %v", err)
+	// TestMain fails if the default partition's goroutines are still running.
 }

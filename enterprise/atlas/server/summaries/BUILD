@@ -5,8 +5,10 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "summaries",
     srcs = [
+        "filters.go",
         "query.go",
         "summaries.go",
+        "values.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/atlas/server/summaries",
     visibility = ["//visibility:public"],

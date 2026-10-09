@@ -221,6 +221,9 @@ message FrontendConfig {
 
   // Whether usage can be downloaded as a CSV from the usage page.
   bool usage_export_enabled = 73;
+
+  // Whether per-target execution stats are enabled.
+  bool single_target_stats_enabled = 74;
 }
 
 message Region {

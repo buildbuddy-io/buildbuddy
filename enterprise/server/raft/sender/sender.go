@@ -62,6 +62,13 @@ func New(rangeCache *rangecache.RangeCache, apiClient *client.APIClient) *Sender
 	}
 }
 
+// Close stops the sender's background goroutines. It does not close the
+// APIClient, which the caller owns.
+func (s *Sender) Close() {
+	s.proposeSession.Close()
+	s.proposeLocker.Close()
+}
+
 func scanKVs(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, scanReq *rfpb.ScanRequest) ([]*rfpb.KV, error) {
 	batchReq, err := rbuilder.NewBatchBuilder().Add(scanReq).ToProto()
 	if err != nil {

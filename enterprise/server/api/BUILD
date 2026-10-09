@@ -48,7 +48,7 @@ go_library(
 )
 
 # Tell gazelle to make each file a separate test target,
-# so the ClickHouse-backed audit-log test can keep separate runner properties.
+# keeping the audit-log test separate from the general API tests.
 # gazelle:go_test file
 
 go_test(
@@ -98,14 +98,6 @@ go_test(
     srcs = ["auditlog_test.go"],
     data = glob(["testdata/**"]),
     embed = [":api"],
-    exec_properties = {
-        "test.workload-isolation-type": "firecracker",
-        "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622",
-        "test.init-dockerd": "true",
-        "test.recycle-runner": "true",
-        "test.runner-recycling-key": "clickhouse25.3",
-    },
-    tags = ["docker"],
     deps = [
         "//enterprise/server/auditlog",
         "//enterprise/server/testutil/enterprise_testauth",
@@ -119,6 +111,7 @@ go_test(
         "//server/http/protolet",
         "//server/tables",
         "//server/testutil/testauth",
+        "//server/testutil/testclickhouse",
         "//server/testutil/testenv",
         "//server/util/authutil",
         "//server/util/testing/flags",

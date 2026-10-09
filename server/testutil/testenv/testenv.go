@@ -18,11 +18,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpostgres"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -35,9 +33,8 @@ import (
 )
 
 var (
-	databaseType  = flag.String("testenv.database_type", "sqlite", "What database to use for tests.")
-	reuseServer   = flag.Bool("testenv.reuse_server", false, "If true, reuse database server between tests.")
-	useClickHouse = flag.Bool("testenv.use_clickhouse", false, "Whether to use Clickhouse in tests")
+	databaseType = flag.String("testenv.database_type", "sqlite", "What database to use for tests.")
+	reuseServer  = flag.Bool("testenv.reuse_server", false, "If true, reuse database server between tests.")
 )
 
 func init() {
@@ -80,16 +77,16 @@ http:
 `
 
 // RegisterLocalGRPCServer registers a local gRPC server to the environment and
-// returns the server.
+// returns the server. opts are added to the server's options.
 //
 // Register services to the server, then call LocalGRPCConn to get a connection
 // to the returned server.
-func RegisterLocalGRPCServer(t testing.TB, te *real_environment.RealEnv) (*grpc.Server, func(), *bufconn.Listener) {
+func RegisterLocalGRPCServer(t testing.TB, te *real_environment.RealEnv, opts ...grpc.ServerOption) (*grpc.Server, func(), *bufconn.Listener) {
 	if te.GetGRPCServer() != nil {
 		log.Fatal("GRPCServer is already registered")
 	}
 	lis := bufconn.Listen(1024 * 1024)
-	srv, run := GRPCServer(te, lis)
+	srv, run := GRPCServer(te, lis, opts...)
 	te.SetGRPCServer(srv)
 	t.Cleanup(srv.Stop)
 
@@ -112,15 +109,19 @@ func RegisterLocalInternalGRPCServer(t testing.TB, te *real_environment.RealEnv)
 	return srv, run, lis
 }
 
-func LocalGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return localGRPCConn(ctx, lis, opts...)
+// LocalGRPCConn returns a connection to the server listening on lis, which is
+// closed when the test ends.
+func LocalGRPCConn(t testing.TB, ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return localGRPCConn(t, ctx, lis, opts...)
 }
 
-func LocalInternalGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return localGRPCConn(ctx, lis, opts...)
+// LocalInternalGRPCConn returns a connection to the internal server listening
+// on lis, which is closed when the test ends.
+func LocalInternalGRPCConn(t testing.TB, ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return localGRPCConn(t, ctx, lis, opts...)
 }
 
-func localGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+func localGRPCConn(t testing.TB, ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	bufDialer := func(context.Context, string) (net.Conn, error) {
 		return lis.Dial()
 	}
@@ -129,12 +130,17 @@ func localGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.Dial
 	dialOptions = append(dialOptions, grpc.WithContextDialer(bufDialer))
 	dialOptions = append(dialOptions, grpc.WithInsecure())
 	dialOptions = append(dialOptions, opts...)
-	return grpc.DialContext(ctx, "bufnet", dialOptions...)
+	conn, err := grpc.DialContext(ctx, "bufnet", dialOptions...)
+	if err != nil {
+		return nil, err
+	}
+	t.Cleanup(func() { conn.Close() })
+	return conn, nil
 }
 
 // gRPCServer starts a gRPC server with standard BuildBuddy filters that uses the given listener.
-func GRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
-	srv := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
+func GRPCServer(env environment.Env, lis net.Listener, opts ...grpc.ServerOption) (*grpc.Server, func()) {
+	srv := grpc.NewServer(append(grpc_server.CommonGRPCServerOptions(env), opts...)...)
 	runFunc := func() {
 		if err := srv.Serve(lis); err != nil && err != grpc.ErrServerStopped {
 			log.Fatal(err.Error())
@@ -229,13 +235,6 @@ func GetTestEnv(t testing.TB, opts ...TestEnvOption) *real_environment.RealEnv {
 	})
 	te.SetInvocationDB(invocationdb.NewInvocationDB(te, dbHandle))
 
-	if *useClickHouse {
-		flags.Set(t, "olap_database.data_source", testclickhouse.GetOrStart(t, *reuseServer))
-		err := clickhouse.Register(te)
-		if err != nil {
-			t.Fatalf("Error configuring ClickHouse: %s", err)
-		}
-	}
 	if err := blobstore.Register(te); err != nil {
 		t.Fatalf("Error configuring blobstore: %s", err)
 	}

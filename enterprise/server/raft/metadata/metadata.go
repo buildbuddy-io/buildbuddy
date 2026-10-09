@@ -366,6 +366,9 @@ func (rc *Server) Stop(ctx context.Context) error {
 		}
 		rc.store.Stop(ctx)
 		log.Infof("raft cache store stopped")
+		if rc.clusterStarter != nil {
+			rc.clusterStarter.Close()
+		}
 		rc.conf.GossipManager.Leave()
 		rc.conf.GossipManager.Shutdown()
 
@@ -764,6 +767,11 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 		}
 		if op.GetFileMetadata().GetFileRecord().GetIsolation().GetGroupId() != groupID {
 			return nil, status.UnauthenticatedErrorf("user %q doesn't have access to the file", groupID)
+		}
+		// Replicas never manage local files, so file-backed records could not
+		// be cleaned up.
+		if op.GetFileMetadata().GetStorageMetadata().GetFileMetadata() != nil {
+			return nil, status.InvalidArgumentError("file-backed storage metadata is not supported")
 		}
 	}
 

@@ -30,7 +30,7 @@ func TestPublishBuildToolEventStream_NoEvents(t *testing.T) {
 	// Make a PublishBuildToolEventStream RPC but close it without sending
 	// anything.
 	ctx := context.Background()
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	client := pepb.NewPublishBuildEventClient(conn)
 	stream, err := client.PublishBuildToolEventStream(ctx)
@@ -98,7 +98,7 @@ func testPublishBuildToolEventStreamProxy(t *testing.T, test proxyTestCase) {
 	go runServer()
 
 	ctx := context.Background()
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	client := pepb.NewPublishBuildEventClient(conn)
 	stream, err := client.PublishBuildToolEventStream(ctx)

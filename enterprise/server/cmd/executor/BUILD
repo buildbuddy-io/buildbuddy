@@ -1,6 +1,6 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load(
     "//rules:platform_transitions.bzl",
     "linux_arm64_alias",
@@ -193,7 +193,7 @@ container_layer(
 container_layer(
     name = "docker_credential_gcr_layer",
     directory = "/usr/bin",
-    files = select({
+    files = ["//enterprise/server/cmd/executor/docker_credential_gcr_config:docker-credential-gcr-optional"] + select({
         "@platforms//cpu:x86_64": [
             "@com_github_googlecloudplatform_docker-credential-gcr-linux-amd64//:docker-credential-gcr.bin",
         ],
@@ -378,4 +378,17 @@ container_image(
     name = "default_base_image",
     base = "@default_execution_image//image:dockerfile_image.tar",
     tags = ["manual"],
+)
+
+go_test(
+    name = "executor_test",
+    srcs = ["executor_linux_test.go"],
+    embed = [":executor_lib"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@com_github_stretchr_testify//require",
+        ],
+        "//conditions:default": [],
+    }),
 )

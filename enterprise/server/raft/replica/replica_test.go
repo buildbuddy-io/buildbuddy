@@ -1164,6 +1164,18 @@ func TestRejectedEntryAdvancesLastAppliedIndex(t *testing.T) {
 			},
 			wantCounter: 1,
 		},
+		{
+			name: "malformed stored session",
+			makeEntry: func(t *testing.T, em *entryMaker, repl *replica.Replica) dbsm.Entry {
+				id := []byte("malformed-session")
+				rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+					Kv: &rfpb.KV{Key: keys.MakeKey(constants.SessionPrefix, id), Value: []byte{0xff}},
+				}))})
+				require.NoError(t, err)
+				require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+				return em.makeEntry(increment().SetSession(&rfpb.Session{Id: id, Index: 1}))
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repl := testutil.NewTestingReplica(t, 1, 1)
@@ -1520,7 +1532,6 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 	}
 
-	wb := repl.DB().NewIndexedBatch()
 	txid := []byte("TX1")
 	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -1528,11 +1539,8 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 			Value: []byte("zoo"),
 		},
 	}).ToProto()
-	_, err = repl.PrepareTransaction(wb, txid, cmd)
+	err = applyTransaction(t, em, repl.Replica, txid, cmd)
 	require.NoError(t, err)
-
-	require.NoError(t, wb.Commit(pebble.Sync))
-	require.NoError(t, wb.Close())
 
 	// Create a snapshot of the replica.
 	snapI, err := repl.PrepareSnapshot()
@@ -1573,7 +1581,7 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	}
 
 	// Prepare a transaction before recovering from snapshot
-	wb2 := repl2.DB().NewIndexedBatch()
+
 	txid2 := []byte("TX2")
 	cmd2, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -1581,11 +1589,8 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 			Value: []byte("zoo2"),
 		},
 	}).ToProto()
-	_, err = repl2.PrepareTransaction(wb2, txid2, cmd2)
+	err = applyTransaction(t, em2, repl2.Replica, txid2, cmd2)
 	require.NoError(t, err)
-
-	require.NoError(t, wb2.Commit(pebble.Sync))
-	require.NoError(t, wb2.Close())
 
 	// Recover from the snapshot
 	err = repl2.RecoverFromSnapshot(snapFile, nil /*=quitChan*/)
@@ -1618,13 +1623,13 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 		require.Equal(t, []byte("bar"), buf)
 	}
 
-	// Verify that we should not be able to commit the txn in the snapshot.
-	err = repl2.CommitTransaction(txid)
+	// Verify that we can commit the txn in the snapshot.
+	err = applyTransaction(t, em2, repl2.Replica, txid, &rfpb.BatchCmdRequest{FinalizeOperation: rfpb.FinalizeOperation_COMMIT.Enum()})
 	require.NoError(t, err)
 
 	// Verify that we should not be able to commit the txn that was not in the
 	// snapshot but created before recovering from the snapshot
-	err = repl2.CommitTransaction(txid2)
+	err = applyTransaction(t, em2, repl2.Replica, txid2, &rfpb.BatchCmdRequest{FinalizeOperation: rfpb.FinalizeOperation_COMMIT.Enum()})
 	require.True(t, status.IsNotFoundError(err), "CommitTransaction should return NotFound error")
 }
 
@@ -2040,6 +2045,487 @@ func TestUsage(t *testing.T) {
 	}
 }
 
+// applyTransaction exercises the same persistence and memory publication path
+// as Raft, rather than committing transaction helper batches directly.
+func applyTransaction(t *testing.T, em *entryMaker, repl *replica.Replica, txid []byte, req *rfpb.BatchCmdRequest) error {
+	t.Helper()
+	index, err := repl.LastAppliedIndex()
+	require.NoError(t, err)
+	em.index = index + 1
+	req = req.CloneVT()
+	req.TransactionId = txid
+	buf, err := proto.Marshal(req)
+	require.NoError(t, err)
+	entries, err := repl.Update([]dbsm.Entry{{Index: em.index, Cmd: buf}})
+	if err != nil {
+		return err
+	}
+	require.NotEqualValues(t, constants.EntryErrorValue, entries[0].Result.Value)
+	return rbuilder.NewBatchResponse(entries[0].Result.Data).AnyError()
+}
+
+type txnFaultDB struct {
+	pebble.IPebbleDB
+	beforeCommit func() error
+	afterCommit  func()
+	// getErr, if set, is checked before each Get on the DB or its batches.
+	getErr func(key []byte) error
+}
+
+func (db *txnFaultDB) Get(key []byte) ([]byte, io.Closer, error) {
+	if db.getErr != nil {
+		if err := db.getErr(key); err != nil {
+			return nil, nil, err
+		}
+	}
+	return db.IPebbleDB.Get(key)
+}
+
+func (db *txnFaultDB) NewBatch() pebble.Batch {
+	return &txnFaultBatch{Batch: db.IPebbleDB.NewBatch(), db: db}
+}
+
+func (db *txnFaultDB) NewIndexedBatch() pebble.Batch {
+	return &txnFaultBatch{Batch: db.IPebbleDB.NewIndexedBatch(), db: db}
+}
+
+type txnFaultBatch struct {
+	pebble.Batch
+	db *txnFaultDB
+}
+
+func (b *txnFaultBatch) Get(key []byte) ([]byte, io.Closer, error) {
+	if b.db.getErr != nil {
+		if err := b.db.getErr(key); err != nil {
+			return nil, nil, err
+		}
+	}
+	return b.Batch.Get(key)
+}
+
+func (b *txnFaultBatch) Apply(other pebble.Batch, opts *pebble.WriteOptions) error {
+	if wrapped, ok := other.(*txnFaultBatch); ok {
+		other = wrapped.Batch
+	}
+	return b.Batch.Apply(other, opts)
+}
+
+func (b *txnFaultBatch) Commit(opts *pebble.WriteOptions) error {
+	if b.db.beforeCommit != nil {
+		if err := b.db.beforeCommit(); err != nil {
+			return err
+		}
+	}
+	if err := b.Batch.Commit(opts); err != nil {
+		return err
+	}
+	if b.db.afterCommit != nil {
+		b.db.afterCommit()
+	}
+	return nil
+}
+
+func openTxnFaultReplica(t *testing.T, dir string) (*testutil.TestingReplica, *txnFaultDB, func()) {
+	t.Helper()
+	db, err := pebble.Open(dir, "txn-atomicity-test", &pebble.Options{})
+	require.NoError(t, err)
+	faultDB := &txnFaultDB{IPebbleDB: db}
+	leaser := pebble.NewDBLeaser(faultDB)
+	repl := testutil.NewTestingReplicaWithLeaser(t, 1, 1, leaser)
+	_, err = repl.Open(make(chan struct{}))
+	require.NoError(t, err)
+	closed := false
+	closeReplica := func() {
+		if closed {
+			return
+		}
+		closed = true
+		require.NoError(t, repl.Close())
+		leaser.Close()
+		require.NoError(t, db.Close())
+	}
+	t.Cleanup(closeReplica)
+	return repl, faultDB, closeReplica
+}
+
+// Interrupt immediately after the first database commit of a COMMIT entry.
+// The writes, session response, and applied index must survive together.
+func TestTransactionCommitCrashRecovery(t *testing.T) {
+	dir := testfs.MakeTempDir(t)
+	repl, db, closeReplica := openTxnFaultReplica(t, dir)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+	txid := []byte("atomic-commit")
+	key := keys.MakeKey(constants.SystemPrefix, []byte("atomic-counter"))
+	prepare := em.makeEntry(rbuilder.NewBatchBuilder().
+		SetTransactionID(txid).
+		Add(&rfpb.IncrementRequest{Key: key, Delta: 1}))
+	rsp, err := repl.Update([]dbsm.Entry{prepare})
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+
+	commit := em.makeEntry(rbuilder.NewBatchBuilder().
+		SetTransactionID(txid).
+		SetSession(&rfpb.Session{Id: []byte("commit-session"), Index: 1}).
+		SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT))
+	db.afterCommit = func() { panic("crash after database commit") }
+	require.PanicsWithValue(t, "crash after database commit", func() {
+		repl.Update([]dbsm.Entry{commit})
+	})
+	db.afterCommit = nil
+	closeReplica()
+
+	restarted, _, _ := openTxnFaultReplica(t, dir)
+	appliedIndex, err := restarted.LastAppliedIndex()
+	require.NoError(t, err)
+	require.Equal(t, commit.Index, appliedIndex)
+	// Dragonboat skips the applied entry. Exercise a client retry with the
+	// same session to verify its response survived with the data.
+	commit.Index++
+	rsp, err = restarted.Update([]dbsm.Entry{commit})
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError(),
+		"committed transaction must replay or deduplicate successfully")
+	read, err := directRead(t, restarted, key)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), binary.LittleEndian.Uint64(read.GetKv().GetValue()))
+	_, err = directRead(t, restarted, keys.MakeKey(constants.LocalTransactionPrefix, txid))
+	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestTransactionPersistenceFailure(t *testing.T) {
+	for _, op := range []rfpb.FinalizeOperation{
+		rfpb.FinalizeOperation_UNKNOWN_OPERATION,
+		rfpb.FinalizeOperation_COMMIT,
+		rfpb.FinalizeOperation_ROLLBACK,
+	} {
+		t.Run(op.String(), func(t *testing.T) {
+			dir := testfs.MakeTempDir(t)
+			repl, db, closeReplica := openTxnFaultReplica(t, dir)
+			em := newEntryMaker(t)
+			writeDefaultRangeDescriptor(t, em, repl.Replica)
+			txid := []byte("failed-transaction")
+			key := []byte("transaction-value")
+			prepare := rbuilder.NewBatchBuilder().SetTransactionID(txid).
+				Add(&rfpb.DirectWriteRequest{Kv: &rfpb.KV{Key: key, Value: []byte("committed")}})
+			if op != rfpb.FinalizeOperation_UNKNOWN_OPERATION {
+				rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(prepare)})
+				require.NoError(t, err)
+				require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+			}
+			batch := prepare
+			if op != rfpb.FinalizeOperation_UNKNOWN_OPERATION {
+				batch = rbuilder.NewBatchBuilder().SetTransactionID(txid).SetFinalizeOperation(op)
+			}
+			entry := em.makeEntry(batch.SetSession(&rfpb.Session{Id: []byte("failed-session"), Index: 1}))
+			injected := errors.New("injected transaction commit failure")
+			db.beforeCommit = func() error { return injected }
+			// Commit failures are local, so Update returns them.
+			_, err := repl.Update([]dbsm.Entry{entry})
+			require.ErrorIs(t, err, injected)
+			db.beforeCommit = nil
+			index, err := repl.LastAppliedIndex()
+			require.NoError(t, err)
+			require.Equal(t, entry.Index-1, index)
+			_, err = directRead(t, repl, key)
+			require.True(t, status.IsNotFoundError(err))
+			_, err = directRead(t, repl, keys.MakeKey(constants.SessionPrefix, []byte("failed-session")))
+			require.True(t, status.IsNotFoundError(err))
+			closeReplica()
+
+			restarted, _, _ := openTxnFaultReplica(t, dir)
+			rsp, err := restarted.Update([]dbsm.Entry{entry})
+			require.NoError(t, err)
+			require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+			if op == rfpb.FinalizeOperation_UNKNOWN_OPERATION {
+				entry = em.makeEntry(rbuilder.NewBatchBuilder().
+					SetTransactionID(txid).SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT))
+				rsp, err = restarted.Update([]dbsm.Entry{entry})
+				require.NoError(t, err)
+				require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+			}
+			read, err := directRead(t, restarted, key)
+			if op == rfpb.FinalizeOperation_ROLLBACK {
+				require.True(t, status.IsNotFoundError(err))
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, []byte("committed"), read.GetKv().GetValue())
+			}
+		})
+	}
+}
+
+func TestTransactionMalformedFinalization(t *testing.T) {
+	for _, op := range []rfpb.FinalizeOperation{rfpb.FinalizeOperation_COMMIT, rfpb.FinalizeOperation_ROLLBACK} {
+		t.Run(op.String(), func(t *testing.T) {
+			repl, _, _ := openTxnFaultReplica(t, testfs.MakeTempDir(t))
+			em := newEntryMaker(t)
+			writeDefaultRangeDescriptor(t, em, repl.Replica)
+			txid := []byte("malformed-finalize")
+			write := &rfpb.DirectWriteRequest{Kv: &rfpb.KV{Key: []byte("foo"), Value: []byte("bar")}}
+			rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(rbuilder.NewBatchBuilder().
+				SetTransactionID(txid).SetLockMappedRange(true).Add(write))})
+			require.NoError(t, err)
+			require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+			rsp, err = repl.Update([]dbsm.Entry{em.makeEntry(rbuilder.NewBatchBuilder().
+				SetTransactionID(txid).SetFinalizeOperation(op).Add(write))})
+			require.NoError(t, err)
+			if rsp[0].Result.Value != constants.EntryErrorValue {
+				require.Error(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+			}
+			_, err = directRead(t, repl, []byte("foo"))
+			require.True(t, status.IsNotFoundError(err), "rejected finalization must not apply writes")
+			_, err = directRead(t, repl, keys.MakeKey(constants.LocalTransactionPrefix, txid))
+			require.NoError(t, err, "rejected finalization must preserve the prepared record")
+
+			// A different key in the mapped range must remain locked too.
+			rsp, err = repl.Update([]dbsm.Entry{em.makeEntry(rbuilder.NewBatchBuilder().
+				Add(&rfpb.DirectWriteRequest{Kv: &rfpb.KV{Key: []byte("other"), Value: []byte("blocked")}}))})
+			require.NoError(t, err)
+			require.Error(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+			rsp, err = repl.Update([]dbsm.Entry{em.makeEntry(rbuilder.NewBatchBuilder().
+				SetTransactionID(txid).SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT))})
+			require.NoError(t, err)
+			require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+		})
+	}
+}
+
+// Non-deterministic failures stop apply: Update returns the error and the
+// stored applied index does not advance.
+func TestUpdateReturnsStorageErrors(t *testing.T) {
+	incrKey := keys.MakeKey(constants.SystemPrefix, []byte("incr-key"))
+	increment := func() *rbuilder.BatchBuilder {
+		return rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{Key: incrKey, Delta: 1})
+	}
+	injected := errors.New("injected storage failure")
+	failCommit := func(db *txnFaultDB) {
+		db.beforeCommit = func() error { return injected }
+	}
+	failGet := func(match []byte) func(db *txnFaultDB) {
+		return func(db *txnFaultDB) {
+			db.getErr = func(key []byte) error {
+				if bytes.Contains(key, match) {
+					return injected
+				}
+				return nil
+			}
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		// setup may apply entries before the fault is injected.
+		setup  func(t *testing.T, em *entryMaker, repl *replica.Replica)
+		batch  *rbuilder.BatchBuilder
+		inject func(db *txnFaultDB)
+	}{
+		{
+			name:   "ordinary commit",
+			batch:  increment().SetSession(&rfpb.Session{Id: []byte("s"), Index: 1}),
+			inject: failCommit,
+		},
+		{
+			name: "duplicate commit",
+			setup: func(t *testing.T, em *entryMaker, repl *replica.Replica) {
+				rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(increment().SetSession(&rfpb.Session{Id: []byte("s"), Index: 1}))})
+				require.NoError(t, err)
+				require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+			},
+			batch:  increment().SetSession(&rfpb.Session{Id: []byte("s"), Index: 1}),
+			inject: failCommit,
+		},
+		{
+			name:   "rejected commit",
+			batch:  increment().SetHeader(&rfpb.Header{RangeId: 1, Generation: 0}),
+			inject: failCommit,
+		},
+		{
+			name:   "session read",
+			batch:  increment().SetSession(&rfpb.Session{Id: []byte("s"), Index: 1}),
+			inject: failGet(constants.SessionPrefix),
+		},
+		{
+			name:   "operation read",
+			batch:  increment(),
+			inject: failGet(incrKey),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repl, db, _ := openTxnFaultReplica(t, testfs.MakeTempDir(t))
+			em := newEntryMaker(t)
+			writeDefaultRangeDescriptor(t, em, repl.Replica)
+			if tc.setup != nil {
+				tc.setup(t, em, repl.Replica)
+			}
+			before, err := repl.LastAppliedIndex()
+			require.NoError(t, err)
+
+			tc.inject(db)
+			_, err = repl.Update([]dbsm.Entry{em.makeEntry(tc.batch)})
+			require.ErrorIs(t, err, injected)
+			*db = txnFaultDB{IPebbleDB: db.IPebbleDB}
+
+			after, err := repl.LastAppliedIndex()
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+		})
+	}
+}
+
+// A non-deterministic failure stops the remaining entries in the same Update.
+func TestUpdateStopsAtFirstFatalError(t *testing.T) {
+	repl, db, _ := openTxnFaultReplica(t, testfs.MakeTempDir(t))
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+	incrKey := keys.MakeKey(constants.SystemPrefix, []byte("incr-key"))
+	entries := make([]dbsm.Entry, 3)
+	for i := range entries {
+		entries[i] = em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{Key: incrKey, Delta: 1}))
+	}
+
+	injected := errors.New("injected commit failure")
+	commits := 0
+	db.beforeCommit = func() error {
+		commits++
+		if commits == 2 {
+			return injected
+		}
+		return nil
+	}
+	_, err := repl.Update(entries)
+	require.ErrorIs(t, err, injected)
+	db.beforeCommit = nil
+
+	index, err := repl.LastAppliedIndex()
+	require.NoError(t, err)
+	require.Equal(t, entries[0].Index, index)
+	rsp, err := directRead(t, repl, incrKey)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), binary.LittleEndian.Uint64(rsp.GetKv().GetValue()))
+}
+
+func TestOpenFailsOnBadRangeState(t *testing.T) {
+	openWith := func(t *testing.T, dir string, getErr func([]byte) error) error {
+		db, err := pebble.Open(dir, "bad-range-state-test", &pebble.Options{})
+		require.NoError(t, err)
+		leaser := pebble.NewDBLeaser(&txnFaultDB{IPebbleDB: db, getErr: getErr})
+		repl := testutil.NewTestingReplicaWithLeaser(t, 1, 1, leaser)
+		_, openErr := repl.Open(make(chan struct{}))
+		require.NoError(t, repl.Close())
+		leaser.Close()
+		require.NoError(t, db.Close())
+		return openErr
+	}
+
+	t.Run("unreadable descriptor", func(t *testing.T) {
+		dir := testfs.MakeTempDir(t)
+		repl, _, closeReplica := openTxnFaultReplica(t, dir)
+		writeDefaultRangeDescriptor(t, newEntryMaker(t), repl.Replica)
+		closeReplica()
+
+		injected := errors.New("injected read failure")
+		err := openWith(t, dir, func(key []byte) error {
+			if bytes.HasSuffix(key, constants.LocalRangeKey) {
+				return injected
+			}
+			return nil
+		})
+		require.ErrorIs(t, err, injected)
+	})
+
+	t.Run("malformed descriptor", func(t *testing.T) {
+		dir := testfs.MakeTempDir(t)
+		repl, db, closeReplica := openTxnFaultReplica(t, dir)
+		writeDefaultRangeDescriptor(t, newEntryMaker(t), repl.Replica)
+		// Simulate local corruption below the state machine.
+		key := append(replica.LocalKeyPrefix(1, 1), constants.LocalRangeKey...)
+		require.NoError(t, db.IPebbleDB.Set(key, []byte{0xff}, pebble.Sync))
+		closeReplica()
+
+		require.Error(t, openWith(t, dir, nil))
+	})
+
+	t.Run("no range state", func(t *testing.T) {
+		require.NoError(t, openWith(t, testfs.MakeTempDir(t), nil))
+	})
+}
+
+// A malformed range descriptor or lease is deterministic: reject the write
+// instead of committing state that cannot load.
+func TestRejectMalformedLocalState(t *testing.T) {
+	for _, key := range [][]byte{constants.LocalRangeKey, constants.LocalRangeLeaseKey} {
+		for _, req := range []proto.Message{
+			&rfpb.DirectWriteRequest{Kv: &rfpb.KV{Key: key, Value: []byte{0xff}}},
+			&rfpb.CASRequest{Kv: &rfpb.KV{Key: key, Value: []byte{0xff}}},
+			&rfpb.IncrementRequest{Key: key, Delta: 1},
+		} {
+			t.Run(fmt.Sprintf("%s/%T", key, req), func(t *testing.T) {
+				repl := testutil.NewTestingReplica(t, 1, 1)
+				_, err := repl.Open(make(chan struct{}))
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, repl.Close()) })
+				entry := newEntryMaker(t).makeEntry(rbuilder.NewBatchBuilder().Add(req))
+				rsp, err := repl.Update([]dbsm.Entry{entry})
+				require.NoError(t, err)
+				err = rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError()
+				require.True(t, status.IsInvalidArgumentError(err), err)
+				index, err := repl.LastAppliedIndex()
+				require.NoError(t, err)
+				require.Equal(t, entry.Index, index)
+			})
+		}
+	}
+}
+
+func TestTransactionFinalizePreservesOtherMappedRangeLock(t *testing.T) {
+	for _, op := range []rfpb.FinalizeOperation{rfpb.FinalizeOperation_COMMIT, rfpb.FinalizeOperation_ROLLBACK} {
+		t.Run(op.String(), func(t *testing.T) {
+			repl := testutil.NewTestingReplica(t, 1, 1)
+			t.Cleanup(func() { require.NoError(t, repl.Close()) })
+			_, err := repl.Open(make(chan struct{}))
+			require.NoError(t, err)
+			em := newEntryMaker(t)
+			writeDefaultRangeDescriptor(t, em, repl.Replica)
+			apply := func(batch *rbuilder.BatchBuilder) error {
+				t.Helper()
+				rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(batch)})
+				require.NoError(t, err)
+				require.NotEqualValues(t, constants.EntryErrorValue, rsp[0].Result.Value)
+				return rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError()
+			}
+
+			txA := []byte("range-lock-owner")
+			txB := []byte("other-transaction")
+			require.NoError(t, apply(rbuilder.NewBatchBuilder().
+				SetTransactionID(txA).SetLockMappedRange(true).
+				Add(&rfpb.DirectWriteRequest{Kv: &rfpb.KV{Key: []byte("a"), Value: []byte("A")}})))
+			// B writes outside the mapped range, so it can prepare while A
+			// holds the range lock.
+			localKey := keys.MakeKey(constants.SystemPrefix, []byte("other-transaction"))
+			require.NoError(t, apply(rbuilder.NewBatchBuilder().
+				SetTransactionID(txB).
+				Add(&rfpb.DirectWriteRequest{Kv: &rfpb.KV{Key: localKey, Value: []byte("B")}})))
+			require.NoError(t, apply(rbuilder.NewBatchBuilder().
+				SetTransactionID(txB).SetFinalizeOperation(op)))
+
+			// Use a key A did not write, so only its range lock can block it.
+			probe := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+				Kv: &rfpb.KV{Key: []byte("b"), Value: []byte("probe")},
+			})
+			err = apply(probe)
+			require.True(t, status.IsUnavailableError(err), "another transaction must not release A's range lock")
+			require.Contains(t, err.Error(), constants.ConflictKeyMsg)
+			_, err = directRead(t, repl, []byte("b"))
+			require.True(t, status.IsNotFoundError(err))
+
+			require.NoError(t, apply(rbuilder.NewBatchBuilder().
+				SetTransactionID(txA).SetFinalizeOperation(op)))
+			require.NoError(t, apply(probe), "finalizing the owner must release its range lock")
+		})
+	}
+}
+
 func TestTransactionPrepareAndCommit(t *testing.T) {
 	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
@@ -2055,7 +2541,6 @@ func TestTransactionPrepareAndCommit(t *testing.T) {
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
-	wb := repl.DB().NewIndexedBatch()
 	txid := []byte("TX1")
 	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -2063,13 +2548,9 @@ func TestTransactionPrepareAndCommit(t *testing.T) {
 			Value: []byte("bar"),
 		},
 	}).ToProto()
-	_, err = repl.PrepareTransaction(wb, txid, cmd)
+	err = applyTransaction(t, em, repl.Replica, txid, cmd)
 	require.NoError(t, err)
 
-	require.NoError(t, wb.Commit(pebble.Sync))
-	require.NoError(t, wb.Close())
-
-	wb = repl.DB().NewIndexedBatch()
 	txid2 := []byte("TX2")
 	badCmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -2077,9 +2558,8 @@ func TestTransactionPrepareAndCommit(t *testing.T) {
 			Value: []byte("baz"),
 		},
 	}).ToProto()
-	_, err = repl.PrepareTransaction(wb, txid2, badCmd)
+	err = applyTransaction(t, em, repl.Replica, txid2, badCmd)
 	require.Error(t, err)
-	require.NoError(t, wb.Close())
 
 	// Do a DirectWrite.
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
@@ -2093,7 +2573,7 @@ func TestTransactionPrepareAndCommit(t *testing.T) {
 	require.NoError(t, err)
 	require.Error(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 
-	err = repl.CommitTransaction(txid)
+	err = applyTransaction(t, em, repl.Replica, txid, &rfpb.BatchCmdRequest{FinalizeOperation: rfpb.FinalizeOperation_COMMIT.Enum()})
 	require.NoError(t, err)
 
 	buf, closer, err := repl.DB().Get([]byte("foo"))
@@ -2124,7 +2604,6 @@ func TestTransactionLockingMappedRange(t *testing.T) {
 	}
 	writeLocalRangeDescriptor(t, em, repl.Replica, rd)
 
-	wb := repl.DB().NewIndexedBatch()
 	txid := []byte("TX1")
 	rd.End = keys.Key("b")
 	rd.Generation = 2
@@ -2137,11 +2616,8 @@ func TestTransactionLockingMappedRange(t *testing.T) {
 		},
 	}).SetLockMappedRange(true).ToProto()
 	require.NoError(t, err)
-	_, err = repl.PrepareTransaction(wb, txid, cmd)
+	err = applyTransaction(t, em, repl.Replica, txid, cmd)
 	require.NoError(t, err)
-
-	require.NoError(t, wb.Commit(pebble.Sync))
-	require.NoError(t, wb.Close())
 
 	// cannot write to [a, c)
 	{
@@ -2159,7 +2635,6 @@ func TestTransactionLockingMappedRange(t *testing.T) {
 
 	// cannot write to [a, c) in a txn
 	{
-		wb = repl.DB().NewIndexedBatch()
 		txid2 := []byte("TX2")
 		badCmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
@@ -2167,12 +2642,11 @@ func TestTransactionLockingMappedRange(t *testing.T) {
 				Value: []byte("baz"),
 			},
 		}).ToProto()
-		_, err = repl.PrepareTransaction(wb, txid2, badCmd)
+		err = applyTransaction(t, em, repl.Replica, txid2, badCmd)
 		require.Error(t, err)
-		require.NoError(t, wb.Close())
 	}
 
-	err = repl.CommitTransaction(txid)
+	err = applyTransaction(t, em, repl.Replica, txid, &rfpb.BatchCmdRequest{FinalizeOperation: rfpb.FinalizeOperation_COMMIT.Enum()})
 	require.NoError(t, err)
 
 	verifyReplicaHasLocalRange(t, repl, rd)
@@ -2193,7 +2667,6 @@ func TestTransactionLockingMappedRange(t *testing.T) {
 
 	// should be able to write to [a, c) in a txn
 	{
-		wb = repl.DB().NewIndexedBatch()
 		txid2 := []byte("TX2")
 		badCmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
@@ -2201,9 +2674,8 @@ func TestTransactionLockingMappedRange(t *testing.T) {
 				Value: []byte("baz"),
 			},
 		}).ToProto()
-		_, err = repl.PrepareTransaction(wb, txid2, badCmd)
+		err = applyTransaction(t, em, repl.Replica, txid2, badCmd)
 		require.NoError(t, err)
-		require.NoError(t, wb.Close())
 	}
 }
 
@@ -2222,7 +2694,6 @@ func TestTransactionPrepareAndRollback(t *testing.T) {
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
-	wb := repl.DB().NewIndexedBatch()
 	txid := []byte("TX1")
 	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -2230,17 +2701,11 @@ func TestTransactionPrepareAndRollback(t *testing.T) {
 			Value: []byte("bar"),
 		},
 	}).ToProto()
-	_, err = repl.PrepareTransaction(wb, txid, cmd)
+	err = applyTransaction(t, em, repl.Replica, txid, cmd)
 	require.NoError(t, err)
 
-	require.NoError(t, wb.Commit(pebble.Sync))
-	require.NoError(t, wb.Close())
-
-	wb = repl.DB().NewIndexedBatch()
-	err = repl.RollbackTransaction(wb, txid, time.Now().UnixMicro())
+	err = applyTransaction(t, em, repl.Replica, txid, &rfpb.BatchCmdRequest{FinalizeOperation: rfpb.FinalizeOperation_ROLLBACK.Enum(), TxnFinalizedAtUsec: time.Now().UnixMicro()})
 	require.NoError(t, err)
-	require.NoError(t, wb.Commit(pebble.Sync))
-	require.NoError(t, wb.Close())
 
 	buf, _, err := repl.DB().Get([]byte("foo"))
 	require.Error(t, err)
@@ -2263,11 +2728,8 @@ func TestRollbackMarkerSurvivesRestartAndRejectsPrepare(t *testing.T) {
 
 		writeDefaultRangeDescriptor(t, em, repl.Replica)
 
-		wb := repl.DB().NewIndexedBatch()
-		err = repl.RollbackTransaction(wb, txid, time.Now().UnixMicro())
+		err = applyTransaction(t, em, repl.Replica, txid, &rfpb.BatchCmdRequest{FinalizeOperation: rfpb.FinalizeOperation_ROLLBACK.Enum(), TxnFinalizedAtUsec: time.Now().UnixMicro()})
 		require.NoError(t, err)
-		require.NoError(t, wb.Commit(pebble.Sync))
-		require.NoError(t, wb.Close())
 
 		err = repl.Close()
 		require.NoError(t, err)
@@ -2285,17 +2747,15 @@ func TestRollbackMarkerSurvivesRestartAndRejectsPrepare(t *testing.T) {
 		_, err := repl.Open(stopc)
 		require.NoError(t, err)
 
-		wb := repl.DB().NewIndexedBatch()
 		cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   []byte("foo"),
 				Value: []byte("bar"),
 			},
 		}).ToProto()
-		_, err = repl.PrepareTransaction(wb, txid, cmd)
+		err = applyTransaction(t, em, repl.Replica, txid, cmd)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), constants.TxnRolledBackMessage)
-		require.NoError(t, wb.Close())
 	}
 }
 
@@ -2317,11 +2777,9 @@ func TestRollbackMarkerGCFiltersByTimestamp(t *testing.T) {
 	now := time.Now()
 	oldTxid := []byte("old-tx")
 	newTxid := []byte("new-tx")
-	wb := repl.DB().NewIndexedBatch()
-	require.NoError(t, repl.RollbackTransaction(wb, oldTxid, now.Add(-4*24*time.Hour).UnixMicro()))
-	require.NoError(t, repl.RollbackTransaction(wb, newTxid, now.UnixMicro()))
-	require.NoError(t, wb.Commit(pebble.Sync))
-	require.NoError(t, wb.Close())
+
+	require.NoError(t, applyTransaction(t, em, repl.Replica, oldTxid, &rfpb.BatchCmdRequest{FinalizeOperation: rfpb.FinalizeOperation_ROLLBACK.Enum(), TxnFinalizedAtUsec: now.Add(-4 * 24 * time.Hour).UnixMicro()}))
+	require.NoError(t, applyTransaction(t, em, repl.Replica, newTxid, &rfpb.BatchCmdRequest{FinalizeOperation: rfpb.FinalizeOperation_ROLLBACK.Enum(), TxnFinalizedAtUsec: now.UnixMicro()}))
 
 	hasMarkers, err := repl.HasTxnRollbackMarkersBeforeForTest(now.Add(-3 * 24 * time.Hour).UnixMicro())
 	require.NoError(t, err)
@@ -2362,14 +2820,13 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 		em := newEntryMaker(t)
 		writeDefaultRangeDescriptor(t, em, repl.Replica)
 
-		wb := repl.DB().NewIndexedBatch()
 		cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   []byte("foo"),
 				Value: []byte("bar"),
 			},
 		}).ToProto()
-		_, err = repl.PrepareTransaction(wb, txid, cmd)
+		err = applyTransaction(t, em, repl.Replica, txid, cmd)
 		require.NoError(t, err)
 
 		cmd2, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
@@ -2378,11 +2835,8 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 				Value: []byte("bap"),
 			},
 		}).ToProto()
-		_, err = repl.PrepareTransaction(wb, txid2, cmd2)
+		err = applyTransaction(t, em, repl.Replica, txid2, cmd2)
 		require.NoError(t, err)
-
-		require.NoError(t, wb.Commit(pebble.Sync))
-		require.NoError(t, wb.Close())
 
 		err = repl.Close()
 		require.NoError(t, err)
@@ -2400,7 +2854,7 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 		_, err := repl.Open(stopc)
 		require.NoError(t, err)
 
-		err = repl.CommitTransaction(txid)
+		err = applyTransaction(t, em, repl.Replica, txid, &rfpb.BatchCmdRequest{FinalizeOperation: rfpb.FinalizeOperation_COMMIT.Enum()})
 		require.NoError(t, err)
 
 		buf, closer, err := repl.DB().Get([]byte("foo"))

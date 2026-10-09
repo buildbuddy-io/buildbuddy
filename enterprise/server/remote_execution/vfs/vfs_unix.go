@@ -641,7 +641,6 @@ func (n *Node) clearCachedDirectoryEntries() {
 }
 
 type remoteFile struct {
-	ctx       context.Context
 	vfsClient vfspb.FileSystemClient
 	path      string
 	id        uint64
@@ -856,7 +855,7 @@ func (f *remoteFile) Allocate(ctx context.Context, off uint64, size uint64, mode
 		Offset:   int64(off),
 		NumBytes: int64(size),
 	}
-	if _, err := f.vfsClient.Allocate(f.ctx, allocReq); err != nil {
+	if _, err := f.vfsClient.Allocate(f.node.vfs.getRPCContext(), allocReq); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
 	return fs.OK
@@ -870,7 +869,7 @@ func (f *remoteFile) Flush(ctx context.Context) syscall.Errno {
 		f.mu.Unlock()
 	}
 
-	if _, err := f.vfsClient.Flush(f.ctx, &vfspb.FlushRequest{HandleId: f.id}); err != nil {
+	if _, err := f.vfsClient.Flush(f.node.vfs.getRPCContext(), &vfspb.FlushRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
 	return fs.OK
@@ -881,7 +880,7 @@ func (f *remoteFile) Fsync(ctx context.Context, flags uint32) syscall.Errno {
 	if f.node.vfs.verbose {
 		log.CtxDebugf(f.node.vfs.rpcCtx, "Fsync %q", f.path)
 	}
-	if _, err := f.vfsClient.Fsync(f.ctx, &vfspb.FsyncRequest{HandleId: f.id}); err != nil {
+	if _, err := f.vfsClient.Fsync(f.node.vfs.getRPCContext(), &vfspb.FsyncRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
 	return fs.OK
@@ -900,7 +899,7 @@ func (f *remoteFile) Release(ctx context.Context) syscall.Errno {
 	}
 	f.node.vfs.beginAttrsMutation()
 	defer f.node.vfs.endAttrsMutation()
-	if _, err := f.vfsClient.Release(f.ctx, &vfspb.ReleaseRequest{HandleId: f.id}); err != nil {
+	if _, err := f.vfsClient.Release(f.node.vfs.getRPCContext(), &vfspb.ReleaseRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
 	f.node.vfs.inodeCache.released(f.node.StableAttr().Ino)
@@ -934,7 +933,7 @@ func (r *remoteFileReader) Bytes(buf []byte) ([]byte, fuse.Status) {
 		Offset:   r.offset,
 		NumBytes: int32(numBytes),
 	}
-	rsp, err := r.f.vfsClient.Read(r.f.ctx, readReq)
+	rsp, err := r.f.vfsClient.Read(r.f.node.vfs.getRPCContext(), readReq)
 	if err != nil {
 		return nil, fuse.ToStatus(rpcErrToSyscallErrno(err))
 	}
@@ -965,7 +964,7 @@ func (f *remoteFile) Write(ctx context.Context, data []byte, off int64) (uint32,
 		Data:     data,
 		Offset:   off,
 	}
-	rsp, err := f.vfsClient.Write(f.ctx, writeReq)
+	rsp, err := f.vfsClient.Write(f.node.vfs.getRPCContext(), writeReq)
 	if err != nil {
 		return 0, rpcErrToSyscallErrno(err)
 	}
@@ -983,7 +982,7 @@ func (f *remoteFile) Lseek(ctx context.Context, off uint64, whence uint32) (uint
 		Offset:   off,
 		Whence:   whence,
 	}
-	rsp, err := f.vfsClient.Lseek(f.ctx, writeReq)
+	rsp, err := f.vfsClient.Lseek(f.node.vfs.getRPCContext(), writeReq)
 	if err != nil {
 		return 0, rpcErrToSyscallErrno(err)
 	}
@@ -1058,7 +1057,6 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 	n.vfs.inodeCache.opened(n.StableAttr().Ino)
 	return &remoteFile{
-		ctx:       ctx,
 		vfsClient: n.vfs.vfsClient,
 		path:      n.relativePath(),
 		id:        rsp.GetHandleId(),
@@ -1094,7 +1092,6 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG, Ino: rsp.GetId()})
 
 	rf := &remoteFile{
-		ctx:       ctx,
 		vfsClient: n.vfs.vfsClient,
 		path:      filepath.Join(n.relativePath(), name),
 		id:        rsp.GetHandleId(),
@@ -1538,14 +1535,9 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 		log.CtxDebugf(n.vfs.rpcCtx, "Symlink %q -> %q", src, target)
 	}
 
-	reqTarget := target
-	if after, ok := strings.CutPrefix(target, n.vfs.mountDir); ok {
-		reqTarget = after
-	}
-
 	n.beginDirectoryMutation()
 	defer n.endDirectoryMutation()
-	rsp, err := n.vfs.vfsClient.Symlink(n.vfs.getRPCContext(), &vfspb.SymlinkRequest{ParentId: n.StableAttr().Ino, Name: name, Target: reqTarget})
+	rsp, err := n.vfs.vfsClient.Symlink(n.vfs.getRPCContext(), &vfspb.SymlinkRequest{ParentId: n.StableAttr().Ino, Name: name, Target: target})
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}

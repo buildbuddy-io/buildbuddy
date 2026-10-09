@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime/seccomp"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/gpu"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -95,6 +96,7 @@ var (
 	enableTini                = flag.Bool("executor.oci.enable_tini", false, "If true, run all OCI containers with tini as pid 1.")
 	enableCgroupMemoryLimit   = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
 	minPIDsLimit              = flag.Int64("executor.oci.min_pids_limit", 0, "Min value to use for pids.max (PID limit). The scheduler may set a higher value for larger tasks. This can be used for rare cases where the scheduler does not provide a high enough limit.")
+	nofileLimit               = flag.Uint64("executor.oci.nofile_limit", 0, "Soft and hard RLIMIT_NOFILE (open file descriptor limit) for initial OCI container processes. If 0, leave the limit unset in the OCI spec.")
 	cgroupMemoryCushion       = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
 	enableImageEviction       = flag.Bool("executor.oci.image_eviction_enabled", false, "If true, track OCI image layers in the filecache LRU for eviction. When enabled, unused image layers can be evicted to make room for other cached files.")
 
@@ -131,6 +133,11 @@ var (
 
 	// Fake /proc/cgroups content to mount into the container.
 	fakeProcCgroupsContent = getFakeProcCgroupsContent()
+
+	// RuntimeEnv holds environment variables that are set for every OCI
+	// runtime invocation, in addition to the executor's own environment. It
+	// must only be modified before any containers are created.
+	RuntimeEnv = map[string]string{}
 )
 
 // Set via x_defs from the BUILD file
@@ -497,7 +504,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		cgroupSettings:     &scpb.CgroupSettings{},
 		imageRef:           args.Props.ContainerImage,
 		networkEnabled:     networkMode != "off",
-		userspaceNetwork:   slices.Contains(args.Task.GetExecutionTask().GetExperiments(), "executor.userspace_networking"),
+		userspaceNetwork:   execution_experiments.UserspaceNetworking.Get(ctx),
 		isPersistentWorker: args.Props.PersistentWorkerKey != "",
 		tiniEnabled:        args.Props.DockerInit || *enableTini,
 		user:               args.Props.DockerUser,
@@ -1377,6 +1384,13 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			},
 		},
 	}
+	if *nofileLimit != 0 {
+		spec.Process.Rlimits = append(spec.Process.Rlimits, specs.POSIXRlimit{
+			Type: "RLIMIT_NOFILE",
+			Hard: *nofileLimit,
+			Soft: *nofileLimit,
+		})
+	}
 	if *dns != "" {
 		spec.Mounts = append(spec.Mounts, specs.Mount{
 			Destination: "/etc/resolv.conf",
@@ -1491,6 +1505,10 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 
 	cmd := exec.CommandContext(ctx, runtimeArgs[0], runtimeArgs[1:]...)
 	cmd.Dir = wd
+	cmd.Env = os.Environ()
+	for key, value := range RuntimeEnv {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
 	var stdout *bytes.Buffer
 	var stderr *bytes.Buffer
 	// If stdio is nil, the output will be discarded.

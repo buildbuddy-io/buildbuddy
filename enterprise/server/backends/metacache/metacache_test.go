@@ -63,7 +63,7 @@ func runMetacache(t testing.TB, te *real_environment.RealEnv, clock clockwork.Cl
 
 	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	mdspb.RegisterMetadataServiceServer(te.GetGRPCServer(), mm)
-	conn, err := testenv.LocalGRPCConn(
+	conn, err := testenv.LocalGRPCConn(t,
 		te.GetServerContext(),
 		lis,
 		interceptors.GetUnaryClientIdentityInterceptor(te),

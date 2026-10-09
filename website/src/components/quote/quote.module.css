@@ -10,6 +10,10 @@
   text-align: center;
 }
 
+.heading .pillTitle {
+  background-color: #fff59d;
+}
+
 .title {
   margin: 0;
   font-size: 42px;
@@ -126,6 +130,7 @@
 
 @media (max-width: 680px) {
   .container {
+    --section-horizontal-padding: 24px;
     gap: 28px;
   }
 

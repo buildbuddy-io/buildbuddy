@@ -226,6 +226,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		SchedulingMetadata:    st.GetSchedulingMetadata(),
 		ExecutorHostname:      s.hostname,
 		Experiments:           task.GetExperiments(),
+		ExperimentFlags:       task.GetExperimentFlags(),
 	}
 	actionMetrics.AuxMetadata = auxMetadata
 	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest.GetDigest())

@@ -25,6 +25,7 @@ go_library(
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/ociruntime/seccomp",
+        "//enterprise/server/remote_execution/execution_experiments",
         "//enterprise/server/remote_execution/executor_auth",
         "//enterprise/server/remote_execution/gpu",
         "//enterprise/server/util/oci",

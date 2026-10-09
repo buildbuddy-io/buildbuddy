@@ -293,6 +293,19 @@ func TestSearch(t *testing.T) {
 	require.Equal(t, "apps", rsp.GetGroups()[0].GetGroup(), "the api group rides along with the kind")
 }
 
+func TestListFilterValues(t *testing.T) {
+	s, _ := newTestService(t)
+	rsp, err := s.GetFilterValues(context.Background(), &atlaspb.GetFilterValuesRequest{Field: "kind", Prefix: "p"})
+	require.NoError(t, err)
+	require.NotEmpty(t, rsp.GetValues())
+	require.Equal(t, "pod", rsp.GetValues()[0].GetValue())
+	require.EqualValues(t, 1, rsp.GetValues()[0].GetCount())
+
+	_, err = s.GetFilterValues(context.Background(), &atlaspb.GetFilterValuesRequest{Field: "bogus"})
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err), err)
+}
+
 func TestGetStatus(t *testing.T) {
 	s, _ := newTestService(t)
 	rsp, err := s.GetStatus(context.Background(), &atlaspb.GetStatusRequest{})

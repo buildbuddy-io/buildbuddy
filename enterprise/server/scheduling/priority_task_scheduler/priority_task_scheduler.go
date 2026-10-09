@@ -373,6 +373,13 @@ type PriorityTaskScheduler struct {
 	rootContext      context.Context
 	rootCancel       context.CancelFunc
 
+	// stopped is closed by Stop to stop the background goroutines, which
+	// background tracks. stopMu guards closing stopped and starting
+	// background goroutines, so that none start after Stop.
+	stopMu     sync.Mutex
+	stopped    chan struct{}
+	background sync.WaitGroup
+
 	mu                     sync.Mutex
 	q                      *taskQueue
 	activeTaskCancelFuncs  sync.WaitGroup
@@ -430,6 +437,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 		clock:            env.GetClock(),
 		runnerPool:       runnerPool,
 		checkQueueSignal: make(chan struct{}, 64),
+		stopped:          make(chan struct{}),
 		rootContext:      rootContext,
 		rootCancel:       rootCancel,
 		shuttingDown:     false,
@@ -522,7 +530,8 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 	// safe to wait for all pending cleanup jobs to finish.
 	q.runnerPool.Wait()
 
-	return nil
+	// No more work will be claimed, so the background loops can exit.
+	return q.Stop()
 }
 
 func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
@@ -573,13 +582,16 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 		log.CtxDebugf(ctx, "Added task %q to pq.", req.GetTaskId())
 		// Wake up the scheduling loop so that it can run the task if there are
 		// enough resources available.
-		q.checkQueueSignal <- struct{}{}
+		q.signalQueue()
 	}
 	if req.GetDelay().AsDuration() > 0 {
-		go func() {
-			time.Sleep(req.GetDelay().AsDuration())
-			enqueueFn()
-		}()
+		q.goUnlessStopped(func() {
+			select {
+			case <-q.clock.After(req.GetDelay().AsDuration()):
+				enqueueFn()
+			case <-q.stopped:
+			}
+		})
 	} else {
 		enqueueFn()
 	}
@@ -981,7 +993,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			q.mu.Unlock()
 			// Wake up the scheduling loop since the resources we just freed up
 			// may allow another task to become runnable.
-			q.checkQueueSignal <- struct{}{}
+			q.signalQueue()
 		}()
 
 		lease, err := q.taskLeaser.Lease(ctx, reservation.GetTaskId())
@@ -1012,21 +1024,67 @@ func (q *PriorityTaskScheduler) handleTask() {
 	})
 }
 
+// signalQueue wakes up the scheduling loop, waiting for room in the signal
+// channel unless the scheduler is stopped. Each signal schedules at most one
+// task, so signals must not be dropped while the loop is running.
+func (q *PriorityTaskScheduler) signalQueue() {
+	select {
+	case q.checkQueueSignal <- struct{}{}:
+	case <-q.stopped:
+	}
+}
+
+func (q *PriorityTaskScheduler) isStopped() bool {
+	select {
+	case <-q.stopped:
+		return true
+	default:
+		return false
+	}
+}
+
+// goUnlessStopped runs f in a background goroutine that Stop waits for, unless
+// the scheduler is stopped. It reports whether f was started.
+func (q *PriorityTaskScheduler) goUnlessStopped(f func()) bool {
+	q.stopMu.Lock()
+	defer q.stopMu.Unlock()
+	if q.isStopped() {
+		return false
+	}
+	q.background.Go(f)
+	return true
+}
+
+// Start starts scheduling queued tasks. It returns an error if the scheduler
+// has been stopped.
 func (q *PriorityTaskScheduler) Start() error {
-	go func() {
-		for range q.checkQueueSignal {
-			q.handleTask()
+	q.stopMu.Lock()
+	defer q.stopMu.Unlock()
+	if q.isStopped() {
+		return status.FailedPreconditionError("priority task scheduler has been stopped")
+	}
+
+	q.background.Go(func() {
+		for {
+			select {
+			case <-q.stopped:
+				return
+			case <-q.checkQueueSignal:
+				q.handleTask()
+			}
 		}
-	}()
+	})
 
 	if *queueTrimInterval > 0 {
-		go func() {
+		q.background.Go(func() {
 			ticker := q.clock.NewTicker(*queueTrimInterval)
 			defer ticker.Stop()
 
 			for {
 				select {
 				case <-q.rootContext.Done():
+					return
+				case <-q.stopped:
 					return
 				case <-ticker.Chan():
 				}
@@ -1038,18 +1096,30 @@ func (q *PriorityTaskScheduler) Start() error {
 					log.CtxDebugf(q.rootContext, "Trimmed %d tasks from queue", trimCount)
 					// Wake up the scheduling loop since the task after the
 					// trimmed task may now be schedulable.
-					select {
-					case q.checkQueueSignal <- struct{}{}:
-					default:
-					}
+					q.signalQueue()
 				}
 			}
-		}()
+		})
 	}
 	return nil
 }
 
+// Stop stops the scheduler's background goroutines and waits for them to
+// exit. Queued tasks are no longer scheduled after Stop is called, and the
+// scheduler can't be started again. Shutdown calls Stop once active tasks have
+// finished.
 func (q *PriorityTaskScheduler) Stop() error {
+	// Keep the scheduling loop from starting a queued task if it receives a
+	// buffered signal before it sees that the scheduler is stopped.
+	q.mu.Lock()
+	q.shuttingDown = true
+	q.mu.Unlock()
+	q.stopMu.Lock()
+	if !q.isStopped() {
+		close(q.stopped)
+	}
+	q.stopMu.Unlock()
+	q.background.Wait()
 	return nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -244,6 +245,33 @@ func TestRun(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
+}
+
+func TestRunNofileLimit(t *testing.T) {
+	setupNetworking(t)
+	flags.Set(t, "executor.oci.nofile_limit", uint64(65536))
+	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: busyboxImage(t),
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.Remove(ctx)) })
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-ec", "ulimit -Sn; ulimit -Hn"}}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, "65536\n65536\n", string(res.Stdout))
 }
 
 func TestCgroupSettings(t *testing.T) {
@@ -1142,7 +1170,7 @@ func TestNetworking(t *testing.T) {
 		name                       string
 		defaultNetworkFlag         string
 		dockerNetworkProp          string
-		experiments                []string
+		userspaceNetworking        bool
 		expectExternalConnectivity bool
 	}{
 		{
@@ -1167,13 +1195,13 @@ func TestNetworking(t *testing.T) {
 		},
 		{
 			name:                       "userspace networking",
-			experiments:                []string{"executor.userspace_networking"},
+			userspaceNetworking:        true,
 			expectExternalConnectivity: true,
 		},
 		{
 			name:                       "userspace networking disabled via flag",
 			defaultNetworkFlag:         "off",
-			experiments:                []string{"executor.userspace_networking"},
+			userspaceNetworking:        true,
 			expectExternalConnectivity: false,
 		},
 	} {
@@ -1189,6 +1217,7 @@ func TestNetworking(t *testing.T) {
 			if tc.defaultNetworkFlag != "" {
 				flags.Set(t, "executor.oci.default_network_mode", tc.defaultNetworkFlag)
 			}
+			flags.Set(t, "executor.userspace_networking", tc.userspaceNetworking)
 
 			buildRoot := testfs.MakeTempDir(t)
 			cacheRoot := testfs.MakeTempDir(t)
@@ -1202,7 +1231,7 @@ func TestNetworking(t *testing.T) {
 					ContainerImage: image,
 					DockerNetwork:  tc.dockerNetworkProp,
 				},
-				Task: &repb.ScheduledTask{ExecutionTask: &repb.ExecutionTask{Experiments: tc.experiments}},
+				Task: &repb.ScheduledTask{ExecutionTask: &repb.ExecutionTask{}},
 			})
 			require.NoError(t, err)
 			t.Cleanup(func() {
@@ -3432,4 +3461,62 @@ func TestExecrootPath_InvalidRelativePath(t *testing.T) {
 	}})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must be an absolute path")
+}
+
+func TestTaskCPUControllerDisabled(t *testing.T) {
+	for _, mode := range []string{"Run", "CreateExec"} {
+		t.Run(mode, func(t *testing.T) {
+			setupNetworking(t)
+			image := busyboxImage(t)
+			ctx := t.Context()
+			env := testenv.GetTestEnv(t)
+			installLeaserInEnv(t, env)
+			installFileCacheInEnv(t, env)
+			flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+			buildRoot := testfs.MakeTempDir(t)
+			provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+			require.NoError(t, err)
+			wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+			// Mirror executor startup with CPU disabled only for task cgroups,
+			// including the variable that keeps the bundled crun from turning
+			// it back on.
+			runtimeEnv := maps.Clone(ociruntime.RuntimeEnv)
+			t.Cleanup(func() { ociruntime.RuntimeEnv = runtimeEnv })
+			ociruntime.RuntimeEnv["BUILDBUDDY_CRUN_SKIP_ENABLE_CONTROLLERS"] = "1"
+			parent := "ociruntime-test-" + uuid.New()
+			parentPath := filepath.Join(cgroup.RootPath, parent)
+			require.NoError(t, os.Mkdir(parentPath, 0755))
+			t.Cleanup(func() { require.NoError(t, os.Remove(parentPath)) })
+			require.NoError(t, cgroup.WriteSubtreeControl(parentPath, map[string]bool{
+				"cpuset": true, "memory": true, "pids": true,
+			}))
+			before, err := os.ReadFile(filepath.Join(parentPath, "cgroup.subtree_control"))
+			require.NoError(t, err)
+
+			c, err := provider.New(ctx, &container.Init{
+				Props:        &platform.Properties{ContainerImage: image},
+				CgroupParent: parent,
+			})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, c.Remove(context.WithoutCancel(ctx))) })
+
+			cmd := &repb.Command{Arguments: []string{"cat", "/sys/fs/cgroup/cgroup.controllers"}}
+			var res *interfaces.CommandResult
+			if mode == "Run" {
+				res = c.Run(ctx, cmd, wd, oci.Credentials{})
+			} else {
+				require.NoError(t, c.PullImage(ctx, oci.Credentials{}))
+				require.NoError(t, c.Create(ctx, wd))
+				res = c.Exec(ctx, cmd, &interfaces.Stdio{})
+			}
+			require.NoError(t, res.Error)
+			require.Equal(t, 0, res.ExitCode, "%s", res.Stderr)
+			require.ElementsMatch(t, []string{"cpuset", "memory", "pids"}, strings.Fields(string(res.Stdout)))
+
+			after, err := os.ReadFile(filepath.Join(parentPath, "cgroup.subtree_control"))
+			require.NoError(t, err)
+			require.Equal(t, string(before), string(after))
+		})
+	}
 }

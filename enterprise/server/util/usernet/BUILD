@@ -48,6 +48,7 @@ go_test(
         "//server/testutil/testnetworking",
         "//server/util/networking",
         "//server/util/testing/flags",
+        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@dev_gvisor_gvisor//pkg/tcpip",
         "@dev_gvisor_gvisor//pkg/tcpip/header",

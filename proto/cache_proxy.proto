@@ -119,6 +119,11 @@ message RegisterCacheProxyRequest {
   // remove this cache proxy from its registry immediately rather than waiting
   // for the heartbeat staleness TTL.
   bool shutting_down = 3;
+
+  // When this message answers a RegisterCacheProxyResponse from the server,
+  // this will be the request_id from that RegisterCacheProxyResponse. Empty for
+  // heartbeats.
+  string request_id = 5;
 }
 
 // RegisterCacheProxyResponse is sent on the stream from the server to the
@@ -128,6 +133,14 @@ message RegisterCacheProxyResponse {
   // with a RegisterCacheProxyRequest with the requested details fields set. The
   // "selector" field of this GetCacheProxyRequest is ignored.
   GetCacheProxyRequest details_request = 1;
+
+  // A unique (within the stream) identifier for this request. This is necessary
+  // because the registration stream contains heartbeat updates along with
+  // details requests, and the registry server may not be able to distinguish
+  // between them. The request_id lets the registration server associate the
+  // details it receives with the response message it sent requesting them (and
+  // this, the request it is serving).
+  string request_id = 2;
 }
 
 // TODO(go/b/8433): remove
@@ -183,11 +196,19 @@ message GetCacheProxyRequest {
 
   CacheProxySelector selector = 2;
 
+  // If set, the server handling this request only serves it from cache proxies
+  // whose registration streams it holds and never forwards it to a peer. Peers
+  // should set this bit when forwarding a request to the instance that owns the
+  // registration to prevent forwarding loops. If a server receives a request
+  // with do_not_forward, but it does not own the registration stream with the
+  // requested proxy, it will return an error.
+  bool do_not_forward = 3;
+
   // Whether to include the cache proxy's configured flags in the response.
-  bool include_configured_flags = 3;
+  bool include_configured_flags = 4;
 
   // Whether to include the cache proxy's statistics in the response.
-  bool include_statistics = 4;
+  bool include_statistics = 5;
 }
 
 message GetCacheProxyResponse {
@@ -205,6 +226,8 @@ message RegisteredCacheProxy {
   acl.ACL acl = 3;
   google.protobuf.Timestamp last_ping_time = 4;
   Statistics statistics = 5;
+  // host:port of the app instance holding this proxy's registration stream.
+  string app_host_port = 6;
 }
 
 // CacheProxyRegistry runs on the main BuildBuddy app and tracks the set of

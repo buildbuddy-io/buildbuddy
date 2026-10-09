@@ -108,6 +108,11 @@ div.ossContainer.ossContainer {
 }
 
 @media (max-width: 720px) {
+  .ossList {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+
   .repos {
     grid-template-columns: 1fr;
   }

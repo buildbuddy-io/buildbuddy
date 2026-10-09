@@ -13,7 +13,6 @@ DASHBOARD_NAMES = [
     "node-exporter-full",
     "nodes",
     "rbeperf",
-    "traffic-stats",
     "victoriametrics-cluster",
     "victoriametrics-single",
     "victoriametrics-vmagent",

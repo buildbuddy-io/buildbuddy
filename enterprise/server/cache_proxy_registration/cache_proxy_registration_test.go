@@ -72,7 +72,7 @@ func startTestRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*cac
 
 	dialCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	conn, err := testenv.LocalGRPCConn(dialCtx, lis)
+	conn, err := testenv.LocalGRPCConn(t, dialCtx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -348,4 +348,67 @@ func TestSendHeartbeat_FlagMutationRaciness(t *testing.T) {
 	<-done
 
 	assert.Len(t, stream.sent, iterations)
+}
+
+// detailsRequestingRegistry is a fake registry server that sends a details
+// request after the initial heartbeat and records the messages it receives.
+type detailsRequestingRegistry struct {
+	cppb.UnimplementedCacheProxyRegistryServer
+	request  *cppb.RegisterCacheProxyResponse
+	received chan *cppb.RegisterCacheProxyRequest
+}
+
+func (r *detailsRequestingRegistry) RegisterAndStreamHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatServer) error {
+	for sent := false; ; sent = true {
+		req, err := stream.Recv()
+		if err != nil {
+			return nil
+		}
+		r.received <- req
+		if !sent {
+			if err := stream.Send(r.request); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func TestStreamHeartbeats_AnswersDetailsRequestWithRequestID(t *testing.T) {
+	registry := &detailsRequestingRegistry{
+		request: &cppb.RegisterCacheProxyResponse{
+			DetailsRequest: &cppb.GetCacheProxyRequest{IncludeConfiguredFlags: true, IncludeStatistics: true},
+			RequestId:      "req-1",
+		},
+		received: make(chan *cppb.RegisterCacheProxyRequest, 10),
+	}
+	env := testenv.GetTestEnv(t)
+	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	cppb.RegisterCacheProxyRegistryServer(server, registry)
+	go runFunc()
+	conn, err := testenv.LocalGRPCConn(t, context.Background(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	refreshConfiguredFlags()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- streamHeartbeats(ctx, make(chan struct{}), cppb.NewCacheProxyRegistryClient(conn), &cppb.CacheProxySummary{Host: "h", ProxyId: "id"})
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	heartbeat := <-registry.received
+	assert.Empty(t, heartbeat.GetRequestId(), "heartbeats should not carry a request ID")
+
+	select {
+	case reply := <-registry.received:
+		assert.Equal(t, "req-1", reply.GetRequestId())
+		assert.Equal(t, "id", reply.GetDetails().GetSummary().GetProxyId())
+		assert.NotNil(t, reply.GetDetails().GetStatistics())
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "proxy did not answer the details request")
+	}
 }

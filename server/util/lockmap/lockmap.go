@@ -39,8 +39,9 @@ type Locker[K comparable] interface {
 }
 
 type perKeyMutex[K comparable] struct {
-	mutexes sync.Map
-	closed  chan struct{}
+	mutexes   sync.Map
+	closed    chan struct{}
+	closeOnce sync.Once
 }
 
 // New returns a new lock map keyed by K.
@@ -116,8 +117,9 @@ func (p *perKeyMutex[K]) RLock(key K) func() {
 	return func() { rcm.RUnlock() }
 }
 
+// Close stops the background GC goroutine. It is safe to call more than once.
 func (p *perKeyMutex[K]) Close() error {
-	close(p.closed)
+	p.closeOnce.Do(func() { close(p.closed) })
 	return nil
 }
 

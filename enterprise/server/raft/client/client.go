@@ -86,6 +86,9 @@ func NewAPIClient(env environment.Env, name string, registry IRegistry) *APIClie
 func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient rfspb.ApiClient, returnedErr error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.clients == nil {
+		return nil, status.UnavailableError("api client is closed")
+	}
 	if client, ok := c.clients[peer]; ok {
 		conn, err := client.GetReadyConnection()
 		if err != nil {
@@ -116,6 +119,19 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient 
 	}
 	c.clients[peer] = conn
 	return rfspb.NewApiClient(conn), nil
+}
+
+// Close closes all cached connections. Later calls that need a connection
+// return an Unavailable error.
+func (c *APIClient) Close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for peer, conn := range c.clients {
+		if err := conn.Close(); err != nil {
+			c.log.Warningf("Error closing connection to peer %q: %s", peer, err)
+		}
+	}
+	c.clients = nil
 }
 
 func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, error) {
@@ -302,6 +318,11 @@ func NewSessionWithClock(clock clockwork.Clock) *Session {
 		locker:             lockmap.New[uint64](),
 		maxSingleOpTimeout: config.SingleRaftOpTimeout(),
 	}
+}
+
+// Close stops the session's background lock cleanup.
+func (s *Session) Close() {
+	s.locker.Close()
 }
 
 // maybeRefresh resets the id and index when the session expired.

@@ -160,7 +160,7 @@ func getExecutor(t *testing.T, runOverride rbetest.RunInterceptor) (*executor.Ex
 	exec, err := executor.NewExecutor(env, "executor-id", "host-id", "hostname", runnerPool)
 	require.NoError(t, err)
 
-	conn, err := testenv.LocalGRPCConn(context.Background(), lis)
+	conn, err := testenv.LocalGRPCConn(t, context.Background(), lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	client := repb.NewExecutionClient(conn)
@@ -492,7 +492,7 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 			exec, err := executor.NewExecutor(env, "executor-id", "host-id", "hostname", runnerPool)
 			require.NoError(t, err)
 
-			conn, err := testenv.LocalGRPCConn(context.Background(), lis)
+			conn, err := testenv.LocalGRPCConn(t, context.Background(), lis)
 			require.NoError(t, err)
 			t.Cleanup(func() { conn.Close() })
 			execClient := repb.NewExecutionClient(conn)

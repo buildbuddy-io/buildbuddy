@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -177,11 +178,10 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			flags.Set(t, "testenv.use_clickhouse", true)
-			flags.Set(t, "testenv.reuse_server", true)
 			flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
 			flags.Set(t, "remote_execution.olap_reads_enabled", true)
 			env := testenv.GetTestEnv(t)
+			testclickhouse.Configure(t, env)
 			redis := testredis.Start(t)
 			env.SetDefaultRedisClient(redis.Client())
 			redis_execution_collector.Register(env)
@@ -238,14 +238,13 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 }
 
 func TestGetExecution_OLAPOnly_InvocationFinalizedWhileExecutionCleanupInProgress(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
 	flags.Set(t, "remote_execution.olap_reads_enabled", true)
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	flags.Set(t, "cache_stats_finalization_delay", 0)
 
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	redis := testredis.Start(t)
 	env.SetDefaultRedisClient(redis.Client())
 	redis_execution_collector.Register(env)
@@ -620,12 +619,11 @@ func TestGetExecutionDownloads(t *testing.T) {
 }
 
 func TestGetExecution_OLAPOnly_ExactFilters(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
 	flags.Set(t, "remote_execution.olap_reads_enabled", true)
 
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	redis := testredis.Start(t)
 	env.SetDefaultRedisClient(redis.Client())
 	redis_execution_collector.Register(env)
@@ -704,12 +702,11 @@ func TestGetExecution_OLAPOnly_ExactFilters(t *testing.T) {
 }
 
 func TestGetExecution_OLAPOnly_DoesNotCollapseDistinctExecutions(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
 	flags.Set(t, "remote_execution.olap_reads_enabled", true)
 
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	redis := testredis.Start(t)
 	env.SetDefaultRedisClient(redis.Client())
 	redis_execution_collector.Register(env)
@@ -761,12 +758,11 @@ func TestGetExecution_OLAPOnly_DoesNotCollapseDistinctExecutions(t *testing.T) {
 }
 
 func TestGetExecution_OLAPOnly_BufferedExecutionIncludesInvocationLinkType(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
 	flags.Set(t, "remote_execution.olap_reads_enabled", true)
 
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	redis := testredis.Start(t)
 	env.SetDefaultRedisClient(redis.Client())
 	redis_execution_collector.Register(env)
@@ -811,12 +807,11 @@ func TestGetExecution_OLAPOnly_BufferedExecutionIncludesInvocationLinkType(t *te
 }
 
 func TestGetExecution_PrefersOLAPWithoutDuplicatingPrimary(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "remote_execution.primary_db_reads_enabled", true)
 	flags.Set(t, "remote_execution.olap_reads_enabled", true)
 
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	redis := testredis.Start(t)
 	env.SetDefaultRedisClient(redis.Client())
 	redis_execution_collector.Register(env)

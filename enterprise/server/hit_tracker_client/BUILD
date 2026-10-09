@@ -7,6 +7,7 @@ go_library(
     srcs = ["hit_tracker_client.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client",
     deps = [
+        "//enterprise/server/cache_proxy_config",
         "//enterprise/server/ip_rules_enforcer",
         "//enterprise/server/util/proxy_util",
         "//proto:cache_go_proto",
@@ -18,7 +19,6 @@ go_library(
         "//server/real_environment",
         "//server/util/alert",
         "//server/util/authutil",
-        "//server/util/claims",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/status",
@@ -47,6 +47,7 @@ go_test(
         "//server/util/log",
         "//server/util/testing/flags",
         "//server/util/usageutil",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
     ],

@@ -32,14 +32,6 @@ go_library(
 go_test(
     name = "auditlog_test",
     srcs = ["auditlog_test.go"],
-    exec_properties = {
-        "test.workload-isolation-type": "firecracker",
-        "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622",
-        "test.init-dockerd": "true",
-        "test.recycle-runner": "true",
-        "test.runner-recycling-key": "clickhouse25.3",
-    },
-    tags = ["docker"],
     deps = [
         ":auditlog",
         "//enterprise/server/testutil/enterprise_testauth",
@@ -53,6 +45,7 @@ go_test(
         "//server/interfaces",
         "//server/tables",
         "//server/testutil/testauth",
+        "//server/testutil/testclickhouse",
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/request_context",
