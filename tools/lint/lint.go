@@ -41,14 +41,10 @@ var (
 	clangFormatRlocationpath string
 	bbCLIRlocationpath       string
 	prettierRlocationpath    string
-	// Space-separated; the no_gazelle.txt sentinel if the :gazelle label_flag
-	// isn't set (see gazelleRunfile).
+	// Space-separated: a `gazelle` rule has two outputs, which are equivalent
+	// runner scripts.
 	gazelleRlocationpaths string
 )
-
-// gazelleRunner is the rlocationpath of the gazelle runner that BuildDepsFix
-// runs. It's set (by run) only if BuildDepsFix is selected.
-var gazelleRunner string
 
 var (
 	// Available tools
@@ -99,25 +95,12 @@ type Tool struct {
 	Run func(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error
 }
 
-// gazelleRunfile returns the rlocationpath of the gazelle runner selected by
-// the :gazelle label_flag.
-func gazelleRunfile() (string, error) {
-	gazelle, _, _ := strings.Cut(gazelleRlocationpaths, " ")
-	if strings.HasSuffix(gazelle, "/no_gazelle.txt") {
-		return "", errors.New(`BuildDepsFix needs to know which gazelle target to run. Set it in your .bazelrc, e.g.:
-
-  common --@com_github_buildbuddy_io_buildbuddy//tools/lint:gazelle=//:gazelle
-
-or pass -exclude=BuildDepsFix to skip it`)
-	}
-	return gazelle, nil
-}
-
-// runGazelle runs the gazelle runner script from runfiles, which is built by
+// runGazelle runs //:gazelle's runner script from runfiles, which is built by
 // the same bazel invocation as lint (rather than by a nested `bazel run`).
 // Gazelle always looks at the whole repo, so files is unused.
 func runGazelle(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	cmd, err := getRunfileToolCommand(ctx, gazelleRunner)
+	runner, _, _ := strings.Cut(gazelleRlocationpaths, " ")
+	cmd, err := getRunfileToolCommand(ctx, runner)
 	if err != nil {
 		return fmt.Errorf("get gazelle command: %w", err)
 	}
@@ -408,20 +391,6 @@ func run() error {
 			return fmt.Errorf("tool %q not found", t)
 		}
 	}
-	var selected []Tool
-	for _, t := range tools {
-		if (len(*tool) == 0 || slices.Contains(*tool, t.Name)) && !slices.Contains(*exclude, t.Name) {
-			selected = append(selected, t)
-		}
-	}
-	// Check BuildDepsFix's config before starting any tools, so that a missing
-	// flag isn't buried among their output.
-	if slices.ContainsFunc(selected, func(t Tool) bool { return t.Name == "BuildDepsFix" }) {
-		var err error
-		if gazelleRunner, err = gazelleRunfile(); err != nil {
-			return err
-		}
-	}
 
 	// Get changed files.
 	diffBaseRev, err := getDiffBase()
@@ -448,7 +417,13 @@ func run() error {
 	var eg errgroup.Group
 	eg.SetLimit(3)
 	var mu sync.RWMutex
-	for _, t := range selected {
+	for _, t := range tools {
+		if len(*tool) > 0 && !slices.Contains(*tool, t.Name) {
+			continue
+		}
+		if slices.Contains(*exclude, t.Name) {
+			continue
+		}
 		eg.Go(func() error {
 			if t.WriteLock && *fix {
 				mu.Lock()
