@@ -247,6 +247,33 @@ func TestRun(t *testing.T) {
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
+func TestRunNofileLimit(t *testing.T) {
+	setupNetworking(t)
+	flags.Set(t, "executor.oci.nofile_limit", uint64(65536))
+	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: busyboxImage(t),
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.Remove(ctx)) })
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-ec", "ulimit -Sn; ulimit -Hn"}}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, "65536\n65536\n", string(res.Stdout))
+}
+
 func TestCgroupSettings(t *testing.T) {
 	setupNetworking(t)
 
