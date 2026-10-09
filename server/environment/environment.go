@@ -149,4 +149,7 @@ type Env interface {
 	GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer
 	GetExperimentFlagProvider() interfaces.ExperimentFlagProvider
 	GetOCIFetcherClient() ofpb.OCIFetcherClient
+	// GetLocalOCIFetcherClient returns a client for an OCI fetcher that runs
+	// in-process, so that the executor talks to remote registries itself.
+	GetLocalOCIFetcherClient() ofpb.OCIFetcherClient
 }

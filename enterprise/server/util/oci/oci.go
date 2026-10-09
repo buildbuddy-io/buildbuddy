@@ -199,6 +199,10 @@ func (c Credentials) Equals(o Credentials) bool {
 type Resolver struct {
 	env environment.Env
 
+	// localFetcher fetches images in-process when the remote OCI fetcher
+	// isn't used.
+	localFetcher ofpb.OCIFetcherClient
+
 	allowedPrivateIPs   []*net.IPNet
 	imageTagToDigestLRU lru.LRU[string]
 }
@@ -218,11 +222,34 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	if err != nil {
 		return nil, err
 	}
+	localFetcher := env.GetLocalOCIFetcherClient()
+	if localFetcher == nil {
+		localFetcher, err = newLocalFetcher(env)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &Resolver{
 		env:                 env,
+		localFetcher:        localFetcher,
 		imageTagToDigestLRU: imageTagToDigestLRU,
 		allowedPrivateIPs:   allowedPrivateIPNets,
 	}, nil
+}
+
+// newLocalFetcher creates an in-process OCI fetcher for an environment that
+// doesn't provide one, caching with the environment's cache clients if it
+// has both.
+func newLocalFetcher(env environment.Env) (ofpb.OCIFetcherClient, error) {
+	bsClient, acClient := env.GetByteStreamClient(), env.GetActionCacheClient()
+	if bsClient == nil || acClient == nil {
+		bsClient, acClient = nil, nil
+	}
+	server, err := ocifetcher.NewLocalServer(bsClient, acClient)
+	if err != nil {
+		return nil, err
+	}
+	return ocifetcher.NewLocalClient(server), nil
 }
 
 // AuthenticateWithRegistry makes a HEAD request to a remote registry with the input credentials.
@@ -279,9 +306,14 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	return imageNameWithDigest, nil
 }
 
-func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials, useOCIFetcher bool) (ctr.Image, error) {
+// Resolve returns an image that fetches its manifest and layers lazily
+// through an OCI fetcher. If useRemoteFetcher is true and the
+// executor.use_remote_oci_fetcher flag is set, it uses the remote fetcher on
+// the executor's cache target. Otherwise it uses an in-process fetcher, which
+// talks to the registry directly.
+func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials, useRemoteFetcher bool) (ctr.Image, error) {
 	if !*useRemoteOCIFetcher {
-		useOCIFetcher = false
+		useRemoteFetcher = false
 	}
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -308,8 +340,14 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 	useCache := cacheEnabled && !isAnon
 
-	if useOCIFetcher && r.env.GetOCIFetcherClient() == nil {
-		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
+	fetcher := r.localFetcher
+	if useRemoteFetcher {
+		fetcher = r.env.GetOCIFetcherClient()
+		if fetcher == nil {
+			return nil, status.FailedPreconditionError("OCIFetcherClient is required when using the remote OCI fetcher")
+		}
+	} else if !useCache {
+		ctx = ocifetcher.WithoutCache(ctx)
 	}
 
 	return fetchImageFromCacheOrRemote(
@@ -323,10 +361,10 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		r.env.GetActionCacheClient(),
 		r.env.GetByteStreamClient(),
 		puller,
-		r.env.GetOCIFetcherClient(),
+		fetcher,
 		credentials,
-		useCache,
-		useOCIFetcher,
+		false, /*=useCache: the fetcher does its own caching*/
+		true,  /*=useOCIFetcher*/
 	)
 }
 
@@ -845,11 +883,16 @@ func (l *layerFromDigest) fetchFromRemote() (io.ReadCloser, error) {
 		// Create a cancellable context so that Close() can abort the stream
 		// if the caller doesn't read to EOF.
 		ctx, cancel := context.WithCancel(l.image.ctx)
-		stream, err := l.image.ociFetcherClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		req := &ofpb.FetchBlobRequest{
 			Ref:            ref.String(),
 			Credentials:    l.image.credentials.ToProto(),
 			BypassRegistry: l.image.credentials.bypassRegistry,
-		})
+		}
+		if l.desc != nil {
+			req.Size = new(l.desc.Size)
+			req.MediaType = new(string(l.desc.MediaType))
+		}
+		stream, err := l.image.ociFetcherClient.FetchBlob(ctx, req)
 		if err != nil {
 			cancel()
 			return nil, err

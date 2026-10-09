@@ -146,6 +146,7 @@ type RealEnv struct {
 	cpuLeaser                            interfaces.CPULeaser
 	ociRegistry                          interfaces.OCIRegistry
 	ociFetcherClient                     ofpb.OCIFetcherClient
+	localOCIFetcherClient                ofpb.OCIFetcherClient
 	ociFetcherServer                     ofpb.OCIFetcherServer
 	hitTrackerFactory                    interfaces.HitTrackerFactory
 	hitTrackerServiceServer              hitpb.HitTrackerServiceServer
@@ -901,6 +902,13 @@ func (r *RealEnv) GetOCIFetcherClient() ofpb.OCIFetcherClient {
 }
 func (r *RealEnv) SetOCIFetcherClient(c ofpb.OCIFetcherClient) {
 	r.ociFetcherClient = c
+}
+
+func (r *RealEnv) GetLocalOCIFetcherClient() ofpb.OCIFetcherClient {
+	return r.localOCIFetcherClient
+}
+func (r *RealEnv) SetLocalOCIFetcherClient(c ofpb.OCIFetcherClient) {
+	r.localOCIFetcherClient = c
 }
 
 func (r *RealEnv) GetOCIFetcherServer() ofpb.OCIFetcherServer {
