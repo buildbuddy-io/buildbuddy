@@ -15,5 +15,8 @@ go_test(
     srcs = ["testleak_test.go"],
     embed = [":testleak"],
     target_compatible_with = ["@platforms//os:linux"],
-    deps = ["@com_github_stretchr_testify//require"],
+    deps = [
+        "@com_github_stretchr_testify//require",
+        "@org_golang_x_sys//unix",
+    ],
 )

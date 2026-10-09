@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 // fakeTB records errors instead of failing the real test.
@@ -112,4 +113,22 @@ func TestCheckFDs_ReportsLeakedTarget(t *testing.T) {
 	ft.runCleanups()
 	require.Len(t, ft.errors, 1)
 	require.Contains(t, ft.errors[0], "-> "+os.DevNull)
+}
+
+func TestCheckFDs_ReplacedByDifferentAnonInode(t *testing.T) {
+	epfd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
+	require.NoError(t, err)
+
+	ft := &fakeTB{TB: t}
+	CheckFDs(ft)
+	// Replace the epoll fd with an eventfd at the same fd number. Both are
+	// anonymous inodes, which share one inode.
+	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC)
+	require.NoError(t, err)
+	require.NoError(t, unix.Dup3(efd, epfd, unix.O_CLOEXEC))
+	require.NoError(t, unix.Close(efd))
+	defer unix.Close(epfd)
+	ft.runCleanups()
+	require.Len(t, ft.errors, 1)
+	require.Contains(t, ft.errors[0], "anon_inode:[eventfd]")
 }

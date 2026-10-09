@@ -95,7 +95,7 @@ func CheckFDs(t testing.TB, opts ...FDOption) {
 			}
 			leaked = leaked[:0]
 			for num, fd := range after {
-				if b, ok := before[num]; (ok && os.SameFile(b.info, fd.info)) || o.ignored(fd.target) {
+				if b, ok := before[num]; (ok && b.sameFile(fd)) || o.ignored(fd.target) {
 					continue
 				}
 				leaked = append(leaked, fmt.Sprintf("%s -> %s", num, fd.target))
@@ -127,8 +127,19 @@ type openFD struct {
 	// "socket:[12345]" or a path.
 	target string
 	// info identifies the file the fd refers to. Unlike target, it doesn't
-	// change when the file is renamed or deleted.
+	// change when the file is renamed or deleted. It's nil if the file
+	// couldn't be stat'd.
 	info os.FileInfo
+}
+
+// sameFile reports whether fd refers to the same file as f.
+func (f openFD) sameFile(fd openFD) bool {
+	// All anonymous inodes, such as eventfds and epoll fds, share one inode,
+	// so only their targets tell them apart.
+	if f.info == nil || fd.info == nil || strings.HasPrefix(f.target, "anon_inode:") {
+		return f.target == fd.target
+	}
+	return os.SameFile(f.info, fd.info)
 }
 
 // openFDs returns the open file descriptors of the current process, keyed by
@@ -146,12 +157,12 @@ func openFDs() (map[string]openFD, error) {
 			// The fd used by ReadDir itself is gone by now.
 			continue
 		}
+		fd := openFD{target: target}
 		// Stat follows the link to the open file itself.
-		info, err := os.Stat(path)
-		if err != nil {
-			continue
+		if info, err := os.Stat(path); err == nil {
+			fd.info = info
 		}
-		fds[e.Name()] = openFD{target: target, info: info}
+		fds[e.Name()] = fd
 	}
 	return fds, nil
 }
