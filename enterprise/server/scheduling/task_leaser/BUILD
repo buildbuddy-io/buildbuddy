@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -18,5 +18,20 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "task_leaser_test",
+    srcs = ["task_leaser_test.go"],
+    deps = [
+        ":task_leaser",
+        "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
+        "//server/real_environment",
+        "//server/util/proto",
+        "//server/util/status",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
     ],
 )
