@@ -315,7 +315,10 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 	}
 	ow.ObjectAttrs.CustomTime = customTime
 
-	cwc := ioutil.NewCustomCommitWriteCloser(ow)
+	// Closing the GCS writer should only be done when committing the write, so
+	// we wrap it in a nopCloser to prevent cwc.Close() from closing it. The
+	// context is canceled in cwc.Close() below, which aborts the GCS write.
+	cwc := ioutil.NewCustomCommitWriteCloser(ioutil.OnlyWriter{Writer: ow})
 	cwc.SetCommitFn(func(n int64) error {
 		err := ow.Close()
 		if gerr, ok := err.(*googleapi.Error); ok {
@@ -360,7 +363,8 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 	} else {
 		zw = ow
 	}
-	cwc := ioutil.NewCustomCommitWriteCloser(zw)
+	// See comment in ConditionalWriter
+	cwc := ioutil.NewCustomCommitWriteCloser(ioutil.OnlyWriter{Writer: zw})
 	cwc.SetCommitFn(func(n int64) error {
 		err := zw.Close()
 		if err != nil {
@@ -374,6 +378,9 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 	})
 	cwc.SetCloseFn(func() error {
 		cancel()
+		if g.compress {
+			zw.Close() // return pooled buffers
+		}
 		return nil
 	})
 	return cwc, nil
