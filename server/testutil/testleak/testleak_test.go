@@ -118,6 +118,8 @@ func TestCheckFDs_ReportsLeakedTarget(t *testing.T) {
 func TestCheckFDs_ReplacedByDifferentAnonInode(t *testing.T) {
 	epfd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
 	require.NoError(t, err)
+	// After Dup3 below, this closes the eventfd instead.
+	defer unix.Close(epfd)
 
 	ft := &fakeTB{TB: t}
 	CheckFDs(ft)
@@ -125,9 +127,9 @@ func TestCheckFDs_ReplacedByDifferentAnonInode(t *testing.T) {
 	// anonymous inodes, which share one inode.
 	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC)
 	require.NoError(t, err)
-	require.NoError(t, unix.Dup3(efd, epfd, unix.O_CLOEXEC))
-	require.NoError(t, unix.Close(efd))
-	defer unix.Close(epfd)
+	err = unix.Dup3(efd, epfd, unix.O_CLOEXEC)
+	unix.Close(efd)
+	require.NoError(t, err)
 	ft.runCleanups()
 	require.Len(t, ft.errors, 1)
 	require.Contains(t, ft.errors[0], "anon_inode:[eventfd]")
