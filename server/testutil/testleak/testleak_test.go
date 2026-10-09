@@ -2,6 +2,7 @@ package testleak
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -133,4 +134,15 @@ func TestCheckFDs_ReplacedByDifferentAnonInode(t *testing.T) {
 	ft.runCleanups()
 	require.Len(t, ft.errors, 1)
 	require.Contains(t, ft.errors[0], "anon_inode:[eventfd]")
+}
+
+func TestCheckFDs_DescribesLeakedSockets(t *testing.T) {
+	ft := &fakeTB{TB: t}
+	CheckFDs(ft)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer lis.Close()
+	ft.runCleanups()
+	require.Len(t, ft.errors, 1)
+	require.Contains(t, ft.errors[0], "tcp "+lis.Addr().String()+" -> 0.0.0.0:0 LISTEN")
 }

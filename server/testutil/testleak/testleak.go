@@ -3,11 +3,14 @@
 package testleak
 
 import (
+	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -106,6 +109,12 @@ func CheckFDs(t testing.TB, opts ...FDOption) {
 			time.Sleep(fdPollPeriod)
 		}
 		if len(leaked) > 0 {
+			sockets := describeSockets()
+			for i, l := range leaked {
+				if inode, ok := socketInode(l); ok && sockets[inode] != "" {
+					leaked[i] = l + " (" + sockets[inode] + ")"
+				}
+			}
 			sort.Strings(leaked)
 			t.Errorf("file descriptors leaked by %s:\n%s", t.Name(), strings.Join(leaked, "\n"))
 		}
@@ -165,4 +174,83 @@ func openFDs() (map[string]openFD, error) {
 		fds[e.Name()] = fd
 	}
 	return fds, nil
+}
+
+// socketInode returns the inode of a "socket:[inode]" fd description.
+func socketInode(fd string) (string, bool) {
+	_, after, ok := strings.Cut(fd, "socket:[")
+	if !ok {
+		return "", false
+	}
+	inode, _, ok := strings.Cut(after, "]")
+	return inode, ok
+}
+
+// tcpStates names the states in /proc/net/tcp, from include/net/tcp_states.h.
+var tcpStates = map[string]string{
+	"01": "ESTABLISHED", "02": "SYN_SENT", "03": "SYN_RECV", "04": "FIN_WAIT1",
+	"05": "FIN_WAIT2", "06": "TIME_WAIT", "07": "CLOSE", "08": "CLOSE_WAIT",
+	"09": "LAST_ACK", "0A": "LISTEN", "0B": "CLOSING",
+}
+
+// describeSockets returns descriptions of the sockets in the current network
+// namespace, keyed by inode, such as "tcp 127.0.0.1:1234 -> 127.0.0.1:443
+// ESTABLISHED" or "unix /tmp/sock". Sockets that can't be described are
+// omitted.
+func describeSockets() map[string]string {
+	sockets := map[string]string{}
+	for _, proto := range []string{"tcp", "tcp6", "udp", "udp6"} {
+		b, err := os.ReadFile("/proc/self/net/" + proto)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(b), "\n")[1:] {
+			f := strings.Fields(line)
+			if len(f) < 10 {
+				continue
+			}
+			desc := fmt.Sprintf("%s %s -> %s", proto, procNetAddr(f[1]), procNetAddr(f[2]))
+			if state, ok := tcpStates[f[3]]; ok && strings.HasPrefix(proto, "tcp") {
+				desc += " " + state
+			}
+			sockets[f[9]] = desc
+		}
+	}
+	if b, err := os.ReadFile("/proc/self/net/unix"); err == nil {
+		for _, line := range strings.Split(string(b), "\n")[1:] {
+			f := strings.Fields(line)
+			if len(f) < 7 {
+				continue
+			}
+			desc := "unix"
+			if len(f) >= 8 {
+				desc += " " + f[7]
+			}
+			sockets[f[6]] = desc
+		}
+	}
+	return sockets
+}
+
+// procNetAddr formats an address from /proc/net/{tcp,udp}{,6}, which is the
+// IP as hex 32-bit words in host byte order, then ":" and the port in hex.
+func procNetAddr(s string) string {
+	ipHex, portHex, ok := strings.Cut(s, ":")
+	if !ok {
+		return s
+	}
+	raw, err := hex.DecodeString(ipHex)
+	if err != nil || len(raw)%4 != 0 {
+		return s
+	}
+	ip := make(net.IP, len(raw))
+	for i := 0; i < len(raw); i += 4 {
+		// Each 32-bit word is little-endian on the architectures we run on.
+		ip[i], ip[i+1], ip[i+2], ip[i+3] = raw[i+3], raw[i+2], raw[i+1], raw[i]
+	}
+	port, err := strconv.ParseUint(portHex, 16, 16)
+	if err != nil {
+		return s
+	}
+	return net.JoinHostPort(ip.String(), strconv.FormatUint(port, 10))
 }
