@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
-	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -42,14 +41,6 @@ const (
 	// cgroup name for the parent cgroup for action executions.
 	taskCgroupName = "buildbuddy.executor.tasks"
 )
-
-func setupRlimits() error {
-	if *nofileLimit == 0 {
-		return nil
-	}
-	// Set the limit before launching children so both OCI Run and Exec inherit it.
-	return rlimit.SetOpenFileDescriptorLimit(*nofileLimit)
-}
 
 // setupCgroups moves the executor process to its own child cgroup, and sets up
 // a separate cgroup that will be a parent cgroup for all action cgroups.

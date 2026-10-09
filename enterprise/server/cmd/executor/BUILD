@@ -92,7 +92,6 @@ go_library(
             "//enterprise/server/remote_execution/containers/ociruntime",
             "//enterprise/server/remote_execution/vbd",
             "//server/util/networking",
-            "//server/util/rlimit",
         ],
         "//conditions:default": [],
     }),

@@ -96,6 +96,7 @@ var (
 	enableTini                = flag.Bool("executor.oci.enable_tini", false, "If true, run all OCI containers with tini as pid 1.")
 	enableCgroupMemoryLimit   = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
 	minPIDsLimit              = flag.Int64("executor.oci.min_pids_limit", 0, "Min value to use for pids.max (PID limit). The scheduler may set a higher value for larger tasks. This can be used for rare cases where the scheduler does not provide a high enough limit.")
+	nofileLimit               = flag.Uint64("executor.oci.nofile_limit", 0, "Soft and hard RLIMIT_NOFILE (open file descriptor limit) for initial OCI container processes. If 0, leave the limit unset in the OCI spec.")
 	cgroupMemoryCushion       = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
 	enableImageEviction       = flag.Bool("executor.oci.image_eviction_enabled", false, "If true, track OCI image layers in the filecache LRU for eviction. When enabled, unused image layers can be evicted to make room for other cached files.")
 
@@ -1382,6 +1383,13 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				"/proc/sysrq-trigger",
 			},
 		},
+	}
+	if *nofileLimit != 0 {
+		spec.Process.Rlimits = append(spec.Process.Rlimits, specs.POSIXRlimit{
+			Type: "RLIMIT_NOFILE",
+			Hard: *nofileLimit,
+			Soft: *nofileLimit,
+		})
 	}
 	if *dns != "" {
 		spec.Mounts = append(spec.Mounts, specs.Mount{

@@ -95,7 +95,6 @@ var (
 	monitoringSSLPort = flag.Int("monitoring.ssl_port", -1, "If non-negative, the SSL port to listen for monitoring traffic on. `ssl` config must have `ssl_enabled: true` and be properly configured.")
 	serverType        = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
 	maxThreads        = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
-	nofileLimit       = flag.Uint64("executor.nofile_limit", 0, "Soft and hard RLIMIT_NOFILE (open file descriptor limit) to set on the executor at startup. Linux only. If 0, leave the limits unchanged.")
 )
 
 // Cgroups contains the executor's cgroup paths discovered during setup.
@@ -360,9 +359,6 @@ func main() {
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
-	}
-	if err := setupRlimits(); err != nil {
-		log.Fatalf("Could not configure resource limits: %s", err)
 	}
 	if err := gpu.Configure(); err != nil {
 		log.Fatalf("Could not configure GPU memory tracking: %s", err)

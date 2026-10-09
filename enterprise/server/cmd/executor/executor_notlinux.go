@@ -4,18 +4,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 )
-
-func setupRlimits() error {
-	if *nofileLimit != 0 {
-		return fmt.Errorf("executor.nofile_limit is only supported on Linux")
-	}
-	return nil
-}
 
 func setupCgroups() (*Cgroups, error) {
 	return &Cgroups{}, nil
