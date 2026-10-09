@@ -140,7 +140,24 @@ func runGazelle(ctx context.Context, stdout, stderr io.Writer, fix bool, files [
 	return nil
 }
 
+// buildifierInputs are files that determine buildifier's version, patches or
+// config. If any of them changed, all files are checked, not just changed
+// ones, since buildifier may now flag files that haven't changed.
+var buildifierInputs = []string{
+	// The buildifier version, as github.com/bazel-contrib/buildtools/v10.
+	"go.mod",
+	"buildpatches/buildifier.patch",
+	".buildifier.json",
+}
+
 func runBuildifier(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	if slices.ContainsFunc(files, func(f string) bool { return slices.Contains(buildifierInputs, f) }) {
+		allFiles, err := sh("git ls-files")
+		if err != nil {
+			return fmt.Errorf("list files: %w", err)
+		}
+		files = lines(allFiles)
+	}
 	files = filterToBuildifierFiles(files)
 	if len(files) == 0 {
 		return nil
