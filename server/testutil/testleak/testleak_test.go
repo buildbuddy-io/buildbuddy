@@ -148,7 +148,7 @@ func TestCheckFDs_DescribesLeakedSockets(t *testing.T) {
 }
 
 func TestCheckFDs_DescribesLeakedUnixSockets(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "my socket")
+	path := filepath.Join(t.TempDir(), "my  socket")
 	ft := &fakeTB{TB: t}
 	CheckFDs(ft)
 	lis, err := net.Listen("unix", path)

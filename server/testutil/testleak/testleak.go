@@ -224,13 +224,28 @@ func describeSockets() map[string]string {
 			}
 			desc := "unix"
 			if len(f) >= 8 {
-				// The path is the last column, and may contain spaces.
-				desc += " " + strings.Join(f[7:], " ")
+				// The path is the last column, and may contain whitespace.
+				desc += " " + afterFields(line, 7)
 			}
 			sockets[f[6]] = desc
 		}
 	}
 	return sockets
+}
+
+// afterFields returns the rest of line after its first n whitespace-separated
+// fields, without the whitespace that follows them.
+func afterFields(line string, n int) string {
+	rest := line
+	for range n {
+		rest = strings.TrimLeft(rest, " \t")
+		if i := strings.IndexAny(rest, " \t"); i >= 0 {
+			rest = rest[i:]
+		} else {
+			return ""
+		}
+	}
+	return strings.TrimLeft(rest, " \t")
 }
 
 // procNetAddr formats an address from /proc/net/{tcp,udp}{,6}, which is the
