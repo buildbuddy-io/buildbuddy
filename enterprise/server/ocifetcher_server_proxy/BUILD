@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+# gazelle:go_test file
+
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
@@ -9,17 +11,23 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/oci/ocicache",
+        "//enterprise/server/oci/ocifetcher",
         "//proto:oci_fetcher_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
+        "//server/http/httpclient",
+        "//server/interfaces",
+        "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/claims",
         "//server/util/log",
         "//server/util/status",
         "//third_party/singleflight",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
@@ -52,5 +60,31 @@ go_test(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
+    ],
+)
+
+go_test(
+    name = "registry_fetch_test",
+    size = "medium",
+    srcs = ["registry_fetch_test.go"],
+    embed = [":ocifetcher_server_proxy"],
+    deps = [
+        "//enterprise/server/experiments",
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//enterprise/server/testutil/testregistry",
+        "//proto:oci_fetcher_go_proto",
+        "//server/interfaces",
+        "//server/metrics",
+        "//server/testutil/testcache",
+        "//server/testutil/testenv",
+        "//server/testutil/testhttp",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_golang//prometheus/testutil",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
     ],
 )
