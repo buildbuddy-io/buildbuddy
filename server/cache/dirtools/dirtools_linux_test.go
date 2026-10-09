@@ -21,7 +21,7 @@ import (
 )
 
 func TestPublishDownloadedExecutableWaitsForWriter(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	for _, tc := range []struct {
 		name   string
@@ -99,7 +99,7 @@ func TestPublishDownloadedExecutableWaitsForWriter(t *testing.T) {
 }
 
 func TestWaitForExecutableReadyReleasesLease(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	path := filepath.Join(t.TempDir(), "executable")
 	require.NoError(t, os.WriteFile(path, []byte("#!/bin/true\n"), 0755))
@@ -112,7 +112,7 @@ func TestWaitForExecutableReadyReleasesLease(t *testing.T) {
 }
 
 func TestWaitForExecutableReadyContinuesOnLeaseError(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	path := filepath.Join(t.TempDir(), "executable")
 	require.NoError(t, os.WriteFile(path, []byte("#!/bin/true\n"), 0755))
@@ -129,7 +129,7 @@ func TestWaitForExecutableReadyContinuesOnLeaseError(t *testing.T) {
 }
 
 func TestWaitForExecutableReadyTimesOut(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	path := filepath.Join(t.TempDir(), "executable")
 	require.NoError(t, os.WriteFile(path, []byte("#!/bin/true\n"), 0755))

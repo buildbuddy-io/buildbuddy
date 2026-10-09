@@ -18,14 +18,15 @@ import (
 	"go.uber.org/goleak"
 )
 
-// Check fails the test if any goroutine started after Check is called is still
-// running once the test's other cleanups have finished. Cleanups run in
-// reverse order, so call Check before setting up anything that registers a
-// cleanup, such as servers or test environments.
+// CheckGoroutines fails the test if any goroutine started after
+// CheckGoroutines is called is still running once the test's other cleanups
+// have finished. Cleanups run in reverse order, so call CheckGoroutines before
+// setting up anything that registers a cleanup, such as servers or test
+// environments.
 //
 // opts are passed to goleak, and are typically goleak.IgnoreTopFunction or
 // goleak.IgnoreAnyFunction options listing known leaks.
-func Check(t testing.TB, opts ...goleak.Option) {
+func CheckGoroutines(t testing.TB, opts ...goleak.Option) {
 	opts = append(slices.Clip(opts), goleak.IgnoreCurrent())
 	t.Cleanup(func() {
 		if err := goleak.Find(opts...); err != nil {
@@ -62,7 +63,8 @@ func IgnoreFDTarget(prefix string) FDOption {
 
 // CheckFDs fails the test if any file descriptor opened after CheckFDs is
 // called is still open once the test's other cleanups have finished. Like
-// Check, call it before setting up anything that registers a cleanup.
+// CheckGoroutines, call it before setting up anything that registers a
+// cleanup.
 //
 // It compares snapshots of the process's open file descriptors, so:
 //   - Tests that use it must not run in parallel with other tests.

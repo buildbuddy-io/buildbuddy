@@ -176,7 +176,7 @@ func checkDirectoriesMatch(t *testing.T, expected []string, actual []*repb.Direc
 }
 
 func TestBasicGetTree(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	flags.Set(t, "cache.request_cached_subtree_digests", false)
 	a := makeDirectory("a", []string{"b", "c"})
@@ -197,7 +197,7 @@ func TestBasicGetTree(t *testing.T) {
 }
 
 func TestBasicGetTree_subtreesEnabled(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	flags.Set(t, "cache.request_cached_subtree_digests", true)
 	a := makeDirectory("a", []string{"b", "c"})
@@ -218,7 +218,7 @@ func TestBasicGetTree_subtreesEnabled(t *testing.T) {
 }
 
 func TestBasicSubtrees_allLocal(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	flags.Set(t, "cache.request_cached_subtree_digests", true)
 	a := makeDirectory("a", []string{"b", "c"})
@@ -248,7 +248,7 @@ func TestBasicSubtrees_allLocal(t *testing.T) {
 }
 
 func TestBasicSubtrees_allRemote(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	flags.Set(t, "cache.request_cached_subtree_digests", true)
 	a := makeDirectory("a", []string{"b", "c"})
@@ -280,7 +280,7 @@ func TestBasicSubtrees_allRemote(t *testing.T) {
 }
 
 func TestBasicSubtrees_mixedWithLocalSplit(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	flags.Set(t, "cache.request_cached_subtree_digests", true)
 	a := makeDirectory("a", []string{"b", "c"})
@@ -316,7 +316,7 @@ func TestBasicSubtrees_mixedWithLocalSplit(t *testing.T) {
 }
 
 func TestBasicSubtrees_mixedWithRemoteSplit(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	flags.Set(t, "cache.request_cached_subtree_digests", true)
 	a := makeDirectory("a", []string{"b", "c"})
@@ -457,7 +457,7 @@ func (f *fakeCasClient) RegisterChunkMapping(ctx context.Context, opts ...grpc.C
 }
 
 func TestFindMissingBlobs_AppliesCASRPCTimeout(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	// Set a very short timeout so the test is fast.
 	flags.Set(t, "cache.client.cas_rpc_timeout", 1*time.Nanosecond)
@@ -674,7 +674,7 @@ func (b *bsReadStreamer) Trailer() metadata.MD {
 }
 
 func TestGetBlobChunked_FallsBackWithoutManifest(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	ctx := context.Background()
 	out, err := os.CreateTemp(t.TempDir(), "chunked-download-*")
@@ -701,7 +701,7 @@ func TestGetBlobChunked_FallsBackWithoutManifest(t *testing.T) {
 }
 
 func TestGetBlobChunked_ReusesWholeFileChunks_ZstdBLAKE3(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	ctx := context.Background()
 	chunk1 := bytes.Repeat([]byte("a"), 1024)
@@ -769,7 +769,7 @@ func TestGetBlobChunked_ReusesWholeFileChunks_ZstdBLAKE3(t *testing.T) {
 }
 
 func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	ctx := context.Background()
 
@@ -864,7 +864,7 @@ func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
 }
 
 func TestUploadReaderAndGetBlob(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	for _, tc := range []struct {
 		name string
@@ -981,7 +981,7 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 }
 
 func TestUploadReader_BlobExists(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	for _, useZstd := range []bool{false, true} {
 		t.Run(fmt.Sprintf("use_zstd_%t", useZstd), func(t *testing.T) {
@@ -1040,7 +1040,7 @@ func TestUploadReader_BlobExists(t *testing.T) {
 }
 
 func TestConcurrentMutationDuringUpload(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	for _, tc := range []struct {
 		name string
@@ -1080,7 +1080,7 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 }
 
 func TestBatchCASUploader_DedupesUploads(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	te := testenv.GetTestEnv(t)
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
@@ -1110,7 +1110,7 @@ func TestBatchCASUploader_DedupesUploads(t *testing.T) {
 }
 
 func TestUploadWriterAndGetBlob(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	for _, tc := range []struct {
 		name string
@@ -1230,7 +1230,7 @@ func TestUploadWriterAndGetBlob(t *testing.T) {
 }
 
 func TestUploadWriter_BlobExists(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	for _, useZstd := range []bool{false, true} {
 		t.Run(fmt.Sprintf("zstd=%t", useZstd), func(t *testing.T) {
@@ -1313,7 +1313,7 @@ func TestUploadWriter_BlobExists(t *testing.T) {
 }
 
 func TestUploadWriter_NoWritesAfterCommit(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	rn, buf := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
 	te := testenv.GetTestEnv(t)
@@ -1372,7 +1372,7 @@ func TestUploadWriter_NoWritesAfterCommit(t *testing.T) {
 }
 
 func TestUploadWriter_CanCloseBeforeCommit(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	rn, buf := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
 	te := testenv.GetTestEnv(t)
@@ -1398,7 +1398,7 @@ func TestUploadWriter_CanCloseBeforeCommit(t *testing.T) {
 }
 
 func TestUploadWriter_CancelContext(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	te := testenv.GetTestEnv(t)
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
@@ -1426,7 +1426,7 @@ func TestUploadWriter_CancelContext(t *testing.T) {
 }
 
 func TestUploadFromReaderWithCompression(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	for _, tc := range []struct {
 		name              string
@@ -1497,7 +1497,7 @@ func TestUploadFromReaderWithCompression(t *testing.T) {
 }
 
 func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	te := testenv.GetTestEnv(t)
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
@@ -1520,7 +1520,7 @@ func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
 }
 
 func TestBatchCASUploader_ChunkedUploadDetectsConcurrentMutation(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	te := testenv.GetTestEnv(t)
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
@@ -1541,7 +1541,7 @@ func TestBatchCASUploader_ChunkedUploadDetectsConcurrentMutation(t *testing.T) {
 }
 
 func TestBatchCASUploader_SkipsChunkedUploadAboveMaxSize(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	testleak.CheckFDs(t)
 	te := testenv.GetTestEnv(t)
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)

@@ -307,7 +307,7 @@ func TestOneWayUDPFlowStaysOpen(t *testing.T) {
 // checkLeaks fails the test if it leaves goroutines running or file
 // descriptors open.
 func checkLeaks(t *testing.T) {
-	testleak.Check(t)
+	testleak.CheckGoroutines(t)
 	// TODO: gVisor's fdbased endpoint never closes the eventfds it uses to
 	// stop its packet dispatchers, which leaks two per network: one for the
 	// dispatcher it discards and one for the dispatcher it uses. See
