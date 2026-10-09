@@ -47,11 +47,11 @@ const (
 var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
-	useRemoteOCIFetcher    = flag.Bool("executor.use_remote_oci_fetcher", false, "If true, pull container images through the OCI fetcher service on the executor's cache target (the apps or a cache proxy), which talks to the registry on the executor's behalf. If false, the executor talks to the registry itself.")
+	useRemoteOCIFetcher    = flag.Bool("executor.use_remote_oci_fetcher", false, "If true, allow pulling container images through the OCI fetcher service on the executor's cache target (the apps or a cache proxy), which talks to the registry on the executor's behalf. A task only uses it if its use-oci-fetcher platform property is also true. Otherwise, the executor talks to the registry itself.")
 	_                      = flag.Alias[bool]("executor.use_remote_oci_fetcher", "executor.use_oci_fetcher")
 
-	useOCICache         = flag.Bool("executor.use_oci_cache", false, "If true, cache container image manifests and layers in the BuildBuddy remote cache.")
-	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.", flag.Deprecated("Use executor.use_oci_cache instead."))
+	useOCICache         = flag.Bool("executor.use_oci_cache", false, "If true, cache container image manifests and layers in the BuildBuddy remote cache when the executor talks to the registry itself. Pulls through the remote OCI fetcher service are cached by that service.")
+	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.", flag.Deprecated("Use executor.use_oci_cache instead. While this is above 0, it still enables caching for that percentage of pulls, even if executor.use_oci_cache is false."))
 )
 
 type Registry struct {
