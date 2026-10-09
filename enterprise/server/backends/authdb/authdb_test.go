@@ -226,6 +226,72 @@ func TestGroupKeyExpiration(t *testing.T) {
 	require.NotContains(t, apiKeyIDs(keys), rsp.GetApiKey().GetId())
 }
 
+func TestUpdateKeyExpiration(t *testing.T) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+	ctx := context.Background()
+	env := setupEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	fakeClock := clockwork.NewFakeClock()
+	env.SetClock(fakeClock)
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	var admin *tables.User
+	for _, u := range users {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			admin = u
+			break
+		}
+	}
+	groupID := admin.Groups[0].Group.GroupID
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	createRsp, err := env.GetBuildBuddyServer().CreateApiKey(authCtx, &akpb.CreateApiKeyRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+	})
+	require.NoError(t, err)
+	value := createRsp.GetApiKey().GetValue()
+	update := func(expiresIn *durationpb.Duration) error {
+		_, err := env.GetBuildBuddyServer().UpdateApiKey(authCtx, &akpb.UpdateApiKeyRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+			Id:             createRsp.GetApiKey().GetId(),
+			ExpiresIn:      expiresIn,
+		})
+		return err
+	}
+
+	// Set an expiration, then clear it; the key should not expire.
+	require.NoError(t, update(durationpb.New(1*time.Hour)))
+	require.NoError(t, update(nil))
+	fakeClock.Advance(2 * time.Hour)
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, value)
+	require.NoError(t, err)
+
+	// Set an expiration and let it pass; the key should no longer be usable.
+	require.NoError(t, update(durationpb.New(1*time.Hour)))
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, value)
+	require.NoError(t, err)
+	fakeClock.Advance(2 * time.Hour)
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, value)
+	require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated, got %v", err)
+
+	// The expiration of impersonation keys cannot be changed.
+	flags.Set(t, "auth.admin_group_id", groupID)
+	impersonationRsp, err := env.GetBuildBuddyServer().CreateImpersonationApiKey(authCtx, &akpb.CreateImpersonationApiKeyRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+	})
+	require.NoError(t, err)
+	_, err = env.GetBuildBuddyServer().UpdateApiKey(authCtx, &akpb.UpdateApiKeyRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		Id:             impersonationRsp.GetApiKey().GetId(),
+	})
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+}
+
 func TestUserKeyExpiration(t *testing.T) {
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 	ctx := context.Background()
