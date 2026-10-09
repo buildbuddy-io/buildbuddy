@@ -655,6 +655,10 @@ func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *r
 	}
 }
 
+// errHintedHandoffSourceMissing means a hinted handoff's blob is no longer in
+// the local cache, so the handoff can never be delivered from here.
+var errHintedHandoffSourceMissing = errors.New("hinted handoff blob is no longer in the local cache")
+
 func (c *Cache) handleHintedHandoffs(peer string) {
 	c.hintedHandoffsMu.RLock()
 	handoffs := c.hintedHandoffsByPeer[peer]
@@ -663,8 +667,18 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 		select {
 		case handoffOrder := <-handoffs:
 			err := c.sendFile(handoffOrder.ctx, handoffOrder.r, peer)
+			if errors.Is(err, errHintedHandoffSourceMissing) {
+				c.log.CtxWarningf(handoffOrder.ctx, "dropping hinted handoff to peer %q: %s (order %s)", peer, err, handoffOrder)
+				continue
+			}
 			if err != nil {
 				c.log.CtxWarningf(handoffOrder.ctx, "unable to complete hinted handoff to peer: %q: %s (order %s)", peer, err, handoffOrder)
+				// Put it back so a later attempt can deliver it.
+				select {
+				case handoffs <- handoffOrder:
+				default:
+					c.log.CtxWarningf(handoffOrder.ctx, "Buffer full: unable to requeue hinted handoff for %q", peer)
+				}
 				return
 			}
 			c.log.CtxDebugf(handoffOrder.ctx, "completed hinted handoff to peer: %q", peer)
@@ -1141,6 +1155,9 @@ func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string
 
 	r, err := c.local.Reader(ctx, rn, 0, 0)
 	if err != nil {
+		if status.IsNotFoundError(err) {
+			return fmt.Errorf("%w: %w", errHintedHandoffSourceMissing, err)
+		}
 		return err
 	}
 	defer r.Close()

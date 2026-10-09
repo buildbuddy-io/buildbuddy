@@ -4968,3 +4968,85 @@ func TestFindMissing_Quorum_IgnoresNonReplicaCopies(t *testing.T) {
 	require.Zero(t, caches[nonReplica].lookups[rn.GetDigest().GetHash()])
 	caches[nonReplica].mu.Unlock()
 }
+
+// newHintedHandoffTestNodes starts a distributed cache that holds hinted
+// handoffs for a peer, and returns it with the peer's address and config.
+// The peer isn't started.
+func newHintedHandoffTestNodes(t *testing.T) (context.Context, environment.Env, *Cache, interfaces.Cache, string, Options) {
+	env, authenticator, ctx := getEnvAuthAndCtx(t)
+	ctx, err := authenticator.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	holderAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peerAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	holderConfig := Options{
+		ReplicationFactor:  2,
+		Nodes:              []string{holderAddr, peerAddr},
+		DisableLocalLookup: true,
+		ListenAddr:         holderAddr,
+	}
+	peerConfig := holderConfig
+	peerConfig.Nodes = []string{holderAddr, peerAddr}
+	peerConfig.ListenAddr = peerAddr
+
+	holderLocal := newMemoryCache(t, 1_000_000)
+	holder := startNewDCache(t, env, holderConfig, holderLocal)
+	waitForReady(t, holderAddr)
+	return ctx, env, holder, holderLocal, peerAddr, peerConfig
+}
+
+func queuedHintedHandoffs(c *Cache, peer string) int {
+	c.hintedHandoffsMu.RLock()
+	defer c.hintedHandoffsMu.RUnlock()
+	return len(c.hintedHandoffsByPeer[peer])
+}
+
+func TestHintedHandoffRequeuedAfterFailedDelivery(t *testing.T) {
+	ctx, env, holder, holderLocal, peerAddr, peerConfig := newHintedHandoffTestNodes(t)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, holderLocal.Set(ctx, rn, buf))
+	holder.recvHintedHandoffCallback(ctx, peerAddr, rn)
+
+	// The peer is down, so delivery fails, and the handoff should stay queued
+	// for a later attempt.
+	holder.handleHintedHandoffs(peerAddr)
+	require.Equal(t, 1, queuedHintedHandoffs(holder, peerAddr))
+
+	peerLocal := newMemoryCache(t, 1_000_000)
+	startNewDCache(t, env, peerConfig, peerLocal)
+	waitForReady(t, peerAddr)
+	// The holder's connections to the peer may still be backing off from the
+	// failed attempt, so keep trying, as heartbeats would.
+	require.Eventually(t, func() bool {
+		holder.handleHintedHandoffs(peerAddr)
+		return queuedHintedHandoffs(holder, peerAddr) == 0
+	}, 10*time.Second, 100*time.Millisecond)
+	exists, err := peerLocal.Contains(ctx, rn)
+	require.NoError(t, err)
+	require.True(t, exists, "the peer should have received the hinted handoff")
+}
+
+func TestHintedHandoffDroppedWhenBlobIsGone(t *testing.T) {
+	ctx, env, holder, holderLocal, peerAddr, peerConfig := newHintedHandoffTestNodes(t)
+	peerLocal := newMemoryCache(t, 1_000_000)
+	startNewDCache(t, env, peerConfig, peerLocal)
+	waitForReady(t, peerAddr)
+
+	// The first handoff's blob isn't in the holder's local cache, e.g.
+	// because it was evicted, so it can never be delivered. It shouldn't
+	// hold up the handoff behind it, or stay queued.
+	gone, _ := testdigest.RandomCASResourceBuf(t, 100)
+	holder.recvHintedHandoffCallback(ctx, peerAddr, gone)
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, holderLocal.Set(ctx, rn, buf))
+	holder.recvHintedHandoffCallback(ctx, peerAddr, rn)
+
+	holder.handleHintedHandoffs(peerAddr)
+	require.Equal(t, 0, queuedHintedHandoffs(holder, peerAddr))
+	exists, err := peerLocal.Contains(ctx, rn)
+	require.NoError(t, err)
+	require.True(t, exists, "the peer should have received the deliverable hinted handoff")
+}
