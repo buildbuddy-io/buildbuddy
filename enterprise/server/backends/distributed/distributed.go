@@ -1895,9 +1895,9 @@ type referenceWriteCloser struct {
 	refCache  interfaces.ReferenceCache
 }
 
-// peersContain returns whether every peer hold r.
-// Errors are treated as the blob being missing so that the write proceeds.
 func (c *Cache) peersContain(ctx context.Context, r *rspb.ResourceName, peers []string) bool {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	ctx = findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_REFERENCE_WRITE_DEDUPE)
 	eg, gCtx := errgroup.WithContext(ctx)
 	for _, peer := range peers {
