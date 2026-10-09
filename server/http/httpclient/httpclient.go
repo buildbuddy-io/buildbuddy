@@ -20,7 +20,8 @@ import (
 var allowLocalhost = flag.Bool("http.client.allow_localhost", false, "Allow HTTP requests to localhost")
 
 // New creates an HTTP client that blocks connections to private IPs and records
-// metrics on any requests made.
+// metrics on any requests made. Each client has its own connection pool, so
+// create one per component and reuse it, rather than one per request.
 func New(allowedPrivateIPNets []*net.IPNet, clientName string) *http.Client {
 	inner := &http.Transport{
 		DialContext: (&net.Dialer{
@@ -28,7 +29,10 @@ func New(allowedPrivateIPNets []*net.IPNet, clientName string) *http.Client {
 			Control: blockingDialerControl(allowedPrivateIPNets),
 		}).DialContext,
 		TLSHandshakeTimeout: 10 * time.Second,
-		Proxy:               http.ProxyFromEnvironment,
+		// Close idle keep-alive connections, which otherwise stay open (each
+		// with its own goroutines) until the server closes them.
+		IdleConnTimeout: 90 * time.Second,
+		Proxy:           http.ProxyFromEnvironment,
 	}
 	tp := newMetricsTransport(inner, clientName)
 	return &http.Client{

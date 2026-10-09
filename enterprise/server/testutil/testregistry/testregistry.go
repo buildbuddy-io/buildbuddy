@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,6 +58,8 @@ type Registry struct {
 	port   int
 	server *http.Server
 	creds  *BasicAuthCreds
+	// numConnections counts the connections the registry has accepted.
+	numConnections atomic.Int64
 }
 
 func Run(t *testing.T, opts Opts) *Registry {
@@ -93,17 +96,28 @@ func Run(t *testing.T, opts Opts) *Registry {
 		})
 	}
 
-	server := &http.Server{Handler: f}
-	registry := Registry{
-		host:   "localhost",
-		port:   testport.FindFree(t),
-		server: server,
-		creds:  opts.Creds,
+	registry := &Registry{
+		host:  "localhost",
+		port:  testport.FindFree(t),
+		creds: opts.Creds,
+	}
+	registry.server = &http.Server{
+		Handler: f,
+		ConnState: func(_ net.Conn, state http.ConnState) {
+			if state == http.StateNew {
+				registry.numConnections.Add(1)
+			}
+		},
 	}
 	lis, err := net.Listen("tcp", registry.Address())
 	require.NoError(t, err)
-	go func() { _ = server.Serve(lis) }()
-	return &registry
+	go func() { _ = registry.server.Serve(lis) }()
+	return registry
+}
+
+// NumConnections returns the number of connections the registry has accepted.
+func (r *Registry) NumConnections() int64 {
+	return r.numConnections.Load()
 }
 
 func (r *Registry) Address() string {
