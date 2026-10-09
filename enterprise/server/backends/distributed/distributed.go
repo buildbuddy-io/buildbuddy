@@ -1895,16 +1895,12 @@ type referenceWriteCloser struct {
 	refCache  interfaces.ReferenceCache
 }
 
-// writePeersContain returns whether every write peer for r already holds it.
+// peersContain returns whether every peer hold r.
 // Errors are treated as the blob being missing so that the write proceeds.
-func (c *Cache) writePeersContain(ctx context.Context, r *rspb.ResourceName) bool {
-	ps, err := c.writePeers(r)
-	if err != nil {
-		return false
-	}
+func (c *Cache) peersContain(ctx context.Context, r *rspb.ResourceName, peers []string) bool {
 	ctx = findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_REFERENCE_WRITE_DEDUPE)
 	eg, gCtx := errgroup.WithContext(ctx)
-	for _, peer := range ps.PreferredPeers {
+	for _, peer := range peers {
 		eg.Go(func() error {
 			missing, err := c.remoteFindMissing(gCtx, peer, []*rspb.ResourceName{r})
 			if err != nil {
@@ -1920,24 +1916,23 @@ func (c *Cache) writePeersContain(ctx context.Context, r *rspb.ResourceName) boo
 }
 
 func (c *Cache) referenceWriter(ctx context.Context, refCache interfaces.ReferenceCache, rn *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	refWriter, err := refCache.CreateReference(ctx, rn)
+	ps, err := c.writePeers(rn)
 	if err != nil {
-		// The blob can't be staged in shared storage (e.g. it's too small);
-		// fall back to streaming bytes to the peers.
-		return c.byteMultiWriter(ctx, rn)
+		// Fail fast, before any bytes are accepted, if there aren't enough
+		// write peers.
+		return nil, err
 	}
-	if c.writePeersContain(ctx, rn) {
-		refWriter.Close()
+	if c.peersContain(ctx, rn, ps.PreferredPeers) {
 		// Every write peer already has this blob, so don't pay to stage it in
 		// shared storage; the byte writers short-circuit when the peers
 		// respond with AlreadyExists.
 		return c.byteMultiWriter(ctx, rn)
 	}
-	if _, err := c.writePeers(rn); err != nil {
-		// Fail fast, before any bytes are accepted, if there aren't enough
-		// write peers.
-		refWriter.Close()
-		return nil, err
+	refWriter, err := refCache.CreateReference(ctx, rn)
+	if err != nil {
+		// The blob can't be staged in shared storage (e.g. it's too small);
+		// fall back to streaming bytes to the peers.
+		return c.byteMultiWriter(ctx, rn)
 	}
 	return &referenceWriteCloser{
 		ctx:       ctx,
@@ -1986,7 +1981,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 	}
 
 	if c.writeReferences(ctx) && r.GetCacheType() == rspb.CacheType_CAS {
-		if refCache, ok := c.local.(interfaces.ReferenceCache); ok {
+		if refCache, ok := c.local.(interfaces.ReferenceCache); ok && refCache.IsReferenceable(ctx, r) {
 			return c.referenceWriter(ctx, refCache, r)
 		}
 	}
