@@ -9,6 +9,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/atlas/server/summaries"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
@@ -75,6 +76,7 @@ func Handler(env environment.Env, opts Options) (http.Handler, error) {
 		Version:       version.Tag(),
 		ClusterName:   opts.ClusterName,
 		ClusterLinks:  opts.ClusterLinks,
+		FilterKeys:    filterKeys(),
 	})
 	if err != nil {
 		return nil, err
@@ -148,4 +150,12 @@ func cacheByHash(h http.Handler, bundleHash string) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+func filterKeys() []*atlaspb.FilterKey {
+	var out []*atlaspb.FilterKey
+	for _, k := range summaries.FilterKeys {
+		out = append(out, &atlaspb.FilterKey{Key: k.Key, Hint: k.Hint})
+	}
+	return out
 }

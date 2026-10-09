@@ -413,137 +413,143 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   value={request?.label || ""}
                 />
               </div>
-              <div className="field-container">
-                <label className="checkbox-row">
-                  <input
-                    type="radio"
-                    onChange={this.onSelectReadOnly.bind(this, onChange)}
-                    checked={isReadOnly(request)}
-                    disabled={!this.canSetCapabilities([])}
-                  />
-                  <span>
-                    Read-only key <span className="field-description">(disable all remote cache uploads)</span>
-                  </span>
-                </label>
-              </div>
-              <div className="field-container">
-                <label className="checkbox-row">
-                  <input
-                    type="radio"
-                    onChange={this.onSelectCASOnly.bind(this, onChange)}
-                    checked={isCASOnly(request)}
-                    disabled={!this.canSetCapabilities([capability.Capability.CAS_WRITE])}
-                    debug-id="cas-only-radio-button"
-                  />
-                  <span>
-                    CAS-only key <span className="field-description">(disable action cache uploads)</span>
-                  </span>
-                </label>
-              </div>
-              <div className="field-container">
-                <label className="checkbox-row">
-                  <input
-                    type="radio"
-                    onChange={this.onSelectReadWrite.bind(this, onChange)}
-                    checked={isReadWrite(request)}
-                    disabled={!this.canSetCapabilities([capability.Capability.CACHE_WRITE])}
-                  />
-                  <span>
-                    Read+Write key <span className="field-description">(allow all remote cache uploads)</span>
-                  </span>
-                </label>
-              </div>
+              <fieldset className="form-section">
+                <legend>Key type</legend>
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectReadOnly.bind(this, onChange)}
+                      checked={isReadOnly(request)}
+                      disabled={!this.canSetCapabilities([])}
+                    />
+                    <span>
+                      Read-only key <span className="field-description">(disable all remote cache uploads)</span>
+                    </span>
+                  </label>
+                </div>
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectCASOnly.bind(this, onChange)}
+                      checked={isCASOnly(request)}
+                      disabled={!this.canSetCapabilities([capability.Capability.CAS_WRITE])}
+                      debug-id="cas-only-radio-button"
+                    />
+                    <span>
+                      CAS-only key <span className="field-description">(disable action cache uploads)</span>
+                    </span>
+                  </label>
+                </div>
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectReadWrite.bind(this, onChange)}
+                      checked={isReadWrite(request)}
+                      disabled={!this.canSetCapabilities([capability.Capability.CACHE_WRITE])}
+                    />
+                    <span>
+                      Read+Write key <span className="field-description">(allow all remote cache uploads)</span>
+                    </span>
+                  </label>
+                </div>
 
-              {/* User-owned keys cannot be used to register executors. */}
-              {capabilities.executorKeyCreation && !this.props.userOwnedOnly && (
-                <div className="field-container">
-                  <label className="checkbox-row">
-                    <input
-                      type="radio"
-                      onChange={this.onSelectExecutor.bind(this, onChange)}
-                      checked={isExecutorKey(request)}
-                    />
-                    <span>
-                      Executor key <span className="field-description">(for self-hosted executors)</span>
-                    </span>
-                  </label>
-                </div>
-              )}
-              {/* User-owned keys cannot be used to register cache proxies. */}
-              {capabilities.cacheProxyKeyCreation && !this.props.userOwnedOnly && (
-                <div className="field-container">
-                  <label className="checkbox-row">
-                    <input
-                      type="radio"
-                      onChange={this.onSelectCacheProxy.bind(this, onChange)}
-                      checked={isCacheProxyKey(request)}
-                    />
-                    <span>
-                      Cache proxy key <span className="field-description">(for self-hosted cache proxies)</span>
-                    </span>
-                  </label>
-                </div>
-              )}
-              {/* User-owned keys cannot be used for SCIM. */}
-              {capabilities.config.orgAdminApiKeyCreationEnabled && !this.props.userOwnedOnly && (
-                <div className="field-container">
-                  <label className="checkbox-row">
-                    <input
-                      type="radio"
-                      onChange={this.onSelectOrgAdmin.bind(this, onChange)}
-                      checked={isOrgAdminKey(request)}
-                    />
-                    <span>
-                      Org admin key <span className="field-description">(for external user management)</span>
-                    </span>
-                  </label>
-                </div>
-              )}
-              {capabilities.config.auditLogsUiEnabled && !this.props.userOwnedOnly && (
-                <div className="field-container">
-                  <label className="checkbox-row">
-                    <input
-                      type="radio"
-                      onChange={this.onSelectAuditLogReader.bind(this, onChange)}
-                      checked={isAuditLogReader(request)}
-                    />
-                    <span>
-                      Audit log reader key <span className="field-description">(for reading audit logs)</span>
-                    </span>
-                  </label>
-                </div>
-              )}
-              {/* User-owned keys cannot be used to send notifications. */}
-              {!this.props.userOwnedOnly && (
-                <div className="field-container">
-                  <label className="checkbox-row">
-                    <input
-                      type="radio"
-                      onChange={this.onSelectSendNotification.bind(this, onChange)}
-                      checked={isSendNotificationKey(request)}
-                    />
-                    <span>
-                      Notification key{" "}
-                      <span className="field-description">(for sending notifications via the API)</span>
-                    </span>
-                  </label>
-                </div>
-              )}
+                {/* User-owned keys cannot be used to register executors. */}
+                {capabilities.executorKeyCreation && !this.props.userOwnedOnly && (
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        onChange={this.onSelectExecutor.bind(this, onChange)}
+                        checked={isExecutorKey(request)}
+                      />
+                      <span>
+                        Executor key <span className="field-description">(for self-hosted executors)</span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+                {/* User-owned keys cannot be used to register cache proxies. */}
+                {capabilities.cacheProxyKeyCreation && !this.props.userOwnedOnly && (
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        onChange={this.onSelectCacheProxy.bind(this, onChange)}
+                        checked={isCacheProxyKey(request)}
+                      />
+                      <span>
+                        Cache proxy key <span className="field-description">(for self-hosted cache proxies)</span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+                {/* User-owned keys cannot be used for SCIM. */}
+                {capabilities.config.orgAdminApiKeyCreationEnabled && !this.props.userOwnedOnly && (
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        onChange={this.onSelectOrgAdmin.bind(this, onChange)}
+                        checked={isOrgAdminKey(request)}
+                      />
+                      <span>
+                        Org admin key <span className="field-description">(for external user management)</span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+                {capabilities.config.auditLogsUiEnabled && !this.props.userOwnedOnly && (
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        onChange={this.onSelectAuditLogReader.bind(this, onChange)}
+                        checked={isAuditLogReader(request)}
+                      />
+                      <span>
+                        Audit log reader key <span className="field-description">(for reading audit logs)</span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+                {/* User-owned keys cannot be used to send notifications. */}
+                {!this.props.userOwnedOnly && (
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        onChange={this.onSelectSendNotification.bind(this, onChange)}
+                        checked={isSendNotificationKey(request)}
+                      />
+                      <span>
+                        Notification key{" "}
+                        <span className="field-description">(for sending notifications via the API)</span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+              </fieldset>
               {/* "Visible to developers" bit does not apply for user-level keys. */}
               {!this.props.userOwnedOnly && (
-                <div className="field-container">
-                  <label className="checkbox-row">
-                    <input
-                      type="checkbox"
-                      onChange={this.onChangeVisibility.bind(this, onChange, request)}
-                      checked={request.visibleToDevelopers}
-                    />
-                    <span>
-                      Visible to non-admins{" "}
-                      <span className="field-description">(org members with role other than Admin)</span>
-                    </span>
-                  </label>
-                </div>
+                <fieldset className="form-section">
+                  <legend>Visibility</legend>
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        onChange={this.onChangeVisibility.bind(this, onChange, request)}
+                        checked={request.visibleToDevelopers}
+                      />
+                      <span>
+                        Visible to non-admins{" "}
+                        <span className="field-description">(org members with role other than Admin)</span>
+                      </span>
+                    </label>
+                  </div>
+                </fieldset>
               )}
             </DialogBody>
             <DialogFooter>

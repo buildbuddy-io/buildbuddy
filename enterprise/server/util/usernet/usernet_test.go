@@ -6,7 +6,10 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"runtime"
+	"runtime/pprof"
 	"slices"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -14,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -226,6 +230,34 @@ func TestCleanupClosesForwardedConnections(t *testing.T) {
 	remote.SetReadDeadline(time.Now().Add(5 * time.Second))
 	_, err = remote.Read(make([]byte, 1))
 	require.ErrorIs(t, err, io.EOF)
+}
+
+func TestCleanupStopsGoroutines(t *testing.T) {
+	testnetworking.Setup(t)
+	// fdbased only starts processor goroutines when GOMAXPROCS > 1.
+	prev := runtime.GOMAXPROCS(4)
+	t.Cleanup(func() { runtime.GOMAXPROCS(prev) })
+	ctx := context.Background()
+	goroutines := func() int {
+		var b strings.Builder
+		pprof.Lookup("goroutine").WriteTo(&b, 2)
+		n := 0
+		for g := range strings.SplitSeq(b.String(), "\n\n") {
+			if strings.Contains(g, "gvisor.dev/gvisor/") {
+				n++
+			}
+		}
+		return n
+	}
+	before := goroutines()
+	for range 3 {
+		n, err := NewContainerNetwork(ctx)
+		require.NoError(t, err)
+		require.NoError(t, n.Cleanup(ctx))
+	}
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.LessOrEqual(c, goroutines(), before, "goroutines running gVisor code")
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 func TestOneWayUDPFlowStaysOpen(t *testing.T) {

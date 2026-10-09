@@ -3,6 +3,7 @@ package networking
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -250,12 +251,24 @@ func randomVethName(prefix string) (string, error) {
 	return prefix + suffix, nil
 }
 
+// RetryDump calls list until its netlink dump isn't interrupted by a concurrent
+// change, which makes the dump fail with netlink.ErrDumpInterrupted.
+func RetryDump[T any](list func() ([]T, error)) ([]T, error) {
+	const maxAttempts = 5
+	for i := 1; ; i++ {
+		res, err := list()
+		if !errors.Is(err, netlink.ErrDumpInterrupted) || i == maxAttempts {
+			return res, err
+		}
+	}
+}
+
 // cleanupStaleVeths removes any existing veth devices that have the given IP
 // address assigned. This handles the case where a previous process was killed
 // without cleanup (e.g. SIGKILL), leaving orphaned veth devices with stale
 // routes that would cause routing conflicts with newly created veth pairs.
 func cleanupStaleVeths(ctx context.Context, ipWithCIDR string) error {
-	links, err := netlink.LinkList()
+	links, err := RetryDump(netlink.LinkList)
 	if err != nil {
 		return status.WrapError(err, "list links")
 	}
@@ -269,7 +282,9 @@ func cleanupStaleVeths(ctx context.Context, ipWithCIDR string) error {
 		if link.Type() != "veth" {
 			continue
 		}
-		addrs, err := netlink.AddrList(link, 0 /* FAMILY_ALL */)
+		addrs, err := RetryDump(func() ([]netlink.Addr, error) {
+			return netlink.AddrList(link, 0 /* FAMILY_ALL */)
+		})
 		if err != nil {
 			continue
 		}
@@ -1371,7 +1386,9 @@ type route struct {
 // Destination may be defaultRoute to find a default route.
 func findRoute(destination string) (route, error) {
 	// Get all routes.
-	rs, err := netlink.RouteList(nil, 0)
+	rs, err := RetryDump(func() ([]netlink.Route, error) {
+		return netlink.RouteList(nil, 0)
+	})
 	if err != nil {
 		return route{}, status.UnknownErrorf("could not get ip routes: %s", err)
 	}
@@ -1385,7 +1402,14 @@ func findRoute(destination string) (route, error) {
 	}
 
 	for _, r := range rs {
-		if targetDst.String() == r.Dst.String() {
+		dst := r.Dst
+		// netlink reports default routes as 0.0.0.0/0 or ::/0 rather than nil.
+		if dst != nil {
+			if ones, _ := dst.Mask.Size(); ones == 0 {
+				dst = nil
+			}
+		}
+		if targetDst.String() == dst.String() {
 			l, err := netlink.LinkByIndex(r.LinkIndex)
 			if err != nil {
 				return route{}, status.UnknownErrorf("could not lookup interface for route: %s", err)

@@ -456,6 +456,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		TestShardIndex:                     in.GetTestShardIndex(),
 		TestTotalShards:                    in.GetTestTotalShards(),
 		Experiments:                        in.GetExperiments(),
+		ExperimentVariants:                 in.GetExperimentVariants(),
 		CommandSnippet:                     in.GetCommandSnippet(),
 		RunnerTaskNumber:                   in.GetRunnerTaskNumber(),
 		RunnerID:                           in.GetRunnerId(),

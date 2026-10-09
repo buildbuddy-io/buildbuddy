@@ -106,6 +106,11 @@ func New(grpcAddr string, gossipMan interfaces.GossipService, store IStore, part
 	return cs, nil
 }
 
+// Close stops the session's background lock cleanup.
+func (cs *ClusterStarter) Close() {
+	cs.session.Close()
+}
+
 func (cs *ClusterStarter) markBringupComplete() {
 	cs.doneOnce.Do(func() {
 		cs.log.Info("Bringup is complete!")

@@ -489,6 +489,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 
 			executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
 			executionProto.Experiments = auxMeta.GetExperiments()
+			executionProto.ExperimentVariants = experiments.ProtoToVariantMap(auxMeta.GetExperimentFlags())
 
 			executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
 			executionProto.RunnerId = auxMeta.GetRunnerMetadata().GetRunnerId()
@@ -978,10 +979,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	if efp != nil && efp.Boolean(ctx, "remote_execution.publish_post_completion_stats", false) {
 		executionTask.Experiments = append(executionTask.Experiments, "remote_execution.publish_post_completion_stats")
-	}
-
-	if efp != nil && efp.Boolean(ctx, "executor.userspace_networking", false) {
-		executionTask.Experiments = append(executionTask.Experiments, "executor.userspace_networking")
 	}
 
 	if efp != nil && platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType {

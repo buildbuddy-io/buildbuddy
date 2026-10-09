@@ -1,0 +1,369 @@
+.single-target {
+  --color-timing-execution: var(--color-green-600);
+  --color-timing-input-download: var(--color-blue-600);
+  --color-timing-output-upload: var(--color-purple-600);
+  --color-timing-runner-setup: var(--color-orange-500);
+  --color-timing-queue: var(--color-red-500);
+}
+
+.single-target .single-target-card-title,
+.single-target .single-action-card-title {
+  display: flex;
+  align-items: center;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.single-target .target-donuts {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 1200px;
+}
+
+.single-target .target-donut {
+  min-width: 350px;
+  width: calc(50% - 32px);
+  margin-bottom: 32px;
+  margin-right: 32px;
+}
+
+.single-target .top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  --gap: 8px;
+  margin-top: calc(-1 * var(--gap));
+  margin-right: calc(-1 * var(--gap));
+}
+
+.single-target .chart-table-container .results-table {
+  border: 1px solid var(--color-border-primary);
+  border-radius: 4px;
+  overflow: hidden;
+  line-height: 20px;
+}
+
+.single-target .chart-table-container .row {
+  display: flex;
+  &:not(:last-child) {
+    border-bottom: 1px solid var(--color-border-primary);
+  }
+}
+
+.single-target .chart-table-container .column-headers {
+  font-weight: 600;
+}
+
+.single-target .chart-table-container .result-row {
+  transition: background-color 0.2s ease;
+}
+
+.single-target .chart-table-container .result-row.clickable {
+  cursor: pointer;
+}
+
+.single-target .chart-table-container .result-row.clickable:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.single-target .chart-table-container .legend-column {
+  width: 12px;
+  padding: 9px 8px 9px 12px;
+}
+
+.single-target .chart-table-container .legend-column .legend-square {
+  width: 12px;
+  height: 12px;
+}
+
+.single-target .chart-table-container .empty-row {
+  height: 30px;
+}
+
+.single-target .chart-table-container .action-column {
+  flex-grow: 1;
+  width: 100px;
+  padding: 4px;
+}
+
+.single-target .chart-table-container .stat-column {
+  width: 100px;
+  padding: 4px;
+  text-align: right;
+}
+
+.single-target .chart-table-container .compare-column {
+  width: 32px;
+  padding: 4px;
+}
+
+.single-target .chart-table-container .results-table.executions-table {
+  overflow: visible;
+}
+
+.single-target .execution-menu {
+  position: relative;
+}
+
+.single-target .execution-menu-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-icon-default);
+  cursor: pointer;
+}
+
+.single-target .execution-menu-button:hover {
+  background: var(--color-bg-hover);
+}
+
+.single-target .execution-menu-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.single-target .table-footer-controls {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+}
+
+.single-target .load-more-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.single-target .targets-empty {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 80px 40px;
+}
+
+.single-target .empty-message {
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  text-align: center;
+}
+
+.single-target .loading-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+}
+
+.single-target .shelf .detail svg {
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.single-target .controls.row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.single-target .controls.row label {
+  font-weight: 600;
+}
+
+.single-target .controls.row .separator {
+  border-left: 1px solid var(--color-border-primary);
+  align-self: stretch;
+  margin: 0 8px;
+}
+
+.single-target .single-action-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.single-target .single-action-chart-tooltip {
+  min-width: 220px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.single-target .single-action-chart-tooltip .tooltip-section + .tooltip-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.single-target .single-action-chart-tooltip .tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.single-target .single-action-chart-tooltip .tooltip-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.single-target .single-action-chart-tooltip .tooltip-hint {
+  font-size: 12px;
+  color: var(--color-hovercard-muted);
+}
+
+.single-target .chart-table-container {
+  margin-top: 12px;
+}
+
+.single-target .chart-table-container .digest-column {
+  width: 96px;
+  padding: 4px;
+}
+
+.single-target .digest-bubble {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  color: var(--color-digest-hash-text);
+  background-color: hsl(var(--digest-hue), 50%, var(--color-digest-color-lightness));
+}
+
+.single-target .chart-table-container .date-column {
+  flex-grow: 1;
+  width: 240px;
+  padding: 4px;
+}
+
+.single-target .chart-table-container .timing-column {
+  display: flex;
+  align-items: center;
+  flex-grow: 1;
+  width: 200px;
+  padding: 0 8px;
+}
+
+.single-target .timing-bar {
+  width: 100%;
+  padding: 8px 0;
+}
+
+.single-target .timing-track {
+  display: flex;
+  gap: 1px;
+  height: 12px;
+  overflow: hidden;
+}
+
+.single-target .timing-track.empty {
+  background-color: var(--color-bg-tertiary);
+}
+
+.single-target .timing-segment {
+  flex-basis: 0;
+  min-width: 2px;
+}
+
+.single-target .timing-segment:first-of-type {
+  border-radius: 4px 0 0 4px;
+}
+
+.single-target .timing-segment:nth-last-of-type(2) {
+  border-radius: 0 4px 4px 0;
+}
+
+.single-target .timing-bar:hover .timing-segment {
+  filter: brightness(1.15);
+}
+
+/* The tooltip and swatches are rendered outside of .single-target, so the
+   following rules are not scoped to it. */
+.timing-swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.timing-phase-queue {
+  background-color: var(--color-timing-queue);
+}
+
+.timing-phase-runner-setup {
+  background-color: var(--color-timing-runner-setup);
+}
+
+.timing-phase-input-download {
+  background-color: var(--color-timing-input-download);
+}
+
+.timing-phase-execution {
+  background-color: var(--color-timing-execution);
+}
+
+.timing-phase-output-upload {
+  background-color: var(--color-timing-output-upload);
+}
+
+.trend-chart-hover.timing-tooltip {
+  min-width: 200px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.timing-tooltip .timing-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timing-tooltip .timing-tooltip-label {
+  flex-grow: 1;
+}
+
+.timing-tooltip .timing-tooltip-value {
+  margin-left: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.single-target .table-summary {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.single-target .table-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.single-target .table-pager .table-pager-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.single-target .table-pager .icon-button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+}
+
+.single-target .table-pager .icon-button svg {
+  width: 16px;
+  height: 16px;
+}

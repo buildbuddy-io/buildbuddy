@@ -48,6 +48,7 @@ var DefaultFS = vfs.Default
 
 type FormatMajorVersion = pebble.FormatMajorVersion
 type Options = pebble.Options
+type WriteOptions = pebble.WriteOptions
 type IterOptions = pebble.IterOptions
 type LevelOptions = pebble.LevelOptions
 type BloomFilterPolicy = bloom.FilterPolicy

@@ -1016,6 +1016,10 @@ code .comment {
   padding: 2px;
 }
 
+.nowrap {
+  white-space: nowrap;
+}
+
 .disclaimer {
   color: var(--color-text-tertiary);
   margin-top: 4px;

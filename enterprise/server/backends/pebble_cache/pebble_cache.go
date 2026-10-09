@@ -2328,6 +2328,10 @@ func (w *referenceWriter) Commit() (*refpb.Reference, error) {
 	return &refpb.Reference{Metadata: w.md}, nil
 }
 
+func (p *PebbleCache) IsReferenceable(ctx context.Context, r *rspb.ResourceName) bool {
+	return p.gcsBlobstore != nil && p.storesInGCS(r.GetDigest().GetSizeBytes())
+}
+
 func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {
 	if p.gcsBlobstore == nil {
 		return nil, status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot create references")

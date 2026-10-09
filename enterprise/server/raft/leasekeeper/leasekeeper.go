@@ -88,6 +88,8 @@ type LeaseKeeper struct {
 	nodeLivenessUpdates <-chan *rfpb.NodeLivenessRecord
 }
 
+// New returns a LeaseKeeper that takes ownership of session and closes it in
+// Stop.
 func New(nodeHost *dragonboat.NodeHost, zone string, log log.Logger, liveness *nodeliveness.Liveness, listener *listener.RaftListener, broadcast chan<- events.Event, session *client.Session) *LeaseKeeper {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	eg, gctx := errgroup.WithContext(ctx)
@@ -128,6 +130,7 @@ func (lk *LeaseKeeper) Stop() {
 
 	lk.egCancel()
 	lk.eg.Wait()
+	lk.session.Close()
 }
 
 // A leaseAgent keeps a single rangelease up to date based on the instructions

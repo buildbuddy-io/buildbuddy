@@ -152,7 +152,7 @@ func runBBServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.
 
 	go runFunc()
 
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
+	clientConn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	if err != nil {
 		t.Error(err)
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/mdutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/docker/go-units"
@@ -81,7 +82,7 @@ func (n *newlineStdoutCloser) Close() error {
 
 func getOutput() (io.WriteCloser, error) {
 	if *outputFile != "" {
-		return os.OpenFile(*outputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		return os.OpenFile(*outputFile, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
 	}
 	return &newlineStdoutCloser{os.Stdout}, nil
 }
@@ -125,10 +126,27 @@ func downloadFile(ctx context.Context, ind *digest.CASResourceName, bsClient bsp
 	return cachetools.GetBlob(ctx, bsClient, ind, wc)
 }
 
+func retryOptions(name string) *retry.Options {
+	opts := retry.DefaultOptions()
+	opts.MaxRetries = 3
+	opts.Name = name
+	return opts
+}
+
+func maybeRetryable(err error) error {
+	if err == nil || status.IsUnavailableError(err) {
+		return err
+	}
+	return retry.NonRetryableError(err)
+}
+
 func downloadArtifacts(ctx context.Context, client apipb.ApiServiceClient, invocationID, outputDir string) error {
-	rsp, err := client.GetInvocation(ctx, &apipb.GetInvocationRequest{
-		Selector:         &apipb.InvocationSelector{InvocationId: invocationID},
-		IncludeArtifacts: true,
+	rsp, err := retry.Do(ctx, retryOptions("GetInvocation"), func(ctx context.Context) (*apipb.GetInvocationResponse, error) {
+		rsp, err := client.GetInvocation(ctx, &apipb.GetInvocationRequest{
+			Selector:         &apipb.InvocationSelector{InvocationId: invocationID},
+			IncludeArtifacts: true,
+		})
+		return rsp, maybeRetryable(err)
 	})
 	if err != nil {
 		return fmt.Errorf("get invocation: %w", err)
@@ -168,23 +186,30 @@ func downloadArtifacts(ctx context.Context, client apipb.ApiServiceClient, invoc
 		if artifact.GetUri() == "" {
 			_, err = f.Write(artifact.GetContents())
 		} else {
-			stream, streamErr := client.GetFile(ctx, &apipb.GetFileRequest{Uri: artifact.GetUri()})
-			getFileErr = streamErr
-			if streamErr == nil {
+			getFileErr = retry.DoVoid(ctx, retryOptions("GetFile"), func(ctx context.Context) error {
+				if err = f.Truncate(0); err != nil {
+					return retry.NonRetryableError(err)
+				}
+				if _, err = f.Seek(0, io.SeekStart); err != nil {
+					return retry.NonRetryableError(err)
+				}
+				stream, streamErr := client.GetFile(ctx, &apipb.GetFileRequest{Uri: artifact.GetUri()})
+				if streamErr != nil {
+					return maybeRetryable(streamErr)
+				}
 				for {
 					chunk, recvErr := stream.Recv()
 					if recvErr == io.EOF {
-						break
+						return nil
 					}
 					if recvErr != nil {
-						getFileErr = recvErr
-						break
+						return maybeRetryable(recvErr)
 					}
 					if _, err = f.Write(chunk.GetData()); err != nil {
-						break
+						return retry.NonRetryableError(err)
 					}
 				}
-			}
+			})
 		}
 		closeErr := f.Close()
 		if err != nil {

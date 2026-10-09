@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1050,8 +1051,19 @@ func (s *BuildBuddyServer) getAPIKeyCreationMetadata(ctx context.Context, groupI
 	isServerAdmin := claims.AuthorizeServerAdmin(ctx) == nil
 	if !isServerAdmin {
 		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-		if err != nil || authutil.AuthorizeOrgAdmin(u, groupID) != nil {
-			// Only org and server admins can see API key creation metadata.
+		if err != nil {
+			return nil, nil
+		}
+		// Creation metadata is visible to: server admins, org admins, and the
+		// user who owns the key. We only hit the user-who-owns-the-key branch
+		// when retrieving keys for the user-owned API keys page, which we can
+		// detect by checking if all of the keys retrieved from the database are
+		// owned by the user making the request.
+		userID := u.GetUserID()
+		ownsAllKeys := userID != "" && !slices.ContainsFunc(keys, func(k *tables.APIKey) bool {
+			return k.UserID != userID
+		})
+		if authutil.AuthorizeOrgAdmin(u, groupID) != nil && !ownsAllKeys {
 			return nil, nil
 		}
 	}
@@ -1295,6 +1307,10 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 	if err != nil {
 		return nil, err
 	}
+	creationMetadata, err := s.getAPIKeyCreationMetadata(ctx, groupID, tableKeys)
+	if err != nil {
+		return nil, err
+	}
 	rsp := &akpb.GetApiKeysResponse{
 		ApiKey: make([]*akpb.ApiKey, 0, len(tableKeys)),
 	}
@@ -1306,6 +1322,7 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
 			Visibility:          apiKeyVisibilities(k.Visibility),
+			CreationMetadata:    creationMetadata[k.APIKeyID],
 		})
 	}
 	return rsp, nil
@@ -1788,7 +1805,11 @@ func (s *BuildBuddyServer) ListCacheProxies(ctx context.Context, req *cppb.ListC
 }
 
 func (s *BuildBuddyServer) GetCacheProxy(ctx context.Context, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error) {
-	return nil, status.UnimplementedError("Not implemented")
+	cps := s.env.GetCacheProxyRegistryService()
+	if cps == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return cps.GetCacheProxy(ctx, req)
 }
 
 func (s *BuildBuddyServer) SearchExecution(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error) {

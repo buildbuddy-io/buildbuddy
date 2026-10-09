@@ -133,6 +133,9 @@ func TestIndexAndAssets(t *testing.T) {
 		require.Equal(t, "uswest1", cfg.GetClusterName())
 		require.Len(t, cfg.GetClusterLinks(), 2, "the picker's instances ride along")
 		require.Equal(t, "https://atlas.sjc.example", cfg.GetClusterLinks()[1].GetUrl())
+		require.Len(t, cfg.GetFilterKeys(), len(summaries.FilterKeys), "the grammar's keys reach the completion")
+		require.Equal(t, "kind", cfg.GetFilterKeys()[0].GetKey())
+		require.NotEmpty(t, cfg.GetFilterKeys()[0].GetHint())
 		require.Contains(t, body, `src="/app/app_bundle/app.js?hash=abc123"`)
 		require.Contains(t, body, `href="/app/style.css?hash=abc123"`)
 	}
@@ -177,6 +180,15 @@ func TestUnaryRPCOverHTTP(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, resp.StatusCode, string(body))
 	require.Contains(t, string(body), `"total":1`)
+
+	// Every unary method is routed the same way, including the newest.
+	resp, err = srv.Client().Post(srv.URL+"/rpc/AtlasService/GetFilterValues", "application/json", strings.NewReader(`{"field":"kind","prefix":"p"}`))
+	require.NoError(t, err)
+	body, err = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode, string(body))
+	require.Contains(t, string(body), `"value":"pod"`)
 
 	resp, err = srv.Client().Post(srv.URL+"/rpc/AtlasService/Nope", "application/proto", bytes.NewReader(nil))
 	require.NoError(t, err)

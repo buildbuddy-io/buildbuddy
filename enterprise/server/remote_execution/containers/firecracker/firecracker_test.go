@@ -169,7 +169,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "8e39891dea9121003282eedf4a9974fc35416867c11d05cb48efad5b4811398e"
+		expectedHash    = "9a2cbbff08c1fdf668b3c37f1c3e5a8b754d98c1006e20488ef8cfa5c517eb1a"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -298,7 +298,7 @@ func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEn
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(
+	conn, err := testenv.LocalGRPCConn(t,
 		env.GetServerContext(),
 		lis,
 		interceptors.GetUnaryClientIdentityInterceptor(env),
@@ -332,7 +332,7 @@ func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEn
 		bspb.RegisterByteStreamServer(proxyGrpcServer, bsProxy)
 		go proxyRunFunc()
 
-		proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+		proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
 		require.NoError(t, err)
 		t.Cleanup(func() { proxyConn.Close() })
 
@@ -3073,11 +3073,11 @@ func TestStatsReturnsLatestGuestStatsDuringExec(t *testing.T) {
 
 func TestFirecrackerRunWithNetwork(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		experiments []string
+		name                string
+		userspaceNetworking bool
 	}{
 		{name: "veth"},
-		{name: "userspace", experiments: []string{"executor.userspace_networking"}},
+		{name: "userspace", userspaceNetworking: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -3085,6 +3085,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 			rootDir := testfs.MakeTempDir(t)
 			workDir := testfs.MakeDirAll(t, rootDir, "work")
 			flags.Set(t, "executor.network_stats_enabled", true)
+			flags.Set(t, "executor.userspace_networking", tc.userspaceNetworking)
 
 			// Make sure the container can send packets to something external to the VM
 			googleDNS := "8.8.8.8"
@@ -3101,7 +3102,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 				},
 				ExecutorConfig: getExecutorConfig(t),
 			}
-			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Experiments: tc.experiments}, opts)
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -3122,11 +3123,11 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 
 func TestFirecrackerRunWithoutNetwork(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		experiments []string
+		name                string
+		userspaceNetworking bool
 	}{
 		{name: "veth"},
-		{name: "userspace", experiments: []string{"executor.userspace_networking"}},
+		{name: "userspace", userspaceNetworking: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -3134,6 +3135,7 @@ func TestFirecrackerRunWithoutNetwork(t *testing.T) {
 			rootDir := testfs.MakeTempDir(t)
 			workDir := testfs.MakeDirAll(t, rootDir, "work")
 			flags.Set(t, "executor.network_stats_enabled", true)
+			flags.Set(t, "executor.userspace_networking", tc.userspaceNetworking)
 
 			// Make sure the container can't send packets to the internet when
 			// NetworkMode is LOCAL.
@@ -3151,7 +3153,7 @@ func TestFirecrackerRunWithoutNetwork(t *testing.T) {
 				},
 				ExecutorConfig: getExecutorConfig(t),
 			}
-			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Experiments: tc.experiments}, opts)
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -3254,11 +3256,11 @@ func TestFirecrackerResolvConf(t *testing.T) {
 
 func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		experiments []string
+		name                string
+		userspaceNetworking bool
 	}{
 		{name: "veth"},
-		{name: "userspace", experiments: []string{"executor.userspace_networking"}},
+		{name: "userspace", userspaceNetworking: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -3266,6 +3268,7 @@ func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 			rootDir := testfs.MakeTempDir(t)
 			workDir := testfs.MakeDirAll(t, rootDir, "work")
 			flags.Set(t, "executor.network_stats_enabled", true)
+			flags.Set(t, "executor.userspace_networking", tc.userspaceNetworking)
 
 			// Make sure the container can send packets to something external of the VM
 			googleDNS := "8.8.8.8"
@@ -3287,7 +3290,7 @@ func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 				},
 				ExecutorConfig: getExecutorConfig(t),
 			}
-			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Experiments: tc.experiments, Command: cmd}, opts)
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Command: cmd}, opts)
 			require.NoError(t, err)
 			require.NoError(t, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
 			err = c.Create(ctx, opts.ActionWorkingDirectory)

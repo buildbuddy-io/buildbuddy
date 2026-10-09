@@ -11,11 +11,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
@@ -41,6 +44,7 @@ func startServer(t *testing.T, env environment.Env) *TestService {
 	require.NoError(t, server.Start())
 	client, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", port))
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.Close() })
 	ts.client = client
 	return &ts
 }
@@ -142,6 +146,7 @@ func TestCheck(t *testing.T) {
 	// connections cycle through CONNECTING and TRANSIENT_FAILURE.
 	deadPool, err := grpc_client.DialSimpleWithPoolSize(fmt.Sprintf("grpc://localhost:%d", testport.FindFree(t)), 2)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = deadPool.Close() })
 	require.Never(t, func() bool { return deadPool.Check(ctx) != nil }, 2*time.Second, 100*time.Millisecond)
 
 	// Once a connection has been ready, losing the server makes the pool
@@ -153,6 +158,7 @@ func TestCheck(t *testing.T) {
 	require.NoError(t, server.Start())
 	pool, err := grpc_client.DialInternalWithPoolSize(te, fmt.Sprintf("grpc://localhost:%d", port), 1)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = pool.Close() })
 	_, err = pspb.NewApiClient(pool).Ping(ctx, &pspb.PingRequest{})
 	require.NoError(t, err)
 	// This Check observes the connection in the Ready state, which is what
@@ -186,4 +192,97 @@ func TestClose_DeletesPendingRPCMetricSeries(t *testing.T) {
 
 	require.NoError(t, pool.Close())
 	require.Zero(t, pendingRPCSeriesCount(t, target))
+}
+
+const (
+	connExpiration    = 5 * time.Minute
+	connCheckInterval = 1 * time.Minute
+)
+
+func newConnCache(t *testing.T) (*grpc_client.ConnCache, *clockwork.FakeClock) {
+	testleak.Check(t)
+	env := testenv.GetTestEnv(t)
+	clock := clockwork.NewFakeClock()
+	c, err := grpc_client.NewConnCache(env, grpc_client.ConnCacheOpts{
+		PoolSize:      1,
+		Expiration:    connExpiration,
+		CheckInterval: connCheckInterval,
+		Clock:         clock,
+	})
+	require.NoError(t, err)
+	t.Cleanup(c.CloseForTesting)
+	return c, clock
+}
+
+func TestConnCache_InvalidOpts(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	valid := grpc_client.ConnCacheOpts{PoolSize: 1, Expiration: connExpiration, CheckInterval: connCheckInterval}
+	for name, mutate := range map[string]func(*grpc_client.ConnCacheOpts){
+		"zero pool size":      func(o *grpc_client.ConnCacheOpts) { o.PoolSize = 0 },
+		"zero expiration":     func(o *grpc_client.ConnCacheOpts) { o.Expiration = 0 },
+		"zero check interval": func(o *grpc_client.ConnCacheOpts) { o.CheckInterval = 0 },
+		"negative interval":   func(o *grpc_client.ConnCacheOpts) { o.CheckInterval = -time.Second },
+	} {
+		t.Run(name, func(t *testing.T) {
+			opts := valid
+			mutate(&opts)
+			_, err := grpc_client.NewConnCache(env, opts)
+			require.Error(t, err)
+			assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument, got: %v", err)
+		})
+	}
+}
+
+func TestConnCache_StopExpiring(t *testing.T) {
+	c, clock := newConnCache(t)
+	before, err := c.Get("a:1")
+	require.NoError(t, err)
+
+	c.StopExpiring()
+	clock.Advance(2 * connExpiration)
+
+	after, err := c.Get("a:1")
+	require.NoError(t, err)
+	assert.Same(t, before, after)
+}
+
+func TestConnCache_ReusesConnections(t *testing.T) {
+	c, _ := newConnCache(t)
+
+	a1, err := c.Get("a:1")
+	require.NoError(t, err)
+	a2, err := c.Get("a:1")
+	require.NoError(t, err)
+	b, err := c.Get("b:1")
+	require.NoError(t, err)
+
+	assert.Same(t, a1, a2)
+	assert.NotSame(t, a1, b)
+}
+
+func TestConnCache_ExpiresUnusedConnections(t *testing.T) {
+	c, clock := newConnCache(t)
+
+	unused, err := c.Get("unused:1")
+	require.NoError(t, err)
+	used, err := c.Get("used:1")
+	require.NoError(t, err)
+
+	// Keep "used" fresh while "unused" ages past the expiration.
+	for elapsed := time.Duration(0); elapsed <= connExpiration; elapsed += connCheckInterval {
+		require.NoError(t, clock.BlockUntilContext(t.Context(), 1))
+		clock.Advance(connCheckInterval)
+		_, err = c.Get("used:1")
+		require.NoError(t, err)
+	}
+	require.Eventually(t, func() bool {
+		return grpc_client.CachedConnCountForTesting(c) == 1
+	}, 2*time.Second, 10*time.Millisecond, "unused connection was not expired")
+
+	redialed, err := c.Get("unused:1")
+	require.NoError(t, err)
+	assert.NotSame(t, unused, redialed)
+	stillUsed, err := c.Get("used:1")
+	require.NoError(t, err)
+	assert.Same(t, used, stillUsed)
 }

@@ -4,10 +4,10 @@
 // # Declarations
 //
 // Declare experiments at the package level using Bool, String, Int64, Float64,
-// or Object. Follow normal flag naming conventions, with a subsystem namespace
-// and a snake_case feature name, such as app.widget_color. Adding a blank line
-// between normal flags and experiment flags can help delineate them more
-// clearly. Example:
+// Object, or Struct. Follow normal flag naming conventions, with a subsystem
+// namespace and a snake_case feature name, such as app.widget_color. Adding a
+// blank line between normal flags and experiment flags can help delineate them
+// more clearly. Example:
 //
 //	var (
 //	    widgetSize = flag.Int("app.widget_size", 10, "Widget size.")
@@ -120,12 +120,15 @@
 package expflag
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"sync/atomic"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags/tags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -294,6 +297,116 @@ func Object(name string, defaultValue map[string]any, help string, opts ...any) 
 			return nil
 		},
 	}
+}
+
+// StructFlag is an experiment flag whose value is a struct.
+type StructFlag[T any] struct {
+	name                     string
+	deprecatedExperimentName string
+	// value is the configured value, which a command-line flag or YAML config
+	// replaces as a whole, exactly as for flag.Struct.
+	value *T
+}
+
+// Struct declares an experiment flag whose value is a struct, decoded from a
+// JSON object through its json tags. As with flag.Struct, a configured value or
+// a provider's variant replaces the whole struct, so fields it omits are zero.
+func Struct[T any](name string, defaultValue T, help string, opts ...any) *StructFlag[T] {
+	deprecatedName, flagTags := parseOptions(opts)
+	return &StructFlag[T]{
+		name:                     name,
+		deprecatedExperimentName: deprecatedName,
+		value:                    flag.Struct(name, defaultValue, help, flagTags...),
+	}
+}
+
+// Name returns the flag name.
+func (f *StructFlag[T]) Name() string {
+	return f.name
+}
+
+// Get evaluates the flag and returns its value: the provider's variant when it
+// has one for this evaluation, otherwise the configured value. A variant that
+// cannot be decoded into T, including one with a field T does not have, is
+// ignored.
+func (f *StructFlag[T]) Get(ctx context.Context, opts ...any) T {
+	value, _ := f.get(ctx, opts...)
+	return value
+}
+
+// GetWithDetails evaluates the flag and returns its value along with the
+// evaluation details, which include the selected variant.
+func (f *StructFlag[T]) GetWithDetails(ctx context.Context, opts ...any) (T, *expb.EvaluatedFlag) {
+	value, details := f.get(ctx, opts...)
+	evaluated := &expb.EvaluatedFlag{Name: f.name}
+	if details != nil {
+		evaluated.Variant = details.Variant()
+	}
+	object, err := structToObject(value)
+	if err != nil {
+		log.CtxWarningf(ctx, "Experiment flag %q value could not be converted to a proto: %s", f.name, err)
+	} else {
+		evaluated.Value = &expb.EvaluatedFlag_ObjectValue{ObjectValue: object}
+	}
+	return value, evaluated
+}
+
+// GetProto evaluates the flag and returns the result as a proto, so that
+// another process can use the same value without re-evaluating the targeting
+// rules.
+func (f *StructFlag[T]) GetProto(ctx context.Context, opts ...any) *expb.EvaluatedFlag {
+	_, evaluated := f.GetWithDetails(ctx, opts...)
+	return evaluated
+}
+
+func (f *StructFlag[T]) get(ctx context.Context, opts ...any) (T, interfaces.ExperimentFlagDetails) {
+	p := provider.Load()
+	if p == nil {
+		return *f.value, nil
+	}
+	// Providers return the default when the flag is missing or cannot be
+	// evaluated, while a variant is a non-nil map even when it is empty. So
+	// passing a nil default lets us tell when the configured value applies.
+	object, details := (*p).ObjectDetails(ctx, f.name, nil, opts...)
+	if nf, ok := details.(flagNotFoundReporter); ok && nf.FlagNotFound() && f.deprecatedExperimentName != "" {
+		object, details = (*p).ObjectDetails(ctx, f.deprecatedExperimentName, nil, opts...)
+	}
+	if object == nil {
+		return *f.value, details
+	}
+	var value T
+	if err := decodeObject(object, &value); err != nil {
+		alert.CtxUnexpectedEvent(ctx, "expflag_struct_invalid_variant", "Ignoring the value of experiment flag %q from the experiment provider because it cannot be decoded as %T: %s", f.name, value, err)
+		return *f.value, details
+	}
+	return value, details
+}
+
+// decodeObject decodes object into value through a JSON round trip. A key
+// that value has no field for is an error, so that a misspelled field in a
+// variant is noticed instead of silently leaving the field zero.
+func decodeObject[T any](object map[string]any, value *T) error {
+	encoded, err := json.Marshal(object)
+	if err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(value)
+}
+
+// structToObject converts a struct to the map form that object flags carry in
+// protos, through a JSON round trip.
+func structToObject(value any) (*structpb.Struct, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	object := map[string]any{}
+	if err := json.Unmarshal(encoded, &object); err != nil {
+		return nil, err
+	}
+	return structpb.NewStruct(object)
 }
 
 // Name returns the flag name.

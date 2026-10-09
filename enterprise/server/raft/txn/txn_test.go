@@ -181,12 +181,14 @@ func TestRecoverTxnToUpdateRangeDescriptor(t *testing.T) {
 	err = tc.WriteTxnRecord(ctx, txnRecord)
 	require.NoError(t, err)
 
-	repl2, err := store.GetReplica(2)
+	commit, err := rbuilder.NewBatchBuilder().SetTransactionID(txnProto.GetTransactionId()).
+		SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT).ToProto()
 	require.NoError(t, err)
 
 	// commit the transaction statement on range 2
-	err = repl2.CommitTransaction(txnProto.GetTransactionId())
+	commitRsp, err := store.Sender().SyncPropose(ctx, oldRD.GetStart(), commit)
 	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponseFromProto(commitRsp).AnyError())
 
 	// Tries to finalize the txn again.
 	err = tc.RecoverTxnRecordForTest(ctx, txnRecord)
@@ -705,9 +707,12 @@ func TestRecoverSplitTxnRetryMatrix(t *testing.T) {
 			})
 			ctx, stores, store, updatedLeftRange, newRightRange, txnProto, coordinator, txnRecord := setupSplitTxnForRecovery(t, harness)
 
-			repl, err := store.GetReplica(2)
+			commit, err := rbuilder.NewBatchBuilder().SetTransactionID(txnProto.GetTransactionId()).
+				SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT).ToProto()
 			require.NoError(t, err)
-			require.NoError(t, repl.CommitTransaction(txnProto.GetTransactionId()))
+			commitRsp, err := store.Sender().SyncPropose(ctx, updatedLeftRange.GetStart(), commit)
+			require.NoError(t, err)
+			require.NoError(t, rbuilder.NewBatchResponseFromProto(commitRsp).AnyError())
 
 			require.NoError(t, coordinator.RecoverTxnRecordForTest(ctx, txnRecord))
 

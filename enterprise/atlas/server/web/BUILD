@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/atlas/server/web",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/atlas/server/summaries",
         "//proto:atlas_go_proto",
         "//server/environment",
         "//server/http/csp",

@@ -22,6 +22,7 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	flagdsync "github.com/open-feature/flagd/core/pkg/sync"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
@@ -253,6 +254,20 @@ func ObjectToProto(object map[string]any, dest proto.Message) error {
 		return fmt.Errorf("unmarshal: %w", err)
 	}
 	return nil
+}
+
+// ProtoToVariantMap returns a map from flag name to selected variant, for
+// recording which experiment variants applied to a request. Flags with an
+// empty variant are excluded, since no variant was selected (for example, the
+// flag is missing from the experiment config).
+func ProtoToVariantMap(flags []*expb.EvaluatedFlag) map[string]string {
+	variants := make(map[string]string, len(flags))
+	for _, f := range flags {
+		if v := f.GetVariant(); v != "" {
+			variants[f.GetName()] = v
+		}
+	}
+	return variants
 }
 
 // WithContext adds the provided key and value into the experiment context when

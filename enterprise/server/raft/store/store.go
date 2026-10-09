@@ -1016,6 +1016,12 @@ func (s *Store) Stop(ctx context.Context) error {
 	s.leaser.Close()
 	s.log.Info("Store: leaser closed")
 
+	s.sender.Close()
+	s.apiClient.Close()
+	s.session.Close()
+	s.evictionSession.Close()
+	s.shardStarterSession.Close()
+
 	return s.db.Close()
 }
 
@@ -2904,6 +2910,12 @@ func newRangeGCWorker(clock clockwork.Clock, store *Store, clientSessionTTL, txn
 		handleFn: res.gcExpiredRangeState,
 	}
 	return res
+}
+
+// Start runs the worker until ctx is done, then closes its session.
+func (w *rangeGCWorker) Start(ctx context.Context) {
+	defer w.session.Close()
+	w.replicaWorker.Start(ctx)
 }
 
 // gcExpiredRangeState runs on the leaseholder and deletes expired per-range

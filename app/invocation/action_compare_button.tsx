@@ -57,14 +57,12 @@ export default class ActionCompareButtonComponent extends React.Component<Action
       return;
     }
 
-    // Build the compare URL
-    const comparePath =
-      Path.compareActionsPath +
-      `${comparisonData.invocationId}:${encodeURIComponent(
-        comparisonData.actionDigest
-      )}...${this.props.invocationId}:${encodeURIComponent(this.props.actionDigest)}`;
-
-    router.navigateTo(comparePath);
+    router.navigateToCompareActionsPath(
+      comparisonData.invocationId,
+      comparisonData.actionDigest,
+      this.props.invocationId,
+      this.props.actionDigest
+    );
 
     // Clear the comparison selection
     actionComparisonService.clearComparisonAction();

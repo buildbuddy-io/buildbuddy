@@ -215,6 +215,7 @@ module.exports = {
           position: "left",
           type: "dropdown",
           items: [
+            { label: "Changelog", href: "/changelog/", target: "_self" },
             { label: "GitHub", to: "https://github.com/buildbuddy-io/buildbuddy" },
             { label: "Community", to: "http://community.buildbuddy.io/" },
             { label: "Security", href: "/security" },
@@ -238,12 +239,6 @@ module.exports = {
         {
           label: "Blog",
           href: "/blog/",
-          target: "_self",
-          position: "left",
-        },
-        {
-          label: "Changelog",
-          href: "/changelog/",
           target: "_self",
           position: "left",
         },
@@ -279,7 +274,7 @@ module.exports = {
           ],
         },
         {
-          title: "Product",
+          title: "Platform",
           items: [
             {
               label: "Build & Test UI",
@@ -306,24 +301,24 @@ module.exports = {
               href: "/cli",
               target: "_self",
             },
-            {
-              label: "Get Started",
-              to: "https://app.buildbuddy.io",
-              target: "_self",
-            },
-            {
-              label: "Login",
-              to: "https://app.buildbuddy.io/",
-              target: "_self",
-            },
           ],
         },
         {
           title: "Resources",
           items: [
             {
-              label: "Docs",
+              label: "Documentation",
               href: "/docs/introduction/",
+              target: "_self",
+            },
+            {
+              label: "API Reference",
+              href: "/docs/enterprise-api",
+              target: "_self",
+            },
+            {
+              label: "Changelog",
+              href: "/changelog/",
               target: "_self",
             },
             {
@@ -337,14 +332,12 @@ module.exports = {
               target: "_self",
             },
             {
-              label: "Plugins",
-              href: "/plugins",
-              target: "_self",
+              label: "Status",
+              to: "https://status.buildbuddy.io",
             },
             {
-              label: "API",
-              href: "/docs/enterprise-api",
-              target: "_self",
+              label: "Report an Issue",
+              to: "https://github.com/buildbuddy-io/buildbuddy/issues/new",
             },
           ],
         },
@@ -352,13 +345,13 @@ module.exports = {
           title: "Company",
           items: [
             {
-              label: "Contact Us",
-              href: "/contact",
+              label: "Team",
+              href: "/team",
               target: "_self",
             },
             {
-              label: "Team",
-              href: "/team",
+              label: "Blog",
+              href: "/blog/",
               target: "_self",
             },
             {
@@ -367,39 +360,9 @@ module.exports = {
               target: "_self",
             },
             {
-              label: "Report an Issue",
-              to: "https://github.com/buildbuddy-io/buildbuddy/issues/new",
-            },
-            {
-              label: "Privacy Policy",
-              href: "/privacy",
+              label: "Contact Us",
+              href: "/contact",
               target: "_self",
-            },
-            {
-              label: "Terms of Service",
-              href: "/terms",
-              target: "_self",
-            },
-          ],
-        },
-        {
-          title: "Connect",
-          items: [
-            {
-              label: "Slack",
-              to: "http://community.buildbuddy.io/",
-            },
-            {
-              label: "Twitter",
-              to: "https://twitter.com/buildbuddy",
-            },
-            {
-              label: "LinkedIn",
-              to: "http://linkedin.com/company/buildbuddy",
-            },
-            {
-              label: "GitHub",
-              to: "https://github.com/buildbuddy-io",
             },
           ],
         },

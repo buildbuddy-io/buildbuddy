@@ -57,6 +57,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -168,7 +169,7 @@ func setupEnvWithClock(t *testing.T, clock clockwork.Clock) (*testenv.TestEnv, *
 	repb.RegisterExecutionServer(env.GetGRPCServer(), env.GetRemoteExecutionService())
 	go run()
 
-	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), lis)
+	conn, err := testenv.LocalGRPCConn(t, env.GetServerContext(), lis)
 	require.NoError(t, err)
 	return env, conn, r
 }
@@ -1202,6 +1203,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			VmExecInitDurationUsec:  4003,
 			VmExecDialDurationUsec:  4004,
 		}
+		aux.ExperimentFlags = []*expb.EvaluatedFlag{
+			{Name: "executor.foo_experiment", Variant: "treatment", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true}},
+		}
 	} else if !test.omitSchedulingMetadata {
 		effectivePool := "test-pool"
 		if test.useDefaultPool {
@@ -1464,6 +1468,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.VmDnsWaitDurationUsec = 4002
 		expectedExecution.VmExecInitDurationUsec = 4003
 		expectedExecution.VmExecDialDurationUsec = 4004
+		expectedExecution.ExperimentVariants = map[string]string{"executor.foo_experiment": "treatment"}
 	}
 	require.Empty(t, cmp.Diff(
 		expectedExecution,

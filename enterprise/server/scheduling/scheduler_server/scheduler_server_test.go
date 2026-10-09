@@ -2,8 +2,8 @@ package scheduler_server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"sort"
@@ -29,7 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -38,11 +38,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
+	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -52,7 +55,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
-	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
 const (
@@ -111,6 +113,7 @@ type schedulerOpts struct {
 }
 
 func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, context.Context) {
+	testleak.Check(t)
 	redisTarget := testredis.Start(t).Target
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
@@ -127,7 +130,9 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	err = redis_execution_collector.Register(env)
 	require.NoError(t, err)
 
-	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	// Like GracefulStop in production, wait for handlers to return when the
+	// server stops, including any work they do on the way out.
+	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env, grpc.WaitForHandlers(true))
 	testcache.Setup(t, env, lis)
 
 	err = execution_server.Register(env)
@@ -142,8 +147,9 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
+	clientConn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
+	t.Cleanup(func() { clientConn.Close() })
 	sc := scpb.NewSchedulerClient(clientConn)
 	env.SetSchedulerClient(sc)
 
@@ -161,6 +167,30 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 		ctx = authenticatedCtx
 	}
 	return env, ctx
+}
+
+// newTestFlagProvider returns a flag provider that serves the given flags.
+func newTestFlagProvider(t *testing.T, flags map[string]memprovider.InMemoryFlag) *experiments.FlagProvider {
+	require.NoError(t, openfeature.SetProviderAndWait(memprovider.NewInMemoryProvider(flags)))
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	return fp
+}
+
+// targeted returns an evaluator that serves the variant returned by pick, or
+// the flag's default variant if pick returns "".
+func targeted(pick func(ctx openfeature.FlattenedContext) string) memprovider.ContextEvaluator {
+	eval := func(flag memprovider.InMemoryFlag, ctx openfeature.FlattenedContext) (any, openfeature.ProviderResolutionDetail) {
+		variant, reason := flag.DefaultVariant, openfeature.DefaultReason
+		if v := pick(ctx); v != "" {
+			variant, reason = v, openfeature.TargetingMatchReason
+		}
+		return flag.Variants[variant], openfeature.ProviderResolutionDetail{Variant: variant, Reason: reason}
+	}
+	return &eval
 }
 
 func getScheduleServer(t *testing.T, userOwnedEnabled, groupOwnedEnabled bool, user string) (*SchedulerServer, context.Context) {
@@ -298,39 +328,23 @@ func TestSchedulerServerGetPoolInfoSelfHostedByDefault(t *testing.T) {
 }
 
 func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
-	tmp := testfs.MakeTempDir(t)
 	overridePool := "experimental-linux-amd64-pool"
-	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
-	"$schema": "https://flagd.dev/schema/v0/flags.json",
-	"flags": {
+	fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
 		"remote_execution.pool_override": {
-			"state": "ENABLED",
-			"defaultVariant": "default",
-			"variants": {
-				"experimentalPool": {
-					"pool": "`+overridePool+`"
-				},
-				"default": {}
+			State:          memprovider.Enabled,
+			DefaultVariant: "default",
+			Variants: map[string]any{
+				"experimentalPool": map[string]any{"pool": overridePool},
+				"default":          map[string]any{},
 			},
-			"targeting": {
-				"if": [
-					{
-						"and": [
-							{ "==": [{ "var": "os" }, "linux"] },
-							{ "==": [{ "var": "arch" }, "amd64"] }
-						]
-					},
-					"experimentalPool"
-				]
-			}
-		}
-	}
-}`)
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
-	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
+			ContextEvaluator: targeted(func(ctx openfeature.FlattenedContext) string {
+				if ctx["os"] == "linux" && ctx["arch"] == "amd64" {
+					return "experimentalPool"
+				}
+				return ""
+			}),
+		},
+	})
 
 	env, ctx := getEnv(t, &schedulerOpts{userOwnedEnabled: true}, "user1")
 	env.SetExperimentFlagProvider(fp)
@@ -362,31 +376,16 @@ func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
 }
 
 func TestSchedulerServerPersistentVolumes(t *testing.T) {
-	tmp := testfs.MakeTempDir(t)
-	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
-	"$schema": "https://flagd.dev/schema/v0/flags.json",
-	"flags": {
+	fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
 		"executor.persistent_volumes": {
-			"state": "ENABLED",
-			"defaultVariant": "default",
-			"variants": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "tmp-cache",
+			Variants: map[string]any{
 				"tmp-cache": "cache:/tmp/.cache",
-				"default": ""
+				"default":   "",
 			},
-			"targeting": {
-				"fractional": [
-					["tmp-cache", 50],
-					["default", 0]
-				]
-			}
-		}
-	}
-}`)
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
-	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
+		},
+	})
 	expflag.SetFlagProvider(fp)
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 
@@ -404,57 +403,72 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 
 	// The scheduler should send the experiment's value with the leased task,
 	// and leave it to the executor to apply the value to the task's platform.
-	gotFlags := lease.task.GetExperimentFlags()
-	require.Empty(t, cmp.Diff([]*expb.EvaluatedFlag{
-		{Name: "executor.persistent_volumes", Variant: "tmp-cache", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
-	}, gotFlags, protocmp.Transform()))
+	var gotFlag *expb.EvaluatedFlag
+	for _, f := range lease.task.GetExperimentFlags() {
+		if f.GetName() == "executor.persistent_volumes" {
+			gotFlag = f
+		}
+	}
+	require.Empty(t, cmp.Diff(&expb.EvaluatedFlag{
+		Name: "executor.persistent_volumes", Variant: "tmp-cache", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"},
+	}, gotFlag, protocmp.Transform()))
 	gotOverrides := lease.task.GetPlatformOverrides().GetProperties()
 	require.Empty(t, gotOverrides)
 }
 
 func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
-	// Note: persistent_volumes is just used as an example here. The scheduler
-	// should handle all experiments the same way.
-	tmp := testfs.MakeTempDir(t)
-	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
-	"$schema": "https://flagd.dev/schema/v0/flags.json",
-	"flags": {
-		"executor.persistent_volumes": {
-			"state": "ENABLED",
-			"defaultVariant": "enabled",
-			"variants": {
-				"enabled": "cache:/tmp/.cache"
-			}
-		}
-	}
-}`)
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
-	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	expflag.SetFlagProvider(fp)
-	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
-
 	for _, tc := range []struct {
 		name                    string
 		supportsExperimentFlags bool
-		wantFlags               []*expb.EvaluatedFlag
+		flagdFlags              map[string]memprovider.InMemoryFlag
+		// Note: persistent_volumes is just used as an example here. The
+		// scheduler should handle all experiments the same way.
+		wantPersistentVolumesFlag *expb.EvaluatedFlag
 	}{
 		{
 			name:                    "ExecutorSupportsExperimentFlags",
 			supportsExperimentFlags: true,
-			wantFlags: []*expb.EvaluatedFlag{
-				{Name: "executor.persistent_volumes", Variant: "enabled", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
+			flagdFlags: map[string]memprovider.InMemoryFlag{
+				"executor.persistent_volumes": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "enabled",
+					Variants:       map[string]any{"enabled": "cache:/tmp/.cache"},
+				},
+			},
+			wantPersistentVolumesFlag: &expb.EvaluatedFlag{
+				Name:    "executor.persistent_volumes",
+				Variant: "enabled", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"},
+			},
+		},
+		{
+			name:                    "ExperimentNotDefinedInFlagd",
+			supportsExperimentFlags: true,
+			flagdFlags:              map[string]memprovider.InMemoryFlag{},
+			// If the flag is not defined in flagd explicitly, the scheduler
+			// should still send its configured (default) flag value.
+			wantPersistentVolumesFlag: &expb.EvaluatedFlag{
+				Name:  "executor.persistent_volumes",
+				Value: &expb.EvaluatedFlag_StringValue{StringValue: ""},
 			},
 		},
 		{
 			name:                    "ExecutorDoesNotSupportExperimentFlags",
 			supportsExperimentFlags: false,
-			wantFlags:               nil,
+			flagdFlags: map[string]memprovider.InMemoryFlag{
+				"executor.persistent_volumes": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "enabled",
+					Variants:       map[string]any{"enabled": "cache:/tmp/.cache"},
+				},
+			},
+			wantPersistentVolumesFlag: nil,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			fp := newTestFlagProvider(t, tc.flagdFlags)
+			expflag.SetFlagProvider(fp)
+			t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
 			env, ctx := getEnv(t, &schedulerOpts{}, "")
 			env.SetExperimentFlagProvider(fp)
 			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
@@ -467,8 +481,13 @@ func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
 			lease := fe.Claim(taskID)
 			defer lease.Finalize()
 
-			gotFlags := lease.task.GetExperimentFlags()
-			require.Empty(t, cmp.Diff(tc.wantFlags, gotFlags, protocmp.Transform()))
+			var gotFlag *expb.EvaluatedFlag
+			for _, f := range lease.task.GetExperimentFlags() {
+				if f.GetName() == "executor.persistent_volumes" {
+					gotFlag = f
+				}
+			}
+			require.Empty(t, cmp.Diff(tc.wantPersistentVolumesFlag, gotFlag, protocmp.Transform()))
 		})
 	}
 }
@@ -797,6 +816,17 @@ func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, err
 		task:    task,
 		leaseID: rsp.GetLeaseId(),
 	}
+	// Like a real executor, close the lease while still registered, so that
+	// the scheduler can promptly re-enqueue a task that is still claimed.
+	// Wait for the scheduler to finish with the lease.
+	e.t.Cleanup(func() {
+		stream.CloseSend()
+		for {
+			if _, err := stream.Recv(); err != nil {
+				return
+			}
+		}
+	})
 	return lease, nil
 }
 
@@ -1274,30 +1304,19 @@ func configureLeaseTaskGroupCheck(t *testing.T, env *testenv.TestEnv, enforce bo
 	if enforce {
 		defaultVariant = "on"
 	}
-	targeting := ""
-	if len(excludedGroupIDs) > 0 {
-		excluded, err := json.Marshal(excludedGroupIDs)
-		require.NoError(t, err)
-		targeting = `,
-			"targeting": {
-				"if": [{"in": [{"var": "group_id"}, ` + string(excluded) + `]}, "off"]
-			}`
-	}
-	configFile := testfs.WriteFile(t, testfs.MakeTempDir(t), "config.flagd.json", `{
-	"$schema": "https://flagd.dev/schema/v0/flags.json",
-	"flags": {
-		"`+checkTaskAccessExperiment+`": {
-			"state": "ENABLED",
-			"defaultVariant": "`+defaultVariant+`",
-			"variants": {"on": true, "off": false}`+targeting+`
-		}
-	}
-}`)
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
-	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
+	fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
+		checkTaskAccessExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: defaultVariant,
+			Variants:       map[string]any{"on": true, "off": false},
+			ContextEvaluator: targeted(func(ctx openfeature.FlattenedContext) string {
+				if groupID, ok := ctx["group_id"].(string); ok && slices.Contains(excludedGroupIDs, groupID) {
+					return "off"
+				}
+				return ""
+			}),
+		},
+	})
 	env.SetExperimentFlagProvider(fp)
 }
 
@@ -1929,7 +1948,14 @@ func TestSampleUnclaimedTasks_Concurrent(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			rdb := testredis.Start(t).Client()
 			t.Cleanup(func() { rdb.Close() })
-			np := &nodePool{rdb: rdb, clock: clockwork.NewFakeClock(), unclaimedTasksTTL: testCase.cacheTTL}
+			clock := clockwork.NewFakeClock()
+			np := &nodePool{
+				rdb:                   rdb,
+				clock:                 clock,
+				unclaimedTasksKeys:    []string{"unclaimedTasks/test"},
+				unclaimedTasksTTL:     testCase.cacheTTL,
+				unclaimedTasksJanitor: newUnclaimedTasksJanitor(rdb, clock),
+			}
 			tasks := []string{"a", "b", "c", "d", "e"}
 			for _, task := range tasks {
 				require.NoError(t, np.AddUnclaimedTask(t.Context(), task))
@@ -1962,6 +1988,231 @@ func TestSampleUnclaimedTasks_Concurrent(t *testing.T) {
 			require.ElementsMatch(t, tasks, sample)
 		})
 	}
+}
+
+func TestAddUnclaimedTask_SetsAndRefreshesTTL(t *testing.T) {
+	rdb := testredis.Start(t).Client()
+	clock := clockwork.NewFakeClock()
+	np := &nodePool{
+		rdb:                   rdb,
+		clock:                 clock,
+		unclaimedTasksKeys:    []string{"unclaimedTasks/test"},
+		unclaimedTasksJanitor: newUnclaimedTasksJanitor(rdb, clock),
+	}
+	key := np.unclaimedTasksKeys[0]
+
+	require.NoError(t, np.AddUnclaimedTask(t.Context(), "first"))
+	ttl, err := rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Greater(t, ttl, unclaimedTaskSetTTL-time.Minute)
+
+	// Adding to an existing set must renew its TTL before returning.
+	require.NoError(t, rdb.Expire(t.Context(), key, time.Minute).Err())
+	require.NoError(t, np.AddUnclaimedTask(t.Context(), "second"))
+	ttl, err = rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Greater(t, ttl, unclaimedTaskSetTTL-time.Minute)
+}
+
+func TestUnclaimedTasksJanitor(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", 3)
+	// Use a fake clock so that the janitor waits forever after being woken
+	// up, letting the test decide when its passes run.
+	env, _ := getEnv(t, &schedulerOpts{options: Options{Clock: clockwork.NewFakeClock()}}, "")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	rdb := env.GetRemoteExecutionRedisClient()
+	np := s.getOrCreatePool(nodePoolKey{os: defaultOS, arch: defaultArch, pool: "defaultPoolName"})
+	key := np.unclaimedTasksKeys[0]
+
+	// Add a task older than the max age, followed by more new tasks than the
+	// set can hold.
+	staleScore := float64(time.Now().Add(-unclaimedTaskMaxAge - time.Minute).Unix())
+	err := rdb.ZAdd(t.Context(), key, &redis.Z{Member: "stale", Score: staleScore}).Err()
+	require.NoError(t, err)
+	for i := range 5 {
+		err := np.AddUnclaimedTask(t.Context(), fmt.Sprintf("task-%d", i))
+		require.NoError(t, err)
+	}
+
+	// Adding tasks sets the TTL but leaves trimming to the janitor.
+	tasks, err := rdb.ZRange(t.Context(), key, 0, -1).Result()
+	require.NoError(t, err)
+	require.Equal(t, []string{"stale", "task-0", "task-1", "task-2", "task-3", "task-4"}, tasks)
+	ttl, err := rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Greater(t, ttl, time.Duration(0))
+
+	// Removing the TTL lets us check that the janitor does not set it.
+	require.NoError(t, rdb.Persist(t.Context(), key).Err())
+	// A janitor pass removes the stale task and the oldest tasks beyond the
+	// max set size.
+	err = s.unclaimedTasksJanitor.clean(t.Context())
+	require.NoError(t, err)
+	tasks, err = rdb.ZRange(t.Context(), key, 0, -1).Result()
+	require.NoError(t, err)
+	require.Equal(t, []string{"task-2", "task-3", "task-4"}, tasks)
+	ttl, err = rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Equal(t, time.Duration(-1), ttl)
+
+	// Without new tasks added through AddUnclaimedTask, the next pass skips
+	// the set, so a stale entry inserted directly is not trimmed.
+	err = rdb.ZAdd(t.Context(), key, &redis.Z{Member: "stale", Score: staleScore}).Err()
+	require.NoError(t, err)
+	err = s.unclaimedTasksJanitor.clean(t.Context())
+	require.NoError(t, err)
+	score, err := rdb.ZScore(t.Context(), key, "stale").Result()
+	require.NoError(t, err)
+	require.Equal(t, staleScore, score)
+}
+
+func TestUnclaimedTasksSharding(t *testing.T) {
+	for _, testCase := range []struct {
+		name         string
+		shardCount   int
+		expectedKeys []string
+	}{
+		{
+			name:         "single shard uses unsharded key",
+			shardCount:   1,
+			expectedKeys: []string{"unclaimedTasks/GR1-linux-amd64-pool"},
+		},
+		{
+			name:       "multiple shards",
+			shardCount: 3,
+			expectedKeys: []string{
+				"unclaimedTasks/0/GR1-linux-amd64-pool",
+				"unclaimedTasks/1/GR1-linux-amd64-pool",
+				"unclaimedTasks/2/GR1-linux-amd64-pool",
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.unclaimed_tasks_shard_count", testCase.shardCount)
+			flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+			rdb := testredis.Start(t).Client()
+			t.Cleanup(func() { rdb.Close() })
+			env := testenv.GetTestEnv(t)
+			env.SetRemoteExecutionRedisClient(rdb)
+			np := newNodePool(env, nodePoolKey{groupID: "GR1", os: "linux", arch: "amd64", pool: "pool"}, newUnclaimedTasksJanitor(rdb, env.GetClock()))
+
+			// Add enough tasks that every shard receives some of them.
+			var tasks []string
+			for i := range 30 {
+				tasks = append(tasks, fmt.Sprintf("task-%d", i))
+			}
+			for _, task := range tasks {
+				require.NoError(t, np.AddUnclaimedTask(t.Context(), task))
+			}
+
+			// Each task should be stored in exactly one of the expected keys,
+			// and no shard should be left empty.
+			keys, err := rdb.Keys(t.Context(), "unclaimedTasks/*").Result()
+			require.NoError(t, err)
+			require.ElementsMatch(t, testCase.expectedKeys, keys)
+			var stored []string
+			for _, key := range testCase.expectedKeys {
+				members, err := rdb.ZRange(t.Context(), key, 0, -1).Result()
+				require.NoError(t, err)
+				require.NotEmpty(t, members)
+				stored = append(stored, members...)
+			}
+			require.ElementsMatch(t, tasks, stored)
+
+			// A sample large enough to hold every task should collect tasks
+			// from all shards.
+			sample, err := np.SampleUnclaimedTasks(t.Context(), len(tasks))
+			require.NoError(t, err)
+			require.ElementsMatch(t, tasks, sample)
+
+			// Removing tasks should remove them from whichever shard they were
+			// added to, so they no longer show up in samples.
+			for _, task := range tasks[:10] {
+				require.NoError(t, np.RemoveUnclaimedTask(t.Context(), task))
+			}
+			sample, err = np.SampleUnclaimedTasks(t.Context(), len(tasks))
+			require.NoError(t, err)
+			require.ElementsMatch(t, tasks[10:], sample)
+		})
+	}
+}
+
+func TestUnclaimedTasksSharding_MaxSize(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_shard_count", 3)
+	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", 2)
+	rdb := testredis.Start(t).Client()
+	t.Cleanup(func() { rdb.Close() })
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionRedisClient(rdb)
+	janitor := newUnclaimedTasksJanitor(rdb, env.GetClock())
+	np := newNodePool(env, nodePoolKey{os: "linux", arch: "amd64", pool: "pool"}, janitor)
+
+	// Add many more tasks than the max size, so that every shard is over it.
+	for i := range 30 {
+		require.NoError(t, np.AddUnclaimedTask(t.Context(), fmt.Sprintf("task-%d", i)))
+	}
+
+	// The max size applies to each shard, so a janitor pass should trim each
+	// of the 3 shards down to the max size.
+	err := janitor.clean(t.Context())
+	require.NoError(t, err)
+	for _, key := range np.unclaimedTasksKeys {
+		size, err := rdb.ZCard(t.Context(), key).Result()
+		require.NoError(t, err)
+		require.Equal(t, int64(2), size)
+	}
+}
+
+func TestUnclaimedTasksSharding_FailedShard(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_shard_count", 3)
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	rdb := testredis.Start(t).Client()
+	t.Cleanup(func() { rdb.Close() })
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionRedisClient(rdb)
+	np := newNodePool(env, nodePoolKey{os: "linux", arch: "amd64", pool: "pool"}, newUnclaimedTasksJanitor(rdb, env.GetClock()))
+
+	// Add enough tasks that every shard receives some of them.
+	var tasks []string
+	for i := range 30 {
+		task := fmt.Sprintf("task-%d", i)
+		tasks = append(tasks, task)
+		require.NoError(t, np.AddUnclaimedTask(t.Context(), task))
+	}
+
+	// Make reads of the first shard fail, as if its Redis shard were down.
+	failedKey := np.unclaimedTasksKeys[0]
+	failedKeys := []string{failedKey}
+	rdb.AddHook(testredis.Hook{
+		AfterProcessPipelineFunc: func(ctx context.Context, cmds []redis.Cmder) error {
+			for _, cmd := range cmds {
+				if cmd.Name() != "zrange" {
+					continue
+				}
+				if key, ok := cmd.Args()[1].(string); ok && slices.Contains(failedKeys, key) {
+					cmd.SetErr(errors.New("redis shard is down"))
+				}
+			}
+			return nil
+		},
+	})
+
+	// Sampling should still return the tasks stored in the other shards.
+	var expected []string
+	for _, task := range tasks {
+		if np.unclaimedTasksKey(task) != failedKey {
+			expected = append(expected, task)
+		}
+	}
+	sample, err := np.SampleUnclaimedTasks(t.Context(), len(tasks))
+	require.NoError(t, err)
+	require.ElementsMatch(t, expected, sample)
+
+	// If reads of every shard fail, sampling should return an error rather
+	// than an empty sample.
+	failedKeys = np.unclaimedTasksKeys
+	_, err = np.SampleUnclaimedTasks(t.Context(), len(tasks))
+	require.Error(t, err)
 }
 
 func BenchmarkSampleUnclaimedTasks(b *testing.B) {
@@ -2384,4 +2635,15 @@ func TestGetNewestVersion_ScopedToSharedPoolGroup(t *testing.T) {
 	v := s.getNewestVersion(ctx)
 	require.NotNil(t, v)
 	require.Equal(t, "2.153.0", v.String())
+}
+
+func TestShutdown_StopsBackgroundGoroutines(t *testing.T) {
+	// getEnv checks for leaked goroutines, which catches any goroutines (such
+	// as an executor's stream receiver) still running after shutdown.
+	env, _ := getEnv(t, &schedulerOpts{}, "user1")
+	executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
+	executor.Register()
+
+	env.GetHealthChecker().Shutdown()
+	env.GetHealthChecker().WaitForGracefulShutdown()
 }

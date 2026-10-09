@@ -250,14 +250,19 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
 		return nil, nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
 	}
+	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
+		rsp.GetExecutionMetadata().GetUsageStats().Timeline = nil
+	}
+
+	// Measure the ActionResult before inlining output files: inlined files are
+	// tracked as individual CAS downloads, so their bytes must not also count
+	// towards the ActionResult download.
+	resultSizeBytes := int64(proto.Size(rsp))
+
 	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
 	// change it.
 	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
 		return nil, nil, 0, err
-	}
-
-	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
-		rsp.GetExecutionMetadata().GetUsageStats().Timeline = nil
 	}
 
 	// See if the caller specified a cached value.  If they did and it matches
@@ -273,7 +278,6 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 		// means we need to track the full response size here instead.
 
 		originalMetadata := rsp.GetExecutionMetadata()
-		originalResultSize := int64(proto.Size(rsp))
 
 		// Now that we've tracked size and metadata, wipe out the response.
 		if proto.Equal(req.GetCachedActionResultDigest(), d) {
@@ -281,10 +285,10 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 				ActionResultDigest: d,
 			}
 		}
-		return rsp, originalMetadata, originalResultSize, nil
+		return rsp, originalMetadata, resultSizeBytes, nil
 	}
 
-	return rsp, rsp.GetExecutionMetadata(), int64(proto.Size(rsp)), nil
+	return rsp, rsp.GetExecutionMetadata(), resultSizeBytes, nil
 }
 
 // Retrieve a cached execution result.

@@ -52,6 +52,12 @@ func TestConfigure(t *testing.T) {
 			expectError: true,
 		},
 		{
+			// 1e19 cores is too many milliCPU for an int64.
+			name:        "out of range SYS_CPU core setting returns error",
+			env:         map[string]string{"SYS_CPU": "1e19"},
+			expectError: true,
+		},
+		{
 			name:        "setting both flag and env var returns error",
 			flags:       map[string]any{"executor.millicpu": 1234},
 			env:         map[string]string{"SYS_CPU": "1"},

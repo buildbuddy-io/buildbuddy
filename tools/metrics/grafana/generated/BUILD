@@ -20,5 +20,6 @@ filegroup(
         "//tools/metrics/grafana/generated/nameserver:nameserver.json",
         "//tools/metrics/grafana/generated/oci_image_fetches:oci-image-fetches.json",
         "//tools/metrics/grafana/generated/raft:raft.json",
+        "//tools/metrics/grafana/generated/traffic_stats:traffic-stats.json",
     ],
 )

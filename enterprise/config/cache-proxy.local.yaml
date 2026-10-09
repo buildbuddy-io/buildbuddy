@@ -10,7 +10,5 @@ cache:
     root_directory: /tmp/${USER}-buildbuddy-enterprise-pebble-cache
 cache_proxy:
   remote_cache: "grpc://localhost:1985"
-  remote_hit_tracker:
-    target: "grpc://localhost:1985"
 crypter:
   remote_target: "grpc://localhost:1985"

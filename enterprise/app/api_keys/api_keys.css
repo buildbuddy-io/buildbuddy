@@ -154,6 +154,38 @@
 
 .api-keys-form .field-description {
   color: var(--color-text-emphasis);
+  font-weight: normal;
+}
+
+.api-keys-form .note-input-label,
+.api-keys-form legend {
+  font-weight: 600;
+}
+
+.api-keys-form .form-section {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.api-keys-form .form-section:not(:last-child) {
+  margin-bottom: 16px;
+}
+
+.api-keys-form .form-section legend {
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+/* Options within a section sit closer together than separate fields, so the
+ * section reads as a single group. */
+.api-keys-form .form-section .field-container:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.api-keys-form .dialog-footer {
+  margin-top: 16px;
 }
 
 .api-keys-form label {
@@ -166,7 +198,9 @@
   height: 20px;
   flex-shrink: 0;
   user-select: none;
-  margin-right: 8px;
+  /* Drop the browser's default margins so controls line up with the label
+   * input's left edge. */
+  margin: 0 8px 0 0;
 }
 
 .api-keys-delete-modal .delete-modal-key-label {

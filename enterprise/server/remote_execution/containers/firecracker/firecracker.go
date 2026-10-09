@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd"
@@ -1994,7 +1995,7 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 
 	externalNetworking := externalNetworkingEnabled(c.vmConfig.NetworkMode)
 
-	if slices.Contains(c.task.GetExperiments(), "executor.userspace_networking") {
+	if execution_experiments.UserspaceNetworking.Get(ctx) {
 		network, err := usernet.NewVMNetwork(ctx, tapDeviceName, tapAddr, externalNetworking)
 		if err != nil {
 			return status.UnavailableErrorf("create userspace VM network: %s", err)

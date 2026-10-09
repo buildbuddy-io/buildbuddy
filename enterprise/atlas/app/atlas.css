@@ -1,0 +1,635 @@
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: "Open Sans", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+}
+
+a {
+  color: var(--color-link);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code,
+pre,
+.atlas-mono {
+  font-family: "Source Code Pro", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Layout */
+
+.atlas-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.atlas-header {
+  flex: none;
+  /* width of the body gutter so that header contents is aligned with body contents */
+  padding-right: var(--atlas-scrollbar, 0px);
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border-primary);
+  position: relative;
+  z-index: 10;
+}
+
+/* The same 1100px column as .atlas-column, so the two line up. */
+.atlas-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 10px 20px;
+}
+
+.atlas-logo {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.atlas-logo span {
+  color: var(--color-status-success);
+}
+
+.atlas-logo:hover {
+  text-decoration: none;
+}
+
+.atlas-searchbox {
+  flex: 1;
+  position: relative;
+  max-width: 860px;
+}
+
+.atlas-searchbox .atlas-search-input {
+  width: 100%;
+}
+
+/* Which cluster this is, at the right of the header; a picker when there
+   are others to switch to. */
+.atlas-cluster-name {
+  color: var(--color-text-secondary);
+  font-size: 12.5px;
+}
+
+.atlas-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  --icon-size: 16px;
+}
+
+.atlas-theme-toggle:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+}
+
+.atlas-cluster-picker {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 3px 8px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 6px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.atlas-search-meta {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.atlas-navlink {
+  margin-left: auto; /* controls sit at the column's right edge */
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.atlas-navlink.error::after {
+  content: "●";
+  color: var(--color-status-error);
+  margin-left: 6px;
+}
+
+.atlas-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.atlas-column {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.atlas-spinner {
+  margin: 48px auto;
+}
+
+/* Landing hint and empty states */
+
+.atlas-hint {
+  color: var(--color-text-muted);
+  text-align: center;
+  margin-top: 12vh;
+}
+
+.atlas-hint-big {
+  font-size: 40px;
+}
+
+.atlas-hint kbd {
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-primary);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 12px;
+}
+
+/* Search results */
+
+.atlas-group {
+  margin-bottom: 22px;
+}
+
+.atlas-group h2,
+.atlas-section h3,
+.atlas-yaml summary {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  margin: 0 0 6px 2px;
+  font-weight: 600;
+}
+
+.atlas-count {
+  color: var(--color-status-success);
+}
+
+.atlas-card {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.atlas-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--color-border-primary);
+  color: var(--color-text-primary);
+}
+
+.atlas-row:last-child {
+  border-bottom: none;
+}
+
+.atlas-row:hover,
+.atlas-row.selected {
+  background: var(--color-bg-hover);
+}
+
+/* The clickable line of a row; port links go on a line below it, outside
+   the anchor. */
+.atlas-row-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--color-text-primary);
+}
+
+.atlas-row-main:hover {
+  text-decoration: none;
+}
+
+.atlas-row-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* A port in a result row: [name | copy]. The name opens it when a browser
+   can; copy puts host:port (or a page's URL) on the clipboard. */
+.atlas-port-chip {
+  display: inline-flex;
+  align-items: stretch;
+  font-size: 11.5px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+}
+
+.atlas-port-chip-name {
+  padding: 1px 8px;
+  color: inherit;
+}
+
+a.atlas-port-chip-name:hover {
+  text-decoration: underline;
+}
+
+.atlas-port-chip-copy.atlas-copy-button {
+  border: none;
+  border-left: 1px solid var(--color-border-primary);
+  border-radius: 0 5px 5px 0;
+  background: none;
+  padding: 0 6px;
+  --icon-size: 12px;
+}
+
+.atlas-row.selected {
+  box-shadow: inset 3px 0 0 var(--color-status-success);
+}
+
+.atlas-row-name {
+  font-weight: 600;
+}
+
+.atlas-row-context {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin-left: auto;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+}
+
+/* Badges */
+
+.atlas-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-primary);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.atlas-badge.cluster {
+  color: var(--color-deep-purple-500);
+  background: var(--color-bg-info-subtle);
+}
+
+/* The 500 purple is a fixed palette color and sinks into the dark set's
+   grey background; lift it. */
+html.dark .atlas-badge.cluster {
+  color: var(--color-purple-300-alt);
+}
+
+.atlas-badge.ns {
+  color: var(--color-status-info);
+  background: var(--color-status-info-bg);
+}
+
+.atlas-badge.ok {
+  color: var(--color-status-success);
+  background: var(--color-status-success-bg);
+}
+
+.atlas-badge.bad {
+  color: var(--color-status-error);
+  background: var(--color-status-error-bg);
+}
+
+.atlas-badge.warn {
+  color: var(--color-status-warning);
+}
+
+/* Detail page */
+
+.atlas-detail h1 {
+  font-size: 22px;
+  margin: 4px 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  word-break: break-all;
+}
+
+.atlas-crumb,
+.atlas-meta-line {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.atlas-meta-line {
+  margin-bottom: 14px;
+}
+
+.atlas-section {
+  margin: 18px 0;
+}
+
+.atlas-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.atlas-chip {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 12.5px;
+  color: var(--color-text-primary);
+}
+
+.atlas-chip:hover {
+  border-color: var(--color-border-focus);
+  text-decoration: none;
+}
+
+.atlas-chip-key {
+  color: var(--color-text-muted);
+}
+
+.atlas-portrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.atlas-portrow:last-child {
+  border-bottom: none;
+}
+
+.atlas-port-name {
+  min-width: 130px;
+  font-weight: 600;
+}
+
+.atlas-port-links {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Picks which way to reach the ports: the pod, or one of its services. */
+.atlas-switch {
+  display: inline-flex;
+  gap: 2px;
+  margin: 0 0 8px 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 8px;
+  background: var(--color-bg-secondary);
+}
+
+.atlas-switch-option {
+  border: none;
+  background: none;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.atlas-switch-option.selected {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.atlas-copy-button,
+.atlas-small-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 6px;
+  padding: 2px 9px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  --icon-size: 13px;
+}
+
+.atlas-copy-button:hover,
+.atlas-small-button:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-border-focus);
+}
+
+.atlas-copy-button.copied {
+  color: var(--color-status-success);
+}
+
+.atlas-small-button.base-button {
+  height: auto;
+  min-height: 0;
+}
+
+.atlas-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.atlas-table th {
+  text-align: left;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.atlas-table td {
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.atlas-table tr:last-child td {
+  border-bottom: none;
+}
+
+.atlas-wrap {
+  word-break: break-word;
+}
+
+.atlas-nowrap {
+  white-space: nowrap;
+}
+
+.atlas-yaml summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.atlas-yaml pre {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 10px;
+  padding: 14px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  margin: 0;
+}
+
+/* Logs */
+
+.atlas-logbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--color-border-primary);
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  flex-wrap: wrap;
+}
+
+.atlas-logbar .select-wrapper .select {
+  height: 28px;
+  padding: 0 28px 0 8px;
+  font-size: 12.5px;
+}
+
+.atlas-logbar label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.atlas-logpane {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 420px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.atlas-logline.warn .atlas-log-severity {
+  color: var(--color-status-warning);
+}
+
+.atlas-logline.bad .atlas-log-severity,
+.atlas-logline.bad .atlas-log-message {
+  color: var(--color-status-error);
+}
+
+.atlas-log-time {
+  margin-right: 8px;
+  color: var(--color-text-muted);
+}
+
+.atlas-log-severity {
+  display: inline-block;
+  width: 5ch;
+  margin-right: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.atlas-log-source,
+.atlas-log-field {
+  margin-left: 10px;
+  color: var(--color-text-muted);
+}
+
+.atlas-log-key {
+  opacity: 0.7;
+}
+
+/* Clusters */
+
+.atlas-cluster-card {
+  margin-bottom: 18px;
+}
+
+.atlas-cluster-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.atlas-cluster-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* Text helpers */
+
+.atlas-muted {
+  color: var(--color-text-muted);
+}
+
+.atlas-small {
+  font-size: 12px;
+}
+
+.atlas-italic {
+  font-style: italic;
+}
+
+.atlas-error-text {
+  color: var(--color-status-error);
+  font-size: 12.5px;
+}
+
+.atlas-error-panel {
+  background: var(--color-status-error-bg);
+  border: 1px solid var(--color-status-error);
+  color: var(--color-status-error);
+  border-radius: 10px;
+  padding: 14px;
+  margin: 20px 0;
+}

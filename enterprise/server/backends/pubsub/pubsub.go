@@ -344,17 +344,19 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 		defer cancel()
 		defer close(ch)
 		for {
+			var msg *Message
+			var ok bool
 			select {
-			case msg, ok := <-monChan:
-				if !ok {
-					return
-				}
-				ch <- msg
-			case msg, ok := <-msgChan:
-				if !ok {
-					return
-				}
-				ch <- msg
+			case msg, ok = <-monChan:
+			case msg, ok = <-msgChan:
+			case <-ctx.Done():
+				return
+			}
+			if !ok {
+				return
+			}
+			select {
+			case ch <- msg:
 			case <-ctx.Done():
 				return
 			}

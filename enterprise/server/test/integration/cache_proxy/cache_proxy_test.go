@@ -183,12 +183,9 @@ func TestES256Auth_RemoteExecution(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
 	proxy := rbe.AddCacheProxy()
-	conn, err := grpc_client.DialSimple(
-		fmt.Sprintf("grpc://localhost:%d", proxy.Port))
-	require.NoError(t, err)
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
 		Name:      "executor",
-		CacheConn: conn,
+		CacheConn: proxy.Conn(),
 	})
 
 	cmd := rbe.Execute(&repb.Command{
@@ -263,6 +260,85 @@ func TestFindMissing_Encryption(t *testing.T) {
 	resp, err := cas.FindMissingBlobs(ctx, &req)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(resp.MissingBlobDigests))
+}
+
+func TestAllowLocalCacheEncryption(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		t.Run(fmt.Sprintf("allow_local_cache_encryption=%t", allow), func(t *testing.T) {
+			// This flag is process-wide, so it also controls encryption in the
+			// app, but this test only checks the proxy's behavior.
+			flags.Set(t, "crypter.allow_local_cache_encryption", allow)
+			// The proxy needs to authenticate requests locally to read from
+			// and write to its local cache, which requires ES256 JWTs.
+			keyPair := testkeys.GenerateES256KeyPair(t)
+			flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+			flags.Set(t, "auth.remote.use_es256_jwts", true)
+			require.NoError(t, claims.Init())
+
+			var backendReads atomic.Int64
+			interceptor := func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+				if strings.HasSuffix(info.FullMethod, "/BatchReadBlobs") {
+					backendReads.Add(1)
+				}
+				return handler(ctx, req)
+			}
+
+			rbe := rbetest.NewRBETestEnv(t)
+			rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
+				GRPCServerConfig: grpc_server.GRPCServerConfig{
+					ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{interceptor},
+				},
+			})
+			enableEncryption(t, rbe, rbe.UserID1)
+
+			proxy := rbe.AddCacheProxyWithOptions(&rbetest.CacheProxyOptions{
+				EnvModifier: func(env *testenv.TestEnv) {
+					pc, err := pebble_cache.NewPebbleCache(env, &pebble_cache.Options{
+						RootDirectory: testfs.MakeTempDir(t),
+						MaxSizeBytes:  1_000_000_000,
+					})
+					require.NoError(t, err)
+					require.NoError(t, pc.Start())
+					t.Cleanup(func() {
+						require.NoError(t, pc.Stop())
+					})
+					env.SetCache(pc)
+				},
+			})
+			cas := proxy.GetContentAddressableStorageClient()
+
+			blob := []byte("hello, enable-local-cache-encryption test")
+			h := sha256.Sum256(blob)
+			d := &repb.Digest{
+				Hash:      hex.EncodeToString(h[:]),
+				SizeBytes: int64(len(blob)),
+			}
+			ctx := metadata.AppendToOutgoingContext(t.Context(), authutil.APIKeyHeader, rbe.APIKey1)
+
+			updateResp, err := cas.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+				Requests: []*repb.BatchUpdateBlobsRequest_Request{
+					{Digest: d, Data: blob},
+				},
+			})
+			require.NoError(t, err)
+			require.Len(t, updateResp.Responses, 1)
+			require.EqualValues(t, 0, updateResp.Responses[0].GetStatus().GetCode())
+
+			readResp, err := cas.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+				Digests: []*repb.Digest{d},
+			})
+			require.NoError(t, err)
+			require.Len(t, readResp.Responses, 1)
+			require.EqualValues(t, 0, readResp.Responses[0].GetStatus().GetCode())
+			require.Equal(t, blob, readResp.Responses[0].GetData())
+
+			if allow {
+				require.Positive(t, backendReads.Load(), "expected the read to bypass the proxy's local cache")
+			} else {
+				require.Zero(t, backendReads.Load(), "expected the read to be served from the proxy's local cache")
+			}
+		})
+	}
 }
 
 func TestAtimeUpdateAuth(t *testing.T) {

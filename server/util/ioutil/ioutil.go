@@ -444,3 +444,7 @@ func (b *SpillBuffer) releaseBuf() {
 	spillBufferPool.Put(b.buf)
 	b.buf = nil
 }
+
+// OnlyWriter wraps an io.Writer and only exposes the Write method, hiding
+// any other methods the underlying writer may implement.
+type OnlyWriter struct{ io.Writer }

@@ -29,8 +29,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/useragent"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/peer"
@@ -165,6 +167,8 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 			attribute.String("compressor", r.GetCompressor().String()),
 			attribute.Int64("resource_size", r.GetDigest().GetSizeBytes()),
 			attribute.String("peer", rpcPeerAddr(ctx)),
+			attribute.String("user_agent", useragent.Get(ctx)),
+			attribute.String("subdomain", subdomain.Get(ctx)),
 			attribute.String("invocation_id", bazelMetadata.GetToolInvocationId()),
 			attribute.String("action_id", bazelMetadata.GetActionId()),
 			attribute.String("action_mnemonic", bazelMetadata.GetActionMnemonic()),

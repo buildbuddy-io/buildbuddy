@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { User } from "../../../app/auth/user";
+import capabilities from "../../../app/capabilities/capabilities";
 import Button from "../../../app/components/button/button";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import Select, { Option } from "../../../app/components/select/select";
@@ -279,11 +280,19 @@ export default class TrendsComponent extends React.Component<Props, State> {
   };
 
   handleBarClick = (data: TargetChartData) => {
-    this.navigateToTargetDrilldown(data.target);
+    if (capabilities.config.singleTargetStatsEnabled) {
+      router.navigateToSingleTarget(data.target);
+    } else {
+      this.navigateToTargetDrilldown(data.target);
+    }
   };
 
   handleTableRowClick = (target: string) => {
-    this.navigateToTargetDrilldown(target);
+    if (capabilities.config.singleTargetStatsEnabled) {
+      router.navigateToSingleTarget(target);
+    } else {
+      this.navigateToTargetDrilldown(target);
+    }
   };
 
   navigateToTargetDrilldown = (target: string) => {
