@@ -80,33 +80,33 @@ func MustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStre
 	res, err := uploadStream.CloseAndRecv()
 	require.NoError(t, err)
 
-	rn, err := digest.ParseUploadResourceName(uploadResourceName)
-	require.NoError(t, err)
-	isCompressed := rn.GetCompressor() != repb.Compressor_IDENTITY
+	//rn, err := digest.ParseUploadResourceName(uploadResourceName)
+	//require.NoError(t, err)
+	//isCompressed := rn.GetCompressor() != repb.Compressor_IDENTITY
 
 	// If this is a duplicate write, we expect the upload to be short-circuited.
-	shouldShortCircuit := !isFirstAttempt
+	//shouldShortCircuit := !isFirstAttempt
 
 	// Note: Bazel pre-5.1.0 doesn't support short-circuiting compressed writes.
 	// Instead, the server should allow the client to upload the full stream,
 	// but just discard the uploaded stream.
 	// See https://github.com/bazelbuild/bazel/issues/14654
-	bazel5_1_0 := bazel_request.MustParseVersion("5.1.0")
-	if v := bazel_request.MustParseVersion(bazelVersion); isCompressed && !v.IsAtLeast(bazel5_1_0) {
-		shouldShortCircuit = false
-	}
+	//bazel5_1_0 := bazel_request.MustParseVersion("5.1.0")
+	//if v := bazel_request.MustParseVersion(bazelVersion); isCompressed && !v.IsAtLeast(bazel5_1_0) {
+	//	shouldShortCircuit = false
+	//}
 
-	if shouldShortCircuit {
-		// When short-circuiting, we expect committed size to be -1 for
-		// compressed blobs, since the committed size can vary depending on
-		// things like compression level.
-		if isCompressed {
-			require.Equal(t, int64(-1), res.CommittedSize)
-		} else {
-			require.Equal(t, rn.GetDigest().GetSizeBytes(), res.CommittedSize)
-		}
-		return
-	}
+	//if shouldShortCircuit {
+	//	// When short-circuiting, we expect committed size to be -1 for
+	//	// compressed blobs, since the committed size can vary depending on
+	//	// things like compression level.
+	//	if isCompressed {
+	//		require.Equal(t, int64(-1), res.CommittedSize)
+	//	} else {
+	//		require.Equal(t, rn.GetDigest().GetSizeBytes(), res.CommittedSize)
+	//	}
+	//	return
+	//}
 
 	require.Equal(t, int64(len(blob)), res.CommittedSize)
 	require.Len(t, remaining, 0, "not all bytes were uploaded")

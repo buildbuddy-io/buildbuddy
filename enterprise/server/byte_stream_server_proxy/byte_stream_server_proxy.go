@@ -749,6 +749,13 @@ type readThroughCacheStream struct {
 // Recv turns a ReadResponse from a remote read into a WriteRequest that gets
 // returned to a local write.
 func (r *readThroughCacheStream) Recv() (*bspb.WriteRequest, error) {
+	// If we already got an EOF from the remote and generated the final write
+	// request then there's nothing more to do here. Just return the error,
+	// which should only be io.EOF in practice.
+	if r.remoteRecvErr != nil {
+		return nil, r.remoteRecvErr
+	}
+
 	resp, err := r.remote.Recv()
 	if err != nil {
 		r.remoteRecvErr = err

@@ -458,6 +458,8 @@ const (
 	// operator-controlled zone files, so cardinality is bounded. Named
 	// "dns_zone" because ZoneLabel ("zone") is the availability zone of a node.
 	DNSZoneLabel = "dns_zone"
+
+	ByteStreamIgnoredBytesReasonLabel = "reason"
 )
 
 // Label value constants
@@ -4529,6 +4531,16 @@ var (
 		ChunkedFailureReasonLabel,
 		StatusHumanReadableLabel,
 		ChunkedOffsetReadLabel,
+	})
+
+	ByteStreamIgnoredBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "byte_stream_ignored_bytes",
+		Help:      "Number of bytes received by the bytestream server after the first request that were not written to the cache.",
+	}, []string{
+		GroupID,
+		ByteStreamIgnoredBytesReasonLabel,
 	})
 
 	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{

@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
@@ -49,7 +50,6 @@ const defaultChunkedReadMaxInFlight = 32
 var compressBufSize = int(4e6) // 4MB
 
 var (
-	bazel5_1_0              = bazel_request.MustParseVersion("5.1.0")
 	maxDirectWriteSizeBytes = flag.Int64("cache.max_direct_write_size_bytes", 16384, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
 )
 
@@ -556,6 +556,10 @@ type writeHandler struct {
 	resourceName       *digest.CASResourceName
 	resourceNameString string
 	offset             int64
+
+	ctx                    context.Context
+	skipCacheWriteReason   string
+	skippedCacheWriteBytes int64
 }
 
 func checkInitialPreconditions(req *bspb.WriteRequest) error {
@@ -604,14 +608,25 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		}
 	}
 
-	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
-	if err != nil {
-		return nil, err
+	// We can skip writing to the cache if we know the data already exists or
+	// we do not want to bytes to be written. We still do all the surround work
+	// like checksumming and transfer tracking.
+	skipCacheWriteReason := ""
+
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		skipCacheWriteReason = "blackhole_anon"
 	}
-	if !canWrite {
-		// Return already-exists error if the API key may not write so that
-		// higher-level code can detect and short-circuit this case.
-		return nil, status.AlreadyExistsError("The provided API Key does not have permission to write to the cache")
+
+	if skipCacheWriteReason == "" {
+		canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+		if err != nil {
+			return nil, err
+		}
+		if !canWrite {
+			// If the API key may not write then pretend the write works without
+			// writing any of the bytes to the cache.
+			skipCacheWriteReason = "read_only_api_key"
+		}
 	}
 
 	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
@@ -624,7 +639,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		compressData = true
 	}
 
-	if r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
+	if skipCacheWriteReason == "" && r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
 		// The protocol says it is *optional* to allow overwriting, but does
 		// not specify what errors should be returned in that case. We would
 		// like to return an "AlreadyExists" error here, but it causes errors
@@ -638,12 +653,12 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 			return nil, err
 		}
 		if exists {
-			return nil, status.AlreadyExistsError("Already exists")
+			skipCacheWriteReason = "already_exists"
 		}
 	}
 
 	var committedWriteCloser interfaces.CommittedWriteCloser
-	if r.IsEmpty() {
+	if r.IsEmpty() || skipCacheWriteReason != "" {
 		committedWriteCloser = ioutil.DiscardWriteCloser()
 	} else {
 		cacheWriter, err := s.cache.Writer(ctx, casRN.ToProto())
@@ -655,11 +670,21 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 	hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 	skipValidation := skipWriteValidation(ctx)
 	ws := &writeHandler{
-		transferTimer:      hitTracker.TrackUpload(r.GetDigest()),
-		resourceName:       r,
-		resourceNameString: req.ResourceName,
-		cacheCommitter:     committedWriteCloser,
-		cacheCloser:        committedWriteCloser,
+		transferTimer:          hitTracker.TrackUpload(r.GetDigest()),
+		resourceName:           r,
+		resourceNameString:     req.ResourceName,
+		cacheCommitter:         committedWriteCloser,
+		cacheCloser:            committedWriteCloser,
+		ctx:                    ctx,
+		skipCacheWriteReason:   skipCacheWriteReason,
+		skippedCacheWriteBytes: 0,
+	}
+
+	// If we're not writing to the cache, we can skip all the checksumming
+	// and compression logic below.
+	if skipCacheWriteReason != "" {
+		ws.writer = committedWriteCloser
+		return ws, nil
 	}
 
 	if skipValidation {
@@ -733,6 +758,9 @@ func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error
 	if err != nil {
 		return nil, err
 	}
+	if w.skipCacheWriteReason != "" && w.offset != 0 {
+		w.skippedCacheWriteBytes += int64(len(req.Data))
+	}
 	w.bytesUploadedFromClient += len(req.Data)
 	w.offset += int64(n)
 	if req.FinishWrite {
@@ -771,6 +799,18 @@ func (w *writeHandler) commit() error {
 }
 
 func (w *writeHandler) Close() error {
+	if w.skipCacheWriteReason != "" {
+		groupID := interfaces.AuthAnonymousUser
+		c, err := claims.ClaimsFromContext(w.ctx)
+		if err == nil {
+			groupID = c.GetGroupID()
+		}
+		metrics.ByteStreamIgnoredBytes.With(prometheus.Labels{
+			metrics.GroupID: groupID,
+			metrics.ByteStreamIgnoredBytesReasonLabel: w.skipCacheWriteReason,
+		}).Add(float64(w.skippedCacheWriteBytes))
+	}
+
 	if err := w.transferTimer.CloseWithBytesTransferred(w.offset, int64(w.bytesUploadedFromClient), w.resourceName.GetCompressor(), "byte_stream_server"); err != nil {
 		log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
 	}
@@ -779,6 +819,17 @@ func (w *writeHandler) Close() error {
 		w.bufioCloser.Close()
 	}
 	return w.cacheCloser.Close()
+}
+
+func (s *ByteStreamServer) waitForClientClose(stream bspb.ByteStream_WriteServer) error {
+	req, err := stream.Recv()
+	if err == io.EOF {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return status.FailedPreconditionErrorf("received WriteRequest with %d bytes after finish_write", len(req.GetData()))
 }
 
 // `Write()` is used to send the contents of a resource as a sequence of
@@ -816,15 +867,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 		}
 
 		if streamState == nil {
-			if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
-				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
-				return s.handleAlreadyExists(ctx, hitTracker, stream, req)
-			}
 			streamState, err = s.beginWrite(ctx, req)
-			if status.IsAlreadyExistsError(err) {
-				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
-				return s.handleAlreadyExists(ctx, hitTracker, stream, req)
-			}
 			if err != nil {
 				return err
 			}
@@ -842,6 +885,9 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 		if resp != nil {
 			// Warn after the write has completed.
 			if err := s.warner.Warn(ctx); err != nil {
+				return err
+			}
+			if err := s.waitForClientClose(stream); err != nil {
 				return err
 			}
 			return stream.SendAndClose(resp)
@@ -877,61 +923,6 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 	// to this method in the case of Bazel.
 	// https://github.com/bazelbuild/bazel/pull/28235
 	return nil, status.UnimplementedError("not implemented")
-}
-
-func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interfaces.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
-	r, err := digest.ParseUploadResourceName(firstRequest.ResourceName)
-	if err != nil {
-		return err
-	}
-	clientUploadedBytes := int64(len(firstRequest.Data))
-
-	uploadTracker := ht.TrackUpload(r.GetDigest())
-	defer func() {
-		if err := uploadTracker.CloseWithBytesTransferred(0, clientUploadedBytes, r.GetCompressor(), "byte_stream_server"); err != nil {
-			log.Debugf("handleAlreadyExists: uploadTracker.CloseWithBytesTransferred error: %s", err)
-		}
-	}()
-
-	// Uncompressed uploads can always short-circuit, returning
-	// the digest size as the committed size.
-	if r.GetCompressor() == repb.Compressor_IDENTITY {
-		return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: r.GetDigest().GetSizeBytes()})
-	}
-
-	// Bazel pre-5.1.0 doesn't support short-circuiting compressed uploads.
-	// Instead, it expects the committed size to match the size of the
-	// compressed stream. Since there is no unique compressed representation,
-	// the only way to get the compressed stream size is to read the full
-	// stream.
-	if v := bazel_request.GetVersion(ctx); v != nil && !v.IsAtLeast(bazel5_1_0) {
-		if !firstRequest.FinishWrite {
-			n, err := s.recvAll(stream)
-			clientUploadedBytes += n
-			if err != nil {
-				return err
-			}
-		}
-		return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: clientUploadedBytes})
-	}
-
-	return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: -1})
-}
-
-// recvAll receives the remaining write requests from the client, and returns
-// the total (compressed) size of the uploaded bytes.
-func (s *ByteStreamServer) recvAll(stream bspb.ByteStream_WriteServer) (int64, error) {
-	size := int64(0)
-	for {
-		req, err := stream.Recv()
-		if err == io.EOF {
-			return size, nil
-		}
-		if err != nil {
-			return size, err
-		}
-		size += int64(len(req.Data))
-	}
 }
 
 type Checksum struct {

@@ -1256,7 +1256,7 @@ func TestUploadWriter_BlobExists(t *testing.T) {
 				err = uw.Commit()
 				require.NoError(t, err)
 				if useZstd {
-					require.Equal(t, int64(-1), uw.GetCommittedSize())
+					require.Greater(t, uw.GetCommittedSize(), int64(0))
 				} else {
 					require.Equal(t, uploadSize, uw.GetCommittedSize())
 				}
