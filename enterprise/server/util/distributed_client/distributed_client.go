@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
@@ -62,6 +63,7 @@ var (
 	connWindowSize     = flag.Int("cache.distributed_cache.conn_window_size", 64*1024*1024, "Static HTTP/2 window size of each connection in bytes")
 	streamWindowSize   = flag.Int("cache.distributed_cache.stream_window_size", 8*1024*1024, "Static HTTP/2 Window size of each stream in bytes")
 	poolSize           = flag.Int("cache.distributed_cache.client_pool_size", 4, "Number of connections to open per peer.")
+	maxReconnectDelay  = flag.Duration("cache.distributed_cache.max_reconnect_delay", 5*time.Second, "About the longest to wait between attempts to reconnect to a peer (gRPC adds up to 20% jitter). gRPC's default backoff grows to two minutes, which leaves a restarted peer unreachable long after it's back up. If not positive, gRPC's default backoff is used.")
 )
 
 type Proxy struct {
@@ -201,10 +203,19 @@ func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCac
 
 	// Disable dynamic windows. Bursty traffic can undersize the window and
 	// cause flow control to kick in prematurely.
+	backoffConfig := backoff.DefaultConfig
+	if *maxReconnectDelay > 0 {
+		backoffConfig.BaseDelay = min(backoffConfig.BaseDelay, *maxReconnectDelay)
+		backoffConfig.MaxDelay = *maxReconnectDelay
+	}
 	conn, err := grpc_client.DialInternalWithPoolSize(c.env, resolverPrefix+peer,
 		*poolSize,
 		grpc.WithStaticConnWindowSize(int32(*connWindowSize)),
-		grpc.WithStaticStreamWindowSize(int32(*streamWindowSize)))
+		grpc.WithStaticStreamWindowSize(int32(*streamWindowSize)),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff:           backoffConfig,
+			MinConnectTimeout: 20 * time.Second,
+		}))
 	if err != nil {
 		return nil, err
 	}
