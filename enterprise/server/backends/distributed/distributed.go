@@ -926,21 +926,7 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.FindMissing(ctx, rns)
 	}
-
-	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
-	for _, r := range rns {
-		// If quorum is requested, skip the lookaside cache to make sure the required number of replicas have the artifact.
-		if !findmissing.RequiresQuorum(ctx) {
-			if _, found := c.getLookasideEntry(ctx, r); found {
-				continue
-			}
-		}
-		stillMissing = append(stillMissing, r)
-	}
-	if len(stillMissing) == 0 {
-		return nil, nil
-	}
-	return c.distributedProxy.RemoteFindMissing(ctx, peer, stillMissing)
+	return c.distributedProxy.RemoteFindMissing(ctx, peer, rns)
 }
 
 // recordRead records one object served by a distributed cache read, by
@@ -1472,6 +1458,21 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		if requiredReplicas >= c.opts.ReplicationFactor {
 			return nil, status.FailedPreconditionError("Quorum availability checks are not supported by the current cache configuration")
 		}
+	} else if c.lookasideCacheEnabled() {
+		// Only check the lookaside cache if quorum is not required.
+		var stillMissing []*rspb.ResourceName
+		for _, r := range resources {
+			if _, found := c.getLookasideEntry(ctx, r); !found {
+				if stillMissing == nil {
+					stillMissing = make([]*rspb.ResourceName, 0, len(resources))
+				}
+				stillMissing = append(stillMissing, r)
+			}
+		}
+		if len(stillMissing) == 0 {
+			return nil, nil
+		}
+		resources = stillMissing
 	}
 	purpose := findmissing.PurposeFromContext(ctx)
 
