@@ -27,6 +27,7 @@ package cache_proxy_registry_server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -42,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -51,6 +53,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
@@ -71,6 +74,11 @@ const (
 
 	// How long GetCacheProxy waits for a cache proxy to respond.
 	getDetailsTimeout = 15 * time.Second
+
+	// Connections to peer app instances that haven't been used for this long
+	// are closed. Peers come and go during app rollouts.
+	unusedPeerConnExpiration    = 10 * time.Minute
+	unusedPeerConnCheckInterval = 1 * time.Minute
 
 	// Message attached to upgrade prompts returned by GetCacheProxies.
 	upgradePromptMessage = "One or more of your cache proxies are running an outdated version. The newest available version is %s."
@@ -100,6 +108,10 @@ type CacheProxyRegistryServer struct {
 	// The registration streams held by this app instance.
 	streamsMu sync.Mutex
 	streams   map[proxyKey]*registrationStream
+
+	// Connections to peer app instances, keyed by host:port, used to forward
+	// GetCacheProxy requests to the instance holding a proxy's stream.
+	peerConns *grpc_client.ConnCache
 }
 
 type proxyKey struct {
@@ -161,9 +173,18 @@ func NewCacheProxyRegistryServer(env environment.Env, detector *upgrade.Detector
 	if err != nil {
 		return nil, status.UnknownErrorf("Could not determine own port: %s", err)
 	}
+	peerConns, err := grpc_client.NewConnCache(env, grpc_client.ConnCacheOpts{
+		PoolSize:      1,
+		Expiration:    unusedPeerConnExpiration,
+		CheckInterval: unusedPeerConnCheckInterval,
+	})
+	if err != nil {
+		return nil, err
+	}
 	quit := make(chan struct{})
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		close(quit)
+		peerConns.StopExpiring()
 		return nil
 	})
 	return &CacheProxyRegistryServer{
@@ -174,6 +195,7 @@ func NewCacheProxyRegistryServer(env environment.Env, detector *upgrade.Detector
 		detector:      detector,
 		ownHostPort:   net.JoinHostPort(ownHostname, strconv.Itoa(int(ownPort))),
 		streams:       make(map[proxyKey]*registrationStream),
+		peerConns:     peerConns,
 	}, nil
 }
 
@@ -545,14 +567,20 @@ func (s *CacheProxyRegistryServer) GetCacheProxy(ctx context.Context, req *cppb.
 		return nil, err
 	}
 
-	handle := s.lookupStream(groupID, proxyID)
-	if handle == nil {
-		// TODO(go/b/8433): handle the peer case.
-		return nil, status.NotFoundErrorf("cache proxy %q is not connected to this server", proxyID)
-	}
-
+	// This deadline covers the whole request. If the request is forwarded,
+	// gRPC propagates it to the peer, which applies the same logic, so a
+	// single deadline governs every hop.
 	ctx, cancel := context.WithTimeout(ctx, getDetailsTimeout)
 	defer cancel()
+
+	handle := s.lookupStream(groupID, proxyID)
+	if handle == nil {
+		if req.GetDoNotForward() {
+			return nil, status.NotFoundErrorf("cache proxy %q is not connected to this server", proxyID)
+		}
+		return s.forwardGetCacheProxy(ctx, groupID, req)
+	}
+
 	p := &detailsRequest{
 		ctx: ctx,
 		req: req,
@@ -563,7 +591,7 @@ func (s *CacheProxyRegistryServer) GetCacheProxy(ctx context.Context, req *cppb.
 	case <-handle.done:
 		return nil, status.UnavailableErrorf("registration stream for cache proxy %q closed", proxyID)
 	case <-ctx.Done():
-		return nil, status.FromContextError(ctx)
+		return nil, detailsWaitError(ctx, proxyID)
 	}
 	var details *cppb.CacheProxyDetails
 	select {
@@ -571,7 +599,7 @@ func (s *CacheProxyRegistryServer) GetCacheProxy(ctx context.Context, req *cppb.
 	case <-handle.done:
 		return nil, status.UnavailableErrorf("registration stream for cache proxy %q closed", proxyID)
 	case <-ctx.Done():
-		return nil, status.FromContextError(ctx)
+		return nil, detailsWaitError(ctx, proxyID)
 	}
 	if details == nil {
 		details = &cppb.CacheProxyDetails{}
@@ -586,4 +614,61 @@ func (s *CacheProxyRegistryServer) GetCacheProxy(ctx context.Context, req *cppb.
 			{Summary: details.GetSummary()},
 		}),
 	}, nil
+}
+
+// detailsWaitError returns the error for a GetCacheProxy request whose context
+// ended while waiting for the proxy, directly or via a peer.
+func detailsWaitError(ctx context.Context, proxyID string) error {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return status.DeadlineExceededErrorf("cache proxy %q did not respond in time", proxyID)
+	}
+	return status.FromContextError(ctx)
+}
+
+// forwardGetCacheProxy forwards a GetCacheProxy request to the app instance
+// that, according to Redis, holds the requested proxy's registration stream.
+func (s *CacheProxyRegistryServer) forwardGetCacheProxy(ctx context.Context, groupID string, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error) {
+	proxyID := req.GetSelector().GetProxyId()
+	data, err := s.rdb.HGet(ctx, redisKeyForCacheProxies(groupID), proxyID).Result()
+	if err == redis.Nil {
+		return nil, status.NotFoundErrorf("cache proxy %q not found", proxyID)
+	}
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not look up cache proxy %q: %s", proxyID, err)
+	}
+	reg := &cppb.RegisteredCacheProxy{}
+	if err := proto.Unmarshal([]byte(data), reg); err != nil {
+		return nil, status.InternalErrorf("could not parse registration for cache proxy %q: %s", proxyID, err)
+	}
+	if s.clock.Since(reg.GetLastPingTime().AsTime()) > maxRegistrationStaleness {
+		return nil, status.NotFoundErrorf("cache proxy %q not found", proxyID)
+	}
+	peer := reg.GetAppHostPort()
+	if peer == "" {
+		return nil, status.UnavailableErrorf("registration for cache proxy %q does not record which app holds its stream", proxyID)
+	}
+	if peer == s.ownHostPort {
+		// The registration says this instance holds the stream, but it
+		// doesn't (e.g. the stream just closed).
+		return nil, status.NotFoundErrorf("cache proxy %q is not connected to this server", proxyID)
+	}
+
+	conn, err := s.peerConns.Get(peer)
+	if err != nil {
+		return nil, err
+	}
+	client := bbspb.NewBuildBuddyServiceClient(conn)
+	fwdReq := proto.Clone(req).(*cppb.GetCacheProxyRequest)
+	fwdReq.DoNotForward = true
+	rsp, err := client.GetCacheProxy(ctx, fwdReq)
+	if err != nil {
+		// The peer shares this deadline but sees it slightly later, so when
+		// the proxy doesn't answer, this call times out first.
+		if ctx.Err() != nil {
+			err = detailsWaitError(ctx, proxyID)
+		}
+		log.CtxInfof(ctx, "Forwarding GetCacheProxy for cache proxy %q (group %q) to %q failed: %s", proxyID, groupID, peer, err)
+		return nil, err
+	}
+	return rsp, nil
 }
