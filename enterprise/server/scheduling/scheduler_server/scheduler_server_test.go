@@ -1194,9 +1194,14 @@ func TestLeaseExpiration(t *testing.T) {
 	fakeClock.Advance(2 * time.Second)
 	fe.WaitForTask(taskID)
 
-	// Lease renewal should fail as the stream should be broken.
+	// Lease renewal should fail with the reason the lease ended.
 	err = lease.Renew()
-	require.ErrorIs(t, io.EOF, err)
+	if err == io.EOF {
+		// Send returns io.EOF once the stream has ended, and Recv returns the
+		// stream's status.
+		_, err = lease.stream.Recv()
+	}
+	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got: %v", err)
 }
 
 func TestLeaseReconnectGrace_OtherExecutorsCannotStealTask(t *testing.T) {
