@@ -16,6 +16,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"sync/atomic"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
@@ -186,8 +187,10 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		counter := &countingFetchBlobStream{OCIFetcher_FetchBlobServer: stream}
 		err := s.registryFetcher.FetchBlob(req, counter)
 		// Once bytes have been sent, falling back would replay the blob
-		// from the start.
-		if counter.bytesSent > 0 || !shouldFallBackToApps(err) {
+		// from the start. Before that, also fall back on Internal errors,
+		// which is how the fetcher reports failing to read the blob from
+		// the registry.
+		if counter.bytesSent.Load() > 0 || !(shouldFallBackToApps(err) || status.IsInternalError(err)) {
 			return err
 		}
 		recordFallbackToApps(ctx, "FetchBlob", req.GetRef(), err)
@@ -324,16 +327,19 @@ func newLocalBSWriter(ctx context.Context, bsClient bspb.ByteStreamClient, hash 
 }
 
 // countingFetchBlobStream counts the bytes sent through a FetchBlob stream.
+// The fetcher may still be sending from another goroutine after FetchBlob
+// returns (if the request was canceled while it was deduplicated with
+// another one), so the count is atomic.
 type countingFetchBlobStream struct {
 	ofpb.OCIFetcher_FetchBlobServer
-	bytesSent int64
+	bytesSent atomic.Int64
 }
 
 func (s *countingFetchBlobStream) Send(resp *ofpb.FetchBlobResponse) error {
 	if err := s.OCIFetcher_FetchBlobServer.Send(resp); err != nil {
 		return err
 	}
-	s.bytesSent += int64(len(resp.GetData()))
+	s.bytesSent.Add(int64(len(resp.GetData())))
 	return nil
 }
 
