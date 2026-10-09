@@ -1449,10 +1449,11 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	}
 	// Includes lookaside hits, which the metric below counts as present.
 	requested := len(resources)
+	quorumRequested := findmissing.RequiresQuorum(ctx)
 	// During node migrations, disable quorum requirements so that
 	// reads are respected from both the old and new replica sets,
 	// until data has fully migrated to the new nodes.
-	requireQuorum := findmissing.RequiresQuorum(ctx) && len(c.opts.NewNodes) == 0
+	requireQuorum := quorumRequested && len(c.opts.NewNodes) == 0
 	requiredReplicas := 1
 	if requireQuorum {
 		requiredReplicas = c.opts.ReplicationFactor/2 + 1
@@ -1460,8 +1461,9 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		if requiredReplicas >= c.opts.ReplicationFactor {
 			return nil, status.FailedPreconditionError("Quorum availability checks are not supported by the current cache configuration")
 		}
-	} else if c.lookasideCacheEnabled() {
-		// Only check the lookaside cache if quorum is not required.
+	} else if !quorumRequested && c.lookasideCacheEnabled() {
+		// A quorum request exists to trigger read repair, so never answer it
+		// from the lookaside cache, even during a migration.
 		var stillMissing []*rspb.ResourceName
 		for _, r := range resources {
 			if _, found := c.getLookasideEntry(ctx, r); !found {

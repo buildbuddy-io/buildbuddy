@@ -4931,7 +4931,7 @@ func TestFindMissing_Quorum_DisabledDuringNewNodesMigration(t *testing.T) {
 		caches[peer] = c
 		dc = startNewDCache(t, env, Options{
 			ListenAddr: peer, Nodes: slices.Clone(peers[:3]), NewNodes: slices.Clone(peers[3:]),
-			ReplicationFactor: 3, DisableLocalLookup: true,
+			ReplicationFactor: 3, DisableLocalLookup: true, LookasideCacheSizeBytes: 1000000,
 		}, c)
 		waitForReady(t, peer)
 	}
@@ -4939,6 +4939,9 @@ func TestFindMissing_Quorum_DisabledDuringNewNodesMigration(t *testing.T) {
 	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	// Only an old node has this digest; the new write replicas are empty.
 	require.NoError(t, caches[peers[0]].Cache.Set(ctx, rn, buf))
+	// A lookaside hit must not short-circuit a quorum request, even though the
+	// migration disables the quorum check.
+	dc.addLookasideEntry(ctx, rn, buf)
 	quorumCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(findmissing.RequireQuorumHeader, "true"))
 
 	// Because there is an active migration, the quorum check should be disabled,
@@ -4946,6 +4949,9 @@ func TestFindMissing_Quorum_DisabledDuringNewNodesMigration(t *testing.T) {
 	missing, err := dc.FindMissing(quorumCtx, []*rspb.ResourceName{rn})
 	require.NoError(t, err)
 	require.Empty(t, missing)
+	caches[peers[0]].mu.Lock()
+	require.Equal(t, 1, caches[peers[0]].lookups[rn.GetDigest().GetHash()], "old node must be consulted")
+	caches[peers[0]].mu.Unlock()
 }
 
 func TestFindMissing_Quorum_IgnoresNonReplicaCopies(t *testing.T) {
