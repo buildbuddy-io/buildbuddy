@@ -22,6 +22,7 @@ import (
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc"
 )
 
 func runRegistry(t *testing.T) (*testregistry.Registry, *testhttp.RequestCounter) {
@@ -344,4 +345,40 @@ func TestLocalClientRecvReturnsEOFAfterServerReturns(t *testing.T) {
 		_, err = stream.Recv()
 		require.Equal(t, io.EOF, err)
 	}
+}
+
+// evictedBlobByteStreamClient fails reads of one blob the way the CAS does
+// once the blob has been evicted, as if its AC metadata outlived it.
+type evictedBlobByteStreamClient struct {
+	bspb.ByteStreamClient
+	hash string
+}
+
+func (c evictedBlobByteStreamClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	if strings.Contains(req.GetResourceName(), c.hash) {
+		return nil, status.FailedPreconditionError("blob evicted")
+	}
+	return c.ByteStreamClient.Read(ctx, req, opts...)
+}
+
+func TestLocalServerBypassRegistryFallsBackWhenBlobEvicted(t *testing.T) {
+	reg, counter := runRegistry(t)
+	_, layerRef, want := pushLargeImage(t, reg)
+	counter.Reset()
+	bsClient, acClient := cacheClients(t)
+	ctx := context.Background()
+
+	// Cache the blob and its metadata.
+	got, err := fetchBlob(ctx, newLocalClient(t, bsClient, acClient), layerRef)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.Equal(t, 1, blobGETs(t, counter, layerRef))
+
+	_, digest, _ := strings.Cut(layerRef, "@")
+	evicted := evictedBlobByteStreamClient{ByteStreamClient: bsClient, hash: strings.TrimPrefix(digest, "sha256:")}
+	client := newLocalClient(t, evicted, acClient)
+	got, err = fetchBlobWithRequest(ctx, client, &ofpb.FetchBlobRequest{Ref: layerRef, BypassRegistry: true})
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.Equal(t, 2, blobGETs(t, counter, layerRef))
 }

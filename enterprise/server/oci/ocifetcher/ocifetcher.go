@@ -222,17 +222,26 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	}
 
 	if bypassRegistry {
-		err := s.streamBlobFromCache(ctx, stream, digestRef.Context(), hash)
+		cacheWriter := &grpcStreamWriter{stream: stream}
+		err := s.streamBlobFromCache(ctx, cacheWriter, digestRef.Context(), hash)
 		if err == nil {
 			return nil
+		}
+		if s.inProcess && cacheWriter.bytesWritten == 0 {
+			// An in-process server falls back to the registry for anything
+			// it can't serve from the cache, as long as it hasn't started
+			// streaming. A blob evicted from the CAS shows up as
+			// FailedPrecondition rather than NotFound.
+			if !status.IsNotFoundError(err) {
+				log.CtxWarningf(ctx, "Error fetching blob %q from cache; falling back to registry: %s", digestRef, err)
+			}
+			return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req)
 		}
 		if !status.IsNotFoundError(err) {
 			log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
 			return err
 		}
-		if !s.inProcess {
-			return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
-		}
+		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
 	}
 	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req)
 }
@@ -367,12 +376,12 @@ func parseBlobDigestRef(ref string) (ctrname.Digest, ctr.Hash, error) {
 	return digestRef, hash, nil
 }
 
-func (s *ociFetcherServer) streamBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, repo ctrname.Repository, hash ctr.Hash) error {
+func (s *ociFetcherServer) streamBlobFromCache(ctx context.Context, w io.Writer, repo ctrname.Repository, hash ctr.Hash) error {
 	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
 	if err != nil {
 		return err
 	}
-	return ocicache.FetchBlobFromCache(ctx, &grpcStreamWriter{stream: stream}, s.bsClient, hash, metadata.GetContentLength())
+	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, metadata.GetContentLength())
 }
 
 func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef ctrname.Digest, hash ctr.Hash, req *ofpb.FetchBlobRequest) error {
