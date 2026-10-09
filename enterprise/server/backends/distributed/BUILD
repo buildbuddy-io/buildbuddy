@@ -22,7 +22,6 @@ go_library(
         "//server/resources",
         "//server/util/alert",
         "//server/util/authutil",
-        "//server/util/background",
         "//server/util/claims",
         "//server/util/consistent_hash",
         "//server/util/findmissing",
@@ -44,7 +43,7 @@ go_library(
 
 go_test(
     name = "distributed_test",
-    size = "small",
+    size = "medium",
     srcs = ["distributed_test.go"],
     embed = [":distributed"],
     shard_count = 1,

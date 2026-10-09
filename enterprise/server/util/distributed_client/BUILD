@@ -34,6 +34,7 @@ go_library(
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//backoff",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//reflection",

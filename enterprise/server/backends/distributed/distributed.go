@@ -27,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
@@ -127,8 +126,14 @@ type Cache struct {
 	shutdownMu               *sync.RWMutex
 	shutDownChan             chan struct{}
 	finishedShutdown         bool
-	opts                     Options
-	zone                     string
+	// heartbeatDone is closed when the heartbeat loop exits.
+	heartbeatDone chan struct{}
+	// cancelHintedHandoffs cancels hinted handoff deliveries started by the
+	// heartbeat loop, which hintedHandoffWorkers tracks.
+	cancelHintedHandoffs context.CancelFunc
+	hintedHandoffWorkers *sync.WaitGroup
+	opts                 Options
+	zone                 string
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -239,6 +244,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		peerZones:        make(map[string]string),
 
 		hintedHandoffsMu:     &sync.RWMutex{},
+		hintedHandoffWorkers: &sync.WaitGroup{},
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
 	}
 	dc.lookasideRightsizeConfig.Store(&lookasideRightsizeConfig{enabled: true, ratio: defaultRightsizeLookasideRatio})
@@ -634,7 +640,7 @@ func (c *Cache) recvHeartbeatCallback(ctx context.Context, peer string) {
 	}
 }
 
-func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *rspb.ResourceName) {
+func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *rspb.ResourceName) bool {
 	c.hintedHandoffsMu.Lock()
 	defer c.hintedHandoffsMu.Unlock()
 	if _, ok := c.hintedHandoffsByPeer[peer]; !ok {
@@ -649,25 +655,88 @@ func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *r
 	select {
 	case c.hintedHandoffsByPeer[peer] <- order:
 		c.log.CtxDebugf(ctx, "Wrote order %+v to %q's hinted handoff channel", order, peer)
-		// write was sucessful
+		recordHintedHandoff("queued", 1)
+		return true
 	default:
 		c.log.CtxWarningf(ctx, "Buffer full: unable to store hinted handoff for %q", peer)
+		recordHintedHandoff("dropped_queue_full", 1)
+		return false
 	}
 }
 
-func (c *Cache) handleHintedHandoffs(peer string) {
+func recordHintedHandoff(event string, n int) {
+	metrics.DistributedCacheHintedHandoffCount.With(prometheus.Labels{
+		metrics.DistributedCacheHintedHandoffEvent: event,
+	}).Add(float64(n))
+}
+
+// requeueHintedHandoff puts a handoff whose delivery failed back on its
+// peer's queue, so that a later attempt can deliver it.
+func (c *Cache) requeueHintedHandoff(peer string, handoffs chan *hintedHandoffOrder, order *hintedHandoffOrder) {
+	select {
+	case handoffs <- order:
+		recordHintedHandoff("requeued", 1)
+	default:
+		c.log.CtxWarningf(order.ctx, "Buffer full: unable to requeue hinted handoff for %q", peer)
+		recordHintedHandoff("dropped_queue_full", 1)
+	}
+}
+
+// How long a single hinted handoff delivery may take.
+const hintedHandoffSendTimeout = 10 * time.Second
+
+// errHintedHandoffSourceMissing means a hinted handoff's blob is no longer in
+// the local cache, so the handoff can never be delivered from here.
+var errHintedHandoffSourceMissing = errors.New("hinted handoff blob is no longer in the local cache")
+
+// hintedHandoffContext returns a context for delivering order. It carries
+// order's values, such as the writer's credentials, but not its
+// cancellation. Instead, it's canceled when ctx is done, and times out after
+// hintedHandoffSendTimeout.
+func hintedHandoffContext(ctx context.Context, order *hintedHandoffOrder) (context.Context, context.CancelFunc) {
+	sendCtx, cancel := context.WithTimeout(context.WithoutCancel(order.ctx), hintedHandoffSendTimeout)
+	stop := context.AfterFunc(ctx, cancel)
+	return sendCtx, func() {
+		stop()
+		cancel()
+	}
+}
+
+// deliverHintedHandoff sends order's blob to peer, and returns whether the
+// handoff is finished: delivered, or dropped because it can never be
+// delivered.
+func (c *Cache) deliverHintedHandoff(ctx context.Context, peer string, order *hintedHandoffOrder) (bool, error) {
+	sendCtx, cancel := hintedHandoffContext(ctx, order)
+	defer cancel()
+	err := c.sendFile(sendCtx, order.r, peer)
+	if err == nil {
+		c.log.CtxDebugf(order.ctx, "completed hinted handoff to peer: %q", peer)
+		recordHintedHandoff("delivered", 1)
+		return true, nil
+	}
+	if errors.Is(err, errHintedHandoffSourceMissing) {
+		c.log.CtxWarningf(order.ctx, "dropping hinted handoff to peer %q: %s (order %s)", peer, err, order)
+		recordHintedHandoff("dropped_source_missing", 1)
+		return true, nil
+	}
+	return false, err
+}
+
+// handleHintedHandoffs delivers peer's queued hinted handoffs until the queue
+// is empty, a delivery fails, or ctx is done.
+func (c *Cache) handleHintedHandoffs(ctx context.Context, peer string) {
 	c.hintedHandoffsMu.RLock()
 	handoffs := c.hintedHandoffsByPeer[peer]
 	c.hintedHandoffsMu.RUnlock()
-	for {
+	for ctx.Err() == nil {
 		select {
 		case handoffOrder := <-handoffs:
-			err := c.sendFile(handoffOrder.ctx, handoffOrder.r, peer)
-			if err != nil {
+			done, err := c.deliverHintedHandoff(ctx, peer, handoffOrder)
+			if !done {
 				c.log.CtxWarningf(handoffOrder.ctx, "unable to complete hinted handoff to peer: %q: %s (order %s)", peer, err, handoffOrder)
+				c.requeueHintedHandoff(peer, handoffs, handoffOrder)
 				return
 			}
-			c.log.CtxDebugf(handoffOrder.ctx, "completed hinted handoff to peer: %q", peer)
 		default:
 			// read was unsuccessful -- no more handoffOrders to process.
 			return
@@ -675,7 +744,7 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 	}
 }
 
-func (c *Cache) heartbeatPeers(shutDownChan chan struct{}) {
+func (c *Cache) heartbeatPeers(shutDownChan chan struct{}, handoffCtx context.Context) {
 	ticker := time.NewTicker(c.opts.RPCHeartbeatInterval)
 	defer ticker.Stop()
 	for {
@@ -684,10 +753,17 @@ func (c *Cache) heartbeatPeers(shutDownChan chan struct{}) {
 			return
 		case <-ticker.C:
 			for _, peer := range c.consistentHash.GetItems() {
+				select {
+				case <-shutDownChan:
+					return
+				default:
+				}
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 				if err := c.distributedProxy.SendHeartbeat(ctx, peer); err == nil {
 					// Trigger handoffs if we were able to ping this peer.
-					go c.handleHintedHandoffs(peer)
+					c.hintedHandoffWorkers.Go(func() {
+						c.handleHintedHandoffs(handoffCtx, peer)
+					})
 				}
 				cancel()
 			}
@@ -703,7 +779,13 @@ func (c *Cache) StartListening() error {
 		return nil
 	}
 	c.shutDownChan = make(chan struct{})
-	go c.heartbeatPeers(c.shutDownChan)
+	c.heartbeatDone = make(chan struct{})
+	handoffCtx, cancelHandoffs := context.WithCancel(context.Background())
+	c.cancelHintedHandoffs = cancelHandoffs
+	go func(shutDownChan, heartbeatDone chan struct{}) {
+		defer close(heartbeatDone)
+		c.heartbeatPeers(shutDownChan, handoffCtx)
+	}(c.shutDownChan, c.heartbeatDone)
 	go c.watchLookasideRightsizeConfig(c.shutDownChan)
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StartAdvertising()
@@ -738,7 +820,110 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	}
 	close(c.shutDownChan)
 	c.finishedShutdown = true
-	return c.distributedProxy.Shutdown(ctx)
+	// Stop the heartbeat loop and the hinted handoff deliveries it started,
+	// which put any handoff they were delivering back on its queue.
+	c.cancelHintedHandoffs()
+	select {
+	case <-c.heartbeatDone:
+	case <-ctx.Done():
+	}
+	c.hintedHandoffWorkers.Wait()
+	err := c.distributedProxy.Shutdown(ctx)
+	// Deliver hinted handoffs once this node has stopped accepting writes,
+	// so that no new ones are queued after delivery finishes.
+	c.deliverHintedHandoffsBeforeShutdown(ctx)
+	return err
+}
+
+// How long to keep retrying hinted handoffs to a peer during shutdown before
+// forwarding them to another peer instead. Long enough for connections to a
+// peer that just restarted to come back (see
+// cache.distributed_cache.max_reconnect_delay).
+const hintedHandoffShutdownRetryPeriod = 2 * time.Second
+
+// deliverHintedHandoffsBeforeShutdown tries to deliver every queued hinted
+// handoff, since the queues are only in memory and a restart loses them.
+// Failed deliveries are retried for a short while, since a peer that just
+// restarted can take a moment to accept connections again. Handoffs for a
+// peer that stays unreachable are forwarded to another peer, which holds
+// them until that peer is back.
+func (c *Cache) deliverHintedHandoffsBeforeShutdown(ctx context.Context) {
+	c.hintedHandoffsMu.RLock()
+	queues := maps.Clone(c.hintedHandoffsByPeer)
+	c.hintedHandoffsMu.RUnlock()
+
+	var wg sync.WaitGroup
+	for peer, handoffs := range queues {
+		wg.Go(func() {
+			retryUntil := time.Now().Add(hintedHandoffShutdownRetryPeriod)
+			for ctx.Err() == nil {
+				var order *hintedHandoffOrder
+				select {
+				case order = <-handoffs:
+				default:
+					return
+				}
+				for {
+					done, err := c.deliverHintedHandoff(ctx, peer, order)
+					if done {
+						break
+					}
+					if time.Now().After(retryUntil) {
+						c.forwardHintedHandoff(ctx, peer, order)
+						break
+					}
+					c.log.CtxDebugf(order.ctx, "unable to complete hinted handoff to peer before shutdown, will retry: %q: %s (order %s)", peer, err, order)
+					select {
+					case <-ctx.Done():
+						c.log.CtxWarningf(order.ctx, "unable to complete hinted handoff to peer before shutdown: %q: %s (order %s)", peer, err, order)
+						recordHintedHandoff("dropped_at_shutdown", 1)
+						return
+					case <-time.After(100 * time.Millisecond):
+					}
+				}
+			}
+		})
+	}
+	wg.Wait()
+
+	dropped := 0
+	for _, handoffs := range queues {
+		dropped += len(handoffs)
+	}
+	if dropped > 0 {
+		c.log.Warningf("Dropping %d undelivered hinted handoffs at shutdown", dropped)
+		recordHintedHandoff("dropped_at_shutdown", dropped)
+	}
+}
+
+// forwardHintedHandoff writes order's blob to a peer other than this node and
+// the unreachable peer, along with a hinted handoff to the unreachable peer,
+// so that the handoff survives this node shutting down.
+func (c *Cache) forwardHintedHandoff(ctx context.Context, peer string, order *hintedHandoffOrder) {
+	var lastErr error
+	for _, dest := range c.consistentHash.GetAllReplicas(order.r.GetDigest().GetHash()) {
+		if ctx.Err() != nil {
+			break
+		}
+		if dest == c.opts.ListenAddr || dest == peer {
+			continue
+		}
+		sendCtx, cancel := hintedHandoffContext(ctx, order)
+		lastErr = c.sendFileWithHandoff(sendCtx, order.r, dest, peer)
+		cancel()
+		if lastErr == nil {
+			c.log.CtxDebugf(order.ctx, "forwarded hinted handoff for %q to %q", peer, dest)
+			recordHintedHandoff("forwarded", 1)
+			return
+		}
+		if errors.Is(lastErr, errHintedHandoffSourceMissing) {
+			c.log.CtxWarningf(order.ctx, "dropping hinted handoff to peer %q: %s (order %s)", peer, lastErr, order)
+			recordHintedHandoff("dropped_source_missing", 1)
+			return
+		}
+	}
+	c.log.CtxWarningf(order.ctx, "unable to forward hinted handoff for peer before shutdown: %q: %v (order %s)", peer, lastErr, order)
+	recordHintedHandoff("dropped_at_shutdown", 1)
 }
 
 func (c *Cache) peerZone(peer string) string {
@@ -1133,18 +1318,35 @@ func (c *Cache) remoteDelete(ctx context.Context, peer string, r *rspb.ResourceN
 }
 
 func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string) error {
-	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
-	defer cancel()
-	if exists, err := c.distributedProxy.RemoteContains(ctx, dest, rn); err == nil && exists {
-		return nil
+	return c.sendFileWithHandoff(ctx, rn, dest, "")
+}
+
+// sendFileWithHandoff copies rn from the local cache to dest. If handoffPeer
+// is set, dest also queues a hinted handoff of rn to handoffPeer, and the
+// send fails if dest can't queue it.
+func (c *Cache) sendFileWithHandoff(ctx context.Context, rn *rspb.ResourceName, dest, handoffPeer string) error {
+	// dest only queues the hinted handoff when it receives the write, so
+	// don't skip the write when it's forwarding one.
+	if handoffPeer == "" {
+		if exists, err := c.distributedProxy.RemoteContains(ctx, dest, rn); err == nil && exists {
+			return nil
+		}
 	}
 
 	r, err := c.local.Reader(ctx, rn, 0, 0)
 	if err != nil {
+		if status.IsNotFoundError(err) {
+			return fmt.Errorf("%w: %w", errHintedHandoffSourceMissing, err)
+		}
 		return err
 	}
 	defer r.Close()
-	w, err := c.distributedProxy.RemoteWriter(ctx, dest, "", rn)
+	var w interfaces.CommittedWriteCloser
+	if handoffPeer == "" {
+		w, err = c.distributedProxy.RemoteWriter(ctx, dest, "", rn)
+	} else {
+		w, err = c.distributedProxy.RemoteHandoffWriter(ctx, dest, handoffPeer, rn)
+	}
 	if err != nil {
 		return err
 	}

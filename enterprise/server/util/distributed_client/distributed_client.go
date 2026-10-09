@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
@@ -62,6 +63,7 @@ var (
 	connWindowSize     = flag.Int("cache.distributed_cache.conn_window_size", 64*1024*1024, "Static HTTP/2 window size of each connection in bytes")
 	streamWindowSize   = flag.Int("cache.distributed_cache.stream_window_size", 8*1024*1024, "Static HTTP/2 Window size of each stream in bytes")
 	poolSize           = flag.Int("cache.distributed_cache.client_pool_size", 4, "Number of connections to open per peer.")
+	maxReconnectDelay  = flag.Duration("cache.distributed_cache.max_reconnect_delay", 5*time.Second, "About the longest to wait between attempts to reconnect to a peer (gRPC adds up to 20% jitter). gRPC's default backoff grows to two minutes, which leaves a restarted peer unreachable long after it's back up. If not positive, gRPC's default backoff is used.")
 )
 
 type Proxy struct {
@@ -74,7 +76,7 @@ type Proxy struct {
 	server                *grpc.Server
 	clients               map[string]*grpc_client.ClientConnPool
 	heartbeatCallback     func(ctx context.Context, peer string)
-	hintedHandoffCallback func(ctx context.Context, peer string, r *rspb.ResourceName)
+	hintedHandoffCallback func(ctx context.Context, peer string, r *rspb.ResourceName) bool
 	listenAddr            string
 	zone                  string
 	enableCompressedReads bool
@@ -120,9 +122,11 @@ func (c *Proxy) StartListening() error {
 	dcpb.RegisterDistributedCacheServer(grpcServer, c)
 	c.server = grpcServer
 
+	// Shutdown sets c.server to nil, possibly before this goroutine runs, so
+	// don't read it here.
 	go func() {
 		log.Printf("Listening on %s", c.listenAddr)
-		if err := c.server.Serve(lis); err != nil {
+		if err := grpcServer.Serve(lis); err != nil {
 			log.Warningf("Error serving: %s", err)
 		}
 	}()
@@ -144,7 +148,9 @@ func (c *Proxy) SetHeartbeatCallbackFunc(fn func(ctx context.Context, peer strin
 	c.heartbeatCallback = fn
 }
 
-func (c *Proxy) SetHintedHandoffCallbackFunc(fn func(ctx context.Context, peer string, r *rspb.ResourceName)) {
+// SetHintedHandoffCallbackFunc sets the function that queues a hinted handoff
+// of r to peer. It returns whether the handoff was queued.
+func (c *Proxy) SetHintedHandoffCallbackFunc(fn func(ctx context.Context, peer string, r *rspb.ResourceName) bool) {
 	c.hintedHandoffCallback = fn
 }
 
@@ -201,10 +207,19 @@ func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCac
 
 	// Disable dynamic windows. Bursty traffic can undersize the window and
 	// cause flow control to kick in prematurely.
+	backoffConfig := backoff.DefaultConfig
+	if *maxReconnectDelay > 0 {
+		backoffConfig.BaseDelay = min(backoffConfig.BaseDelay, *maxReconnectDelay)
+		backoffConfig.MaxDelay = *maxReconnectDelay
+	}
 	conn, err := grpc_client.DialInternalWithPoolSize(c.env, resolverPrefix+peer,
 		*poolSize,
 		grpc.WithStaticConnWindowSize(int32(*connWindowSize)),
-		grpc.WithStaticStreamWindowSize(int32(*streamWindowSize)))
+		grpc.WithStaticStreamWindowSize(int32(*streamWindowSize)),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff:           backoffConfig,
+			MinConnectTimeout: 20 * time.Second,
+		}))
 	if err != nil {
 		return nil, err
 	}
@@ -476,6 +491,12 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			if rn.GetCacheType() == rspb.CacheType_CAS && req.GetCheckAlreadyExists() {
 				missing, err := c.cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_WRITE_DEDUPE), []*rspb.ResourceName{rn})
 				if err == nil && len(missing) == 0 {
+					// The sender may be relying on this node to hand the blob
+					// off to a peer that missed the write, whether or not this
+					// node already had it.
+					if !c.queueHintedHandoff(ctx, req) && req.GetRequireHandoffAccepted() {
+						return status.ResourceExhaustedErrorf("could not queue hinted handoff to %q", req.GetHandoffPeer())
+					}
 					return status.AlreadyExistsError("CAS digest already exists")
 				}
 			}
@@ -527,11 +548,21 @@ func (c *Proxy) writeReference(ctx context.Context, stream dcpb.DistributedCache
 	return c.finishWrite(ctx, stream, req, req.GetReference().GetMetadata().GetStoredSizeBytes())
 }
 
+// queueHintedHandoff passes req's hinted handoff, if it has one, to the
+// hinted handoff callback. It returns false if req has a hinted handoff that
+// wasn't queued.
+func (c *Proxy) queueHintedHandoff(ctx context.Context, req *dcpb.WriteRequest) bool {
+	if req.GetHandoffPeer() == "" || c.hintedHandoffCallback == nil {
+		return true
+	}
+	// Because the hinted handoff callback might hold on to the resource in a
+	// queue, and we're pooling WriteRequest protos, clone it.
+	return c.hintedHandoffCallback(ctx, req.GetHandoffPeer(), req.GetResource().CloneVT())
+}
+
 func (c *Proxy) finishWrite(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, committedSize int64) error {
-	if req.GetHandoffPeer() != "" && c.hintedHandoffCallback != nil {
-		// Because the hinted handoff callback might hold on to the resource
-		// in a queue, and we're pooling WriteRequest protos, clone it.
-		c.hintedHandoffCallback(ctx, req.GetHandoffPeer(), req.GetResource().CloneVT())
+	if !c.queueHintedHandoff(ctx, req) && req.GetRequireHandoffAccepted() {
+		return status.ResourceExhaustedErrorf("could not queue hinted handoff to %q", req.GetHandoffPeer())
 	}
 	return stream.SendAndClose(&dcpb.WriteResponse{
 		CommittedSize: committedSize,
@@ -1035,7 +1066,10 @@ type streamWriteCloser struct {
 	refMustBeCloned bool
 	peer            string
 	handoffPeer     string
-	alreadyExists   bool
+	// requireHandoffAccepted makes the write fail if the peer can't queue
+	// the hinted handoff to handoffPeer.
+	requireHandoffAccepted bool
+	alreadyExists          bool
 	// requestType records how this write's payload is sent, for metrics:
 	// "reference" for a reference-only write, "bytes" otherwise.
 	requestType string
@@ -1064,11 +1098,12 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 		return len(data), nil
 	}
 	req := &dcpb.WriteRequest{
-		Data:               data,
-		FinishWrite:        false,
-		CheckAlreadyExists: true,
-		HandoffPeer:        wc.handoffPeer,
-		Resource:           wc.r,
+		Data:                   data,
+		FinishWrite:            false,
+		CheckAlreadyExists:     true,
+		HandoffPeer:            wc.handoffPeer,
+		RequireHandoffAccepted: wc.requireHandoffAccepted,
+		Resource:               wc.r,
 	}
 	err := wc.send(req)
 	if err == io.EOF {
@@ -1104,12 +1139,13 @@ func (wc *streamWriteCloser) commit() error {
 	}
 
 	req := &dcpb.WriteRequest{
-		FinishWrite:           true,
-		CheckAlreadyExists:    true,
-		HandoffPeer:           wc.handoffPeer,
-		Resource:              wc.r,
-		Reference:             wc.ref,
-		ReferenceMustBeCloned: wc.refMustBeCloned,
+		FinishWrite:            true,
+		CheckAlreadyExists:     true,
+		HandoffPeer:            wc.handoffPeer,
+		RequireHandoffAccepted: wc.requireHandoffAccepted,
+		Resource:               wc.r,
+		Reference:              wc.ref,
+		ReferenceMustBeCloned:  wc.refMustBeCloned,
 	}
 	sendErr := wc.send(req)
 	if sendErr != nil && sendErr != io.EOF {
@@ -1145,6 +1181,18 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 	if err != nil {
 		return nil, err
 	}
+	return w, nil
+}
+
+// RemoteHandoffWriter is like RemoteWriter, but the write fails with
+// ResourceExhausted if the peer can't queue the hinted handoff to handoffPeer,
+// e.g. because its hinted handoff queue is full. The data is still written.
+func (c *Proxy) RemoteHandoffWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	w, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	if err != nil {
+		return nil, err
+	}
+	w.requireHandoffAccepted = true
 	return w, nil
 }
 
