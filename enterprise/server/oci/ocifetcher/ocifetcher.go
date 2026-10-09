@@ -127,8 +127,9 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 //
 // The execution server only lets server admins set the platform property
 // that bypasses the registry, so the server trusts bypass_registry requests.
-// When the cache is skipped there is nothing to serve instead of the
-// registry, so bypass_registry is ignored.
+// Like the in-executor cache path this replaced, bypass_registry only skips
+// access checks for cached content: tags are still resolved, and anything
+// missing from the cache is fetched from the registry.
 func NewLocalServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) (ofpb.OCIFetcherServer, error) {
 	if (bsClient == nil) != (acClient == nil) {
 		return nil, status.FailedPreconditionError("OCIFetcherServer requires both or neither of the byte stream and action cache clients")
@@ -229,7 +230,9 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 			log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
 			return err
 		}
-		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
+		if !s.inProcess {
+			return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
+		}
 	}
 	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req)
 }
@@ -259,7 +262,7 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		} else if !status.IsNotFoundError(err) {
 			log.CtxWarningf(ctx, "Error fetching blob metadata from cache: %s", err)
 		}
-		if bypassRegistry {
+		if bypassRegistry && !s.inProcess {
 			return nil, status.NotFoundErrorf("bypassing registry, but blob metadata for %q not found in cache", digestRef)
 		}
 	}
@@ -303,7 +306,7 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 	} else if !status.IsNotFoundError(err) {
 		log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
 	}
-	if bypassRegistry {
+	if bypassRegistry && !s.inProcess {
 		return nil, status.NotFoundErrorf("bypassing registry, but manifest for %q not found in cache", imageRef)
 	}
 	return s.fetchManifestFromRemoteWriteToCache(ctx, imageRef, hash, req.GetCredentials())
@@ -588,7 +591,7 @@ func (s *ociFetcherServer) resolveManifestDigest(ctx context.Context, imageRef c
 		}
 		return hash, nil
 	}
-	if bypassRegistry {
+	if bypassRegistry && !s.inProcess {
 		return ctr.Hash{}, status.NotFoundErrorf("bypassing registry, but cannot resolve tag ref %q from cache", imageRef)
 	}
 	return s.resolveTagToDigest(ctx, imageRef, creds)

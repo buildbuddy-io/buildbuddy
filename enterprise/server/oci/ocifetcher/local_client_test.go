@@ -77,7 +77,11 @@ func compressedLayerData(t *testing.T, layer ctr.Layer) []byte {
 }
 
 func fetchBlob(ctx context.Context, client ofpb.OCIFetcherClient, ref string) ([]byte, error) {
-	stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	return fetchBlobWithRequest(ctx, client, &ofpb.FetchBlobRequest{Ref: ref})
+}
+
+func fetchBlobWithRequest(ctx context.Context, client ofpb.OCIFetcherClient, req *ofpb.FetchBlobRequest) ([]byte, error) {
+	stream, err := client.FetchBlob(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -177,17 +181,8 @@ func TestLocalServerTrustsBypassRegistry(t *testing.T) {
 
 	// The context has no server admin claims, but the local server trusts
 	// bypass_registry because the execution server already checked it.
-	stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: layerRef, BypassRegistry: true})
+	data, err := fetchBlobWithRequest(ctx, client, &ofpb.FetchBlobRequest{Ref: layerRef, BypassRegistry: true})
 	require.NoError(t, err)
-	var data []byte
-	for {
-		resp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		data = append(data, resp.GetData()...)
-	}
 	require.Equal(t, want, data)
 	require.Empty(t, counter.Snapshot())
 }
@@ -197,17 +192,8 @@ func TestLocalServerIgnoresBypassRegistryWithoutCache(t *testing.T) {
 	_, layerRef, want := pushLargeImage(t, reg)
 	client := newLocalClient(t, nil, nil)
 
-	stream, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: layerRef, BypassRegistry: true})
+	data, err := fetchBlobWithRequest(context.Background(), client, &ofpb.FetchBlobRequest{Ref: layerRef, BypassRegistry: true})
 	require.NoError(t, err)
-	var data []byte
-	for {
-		resp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		data = append(data, resp.GetData()...)
-	}
 	require.Equal(t, want, data)
 }
 
@@ -253,17 +239,8 @@ func TestLocalClientUsesBlobMetadataFromRequest(t *testing.T) {
 		MediaType: new("application/vnd.oci.image.layer.v1.tar+gzip"),
 	}
 	for range 2 {
-		stream, err := client.FetchBlob(context.Background(), req)
+		got, err := fetchBlobWithRequest(context.Background(), client, req)
 		require.NoError(t, err)
-		var got []byte
-		for {
-			resp, err := stream.Recv()
-			if err == io.EOF {
-				break
-			}
-			require.NoError(t, err)
-			got = append(got, resp.GetData()...)
-		}
 		require.Equal(t, want, got)
 	}
 	// The size and media type came from the request, so there's no HEAD,
@@ -271,4 +248,100 @@ func TestLocalClientUsesBlobMetadataFromRequest(t *testing.T) {
 	snapshot := counter.Snapshot()
 	require.Zero(t, snapshot[http.MethodHead+" /v2/large/blobs/"+digest], "requests: %v", snapshot)
 	require.Equal(t, 1, blobGETs(t, counter, layerRef))
+}
+
+func TestRemoteServerIgnoresBlobMetadataFromRequest(t *testing.T) {
+	reg, counter := runRegistry(t)
+	_, layerRef, want := pushLargeImage(t, reg)
+	counter.Reset()
+	bsClient, acClient := cacheClients(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
+	server, err := ocifetcher.NewServer(bsClient, acClient)
+	require.NoError(t, err)
+	client := ocifetcher.NewLocalClient(server)
+	_, digest, _ := strings.Cut(layerRef, "@")
+
+	// A remote server must not trust caller-supplied metadata, so it makes
+	// its own HEAD request, and the wrong size doesn't break caching.
+	req := &ofpb.FetchBlobRequest{
+		Ref:       layerRef,
+		Size:      new(int64(1)),
+		MediaType: new("text/plain"),
+	}
+	for range 2 {
+		got, err := fetchBlobWithRequest(context.Background(), client, req)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	}
+	snapshot := counter.Snapshot()
+	require.Equal(t, 1, snapshot[http.MethodHead+" /v2/large/blobs/"+digest], "requests: %v", snapshot)
+	require.Equal(t, 1, blobGETs(t, counter, layerRef))
+}
+
+func TestLocalServerBypassRegistryFallsBackToRegistry(t *testing.T) {
+	reg, _ := runRegistry(t)
+	imageName, layerRef, want := pushLargeImage(t, reg)
+	bsClient, acClient := cacheClients(t)
+	client := newLocalClient(t, bsClient, acClient)
+	ctx := context.Background()
+
+	// Nothing is cached, and the manifest ref is a tag, but an in-process
+	// server still resolves and fetches from the registry.
+	resp, err := client.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: imageName, BypassRegistry: true})
+	require.NoError(t, err)
+	require.NotEmpty(t, resp.GetManifest())
+
+	got, err := fetchBlobWithRequest(ctx, client, &ofpb.FetchBlobRequest{Ref: layerRef, BypassRegistry: true})
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	_, err = client.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: layerRef, BypassRegistry: true})
+	require.NoError(t, err)
+}
+
+// blockingFetchBlobServer sends one response from FetchBlob, then blocks
+// until released, ignoring cancellation.
+type blockingFetchBlobServer struct {
+	ofpb.UnimplementedOCIFetcherServer
+	release chan struct{}
+}
+
+func (s *blockingFetchBlobServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	if err := stream.Send(&ofpb.FetchBlobResponse{Data: []byte("x")}); err != nil {
+		return err
+	}
+	<-s.release
+	return nil
+}
+
+func TestLocalClientRecvReturnsWhenCanceled(t *testing.T) {
+	server := &blockingFetchBlobServer{release: make(chan struct{})}
+	defer close(server.release)
+	client := ocifetcher.NewLocalClient(server)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{})
+	require.NoError(t, err)
+	resp, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, []byte("x"), resp.GetData())
+
+	cancel()
+	_, err = stream.Recv()
+	require.True(t, status.IsCanceledError(err), "unexpected error: %v", err)
+}
+
+func TestLocalClientRecvReturnsEOFAfterServerReturns(t *testing.T) {
+	server := &blockingFetchBlobServer{release: make(chan struct{})}
+	close(server.release)
+	client := ocifetcher.NewLocalClient(server)
+
+	for range 100 {
+		stream, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{})
+		require.NoError(t, err)
+		_, err = stream.Recv()
+		require.NoError(t, err)
+		_, err = stream.Recv()
+		require.Equal(t, io.EOF, err)
+	}
 }

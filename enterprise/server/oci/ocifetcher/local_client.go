@@ -66,11 +66,24 @@ func (s *localBlobStream) Recv() (*ofpb.FetchBlobResponse, error) {
 	case resp := <-s.responses:
 		return resp, nil
 	case <-s.done:
-		if s.err != nil {
-			return nil, s.err
+		return nil, s.result()
+	case <-s.ctx.Done():
+		// The context is also canceled when the server returns, after done
+		// is closed, so check for that first.
+		select {
+		case <-s.done:
+			return nil, s.result()
+		default:
+			return nil, status.FromContextError(s.ctx)
 		}
-		return nil, io.EOF
 	}
+}
+
+func (s *localBlobStream) result() error {
+	if s.err != nil {
+		return s.err
+	}
+	return io.EOF
 }
 
 func (s *localBlobStream) Header() (metadata.MD, error) { return nil, nil }
