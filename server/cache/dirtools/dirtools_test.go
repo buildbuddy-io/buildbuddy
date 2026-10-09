@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -61,7 +62,9 @@ func TestUploadTree(t *testing.T) {
 			symlinkPaths:   map[string]string{},
 			expectedResult: &repb.ActionResult{},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        1,
+				// The empty root Directory proto has the empty digest,
+				// which is never reported missing, so nothing is uploaded.
+				FileCount:        0,
 				BytesTransferred: 0,
 			},
 		},
@@ -543,7 +546,11 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        3,
+				// The file and the "foo/bar/baz" Directory proto. The
+				// ancestor Directory protos are empty and never uploaded.
+				// TODO(jdhollen): This will go down to 1 when we stop
+				// uploading directories that don't exist on an output path.
+				FileCount:        2,
 				BytesTransferred: 84,
 			},
 		},
@@ -574,16 +581,17 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				// This should includes:
+				// This should include:
 				//
-				//   Dir:  a/b
-				//   Dir:  a/b/c
-				//   Dir:  a/b/c/d
-				//   Dir:  a/b/e
-				//   Dir:  a/b/e/g
+				//   Dir:  a (contains b)
+				//   Dir:  a/b (contains c and e)
+				//   Dir:  a/b/c (contains fileA.txt and d)
+				//   Dir:  a/b/e (contains g)
 				//   File: a/b/c/fileA.txt
-				//
-				FileCount:        7,
+				//   And the output tree.
+				// TODO(jdhollen): This will go down to 5 (dropping "a") when
+				// we stop uploading directories that aren't on an output path.
+				FileCount:        6,
 				BytesTransferred: 849,
 			},
 		},
@@ -620,7 +628,9 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        5,
+				// TODO(jdhollen): This will go down to 3 (dropping "a/b") when
+				// we stop uploading directories that aren't on an output path.
+				FileCount:        4,
 				BytesTransferred: 244,
 			},
 		},
@@ -1875,6 +1885,124 @@ func TestUploadTree_OutputUploadConcurrency(t *testing.T) {
 	}
 }
 
+// uploadOutTree writes a small output tree with a nested directory to a fresh
+// root and uploads it with "out" as the only output path. Uploading it to an
+// empty cache transfers six blobs: two files, three Directory protos (the
+// root, "out", and "out/sub"), and one Tree.
+func uploadOutTree(t *testing.T, ctx context.Context, env *testenv.TestEnv, addToFileCache bool) (*dirtools.TransferInfo, *repb.ActionResult) {
+	rootDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, rootDir, map[string]string{
+		"out/fileA.txt":     "a",
+		"out/sub/fileB.txt": "b",
+	})
+	cmd := &repb.Command{OutputPaths: []string{"out"}}
+	dirHelper := dirtools.NewDirHelper(rootDir, cmd, fs.FileMode(0o755))
+	actionResult := &repb.ActionResult{}
+	info, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, cmd, actionResult, addToFileCache, nil /*=chunkingParams*/)
+	require.NoError(t, err)
+	require.Len(t, actionResult.OutputDirectories, 1)
+	return info, actionResult
+}
+
+// treeDirectories fetches the Tree uploaded for the "out" output directory
+// and returns its Directory protos, root first, along with their digests.
+func treeDirectories(t *testing.T, ctx context.Context, env *testenv.TestEnv, actionResult *repb.ActionResult) ([]*repb.Directory, []*repb.Digest) {
+	treeDigest := actionResult.OutputDirectories[0].GetTreeDigest()
+	tree := &repb.Tree{}
+	err := cachetools.GetBlobAsProto(ctx, env.GetByteStreamClient(), digest.NewCASResourceName(treeDigest, "", repb.DigestFunction_SHA256), tree)
+	require.NoError(t, err)
+	require.Len(t, tree.GetChildren(), 1)
+	dirs := append([]*repb.Directory{tree.GetRoot()}, tree.GetChildren()...)
+	digests := make([]*repb.Digest, 0, len(dirs))
+	for _, dir := range dirs {
+		require.NotEmpty(t, dir.GetFiles())
+		d, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		digests = append(digests, d)
+	}
+	return dirs, digests
+}
+
+func TestUploadTree_SkipsPresentBlobs(t *testing.T) {
+	env, ctx := testEnv(t)
+	client := &trackingClient{
+		ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+		ByteStreamClient:                env.GetByteStreamClient(),
+	}
+	env.SetContentAddressableStorageClient(client)
+	env.SetByteStreamClient(client)
+
+	// The first upload should transfer everything.
+	info, actionResult := uploadOutTree(t, ctx, env, false /*=addToFileCache*/)
+	require.Equal(t, int64(6), info.FileCount)
+	treeDigest := actionResult.OutputDirectories[0].GetTreeDigest()
+
+	// The Directory protos should have been checked with FindMissingBlobs
+	// along with the files.
+	dirs, dirDigests := treeDirectories(t, ctx, env, actionResult)
+	for i, dir := range dirs {
+		require.True(t, client.checkedForMissing(dirDigests[i]), "Directory proto %s should have been checked with FindMissingBlobs", dirDigests[i].GetHash())
+		for _, file := range dir.GetFiles() {
+			require.True(t, client.checkedForMissing(file.GetDigest()), "file %s should have been checked with FindMissingBlobs", file.GetName())
+		}
+	}
+
+	// Uploading the same outputs again should find the files and Directory
+	// protos already present, so only the Tree should be transferred.
+	info, _ = uploadOutTree(t, ctx, env, false /*=addToFileCache*/)
+	require.Equal(t, int64(1), info.FileCount)
+	require.Equal(t, treeDigest.GetSizeBytes(), info.BytesTransferred)
+}
+
+func TestUploadTree_UploadsEverythingWhenFindMissingBlobsFails(t *testing.T) {
+	env, ctx := testEnv(t)
+	client := &trackingClient{
+		ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+		ByteStreamClient:                env.GetByteStreamClient(),
+	}
+	env.SetContentAddressableStorageClient(client)
+	env.SetByteStreamClient(client)
+
+	// Populate the cache with everything first.
+	first, _ := uploadOutTree(t, ctx, env, false /*=addToFileCache*/)
+	require.Equal(t, int64(6), first.FileCount)
+
+	// If FindMissingBlobs fails, the files and Directory protos should all be
+	// uploaded again even though they are already present, rather than being
+	// skipped. If the Directory protos were skipped, only the two files and
+	// the Tree would be transferred.
+	client.setFindMissingErr(status.UnavailableError("find missing blobs unavailable"))
+	second, _ := uploadOutTree(t, ctx, env, false /*=addToFileCache*/)
+	require.Equal(t, first.FileCount, second.FileCount)
+	require.Equal(t, first.BytesTransferred, second.BytesTransferred)
+}
+
+func TestUploadTree_AddsOnlyFilesToFileCache(t *testing.T) {
+	env, ctx := testEnv(t)
+	fileCache := &countingFileCache{
+		FileCache: env.GetFileCache(),
+		adds:      make(map[string]int),
+		opens:     make(map[string]int),
+	}
+	env.SetFileCache(fileCache)
+
+	_, actionResult := uploadOutTree(t, ctx, env, true /*=addToFileCache*/)
+
+	// Each output file should be added to the filecache exactly once, and
+	// nothing else should be: in particular not the Directory protos, which
+	// are uploaded alongside the files.
+	dirs, _ := treeDirectories(t, ctx, env, actionResult)
+	fileCount := 0
+	for _, dir := range dirs {
+		for _, file := range dir.GetFiles() {
+			require.Equal(t, 1, fileCache.addCount(file), "file %s should have been added to the filecache once", file.GetName())
+			fileCount++
+		}
+	}
+	require.Equal(t, 2, fileCount)
+	require.Equal(t, fileCount, fileCache.totalAddCount())
+}
+
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 
@@ -1985,6 +2113,16 @@ func (c *countingFileCache) addCount(node *repb.FileNode) int {
 	return c.adds[fileNodeKey(node)]
 }
 
+func (c *countingFileCache) totalAddCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	total := 0
+	for _, n := range c.adds {
+		total += n
+	}
+	return total
+}
+
 func (c *countingFileCache) openCount(node *repb.FileNode) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -2026,6 +2164,39 @@ type trackingClient struct {
 	streamWrites int
 	inFlight     int
 	maxInFlight  int
+	// Hashes of all digests passed to FindMissingBlobs.
+	findMissingHashes map[string]struct{}
+	// If set, FindMissingBlobs returns this error instead of being forwarded.
+	findMissingErr error
+}
+
+func (c *trackingClient) setFindMissingErr(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.findMissingErr = err
+}
+
+func (c *trackingClient) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest, opts ...grpc.CallOption) (*repb.FindMissingBlobsResponse, error) {
+	c.mu.Lock()
+	if c.findMissingHashes == nil {
+		c.findMissingHashes = make(map[string]struct{})
+	}
+	for _, d := range req.GetBlobDigests() {
+		c.findMissingHashes[d.GetHash()] = struct{}{}
+	}
+	err := c.findMissingErr
+	c.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return c.ContentAddressableStorageClient.FindMissingBlobs(ctx, req, opts...)
+}
+
+func (c *trackingClient) checkedForMissing(d *repb.Digest) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, ok := c.findMissingHashes[d.GetHash()]
+	return ok
 }
 
 func (c *trackingClient) track(n int, calls *int) (done func()) {
