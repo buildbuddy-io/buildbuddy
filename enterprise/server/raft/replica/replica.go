@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -299,7 +300,7 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 	if isLocalKey(key) {
 		// Still here? this is a local key, so treat it appropriately.
 		key = sm.replicaLocalKey(key)
-		return wb.Set(key, val, nil /*ignored write options*/)
+		return fatal(wb.Set(key, val, nil /*ignored write options*/))
 	}
 
 	sm.rangeMu.RLock()
@@ -307,7 +308,7 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 	sm.rangeMu.RUnlock()
 
 	if containsKey {
-		return wb.Set(key, val, nil /*ignored write options*/)
+		return fatal(wb.Set(key, val, nil /*ignored write options*/))
 	}
 	return status.OutOfRangeErrorf("%s: [%s] range %s does not contain key %q", constants.RangeNotCurrentMsg, sm.name(), sm.mappedRange, string(key))
 }
@@ -352,11 +353,10 @@ func (sm *Replica) getLastAppliedIndex(db ReplicaReader) (uint64, error) {
 		}
 		return 0, err
 	}
-	if len(val) == 0 {
-		return 0, nil
+	if len(val) != uint64EncodingSizeBytes {
+		return 0, status.InternalErrorf("[%s] last applied index has length %d, expected %d", sm.name(), len(val), uint64EncodingSizeBytes)
 	}
-	i := bytesToUint64(val)
-	return i, nil
+	return bytesToUint64(val), nil
 }
 
 type ReplicaReader interface {
@@ -433,7 +433,7 @@ func (sm *Replica) releaseLocks(wb pebble.Batch, txid []byte) {
 func (sm *Replica) buildTransaction(txid []byte, batchReq *rfpb.BatchCmdRequest) (pebble.Batch, *rfpb.BatchCmdResponse, error) {
 	db, err := sm.leaser.DB()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fatal(err)
 	}
 	defer db.Close()
 	txn := db.NewIndexedBatch()
@@ -449,7 +449,10 @@ func (sm *Replica) buildTransaction(txid []byte, batchReq *rfpb.BatchCmdRequest)
 	// Run all the propose commands against the txn batch.
 	batchRsp := &rfpb.BatchCmdResponse{}
 	for _, union := range batchReq.GetUnion() {
-		rsp := sm.handlePropose(txn, union)
+		rsp, err := sm.handlePropose(txn, union)
+		if err != nil {
+			return nil, nil, err
+		}
 		if rsp.GetStatus().GetCode() != 0 {
 			// Request errors, such as CAS mismatches, reject prepare.
 			return nil, &rfpb.BatchCmdResponse{Status: rsp.GetStatus()}, nil
@@ -613,7 +616,7 @@ func (sm *Replica) deleteTxnRollbackMarkersBefore(wb pebble.Batch, req *rfpb.Del
 		UpperBound: end,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fatal(err)
 	}
 	defer iter.Close()
 
@@ -628,7 +631,7 @@ func (sm *Replica) deleteTxnRollbackMarkersBefore(wb pebble.Batch, req *rfpb.Del
 		// finalize time; see rollbackTransaction.
 		if finalizedAtUsec > 0 && finalizedAtUsec <= cutoffUsec {
 			if err := wb.Delete(iter.Key(), nil /* ignore write options */); err != nil {
-				return nil, err
+				return nil, fatal(err)
 			}
 		}
 	}
@@ -671,24 +674,27 @@ func (sm *Replica) loadInflightTransactions(db ReplicaReader) error {
 	return nil
 }
 
-func (sm *Replica) loadRangeDescriptor(db ReplicaReader) {
+func (sm *Replica) loadRangeDescriptor(db ReplicaReader) error {
 	buf, err := sm.lookup(db, constants.LocalRangeKey)
-	if err != nil {
+	if status.IsNotFoundError(err) {
 		sm.log.Debugf("Replica opened but range not yet set: %s", err)
-		return
+		return nil
 	}
-	sm.setRange(buf)
+	if err != nil {
+		return err
+	}
+	return sm.setRange(buf)
 }
 
-func (sm *Replica) loadRangeLease(db ReplicaReader) {
+func (sm *Replica) loadRangeLease(db ReplicaReader) error {
 	buf, err := sm.lookup(db, constants.LocalRangeLeaseKey)
-	if err != nil {
-		return
+	if status.IsNotFoundError(err) {
+		return nil
 	}
-	err = sm.setRangeLease(buf)
 	if err != nil {
-		sm.log.Errorf("failed to set range lease: %s", err)
+		return err
 	}
+	return sm.setRangeLease(buf)
 }
 
 // clearInMemoryReplicaState clears in-memory replica state.
@@ -709,6 +715,7 @@ func (sm *Replica) clearInMemoryReplicaState() {
 // clearRangeData clears data in range [start, end).
 func (sm *Replica) clearRangeData(db ReplicaWriter, rd *rfpb.RangeDescriptor) error {
 	wb := db.NewBatch()
+	defer wb.Close()
 	if rd.GetStart() != nil && rd.GetEnd() != nil {
 		if err := wb.DeleteRange(rd.GetStart(), rd.GetEnd(), nil /*ignored write options*/); err != nil {
 			return err
@@ -723,6 +730,7 @@ func (sm *Replica) clearRangeData(db ReplicaWriter, rd *rfpb.RangeDescriptor) er
 // clearReplica clears in-memory replica state, and local range data on the disk.
 func (sm *Replica) clearReplica(db ReplicaWriter) error {
 	wb := db.NewBatch()
+	defer wb.Close()
 
 	start, end := keys.Range(sm.replicaPrefix())
 	if err := wb.DeleteRange(start, end, nil /*ignored write options*/); err != nil {
@@ -738,8 +746,12 @@ func (sm *Replica) clearReplica(db ReplicaWriter) error {
 
 // loadReplicaState loads any in-memory replica state from the DB.
 func (sm *Replica) loadReplicaState(db ReplicaReader) error {
-	sm.loadRangeDescriptor(db)
-	sm.loadRangeLease(db)
+	if err := sm.loadRangeDescriptor(db); err != nil {
+		return err
+	}
+	if err := sm.loadRangeLease(db); err != nil {
+		return err
+	}
 	if err := sm.loadInflightTransactions(db); err != nil {
 		return err
 	}
@@ -791,9 +803,30 @@ func (sm *Replica) checkNotFileRecordKey(key []byte) error {
 	return nil
 }
 
+// checkLocalStateValue rejects a range descriptor or lease that would fail to
+// load after the write commits.
+func (sm *Replica) checkLocalStateValue(key, val []byte) error {
+	var msg proto.Message
+	switch localKey := sm.replicaLocalKey(key); {
+	case bytes.Equal(localKey, sm.replicaLocalKey(constants.LocalRangeKey)):
+		msg = &rfpb.RangeDescriptor{}
+	case bytes.Equal(localKey, sm.replicaLocalKey(constants.LocalRangeLeaseKey)):
+		msg = &rfpb.RangeLeaseRecord{}
+	default:
+		return nil
+	}
+	if err := proto.Unmarshal(val, msg); err != nil {
+		return status.InvalidArgumentErrorf("[%s] invalid value for key %q: %s", sm.name(), key, err)
+	}
+	return nil
+}
+
 func (sm *Replica) directWrite(wb pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
 	kv := req.GetKv()
 	if err := sm.checkNotFileRecordKey(kv.GetKey()); err != nil {
+		return nil, err
+	}
+	if err := sm.checkLocalStateValue(kv.GetKey(), kv.GetValue()); err != nil {
 		return nil, err
 	}
 	err := sm.rangeCheckedSet(wb, kv.Key, kv.Value)
@@ -805,8 +838,10 @@ func (sm *Replica) directDelete(wb pebble.Batch, req *rfpb.DirectDeleteRequest) 
 		return nil, status.InvalidArgumentErrorf("[%s] cannot direct delete non-local key; use Delete instead", sm.name())
 	}
 	key := sm.replicaLocalKey(req.GetKey())
-	err := wb.Delete(key, nil /* ignore write options*/)
-	return &rfpb.DirectDeleteResponse{}, err
+	if err := wb.Delete(key, nil /* ignore write options*/); err != nil {
+		return nil, fatal(err)
+	}
+	return &rfpb.DirectDeleteResponse{}, nil
 }
 
 func (sm *Replica) directRead(db ReplicaReader, req *rfpb.DirectReadRequest) (*rfpb.DirectReadResponse, error) {
@@ -831,19 +866,25 @@ func (sm *Replica) increment(wb pebble.Batch, req *rfpb.IncrementRequest) (*rfpb
 	buf, err := pebble.GetCopy(wb, key)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
-			return nil, err
+			return nil, fatal(err)
 		}
 	}
 	var val uint64
 	if status.IsNotFoundError(err) {
 		val = 0
+	} else if len(buf) != uint64EncodingSizeBytes {
+		// DirectWrite and CAS can store any value at this key.
+		return nil, status.InvalidArgumentErrorf("[%s] value for key %q has length %d, expected %d", sm.name(), req.GetKey(), len(buf), uint64EncodingSizeBytes)
 	} else {
 		val = bytesToUint64(buf)
 	}
 	val += req.GetDelta()
-
-	if err := wb.Set(key, uint64ToBytes(val), nil /*ignored write options*/); err != nil {
+	newBuf := uint64ToBytes(val)
+	if err := sm.checkLocalStateValue(req.GetKey(), newBuf); err != nil {
 		return nil, err
+	}
+	if err := wb.Set(key, newBuf, nil /*ignored write options*/); err != nil {
+		return nil, fatal(err)
 	}
 	return &rfpb.IncrementResponse{
 		Key:   req.GetKey(),
@@ -860,11 +901,14 @@ func (sm *Replica) cas(wb pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASResponse
 	var err error
 	buf, err = sm.lookup(wb, kv.GetKey())
 	if err != nil && !status.IsNotFoundError(err) {
-		return nil, err
+		return nil, fatal(err)
 	}
 
 	// Match: set value and return new value + no error.
 	if bytes.Equal(buf, req.GetExpectedValue()) {
+		if err := sm.checkLocalStateValue(kv.GetKey(), kv.GetValue()); err != nil {
+			return nil, err
+		}
 		err := sm.rangeCheckedSet(wb, kv.Key, kv.Value)
 		if err == nil {
 			return &rfpb.CASResponse{Kv: kv}, nil
@@ -1168,7 +1212,7 @@ func (sm *Replica) delete(wb pebble.Batch, req *rfpb.DeleteRequest) (*rfpb.Delet
 	}
 	iter, err := wb.NewIter(nil /*default iter options*/)
 	if err != nil {
-		return nil, err
+		return nil, fatal(err)
 	}
 	defer iter.Close()
 
@@ -1183,7 +1227,7 @@ func (sm *Replica) delete(wb pebble.Batch, req *rfpb.DeleteRequest) (*rfpb.Delet
 		return nil, status.FailedPreconditionErrorf("Atime mismatch, expect atime %d, got %d", req.GetMatchAtime(), fileMetadata.GetLastAccessUsec())
 	}
 	if err := wb.Delete(req.GetKey(), nil /*ignored write options*/); err != nil {
-		return nil, err
+		return nil, fatal(err)
 	}
 	return &rfpb.DeleteResponse{}, nil
 }
@@ -1236,12 +1280,15 @@ func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*
 	}
 
 	buf, err := sm.lookup(wb, req.GetKey())
-	if err != nil {
+	if status.IsNotFoundError(err) {
 		return nil, err
+	}
+	if err != nil {
+		return nil, fatal(err)
 	}
 	fileMetadata := &sgpb.FileMetadata{}
 	if err := proto.Unmarshal(buf, fileMetadata); err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("[%s] failed to decode stored FileMetadata for key %q: %w", sm.name(), req.GetKey(), err)
 	}
 	updated := false
 
@@ -1283,7 +1330,7 @@ func (sm *Replica) deleteSessions(wb pebble.Batch, req *rfpb.DeleteSessionsReque
 	}
 	iter, err := wb.NewIter(iterOpts)
 	if err != nil {
-		return nil, err
+		return nil, fatal(err)
 	}
 	defer iter.Close()
 
@@ -1295,7 +1342,9 @@ func (sm *Replica) deleteSessions(wb pebble.Batch, req *rfpb.DeleteSessionsReque
 			continue
 		}
 		if session.GetCreatedAtUsec() <= req.GetCreatedAtUsec() {
-			wb.Delete(iter.Key(), nil /* ignore write options */)
+			if err := wb.Delete(iter.Key(), nil /* ignore write options */); err != nil {
+				return nil, fatal(err)
+			}
 		}
 	}
 	return &rfpb.DeleteSessionsResponse{}, nil
@@ -1343,74 +1392,81 @@ func (sm *Replica) handlePostCommit(hook *rfpb.PostCommitHook) {
 	}
 }
 
-func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
+// handlePropose returns request errors in the response. It returns any other
+// error so the caller can stop applying the entry.
+func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) (*rfpb.ResponseUnion, error) {
 	rsp := &rfpb.ResponseUnion{}
 
+	var err error
 	switch value := req.Value.(type) {
 	case *rfpb.RequestUnion_DirectWrite:
-		r, err := sm.directWrite(wb, value.DirectWrite)
+		r, e := sm.directWrite(wb, value.DirectWrite)
 		rsp.Value = &rfpb.ResponseUnion_DirectWrite{
 			DirectWrite: r,
 		}
-		rsp.Status = statusProto(err)
+		err = e
 	case *rfpb.RequestUnion_DirectDelete:
-		r, err := sm.directDelete(wb, value.DirectDelete)
+		r, e := sm.directDelete(wb, value.DirectDelete)
 		rsp.Value = &rfpb.ResponseUnion_DirectDelete{
 			DirectDelete: r,
 		}
-		rsp.Status = statusProto(err)
+		err = e
 	case *rfpb.RequestUnion_Increment:
-		r, err := sm.increment(wb, value.Increment)
+		r, e := sm.increment(wb, value.Increment)
 		rsp.Value = &rfpb.ResponseUnion_Increment{
 			Increment: r,
 		}
-		rsp.Status = statusProto(err)
+		err = e
 	case *rfpb.RequestUnion_Cas:
-		r, err := sm.cas(wb, value.Cas)
+		r, e := sm.cas(wb, value.Cas)
 		rsp.Value = &rfpb.ResponseUnion_Cas{
 			Cas: r,
 		}
-		rsp.Status = statusProto(err)
+		err = e
 	case *rfpb.RequestUnion_Set:
-		r, err := sm.set(wb, value.Set)
+		r, e := sm.set(wb, value.Set)
 		rsp.Value = &rfpb.ResponseUnion_Set{
 			Set: r,
 		}
-		rsp.Status = statusProto(err)
+		err = e
 	case *rfpb.RequestUnion_Delete:
-		r, err := sm.delete(wb, value.Delete)
+		r, e := sm.delete(wb, value.Delete)
 		rsp.Value = &rfpb.ResponseUnion_Delete{
 			Delete: r,
 		}
-		rsp.Status = statusProto(err)
+		err = e
 	case *rfpb.RequestUnion_UpdateAtime:
-		r, err := sm.updateAtime(wb, value.UpdateAtime)
+		r, e := sm.updateAtime(wb, value.UpdateAtime)
 		rsp.Value = &rfpb.ResponseUnion_UpdateAtime{
 			UpdateAtime: r,
 		}
-		rsp.Status = statusProto(err)
+		err = e
 	case *rfpb.RequestUnion_DeleteSessions:
-		r, err := sm.deleteSessions(wb, value.DeleteSessions)
+		r, e := sm.deleteSessions(wb, value.DeleteSessions)
 		rsp.Value = &rfpb.ResponseUnion_DeleteSessions{
 			DeleteSessions: r,
 		}
-		rsp.Status = statusProto(err)
+		err = e
 	case *rfpb.RequestUnion_DeleteTxnRollbackMarkersBefore:
-		r, err := sm.deleteTxnRollbackMarkersBefore(wb, value.DeleteTxnRollbackMarkersBefore)
+		r, e := sm.deleteTxnRollbackMarkersBefore(wb, value.DeleteTxnRollbackMarkersBefore)
 		rsp.Value = &rfpb.ResponseUnion_DeleteTxnRollbackMarkersBefore{
 			DeleteTxnRollbackMarkersBefore: r,
 		}
-		rsp.Status = statusProto(err)
+		err = e
 	default:
-		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
+		err = status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req)
 	}
+	if isFatal(err) {
+		return nil, err
+	}
+	rsp.Status = statusProto(err)
 
 	if req.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
 		// Log Update() errors (except Compare-And-Set) errors.
 		sm.log.Errorf("error processing update %+v: %s", req, rsp.GetStatus())
 	}
 
-	return rsp
+	return rsp, nil
 }
 
 func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
@@ -1483,19 +1539,48 @@ func validateHeaderAgainstRange(rd *rfpb.RangeDescriptor, header *rfpb.Header) e
 	return nil
 }
 
-func (sm *Replica) updateInMemoryState(wb pebble.Batch) {
+func (sm *Replica) updateInMemoryState(wb pebble.Batch) error {
 	// Update the local in-memory range descriptor iff this batch modified
 	// it.
 	if buf, ok := sm.batchContainsKey(wb, constants.LocalRangeKey); ok {
-		sm.setRange(buf)
+		if err := sm.setRange(buf); err != nil {
+			return status.InternalErrorf("[%s] failed to set range descriptor: %w", sm.name(), err)
+		}
 	}
 	// Update the rangelease iff this batch sets it.
 	if buf, ok := sm.batchContainsKey(wb, constants.LocalRangeLeaseKey); ok {
-		err := sm.setRangeLease(buf)
-		if err != nil {
-			sm.log.Errorf("failed to set range lease: %s", err)
+		if err := sm.setRangeLease(buf); err != nil {
+			return status.InternalErrorf("[%s] failed to set range lease: %w", sm.name(), err)
 		}
 	}
+	return nil
+}
+
+// fatalError marks an error that may be local to this replica, such as a
+// storage failure. Update returns it so Dragonboat stops. Any other apply
+// error is deterministic and is recorded in the entry result.
+type fatalError struct {
+	err error
+}
+
+func (e *fatalError) Error() string {
+	return e.err.Error()
+}
+
+func (e *fatalError) Unwrap() error {
+	return e.err
+}
+
+func fatal(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &fatalError{err: err}
+}
+
+func isFatal(err error) bool {
+	var fe *fatalError
+	return errors.As(err, &fe)
 }
 
 func errorEntry(err error) dbsm.Result {
@@ -1534,11 +1619,11 @@ func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Ses
 			// This is a new request
 			return nil, nil
 		}
-		return nil, err
+		return nil, fatal(err)
 	}
 	storedSession := &rfpb.Session{}
 	if err := proto.Unmarshal(buf, storedSession); err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("[%s] failed to decode stored session (id=%q): %w", sm.name(), reqSession.GetId(), err)
 	}
 	if storedSession.GetIndex() == reqSession.GetIndex() {
 		return storedSession.GetRspData(), nil
@@ -1559,13 +1644,17 @@ func getEntryResult(cmd []byte, rspBuf []byte) dbsm.Result {
 
 func (sm *Replica) commitIndexBatch(wb pebble.Batch, entryIndex uint64) error {
 	appliedIndex := uint64ToBytes(entryIndex)
-	wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), appliedIndex, nil)
+	if err := wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), appliedIndex, nil); err != nil {
+		return status.InternalErrorf("[%s] failed to set last applied index: %w", sm.name(), err)
+	}
 	if err := wb.Commit(pebble.NoSync); err != nil {
 		return status.InternalErrorf("[%s] failed to commit batch: %w", sm.name(), err)
 	}
 	// If the batch commit was successful, update the replica's in-
 	// memory state.
-	sm.updateInMemoryState(wb)
+	if err := sm.updateInMemoryState(wb); err != nil {
+		return err
+	}
 
 	if sm.lastAppliedIndex >= entryIndex {
 		sm.log.Errorf("[%s] lastAppliedIndex not moving forward: current %d, new: %d", sm.name(), sm.lastAppliedIndex, entryIndex)
@@ -1581,31 +1670,33 @@ func (sm *Replica) updateSession(wb pebble.Batch, reqSession *rfpb.Session, rspB
 		return status.InternalErrorf("[%s] failed to marshal session: %w", sm.name(), err)
 	}
 	sessionKey := sessionPebbleKey(reqSession)
-	wb.Set(sm.replicaLocalKey(sessionKey), sessionBuf, nil)
+	if err := wb.Set(sm.replicaLocalKey(sessionKey), sessionBuf, nil); err != nil {
+		return fatal(status.InternalErrorf("[%s] failed to set session: %w", sm.name(), err))
+	}
 	return nil
 }
 
 // rejectEntry commits only the index and returns rejectErr in the result.
 // Dragonboat advances its applied index even for rejected entries.
-func (sm *Replica) rejectEntry(db pebble.IPebbleDB, entry dbsm.Entry, rejectErr error) dbsm.Entry {
+func (sm *Replica) rejectEntry(db pebble.IPebbleDB, entry dbsm.Entry, rejectErr error) (dbsm.Entry, error) {
 	wb := db.NewBatch()
 	defer wb.Close()
 	if err := sm.commitIndexBatch(wb, entry.Index); err != nil {
-		sm.log.Errorf("[%s] failed to commit last applied index for rejected entry (index=%d): %s", sm.name(), entry.Index, err)
+		return entry, err
 	}
 	entry.Result = errorEntry(rejectErr)
-	return entry
+	return entry, nil
 }
 
 func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Entry, error) {
-	// This method should return errors if something truly fails in an
-	// unrecoverable way (proto marshal/unmarshal, pebble batch commit) but
-	// otherwise normal request handling errors are encoded in the response
-	// and the statemachine keeps progressing.
+	// Deterministic errors are recorded in the entry result, and the entry is
+	// applied. Errors that may be local to this replica, such as storage
+	// failures, are returned so Dragonboat stops instead of letting replicas
+	// diverge.
 	batchReq := &rfpb.BatchCmdRequest{}
 	if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
 		err = status.InternalErrorf("[%s] failed to unmarshal entry.Cmd: %w", sm.name(), err)
-		return sm.rejectEntry(db, entry, err), nil
+		return sm.rejectEntry(db, entry, err)
 	}
 
 	// All of the data in a BatchCmdRequest is handled in a single pebble
@@ -1619,15 +1710,18 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 		reqSession.EntryIndex = proto.Uint64(entry.Index)
 	}
 	lastRspData, err := sm.getLastRespFromSession(db, reqSession)
+	if isFatal(err) {
+		return entry, err
+	}
 	if err != nil {
-		return sm.rejectEntry(db, entry, err), nil
+		return sm.rejectEntry(db, entry, err)
 	}
 	// We have executed this command in the past, return the stored response and
 	// skip execution.
 	if lastRspData != nil {
 		entry.Result = getEntryResult(entry.Cmd, lastRspData)
 		if err := sm.commitIndexBatch(wb, entry.Index); err != nil {
-			entry.Result = errorEntry(err)
+			return entry, err
 		}
 		return entry, nil
 	}
@@ -1645,7 +1739,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	batchRsp := &rfpb.BatchCmdResponse{}
 	if header := batchReq.GetHeader(); header != nil {
 		if err := validateHeaderAgainstRange(rd, header); err != nil {
-			return sm.rejectEntry(db, entry, err), nil
+			return sm.rejectEntry(db, entry, err)
 		}
 	}
 	var preparedTxn pebble.Batch
@@ -1659,7 +1753,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 		// Check that request is not malformed.
 		if len(batchReq.GetUnion()) > 0 && batchReq.GetFinalizeOperation() != rfpb.FinalizeOperation_UNKNOWN_OPERATION {
 			err := status.InvalidArgumentError("Batch must be empty when finalizing transaction")
-			return sm.rejectEntry(db, entry, err), nil
+			return sm.rejectEntry(db, entry, err)
 		}
 
 		switch batchReq.GetFinalizeOperation() {
@@ -1682,7 +1776,11 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 		}
 	} else {
 		for _, union := range batchReq.GetUnion() {
-			batchRsp.Union = append(batchRsp.Union, sm.handlePropose(wb, union))
+			rsp, err := sm.handlePropose(wb, union)
+			if err != nil {
+				return entry, err
+			}
+			batchRsp.Union = append(batchRsp.Union, rsp)
 		}
 		if err := sm.checkLocks(wb, nil); err != nil {
 			batchRsp.Status = statusProto(err)
@@ -1693,18 +1791,19 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
 		err = status.InternalErrorf("[%s] failed to marshal batchRsp: %w", sm.name(), err)
-		return sm.rejectEntry(db, entry, err), nil
+		return sm.rejectEntry(db, entry, err)
 	}
 	entry.Result = getEntryResult(entry.Cmd, rspBuf)
 	if reqSession != nil {
-		if err := sm.updateSession(wb, reqSession, rspBuf); err != nil {
-			return sm.rejectEntry(db, entry, err), nil
+		if err := sm.updateSession(wb, reqSession, rspBuf); isFatal(err) {
+			return entry, err
+		} else if err != nil {
+			return sm.rejectEntry(db, entry, err)
 		}
 	}
 
 	if err := sm.commitIndexBatch(wb, entry.Index); err != nil {
-		entry.Result = errorEntry(err)
-		return entry, nil
+		return entry, err
 	}
 	if len(txid) > 0 && batchRsp.GetStatus().GetCode() == 0 {
 		switch batchReq.GetFinalizeOperation() {
@@ -2183,7 +2282,10 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 		return err
 	}
 
-	sm.clearReplica(db)
+	if err := sm.clearReplica(db); err != nil {
+		db.Close()
+		return err
+	}
 	err = sm.applySnapshotFromReader(r, db)
 	db.Close() // close the DB before handling errors or checking keys.
 	if err != nil {
