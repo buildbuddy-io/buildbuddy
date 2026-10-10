@@ -2387,8 +2387,6 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			if s.clock.Since(lastCheckin) <= s.leaseDuration+s.leaseGracePeriod {
 				continue
 			}
-			// Return the error instead of ending the stream cleanly, so that
-			// the executor sees why its lease ended rather than a bare EOF.
 			err := status.DeadlineExceededErrorf("lease was not renewed by executor and expired (last renewal: %s)", lastCheckin)
 			log.CtxWarningf(ctx, "LeaseTask %q: %s", taskID, err)
 			return err
