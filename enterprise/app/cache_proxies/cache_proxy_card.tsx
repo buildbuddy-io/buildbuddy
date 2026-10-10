@@ -1,7 +1,8 @@
 import Long from "long";
-import { Cloud } from "lucide-react";
+import { ChevronRight, Cloud } from "lucide-react";
 import React from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
+import { Link } from "../../../app/components/link/link";
 import format from "../../../app/format/format";
 import { cache_proxy } from "../../../proto/cache_proxy_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
@@ -18,11 +19,11 @@ function cssColor(name: string, fallback: string): string {
   return v || fallback;
 }
 
-const HIT_COLOR = cssColor("--color-green-500", "#4caf50");
-const MISS_COLOR = cssColor("--color-status-error", "#f44336");
-const UNCACHEABLE_COLOR = cssColor("--color-amber-500", "#f59e0b");
-const READ_COLOR = cssColor("--color-light-blue-500", "#03a9f4");
-const WRITE_COLOR = cssColor("--color-indigo-500", "#3f51b5");
+export const HIT_COLOR = cssColor("--color-green-500", "#4caf50");
+export const MISS_COLOR = cssColor("--color-status-error", "#f44336");
+export const UNCACHEABLE_COLOR = cssColor("--color-amber-500", "#f59e0b");
+export const READ_COLOR = cssColor("--color-light-blue-500", "#03a9f4");
+export const WRITE_COLOR = cssColor("--color-indigo-500", "#3f51b5");
 const EMPTY_COLOR = "#eee";
 
 interface Props {
@@ -32,19 +33,21 @@ interface Props {
   // When true, the card is in summary mode and the statistics divider and
   // rings are hidden.
   summary?: boolean;
+  // The URL of this proxy's details page.
+  href: string;
 }
 
 // toNumber accepts the int64-as-number-or-Long values that protobuf-ts
 // produces and returns a plain number. Total cache counts could in theory
 // exceed Number.MAX_SAFE_INTEGER, but for the purposes of a percentage
 // readout that's fine.
-function toNumber(value: number | Long | null | undefined): number {
+export function toNumber(value: number | Long | null | undefined): number {
   if (value === null || value === undefined) return 0;
   if (typeof value === "number") return value;
   return value.toNumber();
 }
 
-function hitRate(hits: number, misses: number): string {
+export function hitRate(hits: number, misses: number): string {
   const total = hits + misses;
   if (total === 0) return "—";
   return format.percent(hits / total) + "%";
@@ -67,7 +70,7 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
   render() {
     const fresh = isFresh(this.props.lastCheckInTime);
     return (
-      <div className={`card ${fresh ? "card-success" : "card-neutral"}`}>
+      <Link className={`card ${fresh ? "card-success" : "card-neutral"} cache-proxy-card-link`} href={this.props.href}>
         <Cloud />
         <div className="content">
           <div className="details">
@@ -140,7 +143,8 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
             {!this.props.summary && this.props.statistics && this.renderStatistics(this.props.statistics)}
           </div>
         </div>
-      </div>
+        <ChevronRight className="cache-proxy-card-chevron" />
+      </Link>
     );
   }
 
@@ -243,7 +247,7 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
   }
 }
 
-function readWriteRatio(reads: number, writes: number): string {
+export function readWriteRatio(reads: number, writes: number): string {
   if (reads === 0 && writes === 0) return "—";
   if (writes === 0) return "∞:1";
   if (reads === 0) return "1:∞";
