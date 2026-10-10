@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
@@ -322,9 +323,11 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 	start := time.Now()
 	repo := digestRef.Context()
 	key := ocicache.NewBlobFetchKey(repo, hash, creds)
-	isLeader := false
+	// Do runs the leader's function in a goroutine, and returns early if ctx is
+	// canceled, so isLeader may be read while that goroutine is still running.
+	var isLeader atomic.Bool
 	contentLength, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (int64, error) {
-		isLeader = true
+		isLeader.Store(true)
 
 		// Cached metadata proves the content-addressed blob exists; we only need
 		// to prove the caller may access the repo before serving it from cache.
@@ -358,7 +361,7 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 		return size, err
 	})
 
-	if isLeader {
+	if isLeader.Load() {
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleLeader, err, time.Since(start))
 		return err
 	}
