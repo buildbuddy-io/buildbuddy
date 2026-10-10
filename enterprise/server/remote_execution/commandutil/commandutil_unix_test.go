@@ -92,6 +92,13 @@ func TestRun_Stdio_StdinNotConsumedByCommand(t *testing.T) {
 	assert.Equal(t, "foo\n", string(out))
 }
 
+func TestRun_SegmentationFault_NoError(t *testing.T) {
+	res := runSh(context.Background(), "kill -SEGV $$")
+
+	require.NoError(t, res.Error)
+	assert.Equal(t, 128+int(syscall.SIGSEGV), res.ExitCode)
+}
+
 // TODO(bduffany): Treat SIGABRT as a normal exit rather than an unexpected
 // termination, and ensure that unexpected terminations are retried rather than
 // immediately reporting them to Bazel.

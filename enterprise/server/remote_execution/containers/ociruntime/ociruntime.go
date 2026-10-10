@@ -72,9 +72,6 @@ import (
 )
 
 const (
-	// Exit code 139 represents 11 (SIGSEGV signal) + 128 https://tldp.org/LDP/abs/html/exitcodes.html
-	ociSIGSEGVExitCode = 139
-
 	// Statusz section name.
 	imagesStatuszSectionName = "ociruntime_images"
 )
@@ -99,8 +96,6 @@ var (
 	nofileLimit               = flag.Uint64("executor.oci.nofile_limit", 0, "Soft and hard RLIMIT_NOFILE (open file descriptor limit) for initial OCI container processes. If 0, leave the limit unset in the OCI spec.")
 	cgroupMemoryCushion       = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
 	enableImageEviction       = flag.Bool("executor.oci.image_eviction_enabled", false, "If true, track OCI image layers in the filecache LRU for eviction. When enabled, unused image layers can be evicted to make room for other cached files.")
-
-	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
 
 const (
@@ -1554,12 +1549,15 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	}
 	code, err := commandutil.ExitCode(ctx, cmd, runError)
 
-	// Some actions are prone to SIGSEGV when running on an executor that is close to its memory limits.
-	// Return a retryable error so we can make sure that the failure is not infrastructure related.
-	if code == ociSIGSEGVExitCode {
-		log.CtxWarning(ctx, "action exited with SIGSEGV")
-		code = commandutil.NoExitCode
-		err = errSIGSEGV
+	// The runtime normally exits with the action's exit code, including 139
+	// for a segfault. If the runtime process itself received SIGSEGV, execution
+	// failed at the infrastructure level and can be retried. Preserve timeout
+	// and cancellation errors returned by ExitCode.
+	if err == nil && cmd.ProcessState != nil {
+		if ws, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok && ws.Signaled() && ws.Signal() == syscall.SIGSEGV {
+			code = commandutil.NoExitCode
+			err = status.UnavailableErrorf("OCI runtime %q terminated by SIGSEGV: %s", c.runtime, runError)
+		}
 	}
 
 	result := &interfaces.CommandResult{
