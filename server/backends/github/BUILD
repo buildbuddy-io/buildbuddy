@@ -27,6 +27,7 @@ go_library(
         "//server/util/db",
         "//server/util/flag",
         "//server/util/git",
+        "//server/util/githubutil",
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
