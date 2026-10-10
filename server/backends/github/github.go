@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -565,7 +566,16 @@ func (c *GithubClient) CreateStatus(ctx context.Context, groupID string, ownerRe
 	}
 
 	req.Header.Set("Authorization", "token "+token)
+	clock := c.env.GetClock()
+	start := clock.Now()
+	code := 0
+	defer func() {
+		metrics.GitHubStatusRequestDurationUsec.WithLabelValues(strconv.Itoa(code)).Observe(float64(clock.Since(start).Microseconds()))
+	}()
 	res, err := c.client.Do(req)
+	if res != nil {
+		code = res.StatusCode
+	}
 	if err != nil {
 		return status.UnavailableErrorf("failed to send request: %s", err)
 	}

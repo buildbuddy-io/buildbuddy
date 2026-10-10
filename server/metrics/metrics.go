@@ -691,6 +691,21 @@ var (
 		Help:      "How long it took to post an invocation proto to the webhook, in **microseconds**.",
 	})
 
+	// ## GitHub commit status metrics
+
+	GitHubStatusRequestDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "github",
+		Name:      "status_request_duration_usec",
+		Buckets: customDurationBuckets(time.Duration.Microseconds, []time.Duration{
+			1 * time.Millisecond, 10 * time.Millisecond, 50 * time.Millisecond,
+			100 * time.Millisecond, 250 * time.Millisecond, 500 * time.Millisecond,
+			1 * time.Second, 2 * time.Second, 5 * time.Second, 10 * time.Second,
+			20 * time.Second, 30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute,
+		}),
+		Help: "Time spent sending a GitHub commit-status request and handling its response, in **microseconds**, including failed requests. Code 0 means no HTTP response was received. Eligibility checks and token acquisition are excluded.",
+	}, []string{HTTPResponseCodeLabel})
+
 	// ## Remote cache metrics
 	//
 	// NOTE: Cache metrics are recorded at the end of each invocation,
