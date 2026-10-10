@@ -510,6 +510,18 @@ ts_library(
 )
 
 ts_jasmine_node_test(
+    name = "invocation_logs_model_test",
+    srcs = ["invocation_logs_model_test.ts"],
+    deps = [
+        ":invocation_logs_model",
+        "//app/capabilities",
+        "//app/service:rpc_service",
+        "//proto:config_ts_proto",
+        "//proto:eventlog_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
     name = "invocation_model_test",
     srcs = ["invocation_model_test.ts"],
     deps = [
@@ -956,6 +968,26 @@ ts_jasmine_node_test(
         "//:node_modules/react-dom",
         "//app/capabilities",
         "//app/invocation:invocation_not_found",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "invocation_test",
+    srcs = ["invocation_test.ts"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//app/capabilities",
+        "//app/invocation",
+        "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//app/util:errors",
+        "//proto:config_ts_proto",
+        "//proto:eventlog_ts_proto",
+        "//proto:execution_stats_ts_proto",
+        "//proto:grpc_code_ts_proto",
+        "//proto:invocation_ts_proto",
+        "//proto:remote_execution_ts_proto",
     ],
 )
 
