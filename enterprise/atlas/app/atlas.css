@@ -120,14 +120,11 @@ pre,
   cursor: pointer;
 }
 
+/* How many matched and how fast, above the groups. */
 .atlas-search-meta {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+  margin-bottom: 8px;
   color: var(--color-text-muted);
   font-size: 12px;
-  pointer-events: none;
 }
 
 .atlas-navlink {

@@ -9,8 +9,8 @@ interface Props {
   query: string;
   /** Index into the flattened results, for keyboard navigation; -1 for none. */
   selectedIndex: number;
-  /** Reports the response (or none) and its results flattened in display order. */
-  onResults: (response: atlas.SearchResponse | undefined, entries: atlas.Entry[]) => void;
+  /** Reports the results flattened in display order, for keyboard selection. */
+  onResults: (entries: atlas.Entry[]) => void;
 }
 
 interface State {
@@ -40,7 +40,7 @@ export default class SearchComponent extends React.Component<Props, State> {
     const request = ++this.latestRequest;
     if (!query) {
       this.setState({ loading: false, response: undefined, errorMessage: undefined });
-      this.props.onResults(undefined, []);
+      this.props.onResults([]);
       return;
     }
     this.setState({ loading: true });
@@ -49,12 +49,12 @@ export default class SearchComponent extends React.Component<Props, State> {
       .then((response) => {
         if (request !== this.latestRequest) return;
         this.setState({ loading: false, response, errorMessage: undefined });
-        this.props.onResults(response, flatten(response));
+        this.props.onResults(flatten(response));
       })
       .catch((e) => {
         if (request !== this.latestRequest) return;
         this.setState({ loading: false, response: undefined, errorMessage: BuildBuddyError.parse(e).description });
-        this.props.onResults(undefined, []);
+        this.props.onResults([]);
       });
   }
 
@@ -100,6 +100,10 @@ export default class SearchComponent extends React.Component<Props, State> {
     let index = 0;
     return (
       <>
+        <div className="atlas-search-meta">
+          {response.total.toLocaleString()} {response.total === 1 ? "result" : "results"} in{" "}
+          {(Number(response.tookUsec) / 1000).toFixed(1)} ms
+        </div>
         {response.groups.map((group) => (
           <div className="atlas-group" key={`${group.group}/${group.kind}`}>
             <h2>
