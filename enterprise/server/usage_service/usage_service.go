@@ -522,12 +522,13 @@ func (s *usageService) GetCurrentBill(ctx context.Context, req *usagepb.GetCurre
 	if err != nil {
 		return nil, err
 	}
-	var bill *usagepb.Bill
-	if g.Status == grpb.Group_USAGE_BASED_GROUP_STATUS {
-		bill, err = s.fetchBill(ctx, groupID)
-		if err != nil {
-			return nil, err
-		}
+	// Not cached, so that the bill shows up as soon as the group becomes usage based.
+	if g.Status != grpb.Group_USAGE_BASED_GROUP_STATUS {
+		return &usagepb.GetCurrentBillResponse{}, nil
+	}
+	bill, err := s.fetchBill(ctx, groupID)
+	if err != nil {
+		return nil, err
 	}
 	s.bills.Add(groupID, bill)
 	return &usagepb.GetCurrentBillResponse{Bill: bill}, nil

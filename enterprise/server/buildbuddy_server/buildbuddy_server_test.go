@@ -4,11 +4,14 @@ package buildbuddy_server_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/billing/usagebilling"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -664,4 +667,250 @@ func TestSetSSOConfig_RejectsCrossTenantAdmin(t *testing.T) {
 	})
 	require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied from GetSSOConfig, got: %v", err)
 	require.Contains(t, status.Message(err), "not a member of the requested organization")
+}
+
+func setFreeTier(t *testing.T, env environment.Env, groupID string) {
+	require.NoError(t, env.GetDBHandle().NewQuery(context.Background(), "test_set_free_tier").Raw(
+		`UPDATE "Groups" SET status = ? WHERE group_id = ?`, int32(grpb.Group_FREE_TIER_GROUP_STATUS), groupID).Exec().Error)
+}
+
+func TestUsageBasedBillingSetup(t *testing.T) {
+	te := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, te)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+
+	ctx := context.Background()
+	admin := enterprise_testauth.CreateRandomUser(t, te, "billing-test.io")
+	adminCtx := authUserCtx(ctx, te, t, admin.UserID)
+	group := getGroup(t, adminCtx, te).Group
+	setFreeTier(t, te, group.GroupID)
+
+	var stripeCustomersCreated, checkoutSessionsCreated int
+	var sawDefaultPaymentMethodRequest bool
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key, _, _ := r.BasicAuth()
+		require.Equal(t, "sk_test_123", key)
+		switch r.Method + " " + r.URL.Path {
+		case "POST /v1/customers":
+			stripeCustomersCreated++
+			require.NoError(t, r.ParseForm())
+			require.Equal(t, group.Name, r.Form.Get("name"))
+			require.Equal(t, group.GroupID, r.Form.Get("metadata[group_id]"))
+			w.Write([]byte(`{"id":"cus_123"}`))
+		case "POST /v1/checkout/sessions":
+			checkoutSessionsCreated++
+			require.NoError(t, r.ParseForm())
+			require.Equal(t, "setup", r.Form.Get("mode"))
+			require.Equal(t, "cus_123", r.Form.Get("customer"))
+			require.Equal(t, group.GroupID, r.Form.Get("client_reference_id"))
+			require.Equal(t, "https://app.buildbuddy.test/settings/org/details?setup_session_id={CHECKOUT_SESSION_ID}", r.Form.Get("success_url"))
+			require.Equal(t, "https://app.buildbuddy.test/settings/org/details", r.Form.Get("cancel_url"))
+			w.Write([]byte(`{"id":"cs_123","url":"https://checkout.stripe.test/cs_123"}`))
+		case "GET /v1/checkout/sessions/cs_123":
+			require.Equal(t, "setup_intent", r.URL.Query().Get("expand[]"))
+			w.Write([]byte(`{"id":"cs_123","customer":"cus_123","setup_intent":{"id":"seti_123","payment_method":"pm_123"},"mode":"setup","status":"complete","client_reference_id":"` + group.GroupID + `"}`))
+		case "POST /v1/customers/cus_123":
+			sawDefaultPaymentMethodRequest = true
+			require.NoError(t, r.ParseForm())
+			require.Equal(t, "pm_123", r.Form.Get("invoice_settings[default_payment_method]"))
+			w.Write([]byte(`{"id":"cus_123"}`))
+		default:
+			t.Fatalf("unexpected Stripe request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer stripeServer.Close()
+
+	var customerCreated, contractCreated, stripeLinked, sawContractEditRequest bool
+	metronomeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer metronome-key", r.Header.Get("Authorization"))
+		body := map[string]any{}
+		if r.Method == http.MethodPost {
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		}
+		switch r.Method + " " + r.URL.Path {
+		case "GET /v1/customers":
+			require.Equal(t, group.GroupID, r.URL.Query().Get("ingest_alias"))
+			if customerCreated {
+				w.Write([]byte(`{"data":[{"id":"mcust_123","ingest_aliases":["` + group.GroupID + `"]}]}`))
+			} else {
+				w.Write([]byte(`{"data":[]}`))
+			}
+		case "POST /v1/customers":
+			require.False(t, customerCreated)
+			customerCreated = true
+			require.Equal(t, group.GroupID, body["name"])
+			require.Equal(t, []any{group.GroupID}, body["ingest_aliases"])
+			w.Write([]byte(`{"data":{"id":"mcust_123"}}`))
+		case "POST /v1/contracts/create":
+			require.Equal(t, "mcust_123", body["customer_id"])
+			require.Equal(t, "self-serve-free", body["package_alias"])
+			require.Equal(t, group.GroupID, body["uniqueness_key"])
+			if contractCreated {
+				http.Error(w, "uniqueness key already used", http.StatusConflict)
+				return
+			}
+			contractCreated = true
+			w.Write([]byte(`{"data":{"id":"contract_123"}}`))
+		case "POST /v1/getCustomerBillingProviderConfigurations":
+			require.Equal(t, "mcust_123", body["customer_id"])
+			if stripeLinked {
+				w.Write([]byte(`{"data":[{"id":"config_123","billing_provider":"stripe","configuration":{"stripe_customer_id":"cus_123"}}]}`))
+			} else {
+				w.Write([]byte(`{"data":[]}`))
+			}
+		case "POST /v1/setCustomerBillingProviderConfigurations":
+			require.False(t, stripeLinked)
+			stripeLinked = true
+			config := body["data"].([]any)[0].(map[string]any)
+			require.Equal(t, "mcust_123", config["customer_id"])
+			require.Equal(t, "stripe", config["billing_provider"])
+			require.Equal(t, "delivery_123", config["delivery_method_id"])
+			require.Equal(t, map[string]any{"stripe_customer_id": "cus_123", "stripe_collection_method": "charge_automatically"}, config["configuration"])
+			w.Write([]byte(`{"data":[{"id":"config_123"}]}`))
+		case "POST /v2/contracts/list":
+			require.Equal(t, "mcust_123", body["customer_id"])
+			w.Write([]byte(`{"data":[{"id":"contract_123","uniqueness_key":"` + group.GroupID + `"}]}`))
+		case "POST /v2/contracts/edit":
+			sawContractEditRequest = true
+			require.Equal(t, "mcust_123", body["customer_id"])
+			require.Equal(t, "contract_123", body["contract_id"])
+			require.Equal(t, map[string]any{
+				"billing_provider_configuration": map[string]any{"billing_provider_configuration_id": "config_123"},
+				"schedule":                       map[string]any{"effective_at": "START_OF_CURRENT_PERIOD"},
+			}, body["add_billing_provider_configuration_update"])
+			w.Write([]byte(`{"data":{"id":"edit_123"}}`))
+		default:
+			t.Fatalf("unexpected Metronome request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer metronomeServer.Close()
+
+	flags.Set(t, "http.client.allow_localhost", true)
+	flags.Set(t, "billing.stripe.api_key", "sk_test_123")
+	flags.Set(t, "billing.stripe.enabled", true)
+	flags.Set(t, "billing.stripe.api_url", stripeServer.URL)
+	flags.Set(t, "billing.metronome.api_key", "metronome-key")
+	flags.Set(t, "billing.metronome.api_url", metronomeServer.URL)
+	flags.Set(t, "billing.metronome.stripe_delivery_method_id", "delivery_123")
+	require.Error(t, usagebilling.Register(te), "package alias is required")
+	flags.Set(t, "billing.metronome.package_alias", "self-serve-free")
+	require.NoError(t, usagebilling.Register(te))
+	buildBuddyURL, err := url.Parse("https://app.buildbuddy.test")
+	require.NoError(t, err)
+	flags.Set(t, "app.build_buddy_url", *buildBuddyURL)
+
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+	// Retrying reuses the Stripe customer.
+	for range 2 {
+		createRsp, err := server.CreateUsageBasedBillingSetupSession(adminCtx, &grpb.CreateUsageBasedBillingSetupSessionRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+		})
+		require.NoError(t, err)
+		require.Equal(t, "https://checkout.stripe.test/cs_123", createRsp.GetSetupUrl())
+	}
+	require.Equal(t, 1, stripeCustomersCreated)
+	require.Equal(t, 2, checkoutSessionsCreated)
+
+	_, err = server.CompleteUsageBasedBillingSetup(adminCtx, &grpb.CompleteUsageBasedBillingSetupRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+		SetupSessionId: "cs_123",
+	})
+	require.NoError(t, err)
+
+	updatedGroup, err := te.GetUserDB().GetGroupByID(ctx, group.GroupID)
+	require.NoError(t, err)
+	require.Equal(t, grpb.Group_USAGE_BASED_GROUP_STATUS, updatedGroup.Status)
+	require.True(t, contractCreated)
+	require.True(t, sawDefaultPaymentMethodRequest)
+	require.True(t, sawContractEditRequest)
+}
+
+// Only an admin of the group, with a session created for that group, can set
+// up billing. Metronome is never called otherwise.
+func TestUsageBasedBillingSetup_Authorization(t *testing.T) {
+	te := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, te)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.admin_group_id", "GR-NONEXISTENT")
+
+	ctx := context.Background()
+	const domain = "billing-acl-test.io"
+	adminA := enterprise_testauth.CreateRandomUser(t, te, domain)
+	adminACtx := authUserCtx(ctx, te, t, adminA.UserID)
+	groupA := getGroup(t, adminACtx, te).Group
+	_, err := te.GetUserDB().UpdateGroup(adminACtx, &tables.Group{
+		GroupID:       groupA.GroupID,
+		URLIdentifier: "billing-acl-slug",
+		OwnedDomain:   domain,
+	})
+	require.NoError(t, err)
+	devA := enterprise_testauth.CreateRandomUser(t, te, domain)
+	devACtx := authUserCtx(ctx, te, t, devA.UserID)
+	adminB := enterprise_testauth.CreateRandomUser(t, te, "billing-acl-other.io")
+	adminBCtx := authUserCtx(ctx, te, t, adminB.UserID)
+	groupB := getGroup(t, adminBCtx, te).Group
+	setFreeTier(t, te, groupA.GroupID)
+	setFreeTier(t, te, groupB.GroupID)
+
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A completed session that was created for group A.
+		require.Equal(t, "/v1/checkout/sessions/cs_A", r.URL.Path)
+		w.Write([]byte(`{"id":"cs_A","customer":"cus_A","setup_intent":{"id":"seti_A","payment_method":"pm_A"},"mode":"setup","status":"complete","client_reference_id":"` + groupA.GroupID + `"}`))
+	}))
+	defer stripeServer.Close()
+	metronomeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected Metronome request %s %s", r.Method, r.URL.Path)
+	}))
+	defer metronomeServer.Close()
+	flags.Set(t, "http.client.allow_localhost", true)
+	flags.Set(t, "billing.stripe.api_key", "sk_test_123")
+	flags.Set(t, "billing.stripe.enabled", true)
+	flags.Set(t, "billing.stripe.api_url", stripeServer.URL)
+	flags.Set(t, "billing.metronome.api_key", "metronome-key")
+	flags.Set(t, "billing.metronome.api_url", metronomeServer.URL)
+	flags.Set(t, "billing.metronome.package_alias", "self-serve-free")
+	require.NoError(t, usagebilling.Register(te))
+
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name    string
+		ctx     context.Context
+		groupID string
+		message string
+	}{
+		{name: "member who is not an admin", ctx: devACtx, groupID: groupA.GroupID, message: "missing required capabilities"},
+		{name: "admin of another group", ctx: adminBCtx, groupID: groupA.GroupID, message: "not a member of the requested organization"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := server.CreateUsageBasedBillingSetupSession(tc.ctx, &grpb.CreateUsageBasedBillingSetupSessionRequest{
+				RequestContext: &ctxpb.RequestContext{GroupId: tc.groupID},
+			})
+			require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+			require.Contains(t, status.Message(err), tc.message)
+
+			_, err = server.CompleteUsageBasedBillingSetup(tc.ctx, &grpb.CompleteUsageBasedBillingSetupRequest{
+				RequestContext: &ctxpb.RequestContext{GroupId: tc.groupID},
+				SetupSessionId: "cs_A",
+			})
+			require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+			require.Contains(t, status.Message(err), tc.message)
+		})
+	}
+
+	// An admin cannot complete their own group's setup with a session that was
+	// created for a different group.
+	_, err = server.CompleteUsageBasedBillingSetup(adminBCtx, &grpb.CompleteUsageBasedBillingSetupRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupB.GroupID},
+		SetupSessionId: "cs_A",
+	})
+	require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+	require.Contains(t, status.Message(err), "does not belong to the selected organization")
+	updatedGroup, err := te.GetUserDB().GetGroupByID(ctx, groupB.GroupID)
+	require.NoError(t, err)
+	require.Equal(t, grpb.Group_FREE_TIER_GROUP_STATUS, updatedGroup.Status)
 }
