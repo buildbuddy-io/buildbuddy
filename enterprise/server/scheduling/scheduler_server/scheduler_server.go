@@ -2343,10 +2343,10 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		// Reserve the task for its executor to reconnect if the scheduler is
 		// shutting down, or if the stream broke while the executor may still be
 		// running the task. A broken stream can also mean that the executor
-		// died, possibly because of the task. reEnqueueTask skips the attempt
-		// limit for reserved tasks, and it never re-enqueues a reserved task
-		// with retries disabled. So after a broken stream, we only reserve
-		// tasks that can still be retried, and let reEnqueueTask fail the rest.
+		// died. reEnqueueTask skips the attempt limit for reserved tasks, and
+		// it never re-enqueues a reserved task with retries disabled. So after
+		// a broken stream, we only reserve tasks that can still be retried,
+		// and let reEnqueueTask fail the rest.
 		if !schedulerShuttingDown && !(streamBroken && s.taskCanBeRetried(ctx, taskID)) {
 			reconnectToken = ""
 		}
