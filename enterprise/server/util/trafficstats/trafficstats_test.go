@@ -7,11 +7,18 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
 )
@@ -146,6 +153,7 @@ func TestStatsHandler_RecordsTrafficByDestination(t *testing.T) {
 
 			labels := prometheus.Labels{
 				metrics.GroupID:                  tc.groupID,
+				metrics.PeerTypeLabel:            externalPeerType,
 				metrics.DestinationProviderLabel: tc.provider,
 				metrics.DestinationRegionLabel:   tc.region,
 			}
@@ -172,6 +180,7 @@ func TestStatsHandler_IgnoresClientSidePayloads(t *testing.T) {
 
 	labels := prometheus.Labels{
 		metrics.GroupID:                  unknownGroupID,
+		metrics.PeerTypeLabel:            externalPeerType,
 		metrics.DestinationProviderLabel: "aws",
 		metrics.DestinationRegionLabel:   "eu-west-1",
 	}
@@ -193,6 +202,7 @@ func TestStatsHandler_NoPeerInfo(t *testing.T) {
 
 	labels := prometheus.Labels{
 		metrics.GroupID:                  unknownGroupID,
+		metrics.PeerTypeLabel:            externalPeerType,
 		metrics.DestinationProviderLabel: "other",
 		metrics.DestinationRegionLabel:   "unknown",
 	}
@@ -227,6 +237,7 @@ func TestStatsHandler_ConcurrentStreamPayloads(t *testing.T) {
 
 	labels := prometheus.Labels{
 		metrics.GroupID:                  unknownGroupID,
+		metrics.PeerTypeLabel:            externalPeerType,
 		metrics.DestinationProviderLabel: "other",
 		metrics.DestinationRegionLabel:   "unknown",
 	}
@@ -252,11 +263,71 @@ func TestStatsHandler_NoClaims(t *testing.T) {
 
 	labels := prometheus.Labels{
 		metrics.GroupID:                  unknownGroupID,
+		metrics.PeerTypeLabel:            externalPeerType,
 		metrics.DestinationProviderLabel: "aws",
 		metrics.DestinationRegionLabel:   "eu-west-1",
 	}
 	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerEgressBytes, labels); got != 75 {
 		t.Fatalf("metric value = %v, want 75", got)
+	}
+}
+
+func TestStatsHandler_RecordsPeerType(t *testing.T) {
+	key, err := random.RandomString(16)
+	if err != nil {
+		t.Fatalf("RandomString() returned error: %v", err)
+	}
+	flags.Set(t, "app.client_identity.key", string(key))
+	cis, err := clientidentity.New(clockwork.NewFakeClock())
+	if err != nil {
+		t.Fatalf("clientidentity.New() returned error: %v", err)
+	}
+	handler := &StatsHandler{classifier: newTestClassifier(t), cis: cis}
+
+	for _, tc := range []struct {
+		name string
+		// identity is the Client in a signed identity header; empty for none.
+		identity string
+		want     string
+	}{
+		{name: "cache_proxy", identity: interfaces.ClientIdentityCacheProxy, want: "cache-proxy"},
+		{name: "executor", identity: interfaces.ClientIdentityExecutor, want: "executor"},
+		{name: "no_identity", identity: "", want: externalPeerType},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			metrics.GRPCServerEgressBytes.Reset()
+
+			ctx := context.WithValue(context.Background(), clientip.ContextKey, "3.4.12.4")
+			if tc.identity != "" {
+				header, err := cis.NewIdentityHeader(&interfaces.ClientIdentity{
+					Origin: interfaces.ClientIdentityInternalOrigin,
+					Client: tc.identity,
+				}, clientidentity.DefaultExpiration)
+				if err != nil {
+					t.Fatalf("NewIdentityHeader() returned error: %v", err)
+				}
+				ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, header))
+			}
+			// The identity interceptor validates the header before initCounters.
+			ctx, err := cis.ValidateIncomingIdentity(ctx)
+			if err != nil {
+				t.Fatalf("ValidateIncomingIdentity() returned error: %v", err)
+			}
+			ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
+			handler.initCounters(ctx)
+			handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 10})
+			handler.HandleRPC(ctx, &stats.End{})
+
+			labels := prometheus.Labels{
+				metrics.GroupID:                  unknownGroupID,
+				metrics.PeerTypeLabel:            tc.want,
+				metrics.DestinationProviderLabel: "aws",
+				metrics.DestinationRegionLabel:   "eu-west-1",
+			}
+			if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerEgressBytes, labels); got != 10 {
+				t.Fatalf("metric value = %v, want 10", got)
+			}
+		})
 	}
 }
 
