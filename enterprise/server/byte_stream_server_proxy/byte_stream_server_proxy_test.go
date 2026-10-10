@@ -103,6 +103,30 @@ func (c *fakeByteStreamReadClient) Recv() (*bspb.ReadResponse, error) {
 	return &bspb.ReadResponse{Data: c.data}, nil
 }
 
+type fakeCapabilitiesClient struct {
+	repb.CapabilitiesClient
+	getCapabilities func() (*repb.ServerCapabilities, error)
+}
+
+func (c *fakeCapabilitiesClient) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest, opts ...grpc.CallOption) (*repb.ServerCapabilities, error) {
+	return c.getCapabilities()
+}
+
+func fastCDCCapabilities(params *repb.FastCdc2020Params) *repb.ServerCapabilities {
+	return &repb.ServerCapabilities{
+		CacheCapabilities: &repb.CacheCapabilities{
+			SpliceBlobSupport:  true,
+			FastCdc_2020Params: params,
+		},
+	}
+}
+
+func defaultCapabilitiesClient() repb.CapabilitiesClient {
+	return &fakeCapabilitiesClient{getCapabilities: func() (*repb.ServerCapabilities, error) {
+		return fastCDCCapabilities(chunking.FastCDCParams()), nil
+	}}
+}
+
 type recordingByteStreamReadServer struct {
 	grpc.ServerStream
 	responses []*bspb.ReadResponse
@@ -200,7 +224,10 @@ func TestWriteChunkedFallsBackAboveMaxSize(t *testing.T) {
 		"",
 		repb.DigestFunction_BLAKE3,
 	)
-	s := &ByteStreamServerProxy{efp: fp}
+	s := &ByteStreamServerProxy{
+		capabilitiesClient: defaultCapabilitiesClient(),
+		efp:                fp,
+	}
 	result, err := s.writeChunked(ctx, &rawWriteStream{
 		ctx:          ctx,
 		resourceName: rn.NewUploadString(),
@@ -210,6 +237,45 @@ func TestWriteChunkedFallsBackAboveMaxSize(t *testing.T) {
 	require.NotNil(t, result.firstReq)
 }
 
+func TestWriteChunkedUsesCapabilitiesThreshold(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 64*1024)
+	ctx := context.Background()
+	rn := digest.NewCASResourceName(
+		&repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 3 * 1024 * 1024},
+		"",
+		repb.DigestFunction_BLAKE3,
+	)
+	s := &ByteStreamServerProxy{
+		capabilitiesClient: &fakeCapabilitiesClient{getCapabilities: func() (*repb.ServerCapabilities, error) {
+			return fastCDCCapabilities(&repb.FastCdc2020Params{AvgChunkSizeBytes: 1024 * 1024}), nil
+		}},
+	}
+	result, err := s.writeChunked(ctx, &rawWriteStream{
+		ctx:          ctx,
+		resourceName: rn.NewUploadString(),
+		data:         []byte("x"),
+	})
+	require.True(t, status.IsUnimplementedError(err))
+	require.NotNil(t, result.firstReq)
+}
+
+func TestShouldReadChunkedUsesCapabilitiesThreshold(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
+	s := &ByteStreamServerProxy{
+		localCache: testenv.GetTestEnv(t).GetCache(),
+		remoteCAS:  &noOpCASClient{},
+		capabilitiesClient: &fakeCapabilitiesClient{getCapabilities: func() (*repb.ServerCapabilities, error) {
+			return fastCDCCapabilities(&repb.FastCdc2020Params{AvgChunkSizeBytes: 512 * 1024}), nil
+		}},
+	}
+	rn := digest.NewCASResourceName(
+		&repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 3 * 1024 * 1024},
+		"",
+		repb.DigestFunction_BLAKE3,
+	)
+	require.True(t, s.shouldReadChunked(t.Context(), &bspb.ReadRequest{}, rn))
+}
+
 func TestWriteChunkedValidatesBlobForUnvalidatedSplice(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(cdc.SpliceWithoutValidationHeaderName, "true"))
@@ -217,11 +283,12 @@ func TestWriteChunkedValidatesBlobForUnvalidatedSplice(t *testing.T) {
 	local, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
 	s := &ByteStreamServerProxy{
-		authenticator: env.GetAuthenticator(),
-		local:         local,
-		localCache:    env.GetCache(),
-		remoteCAS:     casClient,
-		bufPool:       bytebufferpool.VariableSize(int(chunking.MaxCompressedChunkReadSizeBytes())),
+		authenticator:      env.GetAuthenticator(),
+		local:              local,
+		localCache:         env.GetCache(),
+		remoteCAS:          casClient,
+		capabilitiesClient: defaultCapabilitiesClient(),
+		bufPool:            bytebufferpool.VariableSize(int(chunking.MaxCompressedChunkReadSizeBytes())),
 	}
 
 	data := make([]byte, 5*1024*1024)
@@ -343,6 +410,93 @@ func TestWriteChunkingEnabledRequiresExperimentInterceptFlag(t *testing.T) {
 				efp:        fp,
 			}
 			require.Equal(t, tc.want, s.writeChunkingEnabled(ctx))
+		})
+	}
+}
+
+func TestRemoteFastCDCParamsCachesSingleResponseForTTL(t *testing.T) {
+	response := fastCDCCapabilities(&repb.FastCdc2020Params{AvgChunkSizeBytes: 64 * 1024})
+	calls := 0
+	capabilitiesClient := &fakeCapabilitiesClient{getCapabilities: func() (*repb.ServerCapabilities, error) {
+		calls++
+		return response, nil
+	}}
+	s := &ByteStreamServerProxy{capabilitiesClient: capabilitiesClient}
+
+	group1Ctx := testauth.WithAuthenticatedUserInfo(t.Context(), testauth.User("US1", "GR1"))
+	group2Ctx := testauth.WithAuthenticatedUserInfo(t.Context(), testauth.User("US2", "GR2"))
+
+	params, err := s.remoteFastCDCParams(group1Ctx, "instance")
+	require.NoError(t, err)
+	require.Equal(t, uint64(64*1024), params.GetAvgChunkSizeBytes())
+
+	response = fastCDCCapabilities(&repb.FastCdc2020Params{AvgChunkSizeBytes: 128 * 1024})
+	params, err = s.remoteFastCDCParams(group2Ctx, "other-instance")
+	require.NoError(t, err)
+	require.Equal(t, uint64(64*1024), params.GetAvgChunkSizeBytes())
+	require.Equal(t, 1, calls)
+
+	entry := s.fastCDCParamsCache.Load()
+	s.fastCDCParamsCache.Store(&fastCDCParamsCacheEntry{
+		params:    entry.params,
+		err:       entry.err,
+		expiresAt: time.Now().Add(-time.Second),
+	})
+	params, err = s.remoteFastCDCParams(group1Ctx, "other-instance")
+	require.NoError(t, err)
+	require.Equal(t, uint64(128*1024), params.GetAvgChunkSizeBytes())
+	require.Equal(t, 2, calls)
+}
+
+func TestRemoteFastCDCParamsCachesErrors(t *testing.T) {
+	calls := 0
+	s := &ByteStreamServerProxy{capabilitiesClient: &fakeCapabilitiesClient{getCapabilities: func() (*repb.ServerCapabilities, error) {
+		calls++
+		return nil, status.UnavailableError("unavailable")
+	}}}
+
+	for range 2 {
+		_, err := s.remoteFastCDCParams(t.Context(), "instance")
+		require.True(t, status.IsUnavailableError(err), "got %s", err)
+	}
+	require.Equal(t, 1, calls)
+}
+
+func TestWriteChunkedFallsBackWhenCapabilitiesDoNotSupportParams(t *testing.T) {
+	rn := digest.NewCASResourceName(
+		&repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 6 * 1024 * 1024},
+		"",
+		repb.DigestFunction_BLAKE3,
+	)
+	for _, tc := range []struct {
+		name string
+		resp *repb.ServerCapabilities
+		err  error
+	}{
+		{
+			name: "FastCDC not advertised",
+			resp: &repb.ServerCapabilities{},
+		},
+		{
+			name: "chunk size exceeds proxy buffer support",
+			resp: fastCDCCapabilities(&repb.FastCdc2020Params{AvgChunkSizeBytes: 2 * 1024 * 1024}),
+		},
+		{
+			name: "capabilities unavailable",
+			err:  status.UnavailableError("unavailable"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &ByteStreamServerProxy{capabilitiesClient: &fakeCapabilitiesClient{getCapabilities: func() (*repb.ServerCapabilities, error) {
+				return tc.resp, tc.err
+			}}}
+			result, err := s.writeChunked(t.Context(), &rawWriteStream{
+				ctx:          t.Context(),
+				resourceName: rn.NewUploadString(),
+				data:         []byte("x"),
+			})
+			require.True(t, status.IsUnimplementedError(err), "got %s", err)
+			require.NotNil(t, result.firstReq)
 		})
 	}
 }
@@ -1373,7 +1527,7 @@ func TestReadChunked(t *testing.T) {
 		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, 0, writeChunkFn)
 	require.NoError(t, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(t, err)
@@ -1616,7 +1770,7 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, 0, writeChunkFn)
 	require.NoError(t, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(t, err)
@@ -1770,7 +1924,7 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 		return remoteEnv.GetCache().Set(anonCtx, chunkRN.ToProto(), chunkDataCopy)
 	}
-	cdcChunker, err := chunking.NewChunker(anonCtx, 64*1024, writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(anonCtx, 64*1024, 0, writeChunkFn)
 	require.NoError(t, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(t, err)
@@ -2002,6 +2156,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 
 	uploadProxyEnv.SetByteStreamClient(bsClient)
 	uploadProxyEnv.SetContentAddressableStorageClient(casClient)
+	uploadProxyEnv.SetCapabilitiesClient(defaultCapabilitiesClient())
 	uploadProxyBSS, err := byte_stream_server.NewByteStreamServer(uploadProxyEnv)
 	require.NoError(t, err)
 	uploadProxyEnv.SetLocalByteStreamServer(uploadProxyBSS)
@@ -2277,7 +2432,7 @@ func TestReadChunkedWithOffset(t *testing.T) {
 		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, 0, writeChunkFn)
 	require.NoError(t, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(t, err)
@@ -2515,7 +2670,7 @@ func TestReadChunkedPartialLocalFailure(t *testing.T) {
 		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, 0, writeChunkFn)
 	require.NoError(t, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(t, err)
@@ -2666,6 +2821,7 @@ func TestWriteChunked(t *testing.T) {
 
 	proxyEnv.SetByteStreamClient(bsClient)
 	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyEnv.SetCapabilitiesClient(defaultCapabilitiesClient())
 	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
 	proxyEnv.SetLocalByteStreamServer(proxyBSS)
@@ -2839,6 +2995,7 @@ func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
 	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(remoteConn))
 	casClient := repb.NewContentAddressableStorageClient(remoteConn)
 	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyEnv.SetCapabilitiesClient(defaultCapabilitiesClient())
 	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
 	proxyEnv.SetLocalByteStreamServer(proxyBSS)
@@ -2984,6 +3141,7 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(remoteConn))
 	casClient := repb.NewContentAddressableStorageClient(remoteConn)
 	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyEnv.SetCapabilitiesClient(defaultCapabilitiesClient())
 	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
 	proxyEnv.SetLocalByteStreamServer(proxyBSS)
@@ -3132,6 +3290,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 
 	proxyEnv.SetByteStreamClient(bsClient)
 	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyEnv.SetCapabilitiesClient(defaultCapabilitiesClient())
 	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
 	proxyEnv.SetLocalByteStreamServer(proxyBSS)
@@ -3321,6 +3480,7 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 
 	proxyEnv.SetByteStreamClient(bsClient)
 	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyEnv.SetCapabilitiesClient(defaultCapabilitiesClient())
 	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(b, err)
 	proxyEnv.SetLocalByteStreamServer(proxyBSS)
@@ -3476,7 +3636,7 @@ func prepareChunkedReadBenchmarkData(b *testing.B, ctx context.Context, size int
 		})
 		return nil
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), 0, writeChunkFn)
 	require.NoError(b, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(b, err)
