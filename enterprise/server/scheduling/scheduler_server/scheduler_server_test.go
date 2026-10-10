@@ -1313,8 +1313,8 @@ func TestLeaseReconnect_BeforeOldStreamIsCleanedUp(t *testing.T) {
 
 			reconnectedLease, err := holder.Reconnect(taskID, lease.leaseID)
 			require.NoError(t, err)
-			// Run the old stream's cleanup after the reconnect, as when the
-			// scheduler notices the broken stream late.
+			// Run the old stream's cleanup after the reconnect, as is the case
+			// when the scheduler notices the broken stream late.
 			err = s.reEnqueueTask(ctx, taskID, lease.leaseID, "" /*=reconnectToken*/, 1 /*=numReplicas*/, "stream closed with task still claimed")
 
 			require.True(t, status.IsPermissionDeniedError(err), "unexpected re-enqueue error: %v", err)
