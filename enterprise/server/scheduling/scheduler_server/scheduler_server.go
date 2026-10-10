@@ -2343,10 +2343,11 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		// Reserve the task for its executor to reconnect if the scheduler is
 		// shutting down, or if the stream broke while the executor may still be
 		// running the task. A broken stream can also mean that the executor
-		// died. reEnqueueTask hands a reserved retryable task to another
-		// executor when the grace period ends, but it never re-enqueues a task
-		// with retries disabled, so we fail those right away instead.
-		if !schedulerShuttingDown && !(streamBroken && s.taskRetryable(ctx, taskID)) {
+		// died, possibly because of the task. reEnqueueTask skips the attempt
+		// limit for reserved tasks, and it never re-enqueues a reserved task
+		// with retries disabled. So after a broken stream, we only reserve
+		// tasks that can still be retried, and let reEnqueueTask fail the rest.
+		if !schedulerShuttingDown && !(streamBroken && s.taskCanBeRetried(ctx, taskID)) {
 			reconnectToken = ""
 		}
 		if err := s.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, probesPerTask, reEnqueueReason); err != nil {
@@ -2534,6 +2535,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		rsp.ClosedCleanly = !claimed
 		lastCheckin = s.clock.Now()
 		if err := stream.Send(rsp); err != nil {
+			streamBroken = true
 			return err
 		}
 		if done {
@@ -3052,11 +3054,14 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 	return &scpb.EnqueueTaskReservationResponse{}, nil
 }
 
-// taskRetryable returns whether the task has retries enabled. It returns false
-// if the task can't be read.
-func (s *SchedulerServer) taskRetryable(ctx context.Context, taskID string) bool {
+// taskCanBeRetried returns whether the task has retries enabled and hasn't
+// used up its attempts. It returns false if the task can't be read.
+func (s *SchedulerServer) taskCanBeRetried(ctx context.Context, taskID string) bool {
 	scheduledTask, err := s.readTask(ctx, taskID)
 	if err != nil {
+		return false
+	}
+	if scheduledTask.attemptCount >= maxTaskAttemptCount {
 		return false
 	}
 	task := &repb.ExecutionTask{}

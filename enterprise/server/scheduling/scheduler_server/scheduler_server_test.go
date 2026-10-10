@@ -1331,23 +1331,46 @@ func TestLeaseReconnect_AfterBrokenStreamIsCleanedUp(t *testing.T) {
 	require.NoError(t, reconnectedLease.Finalize())
 }
 
-func TestLeaseReconnect_BrokenStreamFailsTaskWithRetriesDisabled(t *testing.T) {
-	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
-	s := env.GetSchedulerService().(*SchedulerServer)
-	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
-	holder.Register()
-	taskID := scheduleTask(ctx, t, env, map[string]string{platform.RetryPropertyName: "false"})
-	holder.WaitForTask(taskID)
-	lease := holder.Claim(taskID)
+func TestLeaseReconnect_BrokenStreamFailsTaskThatCannotBeRetried(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		props map[string]string
+		// Attempt count to set after the claim, if non-zero.
+		attemptCount int
+	}{
+		{
+			name:  "retries disabled",
+			props: map[string]string{platform.RetryPropertyName: "false"},
+		},
+		{
+			name:         "attempts used up",
+			props:        map[string]string{},
+			attemptCount: maxTaskAttemptCount,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			s := env.GetSchedulerService().(*SchedulerServer)
+			holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+			holder.Register()
+			taskID := scheduleTask(ctx, t, env, testCase.props)
+			holder.WaitForTask(taskID)
+			lease := holder.Claim(taskID)
+			if testCase.attemptCount != 0 {
+				err := s.rdb.HSet(ctx, s.redisKeyForTask(taskID), redisTaskAttempCountField, testCase.attemptCount).Err()
+				require.NoError(t, err)
+			}
 
-	// The scheduler never re-enqueues tasks with retries disabled, so it fails
-	// them after a broken stream instead of reserving them.
-	lease.Drop()
+			// The scheduler only reserves tasks that it could later hand to
+			// another executor, so it fails these after a broken stream.
+			lease.Drop()
 
-	require.Eventually(t, func() bool {
-		_, err := s.readTask(ctx, taskID)
-		return status.IsNotFoundError(err)
-	}, 5*time.Second, 10*time.Millisecond, "task was not deleted")
+			require.Eventually(t, func() bool {
+				_, err := s.readTask(ctx, taskID)
+				return status.IsNotFoundError(err)
+			}, 5*time.Second, 10*time.Millisecond, "task was not deleted")
+		})
+	}
 }
 
 // scheduleTaskForGroup schedules a task owned by the given group.
