@@ -204,7 +204,7 @@ on everything, but use Kythe annotations if/when they are available.
 ## Run a codesearch server
 
 ```bash
-  $ bazel run codesearch/cmd/server -- \
+  $ bazel run enterprise/server/cmd/codesearch:server -- \
     --codesearch.index_dir=/tmp/csindex/ \
     --codesearch.scratch_dir=/tmp/csscratch \
     --codesearch.remote_cache=grpcs://remote.buildbuddy.dev \
