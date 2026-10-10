@@ -4675,6 +4675,18 @@ var (
 		OCIFetcherStatusLabel,
 	})
 
+	OCIFetcherProxyFallbackCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "ocifetcher",
+		Name:      "proxy_fallback_count",
+		Help:      "Number of OCIFetcher requests that a cache proxy tried to fetch from the registry itself, but forwarded to the apps after the registry was unreachable or rejected the proxy.",
+	}, []string{
+		OCIFetcherMethodLabel,
+		GroupID,
+		ImageFetchRegistryLabel,
+		StatusHumanReadableLabel,
+	})
+
 	OCIFetcherRequestDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "ocifetcher",
