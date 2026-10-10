@@ -719,6 +719,7 @@ func (e *fakeExecutor) ResetTasks() {
 type taskLease struct {
 	t       *testing.T
 	stream  scpb.Scheduler_LeaseTaskClient
+	cancel  context.CancelFunc
 	leaseID string
 	taskID  string
 	task    *repb.ExecutionTask
@@ -736,6 +737,12 @@ func (tl *taskLease) Renew() error {
 		return err
 	}
 	return nil
+}
+
+// Drop breaks the lease stream without releasing the lease, as is the case
+// when the executor's connection to the scheduler drops.
+func (tl *taskLease) Drop() {
+	tl.cancel()
 }
 
 func (tl *taskLease) Finalize() error {
@@ -781,7 +788,9 @@ func (e *fakeExecutor) Reconnect(taskID, reconnectToken string) (*taskLease, err
 }
 
 func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, error) {
-	stream, err := e.schedulerClient.LeaseTask(e.ctx)
+	ctx, cancel := context.WithCancel(e.ctx)
+	e.t.Cleanup(cancel)
+	stream, err := e.schedulerClient.LeaseTask(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -812,6 +821,7 @@ func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, err
 	lease := &taskLease{
 		t:       e.t,
 		stream:  stream,
+		cancel:  cancel,
 		taskID:  taskID,
 		task:    task,
 		leaseID: rsp.GetLeaseId(),
@@ -1194,9 +1204,14 @@ func TestLeaseExpiration(t *testing.T) {
 	fakeClock.Advance(2 * time.Second)
 	fe.WaitForTask(taskID)
 
-	// Lease renewal should fail as the stream should be broken.
+	// Lease renewal should fail with the reason the lease ended.
 	err = lease.Renew()
-	require.ErrorIs(t, io.EOF, err)
+	if err == io.EOF {
+		// Send returns io.EOF once the stream has ended, and Recv returns the
+		// stream's status.
+		_, err = lease.stream.Recv()
+	}
+	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got: %v", err)
 }
 
 func TestLeaseReconnectGrace_OtherExecutorsCannotStealTask(t *testing.T) {
@@ -1285,6 +1300,77 @@ func TestLeaseReconnectGrace_RetriesDisabled(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, reconnectedLease.leaseID)
 	require.NoError(t, reconnectedLease.Finalize())
+}
+
+func TestLeaseReconnect_AfterBrokenStreamIsCleanedUp(t *testing.T) {
+	// Set a high grace period since we use real time in the test.
+	flags.Set(t, "remote_execution.lease_reconnect_grace_period", 24*time.Hour)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+
+	lease.Drop()
+	require.Eventually(t, func() bool {
+		task, err := s.readTask(ctx, taskID)
+		return err == nil && !task.reconnectPeriodEnd.IsZero()
+	}, 5*time.Second, 10*time.Millisecond, "task was not reserved for its executor to reconnect")
+
+	thief := newFakeExecutorWithId(ctx, t, "thief", env.GetSchedulerClient())
+	thief.Register()
+	_, err := thief.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.True(t, status.IsNotFoundError(err), "unexpected claim error: %v", err)
+	reconnectedLease, err := holder.Reconnect(taskID, lease.leaseID)
+	require.NoError(t, err)
+	task, err := s.readTask(ctx, taskID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, task.attemptCount)
+	require.NoError(t, reconnectedLease.Finalize())
+}
+
+func TestLeaseReconnect_BrokenStreamFailsTaskThatCannotBeRetried(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		props map[string]string
+		// Attempt count to set after the claim, if non-zero.
+		attemptCount int
+	}{
+		{
+			name:  "retries disabled",
+			props: map[string]string{platform.RetryPropertyName: "false"},
+		},
+		{
+			name:         "attempts used up",
+			props:        map[string]string{},
+			attemptCount: maxTaskAttemptCount,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			s := env.GetSchedulerService().(*SchedulerServer)
+			holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+			holder.Register()
+			taskID := scheduleTask(ctx, t, env, testCase.props)
+			holder.WaitForTask(taskID)
+			lease := holder.Claim(taskID)
+			if testCase.attemptCount != 0 {
+				err := s.rdb.HSet(ctx, s.redisKeyForTask(taskID), redisTaskAttempCountField, testCase.attemptCount).Err()
+				require.NoError(t, err)
+			}
+
+			// The scheduler only reserves tasks that it could later hand to
+			// another executor, so it fails these after a broken stream.
+			lease.Drop()
+
+			require.Eventually(t, func() bool {
+				_, err := s.readTask(ctx, taskID)
+				return status.IsNotFoundError(err)
+			}, 5*time.Second, 10*time.Millisecond, "task was not deleted")
+		})
+	}
 }
 
 // scheduleTaskForGroup schedules a task owned by the given group.

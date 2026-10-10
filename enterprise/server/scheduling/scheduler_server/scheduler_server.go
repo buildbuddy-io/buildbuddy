@@ -65,7 +65,7 @@ var (
 	requireExecutorAuthorization = flag.Bool("remote_execution.require_executor_authorization", false, "If true, executors connecting to this server must provide a valid executor API key.")
 	leaseDuration                = flag.Duration("remote_execution.lease_duration", 10*time.Second, "How long before a task lease must be renewed by the executor client.")
 	leaseGracePeriod             = flag.Duration("remote_execution.lease_grace_period", 10*time.Second, "How long to wait for the executor to renew the lease after the TTL duration has elapsed.")
-	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown).")
+	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown or a broken lease stream).")
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
 	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", true, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
@@ -2322,6 +2322,9 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	taskID := ""
 	reconnectToken := ""
 	leaseID := ""
+	// Set when the stream breaks, e.g. because the connection to the executor
+	// dropped. The executor may still be running the task.
+	streamBroken := false
 
 	// TODO(vadim): remove after executor ID in lease request is rolled out
 	executorID := peerAddress(ctx)
@@ -2337,12 +2340,15 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
 		defer cancel()
 		reEnqueueReason := "stream closed with task still claimed"
-		if !schedulerShuttingDown {
-			// TODO: figure out if we can reliably detect whether the executor
-			// gave up on the lease due to an executor shutdown vs. a transient
-			// issue with the lease stream. Transient disconnects should also
-			// get a reconnect grace period, since the executor should quickly
-			// retry them.
+		// Reserve the task for its executor to reconnect if the scheduler is
+		// shutting down, or if the stream broke while the executor may still be
+		// running the task. A broken stream can also mean that the executor
+		// died. When reEnqueueTask gets a reconnect token, it doesn't check the
+		// task's attempt count against maxTaskAttemptCount, and it doesn't
+		// re-enqueue tasks with retries disabled. So after a broken stream, we
+		// only pass a reconnect token for tasks that can still be retried, and
+		// let reEnqueueTask fail the rest.
+		if !schedulerShuttingDown && !(streamBroken && s.taskCanBeRetried(ctx, taskID)) {
 			reconnectToken = ""
 		}
 		if err := s.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, probesPerTask, reEnqueueReason); err != nil {
@@ -2379,11 +2385,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			// the stream is done, so check for that here.
 			err = ctx.Err()
 		case <-livenessTicker.Chan():
-			if s.clock.Since(lastCheckin) > (s.leaseDuration + s.leaseGracePeriod) {
-				err = status.DeadlineExceededErrorf("lease was not renewed by executor and expired (last renewal: %s)", lastCheckin)
-			} else {
+			if s.clock.Since(lastCheckin) <= s.leaseDuration+s.leaseGracePeriod {
 				continue
 			}
+			err := status.DeadlineExceededErrorf("lease was not renewed by executor and expired (last renewal: %s)", lastCheckin)
+			log.CtxWarningf(ctx, "LeaseTask %q: %s", taskID, err)
+			return err
 		}
 		if err == io.EOF {
 			log.CtxWarningf(ctx, "LeaseTask %q got EOF: %s", taskID, err)
@@ -2391,6 +2398,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 		if err != nil {
 			log.CtxWarningf(ctx, "LeaseTask %q recv with err: %s", taskID, err)
+			streamBroken = true
 			break
 		}
 		if req.GetTaskId() == "" || taskID != "" && req.GetTaskId() != taskID {
@@ -2526,6 +2534,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		rsp.ClosedCleanly = !claimed
 		lastCheckin = s.clock.Now()
 		if err := stream.Send(rsp); err != nil {
+			streamBroken = true
 			return err
 		}
 		if done {
@@ -3042,6 +3051,23 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 		return nil, err
 	}
 	return &scpb.EnqueueTaskReservationResponse{}, nil
+}
+
+// taskCanBeRetried returns whether the task has retries enabled and hasn't
+// used up its attempts. It returns false if the task can't be read.
+func (s *SchedulerServer) taskCanBeRetried(ctx context.Context, taskID string) bool {
+	scheduledTask, err := s.readTask(ctx, taskID)
+	if err != nil {
+		return false
+	}
+	if scheduledTask.attemptCount >= maxTaskAttemptCount {
+		return false
+	}
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(scheduledTask.serializedTask, task); err != nil {
+		return false
+	}
+	return platform.Retryable(task)
 }
 
 func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, reconnectToken string, numReplicas int, reason string) error {
