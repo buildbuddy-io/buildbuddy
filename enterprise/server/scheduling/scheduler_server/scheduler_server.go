@@ -2381,9 +2381,14 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			reconnectToken = ""
 		}
 		if err := s.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, probesPerTask, reEnqueueReason); err != nil {
-			if status.IsPermissionDeniedError(err) {
+			switch {
+			case status.IsPermissionDeniedError(err):
 				log.CtxInfo(ctx, "Not re-enqueueing task because it was already re-claimed under another lease")
-			} else {
+			case status.IsNotFoundError(err):
+				// The executor may have reconnected on a new stream and
+				// finished the task before we cleaned up this one.
+				log.CtxInfo(ctx, "Not re-enqueueing task because it no longer exists")
+			default:
 				log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task but failed with err: %s", taskID, err.Error())
 			}
 		} // Success case will be logged by ReEnqueueTask flow.
@@ -2485,9 +2490,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			}
 			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), req.GetSupportsExperimentFlags(), key, task.serializedTask, task.metadata.GetTaskGroupId())
 
-			// Prometheus: observe queue wait time.
-			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
-			queueWaitTimeMs.Observe(float64(ageInMillis))
+			// Prometheus: observe queue wait time. Skip reconnects, since the
+			// executor has been running the task since its first claim.
+			if req.GetReconnectToken() == "" {
+				ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
+				queueWaitTimeMs.Observe(float64(ageInMillis))
+			}
 			rsp.SerializedTask = task.serializedTask
 			rsp.LeaseId = leaseID
 			// If both the client and server have lease reconnect enabled,
