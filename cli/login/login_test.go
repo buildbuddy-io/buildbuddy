@@ -1,8 +1,10 @@
 package login
 
 import (
+	"bytes"
 	"errors"
 	"flag"
+	stdlog "log"
 	"os"
 	"os/exec"
 	"testing"
@@ -248,8 +250,9 @@ func TestHandleLoginCheck(t *testing.T) {
 }
 
 // --allow_existing skips login when the credentials a build would use are
-// valid, and stops without logging in when they can't be checked. Neither case
-// may write to .git/config.
+// valid, and stops without logging in when they can't be checked or when a
+// rejected key came from the environment. None of these cases may write to
+// .git/config.
 func TestHandleLoginAllowExisting(t *testing.T) {
 	for _, testCase := range []struct {
 		name             string
@@ -265,6 +268,12 @@ func TestHandleLoginAllowExisting(t *testing.T) {
 			authErr:          status.UnavailableError("connection refused"),
 			expectedExitCode: 2,
 		},
+		{
+			// A new key in .git/config would be shadowed by the env key.
+			name:             "rejected env key exits without logging in",
+			authErr:          status.UnauthenticatedError("invalid API key"),
+			expectedExitCode: 1,
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			repoRoot := setUpRepo(t)
@@ -278,6 +287,34 @@ func TestHandleLoginAllowExisting(t *testing.T) {
 			require.Equal(t, testCase.expectedExitCode, exitCode)
 			require.Equal(t, []string{"env-api-key"}, *authKeys)
 			requireRepoAPIKey(t, repoRoot, nil)
+		})
+	}
+}
+
+func TestLogSavedKeyStatus(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		envAPIKey string
+		warns     bool
+	}{
+		{name: "no env key", envAPIKey: "", warns: false},
+		{name: "env key matches the saved key", envAPIKey: "saved-api-key", warns: false},
+		{name: "env key matches after trimming", envAPIKey: " saved-api-key\n", warns: false},
+		{name: "different env key", envAPIKey: "other-api-key", warns: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv("BUILDBUDDY_API_KEY", testCase.envAPIKey)
+			logs := captureLogs(t)
+
+			logSavedKeyStatus("saved-api-key")
+
+			if testCase.warns {
+				require.Contains(t, logs.String(), "builds will keep using that key")
+				require.NotContains(t, logs.String(), "You are now building with BuildBuddy!")
+			} else {
+				require.Contains(t, logs.String(), "You are now building with BuildBuddy!")
+				require.NotContains(t, logs.String(), "BUILDBUDDY_API_KEY")
+			}
 		})
 	}
 }
@@ -357,6 +394,20 @@ func requireRepoAPIKey(t *testing.T, repoRoot string, expected *string) {
 		require.NoError(t, err)
 		require.Equal(t, *expected, apiKey)
 	}
+}
+
+// captureLogs redirects the CLI's log output, which goes through the stdlib log
+// package, into a buffer for the duration of the test.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var buf bytes.Buffer
+	previous := stdlog.Writer()
+	stdlog.SetOutput(&buf)
+	t.Cleanup(func() {
+		stdlog.SetOutput(previous)
+	})
+	return &buf
 }
 
 // gitConfigHasKey reports whether key is present in the repo-local git config,
