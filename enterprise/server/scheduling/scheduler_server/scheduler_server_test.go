@@ -719,6 +719,7 @@ func (e *fakeExecutor) ResetTasks() {
 type taskLease struct {
 	t       *testing.T
 	stream  scpb.Scheduler_LeaseTaskClient
+	cancel  context.CancelFunc
 	leaseID string
 	taskID  string
 	task    *repb.ExecutionTask
@@ -736,6 +737,12 @@ func (tl *taskLease) Renew() error {
 		return err
 	}
 	return nil
+}
+
+// Drop breaks the lease stream without releasing the lease, as when the
+// executor's connection to the scheduler drops.
+func (tl *taskLease) Drop() {
+	tl.cancel()
 }
 
 func (tl *taskLease) Finalize() error {
@@ -781,7 +788,9 @@ func (e *fakeExecutor) Reconnect(taskID, reconnectToken string) (*taskLease, err
 }
 
 func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, error) {
-	stream, err := e.schedulerClient.LeaseTask(e.ctx)
+	ctx, cancel := context.WithCancel(e.ctx)
+	e.t.Cleanup(cancel)
+	stream, err := e.schedulerClient.LeaseTask(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -812,6 +821,7 @@ func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, err
 	lease := &taskLease{
 		t:       e.t,
 		stream:  stream,
+		cancel:  cancel,
 		taskID:  taskID,
 		task:    task,
 		leaseID: rsp.GetLeaseId(),
@@ -1290,6 +1300,54 @@ func TestLeaseReconnectGrace_RetriesDisabled(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, reconnectedLease.leaseID)
 	require.NoError(t, reconnectedLease.Finalize())
+}
+
+func TestLeaseReconnect_AfterBrokenStreamIsCleanedUp(t *testing.T) {
+	// Set a high grace period since we use real time in the test.
+	flags.Set(t, "remote_execution.lease_reconnect_grace_period", 24*time.Hour)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+
+	lease.Drop()
+	require.Eventually(t, func() bool {
+		task, err := s.readTask(ctx, taskID)
+		return err == nil && !task.reconnectPeriodEnd.IsZero()
+	}, 5*time.Second, 10*time.Millisecond, "task was not reserved for its executor to reconnect")
+
+	thief := newFakeExecutorWithId(ctx, t, "thief", env.GetSchedulerClient())
+	thief.Register()
+	_, err := thief.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.True(t, status.IsNotFoundError(err), "unexpected claim error: %v", err)
+	reconnectedLease, err := holder.Reconnect(taskID, lease.leaseID)
+	require.NoError(t, err)
+	task, err := s.readTask(ctx, taskID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, task.attemptCount)
+	require.NoError(t, reconnectedLease.Finalize())
+}
+
+func TestLeaseReconnect_BrokenStreamFailsTaskWithRetriesDisabled(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	taskID := scheduleTask(ctx, t, env, map[string]string{platform.RetryPropertyName: "false"})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+
+	// The scheduler never re-enqueues tasks with retries disabled, so it fails
+	// them after a broken stream instead of reserving them.
+	lease.Drop()
+
+	require.Eventually(t, func() bool {
+		_, err := s.readTask(ctx, taskID)
+		return status.IsNotFoundError(err)
+	}, 5*time.Second, 10*time.Millisecond, "task was not deleted")
 }
 
 // scheduleTaskForGroup schedules a task owned by the given group.
