@@ -168,7 +168,16 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   componentDidUpdate(prevProps: Readonly<Props>, prevState: Readonly<State>): void {
-    if (prevProps.search.get("actionDigest") !== this.props.search.get("actionDigest")) {
+    if (
+      prevProps.search.get("actionDigest") !== this.props.search.get("actionDigest") ||
+      prevProps.model.getCacheAddress() !== this.props.model.getCacheAddress() ||
+      prevProps.model.getCacheEndpoint() !== this.props.model.getCacheEndpoint() ||
+      prevProps.model.getRemoteExecutorEndpoint() !== this.props.model.getRemoteExecutorEndpoint() ||
+      prevProps.model.getRole() !== this.props.model.getRole()
+    ) {
+      // Structured command-line endpoints can arrive after the initial build
+      // event. Retry reads and abandon an old-region stream when they do.
+      this.operationStream?.cancel();
       this.fetchAction();
       this.fetchExecuteResponseOrActionResult();
       this.fetchSpawnMetrics();
@@ -189,6 +198,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (prevExecutionId !== executionId) {
       this.fetchExecutionDownloads("");
     }
+  }
+
+  componentWillUnmount() {
+    ++this.actionReadGeneration;
   }
 
   getExecutionLogSize() {
@@ -239,8 +252,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .finally(() => this.setState({ isExecutionLogLoading: false }));
   }
 
+  private actionReadGeneration = 0;
+
   fetchAction() {
+    const generation = ++this.actionReadGeneration;
+    this.treeShaToChildrenPromiseMap.clear();
     this.setState({
+      treeShaToChildrenMap: new Map(),
+      treeShaToExpanded: new Map(),
+      treeShaToTotalSizeMap: new Map(),
       loadingAction: true,
       action: undefined,
       command: undefined,
@@ -260,10 +280,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
       alert_service.error("Missing action digest URL param");
       return;
     }
-    const actionUrl = this.props.model.getBytestreamURL(digest);
+    const actionUrl = this.props.model.getActionBytestreamURL(digest);
     rpcService
       .fetchBytestreamFile(actionUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
+        if (generation !== this.actionReadGeneration) return;
         let action = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(buffer));
         this.setState({ action });
         this.fetchCommand(action);
@@ -271,7 +292,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.fetchDirectorySizes(action.inputRootDigest ?? build.bazel.remote.execution.v2.Digest.create({}));
       })
       .catch((e) => console.error("Failed to fetch action:", e))
-      .finally(() => this.setState({ loadingAction: false }));
+      .finally(() => {
+        if (generation === this.actionReadGeneration) this.setState({ loadingAction: false });
+      });
   }
 
   private operationStream?: Cancelable;
@@ -284,7 +307,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const executionId = this.props.search.get("executionId");
     if (!executionId) return;
 
-    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.getRemoteExecutorEndpoint());
 
     this.operationStream = waitExecution(service, executionId, {
       next: (operation) => {
@@ -320,8 +343,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchDirectorySizes(rootDigest: build.bazel.remote.execution.v2.Digest) {
+    const generation = this.actionReadGeneration;
     const remoteInstanceName = this.props.model.optionsMap.get("remote_instance_name") || undefined;
-    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_cache"));
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.getActionInputEndpoint());
 
     service
       .getTreeDirectorySizes({
@@ -330,6 +354,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         digestFunction: this.props.model.getDigestFunction(),
       })
       .then((r) => {
+        if (generation !== this.actionReadGeneration) return;
         const sizes = new Map<string, [Number, Number]>();
         r.sizes.forEach((v) => {
           sizes.set(v.digest, [+v.totalSize, +v.childCount]);
@@ -337,15 +362,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.setState({ treeShaToTotalSizeMap: sizes });
       })
       .catch(() => {
+        if (generation !== this.actionReadGeneration) return;
         this.setState({ treeShaToTotalSizeMap: new Map<string, [Number, Number]>() });
       });
   }
 
   fetchInputRoot(rootDigest: build.bazel.remote.execution.v2.IDigest) {
-    let inputRootURL = this.props.model.getBytestreamURL(rootDigest);
+    const generation = this.actionReadGeneration;
+    let inputRootURL = this.props.model.getActionBytestreamURL(rootDigest);
     rpcService
       .fetchBytestreamFile(inputRootURL, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
+        if (generation !== this.actionReadGeneration) return;
         let inputRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
         const inputNodes = this.treeNodesForDirectory(inputRoot);
         this.setState({ inputRoot, inputNodes }, () => this.resolveArgumentInputFilesIfNeeded());
@@ -359,7 +387,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
    * invocation.
    */
   fetchActionResult(actionDigest: IDigest) {
-    const actionResultUrl = this.props.model.getActionCacheURL(actionDigest);
+    const runner = this.props.model.isWorkflowInvocation() || this.props.model.isHostedBazelInvocation();
+    const actionResultUrl = runner
+      ? this.props.model.getActionCacheURL(
+          actionDigest,
+          this.props.model.getActionInputEndpoint().replace(/^(grpcs?|https?):\/\//, "")
+        )
+      : this.props.model.getActionCacheURL(actionDigest);
     this.actionResultRPC = rpcService
       .fetchBytestreamFile(actionResultUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
@@ -389,6 +423,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   fetchExecuteResponseOrActionResult({ streamFallback = true } = {}) {
     this.executeResponseRPC?.cancel();
+    this.executeResponseRPC = undefined;
     this.executionRPC?.cancel();
     this.actionResultRPC?.cancel();
     this.stdoutRPC?.cancel();
@@ -448,12 +483,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
         : this.fetchActionResult(actionDigest);
     }
 
-    if (!this.executeResponseRPC) {
+    // The fetch methods above may assign a new RPC after the previous one was
+    // cleared. TypeScript does not track those side effects across method calls.
+    const executeResponseRPC = this.executeResponseRPC as
+      | CancelablePromise<build.bazel.remote.execution.v2.ExecuteResponse | null>
+      | undefined;
+    if (!executeResponseRPC) {
       return;
     }
 
     let executionFound = false;
-    this.executeResponseRPC
+    executeResponseRPC
       .then((executeResponse) => {
         if (!executeResponse) {
           return;
@@ -494,7 +534,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   fetchExecuteResponseByDigest(executeResponseDigest: build.bazel.remote.execution.v2.Digest) {
     this.executeResponseRPC = rpcService
       .fetchBytestreamFile(
-        this.props.model.getActionCacheURL(executeResponseDigest),
+        this.props.model.getExecuteResponseURL(executeResponseDigest),
         this.props.model.getInvocationId(),
         "arraybuffer"
       )
@@ -509,7 +549,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchExecution(executionId: string) {
-    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.getRemoteExecutorEndpoint());
     // TODO: remove redundant actionDigestHash filtering once all servers
     // support executionId filtering.
     const actionDigestHash = parseActionDigestHashFromExecutionId(executionId);
@@ -546,7 +586,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       return;
     }
 
-    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.getRemoteExecutorEndpoint());
     this.setState({ executionDownloadsLoading: true });
     if (!pageToken) {
       this.setState({ executionDownloads: [] });
@@ -601,7 +641,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
-    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.getRemoteExecutorEndpoint());
     this.executeResponseRPC = service
       .getExecution({
         executionLookup: new execution_stats.ExecutionLookup({
@@ -622,7 +662,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   fetchStdout(actionResult: build.bazel.remote.execution.v2.ActionResult) {
     if (!actionResult.stdoutDigest) return;
 
-    let stdoutUrl = this.props.model.getBytestreamURL(actionResult.stdoutDigest);
+    let stdoutUrl = this.props.model.getActionBytestreamURL(actionResult.stdoutDigest);
     this.stdoutRPC = rpcService
       .fetchBytestreamFile(stdoutUrl, this.props.model.getInvocationId())
       .then((stdout) => this.setState({ stdout }))
@@ -632,7 +672,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   fetchStderr(actionResult: build.bazel.remote.execution.v2.ActionResult) {
     if (!actionResult.stderrDigest) return;
 
-    let stderrUrl = this.props.model.getBytestreamURL(actionResult.stderrDigest);
+    let stderrUrl = this.props.model.getActionBytestreamURL(actionResult.stderrDigest);
     this.stderrRPC = rpcService
       .fetchBytestreamFile(stderrUrl, this.props.model.getInvocationId())
       .then((stderr) => this.setState({ stderr }))
@@ -643,7 +683,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     this.serverLogsRPCs = [];
     for (const [name, file] of Object.entries(executeResponse.serverLogs)) {
       if (!file.digest) continue;
-      const logsURL = this.props.model.getBytestreamURL(file.digest);
+      const logsURL = this.props.model.getActionBytestreamURL(file.digest);
       const rpc = rpcService
         .fetchBytestreamFile(logsURL, this.props.model.getInvocationId())
         .then((text) => {
@@ -658,12 +698,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
+    const generation = this.actionReadGeneration;
     if (!action.commandDigest) return;
 
-    let commandURL = this.props.model.getBytestreamURL(action.commandDigest);
+    let commandURL = this.props.model.getActionBytestreamURL(action.commandDigest);
     rpcService
       .fetchBytestreamFile(commandURL, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
+        if (generation !== this.actionReadGeneration) return;
         const command = build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer));
         this.setState({ command }, () => this.resolveArgumentInputFilesIfNeeded());
       })
@@ -673,11 +715,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
   fetchProfile(executionId: string) {
     this.profileRPC = rpcService
       .fetchFile(
-        rpcService.getDownloadUrl({
-          invocation_id: this.props.model.getInvocationId(),
-          execution_id: executionId,
-          artifact: "execution_profile",
-        }),
+        rpcService.getDownloadUrl(
+          {
+            invocation_id: this.props.model.getInvocationId(),
+            execution_id: executionId,
+            artifact: "execution_profile",
+          },
+          false,
+          this.props.model.getRemoteExecutorEndpoint()
+        ),
         "stream"
       )
       .then((response) => {
@@ -771,13 +817,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   private fetchParamFileContent(path: string, digest: IDigest) {
+    const generation = this.actionReadGeneration;
     const actionDigest = this.props.search.get("actionDigest") ?? "";
     this.updateParamFileState(path, (state) => ({ expanded: state?.expanded ?? true, status: "loading" }));
 
     rpcService
-      .fetchBytestreamFile(this.props.model.getBytestreamURL(digest), this.props.model.getInvocationId(), "text")
+      .fetchBytestreamFile(this.props.model.getActionBytestreamURL(digest), this.props.model.getInvocationId(), "text")
       .then((content) => {
-        if ((this.props.search.get("actionDigest") ?? "") !== actionDigest) return;
+        if (generation !== this.actionReadGeneration || (this.props.search.get("actionDigest") ?? "") !== actionDigest)
+          return;
         this.updateParamFileState(path, (state) => ({
           expanded: state?.expanded ?? false,
           status: "loaded",
@@ -786,7 +834,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
       })
       .catch((e) => {
         console.error(`Failed to fetch params file ${path}:`, e);
-        if ((this.props.search.get("actionDigest") ?? "") !== actionDigest) return;
+        if (generation !== this.actionReadGeneration || (this.props.search.get("actionDigest") ?? "") !== actionDigest)
+          return;
         this.updateParamFileState(path, (state) => ({ expanded: state?.expanded ?? false, status: "error" }));
       });
   }
@@ -818,6 +867,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (!this.state.command || !this.state.inputRoot) return;
 
     // Collect potential paths for command line arguments
+    const generation = this.actionReadGeneration;
     const actionDigest = this.props.search.get("actionDigest") ?? "";
     const argumentToCandidates = new Map<string, string[]>();
     for (const argument of this.state.command.arguments) {
@@ -835,7 +885,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     // For each argument attempt to resolve the path to a real input file digest
     Promise.all(pathsToResolve.map((path) => this.resolveInputFilePath(path))).then((results) => {
-      if ((this.props.search.get("actionDigest") ?? "") !== actionDigest) return;
+      if (generation !== this.actionReadGeneration || (this.props.search.get("actionDigest") ?? "") !== actionDigest)
+        return;
       this.setState((prevState) => {
         const inputFilePathToDigest = new Map(prevState.inputFilePathToDigest);
         for (const [path, digest] of results) {
@@ -905,14 +956,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     rpcService.downloadBytestreamFile(
       file.path,
-      this.props.model.getBytestreamURL(file.digest),
+      this.props.model.getActionBytestreamURL(file.digest),
       this.props.model.getInvocationId()
     );
   }
 
   private getFileViewUrl(path: string, digest: IDigest) {
     const params: Record<string, string> = {
-      bytestream_url: this.props.model.getBytestreamURL(digest),
+      bytestream_url: this.props.model.getActionBytestreamURL(digest),
       invocation_id: this.props.model.getInvocationId(),
       filename: path,
     };
@@ -1011,7 +1062,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                               <a
                                 className="action-downloads-download-link"
                                 href={rpcService.getBytestreamUrl(
-                                  this.props.model.getBytestreamURL(download.digest),
+                                  this.props.model.getActionBytestreamURL(download.digest),
                                   this.props.model.getInvocationId(),
                                   { filename: download.path }
                                 )}
@@ -1061,7 +1112,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     unquotedIndexes.add(parts.length - 1);
 
     // Remote executor / instance (derived from invocation options if present)
-    const remoteExec = this.props.model.stringCommandLineOption("remote_executor");
+    const remoteExec = this.props.model.getRemoteExecutorEndpoint();
     if (remoteExec) parts.push(`--remote_executor=${remoteExec}`);
 
     const digestFn =
@@ -1116,9 +1167,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (node.type !== "dir" && node.type !== "tree") return Promise.resolve([]);
     if (!node.obj.digest) return Promise.resolve([]);
 
+    const generation = this.actionReadGeneration;
     const digestString = node.obj.digest.hash ?? "";
     return this.fetchDirectoryChildren(node.obj.digest, node.type).then((nodes) => {
-      if (digestString) {
+      if (generation === this.actionReadGeneration && digestString) {
         this.state.treeShaToExpanded.set(digestString, true);
       }
       return nodes;
@@ -1126,13 +1178,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   private fetchDirectoryChildren(digest: IDigest, type: "dir" | "tree"): Promise<TreeNode[]> {
+    const generation = this.actionReadGeneration;
     const digestString = digest.hash ?? "";
     const cachedChildren = digestString ? this.state.treeShaToChildrenMap.get(digestString) : undefined;
     if (cachedChildren) return Promise.resolve(cachedChildren);
     const cachedPromise = digestString ? this.treeShaToChildrenPromiseMap.get(digestString) : undefined;
     if (cachedPromise) return cachedPromise;
 
-    const dirUrl = this.props.model.getBytestreamURL(digest);
+    const dirUrl = this.props.model.getActionBytestreamURL(digest);
     const fetchPromise = rpcService
       .fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: ArrayBuffer) => new Uint8Array(buffer))
@@ -1142,7 +1195,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           : build.bazel.remote.execution.v2.Directory.decode(array)
       )
       .then((dir: build.bazel.remote.execution.v2.Directory | null | undefined) => {
-        if (!dir) return [];
+        if (generation !== this.actionReadGeneration || !dir) return [];
 
         const nodes = this.treeNodesForDirectory(dir);
         if (digestString) {
@@ -1152,7 +1205,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
       });
     if (digestString) {
       this.treeShaToChildrenPromiseMap.set(digestString, fetchPromise);
-      fetchPromise.finally(() => this.treeShaToChildrenPromiseMap.delete(digestString));
+      fetchPromise.finally(() => {
+        if (generation === this.actionReadGeneration) this.treeShaToChildrenPromiseMap.delete(digestString);
+      });
     }
     return fetchPromise;
   }
@@ -1196,7 +1251,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       return;
     }
     if (node.type == "file") {
-      let dirUrl = this.props.model.getBytestreamURL(node.obj.digest);
+      let dirUrl = this.props.model.getActionBytestreamURL(node.obj.digest);
       rpcService.downloadBytestreamFile(node.obj.name, dirUrl, this.props.model.getInvocationId());
       return;
     }
@@ -1231,7 +1286,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   private renderNotFoundDetails({ result = false }) {
     const hasRemoteUploadLocalResults = this.props.model.booleanCommandLineOption("remote_upload_local_results");
-    const hasRemoteExecutor = Boolean(this.props.model.stringCommandLineOption("remote_executor"));
+    const hasRemoteExecutor = Boolean(this.props.model.getRemoteExecutorEndpoint());
     const hasRemoteCache = Boolean(this.props.model.booleanCommandLineOption("remote_cache"));
 
     if (result && !hasRemoteCache && !hasRemoteExecutor) {
@@ -1265,7 +1320,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   private onClickInvalidateSnapshot(snapshotKey: firecracker.SnapshotKey) {
-    rpcService.service
+    rpcService
+      .getRegionalServiceOrDefault(this.props.model.getRemoteExecutorEndpoint())
       .invalidateSnapshot(
         new workflow.InvalidateSnapshotRequest({
           snapshotKey: snapshotKey,
