@@ -516,6 +516,13 @@ var (
 	// 9 = inf
 	// It's probably better to use something specific to the given metric.
 	coarseMicrosecondToHour = durationUsecBuckets(1*time.Microsecond, 1*time.Hour, 10)
+
+	githubStatusDurationUsecBuckets = customDurationBuckets(time.Duration.Microseconds, []time.Duration{
+		1 * time.Millisecond, 10 * time.Millisecond, 50 * time.Millisecond,
+		100 * time.Millisecond, 250 * time.Millisecond, 500 * time.Millisecond,
+		time.Second, 2 * time.Second, 5 * time.Second, 10 * time.Second,
+		20 * time.Second, 30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute,
+	})
 )
 
 var (
@@ -689,6 +696,32 @@ var (
 		Name:      "webhook_notify_duration_usec",
 		Buckets:   coarseMicrosecondToHour,
 		Help:      "How long it took to post an invocation proto to the webhook, in **microseconds**.",
+	})
+
+	// ## GitHub commit status metrics
+
+	GitHubStatusRequestDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "github",
+		Name:      "status_request_duration_usec",
+		Buckets:   githubStatusDurationUsecBuckets,
+		Help:      "Time spent in each GitHub commit-status SDK request, in **microseconds**, including failed requests. Code 0 means no HTTP response was received.",
+	}, []string{HTTPResponseCodeLabel})
+
+	GitHubStatusDeliveryDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "github",
+		Name:      "status_delivery_duration_usec",
+		Buckets:   githubStatusDurationUsecBuckets,
+		Help:      "Total time for an enabled GitHub commit-status delivery, in **microseconds**, including eligibility checks, token acquisition, SDK setup, requests, and any retry waits. Disabled reporting does not record an observation.",
+	}, []string{StatusHumanReadableLabel})
+
+	GitHubStatusFlushDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "github",
+		Name:      "status_flush_duration_usec",
+		Buckets:   githubStatusDurationUsecBuckets,
+		Help:      "Time spent synchronously processing a nonempty GitHub status batch, in **microseconds**. Preliminary authentication, metadata, and enablement checks are excluded.",
 	})
 
 	// ## Remote cache metrics

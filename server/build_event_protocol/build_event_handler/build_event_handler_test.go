@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -40,6 +41,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	dto "github.com/prometheus/client_model/go"
 )
 
 func streamRequest(anyEvent *anypb.Any, iid string, sequenceNumer int64) *pepb.PublishBuildToolEventStreamRequest {
@@ -1889,7 +1891,10 @@ func TestBuildStatusReporting(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			var before, after dto.Metric
+			require.NoError(t, metrics.GitHubStatusFlushDurationUsec.Write(&before))
 			te := testenv.GetTestEnv(t)
+			te.SetClock(clockwork.NewFakeClock())
 			fakeGH := &FakeGitHubStatusService{StatusReportingEnabled: true}
 			te.SetGitHubStatusService(fakeGH)
 			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
@@ -1967,6 +1972,8 @@ func TestBuildStatusReporting(t *testing.T) {
 					},
 				},
 			}, client.ConsumeStatuses())
+			require.NoError(t, metrics.GitHubStatusFlushDurationUsec.Write(&after))
+			require.Equal(t, before.GetHistogram().GetSampleCount()+1, after.GetHistogram().GetSampleCount())
 
 			// Handle the Finished event - should report another status.
 			fin := &bspb.BuildEvent{
@@ -1992,6 +1999,8 @@ func TestBuildStatusReporting(t *testing.T) {
 					},
 				},
 			}, client.ConsumeStatuses())
+			require.NoError(t, metrics.GitHubStatusFlushDurationUsec.Write(&after))
+			require.Equal(t, before.GetHistogram().GetSampleCount()+2, after.GetHistogram().GetSampleCount())
 		})
 	}
 }

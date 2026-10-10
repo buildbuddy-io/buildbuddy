@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
@@ -163,6 +164,12 @@ func (r *BuildStatusReporter) flushPayloadsIfMetadataLoaded(ctx context.Context)
 		return
 	}
 
+	if len(r.payloads) > 0 {
+		start := r.env.GetClock().Now()
+		defer func() {
+			metrics.GitHubStatusFlushDurationUsec.Observe(float64(r.env.GetClock().Since(start).Microseconds()))
+		}()
+	}
 	for _, payload := range r.payloads {
 		if github.State(payload.GetState()) == github.PendingState {
 			r.inFlight[payload.GetContext()] = true
