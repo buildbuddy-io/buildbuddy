@@ -51,3 +51,11 @@
   color: var(--color-text-secondary);
   font-size: 14px;
 }
+
+.donut-chart-label-empty {
+  color: var(--color-text-secondary);
+}
+
+.donut-chart-empty .recharts-pie-sector path {
+  fill: var(--color-bg-hover);
+}

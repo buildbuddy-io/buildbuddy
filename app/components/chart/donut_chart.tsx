@@ -18,6 +18,9 @@ interface Props {
 
   /** Returns a human-readable string for a given value in the data. */
   valueFormatter?: (v: number) => string;
+
+  /** Render an empty ring (instead of nothing) when all values are zero. */
+  showEmpty?: boolean;
 }
 
 const OTHER_LABEL = "&&__Other__&&";
@@ -51,6 +54,10 @@ export default class DonutChart extends React.Component<Props> {
       },
       { name: "Sum", value: 0 }
     );
+
+    if (this.props.showEmpty && sum.value === 0) {
+      return this.withTitle(this.renderEmpty(valueFormatter));
+    }
 
     let other = 0;
     let otherLabels: string[] = [];
@@ -102,18 +109,46 @@ export default class DonutChart extends React.Component<Props> {
       </div>
     );
 
-    if (this.props.title) {
-      return (
-        <>
-          <div className="donut-chart-title-block">
-            <div className="donut-chart-title">{this.props.title}</div>
-            {Boolean(this.props.subtitle) && <div className="donut-chart-subtitle">{this.props.subtitle}</div>}
-          </div>
-          {donut}
-        </>
-      );
-    } else {
+    return this.withTitle(donut);
+  }
+
+  renderEmpty(valueFormatter: (v: number) => string) {
+    return (
+      <div className="donut-chart donut-chart-empty">
+        <ResponsiveContainer width={80} height={80}>
+          <PieChart accessibilityLayer={false}>
+            <Pie data={[{ value: 1 }]} dataKey="value" outerRadius={40} innerRadius={20} isAnimationActive={false}>
+              <Cell />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div>
+          {this.props.data?.map((entry) => (
+            <div key={entry.name} className="donut-chart-label donut-chart-label-empty">
+              <span className="donut-chart-swatch"></span>
+              <span>
+                <span className="donut-chart-legend-value">{valueFormatter(0)}</span>{" "}
+                <span className="donut-chart-legend-desc">{entry.name}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  withTitle(donut: React.ReactNode) {
+    if (!this.props.title) {
       return donut;
     }
+    return (
+      <>
+        <div className="donut-chart-title-block">
+          <div className="donut-chart-title">{this.props.title}</div>
+          {Boolean(this.props.subtitle) && <div className="donut-chart-subtitle">{this.props.subtitle}</div>}
+        </div>
+        {donut}
+      </>
+    );
   }
 }
