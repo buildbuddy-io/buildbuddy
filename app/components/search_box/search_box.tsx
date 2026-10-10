@@ -51,13 +51,14 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
   // If the sequence doesn't match by the time we get the completion
   // callback then we know the response is stale.
   private latestCompletionSeq = 0;
-  private last = { value: "", caret: -1 };
+  // The search string and caret position at the time the last completion refresh was invoked.
+  private refreshedFor = { value: "", caret: -1 };
   private list = React.createRef<HTMLUListElement>();
 
   componentDidUpdate(prevProps: SearchBoxProps, prev: State) {
     // Reset if the search string changed through something other than the search box
     // (e.g. navigation).
-    if (this.props.value !== prevProps.value && this.props.value !== this.last.value) {
+    if (this.props.value !== prevProps.value && this.props.value !== this.refreshedFor.value) {
       this.dismiss();
     }
     // Make sure the selected row stays in view when scrolling with arrows.
@@ -91,12 +92,12 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
       this.dismiss();
       return;
     }
-    if (el.value !== this.last.value || caret !== this.last.caret) this.refresh(el.value, caret);
+    if (el.value !== this.refreshedFor.value || caret !== this.refreshedFor.caret) this.refresh(el.value, caret);
   }
 
   // Schedules the completer on a debounce timer to retrieve suggestions and display them to the user.
   private refresh(value: string, caret: number) {
-    this.last = { value, caret };
+    this.refreshedFor = { value, caret };
     const { token, typed } = tokenAt(value, caret);
     // Only the end of a token is completed; replacing a token someone has
     // clicked into the middle of would throw away what follows the caret.
@@ -141,7 +142,7 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
     this.cancelPending();
     // Forgotten too, so the next focus or caret event asks afresh even at
     // the same spot.
-    this.last = { value: "", caret: -1 };
+    this.refreshedFor = { value: "", caret: -1 };
     this.setState({ completions: [], selected: -1, open: false });
   }
 
