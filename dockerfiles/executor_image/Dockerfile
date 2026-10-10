@@ -42,8 +42,8 @@ RUN \
 # can't assume the host GLIBC version will be compatible with the one installed
 # in the executor image. Install only nvidia-cdi-hook from the verified package.
 # When updating the package version, update both package and binary SHA256 values below.
-RUN DOCKER_VERSION="5:29.0.1-1~debian.13~trixie" && \
-    CONTAINERD_DEB_VERSION="2.1.5-1~debian.13~trixie" && \
+RUN DOCKER_VERSION="5:29.8.1-1~debian.13~trixie" && \
+    CONTAINERD_DEB_VERSION="2.3.5-1~debian.13~trixie" && \
     DOCKER_BUILDX_VERSION="0.30.0-1~debian.13~trixie" && \
     DOCKER_COMPOSE_VERSION="2.40.3-1~debian.13~trixie" && \
     NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION="1.19.0-1" && \
