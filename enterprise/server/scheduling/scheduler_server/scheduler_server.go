@@ -179,7 +179,8 @@ var (
 		Help:    "WorkQueue wait time [milliseconds]",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 20),
 	})
-	// Claim field is set only if task exists & claim field is not present.
+	// Claim field is set only if task exists & claim field is not present, or
+	// if the current lease holder is reconnecting.
 	// Return values:
 	//  - 0 claim failed for unknown reason (shouldn't happen)
 	//  - 1 claim successful
@@ -194,6 +195,13 @@ var (
 	
 		-- Task already claimed.
 		if redis.call("hexists", KEYS[1], "claimed") == 1 then
+			-- Let the current lease holder reconnect on a new stream before the
+			-- scheduler has released the claim from its old stream. This isn't
+			-- a new attempt.
+			if ARGV[1] == "true" and ARGV[2] ~= "" and redis.call("hget", KEYS[1], "leaseId") == ARGV[2] then
+				redis.call("hset", KEYS[1], "leaseId", ARGV[4])
+				return 1
+			end
 			return 11
 		end
 
@@ -267,6 +275,19 @@ var (
 		else 
 			return 0 
 		end`)
+	// Deletes a task unless a lease ID is supplied and the task is held under a
+	// different lease.
+	// Return values:
+	//  - 0 if the task doesn't exist
+	//  - 1 if the task was deleted
+	//  - 2 if lease ID was supplied and did not match the current lease ID
+	redisDeleteTaskForLease = redis.NewScript(`
+		local leaseId = redis.call("hget", KEYS[1], "leaseId")
+		if leaseId and ARGV[1] ~= "" and leaseId ~= ARGV[1] then
+			return 2
+		end
+		return redis.call("del", KEYS[1])
+		`)
 	// Task deleted if claim field is present.
 	redisDeleteClaimedTask = redis.NewScript(`
 		if redis.call("hget", KEYS[1], "claimed") == "1" then 
@@ -2005,6 +2026,20 @@ func (s *SchedulerServer) deleteTask(ctx context.Context, taskID string) (bool, 
 	return n == 1, err
 }
 
+// deleteTaskForLease deletes the task unless it's held under a lease other than
+// leaseID, e.g. because its executor reconnected on a new stream. An empty
+// leaseID deletes the task unconditionally.
+func (s *SchedulerServer) deleteTaskForLease(ctx context.Context, taskID, leaseID string) error {
+	r, err := redisDeleteTaskForLease.Run(ctx, s.rdb, []string{s.redisKeyForTask(taskID)}, leaseID).Result()
+	if err != nil {
+		return err
+	}
+	if c, ok := r.(int64); ok && c == 2 {
+		return status.PermissionDeniedErrorf("task %q was re-claimed under another lease", taskID)
+	}
+	return nil
+}
+
 func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) error {
 	// The script will return 1 if the task is claimed & has been deleted.
 	r, err := redisDeleteClaimedTask.Run(ctx, s.rdb, []string{s.redisKeyForTask(taskID)}).Result()
@@ -2346,7 +2381,16 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			reconnectToken = ""
 		}
 		if err := s.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, probesPerTask, reEnqueueReason); err != nil {
-			log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task but failed with err: %s", taskID, err.Error())
+			switch {
+			case status.IsPermissionDeniedError(err):
+				log.CtxInfo(ctx, "Not re-enqueueing task because it was already re-claimed under another lease")
+			case status.IsNotFoundError(err):
+				// The executor may have reconnected on a new stream and
+				// finished the task before we cleaned up this one.
+				log.CtxInfo(ctx, "Not re-enqueueing task because it no longer exists")
+			default:
+				log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task but failed with err: %s", taskID, err.Error())
+			}
 		} // Success case will be logged by ReEnqueueTask flow.
 	}()
 
@@ -2446,9 +2490,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			}
 			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), req.GetSupportsExperimentFlags(), key, task.serializedTask, task.metadata.GetTaskGroupId())
 
-			// Prometheus: observe queue wait time.
-			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
-			queueWaitTimeMs.Observe(float64(ageInMillis))
+			// Prometheus: observe queue wait time. Skip reconnects, since the
+			// executor has been running the task since its first claim.
+			if req.GetReconnectToken() == "" {
+				ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
+				queueWaitTimeMs.Observe(float64(ageInMillis))
+			}
 			rsp.SerializedTask = task.serializedTask
 			rsp.LeaseId = leaseID
 			// If both the client and server have lease reconnect enabled,
@@ -3059,7 +3106,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	// reconnect. A successful reconnect does not increment the attempt count.
 	isLeaseReconnect := reconnectToken != ""
 	if !isLeaseReconnect && scheduledTask.attemptCount >= maxTaskAttemptCount {
-		if _, err := s.deleteTask(ctx, taskID); err != nil {
+		if err := s.deleteTaskForLease(ctx, taskID, leaseID); err != nil {
 			return err
 		}
 		msg := fmt.Sprintf("Task %q already attempted %d times.", taskID, scheduledTask.attemptCount)
@@ -3078,7 +3125,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	}
 	retryable := platform.Retryable(task)
 	if !isLeaseReconnect && !retryable {
-		if _, err := s.deleteTask(ctx, taskID); err != nil {
+		if err := s.deleteTaskForLease(ctx, taskID, leaseID); err != nil {
 			return err
 		}
 		log.CtxInfof(ctx, "Task %q does not have retries enabled. Not re-enqueuing.", taskID)

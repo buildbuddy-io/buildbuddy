@@ -1287,6 +1287,46 @@ func TestLeaseReconnectGrace_RetriesDisabled(t *testing.T) {
 	require.NoError(t, reconnectedLease.Finalize())
 }
 
+func TestLeaseReconnect_BeforeOldStreamIsCleanedUp(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		props map[string]string
+	}{
+		{
+			name:  "retries enabled",
+			props: map[string]string{},
+		},
+		{
+			name:  "retries disabled",
+			props: map[string]string{platform.RetryPropertyName: "false"},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			s := env.GetSchedulerService().(*SchedulerServer)
+			holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+			holder.Register()
+			taskID := scheduleTask(ctx, t, env, testCase.props)
+			holder.WaitForTask(taskID)
+			lease := holder.Claim(taskID)
+			holder.ResetTasks()
+
+			reconnectedLease, err := holder.Reconnect(taskID, lease.leaseID)
+			require.NoError(t, err)
+			// Run the old stream's cleanup after the reconnect, as is the case
+			// when the scheduler notices the broken stream late.
+			err = s.reEnqueueTask(ctx, taskID, lease.leaseID, "" /*=reconnectToken*/, 1 /*=numReplicas*/, "stream closed with task still claimed")
+
+			require.True(t, status.IsPermissionDeniedError(err), "unexpected re-enqueue error: %v", err)
+			holder.EnsureTaskNotReceived(taskID)
+			task, err := s.readTask(ctx, taskID)
+			require.NoError(t, err)
+			require.EqualValues(t, 1, task.attemptCount)
+			require.NoError(t, reconnectedLease.Finalize())
+		})
+	}
+}
+
 // scheduleTaskForGroup schedules a task owned by the given group.
 func scheduleTaskForGroup(ctx context.Context, t *testing.T, env environment.Env, groupID string) string {
 	req := newScheduleRequest(ctx, t, env, scheduleOpts{})
