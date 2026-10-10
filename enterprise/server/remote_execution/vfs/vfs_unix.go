@@ -1066,6 +1066,13 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 
 }
 
+func callerOwner(ctx context.Context) *vfspb.Owner {
+	if caller, ok := fuse.FromContext(ctx); ok {
+		return &vfspb.Owner{Uid: caller.Uid, Gid: caller.Gid}
+	}
+	return nil
+}
+
 func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	n.startOP("Create")
 
@@ -1080,6 +1087,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 		Name:     name,
 		Flags:    flags,
 		Mode:     mode,
+		Owner:    callerOwner(ctx),
 	}
 	n.beginDirectoryMutation()
 	defer n.endDirectoryMutation()
@@ -1100,6 +1108,8 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 
 	out.Mode = mode
 	out.Nlink = 1
+	out.Uid = rsp.GetAttrs().GetUid()
+	out.Gid = rsp.GetAttrs().GetGid()
 
 	return inode, rf, 0, 0
 }
@@ -1124,6 +1134,7 @@ func (n *Node) Mknod(ctx context.Context, name string, mode uint32, dev uint32, 
 		Name:     name,
 		Mode:     mode,
 		Dev:      dev,
+		Owner:    callerOwner(ctx),
 	})
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
@@ -1218,6 +1229,8 @@ func fillFuseAttr(out *fuse.Attr, attr *vfspb.Attrs) {
 	out.Size = uint64(attr.GetSize())
 	out.Mode = attr.GetPerm()
 	out.Nlink = attr.GetNlink()
+	out.Uid = attr.GetUid()
+	out.Gid = attr.GetGid()
 
 	out.Mtime = attr.MtimeNanos / 1e9
 	out.Mtimensec = uint32(attr.MtimeNanos % 1e9)
@@ -1306,6 +1319,15 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 	}
 	if m, ok := in.GetMode(); ok {
 		req.SetPerms = &vfspb.SetAttrRequest_SetPerms{Perms: m}
+	}
+	if uid, ok := in.GetUID(); ok {
+		req.Uid = &uid
+	}
+	if gid, ok := in.GetGID(); ok {
+		req.Gid = &gid
+	}
+	if req.Uid != nil || req.Gid != nil {
+		req.Caller = callerOwner(ctx)
 	}
 	if s, ok := in.GetSize(); ok {
 		req.SetSize = &vfspb.SetAttrRequest_SetSize{Size: int64(s)}
@@ -1431,7 +1453,7 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 
 	n.beginDirectoryMutation()
 	defer n.endDirectoryMutation()
-	rsp, err := n.vfs.vfsClient.Mkdir(n.vfs.getRPCContext(), &vfspb.MkdirRequest{ParentId: n.StableAttr().Ino, Name: name, Perms: mode})
+	rsp, err := n.vfs.vfsClient.Mkdir(n.vfs.getRPCContext(), &vfspb.MkdirRequest{ParentId: n.StableAttr().Ino, Name: name, Perms: mode, Owner: callerOwner(ctx)})
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
@@ -1521,7 +1543,7 @@ func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, o
 		Mode: fuse.S_IFREG,
 		Ino:  target.EmbeddedInode().StableAttr().Ino,
 	})
-	out.Attr.FromStat(attrsToStat(res.GetAttrs()))
+	fillFuseAttr(&out.Attr, res.GetAttrs())
 	return inode, 0
 }
 
@@ -1534,10 +1556,13 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 
 	n.beginDirectoryMutation()
 	defer n.endDirectoryMutation()
-	rsp, err := n.vfs.vfsClient.Symlink(n.vfs.getRPCContext(), &vfspb.SymlinkRequest{ParentId: n.StableAttr().Ino, Name: name, Target: target})
+
+	rsp, err := n.vfs.vfsClient.Symlink(n.vfs.getRPCContext(), &vfspb.SymlinkRequest{ParentId: n.StableAttr().Ino, Name: name, Target: target, Owner: callerOwner(ctx)})
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
+	out.Uid = rsp.GetAttrs().GetUid()
+	out.Gid = rsp.GetAttrs().GetGid()
 	child := &Node{vfs: n.vfs, symlinkTarget: target}
 	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK, Ino: rsp.GetId()})
 	return inode, 0

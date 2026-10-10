@@ -1373,6 +1373,114 @@ func TestMknod(t *testing.T) {
 	require.EqualValues(t, unix.S_IFCHR, rs.Mode&unix.S_IFMT)
 }
 
+func TestOwnership(t *testing.T) {
+	_, client, mount := setupVFSWithInputTreeAndClient(t, setupEnv(t), &repb.Tree{}, &vfs.Options{}, nil)
+	rootInode, err := client.GetInode(1)
+	require.NoError(t, err)
+	root := rootInode.Operations().(*vfs.Node)
+	ctx := &fuse.Context{Uid: 65534, Gid: 65533}
+	t.Run("mkdir", func(t *testing.T) {
+		var out fuse.EntryOut
+		_, errno := root.Mkdir(ctx, "owned-dir", 0700, &out)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+	})
+	t.Run("create", func(t *testing.T) {
+		var out fuse.EntryOut
+		inode, handle, _, errno := root.Create(ctx, "owned-file", uint32(os.O_CREATE|os.O_RDWR), 0600, &out)
+		require.Zero(t, errno)
+		defer handle.(fusefs.FileReleaser).Release(ctx)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+		var attr fuse.AttrOut
+		require.Zero(t, inode.Operations().(*vfs.Node).Getattr(ctx, handle, &attr))
+		require.Equal(t, uint32(65534), attr.Uid)
+		require.Equal(t, uint32(65533), attr.Gid)
+	})
+	t.Run("mknod", func(t *testing.T) {
+		var out fuse.EntryOut
+		_, errno := root.Mknod(ctx, "owned-node", unix.S_IFREG|0600, 0, &out)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+	})
+	t.Run("symlink", func(t *testing.T) {
+		var out fuse.EntryOut
+		_, errno := root.Symlink(ctx, "owned-file", "owned-link", &out)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+	})
+	t.Run("link", func(t *testing.T) {
+		file, handle, _, errno := root.Create(ctx, "link-src", uint32(os.O_CREATE|os.O_RDWR), 0600, &fuse.EntryOut{})
+		require.Zero(t, errno)
+		defer handle.(fusefs.FileReleaser).Release(ctx)
+		var out fuse.EntryOut
+		_, errno = root.Link(ctx, file.Operations(), "link-dst", &out)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+		require.NotZero(t, out.Mtime)
+
+		require.NoError(t, os.Chown(filepath.Join(mount, "link-dst"), 1000, 1001))
+		for _, name := range []string{"link-src", "link-dst"} {
+			info, err := os.Stat(filepath.Join(mount, name))
+			require.NoError(t, err)
+			st := info.Sys().(*syscall.Stat_t)
+			require.Equal(t, uint32(1000), st.Uid, name)
+			require.Equal(t, uint32(1001), st.Gid, name)
+		}
+	})
+	rootCtx := &fuse.Context{}
+	setattr := func(ctx *fuse.Context, inode *fusefs.Inode, in *fuse.SetAttrIn) syscall.Errno {
+		return inode.Operations().(*vfs.Node).Setattr(ctx, nil, in, &fuse.AttrOut{})
+	}
+	t.Run("setgid", func(t *testing.T) {
+		shared, errno := root.Mkdir(ctx, "shared", 0775, &fuse.EntryOut{})
+		require.Zero(t, errno)
+		require.Zero(t, setattr(rootCtx, shared, &fuse.SetAttrIn{Valid: fuse.FATTR_MODE | fuse.FATTR_GID, Mode: 02775, Gid: 1234}))
+		var dirOut fuse.EntryOut
+		_, errno = shared.Operations().(*vfs.Node).Mkdir(ctx, "subdir", 0775, &dirOut)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(1234), dirOut.Gid)
+		require.NotZero(t, dirOut.Mode&syscall.S_ISGID)
+		var fileOut fuse.EntryOut
+		_, handle, _, errno := shared.Operations().(*vfs.Node).Create(ctx, "file", uint32(os.O_CREATE|os.O_RDWR), 0644, &fileOut)
+		require.Zero(t, errno)
+		defer handle.(fusefs.FileReleaser).Release(ctx)
+		require.Equal(t, uint32(1234), fileOut.Gid)
+	})
+	t.Run("chown_permissions", func(t *testing.T) {
+		file, handle, _, errno := root.Create(ctx, "perm-file", uint32(os.O_CREATE|os.O_RDWR), 0644, &fuse.EntryOut{})
+		require.Zero(t, errno)
+		defer handle.(fusefs.FileReleaser).Release(ctx)
+		require.Equal(t, syscall.EPERM, setattr(ctx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_UID, Uid: 0}))
+		require.Equal(t, syscall.EPERM, setattr(ctx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_GID, Gid: 0}))
+		otherCtx := &fuse.Context{Uid: 1000, Gid: 1000}
+		require.Equal(t, syscall.EPERM, setattr(otherCtx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_GID, Gid: 1000}))
+		require.Zero(t, setattr(rootCtx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_GID, Gid: 1234}))
+		require.Zero(t, setattr(ctx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_GID, Gid: 65533}))
+	})
+	t.Run("chown", func(t *testing.T) {
+		path := filepath.Join(mount, "chowned")
+		require.NoError(t, os.WriteFile(path, nil, 0600))
+		require.NoError(t, os.Chown(path, 65534, 65533))
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		st := info.Sys().(*syscall.Stat_t)
+		require.Equal(t, uint32(65534), st.Uid)
+		require.Equal(t, uint32(65533), st.Gid)
+		// Changing only the uid must preserve the gid.
+		require.NoError(t, os.Chown(path, 0, -1))
+		info, err = os.Stat(path)
+		require.NoError(t, err)
+		st = info.Sys().(*syscall.Stat_t)
+		require.Zero(t, st.Uid)
+		require.Equal(t, uint32(65533), st.Gid)
+	})
+}
+
 func TestFileHandleRequestContext(t *testing.T) {
 	for _, open := range []bool{false, true} {
 		name := "Create"

@@ -954,7 +954,7 @@ func (h *fileHandle) allocate(req *vfspb.AllocateRequest) (*vfspb.AllocateRespon
 	return &vfspb.AllocateResponse{}, nil
 }
 
-func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, parentNode *fsNode, name string) (*fsNode, error) {
+func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, parentNode *fsNode, name string, owner *vfspb.Owner) (*fsNode, error) {
 	now := time.Now()
 
 	node := &fsNode{
@@ -962,6 +962,8 @@ func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, pare
 		name:     name,
 		attrs: &vfspb.Attrs{
 			Perm:       mode,
+			Uid:        owner.GetUid(),
+			Gid:        owner.GetGid(),
 			Nlink:      1,
 			MtimeNanos: uint64(now.UnixNano()),
 			AtimeNanos: uint64(now.UnixNano()),
@@ -971,6 +973,7 @@ func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, pare
 	}
 
 	parentNode.mu.Lock()
+	inheritSetgid(parentNode, node.attrs, false)
 	if parentNode.children == nil {
 		parentNode.children = make(map[string]*fsNode)
 	}
@@ -980,13 +983,42 @@ func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, pare
 	return node, nil
 }
 
-func (p *Server) createFile(ctx context.Context, mode uint32, parentNode *fsNode, name string) (*fsNode, error) {
+// inheritSetgid gives a new child the group of a setgid parent directory, and
+// propagates the setgid bit to child directories. parent.mu must be held.
+func inheritSetgid(parent *fsNode, attrs *vfspb.Attrs, isDir bool) {
+	if parent.attrs.GetPerm()&syscall.S_ISGID == 0 {
+		return
+	}
+	attrs.Gid = parent.attrs.GetGid()
+	if isDir {
+		attrs.Perm |= syscall.S_ISGID
+	}
+}
+
+// checkChown applies the Linux rules for changing ownership: only root may
+// change the owner, and the owner may only change the group to its own.
+func checkChown(request *vfspb.SetAttrRequest, attrs *vfspb.Attrs) error {
+	caller := request.GetCaller()
+	if caller.GetUid() == 0 {
+		return nil
+	}
+	isOwner := caller.GetUid() == attrs.GetUid()
+	if request.Uid != nil && (!isOwner || request.GetUid() != attrs.GetUid()) {
+		return syscall.EPERM
+	}
+	if request.Gid != nil && (!isOwner || (request.GetGid() != attrs.GetGid() && request.GetGid() != caller.GetGid())) {
+		return syscall.EPERM
+	}
+	return nil
+}
+
+func (p *Server) createFile(ctx context.Context, mode uint32, parentNode *fsNode, name string, owner *vfspb.Owner) (*fsNode, error) {
 	localFilePath, err := p.generateScratchPath(name)
 	if err != nil {
 		return nil, syscallErrStatus(err)
 	}
 
-	return p.createNode(fsFileNode, localFilePath, mode, parentNode, name)
+	return p.createNode(fsFileNode, localFilePath, mode, parentNode, name, owner)
 }
 
 func groupIDStringFromContext(ctx context.Context) string {
@@ -1244,7 +1276,7 @@ func (p *Server) Mknod(ctx context.Context, request *vfspb.MknodRequest) (*vfspb
 	}
 
 	if request.GetMode()&unix.S_IFREG != 0 {
-		node, err := p.createFile(ctx, request.GetMode(), parentNode, request.GetName())
+		node, err := p.createFile(ctx, request.GetMode(), parentNode, request.GetName(), request.GetOwner())
 		if err != nil {
 			return nil, err
 		}
@@ -1258,7 +1290,7 @@ func (p *Server) Mknod(ctx context.Context, request *vfspb.MknodRequest) (*vfspb
 		if request.GetDev() != 0 {
 			return nil, syscallErrStatus(syscall.ENOSYS)
 		}
-		node, err := p.createNode(fsCharDevNode, "", request.GetMode(), parentNode, request.GetName())
+		node, err := p.createNode(fsCharDevNode, "", request.GetMode(), parentNode, request.GetName(), request.GetOwner())
 		if err != nil {
 			return nil, err
 		}
@@ -1274,7 +1306,7 @@ func (p *Server) Create(ctx context.Context, request *vfspb.CreateRequest) (*vfs
 		return nil, err
 	}
 
-	node, err := p.createFile(ctx, request.GetMode(), parentNode, request.GetName())
+	node, err := p.createFile(ctx, request.GetMode(), parentNode, request.GetName(), request.GetOwner())
 	if err != nil {
 		log.CtxWarningf(p.taskCtx(), "Open %q could not create new file: %s", request.GetName(), err)
 		return nil, err
@@ -1302,7 +1334,7 @@ func (p *Server) Create(ctx context.Context, request *vfspb.CreateRequest) (*vfs
 	p.mu.Lock()
 	p.fileHandles[handleID] = fh
 	p.mu.Unlock()
-	return &vfspb.CreateResponse{Id: id, HandleId: handleID}, nil
+	return &vfspb.CreateResponse{Id: id, HandleId: handleID, Attrs: node.attrs}, nil
 }
 
 func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.OpenResponse, error) {
@@ -1470,6 +1502,16 @@ func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*v
 }
 
 func (p *Server) processSetAttr(node *fsNode, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
+	// Ownership is tracked virtually; backing files are owned by the executor.
+	if err := checkChown(request, newAttrs); err != nil {
+		return err
+	}
+	if request.Uid != nil {
+		newAttrs.Uid = request.GetUid()
+	}
+	if request.Gid != nil {
+		newAttrs.Gid = request.GetGid()
+	}
 	if request.SetPerms != nil {
 		newAttrs.Perm = request.SetPerms.Perms
 	}
@@ -1612,7 +1654,7 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 	// If RENAME_WHITEOUT flag is present, we need to create a character
 	// device where the old node used to be.
 	if request.GetFlags()&unix.RENAME_WHITEOUT != 0 {
-		_, err := p.createNode(fsCharDevNode, "", 0644, oldParentNode, request.GetOldName())
+		_, err := p.createNode(fsCharDevNode, "", 0644, oldParentNode, request.GetOldName(), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1652,9 +1694,12 @@ func (p *Server) Mkdir(ctx context.Context, request *vfspb.MkdirRequest) (*vfspb
 		attrs: &vfspb.Attrs{
 			Size: 1000,
 			Perm: request.GetPerms(),
+			Uid:  request.GetOwner().GetUid(),
+			Gid:  request.GetOwner().GetGid(),
 		},
 		parent: parentNode,
 	}
+	inheritSetgid(parentNode, newNode.attrs, true)
 	parentNode.children[request.GetName()] = newNode
 	p.addNode(newNode)
 
@@ -1727,9 +1772,12 @@ func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*v
 		parentNode.children = make(map[string]*fsNode)
 	}
 	node := newSymlinkNode(parentNode, request.GetName(), request.GetTarget())
+	node.attrs.Uid = request.GetOwner().GetUid()
+	node.attrs.Gid = request.GetOwner().GetGid()
+	inheritSetgid(parentNode, node.attrs, false)
 	parentNode.children[request.GetName()] = node
 	id := p.addNode(node)
-	return &vfspb.SymlinkResponse{Id: id}, nil
+	return &vfspb.SymlinkResponse{Id: id, Attrs: node.attrs}, nil
 }
 
 func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
