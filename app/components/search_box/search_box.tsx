@@ -47,7 +47,10 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
   state: State = { typed: "", showGhost: false, completions: [], selected: -1, open: false };
   private timer?: number;
   private frame?: number;
-  private latest = 0;
+  // Each completion request gets an increasing sequence number.
+  // If the sequence doesn't match by the time we get the completion
+  // callback then we know the response is stale.
+  private latestCompletionSeq = 0;
   private last = { value: "", caret: -1 };
   private list = React.createRef<HTMLUListElement>();
 
@@ -72,7 +75,7 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
     window.clearTimeout(this.timer);
     if (this.frame !== undefined) window.cancelAnimationFrame(this.frame);
     this.frame = undefined;
-    this.latest++;
+    this.latestCompletionSeq++;
   }
 
   /** Where the caret is, or nothing while text is selected, which completion must not replace. */
@@ -110,12 +113,12 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
     this.setState({ token, typed, showGhost: caret === value.length && !scrolled, selected: -1 });
     window.clearTimeout(this.timer);
     this.timer = window.setTimeout(() => {
-      const seq = ++this.latest;
+      const seq = ++this.latestCompletionSeq;
       this.props
         .complete(typed)
         .then((completions) => {
           // Ignore outdated results.
-          if (seq !== this.latest) return;
+          if (seq !== this.latestCompletionSeq) return;
           // Don't show popup for a single result.
           const trivial = completions.length === 1 && completions[0].text.toLowerCase() === typed.toLowerCase();
           // A row picked while the previous answer was showing stays picked
