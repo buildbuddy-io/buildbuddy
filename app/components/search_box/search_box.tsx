@@ -12,7 +12,6 @@ export type SearchBoxProps = {
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   placeholder?: string;
   className?: string;
-  autoFocus?: boolean;
   inputRef: React.RefObject<HTMLInputElement>;
 };
 
@@ -51,15 +50,37 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
   // If the sequence doesn't match by the time we get the completion
   // callback then we know the response is stale.
   private latestCompletionSeq = 0;
-  // The search string and caret position at the time the last completion refresh was invoked.
-  private refreshedFor = { value: "", caret: -1 };
+  // The search string and caret position last seen, and whether completions
+  // were asked for there or the spot was only noted, as on a quiet focus.
+  private refreshedFor = { value: "", caret: -1, asked: false };
   private list = React.createRef<HTMLUListElement>();
+
+  /**
+   * Focuses the box on the page's behalf, e.g. on arriving at a search page.
+   * Quiet unless asked to complete: the value and caret as they are now are
+   * taken as seen, so the focus and select events that follow, whenever the
+   * browser gets to them, read as no move. With complete, it asks as it
+   * would for a person's focus.
+   */
+  focus(complete: boolean) {
+    const input = this.props.inputRef.current;
+    if (!input) return;
+    const caret = this.caretOf(input);
+    this.refreshedFor = { value: input.value, caret: caret ?? -1, asked: false };
+    input.focus();
+    if (complete && caret !== undefined) this.refresh(input.value, caret);
+  }
 
   componentDidUpdate(prevProps: SearchBoxProps, prev: State) {
     // Reset if the search string changed through something other than the search box
     // (e.g. navigation).
     if (this.props.value !== prevProps.value && this.props.value !== this.refreshedFor.value) {
-      this.dismiss();
+      this.close();
+      // React has written the new value and placed the caret; the select
+      // event that follows must read as no move, or it would open the popup
+      // over a query nobody typed.
+      const input = this.props.inputRef.current;
+      if (input) this.refreshedFor = { value: input.value, caret: this.caretOf(input) ?? -1, asked: false };
     }
     // Make sure the selected row stays in view when scrolling with arrows.
     if (this.state.selected !== prev.selected && this.state.selected >= 0) {
@@ -85,25 +106,31 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
     return el.selectionStart ?? el.value.length;
   }
 
-  /** Reads the caret and refreshes, or dismisses when there is nothing to complete there. */
-  private refreshFrom(el: HTMLInputElement) {
+  /**
+   * Reads the caret and refreshes, or dismisses when there is nothing to
+   * complete there. A spot already seen is left alone, except that a click
+   * asks at one that was only noted.
+   */
+  private refreshFrom(el: HTMLInputElement, click = false) {
     const caret = this.caretOf(el);
     if (caret === undefined) {
       this.dismiss();
       return;
     }
-    if (el.value !== this.refreshedFor.value || caret !== this.refreshedFor.caret) this.refresh(el.value, caret);
+    const { value, asked } = this.refreshedFor;
+    const seen = el.value === value && caret === this.refreshedFor.caret;
+    if (!seen || (click && !asked)) this.refresh(el.value, caret);
   }
 
   // Schedules the completer on a debounce timer to retrieve suggestions and display them to the user.
   private refresh(value: string, caret: number) {
-    this.refreshedFor = { value, caret };
+    this.refreshedFor = { value, caret, asked: true };
     const { token, typed } = tokenAt(value, caret);
     // Only the end of a token is completed; replacing a token someone has
     // clicked into the middle of would throw away what follows the caret.
     if (caret !== token.end) {
       this.setState({ token, typed, showGhost: false });
-      this.dismiss();
+      this.close();
       return;
     }
     // If the text is longer than the input box, stop showing the ghost text
@@ -137,13 +164,16 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
     }, COMPLETE_DEBOUNCE_MS);
   }
 
-  /** Hides the auto-complete popup and clears completion state. */
-  private dismiss() {
+  /** Hides the auto-complete popup and stops everything scheduled. */
+  private close() {
     this.cancelPending();
-    // Forgotten too, so the next focus or caret event asks afresh even at
-    // the same spot.
-    this.refreshedFor = { value: "", caret: -1 };
     this.setState({ completions: [], selected: -1, open: false });
+  }
+
+  /** Closes and forgets the spot, so the next focus or caret event asks afresh even there. */
+  private dismiss() {
+    this.close();
+    this.refreshedFor = { value: "", caret: -1, asked: false };
   }
 
   /** Returns the completions that are meaningful for the current state. */
@@ -157,7 +187,10 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
     if (!token) return;
     const next = apply(this.props.value, token, c);
     this.props.onChange(next.value);
-    this.dismiss();
+    this.close();
+    // Claimed as the box's own change, or the value arriving through props
+    // would pass for a navigation and cancel the frame below.
+    this.refreshedFor = { value: next.value, caret: next.caret, asked: false };
     // Once the new value has rendered, place the caret after the insertion
     // and ask what comes next.
     this.frame = window.requestAnimationFrame(() => {
@@ -223,7 +256,7 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
   };
 
   render() {
-    const { value, placeholder, className, autoFocus, inputRef } = this.props;
+    const { value, placeholder, className, inputRef } = this.props;
     const { selected } = this.state;
     const completions = this.applicableCompletions();
     const open = this.state.open && completions.length > 0;
@@ -235,7 +268,6 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
           className={className ?? ""}
           value={value}
           placeholder={placeholder}
-          autoFocus={autoFocus}
           autoComplete="off"
           spellCheck={false}
           onChange={(e) => {
@@ -244,6 +276,9 @@ export default class SearchBox extends React.Component<SearchBoxProps, State> {
           }}
           onKeyDown={this.onKeyDown}
           onFocus={(e) => this.refreshFrom(e.target)}
+          // A click asks even where the caret already was, which no other
+          // event reports.
+          onClick={(e) => this.refreshFrom(e.currentTarget, true)}
           // The caret moving to another token changes what is being completed.
           onSelect={(e) => this.refreshFrom(e.currentTarget)}
           onBlur={() => this.dismiss()}

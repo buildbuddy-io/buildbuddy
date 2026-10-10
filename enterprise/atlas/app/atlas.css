@@ -146,6 +146,11 @@ pre,
   scrollbar-gutter: stable;
 }
 
+/* Focused so the keyboard scrolls it; no ring, it is the page. */
+.atlas-main:focus {
+  outline: none;
+}
+
 .atlas-column {
   max-width: 1100px;
   margin: 0 auto;

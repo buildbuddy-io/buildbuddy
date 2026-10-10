@@ -33,12 +33,16 @@ export default class RootComponent extends React.Component<{}, State> {
     results: [],
   };
   private input = React.createRef<HTMLInputElement>();
+  private searchBox = React.createRef<SearchBox>();
   private main = React.createRef<HTMLElement>();
   private searchTimeout?: number;
+  /** Set while the debounced URL rewrite runs, so its route change is known as the box's own. */
+  private rewritingUrl = false;
   private statusTimer?: number;
   private unsubscribe?: () => void;
 
   componentDidMount() {
+    this.focusFor(this.state.route);
     this.measureScrollbar();
     window.addEventListener("resize", this.measureScrollbar);
     this.unsubscribe = router.subscribe(this.onRouteChange);
@@ -69,27 +73,61 @@ export default class RootComponent extends React.Component<{}, State> {
     // navigated to.
     window.clearTimeout(this.searchTimeout);
     const route = router.current();
-    this.setState((state) => {
-      // Reset the selected index when navigating away from search results so
-      // that hitting enter doesn't navigate to an unexpected page.
-      // Don't reset the index when staying on the search results page so that
-      // the selection doesn't flicker when updating the search results.
-      // The completion of the search takes care of updating the selected
-      // index.
-      const showsResults = route.kind === "search" || route.kind === "home";
-      return {
-        route,
-        query: route.kind === "search" ? route.query : route.kind === "home" ? "" : state.query,
-        results: showsResults ? state.results : [],
-        selectedIndex: showsResults ? state.selectedIndex : -1,
-      };
-    });
+    const fromRewrite = this.rewritingUrl;
+    this.setState(
+      (state) => {
+        // Reset the selected index when navigating away from search results so
+        // that hitting enter doesn't navigate to an unexpected page.
+        // Don't reset the index when staying on the search results page so that
+        // the selection doesn't flicker when updating the search results.
+        // The completion of the search takes care of updating the selected
+        // index.
+        const searching = isSearching(route);
+        return {
+          route,
+          query: searching ? queryOf(route) : state.query,
+          results: searching ? state.results : [],
+          selectedIndex: searching ? state.selectedIndex : -1,
+        };
+      },
+      // After the new query has rendered: focusing earlier would record the
+      // old value, and what the box does on focus depends on it. The box's
+      // own URL rewrite while typing is not a navigation and leaves focus
+      // where it is.
+      () => {
+        if (!fromRewrite) this.focusFor(route);
+      }
+    );
   };
+
+  /**
+   * Puts focus where the page wants the keys. A page that is read rather
+   * than searched gives it to the main area, so arrows and paging scroll it
+   * natively (a scroller only gets those keys while it has focus or contains
+   * it). A home or search page gives it to the box: the home page with the
+   * keys offered, a search page quietly, its query already filled in.
+   */
+  private focusFor(route: Route) {
+    if (isSearching(route)) {
+      this.searchBox.current?.focus(route.kind === "home");
+    } else {
+      this.main.current?.focus({ preventScroll: true });
+    }
+  }
 
   private onQueryChange = (query: string) => {
     this.setState({ query });
     window.clearTimeout(this.searchTimeout);
-    this.searchTimeout = window.setTimeout(() => router.replace(paths.search(query)), SEARCH_DEBOUNCE_MS);
+    this.searchTimeout = window.setTimeout(() => {
+      // The route change this causes is the box's own doing; the router
+      // notifies synchronously, so the flag covers exactly it.
+      this.rewritingUrl = true;
+      try {
+        router.replace(paths.search(query));
+      } finally {
+        this.rewritingUrl = false;
+      }
+    }, SEARCH_DEBOUNCE_MS);
   };
 
   private onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -104,11 +142,14 @@ export default class RootComponent extends React.Component<{}, State> {
         break;
       case "Enter": {
         const entry = this.state.results[this.state.selectedIndex];
+        // The route change hands focus to the object page; "/" brings the
+        // box back.
         if (entry) router.navigateTo(paths.object(entry));
         break;
       }
       case "Escape":
-        this.input.current?.blur();
+        // Leaving the box gives the page the keys.
+        this.main.current?.focus({ preventScroll: true });
         break;
     }
   };
@@ -159,11 +200,7 @@ export default class RootComponent extends React.Component<{}, State> {
       case "home":
       case "search":
         return (
-          <SearchComponent
-            query={route.kind === "search" ? route.query : ""}
-            selectedIndex={this.state.selectedIndex}
-            onResults={this.onResults}
-          />
+          <SearchComponent query={queryOf(route)} selectedIndex={this.state.selectedIndex} onResults={this.onResults} />
         );
       case "object":
         // Keyed, so a response for one object can never render on another's page.
@@ -185,10 +222,10 @@ export default class RootComponent extends React.Component<{}, State> {
             </Link>
             <div className="atlas-searchbox">
               <SearchBox
+                ref={this.searchBox}
                 inputRef={this.input}
                 className="atlas-search-input"
                 complete={complete}
-                autoFocus
                 value={this.state.query}
                 placeholder="Search everything…   (try: kind:pod ns:executor cluster:sjc label:app=web crashloop)"
                 onChange={this.onQueryChange}
@@ -202,7 +239,7 @@ export default class RootComponent extends React.Component<{}, State> {
             <ThemeToggle />
           </div>
         </header>
-        <main className="atlas-main" ref={this.main}>
+        <main className="atlas-main" ref={this.main} tabIndex={-1}>
           <div className="atlas-column">{this.renderRoute()}</div>
         </main>
       </div>
@@ -212,4 +249,9 @@ export default class RootComponent extends React.Component<{}, State> {
 
 function queryOf(route: Route): string {
   return route.kind === "search" ? route.query : "";
+}
+
+/** Whether the page is for searching, so the box rather than the page should hold focus. */
+function isSearching(route: Route): boolean {
+  return route.kind === "home" || route.kind === "search";
 }
