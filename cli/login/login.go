@@ -99,8 +99,9 @@ The exit code indicates the result of the check:
 variable as well as the key saved in .git/config. BUILDBUDDY_API_KEY takes
 precedence: if it is set, that is the key that gets checked, and a key written
 to .git/config by a later login will not be used until the variable is unset.
-A --remote_header=x-buildbuddy-api-key flag in a .bazelrc overrides both during
-a build and is not checked.
+If BUILDBUDDY_API_KEY is set but rejected, --allow_existing exits 1 without
+logging in. A --remote_header=x-buildbuddy-api-key flag in a .bazelrc overrides
+both during a build and is not checked.
 `
 )
 
@@ -178,10 +179,14 @@ func HandleLogin(args []string) (exitCode int, err error) {
 				// Error, exit immediately without proceeding to login.
 				return code, nil
 			}
-			// Unauthenticated - proceed to login.
+			// A new key in .git/config would not be used while
+			// BUILDBUDDY_API_KEY is set, so logging in cannot fix a rejected
+			// env key.
 			if source == apiKeySourceEnv {
-				log.Warnf("%s is set but its key was rejected. Logging in will write a new key to .git/config, but %s takes precedence and will still be used until you unset it.", envAPIKeyVarName, envAPIKeyVarName)
+				log.Warnf("%s is set but its key was rejected. Builds use %s before .git/config, so logging in would not fix this. Update or unset %s.", envAPIKeyVarName, envAPIKeyVarName, envAPIKeyVarName)
+				return 1, nil
 			}
+			// Unauthenticated - proceed to login.
 		}
 	}
 
@@ -272,13 +277,7 @@ func HandleLogin(args []string) (exitCode int, err error) {
 	}
 
 	log.Printf("Wrote API key to .git/config")
-	// The environment wins over .git/config, so the key just written is not
-	// necessarily the one builds will use.
-	if envAPIKey() != "" {
-		log.Warnf("%s is set in the environment and takes precedence, so builds will keep using that key instead of the one just saved. Unset it to use your new key.", envAPIKeyVarName)
-	} else {
-		log.Printf("You are now building with BuildBuddy!")
-	}
+	logSavedKeyStatus(apiKey)
 
 	return 0, nil
 }
@@ -291,6 +290,16 @@ func HandleLogout(args []string) (exitCode int, err error) {
 	log.Printf("You are now logged out!")
 
 	return 0, nil
+}
+
+// logSavedKeyStatus reports whether builds will use the key just saved to
+// .git/config. BUILDBUDDY_API_KEY takes precedence over it.
+func logSavedKeyStatus(savedKey string) {
+	if envKey := envAPIKey(); envKey != "" && envKey != savedKey {
+		log.Warnf("%s is set in the environment and takes precedence, so builds will keep using that key instead of the one just saved. Unset it to use your new key.", envAPIKeyVarName)
+		return
+	}
+	log.Printf("You are now building with BuildBuddy!")
 }
 
 type Result[T any] struct {
