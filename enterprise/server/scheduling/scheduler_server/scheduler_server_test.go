@@ -739,8 +739,8 @@ func (tl *taskLease) Renew() error {
 	return nil
 }
 
-// Drop breaks the lease stream without releasing the lease, as when the
-// executor's connection to the scheduler drops.
+// Drop breaks the lease stream without releasing the lease, as is the case
+// when the executor's connection to the scheduler drops.
 func (tl *taskLease) Drop() {
 	tl.cancel()
 }
