@@ -243,7 +243,7 @@ func main() {
 }
 
 func startGRPCServers(env *real_environment.RealEnv) error {
-	trafficStatsHandler, err := trafficstats.NewServerHandler()
+	trafficStatsHandler, err := trafficstats.NewServerHandler(env)
 	if err != nil {
 		return status.WrapError(err, "failed to create traffic stats handler")
 	}
