@@ -3,9 +3,14 @@ package digest_test
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -656,6 +661,103 @@ func TestRandomGenerator(t *testing.T) {
 		require.Equal(t, size, d.SizeBytes)
 		assert.InDelta(t, int(float64(size)*expectedCompression), len(cb), float64(size)*0.20, "should get approximately 0.3 compression ratio")
 	}
+}
+
+func TestGITSHA1Compute(t *testing.T) {
+	// Hashes obtained from git hash-object --stdin.
+	for _, tc := range []struct{ content, hash string }{
+		{"", "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"},
+		{"abc", "f2ba8f84ab5c1bce84a7b441cb1959cfc7093b7f"},
+		{"hello world\n", "3b18e512dba79e4c8300dd08aeb37f8e728b8dad"},
+		{"0123456789", "ad471007bd7f5983d273b9584e5629230150fd54"},
+	} {
+		t.Run(tc.hash, func(t *testing.T) {
+			want := &repb.Digest{Hash: tc.hash, SizeBytes: int64(len(tc.content))}
+			filePath := filepath.Join(t.TempDir(), "blob")
+			require.NoError(t, os.WriteFile(filePath, []byte("prefix"+tc.content), 0600))
+			f, err := os.Open(filePath)
+			require.NoError(t, err)
+			defer f.Close()
+			_, err = f.Seek(int64(len("prefix")), io.SeekStart)
+			require.NoError(t, err)
+			for name, r := range map[string]io.Reader{
+				"buffer":      bytes.NewBufferString(tc.content),
+				"string":      strings.NewReader(tc.content),
+				"file_offset": f,
+				"stream":      iotest.OneByteReader(strings.NewReader(tc.content)),
+			} {
+				t.Run(name, func(t *testing.T) {
+					d, err := digest.Compute(r, repb.DigestFunction_GITSHA1, int64(len(tc.content)))
+					require.NoError(t, err)
+					require.Equal(t, want, d)
+					require.NoError(t, digest.Validate(d, repb.DigestFunction_GITSHA1))
+					require.Equal(t, tc.content == "", digest.IsEmptyHash(d, repb.DigestFunction_GITSHA1))
+				})
+			}
+		})
+	}
+	emptyDir, err := digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_GITSHA1)
+	require.NoError(t, err)
+	require.Equal(t, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", emptyDir.GetHash())
+}
+
+func TestGITSHA1HashReset(t *testing.T) {
+	h, err := digest.HashForDigestType(repb.DigestFunction_GITSHA1, 3)
+	require.NoError(t, err)
+	for range 2 {
+		_, err = io.WriteString(h, "a")
+		require.NoError(t, err)
+		_, err = io.WriteString(h, "bc")
+		require.NoError(t, err)
+		require.Equal(t, "f2ba8f84ab5c1bce84a7b441cb1959cfc7093b7f", hex.EncodeToString(h.Sum(nil)))
+		h.Reset()
+	}
+	_, err = digest.HashForDigestType(repb.DigestFunction_GITSHA1, -1)
+	require.True(t, status.IsInvalidArgumentError(err))
+}
+
+func TestGITSHA1ComputeRejectsChangedSize(t *testing.T) {
+	for _, size := range []int64{2, 4} {
+		_, err := digest.Compute(strings.NewReader("abc"), repb.DigestFunction_GITSHA1, size)
+		require.True(t, status.IsDataLossError(err), "declared size %d: %v", size, err)
+	}
+}
+
+func TestGITSHA1ResourceNames(t *testing.T) {
+	const hash = "f2ba8f84ab5c1bce84a7b441cb1959cfc7093b7f"
+	const uploadID = "2148e1f1-aacc-41eb-a31c-22b6da7c7ac1"
+	d := &repb.Digest{Hash: hash, SizeBytes: 3}
+	for _, compressor := range []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD} {
+		t.Run(compressor.String(), func(t *testing.T) {
+			blobType := "blobs"
+			if compressor == repb.Compressor_ZSTD {
+				blobType = "compressed-blobs/zstd"
+			}
+			rn := digest.NewCASResourceName(d, "gitsha1/blobs", repb.DigestFunction_GITSHA1)
+			rn.SetCompressor(compressor)
+			require.Equal(t, "gitsha1/blobs/"+blobType+"/gitsha1/"+hash+"/3", rn.DownloadString())
+			parsed, err := digest.ParseDownloadResourceName(rn.DownloadString())
+			require.NoError(t, err)
+			require.Equal(t, rn.ToProto(), parsed.ToProto())
+			require.Equal(t, "gitsha1/blobs/uploads/"+uploadID+"/"+blobType+"/gitsha1/"+hash+"/3", rn.UploadString(uploadID))
+			parsed, err = digest.ParseUploadResourceName(rn.UploadString(uploadID))
+			require.NoError(t, err)
+			require.Equal(t, rn.ToProto(), parsed.ToProto())
+			ac := digest.NewACResourceName(d, "gitsha1/blobs", repb.DigestFunction_GITSHA1)
+			ac.SetCompressor(compressor)
+			require.Equal(t, "gitsha1/blobs/"+blobType+"/ac/gitsha1/"+hash+"/3", ac.ActionCacheString())
+			parsedAC, err := digest.ParseActionCacheResourceName(ac.ActionCacheString())
+			require.NoError(t, err)
+			require.Equal(t, ac.ToProto(), parsedAC.ToProto())
+		})
+	}
+	// GITSHA1 cannot be inferred from the length of a legacy SHA1 resource.
+	sha1, err := digest.ParseDownloadResourceName("blobs/" + hash + "/10")
+	require.NoError(t, err)
+	require.Equal(t, repb.DigestFunction_SHA1, sha1.GetDigestFunction())
+	_, err = digest.ParseDownloadResourceName("blobs/gitsha1/" + digest.EmptySha256 + "/3")
+	require.True(t, status.IsInvalidArgumentError(err))
+	require.Error(t, digest.Validate(&repb.Digest{Hash: "da39a3ee5e6b4b0d3255bfef95601890afd80709"}, repb.DigestFunction_GITSHA1))
 }
 
 func TestSafeBufferSize(t *testing.T) {

@@ -91,6 +91,50 @@ func TestGetSet(t *testing.T) {
 	}
 }
 
+func TestGitSHA1AndSHA1IsolationAfterRestart(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		forceV1 bool
+	}{
+		{name: "v1", forceV1: true},
+		{name: "v2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := getTestEnv(t, emptyUserMap)
+			ctx := getAnonContext(t, te)
+			opts := &disk_cache.Options{RootDirectory: testfs.MakeTempDir(t), ForceV1Layout: tc.forceV1}
+			dc, err := disk_cache.NewDiskCache(te, opts, 1_000_000)
+			require.NoError(t, err)
+			dc.WaitUntilMapped()
+			gitBytes := []byte("abc")
+			sha1Bytes := []byte("blob 3\x00abc")
+			gitDigest, err := digest.Compute(bytes.NewReader(gitBytes), repb.DigestFunction_GITSHA1, int64(len(gitBytes)))
+			require.NoError(t, err)
+			sha1Digest, err := digest.Compute(bytes.NewReader(sha1Bytes), repb.DigestFunction_SHA1, int64(len(sha1Bytes)))
+			require.NoError(t, err)
+			require.Equal(t, sha1Digest.GetHash(), gitDigest.GetHash())
+			gitRN := digest.NewCASResourceName(gitDigest, "instance", repb.DigestFunction_GITSHA1).ToProto()
+			sha1RN := digest.NewCASResourceName(sha1Digest, "instance", repb.DigestFunction_SHA1).ToProto()
+			require.NoError(t, dc.Set(ctx, sha1RN, sha1Bytes))
+			found, err := dc.Contains(ctx, gitRN)
+			require.NoError(t, err)
+			require.False(t, found)
+			require.NoError(t, dc.Set(ctx, gitRN, gitBytes))
+
+			require.NoError(t, dc.Stop())
+			dc, err = disk_cache.NewDiskCache(te, opts, 1_000_000)
+			require.NoError(t, err)
+			dc.WaitUntilMapped()
+			got, err := dc.Get(ctx, sha1RN)
+			require.NoError(t, err)
+			require.Equal(t, sha1Bytes, got)
+			got, err = dc.Get(ctx, gitRN)
+			require.NoError(t, err)
+			require.Equal(t, gitBytes, got)
+		})
+	}
+}
+
 func TestMetadata(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := testfs.MakeTempDir(t)

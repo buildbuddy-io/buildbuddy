@@ -137,6 +137,38 @@ func TestIsolation(t *testing.T) {
 	}
 }
 
+func TestGitSHA1AndSHA1Isolation(t *testing.T) {
+	for _, cacheType := range []rspb.CacheType{rspb.CacheType_CAS, rspb.CacheType_AC} {
+		t.Run(cacheType.String(), func(t *testing.T) {
+			mc, err := memory_cache.NewMemoryCache(1_000_000)
+			require.NoError(t, err)
+			ctx := getAnonContext(t)
+			gitBytes := []byte("abc")
+			sha1Bytes := []byte("blob 3\x00abc")
+			gitDigest, err := digest.Compute(bytes.NewReader(gitBytes), repb.DigestFunction_GITSHA1, int64(len(gitBytes)))
+			require.NoError(t, err)
+			sha1Digest, err := digest.Compute(bytes.NewReader(sha1Bytes), repb.DigestFunction_SHA1, int64(len(sha1Bytes)))
+			require.NoError(t, err)
+			require.Equal(t, sha1Digest.GetHash(), gitDigest.GetHash())
+			gitRN := digest.NewResourceName(gitDigest, "instance", cacheType, repb.DigestFunction_GITSHA1).ToProto()
+			sha1RN := digest.NewResourceName(sha1Digest, "instance", cacheType, repb.DigestFunction_SHA1).ToProto()
+
+			require.NoError(t, mc.Set(ctx, sha1RN, sha1Bytes))
+			found, err := mc.Contains(ctx, gitRN)
+			require.NoError(t, err)
+			require.False(t, found)
+			require.NoError(t, mc.Set(ctx, gitRN, gitBytes))
+
+			got, err := mc.Get(ctx, sha1RN)
+			require.NoError(t, err)
+			require.Equal(t, sha1Bytes, got)
+			got, err = mc.Get(ctx, gitRN)
+			require.NoError(t, err)
+			require.Equal(t, gitBytes, got)
+		})
+	}
+}
+
 func TestGetSet(t *testing.T) {
 	maxSizeBytes := int64(1000000000) // 1GB
 	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)

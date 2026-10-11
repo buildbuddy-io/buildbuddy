@@ -2,10 +2,13 @@ package filestore_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 
 	"github.com/stretchr/testify/assert"
@@ -114,6 +117,77 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 				assert.True(t, bytes.Equal(expectedKeyBytes, parsedKeyBytes), "expected %q, actual: %q", expectedKeyBytes, parsedKeyBytes)
 			} else {
 				assert.ErrorIs(t, err, tc.wantErr, "expected: %s, actual: %s", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestGitSHA1AndSHA1Isolation(t *testing.T) {
+	ctx := context.Background()
+	fs := filestore.New()
+	for _, cacheType := range []rspb.CacheType{rspb.CacheType_CAS, rspb.CacheType_AC} {
+		t.Run(cacheType.String(), func(t *testing.T) {
+			dir := t.TempDir()
+			gitBytes := []byte("abc")
+			sha1Bytes := []byte("blob 3\x00abc")
+			gitDigest, err := digest.Compute(bytes.NewReader(gitBytes), repb.DigestFunction_GITSHA1, int64(len(gitBytes)))
+			require.NoError(t, err)
+			sha1Digest, err := digest.Compute(bytes.NewReader(sha1Bytes), repb.DigestFunction_SHA1, int64(len(sha1Bytes)))
+			require.NoError(t, err)
+			require.Equal(t, sha1Digest.GetHash(), gitDigest.GetHash())
+			gitRecord := toFileRecord(digest.NewResourceName(gitDigest, "instance", cacheType, repb.DigestFunction_GITSHA1).ToProto())
+			sha1Record := toFileRecord(digest.NewResourceName(sha1Digest, "instance", cacheType, repb.DigestFunction_SHA1).ToProto())
+			gitKey, err := fs.PebbleKey(gitRecord)
+			require.NoError(t, err)
+			sha1Key, err := fs.PebbleKey(sha1Record)
+			require.NoError(t, err)
+
+			for from := range filestore.MaxKeyVersion {
+				gitKeyBytes, err := gitKey.Bytes(from)
+				require.NoError(t, err)
+				sha1KeyBytes, err := sha1Key.Bytes(from)
+				require.NoError(t, err)
+				require.NotEqual(t, sha1KeyBytes, gitKeyBytes, "version %d", from)
+				var parsed filestore.PebbleKey
+				parsedVersion, err := parsed.FromBytes(gitKeyBytes)
+				require.NoError(t, err)
+				require.Equal(t, from, parsedVersion)
+				for to := from; to < filestore.MaxKeyVersion; to++ {
+					if cacheType == rspb.CacheType_CAS && from < filestore.Version6 && to >= filestore.Version6 {
+						// Pre-v6 CAS keys do not store the group ID needed for v6.
+						continue
+					}
+					got, err := parsed.Bytes(to)
+					require.NoError(t, err)
+					want, err := gitKey.Bytes(to)
+					require.NoError(t, err)
+					require.Equal(t, want, got, "from v%d to v%d", from, to)
+				}
+			}
+
+			var stored []*sgpb.StorageMetadata
+			for _, tc := range []struct {
+				record *sgpb.FileRecord
+				data   []byte
+			}{
+				{record: sha1Record, data: sha1Bytes},
+				{record: gitRecord, data: gitBytes},
+			} {
+				writer, err := fs.FileWriter(ctx, dir, tc.record)
+				require.NoError(t, err)
+				_, err = writer.Write(tc.data)
+				require.NoError(t, err)
+				require.NoError(t, writer.Commit())
+				stored = append(stored, writer.Metadata())
+				require.NoError(t, writer.Close())
+			}
+			for i, want := range [][]byte{sha1Bytes, gitBytes} {
+				reader, err := fs.NewReader(ctx, dir, stored[i], 0, 0)
+				require.NoError(t, err)
+				got, err := io.ReadAll(reader)
+				require.NoError(t, err)
+				require.NoError(t, reader.Close())
+				require.Equal(t, want, got)
 			}
 		})
 	}

@@ -29,6 +29,7 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:storage_go_proto",
+        "//server/remote_cache/digest",
         "//server/testutil/testdigest",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

@@ -326,6 +326,43 @@ func TestStoreAndLoad(t *testing.T) {
 	}
 }
 
+func TestStoreGITSHA1(t *testing.T) {
+	flags.Set(t, "cache.chunking.ac_key_salt", "test-salt")
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	var digests []*repb.Digest
+	for _, data := range []string{"hel", "lo\n"} {
+		d, err := digest.Compute(bytes.NewReader([]byte(data)), repb.DigestFunction_GITSHA1, int64(len(data)))
+		require.NoError(t, err)
+		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_GITSHA1)
+		require.NoError(t, cache.Set(ctx, rn.ToProto(), []byte(data)))
+		digests = append(digests, d)
+	}
+
+	gitDigest := &repb.Digest{Hash: "ce013625030ba8dba906f756967f9e9ca394464a", SizeBytes: 6}
+	cm := &chunking.Manifest{
+		BlobDigest:     gitDigest,
+		ChunkDigests:   digests,
+		DigestFunction: repb.DigestFunction_GITSHA1,
+	}
+	require.NoError(t, cm.Store(ctx, cache))
+	require.NoError(t, cm.Store(ctx, cache))
+	loaded, err := chunking.LoadManifest(ctx, cache, gitDigest, "", repb.DigestFunction_GITSHA1)
+	require.NoError(t, err)
+	assert.Equal(t, gitDigest.GetHash(), loaded.BlobDigest.GetHash())
+	require.Len(t, loaded.ChunkDigests, 2)
+	assert.Equal(t, digests[0].GetHash(), loaded.ChunkDigests[0].GetHash())
+	assert.Equal(t, digests[1].GetHash(), loaded.ChunkDigests[1].GetHash())
+
+	cm.ChunkDigests = []*repb.Digest{digests[1], digests[0]}
+	err = cm.Store(ctx, cache)
+	require.True(t, status.IsInvalidArgumentError(err), "wrong chunk order should fail verification: %v", err)
+}
+
 func TestStore_MissingChunk(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)

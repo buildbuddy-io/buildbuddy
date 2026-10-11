@@ -344,6 +344,53 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	require.Equal(t, [][]byte{blob}, blobs)
 }
 
+func TestBatchUpdateGITSHA1(t *testing.T) {
+	for _, compressor := range []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD} {
+		t.Run(compressor.String(), func(t *testing.T) {
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			flags.Set(t, "cache.zstd_transcoding_enabled", true)
+			conn := runCASServer(ctx, t, te)
+			cas := repb.NewContentAddressableStorageClient(conn)
+			blob := []byte("hello\n")
+			// git hash-object --stdin for "hello\n".
+			gitDigest := &repb.Digest{Hash: "ce013625030ba8dba906f756967f9e9ca394464a", SizeBytes: int64(len(blob))}
+			sha1Digest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA1, int64(len(blob)))
+			require.NoError(t, err)
+			data := blob
+			if compressor == repb.Compressor_ZSTD {
+				data = compression.CompressZstd(nil, blob)
+			}
+			updated, err := cas.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+				DigestFunction: repb.DigestFunction_GITSHA1,
+				Requests: []*repb.BatchUpdateBlobsRequest_Request{
+					{Digest: sha1Digest, Data: data, Compressor: compressor},
+					{Digest: gitDigest, Data: data, Compressor: compressor},
+				},
+			})
+			require.NoError(t, err)
+			require.Len(t, updated.GetResponses(), 2)
+			assert.Equal(t, int32(gcodes.InvalidArgument), updated.GetResponses()[0].GetStatus().GetCode())
+			assert.Equal(t, int32(gcodes.OK), updated.GetResponses()[1].GetStatus().GetCode())
+
+			read, err := cas.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+				DigestFunction: repb.DigestFunction_GITSHA1,
+				Digests:        []*repb.Digest{gitDigest},
+			})
+			require.NoError(t, err)
+			require.Len(t, read.GetResponses(), 1)
+			require.Equal(t, int32(gcodes.OK), read.GetResponses()[0].GetStatus().GetCode())
+			require.Equal(t, blob, read.GetResponses()[0].GetData())
+
+			rn := digest.NewCASResourceName(gitDigest, "", repb.DigestFunction_GITSHA1)
+			rn.SetCompressor(compressor)
+			var downloaded bytes.Buffer
+			require.NoError(t, cachetools.GetBlob(ctx, bspb.NewByteStreamClient(conn), rn, &downloaded))
+			require.Equal(t, blob, downloaded.Bytes())
+		})
+	}
+}
+
 func TestBatchUpdateRejectsCompressedBlobsIfCompressionDisabled(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)

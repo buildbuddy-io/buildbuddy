@@ -1,7 +1,7 @@
 import Long from "long";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
-import { BytestreamURL, parseBytestreamURL } from "./cache";
+import { BytestreamURL, parseBytestreamURL, resourceNameToString } from "./cache";
 
 const Digest = build.bazel.remote.execution.v2.Digest;
 const DigestFunction = build.bazel.remote.execution.v2.DigestFunction;
@@ -72,6 +72,24 @@ describe("parseBytestreamURL", () => {
         sizeBytes: DIGEST_SIZE,
       }),
     } as BytestreamURL);
+  });
+
+  it("preserves GITSHA1 in a compressed CAS URL", () => {
+    const name = {
+      cacheType: resource.CacheType.CAS,
+      instanceName: INSTANCE_NAME,
+      compressor: Compressor.Value.ZSTD,
+      digestFunction: DigestFunction.Value.GITSHA1,
+      digest: new Digest({
+        hash: "ce013625030ba8dba906f756967f9e9ca394464a",
+        sizeBytes: Long.fromNumber(6),
+      }),
+    };
+    const url = resourceNameToString(HOST, name);
+    expect(url).toBe(
+      `bytestream://${HOST}/${INSTANCE_NAME}/compressed-blobs/zstd/gitsha1/ce013625030ba8dba906f756967f9e9ca394464a/6`
+    );
+    expect(parseBytestreamURL(url)).toEqual({ address: HOST, ...name } as BytestreamURL);
   });
 
   it("should parse an URL with AC cache type", () => {

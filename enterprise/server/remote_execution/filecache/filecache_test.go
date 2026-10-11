@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1249,6 +1250,135 @@ func TestFileCacheWriter(t *testing.T) {
 	require.NoError(t, err)
 	requireOwnerReadableWritable(t, fi)
 	requireOwnerExecutable(t, fi)
+}
+
+func TestFileCacheWriterGITSHA1(t *testing.T) {
+	ctx := context.Background()
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	node := &repb.FileNode{Digest: &repb.Digest{Hash: "ce013625030ba8dba906f756967f9e9ca394464a", SizeBytes: 6}}
+	w, err := fc.Writer(ctx, node, repb.DigestFunction_GITSHA1)
+	require.NoError(t, err)
+	_, err = w.Write([]byte("longer interrupted download"))
+	require.NoError(t, err)
+	_, err = w.(io.Seeker).Seek(0, io.SeekStart)
+	require.NoError(t, err)
+	_, err = w.Write([]byte("hello\n"))
+	require.NoError(t, err)
+	require.NoError(t, w.Commit())
+	require.NoError(t, w.Close())
+
+	f, err := fc.Open(ctx, node, repb.DigestFunction_GITSHA1)
+	require.NoError(t, err)
+	data, err := io.ReadAll(f)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	require.Equal(t, "hello\n", string(data))
+}
+
+func TestFileCacheSHA1AndGITSHA1(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		data       string
+		executable bool
+	}{{"abc", true}, {"", false}} {
+		t.Run(fmt.Sprintf("size=%d/executable=%t", len(tc.data), tc.executable), func(t *testing.T) {
+			data := tc.data
+			shaData := fmt.Sprintf("blob %d\x00%s", len(data), data)
+			gitDigest, err := digest.Compute(strings.NewReader(data), repb.DigestFunction_GITSHA1, int64(len(data)))
+			require.NoError(t, err)
+			shaDigest, err := digest.Compute(strings.NewReader(shaData), repb.DigestFunction_SHA1, int64(len(shaData)))
+			require.NoError(t, err)
+			require.Equal(t, gitDigest.GetHash(), shaDigest.GetHash())
+			gitNode := &repb.FileNode{Digest: gitDigest, IsExecutable: tc.executable}
+			shaNode := &repb.FileNode{Digest: shaDigest, IsExecutable: tc.executable}
+			fcDir := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(fcDir, 100000, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { fc.Close() })
+			fc.WaitForDirectoryScanToComplete()
+
+			_, err = fc.Write(ctx, gitNode, []byte(data), repb.DigestFunction_GITSHA1)
+			require.NoError(t, err)
+			require.False(t, fc.ContainsFile(ctx, shaNode, repb.DigestFunction_SHA1))
+			invalid := &repb.FileNode{Digest: &repb.Digest{Hash: gitDigest.GetHash(), SizeBytes: -1}, IsExecutable: tc.executable}
+			require.False(t, fc.ContainsFile(ctx, invalid, repb.DigestFunction_GITSHA1))
+			_, err = fc.Write(ctx, shaNode, []byte(shaData), repb.DigestFunction_SHA1)
+			require.NoError(t, err)
+
+			for _, phase := range []string{"warm", "disk_fallback", "startup_scan"} {
+				t.Run(phase, func(t *testing.T) {
+					if phase != "warm" {
+						require.NoError(t, fc.Close())
+						if phase == "disk_fallback" {
+							filecache.DisableInitialDirectoryScanForTest()
+						}
+						fc, err = filecache.NewFileCache(fcDir, 100000, false)
+						filecache.EnableInitialDirectoryScanForTest()
+						require.NoError(t, err)
+						if phase == "startup_scan" {
+							fc.WaitForDirectoryScanToComplete()
+						}
+					}
+					for _, entry := range []struct {
+						node *repb.FileNode
+						df   repb.DigestFunction_Value
+						data string
+					}{
+						{shaNode, repb.DigestFunction_SHA1, shaData},
+						{gitNode, repb.DigestFunction_GITSHA1, data},
+					} {
+						got, err := fc.Read(ctx, entry.node, entry.df)
+						require.NoError(t, err)
+						require.Equal(t, entry.data, string(got))
+						require.True(t, fc.ContainsFile(ctx, entry.node, entry.df))
+						link := filepath.Join(testfs.MakeTempDir(t), "linked")
+						require.True(t, fc.FastLinkFile(ctx, entry.node, link, entry.df))
+						assertFileContents(t, link, entry.data)
+					}
+					require.True(t, fc.DeleteFile(ctx, shaNode, repb.DigestFunction_SHA1))
+					require.False(t, fc.ContainsFile(ctx, shaNode, repb.DigestFunction_SHA1))
+					require.True(t, fc.ContainsFile(ctx, gitNode, repb.DigestFunction_GITSHA1))
+					_, err = fc.Write(ctx, shaNode, []byte(shaData), repb.DigestFunction_SHA1)
+					require.NoError(t, err)
+				})
+			}
+		})
+	}
+}
+
+func TestFileCacheScanPreservesLegacySyntheticKeys(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		df   repb.DigestFunction_Value
+		size int64
+	}{
+		{repb.DigestFunction_SHA1, 0},
+		{repb.DigestFunction_SHA256, 1},
+		{repb.DigestFunction_BLAKE3, 1},
+	} {
+		t.Run(tc.df.String(), func(t *testing.T) {
+			const keyData = "tree or snapshot key"
+			const contents = "the cached value has a different size than the key"
+			d, err := digest.Compute(strings.NewReader(keyData), tc.df, int64(len(keyData)))
+			require.NoError(t, err)
+			d.SizeBytes = tc.size
+			node := &repb.FileNode{Digest: d}
+			fcDir := testfs.MakeTempDir(t)
+			writeFileContent(t, fcDir, "ANON/"+d.GetHash(), contents, false)
+
+			fc, err := filecache.NewFileCache(fcDir, 100000, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { fc.Close() })
+			fc.WaitForDirectoryScanToComplete()
+			got, err := fc.Read(ctx, node, tc.df)
+			require.NoError(t, err)
+			require.Equal(t, contents, string(got))
+		})
+	}
 }
 
 func TestFileCacheTempPathRejectsDigestWithTwoDots(t *testing.T) {

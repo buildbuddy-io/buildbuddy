@@ -3,6 +3,7 @@ package cachetools_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"fmt"
 	"io"
 	"math/rand"
@@ -656,6 +657,37 @@ func (b *bsReadStreamer) SendMsg(m any) error {
 // Trailer implements bytestream.ByteStream_ReadClient.
 func (b *bsReadStreamer) Trailer() metadata.MD {
 	panic("unimplemented")
+}
+
+func TestGetBlobGITSHA1Size(t *testing.T) {
+	for _, compressor := range []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD} {
+		for _, declaredSize := range []int64{2, 3, 4} {
+			t.Run(fmt.Sprintf("%s/size_%d", compressor, declaredSize), func(t *testing.T) {
+				// The supplied hash matches the declared Git header and "abc",
+				// even when the declared size does not match the blob contents.
+				h := sha1.Sum([]byte(fmt.Sprintf("blob %d\x00abc", declaredSize)))
+				d := &repb.Digest{Hash: fmt.Sprintf("%x", h), SizeBytes: declaredSize}
+				rn := digest.NewCASResourceName(d, "", repb.DigestFunction_GITSHA1)
+				rn.SetCompressor(compressor)
+				data := []byte("abc")
+				if compressor == repb.Compressor_ZSTD {
+					data = compression.CompressZstd(nil, data)
+				}
+				bs := &fakeBytestreamClient{
+					mu:   &sync.Mutex{},
+					data: map[string][]byte{rn.DownloadString(): data},
+				}
+				var out bytes.Buffer
+				err := cachetools.GetBlob(context.Background(), bs, rn, &out)
+				if declaredSize == 3 {
+					require.NoError(t, err)
+					require.Equal(t, "abc", out.String())
+				} else {
+					require.True(t, status.IsDataLossError(err), "expected DataLoss, got %v", err)
+				}
+			})
+		}
+	}
 }
 
 func TestGetBlobChunked_FallsBackWithoutManifest(t *testing.T) {
