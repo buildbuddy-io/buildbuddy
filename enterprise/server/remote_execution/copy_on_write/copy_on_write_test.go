@@ -194,7 +194,7 @@ func TestCOW_EagerFetchChunksOption(t *testing.T) {
 		digests[i] = d
 		path := filepath.Join(testfs.MakeTempDir(t), fmt.Sprintf("chunk-%d", i))
 		require.NoError(t, os.WriteFile(path, data, 0644))
-		require.NoError(t, fc.AddFile(ctx, &repb.FileNode{Digest: d}, path))
+		require.NoError(t, fc.AddFile(ctx, &repb.FileNode{Digest: d}, path, repb.DigestFunction_BLAKE3))
 	}
 
 	newStore := func(eagerFetchChunks int) (*copy_on_write.COWStore, []*copy_on_write.Mmap) {

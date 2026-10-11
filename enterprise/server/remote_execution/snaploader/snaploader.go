@@ -620,7 +620,7 @@ func (l *FileCacheLoader) FetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 
 func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifestDigest *repb.Digest) (*repb.ActionResult, error) {
 	manifestNode := &repb.FileNode{Digest: manifestDigest}
-	buf, err := l.env.GetFileCache().Read(ctx, manifestNode)
+	buf, err := l.env.GetFileCache().Read(ctx, manifestNode, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to read snapshot manifest: %s", status.Message(err))
 	}
@@ -966,7 +966,7 @@ func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.Sn
 		return err
 	}
 	manifestNode := &repb.FileNode{Digest: d}
-	if _, err := l.env.GetFileCache().Write(ctx, manifestNode, manifestBytes); err != nil {
+	if _, err := l.env.GetFileCache().Write(ctx, manifestNode, manifestBytes, repb.DigestFunction_SHA256); err != nil {
 		return err
 	}
 	log.CtxInfof(ctx, "Cached local snapshot manifest %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, "" /*=snapshotID*/))
@@ -985,7 +985,7 @@ func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.Sn
 		}
 
 		snapshotSpecificManifestNode := &repb.FileNode{Digest: snapshotSpecificManifestKey}
-		if _, err := l.env.GetFileCache().Write(ctx, snapshotSpecificManifestNode, manifestBytes); err != nil {
+		if _, err := l.env.GetFileCache().Write(ctx, snapshotSpecificManifestNode, manifestBytes, repb.DigestFunction_SHA256); err != nil {
 			log.Warningf("Failed to cache local snapshot manifest for snapshot ID %s: %s", snapshotID, err)
 			return nil
 		}
@@ -1004,7 +1004,7 @@ func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.Sn
 			return nil
 		}
 		universalManifestNode := &repb.FileNode{Digest: universalD}
-		if _, err := l.env.GetFileCache().Write(ctx, universalManifestNode, manifestBytes); err != nil {
+		if _, err := l.env.GetFileCache().Write(ctx, universalManifestNode, manifestBytes, repb.DigestFunction_SHA256); err != nil {
 			log.CtxWarningf(ctx, "Failed to cache local universal snapshot manifest: %s", err)
 			return nil
 		}
@@ -1047,7 +1047,7 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 
 	var missingRemoteDigests []*repb.Digest
 	for _, f := range manifest.GetFiles() {
-		if !l.env.GetFileCache().ContainsFile(ctx, f) {
+		if !l.env.GetFileCache().ContainsFile(ctx, f, repb.DigestFunction_BLAKE3) {
 			remoteEnabled := remoteFallbackEnabledForFile(supportsRemoteFallback, f.GetName())
 			if remoteEnabled {
 				missingRemoteDigests = append(missingRemoteDigests, f.GetDigest())
@@ -1062,7 +1062,7 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 			node := &repb.FileNode{
 				Digest: c.GetDigest(),
 			}
-			if !l.env.GetFileCache().ContainsFile(ctx, node) {
+			if !l.env.GetFileCache().ContainsFile(ctx, node, repb.DigestFunction_BLAKE3) {
 				if remoteEnabled {
 					missingRemoteDigests = append(missingRemoteDigests, c.GetDigest())
 				} else {

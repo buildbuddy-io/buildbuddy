@@ -367,19 +367,19 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 	fc := env.GetFileCache()
 	for batch := range batches {
 		alreadyPresentBytes += batch.presentBytes
-		if err := uploadFiles(ctx, uploader, fc, batch.files, addToFileCache); err != nil {
+		if err := uploadFiles(ctx, uploader, fc, batch.files, addToFileCache, digestFunction); err != nil {
 			return 0, err
 		}
 	}
 	return alreadyPresentBytes, nil
 }
 
-func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload, addToFileCache bool) error {
+func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload, addToFileCache bool, digestFunction repb.DigestFunction_Value) error {
 	for _, uploadableFile := range filesToUpload {
 		// Add output files to the filecache.
 		if fc != nil && addToFileCache {
 			node := uploadableFile.FileNode()
-			if err := fc.AddFile(ctx, node, uploadableFile.fullPath); err != nil {
+			if err := fc.AddFile(ctx, node, uploadableFile.fullPath, digestFunction); err != nil {
 				log.Warningf("Error adding file to filecache: %s", err)
 			}
 		}
@@ -698,11 +698,11 @@ func copyFile(src *FilePointer, dest *FilePointer, opts *DownloadTreeOpts) error
 
 // linkFileFromFileCache attempts to link the given file path from the local
 // file cache, and returns whether the linking was successful.
-func linkFileFromFileCache(ctx context.Context, fp *FilePointer, fc interfaces.FileCache, opts *DownloadTreeOpts) (bool, error) {
+func linkFileFromFileCache(ctx context.Context, fp *FilePointer, fc interfaces.FileCache, opts *DownloadTreeOpts, digestFunction repb.DigestFunction_Value) (bool, error) {
 	if err := removeExisting(fp, opts); err != nil {
 		return false, err
 	}
-	return fc.FastLinkFile(ctx, fp.FileNode, fp.FullPath), nil
+	return fc.FastLinkFile(ctx, fp.FileNode, fp.FullPath, digestFunction), nil
 }
 
 // fetchKey identifies an artifact to be fetched from a remote cache.
@@ -931,14 +931,14 @@ func (ff *BatchFileFetcher) checkAndMaybeLinkFromFileCache(ctx context.Context, 
 		// All the file pointers refer to the same artifact so we only need to
 		// check once.
 		fp := filePointers[0]
-		if !ff.env.GetFileCache().ContainsFile(ctx, fp.FileNode) {
+		if !ff.env.GetFileCache().ContainsFile(ctx, fp.FileNode, ff.digestFunction) {
 			return status.NotFoundErrorf("File %s not found in cache", fp.FileNode.Digest.Hash)
 		}
 	} else {
 		// Check the index before taking a slot, so that a miss only waits
 		// for a slot once, to download the file.
 		fc := ff.env.GetFileCache()
-		if fc == nil || len(filePointers) == 0 || !fc.ContainsFile(ctx, filePointers[0].FileNode) {
+		if fc == nil || len(filePointers) == 0 || !fc.ContainsFile(ctx, filePointers[0].FileNode, ff.digestFunction) {
 			return status.NotFoundError("not in file cache")
 		}
 		release, err := inputDownloadLimit.acquire(ctx, 1)
@@ -946,7 +946,7 @@ func (ff *BatchFileFetcher) checkAndMaybeLinkFromFileCache(ctx context.Context, 
 			return err
 		}
 		defer release()
-		if err := ff.treeWrangler.LinkFromFileCache(ctx, filePointers, opts); err != nil {
+		if err := ff.treeWrangler.LinkFromFileCache(ctx, filePointers, opts, ff.digestFunction); err != nil {
 			return err
 		}
 	}
@@ -1148,7 +1148,7 @@ func (ff *BatchFileFetcher) downloadBlobToFile(ctx context.Context, bsClient bsp
 		}
 		openLocal := func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
 			if fc := ff.env.GetFileCache(); fc != nil {
-				return fc.Open(ctx, node)
+				return fc.Open(ctx, node, ff.digestFunction)
 			}
 			return nil, os.ErrNotExist
 		}
@@ -1215,7 +1215,7 @@ func (ff *BatchFileFetcher) publishDownloadedFile(ctx context.Context, fp *FileP
 
 	fileCache := ff.env.GetFileCache()
 	if fileCache != nil {
-		if err := fileCache.AddFile(ff.ctx, fp.FileNode, fp.FullPath); err != nil {
+		if err := fileCache.AddFile(ff.ctx, fp.FileNode, fp.FullPath, ff.digestFunction); err != nil {
 			log.Warningf("Error adding file to filecache: %s", err)
 		}
 	}
@@ -1442,17 +1442,18 @@ func (slr *symlinkRequest) Do() error {
 }
 
 type linkFromFileCacheRequest struct {
-	ctx          context.Context
-	fileCache    interfaces.FileCache
-	filePointers []*FilePointer
-	opts         *DownloadTreeOpts
+	ctx            context.Context
+	fileCache      interfaces.FileCache
+	filePointers   []*FilePointer
+	opts           *DownloadTreeOpts
+	digestFunction repb.DigestFunction_Value
 }
 
 func (lffcr *linkFromFileCacheRequest) Do() error {
 	numFilesLinked := 0
 	for _, fp := range lffcr.filePointers {
 		if lffcr.fileCache != nil {
-			linked, err := linkFileFromFileCache(lffcr.ctx, fp, lffcr.fileCache, lffcr.opts)
+			linked, err := linkFileFromFileCache(lffcr.ctx, fp, lffcr.fileCache, lffcr.opts, lffcr.digestFunction)
 			if err != nil {
 				return err
 			}
@@ -1547,9 +1548,9 @@ func (w *inputTreeWrangler) Symlink(ctx context.Context, oldname string, newname
 	return nil
 }
 
-func (w *inputTreeWrangler) LinkFromFileCache(ctx context.Context, filePointers []*FilePointer, opts *DownloadTreeOpts) error {
+func (w *inputTreeWrangler) LinkFromFileCache(ctx context.Context, filePointers []*FilePointer, opts *DownloadTreeOpts, digestFunction repb.DigestFunction_Value) error {
 	start := time.Now()
-	err := w.scheduleRequest(ctx, &linkFromFileCacheRequest{ctx: ctx, fileCache: w.env.GetFileCache(), filePointers: filePointers, opts: opts})
+	err := w.scheduleRequest(ctx, &linkFromFileCacheRequest{ctx: ctx, fileCache: w.env.GetFileCache(), filePointers: filePointers, opts: opts, digestFunction: digestFunction})
 	if err != nil {
 		return err
 	}

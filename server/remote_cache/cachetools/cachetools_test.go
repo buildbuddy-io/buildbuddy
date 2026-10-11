@@ -74,7 +74,7 @@ func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*r
 			panic(fmt.Sprintf("failed to convert resource name to CAS: %s", err))
 		}
 		fileNode, _ := cachetools.MakeFileNode(rn)
-		fc.Write(context.Background(), fileNode, fileData)
+		fc.Write(context.Background(), fileNode, fileData, rn.GetDigestFunction())
 	}
 	fc.writeCount = 0
 
@@ -507,26 +507,26 @@ func toFileNode(r *rspb.ResourceName) *repb.FileNode {
 	}
 }
 
-func key(f *repb.FileNode) string {
+func key(f *repb.FileNode, digestFunction repb.DigestFunction_Value) string {
 	return fmt.Sprintf("%s/%d/%t", f.GetDigest().GetHash(), f.GetDigest().GetSizeBytes(), f.GetIsExecutable())
 }
 
-func (fc *fakeFilecache) FastLinkFile(ctx context.Context, f *repb.FileNode, outputPath string) bool {
+func (fc *fakeFilecache) FastLinkFile(ctx context.Context, f *repb.FileNode, outputPath string, digestFunction repb.DigestFunction_Value) bool {
 	panic("unimplemented")
 }
 
-func (fc *fakeFilecache) DeleteFile(ctx context.Context, f *repb.FileNode) bool {
+func (fc *fakeFilecache) DeleteFile(ctx context.Context, f *repb.FileNode, digestFunction repb.DigestFunction_Value) bool {
 	panic("unimplemented")
 }
 
-func (fc *fakeFilecache) AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string) error {
+func (fc *fakeFilecache) AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string, digestFunction repb.DigestFunction_Value) error {
 	panic("unimplemented")
 }
 
-func (fc *fakeFilecache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
+func (fc *fakeFilecache) ContainsFile(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) bool {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
-	_, ok := fc.files[key(node)]
+	_, ok := fc.files[key(node, digestFunction)]
 	return ok
 }
 
@@ -534,7 +534,7 @@ func (fc *fakeFilecache) WithSharedDirectory(ctx context.Context, sharedDirector
 	panic("unimplemented")
 }
 
-func (fc *fakeFilecache) Open(ctx context.Context, f *repb.FileNode) (*os.File, error) {
+func (fc *fakeFilecache) Open(ctx context.Context, f *repb.FileNode, digestFunction repb.DigestFunction_Value) (*os.File, error) {
 	panic("unimplemented")
 }
 
@@ -542,22 +542,22 @@ func (fc *fakeFilecache) WaitForDirectoryScanToComplete() {
 	panic("unimplemented")
 }
 
-func (fc *fakeFilecache) Read(ctx context.Context, node *repb.FileNode) ([]byte, error) {
+func (fc *fakeFilecache) Read(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) ([]byte, error) {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
-	data, ok := fc.files[key(node)]
+	data, ok := fc.files[key(node, digestFunction)]
 	if !ok {
-		return nil, status.NotFoundErrorf("not found: %s", key(node))
+		return nil, status.NotFoundErrorf("not found: %s", key(node, digestFunction))
 	}
 	fc.readCount++
 	return data, nil
 }
 
-func (fc *fakeFilecache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error) {
+func (fc *fakeFilecache) Write(ctx context.Context, node *repb.FileNode, b []byte, digestFunction repb.DigestFunction_Value) (n int, err error) {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
 	fc.writeCount++
-	fc.files[key(node)] = b
+	fc.files[key(node, digestFunction)] = b
 	return len(b), nil
 }
 
@@ -724,7 +724,7 @@ func TestGetBlobChunked_ReusesWholeFileChunks_ZstdBLAKE3(t *testing.T) {
 	sourcePath := source.Name()
 	sourceNode := &repb.FileNode{Digest: blobDigest}
 	openLocal := func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
-		if key(node) != key(sourceNode) {
+		if key(node, repb.DigestFunction_BLAKE3) != key(sourceNode, repb.DigestFunction_BLAKE3) {
 			return nil, os.ErrNotExist
 		}
 		return os.Open(sourcePath)
@@ -811,7 +811,7 @@ func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
 	bs := &fakeBytestreamClient{mu: &sync.Mutex{}, data: bsData}
 
 	openLocal := func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
-		if key(node) != key(localNode) {
+		if key(node, repb.DigestFunction_BLAKE3) != key(localNode, repb.DigestFunction_BLAKE3) {
 			return nil, os.ErrNotExist
 		}
 		return os.Open(localPath)

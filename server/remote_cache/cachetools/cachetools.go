@@ -1164,7 +1164,7 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 
 	// Add output files to the filecache.
 	if ul.env.GetFileCache() != nil {
-		if err := ul.env.GetFileCache().AddFile(ul.ctx, &repb.FileNode{Digest: d, IsExecutable: isExecutable(info)}, path); err != nil {
+		if err := ul.env.GetFileCache().AddFile(ul.ctx, &repb.FileNode{Digest: d, IsExecutable: isExecutable(info)}, path, ul.digestFunction); err != nil {
 			log.Warningf("Error adding file to filecache: %s", err)
 		}
 	}
@@ -1429,7 +1429,7 @@ func getTreeCacheFromFilecache(ctx context.Context, r *digest.CASResourceName, f
 	if err != nil {
 		return nil, 0, err
 	}
-	buf, err := fc.Read(ctx, file)
+	buf, err := fc.Read(ctx, file, r.GetDigestFunction())
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1451,7 +1451,7 @@ func writeTreeCacheToFilecache(ctx context.Context, r *digest.CASResourceName, d
 		return 0, err
 	}
 
-	return fc.Write(ctx, file, contents)
+	return fc.Write(ctx, file, contents, r.GetDigestFunction())
 }
 
 func getSubtree(ctx context.Context, subtree *digest.CASResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) ([]*capb.DirectoryWithDigest, error) {
