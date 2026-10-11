@@ -667,7 +667,7 @@ func TestGetBlobChunked_FallsBackWithoutManifest(t *testing.T) {
 	_, err = out.WriteString("keep me")
 	require.NoError(t, err)
 
-	blobDigest, err := digest.Compute(bytes.NewReader([]byte("blob")), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader([]byte("blob")), repb.DigestFunction_BLAKE3, int64(len("blob")))
 	require.NoError(t, err)
 	rn := digest.NewCASResourceName(blobDigest, testInstance, repb.DigestFunction_BLAKE3)
 
@@ -689,7 +689,7 @@ func TestGetBlobChunked_ReusesWholeFileChunks_ZstdBLAKE3(t *testing.T) {
 	chunk2 := bytes.Repeat([]byte("b"), 1536)
 	blob := append(append([]byte{}, chunk1...), chunk2...)
 	compute := func(data []byte) *repb.Digest {
-		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3, int64(len(data)))
 		require.NoError(t, err)
 		return d
 	}
@@ -765,13 +765,13 @@ func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
 		chunks[i] = make([]byte, chunkSize)
 		_, err := rng.Read(chunks[i])
 		require.NoError(t, err)
-		d, err := digest.Compute(bytes.NewReader(chunks[i]), repb.DigestFunction_BLAKE3)
+		d, err := digest.Compute(bytes.NewReader(chunks[i]), repb.DigestFunction_BLAKE3, int64(len(chunks[i])))
 		require.NoError(t, err)
 		chunkDigests[i] = d
 	}
 
 	blob := bytes.Join(chunks, nil)
-	blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_BLAKE3, int64(len(blob)))
 	require.NoError(t, err)
 
 	// Build a partial local file from every Nth chunk.
@@ -782,7 +782,7 @@ func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
 		localChunkDigests = append(localChunkDigests, chunkDigests[i])
 	}
 	localBlob := bytes.Join(localChunks, nil)
-	localDigest, err := digest.Compute(bytes.NewReader(localBlob), repb.DigestFunction_BLAKE3)
+	localDigest, err := digest.Compute(bytes.NewReader(localBlob), repb.DigestFunction_BLAKE3, int64(len(localBlob)))
 	require.NoError(t, err)
 
 	localPath := filepath.Join(t.TempDir(), "local")
@@ -1036,7 +1036,7 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 
 			b := make([]byte, tc.size)
 			df := repb.DigestFunction_SHA256
-			d, err := digest.Compute(bytes.NewReader(b), df)
+			d, err := digest.Compute(bytes.NewReader(b), df, int64(len(b)))
 			require.NoError(t, err)
 			// Overwrite the first byte after we already computed the digest,
 			// simulating a concurrent mutation.
@@ -1483,7 +1483,7 @@ func TestBatchCASUploader_ChunkedUploadDetectsConcurrentMutation(t *testing.T) {
 	go runServer()
 
 	buf := make([]byte, 5*1024*1024)
-	d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256, int64(len(buf)))
 	require.NoError(t, err)
 	buf[0] = 'x'
 

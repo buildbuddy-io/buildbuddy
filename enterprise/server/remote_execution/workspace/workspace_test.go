@@ -150,7 +150,7 @@ func TestWorkspaceCleanup_PreserveWorkspace_CaseInsensitiveFilesystem_Files(t *t
 	require.NoError(t, err)
 	ws.SetTask(ctx, &repb.ExecutionTask{})
 
-	digestA, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("A"))
+	digestA, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("A"), 1)
 	require.NoError(t, err)
 	dirA := &repb.Directory{
 		Files: []*repb.FileNode{
@@ -200,7 +200,7 @@ func TestWorkspaceCleanup_PreserveWorkspace_CaseInsensitiveFilesystem_Files(t *t
 	// Now run another task in this workspace, with the same input paths, except
 	// the case of the filename is different, and the file has different
 	// contents.
-	digestB, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("B"))
+	digestB, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("B"), 1)
 	require.NoError(t, err)
 	dirB := &repb.Directory{
 		Files: []*repb.FileNode{
@@ -453,9 +453,9 @@ func TestPreserveWorkspace_WorkingDirectory_CleansInputIndex(t *testing.T) {
 	require.NoError(t, err)
 
 	// Upload file contents to CAS.
-	inputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("input"))
+	inputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("input"), int64(len("input")))
 	require.NoError(t, err)
-	outputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("output"))
+	outputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("output"), int64(len("output")))
 	require.NoError(t, err)
 
 	// Build an input tree: subdir/ contains both input.txt and out.txt.
@@ -617,7 +617,7 @@ func TestDownloadInputs_VFSPrefetchModeAll_PreserveWorkspace(t *testing.T) {
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	te.SetFileCache(fc)
-	inputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("input"))
+	inputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("input"), int64(len("input")))
 	require.NoError(t, err)
 	inputNode := &repb.FileNode{Name: "input.txt", Digest: inputDigest}
 	layout := &container.FileSystemLayout{
@@ -702,7 +702,7 @@ func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 			fc.WaitForDirectoryScanToComplete()
 			te.SetFileCache(fc)
 
-			inputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("input"))
+			inputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("input"), int64(len("input")))
 			require.NoError(t, err)
 			inputNode := &repb.FileNode{Name: "input.txt", Digest: inputDigest}
 			layout := &container.FileSystemLayout{

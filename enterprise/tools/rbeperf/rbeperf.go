@@ -224,7 +224,7 @@ func addFileWithRandomContent(ctx context.Context, byteStreamClient bspb.ByteStr
 	var err error
 	for {
 		reader := bytes.NewReader(data)
-		d, err = cachetools.UploadBlob(ctx, byteStreamClient, *remoteInstanceName, repb.DigestFunction_SHA256, reader)
+		d, err = cachetools.UploadBlob(ctx, byteStreamClient, *remoteInstanceName, repb.DigestFunction_SHA256, reader, int64(reader.Len()))
 		if err == nil {
 			break
 		}

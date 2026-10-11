@@ -58,7 +58,7 @@ func TestMmap_Digest(t *testing.T) {
 	require.NoError(t, err)
 	r, err := interfaces.StoreReader(s)
 	require.NoError(t, err)
-	expectedDigest, err := digest.Compute(r, repb.DigestFunction_BLAKE3)
+	expectedDigest, err := digest.Compute(r, repb.DigestFunction_BLAKE3, -1)
 	require.NoError(t, err)
 	require.Equal(t, expectedDigest, actualDigest1)
 
@@ -71,7 +71,7 @@ func TestMmap_Digest(t *testing.T) {
 	require.NoError(t, err)
 	r, err = interfaces.StoreReader(s)
 	require.NoError(t, err)
-	expectedDigest, err = digest.Compute(r, repb.DigestFunction_BLAKE3)
+	expectedDigest, err = digest.Compute(r, repb.DigestFunction_BLAKE3, -1)
 	require.NoError(t, err)
 	require.Equal(t, expectedDigest, actualDigest2)
 	require.NotEqual(t, actualDigest1, actualDigest2)
@@ -189,7 +189,7 @@ func TestCOW_EagerFetchChunksOption(t *testing.T) {
 	digests := make([]*repb.Digest, 3)
 	for i := range digests {
 		data := bytes.Repeat([]byte{byte(i + 1)}, int(chunkSizeBytes))
-		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3, int64(len(data)))
 		require.NoError(t, err)
 		digests[i] = d
 		path := filepath.Join(testfs.MakeTempDir(t), fmt.Sprintf("chunk-%d", i))

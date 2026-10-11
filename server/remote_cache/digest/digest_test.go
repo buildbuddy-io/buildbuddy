@@ -732,7 +732,7 @@ func BenchmarkDigestCompute(b *testing.B) {
 				_, err := rand.Read(buf)
 				require.NoError(b, err)
 				for b.Loop() {
-					digest.Compute(bytes.NewReader(buf), df)
+					digest.Compute(bytes.NewReader(buf), df, int64(len(buf)))
 				}
 			})
 		}

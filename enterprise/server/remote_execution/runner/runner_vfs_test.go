@@ -65,7 +65,7 @@ func TestRunnerVFSDownloadError(t *testing.T) {
 
 			// The input exists in the action's tree but has been evicted from
 			// CAS. Files absent from the tree should remain ordinary ENOENTs.
-			d, err := digest.Compute(strings.NewReader("evicted input"), repb.DigestFunction_SHA256)
+			d, err := digest.Compute(strings.NewReader("evicted input"), repb.DigestFunction_SHA256, int64(len("evicted input")))
 			require.NoError(t, err)
 			err = r.Workspace.DownloadInputs(ctx, &container.FileSystemLayout{
 				DigestFunction: repb.DigestFunction_SHA256,

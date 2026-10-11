@@ -127,7 +127,7 @@ func manifestACKey(repo ctrname.Repository, refhash ctr.Hash) (*digest.ACResourc
 		refhash.Hex,
 		*cacheSecret,
 	)
-	arDigest, err := digest.Compute(bytes.NewBufferString(s), cacheDigestFunction)
+	arDigest, err := digest.Compute(bytes.NewBufferString(s), cacheDigestFunction, int64(len(s)))
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 		blobMetadataMiss(ctx)
 		return nil, err
 	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction, int64(len(arKeyBytes)))
 	if err != nil {
 		blobMetadataMiss(ctx)
 		return nil, err
@@ -281,7 +281,7 @@ func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClien
 	if err != nil {
 		return err
 	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction, int64(len(arKeyBytes)))
 	if err != nil {
 		return err
 	}

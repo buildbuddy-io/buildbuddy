@@ -1730,7 +1730,7 @@ sh_test(name = "pass", srcs = ["pass.sh"])`,
 
 	ctx := context.Background()
 	bsClient := app.ByteStreamClient(t)
-	patchDigest, err := cachetools.UploadBlob(ctx, bsClient, "", repb.DigestFunction_SHA256, bytes.NewReader([]byte(patch)))
+	patchDigest, err := cachetools.UploadBlob(ctx, bsClient, "", repb.DigestFunction_SHA256, bytes.NewReader([]byte(patch)), int64(len(patch)))
 	require.NoError(t, err)
 
 	// Execute a Bazel command with a patched `pass.sh` that should output 'EDIT'.

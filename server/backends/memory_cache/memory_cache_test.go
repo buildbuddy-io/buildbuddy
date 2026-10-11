@@ -119,7 +119,7 @@ func TestIsolation(t *testing.T) {
 			}
 
 			// Compute a digest for the bytes returned.
-			d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+			d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 			if err != nil {
 				t.Fatalf("Error computing digest: %s", err.Error())
 			}
@@ -162,7 +162,7 @@ func TestGetSet(t *testing.T) {
 		}
 
 		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 		require.NoError(t, err)
 		if r.GetDigest().GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())
@@ -203,7 +203,7 @@ func TestMultiGetSet(t *testing.T) {
 		if !ok {
 			t.Fatalf("Multi-get failed to return expected digest: %q", rn.GetDigest().GetHash())
 		}
-		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -304,7 +304,7 @@ func TestSizeLimit(t *testing.T) {
 			t.Fatalf("Error getting %q from cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 		require.NoError(t, err)
 		if r.GetDigest().GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())
@@ -357,7 +357,7 @@ func TestLRU(t *testing.T) {
 			t.Fatalf("Error getting %q from cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 		require.NoError(t, err)
 		if r.GetDigest().GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())

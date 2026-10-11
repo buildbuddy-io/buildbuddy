@@ -218,7 +218,7 @@ func (pmk *PebbleKey) createSyntheticHash() (string, error) {
 		rih = "0"
 	}
 	hashExtra += "|" + rih + "|" + pmk.hash
-	d, err := digest.Compute(bytes.NewReader([]byte(hashExtra)), pmk.digestFunction)
+	d, err := digest.Compute(bytes.NewReader([]byte(hashExtra)), pmk.digestFunction, int64(len(hashExtra)))
 	if err != nil {
 		return "", err
 	}

@@ -495,7 +495,7 @@ func batchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorag
 			return nil, status.WrapError(err, "decompress blob")
 		}
 		// Validate digest
-		downloadedContentDigest, err := digest.Compute(bytes.NewReader(data), req.GetDigestFunction())
+		downloadedContentDigest, err := digest.Compute(bytes.NewReader(data), req.GetDigestFunction(), int64(len(data)))
 		if err != nil {
 			return nil, err
 		}
@@ -513,8 +513,8 @@ func batchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorag
 	return results, nil
 }
 
-func computeDigest(in io.ReadSeeker, instanceName string, digestFunction repb.DigestFunction_Value) (*digest.CASResourceName, error) {
-	d, err := digest.Compute(in, digestFunction)
+func computeDigest(in io.ReadSeeker, instanceName string, digestFunction repb.DigestFunction_Value, sizeBytes int64) (*digest.CASResourceName, error) {
+	d, err := digest.Compute(in, digestFunction, sizeBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -522,12 +522,11 @@ func computeDigest(in io.ReadSeeker, instanceName string, digestFunction repb.Di
 }
 
 func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.DigestFunction_Value) (*digest.CASResourceName, error) {
-	f, err := os.Open(fullFilePath)
+	d, err := digest.ComputeForFile(fullFilePath, digestFunction)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	return computeDigest(f, instanceName, digestFunction)
+	return digest.NewCASResourceName(d, instanceName, digestFunction), nil
 }
 
 // uploadFromReader uploads data to the CAS. The readerCompression parameter
@@ -658,7 +657,7 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 			return err
 		}
 		chunkedBlobSize += int64(len(chunkData))
-		d, err := digest.Compute(bytes.NewReader(chunkData), r.GetDigestFunction())
+		d, err := digest.Compute(bytes.NewReader(chunkData), r.GetDigestFunction(), int64(len(chunkData)))
 		if err != nil {
 			return err
 		}
@@ -874,22 +873,11 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 	if err != nil {
 		return nil, err
 	}
-	reader := bytes.NewReader(data)
-	resourceName, err := computeDigest(reader, instanceName, digestFunction)
-	if err != nil {
-		return nil, err
-	}
-	maybeSetCompressor(resourceName)
-	// Go back to the beginning so we can re-read the file contents as we upload.
-	if _, err := reader.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
-	result, _, err := UploadFromReader(ctx, bsClient, resourceName, reader)
-	return result, err
+	return UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(data), int64(len(data)))
 }
 
-func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {
-	resourceName, err := computeDigest(in, instanceName, digestFunction)
+func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker, sizeBytes int64) (*repb.Digest, error) {
+	resourceName, err := computeDigest(in, instanceName, digestFunction, sizeBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -908,17 +896,11 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 		return nil, err
 	}
 	defer f.Close()
-	resourceName, err := computeDigest(f, instanceName, digestFunction)
+	info, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
-	maybeSetCompressor(resourceName)
-	// Go back to the beginning so we can re-read the file contents as we upload.
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
-	result, _, err := UploadFromReader(ctx, bsClient, resourceName, f)
-	return result, err
+	return UploadBlob(ctx, bsClient, instanceName, digestFunction, f, info.Size())
 }
 
 // byteWriteSeeker implements an io.WriterAt with a []byte array. In turn, this
@@ -960,8 +942,8 @@ func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, r *digest.ACRe
 	return readProtoFromCache(ctx, cache, r.ToProto(), out)
 }
 
-func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, remoteInstanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {
-	d, err := digest.Compute(in, digestFunction)
+func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, remoteInstanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker, sizeBytes int64) (*repb.Digest, error) {
+	d, err := digest.Compute(in, digestFunction, sizeBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -991,12 +973,12 @@ func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, cacheType r
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	return UploadBytesToCache(ctx, cache, cacheType, instanceName, digestFunction, reader)
+	return UploadBytesToCache(ctx, cache, cacheType, instanceName, digestFunction, reader, int64(len(data)))
 }
 
 func UploadBlobToCAS(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, blob []byte) (*repb.Digest, error) {
 	reader := bytes.NewReader(blob)
-	d, err := digest.Compute(reader, digestFunction)
+	d, err := digest.Compute(reader, digestFunction, int64(len(blob)))
 	if err != nil {
 		return nil, err
 	}
@@ -1154,7 +1136,7 @@ func (ul *BatchCASUploader) UploadProto(in proto.Message) (*repb.Digest, error) 
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(bytes.NewReader(data), ul.digestFunction)
+	d, err := digest.Compute(bytes.NewReader(data), ul.digestFunction, int64(len(data)))
 	if err != nil {
 		return nil, err
 	}
@@ -1169,12 +1151,14 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(f, ul.digestFunction)
+	info, err := f.Stat()
 	if err != nil {
+		f.Close()
 		return nil, err
 	}
-	info, err := os.Stat(path)
+	d, err := digest.Compute(f, ul.digestFunction, info.Size())
 	if err != nil {
+		f.Close()
 		return nil, err
 	}
 
@@ -1257,7 +1241,7 @@ func checkConcurrentMutation(originalDigest *repb.Digest, digestFunction repb.Di
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
 		return status.DataLossErrorf("seek: %s", err)
 	}
-	computedDigest, err := digest.Compute(r, digestFunction)
+	computedDigest, err := digest.Compute(r, digestFunction, originalDigest.GetSizeBytes())
 	if err != nil {
 		return status.DataLossErrorf("recompute digest: %s", err)
 	}
@@ -1433,7 +1417,7 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 // Exposed for testing--no reason to use outside of this package.
 func MakeFileNode(r *digest.CASResourceName) (*repb.FileNode, error) {
 	buf := strings.NewReader(fmt.Sprintf("%s/%d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()) + r.GetInstanceName() + "_treecache_" + *filecacheTreeSalt)
-	d, err := digest.Compute(buf, r.GetDigestFunction())
+	d, err := digest.Compute(buf, r.GetDigestFunction(), int64(buf.Len()))
 	if err != nil {
 		return nil, err
 	}

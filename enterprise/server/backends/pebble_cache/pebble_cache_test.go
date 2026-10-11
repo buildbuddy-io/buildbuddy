@@ -321,7 +321,7 @@ func TestIsolation(t *testing.T) {
 					require.NoError(t, err, "Error getting %q from cache: %s", r2.GetDigest().GetHash(), err)
 
 					// Compute a digest for the bytes returned.
-					d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+					d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 					require.NoError(t, err, "Error computing digest: %s", err)
 
 					require.Equal(t, r1.GetDigest().GetHash(), d2.GetHash())
@@ -369,7 +369,7 @@ func TestGetSet(t *testing.T) {
 			require.NoError(t, err, "Error getting %q from cache: %s", r.GetDigest().GetHash(), err)
 
 			// Compute a digest for the bytes returned.
-			d2, err := digest.Compute(bytes.NewReader(rbuf), r.GetDigestFunction())
+			d2, err := digest.Compute(bytes.NewReader(rbuf), r.GetDigestFunction(), int64(len(rbuf)))
 			require.NoError(t, err)
 			require.Equal(t, r.GetDigest().GetHash(), d2.GetHash())
 		})
@@ -631,7 +631,7 @@ func TestDupeWrites(t *testing.T) {
 			require.NoError(t, err)
 
 			// Compute a digest for the bytes returned.
-			d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+			d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 			require.NoError(t, err)
 			require.Equal(t, r.GetDigest().GetHash(), d2.GetHash())
 		})
@@ -946,7 +946,7 @@ func TestMultiGetSet(t *testing.T) {
 		d := rn.GetDigest()
 		rbuf, ok := m[d]
 		require.True(t, ok, "Multi-get failed to return expected digest: %q", d.GetHash())
-		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 		require.NoError(t, err)
 		require.Equal(t, d.GetHash(), d2.GetHash(), "d=%v; d2=%v", d, d2)
 	}
@@ -1922,7 +1922,7 @@ func TestStartupScan(t *testing.T) {
 				require.NoError(t, err)
 
 				// Compute a digest for the bytes returned.
-				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 				require.NoError(t, err)
 				require.Equal(t, r.GetDigest().GetHash(), d2.GetHash())
 			}
@@ -2309,7 +2309,7 @@ func TestMigrateVersions(t *testing.T) {
 				require.NoError(t, err)
 
 				// Compute a digest for the bytes returned.
-				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 				require.NoError(t, err)
 				if d.GetHash() != d2.GetHash() {
 					require.Failf(t, "Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())

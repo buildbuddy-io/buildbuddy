@@ -67,7 +67,7 @@ func TestRemoteAsset_WithProxy(t *testing.T) {
 	testshell.Run(t, ws, "tar czf archive.tar.gz $(find . -type f)")
 	b, err := os.ReadFile(filepath.Join(ws, "archive.tar.gz"))
 	require.NoError(t, err)
-	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_SHA256, int64(len(b)))
 	require.NoError(t, err)
 	fileServer := http.FileServer(http.Dir(ws))
 
@@ -96,7 +96,7 @@ func serveArchive(t *testing.T, contents map[string]string) (*repb.Digest, *url.
 	testshell.Run(t, ws, "tar czf archive.tar.gz $(find . -type f)")
 	b, err := os.ReadFile(filepath.Join(ws, "archive.tar.gz"))
 	require.NoError(t, err)
-	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_SHA256, int64(len(b)))
 	require.NoError(t, err)
 	u := testhttp.StartServer(t, http.FileServer(http.Dir(ws)))
 	u.Path = "/archive.tar.gz"

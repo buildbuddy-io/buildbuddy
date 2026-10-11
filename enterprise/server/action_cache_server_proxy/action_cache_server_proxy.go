@@ -78,7 +78,7 @@ func getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*diges
 		return nil, err
 	}
 	hashBytes = append(hashBytes, []byte(*actionCacheSalt)...)
-	d, err := digest.Compute(bytes.NewReader(hashBytes), req.GetDigestFunction())
+	d, err := digest.Compute(bytes.NewReader(hashBytes), req.GetDigestFunction(), int64(len(hashBytes)))
 	if err != nil {
 		return nil, err
 	}

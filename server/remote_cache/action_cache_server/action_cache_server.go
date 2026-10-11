@@ -135,7 +135,7 @@ func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName st
 		if err != nil {
 			return nil, err
 		}
-		computedDigest, err := digest.Compute(bytes.NewReader(blob), rn.GetDigestFunction())
+		computedDigest, err := digest.Compute(bytes.NewReader(blob), rn.GetDigestFunction(), int64(len(blob)))
 		if err != nil {
 			return nil, err
 		}

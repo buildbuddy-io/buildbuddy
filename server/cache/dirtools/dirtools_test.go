@@ -1275,7 +1275,7 @@ func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) 
 func TestDownloadTreeReturnsEmptyFileWriteError(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
-	emptyDigest, err := digest.Compute(strings.NewReader(""), repb.DigestFunction_SHA256)
+	emptyDigest, err := digest.Compute(strings.NewReader(""), repb.DigestFunction_SHA256, 0)
 	require.NoError(t, err)
 	tree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "empty.txt", Digest: emptyDigest}}}}
 
@@ -1692,7 +1692,7 @@ func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t 
 	chunkE := makeChunk('E')
 
 	putChunk := func(data []byte) *repb.Digest {
-		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256, int64(len(data)))
 		require.NoError(t, err)
 		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
 		require.NoError(t, env.GetCache().Set(ctx, rn.ToProto(), data))
@@ -1709,7 +1709,7 @@ func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t 
 		for _, chunk := range chunks {
 			blob = append(blob, chunk...)
 		}
-		blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+		blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256, int64(len(blob)))
 		require.NoError(t, err)
 		_, err = env.GetContentAddressableStorageClient().SpliceBlob(ctx, &repb.SpliceBlobRequest{
 			BlobDigest:     blobDigest,
@@ -1948,7 +1948,7 @@ func addToFileCache(t *testing.T, ctx context.Context, env *testenv.TestEnv, tem
 	if _, err := f.Write([]byte(data)); err != nil {
 		t.Fatal(err)
 	}
-	d, err := digest.Compute(strings.NewReader(data), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(strings.NewReader(data), repb.DigestFunction_SHA256, int64(len(data)))
 	if err != nil {
 		t.Fatal(err)
 	}

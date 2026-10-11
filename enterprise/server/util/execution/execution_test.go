@@ -45,7 +45,7 @@ func TestOLAPExecToClientProto_ExecuteResponseDigest_Invariant(t *testing.T) {
 			rn.SetCompressor(tc.compressor)
 			executionID := rn.NewUploadString()
 
-			expected, err := digest.Compute(strings.NewReader(executionID), tc.digestFunction)
+			expected, err := digest.Compute(strings.NewReader(executionID), tc.digestFunction, int64(len(executionID)))
 			require.NoError(t, err)
 
 			row := &olaptables.Execution{}
