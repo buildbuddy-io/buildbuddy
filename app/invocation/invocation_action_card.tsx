@@ -1066,7 +1066,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     const digestFn =
       build.bazel.remote.execution.v2.DigestFunction.Value[this.props.model.getDigestFunction()].toLowerCase();
-    if (digestFn === "blake3" || digestFn === "sha256") parts.push(`--digest_function=${digestFn}`);
+    if (digestFn === "blake3" || digestFn === "sha256" || digestFn === "gitsha1")
+      parts.push(`--digest_function=${digestFn}`);
 
     const invocationId = this.props.model.getInvocationId();
     if (invocationId) parts.push(`--invocation_id=${invocationId}`);

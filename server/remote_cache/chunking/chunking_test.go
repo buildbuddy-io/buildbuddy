@@ -274,12 +274,12 @@ func TestStoreAndLoad(t *testing.T) {
 			blobData := make([]byte, blobSize)
 			_, err = rand.Read(blobData)
 			require.NoError(t, err)
-			blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256)
+			blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256, int64(len(blobData)))
 			require.NoError(t, err)
 
 			var chunkDigests []*repb.Digest
 			c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
-				d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+				d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256, int64(len(data)))
 				if err != nil {
 					return err
 				}
@@ -305,7 +305,7 @@ func TestStoreAndLoad(t *testing.T) {
 			}
 
 			// Wrong blob digest should fail verification.
-			badDigest, err := digest.Compute(bytes.NewReader([]byte("bad")), repb.DigestFunction_SHA256)
+			badDigest, err := digest.Compute(bytes.NewReader([]byte("bad")), repb.DigestFunction_SHA256, int64(len("bad")))
 			require.NoError(t, err)
 			cm.BlobDigest = badDigest
 			require.Error(t, cm.Store(ctx, cache))
@@ -326,6 +326,43 @@ func TestStoreAndLoad(t *testing.T) {
 	}
 }
 
+func TestStoreGITSHA1(t *testing.T) {
+	flags.Set(t, "cache.chunking.ac_key_salt", "test-salt")
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	var digests []*repb.Digest
+	for _, data := range []string{"hel", "lo\n"} {
+		d, err := digest.Compute(bytes.NewReader([]byte(data)), repb.DigestFunction_GITSHA1, int64(len(data)))
+		require.NoError(t, err)
+		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_GITSHA1)
+		require.NoError(t, cache.Set(ctx, rn.ToProto(), []byte(data)))
+		digests = append(digests, d)
+	}
+
+	gitDigest := &repb.Digest{Hash: "ce013625030ba8dba906f756967f9e9ca394464a", SizeBytes: 6}
+	cm := &chunking.Manifest{
+		BlobDigest:     gitDigest,
+		ChunkDigests:   digests,
+		DigestFunction: repb.DigestFunction_GITSHA1,
+	}
+	require.NoError(t, cm.Store(ctx, cache))
+	require.NoError(t, cm.Store(ctx, cache))
+	loaded, err := chunking.LoadManifest(ctx, cache, gitDigest, "", repb.DigestFunction_GITSHA1)
+	require.NoError(t, err)
+	assert.Equal(t, gitDigest.GetHash(), loaded.BlobDigest.GetHash())
+	require.Len(t, loaded.ChunkDigests, 2)
+	assert.Equal(t, digests[0].GetHash(), loaded.ChunkDigests[0].GetHash())
+	assert.Equal(t, digests[1].GetHash(), loaded.ChunkDigests[1].GetHash())
+
+	cm.ChunkDigests = []*repb.Digest{digests[1], digests[0]}
+	err = cm.Store(ctx, cache)
+	require.True(t, status.IsInvalidArgumentError(err), "wrong chunk order should fail verification: %v", err)
+}
+
 func TestStore_MissingChunk(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
@@ -337,12 +374,12 @@ func TestStore_MissingChunk(t *testing.T) {
 	blobData := make([]byte, blobSize)
 	_, err = rand.Read(blobData)
 	require.NoError(t, err)
-	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256, int64(len(blobData)))
 	require.NoError(t, err)
 
 	var chunkDigests []*repb.Digest
 	c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
-		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256, int64(len(data)))
 		if err != nil {
 			return err
 		}
@@ -398,7 +435,8 @@ func TestLoadWithoutManifest_SaltedHashNotLeaked(t *testing.T) {
 	blobRN, _ := testdigest.RandomCASResourceBuf(t, 500)
 	blobDigest := blobRN.GetDigest()
 
-	saltedDigest, err := digest.Compute(bytes.NewReader([]byte(salt+":"+blobDigest.GetHash())), repb.DigestFunction_SHA256)
+	key := salt + ":" + blobDigest.GetHash()
+	saltedDigest, err := digest.Compute(bytes.NewReader([]byte(key)), repb.DigestFunction_SHA256, int64(len(key)))
 	require.NoError(t, err)
 
 	_, err = chunking.LoadManifest(ctx, te.GetCache(), blobDigest, "", repb.DigestFunction_SHA256)
@@ -427,7 +465,7 @@ func TestStore_ErrGroupContextCancellation(t *testing.T) {
 	require.NoError(t, wrapper.Set(ctx, chunk2RN, chunk2Data))
 
 	allData := append(chunk1Data, chunk2Data...)
-	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256, int64(len(allData)))
 	require.NoError(t, err)
 
 	cm := &chunking.Manifest{
@@ -474,7 +512,7 @@ func TestStore_SharedValidationMarkerIsManifestSpecific(t *testing.T) {
 	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3Data))
 
 	validData := append(chunk1Data, chunk2Data...)
-	blobDigest, err := digest.Compute(bytes.NewReader(validData), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(validData), repb.DigestFunction_SHA256, int64(len(validData)))
 	require.NoError(t, err)
 
 	validManifest := &chunking.Manifest{
@@ -497,7 +535,7 @@ func TestStore_SharedValidationMarkerIsManifestSpecific(t *testing.T) {
 	require.True(t, status.IsInvalidArgumentError(err), "expected invalid argument error, got: %v", err)
 
 	invalidData := append(chunk1Data, chunk3Data...)
-	computedInvalidDigest, err := digest.Compute(bytes.NewReader(invalidData), repb.DigestFunction_SHA256)
+	computedInvalidDigest, err := digest.Compute(bytes.NewReader(invalidData), repb.DigestFunction_SHA256, int64(len(invalidData)))
 	require.NoError(t, err)
 	require.False(t, digest.Equal(computedInvalidDigest, blobDigest))
 }
@@ -542,7 +580,7 @@ func TestMissingChunkChecker(t *testing.T) {
 	require.NoError(t, trackingCache.Set(ctx, chunk2RN, chunk2Data))
 
 	allData := append(append(chunk1Data, chunk2Data...), chunk3Data...)
-	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256, int64(len(allData)))
 	require.NoError(t, err)
 
 	manifestAllPresent := &chunking.Manifest{
@@ -599,7 +637,7 @@ func TestMissingChunkChecker_Concurrent(t *testing.T) {
 	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
 	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
 
-	blobDigest, err := digest.Compute(bytes.NewReader([]byte("blob")), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader([]byte("blob")), repb.DigestFunction_SHA256, int64(len("blob")))
 	require.NoError(t, err)
 
 	// The two manifests share chunk1 so concurrent calls contend on the same
@@ -695,7 +733,7 @@ func BenchmarkStore(b *testing.B) {
 			for i := 0; i < len(blobData); i += chunkSize {
 				end := min(i+chunkSize, len(blobData))
 				chunk := blobData[i:end]
-				d, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+				d, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256, int64(len(chunk)))
 				require.NoError(b, err)
 				chunkDigests = append(chunkDigests, d)
 				rn := digest.NewCASResourceName(d, "bench", repb.DigestFunction_SHA256)

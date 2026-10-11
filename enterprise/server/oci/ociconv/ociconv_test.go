@@ -275,8 +275,8 @@ func TestMigrateImagesToFileCache(t *testing.T) {
 	require.NoError(t, os.Chtimes(filepath.Dir(legacyPathB), time.Unix(20, 0), time.Unix(20, 0)))
 
 	require.NoError(t, ociconv.MigrateImagesToFileCache(ctx, fc, root))
-	require.False(t, fc.ContainsFile(ctx, sharedDiskImageNode(containerImage)))
-	require.True(t, fc.ContainsFile(sharedCtx, sharedDiskImageNode(containerImage)))
+	require.False(t, fc.ContainsFile(ctx, sharedDiskImageNode(containerImage), repb.DigestFunction_SHA256))
+	require.True(t, fc.ContainsFile(sharedCtx, sharedDiskImageNode(containerImage), repb.DigestFunction_SHA256))
 
 	linkedPath := filepath.Join(root, "linked.ext4")
 	err = ociconv.LinkCachedImage(ctx, fc, root, containerImage, linkedPath)

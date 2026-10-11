@@ -381,7 +381,7 @@ func (p *prober) checkCAS(compressor repb.Compressor_Value) error {
 			log.Errorf("failed to generate random data: %s", err)
 			return err
 		}
-		d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
+		d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256, int64(len(buf)))
 		if err != nil {
 			log.Errorf("failed to compute digest: %s", err)
 			return err

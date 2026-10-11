@@ -54,16 +54,22 @@ func (c *ComposableCache) FindMissing(ctx context.Context, resources []*rspb.Res
 	if len(resources) == 0 {
 		return nil, nil
 	}
-	cacheType := resources[0].GetCacheType()
-	instanceName := resources[0].GetInstanceName()
-
 	missingDigests, err := c.outer.FindMissing(ctx, resources)
-	missingResources := digest.ResourceNames(cacheType, instanceName, missingDigests)
 	if err != nil {
-		missingResources = resources
+		return c.inner.FindMissing(ctx, resources)
 	}
-	if len(missingResources) == 0 {
+	if len(missingDigests) == 0 {
 		return nil, nil
+	}
+	missing := make(map[digest.Key]struct{}, len(missingDigests))
+	for _, d := range missingDigests {
+		missing[digest.NewKey(d)] = struct{}{}
+	}
+	missingResources := make([]*rspb.ResourceName, 0, len(missingDigests))
+	for _, r := range resources {
+		if _, ok := missing[digest.NewKey(r.GetDigest())]; ok {
+			missingResources = append(missingResources, r)
+		}
 	}
 	return c.inner.FindMissing(ctx, missingResources)
 }
@@ -101,9 +107,6 @@ func (c *ComposableCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 	if len(resources) == 0 {
 		return nil, nil
 	}
-	cacheType := resources[0].GetCacheType()
-	instanceName := resources[0].GetInstanceName()
-
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	if outerFoundMap, err := c.outer.GetMulti(ctx, resources); err == nil {
 		maps.Copy(foundMap, outerFoundMap)
@@ -112,11 +115,7 @@ func (c *ComposableCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 	for _, r := range resources {
 		d := r.GetDigest()
 		if _, ok := foundMap[d]; !ok {
-			stillMissing = append(stillMissing, &rspb.ResourceName{
-				Digest:       d,
-				InstanceName: instanceName,
-				CacheType:    cacheType,
-			})
+			stillMissing = append(stillMissing, r)
 		}
 	}
 	if len(stillMissing) == 0 {
@@ -200,7 +199,7 @@ func (c *ComposableCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		return nil, err
 	}
 
-	if c.mode&ModeReadThrough == 0 || uncompressedOffset != 0 {
+	if c.mode&ModeReadThrough == 0 || uncompressedOffset != 0 || limit != 0 {
 		return innerReader, nil
 	}
 

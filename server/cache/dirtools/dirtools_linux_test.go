@@ -162,7 +162,7 @@ type publicationTestFileCache struct {
 	added chan string
 }
 
-func (c *publicationTestFileCache) AddFile(ctx context.Context, node *repb.FileNode, path string) error {
+func (c *publicationTestFileCache) AddFile(ctx context.Context, node *repb.FileNode, path string, digestFunction repb.DigestFunction_Value) error {
 	c.added <- path
 	return nil
 }

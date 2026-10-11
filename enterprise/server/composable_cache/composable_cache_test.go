@@ -2,16 +2,20 @@ package composable_cache_test
 
 import (
 	"context"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -44,7 +48,7 @@ func writeDigest(ctx context.Context, t *testing.T, c interfaces.Cache, sizeByte
 func readAndVerifyDigest(ctx context.Context, t *testing.T, c interfaces.Cache, d *rspb.ResourceName) {
 	r, err := c.Reader(ctx, d, 0, 0)
 	require.NoError(t, err)
-	rd, err := digest.Compute(r, repb.DigestFunction_SHA256)
+	rd, err := digest.Compute(r, repb.DigestFunction_SHA256, d.GetDigest().GetSizeBytes())
 	require.NoError(t, err)
 	err = r.Close()
 	require.NoError(t, err)
@@ -97,4 +101,49 @@ func TestReadThrough(t *testing.T) {
 
 		readAndVerifyDigest(ctx, t, outer, rn)
 	}
+}
+
+func TestReadsGITSHA1(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+	inner := te.GetCache()
+	outer, err := memory_cache.NewMemoryCache(100_000)
+	require.NoError(t, err)
+	c := composable_cache.NewComposableCache(outer, inner, composable_cache.ModeReadThrough)
+	var resources []*rspb.ResourceName
+	for _, s := range []string{"outer", "inner", "missing"} {
+		d, err := digest.Compute(strings.NewReader(s), repb.DigestFunction_GITSHA1, int64(len(s)))
+		require.NoError(t, err)
+		resources = append(resources, digest.NewCASResourceName(d, "test", repb.DigestFunction_GITSHA1).ToProto())
+	}
+	require.NoError(t, outer.Set(ctx, resources[0], []byte("outer")))
+	require.NoError(t, inner.Set(ctx, resources[1], []byte("inner")))
+	missing, err := c.FindMissing(ctx, resources)
+	require.NoError(t, err)
+	require.Equal(t, []*repb.Digest{resources[2].GetDigest()}, missing)
+	found, err := c.GetMulti(ctx, resources)
+	require.NoError(t, err)
+	require.Equal(t, map[*repb.Digest][]byte{
+		resources[0].GetDigest(): []byte("outer"),
+		resources[1].GetDigest(): []byte("inner"),
+	}, found)
+
+	r, err := c.Reader(ctx, resources[1], 0, 2)
+	require.NoError(t, err)
+	data, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+	require.Equal(t, []byte("in"), data)
+
+	r, err = c.Reader(ctx, resources[1], 0, 0)
+	require.NoError(t, err)
+	data, err = io.ReadAll(r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+	require.Equal(t, []byte("inner"), data)
+
+	data, err = outer.Get(ctx, resources[1])
+	require.NoError(t, err)
+	require.Equal(t, []byte("inner"), data)
 }

@@ -114,7 +114,7 @@ func writeBlobsForReading(ctx context.Context, numBlobs int) []*repb.Digest {
 		eg.Go(func() error {
 			for range blobsPerThread {
 				d, buf := newRandomDigestBuf(randomBlobSize())
-				_, err := cachetools.UploadBlob(ctx, bsClient, *instanceName, repb.DigestFunction_SHA256, bytes.NewReader(buf))
+				_, err := cachetools.UploadBlob(ctx, bsClient, *instanceName, repb.DigestFunction_SHA256, bytes.NewReader(buf), int64(len(buf)))
 				if err != nil {
 					return err
 				}

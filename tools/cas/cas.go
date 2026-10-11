@@ -73,7 +73,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Parse --resource as upload resource name: %s", err)
 		}
-		executeResponseDigest, err := digest.Compute(strings.NewReader(*resource), r.GetDigestFunction())
+		executeResponseDigest, err := digest.Compute(strings.NewReader(*resource), r.GetDigestFunction(), int64(len(*resource)))
 		if err != nil {
 			log.Fatalf("Failed to compute execute response digest: %s", err)
 		}

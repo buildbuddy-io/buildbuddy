@@ -114,7 +114,7 @@ func TestRestrictedPrefixes(t *testing.T) {
 			go runServer()
 
 			for _, instanceName := range tc.instanceNames {
-				arDigest, err := digest.Compute(bytes.NewReader([]byte(tc.name)), repb.DigestFunction_SHA256)
+				arDigest, err := digest.Compute(bytes.NewReader([]byte(tc.name)), repb.DigestFunction_SHA256, int64(len(tc.name)))
 				require.NoError(t, err)
 				acClient := te.GetActionCacheClient()
 				{

@@ -1455,7 +1455,7 @@ func (m *Mmap) Digest() (*repb.Digest, error) {
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(chunkReader, repb.DigestFunction_BLAKE3)
+	d, err := digest.Compute(chunkReader, repb.DigestFunction_BLAKE3, -1)
 	if err != nil {
 		return nil, err
 	}

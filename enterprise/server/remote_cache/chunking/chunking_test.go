@@ -54,12 +54,12 @@ func TestStore_SharedValidationMarkerSkipsRehashForIdenticalManifest(t *testing.
 	blobData := make([]byte, blobSize)
 	_, err = rand.Read(blobData)
 	require.NoError(t, err)
-	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_BLAKE3, int64(len(blobData)))
 	require.NoError(t, err)
 
 	var chunkDigests []*repb.Digest
 	c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
-		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3, int64(len(data)))
 		if err != nil {
 			return err
 		}

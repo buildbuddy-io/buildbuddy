@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -75,39 +76,39 @@ func TestFilecache(t *testing.T) {
 
 	// Add a file and make sure we can hardlink it
 	node := nodeFromString("my/fun/file", false)
-	err = fc.AddFile(ctx, node, filepath.Join(baseDir, "my/fun/file"))
+	err = fc.AddFile(ctx, node, filepath.Join(baseDir, "my/fun/file"), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
-	linked := fc.FastLinkFile(ctx, node, filepath.Join(baseDir, "my/fun/fastlinked-file"))
+	linked := fc.FastLinkFile(ctx, node, filepath.Join(baseDir, "my/fun/fastlinked-file"), repb.DigestFunction_SHA256)
 	assert.True(t, linked, "existing file should link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-file"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/fastlinked-file"), "my/fun/file")
 
 	// Make sure that when we try to hardlink a non-existent file, it doesn't link
 	nonexistentNode := nodeFromString("my/fun/nonexistentfile", false)
-	notLinked := fc.FastLinkFile(ctx, nonexistentNode, filepath.Join(baseDir, "my/fun/fastlinked-nonexistentfile"))
+	notLinked := fc.FastLinkFile(ctx, nonexistentNode, filepath.Join(baseDir, "my/fun/fastlinked-nonexistentfile"), repb.DigestFunction_SHA256)
 	assert.False(t, notLinked, "nonexistet file should not link")
 	assert.NoFileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-nonexistentfile"))
 
 	// Make sure that when we try to link the existing file as an executable file, it doesn't link
 	executableNode := nodeFromString("my/fun/file", true)
-	notLinkedExecutable := fc.FastLinkFile(ctx, executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
+	notLinkedExecutable := fc.FastLinkFile(ctx, executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"), repb.DigestFunction_SHA256)
 	assert.False(t, notLinkedExecutable, "executable file should not link")
 	assert.NoFileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
 
 	// Replace the original file with an executable one
 	os.Remove(filepath.Join(baseDir, "my/fun/file"))
 	writeFile(t, baseDir, "my/fun/file", true)
-	err = fc.AddFile(ctx, executableNode, filepath.Join(baseDir, "my/fun/file"))
+	err = fc.AddFile(ctx, executableNode, filepath.Join(baseDir, "my/fun/file"), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// Make sure the link now works
-	linkedExecutable := fc.FastLinkFile(ctx, executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
+	linkedExecutable := fc.FastLinkFile(ctx, executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"), repb.DigestFunction_SHA256)
 	assert.True(t, linkedExecutable, "executable file should link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"), "my/fun/file-executable")
 
 	// Make sure the original link still works
-	secondLink := fc.FastLinkFile(ctx, node, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
+	secondLink := fc.FastLinkFile(ctx, node, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"), repb.DigestFunction_SHA256)
 	assert.True(t, secondLink, "original file should still link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"), "my/fun/file")
@@ -158,7 +159,7 @@ func TestFileCacheGroupFromTrustedJWT(t *testing.T) {
 			workspaceDir := testfs.MakeTempDir(t)
 			source := writeFileContent(t, workspaceDir, "source", "source", false)
 			node := nodeFromString("source", false)
-			require.NoError(t, fc.AddFile(ctx, node, source))
+			require.NoError(t, fc.AddFile(ctx, node, source, repb.DigestFunction_SHA256))
 
 			// Files are stored under the group directory, sharded into a
 			// subdirectory named by the first two characters of the digest
@@ -189,12 +190,12 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 
 		writeFile(t, baseDir, "my/fun/file", false)
 		node := nodeFromString("my/fun/file", false)
-		err = fc.AddFile(ctx, node, filepath.Join(baseDir, "my/fun/file"))
+		err = fc.AddFile(ctx, node, filepath.Join(baseDir, "my/fun/file"), repb.DigestFunction_SHA256)
 		require.NoError(t, err)
 
 		writeFile(t, baseDir, "my/evil/file", false)
 		node = nodeFromString("my/evil/file", false)
-		err = fc.AddFile(authedCtx, node, filepath.Join(baseDir, "my/evil/file"))
+		err = fc.AddFile(authedCtx, node, filepath.Join(baseDir, "my/evil/file"), repb.DigestFunction_SHA256)
 		require.NoError(t, err)
 		require.NoError(t, fc.Close())
 	}
@@ -208,13 +209,13 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 		fc.WaitForDirectoryScanToComplete()
 
 		node := nodeFromString("my/fun/file", false)
-		linked := fc.FastLinkFile(ctx, node, filepath.Join(baseDir, "my/fun/fastlinked-file"))
+		linked := fc.FastLinkFile(ctx, node, filepath.Join(baseDir, "my/fun/fastlinked-file"), repb.DigestFunction_SHA256)
 		assert.True(t, linked, "existing file should link")
 		assert.FileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-file"))
 		assertFileContents(t, filepath.Join(baseDir, "my/fun/fastlinked-file"), "my/fun/file")
 
 		evilNode := nodeFromString("my/evil/file", false)
-		evilLinked := fc.FastLinkFile(authedCtx, evilNode, filepath.Join(baseDir, "my/evil/fastlinked-file"))
+		evilLinked := fc.FastLinkFile(authedCtx, evilNode, filepath.Join(baseDir, "my/evil/fastlinked-file"), repb.DigestFunction_SHA256)
 		assert.True(t, evilLinked, "existing file should link")
 		assert.FileExists(t, filepath.Join(baseDir, "my/evil/fastlinked-file"))
 		assertFileContents(t, filepath.Join(baseDir, "my/evil/fastlinked-file"), "my/evil/file")
@@ -231,12 +232,12 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 		fc.WaitForDirectoryScanToComplete()
 
 		node := nodeFromString("my/fun/file", false)
-		linked := fc.FastLinkFile(authedCtx, node, filepath.Join(baseDir, "my/unauthed/fun-file"))
+		linked := fc.FastLinkFile(authedCtx, node, filepath.Join(baseDir, "my/unauthed/fun-file"), repb.DigestFunction_SHA256)
 		assert.False(t, linked, "unowned file should not link")
 		assert.NoFileExists(t, filepath.Join(baseDir, "my/unauthed/fun-file"))
 
 		evilNode := nodeFromString("my/evil/file", false)
-		evilLinked := fc.FastLinkFile(ctx, evilNode, filepath.Join(baseDir, "my/unauthed/evil-file"))
+		evilLinked := fc.FastLinkFile(ctx, evilNode, filepath.Join(baseDir, "my/unauthed/evil-file"), repb.DigestFunction_SHA256)
 		assert.False(t, evilLinked, "unowned file should not link")
 		assert.NoFileExists(t, filepath.Join(baseDir, "my/unauthed/evil-file"))
 	}
@@ -263,44 +264,44 @@ func TestFileCacheSharedDirectoryAcrossGroups(t *testing.T) {
 
 	// Seed both a group-local entry and a shared ext4_images entry with the
 	// same logical filecache key.
-	require.NoError(t, fc.AddFile(group1Ctx, node, normalPath))
-	require.NoError(t, fc.AddFile(sharedDirectoryCtx1, node, sharedPath))
+	require.NoError(t, fc.AddFile(group1Ctx, node, normalPath, repb.DigestFunction_SHA256))
+	require.NoError(t, fc.AddFile(sharedDirectoryCtx1, node, sharedPath, repb.DigestFunction_SHA256))
 
 	// The shared ext4_images entry does not make the same digest visible via
 	// another group's namespace.
-	require.True(t, fc.ContainsFile(group1Ctx, node))
-	require.False(t, fc.ContainsFile(group2Ctx, node))
+	require.True(t, fc.ContainsFile(group1Ctx, node, repb.DigestFunction_SHA256))
+	require.False(t, fc.ContainsFile(group2Ctx, node, repb.DigestFunction_SHA256))
 
 	normalLinkPath := filepath.Join(baseDir, "normal-link")
-	require.True(t, fc.FastLinkFile(group1Ctx, node, normalLinkPath))
+	require.True(t, fc.FastLinkFile(group1Ctx, node, normalLinkPath, repb.DigestFunction_SHA256))
 	assertFileContents(t, normalLinkPath, "normal-content")
 
 	group2MissPath := filepath.Join(baseDir, "group2-miss-link")
-	require.False(t, fc.FastLinkFile(group2Ctx, node, group2MissPath))
+	require.False(t, fc.FastLinkFile(group2Ctx, node, group2MissPath, repb.DigestFunction_SHA256))
 	assert.NoFileExists(t, group2MissPath)
 
 	// Any group should be able to access the entry when looking it up via
 	// ext4_images.
-	require.True(t, fc.ContainsFile(sharedDirectoryCtx1, node))
-	require.True(t, fc.ContainsFile(sharedDirectoryCtx2, node))
+	require.True(t, fc.ContainsFile(sharedDirectoryCtx1, node, repb.DigestFunction_SHA256))
+	require.True(t, fc.ContainsFile(sharedDirectoryCtx2, node, repb.DigestFunction_SHA256))
 
 	sharedLinkPath1 := filepath.Join(baseDir, "shared-link-1")
-	require.True(t, fc.FastLinkFile(sharedDirectoryCtx1, node, sharedLinkPath1))
+	require.True(t, fc.FastLinkFile(sharedDirectoryCtx1, node, sharedLinkPath1, repb.DigestFunction_SHA256))
 	assertFileContents(t, sharedLinkPath1, "shared-content")
 
 	sharedLinkPath2 := filepath.Join(baseDir, "shared-link-2")
-	require.True(t, fc.FastLinkFile(sharedDirectoryCtx2, node, sharedLinkPath2))
+	require.True(t, fc.FastLinkFile(sharedDirectoryCtx2, node, sharedLinkPath2, repb.DigestFunction_SHA256))
 	assertFileContents(t, sharedLinkPath2, "shared-content")
 
 	// Other shared directories should not see ext4_images entries.
-	require.False(t, fc.ContainsFile(otherSharedDirectoryCtx, node))
+	require.False(t, fc.ContainsFile(otherSharedDirectoryCtx, node, repb.DigestFunction_SHA256))
 
 	// Open should respect the same namespace boundaries as linking.
-	_, err = fc.Open(group2Ctx, node)
+	_, err = fc.Open(group2Ctx, node, repb.DigestFunction_SHA256)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err), "expected non-shared group access to miss")
 
-	f, err := fc.Open(sharedDirectoryCtx2, node)
+	f, err := fc.Open(sharedDirectoryCtx2, node, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	defer f.Close()
 	data, err := io.ReadAll(f)
@@ -323,7 +324,7 @@ func TestFileCacheSharedDirectoryAcrossGroupsAfterRestart(t *testing.T) {
 		require.NoError(t, err)
 		fc.WaitForDirectoryScanToComplete()
 		sharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, "ext4_images")
-		require.NoError(t, fc.AddFile(sharedDirectoryCtx, node, sharedPath))
+		require.NoError(t, fc.AddFile(sharedDirectoryCtx, node, sharedPath, repb.DigestFunction_SHA256))
 		require.NoError(t, fc.Close())
 	}
 	// Reopen the filecache and verify the shared entry is visible across groups.
@@ -334,18 +335,18 @@ func TestFileCacheSharedDirectoryAcrossGroupsAfterRestart(t *testing.T) {
 		fc.WaitForDirectoryScanToComplete()
 		sharedDirectoryCtx := fc.WithSharedDirectory(group2Ctx, "ext4_images")
 
-		require.False(t, fc.ContainsFile(group2Ctx, node))
-		require.True(t, fc.ContainsFile(sharedDirectoryCtx, node))
+		require.False(t, fc.ContainsFile(group2Ctx, node, repb.DigestFunction_SHA256))
+		require.True(t, fc.ContainsFile(sharedDirectoryCtx, node, repb.DigestFunction_SHA256))
 
 		missPath := filepath.Join(baseDir, "group2-link")
-		require.False(t, fc.FastLinkFile(group2Ctx, node, missPath))
+		require.False(t, fc.FastLinkFile(group2Ctx, node, missPath, repb.DigestFunction_SHA256))
 		assert.NoFileExists(t, missPath)
 
 		sharedLinkPath := filepath.Join(baseDir, "shared-link")
-		require.True(t, fc.FastLinkFile(sharedDirectoryCtx, node, sharedLinkPath))
+		require.True(t, fc.FastLinkFile(sharedDirectoryCtx, node, sharedLinkPath, repb.DigestFunction_SHA256))
 		assertFileContents(t, sharedLinkPath, "shared-content")
 
-		f, err := fc.Open(sharedDirectoryCtx, node)
+		f, err := fc.Open(sharedDirectoryCtx, node, repb.DigestFunction_SHA256)
 		require.NoError(t, err)
 		defer f.Close()
 		data, err := io.ReadAll(f)
@@ -447,22 +448,22 @@ func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
 			// Startup scanning should ignore the malformed on-disk entries
 			// completely, regardless of whether lookups use the group's default
 			// namespace or the invalid shared-directory context.
-			require.False(t, fc.ContainsFile(group1Ctx, node))
-			require.False(t, fc.ContainsFile(invalidSharedDirectoryCtx, node))
+			require.False(t, fc.ContainsFile(group1Ctx, node, repb.DigestFunction_SHA256))
+			require.False(t, fc.ContainsFile(invalidSharedDirectoryCtx, node, repb.DigestFunction_SHA256))
 
 			group1LinkPath := filepath.Join(baseDir, test.name, "group1-startup-link")
-			require.False(t, fc.FastLinkFile(group1Ctx, node, group1LinkPath))
+			require.False(t, fc.FastLinkFile(group1Ctx, node, group1LinkPath, repb.DigestFunction_SHA256))
 			assert.NoFileExists(t, group1LinkPath)
 
 			invalidLinkPath := filepath.Join(baseDir, test.name, "invalid-startup-link")
-			require.False(t, fc.FastLinkFile(invalidSharedDirectoryCtx, node, invalidLinkPath))
+			require.False(t, fc.FastLinkFile(invalidSharedDirectoryCtx, node, invalidLinkPath, repb.DigestFunction_SHA256))
 			assert.NoFileExists(t, invalidLinkPath)
 
-			_, err := fc.Open(group1Ctx, node)
+			_, err := fc.Open(group1Ctx, node, repb.DigestFunction_SHA256)
 			require.Error(t, err)
 			require.True(t, status.IsNotFoundError(err), "expected group lookup to miss for invalid startup directory")
 
-			_, err = fc.Open(invalidSharedDirectoryCtx, node)
+			_, err = fc.Open(invalidSharedDirectoryCtx, node, repb.DigestFunction_SHA256)
 			require.Error(t, err)
 			require.True(t, status.IsNotFoundError(err), "expected invalid shared-directory lookup to miss after startup scan")
 
@@ -470,13 +471,13 @@ func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
 				// Malformed nested paths should not be reinterpreted as some other
 				// valid shared namespace during startup scanning.
 				unexpectedSharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, test.unexpectedSharedDirName)
-				require.False(t, fc.ContainsFile(unexpectedSharedDirectoryCtx, node))
+				require.False(t, fc.ContainsFile(unexpectedSharedDirectoryCtx, node, repb.DigestFunction_SHA256))
 
 				unexpectedLinkPath := filepath.Join(baseDir, test.name, "unexpected-shared-link")
-				require.False(t, fc.FastLinkFile(unexpectedSharedDirectoryCtx, node, unexpectedLinkPath))
+				require.False(t, fc.FastLinkFile(unexpectedSharedDirectoryCtx, node, unexpectedLinkPath, repb.DigestFunction_SHA256))
 				assert.NoFileExists(t, unexpectedLinkPath)
 
-				_, err := fc.Open(unexpectedSharedDirectoryCtx, node)
+				_, err := fc.Open(unexpectedSharedDirectoryCtx, node, repb.DigestFunction_SHA256)
 				require.Error(t, err)
 				require.True(t, status.IsNotFoundError(err), "expected malformed startup directory to not hydrate another shared namespace")
 			}
@@ -485,21 +486,21 @@ func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
 			// caller's normal group namespace on writes and subsequent reads.
 			// (This also logs an error, but we don't test for that.)
 			path := writeFileContent(t, baseDir, filepath.Join(test.name, "invalid", "file"), "invalid-"+test.name, false)
-			require.NoError(t, fc.AddFile(invalidSharedDirectoryCtx, node, path))
+			require.NoError(t, fc.AddFile(invalidSharedDirectoryCtx, node, path, repb.DigestFunction_SHA256))
 
-			require.True(t, fc.ContainsFile(group1Ctx, node))
-			require.True(t, fc.ContainsFile(invalidSharedDirectoryCtx, node))
+			require.True(t, fc.ContainsFile(group1Ctx, node, repb.DigestFunction_SHA256))
+			require.True(t, fc.ContainsFile(invalidSharedDirectoryCtx, node, repb.DigestFunction_SHA256))
 
 			group1LinkPath = filepath.Join(baseDir, test.name, "group1-link")
-			require.True(t, fc.FastLinkFile(group1Ctx, node, group1LinkPath))
+			require.True(t, fc.FastLinkFile(group1Ctx, node, group1LinkPath, repb.DigestFunction_SHA256))
 			assertFileContents(t, group1LinkPath, "invalid-"+test.name)
 
 			invalidLinkPath = filepath.Join(baseDir, test.name, "invalid-link")
-			require.True(t, fc.FastLinkFile(invalidSharedDirectoryCtx, node, invalidLinkPath))
+			require.True(t, fc.FastLinkFile(invalidSharedDirectoryCtx, node, invalidLinkPath, repb.DigestFunction_SHA256))
 			assertFileContents(t, invalidLinkPath, "invalid-"+test.name)
 
 			// Open should follow the same fallback-to-group behavior.
-			f, err := fc.Open(invalidSharedDirectoryCtx, node)
+			f, err := fc.Open(invalidSharedDirectoryCtx, node, repb.DigestFunction_SHA256)
 			require.NoError(t, err)
 			defer f.Close()
 			data, err := io.ReadAll(f)
@@ -530,9 +531,9 @@ func TestFileCacheOverwrite(t *testing.T) {
 			node := nodeFromString("file1-content", test.Executable)
 			{
 				// Add node for the first time
-				err = fc.AddFile(ctx, node, filepath.Join(tempDir, "file1"))
+				err = fc.AddFile(ctx, node, filepath.Join(tempDir, "file1"), repb.DigestFunction_SHA256)
 				require.NoError(t, err)
-				linked := fc.FastLinkFile(ctx, node, filepath.Join(tempDir, "file1-link1"))
+				linked := fc.FastLinkFile(ctx, node, filepath.Join(tempDir, "file1-link1"), repb.DigestFunction_SHA256)
 				require.True(t, linked, "expected cache hit after writing file")
 				// Verify all file contents
 				file1Content := testfs.ReadFileAsString(t, tempDir, "file1")
@@ -542,9 +543,9 @@ func TestFileCacheOverwrite(t *testing.T) {
 			}
 			{
 				// Overwrite existing node entry
-				err = fc.AddFile(ctx, node, filepath.Join(tempDir, "file1"))
+				err = fc.AddFile(ctx, node, filepath.Join(tempDir, "file1"), repb.DigestFunction_SHA256)
 				require.NoError(t, err)
-				linked := fc.FastLinkFile(ctx, node, filepath.Join(tempDir, "file1-link2"))
+				linked := fc.FastLinkFile(ctx, node, filepath.Join(tempDir, "file1-link2"), repb.DigestFunction_SHA256)
 				require.True(t, linked, "expected cache hit after overwriting file")
 				// Verify all file contents
 				file1Content := testfs.ReadFileAsString(t, tempDir, "file1")
@@ -558,9 +559,9 @@ func TestFileCacheOverwrite(t *testing.T) {
 				// Overwrite again, this time the contents don't match the
 				// digest (filecache supports this, similar to AC).
 				writeFileContent(t, tempDir, "file2", "file2-content", test.Executable)
-				err = fc.AddFile(ctx, node, filepath.Join(tempDir, "file2"))
+				err = fc.AddFile(ctx, node, filepath.Join(tempDir, "file2"), repb.DigestFunction_SHA256)
 				require.NoError(t, err)
-				linked := fc.FastLinkFile(ctx, node, filepath.Join(tempDir, "file2-link1"))
+				linked := fc.FastLinkFile(ctx, node, filepath.Join(tempDir, "file2-link1"), repb.DigestFunction_SHA256)
 				require.True(t, linked, "expected cache hit after overwriting file with different digest")
 				// Verify all file contents
 				file1Content := testfs.ReadFileAsString(t, tempDir, "file1")
@@ -599,22 +600,22 @@ func TestFileCacheEviction(t *testing.T) {
 	// Write a file that takes up 1 block, containing 1 byte
 	{
 		writeFileContent(t, tempDir, "file1", "A", false)
-		err := fc.AddFile(ctx, node1, filepath.Join(tempDir, "file1"))
+		err := fc.AddFile(ctx, node1, filepath.Join(tempDir, "file1"), repb.DigestFunction_SHA256)
 		require.NoError(t, err)
-		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link1"))
+		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link1"), repb.DigestFunction_SHA256)
 		require.True(t, linked)
 	}
 	// Write a different file that takes up 1 block, containing 1 byte
 	{
 		writeFileContent(t, tempDir, "file2", "B", false)
-		err := fc.AddFile(ctx, node2, filepath.Join(tempDir, "file2"))
+		err := fc.AddFile(ctx, node2, filepath.Join(tempDir, "file2"), repb.DigestFunction_SHA256)
 		require.NoError(t, err)
-		linked := fc.FastLinkFile(ctx, node2, filepath.Join(tempDir, "file2-link1"))
+		linked := fc.FastLinkFile(ctx, node2, filepath.Join(tempDir, "file2-link1"), repb.DigestFunction_SHA256)
 		require.True(t, linked)
 	}
 	// The first file should now be evicted, so linking it should fail.
 	{
-		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link2"))
+		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link2"), repb.DigestFunction_SHA256)
 		require.False(t, linked)
 	}
 }
@@ -637,22 +638,22 @@ func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 	node2 := nodeFromString("B", false)
 	// Linking node1 should succeed
 	{
-		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link1"))
+		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link1"), repb.DigestFunction_SHA256)
 		require.True(t, linked)
 	}
 	// Write a different file that takes up 1 block, containing 1 byte
 	{
 		writeFileContent(t, tempDir, "file2", "B", false)
-		err := fc.AddFile(ctx, node2, filepath.Join(tempDir, "file2"))
+		err := fc.AddFile(ctx, node2, filepath.Join(tempDir, "file2"), repb.DigestFunction_SHA256)
 		require.NoError(t, err)
-		linked := fc.FastLinkFile(ctx, node2, filepath.Join(tempDir, "file2-link1"))
+		linked := fc.FastLinkFile(ctx, node2, filepath.Join(tempDir, "file2-link1"), repb.DigestFunction_SHA256)
 		require.True(t, linked)
 	}
 	// The first file should now be evicted, so linking it should fail. If the
 	// startup scan incorrectly used content size rather than size on disk, this
 	// test would fail, since the cache has 4097 bytes of capacity.
 	{
-		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link2"))
+		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link2"), repb.DigestFunction_SHA256)
 		require.False(t, linked)
 	}
 }
@@ -688,7 +689,7 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 
 		// While the directory scan is in progress, re-add a random file
 		// to trigger a race.
-		err = fc.AddFile(ctx, nodeToAddConcurrently, nodeToAddConcurrentlyPath)
+		err = fc.AddFile(ctx, nodeToAddConcurrently, nodeToAddConcurrentlyPath, repb.DigestFunction_SHA256)
 		require.NoError(t, err)
 
 		fc.WaitForDirectoryScanToComplete()
@@ -696,7 +697,7 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 		// The directory scan should be resilient to this race condition -
 		// linking any file should work.
 		for i := range n {
-			ok := fc.FastLinkFile(ctx, nodes[i], filepath.Join(fc.TempDir(), fmt.Sprintf("out-%d", i)))
+			ok := fc.FastLinkFile(ctx, nodes[i], filepath.Join(fc.TempDir(), fmt.Sprintf("out-%d", i)), repb.DigestFunction_SHA256)
 			require.True(t, ok, "link node %d (test trial %d)", i, trial)
 		}
 	}
@@ -721,14 +722,14 @@ func TestFileAccessBeforeInitialScanCompleteFallsBackToFilesystem(t *testing.T) 
 	require.NoError(t, err)
 	t.Cleanup(func() { fc.Close() })
 
-	require.True(t, fc.ContainsFile(ctx, node), "expected disk fallback hit with initial scan disabled")
+	require.True(t, fc.ContainsFile(ctx, node, repb.DigestFunction_SHA256), "expected disk fallback hit with initial scan disabled")
 
 	outPath := filepath.Join(outDir, "linked")
-	ok := fc.FastLinkFile(ctx, node, outPath)
+	ok := fc.FastLinkFile(ctx, node, outPath, repb.DigestFunction_SHA256)
 	require.True(t, ok, "expected filesystem fallback link to succeed before initial scan completes")
 	assertFileContents(t, outPath, "content")
 
-	f, err := fc.Open(ctx, node)
+	f, err := fc.Open(ctx, node, repb.DigestFunction_SHA256)
 	require.NoError(t, err, "expected Open to succeed via disk fallback before initial scan completes")
 	defer f.Close()
 	data, err := io.ReadAll(f)
@@ -764,14 +765,14 @@ func TestFileAccessBeforeInitialScanCompleteRejectsInvalidDigestPath(t *testing.
 	require.NoError(t, err)
 	t.Cleanup(func() { fc.Close() })
 
-	require.False(t, fc.ContainsFile(ctx, node), "invalid digest should not hit startup disk fallback")
+	require.False(t, fc.ContainsFile(ctx, node, repb.DigestFunction_SHA256), "invalid digest should not hit startup disk fallback")
 
 	outPath := filepath.Join(outDir, "linked")
-	ok := fc.FastLinkFile(ctx, node, outPath)
+	ok := fc.FastLinkFile(ctx, node, outPath, repb.DigestFunction_SHA256)
 	require.False(t, ok, "invalid digest should not be linked before initial scan completes")
 	assert.NoFileExists(t, outPath)
 
-	f, err := fc.Open(ctx, node)
+	f, err := fc.Open(ctx, node, repb.DigestFunction_SHA256)
 	if f != nil {
 		defer f.Close()
 	}
@@ -801,7 +802,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 			name := rn.GetDigest().GetHash()
 			writeFileContent(t, scratchDir, name, string(buf), false /*executable*/)
 			node := &repb.FileNode{Digest: rn.GetDigest()}
-			err = fc.AddFile(ctx, node, filepath.Join(scratchDir, name))
+			err = fc.AddFile(ctx, node, filepath.Join(scratchDir, name), repb.DigestFunction_SHA256)
 			require.NoError(t, err)
 			nodes[i] = node
 		}
@@ -826,10 +827,10 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		// Ensure that the files from the previous iteration (without subdir
 		// prefixing enabled) are still present.
 		for _, n := range unprefixedNodes {
-			exists := fc.ContainsFile(ctx, n)
+			exists := fc.ContainsFile(ctx, n, repb.DigestFunction_SHA256)
 			require.True(t, exists, "file %s should still exist", n.GetDigest().GetHash())
 			linkPath := filepath.Join(scratchDir, strconv.Itoa(rand.Intn(1e12)))
-			ok := fc.FastLinkFile(ctx, n, linkPath)
+			ok := fc.FastLinkFile(ctx, n, linkPath, repb.DigestFunction_SHA256)
 			require.True(t, ok, "file %s should be linkable", n.GetDigest().GetHash())
 			require.FileExists(t, linkPath)
 			actualDigest, err := digest.ComputeForFile(linkPath, repb.DigestFunction_SHA256)
@@ -844,7 +845,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 			name := rn.GetDigest().GetHash()
 			writeFileContent(t, scratchDir, name, string(buf), false /*executable*/)
 			node := &repb.FileNode{Digest: rn.GetDigest()}
-			err = fc.AddFile(ctx, node, filepath.Join(scratchDir, name))
+			err = fc.AddFile(ctx, node, filepath.Join(scratchDir, name), repb.DigestFunction_SHA256)
 			require.NoError(t, err)
 			nodes[i] = node
 		}
@@ -852,10 +853,10 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 
 		// The old unprefixed files should all have been evicted.
 		for _, n := range unprefixedNodes {
-			exists := fc.ContainsFile(ctx, n)
+			exists := fc.ContainsFile(ctx, n, repb.DigestFunction_SHA256)
 			require.False(t, exists, "file %s should still exist", n.GetDigest().GetHash())
 			linkPath := filepath.Join(scratchDir, strconv.Itoa(rand.Intn(1e12)))
-			ok := fc.FastLinkFile(ctx, n, linkPath)
+			ok := fc.FastLinkFile(ctx, n, linkPath, repb.DigestFunction_SHA256)
 			require.False(t, ok, "file %s should not be linkable", n.GetDigest().GetHash())
 			require.NoFileExists(t, linkPath)
 		}
@@ -882,10 +883,10 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		// Ensure that the files from the previous iteration (prefix length 4)
 		// are still present.
 		for _, n := range prefixLength4Nodes {
-			exists := fc.ContainsFile(ctx, n)
+			exists := fc.ContainsFile(ctx, n, repb.DigestFunction_SHA256)
 			require.True(t, exists, "file %s should still exist", n.GetDigest().GetHash())
 			linkPath := filepath.Join(scratchDir, strconv.Itoa(rand.Intn(1e12)))
-			ok := fc.FastLinkFile(ctx, n, linkPath)
+			ok := fc.FastLinkFile(ctx, n, linkPath, repb.DigestFunction_SHA256)
 			require.True(t, ok, "file %s should be linkable", n.GetDigest().GetHash())
 			require.FileExists(t, linkPath)
 			actualDigest, err := digest.ComputeForFile(linkPath, repb.DigestFunction_SHA256)
@@ -899,16 +900,16 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 			name := rn.GetDigest().GetHash()
 			writeFileContent(t, scratchDir, name, string(buf), false /*executable*/)
 			node := &repb.FileNode{Digest: rn.GetDigest()}
-			err = fc.AddFile(ctx, node, filepath.Join(scratchDir, name))
+			err = fc.AddFile(ctx, node, filepath.Join(scratchDir, name), repb.DigestFunction_SHA256)
 			require.NoError(t, err)
 		}
 
 		// The old files should all have been evicted.
 		for _, n := range prefixLength4Nodes {
-			exists := fc.ContainsFile(ctx, n)
+			exists := fc.ContainsFile(ctx, n, repb.DigestFunction_SHA256)
 			require.False(t, exists, "file %s should not exist", n.GetDigest().GetHash())
 			linkPath := filepath.Join(scratchDir, strconv.Itoa(rand.Intn(1e12)))
-			ok := fc.FastLinkFile(ctx, n, linkPath)
+			ok := fc.FastLinkFile(ctx, n, linkPath, repb.DigestFunction_SHA256)
 			require.False(t, ok, "file %s should not be linkable", n.GetDigest().GetHash())
 			require.NoFileExists(t, linkPath)
 		}
@@ -934,7 +935,7 @@ func TestFileCacheProcessCrash(t *testing.T) {
 	fc.WaitForDirectoryScanToComplete()
 	writeFile(t, baseDir, "file", false)
 	node := nodeFromString("file", false)
-	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file")))
+	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file"), repb.DigestFunction_SHA256))
 	// Intentionally skip fc.Close() to simulate a process crash.
 
 	// Re-open the filecache. The recorded boot ID matches the current boot ID,
@@ -945,7 +946,7 @@ func TestFileCacheProcessCrash(t *testing.T) {
 	t.Cleanup(func() { fc2.Close() })
 	fc2.WaitForDirectoryScanToComplete()
 
-	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"))
+	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"), repb.DigestFunction_SHA256)
 	require.True(t, linked, "cache should be preserved after a process crash within the same boot session")
 }
 
@@ -965,7 +966,7 @@ func TestFileCacheRebootWithoutCleanShutdown(t *testing.T) {
 	fc.WaitForDirectoryScanToComplete()
 	writeFile(t, baseDir, "file", false)
 	node := nodeFromString("file", false)
-	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file")))
+	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file"), repb.DigestFunction_SHA256))
 	// Simulate the machine rebooting without a clean shutdown (e.g. power
 	// loss) by skipping fc.Close() and overwriting the recorded boot ID with
 	// one from a different boot session.
@@ -979,7 +980,7 @@ func TestFileCacheRebootWithoutCleanShutdown(t *testing.T) {
 	t.Cleanup(func() { fc2.Close() })
 	fc2.WaitForDirectoryScanToComplete()
 
-	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"))
+	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"), repb.DigestFunction_SHA256)
 	require.False(t, linked, "cache should be wiped after a reboot without a clean shutdown")
 }
 
@@ -995,7 +996,7 @@ func TestFileCacheCleanShutdown(t *testing.T) {
 	fc.WaitForDirectoryScanToComplete()
 	writeFile(t, baseDir, "file", false)
 	node := nodeFromString("file", false)
-	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file")))
+	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file"), repb.DigestFunction_SHA256))
 	require.NoError(t, fc.Close())
 
 	// The clean shutdown should have removed the boot ID file, so that the
@@ -1008,7 +1009,7 @@ func TestFileCacheCleanShutdown(t *testing.T) {
 	t.Cleanup(func() { fc2.Close() })
 	fc2.WaitForDirectoryScanToComplete()
 
-	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"))
+	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"), repb.DigestFunction_SHA256)
 	require.True(t, linked, "cache should be preserved after a clean shutdown")
 }
 
@@ -1030,7 +1031,7 @@ func TestFileCacheBootIDFileRemovedWhenDetectionDisabled(t *testing.T) {
 	fc.WaitForDirectoryScanToComplete()
 	writeFile(t, baseDir, "file", false)
 	node := nodeFromString("file", false)
-	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file")))
+	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file"), repb.DigestFunction_SHA256))
 	require.FileExists(t, filepath.Join(fcDir, "boot_id"))
 
 	// Re-open the filecache with detection disabled. The leftover boot ID
@@ -1044,7 +1045,7 @@ func TestFileCacheBootIDFileRemovedWhenDetectionDisabled(t *testing.T) {
 	fc2.WaitForDirectoryScanToComplete()
 
 	require.NoFileExists(t, filepath.Join(fcDir, "boot_id"))
-	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"))
+	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"), repb.DigestFunction_SHA256)
 	require.True(t, linked, "cache should be preserved when detection is disabled")
 }
 
@@ -1064,7 +1065,7 @@ func TestFileCacheAddFileAfterClose(t *testing.T) {
 	// Once shutdown starts, cache population should become best-effort instead
 	// of surfacing "filecache is closed" to callers.
 	require.NoError(t, fc.Close())
-	require.NoError(t, fc.AddFile(ctx, node, path))
+	require.NoError(t, fc.AddFile(ctx, node, path, repb.DigestFunction_SHA256))
 }
 
 func TestFileCacheFastLinkFileAfterClose(t *testing.T) {
@@ -1079,13 +1080,13 @@ func TestFileCacheFastLinkFileAfterClose(t *testing.T) {
 
 	path := writeFileContent(t, baseDir, "file", "content", false)
 	node := nodeFromString("file", false)
-	require.NoError(t, fc.AddFile(ctx, node, path))
+	require.NoError(t, fc.AddFile(ctx, node, path, repb.DigestFunction_SHA256))
 
 	// Already-cached files should still be usable after shutdown begins.
 	require.NoError(t, fc.Close())
 
 	linkedPath := filepath.Join(baseDir, "linked-after-close")
-	require.True(t, fc.FastLinkFile(ctx, node, linkedPath))
+	require.True(t, fc.FastLinkFile(ctx, node, linkedPath, repb.DigestFunction_SHA256))
 	assertFileContents(t, linkedPath, "content")
 }
 
@@ -1195,7 +1196,7 @@ func TestFileCacheWriter(t *testing.T) {
 	err = w.Close()
 	require.NoError(t, err)
 
-	f, err := fc.Open(ctx, node)
+	f, err := fc.Open(ctx, node, repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
 	rc, err := io.ReadAll(f)
 	require.NoError(t, err)
@@ -1204,7 +1205,7 @@ func TestFileCacheWriter(t *testing.T) {
 	require.Equal(t, content, string(rc))
 
 	cf := filepath.Join(fc.TempDir(), "cached_file")
-	require.True(t, fc.FastLinkFile(ctx, node, cf))
+	require.True(t, fc.FastLinkFile(ctx, node, cf, repb.DigestFunction_BLAKE3))
 	fi, err := os.Stat(cf)
 	require.NoError(t, err)
 	// Windows doesn't support Unix-style permission bits. Go reports a synthetic mode
@@ -1223,7 +1224,7 @@ func TestFileCacheWriter(t *testing.T) {
 	err = w.Close()
 	require.NoError(t, err)
 	cfe := filepath.Join(fc.TempDir(), "cached_file_exec")
-	require.True(t, fc.FastLinkFile(ctx, execNode, cfe))
+	require.True(t, fc.FastLinkFile(ctx, execNode, cfe, repb.DigestFunction_BLAKE3))
 	fi, err = os.Stat(cfe)
 	require.NoError(t, err)
 	requireOwnerReadableWritable(t, fi)
@@ -1244,11 +1245,140 @@ func TestFileCacheWriter(t *testing.T) {
 	err = w.Close()
 	require.NoError(t, err)
 	cfe = filepath.Join(fc.TempDir(), "cached_file_exec")
-	require.True(t, fc.FastLinkFile(ctx, execNode, cfe))
+	require.True(t, fc.FastLinkFile(ctx, execNode, cfe, repb.DigestFunction_BLAKE3))
 	fi, err = os.Stat(cfe)
 	require.NoError(t, err)
 	requireOwnerReadableWritable(t, fi)
 	requireOwnerExecutable(t, fi)
+}
+
+func TestFileCacheWriterGITSHA1(t *testing.T) {
+	ctx := context.Background()
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	node := &repb.FileNode{Digest: &repb.Digest{Hash: "ce013625030ba8dba906f756967f9e9ca394464a", SizeBytes: 6}}
+	w, err := fc.Writer(ctx, node, repb.DigestFunction_GITSHA1)
+	require.NoError(t, err)
+	_, err = w.Write([]byte("longer interrupted download"))
+	require.NoError(t, err)
+	_, err = w.(io.Seeker).Seek(0, io.SeekStart)
+	require.NoError(t, err)
+	_, err = w.Write([]byte("hello\n"))
+	require.NoError(t, err)
+	require.NoError(t, w.Commit())
+	require.NoError(t, w.Close())
+
+	f, err := fc.Open(ctx, node, repb.DigestFunction_GITSHA1)
+	require.NoError(t, err)
+	data, err := io.ReadAll(f)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	require.Equal(t, "hello\n", string(data))
+}
+
+func TestFileCacheSHA1AndGITSHA1(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		data       string
+		executable bool
+	}{{"abc", true}, {"", false}} {
+		t.Run(fmt.Sprintf("size=%d/executable=%t", len(tc.data), tc.executable), func(t *testing.T) {
+			data := tc.data
+			shaData := fmt.Sprintf("blob %d\x00%s", len(data), data)
+			gitDigest, err := digest.Compute(strings.NewReader(data), repb.DigestFunction_GITSHA1, int64(len(data)))
+			require.NoError(t, err)
+			shaDigest, err := digest.Compute(strings.NewReader(shaData), repb.DigestFunction_SHA1, int64(len(shaData)))
+			require.NoError(t, err)
+			require.Equal(t, gitDigest.GetHash(), shaDigest.GetHash())
+			gitNode := &repb.FileNode{Digest: gitDigest, IsExecutable: tc.executable}
+			shaNode := &repb.FileNode{Digest: shaDigest, IsExecutable: tc.executable}
+			fcDir := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(fcDir, 100000, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { fc.Close() })
+			fc.WaitForDirectoryScanToComplete()
+
+			_, err = fc.Write(ctx, gitNode, []byte(data), repb.DigestFunction_GITSHA1)
+			require.NoError(t, err)
+			require.False(t, fc.ContainsFile(ctx, shaNode, repb.DigestFunction_SHA1))
+			invalid := &repb.FileNode{Digest: &repb.Digest{Hash: gitDigest.GetHash(), SizeBytes: -1}, IsExecutable: tc.executable}
+			require.False(t, fc.ContainsFile(ctx, invalid, repb.DigestFunction_GITSHA1))
+			_, err = fc.Write(ctx, shaNode, []byte(shaData), repb.DigestFunction_SHA1)
+			require.NoError(t, err)
+
+			for _, phase := range []string{"warm", "disk_fallback", "startup_scan"} {
+				t.Run(phase, func(t *testing.T) {
+					if phase != "warm" {
+						require.NoError(t, fc.Close())
+						if phase == "disk_fallback" {
+							filecache.DisableInitialDirectoryScanForTest()
+						}
+						fc, err = filecache.NewFileCache(fcDir, 100000, false)
+						filecache.EnableInitialDirectoryScanForTest()
+						require.NoError(t, err)
+						if phase == "startup_scan" {
+							fc.WaitForDirectoryScanToComplete()
+						}
+					}
+					for _, entry := range []struct {
+						node *repb.FileNode
+						df   repb.DigestFunction_Value
+						data string
+					}{
+						{shaNode, repb.DigestFunction_SHA1, shaData},
+						{gitNode, repb.DigestFunction_GITSHA1, data},
+					} {
+						got, err := fc.Read(ctx, entry.node, entry.df)
+						require.NoError(t, err)
+						require.Equal(t, entry.data, string(got))
+						require.True(t, fc.ContainsFile(ctx, entry.node, entry.df))
+						link := filepath.Join(testfs.MakeTempDir(t), "linked")
+						require.True(t, fc.FastLinkFile(ctx, entry.node, link, entry.df))
+						assertFileContents(t, link, entry.data)
+					}
+					require.True(t, fc.DeleteFile(ctx, shaNode, repb.DigestFunction_SHA1))
+					require.False(t, fc.ContainsFile(ctx, shaNode, repb.DigestFunction_SHA1))
+					require.True(t, fc.ContainsFile(ctx, gitNode, repb.DigestFunction_GITSHA1))
+					_, err = fc.Write(ctx, shaNode, []byte(shaData), repb.DigestFunction_SHA1)
+					require.NoError(t, err)
+				})
+			}
+		})
+	}
+}
+
+func TestFileCacheScanPreservesLegacySyntheticKeys(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		df   repb.DigestFunction_Value
+		size int64
+	}{
+		{repb.DigestFunction_SHA1, 0},
+		{repb.DigestFunction_SHA256, 1},
+		{repb.DigestFunction_BLAKE3, 1},
+	} {
+		t.Run(tc.df.String(), func(t *testing.T) {
+			const keyData = "tree or snapshot key"
+			const contents = "the cached value has a different size than the key"
+			d, err := digest.Compute(strings.NewReader(keyData), tc.df, int64(len(keyData)))
+			require.NoError(t, err)
+			d.SizeBytes = tc.size
+			node := &repb.FileNode{Digest: d}
+			fcDir := testfs.MakeTempDir(t)
+			writeFileContent(t, fcDir, "ANON/"+d.GetHash(), contents, false)
+
+			fc, err := filecache.NewFileCache(fcDir, 100000, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { fc.Close() })
+			fc.WaitForDirectoryScanToComplete()
+			got, err := fc.Read(ctx, node, tc.df)
+			require.NoError(t, err)
+			require.Equal(t, contents, string(got))
+		})
+	}
 }
 
 func TestFileCacheTempPathRejectsDigestWithTwoDots(t *testing.T) {
@@ -1261,15 +1391,14 @@ func TestFileCacheTempPathRejectsDigestWithTwoDots(t *testing.T) {
 
 	node := &repb.FileNode{Digest: &repb.Digest{Hash: "../foo", SizeBytes: 7}}
 
-	// Read stages its linked cache entry through a temp file, so a digest with a
-	// dot should be rejected before checking the cache.
-	_, err = fc.Read(ctx, node)
+	// Read must validate the digest before checking the cache.
+	_, err = fc.Read(ctx, node, repb.DigestFunction_SHA256)
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got: %v", err)
 
 	// Write stages bytes through a temp file, so the bytes should not be
 	// accepted when the digest name is not safe for temp file creation.
-	n, err := fc.Write(ctx, node, []byte("content"))
+	n, err := fc.Write(ctx, node, []byte("content"), repb.DigestFunction_SHA256)
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got: %v", err)
 	require.Zero(t, n)
@@ -1349,7 +1478,7 @@ func BenchmarkFilecacheLink(b *testing.B) {
 					Digest: d,
 				}
 				nodes = append(nodes, node)
-				err = fc.AddFile(ctx, node, path)
+				err = fc.AddFile(ctx, node, path, repb.DigestFunction_SHA256)
 				require.NoError(b, err)
 			}
 
@@ -1367,14 +1496,14 @@ func BenchmarkFilecacheLink(b *testing.B) {
 				for _, node := range nodes {
 					eg.Go(func() error {
 						if rand.Float64() > test.ReadFraction {
-							err := fc.AddFile(ctx, node, filepath.Join(tmp, node.GetName()))
+							err := fc.AddFile(ctx, node, filepath.Join(tmp, node.GetName()), repb.DigestFunction_SHA256)
 							if err != nil {
 								require.FailNowf(b, "add failed", "%s", err)
 							}
 							return nil
 						}
 
-						ok := fc.FastLinkFile(ctx, node, filepath.Join(out, fmt.Sprint(node.GetName())))
+						ok := fc.FastLinkFile(ctx, node, filepath.Join(out, fmt.Sprint(node.GetName())), repb.DigestFunction_SHA256)
 						if !ok {
 							require.FailNowf(b, "link failed", "")
 						}
@@ -1445,8 +1574,8 @@ func BenchmarkContainsAdd(b *testing.B) {
 				eg.SetLimit(100)
 				for path, node := range nodes {
 					eg.Go(func() error {
-						if !fc.ContainsFile(ctx, node) {
-							require.NoError(b, fc.AddFile(ctx, node, path))
+						if !fc.ContainsFile(ctx, node, repb.DigestFunction_SHA256) {
+							require.NoError(b, fc.AddFile(ctx, node, path, repb.DigestFunction_SHA256))
 						}
 						return nil
 					})
@@ -1529,7 +1658,7 @@ func TestFileCacheWriteCleansUpTempFile(t *testing.T) {
 
 	// Write the bytes through the convenience API and expect it to report the
 	// full accepted byte count.
-	n, err := fc.Write(ctx, node, buf)
+	n, err := fc.Write(ctx, node, buf, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	require.Equal(t, len(buf), n)
 
@@ -1556,14 +1685,14 @@ func TestFileCacheWriteAfterClose(t *testing.T) {
 	// Once the cache is closing, Write should silently accept the bytes so
 	// callers do not fail just because cache population is best-effort.
 	require.NoError(t, fc.Close())
-	n, err := fc.Write(ctx, node, buf)
+	n, err := fc.Write(ctx, node, buf, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	require.Equal(t, len(buf), n)
 
 	// The accepted bytes are intentionally dropped rather than added to the
 	// cache after shutdown starts.
 	linkedPath := filepath.Join(outputDir, "linked-after-close")
-	require.False(t, fc.FastLinkFile(ctx, node, linkedPath))
+	require.False(t, fc.FastLinkFile(ctx, node, linkedPath, repb.DigestFunction_SHA256))
 	require.NoFileExists(t, linkedPath)
 }
 
@@ -1746,7 +1875,7 @@ func TestTrackExternalDirectory_DeferredDeletion_MultipleLocks(t *testing.T) {
 	err = os.WriteFile(filePath, make([]byte, 4000), 0644)
 	require.NoError(t, err)
 	node := nodeFromString(string(make([]byte, 4000)), false)
-	err = fc.AddFile(ctx, node, filePath)
+	err = fc.AddFile(ctx, node, filePath, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// Directory is locked, so deletion is deferred.
@@ -1903,17 +2032,17 @@ func TestFilecache_ConcurrentFileAndDirectoryOperations(t *testing.T) {
 				case 0: // AddFile
 					fileIdx := rng.Intn(numFiles)
 					filePath := filepath.Join(scratchDir, fmt.Sprintf("file%d", fileIdx))
-					_ = fc.AddFile(ctx, nodes[fileIdx], filePath)
+					_ = fc.AddFile(ctx, nodes[fileIdx], filePath, repb.DigestFunction_SHA256)
 
 				case 1: // FastLinkFile
 					fileIdx := rng.Intn(numFiles)
 					outPath := filepath.Join(fc.TempDir(), fmt.Sprintf("link-%d-%d-%d", g, op, fileIdx))
-					fc.FastLinkFile(ctx, nodes[fileIdx], outPath)
+					fc.FastLinkFile(ctx, nodes[fileIdx], outPath, repb.DigestFunction_SHA256)
 					os.Remove(outPath) // Cleanup
 
 				case 2: // ContainsFile
 					fileIdx := rng.Intn(numFiles)
-					fc.ContainsFile(ctx, nodes[fileIdx])
+					fc.ContainsFile(ctx, nodes[fileIdx], repb.DigestFunction_SHA256)
 
 				case 3: // TrackExternalDirectory
 					dirIdx := rng.Intn(numDirs)
@@ -1940,7 +2069,7 @@ func TestFilecache_ConcurrentFileAndDirectoryOperations(t *testing.T) {
 
 				case 5: // DeleteFile
 					fileIdx := rng.Intn(numFiles)
-					fc.DeleteFile(ctx, nodes[fileIdx])
+					fc.DeleteFile(ctx, nodes[fileIdx], repb.DigestFunction_SHA256)
 				}
 			nextOp:
 			}

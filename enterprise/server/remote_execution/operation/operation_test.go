@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	testDigest = &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}
-	testTaskID = digest.NewCASResourceName(testDigest, "test-instance", repb.DigestFunction_SHA256).NewUploadString()
+	testResourceName = digest.NewCASResourceName(&repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}, "test-instance", repb.DigestFunction_SHA256)
+	testTaskID       = testResourceName.NewUploadString()
 )
 
 // fakeStream is a minimal grpc.ClientStreamingClient that records sent
@@ -103,16 +103,41 @@ func newPublisher(t *testing.T, streams ...*fakeStream) (*Publisher, *fakeExecut
 
 func completedOp(t *testing.T) *longrunningpb.Operation {
 	t.Helper()
-	op, err := Assemble(testTaskID, Metadata(repb.ExecutionStage_COMPLETED, testDigest), nil)
+	op, err := Assemble(testTaskID, Metadata(repb.ExecutionStage_COMPLETED, &testResourceName.ResourceName), nil)
 	require.NoError(t, err)
 	return op
 }
 
 func progressOp(t *testing.T) *longrunningpb.Operation {
 	t.Helper()
-	op, err := Assemble(testTaskID, Metadata(repb.ExecutionStage_EXECUTING, testDigest), nil)
+	op, err := Assemble(testTaskID, Metadata(repb.ExecutionStage_EXECUTING, &testResourceName.ResourceName), nil)
 	require.NoError(t, err)
 	return op
+}
+
+func TestGITSHA1ExecutionMetadata(t *testing.T) {
+	d := &repb.Digest{Hash: "f2ba8f84ab5c1bce84a7b441cb1959cfc7093b7f", SizeBytes: 3}
+	rn := digest.NewCASResourceName(d, "test-instance", repb.DigestFunction_GITSHA1)
+	taskID := rn.NewUploadString()
+	stream := &fakeStream{}
+	client := &fakeExecutionClient{streams: []*fakeStream{stream}}
+	pub, err := Publish(t.Context(), client, taskID)
+	require.NoError(t, err)
+
+	require.NoError(t, pub.Ping())
+	stateChange := GetStateChangeFunc(pub, taskID, &rn.ResourceName)
+	require.NoError(t, stateChange(repb.ExecutionStage_EXECUTING, InProgressExecuteResponse()))
+	require.NoError(t, PublishOperationDone(pub, taskID, &rn.ResourceName, &repb.ExecuteResponse{}))
+
+	ops := stream.recordedOps()
+	require.Len(t, ops, 3)
+	for _, op := range ops {
+		md := &repb.ExecuteOperationMetadata{}
+		require.NoError(t, op.GetMetadata().UnmarshalTo(md))
+		require.Equal(t, repb.DigestFunction_GITSHA1, md.GetDigestFunction())
+		require.Equal(t, d.GetHash(), md.GetActionDigest().GetHash())
+		require.Equal(t, d.GetSizeBytes(), md.GetActionDigest().GetSizeBytes())
+	}
 }
 
 func TestRetryingClient_Send_BuffersCompletedAfterSuccess(t *testing.T) {

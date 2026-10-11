@@ -218,7 +218,7 @@ func (pmk *PebbleKey) createSyntheticHash() (string, error) {
 		rih = "0"
 	}
 	hashExtra += "|" + rih + "|" + pmk.hash
-	d, err := digest.Compute(bytes.NewReader([]byte(hashExtra)), pmk.digestFunction)
+	d, err := digest.Compute(bytes.NewReader([]byte(hashExtra)), pmk.digestFunction, int64(len(hashExtra)))
 	if err != nil {
 		return "", err
 	}
@@ -226,9 +226,13 @@ func (pmk *PebbleKey) createSyntheticHash() (string, error) {
 }
 
 func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
+	hash := pmk.hash
+	if version <= Version3 {
+		hash = digest.LegacyKeyHash(hash, pmk.digestFunction)
+	}
 	switch version {
 	case UndefinedKeyVersion:
-		filePath := filepath.Join(pmk.isolation, pmk.remoteInstanceHash, pmk.hash)
+		filePath := filepath.Join(pmk.isolation, pmk.remoteInstanceHash, hash)
 		if pmk.isolation == "ac" {
 			filePath = filepath.Join(pmk.groupID, filePath)
 		}
@@ -237,7 +241,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 
 		return []byte(filePath), nil
 	case Version1:
-		filePath := filepath.Join(pmk.isolation, pmk.remoteInstanceHash, pmk.hash)
+		filePath := filepath.Join(pmk.isolation, pmk.remoteInstanceHash, hash)
 		if pmk.isolation == "ac" {
 			filePath = filepath.Join(pmk.groupID, filePath)
 		}
@@ -245,7 +249,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		filePath = filepath.Join(partDir, filePath, "v1")
 		return []byte(filePath), nil
 	case Version2:
-		filePath := filepath.Join(pmk.hash, pmk.isolation, pmk.remoteInstanceHash)
+		filePath := filepath.Join(hash, pmk.isolation, pmk.remoteInstanceHash)
 		if pmk.isolation == "ac" {
 			filePath = filepath.Join(FixedWidthGroupID(pmk.groupID), filePath)
 		}
@@ -257,7 +261,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		if pmk.isolation == "ac" && rih == "" {
 			rih = "0"
 		}
-		filePath := filepath.Join(pmk.hash, pmk.isolation, rih, pmk.encryptionKeyID)
+		filePath := filepath.Join(hash, pmk.isolation, rih, pmk.encryptionKeyID)
 		if pmk.isolation == "ac" {
 			filePath = filepath.Join(FixedWidthGroupID(pmk.groupID), filePath)
 		}
@@ -539,24 +543,35 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 	// be overwritten during parsing.
 	pmk.digestFunction = repb.DigestFunction_SHA256
 
+	var err error
 	switch version {
 	case UndefinedKeyVersion:
-		return UndefinedKeyVersion, pmk.parseUndefinedVersion(parts)
+		err = pmk.parseUndefinedVersion(parts)
 	case Version1:
-		return Version1, pmk.parseVersion1(parts)
+		err = pmk.parseVersion1(parts)
 	case Version2:
-		return Version2, pmk.parseVersion2(parts)
+		err = pmk.parseVersion2(parts)
 	case Version3:
-		return Version3, pmk.parseVersion3(parts)
+		err = pmk.parseVersion3(parts)
 	case Version4:
-		return Version4, pmk.parseVersion4(parts)
+		err = pmk.parseVersion4(parts)
 	case Version5:
-		return Version5, pmk.parseVersion5(parts)
+		err = pmk.parseVersion5(parts)
 	case Version6:
-		return Version6, pmk.parseVersion6(parts)
+		err = pmk.parseVersion6(parts)
 	default:
 		return -1, status.InvalidArgumentErrorf("Unable to parse %q to pebble key", in)
 	}
+	if err != nil {
+		return version, err
+	}
+	// LegacyKeyHash writes 42 hex characters only for GITSHA1. Recover
+	// the real digest before migrating a pre-v4 key to v4 or later.
+	if version <= Version3 && len(pmk.hash) == 42 && strings.HasSuffix(pmk.hash, "0a") {
+		pmk.hash = strings.TrimSuffix(pmk.hash, "0a")
+		pmk.digestFunction = repb.DigestFunction_GITSHA1
+	}
+	return version, nil
 }
 
 type Store interface {
@@ -652,7 +667,7 @@ func (fs *fileStorer) FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetad
 // fileKey is the partial path where a file will be written.
 // For example, given a fileRecord with fileKey: "foo/bar", the filestore will
 // write the file at a path like "/root/dir/blobs/foo/bar".
-func (fs *fileStorer) fileKey(r *sgpb.FileRecord) (string, error) {
+func fileKey(r *sgpb.FileRecord) (string, error) {
 	// This function cannot change without a data migration.
 	// filekeys look like this:
 	//   // {partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
@@ -663,6 +678,7 @@ func (fs *fileStorer) fileKey(r *sgpb.FileRecord) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	hash = digest.LegacyKeyHash(hash, r.GetDigestFunction())
 	if r.GetEncryption().GetKeyId() != "" {
 		hash += "_" + r.GetEncryption().GetKeyId()
 	}
@@ -687,19 +703,11 @@ func blobKey(appName string, r *sgpb.FileRecord) ([]byte, error) {
 	if appName == "" {
 		return nil, status.FailedPreconditionErrorf("Invalid app name: %q (cannot be empty)", appName)
 	}
-	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
+	file, err := fileKey(r)
 	if err != nil {
 		return nil, err
 	}
-	if r.GetEncryption().GetKeyId() != "" {
-		hash += "_" + r.GetEncryption().GetKeyId()
-	}
-	partDir := PartitionDirectoryPrefix + partID
-	if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
-		return []byte(filepath.Join(appName, partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
-	} else {
-		return []byte(filepath.Join(appName, partDir, isolation, remoteInstanceHash, hash[:4], hash)), nil
-	}
+	return []byte(filepath.Join(appName, file)), nil
 }
 
 func (fs *fileStorer) PebbleKey(r *sgpb.FileRecord) (PebbleKey, error) {
@@ -787,7 +795,7 @@ func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *sgpb.St
 }
 
 func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
-	file, err := fs.fileKey(fileRecord)
+	file, err := fileKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}

@@ -305,7 +305,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			})
 			continue
 		}
-		checksum, err := digest.HashForDigestType(rn.GetDigestFunction())
+		checksum, err := digest.HashForDigestType(rn.GetDigestFunction(), rn.GetDigest().GetSizeBytes())
 		if err != nil {
 			return nil, err
 		}
@@ -572,7 +572,7 @@ func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, dirName 
 
 func makeTreeCachePointer(directoryNode *rspb.ResourceName, digestFunction repb.DigestFunction_Value) (*digest.ResourceName, error) {
 	buf := strings.NewReader(directoryNode.GetDigest().GetHash() + *treeCacheSeed)
-	d, err := digest.Compute(buf, digestFunction)
+	d, err := digest.Compute(buf, digestFunction, int64(buf.Len()))
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +582,7 @@ func makeTreeCachePointer(directoryNode *rspb.ResourceName, digestFunction repb.
 }
 
 func makeTreeCacheDigest(digestFunction repb.DigestFunction_Value, buf []byte) (*digest.ResourceName, error) {
-	d, err := digest.Compute(bytes.NewReader(buf), digestFunction)
+	d, err := digest.Compute(bytes.NewReader(buf), digestFunction, int64(len(buf)))
 	if err != nil {
 		return nil, err
 	}

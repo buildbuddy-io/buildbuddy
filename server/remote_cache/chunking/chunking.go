@@ -540,7 +540,7 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 			attribute.Int("chunk_count", len(cm.ChunkDigests)),
 		)
 	}
-	hasher, err := digest.HashForDigestType(cm.DigestFunction)
+	hasher, err := digest.HashForDigestType(cm.DigestFunction, cm.BlobDigest.GetSizeBytes())
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid digest function: %s", err)
 	}
@@ -621,15 +621,21 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 // cross-group sharing. The content is the pre-image of the CAS digest, so
 // only identical manifests produce the same key.
 //
-// To keep the CAS entry constant-size (32 bytes) regardless of blob size, the
+// To keep the CAS entry constant-size regardless of blob size, the
 // marker uses a double-hash scheme:
 //
-//	content = H(domain || salt || blob_hash || chunk_hashes...)   [32 bytes]
-//	CAS key = H(content)                                          [32 bytes]
+//	content = H(domain || salt || blob_hash || chunk_hashes...)
+//	CAS key = H(content)
 //
 // This avoids writing O(numChunks * digestSize) bytes to the CAS for large blobs.
 func sharedValidationResourceName(cm *Manifest) (*rspb.ResourceName, []byte, error) {
-	inner, err := digest.HashForDigestType(cm.DigestFunction)
+	innerDigestFunction := cm.DigestFunction
+	if innerDigestFunction == repb.DigestFunction_GITSHA1 {
+		// The marker content is not a Git object. Preserve existing marker keys
+		// for all other digest functions.
+		innerDigestFunction = repb.DigestFunction_SHA256
+	}
+	inner, err := digest.HashForDigestType(innerDigestFunction, -1)
 	if err != nil {
 		return nil, nil, status.InvalidArgumentErrorf("compute shared validation key: %s", err)
 	}
@@ -652,7 +658,7 @@ func sharedValidationResourceName(cm *Manifest) (*rspb.ResourceName, []byte, err
 	}
 
 	content := inner.Sum(nil)
-	d, err := digest.Compute(bytes.NewReader(content), cm.DigestFunction)
+	d, err := digest.Compute(bytes.NewReader(content), cm.DigestFunction, int64(len(content)))
 	if err != nil {
 		return nil, nil, status.InvalidArgumentErrorf("compute shared validation key digest: %s", err)
 	}
@@ -671,7 +677,8 @@ func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction
 	// verification.
 	// TODO(buildbuddy-internal#6426): Consider using [HMAC](https://pkg.go.dev/crypto/hmac) for more robust keyed hashing.
 	if *chunkedManifestSalt != "" {
-		saltedDigest, err := digest.Compute(strings.NewReader(*chunkedManifestSalt+":"+blobDigest.GetHash()), digestFunction)
+		key := strings.NewReader(*chunkedManifestSalt + ":" + blobDigest.GetHash())
+		saltedDigest, err := digest.Compute(key, digestFunction, int64(key.Len()))
 		if err != nil {
 			return nil, err
 		}

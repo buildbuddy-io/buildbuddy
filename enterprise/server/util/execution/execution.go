@@ -95,7 +95,7 @@ func TableExecToClientProto(in *tables.Execution, invocationLinkType int8) (*esp
 		return nil, err
 	}
 
-	executeResponseDigest, err := digest.Compute(strings.NewReader(in.ExecutionID), r.GetDigestFunction())
+	executeResponseDigest, err := digest.Compute(strings.NewReader(in.ExecutionID), r.GetDigestFunction(), int64(len(in.ExecutionID)))
 	if err != nil {
 		return nil, status.WrapError(err, "compute execute response digest")
 	}
@@ -150,7 +150,7 @@ func OLAPExecToClientProto(in *olaptables.Execution) (*espb.Execution, error) {
 	}
 	executionID := rn.UploadString(in.ExecutionUUID)
 
-	executeResponseDigest, err := digest.Compute(strings.NewReader(executionID), rn.GetDigestFunction())
+	executeResponseDigest, err := digest.Compute(strings.NewReader(executionID), rn.GetDigestFunction(), int64(len(executionID)))
 	if err != nil {
 		return nil, status.WrapError(err, "compute execute response digest")
 	}

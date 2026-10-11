@@ -83,11 +83,55 @@ func TestGetSet(t *testing.T) {
 		require.NoError(t, err)
 
 		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 		require.NoError(t, err)
 		if r.GetDigest().GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())
 		}
+	}
+}
+
+func TestGitSHA1AndSHA1IsolationAfterRestart(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		forceV1 bool
+	}{
+		{name: "v1", forceV1: true},
+		{name: "v2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := getTestEnv(t, emptyUserMap)
+			ctx := getAnonContext(t, te)
+			opts := &disk_cache.Options{RootDirectory: testfs.MakeTempDir(t), ForceV1Layout: tc.forceV1}
+			dc, err := disk_cache.NewDiskCache(te, opts, 1_000_000)
+			require.NoError(t, err)
+			dc.WaitUntilMapped()
+			gitBytes := []byte("abc")
+			sha1Bytes := []byte("blob 3\x00abc")
+			gitDigest, err := digest.Compute(bytes.NewReader(gitBytes), repb.DigestFunction_GITSHA1, int64(len(gitBytes)))
+			require.NoError(t, err)
+			sha1Digest, err := digest.Compute(bytes.NewReader(sha1Bytes), repb.DigestFunction_SHA1, int64(len(sha1Bytes)))
+			require.NoError(t, err)
+			require.Equal(t, sha1Digest.GetHash(), gitDigest.GetHash())
+			gitRN := digest.NewCASResourceName(gitDigest, "instance", repb.DigestFunction_GITSHA1).ToProto()
+			sha1RN := digest.NewCASResourceName(sha1Digest, "instance", repb.DigestFunction_SHA1).ToProto()
+			require.NoError(t, dc.Set(ctx, sha1RN, sha1Bytes))
+			found, err := dc.Contains(ctx, gitRN)
+			require.NoError(t, err)
+			require.False(t, found)
+			require.NoError(t, dc.Set(ctx, gitRN, gitBytes))
+
+			require.NoError(t, dc.Stop())
+			dc, err = disk_cache.NewDiskCache(te, opts, 1_000_000)
+			require.NoError(t, err)
+			dc.WaitUntilMapped()
+			got, err := dc.Get(ctx, sha1RN)
+			require.NoError(t, err)
+			require.Equal(t, sha1Bytes, got)
+			got, err = dc.Get(ctx, gitRN)
+			require.NoError(t, err)
+			require.Equal(t, gitBytes, got)
+		})
 	}
 }
 
@@ -228,7 +272,7 @@ func TestMultiGetSet(t *testing.T) {
 		if !ok {
 			t.Fatalf("Multi-get failed to return expected digest: %q", d.GetHash())
 		}
-		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -376,7 +420,7 @@ func TestSizeLimit(t *testing.T) {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
 		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 		require.NoError(t, err)
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
@@ -435,7 +479,7 @@ func TestLRU(t *testing.T) {
 			t.Fatalf("Error getting %q from cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256, int64(len(rbuf)))
 		require.NoError(t, err)
 		if r.GetDigest().GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())

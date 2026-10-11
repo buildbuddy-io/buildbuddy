@@ -191,7 +191,7 @@ func dialBufconn(ctx context.Context, lis *bufconn.Listener) (*grpc.ClientConn, 
 // the corresponding CAS resource name.
 func uploadBlob(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClient, data []byte) *digest.CASResourceName {
 	t.Helper()
-	d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256, int64(len(data)))
 	require.NoError(t, err)
 	rn := digest.NewCASResourceName(d, "" /*instanceName*/, repb.DigestFunction_SHA256)
 	_, _, err = cachetools.UploadFromReader(ctx, bsClient, rn, bytes.NewReader(data))

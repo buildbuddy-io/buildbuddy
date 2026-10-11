@@ -203,6 +203,8 @@ function digestFunctionURLPart(cache: resource.IResourceName) {
       return "";
     case DigestFunction.BLAKE3:
       return "blake3";
+    case DigestFunction.GITSHA1:
+      return "gitsha1";
     default:
       throw new Error("unsupported digest function");
   }

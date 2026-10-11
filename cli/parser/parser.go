@@ -697,12 +697,7 @@ func runBazelHelpWithCache() (*bfpb.FlagCollection, error) {
 	if filepath.IsAbs(versionKey) {
 		// If using an absolute path to a bazel binary, use its digest as the
 		// version key.
-		f, err := os.Open(versionKey)
-		if err != nil {
-			return nil, err
-		}
-		defer f.Close()
-		d, err := digest.Compute(f, repb.DigestFunction_SHA256)
+		d, err := digest.ComputeForFile(versionKey, repb.DigestFunction_SHA256)
 		if err != nil {
 			return nil, err
 		}

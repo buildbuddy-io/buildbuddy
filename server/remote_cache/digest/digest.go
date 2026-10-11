@@ -52,11 +52,26 @@ var (
 		repb.DigestFunction_SHA512,
 		repb.DigestFunction_SHA1,
 		repb.DigestFunction_BLAKE3,
+		repb.DigestFunction_GITSHA1,
 	}
 )
 
 func SupportedDigestFunctions() []repb.DigestFunction_Value {
 	return knownDigestFunctions
+}
+
+// LegacyKeyHash returns a storage key for caches that historically keyed blobs
+// by hash without including the digest function. GITSHA1(data) is also the
+// SHA1 of the Git blob header followed by data, so these must be different
+// keys. The suffix is the hex value of DigestFunction_GITSHA1 (10) and keeps
+// the key hexadecimal for the disk cache scanner.
+// 42 hex characters cannot be mistaken for any supported digest's hash.
+// This key must not be used as a REAPI digest.
+func LegacyKeyHash(hash string, df repb.DigestFunction_Value) string {
+	if df == repb.DigestFunction_GITSHA1 {
+		return hash + "0a"
+	}
+	return hash
 }
 
 type ResourceName struct {
@@ -362,13 +377,22 @@ func ComputeForMessage(in proto.Message, digestType repb.DigestFunction_Value) (
 	if err != nil {
 		return nil, err
 	}
-	return Compute(bytes.NewReader(data), digestType)
+	return Compute(bytes.NewReader(data), digestType, int64(len(data)))
 }
 
-func HashForDigestType(digestType repb.DigestFunction_Value) (hash.Hash, error) {
+// HashForDigestType returns a hash for a blob of sizeBytes uncompressed bytes.
+// GITSHA1 includes sizeBytes in the Git blob header.
+func HashForDigestType(digestType repb.DigestFunction_Value, sizeBytes int64) (hash.Hash, error) {
 	switch digestType {
 	case repb.DigestFunction_SHA1:
 		return sha1.New(), nil
+	case repb.DigestFunction_GITSHA1:
+		if sizeBytes < 0 {
+			return nil, status.InvalidArgumentError("GITSHA1 requires a non-negative blob size")
+		}
+		h := &gitSHA1Hash{Hash: sha1.New(), sizeBytes: sizeBytes}
+		h.Reset()
+		return h, nil
 	case repb.DigestFunction_SHA256:
 		return sha256.New(), nil
 	case repb.DigestFunction_SHA384:
@@ -384,6 +408,16 @@ func HashForDigestType(digestType repb.DigestFunction_Value) (hash.Hash, error) 
 	default:
 		return nil, status.UnimplementedErrorf("No support for digest type: %s", digestType)
 	}
+}
+
+type gitSHA1Hash struct {
+	hash.Hash
+	sizeBytes int64
+}
+
+func (h *gitSHA1Hash) Reset() {
+	h.Hash.Reset()
+	fmt.Fprintf(h.Hash, "blob %d\x00", h.sizeBytes)
 }
 
 func InferOldStyleDigestFunctionInDesperation(d *repb.Digest) repb.DigestFunction_Value {
@@ -407,6 +441,8 @@ func IsEmptyHash(d *repb.Digest, digestFunction repb.DigestFunction_Value) bool 
 	switch digestFunction {
 	case repb.DigestFunction_SHA1:
 		return d.GetHash() == "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+	case repb.DigestFunction_GITSHA1:
+		return d.GetHash() == "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
 	case repb.DigestFunction_MD5:
 		return d.GetHash() == "d41d8cd98f00b204e9800998ecf8427e"
 	case repb.DigestFunction_SHA256:
@@ -432,7 +468,7 @@ func hashLength(digestFunction repb.DigestFunction_Value) int {
 		return sha512.Size384 * 2
 	case repb.DigestFunction_SHA512:
 		return sha512.Size * 2
-	case repb.DigestFunction_SHA1:
+	case repb.DigestFunction_SHA1, repb.DigestFunction_GITSHA1:
 		return sha1.Size * 2
 	case repb.DigestFunction_MD5:
 		return md5.Size * 2
@@ -443,15 +479,7 @@ func hashLength(digestFunction repb.DigestFunction_Value) int {
 
 func isOldStyleDigestFunction(digestFunction repb.DigestFunction_Value) bool {
 	switch digestFunction {
-	case repb.DigestFunction_SHA1:
-		return true
-	case repb.DigestFunction_MD5:
-		return true
-	case repb.DigestFunction_SHA256:
-		return true
-	case repb.DigestFunction_SHA384:
-		return true
-	case repb.DigestFunction_SHA512:
+	case repb.DigestFunction_SHA1, repb.DigestFunction_MD5, repb.DigestFunction_SHA256, repb.DigestFunction_SHA384, repb.DigestFunction_SHA512:
 		return true
 	default:
 		return false
@@ -460,7 +488,9 @@ func isOldStyleDigestFunction(digestFunction repb.DigestFunction_Value) bool {
 
 var blake3Hashes = sync.Pool{New: func() any { return blake3.New() }}
 
-func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
+// Compute hashes in from its current position. sizeBytes is the expected
+// number of bytes remaining, or -1 if unknown. GITSHA1 requires a known size.
+func Compute(in io.Reader, digestType repb.DigestFunction_Value, sizeBytes int64) (*repb.Digest, error) {
 	var h hash.Hash
 	if digestType == repb.DigestFunction_BLAKE3 {
 		// blake3.New() allocates over 10KiB. Use a pool to avoid this.
@@ -473,7 +503,7 @@ func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, 
 		}()
 	} else {
 		var err error
-		h, err = HashForDigestType(digestType)
+		h, err = HashForDigestType(digestType, sizeBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -483,6 +513,9 @@ func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, 
 	n, err := io.Copy(h, in)
 	if err != nil {
 		return nil, err
+	}
+	if sizeBytes >= 0 && n != sizeBytes {
+		return nil, status.DataLossErrorf("digest size mismatch: expected %d bytes, read %d", sizeBytes, n)
 	}
 	return &repb.Digest{
 		Hash:      hex.EncodeToString(h.Sum(nil)),
@@ -496,7 +529,11 @@ func ComputeForFile(path string, digestType repb.DigestFunction_Value) (*repb.Di
 		return nil, err
 	}
 	defer f.Close()
-	return Compute(f, digestType)
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	return Compute(f, digestType, info.Size())
 }
 
 // parseResourceName parses a resource-name URL into a ResourceName. For upload
@@ -541,6 +578,8 @@ func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceTy
 	switch piece {
 	case "blake3":
 		digestFunction = repb.DigestFunction_BLAKE3
+	case "gitsha1":
+		digestFunction = repb.DigestFunction_GITSHA1
 	case "sha1":
 		digestFunction = repb.DigestFunction_SHA1
 	case "sha512":
@@ -899,7 +938,7 @@ func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, erro
 	g.fill(buf)
 
 	// Compute a digest for the random bytes.
-	d, err := Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
+	d, err := Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256, int64(len(buf)))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -913,6 +952,8 @@ func lowerFunctionName(df repb.DigestFunction_Value) string {
 	switch df {
 	case repb.DigestFunction_BLAKE3:
 		return "blake3"
+	case repb.DigestFunction_GITSHA1:
+		return "gitsha1"
 	case repb.DigestFunction_SHA1:
 		return "sha1"
 	case repb.DigestFunction_SHA256:

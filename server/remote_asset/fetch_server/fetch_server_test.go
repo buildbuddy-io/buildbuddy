@@ -176,10 +176,10 @@ func TestFetchBlob_LocalSingleflight(t *testing.T) {
 			uriHeader,
 		}
 	}
-	wrongSHA256, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA256)
+	wrongSHA256, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA256, int64(len("wrong")))
 	require.NoError(t, err)
 	wrongSRI := checksumQualifierFromContent(t, wrongSHA256.GetHash(), repb.DigestFunction_SHA256)
-	fallbackDigest, err := digest.Compute(strings.NewReader("fallback"), repb.DigestFunction_SHA256)
+	fallbackDigest, err := digest.Compute(strings.NewReader("fallback"), repb.DigestFunction_SHA256, int64(len("fallback")))
 	require.NoError(t, err)
 	fallbackSRI := checksumQualifierFromContent(t, fallbackDigest.GetHash(), repb.DigestFunction_SHA256)
 	for _, tc := range []struct {
@@ -613,7 +613,7 @@ func TestFetchBlob(t *testing.T) {
 			clientConn := runFetchServer(ctx, t, te)
 			fetchClient := rapb.NewFetchClient(clientConn)
 
-			contentDigest, err := digest.Compute(bytes.NewReader([]byte(tc.content)), tc.digestFunc)
+			contentDigest, err := digest.Compute(bytes.NewReader([]byte(tc.content)), tc.digestFunc, int64(len(tc.content)))
 			require.NoError(t, err)
 
 			var requests atomic.Int64
@@ -730,7 +730,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(t, err)
 
-			checksumDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.checksumFunc)
+			checksumDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.checksumFunc, int64(len(content)))
 			require.NoError(t, err)
 			err = te.GetCache().Set(ctx, digest.NewResourceName(checksumDigest, "", resource.CacheType_CAS, tc.checksumFunc).ToProto(), []byte(content))
 			require.NoError(t, err)
@@ -770,7 +770,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 			assert.Equal(t, tc.storageFunc, resp.GetDigestFunction())
 			assert.Empty(t, resp.GetUri())
 			assert.Equal(t, wantRequests, requests.Load())
-			storageDigest, err := digest.Compute(strings.NewReader(content), tc.storageFunc)
+			storageDigest, err := digest.Compute(strings.NewReader(content), tc.storageFunc, int64(len(content)))
 			require.NoError(t, err)
 			assert.Equal(t, storageDigest, resp.GetBlobDigest())
 
@@ -825,12 +825,12 @@ func TestFetchBlob_ReadOnly(t *testing.T) {
 			cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(t, err)
 
-			checksumDigest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
+			checksumDigest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256, int64(len(content)))
 			require.NoError(t, err)
 			if tc.seedCache {
 				require.NoError(t, te.GetCache().Set(cacheCtx, digest.NewCASResourceName(checksumDigest, "", repb.DigestFunction_SHA256).ToProto(), []byte(content)))
 			}
-			storageDigest, err := digest.Compute(strings.NewReader(content), tc.storageFunc)
+			storageDigest, err := digest.Compute(strings.NewReader(content), tc.storageFunc, int64(len(content)))
 			require.NoError(t, err)
 			storageRN := digest.NewCASResourceName(storageDigest, "", tc.storageFunc)
 
@@ -866,9 +866,9 @@ func TestFetchBlob_ReadOnly(t *testing.T) {
 }
 
 func TestFetchBlobMismatch(t *testing.T) {
-	wrongSHA256, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA256)
+	wrongSHA256, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA256, int64(len("wrong")))
 	require.NoError(t, err)
-	wrongSHA512, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA512)
+	wrongSHA512, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA512, int64(len("wrong")))
 	require.NoError(t, err)
 	for _, tc := range []struct {
 		name                string
@@ -1013,7 +1013,7 @@ func TestFetchBlobMismatch(t *testing.T) {
 			assert.Equal(t, "", resp.GetStatus().Message)
 			assert.Equal(t, tc.expectedDigestFunc, resp.GetDigestFunction())
 			assert.Contains(t, resp.GetUri(), ts.URL)
-			expectedDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.expectedDigestFunc)
+			expectedDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.expectedDigestFunc, int64(len(content)))
 			require.NoError(t, err)
 			assert.Equal(t, expectedDigest.GetHash(), resp.GetBlobDigest().GetHash())
 		})
@@ -1268,9 +1268,9 @@ func TestFetchBlob_CacheConversionFailureFallsThroughToLaterChecksum(t *testing.
 	client := rapb.NewFetchClient(runFetchServer(ctx, t, te))
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
-	sha256Digest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
+	sha256Digest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256, int64(len(content)))
 	require.NoError(t, err)
-	blake3Digest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_BLAKE3)
+	blake3Digest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_BLAKE3, int64(len(content)))
 	require.NoError(t, err)
 	require.NoError(t, te.GetCache().Set(ctx, digest.NewCASResourceName(sha256Digest, "", repb.DigestFunction_SHA256).ToProto(), []byte(content)))
 	require.NoError(t, te.GetCache().Set(ctx, digest.NewCASResourceName(blake3Digest, "", repb.DigestFunction_BLAKE3).ToProto(), []byte(content)))
@@ -1348,7 +1348,7 @@ func TestFetchBlob_CacheProxy(t *testing.T) {
 	fetchClient := rapb.NewFetchClient(clientConn)
 
 	content := "hello world"
-	contentDigest, err := digest.Compute(bytes.NewReader([]byte(content)), repb.DigestFunction_BLAKE3)
+	contentDigest, err := digest.Compute(bytes.NewReader([]byte(content)), repb.DigestFunction_BLAKE3, int64(len(content)))
 	require.NoError(t, err)
 	remoteFetches := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1506,9 +1506,9 @@ func TestFetchBlob_InvalidChecksum(t *testing.T) {
 func TestFetchBlob_ChecksumSRIList(t *testing.T) {
 	flags.Set(t, "storage.tempdir", t.TempDir())
 	require.NoError(t, scratchspace.Init())
-	wrongSHA256, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA256)
+	wrongSHA256, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA256, int64(len("wrong")))
 	require.NoError(t, err)
-	wrongSHA512, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA512)
+	wrongSHA512, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA512, int64(len("wrong")))
 	require.NoError(t, err)
 	wrongSHA256CRI := checksumQualifierFromContent(t, wrongSHA256.GetHash(), repb.DigestFunction_SHA256)
 	wrongSHA512CRI := checksumQualifierFromContent(t, wrongSHA512.GetHash(), repb.DigestFunction_SHA512)
@@ -1646,11 +1646,11 @@ func TestFetchBlob_ChecksumSRIListCacheHitAndConversion(t *testing.T) {
 	client := rapb.NewFetchClient(runFetchServer(ctx, t, te))
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
-	checksumDigest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
+	checksumDigest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256, int64(len(content)))
 	require.NoError(t, err)
 	require.NoError(t, te.GetCache().Set(ctx, digest.NewCASResourceName(checksumDigest, "", repb.DigestFunction_SHA256).ToProto(), []byte(content)))
 
-	wrongSHA256, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA256)
+	wrongSHA256, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA256, int64(len("wrong")))
 	require.NoError(t, err)
 	var requests atomic.Int64
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1840,7 +1840,7 @@ func TestFetchBlob_DigestConversionClosesScratchFile(t *testing.T) {
 	client := rapb.NewFetchClient(runFetchServer(ctx, t, te))
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
-	checksumDigest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
+	checksumDigest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256, int64(len(content)))
 	require.NoError(t, err)
 	require.NoError(t, te.GetCache().Set(ctx, digest.NewResourceName(checksumDigest, "", resource.CacheType_CAS, repb.DigestFunction_SHA256).ToProto(), []byte(content)))
 	// The origin cannot be fetched, so success requires converting the cached blob.

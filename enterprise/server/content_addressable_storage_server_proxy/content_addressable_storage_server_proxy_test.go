@@ -860,9 +860,9 @@ func TestSpliceBlob(t *testing.T) {
 
 	chunk1 := []byte("chunk1data")
 	chunk2 := []byte("chunk2data")
-	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_SHA256)
+	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_SHA256, int64(len(chunk1)))
 	require.NoError(t, err)
-	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_SHA256)
+	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_SHA256, int64(len(chunk2)))
 	require.NoError(t, err)
 
 	update(ctx, proxy, map[*repb.Digest]string{
@@ -871,7 +871,7 @@ func TestSpliceBlob(t *testing.T) {
 	}, t)
 
 	blobData := append(chunk1, chunk2...)
-	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256, int64(len(blobData)))
 	require.NoError(t, err)
 
 	requestCount.Store(0)
@@ -897,9 +897,9 @@ func TestSplitBlob(t *testing.T) {
 
 	chunk1 := []byte("chunk1")
 	chunk2 := []byte("chunk2")
-	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_SHA256)
+	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_SHA256, int64(len(chunk1)))
 	require.NoError(t, err)
-	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_SHA256)
+	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_SHA256, int64(len(chunk2)))
 	require.NoError(t, err)
 
 	update(ctx, remote, map[*repb.Digest]string{
@@ -908,7 +908,7 @@ func TestSplitBlob(t *testing.T) {
 	}, t)
 
 	blobData := append(chunk1, chunk2...)
-	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(blobData), repb.DigestFunction_SHA256, int64(len(blobData)))
 	require.NoError(t, err)
 
 	_, err = remote.SpliceBlob(ctx, &repb.SpliceBlobRequest{
@@ -963,7 +963,7 @@ func BenchmarkGetTree(b *testing.B) {
 	fileDigests := map[string]*repb.Digest{}
 	data := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
 	for _, datum := range data {
-		d, err := cachetools.UploadBlob(ctx, bsProxy, "", repb.DigestFunction_SHA256, bytes.NewReader([]byte(strings.Repeat(datum, 100))))
+		d, err := cachetools.UploadBlob(ctx, bsProxy, "", repb.DigestFunction_SHA256, bytes.NewReader([]byte(strings.Repeat(datum, 100))), int64(len(datum)*100))
 		require.NoError(b, err)
 		fileDigests[datum] = d
 	}

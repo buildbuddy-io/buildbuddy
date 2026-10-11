@@ -75,7 +75,7 @@ func TestE2E(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		d, err := digest.Compute(f, repb.DigestFunction_SHA256)
+		d, err := digest.Compute(f, repb.DigestFunction_SHA256, -1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -151,7 +151,7 @@ func fileDigest(t *testing.T, path string) string {
 	f, err := os.Open(path)
 	require.NoError(t, err)
 	defer f.Close()
-	d, err := digest.Compute(f, repb.DigestFunction_SHA256)
+	d, err := digest.Compute(f, repb.DigestFunction_SHA256, -1)
 	require.NoError(t, err)
 	return d.GetHash()
 }

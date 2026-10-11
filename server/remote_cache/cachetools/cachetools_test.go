@@ -3,6 +3,7 @@ package cachetools_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"fmt"
 	"io"
 	"math/rand"
@@ -74,7 +75,7 @@ func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*r
 			panic(fmt.Sprintf("failed to convert resource name to CAS: %s", err))
 		}
 		fileNode, _ := cachetools.MakeFileNode(rn)
-		fc.Write(context.Background(), fileNode, fileData)
+		fc.Write(context.Background(), fileNode, fileData, rn.GetDigestFunction())
 	}
 	fc.writeCount = 0
 
@@ -507,26 +508,26 @@ func toFileNode(r *rspb.ResourceName) *repb.FileNode {
 	}
 }
 
-func key(f *repb.FileNode) string {
-	return fmt.Sprintf("%s/%d/%t", f.GetDigest().GetHash(), f.GetDigest().GetSizeBytes(), f.GetIsExecutable())
+func key(f *repb.FileNode, digestFunction repb.DigestFunction_Value) string {
+	return fmt.Sprintf("%s/%d/%t/%d", f.GetDigest().GetHash(), f.GetDigest().GetSizeBytes(), f.GetIsExecutable(), digestFunction)
 }
 
-func (fc *fakeFilecache) FastLinkFile(ctx context.Context, f *repb.FileNode, outputPath string) bool {
+func (fc *fakeFilecache) FastLinkFile(ctx context.Context, f *repb.FileNode, outputPath string, digestFunction repb.DigestFunction_Value) bool {
 	panic("unimplemented")
 }
 
-func (fc *fakeFilecache) DeleteFile(ctx context.Context, f *repb.FileNode) bool {
+func (fc *fakeFilecache) DeleteFile(ctx context.Context, f *repb.FileNode, digestFunction repb.DigestFunction_Value) bool {
 	panic("unimplemented")
 }
 
-func (fc *fakeFilecache) AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string) error {
+func (fc *fakeFilecache) AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string, digestFunction repb.DigestFunction_Value) error {
 	panic("unimplemented")
 }
 
-func (fc *fakeFilecache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
+func (fc *fakeFilecache) ContainsFile(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) bool {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
-	_, ok := fc.files[key(node)]
+	_, ok := fc.files[key(node, digestFunction)]
 	return ok
 }
 
@@ -534,7 +535,7 @@ func (fc *fakeFilecache) WithSharedDirectory(ctx context.Context, sharedDirector
 	panic("unimplemented")
 }
 
-func (fc *fakeFilecache) Open(ctx context.Context, f *repb.FileNode) (*os.File, error) {
+func (fc *fakeFilecache) Open(ctx context.Context, f *repb.FileNode, digestFunction repb.DigestFunction_Value) (*os.File, error) {
 	panic("unimplemented")
 }
 
@@ -542,22 +543,22 @@ func (fc *fakeFilecache) WaitForDirectoryScanToComplete() {
 	panic("unimplemented")
 }
 
-func (fc *fakeFilecache) Read(ctx context.Context, node *repb.FileNode) ([]byte, error) {
+func (fc *fakeFilecache) Read(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) ([]byte, error) {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
-	data, ok := fc.files[key(node)]
+	data, ok := fc.files[key(node, digestFunction)]
 	if !ok {
-		return nil, status.NotFoundErrorf("not found: %s", key(node))
+		return nil, status.NotFoundErrorf("not found: %s", key(node, digestFunction))
 	}
 	fc.readCount++
 	return data, nil
 }
 
-func (fc *fakeFilecache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error) {
+func (fc *fakeFilecache) Write(ctx context.Context, node *repb.FileNode, b []byte, digestFunction repb.DigestFunction_Value) (n int, err error) {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
 	fc.writeCount++
-	fc.files[key(node)] = b
+	fc.files[key(node, digestFunction)] = b
 	return len(b), nil
 }
 
@@ -658,6 +659,37 @@ func (b *bsReadStreamer) Trailer() metadata.MD {
 	panic("unimplemented")
 }
 
+func TestGetBlobGITSHA1Size(t *testing.T) {
+	for _, compressor := range []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD} {
+		for _, declaredSize := range []int64{2, 3, 4} {
+			t.Run(fmt.Sprintf("%s/size_%d", compressor, declaredSize), func(t *testing.T) {
+				// The supplied hash matches the declared Git header and "abc",
+				// even when the declared size does not match the blob contents.
+				h := sha1.Sum([]byte(fmt.Sprintf("blob %d\x00abc", declaredSize)))
+				d := &repb.Digest{Hash: fmt.Sprintf("%x", h), SizeBytes: declaredSize}
+				rn := digest.NewCASResourceName(d, "", repb.DigestFunction_GITSHA1)
+				rn.SetCompressor(compressor)
+				data := []byte("abc")
+				if compressor == repb.Compressor_ZSTD {
+					data = compression.CompressZstd(nil, data)
+				}
+				bs := &fakeBytestreamClient{
+					mu:   &sync.Mutex{},
+					data: map[string][]byte{rn.DownloadString(): data},
+				}
+				var out bytes.Buffer
+				err := cachetools.GetBlob(context.Background(), bs, rn, &out)
+				if declaredSize == 3 {
+					require.NoError(t, err)
+					require.Equal(t, "abc", out.String())
+				} else {
+					require.True(t, status.IsDataLossError(err), "expected DataLoss, got %v", err)
+				}
+			})
+		}
+	}
+}
+
 func TestGetBlobChunked_FallsBackWithoutManifest(t *testing.T) {
 	ctx := context.Background()
 	out, err := os.CreateTemp(t.TempDir(), "chunked-download-*")
@@ -667,7 +699,7 @@ func TestGetBlobChunked_FallsBackWithoutManifest(t *testing.T) {
 	_, err = out.WriteString("keep me")
 	require.NoError(t, err)
 
-	blobDigest, err := digest.Compute(bytes.NewReader([]byte("blob")), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader([]byte("blob")), repb.DigestFunction_BLAKE3, int64(len("blob")))
 	require.NoError(t, err)
 	rn := digest.NewCASResourceName(blobDigest, testInstance, repb.DigestFunction_BLAKE3)
 
@@ -689,7 +721,7 @@ func TestGetBlobChunked_ReusesWholeFileChunks_ZstdBLAKE3(t *testing.T) {
 	chunk2 := bytes.Repeat([]byte("b"), 1536)
 	blob := append(append([]byte{}, chunk1...), chunk2...)
 	compute := func(data []byte) *repb.Digest {
-		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3, int64(len(data)))
 		require.NoError(t, err)
 		return d
 	}
@@ -724,7 +756,7 @@ func TestGetBlobChunked_ReusesWholeFileChunks_ZstdBLAKE3(t *testing.T) {
 	sourcePath := source.Name()
 	sourceNode := &repb.FileNode{Digest: blobDigest}
 	openLocal := func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
-		if key(node) != key(sourceNode) {
+		if key(node, repb.DigestFunction_BLAKE3) != key(sourceNode, repb.DigestFunction_BLAKE3) {
 			return nil, os.ErrNotExist
 		}
 		return os.Open(sourcePath)
@@ -765,13 +797,13 @@ func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
 		chunks[i] = make([]byte, chunkSize)
 		_, err := rng.Read(chunks[i])
 		require.NoError(t, err)
-		d, err := digest.Compute(bytes.NewReader(chunks[i]), repb.DigestFunction_BLAKE3)
+		d, err := digest.Compute(bytes.NewReader(chunks[i]), repb.DigestFunction_BLAKE3, int64(len(chunks[i])))
 		require.NoError(t, err)
 		chunkDigests[i] = d
 	}
 
 	blob := bytes.Join(chunks, nil)
-	blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_BLAKE3, int64(len(blob)))
 	require.NoError(t, err)
 
 	// Build a partial local file from every Nth chunk.
@@ -782,7 +814,7 @@ func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
 		localChunkDigests = append(localChunkDigests, chunkDigests[i])
 	}
 	localBlob := bytes.Join(localChunks, nil)
-	localDigest, err := digest.Compute(bytes.NewReader(localBlob), repb.DigestFunction_BLAKE3)
+	localDigest, err := digest.Compute(bytes.NewReader(localBlob), repb.DigestFunction_BLAKE3, int64(len(localBlob)))
 	require.NoError(t, err)
 
 	localPath := filepath.Join(t.TempDir(), "local")
@@ -811,7 +843,7 @@ func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
 	bs := &fakeBytestreamClient{mu: &sync.Mutex{}, data: bsData}
 
 	openLocal := func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
-		if key(node) != key(localNode) {
+		if key(node, repb.DigestFunction_BLAKE3) != key(localNode, repb.DigestFunction_BLAKE3) {
 			return nil, os.ErrNotExist
 		}
 		return os.Open(localPath)
@@ -1036,7 +1068,7 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 
 			b := make([]byte, tc.size)
 			df := repb.DigestFunction_SHA256
-			d, err := digest.Compute(bytes.NewReader(b), df)
+			d, err := digest.Compute(bytes.NewReader(b), df, int64(len(b)))
 			require.NoError(t, err)
 			// Overwrite the first byte after we already computed the digest,
 			// simulating a concurrent mutation.
@@ -1483,7 +1515,7 @@ func TestBatchCASUploader_ChunkedUploadDetectsConcurrentMutation(t *testing.T) {
 	go runServer()
 
 	buf := make([]byte, 5*1024*1024)
-	d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256, int64(len(buf)))
 	require.NoError(t, err)
 	buf[0] = 'x'
 

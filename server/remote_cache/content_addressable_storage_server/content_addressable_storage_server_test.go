@@ -260,7 +260,7 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	compressedBlob := compression.CompressZstd(nil, blob)
 
 	// Note: Digest is of uncompressed contents
-	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256, int64(len(blob)))
 	require.NoError(t, err)
 
 	// FindMissingBlobs should report that the blob is missing, initially.
@@ -344,6 +344,53 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	require.Equal(t, [][]byte{blob}, blobs)
 }
 
+func TestBatchUpdateGITSHA1(t *testing.T) {
+	for _, compressor := range []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD} {
+		t.Run(compressor.String(), func(t *testing.T) {
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			flags.Set(t, "cache.zstd_transcoding_enabled", true)
+			conn := runCASServer(ctx, t, te)
+			cas := repb.NewContentAddressableStorageClient(conn)
+			blob := []byte("hello\n")
+			// git hash-object --stdin for "hello\n".
+			gitDigest := &repb.Digest{Hash: "ce013625030ba8dba906f756967f9e9ca394464a", SizeBytes: int64(len(blob))}
+			sha1Digest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA1, int64(len(blob)))
+			require.NoError(t, err)
+			data := blob
+			if compressor == repb.Compressor_ZSTD {
+				data = compression.CompressZstd(nil, blob)
+			}
+			updated, err := cas.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+				DigestFunction: repb.DigestFunction_GITSHA1,
+				Requests: []*repb.BatchUpdateBlobsRequest_Request{
+					{Digest: sha1Digest, Data: data, Compressor: compressor},
+					{Digest: gitDigest, Data: data, Compressor: compressor},
+				},
+			})
+			require.NoError(t, err)
+			require.Len(t, updated.GetResponses(), 2)
+			assert.Equal(t, int32(gcodes.InvalidArgument), updated.GetResponses()[0].GetStatus().GetCode())
+			assert.Equal(t, int32(gcodes.OK), updated.GetResponses()[1].GetStatus().GetCode())
+
+			read, err := cas.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+				DigestFunction: repb.DigestFunction_GITSHA1,
+				Digests:        []*repb.Digest{gitDigest},
+			})
+			require.NoError(t, err)
+			require.Len(t, read.GetResponses(), 1)
+			require.Equal(t, int32(gcodes.OK), read.GetResponses()[0].GetStatus().GetCode())
+			require.Equal(t, blob, read.GetResponses()[0].GetData())
+
+			rn := digest.NewCASResourceName(gitDigest, "", repb.DigestFunction_GITSHA1)
+			rn.SetCompressor(compressor)
+			var downloaded bytes.Buffer
+			require.NoError(t, cachetools.GetBlob(ctx, bspb.NewByteStreamClient(conn), rn, &downloaded))
+			require.Equal(t, blob, downloaded.Bytes())
+		})
+	}
+}
+
 func TestBatchUpdateRejectsCompressedBlobsIfCompressionDisabled(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
@@ -355,7 +402,7 @@ func TestBatchUpdateRejectsCompressedBlobsIfCompressionDisabled(t *testing.T) {
 	compressedBlob := compression.CompressZstd(nil, blob)
 
 	// Note: Digest is of uncompressed contents
-	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256, int64(len(blob)))
 	require.NoError(t, err)
 
 	// Upload compressed blob via BatchUpdate.
@@ -466,7 +513,7 @@ func TestBatchUpdateAndRead_CacheHandlesCompression(t *testing.T) {
 			}
 
 			// Note: Digest is of uncompressed contents
-			d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+			d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256, int64(len(blob)))
 			require.NoError(t, err, tc.name)
 
 			// FindMissingBlobs should report that the blob is missing, initially.
@@ -1000,7 +1047,7 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 		copy(chunkData, chunk.Data)
 		chunks = append(chunks, chunkData)
 
-		chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), repb.DigestFunction_BLAKE3)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), repb.DigestFunction_BLAKE3, int64(len(chunkData)))
 		require.NoError(t, err)
 		chunkDigests = append(chunkDigests, chunkDigest)
 	}
@@ -1017,7 +1064,7 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 		}
 	}
 
-	blobDigest, err := digest.Compute(bytes.NewReader(fileData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(fileData), repb.DigestFunction_BLAKE3, int64(len(fileData)))
 	require.NoError(t, err)
 
 	spliceReq := &repb.SpliceBlobRequest{
@@ -1190,7 +1237,7 @@ func TestSpliceBlobWithoutValidation(t *testing.T) {
 			chunkDigests := make([]*repb.Digest, 0, len(chunks))
 			var blobSize int
 			for _, chunk := range chunks {
-				d, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+				d, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256, int64(len(chunk)))
 				require.NoError(t, err)
 				chunkDigests = append(chunkDigests, d)
 				blobSize += len(chunk)
@@ -1202,7 +1249,7 @@ func TestSpliceBlobWithoutValidation(t *testing.T) {
 			if tc.wrongBlobSize {
 				blobSize++
 			}
-			blobDigest, err := digest.Compute(strings.NewReader(strings.Repeat("x", blobSize)), repb.DigestFunction_SHA256)
+			blobDigest, err := digest.Compute(strings.NewReader(strings.Repeat("x", blobSize)), repb.DigestFunction_SHA256, int64(blobSize))
 			require.NoError(t, err)
 
 			clientConn := runCASServer(ctx, t, env)
@@ -1274,7 +1321,7 @@ func TestSplitBlobRejectsLayeredManifest(t *testing.T) {
 	leaf2RN, leaf2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	leaf3RN, leaf3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	nestedData := bytes.Join([][]byte{leaf1, leaf2, leaf3}, nil)
-	nestedDigest, err := digest.Compute(bytes.NewReader(nestedData), repb.DigestFunction_SHA256)
+	nestedDigest, err := digest.Compute(bytes.NewReader(nestedData), repb.DigestFunction_SHA256, int64(len(nestedData)))
 	require.NoError(t, err)
 	for i, leaf := range []struct {
 		rn   *rspb.ResourceName
@@ -1295,7 +1342,7 @@ func TestSplitBlobRejectsLayeredManifest(t *testing.T) {
 	directRN, directData := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
 	require.NoError(t, cache.Set(ctx, directRN, directData))
 	parentData := bytes.Join([][]byte{nestedData, directData}, nil)
-	parentDigest, err := digest.Compute(bytes.NewReader(parentData), repb.DigestFunction_SHA256)
+	parentDigest, err := digest.Compute(bytes.NewReader(parentData), repb.DigestFunction_SHA256, int64(len(parentData)))
 	require.NoError(t, err)
 
 	// Inject a legacy layered manifest directly. Normal manifest storage rejects
@@ -1325,7 +1372,7 @@ func TestSpliceBlobSingleChunk(t *testing.T) {
 
 	// Upload a single chunk. This is not supported by the server.
 	chunkData := []byte("this is a single chunk of data")
-	chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), repb.DigestFunction_BLAKE3)
+	chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), repb.DigestFunction_BLAKE3, int64(len(chunkData)))
 	require.NoError(t, err)
 
 	batchReq := &repb.BatchUpdateBlobsRequest{
@@ -1370,7 +1417,7 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	chunk5RN, chunk5 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	fullBlob := bytes.Join([][]byte{chunk1, chunk2, chunk3, chunk4, chunk5}, nil)
 
-	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256, int64(len(fullBlob)))
 	require.NoError(t, err)
 
 	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
@@ -1391,7 +1438,7 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	require.NoError(t, manifest.Store(ctx, cache))
 
 	regularBlob := []byte("small")
-	regularDigest, err := digest.Compute(bytes.NewReader(regularBlob), repb.DigestFunction_SHA256)
+	regularDigest, err := digest.Compute(bytes.NewReader(regularBlob), repb.DigestFunction_SHA256, int64(len(regularBlob)))
 	require.NoError(t, err)
 
 	rsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
@@ -1429,7 +1476,7 @@ func TestChunkedBlobAtCurrentWriteThresholdIsMissingButReadable(t *testing.T) {
 	chunk4RN, chunk4 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	fullBlob := bytes.Join([][]byte{chunk1, chunk2, chunk3, chunk4}, nil)
 
-	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256, int64(len(fullBlob)))
 	require.NoError(t, err)
 
 	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
@@ -1492,7 +1539,7 @@ func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {
 			cache := te.GetCache()
 
 			regularBlob := []byte("regular blob")
-			regularDigest, err := digest.Compute(bytes.NewReader(regularBlob), repb.DigestFunction_SHA256)
+			regularDigest, err := digest.Compute(bytes.NewReader(regularBlob), repb.DigestFunction_SHA256, int64(len(regularBlob)))
 			require.NoError(t, err)
 			require.NoError(t, cache.Set(ctx, digest.NewCASResourceName(regularDigest, "", repb.DigestFunction_SHA256).ToProto(), regularBlob))
 
@@ -1501,7 +1548,7 @@ func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {
 			chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 			chunkedBlob := append(append(chunk1, chunk2...), chunk3...)
 
-			chunkedBlobDigest, err := digest.Compute(bytes.NewReader(chunkedBlob), repb.DigestFunction_SHA256)
+			chunkedBlobDigest, err := digest.Compute(bytes.NewReader(chunkedBlob), repb.DigestFunction_SHA256, int64(len(chunkedBlob)))
 			require.NoError(t, err)
 
 			require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))

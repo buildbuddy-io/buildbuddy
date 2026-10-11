@@ -897,9 +897,9 @@ func TestEmbeddedBinariesFromApp(t *testing.T) {
 
 	require.NotEmpty(t, bundle.CiRunnerBytes)
 	require.NotEmpty(t, cli_bundle.CLIBytes)
-	runnerBinDigest, err := digest.Compute(bytes.NewReader(bundle.CiRunnerBytes), repb.DigestFunction_BLAKE3)
+	runnerBinDigest, err := digest.Compute(bytes.NewReader(bundle.CiRunnerBytes), repb.DigestFunction_BLAKE3, int64(len(bundle.CiRunnerBytes)))
 	require.NoError(t, err)
-	cliDigest, err := digest.Compute(bytes.NewReader(cli_bundle.CLIBytes), repb.DigestFunction_BLAKE3)
+	cliDigest, err := digest.Compute(bytes.NewReader(cli_bundle.CLIBytes), repb.DigestFunction_BLAKE3, int64(len(cli_bundle.CLIBytes)))
 	require.NoError(t, err)
 
 	// The binaries should not be in the cache to begin with.

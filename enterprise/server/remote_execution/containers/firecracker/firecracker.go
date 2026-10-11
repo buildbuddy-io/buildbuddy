@@ -1187,7 +1187,7 @@ func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
 }
 
 func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
-	d, _ := digest.Compute(strings.NewReader(c.task.GetExecutionId()), c.task.GetExecuteRequest().GetDigestFunction())
+	d, _ := digest.Compute(strings.NewReader(c.task.GetExecutionId()), c.task.GetExecuteRequest().GetDigestFunction(), int64(len(c.task.GetExecutionId())))
 	return &fcpb.VMMetadata_VMTask{
 		InvocationId:          c.task.GetInvocationId(),
 		ExecutionId:           c.task.GetExecutionId(),

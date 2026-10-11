@@ -49,7 +49,7 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	randomStr, err := random.RandomString(length)
 	require.NoError(t, err)
 	b := []byte(randomStr)
-	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3)
+	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3, int64(len(b)))
 	require.NoError(t, err)
 	remoteInstanceName := ""
 	fileTypeLabel := "test"
@@ -84,7 +84,7 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	// Rewrite artifact and delete from local cache, make sure we can still read
 	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), true, true, d, remoteInstanceName, b, fileTypeLabel)
 	require.NoError(t, err)
-	deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: d})
+	deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: d}, repb.DigestFunction_BLAKE3)
 	require.True(t, deleted)
 	outputPathRemoteFetch := filepath.Join(tmpDir, "fetch_remote")
 	chunkSrc, err = snaputil.GetArtifact(ctx, fc, env.GetByteStreamClient(), true, d, remoteInstanceName, outputPathRemoteFetch)
@@ -110,7 +110,7 @@ func TestCacheAndFetchArtifact_LocalOnly(t *testing.T) {
 	randomStr, err := random.RandomString(length)
 	require.NoError(t, err)
 	b := []byte(randomStr)
-	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3)
+	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3, int64(len(b)))
 	require.NoError(t, err)
 	remoteInstanceName := ""
 	fileTypeLabel := "test"
@@ -127,7 +127,7 @@ func TestCacheAndFetchArtifact_LocalOnly(t *testing.T) {
 	require.Equal(t, randomStr, fetchedStr)
 
 	// Delete artifact from local cache, make sure we can no longer read it
-	deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: d})
+	deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: d}, repb.DigestFunction_BLAKE3)
 	require.True(t, deleted)
 	outputPathRemoteFetch := filepath.Join(tmpDir, "fetch_err")
 	_, err = snaputil.GetArtifact(ctx, fc, env.GetByteStreamClient(), false /*remoteEnabled*/, d, remoteInstanceName, outputPathRemoteFetch)
@@ -145,7 +145,7 @@ func TestCacheAndFetchBytes(t *testing.T) {
 	randomStr, err := random.RandomString(length)
 	require.NoError(t, err)
 	b := []byte(randomStr)
-	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3)
+	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3, int64(len(b)))
 	require.NoError(t, err)
 	remoteInstanceName := ""
 	fileTypeLabel := "test"
@@ -158,7 +158,7 @@ func TestCacheAndFetchBytes(t *testing.T) {
 	require.Equal(t, randomStr, string(fetchedBytes))
 
 	// Delete from local cache, make sure we can still read
-	deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: d})
+	deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: d}, repb.DigestFunction_BLAKE3)
 	require.True(t, deleted)
 	fetchedBytes, err = snaputil.GetBytes(ctx, fc, env.GetByteStreamClient(), true, d, remoteInstanceName, tmpDir)
 	require.NoError(t, err)
