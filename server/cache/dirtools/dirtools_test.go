@@ -1658,9 +1658,9 @@ func TestDownloadTreeDirectlyToFileCache(t *testing.T) {
 	require.Equal(t, int64(len(file2Contents)+len(largeFileContent)), info.BytesTransferred, "two files should be transferred. file 1 should be linked from filecache")
 
 	fc := env.GetFileCache()
-	require.True(t, fc.ContainsFile(ctx, fileNode1), "file 1 should be in the file cache")
-	require.True(t, fc.ContainsFile(ctx, fileNode2), "file 2 should be in the file cache")
-	require.True(t, fc.ContainsFile(ctx, largeFileNode), "large file should be in the file cache")
+	require.True(t, fc.ContainsFile(ctx, fileNode1, repb.DigestFunction_SHA256), "file 1 should be in the file cache")
+	require.True(t, fc.ContainsFile(ctx, fileNode2, repb.DigestFunction_SHA256), "file 2 should be in the file cache")
+	require.True(t, fc.ContainsFile(ctx, largeFileNode, repb.DigestFunction_SHA256), "large file should be in the file cache")
 }
 
 func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t *testing.T) {
@@ -1751,14 +1751,14 @@ func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t 
 	}
 
 	download(fileNode1, blob1)
-	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode1))
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode1, repb.DigestFunction_SHA256))
 	require.Equal(t, 1, fileCache.addCount(fileNode1))
 	require.Equal(t, 1, chunkReadCount(chunkADigest))
 	require.Equal(t, 1, chunkReadCount(chunkBDigest))
 	require.Equal(t, 1, chunkReadCount(chunkCDigest))
 
 	download(fileNode2, blob2)
-	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode2))
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode2, repb.DigestFunction_SHA256))
 	require.Equal(t, 1, fileCache.addCount(fileNode2))
 	require.Equal(t, 1, chunkReadCount(chunkADigest))
 	require.Equal(t, 1, chunkReadCount(chunkBDigest))
@@ -1766,11 +1766,11 @@ func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t 
 	require.Equal(t, 1, chunkReadCount(chunkDDigest))
 	require.GreaterOrEqual(t, fileCache.openCount(fileNode1), 2)
 
-	require.True(t, env.GetFileCache().DeleteFile(ctx, fileNode1))
-	require.False(t, env.GetFileCache().ContainsFile(ctx, fileNode1))
+	require.True(t, env.GetFileCache().DeleteFile(ctx, fileNode1, repb.DigestFunction_SHA256))
+	require.False(t, env.GetFileCache().ContainsFile(ctx, fileNode1, repb.DigestFunction_SHA256))
 
 	download(fileNode3, blob3)
-	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode3))
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode3, repb.DigestFunction_SHA256))
 	require.Equal(t, 1, fileCache.addCount(fileNode3))
 	require.Equal(t, 1, chunkReadCount(chunkADigest))
 	require.Equal(t, 1, chunkReadCount(chunkBDigest))
@@ -1953,7 +1953,7 @@ func addToFileCache(t *testing.T, ctx context.Context, env *testenv.TestEnv, tem
 		t.Fatal(err)
 	}
 	t.Logf("Added digest %s/%d to filecache (content: %q)", d.GetHash(), d.GetSizeBytes(), data)
-	err = env.GetFileCache().AddFile(ctx, &repb.FileNode{Name: filepath.Base(path), Digest: d}, path)
+	err = env.GetFileCache().AddFile(ctx, &repb.FileNode{Name: filepath.Base(path), Digest: d}, path, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 }
 
@@ -1965,18 +1965,18 @@ type countingFileCache struct {
 	opens map[string]int
 }
 
-func (c *countingFileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
+func (c *countingFileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string, digestFunction repb.DigestFunction_Value) error {
 	c.mu.Lock()
 	c.adds[fileNodeKey(node)]++
 	c.mu.Unlock()
-	return c.FileCache.AddFile(ctx, node, existingFilePath)
+	return c.FileCache.AddFile(ctx, node, existingFilePath, digestFunction)
 }
 
-func (c *countingFileCache) Open(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+func (c *countingFileCache) Open(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (*os.File, error) {
 	c.mu.Lock()
 	c.opens[fileNodeKey(node)]++
 	c.mu.Unlock()
-	return c.FileCache.Open(ctx, node)
+	return c.FileCache.Open(ctx, node, digestFunction)
 }
 
 func (c *countingFileCache) addCount(node *repb.FileNode) int {

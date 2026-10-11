@@ -10,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 func TestFileCacheRestartScanWindows(t *testing.T) {
@@ -24,7 +26,7 @@ func TestFileCacheRestartScanWindows(t *testing.T) {
 	fc, err := filecache.NewFileCache(cacheRoot, 100_000, false)
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
-	require.NoError(t, fc.AddFile(ctx, node, sourcePath))
+	require.NoError(t, fc.AddFile(ctx, node, sourcePath, repb.DigestFunction_SHA256))
 	require.NoError(t, fc.Close())
 
 	fc, err = filecache.NewFileCache(cacheRoot, 100_000, false)
@@ -33,5 +35,5 @@ func TestFileCacheRestartScanWindows(t *testing.T) {
 	fc.WaitForDirectoryScanToComplete()
 
 	linkedPath := filepath.Join(workspace, "linked")
-	require.True(t, fc.FastLinkFile(ctx, node, linkedPath), "startup scan should preserve the cached file")
+	require.True(t, fc.FastLinkFile(ctx, node, linkedPath, repb.DigestFunction_SHA256), "startup scan should preserve the cached file")
 }

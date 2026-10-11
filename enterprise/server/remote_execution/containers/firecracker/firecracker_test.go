@@ -1396,7 +1396,7 @@ func TestFirecracker_LocalSnapshotSharing_DontResave_RemoteChunkFallback(t *test
 		for i, c := range cf.GetChunks() {
 			// Delete every other chunk
 			if i%2 == 0 {
-				deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: c.GetDigest()})
+				deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: c.GetDigest()}, repb.DigestFunction_BLAKE3)
 				if deleted {
 					deletedCount++
 				}

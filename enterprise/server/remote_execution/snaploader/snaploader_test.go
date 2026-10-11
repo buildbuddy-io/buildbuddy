@@ -545,14 +545,14 @@ func TestRemoteSnapshotFetching(t *testing.T) {
 	require.NoError(t, err)
 	for i, f := range snapMetadata.GetFiles() {
 		if i%2 == 0 {
-			deleted := fc.DeleteFile(ctx, f)
+			deleted := fc.DeleteFile(ctx, f, repb.DigestFunction_BLAKE3)
 			require.True(t, deleted)
 		}
 	}
 	for _, f := range snapMetadata.GetChunkedFiles() {
 		for i, c := range f.GetChunks() {
 			if i%2 == 1 {
-				deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: c.Digest})
+				deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: c.Digest}, repb.DigestFunction_BLAKE3)
 				require.True(t, deleted)
 			}
 		}

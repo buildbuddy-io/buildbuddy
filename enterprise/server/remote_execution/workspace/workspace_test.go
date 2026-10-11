@@ -640,19 +640,19 @@ func TestDownloadInputs_VFSPrefetchModeAll_PreserveWorkspace(t *testing.T) {
 	info, err := ws.TaskFinished()
 	require.NoError(t, err)
 	require.EqualValues(t, 1, info.FileCount)
-	require.True(t, fc.ContainsFile(ctx, inputNode))
+	require.True(t, fc.ContainsFile(ctx, inputNode, layout.DigestFunction))
 	require.Contains(t, ws.Inputs, fspath.NewKey(inputNode.GetName(), false))
 	require.NoError(t, ws.Clean())
 
 	// If the cached contents are evicted between tasks, the preserved entry
 	// must not prevent the next task from prefetching them again.
-	require.True(t, fc.DeleteFile(ctx, inputNode))
+	require.True(t, fc.DeleteFile(ctx, inputNode, layout.DigestFunction))
 	ws.SetTask(ctx, &repb.ExecutionTask{})
 	require.NoError(t, ws.DownloadInputs(ctx, layout))
 	info, err = ws.TaskFinished()
 	require.NoError(t, err)
 	require.EqualValues(t, 1, info.FileCount)
-	require.True(t, fc.ContainsFile(ctx, inputNode))
+	require.True(t, fc.ContainsFile(ctx, inputNode, layout.DigestFunction))
 	require.NoError(t, ws.Clean())
 
 	// When the input is already cached, another task reuses its contents
@@ -720,7 +720,7 @@ func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, testCase.wantInputFetcher, layout.InputFetcher != nil)
-			require.Equal(t, testCase.wantCached, fc.ContainsFile(ctx, inputNode))
+			require.Equal(t, testCase.wantCached, fc.ContainsFile(ctx, inputNode, layout.DigestFunction))
 			if testCase.mode != workspace.VFSPrefetchModeNone {
 				require.Contains(t, ws.Inputs, fspath.NewKey(inputNode.GetName(), false))
 			}

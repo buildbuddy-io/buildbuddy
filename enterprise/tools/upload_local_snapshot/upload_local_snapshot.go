@@ -251,7 +251,7 @@ func uploadDigestsRemoteCache(ctx context.Context, ctxWithClaims context.Context
 			node := &repb.FileNode{
 				Digest: d,
 			}
-			inFC := env.GetFileCache().FastLinkFile(ctxWithClaims, node, path)
+			inFC := env.GetFileCache().FastLinkFile(ctxWithClaims, node, path, repb.DigestFunction_BLAKE3)
 			if !inFC {
 				return status.InternalErrorf("digest %s does not exist in the local file cache", d)
 			}
