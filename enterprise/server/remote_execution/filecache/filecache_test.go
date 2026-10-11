@@ -694,47 +694,52 @@ func TestFileCacheStatDoesNotMarkFileUsed(t *testing.T) {
 }
 
 func TestScanWithConcurrentAdd(t *testing.T) {
-	for trial := range 100 {
-		ctx := context.Background()
-		filecacheRoot := testfs.MakeTempDir(t)
+	ctx := context.Background()
+	filecacheRoot := testfs.MakeTempDir(t)
+	workspace := testfs.MakeTempDir(t)
 
-		const n = 100
-		var nodes [n]*repb.FileNode
-		var nodeContents [n]string
+	// Populate the cache once through AddFile so startup scans use the current
+	// on-disk layout, rather than migrating a legacy fixture on every trial.
+	const n = 100
+	var nodes [n]*repb.FileNode
+	var sourcePaths [n]string
+	func() {
+		fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+		require.NoError(t, err)
+		fc.WaitForDirectoryScanToComplete()
+		defer func() { require.NoError(t, fc.Close()) }()
 		for i := range n {
 			name := fmt.Sprint(i)
 			executable := i%2 == 0
 			nodes[i] = nodeFromString(name, executable)
-			cachePath := "ANON/" + nodes[i].GetDigest().GetHash()
-			if executable {
-				cachePath += ".executable"
+			sourcePaths[i] = writeFileContent(t, workspace, name, name, executable)
+			require.NoError(t, fc.AddFile(ctx, nodes[i], sourcePaths[i]))
+		}
+	}()
+
+	for trial := range 100 {
+		func() {
+			fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+			require.NoError(t, err)
+			defer func() {
+				fc.WaitForDirectoryScanToComplete()
+				require.NoError(t, fc.Close())
+			}()
+
+			// While the directory scan is in progress, re-add a random file
+			// to trigger a race.
+			i := rand.Intn(n)
+			require.NoError(t, fc.AddFile(ctx, nodes[i], sourcePaths[i]))
+			fc.WaitForDirectoryScanToComplete()
+
+			// The directory scan should be resilient to this race condition -
+			// linking any file should work. NewFileCache clears these output
+			// links from the temp directory before the next trial.
+			for i := range n {
+				ok := fc.FastLinkFile(ctx, nodes[i], filepath.Join(fc.TempDir(), fmt.Sprintf("out-%d", i)))
+				require.True(t, ok, "link node %d (test trial %d)", i, trial)
 			}
-			writeFileContent(t, filecacheRoot, cachePath, name, executable)
-			nodeContents[i] = name
-		}
-
-		i := rand.Intn(n)
-		nodeToAddConcurrently := nodes[i]
-		nodeToAddConcurrentlyPath := filepath.Join(testfs.MakeTempDir(t), "action.output")
-		writeFileContent(t, filepath.Dir(nodeToAddConcurrentlyPath), filepath.Base(nodeToAddConcurrentlyPath), nodeContents[i], nodeToAddConcurrently.GetIsExecutable())
-
-		fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
-		require.NoError(t, err)
-		t.Cleanup(func() { fc.Close() })
-
-		// While the directory scan is in progress, re-add a random file
-		// to trigger a race.
-		err = fc.AddFile(ctx, nodeToAddConcurrently, nodeToAddConcurrentlyPath)
-		require.NoError(t, err)
-
-		fc.WaitForDirectoryScanToComplete()
-
-		// The directory scan should be resilient to this race condition -
-		// linking any file should work.
-		for i := range n {
-			ok := fc.FastLinkFile(ctx, nodes[i], filepath.Join(fc.TempDir(), fmt.Sprintf("out-%d", i)))
-			require.True(t, ok, "link node %d (test trial %d)", i, trial)
-		}
+		}()
 	}
 }
 
