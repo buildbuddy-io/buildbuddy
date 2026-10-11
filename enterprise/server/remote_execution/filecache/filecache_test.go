@@ -658,52 +658,86 @@ func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 }
 
 func TestScanWithConcurrentAdd(t *testing.T) {
-	ctx := context.Background()
-	filecacheRoot := testfs.MakeTempDir(t)
-	workspace := testfs.MakeTempDir(t)
-
-	// Populate the cache once through AddFile so startup scans use the current
-	// on-disk layout, rather than migrating a legacy fixture on every trial.
-	const n = 100
-	var nodes [n]*repb.FileNode
-	var sourcePaths [n]string
-	func() {
-		fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
-		require.NoError(t, err)
-		fc.WaitForDirectoryScanToComplete()
-		defer func() { require.NoError(t, fc.Close()) }()
-		for i := range n {
-			name := fmt.Sprint(i)
-			executable := i%2 == 0
-			nodes[i] = nodeFromString(name, executable)
-			sourcePaths[i] = writeFileContent(t, workspace, name, name, executable)
-			require.NoError(t, fc.AddFile(ctx, nodes[i], sourcePaths[i]))
-		}
-	}()
-
-	for trial := range 100 {
-		func() {
-			fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
-			require.NoError(t, err)
-			defer func() {
-				fc.WaitForDirectoryScanToComplete()
-				require.NoError(t, fc.Close())
-			}()
-
-			// While the directory scan is in progress, re-add a random file
-			// to trigger a race.
-			i := rand.Intn(n)
-			require.NoError(t, fc.AddFile(ctx, nodes[i], sourcePaths[i]))
-			fc.WaitForDirectoryScanToComplete()
-
-			// The directory scan should be resilient to this race condition -
-			// linking any file should work. NewFileCache clears these output
-			// links from the temp directory before the next trial.
+	for _, tc := range []struct {
+		name         string
+		legacyLayout bool
+		trials       int
+	}{
+		{name: "current_layout", trials: 100},
+		{name: "legacy_layout_migration", legacyLayout: true, trials: 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			filecacheRoot := testfs.MakeTempDir(t)
+			workspace := testfs.MakeTempDir(t)
+			const n = 100
+			var nodes [n]*repb.FileNode
+			var sourcePaths [n]string
 			for i := range n {
-				ok := fc.FastLinkFile(ctx, nodes[i], filepath.Join(fc.TempDir(), fmt.Sprintf("out-%d", i)))
-				require.True(t, ok, "link node %d (test trial %d)", i, trial)
+				name := fmt.Sprint(i)
+				executable := i%2 == 0
+				nodes[i] = nodeFromString(name, executable)
+				sourcePaths[i] = writeFileContent(t, workspace, name, name, executable)
 			}
-		}()
+
+			if !tc.legacyLayout {
+				// Populate the cache once through AddFile so most trials scan
+				// the current layout without repeating legacy migration work.
+				func() {
+					fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+					require.NoError(t, err)
+					fc.WaitForDirectoryScanToComplete()
+					defer func() { require.NoError(t, fc.Close()) }()
+					for i := range n {
+						require.NoError(t, fc.AddFile(ctx, nodes[i], sourcePaths[i]))
+					}
+				}()
+			}
+
+			for trial := range tc.trials {
+				if tc.legacyLayout {
+					// Migration moves the flat-layout files, so each migration
+					// trial needs a fresh legacy cache directory.
+					filecacheRoot = testfs.MakeTempDir(t)
+					for i := range n {
+						cachePath := "ANON/" + nodes[i].GetDigest().GetHash()
+						if nodes[i].GetIsExecutable() {
+							cachePath += ".executable"
+						}
+						writeFileContent(t, filecacheRoot, cachePath, fmt.Sprint(i), nodes[i].GetIsExecutable())
+					}
+				}
+
+				readded := rand.Intn(n)
+				// Use a new source file, not the inode already linked into
+				// the cache. Reusing that inode can make AddFile a no-op.
+				sourcePath := writeFileContent(t, workspace, fmt.Sprintf("action.output-%d", trial), fmt.Sprint(readded), nodes[readded].GetIsExecutable())
+				func() {
+					fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+					require.NoError(t, err)
+					defer func() {
+						fc.WaitForDirectoryScanToComplete()
+						require.NoError(t, fc.Close())
+					}()
+
+					// Race a re-add against the startup scan. The overlap is
+					// probabilistic; these calls do not force a specific order.
+					require.NoError(t, fc.AddFile(ctx, nodes[readded], sourcePath))
+					fc.WaitForDirectoryScanToComplete()
+
+					// Linking any file should work. NewFileCache clears these
+					// output links before the next current-layout trial.
+					for i := range n {
+						outputPath := filepath.Join(fc.TempDir(), fmt.Sprintf("out-%d", i))
+						ok := fc.FastLinkFile(ctx, nodes[i], outputPath)
+						require.True(t, ok, "link node %d (trial %d, re-added node %d)", i, trial, readded)
+						if i == readded {
+							assertFileContents(t, outputPath, fmt.Sprint(readded))
+						}
+					}
+				}()
+			}
+		})
 	}
 }
 
