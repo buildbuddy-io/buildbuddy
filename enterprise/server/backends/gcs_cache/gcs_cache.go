@@ -156,7 +156,7 @@ func (g *GCSCache) key(ctx context.Context, r *rspb.ResourceName) (string, error
 	if len(isolationPrefix) > 0 && isolationPrefix[len(isolationPrefix)-1] != '/' {
 		isolationPrefix += "/"
 	}
-	return userPrefix + isolationPrefix + rn.GetDigest().GetHash(), nil
+	return userPrefix + isolationPrefix + digest.LegacyKeyHash(rn.GetDigest().GetHash(), rn.GetDigestFunction()), nil
 }
 
 func (g *GCSCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {

@@ -992,7 +992,7 @@ func (p *partition) key(ctx context.Context, pbRN *rspb.ResourceName) (*fileKey,
 	if err := rn.Validate(); err != nil {
 		return nil, err
 	}
-	hash := rn.GetDigest().GetHash()
+	hash := digest.LegacyKeyHash(rn.GetDigest().GetHash(), rn.GetDigestFunction())
 
 	userPrefix, err := prefix.UserPrefixFromContext(ctx)
 	if err != nil {

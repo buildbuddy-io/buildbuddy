@@ -305,7 +305,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			})
 			continue
 		}
-		checksum, err := digest.HashForDigestType(rn.GetDigestFunction())
+		checksum, err := digest.HashForDigestType(rn.GetDigestFunction(), rn.GetDigest().GetSizeBytes())
 		if err != nil {
 			return nil, err
 		}

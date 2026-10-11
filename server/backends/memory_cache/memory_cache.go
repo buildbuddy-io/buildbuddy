@@ -82,7 +82,7 @@ func (m *MemoryCache) key(ctx context.Context, r *rspb.ResourceName) (string, er
 	if err != nil {
 		return "", err
 	}
-	hash := rn.GetDigest().GetHash()
+	hash := digest.LegacyKeyHash(rn.GetDigest().GetHash(), rn.GetDigestFunction())
 
 	var key string
 	if r.GetCacheType() == rspb.CacheType_AC {

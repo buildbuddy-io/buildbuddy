@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	testDigest = &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}
-	testTaskID = digest.NewCASResourceName(testDigest, "test-instance", repb.DigestFunction_SHA256).NewUploadString()
+	testResourceName = digest.NewCASResourceName(&repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}, "test-instance", repb.DigestFunction_SHA256)
+	testTaskID       = testResourceName.NewUploadString()
 )
 
 // fakeStream is a minimal grpc.ClientStreamingClient that records sent
@@ -103,14 +103,14 @@ func newPublisher(t *testing.T, streams ...*fakeStream) (*Publisher, *fakeExecut
 
 func completedOp(t *testing.T) *longrunningpb.Operation {
 	t.Helper()
-	op, err := Assemble(testTaskID, Metadata(repb.ExecutionStage_COMPLETED, testDigest), nil)
+	op, err := Assemble(testTaskID, Metadata(repb.ExecutionStage_COMPLETED, &testResourceName.ResourceName), nil)
 	require.NoError(t, err)
 	return op
 }
 
 func progressOp(t *testing.T) *longrunningpb.Operation {
 	t.Helper()
-	op, err := Assemble(testTaskID, Metadata(repb.ExecutionStage_EXECUTING, testDigest), nil)
+	op, err := Assemble(testTaskID, Metadata(repb.ExecutionStage_EXECUTING, &testResourceName.ResourceName), nil)
 	require.NoError(t, err)
 	return op
 }

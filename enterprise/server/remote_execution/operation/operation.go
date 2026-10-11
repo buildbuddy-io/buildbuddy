@@ -68,12 +68,9 @@ func (p *Publisher) Ping() error {
 	if err != nil {
 		return err
 	}
-	md := &repb.ExecuteOperationMetadata{
-		Stage:        p.executionStage,
-		ActionDigest: p.taskResourceName.GetDigest(),
-		PartialExecutionMetadata: &repb.ExecutedActionMetadata{
-			AuxiliaryMetadata: []*anypb.Any{progressAny},
-		},
+	md := Metadata(p.executionStage, &p.taskResourceName.ResourceName)
+	md.PartialExecutionMetadata = &repb.ExecutedActionMetadata{
+		AuxiliaryMetadata: []*anypb.Any{progressAny},
 	}
 	op, err := Assemble(p.taskID, md, nil /*=response*/)
 	if err != nil {
@@ -255,10 +252,11 @@ func isRetryablePublishError(err error) bool {
 
 // Metadata creates the ExecuteOperationMetadata object that goes in the
 // Operation.metadata field.
-func Metadata(stage repb.ExecutionStage_Value, d *repb.Digest) *repb.ExecuteOperationMetadata {
+func Metadata(stage repb.ExecutionStage_Value, action *digest.ResourceName) *repb.ExecuteOperationMetadata {
 	return &repb.ExecuteOperationMetadata{
-		Stage:        stage,
-		ActionDigest: d,
+		Stage:          stage,
+		ActionDigest:   action.GetDigest(),
+		DigestFunction: action.GetDigestFunction(),
 	}
 }
 
@@ -299,7 +297,7 @@ type StreamLike interface {
 
 type StateChangeFunc func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error
 
-func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *repb.Digest) StateChangeFunc {
+func GetStateChangeFunc(stream StreamLike, taskID string, action *digest.ResourceName) StateChangeFunc {
 	return func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
 		if stage == repb.ExecutionStage_COMPLETED {
 			if target, err := flagutil.GetDereferencedValue[string]("executor.app_target"); err == nil {
@@ -314,7 +312,7 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *repb
 				}
 			}
 		}
-		op, err := Assemble(taskID, Metadata(stage, adInstanceDigest), execResponse)
+		op, err := Assemble(taskID, Metadata(stage, action), execResponse)
 		if err != nil {
 			return status.InternalErrorf("Error updating state of %q: %s", taskID, err)
 		}
@@ -332,8 +330,8 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *repb
 	}
 }
 
-func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *repb.Digest, er *repb.ExecuteResponse) error {
-	op, err := Assemble(taskID, Metadata(repb.ExecutionStage_COMPLETED, adInstanceDigest), er)
+func PublishOperationDone(stream StreamLike, taskID string, action *digest.ResourceName, er *repb.ExecuteResponse) error {
+	op, err := Assemble(taskID, Metadata(repb.ExecutionStage_COMPLETED, action), er)
 	if err != nil {
 		return err
 	}

@@ -510,6 +510,8 @@ func (c *fileCache) scanDir() {
 		if !isValidScannedCachePath(c.rootDir, path, keyPrefix, node) {
 			return nil
 		}
+		// The filename contains the storage key, including any digest function
+		// suffix. UNKNOWN keeps the storage key unchanged.
 		if err := c.addFileWithKeyPrefix(keyPrefix, node, path, repb.DigestFunction_UNKNOWN); err != nil {
 			if status.IsInvalidArgumentError(err) {
 				return nil
@@ -659,6 +661,10 @@ func namespacedKey(keyPrefix string, node *repb.FileNode, digestFunction repb.Di
 	if err := validateFilecacheHash(hash); err != nil {
 		return "", err
 	}
+	if node.GetDigest().GetSizeBytes() < 0 {
+		return "", status.InvalidArgumentErrorf("invalid filecache digest size %d", node.GetDigest().GetSizeBytes())
+	}
+	hash = digest.LegacyKeyHash(hash, digestFunction)
 	if node.GetIsExecutable() {
 		return keyPrefix + "/" + hash + "." + executableSuffix, nil
 	}
@@ -703,7 +709,8 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 		return false
 	}
 	start := time.Now()
-	if err := cloneOrLink(keyPrefix, filecachePath(c.rootDir, key), outputPath); err != nil {
+	source := filecachePath(c.rootDir, key)
+	if err := cloneOrLink(keyPrefix, source, outputPath); err != nil {
 		log.Warningf("Failed to link file from cache: %s", err)
 		return false
 	}
@@ -977,19 +984,12 @@ func (c *fileCache) WaitForDirectoryScanToComplete() {
 
 // Read atomically reads a file from filecache.
 func (c *fileCache) Read(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) ([]byte, error) {
-	tmp, err := c.tempPath(node.GetDigest().GetHash())
+	f, err := c.Open(ctx, node, digestFunction)
 	if err != nil {
 		return nil, err
 	}
-	if !c.FastLinkFile(ctx, node, tmp, digestFunction) {
-		return nil, status.NotFoundErrorf("digest %s not found", node.GetDigest().GetHash())
-	}
-	defer func() {
-		if err := os.Remove(tmp); err != nil {
-			log.Warningf("Failed to remove filecache temp file: %s", err)
-		}
-	}()
-	return os.ReadFile(tmp)
+	defer f.Close()
+	return io.ReadAll(f)
 }
 
 // Write atomically writes the given bytes to filecache.
@@ -1025,25 +1025,10 @@ type verifiedWriter struct {
 	ctx context.Context
 	fc  *fileCache
 
-	digestFunction repb.DigestFunction_Value
 	csum           hash.Hash
 	node           *repb.FileNode
 	file           *os.File
-}
-
-func newVerifiedWriter(ctx context.Context, fc *fileCache, node *repb.FileNode, digestFunction repb.DigestFunction_Value, file *os.File) (*verifiedWriter, error) {
-	csum, err := digest.HashForDigestType(digestFunction)
-	if err != nil {
-		return nil, err
-	}
-	return &verifiedWriter{
-		ctx:            ctx,
-		fc:             fc,
-		digestFunction: digestFunction,
-		csum:           csum,
-		node:           node,
-		file:           file,
-	}, nil
+	digestFunction repb.DigestFunction_Value
 }
 
 func (v *verifiedWriter) Seek(offset int64, whence int) (int64, error) {
@@ -1061,12 +1046,11 @@ func (v *verifiedWriter) Seek(offset int64, whence int) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-
-	csum, err := digest.HashForDigestType(v.digestFunction)
-	if err != nil {
+	if err := v.file.Truncate(0); err != nil {
 		return 0, err
 	}
-	v.csum = csum
+
+	v.csum.Reset()
 
 	return ret, nil
 }
@@ -1114,6 +1098,10 @@ func (c *fileCache) Writer(ctx context.Context, node *repb.FileNode, digestFunct
 	if err != nil {
 		return nil, err
 	}
+	csum, err := digest.HashForDigestType(digestFunction, node.GetDigest().GetSizeBytes())
+	if err != nil {
+		return nil, err
+	}
 
 	perms := 0644
 	if node.IsExecutable {
@@ -1124,7 +1112,7 @@ func (c *fileCache) Writer(ctx context.Context, node *repb.FileNode, digestFunct
 	if err != nil {
 		return nil, status.InternalErrorf("filecache temp file creation failed: %s", err)
 	}
-	return newVerifiedWriter(ctx, c, node, digestFunction, f)
+	return &verifiedWriter{ctx: ctx, fc: c, csum: csum, node: node, file: f, digestFunction: digestFunction}, nil
 }
 
 func (c *fileCache) tempPath(name string) (string, error) {

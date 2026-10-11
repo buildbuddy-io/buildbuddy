@@ -229,7 +229,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		ExperimentFlags:       task.GetExperimentFlags(),
 	}
 	actionMetrics.AuxMetadata = auxMetadata
-	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest.GetDigest())
+	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, &adInstanceDigest.ResourceName)
 	stateChangeFn := func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
 		if stage == repb.ExecutionStage_COMPLETED {
 			if err := appendAuxiliaryMetadata(execResponse.GetResult().GetExecutionMetadata(), auxMetadata); err != nil {
@@ -260,7 +260,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		resp.Result = &repb.ActionResult{
 			ExecutionMetadata: md,
 		}
-		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest.GetDigest(), resp); err != nil {
+		if err := operation.PublishOperationDone(stream, taskID, &adInstanceDigest.ResourceName, resp); err != nil {
 			return true, err
 		}
 		return false, finalErr

@@ -665,7 +665,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 	if skipValidation {
 		ws.writer = committedWriteCloser
 	} else {
-		hasher, err := digest.HashForDigestType(r.GetDigestFunction())
+		hasher, err := digest.HashForDigestType(r.GetDigestFunction(), r.GetDigest().GetSizeBytes())
 		if err != nil {
 			ws.Close()
 			return nil, err

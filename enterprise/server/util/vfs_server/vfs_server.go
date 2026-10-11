@@ -1093,7 +1093,7 @@ func (cf *casFetcher) dedupeDownloadToFileCache(ctx context.Context, node *repb.
 		cf.mu.Unlock()
 	}()
 
-	dedupeKey := groupIDStringFromContext(ctx) + "-" + node.GetDigest().GetHash()
+	dedupeKey := fmt.Sprintf("%s-%s-%t", groupIDStringFromContext(ctx), digest.String(node.GetDigest()), node.GetIsExecutable())
 	_, _, err := downloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (struct{}, error) {
 		return struct{}{}, cf.downloadToFileCache(ctx, node)
 	})

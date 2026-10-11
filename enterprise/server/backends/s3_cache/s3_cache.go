@@ -249,7 +249,7 @@ func (s3c *S3Cache) key(ctx context.Context, r *rspb.ResourceName) (string, erro
 	if err := rn.Validate(); err != nil {
 		return "", err
 	}
-	hash := rn.GetDigest().GetHash()
+	hash := digest.LegacyKeyHash(rn.GetDigest().GetHash(), rn.GetDigestFunction())
 	userPrefix, err := prefix.UserPrefixFromContext(ctx)
 	if err != nil {
 		return "", err

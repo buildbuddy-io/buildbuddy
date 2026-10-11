@@ -36,7 +36,7 @@ var Flags = flags
 var (
 	target         = flags.String("remote_executor", login.DefaultApiTarget, "Remote execution service target.")
 	instanceName   = flags.String("remote_instance_name", "", "Value to pass as an instance_name in the remote execution API.")
-	digestFunction = flags.String("digest_function", "sha256", "Digest function used for content-addressable storage. Can be `\"sha256\" or \"blake3\"`.")
+	digestFunction = flags.String("digest_function", "sha256", "Digest function used for content-addressable storage. Can be `\"sha256\", \"blake3\", or \"gitsha1\"`.")
 	invocationID   = flags.String("invocation_id", "", "If set, set this value as the tool_invocation_id in RequestMetadata.")
 	timeout        = flags.Duration("remote_timeout", 1*time.Hour, "Timeout used for the action.")
 	remoteHeaders  = flag.New(flags, "remote_header", []string{}, "Header to be applied to all outgoing gRPC requests, as a `NAME=VALUE` pair. Can be specified more than once.")

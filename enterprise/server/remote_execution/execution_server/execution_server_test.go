@@ -1252,7 +1252,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}
 	op, err = operation.Assemble(
 		taskID,
-		operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+		operation.Metadata(repb.ExecutionStage_COMPLETED, &arn.ResourceName),
 		expectedExecuteResponse,
 	)
 	require.NoError(t, err)
@@ -1566,7 +1566,7 @@ func TestPublishOperation_RetriedStream(t *testing.T) {
 	require.NoError(t, err)
 	completedOp, err := operation.Assemble(
 		taskID,
-		operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+		operation.Metadata(repb.ExecutionStage_COMPLETED, &arn.ResourceName),
 		&repb.ExecuteResponse{
 			Result: &repb.ActionResult{
 				ExecutionMetadata: &repb.ExecutedActionMetadata{
@@ -1725,7 +1725,7 @@ func testPublishOperationFlushWithEmptyLinks(t *testing.T, flushOnEOF bool) {
 	}
 	auxAny, err := anypb.New(aux)
 	require.NoError(t, err)
-	completedOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+	completedOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, &arn.ResourceName), &repb.ExecuteResponse{
 		Result: &repb.ActionResult{
 			ExecutionMetadata: &repb.ExecutedActionMetadata{
 				QueuedTimestamp:          tspb.New(queuedTime),
@@ -1844,7 +1844,7 @@ func TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow(t *testing.T) 
 	}
 	completedOp, err := operation.Assemble(
 		taskID,
-		operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+		operation.Metadata(repb.ExecutionStage_COMPLETED, &arn.ResourceName),
 		completedResponse,
 	)
 	require.NoError(t, err)
@@ -1973,7 +1973,7 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 	require.NoError(t, err)
 
 	// First COMPLETED: full ExecuteResponse with the normal aux metadata.
-	firstOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+	firstOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, &arn.ResourceName), &repb.ExecuteResponse{
 		Result: &repb.ActionResult{
 			ExecutionMetadata: &repb.ExecutedActionMetadata{
 				QueuedTimestamp:          tspb.New(queuedTime),
@@ -1999,7 +1999,7 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 		},
 	})
 	require.NoError(t, err)
-	secondOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+	secondOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, &arn.ResourceName), &repb.ExecuteResponse{
 		Result: &repb.ActionResult{
 			ExecutionMetadata: &repb.ExecutedActionMetadata{
 				AuxiliaryMetadata: []*anypb.Any{secondAuxAny},
@@ -2173,7 +2173,7 @@ func testPublishOperationRetryStreamWithOnlyPostCompletionStats(t *testing.T, fl
 	// Stream 1: regular first COMPLETED, then close cleanly.
 	stream1, err := client.PublishOperation(executorCtx)
 	require.NoError(t, err)
-	firstOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+	firstOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, &arn.ResourceName), &repb.ExecuteResponse{
 		Result: &repb.ActionResult{
 			ExecutionMetadata: &repb.ExecutedActionMetadata{
 				QueuedTimestamp:          tspb.New(queuedTime),
@@ -2203,7 +2203,7 @@ func testPublishOperationRetryStreamWithOnlyPostCompletionStats(t *testing.T, fl
 		},
 	})
 	require.NoError(t, err)
-	postCompletionOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+	postCompletionOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, &arn.ResourceName), &repb.ExecuteResponse{
 		Result: &repb.ActionResult{
 			ExecutionMetadata: &repb.ExecutedActionMetadata{
 				AuxiliaryMetadata: []*anypb.Any{postCompletionAny},
@@ -2330,7 +2330,7 @@ func TestPublishOperation_OOMKilledTask_IncreasesMemoryEstimate(t *testing.T) {
 			require.NoError(t, err)
 			op, err = operation.Assemble(
 				taskID,
-				operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+				operation.Metadata(repb.ExecutionStage_COMPLETED, &arn.ResourceName),
 				&repb.ExecuteResponse{
 					Result: &repb.ActionResult{
 						ExecutionMetadata: &repb.ExecutedActionMetadata{

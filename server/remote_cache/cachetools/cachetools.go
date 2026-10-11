@@ -208,11 +208,15 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 		}
 		return err
 	}
-	checksum, err := digest.HashForDigestType(r.GetDigestFunction())
+	checksum, err := digest.HashForDigestType(r.GetDigestFunction(), r.GetDigest().GetSizeBytes())
 	if err != nil {
 		return err
 	}
 	w := io.MultiWriter(checksum, out)
+	var uncompressedSize ioutil.Counter
+	if r.GetDigestFunction() == repb.DigestFunction_GITSHA1 {
+		w = io.MultiWriter(w, &uncompressedSize)
+	}
 
 	close := func() error { return nil }
 	if r.GetCompressor() == repb.Compressor_ZSTD {
@@ -251,6 +255,9 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 	computedDigest := hex.EncodeToString(checksum.Sum(nil))
 	if computedDigest != r.GetDigest().GetHash() {
 		return status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest, r.GetDigest().GetHash())
+	}
+	if r.GetDigestFunction() == repb.DigestFunction_GITSHA1 && uncompressedSize.Count() != r.GetDigest().GetSizeBytes() {
+		return status.DataLossErrorf("Downloaded GITSHA1 content size %d did not match expected size %d", uncompressedSize.Count(), r.GetDigest().GetSizeBytes())
 	}
 	return nil
 }
@@ -646,7 +653,7 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 		return nil, 0, status.UnavailableErrorf("seek input: %s", err)
 	}
 
-	blobHasher, err := digest.HashForDigestType(r.GetDigestFunction())
+	blobHasher, err := digest.HashForDigestType(r.GetDigestFunction(), r.GetDigest().GetSizeBytes())
 	if err != nil {
 		return nil, 0, err
 	}

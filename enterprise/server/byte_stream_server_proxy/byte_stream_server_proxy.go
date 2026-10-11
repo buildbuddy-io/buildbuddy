@@ -1294,7 +1294,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	// so verify the recomposed blob digest here instead.
 	var blobHasher hash.Hash
 	if cdc.IsSpliceWithoutValidation(ctx) {
-		blobHasher, err = digest.HashForDigestType(digestFunction)
+		blobHasher, err = digest.HashForDigestType(digestFunction, blobSize)
 		if err != nil {
 			return writeChunkedResult{}, err
 		}

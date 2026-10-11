@@ -508,7 +508,7 @@ func toFileNode(r *rspb.ResourceName) *repb.FileNode {
 }
 
 func key(f *repb.FileNode, digestFunction repb.DigestFunction_Value) string {
-	return fmt.Sprintf("%s/%d/%t", f.GetDigest().GetHash(), f.GetDigest().GetSizeBytes(), f.GetIsExecutable())
+	return fmt.Sprintf("%s/%d/%t/%d", f.GetDigest().GetHash(), f.GetDigest().GetSizeBytes(), f.GetIsExecutable(), digestFunction)
 }
 
 func (fc *fakeFilecache) FastLinkFile(ctx context.Context, f *repb.FileNode, outputPath string, digestFunction repb.DigestFunction_Value) bool {
