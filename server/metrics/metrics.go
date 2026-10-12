@@ -1628,7 +1628,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "lost_tasks",
-		Help:      "Number of watched tasks that the scheduler reported lost because they went missing without anyone publishing their final execution update, ending the waits of their clients with a retryable error.",
+		Help:      "Number of tasks that the scheduler reported lost after they stayed missing from Redis while clients were waiting on them.",
 	})
 
 	// #### Examples

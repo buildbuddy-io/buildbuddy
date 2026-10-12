@@ -2674,6 +2674,17 @@ func TestWatchTaskLiveness(t *testing.T) {
 	s.checkTaskLivenessOnce(ctx)
 	require.False(t, isLost())
 
+	// A failed check also restarts the count, since the scheduler cannot tell
+	// whether the task existed at that time. The test makes the check fail by
+	// running it with a canceled context.
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	s.checkTaskLivenessOnce(canceledCtx)
+	s.checkTaskLivenessOnce(ctx)
+	clock.Advance(19 * time.Second)
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+
 	// Once the task has been missing for 20s, the scheduler reports it lost
 	// and stops watching it.
 	clock.Advance(time.Second)

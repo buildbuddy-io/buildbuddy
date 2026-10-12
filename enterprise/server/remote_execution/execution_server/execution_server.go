@@ -1380,11 +1380,18 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 		var waitErr error
 		select {
 		case msg, ok = <-streamPubSubChan:
-			if ok && msg.Err != nil {
-				waitErr = status.NotFoundErrorf("receive execution update: %s", msg.Err)
-			}
 		case <-taskLost:
-			waitErr = status.NotFoundErrorf("the scheduler lost task %q before it completed", req.GetName())
+			// select picks at random among ready cases, so before ending the
+			// wait, take any update that is already waiting, since it may be
+			// the final result.
+			select {
+			case msg, ok = <-streamPubSubChan:
+			default:
+				waitErr = status.NotFoundErrorf("the scheduler lost task %q before it completed", req.GetName())
+			}
+		}
+		if ok && msg != nil && msg.Err != nil {
+			waitErr = status.NotFoundErrorf("receive execution update: %s", msg.Err)
 		}
 		if !ok {
 			if ctx.Err() != nil {

@@ -1464,8 +1464,9 @@ type taskLivenessWatch struct {
 	lost chan struct{}
 	// watchers counts the clients whose contexts are not done yet.
 	watchers int
-	// missingSince is when the scheduler first found the task missing, or zero
-	// if it found the task on its most recent conclusive check.
+	// missingSince is when the current run of checks that found the task
+	// missing began, or zero if the most recent check found the task or
+	// failed.
 	missingSince time.Time
 }
 
@@ -3152,8 +3153,8 @@ func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, taskLivenessCheckTimeout)
 	defer cancel()
 	pipe := s.rdb.Pipeline()
-	var checks []check
 	s.livenessMu.Lock()
+	checks := make([]check, 0, len(s.livenessWatches))
 	for taskID, w := range s.livenessWatches {
 		checks = append(checks, check{taskID, w, pipe.Exists(ctx, s.redisKeyForTask(taskID))})
 	}
@@ -3176,12 +3177,11 @@ func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 			continue
 		}
 		n, err := c.exists.Result()
-		if err != nil {
-			// Inconclusive, for example because a shard did not answer in
-			// time, so leave missingSince as it was.
-			continue
-		}
-		if n == 1 {
+		if err != nil || n == 1 {
+			// Restart the count if the task exists or the check failed (for
+			// example because a shard did not answer in time), so that the
+			// scheduler reports a task lost only if every check over the whole
+			// period found it missing.
 			c.watch.missingSince = time.Time{}
 			continue
 		}
@@ -3192,7 +3192,7 @@ func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 			continue
 		}
 		metrics.RemoteExecutionLostTasks.Inc()
-		log.CtxWarningf(ctx, "Ending waits for task %q, which has been missing for %s without anyone publishing its final update", c.taskID, now.Sub(c.watch.missingSince))
+		log.CtxWarningf(ctx, "Ending waits for task %q, which has been missing from Redis for %s", c.taskID, now.Sub(c.watch.missingSince))
 		close(c.watch.lost)
 		delete(s.livenessWatches, c.taskID)
 	}
