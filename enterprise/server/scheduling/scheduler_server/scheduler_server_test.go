@@ -2665,7 +2665,7 @@ func TestWatchTaskLiveness(t *testing.T) {
 	rdb := env.GetRemoteExecutionRedisClient()
 	ctx := t.Context()
 	taskKey := s.redisKeyForTask("task1")
-	err := rdb.Set(ctx, taskKey, "1", 0).Err()
+	err := rdb.HSet(ctx, taskKey, redisTaskAttempCountField, 0).Err()
 	require.NoError(t, err)
 	lost := s.WatchTaskLiveness(ctx, "task1")
 	isLost := func() bool {
@@ -2695,7 +2695,7 @@ func TestWatchTaskLiveness(t *testing.T) {
 	// If the scheduler finds the task again, it restarts the count, so it
 	// reports the task lost only after the task has been missing continually
 	// for 20s.
-	err = rdb.Set(ctx, taskKey, "1", 0).Err()
+	err = rdb.HSet(ctx, taskKey, redisTaskAttempCountField, 0).Err()
 	require.NoError(t, err)
 	s.checkTaskLivenessOnce(ctx)
 	err = rdb.Del(ctx, taskKey).Err()
@@ -2756,4 +2756,71 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 	s.livenessMu.Lock()
 	defer s.livenessMu.Unlock()
 	require.Empty(t, s.livenessWatches)
+}
+
+func TestWatchTaskLiveness_FailsOrphanedTasks(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		props map[string]string
+		// How long ago the reconnect period of the held task ended.
+		reconnectPeriodEndedAgo time.Duration
+		claimed                 bool
+		wantFailed              bool
+	}{
+		{
+			name:                    "retries disabled",
+			props:                   map[string]string{platform.RetryPropertyName: "false"},
+			reconnectPeriodEndedAgo: time.Minute,
+			wantFailed:              true,
+		},
+		{
+			name:                    "executor may still reconnect",
+			props:                   map[string]string{platform.RetryPropertyName: "false"},
+			reconnectPeriodEndedAgo: 0,
+			wantFailed:              false,
+		},
+		{
+			name:                    "retries enabled",
+			reconnectPeriodEndedAgo: time.Minute,
+			wantFailed:              false,
+		},
+		{
+			name:                    "claimed",
+			props:                   map[string]string{platform.RetryPropertyName: "false"},
+			reconnectPeriodEndedAgo: time.Minute,
+			claimed:                 true,
+			wantFailed:              false,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			// Enable the check, which is off by default, with an interval long
+			// enough that the scheduler never checks on its own.
+			flags.Set(t, "remote_execution.task_liveness_check_interval", 999*time.Hour)
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			s := env.GetSchedulerService().(*SchedulerServer)
+			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			fe.Register()
+
+			// Hold the task for an executor to reconnect, as the scheduler does
+			// when it shuts down while an executor is running the task.
+			taskID := scheduleTask(ctx, t, env, testCase.props)
+			fields := map[string]any{
+				redisTaskReconnectPeriodEndField: time.Now().Add(-testCase.reconnectPeriodEndedAgo).UnixNano(),
+			}
+			if testCase.claimed {
+				fields[redisTaskClaimedField] = "1"
+			}
+			err := env.GetRemoteExecutionRedisClient().HSet(ctx, s.redisKeyForTask(taskID), fields).Err()
+			require.NoError(t, err)
+			s.WatchTaskLiveness(ctx, taskID)
+
+			// The scheduler fails the task only if the executor most likely
+			// stopped running it, it's still unclaimed, and no other executor
+			// can retry it.
+			s.checkTaskLivenessOnce(ctx)
+			exists, err := s.ExistsTask(ctx, taskID)
+			require.NoError(t, err)
+			require.Equal(t, !testCase.wantFailed, exists)
+		})
+	}
 }

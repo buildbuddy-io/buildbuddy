@@ -73,7 +73,7 @@ var (
 	unclaimedTasksSetMaxSize     = flag.Int64("remote_execution.unclaimed_tasks_set_max_size", 100_000, "Max number of unclaimed tasks to track in redis per executor pool, per shard (see remote_execution.unclaimed_tasks_shard_count). This set of tasks is used for eager work assignments (when executors newly join a pool) and work-stealing requests (when executors are nearly idle).")
 	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
 	unclaimedTasksShardCount     = flag.Int("remote_execution.unclaimed_tasks_shard_count", 1, "Number of Redis sets that each executor pool's unclaimed tasks are split across. With a sharded Redis client, this spreads the load of large pools across Redis shards. If the unclaimedTasks/* keys become a source of contention, try setting this value to twice the number of Redis shards. Since remote_execution.unclaimed_tasks_set_max_size applies to each set, consider lowering it when raising this. Changing this value is relatively safe, but it may temporarily increase Redis memory usage, failed task lease attempts, and execution latency in some cases.")
-	taskLivenessCheckInterval    = flag.Duration("remote_execution.task_liveness_check_interval", 0, "How often the scheduler checks that the tasks clients are waiting on still exist. Once a task has been missing for remote_execution.lease_duration plus remote_execution.lease_grace_period, the app ends the clients' waits with a NOT_FOUND error so that they retry the execution. 0 (the default) disables the check.")
+	taskLivenessCheckInterval    = flag.Duration("remote_execution.task_liveness_check_interval", 0, "How often the scheduler checks that the tasks clients are waiting on still exist and can make progress. Once a task has been missing for remote_execution.lease_duration plus remote_execution.lease_grace_period, the app ends the clients' waits with a NOT_FOUND error so that they retry the execution. The scheduler also fails tasks with retries disabled whose executor did not reconnect after its lease was interrupted. 0 (the default) disables the check.")
 
 	upgradePromptMaxLags     = flag.Map("remote_execution.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) an executor may fall behind the newest registered version before GetExecutionNodes prompts an upgrade at that urgency.")
 	upgradePromptMinVersions = flag.Map("remote_execution.upgrade_prompt_min_versions", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the minimum version (semver) below which GetExecutionNodes prompts an upgrade at that urgency.")
@@ -274,11 +274,25 @@ var (
 		end`)
 	// Task deleted if claim field is present.
 	redisDeleteClaimedTask = redis.NewScript(`
-		if redis.call("hget", KEYS[1], "claimed") == "1" then 
-			return redis.call("del", KEYS[1]) 
-		else 
-			return 0 
+		if redis.call("hget", KEYS[1], "claimed") == "1" then
+			return redis.call("del", KEYS[1])
+		else
+			return 0
 		end`)
+	// Deletes a task that the scheduler held for its executor to reconnect,
+	// unless an executor claimed the task or the scheduler held it again since
+	// the caller read its reconnect period end (ARGV[1]).
+	// Return values:
+	//  - 1 if the task was deleted
+	//  - 0 otherwise
+	redisDeleteOrphanedTask = redis.NewScript(`
+		if redis.call("hexists", KEYS[1], "claimed") == 1 then
+			return 0
+		end
+		if redis.call("hget", KEYS[1], "reconnectPeriodEnd") ~= ARGV[1] then
+			return 0
+		end
+		return redis.call("del", KEYS[1])`)
 )
 
 func init() {
@@ -3108,27 +3122,36 @@ func (s *SchedulerServer) checkTaskLiveness(ctx context.Context) {
 	}
 }
 
-// checkTaskLivenessOnce checks whether the watched tasks still exist, using a
-// single pipeline for all active watchers, and closes the channel of each task
-// that has been missing for the lease duration plus grace period. By then, any
-// executor running the task has most likely failed a lease renewal and stopped,
-// and the client has received any final update the scheduler published right
-// after deleting the task. In rare cases (e.g. stalled lease renewals, or apps
-// with different views of the Redis ring) the scheduler may report a task lost
-// early, and the client retries.
+// checkTaskLivenessOnce checks the watched tasks, using a single pipeline for
+// all active watchers.
+//
+// It closes the channel of each task that has been missing for the lease
+// duration plus grace period. By then, any executor running the task has most
+// likely failed a lease renewal and stopped, and the client has received any
+// final update the scheduler published right after deleting the task. In rare
+// cases (e.g. stalled lease renewals, or apps with different views of the
+// Redis ring) the scheduler may report a task lost early, and the client
+// retries.
+//
+// It also fails tasks that still exist but can't make progress, because the
+// scheduler held them for an executor that never reconnected (see
+// failTaskIfOrphaned).
 func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 	type check struct {
 		taskID string
 		watch  *taskLivenessWatch
-		exists *redis.IntCmd
+		// fields holds the task's attempt count, claim and reconnect period
+		// end.
+		fields *redis.SliceCmd
 	}
-	ctx, cancel := context.WithTimeout(ctx, taskLivenessCheckTimeout)
+	pipeCtx, cancel := context.WithTimeout(ctx, taskLivenessCheckTimeout)
 	defer cancel()
 	pipe := s.rdb.Pipeline()
 	s.livenessMu.Lock()
 	checks := make([]check, 0, len(s.livenessWatches))
 	for taskID, w := range s.livenessWatches {
-		checks = append(checks, check{taskID, w, pipe.Exists(ctx, s.redisKeyForTask(taskID))})
+		fields := pipe.HMGet(pipeCtx, s.redisKeyForTask(taskID), redisTaskAttempCountField, redisTaskClaimedField, redisTaskReconnectPeriodEndField)
+		checks = append(checks, check{taskID, w, fields})
 	}
 	s.livenessMu.Unlock()
 	if len(checks) == 0 {
@@ -3137,19 +3160,20 @@ func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 	// Exec returns the first failed command's error, but with a Redis ring,
 	// healthy shards still answer their commands, so look at each command's
 	// own result below.
-	_, _ = pipe.Exec(ctx)
+	_, _ = pipe.Exec(pipeCtx)
 	now := s.clock.Now()
 
 	s.livenessMu.Lock()
-	defer s.livenessMu.Unlock()
 	for _, c := range checks {
 		if s.livenessWatches[c.taskID] != c.watch {
 			// All of the task's watchers finished while the scheduler was running
 			// this check.
 			continue
 		}
-		n, err := c.exists.Result()
-		if err != nil || n == 1 {
+		// insertTask always sets the attempt count, so the task exists if its
+		// attempt count does.
+		vals, err := c.fields.Result()
+		if err != nil || vals[0] != nil {
 			// Restart the count if the task exists or the check failed (for
 			// example because a shard did not answer in time), so that the
 			// scheduler reports a task lost only if every check over the whole
@@ -3168,6 +3192,72 @@ func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 		close(c.watch.lost)
 		delete(s.livenessWatches, c.taskID)
 	}
+	s.livenessMu.Unlock()
+
+	// Look for tasks that the scheduler held for an executor that never
+	// reconnected. These tasks are still unclaimed well after their reconnect
+	// period ended, by which time the executor has most likely stopped running
+	// the task.
+	for _, c := range checks {
+		vals, err := c.fields.Result()
+		if err != nil || vals[1] != nil {
+			continue
+		}
+		end, ok := vals[2].(string)
+		if !ok {
+			continue
+		}
+		endNanos, err := strconv.ParseInt(end, 10, 64)
+		if err != nil || now.Before(time.Unix(0, endNanos).Add(s.leaseDuration+s.leaseGracePeriod)) {
+			continue
+		}
+		if err := s.failTaskIfOrphaned(ctx, c.taskID, end); err != nil {
+			log.CtxWarningf(ctx, "Could not check whether task %q can make progress: %s", c.taskID, err)
+		}
+	}
+}
+
+// failTaskIfOrphaned fails the given task if it has retries disabled.
+// checkTaskLivenessOnce calls it for tasks that the scheduler held for an
+// executor that never reconnected. The scheduler doesn't offer such tasks to
+// other executors, since that would be a retry, so nothing else would run or
+// fail them, and their clients would wait until the task expires from Redis.
+//
+// reconnectPeriodEnd is the task's reconnect period end as the caller read
+// it, so that the scheduler doesn't fail a task that an executor claimed, or
+// that the scheduler held again, since then.
+func (s *SchedulerServer) failTaskIfOrphaned(ctx context.Context, taskID, reconnectPeriodEnd string) error {
+	ctx, cancel := context.WithTimeout(ctx, taskLivenessCheckTimeout)
+	defer cancel()
+	task, err := s.readTask(ctx, taskID)
+	if status.IsNotFoundError(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read task: %w", err)
+	}
+	execTask := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(task.serializedTask, execTask); err != nil {
+		return fmt.Errorf("unmarshal task: %w", err)
+	}
+	if platform.Retryable(execTask) {
+		// When the scheduler held the task, it also offered the task to other
+		// executors once the reconnect period ended.
+		return nil
+	}
+	deleted, err := redisDeleteOrphanedTask.Run(ctx, s.rdb, []string{s.redisKeyForTask(taskID)}, reconnectPeriodEnd).Int()
+	if err != nil {
+		return fmt.Errorf("delete task: %w", err)
+	}
+	if deleted == 0 {
+		// An executor claimed the task, or another app already failed it.
+		return nil
+	}
+	log.CtxWarningf(ctx, "Failing task %q, which has retries disabled and whose executor did not reconnect", taskID)
+	if err := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, status.InternalError("executor did not reconnect to resume the task")); err != nil {
+		return fmt.Errorf("mark execution failed: %w", err)
+	}
+	return nil
 }
 
 func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
