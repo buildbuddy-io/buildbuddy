@@ -1624,6 +1624,20 @@ var (
 	// sum(buildbuddy_remote_execution_waiting_execution_result)
 	// ```
 
+	RemoteExecutionLostTasks = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "lost_tasks",
+		Help:      "Number of tasks that the scheduler reported lost after they stayed missing from Redis while clients were waiting on them.",
+	})
+
+	// #### Examples
+	//
+	// ```promql
+	// # Rate at which the app tells clients to retry executions whose task the scheduler lost.
+	// rate(buildbuddy_remote_execution_lost_tasks[5m])
+	// ```
+
 	RemoteExecutionRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
