@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -117,6 +116,45 @@ func (f *fakeByteStreamReadClient) Trailer() metadata.MD {
 	return nil
 }
 
+// fakeWaitExecutionClient returns the given streams from successive
+// WaitExecution calls.
+type fakeWaitExecutionClient struct {
+	repb.ExecutionClient
+
+	streams  []grpc.ServerStreamingClient[longrunningpb.Operation]
+	requests []*repb.WaitExecutionRequest
+}
+
+func (f *fakeWaitExecutionClient) WaitExecution(_ context.Context, in *repb.WaitExecutionRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[longrunningpb.Operation], error) {
+	f.requests = append(f.requests, in)
+	stream := f.streams[0]
+	f.streams = f.streams[1:]
+	return stream, nil
+}
+
+// fakeOperationStream returns the queued results from successive Recv
+// calls.
+type fakeOperationStream struct {
+	grpc.ClientStream
+
+	results []fakeOperation
+}
+
+type fakeOperation struct {
+	op  *longrunningpb.Operation
+	err error
+}
+
+func (s *fakeOperationStream) Recv() (*longrunningpb.Operation, error) {
+	next := s.results[0]
+	s.results = s.results[1:]
+	return next.op, next.err
+}
+
+func (s *fakeOperationStream) CloseSend() error {
+	return nil
+}
+
 func TestStart(t *testing.T) {
 	for _, test := range []struct {
 		name            string
@@ -159,6 +197,77 @@ func TestStart(t *testing.T) {
 			require.Equal(t, test.skipCacheLookup, client.executeReq.GetSkipCacheLookup())
 		})
 	}
+}
+
+func TestRetryingStream_ReattachesAfterTransientError(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		streamErr error
+	}{
+		{
+			// gRPC reports a stream reset by a proxy as Internal, not
+			// Unavailable.
+			name:      "stream reset by a proxy",
+			streamErr: gstatus.Error(codes.Internal, "stream terminated by RST_STREAM with error code: NO_ERROR"),
+		},
+		{
+			name:      "server unavailable",
+			streamErr: gstatus.Error(codes.Unavailable, "no healthy upstream"),
+		},
+		{
+			name:      "stream canceled by something other than the client",
+			streamErr: gstatus.Error(codes.Canceled, "stream canceled"),
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			executing := &longrunningpb.Operation{Name: "test-execution"}
+			done := &longrunningpb.Operation{Name: "test-execution", Done: true}
+			client := &fakeWaitExecutionClient{
+				streams: []grpc.ServerStreamingClient[longrunningpb.Operation]{
+					&fakeOperationStream{results: []fakeOperation{{op: executing}, {op: done}}},
+				},
+			}
+			stream := rexec.NewRetryingStream(t.Context(), client, &fakeOperationStream{
+				results: []fakeOperation{{op: executing}, {err: testCase.streamErr}},
+			}, "")
+
+			rsp, err := rexec.Wait(stream)
+
+			require.NoError(t, err)
+			require.True(t, rsp.GetDone())
+			require.Len(t, client.requests, 1)
+			require.Equal(t, "test-execution", client.requests[0].GetName())
+		})
+	}
+}
+
+func TestRetryingStream_ReturnsNonTransientError(t *testing.T) {
+	client := &fakeWaitExecutionClient{}
+	stream := rexec.NewRetryingStream(t.Context(), client, &fakeOperationStream{
+		results: []fakeOperation{
+			{op: &longrunningpb.Operation{Name: "test-execution"}},
+			{err: gstatus.Error(codes.PermissionDenied, "permission denied")},
+		},
+	}, "")
+
+	_, err := rexec.Wait(stream)
+
+	require.Equal(t, codes.PermissionDenied, gstatus.Code(err))
+	require.Empty(t, client.requests)
+}
+
+func TestRetryingStream_ReturnsErrorBeforeOperationName(t *testing.T) {
+	client := &fakeWaitExecutionClient{}
+	stream := rexec.NewRetryingStream(t.Context(), client, &fakeOperationStream{
+		results: []fakeOperation{
+			{err: gstatus.Error(codes.InvalidArgument, "invalid action")},
+		},
+	}, "")
+
+	_, err := rexec.Wait(stream)
+
+	require.Equal(t, codes.InvalidArgument, gstatus.Code(err))
+	require.Empty(t, client.requests)
 }
 
 func TestNormalizeCommand(t *testing.T) {

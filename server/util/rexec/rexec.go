@@ -313,8 +313,8 @@ func (s *RetryingStream) Name() string {
 
 // Recv attempts to reliably return the next operation on the named stream.
 //
-// If the stream is disconnected and the operation name has been received, it
-// will attempt to reconnect with WaitExecution.
+// If the stream fails with a transient error and the operation name has been
+// received, it will attempt to reconnect with WaitExecution.
 func (s *RetryingStream) Recv() (*Response, error) {
 	r := retry.DefaultWithContext(s.ctx)
 	for {
@@ -325,7 +325,7 @@ func (s *RetryingStream) Recv() (*Response, error) {
 			}
 			return UnpackOperation(op)
 		}
-		if !status.IsUnavailableError(err) || s.name == "" {
+		if !isTransientExecutionError(s.ctx, err) || s.name == "" {
 			return nil, err
 		}
 		if !r.Next() {
@@ -338,6 +338,25 @@ func (s *RetryingStream) Recv() (*Response, error) {
 		}
 		s.stream.CloseSend()
 		s.stream = next
+	}
+}
+
+// isTransientExecutionError returns whether reconnecting to an execution stream
+// that failed with err might succeed. Proxies in front of the app report stream
+// resets as Internal rather than Unavailable, so Unavailable alone isn't enough.
+// Canceled only counts if we didn't cancel the stream ourselves.
+func isTransientExecutionError(ctx context.Context, err error) bool {
+	st, ok := gstatus.FromError(err)
+	if !ok {
+		return false
+	}
+	switch st.Code() {
+	case codes.Unknown, codes.DeadlineExceeded, codes.Aborted, codes.Internal, codes.Unavailable, codes.ResourceExhausted:
+		return true
+	case codes.Canceled:
+		return ctx.Err() == nil
+	default:
+		return false
 	}
 }
 
