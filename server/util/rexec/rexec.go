@@ -328,8 +328,13 @@ func (s *RetryingStream) Recv() (*Response, error) {
 		if !isTransientExecutionError(s.ctx, err) || s.name == "" {
 			return nil, err
 		}
+		// Next returns false either because our context is done or because
+		// retries ran out.
 		if !r.Next() {
-			return nil, s.ctx.Err()
+			if s.ctx.Err() != nil {
+				return nil, s.ctx.Err()
+			}
+			return nil, err
 		}
 		req := &repb.WaitExecutionRequest{Name: s.name}
 		next, err := s.client.WaitExecution(s.ctx, req)
@@ -344,17 +349,19 @@ func (s *RetryingStream) Recv() (*Response, error) {
 // isTransientExecutionError returns whether reconnecting to an execution stream
 // that failed with err might succeed. Proxies in front of the app report stream
 // resets as Internal rather than Unavailable, so Unavailable alone isn't enough.
-// Canceled only counts if we didn't cancel the stream ourselves.
+// Nothing counts once our own context is done, since the error then comes from
+// our own cancellation or deadline.
 func isTransientExecutionError(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	st, ok := gstatus.FromError(err)
 	if !ok {
 		return false
 	}
 	switch st.Code() {
-	case codes.Unknown, codes.DeadlineExceeded, codes.Aborted, codes.Internal, codes.Unavailable, codes.ResourceExhausted:
+	case codes.Unknown, codes.DeadlineExceeded, codes.Aborted, codes.Internal, codes.Unavailable, codes.ResourceExhausted, codes.Canceled:
 		return true
-	case codes.Canceled:
-		return ctx.Err() == nil
 	default:
 		return false
 	}

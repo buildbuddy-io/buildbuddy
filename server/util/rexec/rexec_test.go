@@ -256,6 +256,44 @@ func TestRetryingStream_ReturnsNonTransientError(t *testing.T) {
 	require.Empty(t, client.requests)
 }
 
+func TestRetryingStream_ReturnsErrorAfterClientCancels(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	client := &fakeWaitExecutionClient{}
+	stream := rexec.NewRetryingStream(ctx, client, &fakeOperationStream{
+		results: []fakeOperation{
+			{op: &longrunningpb.Operation{Name: "test-execution"}},
+			{err: gstatus.Error(codes.Canceled, "context canceled")},
+		},
+	}, "")
+	cancel()
+
+	_, err := rexec.Wait(stream)
+
+	require.Equal(t, codes.Canceled, gstatus.Code(err))
+	require.Empty(t, client.requests)
+}
+
+func TestRetryingStream_ReturnsLastErrorWhenRetriesRunOut(t *testing.T) {
+	unavailable := gstatus.Error(codes.Unavailable, "no healthy upstream")
+	client := &fakeWaitExecutionClient{}
+	for range 99999 {
+		client.streams = append(client.streams, &fakeOperationStream{
+			results: []fakeOperation{{err: unavailable}},
+		})
+	}
+	stream := rexec.NewRetryingStream(t.Context(), client, &fakeOperationStream{
+		results: []fakeOperation{
+			{op: &longrunningpb.Operation{Name: "test-execution"}},
+			{err: unavailable},
+		},
+	}, "")
+
+	_, err := rexec.Wait(stream)
+
+	require.Equal(t, codes.Unavailable, gstatus.Code(err))
+	require.NotEmpty(t, client.requests)
+}
+
 func TestRetryingStream_ReturnsErrorBeforeOperationName(t *testing.T) {
 	client := &fakeWaitExecutionClient{}
 	stream := rexec.NewRetryingStream(t.Context(), client, &fakeOperationStream{
