@@ -124,10 +124,16 @@ type fakeWaitExecutionClient struct {
 
 	streams  []grpc.ServerStreamingClient[longrunningpb.Operation]
 	requests []*repb.WaitExecutionRequest
+	// If set, returns a stream for each WaitExecution call once streams runs
+	// out.
+	newStream func() grpc.ServerStreamingClient[longrunningpb.Operation]
 }
 
 func (f *fakeWaitExecutionClient) WaitExecution(_ context.Context, in *repb.WaitExecutionRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[longrunningpb.Operation], error) {
 	f.requests = append(f.requests, in)
+	if len(f.streams) == 0 && f.newStream != nil {
+		return f.newStream(), nil
+	}
 	stream := f.streams[0]
 	f.streams = f.streams[1:]
 	return stream, nil
@@ -279,11 +285,10 @@ func TestRetryingStream_ReturnsLastErrorWhenRetriesRunOut(t *testing.T) {
 	// the test doesn't have to wait for it.
 	synctest.Test(t, func(t *testing.T) {
 		unavailable := gstatus.Error(codes.Unavailable, "no healthy upstream")
-		client := &fakeWaitExecutionClient{}
-		for range 99999 {
-			client.streams = append(client.streams, &fakeOperationStream{
-				results: []fakeOperation{{err: unavailable}},
-			})
+		client := &fakeWaitExecutionClient{
+			newStream: func() grpc.ServerStreamingClient[longrunningpb.Operation] {
+				return &fakeOperationStream{results: []fakeOperation{{err: unavailable}}}
+			},
 		}
 		stream := rexec.NewRetryingStream(t.Context(), client, &fakeOperationStream{
 			results: []fakeOperation{
