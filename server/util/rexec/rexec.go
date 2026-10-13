@@ -394,8 +394,14 @@ func (s *RetryingStream) Recv() (*Response, error) {
 
 // reconnect opens a new stream after the current one failed with err. Once the
 // operation name is known, it re-attaches with WaitExecution, and otherwise it
-// starts the execution again. It retries transient errors from opening the
-// stream too, and returns the error to give up with once retries run out.
+// retries the execution with Execute, which may occasionally trigger a
+// duplicate execution if the server had already scheduled the prior execution
+// attempt without the client receiving the reply. This matches Bazel's
+// behavior:
+// https://github.com/bazelbuild/bazel/blob/9551cddb4b3f271bbacfaebab0ccc1ab5a090807/src/main/java/com/google/devtools/build/lib/remote/GrpcRemoteExecutor.java#L111-L117
+//
+// It retries transient errors from opening the stream too, and returns the
+// error to give up with once retries run out.
 func (s *RetryingStream) reconnect(err error) error {
 	for {
 		// Next returns false either because our context is done or because
