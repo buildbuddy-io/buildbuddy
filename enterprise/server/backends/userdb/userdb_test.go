@@ -1957,6 +1957,36 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 	}
 }
 
+func TestGetAPIKeyForInternalUseOnly_PrefersAuthenticatedKey(t *testing.T) {
+	ctx := t.Context()
+	env := newTestEnv(t)
+	adb := env.GetAuthDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	g1 := getGroup(t, ctx1, env).Group
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, g1.GroupID, true)
+	createUser(t, ctx, env, "US2", "org2.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	g2 := getGroup(t, ctx2, env).Group
+
+	// Authenticate with a user-owned key. The group-level lookup never returns
+	// user-owned keys, so getting this key back means that the authenticated
+	// key took precedence.
+	userKey, err := adb.CreateUserAPIKey(ctx1, g1.GroupID, "US1", "test-personal-key", nil /*=capabilities*/, 0 /*=expiresIn*/)
+	require.NoError(t, err)
+	userKeyCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, userKey.Value)
+	key, err := adb.GetAPIKeyForInternalUseOnly(userKeyCtx, g1.GroupID)
+	require.NoError(t, err)
+	require.Equal(t, userKey.APIKeyID, key.APIKeyID)
+	require.Equal(t, userKey.Value, key.Value)
+
+	// The authenticated key is owned by a different group than the one
+	// requested, so a key owned by the requested group is returned instead.
+	key, err = adb.GetAPIKeyForInternalUseOnly(userKeyCtx, g2.GroupID)
+	require.NoError(t, err)
+	require.Equal(t, g2.GroupID, key.GroupID)
+}
+
 func TestUserOwnedKeys_NotReturnedByGroupLevelAPIs(t *testing.T) {
 	ctx := context.Background()
 	env := newTestEnv(t)

@@ -1051,15 +1051,38 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	return key, nil
 }
 
-// GetAPIKeyForInternalUseOnly returns any API key for the group, with
-// preference for keys with greater cache capabilities. It is only to be used in
-// situations where the user has a pre-authorized grant to access resources on
-// behalf of the org, such as a publicly shared invocation. The returned API key
-// must only be used to access internal resources and must not be returned to
-// the caller.
+// GetAPIKeyForInternalUseOnly returns an API key for the group. If the caller
+// authenticated with an API key owned by the group, it returns that key, so
+// that work done on the caller's behalf is limited to that key's capabilities
+// and is attributed to its owner. Otherwise, it returns any group-level API
+// key, with preference for keys with greater cache capabilities. It is only to
+// be used in situations where the user has a pre-authorized grant to access
+// resources on behalf of the org, such as a publicly shared invocation. The
+// returned API key must only be used to access internal resources and must not
+// be returned to the caller.
 func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
+	}
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		if !authutil.IsAnonymousUserError(err) {
+			return nil, err
+		}
+	} else if u.GetAPIKeyInfo().OwnerGroupID == groupID {
+		// We look up the key by the ID in the auth claims instead of reading
+		// the x-buildbuddy-api-key header, because HTTP API requests, client
+		// certificates, and keys embedded in the gRPC authority authenticate
+		// without putting that header in the ctx. In those cases, the claims
+		// are the only record of which key was used.
+		key, err := d.getAPIKey(ctx, u.GetAPIKeyInfo().ID)
+		if err != nil {
+			return nil, err
+		}
+		if err := d.fillDecryptedAPIKey(key); err != nil {
+			return nil, err
+		}
+		return key, nil
 	}
 	key := &tables.APIKey{}
 	rq := d.h.NewQuery(ctx, "authdb_get_api_key_for_group").Raw(`
