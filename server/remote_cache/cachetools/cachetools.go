@@ -1116,6 +1116,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 
 		byteStreamClient := ul.env.GetByteStreamClient()
 		if byteStreamClient == nil {
+			defer r.Close()
 			return status.InvalidArgumentError("missing bytestream client")
 		}
 		ul.eg.Go(func() error {
@@ -1127,6 +1128,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	}
 	b, err := io.ReadAll(r)
 	if err != nil {
+		defer r.Close()
 		return err
 	}
 	if err := r.Close(); err != nil {

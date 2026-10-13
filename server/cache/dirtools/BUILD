@@ -74,6 +74,7 @@ go_test(
         "//server/util/prefix",
         "//server/util/proto",
         "//server/util/rpcutil",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_roaringbitmap_roaring//:roaring",
         "@com_github_stretchr_testify//assert",
