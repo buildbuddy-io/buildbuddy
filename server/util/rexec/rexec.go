@@ -30,6 +30,13 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
+const (
+	// maxRetries limits how many times RetryingStream reconnects in a row, and
+	// how many times in total it sends Execute again. It matches the default of
+	// Bazel's --remote_retries flag.
+	maxRetries = 5
+)
+
 // MakeEnv assembles a list of EnvironmentVariable protos from a list of
 // NAME=VALUE pairs. If the same name is specified more than once, the last one
 // wins. The entries are sorted by name, so that the environment variables are
@@ -249,12 +256,10 @@ func Start(ctx context.Context, env environment.Env, actionResourceName *rspb.Re
 	for _, opt := range opts {
 		opt(req)
 	}
-	client := env.GetRemoteExecutionClient()
-	s := NewRetryingStream(ctx, client, nil, "")
+	s := NewRetryingStream(ctx, env.GetRemoteExecutionClient(), nil, "")
 	s.executeReq = req
-	stream, err := client.Execute(s.ctx, req)
+	err := s.open()
 	if err == nil {
-		s.stream = stream
 		return s, nil
 	}
 	// Start the execution again if the error is retryable, the same way Recv
@@ -312,9 +317,14 @@ type RetryingStream struct {
 	executeReq *repb.ExecuteRequest
 	// Backs off between reconnects and limits how many we make in a row. Recv
 	// resets it whenever the stream delivers an operation.
-	retry  *retry.Retry
-	stream repb.Execution_ExecuteClient
-	name   string
+	retry *retry.Retry
+	// How many times we've sent Execute again. Unlike retry, this never
+	// resets, since every execution makes progress before it fails.
+	reexecutions int
+	stream       repb.Execution_ExecuteClient
+	// Cancels the context of the stream that open opened, if any.
+	cancelStream context.CancelFunc
+	name         string
 }
 
 func NewRetryingStream(ctx context.Context, client repb.ExecutionClient, stream repb.Execution_ExecuteClient, name string) *RetryingStream {
@@ -329,7 +339,7 @@ func NewRetryingStream(ctx context.Context, client repb.ExecutionClient, stream 
 			InitialBackoff: 100 * time.Millisecond,
 			MaxBackoff:     5 * time.Second,
 			Multiplier:     2,
-			MaxRetries:     5,
+			MaxRetries:     maxRetries,
 		}),
 	}
 	s.resetRetries()
@@ -381,13 +391,9 @@ func (s *RetryingStream) Recv() (*Response, error) {
 			// Servers shouldn't end the stream before the operation is done,
 			// but proxies in between might, so re-attach without using up a
 			// retry.
-			next, waitErr := s.client.WaitExecution(s.ctx, &repb.WaitExecutionRequest{Name: s.name})
-			if waitErr == nil {
-				s.stream.CloseSend()
-				s.stream = next
+			if err = s.open(); err == nil {
 				continue
 			}
-			err = waitErr
 		}
 		if !s.prepareRetry(err) {
 			return nil, err
@@ -410,6 +416,12 @@ func (s *RetryingStream) Recv() (*Response, error) {
 // error to give up with once retries run out.
 func (s *RetryingStream) reconnect(err error) error {
 	for {
+		if s.name == "" {
+			if s.reexecutions == maxRetries {
+				return err
+			}
+			s.reexecutions++
+		}
 		// Next returns false either because our context is done or because
 		// retries ran out.
 		if !s.retry.Next() {
@@ -418,18 +430,8 @@ func (s *RetryingStream) reconnect(err error) error {
 			}
 			return err
 		}
-		var next repb.Execution_ExecuteClient
-		var openErr error
-		if s.name != "" {
-			next, openErr = s.client.WaitExecution(s.ctx, &repb.WaitExecutionRequest{Name: s.name})
-		} else {
-			next, openErr = s.client.Execute(s.ctx, s.executeReq)
-		}
+		openErr := s.open()
 		if openErr == nil {
-			if s.stream != nil {
-				s.stream.CloseSend()
-			}
-			s.stream = next
 			return nil
 		}
 		if !s.prepareRetry(openErr) {
@@ -437,6 +439,31 @@ func (s *RetryingStream) reconnect(err error) error {
 		}
 		err = openErr
 	}
+}
+
+// open opens a new stream. It re-attaches with WaitExecution once the operation
+// name is known, and otherwise starts the execution with Execute. Each stream
+// gets its own context, which open cancels when it replaces the stream, since
+// gRPC only releases a stream once it's canceled or has returned an error.
+func (s *RetryingStream) open() error {
+	ctx, cancel := context.WithCancel(s.ctx)
+	var stream repb.Execution_ExecuteClient
+	var err error
+	if s.name != "" {
+		stream, err = s.client.WaitExecution(ctx, &repb.WaitExecutionRequest{Name: s.name})
+	} else {
+		stream, err = s.client.Execute(ctx, s.executeReq)
+	}
+	if err != nil {
+		cancel()
+		return err
+	}
+	if s.cancelStream != nil {
+		s.cancelStream()
+	}
+	s.stream = stream
+	s.cancelStream = cancel
+	return nil
 }
 
 // prepareRetry returns whether to open a new stream after err. If the server

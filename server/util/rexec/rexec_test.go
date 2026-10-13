@@ -132,14 +132,16 @@ type fakeStreamingExecutionClient struct {
 
 	executeCalls int
 	waitCalls    int
+	// Every stream returned, in order.
+	opened []*fakeOperationStream
 }
 
-func (f *fakeStreamingExecutionClient) Execute(context.Context, *repb.ExecuteRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[longrunningpb.Operation], error) {
+func (f *fakeStreamingExecutionClient) Execute(ctx context.Context, _ *repb.ExecuteRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[longrunningpb.Operation], error) {
 	f.executeCalls++
-	return f.nextStream(&f.executeStreams, "Execute")
+	return f.nextStream(ctx, &f.executeStreams, "Execute")
 }
 
-func (f *fakeStreamingExecutionClient) WaitExecution(_ context.Context, in *repb.WaitExecutionRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[longrunningpb.Operation], error) {
+func (f *fakeStreamingExecutionClient) WaitExecution(ctx context.Context, in *repb.WaitExecutionRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[longrunningpb.Operation], error) {
 	f.waitCalls++
 	if in.GetName() != "test-execution" {
 		return nil, gstatus.Errorf(codes.InvalidArgument, "unexpected operation name %q", in.GetName())
@@ -149,16 +151,17 @@ func (f *fakeStreamingExecutionClient) WaitExecution(_ context.Context, in *repb
 		f.waitErrs = f.waitErrs[1:]
 		return nil, err
 	}
-	return f.nextStream(&f.waitStreams, "WaitExecution")
+	return f.nextStream(ctx, &f.waitStreams, "WaitExecution")
 }
 
-func (f *fakeStreamingExecutionClient) nextStream(queue *[][]fakeOperation, method string) (grpc.ServerStreamingClient[longrunningpb.Operation], error) {
+func (f *fakeStreamingExecutionClient) nextStream(ctx context.Context, queue *[][]fakeOperation, method string) (grpc.ServerStreamingClient[longrunningpb.Operation], error) {
 	if len(*queue) == 0 {
 		require.FailNow(f.t, "unexpected "+method+" call")
 	}
-	results := (*queue)[0]
+	stream := &fakeOperationStream{ctx: ctx, results: (*queue)[0]}
 	*queue = (*queue)[1:]
-	return &fakeOperationStream{results: results}, nil
+	f.opened = append(f.opened, stream)
+	return stream, nil
 }
 
 // fakeOperationStream returns the queued results from successive Recv
@@ -166,6 +169,8 @@ func (f *fakeStreamingExecutionClient) nextStream(queue *[][]fakeOperation, meth
 type fakeOperationStream struct {
 	grpc.ClientStream
 
+	// The context the stream was opened with, if any.
+	ctx     context.Context
 	results []fakeOperation
 }
 
@@ -355,6 +360,15 @@ func TestRetryingStream(t *testing.T) {
 			wantExecuteCalls: 2,
 		},
 		{
+			name: "gives up re-executing after 5 retries",
+			// Each execution makes progress, which resets the limit on
+			// retries in a row, and then fails.
+			executeStreams: slices.Repeat([][]fakeOperation{{executing, finished(codes.Unavailable)}}, 6),
+			wantCode:       codes.Unavailable,
+			// The initial Execute call, plus 5 retries.
+			wantExecuteCalls: 6,
+		},
+		{
 			name:             "does not re-execute after an action timeout",
 			executeStreams:   [][]fakeOperation{{executing, finished(codes.DeadlineExceeded)}},
 			wantCode:         codes.DeadlineExceeded,
@@ -396,6 +410,11 @@ func TestRetryingStream(t *testing.T) {
 				require.Equal(t, testCase.wantCode, gstatus.Code(err))
 				require.Equal(t, testCase.wantExecuteCalls, client.executeCalls)
 				require.Equal(t, testCase.wantWaitCalls, client.waitCalls)
+				// gRPC only releases a stream once it's canceled or has
+				// returned an error, so replaced streams must be canceled.
+				for _, replaced := range client.opened[:max(len(client.opened)-1, 0)] {
+					require.Error(t, replaced.ctx.Err())
+				}
 			})
 		})
 	}
