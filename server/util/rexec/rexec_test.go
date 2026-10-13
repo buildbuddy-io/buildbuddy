@@ -122,6 +122,8 @@ func (f *fakeByteStreamReadClient) Trailer() metadata.MD {
 type fakeWaitExecutionClient struct {
 	repb.ExecutionClient
 
+	// Errors to return from WaitExecution calls before returning streams.
+	errs     []error
 	streams  []grpc.ServerStreamingClient[longrunningpb.Operation]
 	requests []*repb.WaitExecutionRequest
 	// If set, returns a stream for each WaitExecution call once streams runs
@@ -131,6 +133,11 @@ type fakeWaitExecutionClient struct {
 
 func (f *fakeWaitExecutionClient) WaitExecution(_ context.Context, in *repb.WaitExecutionRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[longrunningpb.Operation], error) {
 	f.requests = append(f.requests, in)
+	if len(f.errs) > 0 {
+		err := f.errs[0]
+		f.errs = f.errs[1:]
+		return nil, err
+	}
 	if len(f.streams) == 0 && f.newStream != nil {
 		return f.newStream(), nil
 	}
@@ -210,6 +217,8 @@ func TestRetryingStream_ReattachesAfterTransientError(t *testing.T) {
 	for _, testCase := range []struct {
 		name      string
 		streamErr error
+		// Errors that WaitExecution returns before it succeeds.
+		waitErrs []error
 	}{
 		{
 			// gRPC reports a stream reset by a proxy as Internal, not
@@ -225,11 +234,17 @@ func TestRetryingStream_ReattachesAfterTransientError(t *testing.T) {
 			name:      "stream canceled by something other than the client",
 			streamErr: gstatus.Error(codes.Canceled, "stream canceled"),
 		},
+		{
+			name:      "reconnect fails with a transient error first",
+			streamErr: gstatus.Error(codes.Internal, "stream terminated by RST_STREAM with error code: NO_ERROR"),
+			waitErrs:  []error{gstatus.Error(codes.Unavailable, "connection refused")},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			executing := &longrunningpb.Operation{Name: "test-execution"}
 			done := &longrunningpb.Operation{Name: "test-execution", Done: true}
 			client := &fakeWaitExecutionClient{
+				errs: testCase.waitErrs,
 				streams: []grpc.ServerStreamingClient[longrunningpb.Operation]{
 					&fakeOperationStream{results: []fakeOperation{{op: executing}, {op: done}}},
 				},
@@ -242,8 +257,10 @@ func TestRetryingStream_ReattachesAfterTransientError(t *testing.T) {
 
 			require.NoError(t, err)
 			require.True(t, rsp.GetDone())
-			require.Len(t, client.requests, 1)
-			require.Equal(t, "test-execution", client.requests[0].GetName())
+			require.Len(t, client.requests, len(testCase.waitErrs)+1)
+			for _, req := range client.requests {
+				require.Equal(t, "test-execution", req.GetName())
+			}
 		})
 	}
 }

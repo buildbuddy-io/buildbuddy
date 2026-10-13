@@ -328,21 +328,29 @@ func (s *RetryingStream) Recv() (*Response, error) {
 		if !isTransientExecutionError(s.ctx, err) || s.name == "" {
 			return nil, err
 		}
-		// Next returns false either because our context is done or because
-		// retries ran out.
-		if !r.Next() {
-			if s.ctx.Err() != nil {
-				return nil, s.ctx.Err()
+		// Retry the WaitExecution call itself on transient errors too, since
+		// the connection may still be down right after the stream failed.
+		for {
+			// Next returns false either because our context is done or because
+			// retries ran out.
+			if !r.Next() {
+				if s.ctx.Err() != nil {
+					return nil, s.ctx.Err()
+				}
+				return nil, err
 			}
-			return nil, err
+			req := &repb.WaitExecutionRequest{Name: s.name}
+			next, waitErr := s.client.WaitExecution(s.ctx, req)
+			if waitErr == nil {
+				s.stream.CloseSend()
+				s.stream = next
+				break
+			}
+			if !isTransientExecutionError(s.ctx, waitErr) {
+				return nil, waitErr
+			}
+			err = waitErr
 		}
-		req := &repb.WaitExecutionRequest{Name: s.name}
-		next, err := s.client.WaitExecution(s.ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		s.stream.CloseSend()
-		s.stream = next
 	}
 }
 
