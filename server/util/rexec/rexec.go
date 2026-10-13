@@ -250,17 +250,21 @@ func Start(ctx context.Context, env environment.Env, actionResourceName *rspb.Re
 		opt(req)
 	}
 	client := env.GetRemoteExecutionClient()
-	stream, err := client.Execute(ctx, req)
-	if err != nil && !isTransientExecutionError(ctx, err) {
-		return nil, err
-	}
-	s := NewRetryingStream(ctx, client, stream, "")
+	s := NewRetryingStream(ctx, client, nil, "")
 	s.executeReq = req
+	stream, err := client.Execute(ctx, req)
+	if err == nil {
+		s.stream = stream
+		return s, nil
+	}
+	// Start the execution again if the error is transient, the same way Recv
+	// does when a stream fails before the server sends the operation name.
+	if isTransientExecutionError(ctx, err) {
+		err = s.reconnect(err)
+	}
 	if err != nil {
-		if err := s.reconnect(err); err != nil {
-			s.CloseSend()
-			return nil, err
-		}
+		s.CloseSend()
+		return nil, err
 	}
 	return s, nil
 }
@@ -306,7 +310,8 @@ type RetryingStream struct {
 	client repb.ExecutionClient
 	// The request that started the execution, if known.
 	executeReq *repb.ExecuteRequest
-	// Limits retries in a row, without progress in between.
+	// Backs off between reconnects and limits how many we make in a row. Recv
+	// resets it whenever the stream delivers an operation.
 	retry  *retry.Retry
 	stream repb.Execution_ExecuteClient
 	name   string
