@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -247,11 +249,20 @@ func Start(ctx context.Context, env environment.Env, actionResourceName *rspb.Re
 	for _, opt := range opts {
 		opt(req)
 	}
-	stream, err := env.GetRemoteExecutionClient().Execute(ctx, req)
-	if err != nil {
+	client := env.GetRemoteExecutionClient()
+	stream, err := client.Execute(ctx, req)
+	if err != nil && !isTransientExecutionError(ctx, err) {
 		return nil, err
 	}
-	return NewRetryingStream(ctx, env.GetRemoteExecutionClient(), stream, ""), nil
+	s := NewRetryingStream(ctx, client, stream, "")
+	s.executeReq = req
+	if err != nil {
+		if err := s.reconnect(err); err != nil {
+			s.CloseSend()
+			return nil, err
+		}
+	}
+	return s, nil
 }
 
 // Wait waits for command execution to complete, and returns the COMPLETE stage
@@ -285,25 +296,47 @@ func GetResult(ctx context.Context, env environment.Env, instanceName string, di
 // RetryingStream implements a reliable operation stream.
 //
 // It keeps track of the operation name internally, and provides a Recv() func
-// which re-establishes the stream transparently if the operation name has been
-// established.
+// which re-establishes the stream transparently. Once the operation name is
+// known, it re-attaches with WaitExecution. If it has the ExecuteRequest, it
+// can also start the execution again when the server never acknowledged it,
+// lost it, or finished it with a transient error.
 type RetryingStream struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	client repb.ExecutionClient
+	// The request that started the execution, if known.
+	executeReq *repb.ExecuteRequest
+	// Limits retries in a row, without progress in between.
+	retry  *retry.Retry
 	stream repb.Execution_ExecuteClient
 	name   string
 }
 
 func NewRetryingStream(ctx context.Context, client repb.ExecutionClient, stream repb.Execution_ExecuteClient, name string) *RetryingStream {
 	ctx, cancel := context.WithCancel(ctx)
-	return &RetryingStream{
+	s := &RetryingStream{
 		ctx:    ctx,
 		cancel: cancel,
 		client: client,
 		stream: stream,
 		name:   name,
+		retry: retry.New(ctx, &retry.Options{
+			InitialBackoff: 100 * time.Millisecond,
+			MaxBackoff:     5 * time.Second,
+			Multiplier:     2,
+			MaxRetries:     5,
+		}),
 	}
+	s.resetRetries()
+	return s
+}
+
+// resetRetries restarts the retry limit and backoff. The retrier's first
+// attempt doesn't wait or count as a retry, and the current stream is that
+// attempt, so we use it up here.
+func (s *RetryingStream) resetRetries() {
+	s.retry.Reset()
+	s.retry.Next()
 }
 
 // Name returns the operation name, if known.
@@ -313,52 +346,119 @@ func (s *RetryingStream) Name() string {
 
 // Recv attempts to reliably return the next operation on the named stream.
 //
-// If the stream fails with a transient error and the operation name has been
-// received, it will attempt to reconnect with WaitExecution.
+// If the stream fails with a transient error, it reconnects as described on
+// RetryingStream.
 func (s *RetryingStream) Recv() (*Response, error) {
-	r := retry.DefaultWithContext(s.ctx)
 	for {
 		op, err := s.stream.Recv()
 		if err == nil {
 			if op.GetName() != "" {
 				s.name = op.GetName()
 			}
-			return UnpackOperation(op)
-		}
-		if !isTransientExecutionError(s.ctx, err) || s.name == "" {
-			return nil, err
-		}
-		// Retry the WaitExecution call itself on transient errors too, since
-		// the connection may still be down right after the stream failed.
-		for {
-			// Next returns false either because our context is done or because
-			// retries ran out.
-			if !r.Next() {
-				if s.ctx.Err() != nil {
-					return nil, s.ctx.Err()
-				}
+			// Executions can run for hours, so only limit retries in a row, and
+			// start over whenever the stream makes progress.
+			s.resetRetries()
+			rsp, err := UnpackOperation(op)
+			if err != nil {
 				return nil, err
 			}
-			req := &repb.WaitExecutionRequest{Name: s.name}
-			next, waitErr := s.client.WaitExecution(s.ctx, req)
+			// If the execution finished with a transient error, start it again.
+			// If that fails, return the finished execution's response.
+			if rsp.GetDone() && s.executeReq != nil && isTransientExecutionFailure(s.ctx, rsp) {
+				s.name = ""
+				if s.reconnect(rsp.Err) == nil {
+					continue
+				}
+			}
+			return rsp, nil
+		}
+		if err == io.EOF && s.name != "" {
+			// The server may end the stream before the operation is done, so
+			// re-attach without using up a retry.
+			next, waitErr := s.client.WaitExecution(s.ctx, &repb.WaitExecutionRequest{Name: s.name})
 			if waitErr == nil {
 				s.stream.CloseSend()
 				s.stream = next
-				break
-			}
-			if !isTransientExecutionError(s.ctx, waitErr) {
-				return nil, waitErr
+				continue
 			}
 			err = waitErr
+		}
+		if !s.prepareRetry(err) {
+			return nil, err
+		}
+		if err := s.reconnect(err); err != nil {
+			return nil, err
 		}
 	}
 }
 
-// isTransientExecutionError returns whether reconnecting to an execution stream
-// that failed with err might succeed. Proxies in front of the app report stream
-// resets as Internal rather than Unavailable, so Unavailable alone isn't enough.
-// Nothing counts once our own context is done, since the error then comes from
-// our own cancellation or deadline.
+// reconnect opens a new stream after the current one failed with err. Once the
+// operation name is known, it re-attaches with WaitExecution, and otherwise it
+// starts the execution again. It retries transient errors from opening the
+// stream too, and returns the error to give up with once retries run out.
+func (s *RetryingStream) reconnect(err error) error {
+	for {
+		// Next returns false either because our context is done or because
+		// retries ran out.
+		if !s.retry.Next() {
+			if s.ctx.Err() != nil {
+				return s.ctx.Err()
+			}
+			return err
+		}
+		var next repb.Execution_ExecuteClient
+		var openErr error
+		if s.name != "" {
+			next, openErr = s.client.WaitExecution(s.ctx, &repb.WaitExecutionRequest{Name: s.name})
+		} else {
+			next, openErr = s.client.Execute(s.ctx, s.executeReq)
+		}
+		if openErr == nil {
+			if s.stream != nil {
+				s.stream.CloseSend()
+			}
+			s.stream = next
+			return nil
+		}
+		if !s.prepareRetry(openErr) {
+			return openErr
+		}
+		err = openErr
+	}
+}
+
+// prepareRetry returns whether to open a new stream after err. If the server
+// lost the operation, it forgets the operation name, so that the next stream
+// starts the execution again.
+func (s *RetryingStream) prepareRetry(err error) bool {
+	if s.ctx.Err() != nil {
+		return false
+	}
+	if gstatus.Code(err) == codes.NotFound && s.executeReq != nil {
+		s.name = ""
+		return true
+	}
+	// Without the operation name, we can only start the execution again.
+	return isTransientExecutionError(s.ctx, err) && (s.name != "" || s.executeReq != nil)
+}
+
+// isTransientExecutionFailure returns whether a finished execution failed with
+// a transient error, so that starting it again might succeed. Action timeouts
+// don't count, since the action would most likely time out again.
+func isTransientExecutionFailure(ctx context.Context, rsp *Response) bool {
+	if st := rsp.GetError(); st != nil {
+		return isTransientExecutionError(ctx, gstatus.FromProto(st).Err())
+	}
+	if rsp.ExecuteResponse.GetStatus().GetCode() == int32(codes.DeadlineExceeded) {
+		return false
+	}
+	return rsp.Err != nil && isTransientExecutionError(ctx, rsp.Err)
+}
+
+// isTransientExecutionError returns whether a stream error returned by
+// Execute or WaitExecution is transient and should be retried.
+// Matches Bazel's behavior here:
+// https://github.com/bazelbuild/bazel/blob/9551cddb4b3f271bbacfaebab0ccc1ab5a090807/src/main/java/com/google/devtools/build/lib/remote/RemoteRetrier.java#L69-L76
 func isTransientExecutionError(ctx context.Context, err error) bool {
 	if ctx.Err() != nil {
 		return false

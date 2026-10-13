@@ -117,32 +117,45 @@ func (f *fakeByteStreamReadClient) Trailer() metadata.MD {
 	return nil
 }
 
-// fakeWaitExecutionClient returns the given streams from successive
-// WaitExecution calls.
-type fakeWaitExecutionClient struct {
+// fakeStreamingExecutionClient returns queued streams from successive Execute
+// and WaitExecution calls, and records the requests.
+type fakeStreamingExecutionClient struct {
 	repb.ExecutionClient
 
+	executeStreams  []grpc.ServerStreamingClient[longrunningpb.Operation]
+	executeRequests []*repb.ExecuteRequest
+
 	// Errors to return from WaitExecution calls before returning streams.
-	errs     []error
-	streams  []grpc.ServerStreamingClient[longrunningpb.Operation]
-	requests []*repb.WaitExecutionRequest
-	// If set, returns a stream for each WaitExecution call once streams runs
-	// out.
-	newStream func() grpc.ServerStreamingClient[longrunningpb.Operation]
+	waitErrs     []error
+	waitStreams  []grpc.ServerStreamingClient[longrunningpb.Operation]
+	waitRequests []*repb.WaitExecutionRequest
+	// If set, returns a stream for each WaitExecution call once waitStreams
+	// runs out.
+	newWaitStream func() grpc.ServerStreamingClient[longrunningpb.Operation]
 }
 
-func (f *fakeWaitExecutionClient) WaitExecution(_ context.Context, in *repb.WaitExecutionRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[longrunningpb.Operation], error) {
-	f.requests = append(f.requests, in)
-	if len(f.errs) > 0 {
-		err := f.errs[0]
-		f.errs = f.errs[1:]
+func (f *fakeStreamingExecutionClient) Execute(_ context.Context, in *repb.ExecuteRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[longrunningpb.Operation], error) {
+	f.executeRequests = append(f.executeRequests, in)
+	if len(f.executeStreams) == 0 {
+		return nil, gstatus.Error(codes.FailedPrecondition, "unexpected Execute call")
+	}
+	stream := f.executeStreams[0]
+	f.executeStreams = f.executeStreams[1:]
+	return stream, nil
+}
+
+func (f *fakeStreamingExecutionClient) WaitExecution(_ context.Context, in *repb.WaitExecutionRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[longrunningpb.Operation], error) {
+	f.waitRequests = append(f.waitRequests, in)
+	if len(f.waitErrs) > 0 {
+		err := f.waitErrs[0]
+		f.waitErrs = f.waitErrs[1:]
 		return nil, err
 	}
-	if len(f.streams) == 0 && f.newStream != nil {
-		return f.newStream(), nil
+	if len(f.waitStreams) == 0 && f.newWaitStream != nil {
+		return f.newWaitStream(), nil
 	}
-	stream := f.streams[0]
-	f.streams = f.streams[1:]
+	stream := f.waitStreams[0]
+	f.waitStreams = f.waitStreams[1:]
 	return stream, nil
 }
 
@@ -243,9 +256,9 @@ func TestRetryingStream_ReattachesAfterTransientError(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			executing := &longrunningpb.Operation{Name: "test-execution"}
 			done := &longrunningpb.Operation{Name: "test-execution", Done: true}
-			client := &fakeWaitExecutionClient{
-				errs: testCase.waitErrs,
-				streams: []grpc.ServerStreamingClient[longrunningpb.Operation]{
+			client := &fakeStreamingExecutionClient{
+				waitErrs: testCase.waitErrs,
+				waitStreams: []grpc.ServerStreamingClient[longrunningpb.Operation]{
 					&fakeOperationStream{results: []fakeOperation{{op: executing}, {op: done}}},
 				},
 			}
@@ -257,8 +270,8 @@ func TestRetryingStream_ReattachesAfterTransientError(t *testing.T) {
 
 			require.NoError(t, err)
 			require.True(t, rsp.GetDone())
-			require.Len(t, client.requests, len(testCase.waitErrs)+1)
-			for _, req := range client.requests {
+			require.Len(t, client.waitRequests, len(testCase.waitErrs)+1)
+			for _, req := range client.waitRequests {
 				require.Equal(t, "test-execution", req.GetName())
 			}
 		})
@@ -266,7 +279,7 @@ func TestRetryingStream_ReattachesAfterTransientError(t *testing.T) {
 }
 
 func TestRetryingStream_ReturnsNonTransientError(t *testing.T) {
-	client := &fakeWaitExecutionClient{}
+	client := &fakeStreamingExecutionClient{}
 	stream := rexec.NewRetryingStream(t.Context(), client, &fakeOperationStream{
 		results: []fakeOperation{
 			{op: &longrunningpb.Operation{Name: "test-execution"}},
@@ -277,12 +290,12 @@ func TestRetryingStream_ReturnsNonTransientError(t *testing.T) {
 	_, err := rexec.Wait(stream)
 
 	require.Equal(t, codes.PermissionDenied, gstatus.Code(err))
-	require.Empty(t, client.requests)
+	require.Empty(t, client.waitRequests)
 }
 
 func TestRetryingStream_ReturnsErrorAfterClientCancels(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	client := &fakeWaitExecutionClient{}
+	client := &fakeStreamingExecutionClient{}
 	stream := rexec.NewRetryingStream(ctx, client, &fakeOperationStream{
 		results: []fakeOperation{
 			{op: &longrunningpb.Operation{Name: "test-execution"}},
@@ -294,7 +307,7 @@ func TestRetryingStream_ReturnsErrorAfterClientCancels(t *testing.T) {
 	_, err := rexec.Wait(stream)
 
 	require.Equal(t, codes.Canceled, gstatus.Code(err))
-	require.Empty(t, client.requests)
+	require.Empty(t, client.waitRequests)
 }
 
 func TestRetryingStream_ReturnsLastErrorWhenRetriesRunOut(t *testing.T) {
@@ -302,8 +315,8 @@ func TestRetryingStream_ReturnsLastErrorWhenRetriesRunOut(t *testing.T) {
 	// the test doesn't have to wait for it.
 	synctest.Test(t, func(t *testing.T) {
 		unavailable := gstatus.Error(codes.Unavailable, "no healthy upstream")
-		client := &fakeWaitExecutionClient{
-			newStream: func() grpc.ServerStreamingClient[longrunningpb.Operation] {
+		client := &fakeStreamingExecutionClient{
+			newWaitStream: func() grpc.ServerStreamingClient[longrunningpb.Operation] {
 				return &fakeOperationStream{results: []fakeOperation{{err: unavailable}}}
 			},
 		}
@@ -317,22 +330,174 @@ func TestRetryingStream_ReturnsLastErrorWhenRetriesRunOut(t *testing.T) {
 		_, err := rexec.Wait(stream)
 
 		require.Equal(t, codes.Unavailable, gstatus.Code(err))
-		require.NotEmpty(t, client.requests)
+		require.NotEmpty(t, client.waitRequests)
 	})
 }
 
-func TestRetryingStream_ReturnsErrorBeforeOperationName(t *testing.T) {
-	client := &fakeWaitExecutionClient{}
+func TestRetryingStream_DoesNotRetryIfOperationNameNotReceivedYet(t *testing.T) {
+	client := &fakeStreamingExecutionClient{}
 	stream := rexec.NewRetryingStream(t.Context(), client, &fakeOperationStream{
 		results: []fakeOperation{
-			{err: gstatus.Error(codes.InvalidArgument, "invalid action")},
+			// A transient error, which would be retried if the operation name
+			// were known. Without it, the stream can't re-attach, and it doesn't
+			// have the ExecuteRequest to send again.
+			{err: gstatus.Error(codes.Unavailable, "no healthy upstream")},
 		},
 	}, "")
 
 	_, err := rexec.Wait(stream)
 
-	require.Equal(t, codes.InvalidArgument, gstatus.Code(err))
-	require.Empty(t, client.requests)
+	require.Equal(t, codes.Unavailable, gstatus.Code(err))
+	require.Empty(t, client.waitRequests)
+}
+
+func TestRetryingStream_ReattachesWithoutUsingRetriesWhenStreamEndsEarly(t *testing.T) {
+	executing := &longrunningpb.Operation{Name: "test-execution"}
+	done := &longrunningpb.Operation{Name: "test-execution", Done: true}
+	client := &fakeStreamingExecutionClient{}
+	// End the stream before the operation is done, without any progress in
+	// between, more times than the retry limit allows.
+	for range 10 {
+		client.waitStreams = append(client.waitStreams, &fakeOperationStream{
+			results: []fakeOperation{{err: io.EOF}},
+		})
+	}
+	client.waitStreams = append(client.waitStreams, &fakeOperationStream{
+		results: []fakeOperation{{op: done}},
+	})
+	stream := rexec.NewRetryingStream(t.Context(), client, &fakeOperationStream{
+		results: []fakeOperation{{op: executing}, {err: io.EOF}},
+	}, "")
+
+	rsp, err := rexec.Wait(stream)
+
+	require.NoError(t, err)
+	require.True(t, rsp.GetDone())
+	require.Len(t, client.waitRequests, 11)
+}
+
+func TestRetryingStream_ResetsRetriesAfterProgress(t *testing.T) {
+	// Run in a synctest bubble, so that the retry backoff uses fake time and
+	// the test doesn't have to wait for it.
+	synctest.Test(t, func(t *testing.T) {
+		executing := &longrunningpb.Operation{Name: "test-execution"}
+		done := &longrunningpb.Operation{Name: "test-execution", Done: true}
+		client := &fakeStreamingExecutionClient{}
+		// Fail the stream more times than the retry limit allows, with
+		// progress before each failure.
+		for range 10 {
+			client.waitStreams = append(client.waitStreams, &fakeOperationStream{
+				results: []fakeOperation{{op: executing}, {err: gstatus.Error(codes.Unavailable, "no healthy upstream")}},
+			})
+		}
+		client.waitStreams = append(client.waitStreams, &fakeOperationStream{
+			results: []fakeOperation{{op: done}},
+		})
+		stream := rexec.NewRetryingStream(t.Context(), client, &fakeOperationStream{
+			results: []fakeOperation{{op: executing}, {err: gstatus.Error(codes.Unavailable, "no healthy upstream")}},
+		}, "")
+
+		rsp, err := rexec.Wait(stream)
+
+		require.NoError(t, err)
+		require.True(t, rsp.GetDone())
+		require.Len(t, client.waitRequests, 11)
+	})
+}
+
+func TestStart_RetriesExecution(t *testing.T) {
+	executing := &longrunningpb.Operation{Name: "test-execution"}
+	succeeded := finishedOperation(t, &repb.ExecuteResponse{})
+	for _, testCase := range []struct {
+		name           string
+		executeStreams []grpc.ServerStreamingClient[longrunningpb.Operation]
+		waitStreams    []grpc.ServerStreamingClient[longrunningpb.Operation]
+	}{
+		{
+			name: "stream fails before the operation name is received",
+			executeStreams: []grpc.ServerStreamingClient[longrunningpb.Operation]{
+				&fakeOperationStream{results: []fakeOperation{{err: gstatus.Error(codes.Unavailable, "no healthy upstream")}}},
+				&fakeOperationStream{results: []fakeOperation{{op: executing}, {op: succeeded}}},
+			},
+		},
+		{
+			name: "server lost the operation",
+			executeStreams: []grpc.ServerStreamingClient[longrunningpb.Operation]{
+				&fakeOperationStream{results: []fakeOperation{{op: executing}, {err: gstatus.Error(codes.Unavailable, "no healthy upstream")}}},
+				&fakeOperationStream{results: []fakeOperation{{op: executing}, {op: succeeded}}},
+			},
+			waitStreams: []grpc.ServerStreamingClient[longrunningpb.Operation]{
+				&fakeOperationStream{results: []fakeOperation{{err: gstatus.Error(codes.NotFound, "operation not found")}}},
+			},
+		},
+		{
+			name: "execution finished with a transient error",
+			executeStreams: []grpc.ServerStreamingClient[longrunningpb.Operation]{
+				&fakeOperationStream{results: []fakeOperation{
+					{op: executing},
+					{op: finishedOperation(t, &repb.ExecuteResponse{Status: &statuspb.Status{Code: int32(codes.Unavailable)}})},
+				}},
+				&fakeOperationStream{results: []fakeOperation{{op: executing}, {op: succeeded}}},
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			client := &fakeStreamingExecutionClient{
+				executeStreams: testCase.executeStreams,
+				waitStreams:    testCase.waitStreams,
+			}
+			env := real_environment.NewBatchEnv()
+			env.SetRemoteExecutionClient(client)
+			arn := &rspb.ResourceName{
+				Digest:         &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1},
+				DigestFunction: repb.DigestFunction_SHA256,
+			}
+			stream, err := rexec.Start(t.Context(), env, arn)
+			require.NoError(t, err)
+
+			rsp, err := rexec.Wait(stream)
+
+			require.NoError(t, err)
+			require.NoError(t, rsp.Err)
+			require.Len(t, client.executeRequests, 2)
+		})
+	}
+}
+
+func TestStart_DoesNotRetryActionTimeout(t *testing.T) {
+	client := &fakeStreamingExecutionClient{
+		executeStreams: []grpc.ServerStreamingClient[longrunningpb.Operation]{
+			&fakeOperationStream{results: []fakeOperation{
+				{op: &longrunningpb.Operation{Name: "test-execution"}},
+				{op: finishedOperation(t, &repb.ExecuteResponse{Status: &statuspb.Status{Code: int32(codes.DeadlineExceeded)}})},
+			}},
+		},
+	}
+	env := real_environment.NewBatchEnv()
+	env.SetRemoteExecutionClient(client)
+	arn := &rspb.ResourceName{
+		Digest:         &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	stream, err := rexec.Start(t.Context(), env, arn)
+	require.NoError(t, err)
+
+	rsp, err := rexec.Wait(stream)
+
+	require.NoError(t, err)
+	require.Equal(t, codes.DeadlineExceeded, gstatus.Code(rsp.Err))
+	require.Len(t, client.executeRequests, 1)
+}
+
+// finishedOperation returns a finished operation with the given response.
+func finishedOperation(t *testing.T, rsp *repb.ExecuteResponse) *longrunningpb.Operation {
+	packed, err := anypb.New(rsp)
+	require.NoError(t, err)
+	return &longrunningpb.Operation{
+		Name:   "test-execution",
+		Done:   true,
+		Result: &longrunningpb.Operation_Response{Response: packed},
+	}
 }
 
 func TestNormalizeCommand(t *testing.T) {
