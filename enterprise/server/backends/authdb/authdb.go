@@ -1052,14 +1052,15 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 }
 
 // GetAPIKeyForInternalUseOnly returns an API key for the group. If the caller
-// authenticated with an API key owned by the group, it returns that key, so
-// that work done on the caller's behalf is limited to that key's capabilities
-// and is attributed to its owner. Otherwise, it returns any group-level API
-// key, with preference for keys with greater cache capabilities. It is only to
-// be used in situations where the user has a pre-authorized grant to access
-// resources on behalf of the org, such as a publicly shared invocation. The
-// returned API key must only be used to access internal resources and must not
-// be returned to the caller.
+// authenticated with an API key, it returns that key, so that work done on the
+// caller's behalf is limited to that key's capabilities and is attributed to
+// its owner. If that key is owned by a different group, it returns
+// PermissionDenied. If the caller did not authenticate with an API key, it
+// returns any group-level API key, with preference for keys with greater cache
+// capabilities. It is only to be used in situations where the user has a
+// pre-authorized grant to access resources on behalf of the org. The returned
+// API key must only be used to access internal resources and must not be
+// returned to the caller.
 func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
@@ -1069,13 +1070,20 @@ func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string
 		if !authutil.IsAnonymousUserError(err) {
 			return nil, err
 		}
-	} else if u.GetAPIKeyInfo().OwnerGroupID == groupID {
+	} else if apiKeyInfo := u.GetAPIKeyInfo(); apiKeyInfo.ID != "" {
+		// A parent org's API key can act on its child groups. We return an
+		// error instead of falling back to a key owned by the child group,
+		// because that key may have capabilities that the caller's key does
+		// not.
+		if apiKeyInfo.OwnerGroupID != groupID {
+			return nil, status.PermissionDeniedErrorf("API key is not owned by group %q", groupID)
+		}
 		// We look up the key by the ID in the auth claims instead of reading
 		// the x-buildbuddy-api-key header, because HTTP API requests, client
 		// certificates, and keys embedded in the gRPC authority authenticate
 		// without putting that header in the ctx. In those cases, the claims
 		// are the only record of which key was used.
-		key, err := d.getAPIKey(ctx, u.GetAPIKeyInfo().ID)
+		key, err := d.getAPIKey(ctx, apiKeyInfo.ID)
 		if err != nil {
 			return nil, err
 		}

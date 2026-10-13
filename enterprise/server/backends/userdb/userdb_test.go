@@ -1981,10 +1981,10 @@ func TestGetAPIKeyForInternalUseOnly_PrefersAuthenticatedKey(t *testing.T) {
 	require.Equal(t, userKey.Value, key.Value)
 
 	// The authenticated key is owned by a different group than the one
-	// requested, so a key owned by the requested group is returned instead.
+	// requested, so no key is returned.
 	key, err = adb.GetAPIKeyForInternalUseOnly(userKeyCtx, g2.GroupID)
-	require.NoError(t, err)
-	require.Equal(t, g2.GroupID, key.GroupID)
+	require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+	require.Nil(t, key)
 }
 
 func TestUserOwnedKeys_NotReturnedByGroupLevelAPIs(t *testing.T) {

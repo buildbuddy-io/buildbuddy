@@ -537,12 +537,12 @@ type AuthDB interface {
 	GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (APIKeyGroup, error)
 
 	// GetAPIKeyForInternalUseOnly returns the API key that the caller
-	// authenticated with if it is owned by the group, or otherwise any
-	// group-level API key for the group. It is only to be used in situations
-	// where the user has a pre-authorized grant to access resources on behalf
-	// of the org, such as a publicly shared invocation. The returned API key
-	// must only be used to access internal resources and must not be returned
-	// to the caller.
+	// authenticated with, or PermissionDenied if that key is owned by a
+	// different group. If the caller did not authenticate with an API key, it
+	// returns any group-level API key for the group. It is only to be used in
+	// situations where the user has a pre-authorized grant to access resources
+	// on behalf of the org. The returned API key must only be used to access
+	// internal resources and must not be returned to the caller.
 	GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error)
 
 	// API Keys API.
