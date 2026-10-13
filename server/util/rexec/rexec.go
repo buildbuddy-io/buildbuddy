@@ -252,14 +252,14 @@ func Start(ctx context.Context, env environment.Env, actionResourceName *rspb.Re
 	client := env.GetRemoteExecutionClient()
 	s := NewRetryingStream(ctx, client, nil, "")
 	s.executeReq = req
-	stream, err := client.Execute(ctx, req)
+	stream, err := client.Execute(s.ctx, req)
 	if err == nil {
 		s.stream = stream
 		return s, nil
 	}
-	// Start the execution again if the error is transient, the same way Recv
+	// Start the execution again if the error is retryable, the same way Recv
 	// does when a stream fails before the server sends the operation name.
-	if isTransientExecutionError(ctx, err) {
+	if s.prepareRetry(err) {
 		err = s.reconnect(err)
 	}
 	if err != nil {
@@ -369,7 +369,7 @@ func (s *RetryingStream) Recv() (*Response, error) {
 			}
 			// If the execution finished with a transient error, start it again.
 			// If that fails, return the finished execution's response.
-			if rsp.GetDone() && s.executeReq != nil && isTransientExecutionFailure(s.ctx, rsp) {
+			if rsp.GetDone() && s.executeReq != nil && isRetryableExecutionFailure(s.ctx, rsp) {
 				s.name = ""
 				if s.reconnect(rsp.Err) == nil {
 					continue
@@ -378,8 +378,9 @@ func (s *RetryingStream) Recv() (*Response, error) {
 			return rsp, nil
 		}
 		if err == io.EOF && s.name != "" {
-			// The server may end the stream before the operation is done, so
-			// re-attach without using up a retry.
+			// Servers shouldn't end the stream before the operation is done,
+			// but proxies in between might, so re-attach without using up a
+			// retry.
 			next, waitErr := s.client.WaitExecution(s.ctx, &repb.WaitExecutionRequest{Name: s.name})
 			if waitErr == nil {
 				s.stream.CloseSend()
@@ -453,17 +454,21 @@ func (s *RetryingStream) prepareRetry(err error) bool {
 	return isTransientExecutionError(s.ctx, err) && (s.name != "" || s.executeReq != nil)
 }
 
-// isTransientExecutionFailure returns whether a finished execution failed with
-// a transient error, so that starting it again might succeed. Action timeouts
-// don't count, since the action would most likely time out again.
-func isTransientExecutionFailure(ctx context.Context, rsp *Response) bool {
+// isRetryableExecutionFailure returns whether starting a finished execution
+// again might succeed. That's the case for transient errors, and for NotFound,
+// which the server returns when it lost the execution. Action timeouts don't
+// count, since the action would most likely time out again.
+func isRetryableExecutionFailure(ctx context.Context, rsp *Response) bool {
+	err := rsp.Err
 	if st := rsp.GetError(); st != nil {
-		return isTransientExecutionError(ctx, gstatus.FromProto(st).Err())
-	}
-	if rsp.ExecuteResponse.GetStatus().GetCode() == int32(codes.DeadlineExceeded) {
+		err = gstatus.FromProto(st).Err()
+	} else if rsp.ExecuteResponse.GetStatus().GetCode() == int32(codes.DeadlineExceeded) {
 		return false
 	}
-	return rsp.Err != nil && isTransientExecutionError(ctx, rsp.Err)
+	if err == nil || ctx.Err() != nil {
+		return false
+	}
+	return gstatus.Code(err) == codes.NotFound || isTransientExecutionError(ctx, err)
 }
 
 // isTransientExecutionError returns whether a stream error returned by
