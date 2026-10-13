@@ -191,11 +191,11 @@ type evictingFileCache struct {
 	once sync.Once
 }
 
-func (fc *evictingFileCache) Open(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+func (fc *evictingFileCache) Open(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (*os.File, error) {
 	fc.once.Do(func() {
-		fc.FileCache.DeleteFile(ctx, node)
+		fc.FileCache.DeleteFile(ctx, node, digestFunction)
 	})
-	return fc.FileCache.Open(ctx, node)
+	return fc.FileCache.Open(ctx, node, digestFunction)
 }
 
 func TestCASFileFetchedOnDemand(t *testing.T) {
@@ -211,10 +211,10 @@ func TestCASFileFetchedOnDemand(t *testing.T) {
 
 	_, err := server.Prepare(ctx, layout, nil)
 	require.NoError(t, err)
-	require.False(t, env.GetFileCache().ContainsFile(ctx, fileNode))
+	require.False(t, env.GetFileCache().ContainsFile(ctx, fileNode, repb.DigestFunction_SHA256))
 
 	require.Equal(t, "only fetched after open", readFromVFS(t, server, "input.txt"))
-	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode))
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode, repb.DigestFunction_SHA256))
 	stats := server.ComputeStats()
 	require.EqualValues(t, 1, stats.GetCasFilesAccessedCount())
 	require.EqualValues(t, 1, stats.GetFileDownloadCount())
@@ -380,7 +380,7 @@ func TestCASFileRefetchedIfEvictedBeforeOpen(t *testing.T) {
 
 	tmpPath := filepath.Join(testfs.MakeTempDir(t), "input.txt")
 	require.NoError(t, os.WriteFile(tmpPath, []byte(contents), 0644))
-	require.NoError(t, env.GetFileCache().AddFile(ctx, fileNode, tmpPath))
+	require.NoError(t, env.GetFileCache().AddFile(ctx, fileNode, tmpPath, repb.DigestFunction_SHA256))
 	env.SetFileCache(&evictingFileCache{FileCache: env.GetFileCache()})
 
 	_, err := server.Prepare(ctx, &container.FileSystemLayout{
@@ -411,7 +411,7 @@ func TestPrefetchedFileRefetchedIfEvictedBeforeOpen(t *testing.T) {
 	require.NoError(t, err)
 	_, err = tf.Wait()
 	require.NoError(t, err)
-	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode))
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode, repb.DigestFunction_SHA256))
 	env.SetFileCache(&evictingFileCache{FileCache: env.GetFileCache()})
 
 	_, err = server.Prepare(ctx, layout, tf)

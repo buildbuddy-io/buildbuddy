@@ -510,7 +510,7 @@ func (c *fileCache) scanDir() {
 		if !isValidScannedCachePath(c.rootDir, path, keyPrefix, node) {
 			return nil
 		}
-		if err := c.addFileWithKeyPrefix(keyPrefix, node, path); err != nil {
+		if err := c.addFileWithKeyPrefix(keyPrefix, node, path, repb.DigestFunction_UNKNOWN); err != nil {
 			if status.IsInvalidArgumentError(err) {
 				return nil
 			}
@@ -654,7 +654,7 @@ func isValidScannedCachePath(rootDir, fullPath, keyPrefix string, node *repb.Fil
 	return name == expectedName
 }
 
-func namespacedKey(keyPrefix string, node *repb.FileNode) (string, error) {
+func namespacedKey(keyPrefix string, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (string, error) {
 	hash := node.GetDigest().GetHash()
 	if err := validateFilecacheHash(hash); err != nil {
 		return "", err
@@ -675,8 +675,8 @@ func groupIDStringFromContext(ctx context.Context) string {
 	return interfaces.AuthAnonymousUser
 }
 
-func key(ctx context.Context, node *repb.FileNode) (string, error) {
-	return namespacedKey(keyPrefixFromContext(ctx), node)
+func key(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (string, error) {
+	return namespacedKey(keyPrefixFromContext(ctx), node, digestFunction)
 }
 
 func (c *fileCache) checkClosed() bool {
@@ -688,13 +688,13 @@ func (c *fileCache) checkClosed() bool {
 	return c.isClosed.Load()
 }
 
-func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) (hit bool) {
+func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string, digestFunction repb.DigestFunction_Value) (hit bool) {
 	defer func() {
 		c.requestCounter[hit].Inc()
 	}()
 
 	keyPrefix := keyPrefixFromContext(ctx)
-	key, err := namespacedKey(keyPrefix, node)
+	key, err := namespacedKey(keyPrefix, node, digestFunction)
 	if err != nil {
 		return false
 	}
@@ -711,14 +711,14 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 	return true
 }
 
-func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, err error) {
+func (c *fileCache) Open(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (f *os.File, err error) {
 	defer func() {
 		hit := f != nil
 		c.requestCounter[hit].Inc()
 	}()
 
 	keyPrefix := keyPrefixFromContext(ctx)
-	key, err := namespacedKey(keyPrefix, node)
+	key, err := namespacedKey(keyPrefix, node, digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -729,7 +729,7 @@ func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, 
 	return os.Open(filecachePath(c.rootDir, key))
 }
 
-func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, existingFilePath string) error {
+func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, existingFilePath string, digestFunction repb.DigestFunction_Value) error {
 	// Remove any existing entry. We can't update in-place because if we
 	// overwrite an existing link with different contents, all pointers
 	// to the old link would suddenly change to point to the new content,
@@ -744,7 +744,7 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 		return wrapOSError(err, "estimate disk usage")
 	}
 
-	k, err := namespacedKey(keyPrefix, node)
+	k, err := namespacedKey(keyPrefix, node, digestFunction)
 	if err != nil {
 		return err
 	}
@@ -812,7 +812,7 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 	return nil
 }
 
-func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
+func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string, digestFunction repb.DigestFunction_Value) error {
 	if c.checkClosed() {
 		// During shutdown, treat filecache population as best-effort so callers
 		// don't fail just because the local cache is no longer accepting writes.
@@ -821,7 +821,7 @@ func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFi
 	start := time.Now()
 	keyPrefix := keyPrefixFromContext(ctx)
 	// Locking happens in addFileWithKeyPrefix().
-	err := c.addFileWithKeyPrefix(keyPrefix, node, existingFilePath)
+	err := c.addFileWithKeyPrefix(keyPrefix, node, existingFilePath, digestFunction)
 	if err != nil {
 		return err
 	}
@@ -949,19 +949,19 @@ func (c *fileCache) initExternalDirectoryEntry(key, path string, size int64, cre
 	return e, nil
 }
 
-func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
-	k, err := key(ctx, node)
+func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) bool {
+	k, err := key(ctx, node, digestFunction)
 	if err != nil {
 		return false
 	}
 	return c.containsWithStatFallback(k)
 }
 
-func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
+func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) bool {
 	if c.checkClosed() {
 		return false
 	}
-	k, err := key(ctx, node)
+	k, err := key(ctx, node, digestFunction)
 	if err != nil {
 		return false
 	}
@@ -976,12 +976,12 @@ func (c *fileCache) WaitForDirectoryScanToComplete() {
 }
 
 // Read atomically reads a file from filecache.
-func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, error) {
+func (c *fileCache) Read(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) ([]byte, error) {
 	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
 		return nil, err
 	}
-	if !c.FastLinkFile(ctx, node, tmp) {
+	if !c.FastLinkFile(ctx, node, tmp, digestFunction) {
 		return nil, status.NotFoundErrorf("digest %s not found", node.GetDigest().GetHash())
 	}
 	defer func() {
@@ -993,7 +993,7 @@ func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, erro
 }
 
 // Write atomically writes the given bytes to filecache.
-func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error) {
+func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte, digestFunction repb.DigestFunction_Value) (n int, err error) {
 	if c.checkClosed() {
 		// Like AddFile, treat writes as best-effort during shutdown: report
 		// success to avoid failing callers, even though the data is not persisted
@@ -1015,7 +1015,7 @@ func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n
 	if err := os.WriteFile(tmp, b, 0o666); err != nil {
 		return 0, status.InternalErrorf("filecache temp file write failed: %s", err)
 	}
-	if err := c.AddFile(ctx, node, tmp); err != nil {
+	if err := c.AddFile(ctx, node, tmp, digestFunction); err != nil {
 		return 0, err
 	}
 	return len(b), nil
@@ -1090,7 +1090,7 @@ func (v *verifiedWriter) Commit() error {
 		return status.DataLossErrorf("data checksum %q does not match expected checksum %q", hashStr, v.node.GetDigest().GetHash())
 	}
 	defer v.Close()
-	return v.fc.AddFile(v.ctx, v.node, v.file.Name())
+	return v.fc.AddFile(v.ctx, v.node, v.file.Name(), v.digestFunction)
 }
 
 func (v *verifiedWriter) Close() error {

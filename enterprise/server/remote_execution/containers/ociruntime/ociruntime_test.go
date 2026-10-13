@@ -2697,7 +2697,7 @@ func TestImageEvictionWhileInUse(t *testing.T) {
 			SizeBytes: filecacheSize,
 		},
 	}
-	err = fc.AddFile(ctx, node, largeFile)
+	err = fc.AddFile(ctx, node, largeFile, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// Despite the image being evicted, we should still be able to exec commands
@@ -2793,7 +2793,7 @@ func TestImageEvictionAfterContainerRemoval(t *testing.T) {
 			SizeBytes: filecacheSize,
 		},
 	}
-	err = fc.AddFile(ctx, node, largeFile)
+	err = fc.AddFile(ctx, node, largeFile, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// The layer directory should now be deleted since the image was unlocked
@@ -2894,7 +2894,7 @@ func TestImageEvictionWithMultipleContainers(t *testing.T) {
 			SizeBytes: filecacheSize,
 		},
 	}
-	err = fc.AddFile(ctx, node, largeFile)
+	err = fc.AddFile(ctx, node, largeFile, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// Layer directory should still exist because container 2 still holds a lock
@@ -2991,7 +2991,7 @@ func TestImageRePullAfterEviction(t *testing.T) {
 			SizeBytes: filecacheSize,
 		},
 	}
-	err = fc.AddFile(ctx, node, largeFile)
+	err = fc.AddFile(ctx, node, largeFile, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// Verify the layer directory was deleted
@@ -3108,7 +3108,7 @@ func TestFileCachePopulatedOnStartup(t *testing.T) {
 			SizeBytes: filecacheSize,
 		},
 	}
-	err = fc2.AddFile(ctx, node, largeFile)
+	err = fc2.AddFile(ctx, node, largeFile, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// The layer directory should be deleted because the new ImageStore
@@ -3186,7 +3186,7 @@ func TestImageResurrection(t *testing.T) {
 			SizeBytes: filecacheSize,
 		},
 	}
-	err = fc.AddFile(ctx, node, largeFile)
+	err = fc.AddFile(ctx, node, largeFile, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// Before we check if the layer was evicted, quickly create container 2
@@ -3309,7 +3309,7 @@ func TestPopulateFileCacheTracksLayerDirsNotAlgorithmDir(t *testing.T) {
 			SizeBytes: filecacheSize,
 		},
 	}
-	err = fc2.AddFile(ctx, node, largeFile)
+	err = fc2.AddFile(ctx, node, largeFile, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// The algorithm directory (sha256) must still exist, since we should only

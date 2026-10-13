@@ -1025,10 +1025,10 @@ type RemoteExecutionService interface {
 }
 
 type FileCache interface {
-	FastLinkFile(ctx context.Context, f *repb.FileNode, outputPath string) bool
-	DeleteFile(ctx context.Context, f *repb.FileNode) bool
-	AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string) error
-	ContainsFile(ctx context.Context, node *repb.FileNode) bool
+	FastLinkFile(ctx context.Context, f *repb.FileNode, outputPath string, digestFunction repb.DigestFunction_Value) bool
+	DeleteFile(ctx context.Context, f *repb.FileNode, digestFunction repb.DigestFunction_Value) bool
+	AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string, digestFunction repb.DigestFunction_Value) error
+	ContainsFile(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) bool
 
 	// WithSharedDirectory returns a context that stores filecache entries under
 	// a shared executor-local directory instead of the current group or ANON
@@ -1040,11 +1040,11 @@ type FileCache interface {
 	WithSharedDirectory(ctx context.Context, sharedDirectory string) context.Context
 
 	// Open returns a file handle to a file in the cache, if one exists.
-	Open(ctx context.Context, f *repb.FileNode) (*os.File, error)
+	Open(ctx context.Context, f *repb.FileNode, digestFunction repb.DigestFunction_Value) (*os.File, error)
 	WaitForDirectoryScanToComplete()
 
-	Read(ctx context.Context, node *repb.FileNode) ([]byte, error)
-	Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error)
+	Read(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) ([]byte, error)
+	Write(ctx context.Context, node *repb.FileNode, b []byte, digestFunction repb.DigestFunction_Value) (n int, err error)
 
 	// Writer returns a writer for writing data directly into the filecache.
 	// The written data is verified using the specified hash function and not
