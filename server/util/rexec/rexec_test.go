@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -274,24 +275,28 @@ func TestRetryingStream_ReturnsErrorAfterClientCancels(t *testing.T) {
 }
 
 func TestRetryingStream_ReturnsLastErrorWhenRetriesRunOut(t *testing.T) {
-	unavailable := gstatus.Error(codes.Unavailable, "no healthy upstream")
-	client := &fakeWaitExecutionClient{}
-	for range 99999 {
-		client.streams = append(client.streams, &fakeOperationStream{
-			results: []fakeOperation{{err: unavailable}},
-		})
-	}
-	stream := rexec.NewRetryingStream(t.Context(), client, &fakeOperationStream{
-		results: []fakeOperation{
-			{op: &longrunningpb.Operation{Name: "test-execution"}},
-			{err: unavailable},
-		},
-	}, "")
+	// Run in a synctest bubble, so that the retry backoff uses fake time and
+	// the test doesn't have to wait for it.
+	synctest.Test(t, func(t *testing.T) {
+		unavailable := gstatus.Error(codes.Unavailable, "no healthy upstream")
+		client := &fakeWaitExecutionClient{}
+		for range 99999 {
+			client.streams = append(client.streams, &fakeOperationStream{
+				results: []fakeOperation{{err: unavailable}},
+			})
+		}
+		stream := rexec.NewRetryingStream(t.Context(), client, &fakeOperationStream{
+			results: []fakeOperation{
+				{op: &longrunningpb.Operation{Name: "test-execution"}},
+				{err: unavailable},
+			},
+		}, "")
 
-	_, err := rexec.Wait(stream)
+		_, err := rexec.Wait(stream)
 
-	require.Equal(t, codes.Unavailable, gstatus.Code(err))
-	require.NotEmpty(t, client.requests)
+		require.Equal(t, codes.Unavailable, gstatus.Code(err))
+		require.NotEmpty(t, client.requests)
+	})
 }
 
 func TestRetryingStream_ReturnsErrorBeforeOperationName(t *testing.T) {
