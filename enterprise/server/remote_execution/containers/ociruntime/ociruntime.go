@@ -55,6 +55,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -1840,6 +1841,7 @@ func (s *ImageStore) populateFileCache() error {
 func (s *ImageStore) PullAndLockImage(ctx context.Context, imageName string, creds oci.Credentials, useOCIFetcher bool) (*LockedImage, error) {
 	key := hash.Strings(imageName, creds.Username, creds.Password)
 	image, _, err := s.imagePullGroup.Do(ctx, key, func(ctx context.Context) (*Image, error) {
+		pprofutil.SetSharedSubsystem("executor.image_pull")
 		image, err := s.pull(ctx, imageName, creds, useOCIFetcher)
 		if err != nil {
 			return nil, err
@@ -1986,6 +1988,7 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 			// the credentials in the key here too.
 			key := hash.Strings(destDir, creds.Username, creds.Password)
 			size, _, err := s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (int64, error) {
+				pprofutil.SetSharedSubsystem("executor.layer_pull")
 				return downloadLayer(ctx, layer, destDir)
 			})
 			if err != nil {

@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -2756,4 +2757,30 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 	s.livenessMu.Lock()
 	defer s.livenessMu.Unlock()
 	require.Empty(t, s.livenessWatches)
+}
+
+func TestLeaseTask_PprofLabels(t *testing.T) {
+	flags.Set(t, "monitoring.enable_pprof_labels", true)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	// The executor authenticates as user2 (group2), but the task belongs to
+	// group1.
+	executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
+	executor.Register()
+	taskID := scheduleTaskForGroup(ctx, t, env, "group1")
+	executor.WaitForTask(taskID)
+	before := testpprof.TakeSnapshot(t)
+	lease, err := executor.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.NoError(t, err)
+
+	// leaseTask returns after the handler has claimed the task and sent its
+	// response, which is after the labels are set. The lease is still open, so
+	// the handler goroutine is blocked waiting for the next message. The
+	// handler runs on a pooled gRPC worker that existed before the snapshot,
+	// but didn't run LeaseTask.
+	sets := before.GoroutineLabels(t, "SchedulerServer).LeaseTask(")
+	require.Len(t, sets, 1)
+	require.Equal(t, "group1", sets[0]["group_id"])
+	require.Equal(t, "/scheduler.Scheduler/LeaseTask", sets[0]["grpc.method"])
+	require.NoError(t, lease.Finalize())
 }
