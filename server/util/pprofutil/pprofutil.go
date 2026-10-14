@@ -35,6 +35,11 @@ func Enabled() bool {
 	return *enablePprofLabels
 }
 
+// TraceTasksEnabled returns whether runtime/trace tasks are enabled.
+func TraceTasksEnabled() bool {
+	return *EnableTraceTasks
+}
+
 // Do runs f with the given key/value label pairs added to the labels carried by
 // ctx. Pairs with an empty value are skipped. f is called directly if labels are
 // disabled or all values are empty.

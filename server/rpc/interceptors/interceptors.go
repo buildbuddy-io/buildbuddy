@@ -733,7 +733,7 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 		interceptors = append(interceptors, extraInterceptors...)
 	}
 	interceptors = append(interceptors, authUnaryServerInterceptor(env))
-	if pprofutil.Enabled() {
+	if pprofutil.Enabled() || pprofutil.TraceTasksEnabled() {
 		interceptors = append(interceptors, groupLabelUnaryServerInterceptor())
 	}
 	interceptors = append(interceptors,
@@ -770,7 +770,7 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 		interceptors = append(interceptors, extraInterceptors...)
 	}
 	interceptors = append(interceptors, authStreamServerInterceptor(env))
-	if pprofutil.Enabled() {
+	if pprofutil.Enabled() || pprofutil.TraceTasksEnabled() {
 		interceptors = append(interceptors, groupLabelStreamServerInterceptor())
 	}
 	interceptors = append(interceptors,

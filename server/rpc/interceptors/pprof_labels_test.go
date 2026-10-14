@@ -8,6 +8,7 @@ import (
 	"net"
 	"runtime"
 	"runtime/pprof"
+	rtrace "runtime/trace"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/google/pprof/profile"
 	"github.com/stretchr/testify/require"
+	exptrace "golang.org/x/exp/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -404,9 +406,10 @@ func TestIdleWorkersHaveNoLabels(t *testing.T) {
 }
 
 func BenchmarkInstrumentedServerPprofLabels(b *testing.B) {
-	for _, enabled := range []bool{false, true} {
-		b.Run(fmt.Sprintf("labels=%v", enabled), func(b *testing.B) {
-			flags.Set(b, "monitoring.enable_pprof_labels", enabled)
+	for _, tc := range []struct{ labels, tasks bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
+		b.Run(fmt.Sprintf("labels=%v,tasks=%v", tc.labels, tc.tasks), func(b *testing.B) {
+			flags.Set(b, "monitoring.enable_pprof_labels", tc.labels)
+			flags.Set(b, "monitoring.enable_trace_tasks", tc.tasks)
 			c := startLabelServer(b, &labelServer{})
 			ctx := requestCtx(b, "US1", "inv1", usageutil.ClientHeaderName, "ios")
 			b.ReportAllocs()
@@ -418,4 +421,88 @@ func BenchmarkInstrumentedServerPprofLabels(b *testing.B) {
 			}
 		})
 	}
+}
+
+// traceInfo summarizes the trace tasks of a given type found in an execution
+// trace.
+type traceInfo struct {
+	begins, ends int
+	// logs maps log category to messages, for logs attached to tasks of the type.
+	logs map[string][]string
+}
+
+func readTraceTasks(t *testing.T, buf *bytes.Buffer, taskType string) traceInfo {
+	r, err := exptrace.NewReader(buf)
+	require.NoError(t, err)
+	info := traceInfo{logs: map[string][]string{}}
+	ids := map[exptrace.TaskID]bool{}
+	for {
+		ev, err := r.ReadEvent()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		switch ev.Kind() {
+		case exptrace.EventTaskBegin:
+			if ev.Task().Type == taskType {
+				info.begins++
+				ids[ev.Task().ID] = true
+			}
+		case exptrace.EventTaskEnd:
+			if ev.Task().Type == taskType {
+				info.ends++
+			}
+		case exptrace.EventLog:
+			if l := ev.Log(); ids[l.Task] {
+				info.logs[l.Category] = append(info.logs[l.Category], l.Message)
+			}
+		default:
+		}
+	}
+	return info
+}
+
+func tracePing(t *testing.T) traceInfo {
+	c := startLabelServer(t, &labelServer{})
+	var buf bytes.Buffer
+	require.NoError(t, rtrace.Start(&buf))
+	_, err := c.ping.Ping(requestCtx(t, "US1", ""), &pspb.PingRequest{})
+	// Let the End stats event, which runs after the response is sent, finish.
+	time.Sleep(200 * time.Millisecond)
+	rtrace.Stop()
+	require.NoError(t, err)
+	return readTraceTasks(t, &buf, pingMethod)
+}
+
+func TestTraceTaskPerRequest(t *testing.T) {
+	flags.Set(t, "monitoring.enable_trace_tasks", true)
+
+	info := tracePing(t)
+
+	require.Equal(t, 1, info.begins)
+	require.Equal(t, 1, info.ends)
+	require.Equal(t, []string{"GR1"}, info.logs[pprofutil.GroupID])
+}
+
+func TestTraceTaskIndependentOfLabelsFlag(t *testing.T) {
+	flags.Set(t, "monitoring.enable_trace_tasks", true)
+	flags.Set(t, "monitoring.enable_pprof_labels", true)
+
+	info := tracePing(t)
+
+	require.Equal(t, 1, info.begins)
+	require.Equal(t, 1, info.ends)
+	require.Equal(t, []string{"GR1"}, info.logs[pprofutil.GroupID])
+}
+
+func TestNoTraceTaskWhenFlagOff(t *testing.T) {
+	// Labels on, trace tasks off: the stats handler is registered but must not
+	// create tasks.
+	flags.Set(t, "monitoring.enable_pprof_labels", true)
+
+	info := tracePing(t)
+
+	require.Equal(t, 0, info.begins)
+	require.Equal(t, 0, info.ends)
+	require.Empty(t, info.logs)
 }

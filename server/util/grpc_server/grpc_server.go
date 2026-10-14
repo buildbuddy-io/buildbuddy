@@ -231,9 +231,9 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		statsHandler = rpcutil.WithTracingMessageEvents(statsHandler)
 	}
 	var opts []grpc.ServerOption
-	if pprofutil.Enabled() {
+	if pprofutil.Enabled() || pprofutil.TraceTasksEnabled() {
 		// Registered first so the other stats handlers' per-RPC work is
-		// labeled too.
+		// labeled and covered by the trace task too.
 		opts = append(opts, grpc.StatsHandler(interceptors.PprofLabelsStatsHandler{}))
 	}
 	opts = append(opts,

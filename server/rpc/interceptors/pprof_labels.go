@@ -3,6 +3,7 @@ package interceptors
 import (
 	"context"
 	"runtime/pprof"
+	"runtime/trace"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -62,13 +63,24 @@ func originMethodLabelStreamServerInterceptor() grpc.StreamServerInterceptor {
 	}
 }
 
+type traceTaskKey struct{}
+
 // PprofLabelsStatsHandler labels the goroutine serving each RPC with pprof
-// labels. It is a stats handler rather than an interceptor because TagRPC runs
+// labels (if enabled) and wraps the RPC in a runtime/trace task (if enabled).
+// It is a stats handler rather than an interceptor because TagRPC runs
 // on the request's goroutine before unary request decoding, and the End event
 // runs after response encoding, so that work is labeled too.
 type PprofLabelsStatsHandler struct{}
 
 func (PprofLabelsStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
+	if pprofutil.TraceTasksEnabled() {
+		var task *trace.Task
+		ctx, task = trace.NewTask(ctx, info.FullMethodName)
+		ctx = context.WithValue(ctx, traceTaskKey{}, task)
+	}
+	if !pprofutil.Enabled() {
+		return ctx
+	}
 	// Parse once here; later readers of the request metadata reuse the result.
 	ctx = bazel_request.ParseRequestMetadataOnce(ctx)
 	kv := make([]string, 0, 10)
@@ -90,7 +102,13 @@ func (PprofLabelsStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInf
 }
 
 func (PprofLabelsStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
-	if _, ok := s.(*stats.End); ok {
+	if _, ok := s.(*stats.End); !ok {
+		return
+	}
+	if task, ok := ctx.Value(traceTaskKey{}).(*trace.Task); ok {
+		task.End()
+	}
+	if pprofutil.Enabled() {
 		// Don't leave this request's labels on a pooled worker goroutine.
 		pprof.SetGoroutineLabels(context.Background())
 	}
@@ -106,9 +124,11 @@ func groupLabelUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		var rsp any
 		var err error
+		groupID := groupIDFromContext(ctx)
+		logGroupID(ctx, groupID)
 		pprofutil.Do(ctx, func(ctx context.Context) {
 			rsp, err = handler(ctx, req)
-		}, pprofutil.GroupID, groupIDFromContext(ctx))
+		}, pprofutil.GroupID, groupID)
 		return rsp, err
 	}
 }
@@ -116,10 +136,18 @@ func groupLabelUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 func groupLabelStreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		var err error
+		groupID := groupIDFromContext(stream.Context())
+		logGroupID(stream.Context(), groupID)
 		pprofutil.Do(stream.Context(), func(ctx context.Context) {
 			err = handler(srv, &wrappedServerStreamWithContext{stream, ctx})
-		}, pprofutil.GroupID, groupIDFromContext(stream.Context()))
+		}, pprofutil.GroupID, groupID)
 		return err
+	}
+}
+
+func logGroupID(ctx context.Context, groupID string) {
+	if groupID != "" && pprofutil.TraceTasksEnabled() {
+		trace.Log(ctx, pprofutil.GroupID, groupID)
 	}
 }
 
