@@ -1501,7 +1501,7 @@ func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*v
 	return &vfspb.GetAttrResponse{Attrs: node.attrs}, nil
 }
 
-func (p *Server) processSetAttr(node *fsNode, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
+func (p *Server) processSetAttr(node *fsNode, file *os.File, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
 	// Ownership is tracked virtually; backing files are owned by the executor.
 	if err := checkChown(request, newAttrs); err != nil {
 		return err
@@ -1637,7 +1637,7 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 			return nil, syscallErrStatus(err)
 		}
 	} else {
-		if err := p.processSetAttr(node, request, newAttrs); err != nil {
+		if err := p.processSetAttr(node, file, request, newAttrs); err != nil {
 			return nil, syscallErrStatus(err)
 		}
 	}
