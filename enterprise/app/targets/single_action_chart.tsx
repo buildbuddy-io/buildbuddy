@@ -17,6 +17,8 @@ import TrendsChartComponent, {
   NearestScatterPoint,
   SeriesType,
 } from "../trends/trends_chart";
+import { getEndDate } from "../filter/filter_util";
+import router from "../../../app/router/router";
 
 interface Props {
   title: string;
@@ -26,6 +28,7 @@ interface Props {
   timeline: execution_stats.ExecutionTimeline;
   interval: stats.StatsInterval;
   domain: [Date, Date];
+  search: URLSearchParams;
 }
 
 /**
@@ -127,8 +130,37 @@ export default class SingleActionChartComponent extends React.Component<Props> {
     );
   };
 
+  private onChartZoomed(bucketStartsUsec: number[], lowUsec: number, highUsec: number) {
+    // Low is the start point, but high is actually the low bound of the bucket
+    // that the user selected, so we need to compute the high bound of that
+    // bucket using our list of keys.
+    const highBucketIndex = bucketStartsUsec.indexOf(highUsec);
+    if (highBucketIndex === -1) {
+      return;
+    }
+
+    let endMillis: number | undefined = undefined;
+    if (highBucketIndex === bucketStartsUsec.length - 1) {
+      // If no end date is specified and the user chose to include the last
+      // bucket, this will technically update the end time and fetch a bit of
+      // new data, but that's probably a good thing in this case.
+      const endDate = getEndDate(this.props.search);
+      if (endDate) {
+        endMillis = endDate.getTime();
+      }
+    } else {
+      endMillis = bucketStartsUsec[highBucketIndex + 1] / 1000;
+    }
+
+    router.navigateToDatePreserveHash(
+      Math.floor(lowUsec / 1e6) * 1e3,
+      endMillis ? Math.ceil(endMillis / 1e3) * 1e3 : undefined
+    );
+  }
+
   render(): React.ReactNode {
     const { timeKeys: bucketKeys, ticks: tickKeys } = computeTimeKeys(this.props.interval, this.props.domain);
+    const bucketStartsUsec = bucketKeys.map((v) => v * 1000);
     const ticks = tickKeys.map((v) => v * 1000);
 
     const lineData = new Map<number, number>();
@@ -160,16 +192,14 @@ export default class SingleActionChartComponent extends React.Component<Props> {
     // needs to be an entry for every bucket start as well as for every sampled
     // execution.  Empty buckets get an entry too, so that hovering over one
     // doesn't snap to a neighboring bucket.
-    const timeKeys = Array.from(new Set([...bucketKeys.map((v) => v * 1000), ...scatterData.keys()])).sort(
-      (a, b) => a - b
-    );
+    const timeKeys = Array.from(new Set([...bucketStartsUsec, ...scatterData.keys()])).sort((a, b) => a - b);
 
     // Space the x axis by time rather than by entry, so that buckets without
     // executions still take up room and sampled executions land at their
     // actual start times.  The axis runs from the start of the first bucket
     // to the end of the queried range.
     const xAxisDomain: [number, number] = [
-      (bucketKeys[0] ?? this.props.domain[0].getTime()) * 1000,
+      bucketStartsUsec[0] ?? this.props.domain[0].getTime() * 1000,
       this.props.domain[1].getTime() * 1000,
     ];
 
@@ -226,6 +256,8 @@ export default class SingleActionChartComponent extends React.Component<Props> {
           render: this.renderTooltip,
           pinnable: true,
         }}
+        zoomBuckets={bucketStartsUsec}
+        onZoomSelection={this.onChartZoomed.bind(this, bucketStartsUsec)}
       />
     );
   }

@@ -113,6 +113,8 @@ ts_library(
         "//:node_modules/tslib",
         "//app/format",
         "//app/invocation:action_compare_button",
+        "//app/router",
+        "//enterprise/app/filter:filter_util",
         "//enterprise/app/trends:common",
         "//enterprise/app/trends:trends_chart",
         "//proto:execution_stats_ts_proto",

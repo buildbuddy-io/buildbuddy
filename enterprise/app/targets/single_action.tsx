@@ -17,6 +17,7 @@ interface Props {
   timeline: execution_stats.ExecutionTimeline;
   interval: stats.StatsInterval;
   domain: [Date, Date];
+  search: URLSearchParams;
 }
 
 interface ExecStat {
@@ -181,6 +182,7 @@ export default class SingleActionComponent extends React.Component<Props, State>
         getScatterValue={scat}
         interval={this.props.interval}
         timeline={this.props.timeline}
+        search={this.props.search}
       />
     );
   }

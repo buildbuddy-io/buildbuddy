@@ -89,6 +89,7 @@ export interface PointTooltipConfig {
   // is clicked again.
   pinnable?: boolean;
 }
+export interface ZoomConfig {}
 
 interface Props {
   title: string;
@@ -115,13 +116,18 @@ interface Props {
   // per `data` entry.
   // TODO(jdhollen): make all charts set this value and simplify.
   xAxisDomain?: [number, number];
+  // When set, zoom selections are made in terms of the buckets starting at
+  // these x values.  This should be a subset of `data`. This is useful for
+  // restricting zoom to specific intervals.  xAxisDomain must be set for
+  // this to be used.
+  zoomBuckets?: number[];
 
   onZoomSelection?: (startDate: number, endDate: number) => void;
 }
 
 interface State {
-  refAreaLeft?: string | number;
-  refAreaRight?: string | number;
+  refAreaLeft?: number;
+  refAreaRight?: number;
   hiddenSeries: ReadonlySet<number>;
 }
 
@@ -616,6 +622,32 @@ function PointTooltipLayer({ config, data, dataSeries }: PointTooltipLayerProps)
   );
 }
 
+interface CustomXAxisProps {
+  hasBars: boolean;
+  numPoints: number;
+  xAxisDomain?: [number, number];
+  ticks: number[];
+  formatXAxisLabel: (value: any, index: number) => string;
+}
+
+function CustomXAxis({ hasBars, numPoints, xAxisDomain, ticks, formatXAxisLabel }: CustomXAxisProps) {
+  const plotArea = usePlotArea();
+  const width = plotArea?.width ?? 0;
+  const points = numPoints + 1;
+  const extraPad = hasBars ? (width / points / 2 || 19) + 1 : 0;
+
+  return (
+    <XAxis
+      dataKey={(v) => v}
+      tickFormatter={formatXAxisLabel}
+      ticks={ticks}
+      type={"number"}
+      padding={{ left: extraPad, right: extraPad }}
+      {...(xAxisDomain ? { type: "number" as const, domain: xAxisDomain } : {})}
+    />
+  );
+}
+
 export default class TrendsChartComponent extends React.Component<Props, State> {
   state: State = { hiddenSeries: new Set() };
 
@@ -635,12 +667,53 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
     }
   }
 
+  /**
+   * Maps the data entry nearest to the mouse (recharts' "active label") to the
+   * x value that a zoom selection should snap to.  With `zoomBuckets`, that's
+   * the start of the bucket containing the entry, so that selections ignore
+   * any individual samples plotted between bucket starts.
+   */
+  snapZoomValue(activeLabel: string | number | undefined): number | undefined {
+    if (activeLabel === undefined) {
+      return undefined;
+    }
+    const value = Number(activeLabel);
+    const buckets = this.props.zoomBuckets;
+    if (!buckets || buckets.length === 0) {
+      return value;
+    }
+    // Entries before the first bucket snap to it.
+    let bucketStart = buckets[0];
+    for (const start of buckets) {
+      if (start > value) {
+        break;
+      }
+      bucketStart = start;
+    }
+    return bucketStart;
+  }
+
+  /**
+   * Returns the x value at which the highlight of a zoom selection whose last
+   * bucket starts at `bucketStart` should end: the next bucket's start, or the
+   * end of the axis for the last bucket, so that the whole bucket is covered.
+   */
+  zoomSelectionEnd(bucketStart: number): number {
+    const buckets = this.props.zoomBuckets;
+    if (!buckets || !this.props.xAxisDomain) {
+      return bucketStart;
+    }
+    const index = buckets.indexOf(bucketStart);
+    return index >= 0 && index < buckets.length - 1 ? buckets[index + 1] : this.props.xAxisDomain[1];
+  }
+
   onMouseDown(e: MouseHandlerDataParam) {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
-    this.setState({ refAreaLeft: e.activeLabel, refAreaRight: e.activeLabel });
+    const value = this.snapZoomValue(e.activeLabel);
+    this.setState({ refAreaLeft: value, refAreaRight: value });
   }
 
   onMouseMove(e: MouseHandlerDataParam) {
@@ -648,10 +721,10 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
-    if (!this.state.refAreaLeft) {
+    if (this.state.refAreaLeft === undefined) {
       return;
     }
-    this.setState({ refAreaRight: e.activeLabel });
+    this.setState({ refAreaRight: this.snapZoomValue(e.activeLabel) });
   }
 
   onMouseUp(e: MouseHandlerDataParam) {
@@ -659,21 +732,16 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
-    const finalRightValue = e.activeLabel;
-    if (this.state.refAreaLeft && finalRightValue) {
-      let v1 = Number(this.state.refAreaLeft);
-      let v2 = Number(finalRightValue);
-      if (v1 > v2) {
-        // Aaahh!!! Real Javascript
-        [v1, v2] = [v2, v1];
-      }
-      this.props.onZoomSelection(v1, v2);
+    const left = this.state.refAreaLeft;
+    const right = this.snapZoomValue(e.activeLabel);
+    if (left !== undefined && right !== undefined) {
+      this.props.onZoomSelection(Math.min(left, right), Math.max(left, right));
     }
     this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
   }
 
   shouldRenderTooltip(): boolean {
-    return !Boolean(this.state.refAreaLeft);
+    return this.state.refAreaLeft === undefined;
   }
 
   render() {
@@ -699,11 +767,12 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" yAxisId="primary" />
             {!this.props.hideLegend && <Legend onClick={this.onLegendClick.bind(this)} />}
-            <XAxis
-              dataKey={(v) => v}
-              tickFormatter={this.props.formatXAxisLabel}
+            <CustomXAxis
+              xAxisDomain={this.props.xAxisDomain}
               ticks={this.props.ticks}
-              {...(this.props.xAxisDomain ? { type: "number" as const, domain: this.props.xAxisDomain } : {})}
+              hasBars={Boolean(this.props.dataSeries.find((ds) => ds.type === SeriesType.BAR))}
+              numPoints={this.props.data.length /* SHOULD BE BUCKETS FROM INTERVAL */}
+              formatXAxisLabel={this.props.formatXAxisLabel}
             />
             <YAxis
               yAxisId="primary"
@@ -755,12 +824,12 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             {this.props.pointTooltip && (
               <PointTooltipLayer config={this.props.pointTooltip} data={this.props.data} dataSeries={visibleSeries} />
             )}
-            {this.state.refAreaLeft && this.state.refAreaRight ? (
+            {this.state.refAreaLeft !== undefined && this.state.refAreaRight !== undefined ? (
               <ReferenceArea
                 yAxisId="primary"
                 ifOverflow="visible"
-                x1={Math.min(+this.state.refAreaLeft, +this.state.refAreaRight)}
-                x2={Math.max(+this.state.refAreaLeft, +this.state.refAreaRight)}
+                x1={Math.min(this.state.refAreaLeft, this.state.refAreaRight)}
+                x2={this.zoomSelectionEnd(Math.max(this.state.refAreaLeft, this.state.refAreaRight))}
                 strokeOpacity={0.3}
               />
             ) : null}

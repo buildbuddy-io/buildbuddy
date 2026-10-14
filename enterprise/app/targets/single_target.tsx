@@ -734,6 +734,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
           outputPath={outputPath}
           target={this.getTarget()}
           timeline={singleAction}
+          search={this.props.search}
         />
       ) : (
         this.renderEmptyState("No remote executions of this action matched the current filters.")
