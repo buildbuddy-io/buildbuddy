@@ -394,16 +394,36 @@ func TestCredentialEnvOverrides_PrivateRepo(t *testing.T) {
 	r, err := New(te)
 	require.NoError(t, err)
 
-	// Call credentialEnvOverrides with a RunRequest that has a repo URL but no explicit access token.
+	// Resolve credentials for a RunRequest that has a repo URL but no explicit access token.
 	req := &rnpb.RunRequest{
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl: repoURL,
 		},
 		Steps: []*rnpb.Step{{Run: "echo hello"}},
 	}
-	envOverrides, err := r.credentialEnvOverrides(ctx, req)
+	err = r.resolveGitCredentials(ctx, req)
 	require.NoError(t, err)
 
-	// Assert that REPO_TOKEN is set to the fake token.
-	require.Contains(t, envOverrides, "REPO_TOKEN="+fakeToken)
+	require.Equal(t, fakeToken, req.GetGitRepo().GetAccessToken())
+}
+
+func TestRun_GitCredentialsFromEnv(t *testing.T) {
+	te, ctx := getEnv(t)
+	r, err := New(te)
+	require.NoError(t, err)
+
+	_, err = r.Run(ctx, &rnpb.RunRequest{
+		GitRepo:   &gitpb.GitRepo{RepoUrl: "https://bitbucket.org/org/repo"},
+		RepoState: &gitpb.RepoState{Branch: "main"},
+		Env:       map[string]string{"REPO_USER": "user", "REPO_TOKEN": "token"},
+		Steps:     []*rnpb.Step{{Run: "echo hello"}},
+	})
+	require.NoError(t, err)
+
+	execReq := te.GetRemoteExecutionClient().(*fakeExecutionClient).executeRequests[0]
+	overrides := execReq.Metadata.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
+	require.Contains(t, overrides[len(overrides)-1], "REPO_USER=user,REPO_TOKEN=token")
+	for _, ev := range getExecution(t, ctx, te, execReq.Payload).Command.GetEnvironmentVariables() {
+		require.NotContains(t, []string{"REPO_USER", "REPO_TOKEN"}, ev.GetName())
+	}
 }
