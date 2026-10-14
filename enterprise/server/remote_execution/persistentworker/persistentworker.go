@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -131,7 +130,6 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 	command.Arguments = append(args.WorkerArgs, "--persistent_worker")
 
 	go func() {
-		pprofutil.SetSubsystem("executor.persistent_worker")
 		defer close(w.workerTerminated)
 		defer stdinReader.Close()
 		defer stdoutWriter.Close()

@@ -42,7 +42,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -694,10 +693,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		log.Infof("Pebble Cache: upgrading format from %s to %s", desc.FormatMajorVersion, pebbleOptions.FormatMajorVersion)
 	}
 
-	var db pebble.IPebbleDB
-	pprofutil.DoSubsystem(env.GetServerContext(), "pebble", func() {
-		db, err = pebble.Open(opts.RootDirectory, opts.Name, pebbleOptions)
-	})
+	db, err := pebble.Open(opts.RootDirectory, opts.Name, pebbleOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -3889,42 +3885,34 @@ func (p *PebbleCache) Start() error {
 	p.quitChan = make(chan struct{})
 	for _, evictor := range p.evictors {
 		p.eg.Go(func() error {
-			pprofutil.SetSubsystem("pebble_cache.evictor")
 			return evictor.run(p.quitChan)
 		})
 		p.eg.Go(func() error {
-			pprofutil.SetSubsystem("pebble_cache.eviction_samples")
 			evictor.startSampleGenerator(p.quitChan)
 			return nil
 		})
 		p.eg.Go(func() error {
-			pprofutil.SetSubsystem("pebble_cache.eviction")
 			evictor.processEviction(p.quitChan)
 			return nil
 		})
 	}
 	p.eg.Go(func() error {
-		pprofutil.SetSubsystem("pebble_cache.flush_partition_metadata")
 		p.periodicFlushPartitionMetadata(p.quitChan)
 		return nil
 	})
 	p.egSizeUpdates.Go(func() error {
-		pprofutil.SetSubsystem("pebble_cache.size_updates")
 		p.processSizeUpdates()
 		return nil
 	})
 	for range p.numAtimeUpdateWorkers {
 		p.eg.Go(func() error {
-			pprofutil.SetSubsystem("pebble_cache.atime")
 			return p.processAccessTimeUpdates(p.quitChan)
 		})
 	}
 	p.eg.Go(func() error {
-		pprofutil.SetSubsystem("pebble_cache.repair")
 		return p.backgroundRepair(p.quitChan)
 	})
 	p.eg.Go(func() error {
-		pprofutil.SetSubsystem("pebble_cache.migration")
 		err := p.migrateData(p.quitChan)
 		if err != nil {
 			alert.UnexpectedEvent("pebble_cache_error_migrating_keys", "err: %s", err)
@@ -3933,24 +3921,20 @@ func (p *PebbleCache) Start() error {
 	})
 	if *scanForOrphanedFiles {
 		p.eg.Go(func() error {
-			pprofutil.SetSubsystem("pebble_cache.orphan_cleanup")
 			return p.deleteOrphanedFiles(p.quitChan)
 		})
 	}
 	p.eg.Go(func() error {
-		pprofutil.SetSubsystem("pebble_cache.metrics")
 		p.refreshMetrics(p.quitChan)
 		return nil
 	})
 	// Load initial experiment state before we start the cache.
 	p.refreshPresenceCacheConfig(p.env.GetServerContext(), p.env.GetExperimentFlagProvider())
 	p.eg.Go(func() error {
-		pprofutil.SetSubsystem("pebble_cache.presence_watch")
 		p.watchPresenceCacheConfig(p.quitChan)
 		return nil
 	})
 	p.eg.Go(func() error {
-		pprofutil.SetSubsystem("pebble_cache.presence_watch")
 		p.watchPresenceCacheSize(p.quitChan)
 		return nil
 	})

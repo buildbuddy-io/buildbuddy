@@ -100,17 +100,3 @@ func SetSubsystem(name string) {
 	}
 	pprof.SetGoroutineLabels(pprof.WithLabels(context.Background(), pprof.Labels(Subsystem, name)))
 }
-
-// DoSubsystem runs f with the goroutine's labels replaced by subsystem=name,
-// then restores the labels carried by ctx. Go can't read a goroutine's current
-// labels, so the restored labels are always those of ctx, which should be the
-// ctx the calling goroutine's labels came from.
-func DoSubsystem(ctx context.Context, name string, f func()) {
-	if !Enabled() {
-		f()
-		return
-	}
-	SetSubsystem(name)
-	defer pprof.SetGoroutineLabels(ctx)
-	f()
-}

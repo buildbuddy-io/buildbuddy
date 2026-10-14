@@ -2,12 +2,9 @@ package vfs_server_test
 
 import (
 	"context"
-	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
-	"runtime/pprof"
 	"sync"
 	"syscall"
 	"testing"
@@ -25,11 +22,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/stretchr/testify/assert"
@@ -102,56 +97,6 @@ func requireSyscallError(t *testing.T, err error, errno syscall.Errno) {
 		}
 	}
 	assert.FailNow(t, "RPC status error did not contain a syscall error number", "RPC error: %s", err)
-}
-
-func TestStart_PprofLabels(t *testing.T) {
-	for _, enabled := range []bool{true, false} {
-		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
-			flags.Set(t, "monitoring.enable_pprof_labels", enabled)
-			before := testpprof.TakeSnapshot(t)
-			server, _ := newServer(t)
-			lis, err := net.Listen("unix", filepath.Join(testfs.MakeTempDir(t), "vfs.sock"))
-			require.NoError(t, err)
-			t.Cleanup(server.Stop)
-
-			// Start the server from a goroutine that looks like a task's
-			// goroutine, then park it so its labels can be inspected.
-			parked := make(chan struct{})
-			release := make(chan struct{})
-			t.Cleanup(func() { close(release) })
-			start := func(ctx context.Context) {
-				go func() {
-					require.NoError(t, server.Start(ctx, lis))
-					close(parked)
-					<-release
-				}()
-			}
-			if enabled {
-				pprof.Do(context.Background(), pprof.Labels("task_id", "X"), start)
-			} else {
-				start(context.Background())
-			}
-			<-parked
-
-			want := map[string]string{}
-			if enabled {
-				want["subsystem"] = "executor.vfs_server"
-			}
-			// Start returns before the Serve goroutine is necessarily running,
-			// so wait for it. It runs until the server is stopped at the end of
-			// the test.
-			before.RequireGoroutineLabels(t, "grpc.(*Server).Serve(", want)
-			// NewServer itself starts the stream workers (when
-			// grpc_server_worker_multiplier > 0), so they must be reset too.
-			// They also run until the server is stopped.
-			before.RequireGoroutineLabels(t, "grpc.(*Server).serverWorker(", want)
-
-			if enabled {
-				// The caller gets its own labels back.
-				require.Contains(t, before.GoroutineLabels(t, "TestStart_PprofLabels.func"), map[string]string{"task_id": "X"})
-			}
-		})
-	}
 }
 
 func newServer(t *testing.T) (*vfs_server.Server, environment.Env) {

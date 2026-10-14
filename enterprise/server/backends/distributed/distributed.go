@@ -38,7 +38,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -479,7 +478,6 @@ func (c *Cache) refreshLookasideRightsizeConfig() {
 }
 
 func (c *Cache) watchLookasideRightsizeConfig(shutDownChan chan struct{}) {
-	pprofutil.SetSubsystem("distributed.lookaside_rightsize")
 	fp := c.env.GetExperimentFlagProvider()
 	if fp == nil {
 		return
@@ -678,7 +676,6 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 }
 
 func (c *Cache) heartbeatPeers(shutDownChan chan struct{}) {
-	pprofutil.SetSubsystem("distributed.heartbeat")
 	ticker := time.NewTicker(c.opts.RPCHeartbeatInterval)
 	defer ticker.Stop()
 	for {

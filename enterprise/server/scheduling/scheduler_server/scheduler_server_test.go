@@ -2809,18 +2809,3 @@ func TestLeaseTask_PprofLabels(t *testing.T) {
 		})
 	}
 }
-
-func TestRegisterAndStreamWork_PprofSubsystemLabel(t *testing.T) {
-	flags.Set(t, "monitoring.enable_pprof_labels", true)
-	env, _ := getEnv(t, &schedulerOpts{}, "user1")
-	executor := newFakeExecutor(authenticatedContext(t, env, "user1"), t, env.GetSchedulerClient())
-	before := testpprof.TakeSnapshot(t)
-	executor.Register()
-
-	// Serve runs for as long as the executor's stream is open, which is until
-	// the end of the test. Only the subsystem label: the executor's group_id
-	// and the request labels must not leak onto the stream.
-	before.RequireGoroutineLabels(t, "executorHandle).Serve(", map[string]string{
-		"subsystem": "scheduler.executor_stream",
-	})
-}

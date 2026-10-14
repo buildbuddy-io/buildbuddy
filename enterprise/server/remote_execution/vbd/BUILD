@@ -8,7 +8,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd",
     deps = [
         "//server/util/log",
-        "//server/util/pprofutil",
         "//server/util/status",
         "@com_github_hanwen_go_fuse_v2//fs",
         "@com_github_hanwen_go_fuse_v2//fuse",

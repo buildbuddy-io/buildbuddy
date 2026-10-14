@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"runtime/pprof"
 	"strconv"
 	"sync"
 	"syscall"
@@ -27,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -227,25 +225,6 @@ func TestCOW_EagerFetchChunksOption(t *testing.T) {
 		return enabledChunks[1].Source() == snaputil.ChunkSourceLocalFilecache
 	}, 5*time.Second, 10*time.Millisecond)
 	require.Equal(t, snaputil.ChunkSourceUnmapped, enabledChunks[2].Source())
-}
-
-func TestMmapLRU_EvictorPprofLabels(t *testing.T) {
-	flags.Set(t, "monitoring.enable_pprof_labels", true)
-
-	// The LRU may be shared across runners, so its evictors must not keep the
-	// labels of the task that created it.
-	var lru *copy_on_write.MmapLRU
-	var err error
-	// Evictors of LRUs created by other tests may be running.
-	before := testpprof.TakeSnapshot(t)
-	pprof.Do(context.Background(), pprof.Labels("task_id", "X"), func(ctx context.Context) {
-		lru, err = copy_on_write.NewMmapLRU(1024)
-	})
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, lru.Close()) })
-
-	// The evictor runs until the LRU is closed at the end of the test.
-	before.RequireGoroutineLabels(t, "MmapLRU).processEvictions(", map[string]string{"subsystem": "executor.cow.evictor"})
 }
 
 func TestCOW_Concurrency(t *testing.T) {

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
@@ -108,10 +107,7 @@ func (f *FS) Mount(ctx context.Context, path string) error {
 		return status.UnavailableErrorf("could not mount VBD to %q: %s", path, err)
 	}
 
-	go func() {
-		pprofutil.SetSubsystem("executor.vbd")
-		server.Serve()
-	}()
+	go server.Serve()
 	if err := server.WaitMount(); err != nil {
 		return status.UnavailableErrorf("waiting for VBD mount failed: %s", err)
 	}

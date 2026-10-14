@@ -39,7 +39,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -4675,41 +4674,4 @@ func TestWriteReference(t *testing.T) {
 		require.Error(t, err)
 		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
 	})
-}
-
-func TestBackgroundGoroutineSubsystemLabels(t *testing.T) {
-	// Maps a substring of a background goroutine's stack to the subsystem
-	// label it should carry.
-	expected := map[string]string{
-		"processAccessTimeUpdates(":            "pebble_cache.atime",
-		"(*partitionEvictor).run(":             "pebble_cache.evictor",
-		"startSampleGenerator(":                "pebble_cache.eviction_samples",
-		"(*partitionEvictor).processEviction(": "pebble_cache.eviction",
-		"periodicFlushPartitionMetadata(":      "pebble_cache.flush_partition_metadata",
-		"processSizeUpdates(":                  "pebble_cache.size_updates",
-		"backgroundRepair(":                    "pebble_cache.repair",
-		"refreshMetrics(":                      "pebble_cache.metrics",
-		"watchPresenceCacheSize(":              "pebble_cache.presence_watch",
-	}
-
-	flags.Set(t, "monitoring.enable_pprof_labels", true)
-	flags.Set(t, "cache.pebble.scan_for_missing_files", true)
-	te := testenv.GetTestEnv(t)
-	// Goroutines from other tests in this process may still be running, so
-	// only look at the ones started by this cache.
-	before := testpprof.TakeSnapshot(t)
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
-		RootDirectory: testfs.MakeTempDir(t),
-		MaxSizeBytes:  1_000_000_000,
-	})
-	require.NoError(t, err)
-	require.NoError(t, pc.Start())
-	t.Cleanup(func() { pc.Stop() })
-
-	// Each of these loops runs until the cache is stopped at the end of the
-	// test (backgroundRepair loops because scan_for_missing_files is set), so
-	// it is guaranteed to show up.
-	for fn, subsystem := range expected {
-		before.RequireGoroutineLabels(t, fn, map[string]string{"subsystem": subsystem})
-	}
 }

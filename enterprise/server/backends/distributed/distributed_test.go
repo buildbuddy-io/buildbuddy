@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -5011,31 +5010,4 @@ func TestFindMissing_Quorum_IgnoresNonReplicaCopies(t *testing.T) {
 	caches[nonReplica].mu.Lock()
 	require.Zero(t, caches[nonReplica].lookups[rn.GetDigest().GetHash()])
 	caches[nonReplica].mu.Unlock()
-}
-
-func TestBackgroundGoroutineSubsystemLabels(t *testing.T) {
-	expected := map[string]string{
-		"heartbeatPeers(":                "distributed.heartbeat",
-		"watchLookasideRightsizeConfig(": "distributed.lookaside_rightsize",
-	}
-	flags.Set(t, "monitoring.enable_pprof_labels", true)
-	env, _, _ := getEnvAuthAndCtx(t)
-	fp, err := experiments.NewFlagProvider("")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
-	addr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	// Goroutines from other tests in this process may still be running, so
-	// only look at the ones started by this cache.
-	before := testpprof.TakeSnapshot(t)
-	startNewDCache(t, env, Options{
-		ListenAddr:        addr,
-		ReplicationFactor: 1,
-		Nodes:             []string{addr},
-	}, newMemoryCache(t, 1000000))
-
-	// Each of these loops runs until the cache is shut down at the end of the
-	// test, so it is guaranteed to show up.
-	for fn, subsystem := range expected {
-		before.RequireGoroutineLabels(t, fn, map[string]string{"subsystem": subsystem})
-	}
 }

@@ -1889,14 +1889,7 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 
 func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error {
 	handle := newExecutorHandle(s.env, s, s.requireExecutorAuthorization, stream)
-	var err error
-	// The stream carries reservations for many customers' tasks, so attribute
-	// its work to the scheduler rather than to any one group. DoSubsystem
-	// replaces the request labels (including the executor's group_id).
-	pprofutil.DoSubsystem(stream.Context(), "scheduler.executor_stream", func() {
-		err = handle.Serve(stream.Context())
-	})
-	return err
+	return handle.Serve(stream.Context())
 }
 
 func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executorHandle, nodePoolKey nodePoolKey) (int, error) {

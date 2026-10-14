@@ -54,32 +54,6 @@ func TestSetSubsystemDisabled(t *testing.T) {
 	require.Equal(t, []map[string]string{{}}, sets)
 }
 
-func TestDoSubsystemRestoresCallerLabels(t *testing.T) {
-	flags.Set(t, "monitoring.enable_pprof_labels", true)
-	reached, release := make(chan struct{}), make(chan struct{})
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		pprof.Do(context.Background(), pprof.Labels(pprofutil.TaskID, "X"), func(ctx context.Context) {
-			pprofutil.DoSubsystem(ctx, "s", func() {
-				waitHere(reached, release)
-			})
-			waitHere(reached, release)
-		})
-	}()
-
-	<-reached
-	inside := testpprof.GoroutineLabels(t, "_test.waitHere")
-	release <- struct{}{}
-	<-reached
-	after := testpprof.GoroutineLabels(t, "_test.waitHere")
-	release <- struct{}{}
-	<-done
-
-	require.Equal(t, []map[string]string{{pprofutil.Subsystem: "s"}}, inside)
-	require.Equal(t, []map[string]string{{pprofutil.TaskID: "X"}}, after)
-}
-
 func TestDoSkipsEmptyValues(t *testing.T) {
 	flags.Set(t, "monitoring.enable_pprof_labels", true)
 	pprofutil.Do(context.Background(), func(ctx context.Context) {
