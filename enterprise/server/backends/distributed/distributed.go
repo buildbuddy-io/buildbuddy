@@ -926,21 +926,7 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.FindMissing(ctx, rns)
 	}
-
-	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
-	for _, r := range rns {
-		// If quorum is requested, skip the lookaside cache to make sure the required number of replicas have the artifact.
-		if !findmissing.RequiresQuorum(ctx) {
-			if _, found := c.getLookasideEntry(ctx, r); found {
-				continue
-			}
-		}
-		stillMissing = append(stillMissing, r)
-	}
-	if len(stillMissing) == 0 {
-		return nil, nil
-	}
-	return c.distributedProxy.RemoteFindMissing(ctx, peer, stillMissing)
+	return c.distributedProxy.RemoteFindMissing(ctx, peer, rns)
 }
 
 // recordRead records one object served by a distributed cache read, by
@@ -1461,10 +1447,13 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	if len(resources) == 0 {
 		return nil, nil
 	}
+	// Includes lookaside hits, which the metric below counts as present.
+	requested := len(resources)
+	quorumRequested := findmissing.RequiresQuorum(ctx)
 	// During node migrations, disable quorum requirements so that
 	// reads are respected from both the old and new replica sets,
 	// until data has fully migrated to the new nodes.
-	requireQuorum := findmissing.RequiresQuorum(ctx) && len(c.opts.NewNodes) == 0
+	requireQuorum := quorumRequested && len(c.opts.NewNodes) == 0
 	requiredReplicas := 1
 	if requireQuorum {
 		requiredReplicas = c.opts.ReplicationFactor/2 + 1
@@ -1472,8 +1461,24 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		if requiredReplicas >= c.opts.ReplicationFactor {
 			return nil, status.FailedPreconditionError("Quorum availability checks are not supported by the current cache configuration")
 		}
+	} else if !quorumRequested && c.lookasideCacheEnabled() {
+		// A quorum request exists to trigger read repair, so never answer it
+		// from the lookaside cache, even during a migration.
+		var stillMissing []*rspb.ResourceName
+		for _, r := range resources {
+			if _, found := c.getLookasideEntry(ctx, r); !found {
+				if stillMissing == nil {
+					stillMissing = make([]*rspb.ResourceName, 0, len(resources))
+				}
+				stillMissing = append(stillMissing, r)
+			}
+		}
+		if len(stillMissing) == 0 {
+			recordFindMissingStatus(ctx, requested, 0)
+			return nil, nil
+		}
+		resources = stillMissing
 	}
-	purpose := findmissing.PurposeFromContext(ctx)
 
 	mu := sync.RWMutex{} // protects digestToPeersWithData and failure updates to PeerSets in peerMap
 	hashResources := make(map[string][]*rspb.ResourceName, 0)
@@ -1640,22 +1645,24 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		}
 	}
 
-	// Record the LOGICAL present/absent counts by purpose (deduplicated across
-	// replica retries), a complementary view to the per-node pebble metric.
-	if len(resources) > 0 {
-		purposeLabel := purpose.String()
-		if present := len(resources) - len(missing); present > 0 {
-			metrics.DistributedCacheFindMissingBlobStatusCount.
-				WithLabelValues(purposeLabel, metrics.PresentStatusLabel).
-				Add(float64(present))
-		}
-		if len(missing) > 0 {
-			metrics.DistributedCacheFindMissingBlobStatusCount.
-				WithLabelValues(purposeLabel, metrics.AbsentStatusLabel).
-				Add(float64(len(missing)))
-		}
-	}
+	recordFindMissingStatus(ctx, requested-len(missing), len(missing))
 	return missing, nil
+}
+
+// recordFindMissingStatus records the logical present/absent counts of a
+// FindMissing call by purpose, once per requested digest.
+func recordFindMissingStatus(ctx context.Context, present, absent int) {
+	purposeLabel := findmissing.PurposeFromContext(ctx).String()
+	if present > 0 {
+		metrics.DistributedCacheFindMissingBlobStatusCount.
+			WithLabelValues(purposeLabel, metrics.PresentStatusLabel).
+			Add(float64(present))
+	}
+	if absent > 0 {
+		metrics.DistributedCacheFindMissingBlobStatusCount.
+			WithLabelValues(purposeLabel, metrics.AbsentStatusLabel).
+			Add(float64(absent))
+	}
 }
 
 func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {

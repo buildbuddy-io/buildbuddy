@@ -2407,6 +2407,13 @@ func TestReadThroughLookaside(t *testing.T) {
 
 	// Call FindMissing on all the digests -- this should also hit
 	// the lookaside cache.
+	statusCount := func(status string) float64 {
+		return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheFindMissingBlobStatusCount, prometheus.Labels{
+			metrics.PurposeLabel: repb.FindMissingBlobsRequest_UNKNOWN.String(),
+			metrics.StatusLabel:  status,
+		})
+	}
+	presentBefore, absentBefore := statusCount(metrics.PresentStatusLabel), statusCount(metrics.AbsentStatusLabel)
 	for _, distributedCache := range distributedCaches {
 		missing, err := distributedCache.FindMissing(ctx, allResources)
 		require.NoError(t, err)
@@ -2415,6 +2422,17 @@ func TestReadThroughLookaside(t *testing.T) {
 	assert.Equal(t, opCountBefore[peer1], len(memoryCache1.ops))
 	assert.Equal(t, opCountBefore[peer2], len(memoryCache2.ops))
 	assert.Equal(t, opCountBefore[peer3], len(memoryCache3.ops))
+	// Lookaside hits count as present.
+	assert.Equal(t, presentBefore+float64(3*len(allResources)), statusCount(metrics.PresentStatusLabel))
+	assert.Equal(t, absentBefore, statusCount(metrics.AbsentStatusLabel))
+
+	// Lookaside hits still count as present alongside an absent digest.
+	absent, _ := testdigest.RandomCASResourceBuf(t, 100)
+	missing, err := dc1.FindMissing(ctx, append(slices.Clone(allResources), absent))
+	require.NoError(t, err)
+	require.Equal(t, []*repb.Digest{absent.GetDigest()}, missing)
+	assert.Equal(t, presentBefore+float64(4*len(allResources)), statusCount(metrics.PresentStatusLabel))
+	assert.Equal(t, absentBefore+1, statusCount(metrics.AbsentStatusLabel))
 }
 
 func TestAbandonedReadDoesntWriteToLookaside(t *testing.T) {
@@ -4387,6 +4405,25 @@ func TestWriteByReference(t *testing.T) {
 		assertReplicated(t, locals, dcs, rn)
 	})
 
+	t.Run("dedupe probe ignores the lookaside cache", func(t *testing.T) {
+		setWriteReferenceExperiments(t, true)
+		_, dcs, locals, store := newCluster(t, 3, func(o *Options) { o.LookasideCacheSizeBytes = 1_000_000 })
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		require.Equal(t, 1, store.uploadCount())
+		createRefs, dedupeProbes := stagingTotals(locals)
+
+		// A lookaside hit on the coordinator says nothing about the write
+		// peers, so a repeated write still probes all of them.
+		dcs[0].addLookasideEntry(ctx, rn, buf)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		require.Equal(t, 1, store.uploadCount())
+		createRefsAfter, dedupeProbesAfter := stagingTotals(locals)
+		require.Equal(t, createRefs, createRefsAfter)
+		require.Equal(t, dedupeProbes+3, dedupeProbesAfter)
+		assertReplicated(t, locals, dcs, rn)
+	})
+
 	t.Run("coordinator outside the write peerset stages the blob", func(t *testing.T) {
 		setWriteReferenceExperiments(t, true)
 		peers, dcs, locals, store := newCluster(t, 4)
@@ -4913,7 +4950,7 @@ func TestFindMissing_Quorum_DisabledDuringNewNodesMigration(t *testing.T) {
 		caches[peer] = c
 		dc = startNewDCache(t, env, Options{
 			ListenAddr: peer, Nodes: slices.Clone(peers[:3]), NewNodes: slices.Clone(peers[3:]),
-			ReplicationFactor: 3, DisableLocalLookup: true,
+			ReplicationFactor: 3, DisableLocalLookup: true, LookasideCacheSizeBytes: 1000000,
 		}, c)
 		waitForReady(t, peer)
 	}
@@ -4921,6 +4958,9 @@ func TestFindMissing_Quorum_DisabledDuringNewNodesMigration(t *testing.T) {
 	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	// Only an old node has this digest; the new write replicas are empty.
 	require.NoError(t, caches[peers[0]].Cache.Set(ctx, rn, buf))
+	// A lookaside hit must not short-circuit a quorum request, even though the
+	// migration disables the quorum check.
+	dc.addLookasideEntry(ctx, rn, buf)
 	quorumCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(findmissing.RequireQuorumHeader, "true"))
 
 	// Because there is an active migration, the quorum check should be disabled,
@@ -4928,6 +4968,9 @@ func TestFindMissing_Quorum_DisabledDuringNewNodesMigration(t *testing.T) {
 	missing, err := dc.FindMissing(quorumCtx, []*rspb.ResourceName{rn})
 	require.NoError(t, err)
 	require.Empty(t, missing)
+	caches[peers[0]].mu.Lock()
+	require.Equal(t, 1, caches[peers[0]].lookups[rn.GetDigest().GetHash()], "old node must be consulted")
+	caches[peers[0]].mu.Unlock()
 }
 
 func TestFindMissing_Quorum_IgnoresNonReplicaCopies(t *testing.T) {
