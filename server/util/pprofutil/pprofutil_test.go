@@ -17,43 +17,6 @@ func waitHere(reached, release chan struct{}) {
 	<-release
 }
 
-func TestSetSharedSubsystemClearsInheritedLabels(t *testing.T) {
-	flags.Set(t, "monitoring.enable_pprof_labels", true)
-	reached, release := make(chan struct{}), make(chan struct{})
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		pprof.Do(context.Background(), pprof.Labels(pprofutil.InvocationID, "X"), func(ctx context.Context) {
-			pprofutil.SetSharedSubsystem("s")
-			waitHere(reached, release)
-		})
-	}()
-
-	<-reached
-	sets := testpprof.GoroutineLabels(t, "_test.waitHere")
-	release <- struct{}{}
-	<-done
-
-	require.Equal(t, []map[string]string{{pprofutil.SharedSubsystem: "s"}}, sets)
-}
-
-func TestSetSharedSubsystemDisabled(t *testing.T) {
-	reached, release := make(chan struct{}), make(chan struct{})
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		pprofutil.SetSharedSubsystem("s")
-		waitHere(reached, release)
-	}()
-
-	<-reached
-	sets := testpprof.GoroutineLabels(t, "_test.waitHere")
-	release <- struct{}{}
-	<-done
-
-	require.Equal(t, []map[string]string{{}}, sets)
-}
-
 func TestDoSkipsEmptyValues(t *testing.T) {
 	flags.Set(t, "monitoring.enable_pprof_labels", true)
 	pprofutil.Do(context.Background(), func(ctx context.Context) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
+	"runtime/pprof"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,13 +15,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
 	dto "github.com/prometheus/client_model/go"
@@ -285,4 +291,33 @@ func TestConnCache_ExpiresUnusedConnections(t *testing.T) {
 	stillUsed, err := c.Get("used:1")
 	require.NoError(t, err)
 	assert.Same(t, used, stillUsed)
+}
+
+// The client conn connects lazily, on behalf of the first (labeled) RPC, so
+// without the label reset its transport goroutines would inherit that RPC's
+// labels.
+func TestTransportGoroutineLabels(t *testing.T) {
+	flags.Set(t, "monitoring.enable_pprof_labels", true)
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	s := grpc.NewServer()
+	pspb.RegisterApiServer(s, &TestService{})
+	go s.Serve(lis)
+	t.Cleanup(s.Stop)
+	snap := testpprof.TakeSnapshot(t)
+
+	pprof.Do(context.Background(), pprof.Labels(pprofutil.GroupID, "GR_TEST"), func(ctx context.Context) {
+		conn, err := grpc_client.DialSimpleWithoutPooling("grpc://" + lis.Addr().String())
+		require.NoError(t, err)
+		t.Cleanup(func() { conn.Close() })
+		_, err = pspb.NewApiClient(conn).Ping(ctx, &pspb.PingRequest{})
+		require.NoError(t, err)
+	})
+
+	// The in-process server's transport has its own (unlabeled) loopy writer, so
+	// match the client's one by the function that runs it.
+	want := map[string]string{pprofutil.SharedSubsystem: "grpc_client"}
+	for _, f := range []string{"http2Client).reader", "http2Client).keepalive", "loopyWriter).run&NewHTTP2Client"} {
+		snap.RequireGoroutineLabels(t, f, want)
+	}
 }

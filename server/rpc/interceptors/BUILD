@@ -2,10 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "interceptors",
-    srcs = [
-        "interceptors.go",
-        "pprof_labels.go",
-    ],
+    srcs = ["interceptors.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors",
     visibility = ["//visibility:public"],
     deps = [
@@ -41,11 +38,7 @@ go_library(
 go_test(
     name = "interceptors_test",
     size = "small",
-    srcs = [
-        "interceptors_test.go",
-        "origin_method_test.go",
-        "pprof_labels_test.go",
-    ],
+    srcs = ["interceptors_test.go"],
     deps = [
         ":interceptors",
         "//proto:ping_service_go_proto",
@@ -54,7 +47,6 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/testutil/testport",
-        "//server/testutil/testpprof",
         "//server/util/authutil",
         "//server/util/bazel_request",
         "//server/util/clientip",

@@ -34,7 +34,6 @@ go_test(
     size = "small",
     srcs = [
         "grpc_client_internal_test.go",
-        "grpc_client_pprof_test.go",
         "grpc_client_test.go",
     ],
     embed = [":grpc_client"],
@@ -56,6 +55,5 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//connectivity",
     ],
 )

@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	// WaitTimeout is only reached if a condition that is guaranteed to become
+	// waitTimeout is only reached if a condition that is guaranteed to become
 	// true never does, or if the machine is stalled.
-	WaitTimeout  = 60 * time.Second
+	waitTimeout  = 60 * time.Second
 	pollInterval = 10 * time.Millisecond
 )
 
@@ -152,7 +152,7 @@ func (s Snapshot) GoroutineLabels(t testing.TB, funcSubstring string) []map[stri
 func (s Snapshot) RequireGoroutineLabels(t testing.TB, funcSubstring string, want map[string]string) {
 	t.Helper()
 	var got []map[string]string
-	deadline := time.Now().Add(WaitTimeout)
+	deadline := time.Now().Add(waitTimeout)
 	for {
 		got = s.GoroutineLabels(t, funcSubstring)
 		if len(got) > 0 && allEqual(got, want) {
