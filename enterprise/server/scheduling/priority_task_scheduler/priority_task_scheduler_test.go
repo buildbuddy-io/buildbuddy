@@ -4,17 +4,22 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"runtime/pprof"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1195,9 +1200,11 @@ func NewFakeExecutor() *FakeExecutor {
 
 type FakeExecution struct {
 	ScheduledTask *repb.ScheduledTask
-	retry         bool
-	err           error
-	completeCh    chan struct{}
+	// Labels are the pprof labels on the context passed to the executor.
+	Labels     map[string]string
+	retry      bool
+	err        error
+	completeCh chan struct{}
 }
 
 func (e *FakeExecution) Complete() {
@@ -1222,12 +1229,23 @@ func (e *FakeExecutor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb
 	log.Debugf("FakeExecutor: starting task %q", st.GetExecutionTask().GetExecutionId())
 	fe := &FakeExecution{
 		ScheduledTask: st,
+		Labels:        pprofLabels(ctx),
 		completeCh:    make(chan struct{}),
 	}
 	e.StartedExecutions <- fe
 	<-fe.completeCh
 	log.Debugf("FakeExecutor: completed task %q (retry=%t, err=%v)", st.GetExecutionTask().GetExecutionId(), fe.retry, fe.err)
 	return fe.retry, fe.err
+}
+
+func pprofLabels(ctx context.Context) map[string]string {
+	labels := map[string]string{}
+	for _, k := range []string{pprofutil.TaskID, pprofutil.GroupID, pprofutil.InvocationID, pprofutil.ActionMnemonic} {
+		if v, ok := pprof.Label(ctx, k); ok {
+			labels[k] = v
+		}
+	}
+	return labels
 }
 
 type FakeRunnerPool struct {
@@ -1239,6 +1257,8 @@ func (*FakeRunnerPool) Wait() {
 
 type FakeTaskLeaser struct {
 	GrantedLeases chan *FakeLease
+	// Task is returned by the granted leases, if set.
+	Task *repb.ExecutionTask
 }
 
 func NewFakeTaskLeaser() *FakeTaskLeaser {
@@ -1252,8 +1272,11 @@ func (f *FakeTaskLeaser) Lease(ctx context.Context, taskID string) (interfaces.T
 		ctx:    ctx,
 		taskID: taskID,
 		closed: make(chan struct{}),
+		task:   f.Task,
 	}
 	f.GrantedLeases <- lease
+	// Like the real leaser, start the keepalive goroutine from Lease.
+	go lease.keepLease()
 	return lease, nil
 }
 
@@ -1263,10 +1286,18 @@ type FakeLease struct {
 
 	ctx    context.Context
 	taskID string
+	task   *repb.ExecutionTask
 	closed chan struct{}
 }
 
+func (f *FakeLease) keepLease() {
+	<-f.closed
+}
+
 func (f *FakeLease) Task() *repb.ExecutionTask {
+	if f.task != nil {
+		return f.task
+	}
 	return &repb.ExecutionTask{
 		ExecutionId: f.taskID,
 	}
@@ -1340,4 +1371,62 @@ func TestStopCancelsDelayedEnqueue(t *testing.T) {
 	// delayed enqueue's goroutine is still running.
 	require.NoError(t, scheduler.Stop())
 	require.Empty(t, scheduler.GetQueuedTaskReservations())
+}
+
+func TestPriorityTaskScheduler_PprofLabels(t *testing.T) {
+	jwtStr, err := jwt.NewWithClaims(jwt.SigningMethodHS256, &claims.Claims{GroupID: "GR123"}).SignedString([]byte("test-key"))
+	require.NoError(t, err)
+
+	for _, enabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
+			flags.Set(t, "monitoring.enable_pprof_labels", enabled)
+			env := testenv.GetTestEnv(t)
+			env.SetRemoteExecutionClient(&FakeExecutionClient{})
+			executor := NewFakeExecutor()
+			leaser := NewFakeTaskLeaser()
+			taskID := fakeTaskID("task1")
+			leaser.Task = &repb.ExecutionTask{
+				ExecutionId:     taskID,
+				InvocationId:    "inv1",
+				RequestMetadata: &repb.RequestMetadata{ActionMnemonic: "CppCompile"},
+			}
+			scheduler, err := NewPriorityTaskScheduler(env, executor, &FakeRunnerPool{}, leaser, &Options{})
+			require.NoError(t, err)
+			scheduler.Start()
+			ctx := context.Background()
+			t.Cleanup(func() {
+				assert.NoError(t, scheduler.Shutdown(ctx))
+			})
+
+			_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{TaskId: taskID, Jwt: jwtStr})
+			require.NoError(t, err)
+
+			// The fake task blocks until completed, so the keepalive goroutine
+			// is still running.
+			execution := <-executor.StartedExecutions
+			keepaliveLabels := pprofutiltest.GoroutineLabels(t, "FakeLease).keepLease")
+			execution.Complete()
+			lease := <-leaser.GrantedLeases
+			lease.WaitClosed()
+
+			if !enabled {
+				assert.Empty(t, execution.Labels)
+				for _, l := range keepaliveLabels {
+					assert.Empty(t, l)
+				}
+				return
+			}
+			assert.Equal(t, map[string]string{
+				pprofutil.TaskID:         taskID,
+				pprofutil.GroupID:        "GR123",
+				pprofutil.InvocationID:   "inv1",
+				pprofutil.ActionMnemonic: "CppCompile",
+			}, execution.Labels)
+			require.Len(t, keepaliveLabels, 1)
+			assert.Equal(t, map[string]string{
+				pprofutil.TaskID:  taskID,
+				pprofutil.GroupID: "GR123",
+			}, keepaliveLabels[0])
+		})
+	}
 }
