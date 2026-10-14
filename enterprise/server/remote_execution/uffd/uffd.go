@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sys/unix"
@@ -197,6 +198,7 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *cop
 	h.earlyTerminationWriter = pipeWrite
 
 	go func() {
+		pprofutil.SetSubsystem("uffd")
 		h.handleErr = h.handle(ctx, memoryStore)
 		if h.handleErr != nil {
 			log.CtxErrorf(ctx, "UFFD handler failed: %s", h.handleErr)

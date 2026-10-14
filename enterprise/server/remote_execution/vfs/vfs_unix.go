@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/go-units"
 	"github.com/hanwen/go-fuse/v2/fs"
@@ -304,7 +305,10 @@ func (vfs *VFS) Mount() error {
 
 	server.RecordLatencies(&latencyRecorder{vfs: vfs})
 
-	go server.Serve()
+	go func() {
+		pprofutil.SetSubsystem("vfs")
+		server.Serve()
+	}()
 	if err := server.WaitMount(); err != nil {
 		return status.UnavailableErrorf("waiting for VFS mount failed: %s", err)
 	}

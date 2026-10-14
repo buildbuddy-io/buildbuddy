@@ -5,10 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
+	"slices"
 	"strconv"
 	"sync"
 	"syscall"
@@ -28,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
@@ -225,6 +229,30 @@ func TestCOW_EagerFetchChunksOption(t *testing.T) {
 		return enabledChunks[1].Source() == snaputil.ChunkSourceLocalFilecache
 	}, 5*time.Second, 10*time.Millisecond)
 	require.Equal(t, snaputil.ChunkSourceUnmapped, enabledChunks[2].Source())
+}
+
+func TestMmapLRU_EvictorPprofLabels(t *testing.T) {
+	flags.Set(t, "monitoring.enable_pprof_labels", true)
+
+	// The LRU may be shared across runners, so its evictors must not keep the
+	// labels of the task that created it.
+	var lru *copy_on_write.MmapLRU
+	var err error
+	pprof.Do(context.Background(), pprof.Labels("task_id", "X"), func(ctx context.Context) {
+		lru, err = copy_on_write.NewMmapLRU(1024)
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, lru.Close()) })
+
+	require.Eventually(t, func() bool {
+		// Evictors of LRUs created by other tests may be running unlabeled.
+		labels := pprofutiltest.GoroutineLabels(t, "MmapLRU).processEvictions")
+		return slices.ContainsFunc(labels, func(l map[string]string) bool {
+			return maps.Equal(l, map[string]string{"subsystem": "cow.evictor"})
+		}) && !slices.ContainsFunc(labels, func(l map[string]string) bool {
+			return l["task_id"] != ""
+		})
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 func TestCOW_Concurrency(t *testing.T) {

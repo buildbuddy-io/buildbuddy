@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -1982,14 +1983,22 @@ func (p *Server) Statfs(ctx context.Context, request *vfspb.StatfsRequest) (*vfs
 	}, nil
 }
 
-func (p *Server) Start(lis net.Listener) error {
-	p.mu.Lock()
-	p.server = grpc.NewServer(grpc_server.CommonGRPCServerOptions(p.env)...)
-	p.mu.Unlock()
-	vfspb.RegisterFileSystemServer(p.server, p)
-	go func() {
-		_ = p.server.Serve(lis)
-	}()
+// Start starts serving on lis. The server's goroutines outlive the calling
+// task, so they are started with subsystem-only pprof labels. ctx must carry
+// the calling goroutine's labels so they can be restored afterwards.
+func (p *Server) Start(ctx context.Context, lis net.Listener) error {
+	pprofutil.DoSubsystem(ctx, "vfs_server", func() {
+		// NewServer starts the stream worker goroutines, so it needs the
+		// subsystem labels too.
+		srv := grpc.NewServer(grpc_server.CommonGRPCServerOptions(p.env)...)
+		p.mu.Lock()
+		p.server = srv
+		p.mu.Unlock()
+		vfspb.RegisterFileSystemServer(srv, p)
+		go func() {
+			_ = srv.Serve(lis)
+		}()
+	})
 	return nil
 }
 

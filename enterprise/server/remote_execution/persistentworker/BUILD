@@ -19,6 +19,7 @@ go_library(
         "//server/util/lockingbuffer",
         "//server/util/log",
         "//server/util/platform",
+        "//server/util/pprofutil",
         "//server/util/proto",
         "//server/util/status",
         "@org_golang_google_protobuf//encoding/protojson",
@@ -35,6 +36,8 @@ go_test(
         "//enterprise/server/remote_execution/workspace",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/util/pprofutil/pprofutiltest",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )

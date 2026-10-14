@@ -58,6 +58,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -2127,7 +2128,7 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := c.vfsServer.Start(lis); err != nil {
+	if err := c.vfsServer.Start(ctx, lis); err != nil {
 		return status.InternalErrorf("Could not start VFS server: %s", err)
 	}
 	return nil
@@ -2152,7 +2153,10 @@ func (c *FirecrackerContainer) setupVMExecReadySignal(ctx context.Context) error
 		<-vmCtx.Done()
 		_ = lis.Close()
 	}()
-	go serveVMExecReadySignal(vmCtx, lis, ready)
+	go func() {
+		pprofutil.SetSubsystem("vmexec_ready")
+		serveVMExecReadySignal(vmCtx, lis, ready)
+	}()
 	return nil
 }
 

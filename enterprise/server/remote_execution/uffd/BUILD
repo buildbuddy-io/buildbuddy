@@ -16,6 +16,7 @@ go_library(
         "//enterprise/server/remote_execution/snaputil",
         "//server/metrics",
         "//server/util/log",
+        "//server/util/pprofutil",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_x_sys//unix",

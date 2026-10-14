@@ -4,14 +4,20 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
+	"maps"
+	"runtime/pprof"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -35,6 +41,48 @@ func (c *stderrContainer) Exec(ctx context.Context, command *repb.Command, stdio
 	}
 	_, _ = stdio.Stderr.Write(c.stderr)
 	return &interfaces.CommandResult{ExitCode: 1}
+}
+
+// blockingContainer blocks in Exec until the worker context is canceled.
+type blockingContainer struct {
+	container.CommandContainer
+}
+
+func (c *blockingContainer) Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
+	<-ctx.Done()
+	return &interfaces.CommandResult{ExitCode: 1}
+}
+
+func TestStart_PprofLabels(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
+			flags.Set(t, "monitoring.enable_pprof_labels", enabled)
+			cmd := &repb.Command{Arguments: []string{"worker"}}
+			var w *persistentworker.Worker
+			var err error
+			start := func(ctx context.Context) {
+				w, err = persistentworker.Start(ctx, &workspace.Workspace{}, &blockingContainer{}, "proto", cmd)
+			}
+			// The worker outlives the task that started it, so it must not
+			// keep the task's labels.
+			if enabled {
+				pprof.Do(context.Background(), pprof.Labels("task_id", "X"), start)
+			} else {
+				start(context.Background())
+			}
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, w.Stop()) })
+
+			want := map[string]string{}
+			if enabled {
+				want["subsystem"] = "persistent_worker"
+			}
+			require.Eventually(t, func() bool {
+				labels := pprofutiltest.GoroutineLabels(t, "persistentworker.Start.func")
+				return len(labels) == 1 && maps.Equal(labels[0], want)
+			}, 5*time.Second, 10*time.Millisecond)
+		})
+	}
 }
 
 func TestWorkerExec_Stderr(t *testing.T) {

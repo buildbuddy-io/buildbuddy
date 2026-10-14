@@ -2,9 +2,12 @@ package vfs_server_test
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"sync"
 	"syscall"
 	"testing"
@@ -23,8 +26,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/stretchr/testify/assert"
@@ -97,6 +102,59 @@ func requireSyscallError(t *testing.T, err error, errno syscall.Errno) {
 		}
 	}
 	assert.FailNow(t, "RPC status error did not contain a syscall error number", "RPC error: %s", err)
+}
+
+func TestStart_PprofLabels(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
+			flags.Set(t, "monitoring.enable_pprof_labels", enabled)
+			server, _ := newServer(t)
+			lis, err := net.Listen("unix", filepath.Join(testfs.MakeTempDir(t), "vfs.sock"))
+			require.NoError(t, err)
+			t.Cleanup(server.Stop)
+
+			// Start the server from a goroutine that looks like a task's
+			// goroutine, then park it so its labels can be inspected.
+			parked := make(chan struct{})
+			release := make(chan struct{})
+			t.Cleanup(func() { close(release) })
+			start := func(ctx context.Context) {
+				go func() {
+					require.NoError(t, server.Start(ctx, lis))
+					close(parked)
+					<-release
+				}()
+			}
+			if enabled {
+				pprof.Do(context.Background(), pprof.Labels("task_id", "X"), start)
+			} else {
+				start(context.Background())
+			}
+			<-parked
+
+			want := map[string]string{}
+			if enabled {
+				want["subsystem"] = "vfs_server"
+			}
+			serveLabels := pprofutiltest.GoroutineLabels(t, "grpc.(*Server).Serve+")
+			require.NotEmpty(t, serveLabels)
+			for _, l := range serveLabels {
+				require.Equal(t, want, l)
+			}
+			// NewServer itself starts the stream workers (when
+			// grpc_server_worker_multiplier > 0), so they must be reset too.
+			workerLabels := pprofutiltest.GoroutineLabels(t, "grpc.(*Server).serverWorker")
+			require.NotEmpty(t, workerLabels)
+			for _, l := range workerLabels {
+				require.Equal(t, want, l)
+			}
+
+			if enabled {
+				// The caller gets its own labels back.
+				require.Contains(t, pprofutiltest.GoroutineLabels(t, "TestStart_PprofLabels.func"), map[string]string{"task_id": "X"})
+			}
+		})
+	}
 }
 
 func newServer(t *testing.T) (*vfs_server.Server, environment.Env) {

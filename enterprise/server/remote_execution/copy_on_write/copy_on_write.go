@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -843,6 +844,7 @@ func (s *COWStore) eagerFetchNextChunks(offset int64) {
 }
 
 func (s *COWStore) eagerFetchChunksInBackground() {
+	pprofutil.SetSubsystem("cow.eager_fetch")
 	rateLimiter := rate.NewLimiter(rate.Limit(*maxEagerFetchesPerSec), 1)
 	eg := &errgroup.Group{}
 	eg.SetLimit(*eagerFetchConcurrency)
@@ -1578,6 +1580,7 @@ func (ml *MmapLRU) Close() error {
 }
 
 func (ml *MmapLRU) processEvictions() error {
+	pprofutil.SetSubsystem("cow.evictor")
 	for m := range ml.evictions {
 		ml.processEviction(m)
 	}
