@@ -157,7 +157,6 @@ func AddUsageHeadersToContext(ctx context.Context, client string, origin string,
 }
 
 // OriginLabel returns the origin header value, if any.
-// OriginLabel returns the origin header value, if any.
 func OriginLabel(ctx context.Context) string {
 	vals := metadata.ValueFromIncomingContext(ctx, OriginHeaderName)
 	if len(vals) == 0 {
@@ -166,7 +165,6 @@ func OriginLabel(ctx context.Context) string {
 	return vals[0]
 }
 
-// ClientLabel returns the client header value, or "bazel" for bazel requests.
 // ClientLabel returns the client header value, or "bazel" for bazel requests.
 func ClientLabel(ctx context.Context) string {
 	vals := metadata.ValueFromIncomingContext(ctx, ClientHeaderName)

@@ -14,7 +14,7 @@ go_test(
     srcs = ["pprofutil_test.go"],
     deps = [
         ":pprofutil",
-        "//server/util/pprofutil/pprofutiltest",
+        "//server/testutil/testpprof",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],

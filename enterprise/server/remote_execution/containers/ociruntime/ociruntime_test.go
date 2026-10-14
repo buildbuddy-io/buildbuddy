@@ -38,12 +38,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testtar"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -1698,8 +1698,8 @@ func TestImageStorePullPprofLabels(t *testing.T) {
 		stackFunc     string
 		wantSubsystem string
 	}{
-		{name: "image", stackFunc: "ImageStore).pull", wantSubsystem: "image_pull"},
-		{name: "layer", blockLayer: true, stackFunc: "ociruntime.downloadLayer", wantSubsystem: "layer_pull"},
+		{name: "image", stackFunc: "ImageStore).pull", wantSubsystem: "executor.image_pull"},
+		{name: "layer", blockLayer: true, stackFunc: "ociruntime.downloadLayer", wantSubsystem: "executor.layer_pull"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			layer := testregistry.NewBytesLayer(t, testtar.EntriesBytes(t, []testtar.Entry{{
@@ -1742,7 +1742,7 @@ func TestImageStorePullPprofLabels(t *testing.T) {
 			})
 			<-blocked
 
-			labels := pprofutiltest.GoroutineLabels(t, tc.stackFunc)
+			labels := testpprof.GoroutineLabels(t, tc.stackFunc)
 			require.NotEmpty(t, labels)
 			for _, l := range labels {
 				require.Equal(t, map[string]string{"subsystem": tc.wantSubsystem}, l)

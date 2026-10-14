@@ -1987,7 +1987,7 @@ func (p *Server) Statfs(ctx context.Context, request *vfspb.StatfsRequest) (*vfs
 // task, so they are started with subsystem-only pprof labels. ctx must carry
 // the calling goroutine's labels so they can be restored afterwards.
 func (p *Server) Start(ctx context.Context, lis net.Listener) error {
-	pprofutil.DoSubsystem(ctx, "vfs_server", func() {
+	pprofutil.DoSubsystem(ctx, "executor.vfs_server", func() {
 		// NewServer starts the stream worker goroutines, so it needs the
 		// subsystem labels too.
 		srv := grpc.NewServer(grpc_server.CommonGRPCServerOptions(p.env)...)

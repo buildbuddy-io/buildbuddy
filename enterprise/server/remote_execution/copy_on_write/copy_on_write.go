@@ -844,7 +844,7 @@ func (s *COWStore) eagerFetchNextChunks(offset int64) {
 }
 
 func (s *COWStore) eagerFetchChunksInBackground() {
-	pprofutil.SetSubsystem("cow.eager_fetch")
+	pprofutil.SetSubsystem("executor.cow.eager_fetch")
 	rateLimiter := rate.NewLimiter(rate.Limit(*maxEagerFetchesPerSec), 1)
 	eg := &errgroup.Group{}
 	eg.SetLimit(*eagerFetchConcurrency)
@@ -1580,7 +1580,7 @@ func (ml *MmapLRU) Close() error {
 }
 
 func (ml *MmapLRU) processEvictions() error {
-	pprofutil.SetSubsystem("cow.evictor")
+	pprofutil.SetSubsystem("executor.cow.evictor")
 	for m := range ml.evictions {
 		ml.processEviction(m)
 	}

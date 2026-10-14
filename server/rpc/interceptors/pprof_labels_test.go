@@ -16,11 +16,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -392,7 +392,7 @@ func TestIdleWorkersHaveNoLabels(t *testing.T) {
 	}
 
 	require.Eventually(t, func() bool {
-		sets := pprofutiltest.GoroutineLabels(t, "serverWorker")
+		sets := testpprof.GoroutineLabels(t, "serverWorker")
 		if len(sets) == 0 {
 			return false
 		}
@@ -484,7 +484,7 @@ func TestTraceTaskPerRequest(t *testing.T) {
 	require.Equal(t, []string{"GR1"}, info.logs[pprofutil.GroupID])
 }
 
-func TestTraceTaskIndependentOfLabelsFlag(t *testing.T) {
+func TestTraceTaskWithLabelsEnabled(t *testing.T) {
 	flags.Set(t, "monitoring.enable_trace_tasks", true)
 	flags.Set(t, "monitoring.enable_pprof_labels", true)
 

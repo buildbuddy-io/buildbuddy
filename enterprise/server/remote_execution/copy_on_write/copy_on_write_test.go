@@ -29,9 +29,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
@@ -246,9 +246,9 @@ func TestMmapLRU_EvictorPprofLabels(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		// Evictors of LRUs created by other tests may be running unlabeled.
-		labels := pprofutiltest.GoroutineLabels(t, "MmapLRU).processEvictions")
+		labels := testpprof.GoroutineLabels(t, "MmapLRU).processEvictions")
 		return slices.ContainsFunc(labels, func(l map[string]string) bool {
-			return maps.Equal(l, map[string]string{"subsystem": "cow.evictor"})
+			return maps.Equal(l, map[string]string{"subsystem": "executor.cow.evictor"})
 		}) && !slices.ContainsFunc(labels, func(l map[string]string) bool {
 			return l["task_id"] != ""
 		})

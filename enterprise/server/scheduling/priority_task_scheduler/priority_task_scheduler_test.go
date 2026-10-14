@@ -11,11 +11,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -1404,7 +1404,11 @@ func TestPriorityTaskScheduler_PprofLabels(t *testing.T) {
 			// The fake task blocks until completed, so the keepalive goroutine
 			// is still running.
 			execution := <-executor.StartedExecutions
-			keepaliveLabels := pprofutiltest.GoroutineLabels(t, "FakeLease).keepLease")
+			var keepaliveLabels []map[string]string
+			require.Eventually(t, func() bool {
+				keepaliveLabels = testpprof.GoroutineLabels(t, "FakeLease).keepLease")
+				return len(keepaliveLabels) > 0
+			}, 10*time.Second, 10*time.Millisecond)
 			execution.Complete()
 			lease := <-leaser.GrantedLeases
 			lease.WaitClosed()

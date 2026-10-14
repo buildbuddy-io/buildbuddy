@@ -36,7 +36,7 @@ go_test(
         "//enterprise/server/remote_execution/workspace",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
-        "//server/util/pprofutil/pprofutiltest",
+        "//server/testutil/testpprof",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],

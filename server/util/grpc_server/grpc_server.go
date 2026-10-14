@@ -232,9 +232,10 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 	}
 	var opts []grpc.ServerOption
 	if pprofutil.Enabled() || pprofutil.TraceTasksEnabled() {
-		// Registered first so the other stats handlers' per-RPC work is
-		// labeled and covered by the trace task too.
-		opts = append(opts, grpc.StatsHandler(interceptors.PprofLabelsStatsHandler{}))
+		// Registered first so the other stats handlers' TagRPC and InHeader
+		// work is labeled and covered by the trace task too. End reaches this
+		// handler first, so work in the other handlers' End is not labeled.
+		opts = append(opts, grpc.StatsHandler(interceptors.ProfilingStatsHandler{}))
 	}
 	opts = append(opts,
 		grpc.StatsHandler(statsHandler),

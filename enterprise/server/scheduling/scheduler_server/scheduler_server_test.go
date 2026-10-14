@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"runtime/pprof"
 	"slices"
 	"sort"
 	"sync"
@@ -31,11 +30,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -2760,34 +2759,55 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 	require.Empty(t, s.livenessWatches)
 }
 
-func TestLeaseTask_PprofLabelsUseTaskGroup(t *testing.T) {
-	flags.Set(t, "monitoring.enable_pprof_labels", true)
-	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+func TestLeaseTask_PprofLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		flagOn       bool
+		taskGroup    string
+		wantGroupID  string
+		wantGRPCName bool
+	}{
+		{name: "task group replaces executor group", flagOn: true, taskGroup: "group1", wantGroupID: "group1", wantGRPCName: true},
+		{name: "empty task group keeps executor group", flagOn: true, taskGroup: "", wantGroupID: "group2", wantGRPCName: true},
+		{name: "flag off adds no labels", flagOn: false, taskGroup: "group1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "monitoring.enable_pprof_labels", tc.flagOn)
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
-	var mu sync.Mutex
-	var gotGroupID string
-	var called bool
-	leaseTaskRelabeledHook = func(ctx context.Context) {
-		mu.Lock()
-		defer mu.Unlock()
-		called = true
-		gotGroupID, _ = pprof.Label(ctx, "group_id")
+			// The executor authenticates as user2, but the task belongs to
+			// the task group.
+			executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
+			executor.Register()
+			taskID := scheduleTaskForGroup(ctx, t, env, tc.taskGroup)
+			executor.WaitForTask(taskID)
+			lease, err := executor.leaseTask(taskID, "" /*=reconnectToken*/)
+			require.NoError(t, err)
+
+			// The lease is open, so the handler goroutine is blocked waiting
+			// for the next message.
+			want := map[string]string{}
+			if tc.wantGroupID != "" {
+				want["group_id"] = tc.wantGroupID
+			}
+			if tc.wantGRPCName {
+				want["grpc.method"] = "/scheduler.Scheduler/LeaseTask"
+			}
+			require.Eventually(t, func() bool {
+				sets := testpprof.GoroutineLabels(t, "SchedulerServer).LeaseTask+0x")
+				if len(sets) != 1 {
+					return false
+				}
+				for k, v := range want {
+					if sets[0][k] != v {
+						return false
+					}
+				}
+				return tc.flagOn || len(sets[0]) == 0
+			}, 10*time.Second, 10*time.Millisecond)
+			require.NoError(t, lease.Finalize())
+		})
 	}
-	t.Cleanup(func() { leaseTaskRelabeledHook = nil })
-
-	// The executor authenticates as user2, but the task belongs to group1.
-	executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
-	executor.Register()
-	taskID := scheduleTaskForGroup(ctx, t, env, "group1")
-	executor.WaitForTask(taskID)
-	lease, err := executor.leaseTask(taskID, "" /*=reconnectToken*/)
-	require.NoError(t, err)
-	require.NoError(t, lease.Finalize())
-
-	mu.Lock()
-	defer mu.Unlock()
-	require.True(t, called)
-	require.Equal(t, "group1", gotGroupID)
 }
 
 func TestRegisterAndStreamWork_PprofSubsystemLabel(t *testing.T) {
@@ -2797,7 +2817,7 @@ func TestRegisterAndStreamWork_PprofSubsystemLabel(t *testing.T) {
 	executor.Register()
 
 	require.Eventually(t, func() bool {
-		for _, labels := range pprofutiltest.GoroutineLabels(t, "executorHandle).Serve") {
+		for _, labels := range testpprof.GoroutineLabels(t, "executorHandle).Serve") {
 			if labels["subsystem"] == "scheduler.executor_stream" {
 				return true
 			}

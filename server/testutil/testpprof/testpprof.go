@@ -1,5 +1,5 @@
-// Package pprofutiltest provides test helpers for inspecting pprof labels.
-package pprofutiltest
+// Package testpprof provides test helpers for inspecting pprof labels.
+package testpprof
 
 import (
 	"bytes"

@@ -25,8 +25,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -134,24 +134,28 @@ func TestStart_PprofLabels(t *testing.T) {
 
 			want := map[string]string{}
 			if enabled {
-				want["subsystem"] = "vfs_server"
+				want["subsystem"] = "executor.vfs_server"
 			}
-			serveLabels := pprofutiltest.GoroutineLabels(t, "grpc.(*Server).Serve+")
-			require.NotEmpty(t, serveLabels)
+			// Start returns before the Serve and worker goroutines are
+			// necessarily running.
+			require.Eventually(t, func() bool {
+				return len(testpprof.GoroutineLabels(t, "grpc.(*Server).Serve+")) > 0 &&
+					len(testpprof.GoroutineLabels(t, "grpc.(*Server).serverWorker")) > 0
+			}, 10*time.Second, 10*time.Millisecond)
+			serveLabels := testpprof.GoroutineLabels(t, "grpc.(*Server).Serve+")
 			for _, l := range serveLabels {
 				require.Equal(t, want, l)
 			}
 			// NewServer itself starts the stream workers (when
 			// grpc_server_worker_multiplier > 0), so they must be reset too.
-			workerLabels := pprofutiltest.GoroutineLabels(t, "grpc.(*Server).serverWorker")
-			require.NotEmpty(t, workerLabels)
+			workerLabels := testpprof.GoroutineLabels(t, "grpc.(*Server).serverWorker")
 			for _, l := range workerLabels {
 				require.Equal(t, want, l)
 			}
 
 			if enabled {
 				// The caller gets its own labels back.
-				require.Contains(t, pprofutiltest.GoroutineLabels(t, "TestStart_PprofLabels.func"), map[string]string{"task_id": "X"})
+				require.Contains(t, testpprof.GoroutineLabels(t, "TestStart_PprofLabels.func"), map[string]string{"task_id": "X"})
 			}
 		})
 	}

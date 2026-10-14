@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"net"
 	"regexp"
-	"runtime/pprof"
 	"slices"
 	"strconv"
 	"strings"
@@ -2350,13 +2349,8 @@ type leaseMessage struct {
 	err error
 }
 
-// leaseTaskRelabeledHook is called by LeaseTask with the relabeled context.
-// Only set in tests.
-var leaseTaskRelabeledHook func(ctx context.Context)
-
 func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error {
 	ctx := stream.Context()
-	relabeled := false
 	lastCheckin := time.Now()
 	claimed := false
 	taskID := ""
@@ -2365,6 +2359,11 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 
 	// TODO(vadim): remove after executor ID in lease request is rolled out
 	executorID := peerAddress(ctx)
+
+	// gRPC workers are pooled, so restore the request's labels when we return.
+	// This is deferred first so it runs last, after the re-enqueue below, which
+	// is then charged to the task's group.
+	defer pprofutil.RestoreGoroutineLabels(stream.Context())
 
 	// If we've exited our event loop and the task is still claimed, then
 	// the worker did not finish properly and we should re-enqueue it.
@@ -2464,16 +2463,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			}
 			// The stream is authenticated as the executor, so charge the
 			// rest of the stream's work to the task's group instead.
-			if pprofutil.Enabled() && !relabeled {
-				relabeled = true
-				labelCtx := pprof.WithLabels(ctx, pprof.Labels(pprofutil.GroupID, task.metadata.GetTaskGroupId()))
-				pprof.SetGoroutineLabels(labelCtx)
-				// gRPC workers are pooled, so restore the request's labels.
-				defer pprof.SetGoroutineLabels(stream.Context())
-				if leaseTaskRelabeledHook != nil {
-					leaseTaskRelabeledHook(labelCtx)
-				}
-			}
+			ctx = pprofutil.SetGoroutineLabels(ctx, pprofutil.GroupID, task.metadata.GetTaskGroupId())
 			leaseID, err = s.claimTask(ctx, taskID, req.GetReconnectToken(), req.GetSupportsReconnect())
 			if err != nil {
 				log.CtxDebugf(ctx, "LeaseTask claim attempt (reconnect=%t) failed: %s", req.GetReconnectToken() != "", err)

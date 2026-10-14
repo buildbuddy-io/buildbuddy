@@ -109,7 +109,7 @@ func (f *FS) Mount(ctx context.Context, path string) error {
 	}
 
 	go func() {
-		pprofutil.SetSubsystem("vbd")
+		pprofutil.SetSubsystem("executor.vbd")
 		server.Serve()
 	}()
 	if err := server.WaitMount(); err != nil {

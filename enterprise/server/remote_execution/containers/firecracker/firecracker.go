@@ -2154,7 +2154,7 @@ func (c *FirecrackerContainer) setupVMExecReadySignal(ctx context.Context) error
 		_ = lis.Close()
 	}()
 	go func() {
-		pprofutil.SetSubsystem("vmexec_ready")
+		pprofutil.SetSubsystem("executor.vmexec_ready")
 		serveVMExecReadySignal(vmCtx, lis, ready)
 	}()
 	return nil

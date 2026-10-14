@@ -5,8 +5,8 @@ import (
 	"runtime/pprof"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +30,7 @@ func TestSetSubsystemClearsInheritedLabels(t *testing.T) {
 	}()
 
 	<-reached
-	sets := pprofutiltest.GoroutineLabels(t, "_test.waitHere")
+	sets := testpprof.GoroutineLabels(t, "_test.waitHere")
 	release <- struct{}{}
 	<-done
 
@@ -47,7 +47,7 @@ func TestSetSubsystemDisabled(t *testing.T) {
 	}()
 
 	<-reached
-	sets := pprofutiltest.GoroutineLabels(t, "_test.waitHere")
+	sets := testpprof.GoroutineLabels(t, "_test.waitHere")
 	release <- struct{}{}
 	<-done
 
@@ -69,10 +69,10 @@ func TestDoSubsystemRestoresCallerLabels(t *testing.T) {
 	}()
 
 	<-reached
-	inside := pprofutiltest.GoroutineLabels(t, "_test.waitHere")
+	inside := testpprof.GoroutineLabels(t, "_test.waitHere")
 	release <- struct{}{}
 	<-reached
-	after := pprofutiltest.GoroutineLabels(t, "_test.waitHere")
+	after := testpprof.GoroutineLabels(t, "_test.waitHere")
 	release <- struct{}{}
 	<-done
 
@@ -96,4 +96,44 @@ func TestDoDisabled(t *testing.T) {
 		_, ok := pprof.Label(ctx, pprofutil.GroupID)
 		require.False(t, ok)
 	}, pprofutil.GroupID, "G")
+}
+
+func TestSetGoroutineLabelsAndRestore(t *testing.T) {
+	flags.Set(t, "monitoring.enable_pprof_labels", true)
+	reached, release := make(chan struct{}), make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		base := pprof.WithLabels(context.Background(), pprof.Labels(pprofutil.GRPCMethod, "m"))
+		pprof.SetGoroutineLabels(base)
+		ctx := pprofutil.SetGoroutineLabels(base, pprofutil.GroupID, "G", pprofutil.TaskID, "")
+		g, ok := pprof.Label(ctx, pprofutil.GroupID)
+		require.True(t, ok)
+		require.Equal(t, "G", g)
+		_, ok = pprof.Label(ctx, pprofutil.TaskID)
+		require.False(t, ok)
+		waitHere(reached, release)
+		pprofutil.RestoreGoroutineLabels(base)
+		waitHere(reached, release)
+	}()
+
+	<-reached
+	inside := testpprof.GoroutineLabels(t, "_test.waitHere")
+	release <- struct{}{}
+	<-reached
+	after := testpprof.GoroutineLabels(t, "_test.waitHere")
+	release <- struct{}{}
+	<-done
+
+	require.Equal(t, []map[string]string{{pprofutil.GRPCMethod: "m", pprofutil.GroupID: "G"}}, inside)
+	require.Equal(t, []map[string]string{{pprofutil.GRPCMethod: "m"}}, after)
+}
+
+func TestSetGoroutineLabelsEmptyValuesAndDisabled(t *testing.T) {
+	ctx := context.Background()
+	_, ok := pprof.Label(pprofutil.SetGoroutineLabels(ctx, pprofutil.GroupID, "G"), pprofutil.GroupID)
+	require.False(t, ok)
+
+	flags.Set(t, "monitoring.enable_pprof_labels", true)
+	require.Equal(t, ctx, pprofutil.SetGoroutineLabels(ctx, pprofutil.GroupID, ""))
 }

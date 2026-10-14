@@ -2,7 +2,6 @@ package interceptors
 
 import (
 	"context"
-	"runtime/pprof"
 	"runtime/trace"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -65,14 +64,14 @@ func originMethodLabelStreamServerInterceptor() grpc.StreamServerInterceptor {
 
 type traceTaskKey struct{}
 
-// PprofLabelsStatsHandler labels the goroutine serving each RPC with pprof
+// ProfilingStatsHandler labels the goroutine serving each RPC with pprof
 // labels (if enabled) and wraps the RPC in a runtime/trace task (if enabled).
 // It is a stats handler rather than an interceptor because TagRPC runs
 // on the request's goroutine before unary request decoding, and the End event
 // runs after response encoding, so that work is labeled too.
-type PprofLabelsStatsHandler struct{}
+type ProfilingStatsHandler struct{}
 
-func (PprofLabelsStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
+func (ProfilingStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
 	if pprofutil.TraceTasksEnabled() {
 		var task *trace.Task
 		ctx, task = trace.NewTask(ctx, info.FullMethodName)
@@ -83,42 +82,34 @@ func (PprofLabelsStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInf
 	}
 	// Parse once here; later readers of the request metadata reuse the result.
 	ctx = bazel_request.ParseRequestMetadataOnce(ctx)
-	kv := make([]string, 0, 10)
-	add := func(k, v string) {
-		if v != "" {
-			kv = append(kv, k, v)
-		}
+	kv := []string{
+		pprofutil.GRPCMethod, info.FullMethodName,
+		pprofutil.Client, usageutil.ClientLabel(ctx),
+		pprofutil.Origin, usageutil.OriginLabel(ctx),
 	}
-	add(pprofutil.GRPCMethod, info.FullMethodName)
-	add(pprofutil.Client, usageutil.ClientLabel(ctx))
-	add(pprofutil.Origin, usageutil.OriginLabel(ctx))
 	if rmd := bazel_request.GetRequestMetadata(ctx); rmd != nil {
-		add(pprofutil.InvocationID, rmd.GetToolInvocationId())
-		add(pprofutil.ActionMnemonic, rmd.GetActionMnemonic())
+		kv = append(kv, pprofutil.InvocationID, rmd.GetToolInvocationId(), pprofutil.ActionMnemonic, rmd.GetActionMnemonic())
 	}
-	ctx = pprof.WithLabels(ctx, pprof.Labels(kv...))
-	pprof.SetGoroutineLabels(ctx)
+	ctx = pprofutil.SetGoroutineLabels(ctx, kv...)
 	return ctx
 }
 
-func (PprofLabelsStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
+func (ProfilingStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 	if _, ok := s.(*stats.End); !ok {
 		return
 	}
 	if task, ok := ctx.Value(traceTaskKey{}).(*trace.Task); ok {
 		task.End()
 	}
-	if pprofutil.Enabled() {
-		// Don't leave this request's labels on a pooled worker goroutine.
-		pprof.SetGoroutineLabels(context.Background())
-	}
+	// Don't leave this request's labels on a pooled worker goroutine.
+	pprofutil.RestoreGoroutineLabels(context.Background())
 }
 
-func (PprofLabelsStatsHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+func (ProfilingStatsHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
 	return ctx
 }
 
-func (PprofLabelsStatsHandler) HandleConn(context.Context, stats.ConnStats) {}
+func (ProfilingStatsHandler) HandleConn(context.Context, stats.ConnStats) {}
 
 func groupLabelUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {

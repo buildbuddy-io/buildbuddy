@@ -16,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
@@ -75,10 +75,10 @@ func TestStart_PprofLabels(t *testing.T) {
 
 			want := map[string]string{}
 			if enabled {
-				want["subsystem"] = "persistent_worker"
+				want["subsystem"] = "executor.persistent_worker"
 			}
 			require.Eventually(t, func() bool {
-				labels := pprofutiltest.GoroutineLabels(t, "persistentworker.Start.func")
+				labels := testpprof.GoroutineLabels(t, "persistentworker.Start.func")
 				return len(labels) == 1 && maps.Equal(labels[0], want)
 			}, 5*time.Second, 10*time.Millisecond)
 		})

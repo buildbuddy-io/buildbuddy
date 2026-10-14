@@ -40,11 +40,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -4715,7 +4715,7 @@ func TestBackgroundGoroutineSubsystemLabels(t *testing.T) {
 					want["subsystem"] = subsystem
 				}
 				require.Eventually(t, func() bool {
-					for _, labels := range pprofutiltest.GoroutineLabels(t, fn) {
+					for _, labels := range testpprof.GoroutineLabels(t, fn) {
 						if maps.Equal(labels, want) {
 							return true
 						}

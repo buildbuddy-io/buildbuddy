@@ -13,8 +13,8 @@ import (
 
 var (
 	enablePprofLabels = flag.Bool("monitoring.enable_pprof_labels", false, "If true, attach pprof labels (gRPC method, group ID, subsystem, etc.) to goroutines so CPU profiles can be sliced by them.")
-	// EnableTraceTasks gates runtime/trace tasks and regions.
-	EnableTraceTasks = flag.Bool("monitoring.enable_trace_tasks", false, "If true, annotate requests with runtime/trace tasks so execution traces can be sliced by request.")
+	// enableTraceTasks gates runtime/trace tasks and regions.
+	enableTraceTasks = flag.Bool("monitoring.enable_trace_tasks", false, "If true, annotate requests with runtime/trace tasks so execution traces can be sliced by request.")
 )
 
 // Label keys.
@@ -37,7 +37,7 @@ func Enabled() bool {
 
 // TraceTasksEnabled returns whether runtime/trace tasks are enabled.
 func TraceTasksEnabled() bool {
-	return *EnableTraceTasks
+	return *enableTraceTasks
 }
 
 // Do runs f with the given key/value label pairs added to the labels carried by
@@ -48,17 +48,47 @@ func Do(ctx context.Context, f func(ctx context.Context), kv ...string) {
 		f(ctx)
 		return
 	}
+	labels := nonEmptyPairs(kv)
+	if len(labels) == 0 {
+		f(ctx)
+		return
+	}
+	pprof.Do(ctx, pprof.Labels(labels...), f)
+}
+
+// SetGoroutineLabels adds the given key/value label pairs to ctx's labels and
+// applies them to the current goroutine. Pairs with an empty value are skipped.
+// It returns ctx unchanged if labels are disabled or all values are empty;
+// otherwise it returns the labeled ctx.
+func SetGoroutineLabels(ctx context.Context, kv ...string) context.Context {
+	if !Enabled() {
+		return ctx
+	}
+	labels := nonEmptyPairs(kv)
+	if len(labels) == 0 {
+		return ctx
+	}
+	ctx = pprof.WithLabels(ctx, pprof.Labels(labels...))
+	pprof.SetGoroutineLabels(ctx)
+	return ctx
+}
+
+// RestoreGoroutineLabels sets the current goroutine's labels to those carried
+// by ctx. Use it to undo SetGoroutineLabels on pooled goroutines.
+func RestoreGoroutineLabels(ctx context.Context) {
+	if Enabled() {
+		pprof.SetGoroutineLabels(ctx)
+	}
+}
+
+func nonEmptyPairs(kv []string) []string {
 	labels := make([]string, 0, len(kv))
 	for i := 0; i+1 < len(kv); i += 2 {
 		if kv[i+1] != "" {
 			labels = append(labels, kv[i], kv[i+1])
 		}
 	}
-	if len(labels) == 0 {
-		f(ctx)
-		return
-	}
-	pprof.Do(ctx, pprof.Labels(labels...), f)
+	return labels
 }
 
 // SetSubsystem replaces the current goroutine's labels (including any

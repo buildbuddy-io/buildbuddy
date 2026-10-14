@@ -306,7 +306,7 @@ func (vfs *VFS) Mount() error {
 	server.RecordLatencies(&latencyRecorder{vfs: vfs})
 
 	go func() {
-		pprofutil.SetSubsystem("vfs")
+		pprofutil.SetSubsystem("executor.vfs")
 		server.Serve()
 	}()
 	if err := server.WaitMount(); err != nil {

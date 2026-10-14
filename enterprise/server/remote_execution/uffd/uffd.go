@@ -198,7 +198,7 @@ func (h *Handler) Start(ctx context.Context, socketPath string, memoryStore *cop
 	h.earlyTerminationWriter = pipeWrite
 
 	go func() {
-		pprofutil.SetSubsystem("uffd")
+		pprofutil.SetSubsystem("executor.uffd")
 		h.handleErr = h.handle(ctx, memoryStore)
 		if h.handleErr != nil {
 			log.CtxErrorf(ctx, "UFFD handler failed: %s", h.handleErr)

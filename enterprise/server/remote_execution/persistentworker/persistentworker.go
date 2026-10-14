@@ -131,7 +131,7 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 	command.Arguments = append(args.WorkerArgs, "--persistent_worker")
 
 	go func() {
-		pprofutil.SetSubsystem("persistent_worker")
+		pprofutil.SetSubsystem("executor.persistent_worker")
 		defer close(w.workerTerminated)
 		defer stdinReader.Close()
 		defer stdoutWriter.Close()
