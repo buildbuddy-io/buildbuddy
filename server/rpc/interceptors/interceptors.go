@@ -214,6 +214,9 @@ func setHeadersFromContext(ctx context.Context) context.Context {
 			ctx = metadata.AppendToOutgoingContext(ctx, headerName, contextVal)
 		}
 	}
+	if m, ok := originMethodFromContext(ctx); ok {
+		ctx = metadata.AppendToOutgoingContext(ctx, originMethodHeader, m)
+	}
 	return ctx
 }
 
@@ -711,13 +714,18 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 		// Check client-identity early so it can be used in later interceptors.
 		identityUnaryServerInterceptor(env),
 		stripInternalHeadersUnaryServerInterceptor(env),
+	}
+	if pprofutil.Enabled() {
+		// Must come after stripInternalHeaders, which sanitizes the header it reads.
+		interceptors = append(interceptors, originMethodLabelUnaryServerInterceptor())
+	}
+	interceptors = append(interceptors,
 		clientIPUnaryServerInterceptor(env),
 		subdomainUnaryServerInterceptor(env),
 		requestIDUnaryServerInterceptor(),
 		invocationIDLoggerUnaryServerInterceptor(),
 		logRequestUnaryServerInterceptor(),
-		requestContextProtoUnaryServerInterceptor(),
-	}
+		requestContextProtoUnaryServerInterceptor())
 	// Install extra, caller-specified interceptors prior to auth interceptors
 	// because the auth interceptors rely on extra interceptors for e.g.
 	// propagating auth headers.
@@ -744,12 +752,17 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 		// Check client-identity early so it can be used in later interceptors.
 		identityStreamServerInterceptor(env),
 		stripInternalHeadersStreamServerInterceptor(env),
+	}
+	if pprofutil.Enabled() {
+		// Must come after stripInternalHeaders, which sanitizes the header it reads.
+		interceptors = append(interceptors, originMethodLabelStreamServerInterceptor())
+	}
+	interceptors = append(interceptors,
 		clientIPStreamServerInterceptor(env),
 		subdomainStreamServerInterceptor(env),
 		requestIDStreamServerInterceptor(),
 		invocationIDLoggerStreamServerInterceptor(),
-		logRequestStreamServerInterceptor(),
-	}
+		logRequestStreamServerInterceptor())
 	// Install extra, caller-specified interceptors prior to auth interceptors
 	// because the auth interceptors rely on extra interceptors for e.g.
 	// propagating auth headers.

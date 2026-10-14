@@ -43,6 +43,7 @@ go_test(
     size = "small",
     srcs = [
         "interceptors_test.go",
+        "origin_method_test.go",
         "pprof_labels_test.go",
     ],
     deps = [
