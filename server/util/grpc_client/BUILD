@@ -47,6 +47,7 @@ go_test(
         "//server/testutil/testport",
         "//server/testutil/testpprof",
         "//server/util/grpc_server",
+        "//server/util/pprofutil",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_jonboulle_clockwork//:clockwork",

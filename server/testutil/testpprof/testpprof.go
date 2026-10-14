@@ -22,7 +22,7 @@ const (
 )
 
 // headerRE matches the first line of a goroutine in a debug=2 goroutine dump,
-// e.g. `goroutine 18 [chan receive, 2 minutes] {subsystem: foo, k: "a b"}:`.
+// e.g. `goroutine 18 [chan receive, 2 minutes] {shared_subsystem: foo, k: "a b"}:`.
 var headerRE = regexp.MustCompile(`^goroutine (\d+) \[[^\]]*\](?: \{(.*)\})?:$`)
 
 type goroutine struct {

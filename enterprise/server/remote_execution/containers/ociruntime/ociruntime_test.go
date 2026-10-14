@@ -44,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -1694,12 +1695,12 @@ func TestImageStorePullPprofLabels(t *testing.T) {
 		name string
 		// blockLayer blocks the layer blob download rather than manifest
 		// resolution.
-		blockLayer    bool
-		stackFunc     string
-		wantSubsystem string
+		blockLayer          bool
+		stackFunc           string
+		wantSharedSubsystem string
 	}{
-		{name: "image", stackFunc: "ImageStore).pull(", wantSubsystem: "executor.image_pull"},
-		{name: "layer", blockLayer: true, stackFunc: "ociruntime.downloadLayer(", wantSubsystem: "executor.layer_pull"},
+		{name: "image", stackFunc: "ImageStore).pull(", wantSharedSubsystem: "executor.image_pull"},
+		{name: "layer", blockLayer: true, stackFunc: "ociruntime.downloadLayer(", wantSharedSubsystem: "executor.layer_pull"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			layer := testregistry.NewBytesLayer(t, testtar.EntriesBytes(t, []testtar.Entry{{
@@ -1751,7 +1752,7 @@ func TestImageStorePullPprofLabels(t *testing.T) {
 			labels := before.GoroutineLabels(t, tc.stackFunc)
 			require.NotEmpty(t, labels)
 			for _, l := range labels {
-				require.Equal(t, map[string]string{"subsystem": tc.wantSubsystem}, l)
+				require.Equal(t, map[string]string{pprofutil.SharedSubsystem: tc.wantSharedSubsystem}, l)
 			}
 			releaseHandler()
 			<-done

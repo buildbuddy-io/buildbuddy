@@ -482,7 +482,7 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 type transportLabelHandler struct{}
 
 func (transportLabelHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
-	pprofutil.SetSubsystem("grpc_client")
+	pprofutil.SetSharedSubsystem("grpc_client")
 	return ctx
 }
 

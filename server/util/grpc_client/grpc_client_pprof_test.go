@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -84,7 +85,7 @@ func TestTransportGoroutineLabels_Dial(t *testing.T) {
 	t.Cleanup(func() { conn.Close() })
 	pingWithLabels(t, conn)
 
-	requireTransportGoroutineLabels(t, snap, map[string]string{"subsystem": "grpc_client"})
+	requireTransportGoroutineLabels(t, snap, map[string]string{pprofutil.SharedSubsystem: "grpc_client"})
 }
 
 func TestTransportGoroutineLabels_Reconnect(t *testing.T) {
@@ -109,7 +110,7 @@ func TestTransportGoroutineLabels_Reconnect(t *testing.T) {
 
 	pingWithLabels(t, conn)
 
-	requireTransportGoroutineLabels(t, snap, map[string]string{"subsystem": "grpc_client"})
+	requireTransportGoroutineLabels(t, snap, map[string]string{pprofutil.SharedSubsystem: "grpc_client"})
 }
 
 func TestCommonGRPCClientOptions_LabelHandlerOnlyWhenEnabled(t *testing.T) {

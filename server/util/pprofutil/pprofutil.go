@@ -1,5 +1,5 @@
 // Package pprofutil provides helpers for attaching pprof labels to goroutines
-// so that CPU profiles can be sliced by request, customer, and subsystem.
+// so that CPU profiles can be sliced by request and customer.
 //
 // All helpers do nothing unless --monitoring.enable_pprof_labels is set.
 package pprofutil
@@ -12,22 +12,22 @@ import (
 )
 
 var (
-	enablePprofLabels = flag.Bool("monitoring.enable_pprof_labels", false, "If true, attach pprof labels (gRPC method, group ID, subsystem, etc.) to goroutines so CPU profiles can be sliced by them.")
+	enablePprofLabels = flag.Bool("monitoring.enable_pprof_labels", false, "If true, attach pprof labels (gRPC method, group ID, etc.) to goroutines so CPU profiles can be sliced by them.")
 	// enableTraceTasks gates runtime/trace tasks and regions.
 	enableTraceTasks = flag.Bool("monitoring.enable_trace_tasks", false, "If true, annotate requests with runtime/trace tasks so execution traces can be sliced by request.")
 )
 
 // Label keys.
 const (
-	GRPCMethod     = "grpc.method"
-	Client         = "client"
-	Origin         = "origin"
-	OriginMethod   = "origin_method"
-	InvocationID   = "invocation_id"
-	ActionMnemonic = "action_mnemonic"
-	GroupID        = "group_id"
-	Subsystem      = "subsystem"
-	TaskID         = "task_id"
+	GRPCMethod      = "grpc.method"
+	Client          = "client"
+	Origin          = "origin"
+	OriginMethod    = "origin_method"
+	InvocationID    = "invocation_id"
+	ActionMnemonic  = "action_mnemonic"
+	GroupID         = "group_id"
+	SharedSubsystem = "shared_subsystem"
+	TaskID          = "task_id"
 )
 
 // Enabled returns whether pprof labels are enabled.
@@ -91,12 +91,13 @@ func nonEmptyPairs(kv []string) []string {
 	return labels
 }
 
-// SetSubsystem replaces the current goroutine's labels (including any
-// inherited ones) with subsystem=name. Call it at the top of long-lived
-// background goroutines.
-func SetSubsystem(name string) {
+// SetSharedSubsystem replaces the current goroutine's labels (including any
+// inherited ones) with shared_subsystem=name. Call it at the top of goroutines
+// that do work shared across requests, so that work isn't charged to whichever
+// request happened to start the goroutine.
+func SetSharedSubsystem(name string) {
 	if !Enabled() {
 		return
 	}
-	pprof.SetGoroutineLabels(pprof.WithLabels(context.Background(), pprof.Labels(Subsystem, name)))
+	pprof.SetGoroutineLabels(pprof.WithLabels(context.Background(), pprof.Labels(SharedSubsystem, name)))
 }

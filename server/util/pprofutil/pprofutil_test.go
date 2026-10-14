@@ -17,14 +17,14 @@ func waitHere(reached, release chan struct{}) {
 	<-release
 }
 
-func TestSetSubsystemClearsInheritedLabels(t *testing.T) {
+func TestSetSharedSubsystemClearsInheritedLabels(t *testing.T) {
 	flags.Set(t, "monitoring.enable_pprof_labels", true)
 	reached, release := make(chan struct{}), make(chan struct{})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		pprof.Do(context.Background(), pprof.Labels(pprofutil.TaskID, "X"), func(ctx context.Context) {
-			pprofutil.SetSubsystem("s")
+			pprofutil.SetSharedSubsystem("s")
 			waitHere(reached, release)
 		})
 	}()
@@ -34,15 +34,15 @@ func TestSetSubsystemClearsInheritedLabels(t *testing.T) {
 	release <- struct{}{}
 	<-done
 
-	require.Equal(t, []map[string]string{{pprofutil.Subsystem: "s"}}, sets)
+	require.Equal(t, []map[string]string{{pprofutil.SharedSubsystem: "s"}}, sets)
 }
 
-func TestSetSubsystemDisabled(t *testing.T) {
+func TestSetSharedSubsystemDisabled(t *testing.T) {
 	reached, release := make(chan struct{}), make(chan struct{})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		pprofutil.SetSubsystem("s")
+		pprofutil.SetSharedSubsystem("s")
 		waitHere(reached, release)
 	}()
 

@@ -126,6 +126,7 @@ go_test(
         "//server/util/disk",
         "//server/util/networking",
         "//server/util/platform",
+        "//server/util/pprofutil",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
