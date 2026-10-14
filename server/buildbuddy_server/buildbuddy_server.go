@@ -1116,6 +1116,10 @@ func (s *BuildBuddyServer) getAPIKeyCreationMetadata(ctx context.Context, groupI
 	return metadata, nil
 }
 
+func (s *BuildBuddyServer) isExpired(key *tables.APIKey) bool {
+	return key.ExpiryUsec != 0 && key.ExpiryUsec <= s.env.GetClock().Now().UnixMicro()
+}
+
 func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyRequest) (*akpb.GetApiKeyResponse, error) {
 	authDB := s.env.GetAuthDB()
 	if authDB == nil {
@@ -1148,7 +1152,7 @@ func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyReq
 			ExpiryUsec:          key.ExpiryUsec,
 		},
 	}
-	if req.GetIncludeCertificate() {
+	if req.GetIncludeCertificate() && !s.isExpired(key) {
 		if !s.sslService.IsCertGenerationEnabled() {
 			return nil, status.FailedPreconditionError("SSL certificate generation is not enabled by this server")
 		}
@@ -1364,7 +1368,7 @@ func (s *BuildBuddyServer) GetUserApiKey(ctx context.Context, req *akpb.GetApiKe
 			ExpiryUsec:          key.ExpiryUsec,
 		},
 	}
-	if req.GetIncludeCertificate() {
+	if req.GetIncludeCertificate() && !s.isExpired(key) {
 		if !s.sslService.IsCertGenerationEnabled() {
 			return nil, status.FailedPreconditionError("SSL certificate generation is not enabled by this server")
 		}

@@ -236,9 +236,13 @@ func TestGroupKeyExpiration(t *testing.T) {
 	require.NotEqual(t, -1, i)
 	require.Empty(t, keys[i].Value)
 	require.Equal(t, rsp.GetApiKey().GetExpiryUsec(), keys[i].ExpiryUsec)
-	getRsp, err := env.GetBuildBuddyServer().GetApiKey(authCtx, &akpb.GetApiKeyRequest{ApiKeyId: rsp.GetApiKey().GetId()})
+	getRsp, err := env.GetBuildBuddyServer().GetApiKey(authCtx, &akpb.GetApiKeyRequest{
+		ApiKeyId:           rsp.GetApiKey().GetId(),
+		IncludeCertificate: true,
+	})
 	require.NoError(t, err)
 	require.Empty(t, getRsp.GetApiKey().GetValue())
+	require.Nil(t, getRsp.GetApiKey().GetCertificate())
 	require.Equal(t, rsp.GetApiKey().GetExpiryUsec(), getRsp.GetApiKey().GetExpiryUsec())
 
 	// Expired keys can still be deleted.
