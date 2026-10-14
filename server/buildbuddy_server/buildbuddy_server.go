@@ -1020,7 +1020,7 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	groupID := req.GetRequestContext().GetGroupId()
-	tableKeys, err := authDB.GetAPIKeys(ctx, groupID)
+	tableKeys, err := authDB.GetAPIKeys(ctx, groupID, req.GetIncludeExpired())
 	if err != nil {
 		return nil, err
 	}
@@ -1040,6 +1040,7 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 			VisibleToDevelopers: k.VisibleToDevelopers,
 			Visibility:          apiKeyVisibilities(k.Visibility),
 			CreationMetadata:    creationMetadata[k.APIKeyID],
+			ExpiryUsec:          k.ExpiryUsec,
 		})
 	}
 	return rsp, nil
@@ -1144,6 +1145,7 @@ func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyReq
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
 			Visibility:          apiKeyVisibilities(key.Visibility),
+			ExpiryUsec:          key.ExpiryUsec,
 		},
 	}
 	if req.GetIncludeCertificate() {
@@ -1190,6 +1192,7 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
 			Visibility:          apiKeyVisibilities(k.Visibility),
+			ExpiryUsec:          k.ExpiryUsec,
 		},
 	}, nil
 }
@@ -1303,7 +1306,7 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 		userID = u.GetUserID()
 	}
 
-	tableKeys, err := authDB.GetUserAPIKeys(ctx, userID, groupID)
+	tableKeys, err := authDB.GetUserAPIKeys(ctx, userID, groupID, req.GetIncludeExpired())
 	if err != nil {
 		return nil, err
 	}
@@ -1323,6 +1326,7 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 			VisibleToDevelopers: k.VisibleToDevelopers,
 			Visibility:          apiKeyVisibilities(k.Visibility),
 			CreationMetadata:    creationMetadata[k.APIKeyID],
+			ExpiryUsec:          k.ExpiryUsec,
 		})
 	}
 	return rsp, nil
@@ -1357,6 +1361,7 @@ func (s *BuildBuddyServer) GetUserApiKey(ctx context.Context, req *akpb.GetApiKe
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
 			Visibility:          apiKeyVisibilities(key.Visibility),
+			ExpiryUsec:          key.ExpiryUsec,
 		},
 	}
 	if req.GetIncludeCertificate() {
@@ -1414,6 +1419,7 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
 			Visibility:          apiKeyVisibilities(k.Visibility),
+			ExpiryUsec:          k.ExpiryUsec,
 		},
 	}, nil
 
@@ -1571,7 +1577,7 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 		if err != nil {
 			return nil, err
 		}
-		keys, err := authDB.GetUserAPIKeys(ctx, u.GetUserID(), groupID)
+		keys, err := authDB.GetUserAPIKeys(ctx, u.GetUserID(), groupID, false /*=includeExpired*/)
 		// PermissionDenied means the Group doesn't have user-owned API keys
 		// enabled; ignore.
 		if err != nil && !status.IsPermissionDeniedError(err) {
@@ -1580,7 +1586,7 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 		userKeys = keys
 	}
 	// Then list group-owned keys
-	groupKeys, err := authDB.GetAPIKeys(ctx, groupID)
+	groupKeys, err := authDB.GetAPIKeys(ctx, groupID, false /*=includeExpired*/)
 	if err != nil {
 		return nil, err
 	}

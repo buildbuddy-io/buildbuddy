@@ -418,7 +418,7 @@ type fakeAuthDB struct {
 	keys []*tables.APIKey
 }
 
-func (f *fakeAuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error) {
+func (f *fakeAuthDB) GetAPIKeys(ctx context.Context, groupID string, includeExpired bool) ([]*tables.APIKey, error) {
 	return f.keys, nil
 }
 
@@ -426,7 +426,7 @@ func (f *fakeAuthDB) GetUserOwnedKeysEnabled() bool {
 	return true
 }
 
-func (f *fakeAuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]*tables.APIKey, error) {
+func (f *fakeAuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string, includeExpired bool) ([]*tables.APIKey, error) {
 	var keys []*tables.APIKey
 	for _, k := range f.keys {
 		if k.UserID == userID {

@@ -80,7 +80,7 @@ func createUser(t *testing.T, ctx context.Context, env environment.Env, userID, 
 }
 
 func getOrgAPIKey(t *testing.T, ctx context.Context, env environment.Env, groupID string) *tables.APIKey {
-	keys, err := env.GetAuthDB().GetAPIKeys(ctx, groupID)
+	keys, err := env.GetAuthDB().GetAPIKeys(ctx, groupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	require.Len(t, keys, 1, "expected exactly one org-level API key")
 	return keys[0]
@@ -1355,7 +1355,7 @@ func TestGetAPIKeyForInternalUseOnly_PrefersCacheWritePermissions(t *testing.T) 
 		createUser(t, ctx, env, uid, "org1.io")
 		authCtx := authUserCtx(ctx, env, t, uid)
 		gid := getGroup(t, authCtx, env).GroupID
-		defaultKeys, err := adb.GetAPIKeys(authCtx, gid)
+		defaultKeys, err := adb.GetAPIKeys(authCtx, gid, false /*=includeExpired*/)
 		require.NoError(t, err)
 
 		// Create a few keys with random capabilities.
@@ -1426,7 +1426,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	require.NoError(t, err)
 
 	// US1 should be able to see the keys they just created.
-	keys, err := adb.GetAPIKeys(ctx1, groupID1)
+	keys, err := adb.GetAPIKeys(ctx1, groupID1, false /*=includeExpired*/)
 	require.NoError(t, err)
 	require.Contains(t, apiKeyValues(keys), adminOnlyKey.Value)
 	require.Contains(t, apiKeyValues(keys), developerKey.Value)
@@ -1450,14 +1450,14 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 
 	// US2 should only be able to see developer keys.
 	ctx2 := authUserCtx(ctx, env, t, "US2")
-	keys, err = adb.GetAPIKeys(ctx2, groupID1)
+	keys, err = adb.GetAPIKeys(ctx2, groupID1, false /*=includeExpired*/)
 	require.NoError(t, err)
 	require.NotContains(t, apiKeyValues(keys), adminOnlyKey.Value)
 	require.Contains(t, apiKeyValues(keys), developerKey.Value)
 
 	// US3 should not be able to see any keys in group1.
 	ctx3 := authUserCtx(ctx, env, t, "US3")
-	keys, err = adb.GetAPIKeys(ctx3, groupID1)
+	keys, err = adb.GetAPIKeys(ctx3, groupID1, false /*=includeExpired*/)
 	require.True(
 		t, status.IsPermissionDeniedError(err),
 		"expected PermissionDenied, got: %v", err)
@@ -1545,7 +1545,7 @@ func TestDeleteAPIKey(t *testing.T) {
 
 	require.NoError(t, err, "US1 should be able to delete their org API key")
 
-	keys, err := adb.GetAPIKeys(ctx1, gr1.Group.GroupID)
+	keys, err := adb.GetAPIKeys(ctx1, gr1.Group.GroupID, false /*=includeExpired*/)
 
 	require.NoError(t, err)
 	require.Empty(t, keys, "US1 group's keys should be empty after deleting")
@@ -1636,7 +1636,7 @@ func TestUserOwnedKeys_GetUpdateDeletePermissions(t *testing.T) {
 			if test.Accessor != "" {
 				accessorCtx = authUserCtx(accessorCtx, env, t, test.Accessor)
 			}
-			keys, err := adb.GetUserAPIKeys(accessorCtx, test.Owner, ownerGroup.GroupID)
+			keys, err := adb.GetUserAPIKeys(accessorCtx, test.Owner, ownerGroup.GroupID, false /*=includeExpired*/)
 			// Only the owner and group's admin should be able to view or update the API key.
 			isAuthorized := test.Owner == test.Accessor || test.Accessor == groupAdminID
 			if isAuthorized {
@@ -1755,7 +1755,7 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 	// Now that user-owned keys are disabled, attempting to list user-owned keys
 	// should also fail.
 
-	keys, err := adb.GetUserAPIKeys(ctx1, "US1", gr1.GroupID)
+	keys, err := adb.GetUserAPIKeys(ctx1, "US1", gr1.GroupID, false /*=includeExpired*/)
 
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -1968,7 +1968,7 @@ func TestUserOwnedKeys_NotReturnedByGroupLevelAPIs(t *testing.T) {
 
 	// Delete any group-level keys so that user-level keys will be the only
 	// keys associated with the org.
-	keys, err := adb.GetAPIKeys(ctx1, g.GroupID)
+	keys, err := adb.GetAPIKeys(ctx1, g.GroupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	for _, key := range keys {
 		err := adb.DeleteAPIKey(ctx1, key.APIKeyID)
@@ -1985,7 +1985,7 @@ func TestUserOwnedKeys_NotReturnedByGroupLevelAPIs(t *testing.T) {
 	require.Nil(t, key)
 	require.Truef(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
 
-	keys, err = adb.GetAPIKeys(ctx1, g.GroupID)
+	keys, err = adb.GetAPIKeys(ctx1, g.GroupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	require.Empty(t, keys)
 }
@@ -2103,7 +2103,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 			// create it for.
 			// We should be able to list the key we created if and only if
 			// we successfully created the key.
-			userKeys, err := adb.GetUserAPIKeys(authCtx, test.KeyUserID, test.KeyGroupID)
+			userKeys, err := adb.GetUserAPIKeys(authCtx, test.KeyUserID, test.KeyGroupID, false /*=includeExpired*/)
 			assert.Equal(t, test.Code.String(), gstatus.Code(err).String(), "%s", err)
 			if err == nil {
 				require.Len(t, userKeys, 1)
