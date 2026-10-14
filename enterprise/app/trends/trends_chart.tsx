@@ -210,10 +210,7 @@ function TrendsChartTooltip({
       });
   } else {
     renderedPayloads = dataSeries.map((ds, index) => {
-      if (index >= payload.length) {
-        return <></>;
-      }
-      const data = payload[index];
+      const data = payload.find((entry) => entry.name === ds.name);
       if (data === undefined) {
         return <></>;
       }
