@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net"
 	"regexp"
+	"runtime/pprof"
 	"slices"
 	"strconv"
 	"strings"
@@ -34,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -1888,7 +1890,13 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 
 func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error {
 	handle := newExecutorHandle(s.env, s, s.requireExecutorAuthorization, stream)
-	return handle.Serve(stream.Context())
+	var err error
+	// The stream carries reservations for many customers' tasks, so attribute
+	// its work to the scheduler rather than to any one group.
+	pprofutil.Do(stream.Context(), func(ctx context.Context) {
+		err = handle.Serve(ctx)
+	}, pprofutil.Subsystem, "scheduler.executor_stream")
+	return err
 }
 
 func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executorHandle, nodePoolKey nodePoolKey) (int, error) {
@@ -2342,8 +2350,13 @@ type leaseMessage struct {
 	err error
 }
 
+// leaseTaskRelabeledHook is called by LeaseTask with the relabeled context.
+// Only set in tests.
+var leaseTaskRelabeledHook func(ctx context.Context)
+
 func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error {
 	ctx := stream.Context()
+	relabeled := false
 	lastCheckin := time.Now()
 	claimed := false
 	taskID := ""
@@ -2448,6 +2461,18 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			}
 			if err := s.checkTaskAccess(ctx, task, executorID); err != nil {
 				return err
+			}
+			// The stream is authenticated as the executor, so charge the
+			// rest of the stream's work to the task's group instead.
+			if pprofutil.Enabled() && !relabeled {
+				relabeled = true
+				labelCtx := pprof.WithLabels(ctx, pprof.Labels(pprofutil.GroupID, task.metadata.GetTaskGroupId()))
+				pprof.SetGoroutineLabels(labelCtx)
+				// gRPC workers are pooled, so restore the request's labels.
+				defer pprof.SetGoroutineLabels(stream.Context())
+				if leaseTaskRelabeledHook != nil {
+					leaseTaskRelabeledHook(labelCtx)
+				}
 			}
 			leaseID, err = s.claimTask(ctx, taskID, req.GetReconnectToken(), req.GetSupportsReconnect())
 			if err != nil {

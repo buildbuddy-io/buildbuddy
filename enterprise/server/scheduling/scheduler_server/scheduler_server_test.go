@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime/pprof"
 	"slices"
 	"sort"
 	"sync"
@@ -34,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -2756,4 +2758,50 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 	s.livenessMu.Lock()
 	defer s.livenessMu.Unlock()
 	require.Empty(t, s.livenessWatches)
+}
+
+func TestLeaseTask_PprofLabelsUseTaskGroup(t *testing.T) {
+	flags.Set(t, "monitoring.enable_pprof_labels", true)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	var mu sync.Mutex
+	var gotGroupID string
+	var called bool
+	leaseTaskRelabeledHook = func(ctx context.Context) {
+		mu.Lock()
+		defer mu.Unlock()
+		called = true
+		gotGroupID, _ = pprof.Label(ctx, "group_id")
+	}
+	t.Cleanup(func() { leaseTaskRelabeledHook = nil })
+
+	// The executor authenticates as user2, but the task belongs to group1.
+	executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
+	executor.Register()
+	taskID := scheduleTaskForGroup(ctx, t, env, "group1")
+	executor.WaitForTask(taskID)
+	lease, err := executor.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.NoError(t, err)
+	require.NoError(t, lease.Finalize())
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.True(t, called)
+	require.Equal(t, "group1", gotGroupID)
+}
+
+func TestRegisterAndStreamWork_PprofSubsystemLabel(t *testing.T) {
+	flags.Set(t, "monitoring.enable_pprof_labels", true)
+	env, _ := getEnv(t, &schedulerOpts{}, "user1")
+	executor := newFakeExecutor(authenticatedContext(t, env, "user1"), t, env.GetSchedulerClient())
+	executor.Register()
+
+	require.Eventually(t, func() bool {
+		for _, labels := range pprofutiltest.GoroutineLabels(t, "executorHandle).Serve") {
+			if labels["subsystem"] == "scheduler.executor_stream" {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 50*time.Millisecond)
 }
