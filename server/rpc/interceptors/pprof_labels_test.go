@@ -471,6 +471,9 @@ func BenchmarkInstrumentedServerPprofLabels(b *testing.B) {
 // trace.
 type traceInfo struct {
 	begins, ends int
+	// regionBegins and regionEnds count regions of the same type inside tasks
+	// of the type.
+	regionBegins, regionEnds int
 	// logs maps log category to messages, for logs attached to tasks of the type.
 	logs map[string][]string
 }
@@ -495,6 +498,14 @@ func readTraceTasks(t *testing.T, buf *bytes.Buffer, taskType string) traceInfo 
 		case exptrace.EventTaskEnd:
 			if ev.Task().Type == taskType {
 				info.ends++
+			}
+		case exptrace.EventRegionBegin:
+			if r := ev.Region(); ids[r.Task] && r.Type == taskType {
+				info.regionBegins++
+			}
+		case exptrace.EventRegionEnd:
+			if r := ev.Region(); ids[r.Task] && r.Type == taskType {
+				info.regionEnds++
 			}
 		case exptrace.EventLog:
 			if l := ev.Log(); ids[l.Task] {
@@ -531,6 +542,8 @@ func TestTraceTaskPerRequest(t *testing.T) {
 
 	require.Equal(t, 1, info.begins)
 	require.Equal(t, 1, info.ends)
+	require.Equal(t, 1, info.regionBegins)
+	require.Equal(t, 1, info.regionEnds)
 	require.Equal(t, []string{"GR1"}, info.logs[pprofutil.GroupID])
 }
 
@@ -542,6 +555,8 @@ func TestTraceTaskWithLabelsEnabled(t *testing.T) {
 
 	require.Equal(t, 1, info.begins)
 	require.Equal(t, 1, info.ends)
+	require.Equal(t, 1, info.regionBegins)
+	require.Equal(t, 1, info.regionEnds)
 	require.Equal(t, []string{"GR1"}, info.logs[pprofutil.GroupID])
 }
 
@@ -554,5 +569,7 @@ func TestNoTraceTaskWhenFlagOff(t *testing.T) {
 
 	require.Equal(t, 0, info.begins)
 	require.Equal(t, 0, info.ends)
+	require.Equal(t, 0, info.regionBegins)
+	require.Equal(t, 0, info.regionEnds)
 	require.Empty(t, info.logs)
 }

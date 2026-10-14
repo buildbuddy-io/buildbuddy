@@ -64,8 +64,15 @@ func originMethodLabelStreamServerInterceptor() grpc.StreamServerInterceptor {
 
 type traceTaskKey struct{}
 
+// requestTrace is the runtime/trace task and region covering one RPC.
+type requestTrace struct {
+	task   *trace.Task
+	region *trace.Region
+}
+
 // ProfilingStatsHandler labels the goroutine serving each RPC with pprof
-// labels (if enabled) and wraps the RPC in a runtime/trace task (if enabled).
+// labels (if enabled) and wraps the RPC in a runtime/trace task and region (if
+// enabled).
 // It is a stats handler rather than an interceptor because TagRPC runs
 // on the request's goroutine before unary request decoding, and the End event
 // runs after response encoding, so that work is labeled too.
@@ -75,7 +82,12 @@ func (ProfilingStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo)
 	if pprofutil.TraceTasksEnabled() {
 		var task *trace.Task
 		ctx, task = trace.NewTask(ctx, info.FullMethodName)
-		ctx = context.WithValue(ctx, traceTaskKey{}, task)
+		// go tool trace breaks down running, waiting and blocked time only per
+		// region, and attributes goroutines to the task only if they're started
+		// inside a region. TagRPC and End run on the same goroutine, so the
+		// region can span the whole RPC.
+		region := trace.StartRegion(ctx, info.FullMethodName)
+		ctx = context.WithValue(ctx, traceTaskKey{}, &requestTrace{task, region})
 	}
 	if !pprofutil.Enabled() {
 		return ctx
@@ -98,8 +110,9 @@ func (ProfilingStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 	if _, ok := s.(*stats.End); !ok {
 		return
 	}
-	if task, ok := ctx.Value(traceTaskKey{}).(*trace.Task); ok {
-		task.End()
+	if rt, ok := ctx.Value(traceTaskKey{}).(*requestTrace); ok {
+		rt.region.End()
+		rt.task.End()
 	}
 	// Don't leave this request's labels on a pooled worker goroutine.
 	pprofutil.RestoreGoroutineLabels(context.Background())
