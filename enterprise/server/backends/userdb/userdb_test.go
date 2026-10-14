@@ -1985,6 +1985,19 @@ func TestGetAPIKeyForInternalUseOnly_PrefersAuthenticatedKey(t *testing.T) {
 	key, err = adb.GetAPIKeyForInternalUseOnly(userKeyCtx, g2.GroupID)
 	require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
 	require.Nil(t, key)
+
+	// Authenticate with an impersonation key for g2, created by US1 as an
+	// admin of the server admin group. The impersonation key is never
+	// returned, so a group-level key owned by g2 is returned instead.
+	flags.Set(t, "auth.admin_group_id", g1.GroupID)
+	impersonationKey, err := adb.CreateImpersonationAPIKey(ctx1, g2.GroupID)
+	require.NoError(t, err)
+	impersonationKeyCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, impersonationKey.Value)
+	key, err = adb.GetAPIKeyForInternalUseOnly(impersonationKeyCtx, g2.GroupID)
+	require.NoError(t, err)
+	require.NotEqual(t, impersonationKey.APIKeyID, key.APIKeyID)
+	require.Equal(t, g2.GroupID, key.GroupID)
+	require.False(t, key.Impersonation)
 }
 
 func TestUserOwnedKeys_NotReturnedByGroupLevelAPIs(t *testing.T) {

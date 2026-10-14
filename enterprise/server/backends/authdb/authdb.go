@@ -1051,16 +1051,24 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	return key, nil
 }
 
-// GetAPIKeyForInternalUseOnly returns an API key for the group. If the caller
-// authenticated with an API key, it returns that key, so that work done on the
-// caller's behalf is limited to that key's capabilities and is attributed to
-// its owner. If that key is owned by a different group, it returns
-// PermissionDenied. If the caller did not authenticate with an API key, it
-// returns any group-level API key, with preference for keys with greater cache
-// capabilities. It is only to be used in situations where the user has a
-// pre-authorized grant to access resources on behalf of the org. The returned
-// API key must only be used to access internal resources and must not be
-// returned to the caller.
+// GetAPIKeyForInternalUseOnly returns an API key for the group.
+//
+// If the caller authenticated with an API key, it returns that key, so that
+// work done on the caller's behalf is limited to that key's capabilities and
+// is attributed to its owner. If that key is owned by a different group, it
+// returns PermissionDenied.
+//
+// Callers authenticated with a web UI session or an impersonation key, and
+// unauthenticated callers, instead get the group-level API key with the
+// greatest cache capabilities, regardless of the caller's own permissions.
+// Impersonation keys are never returned, because callers pass the returned key
+// to runners that execute the group's code, and the server treats
+// impersonation keys as server admin credentials.
+//
+// It is only to be used in situations where the user has a pre-authorized
+// grant to access resources on behalf of the org. The returned API key must
+// only be used to access internal resources and must not be returned to the
+// caller.
 func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
@@ -1070,7 +1078,7 @@ func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string
 		if !authutil.IsAnonymousUserError(err) {
 			return nil, err
 		}
-	} else if apiKeyInfo := u.GetAPIKeyInfo(); apiKeyInfo.ID != "" {
+	} else if apiKeyInfo := u.GetAPIKeyInfo(); apiKeyInfo.ID != "" && !u.IsImpersonating() {
 		// A parent org's API key can act on its child groups. We return an
 		// error instead of falling back to a key owned by the child group,
 		// because that key may have capabilities that the caller's key does
