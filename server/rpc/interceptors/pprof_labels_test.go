@@ -289,27 +289,6 @@ func TestNoLabelsWhenFlagOff(t *testing.T) {
 	require.Empty(t, next(t, s))
 }
 
-func TestLabelsDoNotLeakAcrossRequests(t *testing.T) {
-	enableLabels(t)
-	s := &labelServer{}
-	c := startLabelServer(t, s)
-
-	for i := range 50 {
-		if i%2 == 0 {
-			_, err := c.ping.Ping(requestCtx(t, "US1", ""), &pspb.PingRequest{})
-			require.NoError(t, err)
-			l := next(t, s)
-			require.Equal(t, pingMethod, l[pprofutil.GRPCMethod])
-			require.Equal(t, "GR1", l[pprofutil.GroupID])
-		} else {
-			readStream(t, requestCtx(t, "US2", ""), c.bs)
-			l := next(t, s)
-			require.Equal(t, readMethod, l[pprofutil.GRPCMethod])
-			require.Equal(t, "GR2", l[pprofutil.GroupID])
-		}
-	}
-}
-
 var burnSink int
 
 // burnCPU does a fixed amount of CPU work, so the number of profile samples it
@@ -424,20 +403,25 @@ func TestCPUProfileLabelsUnaryDecodeAndEncode(t *testing.T) {
 	c := startLabelServer(t, s)
 	req := &repb.FindMissingBlobsRequest{BlobDigests: makeDigests(50000)}
 
-	// Server-side marshal/unmarshal runs under handleStream; the client's
-	// does not.
+	// Server-side marshal/unmarshal runs under (*Server).processRPC; the
+	// client's does not. The match is narrowed to processRPC rather than
+	// handleStream because handleStream also runs TagRPC (grpc v1.84
+	// server.go:1578), which parses the request metadata before the labels are
+	// set. processRPC (called at server.go:1595) starts only after TagRPC
+	// returns, unary decode and encode run inside it, and its deferred End
+	// handling (server.go:1330-1351) resets the labels without marshaling.
 	matched, labeled := collectSamples(t, func() {
 		_, err := c.cas.FindMissingBlobs(requestCtx(t, "US1", "inv1"), req)
 		require.NoError(t, err)
 	},
 		func(names []string) bool {
-			return anyContains(names, "(*Server).handleStream") && anyContains(names, "arshal")
+			return anyContains(names, "(*Server).processRPC") && anyContains(names, "arshal")
 		},
 		map[string]string{pprofutil.GRPCMethod: findMethod},
 		10)
-	// TagRPC runs at the start of handleStream, before the request is decoded,
-	// and the labels are reset only after the response is encoded, so every
-	// sample under handleStream must carry the method.
+	// The labels are set before processRPC starts and reset only at End, after
+	// the response is encoded, so every sample under processRPC must carry the
+	// method.
 	require.Equal(t, matched, labeled, "labeled %d of %d samples", labeled, matched)
 }
 

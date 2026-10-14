@@ -230,14 +230,7 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 	if *rpcutil.OTELGRPCMessageEventsEnabled {
 		statsHandler = rpcutil.WithTracingMessageEvents(statsHandler)
 	}
-	var opts []grpc.ServerOption
-	if pprofutil.Enabled() || pprofutil.TraceTasksEnabled() {
-		// Registered first so the other stats handlers' TagRPC and InHeader
-		// work is labeled and covered by the trace task too. End reaches this
-		// handler first, so work in the other handlers' End is not labeled.
-		opts = append(opts, grpc.StatsHandler(interceptors.ProfilingStatsHandler{}))
-	}
-	opts = append(opts,
+	opts := []grpc.ServerOption{
 		grpc.StatsHandler(statsHandler),
 		rpcutil.ServerSizeMetricsOption(),
 		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
@@ -248,9 +241,15 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		grpc.UnaryInterceptor(interceptors.TracedUnaryServerInterceptor("grpc_server.MetricsInterceptor", Metrics().UnaryServerInterceptor())),
 		experimental.BufferPool(mem.DefaultBufferPool()),
 		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
-		grpc.NumStreamWorkers(uint32(runtime.GOMAXPROCS(0))*workerMultiplier),
+		grpc.NumStreamWorkers(uint32(runtime.GOMAXPROCS(0)) * workerMultiplier),
 		KeepaliveEnforcementPolicy(),
-	)
+	}
+	if pprofutil.Enabled() || pprofutil.TraceTasksEnabled() {
+		// Registered first so the other stats handlers' TagRPC and InHeader
+		// work is labeled and covered by the trace task too. End reaches this
+		// handler first, so work in the other handlers' End is not labeled.
+		opts = append([]grpc.ServerOption{grpc.StatsHandler(interceptors.ProfilingStatsHandler{})}, opts...)
+	}
 	for _, h := range config.ExtraStatsHandlers {
 		opts = append(opts, grpc.StatsHandler(h))
 	}

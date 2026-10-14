@@ -100,9 +100,10 @@ func TestTransportGoroutineLabels_Reconnect(t *testing.T) {
 	// Drop the connection and wait for the client conn to go idle, so that the
 	// next RPC reconnects on behalf of a labeled goroutine.
 	lis.closeConns()
-	ctx := t.Context()
+	ctx, cancel := context.WithTimeout(t.Context(), testpprof.WaitTimeout)
+	defer cancel()
 	for conn.GetState() != connectivity.Idle {
-		require.True(t, conn.WaitForStateChange(ctx, conn.GetState()))
+		require.True(t, conn.WaitForStateChange(ctx, conn.GetState()), "timed out waiting for the client conn to go idle")
 	}
 	snap := testpprof.TakeSnapshot(t)
 

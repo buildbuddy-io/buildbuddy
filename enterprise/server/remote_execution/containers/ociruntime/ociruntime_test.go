@@ -1728,6 +1728,11 @@ func TestImageStorePullPprofLabels(t *testing.T) {
 				},
 			})
 			image := reg.Push(t, img, "test-pprof-labels:latest", nil)
+			// Registered after the registry so it runs first: the registry can't
+			// shut down while the handler is blocked.
+			var releaseOnce sync.Once
+			releaseHandler := func() { releaseOnce.Do(func() { close(release) }) }
+			t.Cleanup(releaseHandler)
 
 			store := newImageStoreForTest(t, testfs.MakeTempDir(t))
 			before := testpprof.TakeSnapshot(t)
@@ -1748,7 +1753,7 @@ func TestImageStorePullPprofLabels(t *testing.T) {
 			for _, l := range labels {
 				require.Equal(t, map[string]string{"subsystem": tc.wantSubsystem}, l)
 			}
-			close(release)
+			releaseHandler()
 			<-done
 		})
 	}

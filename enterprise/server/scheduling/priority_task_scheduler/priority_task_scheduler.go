@@ -998,45 +998,43 @@ func (q *PriorityTaskScheduler) handleTask() {
 		}()
 
 		// Label before leasing so the lease keepalive goroutine inherits the
-		// labels.
-		groupID := ""
-		if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
-			groupID = u.GetGroupID()
+		// labels. This goroutine is dedicated to the task, so nothing needs
+		// restoring.
+		if pprofutil.Enabled() {
+			groupID := ""
+			if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
+				groupID = u.GetGroupID()
+			}
+			ctx = pprofutil.SetGoroutineLabels(ctx, pprofutil.TaskID, reservation.GetTaskId(), pprofutil.GroupID, groupID)
 		}
-		pprofutil.Do(ctx, func(ctx context.Context) {
-			q.leaseAndRunTask(ctx, reservation)
-		}, pprofutil.TaskID, reservation.GetTaskId(), pprofutil.GroupID, groupID)
-	})
-}
 
-func (q *PriorityTaskScheduler) leaseAndRunTask(ctx context.Context, reservation *queuedTask) {
-	lease, err := q.taskLeaser.Lease(ctx, reservation.GetTaskId())
-	if err != nil {
-		// NotFound means the task is already claimed.
-		if status.IsNotFoundError(err) {
-			log.CtxDebugf(ctx, "Could not claim task %q: %s", reservation.GetTaskId(), err)
-		} else {
-			log.CtxWarningf(ctx, "Error leasing task %q: %s", reservation.GetTaskId(), err)
+		lease, err := q.taskLeaser.Lease(ctx, reservation.GetTaskId())
+		if err != nil {
+			// NotFound means the task is already claimed.
+			if status.IsNotFoundError(err) {
+				log.CtxDebugf(ctx, "Could not claim task %q: %s", reservation.GetTaskId(), err)
+			} else {
+				log.CtxWarningf(ctx, "Error leasing task %q: %s", reservation.GetTaskId(), err)
+			}
+			return
 		}
-		return
-	}
-	ctx = lease.Context()
+		ctx = lease.Context()
+		ctx = pprofutil.SetGoroutineLabels(ctx, pprofutil.InvocationID, lease.Task().GetInvocationId(), pprofutil.ActionMnemonic, lease.Task().GetRequestMetadata().GetActionMnemonic())
 
-	if iid := lease.Task().GetInvocationId(); iid != "" {
-		ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
-	}
-	scheduledTask := &repb.ScheduledTask{
-		ExecutionTask:         lease.Task(),
-		SchedulingMetadata:    reservation.GetSchedulingMetadata(),
-		WorkerQueuedTimestamp: timestamppb.New(reservation.WorkerQueuedTimestamp),
-	}
-	pprofutil.Do(ctx, func(ctx context.Context) {
+		if iid := lease.Task().GetInvocationId(); iid != "" {
+			ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
+		}
+		scheduledTask := &repb.ScheduledTask{
+			ExecutionTask:         lease.Task(),
+			SchedulingMetadata:    reservation.GetSchedulingMetadata(),
+			WorkerQueuedTimestamp: timestamppb.New(reservation.WorkerQueuedTimestamp),
+		}
 		retry, err := q.runTask(ctx, scheduledTask)
 		if err != nil {
 			log.CtxErrorf(ctx, "Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
 		}
 		lease.Close(ctx, err, retry)
-	}, pprofutil.InvocationID, lease.Task().GetInvocationId(), pprofutil.ActionMnemonic, lease.Task().GetRequestMetadata().GetActionMnemonic())
+	})
 }
 
 // signalQueue wakes up the scheduling loop, waiting for room in the signal

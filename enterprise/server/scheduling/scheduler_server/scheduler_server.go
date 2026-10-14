@@ -2354,11 +2354,6 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	// TODO(vadim): remove after executor ID in lease request is rolled out
 	executorID := peerAddress(ctx)
 
-	// gRPC workers are pooled, so restore the request's labels when we return.
-	// This is deferred first so it runs last, after the re-enqueue below, which
-	// is then charged to the task's group.
-	defer pprofutil.RestoreGoroutineLabels(stream.Context())
-
 	// If we've exited our event loop and the task is still claimed, then
 	// the worker did not finish properly and we should re-enqueue it.
 	defer func() {
