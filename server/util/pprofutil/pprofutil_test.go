@@ -17,7 +17,6 @@ func waitHere(reached, release chan struct{}) {
 	<-release
 }
 
-
 func TestSetSubsystemClearsInheritedLabels(t *testing.T) {
 	flags.Set(t, "monitoring.enable_pprof_labels", true)
 	reached, release := make(chan struct{}), make(chan struct{})

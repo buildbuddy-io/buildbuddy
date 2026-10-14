@@ -8,6 +8,7 @@ import (
 	"hash/crc32"
 	"io"
 	"io/fs"
+	"maps"
 	"math"
 	"math/big"
 	"os"
@@ -43,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -4674,4 +4676,53 @@ func TestWriteReference(t *testing.T) {
 		require.Error(t, err)
 		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
 	})
+}
+
+func TestBackgroundGoroutineSubsystemLabels(t *testing.T) {
+	// Maps a substring of a background goroutine's stack to the subsystem
+	// label it should carry.
+	expected := map[string]string{
+		"processAccessTimeUpdates":            "pebble_cache.atime",
+		"(*partitionEvictor).run":             "pebble_cache.evictor",
+		"startSampleGenerator":                "pebble_cache.eviction_samples",
+		"(*partitionEvictor).processEviction": "pebble_cache.eviction",
+		"periodicFlushPartitionMetadata":      "pebble_cache.flush_partition_metadata",
+		"processSizeUpdates":                  "pebble_cache.size_updates",
+		"backgroundRepair+":                   "pebble_cache.repair",
+		"refreshMetrics":                      "pebble_cache.metrics",
+		"watchPresenceCacheSize":              "pebble_cache.presence_watch",
+	}
+
+	for _, enabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
+			flags.Set(t, "monitoring.enable_pprof_labels", enabled)
+			flags.Set(t, "cache.pebble.scan_for_missing_files", true)
+			te := testenv.GetTestEnv(t)
+			pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+				RootDirectory: testfs.MakeTempDir(t),
+				MaxSizeBytes:  1_000_000_000,
+			})
+			require.NoError(t, err)
+			require.NoError(t, pc.Start())
+			t.Cleanup(func() { pc.Stop() })
+
+			for fn, subsystem := range expected {
+				// Goroutines from other tests in this process may still be
+				// running, so look for a matching goroutine rather than
+				// requiring all of them to match.
+				want := map[string]string{}
+				if enabled {
+					want["subsystem"] = subsystem
+				}
+				require.Eventually(t, func() bool {
+					for _, labels := range pprofutiltest.GoroutineLabels(t, fn) {
+						if maps.Equal(labels, want) {
+							return true
+						}
+					}
+					return false
+				}, 10*time.Second, 10*time.Millisecond, "no goroutine for %q with labels %v", fn, want)
+			}
+		})
+	}
 }

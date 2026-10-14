@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"runtime"
 	"slices"
 	"sync"
@@ -29,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil/pprofutiltest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -5010,4 +5012,44 @@ func TestFindMissing_Quorum_IgnoresNonReplicaCopies(t *testing.T) {
 	caches[nonReplica].mu.Lock()
 	require.Zero(t, caches[nonReplica].lookups[rn.GetDigest().GetHash()])
 	caches[nonReplica].mu.Unlock()
+}
+
+func TestBackgroundGoroutineSubsystemLabels(t *testing.T) {
+	expected := map[string]string{
+		"heartbeatPeers":                "distributed.heartbeat",
+		"watchLookasideRightsizeConfig": "distributed.lookaside_rightsize",
+	}
+	for _, enabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
+			flags.Set(t, "monitoring.enable_pprof_labels", enabled)
+			env, _, _ := getEnvAuthAndCtx(t)
+			fp, err := experiments.NewFlagProvider("")
+			require.NoError(t, err)
+			env.SetExperimentFlagProvider(fp)
+			addr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+			startNewDCache(t, env, Options{
+				ListenAddr:        addr,
+				ReplicationFactor: 1,
+				Nodes:             []string{addr},
+			}, newMemoryCache(t, 1000000))
+
+			for fn, subsystem := range expected {
+				// Goroutines from other tests in this process may still be
+				// running, so look for a matching goroutine rather than
+				// requiring all of them to match.
+				want := map[string]string{}
+				if enabled {
+					want["subsystem"] = subsystem
+				}
+				require.Eventually(t, func() bool {
+					for _, labels := range pprofutiltest.GoroutineLabels(t, fn) {
+						if maps.Equal(labels, want) {
+							return true
+						}
+					}
+					return false
+				}, 10*time.Second, 10*time.Millisecond, "no goroutine for %q with labels %v", fn, want)
+			}
+		})
+	}
 }
