@@ -6,10 +6,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"maps"
 	"runtime/pprof"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -77,10 +75,7 @@ func TestStart_PprofLabels(t *testing.T) {
 			if enabled {
 				want["subsystem"] = "executor.persistent_worker"
 			}
-			require.Eventually(t, func() bool {
-				labels := testpprof.GoroutineLabels(t, "persistentworker.Start.func")
-				return len(labels) == 1 && maps.Equal(labels[0], want)
-			}, 5*time.Second, 10*time.Millisecond)
+			testpprof.RequireGoroutineLabels(t, "persistentworker.Start.func", want)
 		})
 	}
 }

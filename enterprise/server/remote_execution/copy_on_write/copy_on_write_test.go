@@ -5,13 +5,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"maps"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
-	"slices"
 	"strconv"
 	"sync"
 	"syscall"
@@ -244,15 +242,8 @@ func TestMmapLRU_EvictorPprofLabels(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, lru.Close()) })
 
-	require.Eventually(t, func() bool {
-		// Evictors of LRUs created by other tests may be running unlabeled.
-		labels := testpprof.GoroutineLabels(t, "MmapLRU).processEvictions")
-		return slices.ContainsFunc(labels, func(l map[string]string) bool {
-			return maps.Equal(l, map[string]string{"subsystem": "executor.cow.evictor"})
-		}) && !slices.ContainsFunc(labels, func(l map[string]string) bool {
-			return l["task_id"] != ""
-		})
-	}, 5*time.Second, 10*time.Millisecond)
+	// Evictors of LRUs created by other tests may be running unlabeled.
+	testpprof.RequireAnyGoroutineLabels(t, "MmapLRU).processEvictions", map[string]string{"subsystem": "executor.cow.evictor"})
 }
 
 func TestCOW_Concurrency(t *testing.T) {

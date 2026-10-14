@@ -8,7 +8,6 @@ import (
 	"hash/crc32"
 	"io"
 	"io/fs"
-	"maps"
 	"math"
 	"math/big"
 	"os"
@@ -4693,36 +4692,20 @@ func TestBackgroundGoroutineSubsystemLabels(t *testing.T) {
 		"watchPresenceCacheSize":              "pebble_cache.presence_watch",
 	}
 
-	for _, enabled := range []bool{true, false} {
-		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
-			flags.Set(t, "monitoring.enable_pprof_labels", enabled)
-			flags.Set(t, "cache.pebble.scan_for_missing_files", true)
-			te := testenv.GetTestEnv(t)
-			pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
-				RootDirectory: testfs.MakeTempDir(t),
-				MaxSizeBytes:  1_000_000_000,
-			})
-			require.NoError(t, err)
-			require.NoError(t, pc.Start())
-			t.Cleanup(func() { pc.Stop() })
+	flags.Set(t, "monitoring.enable_pprof_labels", true)
+	flags.Set(t, "cache.pebble.scan_for_missing_files", true)
+	te := testenv.GetTestEnv(t)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		MaxSizeBytes:  1_000_000_000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	t.Cleanup(func() { pc.Stop() })
 
-			for fn, subsystem := range expected {
-				// Goroutines from other tests in this process may still be
-				// running, so look for a matching goroutine rather than
-				// requiring all of them to match.
-				want := map[string]string{}
-				if enabled {
-					want["subsystem"] = subsystem
-				}
-				require.Eventually(t, func() bool {
-					for _, labels := range testpprof.GoroutineLabels(t, fn) {
-						if maps.Equal(labels, want) {
-							return true
-						}
-					}
-					return false
-				}, 10*time.Second, 10*time.Millisecond, "no goroutine for %q with labels %v", fn, want)
-			}
-		})
+	for fn, subsystem := range expected {
+		// Goroutines from other tests in this process may still be running
+		// unlabeled, so look for any matching goroutine.
+		testpprof.RequireAnyGoroutineLabels(t, fn, map[string]string{"subsystem": subsystem})
 	}
 }

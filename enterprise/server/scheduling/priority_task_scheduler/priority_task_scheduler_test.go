@@ -1404,20 +1404,20 @@ func TestPriorityTaskScheduler_PprofLabels(t *testing.T) {
 			// The fake task blocks until completed, so the keepalive goroutine
 			// is still running.
 			execution := <-executor.StartedExecutions
-			var keepaliveLabels []map[string]string
-			require.Eventually(t, func() bool {
-				keepaliveLabels = testpprof.GoroutineLabels(t, "FakeLease).keepLease")
-				return len(keepaliveLabels) > 0
-			}, 10*time.Second, 10*time.Millisecond)
+			wantKeepalive := map[string]string{}
+			if enabled {
+				wantKeepalive = map[string]string{
+					pprofutil.TaskID:  taskID,
+					pprofutil.GroupID: "GR123",
+				}
+			}
+			testpprof.RequireGoroutineLabels(t, "FakeLease).keepLease", wantKeepalive)
 			execution.Complete()
 			lease := <-leaser.GrantedLeases
 			lease.WaitClosed()
 
 			if !enabled {
 				assert.Empty(t, execution.Labels)
-				for _, l := range keepaliveLabels {
-					assert.Empty(t, l)
-				}
 				return
 			}
 			assert.Equal(t, map[string]string{
@@ -1426,11 +1426,6 @@ func TestPriorityTaskScheduler_PprofLabels(t *testing.T) {
 				pprofutil.InvocationID:   "inv1",
 				pprofutil.ActionMnemonic: "CppCompile",
 			}, execution.Labels)
-			require.Len(t, keepaliveLabels, 1)
-			assert.Equal(t, map[string]string{
-				pprofutil.TaskID:  taskID,
-				pprofutil.GroupID: "GR123",
-			}, keepaliveLabels[0])
 		})
 	}
 }

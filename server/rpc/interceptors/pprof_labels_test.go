@@ -320,6 +320,20 @@ func sampleStats(p *profile.Profile, match func(funcNames []string) bool, want m
 	return matched, labeled
 }
 
+// collectSamples repeatedly profiles f until at least minMatched samples
+// satisfy match, and returns the total matched and labeled counts. It fails
+// the test if that takes longer than a minute.
+func collectSamples(t *testing.T, f func(), match func(funcNames []string) bool, want map[string]string, minMatched int) (matched, labeled int) {
+	deadline := time.Now().Add(time.Minute)
+	for matched < minMatched {
+		require.True(t, time.Now().Before(deadline), "only %d of %d samples after a minute", matched, minMatched)
+		m, l := sampleStats(profileCPU(t, f), match, want)
+		matched += m
+		labeled += l
+	}
+	return matched, labeled
+}
+
 func anyContains(names []string, substr string) bool {
 	for _, n := range names {
 		if strings.Contains(n, substr) {
@@ -337,21 +351,19 @@ func TestCPUProfileLabelsHandlerWork(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			burnCPU(time.Second)
+			burnCPU(200 * time.Millisecond)
 		}()
 		<-done
 	}
 	c := startLabelServer(t, s)
 
-	p := profileCPU(t, func() {
+	matched, labeled := collectSamples(t, func() {
 		_, err := c.ping.Ping(requestCtx(t, "US1", "inv1"), &pspb.PingRequest{})
 		require.NoError(t, err)
-	})
-
-	matched, labeled := sampleStats(p,
+	},
 		func(names []string) bool { return anyContains(names, ".burnCPU") },
-		map[string]string{pprofutil.GRPCMethod: pingMethod, pprofutil.GroupID: "GR1"})
-	require.GreaterOrEqual(t, matched, 3, "too few burn samples")
+		map[string]string{pprofutil.GRPCMethod: pingMethod, pprofutil.GroupID: "GR1"},
+		20)
 	require.GreaterOrEqual(t, float64(labeled)/float64(matched), 0.9, "labeled %d of %d samples", labeled, matched)
 }
 
@@ -361,22 +373,20 @@ func TestCPUProfileLabelsUnaryDecodeAndEncode(t *testing.T) {
 	c := startLabelServer(t, s)
 	req := &repb.FindMissingBlobsRequest{BlobDigests: makeDigests(50000)}
 
-	p := profileCPU(t, func() {
-		end := time.Now().Add(time.Second)
+	// Server-side marshal/unmarshal runs under handleStream; the client's
+	// does not.
+	matched, labeled := collectSamples(t, func() {
+		end := time.Now().Add(200 * time.Millisecond)
 		for time.Now().Before(end) {
 			_, err := c.cas.FindMissingBlobs(requestCtx(t, "US1", "inv1"), req)
 			require.NoError(t, err)
 		}
-	})
-
-	// Server-side marshal/unmarshal runs under handleStream; the client's
-	// does not.
-	matched, labeled := sampleStats(p,
+	},
 		func(names []string) bool {
 			return anyContains(names, "(*Server).handleStream") && anyContains(names, "arshal")
 		},
-		map[string]string{pprofutil.GRPCMethod: findMethod})
-	require.GreaterOrEqual(t, matched, 5, "too few encode/decode samples")
+		map[string]string{pprofutil.GRPCMethod: findMethod},
+		20)
 	require.GreaterOrEqual(t, float64(labeled)/float64(matched), 0.8, "labeled %d of %d samples", labeled, matched)
 }
 
@@ -391,18 +401,7 @@ func TestIdleWorkersHaveNoLabels(t *testing.T) {
 		readStream(t, requestCtx(t, "US1", "inv1"), c.bs)
 	}
 
-	require.Eventually(t, func() bool {
-		sets := testpprof.GoroutineLabels(t, "serverWorker")
-		if len(sets) == 0 {
-			return false
-		}
-		for _, labels := range sets {
-			if _, ok := labels[pprofutil.GRPCMethod]; ok {
-				return false
-			}
-		}
-		return true
-	}, 5*time.Second, 10*time.Millisecond)
+	testpprof.RequireGoroutineLabels(t, "serverWorker", map[string]string{})
 }
 
 func BenchmarkInstrumentedServerPprofLabels(b *testing.B) {
@@ -467,8 +466,10 @@ func tracePing(t *testing.T) traceInfo {
 	var buf bytes.Buffer
 	require.NoError(t, rtrace.Start(&buf))
 	_, err := c.ping.Ping(requestCtx(t, "US1", ""), &pspb.PingRequest{})
-	// Let the End stats event, which runs after the response is sent, finish.
-	time.Sleep(200 * time.Millisecond)
+	// The End stats event runs in processUnaryRPC after the response is sent.
+	require.Eventually(t, func() bool {
+		return len(testpprof.GoroutineLabels(t, "(*Server).processUnaryRPC")) == 0
+	}, 10*time.Second, 5*time.Millisecond)
 	rtrace.Stop()
 	require.NoError(t, err)
 	return readTraceTasks(t, &buf, pingMethod)

@@ -137,21 +137,11 @@ func TestStart_PprofLabels(t *testing.T) {
 				want["subsystem"] = "executor.vfs_server"
 			}
 			// Start returns before the Serve and worker goroutines are
-			// necessarily running.
-			require.Eventually(t, func() bool {
-				return len(testpprof.GoroutineLabels(t, "grpc.(*Server).Serve+")) > 0 &&
-					len(testpprof.GoroutineLabels(t, "grpc.(*Server).serverWorker")) > 0
-			}, 10*time.Second, 10*time.Millisecond)
-			serveLabels := testpprof.GoroutineLabels(t, "grpc.(*Server).Serve+")
-			for _, l := range serveLabels {
-				require.Equal(t, want, l)
-			}
+			// necessarily running, so wait for them.
+			testpprof.RequireGoroutineLabels(t, "grpc.(*Server).Serve+", want)
 			// NewServer itself starts the stream workers (when
 			// grpc_server_worker_multiplier > 0), so they must be reset too.
-			workerLabels := testpprof.GoroutineLabels(t, "grpc.(*Server).serverWorker")
-			for _, l := range workerLabels {
-				require.Equal(t, want, l)
-			}
+			testpprof.RequireGoroutineLabels(t, "grpc.(*Server).serverWorker", want)
 
 			if enabled {
 				// The caller gets its own labels back.
