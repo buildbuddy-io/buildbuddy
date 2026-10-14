@@ -17,6 +17,8 @@ import { target } from "../../../proto/target_ts_proto";
 import { getProtoFilterParams } from "../filter/filter_util";
 import TrendsChartComponent, { ChartColor, SeriesType } from "../trends/trends_chart";
 import TapEmptyStateComponent from "./tap_empty_state";
+import { longFormatTsForInterval, shortFormatTsForAxis } from "../trends/common";
+import { stats } from "../../../proto/stats_ts_proto";
 
 interface Props {
   search: URLSearchParams;
@@ -553,8 +555,8 @@ export default class FlakesComponent extends React.Component<Props, State> {
                 formatTickValue: count,
                 allowDecimals: false,
               }}
-              formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-              formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+              formatXAxisLabel={(ts) => shortFormatTsForAxis(ts * 1000)}
+              formatHoverXAxisLabel={(ts) => longFormatTsForInterval(stats.IntervalType.INTERVAL_TYPE_DAY, ts * 1000)}
               ticks={dates}></TrendsChartComponent>
           </div>
         </div>
