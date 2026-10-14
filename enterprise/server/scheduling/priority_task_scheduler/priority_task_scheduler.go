@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -997,17 +996,6 @@ func (q *PriorityTaskScheduler) handleTask() {
 			q.signalQueue()
 		}()
 
-		// Label before leasing so the lease keepalive goroutine inherits the
-		// labels. This goroutine is dedicated to the task, so nothing needs
-		// restoring.
-		if pprofutil.Enabled() {
-			groupID := ""
-			if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
-				groupID = u.GetGroupID()
-			}
-			ctx = pprofutil.SetGoroutineLabels(ctx, pprofutil.TaskID, reservation.GetTaskId(), pprofutil.GroupID, groupID)
-		}
-
 		lease, err := q.taskLeaser.Lease(ctx, reservation.GetTaskId())
 		if err != nil {
 			// NotFound means the task is already claimed.
@@ -1019,7 +1007,6 @@ func (q *PriorityTaskScheduler) handleTask() {
 			return
 		}
 		ctx = lease.Context()
-		ctx = pprofutil.SetGoroutineLabels(ctx, pprofutil.InvocationID, lease.Task().GetInvocationId(), pprofutil.ActionMnemonic, lease.Task().GetRequestMetadata().GetActionMnemonic())
 
 		if iid := lease.Task().GetInvocationId(); iid != "" {
 			ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)

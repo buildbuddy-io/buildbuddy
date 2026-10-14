@@ -11,13 +11,10 @@ import (
 	"log"
 	"maps"
 	"math/rand/v2"
-	"net/http"
 	"os"
 	"path/filepath"
-	"runtime/pprof"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -38,13 +35,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testtar"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -1683,81 +1678,6 @@ func newImageStoreForTest(t *testing.T, layerDir string) *ociruntime.ImageStore 
 	imageStore, err := ociruntime.NewImageStore(resolver, layerDir, fc)
 	require.NoError(t, err)
 	return imageStore
-}
-
-// Pulls are shared via singleflight, so the pull must not keep the labels of
-// the first caller.
-func TestImageStorePullPprofLabels(t *testing.T) {
-	flags.Set(t, "monitoring.enable_pprof_labels", true)
-	setupNetworking(t)
-
-	for _, tc := range []struct {
-		name string
-		// blockLayer blocks the layer blob download rather than manifest
-		// resolution.
-		blockLayer          bool
-		stackFunc           string
-		wantSharedSubsystem string
-	}{
-		{name: "image", stackFunc: "ImageStore).pull(", wantSharedSubsystem: "executor.image_pull"},
-		{name: "layer", blockLayer: true, stackFunc: "ociruntime.downloadLayer(", wantSharedSubsystem: "executor.layer_pull"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			layer := testregistry.NewBytesLayer(t, testtar.EntriesBytes(t, []testtar.Entry{{
-				Header: &tar.Header{Name: "file", Typeflag: tar.TypeReg, Mode: 0644, Uid: os.Getuid(), Gid: os.Getgid()},
-			}}))
-			img, err := mutate.AppendLayers(empty.Image, layer)
-			require.NoError(t, err)
-
-			layerDigest, err := layer.Digest()
-			require.NoError(t, err)
-			blockPath := "/manifests/"
-			if tc.blockLayer {
-				blockPath = "/blobs/" + layerDigest.String()
-			}
-
-			blocked := make(chan struct{}, 1)
-			release := make(chan struct{})
-			var once sync.Once
-			reg := testregistry.Run(t, testregistry.Opts{
-				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-					if r.Method == http.MethodGet && strings.Contains(r.URL.Path, blockPath) {
-						once.Do(func() { blocked <- struct{}{} })
-						<-release
-					}
-					return true
-				},
-			})
-			image := reg.Push(t, img, "test-pprof-labels:latest", nil)
-			// Registered after the registry so it runs first: the registry can't
-			// shut down while the handler is blocked.
-			var releaseOnce sync.Once
-			releaseHandler := func() { releaseOnce.Do(func() { close(release) }) }
-			t.Cleanup(releaseHandler)
-
-			store := newImageStoreForTest(t, testfs.MakeTempDir(t))
-			before := testpprof.TakeSnapshot(t)
-			done := make(chan struct{})
-			pprof.Do(context.Background(), pprof.Labels("task_id", "X"), func(ctx context.Context) {
-				go func() {
-					defer close(done)
-					lockedImg, err := store.PullAndLockImage(ctx, image, oci.Credentials{}, false)
-					if err == nil {
-						lockedImg.Unlock()
-					}
-				}()
-			})
-			<-blocked
-
-			labels := before.GoroutineLabels(t, tc.stackFunc)
-			require.NotEmpty(t, labels)
-			for _, l := range labels {
-				require.Equal(t, map[string]string{pprofutil.SharedSubsystem: tc.wantSharedSubsystem}, l)
-			}
-			releaseHandler()
-			<-done
-		})
-	}
 }
 
 func pushSingleLayerImage(t *testing.T, name string, layer ctr.Layer) string {

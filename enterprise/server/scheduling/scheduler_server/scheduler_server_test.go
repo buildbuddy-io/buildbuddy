@@ -30,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpprof"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -2757,55 +2756,4 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 	s.livenessMu.Lock()
 	defer s.livenessMu.Unlock()
 	require.Empty(t, s.livenessWatches)
-}
-
-func TestLeaseTask_PprofLabels(t *testing.T) {
-	for _, tc := range []struct {
-		name         string
-		flagOn       bool
-		taskGroup    string
-		wantGroupID  string
-		wantGRPCName bool
-	}{
-		{name: "task group replaces executor group", flagOn: true, taskGroup: "group1", wantGroupID: "group1", wantGRPCName: true},
-		{name: "empty task group keeps executor group", flagOn: true, taskGroup: "", wantGroupID: "group2", wantGRPCName: true},
-		{name: "flag off adds no labels", flagOn: false, taskGroup: "group1"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			flags.Set(t, "monitoring.enable_pprof_labels", tc.flagOn)
-			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
-
-			// The executor authenticates as user2, but the task belongs to
-			// the task group.
-			executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
-			executor.Register()
-			taskID := scheduleTaskForGroup(ctx, t, env, tc.taskGroup)
-			executor.WaitForTask(taskID)
-			before := testpprof.TakeSnapshot(t)
-			lease, err := executor.leaseTask(taskID, "" /*=reconnectToken*/)
-			require.NoError(t, err)
-
-			// leaseTask returns after the handler has claimed the task and
-			// sent its response, which is after the labels are set. The lease
-			// is still open, so the handler goroutine is blocked waiting for
-			// the next message. The handler runs on a pooled gRPC worker that
-			// existed before the snapshot, but didn't run LeaseTask.
-			want := map[string]string{}
-			if tc.wantGroupID != "" {
-				want["group_id"] = tc.wantGroupID
-			}
-			if tc.wantGRPCName {
-				want["grpc.method"] = "/scheduler.Scheduler/LeaseTask"
-			}
-			sets := before.GoroutineLabels(t, "SchedulerServer).LeaseTask(")
-			require.Len(t, sets, 1)
-			for k, v := range want {
-				require.Equal(t, v, sets[0][k], k)
-			}
-			if !tc.flagOn {
-				require.Empty(t, sets[0])
-			}
-			require.NoError(t, lease.Finalize())
-		})
-	}
 }

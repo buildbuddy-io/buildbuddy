@@ -27,7 +27,6 @@ const (
 	ActionMnemonic  = "action_mnemonic"
 	GroupID         = "group_id"
 	SharedSubsystem = "shared_subsystem"
-	TaskID          = "task_id"
 )
 
 // Enabled returns whether pprof labels are enabled.
