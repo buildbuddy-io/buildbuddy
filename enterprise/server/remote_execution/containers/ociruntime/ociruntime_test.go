@@ -1698,8 +1698,8 @@ func TestImageStorePullPprofLabels(t *testing.T) {
 		stackFunc     string
 		wantSubsystem string
 	}{
-		{name: "image", stackFunc: "ImageStore).pull", wantSubsystem: "executor.image_pull"},
-		{name: "layer", blockLayer: true, stackFunc: "ociruntime.downloadLayer", wantSubsystem: "executor.layer_pull"},
+		{name: "image", stackFunc: "ImageStore).pull(", wantSubsystem: "executor.image_pull"},
+		{name: "layer", blockLayer: true, stackFunc: "ociruntime.downloadLayer(", wantSubsystem: "executor.layer_pull"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			layer := testregistry.NewBytesLayer(t, testtar.EntriesBytes(t, []testtar.Entry{{
@@ -1730,6 +1730,7 @@ func TestImageStorePullPprofLabels(t *testing.T) {
 			image := reg.Push(t, img, "test-pprof-labels:latest", nil)
 
 			store := newImageStoreForTest(t, testfs.MakeTempDir(t))
+			before := testpprof.TakeSnapshot(t)
 			done := make(chan struct{})
 			pprof.Do(context.Background(), pprof.Labels("task_id", "X"), func(ctx context.Context) {
 				go func() {
@@ -1742,7 +1743,7 @@ func TestImageStorePullPprofLabels(t *testing.T) {
 			})
 			<-blocked
 
-			labels := testpprof.GoroutineLabels(t, tc.stackFunc)
+			labels := before.GoroutineLabels(t, tc.stackFunc)
 			require.NotEmpty(t, labels)
 			for _, l := range labels {
 				require.Equal(t, map[string]string{"subsystem": tc.wantSubsystem}, l)

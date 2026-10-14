@@ -55,6 +55,7 @@ func TestStart_PprofLabels(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
 			flags.Set(t, "monitoring.enable_pprof_labels", enabled)
+			before := testpprof.TakeSnapshot(t)
 			cmd := &repb.Command{Arguments: []string{"worker"}}
 			var w *persistentworker.Worker
 			var err error
@@ -75,7 +76,9 @@ func TestStart_PprofLabels(t *testing.T) {
 			if enabled {
 				want["subsystem"] = "executor.persistent_worker"
 			}
-			testpprof.RequireGoroutineLabels(t, "persistentworker.Start.func", want)
+			// The goroutine blocks in Exec until the worker is stopped at the
+			// end of the test, so it is guaranteed to show up.
+			before.RequireGoroutineLabels(t, "persistentworker.Start.func", want)
 		})
 	}
 }

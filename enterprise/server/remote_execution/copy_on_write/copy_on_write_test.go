@@ -236,14 +236,16 @@ func TestMmapLRU_EvictorPprofLabels(t *testing.T) {
 	// labels of the task that created it.
 	var lru *copy_on_write.MmapLRU
 	var err error
+	// Evictors of LRUs created by other tests may be running.
+	before := testpprof.TakeSnapshot(t)
 	pprof.Do(context.Background(), pprof.Labels("task_id", "X"), func(ctx context.Context) {
 		lru, err = copy_on_write.NewMmapLRU(1024)
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, lru.Close()) })
 
-	// Evictors of LRUs created by other tests may be running unlabeled.
-	testpprof.RequireAnyGoroutineLabels(t, "MmapLRU).processEvictions", map[string]string{"subsystem": "executor.cow.evictor"})
+	// The evictor runs until the LRU is closed at the end of the test.
+	before.RequireGoroutineLabels(t, "MmapLRU).processEvictions(", map[string]string{"subsystem": "executor.cow.evictor"})
 }
 
 func TestCOW_Concurrency(t *testing.T) {

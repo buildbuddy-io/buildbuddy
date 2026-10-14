@@ -108,6 +108,7 @@ func TestStart_PprofLabels(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
 			flags.Set(t, "monitoring.enable_pprof_labels", enabled)
+			before := testpprof.TakeSnapshot(t)
 			server, _ := newServer(t)
 			lis, err := net.Listen("unix", filepath.Join(testfs.MakeTempDir(t), "vfs.sock"))
 			require.NoError(t, err)
@@ -136,16 +137,18 @@ func TestStart_PprofLabels(t *testing.T) {
 			if enabled {
 				want["subsystem"] = "executor.vfs_server"
 			}
-			// Start returns before the Serve and worker goroutines are
-			// necessarily running, so wait for them.
-			testpprof.RequireGoroutineLabels(t, "grpc.(*Server).Serve+", want)
+			// Start returns before the Serve goroutine is necessarily running,
+			// so wait for it. It runs until the server is stopped at the end of
+			// the test.
+			before.RequireGoroutineLabels(t, "grpc.(*Server).Serve(", want)
 			// NewServer itself starts the stream workers (when
 			// grpc_server_worker_multiplier > 0), so they must be reset too.
-			testpprof.RequireGoroutineLabels(t, "grpc.(*Server).serverWorker", want)
+			// They also run until the server is stopped.
+			before.RequireGoroutineLabels(t, "grpc.(*Server).serverWorker(", want)
 
 			if enabled {
 				// The caller gets its own labels back.
-				require.Contains(t, testpprof.GoroutineLabels(t, "TestStart_PprofLabels.func"), map[string]string{"task_id": "X"})
+				require.Contains(t, before.GoroutineLabels(t, "TestStart_PprofLabels.func"), map[string]string{"task_id": "X"})
 			}
 		})
 	}

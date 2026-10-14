@@ -1380,6 +1380,7 @@ func TestPriorityTaskScheduler_PprofLabels(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
 			flags.Set(t, "monitoring.enable_pprof_labels", enabled)
+			before := testpprof.TakeSnapshot(t)
 			env := testenv.GetTestEnv(t)
 			env.SetRemoteExecutionClient(&FakeExecutionClient{})
 			executor := NewFakeExecutor()
@@ -1411,7 +1412,7 @@ func TestPriorityTaskScheduler_PprofLabels(t *testing.T) {
 					pprofutil.GroupID: "GR123",
 				}
 			}
-			testpprof.RequireGoroutineLabels(t, "FakeLease).keepLease", wantKeepalive)
+			before.RequireGoroutineLabels(t, "FakeLease).keepLease(", wantKeepalive)
 			execution.Complete()
 			lease := <-leaser.GrantedLeases
 			lease.WaitClosed()

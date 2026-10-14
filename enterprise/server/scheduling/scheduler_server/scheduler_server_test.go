@@ -2781,11 +2781,15 @@ func TestLeaseTask_PprofLabels(t *testing.T) {
 			executor.Register()
 			taskID := scheduleTaskForGroup(ctx, t, env, tc.taskGroup)
 			executor.WaitForTask(taskID)
+			before := testpprof.TakeSnapshot(t)
 			lease, err := executor.leaseTask(taskID, "" /*=reconnectToken*/)
 			require.NoError(t, err)
 
-			// The lease is open, so the handler goroutine is blocked waiting
-			// for the next message.
+			// leaseTask returns after the handler has claimed the task and
+			// sent its response, which is after the labels are set. The lease
+			// is still open, so the handler goroutine is blocked waiting for
+			// the next message. The handler runs on a pooled gRPC worker that
+			// existed before the snapshot, but didn't run LeaseTask.
 			want := map[string]string{}
 			if tc.wantGroupID != "" {
 				want["group_id"] = tc.wantGroupID
@@ -2793,18 +2797,14 @@ func TestLeaseTask_PprofLabels(t *testing.T) {
 			if tc.wantGRPCName {
 				want["grpc.method"] = "/scheduler.Scheduler/LeaseTask"
 			}
-			require.Eventually(t, func() bool {
-				sets := testpprof.GoroutineLabels(t, "SchedulerServer).LeaseTask+0x")
-				if len(sets) != 1 {
-					return false
-				}
-				for k, v := range want {
-					if sets[0][k] != v {
-						return false
-					}
-				}
-				return tc.flagOn || len(sets[0]) == 0
-			}, 10*time.Second, 10*time.Millisecond)
+			sets := before.GoroutineLabels(t, "SchedulerServer).LeaseTask(")
+			require.Len(t, sets, 1)
+			for k, v := range want {
+				require.Equal(t, v, sets[0][k], k)
+			}
+			if !tc.flagOn {
+				require.Empty(t, sets[0])
+			}
 			require.NoError(t, lease.Finalize())
 		})
 	}
@@ -2814,11 +2814,13 @@ func TestRegisterAndStreamWork_PprofSubsystemLabel(t *testing.T) {
 	flags.Set(t, "monitoring.enable_pprof_labels", true)
 	env, _ := getEnv(t, &schedulerOpts{}, "user1")
 	executor := newFakeExecutor(authenticatedContext(t, env, "user1"), t, env.GetSchedulerClient())
+	before := testpprof.TakeSnapshot(t)
 	executor.Register()
 
-	// Only the subsystem label: the executor's group_id and the request labels
-	// must not leak onto the stream.
-	testpprof.RequireAnyGoroutineLabels(t, "executorHandle).Serve", map[string]string{
+	// Serve runs for as long as the executor's stream is open, which is until
+	// the end of the test. Only the subsystem label: the executor's group_id
+	// and the request labels must not leak onto the stream.
+	before.RequireGoroutineLabels(t, "executorHandle).Serve(", map[string]string{
 		"subsystem": "scheduler.executor_stream",
 	})
 }

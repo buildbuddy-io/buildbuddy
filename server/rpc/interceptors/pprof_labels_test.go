@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"runtime"
 	"runtime/pprof"
 	rtrace "runtime/trace"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,11 +29,16 @@ import (
 	exptrace "golang.org/x/exp/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/stats"
 
 	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
+
+// handlerTimeout bounds waits for events that are guaranteed to happen, so that
+// only a stalled machine hits it.
+const handlerTimeout = 60 * time.Second
 
 const (
 	pingMethod = "/ping.Api/Ping"
@@ -69,6 +74,43 @@ type labelServer struct {
 	// bigDigests is the number of digests FindMissingBlobs returns.
 	bigDigests int
 	labels     chan map[string]string
+	// ended receives a value each time an RPC finishes, after the profiling
+	// stats handler has reset the worker goroutine's labels.
+	ended chan struct{}
+}
+
+// endNotifier is registered after ProfilingStatsHandler, so by the time it sees
+// an RPC's End event that handler has already ended the RPC's trace task and
+// reset the worker goroutine's labels. Unlike a response arriving at the
+// client, which happens before the End event, this is a reliable sync point
+// for tests that inspect state after an RPC.
+type endNotifier struct{ ended chan struct{} }
+
+func (e endNotifier) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context { return ctx }
+func (e endNotifier) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+func (e endNotifier) HandleConn(context.Context, stats.ConnStats) {}
+func (e endNotifier) HandleRPC(_ context.Context, rs stats.RPCStats) {
+	if _, ok := rs.(*stats.End); !ok {
+		return
+	}
+	select {
+	case e.ended <- struct{}{}:
+	default: // Benchmarks don't wait for ends.
+	}
+}
+
+// waitForEnds blocks until n more RPCs have fully finished on the server. Each
+// is guaranteed to, so this only times out if the machine is stalled.
+func waitForEnds(t testing.TB, s *labelServer, n int) {
+	for range n {
+		select {
+		case <-s.ended:
+		case <-time.After(handlerTimeout):
+			require.FailNow(t, "RPC did not finish")
+		}
+	}
 }
 
 func (s *labelServer) record(ctx context.Context) {
@@ -114,9 +156,12 @@ type testClients struct {
 // pprof flag before calling.
 func startLabelServer(t testing.TB, s *labelServer) testClients {
 	s.labels = make(chan map[string]string, 1000)
+	s.ended = make(chan struct{}, 1000)
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2")))
-	grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
+	grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptionsWithConfig(env, grpc_server.GRPCServerConfig{
+		ExtraStatsHandlers: []stats.Handler{endNotifier{s.ended}},
+	})...)
 	pspb.RegisterApiServer(grpcServer, s)
 	bspb.RegisterByteStreamServer(grpcServer, s)
 	repb.RegisterContentAddressableStorageServer(grpcServer, s)
@@ -159,7 +204,7 @@ func next(t *testing.T, s *labelServer) map[string]string {
 	select {
 	case l := <-s.labels:
 		return l
-	case <-time.After(10 * time.Second):
+	case <-time.After(handlerTimeout):
 		require.FailNow(t, "handler did not run")
 		return nil
 	}
@@ -267,14 +312,14 @@ func TestLabelsDoNotLeakAcrossRequests(t *testing.T) {
 
 var burnSink int
 
-// burnCPU spins for d.
-func burnCPU(d time.Duration) {
-	end := time.Now().Add(d)
+// burnCPU does a fixed amount of CPU work, so the number of profile samples it
+// yields depends on the CPU time it gets rather than on wall time.
+//
+//go:noinline
+func burnCPU() {
 	x := 0
-	for time.Now().Before(end) {
-		for i := range 10000 {
-			x += i * i
-		}
+	for i := range 100_000_000 {
+		x += i * i
 	}
 	burnSink = x
 }
@@ -282,12 +327,13 @@ func burnCPU(d time.Duration) {
 // profileCPU runs f under the CPU profiler and returns the parsed profile.
 func profileCPU(t *testing.T, f func()) *profile.Profile {
 	var buf bytes.Buffer
-	// Sample faster than the default 100Hz to get enough samples quickly. This
-	// must be set before starting the profile.
-	runtime.SetCPUProfileRate(1000)
 	require.NoError(t, pprof.StartCPUProfile(&buf))
+	// Make sure the profile is stopped even if f fails the test.
+	var once sync.Once
+	stop := func() { once.Do(pprof.StopCPUProfile) }
+	defer stop()
 	f()
-	pprof.StopCPUProfile()
+	stop()
 	p, err := profile.Parse(&buf)
 	require.NoError(t, err)
 	return p
@@ -320,13 +366,16 @@ func sampleStats(p *profile.Profile, match func(funcNames []string) bool, want m
 	return matched, labeled
 }
 
+// maxProfileRuns bounds collectSamples. Each run yields samples in proportion
+// to the CPU time f uses, whatever the load on the machine, so this is only
+// reached if match never matches.
+const maxProfileRuns = 200
+
 // collectSamples repeatedly profiles f until at least minMatched samples
-// satisfy match, and returns the total matched and labeled counts. It fails
-// the test if that takes longer than a minute.
+// satisfy match, and returns the total matched and labeled counts.
 func collectSamples(t *testing.T, f func(), match func(funcNames []string) bool, want map[string]string, minMatched int) (matched, labeled int) {
-	deadline := time.Now().Add(time.Minute)
-	for matched < minMatched {
-		require.True(t, time.Now().Before(deadline), "only %d of %d samples after a minute", matched, minMatched)
+	for run := 0; matched < minMatched; run++ {
+		require.Less(t, run, maxProfileRuns, "only %d of %d samples matched", matched, minMatched)
 		m, l := sampleStats(profileCPU(t, f), match, want)
 		matched += m
 		labeled += l
@@ -351,7 +400,7 @@ func TestCPUProfileLabelsHandlerWork(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			burnCPU(200 * time.Millisecond)
+			burnCPU()
 		}()
 		<-done
 	}
@@ -363,8 +412,10 @@ func TestCPUProfileLabelsHandlerWork(t *testing.T) {
 	},
 		func(names []string) bool { return anyContains(names, ".burnCPU") },
 		map[string]string{pprofutil.GRPCMethod: pingMethod, pprofutil.GroupID: "GR1"},
-		20)
-	require.GreaterOrEqual(t, float64(labeled)/float64(matched), 0.9, "labeled %d of %d samples", labeled, matched)
+		10)
+	// burnCPU only runs in the goroutine the handler starts, which inherits the
+	// handler's labels, so every sample must carry them.
+	require.Equal(t, matched, labeled, "labeled %d of %d samples", labeled, matched)
 }
 
 func TestCPUProfileLabelsUnaryDecodeAndEncode(t *testing.T) {
@@ -376,22 +427,23 @@ func TestCPUProfileLabelsUnaryDecodeAndEncode(t *testing.T) {
 	// Server-side marshal/unmarshal runs under handleStream; the client's
 	// does not.
 	matched, labeled := collectSamples(t, func() {
-		end := time.Now().Add(200 * time.Millisecond)
-		for time.Now().Before(end) {
-			_, err := c.cas.FindMissingBlobs(requestCtx(t, "US1", "inv1"), req)
-			require.NoError(t, err)
-		}
+		_, err := c.cas.FindMissingBlobs(requestCtx(t, "US1", "inv1"), req)
+		require.NoError(t, err)
 	},
 		func(names []string) bool {
 			return anyContains(names, "(*Server).handleStream") && anyContains(names, "arshal")
 		},
 		map[string]string{pprofutil.GRPCMethod: findMethod},
-		20)
-	require.GreaterOrEqual(t, float64(labeled)/float64(matched), 0.8, "labeled %d of %d samples", labeled, matched)
+		10)
+	// TagRPC runs at the start of handleStream, before the request is decoded,
+	// and the labels are reset only after the response is encoded, so every
+	// sample under handleStream must carry the method.
+	require.Equal(t, matched, labeled, "labeled %d of %d samples", labeled, matched)
 }
 
 func TestIdleWorkersHaveNoLabels(t *testing.T) {
 	enableLabels(t)
+	before := testpprof.TakeSnapshot(t)
 	s := &labelServer{}
 	c := startLabelServer(t, s)
 
@@ -401,7 +453,16 @@ func TestIdleWorkersHaveNoLabels(t *testing.T) {
 		readStream(t, requestCtx(t, "US1", "inv1"), c.bs)
 	}
 
-	testpprof.RequireGoroutineLabels(t, "serverWorker", map[string]string{})
+	// The client gets its response before the server's End event, which is
+	// when the labels are reset.
+	waitForEnds(t, s, 40)
+
+	// Only this test's server's workers: others may be shutting down.
+	workers := before.GoroutineLabels(t, "(*Server).serverWorker(")
+	require.NotEmpty(t, workers)
+	for _, l := range workers {
+		require.Empty(t, l)
+	}
 }
 
 func BenchmarkInstrumentedServerPprofLabels(b *testing.B) {
@@ -462,15 +523,19 @@ func readTraceTasks(t *testing.T, buf *bytes.Buffer, taskType string) traceInfo 
 }
 
 func tracePing(t *testing.T) traceInfo {
-	c := startLabelServer(t, &labelServer{})
+	s := &labelServer{}
+	c := startLabelServer(t, s)
 	var buf bytes.Buffer
 	require.NoError(t, rtrace.Start(&buf))
+	// Make sure the trace is stopped even if the test fails.
+	var once sync.Once
+	stop := func() { once.Do(rtrace.Stop) }
+	t.Cleanup(stop)
 	_, err := c.ping.Ping(requestCtx(t, "US1", ""), &pspb.PingRequest{})
-	// The End stats event runs in processUnaryRPC after the response is sent.
-	require.Eventually(t, func() bool {
-		return len(testpprof.GoroutineLabels(t, "(*Server).processUnaryRPC")) == 0
-	}, 10*time.Second, 5*time.Millisecond)
-	rtrace.Stop()
+	// The task ends in the End stats event, which runs after the response is
+	// sent.
+	waitForEnds(t, s, 1)
+	stop()
 	require.NoError(t, err)
 	return readTraceTasks(t, &buf, pingMethod)
 }

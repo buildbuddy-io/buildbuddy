@@ -5015,8 +5015,8 @@ func TestFindMissing_Quorum_IgnoresNonReplicaCopies(t *testing.T) {
 
 func TestBackgroundGoroutineSubsystemLabels(t *testing.T) {
 	expected := map[string]string{
-		"heartbeatPeers":                "distributed.heartbeat",
-		"watchLookasideRightsizeConfig": "distributed.lookaside_rightsize",
+		"heartbeatPeers(":                "distributed.heartbeat",
+		"watchLookasideRightsizeConfig(": "distributed.lookaside_rightsize",
 	}
 	flags.Set(t, "monitoring.enable_pprof_labels", true)
 	env, _, _ := getEnvAuthAndCtx(t)
@@ -5024,15 +5024,18 @@ func TestBackgroundGoroutineSubsystemLabels(t *testing.T) {
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 	addr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	// Goroutines from other tests in this process may still be running, so
+	// only look at the ones started by this cache.
+	before := testpprof.TakeSnapshot(t)
 	startNewDCache(t, env, Options{
 		ListenAddr:        addr,
 		ReplicationFactor: 1,
 		Nodes:             []string{addr},
 	}, newMemoryCache(t, 1000000))
 
+	// Each of these loops runs until the cache is shut down at the end of the
+	// test, so it is guaranteed to show up.
 	for fn, subsystem := range expected {
-		// Goroutines from other tests in this process may still be running
-		// unlabeled, so look for any matching goroutine.
-		testpprof.RequireAnyGoroutineLabels(t, fn, map[string]string{"subsystem": subsystem})
+		before.RequireGoroutineLabels(t, fn, map[string]string{"subsystem": subsystem})
 	}
 }
