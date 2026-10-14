@@ -423,6 +423,10 @@ type CacheSnapshotOptions struct {
 	//
 	// The snapshot write policy determines whether the snapshot is actually written.
 	EligibleToWriteUniversalManifest bool
+
+	// If set, validate the snapshot after caching its artifacts but before
+	// publishing its manifest.
+	ValidateSnapshot func(*Snapshot) error
 }
 
 type UnpackedSnapshot struct {
@@ -891,6 +895,21 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 
 	if err := eg.Wait(); err != nil {
 		return err
+	}
+
+	if opts.ValidateSnapshot != nil {
+		manifest, err := l.actionResultToManifest(ctx, key.InstanceName, ar, l.env.GetFileCache().TempDir(), opts.CacheSnapshotRemotely)
+		if err != nil {
+			return err
+		}
+		snapshot := &Snapshot{
+			key:                  key,
+			manifest:             manifest,
+			supportsRemoteChunks: opts.CacheSnapshotRemotely,
+		}
+		if err := opts.ValidateSnapshot(snapshot); err != nil {
+			return status.WrapError(err, "validate snapshot")
+		}
 	}
 
 	// Write the ActionResult to the cache only after we've successfully
@@ -1508,7 +1527,20 @@ func hashStrings(strs ...string) string {
 	return hash.String(out.String())
 }
 
+type sharedNamespaceKey struct{}
+
+// WithSharedNamespace stores and reads snapshots in an executor-wide namespace
+// instead of the authenticated group's. Only use it for snapshots that contain
+// no group data.
+func WithSharedNamespace(ctx context.Context, env environment.Env, namespace string) context.Context {
+	ctx = context.WithValue(ctx, sharedNamespaceKey{}, namespace)
+	return env.GetFileCache().WithSharedDirectory(ctx, namespace)
+}
+
 func groupID(ctx context.Context, env environment.Env) (string, error) {
+	if namespace, ok := ctx.Value(sharedNamespaceKey{}).(string); ok {
+		return "_SHARED_" + namespace, nil
+	}
 	var gid string
 	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err == nil {

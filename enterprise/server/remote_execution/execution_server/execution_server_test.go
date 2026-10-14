@@ -2976,3 +2976,41 @@ func TestRedactCachedExecuteResponse(t *testing.T) {
 		})
 	}
 }
+
+func TestDispatch_GenericFirecrackerShape(t *testing.T) {
+	for _, tc := range []struct {
+		cpu, memory string
+		wantCPU     int64
+	}{
+		{"1", "2GB", 1}, {"8.1", "2GB", 16}, {"1", "21GB", 16}, {"33", "2GB", 0},
+	} {
+		t.Run(tc.cpu+"/"+tc.memory, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(context.Background(), "US1")
+			require.NoError(t, err)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			action := &repb.Action{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "workload-isolation-type", Value: "firecracker"},
+				{Name: platform.FirecrackerUseGenericSnapshotPropertyName, Value: "true"},
+				{Name: "EstimatedCPU", Value: tc.cpu},
+				{Name: "EstimatedMemory", Value: tc.memory},
+			}}}
+			arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, action)
+			err = env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString())
+			scheduler := env.GetSchedulerService().(*schedulerServerMock)
+			if tc.wantCPU == 0 {
+				require.Error(t, err)
+				require.Empty(t, scheduler.scheduleReqs)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, scheduler.scheduleReqs, 1)
+			md := scheduler.scheduleReqs[0].GetMetadata()
+			assert.Equal(t, tc.wantCPU*1000, md.GetTaskSize().GetEstimatedMilliCpu())
+			assert.GreaterOrEqual(t, md.GetTaskSize().GetEstimatedMemoryBytes(), tc.wantCPU*2_500_000_000)
+			assert.Nil(t, md.GetPredictedTaskSize())
+			assert.Nil(t, md.GetMeasuredTaskSize())
+		})
+	}
+}

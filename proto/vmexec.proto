@@ -152,10 +152,17 @@ message InitializeRequest {
 
   // If true, the arp cache will be cleared.
   bool clear_arp_cache = 2;
+
+  // Mount the action root after restoring a generic snapshot.
+  bool mount_container_root = 3;
+
+  // Random bytes to mix into the guest RNG, which is reseeded when set.
+  bytes entropy = 4;
 }
 
 message InitializeResponse {
-  // This page intentionally left empty.
+  // Set if the container root was mounted for this request.
+  bool container_root_mounted = 1;
 }
 
 message SyncRequest {}

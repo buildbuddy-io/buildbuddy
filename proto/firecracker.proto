@@ -61,6 +61,7 @@ message VMConfiguration {
 
   bool enable_vfs = 16;
   bool enable_pci = 20;
+  bool generic_snapshot = 21;
 
   // TODO: add container_image here?
 }

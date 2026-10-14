@@ -995,6 +995,12 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	defaultTaskSize := tasksize.Default(executionTask)
 	requestedTaskSize := tasksize.Requested(executionTask)
 	taskSize := tasksize.ApplyLimitsWithRequestedSize(ctx, s.env.GetExperimentFlagProvider(), command, props, defaultTaskSize, requestedTaskSize)
+	if props.UseGenericSnapshot {
+		taskSize, err = tasksize.GenericFirecrackerSize(taskSize)
+		if err != nil {
+			return nil, err
+		}
+	}
 	measuredSize := s.taskSizer.Get(ctx, command, props)
 	var predictedSize *scpb.TaskSize
 	if measuredSize == nil {

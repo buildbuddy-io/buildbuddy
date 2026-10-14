@@ -213,7 +213,7 @@ func (s *taskSizer) Get(ctx context.Context, cmd *repb.Command, props *platform.
 }
 
 func (s *taskSizer) Predict(ctx context.Context, action *repb.Action, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
-	if s.model == nil {
+	if s.model == nil || props.UseGenericSnapshot {
 		return nil
 	}
 	return ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), cmd, props, s.model.Predict(ctx, action, cmd, props))
@@ -839,4 +839,20 @@ func String(size *scpb.TaskSize) string {
 		resources = append(resources, fmt.Sprintf("%s=%f", r.GetName(), r.GetValue()))
 	}
 	return strings.Join(resources, ", ")
+}
+
+// GenericFirecrackerSize rounds a scheduled size up to a supported snapshot shape.
+// The input includes guest overhead; rounding must not add it again.
+func GenericFirecrackerSize(size *scpb.TaskSize) (*scpb.TaskSize, error) {
+	for _, cpus := range []int64{1, 2, 3, 4, 5, 6, 7, 8, 16, 32} {
+		memory := ((cpus*int64(ComputeUnitsToRAMBytes) + (1 << 20) - 1) / (1 << 20)) * (1 << 20)
+		if cpus*1000 < size.GetEstimatedMilliCpu() || memory < size.GetEstimatedMemoryBytes() {
+			continue
+		}
+		res := size.CloneVT()
+		res.EstimatedMilliCpu = cpus * 1000
+		res.EstimatedMemoryBytes = memory
+		return res, nil
+	}
+	return nil, status.InvalidArgumentError("generic Firecracker snapshots support at most 32 CPUs and 80 GB of memory")
 }

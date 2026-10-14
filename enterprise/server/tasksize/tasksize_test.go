@@ -792,3 +792,30 @@ func TestCgroupSettings_AdditionalPIDsLimit(t *testing.T) {
 	const wantPidsMax = 10_300 // 10K base limit + (1.5*200 = 300) CPU-based limit
 	assert.Equal(t, int64(10_300), settings.GetPidsMax())
 }
+
+func TestGenericFirecrackerSize(t *testing.T) {
+	for _, tc := range []struct{ cpu, memory, wantCPU int64 }{
+		{250, 200_000_000, 1}, {1000, 2_500_000_000, 1},
+		{1001, 200_000_000, 2}, {1000, 2385*(1<<20) + 1, 2},
+		{7000, 20_000_000_000, 8}, {8001, 200_000_000, 16},
+		{1000, 19074*(1<<20) + 1, 16}, {16000, 40_000_000_000, 16},
+		{16001, 200_000_000, 32}, {32000, 80_000_000_000, 32},
+		{32001, 200_000_000, 0}, {1000, 76294*(1<<20) + 1, 0},
+	} {
+		t.Run(fmt.Sprintf("cpu=%d/memory=%d", tc.cpu, tc.memory), func(t *testing.T) {
+			input := &scpb.TaskSize{EstimatedMilliCpu: tc.cpu, EstimatedMemoryBytes: tc.memory, EstimatedFreeDiskBytes: 1234}
+			original := input.CloneVT()
+			got, err := tasksize.GenericFirecrackerSize(input)
+			if tc.wantCPU == 0 {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantCPU*1000, got.GetEstimatedMilliCpu())
+			assert.GreaterOrEqual(t, got.GetEstimatedMemoryBytes(), tc.memory)
+			assert.Less(t, got.GetEstimatedMemoryBytes()-tc.wantCPU*2_500_000_000, int64(1<<20))
+			assert.Equal(t, int64(1234), got.GetEstimatedFreeDiskBytes())
+			assert.Empty(t, cmp.Diff(original, input, protocmp.Transform()))
+		})
+	}
+}

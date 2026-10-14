@@ -76,6 +76,7 @@ import (
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -168,8 +169,9 @@ func TestGuestAPIVersion(t *testing.T) {
 	//
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
+	// Generic snapshots have distinct keys; existing snapshots do not use the new initialization RPC field.
 	const (
-		expectedHash    = "9a2cbbff08c1fdf668b3c37f1c3e5a8b754d98c1006e20488ef8cfa5c517eb1a"
+		expectedHash    = "700dc3c385cf35a0eb93704324253baa13e5ca53120256d67284adf4d588821a"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -5122,4 +5124,205 @@ func assertCommandResult(t testing.TB, expected *interfaces.CommandResult, actua
 	actual.VMMetadata = nil
 	actual.VMMetrics = nil
 	assert.Equal(t, expected, actual)
+}
+
+func TestFirecrackerGenericSnapshot(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	env := getTestEnv(ctx, t, envOpts{})
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	env.SetAuthenticator(auth)
+	ctx, err := auth.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	cfg := getExecutorConfig(t)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	templateCtx := snaploader.WithSharedNamespace(context.Background(), env, firecracker.GenericSnapshotNamespace)
+	var bootIDsMu sync.Mutex
+	bootIDs := map[string]bool{}
+	run := func(t *testing.T, ctx context.Context, image, user string, cpus int64) *snaploader.Snapshot {
+		workDir := testfs.MakeTempDir(t)
+		require.NoError(t, os.WriteFile(filepath.Join(workDir, "input"), []byte("hello"), 0644))
+		opts := firecracker.ContainerOpts{
+			ContainerImage: image, User: user, ExecutorConfig: cfg,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus: cpus, MemSizeMb: (cpus*2_500_000_000 + (1 << 20) - 1) / (1 << 20),
+				ScratchDiskSizeMb: 100, GenericSnapshot: true,
+				NetworkMode: fcpb.NetworkMode_NETWORK_MODE_OFF,
+			},
+		}
+		if cpus == 2 {
+			opts.VMConfiguration.NetworkMode = fcpb.NetworkMode_NETWORK_MODE_EXTERNAL
+		}
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Command: &repb.Command{OutputFiles: []string{"output"}}}, opts)
+		require.NoError(t, err)
+		t.Cleanup(func() { assert.NoError(t, c.Remove(context.Background())) })
+		command := `test ! -e /tmp/root-marker; touch /tmp/root-marker; test ! -e stale; cp input output; touch stale; test -d /proc/self; test -c /dev/null; test -s /etc/hosts; if (echo x > /proc/sys/kernel/random/boot_id) 2>/dev/null; then exit 1; fi; cat /proc/sys/kernel/random/boot_id; /bin/true`
+		if image == ubuntuImage {
+			command += "; test -e /etc/lsb-release"
+		} else {
+			command += "; test ! -e /etc/lsb-release"
+		}
+		command += fmt.Sprintf("; test \"$(grep -c '^processor' /proc/cpuinfo)\" -eq %d", cpus)
+		if cpus == 2 {
+			command += "; ip route | grep -q default"
+		}
+		if user != "" {
+			command = "id -u; touch /tmp/user-marker; /bin/true"
+		}
+		result := c.Run(ctx, &repb.Command{Arguments: []string{"sh", "-ec", command}, OutputFiles: []string{"output"}}, workDir, oci.Credentials{})
+		require.NoError(t, result.Error, "%s", result.AuxiliaryLogs)
+		require.Equal(t, 0, result.ExitCode, "%s", result.Stderr)
+		if user == "" {
+			data, err := os.ReadFile(filepath.Join(workDir, "output"))
+			require.NoError(t, err)
+			assert.Equal(t, "hello", string(data))
+			bootID := result.Stdout
+			require.Regexp(t, `^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\n$`, string(bootID))
+			bootIDsMu.Lock()
+			assert.False(t, bootIDs[string(bootID)], "boot_id %q was reused", bootID)
+			bootIDs[string(bootID)] = true
+			bootIDsMu.Unlock()
+		} else {
+			assert.Equal(t, "65534\n", string(result.Stdout))
+		}
+		snap, err := loader.GetSnapshot(templateCtx, c.SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
+		require.NoError(t, err)
+		assert.Equal(t, snap.GetVMMetadata().GetSnapshotId(), result.VMMetadata.GetLastExecutedTask().GetSnapshotId())
+		return snap
+	}
+	var snapshots [2]*snaploader.Snapshot
+	t.Run("concurrent cold start", func(t *testing.T) {
+		for i := range snapshots {
+			t.Run(fmt.Sprint(i), func(t *testing.T) {
+				t.Parallel()
+				snapshots[i] = run(t, ctx, busyboxImage, "", 1)
+			})
+		}
+	})
+	require.NotNil(t, snapshots[0])
+	require.NotNil(t, snapshots[1])
+	templateID := snapshots[0].GetVMMetadata().GetSnapshotId()
+	require.NotEmpty(t, templateID)
+	require.Equal(t, templateID, snapshots[1].GetVMMetadata().GetSnapshotId())
+	for _, image := range []string{ubuntuImage, busyboxImage} {
+		t.Run(image, func(t *testing.T) {
+			assert.Equal(t, templateID, run(t, ctx, image, "", 1).GetVMMetadata().GetSnapshotId())
+		})
+	}
+	t.Run("nonroot", func(t *testing.T) {
+		assert.Equal(t, templateID, run(t, ctx, ubuntuImage, "nobody", 1).GetVMMetadata().GetSnapshotId())
+	})
+	t.Run("two CPUs with networking", func(t *testing.T) {
+		assert.NotEqual(t, templateID, run(t, ctx, busyboxImage, "", 2).GetVMMetadata().GetSnapshotId())
+	})
+	t.Run("other group", func(t *testing.T) {
+		otherCtx, err := auth.WithAuthenticatedUser(ctx, "US2")
+		require.NoError(t, err)
+		assert.Equal(t, templateID, run(t, otherCtx, busyboxImage, "", 1).GetVMMetadata().GetSnapshotId())
+	})
+	t.Run("evicted memory", func(t *testing.T) {
+		files := snapshots[0].GetChunkedFiles()
+		require.Len(t, files, 1)
+		require.NotEmpty(t, files[0].GetChunks())
+		require.True(t, env.GetFileCache().DeleteFile(templateCtx, &repb.FileNode{Digest: files[0].GetChunks()[0].GetDigest()}))
+		assert.NotEqual(t, templateID, run(t, ctx, busyboxImage, "", 1).GetVMMetadata().GetSnapshotId())
+	})
+}
+
+func TestFirecrackerGenericSnapshotPrewarm(t *testing.T) {
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	env := getTestEnv(context.Background(), t, envOpts{})
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(auth)
+	root := executorRootDir(t)
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "cache"), 0755))
+	provider, err := firecracker.NewProvider(env, filepath.Join(root, "build"), filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	templateCtx := snaploader.WithSharedNamespace(context.Background(), env, firecracker.GenericSnapshotNamespace)
+	newInit := func(t *testing.T) *container.Init {
+		task := &repb.ExecutionTask{Command: &repb.Command{
+			Arguments: []string{"true"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "workload-isolation-type", Value: "firecracker"},
+				{Name: platform.FirecrackerUseGenericSnapshotPropertyName, Value: "true"},
+				{Name: "network", Value: "off"},
+			}},
+		}}
+		props, err := platform.ParseProperties(task)
+		require.NoError(t, err)
+		props.ContainerImage = busyboxImage
+		size, err := tasksize.GenericFirecrackerSize(&scpb.TaskSize{EstimatedMilliCpu: 1000})
+		require.NoError(t, err)
+		return &container.Init{
+			Props:   props,
+			Task:    &repb.ScheduledTask{SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: size}, ExecutionTask: task},
+			WorkDir: testfs.MakeTempDir(t),
+		}
+	}
+
+	// Executor warmup runs without an authenticated user.
+	require.NoError(t, provider.PrewarmGenericSnapshot(context.Background(), newInit(t)))
+
+	ctx, err := auth.WithAuthenticatedUser(context.Background(), "US1")
+	require.NoError(t, err)
+	args := newInit(t)
+	c, err := provider.New(ctx, args)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, c.Remove(context.Background())) })
+	template, err := loader.GetSnapshot(templateCtx, c.(*firecracker.FirecrackerContainer).SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
+	require.NoError(t, err)
+	result := c.Run(ctx, &repb.Command{Arguments: []string{"/bin/true"}}, args.WorkDir, oci.Credentials{})
+	require.NoError(t, result.Error, "%s", result.AuxiliaryLogs)
+	require.Equal(t, 0, result.ExitCode, "%s", result.Stderr)
+	assert.Equal(t, template.GetVMMetadata().GetSnapshotId(), result.VMMetadata.GetLastExecutedTask().GetSnapshotId())
+}
+
+func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
+	ctx := context.Background()
+	flags.Set(b, "executor.enable_local_snapshot_sharing", true)
+	env := getTestEnv(ctx, b, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(b, testauth.TestUsers("US1", "GR1")))
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(b, err)
+	cfg := getExecutorConfig(b)
+	for _, generic := range []bool{false, true} {
+		b.Run(fmt.Sprintf("generic=%t", generic), func(b *testing.B) {
+			b.StopTimer()
+			var createTime, execTime time.Duration
+			for i := -1; i < b.N; i++ {
+				workDir := testfs.MakeTempDir(b)
+				c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, firecracker.ContainerOpts{
+					ContainerImage: busyboxImage, ExecutorConfig: cfg,
+					VMConfiguration: &fcpb.VMConfiguration{NumCpus: 1, MemSizeMb: 2385, ScratchDiskSizeMb: 100, GenericSnapshot: generic, NetworkMode: fcpb.NetworkMode_NETWORK_MODE_OFF},
+				})
+				require.NoError(b, err)
+				require.NoError(b, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false))
+				if i >= 0 {
+					b.StartTimer()
+				}
+				start := time.Now()
+				err = c.Create(ctx, workDir)
+				created := time.Now()
+				if err != nil {
+					c.Remove(ctx)
+					b.Fatal(err)
+				}
+				result := c.Exec(ctx, &repb.Command{Arguments: []string{"/bin/true"}}, nil)
+				done := time.Now()
+				if i >= 0 {
+					b.StopTimer()
+					createTime += created.Sub(start)
+					execTime += done.Sub(created)
+				}
+				require.NoError(b, c.Remove(ctx))
+				require.NoError(b, result.Error)
+				require.Equal(b, 0, result.ExitCode)
+			}
+			b.ReportMetric(float64(createTime.Microseconds())/float64(b.N), "create-us/op")
+			b.ReportMetric(float64(execTime.Microseconds())/float64(b.N), "exec-us/op")
+		})
+	}
 }

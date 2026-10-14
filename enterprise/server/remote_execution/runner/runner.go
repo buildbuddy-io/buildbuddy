@@ -64,13 +64,14 @@ import (
 )
 
 var (
-	rootDirectory          = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
-	hostRootDirectory      = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
-	warmupTimeoutSecs      = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
-	warmupDefaultImages    = flag.Bool("executor.warmup_default_images", false, "Whether to warm up default container images on executor startup.")
-	warmupWorkflowImages   = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
-	warmupAdditionalImages = flag.Slice[string]("executor.warmup_additional_images", []string{}, "List of container images to warm up alongside the executor default images on executor start up.")
-	maxRunnerCount         = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
+	rootDirectory              = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
+	hostRootDirectory          = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
+	warmupTimeoutSecs          = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
+	warmupDefaultImages        = flag.Bool("executor.warmup_default_images", false, "Whether to warm up default container images on executor startup.")
+	warmupWorkflowImages       = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
+	genericSnapshotPrewarmCPUs = flag.Slice[int64]("executor.firecracker_generic_snapshot_prewarm_cpus", []int64{}, "Reserved CPU counts of generic Firecracker snapshot templates to create on startup, for both network=off and networked actions.")
+	warmupAdditionalImages     = flag.Slice[string]("executor.warmup_additional_images", []string{}, "List of container images to warm up alongside the executor default images on executor start up.")
+	maxRunnerCount             = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
 
 	runnerPoolMaxTotalMemoryUsage = flag.Int64("executor.runner_pool.max_total_memory_usage_bytes", 0, "Max total memory usage for pooled runners.")
 	// How big a runner's workspace is allowed to get before we decide that it
@@ -1132,6 +1133,10 @@ func (p *pool) Warmup(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	var wg sync.WaitGroup
+	wg.Go(func() { p.warmupGenericSnapshots(ctx) })
+	defer wg.Wait()
+
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, cfg := range WarmupConfigs() {
 		eg.Go(func() error {
@@ -1141,6 +1146,76 @@ func (p *pool) Warmup(ctx context.Context) {
 	if err := eg.Wait(); err != nil {
 		log.Warningf("Error warming up containers: %s", err)
 	}
+}
+
+type genericSnapshotPrewarmer interface {
+	PrewarmGenericSnapshot(ctx context.Context, args *container.Init) error
+}
+
+func (p *pool) warmupGenericSnapshots(ctx context.Context) {
+	if len(*genericSnapshotPrewarmCPUs) == 0 {
+		return
+	}
+	prewarmer, ok := p.containerProviders[platform.FirecrackerContainerType].(genericSnapshotPrewarmer)
+	if !ok {
+		return
+	}
+	var eg errgroup.Group
+	eg.SetLimit(4)
+	for _, cpus := range *genericSnapshotPrewarmCPUs {
+		for _, network := range []string{"off", "external"} {
+			eg.Go(func() error {
+				start := time.Now()
+				if err := p.warmupGenericSnapshot(ctx, prewarmer, cpus, network); err != nil {
+					log.CtxWarningf(ctx, "Warmup: failed to prewarm %d CPU generic snapshot with network=%s: %s", cpus, network, err)
+				} else {
+					log.CtxInfof(ctx, "Warmup: prewarmed %d CPU generic snapshot with network=%s in %s", cpus, network, time.Since(start))
+				}
+				return nil
+			})
+		}
+	}
+	eg.Wait()
+}
+
+func (p *pool) warmupGenericSnapshot(ctx context.Context, prewarmer genericSnapshotPrewarmer, cpus int64, network string) error {
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"true"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "workload-isolation-type", Value: string(platform.FirecrackerContainerType)},
+				{Name: platform.FirecrackerUseGenericSnapshotPropertyName, Value: "true"},
+				{Name: "network", Value: network},
+			}},
+		},
+	}
+	props, err := platform.ParseProperties(task)
+	if err != nil {
+		return err
+	}
+	executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand())
+	size, err := tasksize.GenericFirecrackerSize(&scpb.TaskSize{EstimatedMilliCpu: cpus * 1000})
+	if err != nil {
+		return err
+	}
+	ws, err := workspace.New(p.env, p.GetBuildRoot(), &workspace.Opts{CaseInsensitive: p.caseInsensitiveFS})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
+		defer cancel()
+		if err := ws.Remove(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to remove warmup workspace: %s", err)
+		}
+	}()
+	return prewarmer.PrewarmGenericSnapshot(ctx, &container.Init{
+		Props:        props,
+		Task:         &repb.ScheduledTask{SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: size}, ExecutionTask: task},
+		WorkDir:      ws.Path(),
+		BlockDevice:  p.blockDevice,
+		CgroupParent: p.cgroupParent,
+	})
 }
 
 // WarmupConfigs returns the images configured for executor startup warmup.
