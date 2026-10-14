@@ -2816,12 +2816,9 @@ func TestRegisterAndStreamWork_PprofSubsystemLabel(t *testing.T) {
 	executor := newFakeExecutor(authenticatedContext(t, env, "user1"), t, env.GetSchedulerClient())
 	executor.Register()
 
-	require.Eventually(t, func() bool {
-		for _, labels := range testpprof.GoroutineLabels(t, "executorHandle).Serve") {
-			if labels["subsystem"] == "scheduler.executor_stream" {
-				return true
-			}
-		}
-		return false
-	}, 10*time.Second, 50*time.Millisecond)
+	// Only the subsystem label: the executor's group_id and the request labels
+	// must not leak onto the stream.
+	testpprof.RequireAnyGoroutineLabels(t, "executorHandle).Serve", map[string]string{
+		"subsystem": "scheduler.executor_stream",
+	})
 }

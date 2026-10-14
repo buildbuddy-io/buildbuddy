@@ -1891,10 +1891,11 @@ func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAn
 	handle := newExecutorHandle(s.env, s, s.requireExecutorAuthorization, stream)
 	var err error
 	// The stream carries reservations for many customers' tasks, so attribute
-	// its work to the scheduler rather than to any one group.
-	pprofutil.Do(stream.Context(), func(ctx context.Context) {
-		err = handle.Serve(ctx)
-	}, pprofutil.Subsystem, "scheduler.executor_stream")
+	// its work to the scheduler rather than to any one group. DoSubsystem
+	// replaces the request labels (including the executor's group_id).
+	pprofutil.DoSubsystem(stream.Context(), "scheduler.executor_stream", func() {
+		err = handle.Serve(stream.Context())
+	})
 	return err
 }
 
