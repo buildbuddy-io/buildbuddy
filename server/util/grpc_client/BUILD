@@ -12,6 +12,7 @@ go_library(
         "//server/util/canary",
         "//server/util/flag",
         "//server/util/log",
+        "//server/util/pprofutil",
         "//server/util/rpcutil",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
@@ -23,6 +24,7 @@ go_library(
         "@org_golang_google_grpc//experimental",
         "@org_golang_google_grpc//keepalive",
         "@org_golang_google_grpc//mem",
+        "@org_golang_google_grpc//stats",
         "@org_golang_x_sync//errgroup",
     ],
 )
@@ -32,6 +34,7 @@ go_test(
     size = "small",
     srcs = [
         "grpc_client_internal_test.go",
+        "grpc_client_pprof_test.go",
         "grpc_client_test.go",
     ],
     embed = [":grpc_client"],
@@ -42,6 +45,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testleak",
         "//server/testutil/testport",
+        "//server/testutil/testpprof",
         "//server/util/grpc_server",
         "//server/util/status",
         "//server/util/testing/flags",
@@ -50,5 +54,7 @@ go_test(
         "@com_github_prometheus_client_model//io/prometheus/client:go",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//connectivity",
     ],
 )

@@ -107,8 +107,20 @@ func TakeSnapshot(t testing.TB) Snapshot {
 }
 
 // isNew returns whether g runs funcSubstring and didn't at the time of s.
+// funcSubstring may be several substrings joined by "&", all of which must
+// appear in the stack (e.g. to tell a client goroutine from a server one that
+// runs the same function).
 func (s Snapshot) isNew(g goroutine, funcSubstring string) bool {
-	return strings.Contains(g.frames, funcSubstring) && !strings.Contains(s[g.id], funcSubstring)
+	return hasAll(g.frames, funcSubstring) && !hasAll(s[g.id], funcSubstring)
+}
+
+func hasAll(frames, funcSubstring string) bool {
+	for sub := range strings.SplitSeq(funcSubstring, "&") {
+		if !strings.Contains(frames, sub) {
+			return false
+		}
+	}
+	return true
 }
 
 // GoroutineLabels returns the label sets of all goroutines whose stack

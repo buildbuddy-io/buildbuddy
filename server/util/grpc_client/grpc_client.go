@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
@@ -29,6 +30,7 @@ import (
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/mem"
+	"google.golang.org/grpc/stats"
 )
 
 const (
@@ -444,7 +446,7 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 	if *rpcutil.OTELGRPCMessageEventsEnabled {
 		otelOpts = append(otelOpts, otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))
 	}
-	return []grpc.DialOption{
+	opts := []grpc.DialOption{
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler(otelOpts...)),
 		rpcutil.ClientSizeMetricsDialOption(),
 		interceptors.GetUnaryClientInterceptor(),
@@ -466,7 +468,31 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 			PermitWithoutStream: true,
 		}),
 	}
+	if pprofutil.Enabled() {
+		opts = append(opts, grpc.WithStatsHandler(transportLabelHandler{}))
+	}
+	return opts
 }
+
+// transportLabelHandler keeps a connection's transport goroutines (reader,
+// loopy writer, keepalive) from inheriting the pprof labels of the request
+// that happened to trigger the connect. TagConn runs on the goroutine that
+// spawns them, which is dedicated to establishing this connection, so
+// replacing its labels doesn't affect any request.
+type transportLabelHandler struct{}
+
+func (transportLabelHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	pprofutil.SetSubsystem("grpc_client")
+	return ctx
+}
+
+func (transportLabelHandler) HandleConn(context.Context, stats.ConnStats) {}
+
+func (transportLabelHandler) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
+	return ctx
+}
+
+func (transportLabelHandler) HandleRPC(context.Context, stats.RPCStats) {}
 
 type ConnCacheOpts struct {
 	// Number of connections in each peer's pool.
