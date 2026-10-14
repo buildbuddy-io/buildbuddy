@@ -620,16 +620,33 @@ func sqlRow() *dashboard.RowBuilder {
 
 func redisRow() *dashboard.RowBuilder {
 	return row("Redis").
-		WithPanel(ts("Memory usage", dash.UnitPercentUnit).
+		WithPanel(ts("Memory usage (percent of maxmemory)",dash.UnitPercentUnit).
 			Height(9).
+			AxisSoftMax(1).
 			WithTarget(dash.PromQuery(`sum by(pod_name) (redis_memory_used_bytes{region="${region}"} / redis_memory_max_bytes{region="${region}"})`, "{{pod_name}}"))).
 		WithPanel(ts("CPU Usage", dash.UnitPercentUnit).
 			Height(9).
 			WithTarget(dash.PromQuery(`sum by (pod_name) (rate(redis_cpu_user_seconds_total{region="${region}"}[${window}]) + rate(redis_cpu_sys_seconds_total{region="${region}"}[${window}]))`, "{{pod_name}}"))).
-		WithPanel(ts("Total items", "").
+		WithPanel(ts("Memory usage (bytes)",dash.UnitBytes).
 			Height(9).
+			AxisSoftMin(0).
+			Tooltip(multiTooltip()).
+			OverrideByName("maxmemory", []dashboard.DynamicConfigValue{
+				{Id: "color", Value: map[string]any{"fixedColor": "orange", "mode": "fixed"}},
+				{Id: "custom.lineStyle", Value: map[string]any{"fill": "dash", "dash": []any{10, 10}}},
+			}).
+			OverrideByName("pod memory limit", []dashboard.DynamicConfigValue{
+				{Id: "color", Value: map[string]any{"fixedColor": "red", "mode": "fixed"}},
+				{Id: "custom.lineStyle", Value: map[string]any{"fill": "dash", "dash": []any{10, 10}}},
+			}).
+			WithTarget(dash.PromQuery(`sum by(pod_name) (redis_memory_used_bytes{region="${region}"})`, "{{pod_name}}").RefId("A")).
+			WithTarget(dash.PromQuery(`max(redis_memory_max_bytes{region="${region}"})`, "maxmemory").RefId("B")).
+			WithTarget(dash.PromQuery(`max(kube_pod_container_resource_limits{region="${region}", pod=~"redis-sharded-[0-9]+", container="redis", resource="memory"})`, "pod memory limit").RefId("C"))).
+		WithPanel(ts("Total items", dash.UnitShort).
+			Height(9).
+			AxisSoftMin(0).
 			WithTarget(dash.PromQuery(`sum by (pod_name) (redis_db_keys{region="${region}"})`, "{{pod_name}}"))).
-		WithPanel(ts("Expiration Rate", "").
+		WithPanel(ts("Expiration Rate", dash.UnitOps).
 			Height(9).
 			WithTarget(dash.PromQuery(`sum by (pod_name) (rate(redis_expired_keys_total{region="${region}"}[${window}]))`, "{{pod_name}}"))).
 		WithPanel(ts("Total number of clients", "").
