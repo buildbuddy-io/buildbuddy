@@ -55,8 +55,8 @@ func DisableUsageTracking(ctx context.Context) context.Context {
 }
 
 func LabelsForUsageRecording(ctx context.Context, server string) (*tables.UsageLabels, sku.Labels, error) {
-	origin := originLabel(ctx)
-	client := clientLabel(ctx)
+	origin := OriginLabel(ctx)
+	client := ClientLabel(ctx)
 	proxy := proxyLabel(ctx)
 	primaryDBLabels := &tables.UsageLabels{
 		Origin: origin,
@@ -136,8 +136,8 @@ func CollectionFromRPCContext(ctx context.Context) *Collection {
 	c := &Collection{
 		GroupID: groupID,
 		Server:  ServerName(),
-		Client:  clientLabel(ctx),
-		Origin:  originLabel(ctx),
+		Client:  ClientLabel(ctx),
+		Origin:  OriginLabel(ctx),
 		Proxy:   ProxyType(),
 	}
 	return c
@@ -156,7 +156,9 @@ func AddUsageHeadersToContext(ctx context.Context, client string, origin string,
 	return ctx
 }
 
-func originLabel(ctx context.Context) string {
+// OriginLabel returns the origin header value, if any.
+// OriginLabel returns the origin header value, if any.
+func OriginLabel(ctx context.Context) string {
 	vals := metadata.ValueFromIncomingContext(ctx, OriginHeaderName)
 	if len(vals) == 0 {
 		return ""
@@ -164,7 +166,9 @@ func originLabel(ctx context.Context) string {
 	return vals[0]
 }
 
-func clientLabel(ctx context.Context) string {
+// ClientLabel returns the client header value, or "bazel" for bazel requests.
+// ClientLabel returns the client header value, or "bazel" for bazel requests.
+func ClientLabel(ctx context.Context) string {
 	vals := metadata.ValueFromIncomingContext(ctx, ClientHeaderName)
 	if len(vals) > 0 {
 		return vals[0]

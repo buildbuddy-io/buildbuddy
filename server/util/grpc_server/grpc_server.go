@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_forward"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -229,7 +230,13 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 	if *rpcutil.OTELGRPCMessageEventsEnabled {
 		statsHandler = rpcutil.WithTracingMessageEvents(statsHandler)
 	}
-	opts := []grpc.ServerOption{
+	var opts []grpc.ServerOption
+	if pprofutil.Enabled() {
+		// Registered first so the other stats handlers' per-RPC work is
+		// labeled too.
+		opts = append(opts, grpc.StatsHandler(interceptors.PprofLabelsStatsHandler{}))
+	}
+	opts = append(opts,
 		grpc.StatsHandler(statsHandler),
 		rpcutil.ServerSizeMetricsOption(),
 		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
@@ -240,9 +247,9 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		grpc.UnaryInterceptor(interceptors.TracedUnaryServerInterceptor("grpc_server.MetricsInterceptor", Metrics().UnaryServerInterceptor())),
 		experimental.BufferPool(mem.DefaultBufferPool()),
 		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
-		grpc.NumStreamWorkers(uint32(runtime.GOMAXPROCS(0)) * workerMultiplier),
+		grpc.NumStreamWorkers(uint32(runtime.GOMAXPROCS(0))*workerMultiplier),
 		KeepaliveEnforcementPolicy(),
-	}
+	)
 	for _, h := range config.ExtraStatsHandlers {
 		opts = append(opts, grpc.StatsHandler(h))
 	}

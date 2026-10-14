@@ -14,6 +14,7 @@ go_library(
         "//server/util/clientip",
         "//server/util/grpc_forward",
         "//server/util/log",
+        "//server/util/pprofutil",
         "//server/util/rpcutil",
         "//server/util/status",
         "@com_github_grpc_ecosystem_go_grpc_middleware_providers_prometheus//:prometheus",

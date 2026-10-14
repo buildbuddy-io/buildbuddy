@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/pprofutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
@@ -723,7 +724,11 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 	if len(extraInterceptors) > 0 {
 		interceptors = append(interceptors, extraInterceptors...)
 	}
-	interceptors = append(interceptors, authUnaryServerInterceptor(env),
+	interceptors = append(interceptors, authUnaryServerInterceptor(env))
+	if pprofutil.Enabled() {
+		interceptors = append(interceptors, groupLabelUnaryServerInterceptor())
+	}
+	interceptors = append(interceptors,
 		groupStatusUnaryServerInterceptor(env),
 		quotaUnaryServerInterceptor(env),
 		ipAuthUnaryServerInterceptor(env),
@@ -751,7 +756,11 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 	if len(extraInterceptors) > 0 {
 		interceptors = append(interceptors, extraInterceptors...)
 	}
-	interceptors = append(interceptors, authStreamServerInterceptor(env),
+	interceptors = append(interceptors, authStreamServerInterceptor(env))
+	if pprofutil.Enabled() {
+		interceptors = append(interceptors, groupLabelStreamServerInterceptor())
+	}
+	interceptors = append(interceptors,
 		groupStatusStreamServerInterceptor(env),
 		quotaStreamServerInterceptor(env),
 		ipAuthStreamServerInterceptor(env),
