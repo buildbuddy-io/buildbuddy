@@ -48,3 +48,15 @@ ts_library(
     srcs = ["structured_log.ts"],
     deps = ["//:node_modules/tslib"],
 )
+
+ts_library(
+    name = "suggest",
+    srcs = ["suggest.ts"],
+    deps = [
+        "//:node_modules/tslib",
+        "//app/components/search_box:completion",
+        "//enterprise/atlas/app/lib:config",
+        "//enterprise/atlas/app/lib:rpc_service",
+        "//proto:atlas_ts_proto",
+    ],
+)

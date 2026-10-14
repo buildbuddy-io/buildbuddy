@@ -9,9 +9,6 @@ package(default_visibility = [
 go_library(
     name = "vfs",
     srcs = [
-        "vfs_darwin.go",
-        "vfs_linux_amd64.go",
-        "vfs_linux_arm64.go",
         "vfs_unix.go",
         "vfs_windows.go",
     ],

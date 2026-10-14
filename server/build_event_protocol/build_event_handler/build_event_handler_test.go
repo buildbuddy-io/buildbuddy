@@ -1371,6 +1371,53 @@ func TestPeriodicInvocationRowUpdateWhileStreaming(t *testing.T) {
 	assert.Equal(t, t1.UnixMicro(), ti.UpdatedAtUsec)
 }
 
+// fakeExecutionCollector records the invocation IDs passed to
+// RefreshExecutions.
+type fakeExecutionCollector struct {
+	interfaces.ExecutionCollector
+	refreshes chan string
+}
+
+func (c *fakeExecutionCollector) RefreshExecutions(ctx context.Context, iid string) error {
+	c.refreshes <- iid
+	return nil
+}
+
+func TestRefreshBufferedExecutionsWhileStreaming(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	clock := clockwork.NewFakeClock()
+	te.SetClock(clock)
+	collector := &fakeExecutionCollector{refreshes: make(chan string, 10)}
+	te.SetExecutionCollector(collector)
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(t.Context(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	require.NoError(t, err)
+
+	refreshedIID := <-collector.refreshes
+	require.Equal(t, testInvocationID, refreshedIID)
+
+	clock.Advance(15 * time.Minute)
+	refreshedIID = <-collector.refreshes
+	require.Equal(t, testInvocationID, refreshedIID)
+
+	err = channel.FinalizeInvocation(testInvocationID)
+	require.NoError(t, err)
+
+	clock.Advance(15 * time.Minute)
+	require.Empty(t, collector.refreshes)
+}
+
 func TestRetryOnComplete(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))

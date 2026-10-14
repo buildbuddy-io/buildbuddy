@@ -1,0 +1,75 @@
+.search-box {
+  position: relative;
+}
+
+/* The likeliest completion, in grey after what was typed. The overlay is
+   styled as the input itself (it carries the text-input class) so the two
+   share a box, with the typed part drawn invisibly so the grey text starts
+   where the caret is. Three classes, so this outranks the two-class variants
+   in input.css (.text-input.dark, .text-input.invalid) whatever the load
+   order, keeping the overlay see-through. */
+.search-box .text-input.search-box-ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  border-color: transparent;
+  background: transparent;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.search-box-ghost-typed {
+  color: transparent;
+}
+
+.search-box-ghost-rest {
+  color: var(--color-text-muted);
+}
+
+.search-box-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+}
+
+.search-box-item {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.search-box-item.selected,
+.search-box-item:hover {
+  background: var(--color-bg-hover);
+}
+
+.search-box-item-detail {
+  flex: 1;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-box-item-count {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}

@@ -49,6 +49,7 @@ genrule(
         "//app/components/select:select.css",
         "//app/components/checkbox:checkbox.css",
         "//app/components/spinner:spinner.css",
+        "//app/components/search_box:search_box.css",
         "atlas.css",
     ],
     outs = ["style.css"],
