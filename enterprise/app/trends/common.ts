@@ -87,7 +87,7 @@ export function computeTimeKeys(
         break;
       }
     }
-    return { timeKeys: keyDates.map((v) => v.getTime()), ticks: ticks };
+    return { timeKeys: keyDates.map((v) => v.getTime()), ticks };
   }
   const keys = timeDay.range(timeDay.floor(domain[0]), domain[1]).map((v) => v.getTime());
   return { timeKeys: keys, ticks: keys };
