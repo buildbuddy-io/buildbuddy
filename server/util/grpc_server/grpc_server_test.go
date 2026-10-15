@@ -9,21 +9,25 @@ import (
 	"runtime/trace"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/stats"
 
 	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
 	exptrace "golang.org/x/exp/trace"
+	gstatus "google.golang.org/grpc/status"
 )
 
-const pingMethod = "/ping.Api/Ping"
+const (
+	pingMethod    = "/ping.Api/Ping"
+	unknownMethod = "/ping.Api/Unknown"
+	streamMethod  = "/test.Streamer/Stream"
+)
 
 type pingServer struct {
 	pspb.UnimplementedApiServer
@@ -33,21 +37,10 @@ func (pingServer) Ping(ctx context.Context, req *pspb.PingRequest) (*pspb.PingRe
 	return &pspb.PingResponse{Tag: req.GetTag()}, nil
 }
 
-// endNotifier is registered after the trace task stats handler, so by the time
-// it sees an RPC's End event that handler has already ended the RPC's task.
-// Unlike the response arriving at the client, which happens before the End
-// event, this is a reliable sync point.
-type endNotifier struct{ ended chan struct{} }
-
-func (e endNotifier) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context { return ctx }
-func (e endNotifier) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
-	return ctx
-}
-func (e endNotifier) HandleConn(context.Context, stats.ConnStats) {}
-func (e endNotifier) HandleRPC(_ context.Context, rs stats.RPCStats) {
-	if _, ok := rs.(*stats.End); ok {
-		e.ended <- struct{}{}
-	}
+var streamDesc = grpc.StreamDesc{
+	StreamName:    "Stream",
+	ServerStreams: true,
+	Handler:       func(any, grpc.ServerStream) error { return nil },
 }
 
 // traceCounts counts the begin and end events of tasks of a given type, and of
@@ -56,13 +49,17 @@ type traceCounts struct {
 	taskBegins, taskEnds, regionBegins, regionEnds int
 }
 
-func tracePing(t *testing.T) traceCounts {
-	ended := make(chan struct{}, 1)
+// traceRPCs makes a unary RPC, a streaming RPC and an RPC to an unknown method
+// while recording a trace, and returns the trace's counts by method.
+func traceRPCs(t *testing.T) map[string]traceCounts {
 	env := testenv.GetTestEnv(t)
-	s := grpc.NewServer(grpc_server.CommonGRPCServerOptionsWithConfig(env, grpc_server.GRPCServerConfig{
-		ExtraStatsHandlers: []stats.Handler{endNotifier{ended}},
-	})...)
+	s := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
 	pspb.RegisterApiServer(s, pingServer{})
+	s.RegisterService(&grpc.ServiceDesc{
+		ServiceName: "test.Streamer",
+		HandlerType: (*any)(nil),
+		Streams:     []grpc.StreamDesc{streamDesc},
+	}, struct{}{})
 	lis, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	go s.Serve(lis)
@@ -77,19 +74,26 @@ func tracePing(t *testing.T) traceCounts {
 	var once sync.Once
 	stop := func() { once.Do(trace.Stop) }
 	t.Cleanup(stop)
-	_, err = pspb.NewApiClient(conn).Ping(context.Background(), &pspb.PingRequest{})
+	ctx := context.Background()
+	_, err = pspb.NewApiClient(conn).Ping(ctx, &pspb.PingRequest{})
 	require.NoError(t, err)
-	select {
-	case <-ended:
-	case <-time.After(30 * time.Second):
-		require.FailNow(t, "RPC did not finish")
-	}
+	err = conn.Invoke(ctx, unknownMethod, &pspb.PingRequest{}, &pspb.PingResponse{})
+	require.Equal(t, codes.Unimplemented, gstatus.Code(err), "error: %v", err)
+	cs, err := conn.NewStream(ctx, &streamDesc, streamMethod)
+	require.NoError(t, err)
+	require.NoError(t, cs.CloseSend())
+	require.Equal(t, io.EOF, cs.RecvMsg(&pspb.PingResponse{}))
+	// The client can see an RPC finish before the server has sent the End
+	// stats event. GracefulStop waits for the handler goroutines, which send
+	// it, to return.
+	require.NoError(t, conn.Close())
+	s.GracefulStop()
 	stop()
 
 	r, err := exptrace.NewReader(&buf)
 	require.NoError(t, err)
-	var c traceCounts
-	tasks := map[exptrace.TaskID]bool{}
+	counts := map[string]traceCounts{}
+	taskTypes := map[exptrace.TaskID]string{}
 	for {
 		ev, err := r.ReadEvent()
 		if err == io.EOF {
@@ -98,26 +102,32 @@ func tracePing(t *testing.T) traceCounts {
 		require.NoError(t, err)
 		switch ev.Kind() {
 		case exptrace.EventTaskBegin:
-			if ev.Task().Type == pingMethod {
-				c.taskBegins++
-				tasks[ev.Task().ID] = true
-			}
+			task := ev.Task()
+			taskTypes[task.ID] = task.Type
+			c := counts[task.Type]
+			c.taskBegins++
+			counts[task.Type] = c
 		case exptrace.EventTaskEnd:
-			if ev.Task().Type == pingMethod {
-				c.taskEnds++
-			}
+			task := ev.Task()
+			c := counts[task.Type]
+			c.taskEnds++
+			counts[task.Type] = c
 		case exptrace.EventRegionBegin:
-			if r := ev.Region(); tasks[r.Task] && r.Type == pingMethod {
+			if reg := ev.Region(); taskTypes[reg.Task] == reg.Type {
+				c := counts[reg.Type]
 				c.regionBegins++
+				counts[reg.Type] = c
 			}
 		case exptrace.EventRegionEnd:
-			if r := ev.Region(); tasks[r.Task] && r.Type == pingMethod {
+			if reg := ev.Region(); taskTypes[reg.Task] == reg.Type {
+				c := counts[reg.Type]
 				c.regionEnds++
+				counts[reg.Type] = c
 			}
 		default:
 		}
 	}
-	return c
+	return counts
 }
 
 func TestTraceTasks(t *testing.T) {
@@ -125,13 +135,26 @@ func TestTraceTasks(t *testing.T) {
 		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
 			flags.Set(t, "monitoring.enable_trace_tasks", enabled)
 
-			c := tracePing(t)
+			counts := traceRPCs(t)
 
-			n := 0
+			want := map[string]traceCounts{}
 			if enabled {
-				n = 1
+				want = map[string]traceCounts{
+					pingMethod:   {1, 1, 1, 1},
+					streamMethod: {1, 1, 1, 1},
+					// gRPC sends no End event for unknown methods, so their
+					// task is never ended. Their region must not be left
+					// open, though.
+					unknownMethod: {1, 0, 0, 0},
+				}
 			}
-			require.Equal(t, traceCounts{n, n, n, n}, c)
+			got := map[string]traceCounts{}
+			for _, m := range []string{pingMethod, streamMethod, unknownMethod} {
+				if c, ok := counts[m]; ok {
+					got[m] = c
+				}
+			}
+			require.Equal(t, want, got)
 		})
 	}
 }
