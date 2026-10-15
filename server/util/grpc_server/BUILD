@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "grpc_server",
@@ -27,5 +27,21 @@ go_library(
         "@org_golang_google_grpc//mem",
         "@org_golang_google_grpc//reflection",
         "@org_golang_google_grpc//stats",
+    ],
+)
+
+go_test(
+    name = "grpc_server_test",
+    srcs = ["grpc_server_test.go"],
+    deps = [
+        ":grpc_server",
+        "//proto:ping_service_go_proto",
+        "//server/testutil/testenv",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//stats",
+        "@org_golang_x_exp//trace",
     ],
 )
