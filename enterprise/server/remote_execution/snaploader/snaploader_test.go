@@ -111,7 +111,7 @@ func setupCacheRPC(t *testing.T, env *testenv.TestEnv) {
 	go run()
 }
 
-func TestCacheSnapshot_ValidationFailureDoesNotPublishManifest(t *testing.T) {
+func TestCacheSnapshotArtifacts_NotFoundUntilPublished(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t)
 	loader, err := snaploader.New(env)
@@ -119,25 +119,23 @@ func TestCacheSnapshot_ValidationFailureDoesNotPublishManifest(t *testing.T) {
 	workDir := testfs.MakeTempDir(t)
 	keys, err := loader.SnapshotKeySet(ctx, &repb.ExecutionTask{}, "config-hash", "")
 	require.NoError(t, err)
+	getOpts := &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly}
 
 	opts := makeFakeSnapshot(t, workDir, false /*=remoteEnabled*/, nil, "")
-	validated := false
-	opts.ValidateSnapshot = func(snapshot *snaploader.Snapshot) error {
-		validated = true
-		_, err := loader.UnpackSnapshot(ctx, snapshot, testfs.MakeTempDir(t))
-		require.NoError(t, err)
-		return fmt.Errorf("snapshot is unhealthy")
-	}
-	err = loader.CacheSnapshot(ctx, keys.GetBranchKey(), opts)
-	require.ErrorContains(t, err, "snapshot is unhealthy")
-	require.True(t, validated)
-
-	_, err = loader.GetSnapshot(ctx, keys, &snaploader.GetSnapshotOptions{
-		SupportsRemoteChunks:   false,
-		SupportsRemoteManifest: false,
-		ReadPolicy:             platform.ReadLocalSnapshotOnly,
-	})
+	unpublished, err := loader.CacheSnapshotArtifacts(ctx, keys.GetBranchKey(), opts)
+	require.NoError(t, err)
+	_, err = loader.GetSnapshot(ctx, keys, getOpts)
 	require.Error(t, err)
+
+	// The unpublished snapshot can be restored before it's published.
+	snapshot, err := loader.GetUnpublishedSnapshot(ctx, unpublished)
+	require.NoError(t, err)
+	_, err = loader.UnpackSnapshot(ctx, snapshot, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+
+	require.NoError(t, loader.PublishSnapshot(ctx, unpublished))
+	_, err = loader.GetSnapshot(ctx, keys, getOpts)
+	require.NoError(t, err)
 }
 
 func TestPackAndUnpackChunkedFiles(t *testing.T) {

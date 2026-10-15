@@ -1030,40 +1030,19 @@ func (p *pool) resolveImageDigest(ctx context.Context, props *platform.Propertie
 	return nil
 }
 
-func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
-	start := time.Now()
-	plat := &repb.Platform{
-		Properties: []*repb.Platform_Property{
-			{Name: "container-image", Value: platform.DockerPrefix + cfg.Image},
-			{Name: "workload-isolation-type", Value: cfg.Isolation},
-		},
-	}
-	task := &repb.ExecutionTask{
-		Command: &repb.Command{
-			Arguments: []string{"echo", "'warmup'"},
-			Platform:  plat,
-		},
-	}
-	platProps, err := platform.ParseProperties(task)
+// withWarmupContainer creates a container for a startup warmup task and calls
+// fn with it. taskSize returns the task's size after executor overrides are
+// applied to props.
+func (p *pool) withWarmupContainer(ctx context.Context, task *repb.ExecutionTask, taskSize func(props *platform.Properties) (*scpb.TaskSize, error), fn func(props *platform.Properties, c *container.TracedCommandContainer) error) error {
+	props, err := platform.ParseProperties(task)
 	if err != nil {
 		return err
 	}
-	executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), platProps, task.GetCommand())
-	if *resolveImageDigests {
-		if err := p.resolveImageDigest(ctx, platProps); err != nil {
-			return err
-		}
+	executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand())
+	size, err := taskSize(props)
+	if err != nil {
+		return err
 	}
-	log.Infof("Warming up %s image %q", cfg.Isolation, platProps.ContainerImage)
-	st := &repb.ScheduledTask{
-		SchedulingMetadata: &scpb.SchedulingMetadata{
-			// Note: this will use the default task size estimates and not
-			// measurement-based task sizing, which requires the app.
-			TaskSize: tasksize.ApplyLimits(ctx, p.env.GetExperimentFlagProvider(), task.GetCommand(), platProps, tasksize.Default(task)),
-		},
-		ExecutionTask: task,
-	}
-
 	ws, err := workspace.New(p.env, p.GetBuildRoot(), &workspace.Opts{
 		CaseInsensitive: p.caseInsensitiveFS,
 	})
@@ -1077,10 +1056,13 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 			log.CtxErrorf(ctx, "Failed to remove warmup workspace: %s", err)
 		}
 	}()
-	c, err := p.newContainer(ctx, platProps, st, ws.Path())
+	st := &repb.ScheduledTask{
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: size},
+		ExecutionTask:      task,
+	}
+	c, err := p.newContainer(ctx, props, st, ws.Path())
 	if err != nil {
-		log.Errorf("Error warming up %q image %q: %s", cfg.Isolation, platProps.ContainerImage, err)
-		return err
+		return status.WrapError(err, "create warmup container")
 	}
 	defer func() {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
@@ -1089,34 +1071,62 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 			log.CtxErrorf(ctx, "Failed to remove warmup container: %s", err)
 		}
 	}()
+	return fn(props, c)
+}
 
-	creds, err := oci.CredentialsFromProperties(platProps)
-	if err != nil {
-		return err
+func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
+	start := time.Now()
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"echo", "'warmup'"},
+			Platform: &repb.Platform{
+				Properties: []*repb.Platform_Property{
+					{Name: "container-image", Value: platform.DockerPrefix + cfg.Image},
+					{Name: "workload-isolation-type", Value: cfg.Isolation},
+				},
+			},
+		},
 	}
-	// Note: intentionally bypassing PullImageIfNecessary here to avoid caching
-	// the auth result, since it makes it tricker to debug per-action
-	// misconfiguration.
-	onDisk, _ := c.IsImageCached(ctx)
-	pullStart := time.Now()
-	pullErr := c.PullImage(ctx, creds)
-	pullDuration := time.Since(pullStart)
-	container.RecordImageFetchMetrics(
-		c.IsolationType(),
-		oci.RegistryETLDPlusOne(platProps.ContainerImage),
-		metrics.ImageFetchTriggerWarmup,
-		onDisk,
-		!creds.IsEmpty(),
-		platProps.UseOCIFetcher,
-		pullErr,
-		pullDuration,
-	)
-	container.LogImagePullError(ctx, platProps.ContainerImage, c.IsolationType(), metrics.ImageFetchTriggerWarmup, platProps.UseOCIFetcher, pullErr, pullDuration)
-	if pullErr != nil {
-		return pullErr
+	taskSize := func(platProps *platform.Properties) (*scpb.TaskSize, error) {
+		if *resolveImageDigests {
+			if err := p.resolveImageDigest(ctx, platProps); err != nil {
+				return nil, err
+			}
+		}
+		log.Infof("Warming up %s image %q", cfg.Isolation, platProps.ContainerImage)
+		// Note: this will use the default task size estimates and not
+		// measurement-based task sizing, which requires the app.
+		return tasksize.ApplyLimits(ctx, p.env.GetExperimentFlagProvider(), task.GetCommand(), platProps, tasksize.Default(task)), nil
 	}
-	log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, platProps.ContainerImage, time.Since(start))
-	return nil
+	return p.withWarmupContainer(ctx, task, taskSize, func(platProps *platform.Properties, c *container.TracedCommandContainer) error {
+		creds, err := oci.CredentialsFromProperties(platProps)
+		if err != nil {
+			return err
+		}
+		// Note: intentionally bypassing PullImageIfNecessary here to avoid caching
+		// the auth result, since it makes it tricker to debug per-action
+		// misconfiguration.
+		onDisk, _ := c.IsImageCached(ctx)
+		pullStart := time.Now()
+		pullErr := c.PullImage(ctx, creds)
+		pullDuration := time.Since(pullStart)
+		container.RecordImageFetchMetrics(
+			c.IsolationType(),
+			oci.RegistryETLDPlusOne(platProps.ContainerImage),
+			metrics.ImageFetchTriggerWarmup,
+			onDisk,
+			!creds.IsEmpty(),
+			platProps.UseOCIFetcher,
+			pullErr,
+			pullDuration,
+		)
+		container.LogImagePullError(ctx, platProps.ContainerImage, c.IsolationType(), metrics.ImageFetchTriggerWarmup, platProps.UseOCIFetcher, pullErr, pullDuration)
+		if pullErr != nil {
+			return pullErr
+		}
+		log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, platProps.ContainerImage, time.Since(start))
+		return nil
+	})
 }
 
 func (p *pool) Warmup(ctx context.Context) {
@@ -1148,16 +1158,13 @@ func (p *pool) Warmup(ctx context.Context) {
 	}
 }
 
-type genericSnapshotPrewarmer interface {
-	PrewarmGenericSnapshot(ctx context.Context, args *container.Init) error
-}
-
+// warmupGenericSnapshots builds the configured generic Firecracker snapshots.
+// Failures are logged, not fatal: tasks build missing snapshots on demand.
 func (p *pool) warmupGenericSnapshots(ctx context.Context) {
 	if len(*genericSnapshotPrewarmCPUs) == 0 {
 		return
 	}
-	prewarmer, ok := p.containerProviders[platform.FirecrackerContainerType].(genericSnapshotPrewarmer)
-	if !ok {
+	if _, ok := p.containerProviders[platform.FirecrackerContainerType]; !ok && p.overrideProvider == nil {
 		return
 	}
 	var eg errgroup.Group
@@ -1166,8 +1173,8 @@ func (p *pool) warmupGenericSnapshots(ctx context.Context) {
 		for _, network := range []string{"off", "external"} {
 			eg.Go(func() error {
 				start := time.Now()
-				if err := p.warmupGenericSnapshot(ctx, prewarmer, cpus, network); err != nil {
-					log.CtxWarningf(ctx, "Warmup: failed to prewarm %d CPU generic snapshot with network=%s: %s", cpus, network, err)
+				if err := p.warmupGenericSnapshot(ctx, cpus, network); err != nil {
+					log.CtxErrorf(ctx, "Warmup: failed to prewarm %d CPU generic snapshot with network=%s: %s", cpus, network, err)
 				} else {
 					log.CtxInfof(ctx, "Warmup: prewarmed %d CPU generic snapshot with network=%s in %s", cpus, network, time.Since(start))
 				}
@@ -1178,7 +1185,7 @@ func (p *pool) warmupGenericSnapshots(ctx context.Context) {
 	eg.Wait()
 }
 
-func (p *pool) warmupGenericSnapshot(ctx context.Context, prewarmer genericSnapshotPrewarmer, cpus int64, network string) error {
+func (p *pool) warmupGenericSnapshot(ctx context.Context, cpus int64, network string) error {
 	task := &repb.ExecutionTask{
 		Command: &repb.Command{
 			Arguments: []string{"true"},
@@ -1189,32 +1196,15 @@ func (p *pool) warmupGenericSnapshot(ctx context.Context, prewarmer genericSnaps
 			}},
 		},
 	}
-	props, err := platform.ParseProperties(task)
-	if err != nil {
-		return err
+	taskSize := func(*platform.Properties) (*scpb.TaskSize, error) {
+		return tasksize.GenericFirecrackerSize(&scpb.TaskSize{EstimatedMilliCpu: cpus * 1000})
 	}
-	executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand())
-	size, err := tasksize.GenericFirecrackerSize(&scpb.TaskSize{EstimatedMilliCpu: cpus * 1000})
-	if err != nil {
-		return err
-	}
-	ws, err := workspace.New(p.env, p.GetBuildRoot(), &workspace.Opts{CaseInsensitive: p.caseInsensitiveFS})
-	if err != nil {
-		return err
-	}
-	defer func() {
-		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
-		defer cancel()
-		if err := ws.Remove(ctx); err != nil {
-			log.CtxErrorf(ctx, "Failed to remove warmup workspace: %s", err)
+	return p.withWarmupContainer(ctx, task, taskSize, func(_ *platform.Properties, c *container.TracedCommandContainer) error {
+		vm, ok := c.Delegate.(container.VM)
+		if !ok {
+			return status.FailedPreconditionErrorf("%s isolation does not support generic snapshots", c.IsolationType())
 		}
-	}()
-	return prewarmer.PrewarmGenericSnapshot(ctx, &container.Init{
-		Props:        props,
-		Task:         &repb.ScheduledTask{SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: size}, ExecutionTask: task},
-		WorkDir:      ws.Path(),
-		BlockDevice:  p.blockDevice,
-		CgroupParent: p.cgroupParent,
+		return vm.PrewarmGenericSnapshot(ctx)
 	})
 }
 

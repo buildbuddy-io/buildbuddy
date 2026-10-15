@@ -36,7 +36,7 @@ const (
 )
 
 var (
-	deferRootMount   = flag.Bool("defer_container_root", false, "Mount the container root after restoring a generic snapshot.")
+	deferRootfsMount = flag.Bool("defer_rootfs_mount", false, "Mount the rootfs after restoring a generic snapshot.")
 	path             = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	vmExecPort       = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
 	enableRootfs     = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
@@ -257,7 +257,7 @@ func main() {
 	die(mkdirp("/sys", 0555))
 	die(mount("sys", "/sys", "sysfs", commonMountFlags, ""))
 
-	if *deferRootMount {
+	if *deferRootfsMount {
 		die(mkdirp("/mnt", 0755))
 		die(mount("tmpfs", "/mnt", "tmpfs", syscall.MS_NOSUID, ""))
 	} else if *enableRootfs {

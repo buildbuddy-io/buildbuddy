@@ -92,6 +92,7 @@ go_test(
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",
         "//enterprise/server/util/oci",
+        "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",

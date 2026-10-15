@@ -41,6 +41,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -1316,47 +1317,56 @@ func TestTransientErrorExitCodes(t *testing.T) {
 	}
 }
 
-type fakeGenericSnapshotPrewarmer struct {
-	providerFunc
-	mu   sync.Mutex
-	errs []error
+// fakeVMContainer is a fake Firecracker container for generic snapshot prewarm.
+type fakeVMContainer struct {
+	*fakeContainer
+	prewarm func(ctx context.Context) error
 }
 
-func (f *fakeGenericSnapshotPrewarmer) PrewarmGenericSnapshot(ctx context.Context, args *container.Init) error {
-	var err error
-	select {
-	case <-ctx.Done():
-		err = ctx.Err()
-	case <-time.After(100 * time.Millisecond):
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.errs = append(f.errs, err)
-	return err
+func (*fakeVMContainer) SetTaskFileSystemLayout(*container.FileSystemLayout) {}
+func (*fakeVMContainer) SnapshotDebugString(context.Context) string          { return "" }
+func (*fakeVMContainer) VMConfig() *fcpb.VMConfiguration                     { return nil }
+func (c *fakeVMContainer) PrewarmGenericSnapshot(ctx context.Context) error {
+	return c.prewarm(ctx)
 }
 
 func TestWarmup_ImageWarmupFailureDoesNotCancelGenericSnapshotPrewarm(t *testing.T) {
 	flags.Set(t, "executor.firecracker_generic_snapshot_prewarm_cpus", []int64{1})
 	flags.Set(t, "executor.warmup_additional_images", []string{"example.com/image:latest"})
 	env := newTestEnv(t)
-	failingProvider := providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	var mu sync.Mutex
+	var prewarmErrs []error
+	prewarm := func(ctx context.Context) error {
+		var err error
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		prewarmErrs = append(prewarmErrs, err)
+		return err
+	}
+	provider := providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		if args.Props.UseGenericSnapshot {
+			return &fakeVMContainer{fakeContainer: NewFakeContainer(), prewarm: prewarm}, nil
+		}
 		return nil, status.UnavailableError("image warmup failed")
 	})
 	pool := newRunnerPool(t, env, &RunnerPoolOptions{
-		PoolOptions:               &PoolOptions{ContainerProvider: failingProvider},
+		PoolOptions:               &PoolOptions{ContainerProvider: provider},
 		MaxRunnerCount:            unlimited,
 		MaxRunnerDiskSizeBytes:    unlimited,
 		MaxRunnerMemoryUsageBytes: unlimited,
 	})
-	prewarmer := &fakeGenericSnapshotPrewarmer{providerFunc: failingProvider}
-	pool.containerProviders = map[platform.ContainerType]container.Provider{platform.FirecrackerContainerType: prewarmer}
 
 	pool.Warmup(context.Background())
 
-	prewarmer.mu.Lock()
-	defer prewarmer.mu.Unlock()
-	require.Len(t, prewarmer.errs, 2) // network=off and external
-	for _, err := range prewarmer.errs {
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, prewarmErrs, 2) // network=off and external
+	for _, err := range prewarmErrs {
 		assert.NoError(t, err)
 	}
 }

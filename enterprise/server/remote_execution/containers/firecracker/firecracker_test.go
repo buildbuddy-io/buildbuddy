@@ -171,7 +171,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// which will negatively affect customer experience. Be careful!
 	// Generic snapshots have distinct keys; existing snapshots do not use the new initialization RPC field.
 	const (
-		expectedHash    = "6c113cf7503624afd0e54faf34504d1883fcbd89c24cb59247e76c0261f3849b"
+		expectedHash    = "1de1de800194f937d5a13a2db060f093feb133cbeb308da52dcfe46ccae5e12f"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -5137,7 +5137,7 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 	cfg := getExecutorConfig(t)
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
-	templateCtx := snaploader.WithSharedNamespace(context.Background(), env, firecracker.GenericSnapshotNamespace)
+	genericSnapshotCtx := snaploader.WithSharedNamespace(context.Background(), env, firecracker.GenericSnapshotNamespace)
 	var bootIDsMu sync.Mutex
 	bootIDs := map[string]bool{}
 	run := func(t *testing.T, ctx context.Context, image, user string, cpus int64) *snaploader.Snapshot {
@@ -5192,15 +5192,15 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 		} else {
 			assert.Equal(t, "65534\n", string(result.Stdout))
 		}
-		snap, err := loader.GetSnapshot(templateCtx, c.SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
+		snap, err := loader.GetSnapshot(genericSnapshotCtx, c.SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
 		require.NoError(t, err)
 		assert.Equal(t, snap.GetVMMetadata().GetSnapshotId(), result.VMMetadata.GetLastExecutedTask().GetSnapshotId())
-		// Templates are shared across groups, so they must not identify the task that built them.
+		// Generic snapshots are shared across groups, so they must not identify the task that built them.
 		lastTask := result.VMMetadata.GetLastExecutedTask()
 		assert.Empty(t, lastTask.GetInvocationId())
 		assert.Empty(t, lastTask.GetExecutionId())
 		assert.Nil(t, lastTask.GetActionDigest())
-		// Images are cached under the task's instance, not the template's.
+		// Images are cached under the task's instance, not the generic snapshot's.
 		_, err = snaploader.GetCachedContainerImage(ctx, loader, "generic-instance", image, false /*=remoteEnabled*/)
 		assert.NoError(t, err)
 		return snap
@@ -5216,31 +5216,31 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 	})
 	require.NotNil(t, snapshots[0])
 	require.NotNil(t, snapshots[1])
-	templateID := snapshots[0].GetVMMetadata().GetSnapshotId()
-	require.NotEmpty(t, templateID)
-	require.Equal(t, templateID, snapshots[1].GetVMMetadata().GetSnapshotId())
+	genericSnapshotID := snapshots[0].GetVMMetadata().GetSnapshotId()
+	require.NotEmpty(t, genericSnapshotID)
+	require.Equal(t, genericSnapshotID, snapshots[1].GetVMMetadata().GetSnapshotId())
 	for _, image := range []string{ubuntuImage, busyboxImage} {
 		t.Run(image, func(t *testing.T) {
-			assert.Equal(t, templateID, run(t, ctx, image, "", 1).GetVMMetadata().GetSnapshotId())
+			assert.Equal(t, genericSnapshotID, run(t, ctx, image, "", 1).GetVMMetadata().GetSnapshotId())
 		})
 	}
 	t.Run("nonroot", func(t *testing.T) {
-		assert.Equal(t, templateID, run(t, ctx, ubuntuImage, "nobody", 1).GetVMMetadata().GetSnapshotId())
+		assert.Equal(t, genericSnapshotID, run(t, ctx, ubuntuImage, "nobody", 1).GetVMMetadata().GetSnapshotId())
 	})
 	t.Run("two CPUs with networking", func(t *testing.T) {
-		assert.NotEqual(t, templateID, run(t, ctx, busyboxImage, "", 2).GetVMMetadata().GetSnapshotId())
+		assert.NotEqual(t, genericSnapshotID, run(t, ctx, busyboxImage, "", 2).GetVMMetadata().GetSnapshotId())
 	})
 	t.Run("other group", func(t *testing.T) {
 		otherCtx, err := auth.WithAuthenticatedUser(ctx, "US2")
 		require.NoError(t, err)
-		assert.Equal(t, templateID, run(t, otherCtx, busyboxImage, "", 1).GetVMMetadata().GetSnapshotId())
+		assert.Equal(t, genericSnapshotID, run(t, otherCtx, busyboxImage, "", 1).GetVMMetadata().GetSnapshotId())
 	})
 	t.Run("evicted memory", func(t *testing.T) {
 		files := snapshots[0].GetChunkedFiles()
 		require.Len(t, files, 1)
 		require.NotEmpty(t, files[0].GetChunks())
-		require.True(t, env.GetFileCache().DeleteFile(templateCtx, &repb.FileNode{Digest: files[0].GetChunks()[0].GetDigest()}))
-		assert.NotEqual(t, templateID, run(t, ctx, busyboxImage, "", 1).GetVMMetadata().GetSnapshotId())
+		require.True(t, env.GetFileCache().DeleteFile(genericSnapshotCtx, &repb.FileNode{Digest: files[0].GetChunks()[0].GetDigest()}))
+		assert.NotEqual(t, genericSnapshotID, run(t, ctx, busyboxImage, "", 1).GetVMMetadata().GetSnapshotId())
 	})
 }
 
@@ -5255,7 +5255,7 @@ func TestFirecrackerGenericSnapshotPrewarm(t *testing.T) {
 	require.NoError(t, err)
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
-	templateCtx := snaploader.WithSharedNamespace(context.Background(), env, firecracker.GenericSnapshotNamespace)
+	genericSnapshotCtx := snaploader.WithSharedNamespace(context.Background(), env, firecracker.GenericSnapshotNamespace)
 	newInit := func(t *testing.T) *container.Init {
 		task := &repb.ExecutionTask{Command: &repb.Command{
 			Arguments: []string{"true"},
@@ -5278,7 +5278,10 @@ func TestFirecrackerGenericSnapshotPrewarm(t *testing.T) {
 	}
 
 	// Executor warmup runs without an authenticated user.
-	require.NoError(t, provider.PrewarmGenericSnapshot(context.Background(), newInit(t)))
+	prewarmVM, err := provider.New(context.Background(), newInit(t))
+	require.NoError(t, err)
+	require.NoError(t, prewarmVM.(*firecracker.FirecrackerContainer).PrewarmGenericSnapshot(context.Background()))
+	require.NoError(t, prewarmVM.Remove(context.Background()))
 
 	ctx, err := auth.WithAuthenticatedUser(context.Background(), "US1")
 	require.NoError(t, err)
@@ -5286,12 +5289,12 @@ func TestFirecrackerGenericSnapshotPrewarm(t *testing.T) {
 	c, err := provider.New(ctx, args)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, c.Remove(context.Background())) })
-	template, err := loader.GetSnapshot(templateCtx, c.(*firecracker.FirecrackerContainer).SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
+	genericSnapshot, err := loader.GetSnapshot(genericSnapshotCtx, c.(*firecracker.FirecrackerContainer).SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
 	require.NoError(t, err)
 	result := c.Run(ctx, &repb.Command{Arguments: []string{"/bin/true"}}, args.WorkDir, oci.Credentials{})
 	require.NoError(t, result.Error, "%s", result.AuxiliaryLogs)
 	require.Equal(t, 0, result.ExitCode, "%s", result.Stderr)
-	assert.Equal(t, template.GetVMMetadata().GetSnapshotId(), result.VMMetadata.GetLastExecutedTask().GetSnapshotId())
+	assert.Equal(t, genericSnapshot.GetVMMetadata().GetSnapshotId(), result.VMMetadata.GetLastExecutedTask().GetSnapshotId())
 }
 
 func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {

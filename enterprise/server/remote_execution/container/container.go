@@ -614,6 +614,10 @@ type VM interface {
 
 	// VMConfig returns the VM's initialization config.
 	VMConfig() *fcpb.VMConfiguration
+
+	// PrewarmGenericSnapshot builds the generic snapshot this VM would start
+	// from, if it isn't already cached.
+	PrewarmGenericSnapshot(ctx context.Context) error
 }
 
 // RecordImageFetchMetrics records the image fetch duration histogram.

@@ -423,10 +423,14 @@ type CacheSnapshotOptions struct {
 	//
 	// The snapshot write policy determines whether the snapshot is actually written.
 	EligibleToWriteUniversalManifest bool
+}
 
-	// If set, validate the snapshot after caching its artifacts but before
-	// publishing its manifest.
-	ValidateSnapshot func(*Snapshot) error
+// UnpublishedSnapshot is a snapshot whose artifacts are cached but whose
+// manifest isn't published yet, so GetSnapshot can't find it.
+type UnpublishedSnapshot struct {
+	key          *fcpb.SnapshotKey
+	opts         *CacheSnapshotOptions
+	actionResult *repb.ActionResult
 }
 
 type UnpackedSnapshot struct {
@@ -826,21 +830,34 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	unpublished, err := l.CacheSnapshotArtifacts(ctx, key, opts)
+	if err != nil {
+		return err
+	}
+	return l.PublishSnapshot(ctx, unpublished)
+}
+
+// CacheSnapshotArtifacts caches a snapshot's files without publishing its
+// manifest. Call PublishSnapshot to make it available to GetSnapshot.
+func (l *FileCacheLoader) CacheSnapshotArtifacts(ctx context.Context, key *fcpb.SnapshotKey, opts *CacheSnapshotOptions) (*UnpublishedSnapshot, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	if key == nil {
-		return status.InvalidArgumentErrorf("key required to cache snapshot")
+		return nil, status.InvalidArgumentErrorf("key required to cache snapshot")
 	}
 
 	if !opts.CacheSnapshotRemotely && !opts.WriteManifestLocally {
-		return status.InternalError("must cache snapshot either remotely or locally")
+		return nil, status.InternalError("must cache snapshot either remotely or locally")
 	}
 
 	vmConfig, err := anypb.New(opts.VMConfiguration)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	vmMetadata, err := anypb.New(opts.VMMetadata)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ar := &repb.ActionResult{
 		ExecutionMetadata: &repb.ExecutedActionMetadata{
@@ -899,7 +916,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	for name, cow := range opts.ChunkedFiles {
 		treeDigest, err := l.cacheCOW(egCtx, name, key.InstanceName, cow, opts)
 		if err != nil {
-			return status.WrapErrorf(err, "cache %q COW", name)
+			return nil, status.WrapErrorf(err, "cache %q COW", name)
 		}
 		dir := &repb.OutputDirectory{
 			Path:       name,
@@ -909,28 +926,29 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	}
 
 	if err := eg.Wait(); err != nil {
-		return err
+		return nil, err
 	}
+	return &UnpublishedSnapshot{key: key, opts: opts, actionResult: ar}, nil
+}
 
-	if opts.ValidateSnapshot != nil {
-		manifest, err := l.actionResultToManifest(ctx, key.InstanceName, ar, l.env.GetFileCache().TempDir(), opts.CacheSnapshotRemotely)
-		if err != nil {
-			return err
-		}
-		snapshot := &Snapshot{
-			key:                  key,
-			manifest:             manifest,
-			supportsRemoteChunks: opts.CacheSnapshotRemotely,
-		}
-		if err := opts.ValidateSnapshot(snapshot); err != nil {
-			return status.WrapError(err, "validate snapshot")
-		}
+// GetUnpublishedSnapshot returns an unpublished snapshot in the form
+// GetSnapshot would, so it can be restored and checked before publishing.
+func (l *FileCacheLoader) GetUnpublishedSnapshot(ctx context.Context, s *UnpublishedSnapshot) (*Snapshot, error) {
+	manifest, err := l.actionResultToManifest(ctx, s.key.InstanceName, s.actionResult, l.env.GetFileCache().TempDir(), s.opts.CacheSnapshotRemotely)
+	if err != nil {
+		return nil, err
 	}
+	return &Snapshot{
+		key:                  s.key,
+		manifest:             manifest,
+		supportsRemoteChunks: s.opts.CacheSnapshotRemotely,
+	}, nil
+}
 
-	// Write the ActionResult to the cache only after we've successfully
-	// uploaded all snapshot related artifacts. We'll retrieve this later in
-	// order to unpack the snapshot.
-	return l.cacheActionResult(ctx, key, ar, opts)
+// PublishSnapshot writes the manifest for a snapshot whose artifacts are
+// cached, making it available to GetSnapshot.
+func (l *FileCacheLoader) PublishSnapshot(ctx context.Context, s *UnpublishedSnapshot) error {
+	return l.cacheActionResult(ctx, s.key, s.actionResult, s.opts)
 }
 
 func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.SnapshotKey, ar *repb.ActionResult, opts *CacheSnapshotOptions) error {
