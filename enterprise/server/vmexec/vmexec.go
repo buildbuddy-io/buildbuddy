@@ -376,6 +376,15 @@ func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspa
 
 // waitForBlockDeviceSize polls until the block device reports the given size.
 func waitForBlockDeviceSize(ctx context.Context, device string, sizeBytes int64) error {
+	// We stop waiting a second before the caller's deadline so that the caller
+	// receives our error, which includes the device size, rather than its own
+	// deadline error. If our response takes longer than that to arrive, the
+	// caller just sees the less detailed error.
+	if deadline, ok := ctx.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline.Add(-time.Second))
+		defer cancel()
+	}
 	// sysfs reports the size in 512-byte sectors, regardless of the device's
 	// logical block size.
 	sizePath := filepath.Join("/sys/class/block", filepath.Base(device), "size")
@@ -394,7 +403,7 @@ func waitForBlockDeviceSize(ctx context.Context, device string, sizeBytes int64)
 		}
 		select {
 		case <-ctx.Done():
-			return status.DeadlineExceededErrorf("device %s has %d sectors, want %d", device, sectors, wantSectors)
+			return status.WrapErrorf(status.FromContextError(ctx), "device %s has %d sectors, want %d", device, sectors, wantSectors)
 		case <-time.After(time.Millisecond):
 		}
 	}
