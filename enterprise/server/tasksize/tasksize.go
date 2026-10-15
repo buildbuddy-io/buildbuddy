@@ -178,6 +178,10 @@ func (s *taskSizer) Get(ctx context.Context, cmd *repb.Command, props *platform.
 	if props.DisableMeasuredTaskSize {
 		return nil
 	}
+	// Generic Firecracker snapshot tasks must keep their shape-rounded size.
+	if props.UseGenericSnapshot {
+		return nil
+	}
 	// Don't use measured task sizes for Firecracker tasks for now, since task
 	// sizes are used as hard limits on allowed resources.
 	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {

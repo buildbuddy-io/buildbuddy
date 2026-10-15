@@ -394,6 +394,30 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 		"subsequent milliCPU estimate should equal recorded milliCPU")
 }
 
+func TestSizer_Get_SkipsMeasuredSizeForGenericSnapshot(t *testing.T) {
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionRedisClient(testredis.Start(t).Client())
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers()))
+	sizer, err := tasksize.NewSizer(env)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	cmd := &repb.Command{Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"}}
+	execStart := time.Now()
+	err = sizer.Update(ctx, cmd, &platform.Properties{}, &repb.ExecutedActionMetadata{
+		UsageStats:                  &repb.UsageStats{CpuNanos: 3e9, PeakMemoryBytes: 500e6},
+		ExecutionStartTimestamp:     timestamppb.New(execStart),
+		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(2 * time.Second)),
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, sizer.Get(ctx, cmd, &platform.Properties{}))
+	// The generic snapshot size must not be replaced, even without the
+	// Firecracker isolation exclusion.
+	require.Nil(t, sizer.Get(ctx, cmd, &platform.Properties{UseGenericSnapshot: true}))
+}
+
 func TestSizer_RespectsMilliCPULimit(t *testing.T) {
 	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
 
