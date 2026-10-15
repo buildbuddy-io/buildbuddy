@@ -9,18 +9,13 @@ import (
 
 // ServeHTTP renders the current flag state to YAML and writes it to the
 // http.ResponseWriter. The endpoint is read-only: only GET and HEAD are
-// allowed, and requests with a query string are rejected rather than ignored,
-// so that callers expecting to set a flag don't silently get a no-op.
+// allowed, and query parameters are ignored.
 func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "/flagz is read-only; only GET and HEAD are supported.", http.StatusMethodNotAllowed)
-		return
-	}
-	if r.URL.RawQuery != "" {
-		http.Error(w, "/flagz is read-only and does not support setting flags.", http.StatusBadRequest)
 		return
 	}
 	b, err := flagyaml.SplitDocumentedYAMLFromFlags(flagyaml.RedactSecrets)
