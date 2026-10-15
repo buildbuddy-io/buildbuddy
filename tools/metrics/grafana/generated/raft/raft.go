@@ -307,7 +307,7 @@ func metadataServerOverallRow() *dashboard.RowBuilder {
 	return row("Metadata Server Overall").
 		WithPanel(ts("CPU", dash.UnitPercentUnit).
 			Max(1).
-			WithTarget(q("1 - (avg by(mode,nodename) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^gke-.*-mds-.*-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"})))", "{{nodename}}").
+			WithTarget(q("1 - avg by (nodename) (rate(node_cpu_seconds_total{region=\"${region}\", mode=\"idle\", nodename=~\"^gke-.*-mds-.*-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"}[1m]))", "{{nodename}}").
 				RefId("A"))).
 		WithPanel(metadataServerOverallPodNhidGkeNodePanel()).
 		WithPanel(ts("instances", dash.UnitShort).
