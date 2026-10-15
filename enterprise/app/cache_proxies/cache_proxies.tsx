@@ -340,11 +340,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                     Setup
                   </div>
                   {activeTab === "status" && hasProxies && (
-                    <ViewModeToggle
-                      viewMode={this.state.viewMode}
-                      onChange={this.onChangeViewMode.bind(this)}
-                      showLabel
-                    />
+                    <ViewModeToggle viewMode={this.state.viewMode} onChange={this.onChangeViewMode.bind(this)} />
                   )}
                 </div>
                 {activeTab === "status" && (
