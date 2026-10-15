@@ -3,6 +3,7 @@
 package vfs_server
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -233,6 +234,11 @@ type fsNode struct {
 	parent      *fsNode
 	children    map[string]*fsNode
 	backingPath string
+
+	// Directory offsets must survive additions and removals so a reader can
+	// resume from an older listing without skipping or repeating other entries.
+	directoryOffsets    map[string]uint64
+	nextDirectoryOffset uint64
 }
 
 func (fsn *fsNode) IsDirectory() bool {
@@ -811,28 +817,46 @@ func (p *Server) GetDirectoryContents(ctx context.Context, request *vfspb.GetDir
 	for name := range node.children {
 		names = append(names, name)
 	}
-	node.mu.Unlock()
-
 	slices.Sort(names)
 
+	if node.directoryOffsets == nil {
+		node.directoryOffsets = make(map[string]uint64, len(names))
+	}
+	for name := range node.directoryOffsets {
+		if _, ok := node.children[name]; !ok {
+			delete(node.directoryOffsets, name)
+		}
+	}
+	children := make(map[string]*fsNode, len(names))
 	var nodes []*vfspb.Node
 	for _, name := range names {
-		node.mu.Lock()
-		child, ok := node.children[name]
-		node.mu.Unlock()
-
-		// Shouldn't happen in practice.
+		offset, ok := node.directoryOffsets[name]
 		if !ok {
-			return nil, status.UnknownError("child node disappeared")
+			node.nextDirectoryOffset++
+			offset = node.nextDirectoryOffset
+			node.directoryOffsets[name] = offset
 		}
-
-		child.mu.Lock()
+		children[name] = node.children[name]
 		nodes = append(nodes, &vfspb.Node{
-			Id:    child.id,
-			Mode:  child.mode(),
-			Name:  name,
-			Attrs: child.attrs,
+			Name:            name,
+			DirectoryOffset: offset,
 		})
+	}
+	node.mu.Unlock()
+
+	// Sort by stable directory offset so that clients can do a simple binary
+	// search to implement seekdir.
+	slices.SortFunc(nodes, func(a, b *vfspb.Node) int {
+		return cmp.Compare(a.GetDirectoryOffset(), b.GetDirectoryOffset())
+	})
+	// Read attributes from the captured children so concurrent removals do not
+	// make this listing fail partway through.
+	for _, n := range nodes {
+		child := children[n.GetName()]
+		child.mu.Lock()
+		n.Id = child.id
+		n.Mode = child.mode()
+		n.Attrs = child.attrs
 		child.mu.Unlock()
 	}
 	return &vfspb.GetDirectoryContentsResponse{Nodes: nodes}, nil
