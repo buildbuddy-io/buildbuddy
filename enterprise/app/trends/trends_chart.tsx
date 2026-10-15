@@ -631,15 +631,14 @@ function CustomXAxis({ hasBars, numPoints, ticks, formatXAxisLabel }: CustomXAxi
   // If someone really needs it, this could be updated to filter down to just
   // the points where the BAR series' extractor function returns a non-null
   // value, but that's kinda funky and we don't need it right now.
-  const points = numPoints + 1;
-  const extraPad = hasBars ? (width / points / 2 || 19) + 1 : 0;
+  const extraPad = hasBars && numPoints > 1 ? (width / numPoints / 2 || 19) + 1 : 0;
 
   return (
     <XAxis
       dataKey={(v) => v}
       tickFormatter={formatXAxisLabel}
       ticks={ticks}
-      type={"number"}
+      type={numPoints > 1 ? "number" : "auto"}
       padding={{ left: extraPad, right: extraPad }}
       domain={["dataMin", "dataMax"]}
     />
