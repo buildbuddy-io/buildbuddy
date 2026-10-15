@@ -1,7 +1,8 @@
 import Long from "long";
-import { Cloud } from "lucide-react";
+import { ChartColumn, Cloud, Flag } from "lucide-react";
 import React from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
+import { OutlinedButton } from "../../../app/components/button/button";
 import format from "../../../app/format/format";
 import { cache_proxy } from "../../../proto/cache_proxy_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
@@ -29,9 +30,13 @@ interface Props {
   proxy: cache_proxy.CacheProxySummary;
   lastCheckInTime?: google_timestamp.protobuf.Timestamp | null;
   statistics?: cache_proxy.IStatistics | null;
-  // When true, the card is in summary mode and the statistics divider and
-  // rings are hidden.
+  // Sets the default visibility of flags and statistics for all cards.
   summary?: boolean;
+}
+
+interface State {
+  showFlags: boolean;
+  showStats: boolean;
 }
 
 // toNumber accepts the int64-as-number-or-Long values that protobuf-ts
@@ -63,7 +68,18 @@ function isFresh(t?: google_timestamp.protobuf.Timestamp | null): boolean {
   return Date.now() - ms < freshThresholdMs;
 }
 
-export default class CacheProxyCardComponent extends React.Component<Props> {
+export default class CacheProxyCardComponent extends React.Component<Props, State> {
+  state: State = {
+    showFlags: !this.props.summary,
+    showStats: !this.props.summary,
+  };
+
+  componentDidUpdate(prevProps: Props) {
+    if (prevProps.summary !== this.props.summary) {
+      this.setState({ showFlags: !this.props.summary, showStats: !this.props.summary });
+    }
+  }
+
   render() {
     const fresh = isFresh(this.props.lastCheckInTime);
     return (
@@ -127,17 +143,40 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
                 </div>
               </div>
             )}
-            {!this.props.summary && this.props.proxy.configuredFlags.length > 0 && (
-              <div className="cache-proxy-section">
+            <div className="cache-proxy-card-actions">
+              <OutlinedButton
+                type="button"
+                className="small-button"
+                aria-expanded={this.state.showFlags}
+                onClick={() => this.setState((state) => ({ showFlags: !state.showFlags }))}>
+                <Flag className="icon" aria-hidden="true" />
+                {this.state.showFlags ? "Hide flags" : "View flags"}
+              </OutlinedButton>
+              <OutlinedButton
+                type="button"
+                className="small-button"
+                aria-expanded={this.state.showStats}
+                onClick={() => this.setState((state) => ({ showStats: !state.showStats }))}>
+                <ChartColumn className="icon" aria-hidden="true" />
+                {this.state.showStats ? "Hide stats" : "View stats"}
+              </OutlinedButton>
+            </div>
+            {this.state.showFlags && (
+              <div className="cache-proxy-section cache-proxy-flags-section">
                 <div className="cache-proxy-section-title">Configuration:</div>
                 <div className="cache-proxy-configured-flags">
-                  {this.props.proxy.configuredFlags.map((f) => (
-                    <div key={f}>{f}</div>
-                  ))}
+                  {this.props.proxy.configuredFlags.length > 0
+                    ? this.props.proxy.configuredFlags.map((f) => <div key={f}>{f}</div>)
+                    : "No configured flags reported."}
                 </div>
               </div>
             )}
-            {!this.props.summary && this.props.statistics && this.renderStatistics(this.props.statistics)}
+            {this.state.showStats &&
+              (this.props.statistics ? (
+                this.renderStatistics(this.props.statistics)
+              ) : (
+                <div className="cache-proxy-stats-empty">No statistics reported yet.</div>
+              ))}
           </div>
         </div>
       </div>
@@ -151,46 +190,65 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
     const casReadBytes = toNumber(s.casReadHitBytes) + toNumber(s.casReadMissBytes);
     return (
       <>
-        <div className="cache-proxy-stats-divider"></div>
         <div className="cache-proxy-stats-heading">Statistics</div>
         <div className="cache-proxy-stat-rings">
-          {this.renderReadRing("AC reads (digests)", toNumber(s.acReadHits), toNumber(s.acReadMisses), 0, format.count)}
-          {this.renderReadWriteRing("AC reads/writes (digests)", acReads, toNumber(s.acWrites), format.count)}
           {this.renderReadRing(
-            "AC reads (bytes)",
-            toNumber(s.acReadHitBytes),
-            toNumber(s.acReadMissBytes),
-            0,
-            format.bytes
-          )}
-          {this.renderReadWriteRing("AC reads/writes (bytes)", acReadBytes, toNumber(s.acWriteBytes), format.bytes)}
-        </div>
-        <div className="cache-proxy-stat-rings">
-          {this.renderReadRing(
-            "CAS reads (digests)",
+            "Hit rate",
+            "CAS Requests",
             toNumber(s.casReadHits),
             toNumber(s.casReadMisses),
             toNumber(s.casReadUncacheable),
             format.count
           )}
-          {this.renderReadWriteRing("CAS reads/writes (digests)", casReads, toNumber(s.casWrites), format.count)}
+          {this.renderReadWriteRing("Read ratio", "CAS Requests", casReads, toNumber(s.casWrites), format.count)}
           {this.renderReadRing(
-            "CAS reads (bytes)",
+            "Hit rate",
+            "CAS Bytes",
             toNumber(s.casReadHitBytes),
             toNumber(s.casReadMissBytes),
             toNumber(s.casReadUncacheableBytes),
             format.bytes
           )}
-          {this.renderReadWriteRing("CAS reads/writes (bytes)", casReadBytes, toNumber(s.casWriteBytes), format.bytes)}
+          {this.renderReadWriteRing("Read ratio", "CAS Bytes", casReadBytes, toNumber(s.casWriteBytes), format.bytes)}
         </div>
+        {toNumber(s.acReadHits) > 0 && (
+          <div className="cache-proxy-stat-rings">
+            {this.renderReadRing(
+              "Hit rate",
+              "AC Requests",
+              toNumber(s.acReadHits),
+              toNumber(s.acReadMisses),
+              0,
+              format.count
+            )}
+            {this.renderReadWriteRing("Read ratio", "AC Requests", acReads, toNumber(s.acWrites), format.count)}
+            {this.renderReadRing(
+              "Hit rate",
+              "AC Bytes",
+              toNumber(s.acReadHitBytes),
+              toNumber(s.acReadMissBytes),
+              0,
+              format.bytes
+            )}
+            {this.renderReadWriteRing("Read ratio", "AC Bytes", acReadBytes, toNumber(s.acWriteBytes), format.bytes)}
+          </div>
+        )}
       </>
     );
   }
 
-  renderReadRing(title: string, hits: number, misses: number, uncacheable: number, formatValue: (v: number) => string) {
+  renderReadRing(
+    title: string,
+    subtitle: string,
+    hits: number,
+    misses: number,
+    uncacheable: number,
+    formatValue: (v: number) => string
+  ) {
     return (
       <div className="cache-proxy-stat-ring">
         <div className="cache-proxy-stat-ring-title">{title}</div>
+        <div className="cache-proxy-stat-ring-subtitle">{subtitle}</div>
         <div className="cache-proxy-stat-ring-row">
           {drawReadRing(hits, misses, uncacheable)}
           <div className="cache-proxy-stat-ring-labels">
@@ -218,10 +276,11 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
     );
   }
 
-  renderReadWriteRing(title: string, reads: number, writes: number, formatValue: (v: number) => string) {
+  renderReadWriteRing(title: string, subtitle: string, reads: number, writes: number, formatValue: (v: number) => string) {
     return (
       <div className="cache-proxy-stat-ring">
         <div className="cache-proxy-stat-ring-title">{title}</div>
+        <div className="cache-proxy-stat-ring-subtitle">{subtitle}</div>
         <div className="cache-proxy-stat-ring-row">
           {drawReadWriteRing(reads, writes)}
           <div className="cache-proxy-stat-ring-labels">

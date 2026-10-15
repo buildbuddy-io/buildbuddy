@@ -39,6 +39,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/recharts",
         "//:node_modules/tslib",
+        "//app/components/button",
         "//app/format",
         "//proto:cache_proxy_ts_proto",
         "//proto:timestamp_ts_proto",

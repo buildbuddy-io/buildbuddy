@@ -392,7 +392,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
   }
 
   renderViewModeToggle() {
-    return <ViewModeToggle viewMode={this.state.viewMode} onChange={this.onChangeViewMode.bind(this)} />;
+    return <ViewModeToggle viewMode={this.state.viewMode} onChange={this.onChangeViewMode.bind(this)} showLabel />;
   }
 
   // "bring your own runners" is enabled for the installation (i.e. BuildBuddy Cloud deployment).
