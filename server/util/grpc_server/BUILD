@@ -40,8 +40,9 @@ go_test(
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
-        "@org_golang_google_grpc//stats",
+        "@org_golang_google_grpc//status",
         "@org_golang_x_exp//trace",
     ],
 )
