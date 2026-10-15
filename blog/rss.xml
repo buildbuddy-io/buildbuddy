@@ -4,10 +4,19 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Fri, 01 May 2026 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Wed, 14 Oct 2026 09:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Taking humans out of the build loop]]></title>
+            <link>https://www.buildbuddy.io/blog/taking-humans-out-of-the-build-loop</link>
+            <guid>https://www.buildbuddy.io/blog/taking-humans-out-of-the-build-loop</guid>
+            <pubDate>Wed, 14 Oct 2026 09:00:00 GMT</pubDate>
+            <description><![CDATA[At BuildBuddy, we've been thinking a lot about what it means to build developer infrastructure not just for humans, but for agents. This post, which was adapted from my BazelCon talk, walks through the tools we've built to make building with agents easier and faster.]]></description>
+            <category>product</category>
+            <category>AI</category>
+        </item>
         <item>
             <title><![CDATA[Remote Cache CDC: Reusing Bytes]]></title>
             <link>https://www.buildbuddy.io/blog/content-defined-chunking</link>
@@ -181,14 +190,6 @@
             <pubDate>Wed, 01 Nov 2023 12:00:00 GMT</pubDate>
             <description><![CDATA[Another year, another Bazelcon! This year's edition was held in Munich, Germany, and featured two days of talks by Bazel maintainers, contributers, and users. Among the Bazel users represented as this year's conference were: Booking.com, RabbitMQ, Spotify, Stripe, Uber, and more.]]></description>
             <category>bazelcon</category>
-            <category>company</category>
-        </item>
-        <item>
-            <title><![CDATA[BuildBuddy Named to Inaugural Redpoint InfraRed 100]]></title>
-            <link>https://www.buildbuddy.io/blog/redpoint-infrared-100</link>
-            <guid>https://www.buildbuddy.io/blog/redpoint-infrared-100</guid>
-            <pubDate>Tue, 18 Jul 2023 12:00:00 GMT</pubDate>
-            <description><![CDATA[New York City – July 18, 2023 – BuildBuddy, which provides an enterprise software for the Bazel ecosystem, announces its inclusion in the first edition of the Redpoint InfraRed 100, a comprehensive list of the next 100 promising private companies in Cloud Infrastructure. This curated selection of companies represents the next generation of leaders in the industry, poised to make a significant impact in the cloud infrastructure market.]]></description>
             <category>company</category>
         </item>
     </channel>
