@@ -517,6 +517,67 @@ func TestGetAPIKeyGroupFromAPIKeyID(t *testing.T) {
 		"expected Unauthenticated error; got: %v", err)
 }
 
+func TestGetAPIKeysOrder(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	fakeClock := clockwork.NewFakeClock()
+	env.SetClock(fakeClock)
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+	env.SetAuthDB(adb)
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	var admin *tables.User
+	for _, u := range users {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			admin = u
+			break
+		}
+	}
+	require.NotNil(t, admin)
+	groupID := admin.Groups[0].Group.GroupID
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	labelsByID := map[string]string{}
+	for _, k := range []struct {
+		label     string
+		expiresIn time.Duration
+	}{
+		{"a-never", 0},
+		{"b-never", 0},
+		{"c-3h", 3 * time.Hour},
+		{"e-2h", 2 * time.Hour},
+		{"f-2h", 2 * time.Hour},
+		{"g-expired", 30 * time.Minute},
+		{"h-expired", 10 * time.Minute},
+		{"z-90m", 90 * time.Minute},
+	} {
+		req := &akpb.CreateApiKeyRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+			Label:          k.label,
+		}
+		if k.expiresIn != 0 {
+			req.ExpiresIn = durationpb.New(k.expiresIn)
+		}
+		rsp, err := env.GetBuildBuddyServer().CreateApiKey(authCtx, req)
+		require.NoError(t, err)
+		labelsByID[rsp.GetApiKey().GetId()] = k.label
+	}
+	fakeClock.Advance(time.Hour)
+
+	keys, err := adb.GetAPIKeys(authCtx, groupID, true /*=includeExpired*/)
+	require.NoError(t, err)
+	var labels []string
+	for _, k := range keys {
+		if label, ok := labelsByID[k.APIKeyID]; ok {
+			labels = append(labels, label)
+		}
+	}
+	require.Equal(t, []string{"z-90m", "e-2h", "f-2h", "c-3h", "a-never", "b-never", "g-expired", "h-expired"}, labels)
+}
+
 func TestGetAPIKeys(t *testing.T) {
 	for _, encrypt := range []bool{false, true} {
 		t.Run(fmt.Sprintf("encrypt_%t", encrypt), func(t *testing.T) {

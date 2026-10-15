@@ -1,6 +1,7 @@
 package authdb
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
@@ -1179,7 +1180,32 @@ func (d *AuthDB) toListedAPIKeys(rows []*apiKeyGroupRow) ([]*tables.APIKey, erro
 		}
 		keys = append(keys, k)
 	}
+	sortAPIKeys(keys, d.clock.Now())
 	return keys, nil
+}
+
+func sortAPIKeys(keys []*tables.APIKey, now time.Time) {
+	nowUsec := now.UnixMicro()
+	slices.SortFunc(keys, func(a, b *tables.APIKey) int {
+		aExpired := a.ExpiryUsec != 0 && a.ExpiryUsec <= nowUsec
+		bExpired := b.ExpiryUsec != 0 && b.ExpiryUsec <= nowUsec
+		if aExpired != bExpired {
+			if aExpired {
+				return 1
+			}
+			return -1
+		}
+		if !aExpired && a.ExpiryUsec != b.ExpiryUsec {
+			if a.ExpiryUsec == 0 {
+				return 1
+			}
+			if b.ExpiryUsec == 0 {
+				return -1
+			}
+			return cmp.Compare(a.ExpiryUsec, b.ExpiryUsec)
+		}
+		return strings.Compare(a.Label, b.Label)
+	})
 }
 
 func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiKeyID string, includeExpired bool) (*tables.APIKey, error) {
