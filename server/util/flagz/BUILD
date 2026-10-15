@@ -14,7 +14,7 @@ go_test(
     deps = [
         ":flagz",
         "//server/util/flag",
-        "//server/util/flagutil/common",
+        "//server/util/flagutil/yaml",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -284,7 +284,7 @@ func Zero[T any]() T {
 func ResetFlags(flagset *flag.FlagSet) error {
 	errors := []error{}
 	flagset.VisitAll(func(flg *flag.Flag) {
-		if err := setWithOverride(flagset, flg.Value, flg.Name, flg.DefValue, true); err != nil {
+		if err := setWithOverride(flagset, flg.Value, flg.Name, flg.DefValue); err != nil {
 			errors = append(errors, status.InternalErrorf("Error resetting flag %s: %s", flg.Name, err))
 			return
 		}
@@ -295,21 +295,11 @@ func ResetFlags(flagset *flag.FlagSet) error {
 	return nil
 }
 
-// SetWithOverride sets the flag's value by creating a new, empty flag.Value of
-// the same type as the flag Value specified by name, calling
-// `Set.(newValueString)` on the new flag.Value, and then explicitly setting the
-// data pointed to by flagValue to the data pointed to by the new flag value.
-func SetWithOverride(flagset *flag.FlagSet, name, newValueString string) error {
-	flg := flagset.Lookup(name)
-	if flg == nil {
-		return status.NotFoundErrorf("Error when attempting to override flag %s: Flag does not exist.", name)
-	}
-	flagValue := flg.Value
-
-	return setWithOverride(flagset, flagValue, name, newValueString, false)
-}
-
-func setWithOverride(flagset *flag.FlagSet, flagValue flag.Value, name, newValueString string, skipWrappers bool) error {
+// setWithOverride sets the flag's value by creating a new, empty flag.Value of
+// the same type as the flag Value, calling `Set(newValueString)` on the new
+// flag.Value, and then explicitly setting the data pointed to by the unwrapped
+// flagValue to the data pointed to by the new flag value.
+func setWithOverride(flagset *flag.FlagSet, flagValue flag.Value, name, newValueString string) error {
 	// Unwrap the value to ensure we have the real flag.Value, not a wrapper like,
 	// for example, DeprecatedFlag or FlagAlias.
 	unwrapped := UnwrapFlagValue(flagValue)
@@ -347,11 +337,7 @@ func setWithOverride(flagset *flag.FlagSet, flagValue flag.Value, name, newValue
 	if err != nil {
 		return status.InternalErrorf("Error converting copy of flag %s: %s", name, err)
 	}
-	value := flagValue
-	if skipWrappers {
-		value = unwrapped
-	}
-	if err := setValueFromFlagName(flagset, value, name, reflect.Indirect(reflect.ValueOf(newValue)).Interface(), map[string]struct{}{}, false); err != nil {
+	if err := setValueFromFlagName(flagset, unwrapped, name, reflect.Indirect(reflect.ValueOf(newValue)).Interface(), map[string]struct{}{}, false); err != nil {
 		return err
 	}
 	return nil

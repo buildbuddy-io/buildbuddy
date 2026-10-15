@@ -1,27 +1,38 @@
 package flagz_test
 
 import (
+	stdflag "flag"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagz"
 	"github.com/stretchr/testify/require"
+
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
-// registerTestFlag swaps in an isolated flag set containing one flag, since
-// the process-wide set includes flags (like the testing package's) that can't
-// be rendered to YAML.
-func registerTestFlag(t *testing.T) *string {
-	common.DefaultFlagSet = flag.NewFlagSet("test", flag.ContinueOnError)
-	t.Cleanup(func() { common.DefaultFlagSet = flag.CommandLine })
-	return flag.String("flagz_test.flag", "original", "A flag for testing flagz.")
+var testFlag = flag.String("flagz_test.flag", "original", "A flag for testing flagz.")
+
+var ignoreTestFlagsOnce sync.Once
+
+// ignoreTestFlags excludes the stdlib testing flags, which can't be rendered
+// to YAML. They are only registered once the test binary starts running.
+func ignoreTestFlags() {
+	ignoreTestFlagsOnce.Do(func() {
+		stdflag.VisitAll(func(f *stdflag.Flag) {
+			if strings.HasPrefix(f.Name, "test.") {
+				flagyaml.IgnoreFlagForYAML(f.Name)
+			}
+		})
+	})
 }
 
 func TestGetRendersFlags(t *testing.T) {
-	registerTestFlag(t)
+	ignoreTestFlags()
 	rec := httptest.NewRecorder()
 	flagz.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/flagz", nil))
 
@@ -29,14 +40,31 @@ func TestGetRendersFlags(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "flagz_test")
 }
 
-func TestQueryParamsRejectedAndFlagUnchanged(t *testing.T) {
-	testFlag := registerTestFlag(t)
-	for _, method := range []string{http.MethodGet, http.MethodPost} {
-		rec := httptest.NewRecorder()
-		flagz.ServeHTTP(rec, httptest.NewRequest(method, "/flagz?flagz_test.flag=changed", nil))
+func TestRejectedRequestsLeaveFlagUnchanged(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		method       string
+		target       string
+		body         string
+		expectedCode int
+	}{
+		{"get with query param", http.MethodGet, "/flagz?flagz_test.flag=changed", "", http.StatusBadRequest},
+		{"post with query param", http.MethodPost, "/flagz?flagz_test.flag=changed", "", http.StatusMethodNotAllowed},
+		{"malformed percent escape", http.MethodGet, "/flagz?a=100%", "", http.StatusBadRequest},
+		{"semicolon separator", http.MethodGet, "/flagz?a=1;b=2", "", http.StatusBadRequest},
+		{"post with form body", http.MethodPost, "/flagz", "flagz_test.flag=changed", http.StatusMethodNotAllowed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.target, strings.NewReader(tc.body))
+			if tc.body != "" {
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			}
+			rec := httptest.NewRecorder()
+			flagz.ServeHTTP(rec, req)
 
-		require.Equal(t, http.StatusBadRequest, rec.Code, method)
-		require.Contains(t, rec.Body.String(), "read-only")
-		require.Equal(t, "original", *testFlag, method)
+			require.Equal(t, tc.expectedCode, rec.Code)
+			require.Contains(t, rec.Body.String(), "read-only")
+			require.Equal(t, "original", *testFlag)
+		})
 	}
 }
