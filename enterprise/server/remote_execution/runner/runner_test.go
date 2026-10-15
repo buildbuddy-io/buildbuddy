@@ -1026,6 +1026,8 @@ func TestRunnerPool_PersistentWorker_LargeFlagFile(t *testing.T) {
 
 	r, err := pool.Get(ctx, task)
 	require.NoError(t, err)
+	err = r.PrepareForTask(ctx)
+	require.NoError(t, err)
 	err = r.DownloadInputs(ctx)
 	require.NoError(t, err)
 	res := r.Run(context.Background(), &repb.IOStats{})

@@ -276,10 +276,6 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := r.Workspace.CreateOutputDirs(); err != nil {
-		return status.UnavailableErrorf("Error creating output directory: %s", err)
-	}
-
 	// Pull the container image before Run() is called, so that we don't
 	// use up the whole exec ctx timeout with a slow container pull.
 	creds, err := r.pullCredentials()
@@ -340,6 +336,9 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 	err = r.Workspace.DownloadInputs(ctx, layout)
 	if err != nil {
 		return err
+	}
+	if err := r.Workspace.CreateOutputDirs(); err != nil {
+		return status.UnavailableErrorf("Error creating output directory: %s", err)
 	}
 	if platform.IsCIRunner(r.task.GetCommand(), platform.GetProto(r.task.GetAction(), r.task.GetCommand())) &&
 		!ci_runner_util.CanInitFromCache(r.PlatformProperties.OS, r.PlatformProperties.Arch) {
