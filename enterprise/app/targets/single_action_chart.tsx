@@ -164,15 +164,6 @@ export default class SingleActionChartComponent extends React.Component<Props> {
       (a, b) => a - b
     );
 
-    // Space the x axis by time rather than by entry, so that buckets without
-    // executions still take up room and sampled executions land at their
-    // actual start times.  The axis runs from the start of the first bucket
-    // to the end of the queried range.
-    const xAxisDomain: [number, number] = [
-      (bucketKeys[0] ?? this.props.domain[0].getTime()) * 1000,
-      this.props.domain[1].getTime() * 1000,
-    ];
-
     const series: ChartDataSeries[] = [];
 
     series.push({
@@ -209,7 +200,6 @@ export default class SingleActionChartComponent extends React.Component<Props> {
         title={this.props.title}
         data={timeKeys}
         ticks={ticks}
-        xAxisDomain={xAxisDomain}
         dataSeries={series}
         primaryYAxis={{
           formatTickValue: this.props.formatValue,

@@ -109,12 +109,6 @@ interface Props {
   // When set, replaces the default tooltip with one driven by the scatter
   // point nearest to the mouse.
   pointTooltip?: PointTooltipConfig;
-  // When set, the x axis is a continuous numeric axis spanning this range, so
-  // that `data` entries are positioned by their value rather than by their
-  // index.  Otherwise the x axis is categorical, with one equally sized slot
-  // per `data` entry.
-  // TODO(jdhollen): make all charts set this value and simplify.
-  xAxisDomain?: [number, number];
 
   onZoomSelection?: (startDate: number, endDate: number) => void;
 }
@@ -616,6 +610,42 @@ function PointTooltipLayer({ config, data, dataSeries }: PointTooltipLayerProps)
   );
 }
 
+interface CustomXAxisProps {
+  hasBars: boolean;
+  numPoints: number;
+  ticks: number[];
+  formatXAxisLabel: (value: any, index: number) => string;
+}
+
+/**
+ * This custom axis provides the right amount of spacing so that bar charts
+ * don't center their first and last bars directly over the far left and
+ * far right ends of the X axis.
+ */
+function CustomXAxis({ hasBars, numPoints, ticks, formatXAxisLabel }: CustomXAxisProps) {
+  const plotArea = usePlotArea();
+  const width = plotArea?.width ?? 0;
+
+  // NOTE: For bar charts, this currently assumes that every point in a dataset
+  // is evenly spaced--otherwise the rendered chart would be difficult to parse.
+  // If someone really needs it, this could be updated to filter down to just
+  // the points where the BAR series' extractor function returns a non-null
+  // value, but that's kinda funky and we don't need it right now.
+  const points = numPoints + 1;
+  const extraPad = hasBars ? (width / points / 2 || 19) + 1 : 0;
+
+  return (
+    <XAxis
+      dataKey={(v) => v}
+      tickFormatter={formatXAxisLabel}
+      ticks={ticks}
+      type={"number"}
+      padding={{ left: extraPad, right: extraPad }}
+      domain={["dataMin", "dataMax"]}
+    />
+  );
+}
+
 export default class TrendsChartComponent extends React.Component<Props, State> {
   state: State = { hiddenSeries: new Set() };
 
@@ -699,11 +729,11 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" yAxisId="primary" />
             {!this.props.hideLegend && <Legend onClick={this.onLegendClick.bind(this)} />}
-            <XAxis
-              dataKey={(v) => v}
-              tickFormatter={this.props.formatXAxisLabel}
+            <CustomXAxis
               ticks={this.props.ticks}
-              {...(this.props.xAxisDomain ? { type: "number" as const, domain: this.props.xAxisDomain } : {})}
+              hasBars={Boolean(this.props.dataSeries.find((ds) => ds.type === SeriesType.BAR))}
+              numPoints={this.props.data.length}
+              formatXAxisLabel={this.props.formatXAxisLabel}
             />
             <YAxis
               yAxisId="primary"
