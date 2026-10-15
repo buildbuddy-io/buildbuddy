@@ -171,7 +171,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// which will negatively affect customer experience. Be careful!
 	// Generic snapshots have distinct keys; existing snapshots do not use the new initialization RPC field.
 	const (
-		expectedHash    = "f6adc32254baeccef071fec615f1571415b7143a452c58af8bf25236af30b026"
+		expectedHash    = "6f9e1808efd58b050e5ee6112c7f2b6ce17c52f524689e63651b6d11b0030fd2"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
