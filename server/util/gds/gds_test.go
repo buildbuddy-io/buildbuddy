@@ -1,6 +1,7 @@
 package gds_test
 
 import (
+	"math"
 	"math/rand/v2"
 	"slices"
 	"testing"
@@ -65,6 +66,22 @@ func TestReAddRefreshesPriority(t *testing.T) {
 	assert.Equal(t, "small", k)
 }
 
+func TestNegativeAndNaNValuesCountAsZero(t *testing.T) {
+	q := gds.New[string]()
+	q.Add("old", 10)
+	q.Add("negative", -100)
+	q.Add("nan", math.NaN())
+	_, ok := q.Evict()
+	require.True(t, ok)
+	_, ok = q.Evict()
+	require.True(t, ok)
+	q.Add("new", 10)
+
+	evicted := evictAll(q)
+
+	assert.Equal(t, []string{"old", "new"}, evicted)
+}
+
 func TestRemove(t *testing.T) {
 	q := gds.New[string]()
 	q.Add("a", 1)
@@ -121,9 +138,12 @@ func TestRemoveDuringAll(t *testing.T) {
 	assert.Equal(t, 0, remaining)
 }
 
-// TestMatchesReference compares the queue against a linear scan over random
-// adds, removes and evictions, which covers re-adds that lower a priority and
-// removals deep in the heap.
+// TestMatchesReference checks that the queue evicts the same entries in the
+// same order as a simple implementation, which scans every entry for the lowest
+// priority and breaks ties by the order they were added. It also checks that
+// both agree on which entries are present. Random adds, removes and evictions
+// cover cases the other tests don't, such as re-adding an entry with a lower
+// priority and removing an entry from deep in the heap.
 func TestMatchesReference(t *testing.T) {
 	type refEntry struct {
 		priority float64

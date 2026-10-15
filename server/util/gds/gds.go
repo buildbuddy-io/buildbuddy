@@ -18,6 +18,7 @@ import (
 	"container/heap"
 	"iter"
 	"maps"
+	"math"
 )
 
 // Queue tracks the eviction priorities of a set of entries. Use New to create a
@@ -45,9 +46,13 @@ func New[K comparable]() *Queue[K] {
 }
 
 // Add adds an entry with the given value, or refreshes the priority of an
-// entry that is already in the queue. The value must not be negative, since
-// evicting an entry with a negative value would lower L.
+// entry that is already in the queue. Negative and NaN values count as 0, since
+// evicting an entry whose priority is below L would lower L, and NaN can't be
+// ordered.
 func (q *Queue[K]) Add(key K, value float64) {
+	if value < 0 || math.IsNaN(value) {
+		value = 0
+	}
 	q.clock++
 	priority := q.inflation + value
 	if e, ok := q.entries[key]; ok {
