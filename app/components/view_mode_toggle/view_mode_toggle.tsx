@@ -11,13 +11,19 @@ export interface ViewModeToggleProps {
 
 export default function ViewModeToggle({ viewMode, onChange }: ViewModeToggleProps) {
   const isSummary = viewMode === "summary";
+  const label = isSummary ? "Expand all" : "Collapse all";
   return (
     <div className="view-mode-toggle">
       <OutlinedButton
-        className="icon-button"
-        title={isSummary ? "Show details" : "Hide details"}
+        className="small-button"
+        title={label}
         onClick={() => onChange(isSummary ? "details" : "summary")}>
-        {isSummary ? <ListChevronsUpDown /> : <ListChevronsDownUp />}
+        {isSummary ? (
+          <ListChevronsUpDown className="icon" aria-hidden="true" />
+        ) : (
+          <ListChevronsDownUp className="icon" aria-hidden="true" />
+        )}
+        {label}
       </OutlinedButton>
     </div>
   );
