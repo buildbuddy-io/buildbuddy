@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -353,12 +354,50 @@ func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspa
 		return nil, status.InternalErrorf("workspace is already mounted at %s", workspaceMountPath)
 	}
 
+	// Firecracker applies a drive update by sending the guest a config change
+	// notification, and the virtio_blk driver reads the new capacity
+	// asynchronously. Until it does, the kernel rejects reads past the old
+	// capacity with EIO, which makes the mount fail. The old capacity is
+	// usually 0, because the host attaches an empty file to the workspace
+	// drive between actions.
+	if req.GetSizeBytes() > 0 {
+		if err := waitForBlockDeviceSize(ctx, x.workspaceDevice, req.GetSizeBytes()); err != nil {
+			log.Errorf("Failed to wait for workspace device size: %s", err)
+			return nil, err
+		}
+	}
 	if err := syscall.Mount(x.workspaceDevice, workspaceMountPath, "ext4", syscall.MS_NOATIME, ""); err != nil {
 		log.Errorf("Failed to mount workspace: %s", err)
 		return nil, err
 	}
 	log.Infof("Mounted workspace %s to %s", x.workspaceDevice, workspaceMountPath)
 	return &vmxpb.MountWorkspaceResponse{}, nil
+}
+
+// waitForBlockDeviceSize polls until the block device reports the given size.
+func waitForBlockDeviceSize(ctx context.Context, device string, sizeBytes int64) error {
+	// sysfs reports the size in 512-byte sectors, regardless of the device's
+	// logical block size.
+	sizePath := filepath.Join("/sys/class/block", filepath.Base(device), "size")
+	wantSectors := sizeBytes / 512
+	for {
+		b, err := os.ReadFile(sizePath)
+		if err != nil {
+			return status.InternalErrorf("read device size: %s", err)
+		}
+		sectors, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+		if err != nil {
+			return status.InternalErrorf("parse device size: %s", err)
+		}
+		if sectors == wantSectors {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return status.DeadlineExceededErrorf("device %s has %d sectors, want %d", device, sectors, wantSectors)
+		case <-time.After(time.Millisecond):
+		}
+	}
 }
 
 func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
