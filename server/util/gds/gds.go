@@ -5,8 +5,8 @@
 // up. An entry's priority is L plus its value, where L starts at 0, and Evict
 // removes the entry with the lowest priority and raises L to that priority. So
 // entries with a high value survive longer, but an entry that isn't re-added
-// eventually falls below the rising L and is evicted. Re-adding an entry
-// refreshes its priority to the current L plus its value.
+// is evicted once L catches up to its priority. Re-adding an entry refreshes
+// its priority to the current L plus its value.
 //
 // When every entry has the same value, entries are evicted in the order they
 // were added, which is LRU.
@@ -17,13 +17,14 @@ package gds
 import (
 	"container/heap"
 	"iter"
+	"maps"
 )
 
-// Queue tracks the eviction priorities of a set of entries. It is not safe for
-// concurrent use.
+// Queue tracks the eviction priorities of a set of entries. Use New to create a
+// Queue. It is not safe for concurrent use.
 type Queue[K comparable] struct {
 	// The priority of the most recently evicted entry.
-	inflation int64
+	inflation float64
 	// Counts additions, to evict entries with equal priorities in the order
 	// they were added.
 	clock   int64
@@ -33,7 +34,7 @@ type Queue[K comparable] struct {
 
 type entry[K comparable] struct {
 	key      K
-	priority int64
+	priority float64
 	added    int64
 	index    int
 }
@@ -44,8 +45,9 @@ func New[K comparable]() *Queue[K] {
 }
 
 // Add adds an entry with the given value, or refreshes the priority of an
-// entry that is already in the queue.
-func (q *Queue[K]) Add(key K, value int64) {
+// entry that is already in the queue. The value must not be negative, since
+// evicting an entry with a negative value would lower L.
+func (q *Queue[K]) Add(key K, value float64) {
 	q.clock++
 	priority := q.inflation + value
 	if e, ok := q.entries[key]; ok {
@@ -58,8 +60,9 @@ func (q *Queue[K]) Add(key K, value int64) {
 	heap.Push(&q.heap, e)
 }
 
-// Remove removes an entry without evicting it, for example because the
-// entry is being used, and returns whether it was in the queue.
+// Remove removes an entry without evicting it, for example while the entry is
+// being used (Add it again when done), and returns whether it was in the
+// queue.
 func (q *Queue[K]) Remove(key K) bool {
 	e, ok := q.entries[key]
 	if !ok {
@@ -84,20 +87,14 @@ func (q *Queue[K]) Evict() (K, bool) {
 }
 
 // All returns an iterator over the entries in the queue, in no particular
-// order. The queue must not change during the iteration.
+// order. Entries may be removed during the iteration.
 func (q *Queue[K]) All() iter.Seq[K] {
-	return func(yield func(K) bool) {
-		for _, e := range q.heap {
-			if !yield(e.key) {
-				return
-			}
-		}
-	}
+	return maps.Keys(q.entries)
 }
 
 // Len returns the number of entries in the queue.
 func (q *Queue[K]) Len() int {
-	return len(q.heap)
+	return len(q.entries)
 }
 
 type entryHeap[K comparable] []*entry[K]

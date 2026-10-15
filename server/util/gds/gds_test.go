@@ -1,6 +1,7 @@
 package gds_test
 
 import (
+	"math/rand/v2"
 	"slices"
 	"testing"
 
@@ -104,4 +105,63 @@ func TestAll(t *testing.T) {
 	keys := slices.Collect(q.All())
 
 	assert.ElementsMatch(t, []string{"b", "c"}, keys)
+}
+
+func TestRemoveDuringAll(t *testing.T) {
+	q := gds.New[string]()
+	q.Add("a", 1)
+	q.Add("b", 2)
+	q.Add("c", 3)
+
+	for k := range q.All() {
+		q.Remove(k)
+	}
+	remaining := q.Len()
+
+	assert.Equal(t, 0, remaining)
+}
+
+// TestMatchesReference compares the queue against a linear scan over random
+// adds, removes and evictions, which covers re-adds that lower a priority and
+// removals deep in the heap.
+func TestMatchesReference(t *testing.T) {
+	type refEntry struct {
+		priority float64
+		added    int
+	}
+	rng := rand.New(rand.NewPCG(1, 2))
+	q := gds.New[int]()
+	ref := map[int]refEntry{}
+	inflation := 0.0
+	for i := range 20_000 {
+		key := rng.IntN(200)
+		switch op := rng.IntN(10); {
+		case op < 6:
+			value := float64(rng.IntN(1_000))
+			q.Add(key, value)
+			ref[key] = refEntry{priority: inflation + value, added: i}
+		case op < 8:
+			_, want := ref[key]
+			removed := q.Remove(key)
+			require.Equal(t, want, removed)
+			delete(ref, key)
+		default:
+			wantKey, wantOK := 0, false
+			for k, e := range ref {
+				w := ref[wantKey]
+				if !wantOK || e.priority < w.priority || (e.priority == w.priority && e.added < w.added) {
+					wantKey, wantOK = k, true
+				}
+			}
+			k, ok := q.Evict()
+			require.Equal(t, wantOK, ok)
+			if ok {
+				require.Equal(t, wantKey, k)
+				inflation = ref[k].priority
+				delete(ref, k)
+			}
+		}
+		n := q.Len()
+		require.Equal(t, len(ref), n)
+	}
 }
