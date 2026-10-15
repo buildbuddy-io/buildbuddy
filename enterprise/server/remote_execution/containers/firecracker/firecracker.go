@@ -1692,7 +1692,11 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 		return status.UnavailableErrorf("error updating workspace drive attached to snapshot: %s", err)
 	}
 
-	if err := c.mountWorkspace(ctx, execClient); err != nil {
+	info, err := os.Stat(workspaceExt4Path)
+	if err != nil {
+		return status.UnavailableErrorf("stat workspace image: %s", err)
+	}
+	if err := c.mountWorkspace(ctx, execClient, info.Size()); err != nil {
 		// Translate deadline-exceeded to unavailable so the caller retries.
 		if status.IsDeadlineExceededError(err) {
 			return status.UnavailableErrorf("failed to remount workspace after update: %v", err)
@@ -3725,10 +3729,10 @@ func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 	return c.LoadSnapshot(ctx)
 }
 
-func (c *FirecrackerContainer) mountWorkspace(ctx context.Context, client vmxpb.ExecClient) error {
+func (c *FirecrackerContainer) mountWorkspace(ctx context.Context, client vmxpb.ExecClient, sizeBytes int64) error {
 	ctx, cancel := context.WithTimeout(ctx, mountTimeout)
 	defer cancel()
-	_, err := client.MountWorkspace(ctx, &vmxpb.MountWorkspaceRequest{})
+	_, err := client.MountWorkspace(ctx, &vmxpb.MountWorkspaceRequest{SizeBytes: sizeBytes})
 	return err
 }
 
