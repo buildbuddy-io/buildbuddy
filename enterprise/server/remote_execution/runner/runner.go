@@ -1137,10 +1137,10 @@ func (p *pool) Warmup(ctx context.Context) {
 	wg.Go(func() { p.warmupGenericSnapshots(ctx) })
 	defer wg.Wait()
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(ctx)
 	for _, cfg := range WarmupConfigs() {
 		eg.Go(func() error {
-			return p.warmupImage(ctx, &cfg)
+			return p.warmupImage(egCtx, &cfg)
 		})
 	}
 	if err := eg.Wait(); err != nil {

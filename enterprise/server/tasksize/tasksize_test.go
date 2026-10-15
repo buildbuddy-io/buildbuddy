@@ -794,6 +794,8 @@ func TestCgroupSettings_AdditionalPIDsLimit(t *testing.T) {
 }
 
 func TestGenericFirecrackerSize(t *testing.T) {
+	_, err := tasksize.GenericFirecrackerSize(nil)
+	require.Error(t, err)
 	for _, tc := range []struct{ cpu, memory, wantCPU int64 }{
 		{250, 200_000_000, 1}, {1000, 2_500_000_000, 1},
 		{1001, 200_000_000, 2}, {1000, 2385*(1<<20) + 1, 2},

@@ -844,6 +844,9 @@ func String(size *scpb.TaskSize) string {
 // GenericFirecrackerSize rounds a scheduled size up to a supported snapshot shape.
 // The input includes guest overhead; rounding must not add it again.
 func GenericFirecrackerSize(size *scpb.TaskSize) (*scpb.TaskSize, error) {
+	if size == nil {
+		return nil, status.InvalidArgumentError("task size is required for generic Firecracker snapshots")
+	}
 	for _, cpus := range []int64{1, 2, 3, 4, 5, 6, 7, 8, 16, 32} {
 		memory := ((cpus*int64(ComputeUnitsToRAMBytes) + (1 << 20) - 1) / (1 << 20)) * (1 << 20)
 		if cpus*1000 < size.GetEstimatedMilliCpu() || memory < size.GetEstimatedMemoryBytes() {

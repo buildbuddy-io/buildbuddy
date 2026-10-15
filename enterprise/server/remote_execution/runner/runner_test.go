@@ -1315,3 +1315,48 @@ func TestTransientErrorExitCodes(t *testing.T) {
 		})
 	}
 }
+
+type fakeGenericSnapshotPrewarmer struct {
+	providerFunc
+	mu   sync.Mutex
+	errs []error
+}
+
+func (f *fakeGenericSnapshotPrewarmer) PrewarmGenericSnapshot(ctx context.Context, args *container.Init) error {
+	var err error
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	case <-time.After(100 * time.Millisecond):
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.errs = append(f.errs, err)
+	return err
+}
+
+func TestWarmup_ImageWarmupFailureDoesNotCancelGenericSnapshotPrewarm(t *testing.T) {
+	flags.Set(t, "executor.firecracker_generic_snapshot_prewarm_cpus", []int64{1})
+	flags.Set(t, "executor.warmup_additional_images", []string{"example.com/image:latest"})
+	env := newTestEnv(t)
+	failingProvider := providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return nil, status.UnavailableError("image warmup failed")
+	})
+	pool := newRunnerPool(t, env, &RunnerPoolOptions{
+		PoolOptions:               &PoolOptions{ContainerProvider: failingProvider},
+		MaxRunnerCount:            unlimited,
+		MaxRunnerDiskSizeBytes:    unlimited,
+		MaxRunnerMemoryUsageBytes: unlimited,
+	})
+	prewarmer := &fakeGenericSnapshotPrewarmer{providerFunc: failingProvider}
+	pool.containerProviders = map[platform.ContainerType]container.Provider{platform.FirecrackerContainerType: prewarmer}
+
+	pool.Warmup(context.Background())
+
+	prewarmer.mu.Lock()
+	defer prewarmer.mu.Unlock()
+	require.Len(t, prewarmer.errs, 2) // network=off and external
+	for _, err := range prewarmer.errs {
+		assert.NoError(t, err)
+	}
+}

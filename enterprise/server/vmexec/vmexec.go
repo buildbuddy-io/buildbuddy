@@ -305,6 +305,13 @@ func isWorkspaceMounted() (bool, error) {
 }
 
 func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeRequest) (*vmxpb.InitializeResponse, error) {
+	if req.GetUnixTimestampNanoseconds() > 1 {
+		tv := syscall.NsecToTimeval(req.GetUnixTimestampNanoseconds())
+		if err := syscall.Settimeofday(&tv); err != nil {
+			return nil, err
+		}
+		log.Debugf("Set time of day to %d", req.GetUnixTimestampNanoseconds())
+	}
 	if len(req.GetEntropy()) > 0 {
 		if err := reseedRNG(req.GetEntropy()); err != nil {
 			return nil, status.WrapError(err, "reseed RNG")
@@ -326,13 +333,6 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 			return nil, err
 		}
 		log.Debugf("Cleared ARP cache")
-	}
-	if req.GetUnixTimestampNanoseconds() > 1 {
-		tv := syscall.NsecToTimeval(req.GetUnixTimestampNanoseconds())
-		if err := syscall.Settimeofday(&tv); err != nil {
-			return nil, err
-		}
-		log.Debugf("Set time of day to %d", req.GetUnixTimestampNanoseconds())
 	}
 	return &vmxpb.InitializeResponse{ContainerRootMounted: req.GetMountContainerRoot()}, nil
 }

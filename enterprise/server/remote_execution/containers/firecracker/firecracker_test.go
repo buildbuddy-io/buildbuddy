@@ -171,7 +171,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// which will negatively affect customer experience. Be careful!
 	// Generic snapshots have distinct keys; existing snapshots do not use the new initialization RPC field.
 	const (
-		expectedHash    = "700dc3c385cf35a0eb93704324253baa13e5ca53120256d67284adf4d588821a"
+		expectedHash    = "6c113cf7503624afd0e54faf34504d1883fcbd89c24cb59247e76c0261f3849b"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -5154,7 +5154,13 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 		if cpus == 2 {
 			opts.VMConfiguration.NetworkMode = fcpb.NetworkMode_NETWORK_MODE_EXTERNAL
 		}
-		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Command: &repb.Command{OutputFiles: []string{"output"}}}, opts)
+		task := &repb.ExecutionTask{
+			InvocationId:   "generic-invocation",
+			ExecutionId:    "generic-execution",
+			ExecuteRequest: &repb.ExecuteRequest{InstanceName: "generic-instance", ActionDigest: &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}},
+			Command:        &repb.Command{OutputFiles: []string{"output"}},
+		}
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, c.Remove(context.Background())) })
 		command := `test ! -e /tmp/root-marker; touch /tmp/root-marker; test ! -e stale; cp input output; touch stale; test -d /proc/self; test -c /dev/null; test -s /etc/hosts; if (echo x > /proc/sys/kernel/random/boot_id) 2>/dev/null; then exit 1; fi; cat /proc/sys/kernel/random/boot_id; /bin/true`
@@ -5189,6 +5195,14 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 		snap, err := loader.GetSnapshot(templateCtx, c.SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
 		require.NoError(t, err)
 		assert.Equal(t, snap.GetVMMetadata().GetSnapshotId(), result.VMMetadata.GetLastExecutedTask().GetSnapshotId())
+		// Templates are shared across groups, so they must not identify the task that built them.
+		lastTask := result.VMMetadata.GetLastExecutedTask()
+		assert.Empty(t, lastTask.GetInvocationId())
+		assert.Empty(t, lastTask.GetExecutionId())
+		assert.Nil(t, lastTask.GetActionDigest())
+		// Images are cached under the task's instance, not the template's.
+		_, err = snaploader.GetCachedContainerImage(ctx, loader, "generic-instance", image, false /*=remoteEnabled*/)
+		assert.NoError(t, err)
 		return snap
 	}
 	var snapshots [2]*snaploader.Snapshot

@@ -630,7 +630,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 			return nil, err
 		}
 		if shape.GetEstimatedMilliCpu() != sizeEstimate.GetEstimatedMilliCpu() || shape.GetEstimatedMemoryBytes() != sizeEstimate.GetEstimatedMemoryBytes() {
-			return nil, status.FailedPreconditionError("generic snapshot shape must be selected before scheduling; set firecracker-use-generic-snapshot on the action")
+			return nil, status.FailedPreconditionErrorf("task size %s is not a generic snapshot shape; the app must round it when scheduling, so set firecracker-use-generic-snapshot on the action (not only as an executor override) and make sure the app supports it", tasksize.String(sizeEstimate))
 		}
 		if sizeEstimate.GetEstimatedMilliCpu() > int64(runtime.NumCPU())*1000 {
 			return nil, status.ResourceExhaustedErrorf("generic snapshot shape requires %d CPUs but executor has %d", sizeEstimate.GetEstimatedMilliCpu()/1000, runtime.NumCPU())
@@ -733,7 +733,10 @@ type FirecrackerContainer struct {
 	snapshotKeySet          *fcpb.SnapshotKeySet
 	createFromSnapshot      bool
 	supportsRemoteSnapshots bool
-	recyclingEnabled        bool
+
+	// Set on the VM that builds a generic snapshot template.
+	buildsGenericSnapshot bool
+	recyclingEnabled      bool
 
 	// TODO: Cleanup after remote container image reads/writes are fully rolled out.
 	// remoteContainerImageAccess is resolved once per container so the remote
@@ -1128,6 +1131,27 @@ func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
 	return c.snapshotKeySet
 }
 
+var fileHashes sync.Map // path => sha256 hex
+
+// fileHash returns the sha256 of the file at path, cached for the process.
+func fileHash(path string) (string, error) {
+	if h, ok := fileHashes.Load(path); ok {
+		return h.(string), nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	sum := hex.EncodeToString(h.Sum(nil))
+	fileHashes.Store(path, sum)
+	return sum, nil
+}
+
 func (c *FirecrackerContainer) genericSnapshotKey() (*fcpb.SnapshotKey, error) {
 	config := c.vmConfig.CloneVT()
 	config.ScratchDiskSizeMb = 0
@@ -1135,9 +1159,14 @@ func (c *FirecrackerContainer) genericSnapshotKey() (*fcpb.SnapshotKey, error) {
 	if err != nil {
 		return nil, err
 	}
+	initrdHash, err := fileHash(c.executorConfig.InitrdImagePath)
+	if err != nil {
+		return nil, status.WrapError(err, "hash initrd")
+	}
 	configurationHash := hash.String(strings.Join([]string{
 		"generic-v1",
 		configurationDigest.GetHash(),
+		initrdHash,
 		c.marshalledDNSOverrides,
 		c.hostResolvConf,
 	}, "\x00"))
@@ -1261,6 +1290,13 @@ func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
 }
 
 func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
+	if c.buildsGenericSnapshot {
+		// Templates are shared across groups, so they must not identify a task.
+		return &fcpb.VMMetadata_VMTask{
+			SnapshotId:         c.snapshotID,
+			CompletedTimestamp: tspb.New(c.env.GetClock().Now()),
+		}
+	}
 	d, _ := digest.Compute(strings.NewReader(c.task.GetExecutionId()), c.task.GetExecuteRequest().GetDigestFunction())
 	return &fcpb.VMMetadata_VMTask{
 		InvocationId:          c.task.GetInvocationId(),
@@ -1585,14 +1621,22 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 	return nil
 }
 
+// imageInstanceName is the remote instance that container images are cached
+// under. Generic snapshot keys have no instance, so use the task's.
+func (c *FirecrackerContainer) imageInstanceName() string {
+	if c.vmConfig.GetGenericSnapshot() {
+		return c.task.GetExecuteRequest().GetInstanceName()
+	}
+	return c.snapshotKeySet.GetBranchKey().GetInstanceName()
+}
+
 // cachedContainerfs returns the snapshot for the container image.
 func (c *FirecrackerContainer) cachedContainerfs(ctx context.Context) *snaploader.Snapshot {
 	if !snaputil.IsChunkedSnapshotSharingEnabled() {
 		return nil
 	}
 	c.containerfsSnapshotOnce.Do(func() {
-		instanceName := c.snapshotKeySet.GetBranchKey().GetInstanceName()
-		snap, err := snaploader.GetCachedContainerImage(ctx, c.loader, instanceName, c.containerImage, c.remoteContainerImageAccess.RemoteReadsEnabled)
+		snap, err := snaploader.GetCachedContainerImage(ctx, c.loader, c.imageInstanceName(), c.containerImage, c.remoteContainerImageAccess.RemoteReadsEnabled)
 		if err != nil {
 			if !status.IsNotFoundError(err) {
 				log.CtxWarningf(ctx, "Failed to look up cached containerfs for image %q: %s", c.containerImage, err)
@@ -1618,7 +1662,7 @@ func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
 	} else {
 		// If a chunked containerfs is not cached, we need to convert the ext4 image into chunks.
 		containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
-		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes(), c.remoteContainerImageAccess)
+		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.imageInstanceName(), c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes(), c.remoteContainerImageAccess)
 	}
 	if err != nil {
 		return status.WrapError(err, "unpack container image")
@@ -2388,51 +2432,36 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	return err
 }
 
-// keyedMutex is a per-key mutex whose waiters give up when their ctx is done.
-type keyedMutex struct {
-	mu    sync.Mutex
-	locks map[string]*keyedMutexEntry
-}
-
-type keyedMutexEntry struct {
-	ch   chan struct{}
-	refs int
-}
-
-func (m *keyedMutex) Lock(ctx context.Context, key string) (unlock func(), err error) {
-	m.mu.Lock()
-	e := m.locks[key]
-	if e == nil {
-		e = &keyedMutexEntry{ch: make(chan struct{}, 1)}
-		m.locks[key] = e
-	}
-	e.refs++
-	m.mu.Unlock()
-	release := func() {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		if e.refs--; e.refs == 0 {
-			delete(m.locks, key)
-		}
-	}
-	select {
-	case e.ch <- struct{}{}:
-		return func() {
-			<-e.ch
-			release()
-		}, nil
-	case <-ctx.Done():
-		release()
-		return nil, status.FromContextError(ctx)
-	}
-}
-
 // GenericSnapshotNamespace is the executor-wide snapshot namespace for generic templates.
 const GenericSnapshotNamespace = "firecracker-generic-snapshots"
 
-var genericSnapshotLocks = &keyedMutex{locks: make(map[string]*keyedMutexEntry)}
+// genericSnapshotBuildTimeout bounds a template build, which outlives the
+// tasks waiting for it.
+const genericSnapshotBuildTimeout = 2 * time.Minute
+
+// templateBuild is an in-progress generic snapshot template build.
+type templateBuild struct {
+	done chan struct{}
+	err  error
+}
+
+var templateBuilds = struct {
+	mu     sync.Mutex
+	builds map[string]*templateBuild
+}{builds: make(map[string]*templateBuild)}
 
 func (c *FirecrackerContainer) createFromGenericSnapshot(ctx context.Context) (retErr error) {
+	c.currentTaskInitTime = time.Now()
+	// loadSnapshot switches to a new chroot; carry over any image PullImage
+	// put in the original one and delete it.
+	pulledChroot := c.getChroot()
+	defer func() {
+		if pulledChroot != c.getChroot() {
+			if err := os.RemoveAll(filepath.Dir(pulledChroot)); err != nil {
+				log.CtxWarningf(ctx, "Failed to remove chroot %q: %s", pulledChroot, err)
+			}
+		}
+	}()
 	defer func() {
 		if retErr != nil {
 			cleanupCtx, cancel := background.ExtendContextForFinalization(ctx, finalizationTimeout)
@@ -2448,57 +2477,146 @@ func (c *FirecrackerContainer) createFromGenericSnapshot(ctx context.Context) (r
 	}
 	c.postCompletionStats = nil
 	if err := c.loadSnapshot(ctx, snap); err != nil {
+		if ctx.Err() == nil {
+			c.deleteGenericSnapshot(ctx)
+		}
 		return err
+	}
+	pulledImage := filepath.Join(pulledChroot, containerFSName)
+	if err := os.Rename(pulledImage, filepath.Join(c.getChroot(), containerFSName)); err != nil && !os.IsNotExist(err) {
+		return status.UnavailableErrorf("move pulled image into chroot: %s", err)
 	}
 	return c.attachContainerRoot(ctx)
 }
 
-// ensureGenericSnapshot returns the VM's generic snapshot template, creating
+// deleteGenericSnapshot deletes a template that failed to restore so the next
+// task rebuilds it instead of failing until it's evicted.
+func (c *FirecrackerContainer) deleteGenericSnapshot(ctx context.Context) {
+	log.CtxWarningf(ctx, "Deleting generic snapshot template %s after failed restore", c.snapshotKeySet.GetBranchKey().GetConfigurationHash())
+	if err := c.loader.DeleteLocalManifest(c.templateCtx(ctx), c.snapshotKeySet.GetBranchKey()); err != nil {
+		log.CtxWarningf(ctx, "Failed to delete generic snapshot template: %s", err)
+	}
+}
+
+// ensureGenericSnapshot returns the VM's generic snapshot template, building
 // it if it isn't cached on this executor.
 func (c *FirecrackerContainer) ensureGenericSnapshot(ctx context.Context) (*snaploader.Snapshot, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	_, lockSpan := tracing.StartSpan(ctx)
-	lockSpan.SetName("WaitForGenericSnapshotLock")
-	unlock, err := genericSnapshotLocks.Lock(ctx, c.snapshotKeySet.GetWriteKey().GetConfigurationHash())
-	lockSpan.End()
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
-
 	opts := &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly}
-	if snap, err := c.loader.GetSnapshot(c.templateCtx(ctx), c.snapshotKeySet, opts); err == nil {
-		span.SetAttributes(attribute.Bool("template_cached", true))
+	snap, err := c.loader.GetSnapshot(c.templateCtx(ctx), c.snapshotKeySet, opts)
+	span.SetAttributes(attribute.Bool("template_cached", err == nil))
+	if err == nil {
 		return snap, nil
 	} else if !status.IsNotFoundError(err) && !status.IsUnavailableError(err) {
 		return nil, err
 	}
-	span.SetAttributes(attribute.Bool("template_cached", false))
-	log.CtxInfof(ctx, "Creating generic snapshot template %s", c.snapshotKeySet.GetWriteKey().GetConfigurationHash())
-	if err := c.createGenericSnapshot(ctx); err != nil {
-		return nil, status.WrapError(err, "create generic snapshot template")
+	if err := c.waitForGenericSnapshotBuild(ctx); err != nil {
+		return nil, status.WrapError(err, "build generic snapshot template")
 	}
 	return c.loader.GetSnapshot(c.templateCtx(ctx), c.snapshotKeySet, opts)
 }
 
-func (c *FirecrackerContainer) createGenericSnapshot(ctx context.Context) error {
+// waitForGenericSnapshotBuild starts a template build, or joins one already
+// in progress, and waits for it. The build isn't cancelled when ctx is, so a
+// cancelled task doesn't waste the build for the tasks after it.
+func (c *FirecrackerContainer) waitForGenericSnapshotBuild(ctx context.Context) error {
+	key := c.snapshotKeySet.GetWriteKey().GetConfigurationHash()
+	templateBuilds.mu.Lock()
+	b := templateBuilds.builds[key]
+	if b == nil {
+		b = &templateBuild{done: make(chan struct{})}
+		templateBuilds.builds[key] = b
+		buildCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), genericSnapshotBuildTimeout)
+		go func() {
+			defer cancel()
+			err := c.buildGenericSnapshot(buildCtx)
+			templateBuilds.mu.Lock()
+			delete(templateBuilds.builds, key)
+			templateBuilds.mu.Unlock()
+			b.err = err
+			close(b.done)
+		}()
+	}
+	templateBuilds.mu.Unlock()
+
+	_, span := tracing.StartSpan(ctx)
+	span.SetName("WaitForGenericSnapshotBuild")
+	defer span.End()
+	select {
+	case <-b.done:
+		return b.err
+	case <-ctx.Done():
+		return status.FromContextError(ctx)
+	}
+}
+
+// buildGenericSnapshot boots a VM with no container root and saves it as the
+// template for c's configuration.
+func (c *FirecrackerContainer) buildGenericSnapshot(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	if err := c.create(ctx); err != nil {
+	log.CtxInfof(ctx, "Building generic snapshot template %s", c.snapshotKeySet.GetWriteKey().GetConfigurationHash())
+
+	builder, cleanup, err := c.newGenericSnapshotVM(ctx, "generic-snapshot-build-*")
+	if err != nil {
 		return err
 	}
-	if err := c.resetGuestState(ctx); err != nil {
+	defer cleanup()
+	builder.buildsGenericSnapshot = true
+	if err := builder.create(ctx); err != nil {
 		return err
 	}
-	c.postCompletionStats = &espb.PostCompletionStats{FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{}}
-	details, err := c.newSnapshotDetails(ctx, false /*=saveRemoteSnapshot*/, true /*=saveLocalSnapshot*/)
+	if err := builder.resetGuestState(ctx); err != nil {
+		return err
+	}
+	builder.postCompletionStats = &espb.PostCompletionStats{FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{}}
+	details, err := builder.newSnapshotDetails(ctx, false /*=saveRemoteSnapshot*/, true /*=saveLocalSnapshot*/)
 	if err != nil {
 		return err
 	}
 	validate := func(snap *snaploader.Snapshot) error { return c.validateStartupSnapshot(ctx, snap) }
-	return c.pauseWithSnapshot(ctx, details, validate)
+	return builder.pauseWithSnapshot(ctx, details, validate)
+}
+
+// newGenericSnapshotVM returns a VM with c's generic snapshot configuration,
+// for building or validating a template. cleanup removes it.
+func (c *FirecrackerContainer) newGenericSnapshotVM(ctx context.Context, workDirPattern string) (*FirecrackerContainer, func(), error) {
+	workDir, err := os.MkdirTemp(c.jailerRoot, workDirPattern)
+	if err != nil {
+		return nil, nil, err
+	}
+	vm, err := NewContainer(ctx, c.env, c.task, ContainerOpts{
+		VMConfiguration:        c.vmConfig,
+		ContainerImage:         c.containerImage,
+		User:                   c.user,
+		ActionWorkingDirectory: workDir,
+		CgroupParent:           c.cgroupParent,
+		CgroupSettings:         c.cgroupSettings.CloneVT(),
+		BlockDevice:            c.blockDevice,
+		ExecutorConfig:         c.executorConfig,
+		ExternalNetworkPool:    c.externalNetworkPool,
+		LocalNetworkPool:       c.localNetworkPool,
+		MarshalledDNSOverrides: c.marshalledDNSOverrides,
+		HostResolvConf:         c.hostResolvConf,
+		UseOCIFetcher:          c.useOCIFetcher,
+	})
+	if err != nil {
+		os.RemoveAll(workDir)
+		return nil, nil, err
+	}
+	// Templates are local to the executor.
+	vm.supportsRemoteSnapshots = false
+	cleanup := func() {
+		cleanupCtx, cancel := background.ExtendContextForFinalization(ctx, finalizationTimeout)
+		defer cancel()
+		if err := vm.Remove(cleanupCtx); err != nil {
+			log.CtxWarningf(ctx, "Failed to remove generic snapshot VM: %s", err)
+		}
+		os.RemoveAll(workDir)
+	}
+	return vm, cleanup, nil
 }
 
 // templateCtx scopes snapshot storage for generic templates to the executor,
@@ -2513,8 +2631,11 @@ func (c *FirecrackerContainer) templateCtx(ctx context.Context) context.Context 
 func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	if c.cachedContainerfs(ctx) == nil {
-		if err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, filepath.Join(c.getChroot(), containerFSName)); err != nil {
+	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
+	if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
+		return status.UnavailableErrorf("check containerfs exists: %s", err)
+	} else if !exists && c.cachedContainerfs(ctx) == nil {
+		if err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, containerFSPath); err != nil {
 			return err
 		}
 	}
@@ -2535,13 +2656,18 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 	if _, err := crand.Read(entropy); err != nil {
 		return err
 	}
-	rsp, err := vmxpb.NewExecClient(conn).Initialize(ctx, &vmxpb.InitializeRequest{
+	mountCtx, cancel := context.WithTimeout(ctx, mountTimeout)
+	defer cancel()
+	rsp, err := vmxpb.NewExecClient(conn).Initialize(mountCtx, &vmxpb.InitializeRequest{
 		Entropy:                  entropy,
 		MountContainerRoot:       true,
 		ClearArpCache:            true,
 		UnixTimestampNanoseconds: time.Now().UnixNano(),
 	})
 	if err != nil {
+		if status.IsDeadlineExceededError(err) && ctx.Err() == nil {
+			return status.UnavailableErrorf("mount container root: %s", err)
+		}
 		return err
 	}
 	if !rsp.GetContainerRootMounted() {
@@ -2553,32 +2679,11 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 func (c *FirecrackerContainer) validateStartupSnapshot(ctx context.Context, snapshot *snaploader.Snapshot) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	workDir, err := os.MkdirTemp(c.jailerRoot, "startup-snapshot-validation-*")
+	validator, cleanup, err := c.newGenericSnapshotVM(ctx, "generic-snapshot-validation-*")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(workDir)
-
-	validator, err := NewContainer(ctx, c.env, c.task, ContainerOpts{
-		VMConfiguration:        c.vmConfig,
-		ContainerImage:         c.containerImage,
-		User:                   c.user,
-		ActionWorkingDirectory: workDir,
-		CgroupParent:           c.cgroupParent,
-		CgroupSettings:         c.cgroupSettings.CloneVT(),
-		BlockDevice:            c.blockDevice,
-		ExecutorConfig:         c.executorConfig,
-		ExternalNetworkPool:    c.externalNetworkPool,
-		LocalNetworkPool:       c.localNetworkPool,
-		MarshalledDNSOverrides: c.marshalledDNSOverrides,
-		HostResolvConf:         c.hostResolvConf,
-		UseOCIFetcher:          c.useOCIFetcher,
-	})
-	if err != nil {
-		return err
-	}
-	defer validator.Remove(context.WithoutCancel(ctx))
-
+	defer cleanup()
 	if err := validator.loadSnapshot(ctx, snapshot); err != nil {
 		return err
 	}
