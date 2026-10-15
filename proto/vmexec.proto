@@ -174,5 +174,9 @@ message UnmountWorkspaceResponse {
   bool busy = 1;
 }
 
-message MountWorkspaceRequest {}
+message MountWorkspaceRequest {
+  // Size of the image that the host attached to the workspace drive. If set,
+  // the guest waits for the drive to report this size before mounting it.
+  int64 size_bytes = 1;
+}
 message MountWorkspaceResponse {}

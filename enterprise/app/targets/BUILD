@@ -78,6 +78,7 @@ ts_library(
         "//enterprise/app/trends:common",
         "//enterprise/app/trends:trends_chart",
         "//proto:execution_stats_ts_proto",
+        "//proto:stats_ts_proto",
     ],
 )
 

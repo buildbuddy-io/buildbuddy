@@ -15,6 +15,8 @@ import DateRangePickerButton from "../filter/date_range_picker_button";
 import TrendsChartComponent, { ChartColor, SeriesType } from "../trends/trends_chart";
 import UsageAlertsComponent from "./usage_alerts";
 import UsageBillCard from "./usage_bill";
+import { longFormatTsForInterval, shortFormatTsForAxis } from "../trends/common";
+import { stats } from "../../../proto/stats_ts_proto";
 
 export interface UsageProps {
   user?: User;
@@ -218,8 +220,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 formatTickValue: count,
                 allowDecimals: false,
               }}
-              formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-              formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+              formatXAxisLabel={(ts) => moment.unix(ts).utc().format("MMM D")}
+              formatHoverXAxisLabel={(ts) => moment.unix(ts).utc().format("dddd, MMMM Do YYYY")}
               ticks={[]}
             />
           </div>
@@ -244,8 +246,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 formatTickValue: count,
                 allowDecimals: false,
               }}
-              formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-              formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+              formatXAxisLabel={(ts) => moment.unix(ts).utc().format("MMM D")}
+              formatHoverXAxisLabel={(ts) => moment.unix(ts).utc().format("dddd, MMMM Do YYYY")}
               ticks={[]}
             />
           </div>
@@ -270,8 +272,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 formatTickValue: (v) => formatWithCommas(Math.floor(v / 60e6)),
                 allowDecimals: false,
               }}
-              formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-              formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+              formatXAxisLabel={(ts) => moment.unix(ts).utc().format("MMM D")}
+              formatHoverXAxisLabel={(ts) => moment.unix(ts).utc().format("dddd, MMMM Do YYYY")}
               ticks={[]}
             />
           </div>
@@ -296,8 +298,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 formatTickValue: count,
                 allowDecimals: false,
               }}
-              formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-              formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+              formatXAxisLabel={(ts) => moment.unix(ts).utc().format("MMM D")}
+              formatHoverXAxisLabel={(ts) => moment.unix(ts).utc().format("dddd, MMMM Do YYYY")}
               ticks={[]}
             />
           </div>
@@ -342,8 +344,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                   formatTickValue: bytes,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-                formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+                formatXAxisLabel={(ts) => moment.unix(ts).utc().format("MMM D")}
+                formatHoverXAxisLabel={(ts) => moment.unix(ts).utc().format("dddd, MMMM Do YYYY")}
                 ticks={[]}
               />
             )}
@@ -366,8 +368,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                   formatTickValue: bytes,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-                formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+                formatXAxisLabel={(ts) => moment.unix(ts).utc().format("MMM D")}
+                formatHoverXAxisLabel={(ts) => moment.unix(ts).utc().format("dddd, MMMM Do YYYY")}
                 ticks={[]}
               />
             )}
@@ -413,8 +415,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                   formatTickValue: bytes,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-                formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+                formatXAxisLabel={(ts) => moment.unix(ts).utc().format("MMM D")}
+                formatHoverXAxisLabel={(ts) => moment.unix(ts).utc().format("dddd, MMMM Do YYYY")}
                 ticks={[]}
               />
             )}
@@ -437,8 +439,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                   formatTickValue: bytes,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-                formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+                formatXAxisLabel={(ts) => moment.unix(ts).utc().format("MMM D")}
+                formatHoverXAxisLabel={(ts) => moment.unix(ts).utc().format("dddd, MMMM Do YYYY")}
                 ticks={[]}
               />
             )}
@@ -475,8 +477,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                   formatTickValue: (v) => formatWithCommas(Math.floor(v / 60e6)),
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-                formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+                formatXAxisLabel={(ts) => moment.unix(ts).utc().format("MMM D")}
+                formatHoverXAxisLabel={(ts) => moment.unix(ts).utc().format("dddd, MMMM Do YYYY")}
                 ticks={[]}
               />
             )}
@@ -499,8 +501,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                   formatTickValue: (v) => formatWithCommas(Math.floor(v / 60e6)),
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-                formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+                formatXAxisLabel={(ts) => moment.unix(ts).utc().format("MMM D")}
+                formatHoverXAxisLabel={(ts) => moment.unix(ts).utc().format("dddd, MMMM Do YYYY")}
                 ticks={[]}
               />
             )}
@@ -537,8 +539,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                   formatTickValue: (v) => formatWithCommas(Math.floor(v / 60e6)),
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-                formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+                formatXAxisLabel={(ts) => moment.unix(ts).utc().format("MMM D")}
+                formatHoverXAxisLabel={(ts) => moment.unix(ts).utc().format("dddd, MMMM Do YYYY")}
                 ticks={[]}
               />
             )}
@@ -561,8 +563,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                   formatTickValue: (v) => formatWithCommas(Math.floor(v / 60e6)),
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-                formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
+                formatXAxisLabel={(ts) => moment.unix(ts).utc().format("MMM D")}
+                formatHoverXAxisLabel={(ts) => moment.unix(ts).utc().format("dddd, MMMM Do YYYY")}
                 ticks={[]}
               />
             )}

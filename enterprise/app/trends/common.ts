@@ -112,6 +112,23 @@ export function intervalEndUsec(interval: stats.StatsInterval, startUsec: number
   );
 }
 
+export function longFormatTsForInterval(interval: stats.IntervalType, timestampMillis: number): string {
+  if (interval === stats.IntervalType.INTERVAL_TYPE_DAY) {
+    return moment(timestampMillis).format("dddd, MMMM Do YYYY");
+  }
+  return moment(timestampMillis).format("dddd, MMMM Do YYYY HH:mm");
+}
+
+export function shortFormatTsForAxis(timestampMillis: number) {
+  const time = moment(timestampMillis);
+
+  if (time.hour() === 0) {
+    return time.format("MMM D");
+  }
+
+  return time.format("HH:mm");
+}
+
 export function renderMetricValue(m: stat_filter.Metric, v: number) {
   if (isExecutionMetric(m)) {
     switch (m.execution) {

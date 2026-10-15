@@ -110,7 +110,9 @@ ts_library(
         "//app/util:proto",
         "//enterprise/app/filter:filter_util",
         "//enterprise/app/tap:tap_empty_state",
+        "//enterprise/app/trends:common",
         "//enterprise/app/trends:trends_chart",
+        "//proto:stats_ts_proto",
         "//proto:target_ts_proto",
     ],
 )

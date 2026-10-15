@@ -379,12 +379,61 @@ func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspa
 		return nil, status.InternalErrorf("workspace is already mounted at %s", workspaceMountPath)
 	}
 
+	// Firecracker applies a drive update by sending the guest a config change
+	// notification, and the virtio_blk driver reads the new capacity
+	// asynchronously. Until it does, the kernel rejects reads past the old
+	// capacity with EIO, which makes the mount fail. The old capacity is
+	// usually 0, because the host attaches an empty file to the workspace
+	// drive between actions.
+	if req.GetSizeBytes() > 0 {
+		if err := waitForBlockDeviceSize(ctx, x.workspaceDevice, req.GetSizeBytes()); err != nil {
+			log.Errorf("Failed to wait for workspace device size: %s", err)
+			return nil, err
+		}
+	}
 	if err := syscall.Mount(x.workspaceDevice, workspaceMountPath, "ext4", syscall.MS_NOATIME, ""); err != nil {
 		log.Errorf("Failed to mount workspace: %s", err)
 		return nil, err
 	}
 	log.Infof("Mounted workspace %s to %s", x.workspaceDevice, workspaceMountPath)
 	return &vmxpb.MountWorkspaceResponse{}, nil
+}
+
+// waitForBlockDeviceSize polls until the block device reports the given size.
+func waitForBlockDeviceSize(ctx context.Context, device string, sizeBytes int64) error {
+	// We stop waiting a second before the caller's deadline so that the caller
+	// receives our error, which includes the device size, rather than its own
+	// deadline error. If our response takes longer than that to arrive, the
+	// caller just sees the less detailed error.
+	if deadline, ok := ctx.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline.Add(-time.Second))
+		defer cancel()
+	}
+	// sysfs reports the size in 512-byte sectors, regardless of the device's
+	// logical block size.
+	sizePath := filepath.Join("/sys/class/block", filepath.Base(device), "size")
+	wantSectors := sizeBytes / 512
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		b, err := os.ReadFile(sizePath)
+		if err != nil {
+			return status.InternalErrorf("read device size: %s", err)
+		}
+		sectors, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+		if err != nil {
+			return status.InternalErrorf("parse device size: %s", err)
+		}
+		if sectors == wantSectors {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return status.WrapErrorf(status.FromContextError(ctx), "device %s has %d sectors, want %d", device, sectors, wantSectors)
+		case <-ticker.C:
+		}
+	}
 }
 
 func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {

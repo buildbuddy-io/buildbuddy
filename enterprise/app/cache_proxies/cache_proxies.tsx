@@ -1,9 +1,9 @@
-import { Cpu, Globe, Hash, Laptop, LucideIcon } from "lucide-react";
+import { CheckCircle2, Cpu, ExternalLink, Globe, Hash, Laptop, LucideIcon } from "lucide-react";
 import React from "react";
 import { Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
 import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
-import LinkButton from "../../../app/components/button/link_button";
+import LinkButton, { OutlinedLinkButton } from "../../../app/components/button/link_button";
 import UpgradePrompt, { mostUrgent } from "../../../app/components/upgrade/upgrade";
 import ViewModeToggle, { ViewMode } from "../../../app/components/view_mode_toggle/view_mode_toggle";
 import router from "../../../app/router/router";
@@ -26,40 +26,59 @@ interface CacheProxySetupProps {
 
 class CacheProxySetup extends React.Component<CacheProxySetupProps> {
   render() {
+    const keyCount = this.props.proxyKeys.length;
+    const canManageKeys = this.props.user.canCall("createApiKey");
+
     return (
-      <>
-        <h1>Set up self-hosted cache proxies</h1>
-        <hr />
-        <h2>1. Create an API key for cache proxy registration</h2>
-        {this.props.proxyKeys.length == 0 && (
+      <div className="cache-proxy-setup">
+        <div className="cache-proxy-setup-header">
           <div>
-            <p>There are no API keys with the cache proxy capability configured for your organization.</p>
-            <p>API keys are used to authorize self-hosted cache proxies.</p>
-            {this.props.user.canCall("createApiKey") && (
-              <LinkButton href="/settings/org/api-keys" className="manage-keys-button">
-                Manage keys
-              </LinkButton>
-            )}
+            <h1>Set up self-hosted cache proxies</h1>
           </div>
-        )}
-        {this.props.proxyKeys.length > 0 && (
-          <>
-            <div>
-              {this.props.proxyKeys.length == 1 && <p>You have one Cache Proxy API key available.</p>}
-              {this.props.proxyKeys.length > 1 && (
-                <p>You have {this.props.proxyKeys.length} Cache Proxy API keys available.</p>
+          <OutlinedLinkButton href="https://www.buildbuddy.io/docs/enterprise-proxy" target="_blank" rel="noreferrer">
+            Documentation <ExternalLink className="icon" aria-hidden="true" />
+          </OutlinedLinkButton>
+        </div>
+
+        <ol className="cache-proxy-setup-steps">
+          <li className="cache-proxy-setup-step">
+            <span className="cache-proxy-setup-step-number" aria-hidden="true">
+              1
+            </span>
+            <div className="cache-proxy-setup-step-content">
+              <h2>Create a registration API key</h2>
+              <p>Use an organization API key with the Cache Proxy capability to authorize your proxies.</p>
+              {keyCount > 0 && (
+                <div className="cache-proxy-setup-key-status">
+                  <CheckCircle2 aria-hidden="true" />
+                  <span>
+                    {keyCount} {keyCount === 1 ? "API key available" : "API keys available"}
+                  </span>
+                </div>
               )}
-              <p>These API keys can be used to register your cache proxies.</p>
+              {keyCount === 0 && !canManageKeys && <p>Ask an organization admin to create a Cache Proxy API key.</p>}
+              {canManageKeys && (
+                <LinkButton href="/settings/org/api-keys" className="small-button">
+                  {keyCount > 0 ? "Manage API keys" : "Create API key"}
+                </LinkButton>
+              )}
             </div>
-            <h2>2. Deploy cache proxies</h2>
-            <p>
-              Start each cache proxy with <code>--cache_proxy.api_key=&lt;key&gt;</code> and{" "}
-              <code>--cache_proxy.app_target=&lt;app gRPC target&gt;</code>. Once running, the proxy will appear on the
-              Status tab.
-            </p>
-          </>
-        )}
-      </>
+          </li>
+          <li className="cache-proxy-setup-step">
+            <span className="cache-proxy-setup-step-number" aria-hidden="true">
+              2
+            </span>
+            <div className="cache-proxy-setup-step-content">
+              <h2>Deploy your cache proxies</h2>
+              <p>Start each proxy with these flags, using your API key and the app's gRPC target.</p>
+              <pre className="cache-proxy-setup-flags">
+                <code>{"--cache_proxy.api_key=<key>\n--cache_proxy.app_target=<app gRPC target>"}</code>
+              </pre>
+              <p className="cache-proxy-setup-hint">Once running, your proxies will appear on the Status tab.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
     );
   }
 }
