@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
 
@@ -190,7 +189,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Could not parse http proxy url: %v", err)
 		}
-		proxy := httputil.NewSingleHostReverseProxy(httpProxyUrl)
+		proxy := proxy_util.NewHTTPForwarder(env, httpProxyUrl)
 
 		// Fallback to forward any unmatched HTTP routes to the proxy target.
 		env.GetMux().Handle("/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

@@ -2,12 +2,21 @@ package proxy_util
 
 import (
 	"context"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"google.golang.org/grpc/metadata"
@@ -62,4 +71,52 @@ func RequestTypeLabelFromContext(ctx context.Context) string {
 		return metrics.LocalOnlyCacheProxyRequestLabel
 	}
 	return metrics.DefaultCacheProxyRequestLabel
+}
+
+// NewHTTPForwarder returns a handler that reverse-proxies HTTP requests to
+// target, preserving the incoming Host header (which the target uses to resolve
+// the subdomain).
+//
+// Like the gRPC forwarder, it attests the client's IP to the target: it strips
+// all client-supplied internal and identity headers, then sets the resolved
+// client IP and a grpc-proxy client identity, which the target requires before
+// trusting the IP. If env has no client identity service, nothing is attested.
+func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
+	cis := env.GetClientIdentityService()
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(r *httputil.ProxyRequest) {
+			r.SetURL(target)
+			r.Out.Host = r.In.Host
+			// Append to the incoming X-Forwarded-For, as the default director
+			// does; Rewrite otherwise drops it.
+			r.Out.Header["X-Forwarded-For"] = r.In.Header["X-Forwarded-For"]
+			r.SetXForwarded()
+
+			for k := range r.Out.Header {
+				if strings.HasPrefix(strings.ToLower(k), authutil.InternalHeaderPrefix) {
+					delete(r.Out.Header, k)
+				}
+			}
+			r.Out.Header.Del(authutil.ClientIdentityHeaderName)
+			if cis == nil {
+				return
+			}
+			clientIP := clientip.Get(r.In.Context())
+			if clientIP == "" {
+				return
+			}
+			header, err := cis.CachedIdentityHeader(&interfaces.ClientIdentity{
+				Origin: interfaces.ClientIdentityInternalOrigin,
+				Client: interfaces.ClientIdentityGRPCProxy,
+			})
+			if err != nil {
+				// Without the identity the target ignores the IP anyway.
+				log.CtxWarningf(r.In.Context(), "Could not create client identity header: %s", err)
+				return
+			}
+			r.Out.Header.Set(clientip.HeaderName, clientIP)
+			r.Out.Header.Set(authutil.ClientIdentityHeaderName, header)
+		},
+	}
+	return interceptors.ClientIP(env, proxy)
 }
