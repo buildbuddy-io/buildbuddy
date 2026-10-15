@@ -1332,6 +1332,7 @@ func (c *fakeVMContainer) PrewarmGenericSnapshot(ctx context.Context) error {
 
 func TestWarmup_ImageWarmupFailureDoesNotCancelGenericSnapshotPrewarm(t *testing.T) {
 	flags.Set(t, "executor.firecracker_generic_snapshot_prewarm_cpus", []int64{1})
+	flags.Set(t, "executor.enable_firecracker", true)
 	flags.Set(t, "executor.warmup_additional_images", []string{"example.com/image:latest"})
 	env := newTestEnv(t)
 	var mu sync.Mutex

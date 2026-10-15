@@ -1038,7 +1038,9 @@ func (p *pool) withWarmupContainer(ctx context.Context, task *repb.ExecutionTask
 	if err != nil {
 		return err
 	}
-	executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand())
+	if err := executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
+		return status.WrapError(err, "apply executor platform overrides")
+	}
 	size, err := taskSize(props)
 	if err != nil {
 		return err

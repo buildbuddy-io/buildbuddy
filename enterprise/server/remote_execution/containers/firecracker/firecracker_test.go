@@ -171,7 +171,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// which will negatively affect customer experience. Be careful!
 	// Generic snapshots have distinct keys; existing snapshots do not use the new initialization RPC field.
 	const (
-		expectedHash    = "1de1de800194f937d5a13a2db060f093feb133cbeb308da52dcfe46ccae5e12f"
+		expectedHash    = "f6adc32254baeccef071fec615f1571415b7143a452c58af8bf25236af30b026"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -5165,7 +5165,8 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 		t.Cleanup(func() { assert.NoError(t, c.Remove(context.Background())) })
 		command := `test ! -e /tmp/root-marker; touch /tmp/root-marker; test ! -e stale; cp input output; touch stale; test -d /proc/self; test -c /dev/null; test -s /etc/hosts; if (echo x > /proc/sys/kernel/random/boot_id) 2>/dev/null; then exit 1; fi; cat /proc/sys/kernel/random/boot_id; /bin/true`
 		if image == ubuntuImage {
-			command += "; test -e /etc/lsb-release"
+			// Creating a user namespace fails if the root is merely chrooted.
+			command += "; test -e /etc/lsb-release; unshare -Ur true"
 		} else {
 			command += "; test ! -e /etc/lsb-release"
 		}
@@ -5342,4 +5343,95 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 			b.ReportMetric(float64(execTime.Microseconds())/float64(b.N), "exec-us/op")
 		})
 	}
+}
+
+// TEMPORARY: measures generic snapshot prewarm cost. Not for the PR.
+func TestTmpGenericSnapshotPrewarmTimes(t *testing.T) {
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	shapes := []int64{1, 2, 3, 4, 5, 6, 7, 8, 16, 32}
+	t.Logf("host: %d CPUs", runtime.NumCPU())
+	type key struct {
+		cpus    int64
+		network string
+	}
+	var keys []key
+	for _, cpus := range shapes {
+		if cpus > int64(runtime.NumCPU()) {
+			t.Logf("skipping %d CPUs: host has %d", cpus, runtime.NumCPU())
+			continue
+		}
+		for _, network := range []string{"off", "external"} {
+			keys = append(keys, key{cpus, network})
+		}
+	}
+	setup := func(t *testing.T) (*firecracker.Provider, *snaploader.FileCacheLoader, context.Context, func(cpus int64, network string) *container.Init) {
+		env := getTestEnv(context.Background(), t, envOpts{})
+		root := executorRootDir(t)
+		require.NoError(t, os.MkdirAll(filepath.Join(root, "cache"), 0755))
+		provider, err := firecracker.NewProvider(env, filepath.Join(root, "build"), filepath.Join(root, "cache"))
+		require.NoError(t, err)
+		loader, err := snaploader.New(env)
+		require.NoError(t, err)
+		newInit := func(cpus int64, network string) *container.Init {
+			task := &repb.ExecutionTask{Command: &repb.Command{
+				Arguments: []string{"true"},
+				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: "workload-isolation-type", Value: "firecracker"},
+					{Name: platform.FirecrackerUseGenericSnapshotPropertyName, Value: "true"},
+					{Name: "network", Value: network},
+				}},
+			}}
+			props, err := platform.ParseProperties(task)
+			require.NoError(t, err)
+			size, err := tasksize.GenericFirecrackerSize(&scpb.TaskSize{EstimatedMilliCpu: cpus * 1000})
+			require.NoError(t, err)
+			return &container.Init{Props: props, Task: &repb.ScheduledTask{SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: size}, ExecutionTask: task}, WorkDir: testfs.MakeTempDir(t)}
+		}
+		return provider, loader, snaploader.WithSharedNamespace(context.Background(), env, firecracker.GenericSnapshotNamespace), newInit
+	}
+	prewarm := func(t *testing.T, provider *firecracker.Provider, loader *snaploader.FileCacheLoader, genericCtx context.Context, init *container.Init) (time.Duration, int64, int64) {
+		c, err := provider.New(context.Background(), init)
+		require.NoError(t, err)
+		fc := c.(*firecracker.FirecrackerContainer)
+		start := time.Now()
+		require.NoError(t, fc.PrewarmGenericSnapshot(context.Background()))
+		d := time.Since(start)
+		snap, err := loader.GetSnapshot(genericCtx, fc.SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
+		require.NoError(t, err)
+		var stored, chunks int64
+		for _, f := range snap.GetChunkedFiles() {
+			for _, ch := range f.GetChunks() {
+				stored += ch.GetDigest().GetSizeBytes()
+				chunks++
+			}
+		}
+		require.NoError(t, c.Remove(context.Background()))
+		return d, stored, chunks
+	}
+
+	t.Run("sequential", func(t *testing.T) {
+		provider, loader, genericCtx, newInit := setup(t)
+		var total time.Duration
+		for _, k := range keys {
+			d, stored, chunks := prewarm(t, provider, loader, genericCtx, newInit(k.cpus, k.network))
+			total += d
+			t.Logf("RESULT cpus=%d network=%s build=%s stored_memory_chunks=%d stored_memory_bytes=%d", k.cpus, k.network, d.Round(time.Millisecond), chunks, stored)
+		}
+		t.Logf("RESULT sequential total=%s builds=%d", total.Round(time.Millisecond), len(keys))
+	})
+	t.Run("concurrent4", func(t *testing.T) {
+		provider, loader, genericCtx, newInit := setup(t)
+		start := time.Now()
+		var eg errgroup.Group
+		eg.SetLimit(4)
+		for _, k := range keys {
+			eg.Go(func() error {
+				d, _, _ := prewarm(t, provider, loader, genericCtx, newInit(k.cpus, k.network))
+				t.Logf("RESULT concurrent cpus=%d network=%s build=%s", k.cpus, k.network, d.Round(time.Millisecond))
+				return nil
+			})
+		}
+		require.NoError(t, eg.Wait())
+		t.Logf("RESULT concurrent4 wall=%s builds=%d", time.Since(start).Round(time.Millisecond), len(keys))
+	})
 }

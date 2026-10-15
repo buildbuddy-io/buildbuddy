@@ -903,7 +903,15 @@ func mountContainerRoot() error {
 		}
 		config[name] = data
 	}
-	if err := syscall.Chroot(root); err != nil {
+	// Move the root over / rather than chrooting into it: the kernel won't
+	// create user namespaces for a chrooted process.
+	if err := os.Chdir(root); err != nil {
+		return err
+	}
+	if err := syscall.Mount(".", "/", "", syscall.MS_MOVE, ""); err != nil {
+		return err
+	}
+	if err := syscall.Chroot("."); err != nil {
 		return err
 	}
 	if err := os.Chdir("/"); err != nil {

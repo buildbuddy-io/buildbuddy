@@ -576,6 +576,51 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 	}, task.GetPlatformOverrides(), protocmp.Transform()))
 }
 
+func TestDispatch_GenericSnapshotFromExperiment(t *testing.T) {
+	env, _, _ := setupEnv(t)
+	offlineFlagPath := testfs.WriteFile(t, testfs.MakeTempDir(t), "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "remote_execution.task_size_overrides": {
+      "state": "ENABLED",
+      "variants": {
+        "generic": {
+          "firecracker-use-generic-snapshot": "true"
+        }
+      },
+      "defaultVariant": "generic"
+    }
+  }
+}
+`)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(context.Background(), "US1")
+	require.NoError(t, err)
+	action := &repb.Action{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: "workload-isolation-type", Value: "firecracker"},
+		{Name: "EstimatedCPU", Value: "1.5"},
+		{Name: "EstimatedMemory", Value: "1GB"},
+	}}}
+	arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, action)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	err = env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString())
+	require.NoError(t, err)
+
+	// The property comes only from the experiment, but the size must still be
+	// rounded to a generic snapshot shape.
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Len(t, sched.scheduleReqs, 1)
+	assert.Equal(t, int64(2000), sched.scheduleReqs[0].GetMetadata().GetTaskSize().GetEstimatedMilliCpu())
+}
+
 func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
 	for _, tc := range []struct {
 		name                  string

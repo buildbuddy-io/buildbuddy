@@ -423,6 +423,7 @@ type ExecutorConfig struct {
 	HostKernelVersion  string
 	FirecrackerVersion string
 	GuestAPIVersion    string
+	InitrdVersion      string
 
 	GuestKernelImagePath6_1 string
 	GuestKernelVersion6_1   string
@@ -499,6 +500,10 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	if err != nil {
 		return nil, fmt.Errorf("compute digest for firecracker: %w", err)
 	}
+	initrdDigest, err := digest.ComputeForFile(initrdPath, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, fmt.Errorf("compute digest for initrd: %w", err)
+	}
 	hostKernelVersion, err := getHostKernelVersion()
 	if err != nil {
 		return nil, fmt.Errorf("get host kernel version: %w", err)
@@ -521,6 +526,7 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 		GuestKernelVersion:      guestKernelVersion,
 		HostKernelVersion:       hostKernelVersion,
 		FirecrackerVersion:      firecrackerDigest.GetHash(),
+		InitrdVersion:           initrdDigest.GetHash(),
 		GuestAPIVersion:         GuestAPIVersion,
 		GuestKernelImagePath6_1: guestKernelPath6_1,
 		GuestKernelVersion6_1:   guestKernelDigest6_1.GetHash(),
@@ -719,7 +725,10 @@ type FirecrackerContainer struct {
 
 	// Set on the VM that builds a generic snapshot.
 	buildsGenericSnapshot bool
-	recyclingEnabled      bool
+	// Set when attaching the container root already reset guest state, so the
+	// first Exec can skip it.
+	guestStateReset  bool
+	recyclingEnabled bool
 
 	// TODO: Cleanup after remote container image reads/writes are fully rolled out.
 	// remoteContainerImageAccess is resolved once per container so the remote
@@ -1116,27 +1125,6 @@ func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
 	return c.snapshotKeySet
 }
 
-var fileHashes sync.Map // path => sha256 hex
-
-// fileHash returns the sha256 of the file at path, cached for the process.
-func fileHash(path string) (string, error) {
-	if h, ok := fileHashes.Load(path); ok {
-		return h.(string), nil
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	sum := hex.EncodeToString(h.Sum(nil))
-	fileHashes.Store(path, sum)
-	return sum, nil
-}
-
 func (c *FirecrackerContainer) genericSnapshotKey() (*fcpb.SnapshotKey, error) {
 	config := c.vmConfig.CloneVT()
 	config.ScratchDiskSizeMb = 0
@@ -1144,14 +1132,10 @@ func (c *FirecrackerContainer) genericSnapshotKey() (*fcpb.SnapshotKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	initrdHash, err := fileHash(c.executorConfig.InitrdImagePath)
-	if err != nil {
-		return nil, status.WrapError(err, "hash initrd")
-	}
 	configurationHash := hash.Strings(
 		"generic-v1",
 		configurationDigest.GetHash(),
-		initrdHash,
+		c.executorConfig.InitrdVersion,
 		c.marshalledDNSOverrides,
 		c.hostResolvConf,
 	)
@@ -2544,7 +2528,7 @@ func (c *FirecrackerContainer) buildGenericSnapshot(ctx context.Context) error {
 	defer span.End()
 	log.CtxInfof(ctx, "Building generic snapshot %s", c.snapshotKeySet.GetWriteKey().GetConfigurationHash())
 
-	builder, cleanup, err := c.newGenericSnapshotVM(ctx, "generic-snapshot-build-*")
+	builder, cleanup, err := c.newGenericSnapshotVM(ctx)
 	if err != nil {
 		return err
 	}
@@ -2567,16 +2551,12 @@ func (c *FirecrackerContainer) buildGenericSnapshot(ctx context.Context) error {
 
 // newGenericSnapshotVM returns a VM with c's generic snapshot configuration,
 // for building or validating a generic snapshot. cleanup removes it.
-func (c *FirecrackerContainer) newGenericSnapshotVM(ctx context.Context, workDirPattern string) (*FirecrackerContainer, func(), error) {
-	workDir, err := os.MkdirTemp(c.jailerRoot, workDirPattern)
-	if err != nil {
-		return nil, nil, err
-	}
+func (c *FirecrackerContainer) newGenericSnapshotVM(ctx context.Context) (*FirecrackerContainer, func(), error) {
+	// No ActionWorkingDirectory: these VMs never mount a workspace.
 	vm, err := NewContainer(ctx, c.env, c.task, ContainerOpts{
 		VMConfiguration:        c.vmConfig,
 		ContainerImage:         c.containerImage,
 		User:                   c.user,
-		ActionWorkingDirectory: workDir,
 		CgroupParent:           c.cgroupParent,
 		CgroupSettings:         c.cgroupSettings.CloneVT(),
 		BlockDevice:            c.blockDevice,
@@ -2588,7 +2568,6 @@ func (c *FirecrackerContainer) newGenericSnapshotVM(ctx context.Context, workDir
 		UseOCIFetcher:          c.useOCIFetcher,
 	})
 	if err != nil {
-		os.RemoveAll(workDir)
 		return nil, nil, err
 	}
 	// Generic snapshots are local to the executor.
@@ -2599,7 +2578,6 @@ func (c *FirecrackerContainer) newGenericSnapshotVM(ctx context.Context, workDir
 		if err := vm.Remove(cleanupCtx); err != nil {
 			log.CtxWarningf(ctx, "Failed to remove generic snapshot VM: %s", err)
 		}
-		os.RemoveAll(workDir)
 	}
 	return vm, cleanup, nil
 }
@@ -2658,13 +2636,14 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 	if !rsp.GetContainerRootMounted() {
 		return status.FailedPreconditionError("guest did not mount the container root")
 	}
+	c.guestStateReset = true
 	return nil
 }
 
 func (c *FirecrackerContainer) validateGenericSnapshot(ctx context.Context, snapshot *snaploader.Snapshot) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	validator, cleanup, err := c.newGenericSnapshotVM(ctx, "generic-snapshot-validation-*")
+	validator, cleanup, err := c.newGenericSnapshotVM(ctx)
 	if err != nil {
 		return err
 	}
@@ -3160,7 +3139,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			return result
 		}
 	}
-	if c.createFromSnapshot {
+	if c.createFromSnapshot && !c.guestStateReset {
 		err := c.resetGuestState(ctx)
 		if err != nil {
 			result.Error = status.WrapError(err, "Failed to initialize firecracker VM exec client")
