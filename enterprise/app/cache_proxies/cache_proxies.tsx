@@ -34,7 +34,6 @@ class CacheProxySetup extends React.Component<CacheProxySetupProps> {
         <div className="cache-proxy-setup-header">
           <div>
             <h1>Set up self-hosted cache proxies</h1>
-            <p>Bring the BuildBuddy cache closer to your builds to reduce latency and bandwidth.</p>
           </div>
           <OutlinedLinkButton href="https://www.buildbuddy.io/docs/enterprise-proxy" target="_blank" rel="noreferrer">
             Documentation <ExternalLink className="icon" aria-hidden="true" />

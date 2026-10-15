@@ -276,7 +276,13 @@ export default class CacheProxyCardComponent extends React.Component<Props, Stat
     );
   }
 
-  renderReadWriteRing(title: string, subtitle: string, reads: number, writes: number, formatValue: (v: number) => string) {
+  renderReadWriteRing(
+    title: string,
+    subtitle: string,
+    reads: number,
+    writes: number,
+    formatValue: (v: number) => string
+  ) {
     return (
       <div className="cache-proxy-stat-ring">
         <div className="cache-proxy-stat-ring-title">{title}</div>
