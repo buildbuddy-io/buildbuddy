@@ -10,7 +10,8 @@ def microvm_kernel(
         arch,
         config,
         out,
-        version):
+        version,
+        git_tag = None):
     """Builds a guest kernel and emits matching public alias and upload targets.
 
     Args:
@@ -19,6 +20,7 @@ def microvm_kernel(
         config: Kernel config file.
         out: Output kernel image filename.
         version: Version string passed to the rebuild script and uploader.
+        git_tag: Stable kernel git tag to build. Defaults to version.
     """
     if arch == "x86_64":
         cpu_constraint = "@platforms//cpu:x86_64"
@@ -49,13 +51,14 @@ trap cleanup EXIT
 if ! env \\
     TMPDIR="$$tmpdir" \\
     KERNEL_VERSION=%s \\
+    KERNEL_GIT_TAG=%s \\
     SKIP_UPLOAD=1 \\
     OUTPUT_FILE="$@" \\
     $(location rebuild.sh) >"$$log_file" 2>&1; then
   cat "$$log_file" >&2
   exit 1
 fi
-""" % (name + "_build", version),
+""" % (name + "_build", version, git_tag or version),
         exec_compatible_with = [
             cpu_constraint,
             "@platforms//os:linux",

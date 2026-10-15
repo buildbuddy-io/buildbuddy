@@ -97,7 +97,7 @@ var (
 	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
 	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
-	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
+	enableLinux6_18                       = flag.Bool("executor.firecracker_enable_linux_6_18", false, "Enable the 6.18 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
@@ -420,15 +420,15 @@ type ExecutorConfig struct {
 	FirecrackerVersion string
 	GuestAPIVersion    string
 
-	GuestKernelImagePath6_1 string
-	GuestKernelVersion6_1   string
+	GuestKernelImagePath6_18 string
+	GuestKernelVersion6_18   string
 }
 
 var (
 	// set by x_defs in BUILD file
-	initrdRunfilePath     string
-	vmlinuxRunfilePath    string
-	vmlinux6_1RunfilePath string
+	initrdRunfilePath      string
+	vmlinuxRunfilePath     string
+	vmlinux6_18RunfilePath string
 )
 
 // GetExecutorConfig computes the ExecutorConfig for this executor instance.
@@ -449,24 +449,24 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 		return nil, fmt.Errorf("put initrd into build root dir: %w", err)
 	}
 
-	var guestKernelPath6_1 string
-	var guestKernelDigest6_1 *repb.Digest
-	// TODO: build a 6.1 kernel for arm64, then remove this conditional.
-	if vmlinux6_1RunfilePath != "" {
-		vmlinuxRunfileLocation6_1, err := runfiles.Rlocation(vmlinux6_1RunfilePath)
+	var guestKernelPath6_18 string
+	var guestKernelDigest6_18 *repb.Digest
+	// TODO: build a 6.18 kernel for arm64, then remove this conditional.
+	if vmlinux6_18RunfilePath != "" {
+		vmlinuxRunfileLocation6_18, err := runfiles.Rlocation(vmlinux6_18RunfilePath)
 		if err != nil {
-			return nil, fmt.Errorf("get vmlinux 6.1 runfile path: %w", err)
+			return nil, fmt.Errorf("get vmlinux 6.18 runfile path: %w", err)
 		}
-		p, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation6_1, buildRootDir, 0755)
+		p, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation6_18, buildRootDir, 0755)
 		if err != nil {
-			return nil, fmt.Errorf("put vmlinux 6.1 into build root dir: %w", err)
+			return nil, fmt.Errorf("put vmlinux 6.18 into build root dir: %w", err)
 		}
-		guestKernelPath6_1 = p
-		d, err := digest.ComputeForFile(guestKernelPath6_1, repb.DigestFunction_SHA256)
+		guestKernelPath6_18 = p
+		d, err := digest.ComputeForFile(guestKernelPath6_18, repb.DigestFunction_SHA256)
 		if err != nil {
-			return nil, fmt.Errorf("compute digest for vmlinux 6.1: %w", err)
+			return nil, fmt.Errorf("compute digest for vmlinux 6.18: %w", err)
 		}
-		guestKernelDigest6_1 = d
+		guestKernelDigest6_18 = d
 	}
 	vmlinuxRunfileLocation5_15, err := runfiles.Rlocation(vmlinuxRunfilePath)
 	if err != nil {
@@ -501,25 +501,25 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	}
 	guestKernelImagePath := guestKernelPath5_15
 	guestKernelVersion := guestKernelDigest5_15.GetHash()
-	if *enableLinux6_1 {
-		guestKernelImagePath = guestKernelPath6_1
-		guestKernelVersion = guestKernelDigest6_1.GetHash()
+	if *enableLinux6_18 {
+		guestKernelImagePath = guestKernelPath6_18
+		guestKernelVersion = guestKernelDigest6_18.GetHash()
 	}
 	return &ExecutorConfig{
 		// For now just use the build root dir as the jailer root dir, since
 		// these are guaranteed to be on the same FS.
-		JailerRoot:              buildRootDir,
-		CacheRoot:               cacheRootDir,
-		InitrdImagePath:         initrdPath,
-		GuestKernelImagePath:    guestKernelImagePath,
-		FirecrackerBinaryPath:   firecrackerPath,
-		JailerBinaryPath:        jailerPath,
-		GuestKernelVersion:      guestKernelVersion,
-		HostKernelVersion:       hostKernelVersion,
-		FirecrackerVersion:      firecrackerDigest.GetHash(),
-		GuestAPIVersion:         GuestAPIVersion,
-		GuestKernelImagePath6_1: guestKernelPath6_1,
-		GuestKernelVersion6_1:   guestKernelDigest6_1.GetHash(),
+		JailerRoot:               buildRootDir,
+		CacheRoot:                cacheRootDir,
+		InitrdImagePath:          initrdPath,
+		GuestKernelImagePath:     guestKernelImagePath,
+		FirecrackerBinaryPath:    firecrackerPath,
+		JailerBinaryPath:         jailerPath,
+		GuestKernelVersion:       guestKernelVersion,
+		HostKernelVersion:        hostKernelVersion,
+		FirecrackerVersion:       firecrackerDigest.GetHash(),
+		GuestAPIVersion:          GuestAPIVersion,
+		GuestKernelImagePath6_18: guestKernelPath6_18,
+		GuestKernelVersion6_18:   guestKernelDigest6_18.GetHash(),
 	}, nil
 }
 
@@ -850,7 +850,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 
 	c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion
 	if c.shouldUpgradeGuestKernel() {
-		c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion6_1
+		c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion6_18
 	}
 	c.vmConfig.HostKernelVersion = c.executorConfig.HostKernelVersion
 	c.vmConfig.FirecrackerVersion = c.executorConfig.FirecrackerVersion
@@ -1818,7 +1818,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 	bootArgs := getBootArgs(c.vmConfig)
 	guestKernelPath := c.executorConfig.GuestKernelImagePath
 	if c.shouldUpgradeGuestKernel() {
-		guestKernelPath = c.executorConfig.GuestKernelImagePath6_1
+		guestKernelPath = c.executorConfig.GuestKernelImagePath6_18
 	}
 	jailerCfg, err := c.getJailerConfig(ctx, c.executorConfig.GuestKernelImagePath)
 	if err != nil {
@@ -4092,7 +4092,7 @@ func workspacePathsToExtract(task *repb.ExecutionTask) []string {
 }
 
 func (c *FirecrackerContainer) shouldUpgradeGuestKernel() bool {
-	return c.executorConfig.GuestKernelImagePath6_1 != "" && slices.Contains(c.task.Experiments, "upgrade-fc-guest-kernel")
+	return c.executorConfig.GuestKernelImagePath6_18 != "" && slices.Contains(c.task.Experiments, "upgrade-fc-guest-kernel")
 }
 
 func snapshotReadPolicy(task *repb.ExecutionTask) (string, error) {
