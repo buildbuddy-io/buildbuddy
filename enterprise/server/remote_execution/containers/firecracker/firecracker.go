@@ -2453,9 +2453,6 @@ func (c *FirecrackerContainer) createFromGenericSnapshot(ctx context.Context) (r
 	}
 	c.postCompletionStats = nil
 	if err := c.loadSnapshot(ctx, snap); err != nil {
-		if ctx.Err() == nil {
-			c.deleteGenericSnapshot(ctx)
-		}
 		return err
 	}
 	pulledImage := filepath.Join(pulledChroot, containerFSName)
@@ -2463,15 +2460,6 @@ func (c *FirecrackerContainer) createFromGenericSnapshot(ctx context.Context) (r
 		return status.UnavailableErrorf("move pulled image into chroot: %s", err)
 	}
 	return c.attachContainerRoot(ctx)
-}
-
-// deleteGenericSnapshot deletes a generic snapshot that failed to restore, so
-// the next task rebuilds it instead of failing until it's evicted.
-func (c *FirecrackerContainer) deleteGenericSnapshot(ctx context.Context) {
-	log.CtxWarningf(ctx, "Deleting generic snapshot %s after failed restore", c.snapshotKeySet.GetBranchKey().GetConfigurationHash())
-	if err := c.loader.DeleteLocalManifest(c.genericSnapshotCtx(ctx), c.snapshotKeySet.GetBranchKey()); err != nil {
-		log.CtxWarningf(ctx, "Failed to delete generic snapshot: %s", err)
-	}
 }
 
 // PrewarmGenericSnapshot builds the generic snapshot this VM would start from,
@@ -3927,14 +3915,17 @@ func (c *FirecrackerContainer) newSnapshotDetails(ctx context.Context, saveRemot
 
 	snapshotType := fullSnapshotType
 	memSnapshotName := fullMemSnapshotName
-	if c.recycled {
+	// A freshly booted VM's unwritten memory is zero, so a diff onto an empty
+	// store captures it without writing every page of guest memory.
+	diffFromBoot := c.buildsGenericSnapshot
+	if c.recycled || diffFromBoot {
 		snapshotType = diffSnapshotType
 		memSnapshotName = diffMemSnapshotName
 	}
 
 	// We export full snapshots directly to a COWStore. Create the COWStore here.
 	// For diff snapshots, we'll use the existing memoryStore.
-	if snapshotType == fullSnapshotType {
+	if snapshotType == fullSnapshotType || diffFromBoot {
 		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
 		if err := os.Mkdir(memChunkDir, 0755); err != nil {
 			return nil, status.WrapError(err, "make memory chunk dir")
@@ -4010,7 +4001,7 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 	// Re-limiting the full-snapshot store would allocate a second,
 	// identically-sized LRU and orphan the first, leaking its evictor
 	// goroutines.
-	if snapshotDetails.snapshotType == diffSnapshotType {
+	if snapshotDetails.snapshotType == diffSnapshotType && c.recycled {
 		if err := c.memoryStore.LimitMmappedChunks(c.snapshotWriteMaxMmappedChunks()); err != nil {
 			return status.WrapError(err, "set limited LRU for snapshot export")
 		}

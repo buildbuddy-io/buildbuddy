@@ -626,21 +626,6 @@ func (l *FileCacheLoader) FetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 	return manifest, acResult, nil
 }
 
-// DeleteLocalManifest deletes the local manifest for key, so the snapshot is no
-// longer found locally.
-func (l *FileCacheLoader) DeleteLocalManifest(ctx context.Context, key *fcpb.SnapshotKey) error {
-	gid, err := groupID(ctx, l.env)
-	if err != nil {
-		return err
-	}
-	d, err := LocalManifestKey(gid, key)
-	if err != nil {
-		return err
-	}
-	l.env.GetFileCache().DeleteFile(ctx, &repb.FileNode{Digest: d})
-	return nil
-}
-
 func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifestDigest *repb.Digest) (*repb.ActionResult, error) {
 	manifestNode := &repb.FileNode{Digest: manifestDigest}
 	buf, err := l.env.GetFileCache().Read(ctx, manifestNode)
