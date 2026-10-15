@@ -389,6 +389,8 @@ func waitForBlockDeviceSize(ctx context.Context, device string, sizeBytes int64)
 	// logical block size.
 	sizePath := filepath.Join("/sys/class/block", filepath.Base(device), "size")
 	wantSectors := sizeBytes / 512
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
 	for {
 		b, err := os.ReadFile(sizePath)
 		if err != nil {
@@ -404,7 +406,7 @@ func waitForBlockDeviceSize(ctx context.Context, device string, sizeBytes int64)
 		select {
 		case <-ctx.Done():
 			return status.WrapErrorf(status.FromContextError(ctx), "device %s has %d sectors, want %d", device, sectors, wantSectors)
-		case <-time.After(time.Millisecond):
+		case <-ticker.C:
 		}
 	}
 }
