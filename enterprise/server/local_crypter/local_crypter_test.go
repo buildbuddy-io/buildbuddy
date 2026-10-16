@@ -3,7 +3,9 @@ package local_crypter_test
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -138,6 +140,62 @@ func TestRegisterWithMissingKeyFile(t *testing.T) {
 	err := local_crypter.Register(te)
 	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
 	require.Nil(t, te.GetCrypter())
+}
+
+func TestRegisterWithKMS(t *testing.T) {
+	kmsDir := testfs.MakeTempDir(t)
+	kmsKey := randomKey(t)
+	testfs.WriteFile(t, kmsDir, "kms-key", string(kmsKey))
+	flags.Set(t, "keystore.local_insecure_kms_directory", kmsDir)
+
+	// The key derivation must not change, or existing local cache entries
+	// become unreadable.
+	expectedKey := func(version int64) []byte {
+		mac := hmac.New(sha256.New, kmsKey)
+		mac.Write([]byte(fmt.Sprintf("buildbuddy-cache-proxy-local-key-v%d", version)))
+		return mac.Sum(nil)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		kmsKeyURI string
+		keyFile   bool
+		version   int64
+		wantErr   bool
+	}{
+		{name: "KMS key", kmsKeyURI: "local-insecure-kms://kms-key", version: 1},
+		{name: "KMS key with later version", kmsKeyURI: "local-insecure-kms://kms-key", version: 7},
+		{name: "missing KMS key", kmsKeyURI: "local-insecure-kms://missing", version: 1, wantErr: true},
+		{name: "unsupported KMS key URI", kmsKeyURI: "foo://bar", version: 1, wantErr: true},
+		{name: "KMS key and key file", kmsKeyURI: "local-insecure-kms://kms-key", keyFile: true, version: 1, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "crypter.local.kms_key_uri", tc.kmsKeyURI)
+			flags.Set(t, "crypter.local.key_version", tc.version)
+			if tc.keyFile {
+				flags.Set(t, "crypter.local.key_file", writeKeyFile(t, base64.StdEncoding.EncodeToString(randomKey(t))))
+			}
+			te := testenv.GetTestEnv(t)
+			authenticator, expectedKeyCrypter := setup(t, expectedKey(tc.version), tc.version)
+			te.SetAuthenticator(authenticator)
+
+			err := local_crypter.Register(te)
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Nil(t, te.GetCrypter())
+				return
+			}
+			require.NoError(t, err)
+
+			ctx, err := authenticator.WithAuthenticatedUser(context.Background(), user1)
+			require.NoError(t, err)
+			data := randomKey(t)
+			ciphertext, md := encrypt(t, ctx, te.GetCrypter(), data)
+			decrypted, err := decrypt(ctx, expectedKeyCrypter, fooDigest, ciphertext, md)
+			require.NoError(t, err)
+			require.Equal(t, data, decrypted)
+		})
+	}
 }
 
 func TestRegisterWithExistingCrypter(t *testing.T) {

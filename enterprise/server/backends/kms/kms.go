@@ -5,7 +5,10 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/csv"
 	"fmt"
 	"os"
@@ -24,6 +27,7 @@ import (
 	"github.com/tink-crypto/tink-go-gcpkms/v2/integration/gcpkms"
 	"github.com/tink-crypto/tink-go/v2/core/registry"
 	"github.com/tink-crypto/tink-go/v2/tink"
+	"google.golang.org/api/cloudkms/v1"
 	"google.golang.org/api/option"
 
 	awscreds "github.com/aws/aws-sdk-go/aws/credentials"
@@ -51,6 +55,9 @@ var (
 type KMS struct {
 	// May be nil if GCP integration is not enabled.
 	gcpClient registry.KMSClient
+	// Used for operations the tink client doesn't support. May be nil if GCP
+	// integration is not enabled.
+	gcpService *cloudkms.Service
 
 	// AWS clients are regional and we create them on-demand.
 	awsClientsMu sync.Mutex
@@ -62,19 +69,25 @@ type KMS struct {
 }
 
 func New(ctx context.Context) (*KMS, error) {
+	return NewWithKeyURI(ctx, *masterKeyURI)
+}
+
+// NewWithKeyURI returns a KMS that supports keyURI, and any other key types
+// enabled by flags.
+func NewWithKeyURI(ctx context.Context, keyURI string) (*KMS, error) {
 	kms := &KMS{}
-	if err := kms.initGCPClient(ctx); err != nil {
+	if err := kms.initGCPClient(ctx, keyURI); err != nil {
 		return nil, err
 	}
-	if err := kms.initAWSClient(ctx); err != nil {
+	if err := kms.initAWSClient(ctx, keyURI); err != nil {
 		return nil, err
 	}
 	if err := kms.initLocalInsecureKMSClient(ctx); err != nil {
 		return nil, err
 	}
-	_, err := kms.clientForURI(*masterKeyURI)
+	_, err := kms.clientForURI(keyURI)
 	if err != nil {
-		return nil, status.InvalidArgumentErrorf("master key URI not supported")
+		return nil, status.InvalidArgumentErrorf("key URI not supported")
 	}
 	return kms, nil
 }
@@ -91,8 +104,8 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func (k *KMS) initGCPClient(ctx context.Context) error {
-	if !*enableGCPClient && !strings.HasPrefix(*masterKeyURI, gcpKMSPrefix) {
+func (k *KMS) initGCPClient(ctx context.Context, keyURI string) error {
+	if !*enableGCPClient && !strings.HasPrefix(keyURI, gcpKMSPrefix) {
 		return nil
 	}
 
@@ -111,6 +124,11 @@ func (k *KMS) initGCPClient(ctx context.Context) error {
 		return err
 	}
 	k.gcpClient = client
+	service, err := cloudkms.NewService(ctx, opts...)
+	if err != nil {
+		return err
+	}
+	k.gcpService = service
 	return nil
 }
 
@@ -138,8 +156,8 @@ func parseAWSARN(keyURI string) (*awsKMSARN, error) {
 	}, nil
 }
 
-func (k *KMS) initAWSClient(ctx context.Context) error {
-	if !*enableAWSClient && !strings.HasPrefix(*masterKeyURI, awsKMSPrefix) {
+func (k *KMS) initAWSClient(ctx context.Context, keyURI string) error {
+	if !*enableAWSClient && !strings.HasPrefix(keyURI, awsKMSPrefix) {
 		return nil
 	}
 
@@ -157,9 +175,9 @@ func (k *KMS) initAWSClient(ctx context.Context) error {
 			return status.FailedPreconditionErrorf("AWS credentials file not valid: %s", err)
 		}
 	}
-	if strings.HasPrefix(*masterKeyURI, awsKMSPrefix) {
-		if _, err := k.clientForURI(*masterKeyURI); err != nil {
-			return status.FailedPreconditionErrorf("could not initialize KMS client for master key: %s", err)
+	if strings.HasPrefix(keyURI, awsKMSPrefix) {
+		if _, err := k.clientForURI(keyURI); err != nil {
+			return status.FailedPreconditionErrorf("could not initialize KMS client for key: %s", err)
 		}
 	}
 	return nil
@@ -204,19 +222,29 @@ func loadAWSCreds() (*awscreds.Value, error) {
 // For some reason, the tink library does not support aws credential files with
 // 2 columns so we manually create the AWS SDK client.
 func createAWSClientWithCreds(arn *awsKMSARN) (registry.KMSClient, error) {
-	credValue, err := loadAWSCreds()
+	service, err := newAWSService(arn)
 	if err != nil {
-		return nil, status.UnknownErrorf("could not load credentials file: %s", err)
+		return nil, err
 	}
-	creds := awscreds.NewStaticCredentialsFromCreds(*credValue)
-	sess, err := awssession.NewSession(&aws.Config{
-		Credentials: creds,
-		Region:      new(arn.region),
-	})
+	return awskms.NewClientWithKMS(arn.uriLocationPrefix, service)
+}
+
+// newAWSService returns an AWS KMS service for the region in arn, using the
+// configured credentials, or the default credentials if none are configured.
+func newAWSService(arn *awsKMSARN) (*awssdkkms.KMS, error) {
+	cfg := &aws.Config{Region: new(arn.region)}
+	if *awsCredentialsFile != "" || *awsCredentials != "" {
+		credValue, err := loadAWSCreds()
+		if err != nil {
+			return nil, status.UnknownErrorf("could not load credentials file: %s", err)
+		}
+		cfg.Credentials = awscreds.NewStaticCredentialsFromCreds(*credValue)
+	}
+	sess, err := awssession.NewSession(cfg)
 	if err != nil {
 		return nil, status.UnknownErrorf("could not create session: %s", err)
 	}
-	return awskms.NewClientWithKMS(arn.uriLocationPrefix, awssdkkms.New(sess))
+	return awssdkkms.New(sess), nil
 }
 
 func (k *KMS) clientForURI(uri string) (registry.KMSClient, error) {
@@ -261,6 +289,49 @@ func (k *KMS) FetchKey(uri string) (interfaces.AEAD, error) {
 		return nil, status.NotFoundErrorf("no handler available for KMS URI: %s", err)
 	}
 	return c.GetAEAD(uri)
+}
+
+// MAC returns the HMAC of data computed with the KMS HMAC key at keyURI. GCP key
+// URIs must include the key version.
+func (k *KMS) MAC(ctx context.Context, keyURI string, data []byte) ([]byte, error) {
+	switch {
+	case strings.HasPrefix(keyURI, gcpKMSPrefix) && k.gcpService != nil:
+		name := strings.TrimPrefix(keyURI, gcpKMSPrefix)
+		req := &cloudkms.MacSignRequest{Data: base64.StdEncoding.EncodeToString(data)}
+		rsp, err := k.gcpService.Projects.Locations.KeyRings.CryptoKeys.CryptoKeyVersions.MacSign(name, req).Context(ctx).Do()
+		if err != nil {
+			return nil, err
+		}
+		return base64.StdEncoding.DecodeString(rsp.Mac)
+	case strings.HasPrefix(keyURI, awsKMSPrefix) && k.awsClients != nil:
+		arn, err := parseAWSARN(keyURI)
+		if err != nil {
+			return nil, err
+		}
+		service, err := newAWSService(arn)
+		if err != nil {
+			return nil, err
+		}
+		rsp, err := service.GenerateMacWithContext(ctx, &awssdkkms.GenerateMacInput{
+			KeyId:        new(strings.TrimPrefix(keyURI, awsKMSPrefix)),
+			MacAlgorithm: new(awssdkkms.MacAlgorithmSpecHmacSha256),
+			Message:      data,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return rsp.Mac, nil
+	case strings.HasPrefix(keyURI, localInsecureKMSPrefix) && k.localInsecureKMSClient != nil:
+		id := strings.TrimPrefix(keyURI, localInsecureKMSPrefix)
+		key, err := os.ReadFile(filepath.Join(*localInsecureKMSDirectory, id))
+		if err != nil {
+			return nil, err
+		}
+		mac := hmac.New(sha256.New, key)
+		mac.Write(data)
+		return mac.Sum(nil), nil
+	}
+	return nil, status.InvalidArgumentErrorf("no MAC support for key URI %q", keyURI)
 }
 
 func (k *KMS) SupportedTypes() []interfaces.KMSType {
