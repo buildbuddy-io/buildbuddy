@@ -394,6 +394,30 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 		"subsequent milliCPU estimate should equal recorded milliCPU")
 }
 
+func TestSizer_Get_SkipsMeasuredSizeForGenericSnapshot(t *testing.T) {
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionRedisClient(testredis.Start(t).Client())
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers()))
+	sizer, err := tasksize.NewSizer(env)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	cmd := &repb.Command{Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"}}
+	execStart := time.Now()
+	err = sizer.Update(ctx, cmd, &platform.Properties{}, &repb.ExecutedActionMetadata{
+		UsageStats:                  &repb.UsageStats{CpuNanos: 3e9, PeakMemoryBytes: 500e6},
+		ExecutionStartTimestamp:     timestamppb.New(execStart),
+		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(2 * time.Second)),
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, sizer.Get(ctx, cmd, &platform.Properties{}))
+	// The generic snapshot size must not be replaced, even without the
+	// Firecracker isolation exclusion.
+	require.Nil(t, sizer.Get(ctx, cmd, &platform.Properties{UseGenericSnapshot: true}))
+}
+
 func TestSizer_RespectsMilliCPULimit(t *testing.T) {
 	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
 
@@ -791,4 +815,33 @@ func TestCgroupSettings_AdditionalPIDsLimit(t *testing.T) {
 	settings := tasksize.GetCgroupSettings(ctx, env.GetExperimentFlagProvider(), size, &scpb.SchedulingMetadata{})
 	const wantPidsMax = 10_300 // 10K base limit + (1.5*200 = 300) CPU-based limit
 	assert.Equal(t, int64(10_300), settings.GetPidsMax())
+}
+
+func TestGenericFirecrackerSize(t *testing.T) {
+	_, err := tasksize.GenericFirecrackerSize(nil)
+	require.Error(t, err)
+	for _, tc := range []struct{ cpu, memory, wantCPU int64 }{
+		{250, 200_000_000, 1}, {1000, 2_500_000_000, 1},
+		{1001, 200_000_000, 2}, {1000, 2385*(1<<20) + 1, 2},
+		{7000, 20_000_000_000, 8}, {8001, 200_000_000, 16},
+		{1000, 19074*(1<<20) + 1, 16}, {16000, 40_000_000_000, 16},
+		{16001, 200_000_000, 32}, {32000, 80_000_000_000, 32},
+		{32001, 200_000_000, 0}, {1000, 76294*(1<<20) + 1, 0},
+	} {
+		t.Run(fmt.Sprintf("cpu=%d/memory=%d", tc.cpu, tc.memory), func(t *testing.T) {
+			input := &scpb.TaskSize{EstimatedMilliCpu: tc.cpu, EstimatedMemoryBytes: tc.memory, EstimatedFreeDiskBytes: 1234}
+			original := input.CloneVT()
+			got, err := tasksize.GenericFirecrackerSize(input)
+			if tc.wantCPU == 0 {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantCPU*1000, got.GetEstimatedMilliCpu())
+			assert.GreaterOrEqual(t, got.GetEstimatedMemoryBytes(), tc.memory)
+			assert.Less(t, got.GetEstimatedMemoryBytes()-tc.wantCPU*2_500_000_000, int64(1<<20))
+			assert.Equal(t, int64(1234), got.GetEstimatedFreeDiskBytes())
+			assert.Empty(t, cmp.Diff(original, input, protocmp.Transform()))
+		})
+	}
 }

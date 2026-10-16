@@ -172,6 +172,8 @@ const (
 	// boot with IPv6 enabled.
 	NetworkEnableIPv6PropertyName = "network-enable-ipv6"
 
+	FirecrackerUseGenericSnapshotPropertyName = "firecracker-use-generic-snapshot"
+
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
 
@@ -277,6 +279,7 @@ type Properties struct {
 
 	// ShmSizeBytes is the requested size of the /dev/shm tmpfs mount.
 	ShmSizeBytes           *int64
+	UseGenericSnapshot     bool
 	RecycleRunner          bool
 	RunnerRecyclingMaxWait time.Duration
 
@@ -563,7 +566,12 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		shmSizeBytes = &n
 	}
 
+	useGenericSnapshot := boolProp(m, FirecrackerUseGenericSnapshotPropertyName, false)
+	if useGenericSnapshot && (isolationType != string(FirecrackerContainerType) || recycleRunner || boolProp(m, initDockerdPropertyName, false) || vfsEnabled || overrideSnapshotKey != nil) {
+		return nil, status.InvalidArgumentError("firecracker-use-generic-snapshot requires Firecracker without dockerd, VFS, runner recycling, or snapshot overrides")
+	}
 	return &Properties{
+		UseGenericSnapshot:        useGenericSnapshot,
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
