@@ -292,7 +292,13 @@ func TestStatsHandler_RecordsPeerType(t *testing.T) {
 			// subtest needs its own handler.
 			handler := &StatsHandler{classifier: classifier, cis: cis}
 
-			ctx := context.WithValue(context.Background(), clientip.ContextKey, "3.4.12.4")
+			// TagRPC runs before interceptors, and the context it returns
+			// becomes the stream context that HandleRPC receives.
+			rpcCtx := handler.TagRPC(context.Background(), &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
+
+			// The identity and clientip interceptors enrich a derived
+			// context, which only the trafficstats interceptor sees.
+			ctx := rpcCtx
 			if tc.identity != "" {
 				header, err := cis.NewIdentityHeader(&interfaces.ClientIdentity{
 					Origin: interfaces.ClientIdentityInternalOrigin,
@@ -303,15 +309,17 @@ func TestStatsHandler_RecordsPeerType(t *testing.T) {
 				}
 				ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, header))
 			}
-			// The identity interceptor validates the header before initCounters.
 			ctx, err := cis.ValidateIncomingIdentity(ctx)
 			if err != nil {
 				t.Fatalf("ValidateIncomingIdentity() returned error: %v", err)
 			}
-			ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
+			ctx = context.WithValue(ctx, clientip.ContextKey, "3.4.12.4")
 			handler.initCounters(ctx)
-			handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 10})
-			handler.HandleRPC(ctx, &stats.End{})
+
+			// gRPC calls HandleRPC with the stream context, not the
+			// interceptor's, so the identity is not visible here.
+			handler.HandleRPC(rpcCtx, &stats.OutPayload{WireLength: 10})
+			handler.HandleRPC(rpcCtx, &stats.End{})
 
 			labels := prometheus.Labels{
 				metrics.GroupID:                  unknownGroupID,
