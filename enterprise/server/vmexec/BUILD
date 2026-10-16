@@ -23,7 +23,6 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "@com_github_elastic_gosigar//:gosigar",
-        "@com_github_google_uuid//:uuid",
         "@com_github_miekg_dns//:dns",
         "@com_github_tklauser_go_sysconf//:go-sysconf",
         "@com_github_vishvananda_netlink//:netlink",

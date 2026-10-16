@@ -29,7 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
-	"github.com/google/uuid"
 	"github.com/miekg/dns"
 	"github.com/tklauser/go-sysconf"
 	"github.com/vishvananda/netlink"
@@ -921,20 +920,6 @@ func reseedRNG(seed []byte) error {
 	return nil
 }
 
-// overrideBootID bind-mounts a fresh read-only boot ID over target, since the
-// kernel's boot ID is shared by every VM restored from the same snapshot.
-func overrideBootID(target string) error {
-	// Lives on the guest's tmpfs root, outside the container root.
-	const path = "/.boot_id"
-	if err := os.WriteFile(path, []byte(uuid.NewString()+"\n"), 0444); err != nil {
-		return err
-	}
-	if err := syscall.Mount(path, target, "", syscall.MS_BIND, ""); err != nil {
-		return err
-	}
-	return syscall.Mount("", target, "", syscall.MS_BIND|syscall.MS_REMOUNT|syscall.MS_RDONLY, "")
-}
-
 func mountContainerRoot() error {
 	const root = "/mnt"
 	if err := os.MkdirAll(root, 0755); err != nil {
@@ -961,9 +946,6 @@ func mountContainerRoot() error {
 		if err := syscall.Mount("/"+name, target, "", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
 			return err
 		}
-	}
-	if err := overrideBootID(filepath.Join(root, "proc/sys/kernel/random/boot_id")); err != nil {
-		return status.WrapError(err, "override boot_id")
 	}
 	config := make(map[string][]byte)
 	for _, name := range []string{"hostname", "hosts", "resolv.conf"} {
