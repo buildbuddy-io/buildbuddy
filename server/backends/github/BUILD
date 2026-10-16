@@ -5,7 +5,11 @@ go_test(
     srcs = ["github_test.go"],
     deps = [
         ":github",
+        "//server/metrics",
         "//server/testutil/testenv",
+        "//server/testutil/testmetrics",
+        "//server/util/testing/flags",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],
 )
@@ -20,6 +24,7 @@ go_library(
         "//server/environment",
         "//server/http/interceptors",
         "//server/interfaces",
+        "//server/metrics",
         "//server/real_environment",
         "//server/tables",
         "//server/util/authutil",
