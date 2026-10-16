@@ -589,6 +589,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		unpushedLocalCommit       bool
 		detachedHead              bool
 		detachedHeadMoved         bool
+		detachedWorktree          bool
 
 		expectedBranch  string
 		expectedCommit  string
@@ -642,6 +643,13 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			expectedCommit:    originalMasterHeadCommit,
 			expectedPatches:   []string{"detached_file.txt"},
 		},
+		{
+			name:             "Detached worktree without a checkout reflog entry",
+			detachedWorktree: true,
+			expectedBranch:   "master",
+			expectedCommit:   originalMasterHeadCommit,
+			expectedPatches:  []string{"local_file.txt"},
+		},
 	}
 
 	for i, tc := range testCases {
@@ -674,6 +682,14 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 				// to "detached from".
 				testgit.CommitFiles(t, localRepoPath, map[string]string{"detached_file.txt": "exit 0"})
 			}
+		}
+		if tc.detachedWorktree {
+			worktreePath := filepath.Join(t.TempDir(), "worktree")
+			testshell.Run(t, localRepoPath, "git worktree add --detach "+worktreePath)
+			require.Contains(t, testshell.Run(t, worktreePath, "git branch"), "(no branch)", tc.name)
+			err = os.Chdir(worktreePath)
+			require.NoError(t, err, tc.name)
+			resetRepoRootPathForTest(t)
 		}
 
 		config, err := Config()
