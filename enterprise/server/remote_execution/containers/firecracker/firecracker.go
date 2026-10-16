@@ -3267,10 +3267,10 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "prepare snapshot details")
 	}
-	return c.pauseWithSnapshot(ctx, snapDetails)
+	return c.pauseWithSnapshotDetails(ctx, snapDetails)
 }
 
-func (c *FirecrackerContainer) pauseWithSnapshot(ctx context.Context, snapDetails *snapshotDetails) error {
+func (c *FirecrackerContainer) pauseWithSnapshotDetails(ctx context.Context, snapDetails *snapshotDetails) error {
 	ctx, cancel := c.monitorVMContext(ctx)
 	defer cancel()
 
