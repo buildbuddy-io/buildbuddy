@@ -641,7 +641,7 @@ function CustomXAxis({ domain, hasBars, numPoints, ticks, formatXAxisLabel }: Cu
       dataKey={(v) => v}
       tickFormatter={formatXAxisLabel}
       ticks={ticks}
-      type={numPoints > 1 ? "number" : "auto"}
+      type={domain || numPoints > 1 ? "number" : "auto"}
       padding={{ left: extraPad, right: extraPad }}
       domain={domain ?? ["dataMin", "dataMax"]}
     />
