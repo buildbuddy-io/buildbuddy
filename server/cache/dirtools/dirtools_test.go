@@ -921,6 +921,15 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 			},
 		},
 		{
+			name: "FileAndSymlinkWithSameNameNotAdjacent",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{Root: &repb.Directory{
+					Files:    []*repb.FileNode{{Name: "a", Digest: blob}, {Name: "c", Digest: blob}},
+					Symlinks: []*repb.SymlinkNode{{Name: "a", Target: filepath.Join(outside, "file.txt")}},
+				}}
+			},
+		},
+		{
 			name: "DirectoryAndSymlinkWithSameName",
 			tree: func(outside string) *repb.Tree {
 				return &repb.Tree{
