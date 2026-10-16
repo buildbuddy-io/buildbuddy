@@ -601,7 +601,7 @@ func keyPrefixFromContext(ctx context.Context) string {
 	if sharedDirectory, ok := sharedDirectoryFromContext(ctx); ok {
 		return sharedDirectoryPrefix + sharedDirectory
 	}
-	return groupIDStringFromContext(ctx)
+	return GroupIDStringFromContext(ctx)
 }
 
 func isScannableCacheDir(name string) bool {
@@ -665,7 +665,9 @@ func namespacedKey(keyPrefix string, node *repb.FileNode) (string, error) {
 	return keyPrefix + "/" + hash, nil
 }
 
-func groupIDStringFromContext(ctx context.Context) string {
+// GroupIDStringFromContext returns the group ID of the authenticated user, or
+// interfaces.AuthAnonymousUser for anonymous requests.
+func GroupIDStringFromContext(ctx context.Context) string {
 	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
 		groupID := u.GetGroupID()
 		if groupID != "" {
@@ -957,6 +959,14 @@ func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool 
 	return c.containsWithStatFallback(k)
 }
 
+func (c *fileCache) Stat(ctx context.Context, node *repb.FileNode) (os.FileInfo, error) {
+	k, err := key(ctx, node)
+	if err != nil {
+		return nil, err
+	}
+	return os.Stat(filecachePath(c.rootDir, k))
+}
+
 func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
 	if c.checkClosed() {
 		return false
@@ -1138,8 +1148,25 @@ func (c *fileCache) tempPath(name string) (string, error) {
 	return filepath.Join(c.TempDir(), fmt.Sprintf("%s.%s.tmp", name, randStr)), nil
 }
 
+// ClonesInputs returns whether files linked from the file cache for the given
+// context are copies, rather than hard links to the file cache's own copy, so
+// that actions can modify them without affecting the file cache. It uses the
+// same rule as cloneOrLink, from shouldClone.
+func ClonesInputs(ctx context.Context) bool {
+	if shouldClone(keyPrefixFromContext(ctx)) {
+		return !fastcopy.CloneHardLinks()
+	}
+	return !fastcopy.FastCopyHardLinks()
+}
+
+// shouldClone returns whether cloneOrLink clones files for the given key
+// prefix, rather than fast-copying them.
+func shouldClone(keyPrefix string) bool {
+	return keyPrefix == interfaces.AuthAnonymousUser || *enableAlwaysClone
+}
+
 func cloneOrLink(keyPrefix, source, destination string) error {
-	if keyPrefix == interfaces.AuthAnonymousUser || *enableAlwaysClone {
+	if shouldClone(keyPrefix) {
 		if err := fastcopy.Clone(source, destination); err != nil {
 			return wrapOSError(err, "clone")
 		}

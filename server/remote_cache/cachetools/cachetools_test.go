@@ -541,6 +541,10 @@ func (fc *fakeFilecache) Open(ctx context.Context, f *repb.FileNode) (*os.File, 
 	panic("unimplemented")
 }
 
+func (fc *fakeFilecache) Stat(ctx context.Context, f *repb.FileNode) (os.FileInfo, error) {
+	panic("unimplemented")
+}
+
 func (fc *fakeFilecache) WaitForDirectoryScanToComplete() {
 	panic("unimplemented")
 }

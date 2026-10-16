@@ -1047,6 +1047,11 @@ type FileCache interface {
 
 	// Open returns a file handle to a file in the cache, if one exists.
 	Open(ctx context.Context, f *repb.FileNode) (*os.File, error)
+
+	// Stat returns info about a file in the cache, if one exists. Unlike
+	// the other lookups, it doesn't mark the file as recently used, or count
+	// as a cache request in metrics.
+	Stat(ctx context.Context, f *repb.FileNode) (os.FileInfo, error)
 	WaitForDirectoryScanToComplete()
 
 	Read(ctx context.Context, node *repb.FileNode) ([]byte, error)

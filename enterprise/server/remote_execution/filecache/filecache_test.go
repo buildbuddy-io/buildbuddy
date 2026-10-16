@@ -657,6 +657,42 @@ func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 	}
 }
 
+func TestFileCacheStatDoesNotMarkFileUsed(t *testing.T) {
+	ctx := t.Context()
+	// For now just assume the disk block size is 4096
+	const fsBlockSize = 4096
+	// Create a filecache that can only fit 2 physical blocks
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 2*fsBlockSize, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	tempDir := testfs.MakeTempDir(t)
+
+	nodeA := nodeFromString("A", false)
+	nodeB := nodeFromString("B", false)
+	nodeC := nodeFromString("C", false)
+	writeFileContent(t, tempDir, "a", "A", false)
+	err = fc.AddFile(ctx, nodeA, filepath.Join(tempDir, "a"))
+	require.NoError(t, err)
+	writeFileContent(t, tempDir, "b", "B", false)
+	err = fc.AddFile(ctx, nodeB, filepath.Join(tempDir, "b"))
+	require.NoError(t, err)
+
+	info, err := fc.Stat(ctx, nodeA)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), info.Size())
+
+	// Adding a third file evicts the least recently used one, which is still
+	// A, since Stat didn't mark A as used.
+	writeFileContent(t, tempDir, "c", "C", false)
+	err = fc.AddFile(ctx, nodeC, filepath.Join(tempDir, "c"))
+	require.NoError(t, err)
+	_, err = fc.Stat(ctx, nodeA)
+	assert.True(t, os.IsNotExist(err), "Stat(A) error = %v, want not exist", err)
+	linked := fc.FastLinkFile(ctx, nodeB, filepath.Join(tempDir, "b-link"))
+	assert.True(t, linked)
+}
+
 func TestScanWithConcurrentAdd(t *testing.T) {
 	for trial := range 100 {
 		ctx := context.Background()
@@ -1310,7 +1346,7 @@ func requireNotOwnerExecutable(t *testing.T, fi os.FileInfo) {
 }
 
 func BenchmarkFilecacheLink(b *testing.B) {
-	// Use a simple Claims to speed up filecache.groupIDStringFromContext()
+	// Use a simple Claims to speed up filecache.GroupIDStringFromContext()
 	ctx := claims.AuthContextWithJWT(context.Background(), &claims.Claims{}, nil)
 	flags.Set(b, "app.log_level", "warn")
 	log.Configure()
@@ -1391,7 +1427,7 @@ func BenchmarkFilecacheLink(b *testing.B) {
 }
 
 func BenchmarkContainsAdd(b *testing.B) {
-	// Use a simple Claims to speed up filecache.groupIDStringFromContext()
+	// Use a simple Claims to speed up filecache.GroupIDStringFromContext()
 	ctx := claims.AuthContextWithJWT(context.Background(), &claims.Claims{}, nil)
 	flags.Set(b, "app.log_level", "warn")
 	log.Configure()
