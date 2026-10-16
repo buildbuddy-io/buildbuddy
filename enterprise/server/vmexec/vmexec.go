@@ -313,15 +313,36 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 		log.Debugf("Set time of day to %d", req.GetUnixTimestampNanoseconds())
 	}
 	if len(req.GetEntropy()) > 0 {
+		// Require sufficient entropy.
+		if len(req.GetEntropy()) < 32 {
+			return nil, status.InvalidArgumentError("at least 32 bytes of entropy are required")
+		}
+
 		if err := reseedRNG(req.GetEntropy()); err != nil {
 			return nil, status.WrapError(err, "reseed RNG")
 		}
 	}
 	if req.GetMountContainerRoot() {
+		// Without fresh entropy, every VM restored from the snapshot would
+		// generate the same boot ID.
+		if len(req.GetEntropy()) == 0 {
+			return nil, status.InvalidArgumentError("mounting the container root requires entropy")
+		}
 		x.rootMu.Lock()
 		defer x.rootMu.Unlock()
 		if x.rootMountAttempted {
 			return nil, status.FailedPreconditionError("container root initialization already attempted")
+		}
+		// The new root would hide a workspace mounted on the old one.
+		if mounted, err := isWorkspaceMounted(); err != nil {
+			return nil, err
+		} else if mounted {
+			return nil, status.FailedPreconditionError("workspace must be mounted after the container root")
+		}
+		if req.GetContainerRootSizeBytes() > 0 {
+			if err := waitForBlockDeviceSize(ctx, RootfsDevice, req.GetContainerRootSizeBytes()); err != nil {
+				return nil, err
+			}
 		}
 		x.rootMountAttempted = true
 		if err := mountContainerRoot(); err != nil {

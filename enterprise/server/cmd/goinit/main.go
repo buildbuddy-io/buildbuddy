@@ -259,7 +259,7 @@ func main() {
 
 	if *deferRootfsMount {
 		die(mkdirp("/mnt", 0755))
-		die(mount("tmpfs", "/mnt", "tmpfs", syscall.MS_NOSUID, ""))
+		die(mount("tmpfs", "/mnt", "tmpfs", syscall.MS_NOSUID, "mode=0755"))
 	} else if *enableRootfs {
 		die(mkdirp("/mnt", 0755))
 		die(mount(rootDevice, "/mnt", "ext4", syscall.MS_NOATIME, ""))
