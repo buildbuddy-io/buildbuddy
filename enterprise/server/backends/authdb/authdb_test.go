@@ -517,6 +517,102 @@ func TestGetAPIKeyGroupFromAPIKeyID(t *testing.T) {
 		"expected Unauthenticated error; got: %v", err)
 }
 
+func TestGetApiKeyPermissions(t *testing.T) {
+	ctx := t.Context()
+	env := setupEnv(t)
+	adb := env.GetAuthDB()
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	var admin *tables.User
+	for _, u := range users {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			admin = u
+			break
+		}
+	}
+	require.NotNil(t, admin)
+	groupID := admin.Groups[0].Group.GroupID
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+	g, err := env.GetUserDB().GetGroupByID(adminCtx, groupID)
+	require.NoError(t, err)
+	g.UserOwnedKeysEnabled = true
+	_, err = env.GetUserDB().UpdateGroup(adminCtx, g)
+	require.NoError(t, err)
+
+	createGroupKey := func(caps ...cappb.Capability) *tables.APIKey {
+		k, err := adb.CreateAPIKey(adminCtx, groupID, "", caps, 0 /*=expiresIn*/, true /*=visibleToDevelopers*/)
+		require.NoError(t, err)
+		return k
+	}
+	createUserKey := func(caps ...cappb.Capability) *tables.APIKey {
+		k, err := adb.CreateUserAPIKey(adminCtx, groupID, admin.UserID, "", caps, 0 /*=expiresIn*/)
+		require.NoError(t, err)
+		return k
+	}
+	readOnlyKey := createGroupKey()
+	casKey := createGroupKey(cappb.Capability_CAS_WRITE)
+	writeKey := createGroupKey(cappb.Capability_CACHE_WRITE)
+	orgAdminKey := createGroupKey(cappb.Capability_ORG_ADMIN)
+	userReadOnlyKey := createUserKey()
+	userWriteKey := createUserKey(cappb.Capability_CACHE_WRITE)
+
+	for _, tc := range []struct {
+		name    string
+		caller  *tables.APIKey
+		target  *tables.APIKey
+		allowed bool
+	}{
+		{"read-only key gets itself", readOnlyKey, readOnlyKey, true},
+		{"read-only key gets write key", readOnlyKey, writeKey, false},
+		{"read-only key gets org admin key", readOnlyKey, orgAdminKey, false},
+		{"write key gets itself", writeKey, writeKey, true},
+		{"write key gets read-only key", writeKey, readOnlyKey, false},
+		{"write key gets CAS key", writeKey, casKey, false},
+		{"write key gets org admin key", writeKey, orgAdminKey, false},
+		{"write key gets user key", writeKey, userReadOnlyKey, false},
+		{"org admin key gets write key", orgAdminKey, writeKey, true},
+		{"user write key gets itself", userWriteKey, userWriteKey, true},
+		{"user read-only key gets user write key", userReadOnlyKey, userWriteKey, false},
+		{"user write key gets user read-only key", userWriteKey, userReadOnlyKey, false},
+		{"user write key gets group key", userWriteKey, readOnlyKey, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			callerCtx := auth.AuthContextFromAPIKey(ctx, tc.caller.Value)
+			req := &akpb.GetApiKeyRequest{ApiKeyId: tc.target.APIKeyID}
+			var rsp *akpb.GetApiKeyResponse
+			var err error
+			if tc.target.UserID != "" {
+				rsp, err = env.GetBuildBuddyServer().GetUserApiKey(callerCtx, req)
+			} else {
+				rsp, err = env.GetBuildBuddyServer().GetApiKey(callerCtx, req)
+			}
+			if !tc.allowed {
+				require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got %v", err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.target.Value, rsp.GetApiKey().GetValue())
+		})
+	}
+
+	// Keys can still be listed, without their values.
+	listRsp, err := env.GetBuildBuddyServer().GetApiKeys(auth.AuthContextFromAPIKey(ctx, readOnlyKey.Value), &akpb.GetApiKeysRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, listRsp.GetApiKey())
+	for _, k := range listRsp.GetApiKey() {
+		require.Empty(t, k.GetValue())
+	}
+
+	// Users authenticated without an API key are unaffected.
+	rsp, err := env.GetBuildBuddyServer().GetApiKey(adminCtx, &akpb.GetApiKeyRequest{ApiKeyId: writeKey.APIKeyID})
+	require.NoError(t, err)
+	require.Equal(t, writeKey.Value, rsp.GetApiKey().GetValue())
+}
+
 func TestGetAPIKeys(t *testing.T) {
 	for _, encrypt := range []bool{false, true} {
 		t.Run(fmt.Sprintf("encrypt_%t", encrypt), func(t *testing.T) {

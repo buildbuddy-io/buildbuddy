@@ -1120,6 +1120,21 @@ func (s *BuildBuddyServer) isExpired(key *tables.APIKey) bool {
 	return key.ExpiryUsec != 0 && key.ExpiryUsec <= s.env.GetClock().Now().UnixMicro()
 }
 
+func (s *BuildBuddyServer) apiKeyVisible(ctx context.Context, key *tables.APIKey) error {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	callerKey := u.GetAPIKeyInfo()
+	if callerKey.ID == "" || callerKey.ID == key.APIKeyID {
+		return nil
+	}
+	if claims.AuthorizeServerAdmin(ctx) == nil || authutil.AuthorizeOrgAdmin(u, key.GroupID) == nil {
+		return nil
+	}
+	return status.PermissionDeniedError("API keys without the ORG_ADMIN capability may only retrieve themselves")
+}
+
 func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyRequest) (*akpb.GetApiKeyResponse, error) {
 	authDB := s.env.GetAuthDB()
 	if authDB == nil {
@@ -1127,6 +1142,9 @@ func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyReq
 	}
 	key, err := authDB.GetAPIKey(ctx, req.GetApiKeyId())
 	if err != nil {
+		return nil, err
+	}
+	if err := s.apiKeyVisible(ctx, key); err != nil {
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
@@ -1343,6 +1361,9 @@ func (s *BuildBuddyServer) GetUserApiKey(ctx context.Context, req *akpb.GetApiKe
 	}
 	key, err := authDB.GetAPIKey(ctx, req.GetApiKeyId())
 	if err != nil {
+		return nil, err
+	}
+	if err := s.apiKeyVisible(ctx, key); err != nil {
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
