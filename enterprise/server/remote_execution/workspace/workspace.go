@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -42,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/gobwas/glob"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
@@ -974,6 +977,7 @@ func (p *Pool) take(groupID string, newRoot *repb.Digest, newDirs map[string]*re
 	p.workspaces.Remove(best)
 	// Update directory interning structures.
 	p.release(best)
+	metrics.WorkspacePoolCount.Set(float64(p.workspaces.Len()))
 	return best
 }
 
@@ -991,6 +995,7 @@ func (p *Pool) add(e *pooledWorkspace) {
 		if !ok {
 			break
 		}
+		metrics.WorkspacePoolEvictions.With(prometheus.Labels{metrics.WorkspacePoolEvictedNewlyAdded: strconv.FormatBool(v == e)}).Inc()
 		// Decrement Directory refcounts for evicted workspaces, unless the
 		// evicted workspace is e (since we haven't interned it yet).
 		if v == e {
@@ -1018,6 +1023,7 @@ func (p *Pool) add(e *pooledWorkspace) {
 			e.dirMap[k] = s.dir
 		}
 	}
+	metrics.WorkspacePoolCount.Set(float64(p.workspaces.Len()))
 	p.mu.Unlock()
 	// removePooledWorkspace blocks while too many deletions are running, so we
 	// start them only after unlocking, to not hold up other tasks' take calls.
@@ -1275,6 +1281,7 @@ func (ws *Workspace) ReturnToPool(ctx context.Context) {
 	rootIntact, err := ws.cleanReturnedDir(ctx, "", ws.inputRootDigest, current, missing)
 	if err != nil {
 		log.CtxWarningf(ctx, "Not pooling workspace: %s", err)
+		recordReturnOutcome("error")
 		return
 	}
 
@@ -1283,6 +1290,7 @@ func (ws *Workspace) ReturnToPool(ctx context.Context) {
 	// workspace instead.
 	if !rootIntact {
 		log.CtxWarningf(ctx, "Not pooling workspace, because the task removed or replaced its input root, changed its mode or owner, or set new xattrs on it")
+		recordReturnOutcome("root_changed")
 		return
 	}
 
@@ -1292,8 +1300,10 @@ func (ws *Workspace) ReturnToPool(ctx context.Context) {
 	pooledPath := filepath.Join(pool.dir, newRandomBuildDirCandidate())
 	if err := os.Rename(ws.rootDir, pooledPath); err != nil {
 		log.CtxWarningf(ctx, "Not pooling workspace: %s", err)
+		recordReturnOutcome("error")
 		return
 	}
+	recordReturnOutcome("pooled")
 	pool.add(&pooledWorkspace{
 		groupID:        ws.groupID,
 		path:           pooledPath,
@@ -1490,6 +1500,7 @@ func (ws *Workspace) isCachedCopy(ctx context.Context, fullPath string, node *re
 func (ws *Workspace) reusePooledWorkspace(ctx context.Context) (map[fspath.Key]*repb.FileNode, error) {
 	e := ws.Opts.Pool.take(ws.groupID, ws.inputRootDigest, ws.inputDirs, ws.inputDigestFunction)
 	if e == nil {
+		recordReuseOutcome("no_match")
 		return nil, nil
 	}
 	// os.Rename won't replace an existing directory, so we remove the
@@ -1499,11 +1510,13 @@ func (ws *Workspace) reusePooledWorkspace(ctx context.Context) (map[fspath.Key]*
 		// pool.
 		log.CtxWarningf(ctx, "Not reusing pooled workspace: %s", err)
 		ws.Opts.Pool.add(e)
+		recordReuseOutcome("failed")
 		return nil, nil
 	}
 	if err := os.Rename(e.path, ws.rootDir); err != nil {
 		log.CtxWarningf(ctx, "Not reusing pooled workspace: %s", err)
 		removePooledWorkspace(e.path)
+		recordReuseOutcome("failed")
 		if err := os.Mkdir(ws.rootDir, ws.dirPerms); err != nil {
 			return nil, err
 		}
@@ -1517,6 +1530,7 @@ func (ws *Workspace) reusePooledWorkspace(ctx context.Context) (map[fspath.Key]*
 		// pool dir, which is still free, then remove in the background so that
 		// the task doesn't wait for us to delete it.
 		log.CtxWarningf(ctx, "Not reusing pooled workspace: %s", err)
+		recordReuseOutcome("failed")
 		if err := os.Rename(ws.rootDir, e.path); err != nil {
 			return nil, err
 		}
@@ -1526,8 +1540,18 @@ func (ws *Workspace) reusePooledWorkspace(ctx context.Context) (map[fspath.Key]*
 		}
 		return nil, nil
 	}
+	recordReuseOutcome("reused")
+	metrics.WorkspacePoolKeptInputs.Add(float64(len(kept)))
 	ws.markKeptFilesUsed(ctx, kept)
 	return kept, nil
+}
+
+func recordReuseOutcome(outcome string) {
+	metrics.WorkspacePoolReuses.With(prometheus.Labels{metrics.WorkspacePoolReuseOutcome: outcome}).Inc()
+}
+
+func recordReturnOutcome(outcome string) {
+	metrics.WorkspacePoolReturns.With(prometheus.Labels{metrics.WorkspacePoolReturnOutcome: outcome}).Inc()
 }
 
 // markKeptFilesUsed looks up the given input files in the file cache in the
