@@ -1097,7 +1097,7 @@ func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string
 		// certificates, and keys embedded in the gRPC authority authenticate
 		// without putting that header in the ctx. In those cases, the claims
 		// are the only record of which key was used.
-		key, err := d.getAPIKey(ctx, apiKeyInfo.ID)
+		key, err := d.getAPIKey(ctx, apiKeyInfo.ID, false /*=includeExpired*/)
 		if err != nil {
 			return nil, err
 		}
