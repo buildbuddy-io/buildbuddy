@@ -776,6 +776,16 @@ type FirecrackerContainer struct {
 
 var _ container.VM = (*FirecrackerContainer)(nil)
 
+// newMachineMu serializes fcclient.NewMachine, which writes a global logger in
+// go-openapi.
+var newMachineMu sync.Mutex
+
+func newMachine(ctx context.Context, cfg fcclient.Config, opts ...fcclient.Opt) (*fcclient.Machine, error) {
+	newMachineMu.Lock()
+	defer newMachineMu.Unlock()
+	return fcclient.NewMachine(ctx, cfg, opts...)
+}
+
 func NewContainer(ctx context.Context, env environment.Env, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -1378,7 +1388,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	log.CtxDebugf(ctx, "fullMemSnapshotName: %s, vmStateSnapshotName %s", fullMemSnapshotName, vmStateSnapshotName)
 
-	machine, err := fcclient.NewMachine(vmCtx, cfg, machineOpts...)
+	machine, err := newMachine(vmCtx, cfg, machineOpts...)
 	if err != nil {
 		return status.UnavailableErrorf("Failed creating machine: %s", err)
 	}
@@ -2423,7 +2433,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 			})
 	}
 
-	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
+	m, err := newMachine(vmCtx, *fcCfg, machineOpts...)
 	if err != nil {
 		return status.UnavailableErrorf("create machine: %s", err)
 	}
