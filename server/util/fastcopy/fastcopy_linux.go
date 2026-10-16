@@ -23,6 +23,18 @@ func FastCopy(source, destination string) error {
 	return nil
 }
 
+// CloneHardLinks returns whether Clone hard-links the source rather than
+// making a copy.
+func CloneHardLinks() bool {
+	return !*enableFastcopyReflinking
+}
+
+// FastCopyHardLinks returns whether FastCopy hard-links the source rather
+// than making a copy.
+func FastCopyHardLinks() bool {
+	return true
+}
+
 func reflink(source, destination string) error {
 	sourceFile, err := os.Open(source)
 	if err != nil {
