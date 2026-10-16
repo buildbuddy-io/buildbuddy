@@ -1734,6 +1734,7 @@ func (uw *UploadWriter) Commit() error {
 	}
 	if uw.sendErr != nil {
 		if status.IsAlreadyExistsError(uw.sendErr) {
+			uw.committed = true
 			return nil
 		}
 		return status.WrapError(uw.sendErr, "UploadWriter already encountered send error, cannot commit")

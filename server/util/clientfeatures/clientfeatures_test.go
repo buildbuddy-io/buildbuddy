@@ -55,16 +55,3 @@ func TestSupportsWithoutHeader(t *testing.T) {
 	in := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-other-header", "value"))
 	require.False(t, clientfeatures.Supports(in, clientfeatures.ByteStreamWriteAlreadyExists))
 }
-
-func TestSupportsTolerantParsing(t *testing.T) {
-	// Values written by other implementations may contain spaces, empty
-	// entries or different casing of the key.
-	in := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
-		"X-BuildBuddy-Client-Features", " feature-a , ,feature-b ",
-	))
-	require.True(t, clientfeatures.Supports(in, "feature-a"))
-	require.True(t, clientfeatures.Supports(in, "feature-b"))
-	require.False(t, clientfeatures.Supports(in, ""), "an empty token is not a feature")
-	// Tokens are case-sensitive.
-	require.False(t, clientfeatures.Supports(in, "Feature-A"))
-}

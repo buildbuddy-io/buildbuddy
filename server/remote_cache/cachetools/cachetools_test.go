@@ -1546,11 +1546,16 @@ var shortCircuitModes = []byte_stream.ShortCircuitMode{
 	byte_stream.ShortCircuitWithStatus,
 }
 
-// Blob sizes for the short-circuit tests. The single-chunk blob must stay
-// below the 256 KB upload buffer: the client then makes exactly one Send,
-// which returns before the server can answer, so the reply is always first
-// seen by CloseAndRecv. The multi-chunk blob may see it on a later Send
-// instead, depending on scheduling.
+// Blob sizes for the short-circuit tests. The upload buffer is sized to the
+// blob (up to 256 KB), and a read that fills the buffer does not observe
+// EOF, so an upload always ends with an empty finish_write request after the
+// data. With a blob no larger than the buffer, the first request carries the
+// whole payload and is the first message on the stream, so it cannot
+// observe the server's reply; the reply is first seen by the empty finish
+// request or by CloseAndRecv. For zstd this relies on the test data
+// compressing to no more than the blob size, which digest.RandomGenerator
+// guarantees. The multi-chunk blob may see the reply on a Send that carries
+// data instead, depending on scheduling.
 var shortCircuitBlobSizes = []struct {
 	name        string
 	size        int64
@@ -1588,8 +1593,10 @@ func TestUploadFromReader_ShortCircuit(t *testing.T) {
 					require.Equal(t, int32(1), srv.Writes.Load(), "a short-circuited upload must not be retried")
 					require.Greater(t, bytesUploaded, int64(0))
 					if blob.singleChunk {
-						// The one request carried the whole blob and the
-						// server consumed it.
+						// The first request carried the whole payload and
+						// the server consumed exactly that. The trailing
+						// finish request is empty, so it adds nothing to
+						// bytesUploaded whether or not it was sent.
 						require.Equal(t, srv.Received.Load(), bytesUploaded)
 					}
 				})
@@ -1625,8 +1632,10 @@ func TestUploadWriter_ShortCircuit(t *testing.T) {
 					require.NoError(t, err)
 					_, err = uw.Write(buf)
 					if blob.singleChunk {
-						// Nothing is sent before Commit, so Write cannot
-						// observe the reply.
+						// Write fills the buffer and sends the whole payload
+						// as the first message on the stream, which cannot
+						// observe a reply yet. The reply is first seen by
+						// Commit's empty finish request or by CloseAndRecv.
 						require.NoError(t, err)
 					} else if err != nil {
 						// The server closed the stream while the client was
@@ -1662,6 +1671,8 @@ func TestUploadWriter_OtherStatusIsReturned(t *testing.T) {
 	require.NoError(t, err)
 	err = uw.Commit()
 	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+	// Close must still succeed after a failed Commit.
+	require.NoError(t, uw.Close())
 }
 
 // featureRecordingServer short-circuits like ShortCircuitFakeWriteServer and
