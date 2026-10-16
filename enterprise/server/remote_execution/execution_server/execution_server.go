@@ -1004,7 +1004,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	requestedTaskSize := tasksize.Requested(executionTask)
 	taskSize := tasksize.ApplyLimitsWithRequestedSize(ctx, s.env.GetExperimentFlagProvider(), command, props, defaultTaskSize, requestedTaskSize)
 	if props.UseGenericSnapshot {
-		taskSize, err = tasksize.GenericFirecrackerSize(taskSize)
+		taskSize, err = tasksize.GenericSnapshotSize(taskSize)
 		if err != nil {
 			return nil, err
 		}

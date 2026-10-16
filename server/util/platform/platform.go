@@ -172,7 +172,7 @@ const (
 	// boot with IPv6 enabled.
 	NetworkEnableIPv6PropertyName = "network-enable-ipv6"
 
-	FirecrackerUseGenericSnapshotPropertyName = "firecracker-use-generic-snapshot"
+	UseGenericSnapshotPropertyName = "use-generic-snapshot"
 
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
@@ -566,10 +566,10 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		shmSizeBytes = &n
 	}
 
-	useGenericSnapshot := boolProp(m, FirecrackerUseGenericSnapshotPropertyName, false)
-	if useGenericSnapshot && (isolationType != string(FirecrackerContainerType) || recycleRunner || boolProp(m, initDockerdPropertyName, false) || vfsEnabled || overrideSnapshotKey != nil) {
-		return nil, status.InvalidArgumentError("firecracker-use-generic-snapshot requires Firecracker without dockerd, VFS, runner recycling, or snapshot overrides")
-	}
+	// Ignored for incompatible actions, so experiments can enable it broadly.
+	useGenericSnapshot := boolProp(m, UseGenericSnapshotPropertyName, false) &&
+		isolationType == string(FirecrackerContainerType) && !recycleRunner &&
+		!boolProp(m, initDockerdPropertyName, false) && !vfsEnabled && overrideSnapshotKey == nil
 	return &Properties{
 		UseGenericSnapshot:        useGenericSnapshot,
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),

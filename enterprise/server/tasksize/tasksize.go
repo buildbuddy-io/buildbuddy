@@ -845,9 +845,9 @@ func String(size *scpb.TaskSize) string {
 	return strings.Join(resources, ", ")
 }
 
-// GenericFirecrackerSize rounds a scheduled size up to a supported snapshot shape.
+// GenericSnapshotSize rounds a scheduled size up to a supported snapshot shape.
 // The input includes guest overhead; rounding must not add it again.
-func GenericFirecrackerSize(size *scpb.TaskSize) (*scpb.TaskSize, error) {
+func GenericSnapshotSize(size *scpb.TaskSize) (*scpb.TaskSize, error) {
 	if size == nil {
 		return nil, status.InvalidArgumentError("task size is required for generic Firecracker snapshots")
 	}

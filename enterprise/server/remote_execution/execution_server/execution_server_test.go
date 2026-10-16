@@ -586,7 +586,7 @@ func TestDispatch_GenericSnapshotFromExperiment(t *testing.T) {
       "state": "ENABLED",
       "variants": {
         "generic": {
-          "firecracker-use-generic-snapshot": "true"
+          "use-generic-snapshot": "true"
         }
       },
       "defaultVariant": "generic"
@@ -619,6 +619,14 @@ func TestDispatch_GenericSnapshotFromExperiment(t *testing.T) {
 	sched := env.GetSchedulerService().(*schedulerServerMock)
 	require.Len(t, sched.scheduleReqs, 1)
 	assert.Equal(t, int64(2000), sched.scheduleReqs[0].GetMetadata().GetTaskSize().GetEstimatedMilliCpu())
+
+	// Incompatible actions ignore the experiment instead of failing.
+	action.Platform.Properties = append(action.Platform.Properties, &repb.Platform_Property{Name: "recycle-runner", Value: "true"})
+	arn = uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, action)
+	err = env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString())
+	require.NoError(t, err)
+	require.Len(t, sched.scheduleReqs, 2)
+	assert.Equal(t, int64(1500), sched.scheduleReqs[1].GetMetadata().GetTaskSize().GetEstimatedMilliCpu())
 }
 
 func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
@@ -3037,7 +3045,7 @@ func TestDispatch_GenericFirecrackerShape(t *testing.T) {
 			require.NoError(t, err)
 			action := &repb.Action{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "workload-isolation-type", Value: "firecracker"},
-				{Name: platform.FirecrackerUseGenericSnapshotPropertyName, Value: "true"},
+				{Name: platform.UseGenericSnapshotPropertyName, Value: "true"},
 				{Name: "EstimatedCPU", Value: tc.cpu},
 				{Name: "EstimatedMemory", Value: tc.memory},
 			}}}

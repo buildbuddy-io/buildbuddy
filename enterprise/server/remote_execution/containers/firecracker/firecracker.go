@@ -632,12 +632,12 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		EnablePci:         *enablePCI,
 	}
 	if args.Props.UseGenericSnapshot {
-		shape, err := tasksize.GenericFirecrackerSize(sizeEstimate)
+		shape, err := tasksize.GenericSnapshotSize(sizeEstimate)
 		if err != nil {
 			return nil, err
 		}
 		if shape.GetEstimatedMilliCpu() != sizeEstimate.GetEstimatedMilliCpu() || shape.GetEstimatedMemoryBytes() != sizeEstimate.GetEstimatedMemoryBytes() {
-			return nil, status.FailedPreconditionErrorf("task size %s is not a generic snapshot shape; the app must round it when scheduling, so set firecracker-use-generic-snapshot on the action (not only as an executor override) and make sure the app supports it", tasksize.String(sizeEstimate))
+			return nil, status.FailedPreconditionErrorf("task size %s is not a generic snapshot shape; the app must round it when scheduling, so set use-generic-snapshot on the action (not only as an executor override) and make sure the app supports it", tasksize.String(sizeEstimate))
 		}
 		if sizeEstimate.GetEstimatedMilliCpu() > int64(runtime.NumCPU())*1000 {
 			return nil, status.ResourceExhaustedErrorf("generic snapshot shape requires %d CPUs but executor has %d", sizeEstimate.GetEstimatedMilliCpu()/1000, runtime.NumCPU())
@@ -907,9 +907,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		// PullImage writes into the chroot before any VM starts, so Remove
 		// must clean up even if no VM is ever created.
 		c.rmOnce = &sync.Once{}
-		if opts.OverrideSnapshotKey != nil || c.vmConfig.GetInitDockerd() || c.vmConfig.GetEnableVfs() || platform.IsTrue(platform.FindEffectiveValue(task, "recycle-runner")) {
-			return nil, status.InvalidArgumentError("generic snapshots do not support dockerd, VFS, runner recycling, or snapshot overrides")
-		}
 		if err := c.newID(ctx); err != nil {
 			return nil, err
 		}
@@ -1216,7 +1213,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	if c.snapshot != nil {
 		resumedFrom = c.snapshot.GetKey()
 	}
-	writeUniversalManifest := snaploader.IsEligibleToUpdateUniversalSnapshot(c.task, resumedFrom)
+	writeUniversalManifest := !c.buildsGenericSnapshot && snaploader.IsEligibleToUpdateUniversalSnapshot(c.task, resumedFrom)
 
 	opts := &snaploader.CacheSnapshotOptions{
 		VMMetadata:                       vmd,
@@ -2506,14 +2503,23 @@ func (c *FirecrackerContainer) waitForGenericSnapshot(ctx context.Context) error
 	span.SetName("WaitForGenericSnapshot")
 	defer span.End()
 	key := c.snapshotKeySet.GetWriteKey().GetConfigurationHash()
-	_, _, err := genericSnapshotBuilds.Do(ctx, key, func(ctx context.Context) (struct{}, error) {
-		// Finish even if every waiting task is cancelled, so the next task
-		// doesn't start over.
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), genericSnapshotBuildTimeout)
-		defer cancel()
-		return struct{}{}, c.prepareGenericSnapshot(ctx)
-	})
-	return err
+	done := make(chan error, 1)
+	go func() {
+		// Wait without cancellation so the build stays in the group until it
+		// finishes, even if every waiting task is cancelled.
+		_, _, err := genericSnapshotBuilds.Do(context.WithoutCancel(ctx), key, func(ctx context.Context) (struct{}, error) {
+			ctx, cancel := context.WithTimeout(ctx, genericSnapshotBuildTimeout)
+			defer cancel()
+			return struct{}{}, c.prepareGenericSnapshot(ctx)
+		})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return status.FromContextError(ctx)
+	}
 }
 
 // prepareGenericSnapshot validates the cached generic snapshot, rebuilding it
@@ -2619,17 +2625,17 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 		return status.UnavailableErrorf("check containerfs exists: %s", err)
 	} else if !exists && c.cachedContainerfs(ctx) == nil {
 		if err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, containerFSPath); err != nil {
-			return err
+			return status.UnavailableErrorf("link cached image: %s", err)
 		}
 	}
 	if err := c.initRootfsStore(ctx); err != nil {
-		return err
+		return status.WrapError(err, "create root image")
 	}
 	if err := c.setupVBDMounts(ctx); err != nil {
-		return err
+		return status.WrapError(err, "failed to init VBD mounts")
 	}
 	if err := c.machine.UpdateGuestDrive(ctx, rootDriveID, filepath.Join(rootDriveID+vbdMountDirSuffix, vbd.FileName)); err != nil {
-		return err
+		return status.UnavailableErrorf("update guest drive: %s", err)
 	}
 	rootSizeBytes, err := c.rootStore.SizeBytes()
 	if err != nil {
@@ -3236,8 +3242,8 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	stage = "exec"
 	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), stdio)
-	if c.fsLayout != nil {
-		// Recycling is not supported for firecracker + fuse yet.
+	// Recycling is not supported for firecracker + fuse or generic snapshots yet.
+	if c.fsLayout != nil || c.vmConfig.GetGenericSnapshot() {
 		result.DoNotRecycle = true
 	}
 

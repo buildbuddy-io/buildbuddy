@@ -413,9 +413,18 @@ func TestSizer_Get_SkipsMeasuredSizeForGenericSnapshot(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, sizer.Get(ctx, cmd, &platform.Properties{}))
-	// The generic snapshot size must not be replaced, even without the
-	// Firecracker isolation exclusion.
-	require.Nil(t, sizer.Get(ctx, cmd, &platform.Properties{UseGenericSnapshot: true}))
+	for _, tc := range []struct {
+		name  string
+		props *platform.Properties
+	}{
+		{"firecracker", &platform.Properties{WorkloadIsolationType: "firecracker"}},
+		{"generic snapshot", &platform.Properties{UseGenericSnapshot: true}},
+		{"both", &platform.Properties{WorkloadIsolationType: "firecracker", UseGenericSnapshot: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Nil(t, sizer.Get(ctx, cmd, tc.props))
+		})
+	}
 }
 
 func TestSizer_RespectsMilliCPULimit(t *testing.T) {
@@ -817,8 +826,8 @@ func TestCgroupSettings_AdditionalPIDsLimit(t *testing.T) {
 	assert.Equal(t, int64(10_300), settings.GetPidsMax())
 }
 
-func TestGenericFirecrackerSize(t *testing.T) {
-	_, err := tasksize.GenericFirecrackerSize(nil)
+func TestGenericSnapshotSize(t *testing.T) {
+	_, err := tasksize.GenericSnapshotSize(nil)
 	require.Error(t, err)
 	for _, tc := range []struct{ cpu, memory, wantCPU int64 }{
 		{250, 200_000_000, 1}, {1000, 2_500_000_000, 1},
@@ -831,7 +840,7 @@ func TestGenericFirecrackerSize(t *testing.T) {
 		t.Run(fmt.Sprintf("cpu=%d/memory=%d", tc.cpu, tc.memory), func(t *testing.T) {
 			input := &scpb.TaskSize{EstimatedMilliCpu: tc.cpu, EstimatedMemoryBytes: tc.memory, EstimatedFreeDiskBytes: 1234}
 			original := input.CloneVT()
-			got, err := tasksize.GenericFirecrackerSize(input)
+			got, err := tasksize.GenericSnapshotSize(input)
 			if tc.wantCPU == 0 {
 				require.Error(t, err)
 				return
