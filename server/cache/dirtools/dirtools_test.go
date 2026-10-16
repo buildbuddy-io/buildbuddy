@@ -871,6 +871,101 @@ func TestDownloadTree(t *testing.T) {
 	assert.Equal(t, "mytestdataA", string(targetContents), "symlinked file contents should match target file")
 }
 
+func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
+	env, ctx := testEnv(t)
+	blob := setFile(t, env, ctx, "", "contents")
+	child := &repb.Directory{Files: []*repb.FileNode{{Name: "file.txt", Digest: blob}}}
+	childDigest, err := digest.ComputeForMessage(child, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	for _, test := range []struct {
+		name string
+		// tree builds the input tree, given a directory outside the root.
+		tree            func(outside string) *repb.Tree
+		caseInsensitive bool
+	}{
+		{
+			name: "ParentDirectory",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{
+					Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "..", Digest: childDigest}}},
+					Children: []*repb.Directory{child},
+				}
+			},
+		},
+		{
+			name: "FileNameWithSlash",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "../file.txt", Digest: blob}}}}
+			},
+		},
+		{
+			name: "BadNameInChildDirectory",
+			tree: func(outside string) *repb.Tree {
+				badChild := &repb.Directory{Files: []*repb.FileNode{{Name: "../../file.txt", Digest: blob}}}
+				badChildDigest, err := digest.ComputeForMessage(badChild, repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				return &repb.Tree{
+					Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "sub", Digest: badChildDigest}}},
+					Children: []*repb.Directory{badChild},
+				}
+			},
+		},
+		{
+			name: "FileAndSymlinkWithSameName",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{Root: &repb.Directory{
+					Files:    []*repb.FileNode{{Name: "a", Digest: blob}},
+					Symlinks: []*repb.SymlinkNode{{Name: "a", Target: filepath.Join(outside, "file.txt")}},
+				}}
+			},
+		},
+		{
+			name: "DirectoryAndSymlinkWithSameName",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{
+					Root: &repb.Directory{
+						Directories: []*repb.DirectoryNode{{Name: "d", Digest: childDigest}},
+						Symlinks:    []*repb.SymlinkNode{{Name: "d", Target: outside}},
+					},
+					Children: []*repb.Directory{child},
+				}
+			},
+		},
+		{
+			name: "NamesDifferingOnlyInCase",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{
+					Root: &repb.Directory{
+						Directories: []*repb.DirectoryNode{{Name: "D", Digest: childDigest}},
+						Symlinks:    []*repb.SymlinkNode{{Name: "d", Target: outside}},
+					},
+					Children: []*repb.Directory{child},
+				}
+			},
+			caseInsensitive: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			outside := testfs.MakeTempDir(t)
+			root := filepath.Join(outside, "root")
+			require.NoError(t, os.Mkdir(root, 0755))
+
+			_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, test.tree(outside), &dirtools.DownloadTreeOpts{RootDir: root, CaseInsensitive: test.caseInsensitive})
+
+			require.Error(t, err)
+			assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+			outsideEntries, err := os.ReadDir(outside)
+			require.NoError(t, err)
+			require.Len(t, outsideEntries, 1)
+			assert.Equal(t, "root", outsideEntries[0].Name())
+			rootEntries, err := os.ReadDir(root)
+			require.NoError(t, err)
+			assert.Empty(t, rootEntries)
+		})
+	}
+}
+
 func TestDownloadTreeEmptySymlinkTarget(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
