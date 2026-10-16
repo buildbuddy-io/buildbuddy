@@ -13,9 +13,10 @@ import (
 
 // filterLabel is a metric label that gets a filter variable and a "Group By" option.
 type filterLabel struct {
-	name        string
-	displayName string // shown instead of name when set
-	description string // selector tooltip
+	name         string
+	displayName  string // shown instead of name when set
+	description  string // selector tooltip
+	defaultValue string // initial selection; "All" when empty
 }
 
 func (l filterLabel) text() string {
@@ -35,6 +36,12 @@ var filterLabels = []filterLabel{
 		name:        "job",
 		displayName: "Server Job",
 		description: "Prometheus scrape job, i.e. the kind of BuildBuddy server that handled the RPC (app, cache proxy).",
+	},
+	{
+		name:         "peer_type",
+		displayName:  "Peer Type",
+		description:  `Verified client identity of the peer (cache-proxy, executor, app, grpc-proxy, workflow), or "external" when it presented none. Bytes exchanged between BuildBuddy servers are counted on both, so "external" counts each byte once, where it crosses our fleet's edge.`,
+		defaultValue: "external",
 	},
 	{
 		name:        "provider",
@@ -86,13 +93,17 @@ func filterVariable(l filterLabel) *dashboard.QueryVariableBuilder {
 		metric += `{region=~"${region}"}`
 	}
 	query := fmt.Sprintf("label_values(%s, %s)", metric, l.name)
+	current := dash.SelectedOption("All", "$__all")
+	if l.defaultValue != "" {
+		current = dash.SelectedOption(l.defaultValue, l.defaultValue)
+	}
 	return dash.QueryVar(l.name, query).
 		Description(l.description).
 		Refresh(dashboard.VariableRefreshOnDashboardLoad).
 		Multi(true).
 		IncludeAll(true).
 		AllValue(".*").
-		Current(dash.SelectedOption("All", "$__all")).
+		Current(current).
 		Definition(query).
 		Label(l.text())
 }
