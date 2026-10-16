@@ -1385,32 +1385,33 @@ func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) erro
 // root directory. If caseInsensitive is true, names that differ only in case
 // count as the same name.
 func ValidateTreeNames(tree *repb.Tree, caseInsensitive bool) error {
+	// Reuse the buffer across directories to avoid allocating it for each one.
+	// Growing the buffer and converting names to lowercase can still allocate.
+	var names []fspath.Key
 	checkDir := func(dir *repb.Directory) error {
-		seen := make(map[fspath.Key]bool, len(dir.GetFiles())+len(dir.GetDirectories())+len(dir.GetSymlinks()))
-		check := func(name string) error {
-			if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') || strings.ContainsRune(name, filepath.Separator) {
-				return status.InvalidArgumentErrorf("input tree entry name %q isn't a single path component", name)
-			}
-			key := fspath.NewKey(name, caseInsensitive)
-			if seen[key] {
-				return status.InvalidArgumentErrorf("input tree has more than one entry named %q in a directory", name)
-			}
-			seen[key] = true
-			return nil
-		}
+		names = names[:0]
 		for _, f := range dir.GetFiles() {
-			if err := check(f.GetName()); err != nil {
-				return err
-			}
+			names = append(names, fspath.NewKey(f.GetName(), caseInsensitive))
 		}
 		for _, d := range dir.GetDirectories() {
-			if err := check(d.GetName()); err != nil {
-				return err
-			}
+			names = append(names, fspath.NewKey(d.GetName(), caseInsensitive))
 		}
 		for _, s := range dir.GetSymlinks() {
-			if err := check(s.GetName()); err != nil {
-				return err
+			names = append(names, fspath.NewKey(s.GetName(), caseInsensitive))
+		}
+		for _, key := range names {
+			name := key.NormalizedString()
+			if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') || (filepath.Separator != '/' && strings.ContainsRune(name, filepath.Separator)) {
+				return status.InvalidArgumentErrorf("input tree entry name %q isn't a single path component", name)
+			}
+		}
+		// Sorting puts duplicate names next to each other.
+		slices.SortFunc(names, func(a, b fspath.Key) int {
+			return strings.Compare(a.NormalizedString(), b.NormalizedString())
+		})
+		for i := 1; i < len(names); i++ {
+			if names[i] == names[i-1] {
+				return status.InvalidArgumentErrorf("input tree has more than one entry named %q in a directory", names[i].NormalizedString())
 			}
 		}
 		return nil
