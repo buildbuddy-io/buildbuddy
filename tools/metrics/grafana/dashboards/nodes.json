@@ -183,7 +183,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "rate(node_network_receive_bytes_total{device=~\"ens.*\", region=\"${region}\", nodename=\"${kubenode}\"}[1m])",
+              "expr": "rate(node_network_receive_bytes_total{device=~\"(ens|eth).*\", region=\"${region}\", nodename=\"${kubenode}\"}[1m])",
               "hide": false,
               "interval": "",
               "legendFormat": "{{device}} rx",
@@ -195,7 +195,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "rate(node_network_transmit_bytes_total{device=~\"ens.*\", region=\"${region}\", nodename=\"${kubenode}\"}[1m])",
+              "expr": "rate(node_network_transmit_bytes_total{device=~\"(ens|eth).*\", region=\"${region}\", nodename=\"${kubenode}\"}[1m])",
               "hide": false,
               "interval": "",
               "legendFormat": "{{device}} tx",
@@ -207,7 +207,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "1 - avg by (mode) (rate(node_cpu_seconds_total{mode=\"idle\", region=\"${region}\", nodename=\"${kubenode}\"}[1m]))",
+              "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\", region=\"${region}\", nodename=\"${kubenode}\"}[1m]))",
               "hide": false,
               "interval": "",
               "legendFormat": "cpu",
