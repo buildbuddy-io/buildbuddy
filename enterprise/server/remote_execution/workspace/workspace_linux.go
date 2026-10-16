@@ -3,7 +3,11 @@
 package workspace
 
 import (
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -26,6 +30,76 @@ func lstatDir(path string) (dirFingerprint, bool, error) {
 		uid:        st.Uid,
 		gid:        st.Gid,
 	}, true, nil
+}
+
+// readXattrs returns the names and values of the extended attributes of the
+// file at path, sorted by name and encoded as a string, so that comparing the
+// strings tells whether the attributes changed. It leaves out security.*
+// attributes, such as SELinux labels, since container runtimes change them
+// for their own reasons, as is the case when Docker relabels a workspace that
+// it mounts with --executor.docker_mount_mode=z.
+func readXattrs(path string) (string, error) {
+	// Most directories have no extended attributes, so we first ask for the
+	// size of the list, which doesn't need a buffer.
+	size, err := unix.Llistxattr(path, nil)
+	if errors.Is(err, errors.ErrUnsupported) {
+		// The filesystem doesn't support extended attributes.
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("list xattrs: %w", err)
+	}
+	if size == 0 {
+		return "", nil
+	}
+	list, err := xattrCall(func(buf []byte) (int, error) { return unix.Llistxattr(path, buf) })
+	if err != nil {
+		return "", fmt.Errorf("list xattrs: %w", err)
+	}
+	var names []string
+	for name := range strings.SplitSeq(strings.TrimSuffix(string(list), "\x00"), "\x00") {
+		if name != "" && !strings.HasPrefix(name, "security.") {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	var encoded []byte
+	for _, name := range names {
+		value, err := xattrCall(func(buf []byte) (int, error) { return unix.Lgetxattr(path, name, buf) })
+		if errors.Is(err, errors.ErrUnsupported) {
+			// The filesystem lists the attribute but can't read it.
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("get xattr %q: %w", name, err)
+		}
+		// Values can hold any byte, so we prefix them with their length to
+		// keep the encoding unambiguous. Names can't hold NUL bytes.
+		encoded = append(encoded, name...)
+		encoded = append(encoded, 0)
+		encoded = binary.AppendUvarint(encoded, uint64(len(value)))
+		encoded = append(encoded, value...)
+	}
+	return string(encoded), nil
+}
+
+// xattrCall calls an xattr syscall that fills buf, such as listxattr, and
+// returns what it filled in. Directories usually have no extended attributes,
+// or a few short ones such as an SELinux label, so we start with a small buffer
+// and double it while the result doesn't fit. The kernel limits results to 64
+// KiB, so this ends.
+func xattrCall(call func(buf []byte) (int, error)) ([]byte, error) {
+	for size := 256; ; size *= 2 {
+		buf := make([]byte, size)
+		n, err := call(buf)
+		if errors.Is(err, unix.ERANGE) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		return buf[:n], nil
+	}
 }
 
 // waitForTimestampTick waits until the kernel's coarse clock is past t so we

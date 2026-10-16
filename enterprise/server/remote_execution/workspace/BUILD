@@ -76,6 +76,7 @@ go_test(
         "@io_bazel_rules_go//go/platform:linux": [
             "//server/util/claims",
             "//server/util/testing/flags",
+            "@org_golang_x_sys//unix",
         ],
         "//conditions:default": [],
     }),

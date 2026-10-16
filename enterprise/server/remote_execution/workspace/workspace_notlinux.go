@@ -10,6 +10,10 @@ func lstatDir(path string) (dirFingerprint, bool, error) {
 	return dirFingerprint{}, false, errors.ErrUnsupported
 }
 
+func readXattrs(path string) (string, error) {
+	return "", errors.ErrUnsupported
+}
+
 func waitForTimestampTick(t int64) error {
 	return errors.ErrUnsupported
 }
