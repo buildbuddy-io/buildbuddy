@@ -35,6 +35,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
+	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -371,40 +372,55 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 		return nil, err
 	}
 
-	// If no access token is provided explicitly, try reading from the REPO_TOKEN env var.
-	accessToken := req.GetGitRepo().GetAccessToken()
-	if accessToken == "" {
-		for k, v := range req.GetEnv() {
-			if k == "REPO_TOKEN" {
-				accessToken = v
-				break
-			}
-		}
-	}
-	// If the token is still not set, try fetching the token from a Workflow
-	// configured for the same repo.
-	if accessToken == "" && req.GetGitRepo().GetRepoUrl() != "" {
-		repoURL, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
-		if err != nil {
-			return nil, status.WrapError(err, "normalize git repo url")
-		}
-
-		gitToken, err := r.getGitHubAccessToken(ctx, u.GetGroupID(), repoURL.String())
-		if err != nil {
-			log.Warningf("Could not fetch git auth token for %s for hosted runner"+
-				" (Note: The token is not needed for public repos): %s", repoURL, err)
-		}
-		accessToken = gitToken
-	}
-
 	// Use env override headers for credentials.
 	// TODO(Maggie): Remove REPO_TOKEN once the leaser fetches the token.
 	envOverrides := []string{
 		ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=" + apiKey.Value,
 		"REPO_USER=" + req.GetGitRepo().GetUsername(),
-		"REPO_TOKEN=" + accessToken,
+		"REPO_TOKEN=" + req.GetGitRepo().GetAccessToken(),
 	}
 	return envOverrides, nil
+}
+
+// resolveGitCredentials populates the GitRepo credentials in req, falling back
+// to the REPO_USER and REPO_TOKEN env vars, then to a token from the GitHub app.
+//
+// The env vars are removed from req, since credentials are passed to the runner
+// via env overrides (see credentialEnvOverrides) rather than persisted in the
+// Command.
+func (r *runnerService) resolveGitCredentials(ctx context.Context, req *rnpb.RunRequest) error {
+	if req.GitRepo == nil {
+		req.GitRepo = &gitpb.GitRepo{}
+	}
+	repo := req.GitRepo
+	if repo.Username == "" {
+		repo.Username = req.Env["REPO_USER"]
+	}
+	if repo.AccessToken == "" {
+		repo.AccessToken = req.Env["REPO_TOKEN"]
+	}
+	delete(req.Env, "REPO_USER")
+	delete(req.Env, "REPO_TOKEN")
+
+	if repo.AccessToken != "" || repo.RepoUrl == "" {
+		return nil
+	}
+	repoURL, err := git.NormalizeRepoURL(repo.RepoUrl)
+	if err != nil {
+		return status.WrapError(err, "normalize git repo url")
+	}
+	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	token, err := r.getGitHubAccessToken(ctx, u.GetGroupID(), repoURL.String())
+	if err != nil {
+		log.Warningf("Could not fetch git auth token for %s for hosted runner"+
+			" (Note: The token is not needed for public repos): %s", repoURL, err)
+		return nil
+	}
+	repo.AccessToken = token
+	return nil
 }
 
 func (r *runnerService) getGitHubAccessToken(ctx context.Context, groupID string, repoURL string) (string, error) {
@@ -430,6 +446,9 @@ func (r *runnerService) getGitHubAccessToken(ctx context.Context, groupID string
 func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {
 	if err := r.checkPreconditions(req); err != nil {
 		return nil, status.WrapError(err, "check preconditions")
+	}
+	if err := r.resolveGitCredentials(ctx, req); err != nil {
+		return nil, status.WrapError(err, "resolve git credentials")
 	}
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env.GetAuthenticator())
 	if err != nil {
