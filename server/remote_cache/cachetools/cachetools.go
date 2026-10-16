@@ -1795,6 +1795,7 @@ var _ interfaces.CommittedWriteCloser = (*UploadWriter)(nil)
 // NewUploadWriter returns an UploadWriter that writes to the CAS for the specific resource name.
 // The blob is guaranteed to be written to the CAS only if all Write(...) calls and the Commit() calls succeed.
 // The caller is responsible for checking data integrity using GetCommittedSize() and GetBytesUploaded().
+// GetCommittedSize() can return -1 if the server terminated the write because the blob already exists.
 //
 // You must call Close() on an UploadWriter.
 // You also must either
