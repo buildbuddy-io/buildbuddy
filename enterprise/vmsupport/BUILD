@@ -16,7 +16,7 @@ go_library(
         "//platforms/configs:linux_x86_64": [
             "//enterprise/vmsupport/bin:initrd.cpio",
             "//enterprise/vmsupport/bin:vmlinux",
-            "//enterprise/vmsupport/bin:vmlinux_6.1",
+            "//enterprise/vmsupport/bin:vmlinux_6.18",
         ],
         "//platforms/configs:linux_arm64": [
             "//enterprise/vmsupport/bin:initrd.cpio",
