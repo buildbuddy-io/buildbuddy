@@ -12,7 +12,7 @@ import {
   LegendPayload,
   Line,
   MouseHandlerDataParam,
-  ReferenceArea,
+  Rectangle,
   ResponsiveContainer,
   Scatter,
   ScatterPointItem,
@@ -634,7 +634,7 @@ function CustomXAxis({ domain, hasBars, numPoints, ticks, formatXAxisLabel }: Cu
   // the points where the BAR series' extractor function returns a non-null
   // value, but that's kinda funky and we don't need it right now.
   // Always ensure that we have at least 1 pixel of padding in the bar case.
-  const extraPad = hasBars && numPoints > 1 ? (width / numPoints / 2 || 0) + 1 : 0;
+  const extraPad = hasBars && numPoints > 1 ? width / numPoints / 2 || 1 : 0;
 
   return (
     <XAxis
@@ -657,6 +657,8 @@ interface ZoomRefAreaProps {
 
 function ZoomRefArea({ refAreaLeft, refAreaRight, domain, data }: ZoomRefAreaProps) {
   const [a, b] = [Math.min(refAreaLeft, refAreaRight), Math.max(refAreaLeft, refAreaRight)];
+  const xScale = useXAxisScale();
+  const plotArea = usePlotArea();
   if (data.length === 0) {
     return <></>;
   }
@@ -673,10 +675,27 @@ function ZoomRefArea({ refAreaLeft, refAreaRight, domain, data }: ZoomRefAreaPro
     }
   }
 
-  const leftEdge = leftNeighbor === domain[0] ? leftNeighbor : (leftNeighbor + a) / 2;
-  const rightEdge = rightNeighbor === domain[0] ? rightNeighbor : (rightNeighbor + b) / 2;
+  if (xScale === undefined || plotArea === undefined) {
+    return <></>;
+  }
 
-  return <ReferenceArea yAxisId="primary" ifOverflow="visible" x1={leftEdge} x2={rightEdge} strokeOpacity={0.3} />;
+  const leftEdge = leftNeighbor === domain[0] ? plotArea.x : xScale((leftNeighbor + a) / 2);
+  const rightEdge = rightNeighbor === domain[1] ? plotArea.x + plotArea.width : xScale((rightNeighbor + b) / 2);
+  if (leftEdge === undefined || rightEdge === undefined) {
+    return <></>;
+  }
+
+  return (
+    <Rectangle
+      x={leftEdge}
+      width={rightEdge - leftEdge}
+      y={plotArea.y}
+      height={plotArea.height}
+      strokeOpacity={0.3}
+      fill={"#ccc"}
+      fillOpacity={"0.3"}
+    />
+  );
 }
 
 export default class TrendsChartComponent extends React.Component<Props, State> {
