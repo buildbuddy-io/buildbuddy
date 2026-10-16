@@ -958,3 +958,19 @@ ts_jasmine_node_test(
         "//app/invocation:invocation_not_found",
     ],
 )
+
+ts_jasmine_node_test(
+    name = "invocation_action_card_test",
+    srcs = ["invocation_action_card_test.ts"],
+    deps = [
+        ":invocation_action_card",
+        ":invocation_model",
+        "//:node_modules/@types/react",
+        "//:node_modules/long",
+        "//:node_modules/react",
+        "//app/preferences",
+        "//app/service:rpc_service",
+        "//proto:invocation_ts_proto",
+        "//proto:remote_execution_ts_proto",
+    ],
+)
