@@ -3261,9 +3261,6 @@ func (c *FirecrackerContainer) PostCompletionStats() *espb.PostCompletionStats {
 }
 
 func (c *FirecrackerContainer) pause(ctx context.Context) error {
-	ctx, cancel := c.monitorVMContext(ctx)
-	defer cancel()
-
 	log.CtxInfof(ctx, "Pausing VM")
 
 	snapDetails, err := c.snapshotDetails(ctx)
@@ -3274,6 +3271,9 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) pauseWithSnapshot(ctx context.Context, snapDetails *snapshotDetails) error {
+	ctx, cancel := c.monitorVMContext(ctx)
+	defer cancel()
+
 	shouldSaveSnapshot := snapDetails.saveRemoteSnapshot || snapDetails.saveLocalSnapshot
 
 	if shouldSaveSnapshot && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
@@ -3561,6 +3561,8 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 	return c.newSnapshotDetails(ctx, saveRemoteSnapshot, saveLocalSnapshot)
 }
 
+// newSnapshotDetails prepares to save a snapshot locally and/or remotely as
+// requested, without applying the task's save policy.
 func (c *FirecrackerContainer) newSnapshotDetails(ctx context.Context, saveRemoteSnapshot, saveLocalSnapshot bool) (*snapshotDetails, error) {
 	if !saveRemoteSnapshot && !saveLocalSnapshot {
 		return &snapshotDetails{
@@ -3570,6 +3572,13 @@ func (c *FirecrackerContainer) newSnapshotDetails(ctx context.Context, saveRemot
 			saveRemoteSnapshot:  false,
 			saveLocalSnapshot:   false,
 		}, nil
+	}
+	// Check these before the VM is paused and its memory exported.
+	if saveRemoteSnapshot && !c.supportsRemoteSnapshots {
+		return nil, status.InvalidArgumentError("remote snapshots are not supported for this VM")
+	}
+	if c.snapshotKeySet.GetWriteKey() == nil {
+		return nil, status.InvalidArgumentError("write key required to save snapshot")
 	}
 
 	snapshotType := fullSnapshotType
