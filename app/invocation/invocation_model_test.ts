@@ -1,3 +1,4 @@
+import Long from "long";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
 import InvocationModel from "./invocation_model";
@@ -83,5 +84,128 @@ describe("InvocationModel.getMode", () => {
     model.optionsMap.set("compilation_mode", "opt");
 
     expect(model.getMode()).toBe("opt");
+  });
+});
+
+describe("InvocationModel regional endpoints", () => {
+  const globalPublic = "grpcs://remote.buildbuddy.io";
+  const globalOrg = "grpcs://test-org.buildbuddy.io";
+  const europePublic = "grpcs://remote.europe.buildbuddy.io";
+  const europeOrg = "grpcs://test-org.europe.buildbuddy.io";
+  const cases: {
+    name: string;
+    role: string;
+    options: Record<string, string>;
+    execution: string;
+    cache: string;
+    bes: string;
+  }[] = [
+    ...[
+      { name: "global public", endpoint: globalPublic },
+      { name: "global organization", endpoint: globalOrg },
+      { name: "Europe public", endpoint: europePublic },
+      { name: "Europe organization", endpoint: europeOrg },
+    ].map(({ name, endpoint }) => ({
+      name: `Bazel uses the ${name} endpoint for all services`,
+      role: "",
+      options: { remote_executor: endpoint, remote_cache: endpoint, bes_backend: endpoint },
+      execution: endpoint,
+      cache: endpoint,
+      bes: endpoint,
+    })),
+    {
+      name: "Bazel executes in Europe with a global cache and build event service",
+      role: "",
+      options: { remote_executor: europeOrg, remote_cache: globalOrg, bes_backend: globalOrg },
+      execution: europeOrg,
+      cache: globalOrg,
+      bes: globalOrg,
+    },
+    {
+      name: "executor-only Bazel build uses the Europe public endpoint for its cache",
+      role: "",
+      options: { remote_executor: europePublic },
+      execution: europePublic,
+      cache: europePublic,
+      bes: "",
+    },
+    {
+      name: "workflow runner uses its Europe backend options for all services",
+      role: "CI_RUNNER",
+      options: { rbe_backend: europePublic, cache_backend: europePublic, bes_backend: europePublic },
+      execution: europePublic,
+      cache: europePublic,
+      bes: europePublic,
+    },
+    {
+      name: "compatibility: workflow runner ignores recorded Bazel flags for its own cache",
+      role: "CI_RUNNER",
+      options: {
+        rbe_backend: europeOrg,
+        cache_backend: europeOrg,
+        remote_cache: globalOrg,
+        remote_executor: globalOrg,
+        bes_backend: europeOrg,
+      },
+      execution: europeOrg,
+      cache: europeOrg,
+      bes: europeOrg,
+    },
+    {
+      name: "compatibility: hosted runner ignores recorded Bazel flags for its own cache",
+      role: "HOSTED_BAZEL",
+      options: { rbe_backend: europePublic, remote_cache: globalPublic, remote_executor: globalPublic },
+      execution: europePublic,
+      cache: europePublic,
+      bes: "",
+    },
+    {
+      name: "hosted runner executes in Europe with a global cache backend",
+      role: "HOSTED_BAZEL",
+      options: { rbe_backend: europeOrg, cache_backend: globalOrg, bes_backend: europeOrg },
+      execution: europeOrg,
+      cache: globalOrg,
+      bes: europeOrg,
+    },
+    {
+      name: "runner backend supplies the global public cache fallback",
+      role: "CI_RUNNER",
+      options: { rbe_backend: globalPublic },
+      execution: globalPublic,
+      cache: globalPublic,
+      bes: "",
+    },
+    {
+      name: "no configured endpoints",
+      role: "",
+      options: {},
+      execution: "",
+      cache: "",
+      bes: "",
+    },
+  ];
+
+  for (const testCase of cases) {
+    it(testCase.name, () => {
+      const model = new InvocationModel(new invocation.Invocation({ role: testCase.role }));
+      for (const [name, endpoint] of Object.entries(testCase.options)) {
+        model.optionsMap.set(name, endpoint);
+      }
+      expect(model.getRemoteExecutorEndpoint()).toBe(testCase.execution);
+      expect(model.getCacheEndpoint()).toBe(testCase.cache);
+      expect(model.getBESBackendEndpoint()).toBe(testCase.bes);
+    });
+  }
+
+  it("reads full execution responses from the executor even with a separate cache and artifact prefix", () => {
+    const model = new InvocationModel(new invocation.Invocation());
+    model.optionsMap.set("remote_executor", europeOrg);
+    model.optionsMap.set("remote_cache", globalOrg);
+    model.optionsMap.set("remote_bytestream_uri_prefix", "remote.buildbuddy.io/prefix");
+    const digest = { hash: "abc", sizeBytes: Long.fromNumber(3) };
+
+    expect(model.getActionCacheURL(digest)).toContain("actioncache://remote.buildbuddy.io/");
+    expect(model.getExecuteResponseURL(digest)).toContain("actioncache://test-org.europe.buildbuddy.io/");
+    expect(model.getCacheEndpoint()).toBe(globalOrg);
   });
 });

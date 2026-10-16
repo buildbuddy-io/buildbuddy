@@ -514,6 +514,7 @@ ts_jasmine_node_test(
     srcs = ["invocation_model_test.ts"],
     deps = [
         ":invocation_model",
+        "//:node_modules/long",
         "//:node_modules/tslib",
         "//proto:build_event_stream_ts_proto",
         "//proto:invocation_ts_proto",
