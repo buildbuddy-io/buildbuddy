@@ -128,6 +128,20 @@ const (
 	// Reason for a runner not being added to the runner pool.
 	RunnerPoolFailedRecycleReason = "reason"
 
+	// Outcome of looking for a pooled workspace to reuse for a task: `reused`,
+	// `no_match` if no pooled workspace was worth reusing, or `failed` if
+	// reusing one failed and the task started from an empty workspace.
+	WorkspacePoolReuseOutcome = "outcome"
+
+	// Outcome of returning a finished task's workspace to the workspace pool:
+	// `pooled`, `root_changed` if the task removed or replaced its input root,
+	// or `error`.
+	WorkspacePoolReturnOutcome = "outcome"
+
+	// Whether an evicted workspace was the one that was just added to the
+	// workspace pool: `true` or `false`.
+	WorkspacePoolEvictedNewlyAdded = "newly_added"
+
 	// Reason for a Firecracker task execution failure.
 	FirecrackerErrorReason = "reason"
 
@@ -2208,6 +2222,47 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "runner_pool_disk_usage_bytes",
 		Help:      "Total disk usage of pooled command runners, in **bytes**.",
+	})
+
+	WorkspacePoolReuses = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_reuses",
+		Help:      "Number of tasks that looked for a pooled workspace to reuse, by outcome.",
+	}, []string{
+		WorkspacePoolReuseOutcome,
+	})
+
+	WorkspacePoolKeptInputs = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_kept_inputs",
+		Help:      "Number of input files that were already in place in reused pooled workspaces, so the executor didn't link or download them.",
+	})
+
+	WorkspacePoolReturns = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_returns",
+		Help:      "Number of finished tasks' workspaces returned to the workspace pool, by outcome.",
+	}, []string{
+		WorkspacePoolReturnOutcome,
+	})
+
+	WorkspacePoolEvictions = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_evictions",
+		Help:      "Number of workspaces evicted from the workspace pool to free up a slot.",
+	}, []string{
+		WorkspacePoolEvictedNewlyAdded,
+	})
+
+	WorkspacePoolCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_count",
+		Help:      "Number of workspaces in the workspace pool.",
 	})
 
 	FileCacheRequests = promauto.NewCounterVec(prometheus.CounterOpts{
