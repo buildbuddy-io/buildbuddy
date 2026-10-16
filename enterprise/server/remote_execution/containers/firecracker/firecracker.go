@@ -2,7 +2,6 @@ package firecracker
 
 import (
 	"context"
-	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -26,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	crand "crypto/rand"
 	_ "embed"
 
 	"github.com/armon/circbuf"
