@@ -8,15 +8,13 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
@@ -273,16 +271,10 @@ func TestStatsHandler_NoClaims(t *testing.T) {
 }
 
 func TestStatsHandler_RecordsPeerType(t *testing.T) {
-	key, err := random.RandomString(16)
-	if err != nil {
-		t.Fatalf("RandomString() returned error: %v", err)
-	}
-	flags.Set(t, "app.client_identity.key", string(key))
-	cis, err := clientidentity.New(clockwork.NewFakeClock())
-	if err != nil {
-		t.Fatalf("clientidentity.New() returned error: %v", err)
-	}
-	handler := &StatsHandler{classifier: newTestClassifier(t), cis: cis}
+	te := enterprise_testenv.New(t)
+	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
+	cis := te.GetClientIdentityService()
+	classifier := newTestClassifier(t)
 
 	for _, tc := range []struct {
 		name string
@@ -296,6 +288,9 @@ func TestStatsHandler_RecordsPeerType(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			metrics.GRPCServerEgressBytes.Reset()
+			// Reset detaches any counters a handler has cached, so each
+			// subtest needs its own handler.
+			handler := &StatsHandler{classifier: classifier, cis: cis}
 
 			ctx := context.WithValue(context.Background(), clientip.ContextKey, "3.4.12.4")
 			if tc.identity != "" {
