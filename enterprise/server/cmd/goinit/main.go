@@ -10,13 +10,10 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/firecrackerutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -26,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jsimonetti/rtnetlink/rtnl"
 	"github.com/miekg/dns"
 	"golang.org/x/sync/errgroup"
@@ -37,13 +33,10 @@ const (
 	commonMountFlags = syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_NOSUID
 	cgroupMountFlags = syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_RELATIME
 	selfExePath      = "/proc/self/exe"
-
-	// EXT4_IOC_RESIZE_FS is the ioctl constant for resizing an ext4 FS.
-	// Computed from C: https://gist.github.com/bduffany/ce9b594c2166ea1a4564cba1b5ed652d
-	EXT4_IOC_RESIZE_FS = 0x40086610
 )
 
 var (
+	deferRootfsMount = flag.Bool("defer_rootfs_mount", false, "Mount the rootfs after restoring a generic snapshot.")
 	path             = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	vmExecPort       = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
 	enableRootfs     = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
@@ -209,7 +202,7 @@ func main() {
 	}
 
 	if *enableRootfs {
-		rootDevice = "/dev/vda"
+		rootDevice = vmexec.RootfsDevice
 		workspaceDevice = "/dev/vdb"
 		containerDevice = ""
 		scratchDevice = ""
@@ -264,10 +257,13 @@ func main() {
 	die(mkdirp("/sys", 0555))
 	die(mount("sys", "/sys", "sysfs", commonMountFlags, ""))
 
-	if *enableRootfs {
+	if *deferRootfsMount {
+		die(mkdirp("/mnt", 0755))
+		die(mount("tmpfs", "/mnt", "tmpfs", syscall.MS_NOSUID, "mode=0755"))
+	} else if *enableRootfs {
 		die(mkdirp("/mnt", 0755))
 		die(mount(rootDevice, "/mnt", "ext4", syscall.MS_NOATIME, ""))
-		die(resizeExt4FS(rootDevice, "/mnt"))
+		die(vmexec.ResizeExt4FS(rootDevice, "/mnt"))
 	} else {
 		// If rootfs is not enabled then set up an overlayfs with a readonly
 		// containerfs layer and a read/write scratchfs layer.
@@ -498,45 +494,4 @@ func runVMExecProcess(ctx context.Context) error {
 	})
 
 	return eg.Wait()
-}
-
-// Resizes the ext4 filesystem mounted at the given path to match the underlying
-// block device size.
-func resizeExt4FS(devicePath, mountPath string) error {
-	blockSizePath := fmt.Sprintf("/sys/class/block/%s/size", filepath.Base(devicePath))
-	log.Debugf("os.ReadFile(%q)", blockSizePath)
-	sizeBuf, err := os.ReadFile(blockSizePath)
-	if err != nil {
-		return status.InternalErrorf("read block device size: %s", err)
-	}
-	// Here, the block size is always 512.
-	// So the size in bytes is deviceSizeBlocks*512.
-	deviceSizeBlocks, err := strconv.Atoi(strings.TrimSpace(string(sizeBuf)))
-	if err != nil {
-		return status.InternalErrorf("failed to parse block device size %q", string(sizeBuf))
-	}
-
-	log.Debugf("statfs %q", mountPath)
-	s := &syscall.Statfs_t{}
-	if err := syscall.Statfs(mountPath, s); err != nil {
-		return status.InternalErrorf("statfs %s: %s", mountPath, err)
-	}
-	blocks := int64(deviceSizeBlocks*512) / s.Bsize
-	log.Debugf("open %q", mountPath)
-	fd, err := syscall.Open(mountPath, syscall.O_RDONLY, 0)
-	if err != nil {
-		return err
-	}
-	defer syscall.Close(fd)
-	log.Debugf("IOC_RESIZE_FS(%q) to %v blocks (%v byte)", mountPath, blocks, deviceSizeBlocks*512)
-	_, _, errno := syscall.Syscall(
-		syscall.SYS_IOCTL,
-		uintptr(fd),
-		uintptr(EXT4_IOC_RESIZE_FS),
-		uintptr(unsafe.Pointer(&blocks)),
-	)
-	if errno != 0 {
-		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
-	}
-	return nil
 }
