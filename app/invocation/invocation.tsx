@@ -14,7 +14,12 @@ import capabilities from "../capabilities/capabilities";
 import faviconService from "../favicon/favicon";
 import UserPreferences from "../preferences/preferences";
 import router from "../router/router";
-import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
+import {
+  Cancelable,
+  CancelablePromise,
+  ExtendedBuildBuddyService,
+  default as rpcService,
+} from "../service/rpc_service";
 import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import TargetComponent from "../target/target";
 import TargetV2Component from "../target/target_v2";
@@ -99,6 +104,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
   private runLogsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
   private runnerExecutionRPC?: CancelablePromise;
+  private runnerExecutionService?: ExtendedBuildBuddyService;
+  private runnerExecutionOwnerService?: ExtendedBuildBuddyService;
+  private invocationRPC?: CancelablePromise;
+  private mounted = true;
+  private runnerFetchGeneration = 0;
+  private runnerFetchCompletion?: Promise<void>;
   private cancelGroupIdOverride?: () => void;
 
   private seenChildInvocationConfiguredIds = new Set<string>();
@@ -149,6 +160,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
     if (this.state.model !== prevState.model) {
       this.modelChangedSubscription?.unsubscribe();
       if (this.state.model) {
+        const service = this.getLogsService(this.state.model);
+        if (service !== this.getLogsService(prevState.model)) {
+          // A wrong-region log tail can look complete before the regional run
+          // finishes. Allow the regional log completion to refresh run status.
+          this.didFetchAfterRunLogsComplete = false;
+        }
+        this.logsModel?.setService(service);
+        this.runLogsModel?.setService(service);
         this.modelChangedSubscription = this.state.model?.onChange.subscribe(() => this.forceUpdate());
       }
     }
@@ -177,12 +196,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
     // If we don't have an invocation yet, stream updates from the runner
     // execution so we can see what it's doing before the invocation is created.
     if (prevState.runnerExecution?.executionId !== this.state.runnerExecution?.executionId && !this.state.model) {
-      this.runnerExecutionStream?.cancel();
+      this.cancelRunnerExecutionStream();
       if (this.state.runnerExecution?.executionId) {
         this.streamRunnerExecution();
       }
     } else if (this.state.model) {
-      this.runnerExecutionStream?.cancel();
+      this.cancelRunnerExecutionStream();
     }
 
     // If we transitioned from queued to not queued, and we have an invocation,
@@ -216,6 +235,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   componentWillUnmount() {
+    this.mounted = false;
+    this.invocationRPC?.cancel();
+    this.cancelRunnerExecutionStream();
     if (this.timeoutRef) {
       clearTimeout(this.timeoutRef);
     }
@@ -278,9 +300,31 @@ export default class InvocationComponent extends React.Component<Props, State> {
     request.lookup = new invocation.InvocationLookup();
     request.lookup.invocationId = this.props.invocationId;
     request.lookup.fetchChildInvocations = fetchChildren;
-    return rpcService.service
-      .getInvocation(request)
+    const invocationId = this.props.invocationId;
+    // Events and persisted invocation state are shared, but in-progress cache
+    // statistics are collected in the cache region, independently of BES.
+    const service = rpcService.getRegionalServiceOrDefault(this.state.model?.getCacheEndpoint() ?? "");
+    const hasModel = Boolean(this.state.model);
+    const rpc = service.getInvocation(request).catch((error) => {
+      if (
+        !hasModel ||
+        service === rpcService.service ||
+        !this.mounted ||
+        invocationId !== this.props.invocationId ||
+        rpc !== this.invocationRPC
+      ) {
+        throw error;
+      }
+      // Regional cache statistics should not make shared invocation metadata
+      // unavailable. Keep trying the cache region on later polls, but recover
+      // this update from the same-origin service if the regional read fails.
+      console.warn("Failed to fetch regional invocation; retrying same-origin:", error);
+      return rpcService.service.getInvocation(request);
+    });
+    this.invocationRPC = rpc;
+    return rpc
       .then((response: invocation.GetInvocationResponse) => {
+        if (!this.mounted || invocationId !== this.props.invocationId || rpc !== this.invocationRPC) return;
         console.log(response);
         if (!response.invocation || response.invocation.length === 0) {
           throw new BuildBuddyError("NotFound", "Invocation not found.");
@@ -309,10 +353,15 @@ export default class InvocationComponent extends React.Component<Props, State> {
         }
       })
       .catch((error: any) => {
+        if (!this.mounted || invocationId !== this.props.invocationId || rpc !== this.invocationRPC) return;
         console.error("Failed to fetch invocation:", error);
         this.setState({ error: BuildBuddyError.parse(error), missingAPIKey: false });
       })
-      .finally(() => this.setState({ loading: false }));
+      .finally(() => {
+        if (this.mounted && invocationId === this.props.invocationId && rpc === this.invocationRPC) {
+          this.setState({ loading: false });
+        }
+      });
   }
 
   shouldFetchChildren(model: InvocationModel | undefined): boolean {
@@ -345,14 +394,23 @@ export default class InvocationComponent extends React.Component<Props, State> {
       // Before fetching the invocation, wait for the runner execution to be
       // fetched, so we don't keep canceling the execution fetch if it takes
       // longer than the invocation poll interval.
-      if (this.runnerExecutionRPC) await this.runnerExecutionRPC;
+      if (this.runnerFetchCompletion) await this.runnerFetchCompletion;
 
+      if (!this.mounted) return;
       await this.fetchInvocation();
+      if (!this.mounted) return;
       this.timeoutRef = undefined;
       if (this.state.model?.isInProgress() || this.isQueued()) {
         this.scheduleRefetch();
       }
     }, 3000);
+  }
+
+  private getLogsService(model?: InvocationModel): ExtendedBuildBuddyService {
+    const service = rpcService.getRegionalServiceOrDefault(model?.getBESBackendEndpoint() ?? "");
+    // Custom or proxy BES endpoints still fall back to the page's region. Use
+    // its named service identity, matching log initialization, to avoid replay.
+    return service === rpcService.service ? rpcService.getRegionalServiceOrDefault(window.location.origin) : service;
   }
 
   getBuildLogs(model: InvocationModel): string {
@@ -393,58 +451,192 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
   fetchRunnerExecution() {
     this.runnerExecutionRPC?.cancel();
-    this.runnerExecutionRPC = rpcService.service
-      .getExecution({
-        executionLookup: new execution_stats.ExecutionLookup({
-          invocationId: this.props.invocationId,
-        }),
+    const generation = ++this.runnerFetchGeneration;
+    const invocationId = this.props.invocationId;
+    const service = this.state.model
+      ? rpcService.getRegionalServiceOrDefault(this.state.model.getRemoteExecutorEndpoint())
+      : (this.runnerExecutionOwnerService ?? rpcService.service);
+    const lookups: CancelablePromise<execution_stats.GetExecutionResponse>[] = [];
+    let canceled = false;
+    let finish = () => {};
+    this.runnerFetchCompletion = new Promise<void>((resolve) => (finish = resolve));
+    const lookup = async (candidate: ExtendedBuildBuddyService) => {
+      const rpc = candidate.getExecution({
+        executionLookup: new execution_stats.ExecutionLookup({ invocationId }),
         // Fetch the full ExecuteResponse, not just metadata.
         inlineExecuteResponse: true,
-      })
-      .then((response) => {
-        const runnerExecution = response.execution?.[response.execution.length - 1] ?? undefined;
-        this.setState({ runnerExecution });
+      });
+      lookups.push(rpc);
+      try {
+        const response = await rpc;
+        return { service: candidate, execution: response.execution?.[response.execution.length - 1] };
+      } catch (e) {
+        if (BuildBuddyError.parse(e).code !== "NotFound") throw e;
+        return { service: candidate, execution: undefined };
+      }
+    };
+    const discover = async () => {
+      // Prefer the page's region. If the queued runner has not created its
+      // invocation yet, there is no BES or execution endpoint to route by.
+      const result = await lookup(service);
+      if (canceled || result.execution || this.state.model || this.runnerExecutionOwnerService) return result;
+      const currentRegionService = rpcService.getRegionalServiceOrDefault(window.location.origin);
+      const candidates = new Set(rpcService.regionalServices.values());
+      candidates.delete(service);
+      candidates.delete(currentRegionService);
+      let firstError: unknown;
+      for (const candidate of candidates) {
+        if (canceled) return result;
+        try {
+          const regionalResult = await lookup(candidate);
+          if (regionalResult.execution) return regionalResult;
+        } catch (e) {
+          // Another region may own the runner, but do not report an unexpected
+          // or authorization failure as a successful empty lookup.
+          firstError ??= e;
+        }
+      }
+      if (firstError) throw firstError;
+      return result;
+    };
+    const rpc = new CancelablePromise(discover(), {
+      oncancelled: () => {
+        canceled = true;
+        finish();
+        for (const lookup of lookups) lookup.cancel();
+      },
+    });
+    this.runnerExecutionRPC = rpc
+      .then((result) => {
+        if (!this.mounted || invocationId !== this.props.invocationId || generation !== this.runnerFetchGeneration)
+          return;
+        if (this.state.runnerExecution?.executionId !== result.execution?.executionId) {
+          this.runnerExecutionOwnerService = undefined;
+        }
+        // A shared primary DB can return runner metadata in every region. Only
+        // an actual streamed operation proves which region owns its pubsub data.
+        const resultService = this.runnerExecutionOwnerService ?? result.service;
+        const serviceChanged = this.runnerExecutionService !== resultService;
+        const restartStream =
+          serviceChanged && this.state.runnerExecution?.executionId === result.execution?.executionId;
+        if (serviceChanged) this.cancelRunnerExecutionStream();
+        this.runnerExecutionService = resultService;
+        this.setState({ runnerExecution: result.execution }, () => {
+          if (restartStream && generation === this.runnerFetchGeneration && !this.state.model)
+            this.streamRunnerExecution();
+        });
       })
       .catch((e) => {
+        if (!this.mounted || invocationId !== this.props.invocationId || generation !== this.runnerFetchGeneration)
+          return;
         console.error("Failed to fetch runner execution", e);
         this.setState({ runnerExecution: undefined });
-      });
+      })
+      .finally(finish);
     return this.runnerExecutionRPC;
   }
 
   private runnerExecutionStream?: Cancelable;
+  private runnerStreamGeneration = 0;
+
+  private cancelRunnerExecutionStream() {
+    this.runnerStreamGeneration++;
+    this.runnerExecutionStream?.cancel();
+    this.runnerExecutionStream = undefined;
+  }
 
   streamRunnerExecution() {
-    if (!capabilities.config.streamingHttpEnabled) return;
+    if (!this.mounted || this.state.model || !capabilities.config.streamingHttpEnabled) return;
 
     const runnerExecution = this.state.runnerExecution;
     if (!runnerExecution?.executionId) return;
 
-    // We technically know that we won't have the invocation at this point,
-    // but at least flagging this call here will get the default entry and
-    // ensure that we try to keep this matching region in the future (if we
-    // ever wind up needing it).
-    const service = rpcService.getRegionalServiceOrDefault(
-      this.state.model?.stringCommandLineOption("remote_executor") ?? ""
-    );
-
-    this.runnerExecutionStream = waitExecution(service, runnerExecution.executionId, {
-      next: (op) => {
-        this.setState({ runnerLastExecuteOperation: op });
-        if (op.response) {
-          this.setState({
-            runnerExecution: new execution_stats.Execution({
-              ...runnerExecution,
-              executeResponse: op.response,
-            }),
-          });
-        }
-      },
-      error: (error) => {
-        console.error("Failed to fetch runner execution", error);
-      },
-      complete: () => {},
-    });
+    this.cancelRunnerExecutionStream();
+    const invocationId = this.props.invocationId;
+    const generation = this.runnerStreamGeneration;
+    const candidates = new Set<ExtendedBuildBuddyService>([
+      this.runnerExecutionOwnerService ?? this.runnerExecutionService ?? rpcService.service,
+    ]);
+    if (!this.runnerExecutionOwnerService) {
+      // Metadata may be globally shared even though WaitExecution's pubsub
+      // channel is regional. Probe streams concurrently: a wrong-region stream
+      // can wait indefinitely without returning NotFound.
+      candidates.add(rpcService.service);
+      const currentRegionService = rpcService.getRegionalServiceOrDefault(window.location.origin);
+      for (const candidate of rpcService.regionalServices.values()) {
+        if (candidate !== currentRegionService) candidates.add(candidate);
+      }
+    }
+    const streams = new Map<ExtendedBuildBuddyService, Cancelable>();
+    let owner = this.runnerExecutionOwnerService;
+    const pending = new Set(candidates);
+    let lastMissingOperation: ExecuteOperation | undefined;
+    const isCurrent = () =>
+      this.mounted &&
+      !this.state.model &&
+      invocationId === this.props.invocationId &&
+      generation === this.runnerStreamGeneration;
+    const publishOperation = (op: ExecuteOperation) => {
+      this.setState({ runnerLastExecuteOperation: op });
+      if (op.response) {
+        this.setState({
+          runnerExecution: new execution_stats.Execution({
+            ...runnerExecution,
+            executeResponse: op.response,
+          }),
+        });
+      }
+    };
+    const publishMissingIfExhausted = () => {
+      if (!owner && pending.size === 0 && lastMissingOperation) publishOperation(lastMissingOperation);
+    };
+    this.runnerExecutionStream = { cancel: () => streams.forEach((stream) => stream.cancel()) };
+    for (const service of candidates) {
+      if (owner && owner !== service) continue;
+      const stream = waitExecution(service, runnerExecution.executionId, {
+        next: (op) => {
+          if (!isCurrent() || !pending.has(service) || (owner && owner !== service)) return;
+          if (
+            !owner &&
+            candidates.size > 1 &&
+            op.response?.status?.code === google_grpc_code.rpc.Code.NOT_FOUND &&
+            op.response.status.message?.startsWith("receive execution update:")
+          ) {
+            // The execution server synthesizes this response when its Redis
+            // subscription fails (rather than receiving an action result).
+            // It is not proof of ownership, so wait for other discovery
+            // streams. If none remain, show the failure rather than hiding it.
+            pending.delete(service);
+            lastMissingOperation = op;
+            streams.get(service)?.cancel();
+            publishMissingIfExhausted();
+            return;
+          }
+          if (!owner) {
+            owner = service;
+            this.runnerExecutionOwnerService = service;
+            this.runnerExecutionService = service;
+            for (const [candidate, stream] of streams) {
+              if (candidate !== owner) stream.cancel();
+            }
+          }
+          publishOperation(op);
+        },
+        error: (error) => {
+          if (!isCurrent() || !pending.has(service) || (owner && owner !== service)) return;
+          pending.delete(service);
+          console.error("Failed to fetch runner execution", error);
+          publishMissingIfExhausted();
+        },
+        complete: () => {
+          if (!isCurrent() || !pending.has(service) || (owner && owner !== service)) return;
+          pending.delete(service);
+          publishMissingIfExhausted();
+        },
+      });
+      streams.set(service, stream);
+      if (!pending.has(service) || (owner && owner !== service)) stream.cancel();
+    }
   }
 
   renderTargetPage(targetLabel: string, targetStatus: api_common.v1.Status) {
