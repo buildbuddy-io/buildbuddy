@@ -477,7 +477,16 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 			// record a fingerprint of each input directory. When the workspace
 			// returns to the pool, we compare against these, so that we only
 			// need to read the directories that the task changed.
-			if err := ws.recordDirFingerprints(); err != nil {
+			//
+			// Fingerprints don't detect writes to input files in place. That's
+			// fine for inputs that are hard links to the file cache, since the
+			// file cache already relies on tasks not writing to them, but
+			// inputs that the file cache failed to add are standalone copies.
+			// So we don't record fingerprints for workspaces that have any,
+			// which makes ReturnToPool leave them for Remove.
+			if txInfo.FileCacheAddFailures > 0 {
+				log.CtxInfof(ctx, "Workspace won't be pooled, because %d input files couldn't be added to the file cache", txInfo.FileCacheAddFailures)
+			} else if err := ws.recordDirFingerprints(); err != nil {
 				log.CtxWarningf(ctx, "Workspace won't be pooled, because recording directory fingerprints failed: %s", err)
 				ws.dirFingerprints = nil
 			}

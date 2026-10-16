@@ -18,11 +18,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -400,4 +402,36 @@ func TestPool_EvictsWorkspacesOverSlotLimit(t *testing.T) {
 	third := runPooledTask(t, ctx, te, buildRoot, pool, tree2)
 	reused := os.SameFile(second, third)
 	assert.True(t, reused)
+}
+
+// fakeFileCache is a file cache that fails to add files.
+type fakeFileCache struct {
+	interfaces.FileCache
+}
+
+func (fc *fakeFileCache) AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string) error {
+	return status.UnavailableError("fake AddFile failure")
+}
+
+func TestPool_DoesNotPoolWorkspaceWithFilesMissingFromFileCache(t *testing.T) {
+	flags.Set(t, "executor.workspace_pool.slots", 4)
+	te := newPoolTestEnv(t)
+	te.SetFileCache(&fakeFileCache{FileCache: te.GetFileCache()})
+	ctx := t.Context()
+	tree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{uploadFile(t, te, "input.txt", "content")}}}
+	buildRoot := testfs.MakeTempDir(t)
+	pool, err := workspace.NewPool(buildRoot)
+	require.NoError(t, err)
+	ws, err := workspace.New(te, buildRoot, &workspace.Opts{Pool: pool})
+	require.NoError(t, err)
+	ws.SetTask(ctx, &repb.ExecutionTask{Command: &repb.Command{}})
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{DigestFunction: repb.DigestFunction_SHA256, Inputs: tree})
+	require.NoError(t, err)
+
+	// The downloaded input is a standalone copy, since the file cache failed
+	// to add it, so ReturnToPool leaves the workspace in place for Remove.
+	ws.ReturnToPool(ctx)
+	_, err = os.Stat(filepath.Join(ws.Path(), "input.txt"))
+	assert.NoError(t, err)
+	require.NoError(t, ws.Remove(ctx))
 }
