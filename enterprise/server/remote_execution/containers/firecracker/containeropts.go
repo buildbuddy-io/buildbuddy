@@ -18,9 +18,10 @@ type ContainerOpts struct {
 	// is stored in the snapshot.
 	VMConfiguration *fcpb.VMConfiguration
 
-	// GenericSnapshot makes the VM start from this executor's generic snapshot
-	// for VMConfiguration, or boot from scratch the same way if there isn't
-	// one. It isn't part of VMConfiguration, so it isn't saved in snapshots.
+	// GenericSnapshot boots the VM without a container root, which is
+	// attached afterwards. The VM starts from this executor's generic snapshot
+	// for VMConfiguration if one was built. It isn't part of VMConfiguration,
+	// so it isn't saved in snapshots.
 	GenericSnapshot bool
 
 	// OverrideSnapshotKey is an optional snapshot key to resume from, which

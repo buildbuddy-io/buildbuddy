@@ -87,6 +87,8 @@ const (
 
 	diskCacheSize = 10_000_000_000  // 10GB
 	fileCacheSize = 100_000_000_000 // 100GB
+
+	mib = 1 << 20
 )
 
 var (
@@ -5140,7 +5142,7 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 	genericSnapshotCtx := snaploader.WithSharedNamespace(context.Background(), env, firecracker.GenericSnapshotNamespace)
 	vmConfig := func(cpus int64, mode fcpb.NetworkMode) *fcpb.VMConfiguration {
 		return &fcpb.VMConfiguration{
-			NumCpus: cpus, MemSizeMb: (cpus*2_500_000_000 + (1 << 20) - 1) / (1 << 20),
+			NumCpus: cpus, MemSizeMb: (cpus*2_500_000_000 + mib - 1) / mib,
 			ScratchDiskSizeMb: 100, NetworkMode: mode,
 		}
 	}
@@ -5321,11 +5323,11 @@ func TestGenericSnapshotShape(t *testing.T) {
 	require.Nil(t, firecracker.GenericSnapshotShape(nil))
 	for _, tc := range []struct{ cpu, memory, wantCPU int64 }{
 		{250, 200_000_000, 1}, {1000, 2_500_000_000, 1},
-		{1001, 200_000_000, 2}, {1000, 2385*(1<<20) + 1, 2},
+		{1001, 200_000_000, 2}, {1000, 2385*mib + 1, 2},
 		{2001, 200_000_000, 8}, {7000, 20_000_000_000, 8},
-		{8001, 200_000_000, 16}, {1000, 19074*(1<<20) + 1, 16},
+		{8001, 200_000_000, 16}, {1000, 19074*mib + 1, 16},
 		{16000, 40_000_000_000, 16},
-		{16001, 200_000_000, 0}, {1000, 38147*(1<<20) + 1, 0},
+		{16001, 200_000_000, 0}, {1000, 38147*mib + 1, 0},
 	} {
 		t.Run(fmt.Sprintf("cpu=%d/memory=%d", tc.cpu, tc.memory), func(t *testing.T) {
 			input := &scpb.TaskSize{EstimatedMilliCpu: tc.cpu, EstimatedMemoryBytes: tc.memory, EstimatedFreeDiskBytes: 1234}
@@ -5337,7 +5339,7 @@ func TestGenericSnapshotShape(t *testing.T) {
 			}
 			assert.Equal(t, tc.wantCPU*1000, got.GetEstimatedMilliCpu())
 			assert.GreaterOrEqual(t, got.GetEstimatedMemoryBytes(), tc.memory)
-			assert.Less(t, got.GetEstimatedMemoryBytes()-tc.wantCPU*2_500_000_000, int64(1<<20))
+			assert.Less(t, got.GetEstimatedMemoryBytes()-tc.wantCPU*2_500_000_000, int64(mib))
 			assert.Equal(t, int64(1234), got.GetEstimatedFreeDiskBytes())
 			assert.Empty(t, cmp.Diff(original, input, protocmp.Transform()))
 		})

@@ -115,6 +115,8 @@ var (
 var GuestAPIHash string
 
 const (
+	mib = 1 << 20
+
 	// goinitVersion determines the version of the go init binary that this
 	// executor supports. This version needs to be bumped when making
 	// incompatible changes to the goinit binary. This includes but is not
@@ -618,7 +620,7 @@ func GenericSnapshotShape(size *scpb.TaskSize) *scpb.TaskSize {
 		return nil
 	}
 	for _, cpus := range slices.Sorted(slices.Values(*genericSnapshotCPUs)) {
-		memory := ((cpus*int64(tasksize.ComputeUnitsToRAMBytes) + (1 << 20) - 1) / (1 << 20)) * (1 << 20)
+		memory := ((cpus*int64(tasksize.ComputeUnitsToRAMBytes) + mib - 1) / mib) * mib
 		if cpus*1000 < size.GetEstimatedMilliCpu() || memory < size.GetEstimatedMemoryBytes() {
 			continue
 		}
@@ -630,7 +632,7 @@ func GenericSnapshotShape(size *scpb.TaskSize) *scpb.TaskSize {
 	return nil
 }
 
-// genericVMConfig returns the configuration of generic snapshot VMs of shape.
+// genericVMConfig returns the configuration for generic snapshot VMs with the given shape.
 func genericVMConfig(shape *scpb.TaskSize, networkMode fcpb.NetworkMode) *fcpb.VMConfiguration {
 	// Generic VMs always have a network interface, so one snapshot serves
 	// every network mode.
@@ -639,7 +641,7 @@ func genericVMConfig(shape *scpb.TaskSize, networkMode fcpb.NetworkMode) *fcpb.V
 	}
 	return &fcpb.VMConfiguration{
 		NumCpus:     vcpuCount(shape.GetEstimatedMilliCpu()),
-		MemSizeMb:   shape.GetEstimatedMemoryBytes() / (1 << 20),
+		MemSizeMb:   shape.GetEstimatedMemoryBytes() / mib,
 		NetworkMode: networkMode,
 		HostCpuid:   getCPUID(),
 		Ipv6Enabled: true,
@@ -656,25 +658,31 @@ func (p *Provider) BuildGenericSnapshots(ctx context.Context, cgroupParent strin
 	if p.executorConfig.GuestKernelImagePath6_18 == "" {
 		return status.FailedPreconditionError("generic snapshots require the 6.18 guest kernel")
 	}
-	for _, cpus := range *genericSnapshotCPUs {
-		shape := GenericSnapshotShape(&scpb.TaskSize{EstimatedMilliCpu: cpus * 1000})
-		vmConfig := genericVMConfig(shape, fcpb.NetworkMode_NETWORK_MODE_OFF)
-		vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
-		start := time.Now()
-		err := BuildGenericSnapshot(ctx, p.env, ContainerOpts{
-			VMConfiguration:        vmConfig,
-			CgroupParent:           cgroupParent,
-			ExecutorConfig:         p.executorConfig,
-			MarshalledDNSOverrides: p.marshalledDNSOverrides,
-			HostResolvConf:         p.hostResolvConf,
+	var eg errgroup.Group
+	eg.SetLimit(4)
+	// Deduplicate so that no two builds write the same snapshot.
+	for _, cpus := range slices.Compact(slices.Sorted(slices.Values(*genericSnapshotCPUs))) {
+		eg.Go(func() error {
+			shape := GenericSnapshotShape(&scpb.TaskSize{EstimatedMilliCpu: cpus * 1000})
+			vmConfig := genericVMConfig(shape, fcpb.NetworkMode_NETWORK_MODE_OFF)
+			vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
+			start := time.Now()
+			err := BuildGenericSnapshot(ctx, p.env, ContainerOpts{
+				VMConfiguration:        vmConfig,
+				CgroupParent:           cgroupParent,
+				ExecutorConfig:         p.executorConfig,
+				MarshalledDNSOverrides: p.marshalledDNSOverrides,
+				HostResolvConf:         p.hostResolvConf,
+			})
+			if err != nil {
+				log.CtxErrorf(ctx, "Failed to build %d CPU generic snapshot: %s", cpus, err)
+				return nil
+			}
+			log.CtxInfof(ctx, "Built %d CPU generic snapshot in %s", cpus, time.Since(start))
+			return nil
 		})
-		if err != nil {
-			log.CtxErrorf(ctx, "Failed to build %d CPU generic snapshot: %s", cpus, err)
-			continue
-		}
-		log.CtxInfof(ctx, "Built %d CPU generic snapshot in %s", cpus, time.Since(start))
 	}
-	return nil
+	return eg.Wait()
 }
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
@@ -685,8 +693,9 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	}
 	var vmConfig *fcpb.VMConfiguration
 	generic := false
-	// Generic snapshot VMs get the rounded shape, but only the scheduled size
-	// is reserved; the excess is backed lazily, like overprovisioned CPUs.
+	// Generic snapshot VMs get the rounded shape, but the scheduler only
+	// reserves the scheduled size. This is fine enough because CPU and
+	// memory are lazily allocated.
 	if shape := GenericSnapshotShape(sizeEstimate); args.Props.UseGenericSnapshot && shape != nil {
 		vmConfig = genericVMConfig(shape, networkMode)
 		generic = true
@@ -782,14 +791,10 @@ type FirecrackerContainer struct {
 	createFromSnapshot      bool
 	supportsRemoteSnapshots bool
 
-	// Set if the VM starts from (or builds) the generic snapshot for its
-	// configuration.
-	genericSnapshot bool
-	// Set on the VM that builds a generic snapshot.
-	buildsGenericSnapshot bool
-	// Set when attaching the container root already reset guest state, so the
-	// first Exec can skip it.
-	guestStateReset  bool
+	// genericSnapshot is set if the VM boots without a container root, which
+	// attachContainerRoot adds later. This lets one snapshot of the booted VM
+	// serve any container image.
+	genericSnapshot  bool
 	recyclingEnabled bool
 
 	// TODO: Cleanup after remote container image reads/writes are fully rolled out.
@@ -2487,7 +2492,6 @@ func BuildGenericSnapshot(ctx context.Context, env environment.Env, opts Contain
 	if err != nil {
 		return err
 	}
-	c.buildsGenericSnapshot = true
 	defer func() {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, finalizationTimeout)
 		defer cancel()
@@ -2630,7 +2634,6 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 	if !rsp.GetContainerRootMounted() {
 		return status.FailedPreconditionError("guest did not mount the container root")
 	}
-	c.guestStateReset = true
 	return nil
 }
 
@@ -3119,7 +3122,8 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			return result
 		}
 	}
-	if c.createFromSnapshot && !c.guestStateReset {
+	// For generic snapshots, attachContainerRoot already reset guest state.
+	if c.createFromSnapshot && !c.genericSnapshot {
 		err := c.resetGuestState(ctx)
 		if err != nil {
 			result.Error = status.WrapError(err, "Failed to initialize firecracker VM exec client")
@@ -3919,7 +3923,7 @@ func (c *FirecrackerContainer) newSnapshotDetails(ctx context.Context, saveRemot
 	memSnapshotName := fullMemSnapshotName
 	// A freshly booted VM's unwritten memory is zero, so a diff onto an empty
 	// store captures it without writing every page of guest memory.
-	diffFromBoot := c.buildsGenericSnapshot
+	diffFromBoot := c.genericSnapshot && !c.createFromSnapshot
 	if c.recycled || diffFromBoot {
 		snapshotType = diffSnapshotType
 		memSnapshotName = diffMemSnapshotName
