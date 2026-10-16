@@ -1305,6 +1305,10 @@ func snapshotWriteInterval(ctx context.Context, task *repb.ExecutionTask) time.D
 // LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
 // the VM.
 func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
+	return c.loadSnapshot(ctx, nil)
+}
+
+func (c *FirecrackerContainer) loadSnapshot(ctx context.Context, snap *snaploader.Snapshot) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1384,18 +1388,20 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	getSnapshotOpts, err := c.getSnapshotOptions()
-	if err != nil {
-		return err
-	}
-	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, getSnapshotOpts)
-	if err != nil {
-		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
-	}
+	if snap == nil {
+		getSnapshotOpts, err := c.getSnapshotOptions()
+		if err != nil {
+			return err
+		}
+		snap, err = c.loader.GetSnapshot(ctx, c.snapshotKeySet, getSnapshotOpts)
+		if err != nil {
+			return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
+		}
 
-	metrics.SnapshotSourceCount.With(prometheus.Labels{
-		metrics.ChunkSource: snap.GetManifestFetchSource().String(),
-	}).Inc()
+		metrics.SnapshotSourceCount.With(prometheus.Labels{
+			metrics.ChunkSource: snap.GetManifestFetchSource().String(),
+		}).Inc()
+	}
 
 	// Set unique per-run identifier on the vm metadata so this exact snapshot
 	// run can be identified
@@ -2788,7 +2794,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 	}
 	if c.createFromSnapshot {
-		err := c.resetGuestState(ctx, result)
+		err := c.resetGuestState(ctx)
 		if err != nil {
 			result.Error = status.WrapError(err, "Failed to initialize firecracker VM exec client")
 			return result
@@ -2924,7 +2930,7 @@ func (c *FirecrackerContainer) emitCOWAndUFFDMetrics(stage string) {
 	}
 }
 
-func (c *FirecrackerContainer) resetGuestState(ctx context.Context, result *interfaces.CommandResult) error {
+func (c *FirecrackerContainer) resetGuestState(ctx context.Context) error {
 	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return err
@@ -3265,7 +3271,10 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "prepare snapshot details")
 	}
+	return c.pauseWithSnapshot(ctx, snapDetails)
+}
 
+func (c *FirecrackerContainer) pauseWithSnapshot(ctx context.Context, snapDetails *snapshotDetails) error {
 	shouldSaveSnapshot := snapDetails.saveRemoteSnapshot || snapDetails.saveLocalSnapshot
 
 	if shouldSaveSnapshot && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
@@ -3550,7 +3559,10 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 	if !saveLocalSnapshot {
 		log.CtxInfof(ctx, "Not saving local snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
 	}
+	return c.newSnapshotDetails(ctx, saveRemoteSnapshot, saveLocalSnapshot)
+}
 
+func (c *FirecrackerContainer) newSnapshotDetails(ctx context.Context, saveRemoteSnapshot, saveLocalSnapshot bool) (*snapshotDetails, error) {
 	if !saveRemoteSnapshot && !saveLocalSnapshot {
 		return &snapshotDetails{
 			snapshotType:        noSnapshotType,
