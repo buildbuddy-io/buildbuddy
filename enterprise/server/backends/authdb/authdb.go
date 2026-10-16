@@ -381,6 +381,10 @@ func (d *AuthDB) fillDecryptedAPIKey(ak *tables.APIKey) error {
 }
 
 func (d *AuthDB) populateAPIKeyValueForReadback(ak *tables.APIKey) error {
+	if ak.ExpiryUsec != 0 && ak.ExpiryUsec <= d.clock.Now().UnixMicro() {
+		ak.Value = ""
+		return nil
+	}
 	if !apiKeyValueReadbackEnabled() {
 		// If readback is disabled and decryption happens to be disabled, then
 		// [ak.Value] will already be set here - clear it.
@@ -490,7 +494,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 }
 
 func (d *AuthDB) lookupAPIKeyGroup(ctx context.Context, queryName, subDomain string, addConds func(*query_builder.Query) error) (*apiKeyGroup, error) {
-	row, err := d.fetchAPIKey(ctx, queryName, subDomain, db.Opts().WithStaleReads(), addConds)
+	row, err := d.fetchAPIKey(ctx, queryName, subDomain, db.Opts().WithStaleReads(), false /*=includeExpired*/, addConds)
 	if err != nil {
 		return nil, err
 	}
@@ -532,8 +536,8 @@ func (d *AuthDB) lookupAPIKeyGroupByID(ctx context.Context, subDomain string, ap
 // owning group.
 // The caller must use the addConds func to add restrictions to limit the
 // matching API keys to a single API key (i.e. by API key value or ID).
-func (d *AuthDB) fetchAPIKey(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, addConds func(*query_builder.Query) error) (*apiKeyGroupRow, error) {
-	rows, err := d.fetchAPIKeys(ctx, queryName, subDomain, dbOpts, addConds)
+func (d *AuthDB) fetchAPIKey(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, includeExpired bool, addConds func(*query_builder.Query) error) (*apiKeyGroupRow, error) {
+	rows, err := d.fetchAPIKeys(ctx, queryName, subDomain, dbOpts, includeExpired, addConds)
 	if err != nil {
 		return nil, err
 	}
@@ -551,8 +555,8 @@ func (d *AuthDB) fetchAPIKey(ctx context.Context, queryName, subDomain string, d
 // owning group.
 // The caller must use the addConds func to add restrictions to limit the
 // matching API keys to a single group or to a single API key.
-func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, addConds func(*query_builder.Query) error) ([]*apiKeyGroupRow, error) {
-	qb := d.newAPIKeyLookupQuery(subDomain)
+func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, includeExpired bool, addConds func(*query_builder.Query) error) ([]*apiKeyGroupRow, error) {
+	qb := d.newAPIKeyLookupQuery(subDomain, includeExpired)
 	if err := addConds(qb); err != nil {
 		return nil, err
 	}
@@ -633,7 +637,7 @@ func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, 
 	return out, nil
 }
 
-func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
+func (d *AuthDB) newAPIKeyLookupQuery(subDomain string, includeExpired bool) *query_builder.Query {
 	memberStatus := int32(grpb.GroupMembershipStatus_MEMBER)
 	// This query may return multiple rows per API key for user API keys
 	// when a user has multiple indirect memberships through user lists.
@@ -670,7 +674,9 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
 	}
 
 	qb := query_builder.NewQuery(baseQuery)
-	qb.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, d.clock.Now().UnixMicro())
+	if !includeExpired {
+		qb.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, d.clock.Now().UnixMicro())
+	}
 
 	if subDomain != "" {
 		qb.AddWhereClause("url_identifier = ?", subDomain)
@@ -1002,11 +1008,11 @@ func (d *AuthDB) isGroupMember(ctx context.Context, groupID, userID string) (boo
 	return false, nil
 }
 
-func (d *AuthDB) getAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error) {
+func (d *AuthDB) getAPIKey(ctx context.Context, apiKeyID string, includeExpired bool) (*tables.APIKey, error) {
 	if apiKeyID == "" {
 		return nil, status.InvalidArgumentError("API key ID cannot be empty.")
 	}
-	row, err := d.fetchAPIKey(ctx, "authdb_get_api_key_by_id", "", db.Opts(), func(qb *query_builder.Query) error {
+	row, err := d.fetchAPIKey(ctx, "authdb_get_api_key_by_id", "", db.Opts(), includeExpired, func(qb *query_builder.Query) error {
 		qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
 		return nil
 	})
@@ -1025,7 +1031,7 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 		return nil, err
 	}
 
-	key, err := d.getAPIKey(ctx, apiKeyID)
+	key, err := d.getAPIKey(ctx, apiKeyID, true /*=includeExpired*/)
 	if err != nil {
 		return nil, err
 	}
@@ -1133,7 +1139,7 @@ func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string
 
 // GetAPIKeys returns group-level API keys that the user is authorized to
 // access.
-func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error) {
+func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string, includeExpired bool) ([]*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
@@ -1144,7 +1150,7 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
 		return nil, err
 	}
-	rows, err := d.fetchAPIKeys(ctx, "authdb_get_api_keys", "", db.Opts(), func(qb *query_builder.Query) error {
+	rows, err := d.fetchAPIKeys(ctx, "authdb_get_api_keys", "", db.Opts(), includeExpired, func(qb *query_builder.Query) error {
 		// Select group-owned keys only.
 		qb.AddWhereClause(`ak.user_id IS NULL OR ak.user_id = ''`)
 		qb.AddWhereClause(`ak.group_id = ?`, groupID)
@@ -1161,6 +1167,10 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	if err != nil {
 		return nil, err
 	}
+	return d.toListedAPIKeys(rows)
+}
+
+func (d *AuthDB) toListedAPIKeys(rows []*apiKeyGroupRow) ([]*tables.APIKey, error) {
 	keys := make([]*tables.APIKey, 0, len(rows))
 	for _, row := range rows {
 		k := row.toAPIKey()
@@ -1172,7 +1182,7 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	return keys, nil
 }
 
-func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiKeyID string) (*tables.APIKey, error) {
+func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiKeyID string, includeExpired bool) (*tables.APIKey, error) {
 	if apiKeyID == "" {
 		return nil, status.InvalidArgumentError("API key ID is required")
 	}
@@ -1180,7 +1190,7 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiK
 	if err != nil {
 		return nil, err
 	}
-	key, err := d.getAPIKey(ctx, apiKeyID)
+	key, err := d.getAPIKey(ctx, apiKeyID, includeExpired)
 	if err != nil {
 		return nil, err
 	}
@@ -1212,7 +1222,7 @@ func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 	if key == nil {
 		return status.InvalidArgumentError("API key cannot be nil.")
 	}
-	existingKey, err := d.authorizeAPIKeyWrite(ctx, d.h, key.APIKeyID)
+	existingKey, err := d.authorizeAPIKeyWrite(ctx, d.h, key.APIKeyID, false /*=includeExpired*/)
 	if err != nil {
 		return err
 	}
@@ -1243,14 +1253,14 @@ func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 
 func (d *AuthDB) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
 	// TODO (zoey): could make this one query
-	if _, err := d.authorizeAPIKeyWrite(ctx, d.h, apiKeyID); err != nil {
+	if _, err := d.authorizeAPIKeyWrite(ctx, d.h, apiKeyID, true /*=includeExpired*/); err != nil {
 		return err
 	}
 	return d.h.NewQuery(ctx, "authdb_delete_api_key").Raw(
 		`DELETE FROM "APIKeys" WHERE api_key_id = ?`, apiKeyID).Exec().Error
 }
 
-func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]*tables.APIKey, error) {
+func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string, includeExpired bool) ([]*tables.APIKey, error) {
 	if !*userOwnedKeysEnabled {
 		return nil, status.UnimplementedError("not implemented")
 	}
@@ -1301,7 +1311,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]
 		return nil, status.PermissionDeniedError("user-owned keys are not enabled for this group")
 	}
 
-	rows, err := d.fetchAPIKeys(ctx, "authdb_get_user_api_keys", "" /*=subDomain*/, db.Opts(), func(qb *query_builder.Query) error {
+	rows, err := d.fetchAPIKeys(ctx, "authdb_get_user_api_keys", "" /*=subDomain*/, db.Opts(), includeExpired, func(qb *query_builder.Query) error {
 		qb.AddWhereClause(`ak.user_id = ?`, userID)
 		qb.AddWhereClause(`ak.group_id = ?`, groupID)
 		qb.AddWhereClause(`ak.impersonation = false`)
@@ -1311,15 +1321,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]
 	if err != nil {
 		return nil, err
 	}
-	keys := make([]*tables.APIKey, 0, len(rows))
-	for _, row := range rows {
-		k := row.toAPIKey()
-		if err := d.populateAPIKeyValueForReadback(k); err != nil {
-			return nil, err
-		}
-		keys = append(keys, k)
-	}
-	return keys, nil
+	return d.toListedAPIKeys(rows)
 }
 
 func (d *AuthDB) GetUserOwnedKeysEnabled() bool {

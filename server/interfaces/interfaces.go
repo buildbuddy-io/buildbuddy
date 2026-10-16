@@ -557,8 +557,9 @@ type AuthDB interface {
 	// keys are not enabled by the org.
 
 	// GetAPIKeys returns group-level API keys that the user is authorized to
-	// access.
-	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+	// access. If includeExpired is set, expired keys are returned without
+	// their values.
+	GetAPIKeys(ctx context.Context, groupID string, includeExpired bool) ([]*tables.APIKey, error)
 
 	// CreateAPIKey creates a group-level API key.
 	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []cappb.Capability, expiresIn time.Duration, visibleToDevelopers bool) (*tables.APIKey, error)
@@ -579,8 +580,9 @@ type AuthDB interface {
 	// retrieved after creation by API key read methods.
 	GetAPIKeyValueReadbackEnabled() bool
 
-	// GetUserAPIKeys returns all user-owned API keys within a group.
-	GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]*tables.APIKey, error)
+	// GetUserAPIKeys returns all user-owned API keys within a group. If
+	// includeExpired is set, expired keys are returned without their values.
+	GetUserAPIKeys(ctx context.Context, userID, groupID string, includeExpired bool) ([]*tables.APIKey, error)
 
 	// CreateUserAPIKey creates a user-owned API key within the group. The given
 	// user must be a member of the group. If the request is not authenticated
@@ -589,7 +591,7 @@ type AuthDB interface {
 	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []cappb.Capability, expiresIn time.Duration) (*tables.APIKey, error)
 
 	// GetAPIKey returns an API key by ID. The key may be user-owned or
-	// group-owned.
+	// group-owned. Expired keys are returned without their values.
 	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
 
 	// UpdateAPIKey updates an API key by ID. The key may be user-owned or

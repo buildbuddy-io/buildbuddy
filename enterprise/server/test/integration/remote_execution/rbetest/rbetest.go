@@ -291,7 +291,7 @@ func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
 	ctx := context.Background()
 	ctxUS1, err := auth.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
-	keys, err := testEnv.GetAuthDB().GetAPIKeys(ctxUS1, groupID)
+	keys, err := testEnv.GetAuthDB().GetAPIKeys(ctxUS1, groupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	key := keys[0]
 	key.Capabilities |= int32(cappb.Capability_REGISTER_EXECUTOR)
