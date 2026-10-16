@@ -720,9 +720,8 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 	p.casFileCount = 0
 	p.casFileSizeBytes = 0
 	p.mu.Unlock()
-	// There may already be nodes in the tree prior to `Prepare` to be called,
-	// for example by the workspace code pre-creating the action output
-	// directories. We merge the known CAS inputs with the tree we already have.
+	// There may already be nodes in the tree before `Prepare` is called. We
+	// merge the known CAS inputs with the tree we already have.
 	invalidatedInodes, err := p.updateLayout(ctx, layout.Inputs, layout.DigestFunction)
 	if err != nil {
 		return nil, err

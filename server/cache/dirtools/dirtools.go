@@ -178,9 +178,26 @@ func NewDirHelper(rootDir string, cmd *repb.Command, dirPerms fs.FileMode) *DirH
 	return c
 }
 
+// CreateOutputDirs creates the output directories and the parent directory of
+// each output path. The input tree is already in place when this runs, so we
+// create them through an os.Root, which fails rather than follow a symlink out
+// of rootDir, since an input symlink could otherwise make us create
+// directories outside the workspace.
 func (c *DirHelper) CreateOutputDirs() error {
+	if err := os.MkdirAll(c.rootDir, c.dirPerms); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(c.rootDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	for _, dir := range c.dirsToCreate {
-		if err := os.MkdirAll(dir, c.dirPerms); err != nil {
+		rel, err := filepath.Rel(c.rootDir, dir)
+		if err != nil {
+			return err
+		}
+		if err := root.MkdirAll(rel, c.dirPerms); err != nil {
 			return err
 		}
 	}

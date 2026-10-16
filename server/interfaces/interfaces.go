@@ -1262,7 +1262,7 @@ type Runner interface {
 	PrepareForTask(ctx context.Context) error
 
 	// DownloadInputs downloads any input files associated with the task assigned
-	// to the runner.
+	// to the runner, then creates the task's output directories.
 	DownloadInputs(ctx context.Context) error
 
 	// Run runs the task that is currently assigned to the runner.
