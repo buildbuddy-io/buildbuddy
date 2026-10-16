@@ -660,6 +660,9 @@ function ZoomRefArea({ refAreaLeft, refAreaRight, domain, data }: ZoomRefAreaPro
   if (data.length === 0) {
     return <></>;
   }
+  // TODO(jdhollen): make this depend on a caller-provided set of valid zoom
+  // breakpoints instead of the full dataset so that it plays nice with lines
+  // and scatters.
   domain = domain ?? [data[0], data[data.length - 1]];
   let [leftNeighbor, rightNeighbor] = [domain[0], domain[1]];
   for (const d of data) {
