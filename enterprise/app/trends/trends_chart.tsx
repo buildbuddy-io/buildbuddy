@@ -109,13 +109,14 @@ interface Props {
   // When set, replaces the default tooltip with one driven by the scatter
   // point nearest to the mouse.
   pointTooltip?: PointTooltipConfig;
+  xAxisDomain?: [number, number];
 
   onZoomSelection?: (startDate: number, endDate: number) => void;
 }
 
 interface State {
-  refAreaLeft?: string | number;
-  refAreaRight?: string | number;
+  refAreaLeft?: number;
+  refAreaRight?: number;
   hiddenSeries: ReadonlySet<number>;
 }
 
@@ -614,7 +615,8 @@ interface CustomXAxisProps {
   hasBars: boolean;
   numPoints: number;
   ticks: number[];
-  formatXAxisLabel: (value: any, index: number) => string;
+  domain?: [number, number];
+  formatXAxisLabel: (value: number, index: number) => string;
 }
 
 /**
@@ -622,7 +624,7 @@ interface CustomXAxisProps {
  * don't center their first and last bars directly over the far left and
  * far right ends of the X axis.
  */
-function CustomXAxis({ hasBars, numPoints, ticks, formatXAxisLabel }: CustomXAxisProps) {
+function CustomXAxis({ domain, hasBars, numPoints, ticks, formatXAxisLabel }: CustomXAxisProps) {
   const plotArea = usePlotArea();
   const width = plotArea?.width ?? 0;
 
@@ -631,7 +633,8 @@ function CustomXAxis({ hasBars, numPoints, ticks, formatXAxisLabel }: CustomXAxi
   // If someone really needs it, this could be updated to filter down to just
   // the points where the BAR series' extractor function returns a non-null
   // value, but that's kinda funky and we don't need it right now.
-  const extraPad = hasBars && numPoints > 1 ? (width / numPoints / 2 || 19) + 1 : 0;
+  // Always ensure that we have at least 1 pixel of padding in the bar case.
+  const extraPad = hasBars && numPoints > 1 ? (width / numPoints / 2 || 0) + 1 : 0;
 
   return (
     <XAxis
@@ -640,9 +643,37 @@ function CustomXAxis({ hasBars, numPoints, ticks, formatXAxisLabel }: CustomXAxi
       ticks={ticks}
       type={numPoints > 1 ? "number" : "auto"}
       padding={{ left: extraPad, right: extraPad }}
-      domain={["dataMin", "dataMax"]}
+      domain={domain ?? ["dataMin", "dataMax"]}
     />
   );
+}
+
+interface ZoomRefAreaProps {
+  refAreaLeft: number;
+  refAreaRight: number;
+  domain?: [number, number];
+  data: number[];
+}
+
+function ZoomRefArea({ refAreaLeft, refAreaRight, domain, data }: ZoomRefAreaProps) {
+  const [a, b] = [Math.min(refAreaLeft, refAreaRight), Math.max(refAreaLeft, refAreaRight)];
+  if (data.length === 0) {
+    return <></>;
+  }
+  domain = domain ?? [data[0], data[data.length - 1]];
+  let [leftNeighbor, rightNeighbor] = [domain[0], domain[1]];
+  for (const d of data) {
+    if (d < a && d > leftNeighbor) {
+      leftNeighbor = d;
+    } else if (d > b && d < rightNeighbor) {
+      rightNeighbor = d;
+    }
+  }
+
+  const leftEdge = leftNeighbor === domain[0] ? leftNeighbor : (leftNeighbor + a) / 2;
+  const rightEdge = rightNeighbor === domain[0] ? rightNeighbor : (rightNeighbor + b) / 2;
+
+  return <ReferenceArea yAxisId="primary" ifOverflow="visible" x1={leftEdge} x2={rightEdge} strokeOpacity={0.3} />;
 }
 
 export default class TrendsChartComponent extends React.Component<Props, State> {
@@ -669,7 +700,10 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
-    this.setState({ refAreaLeft: e.activeLabel, refAreaRight: e.activeLabel });
+    if (!e.activeLabel) {
+      return;
+    }
+    this.setState({ refAreaLeft: +e.activeLabel, refAreaRight: +e.activeLabel });
   }
 
   onMouseMove(e: MouseHandlerDataParam) {
@@ -677,10 +711,10 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
-    if (!this.state.refAreaLeft) {
+    if (!this.state.refAreaLeft || !e.activeLabel) {
       return;
     }
-    this.setState({ refAreaRight: e.activeLabel });
+    this.setState({ refAreaRight: +e.activeLabel });
   }
 
   onMouseUp(e: MouseHandlerDataParam) {
@@ -730,8 +764,9 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             {!this.props.hideLegend && <Legend onClick={this.onLegendClick.bind(this)} />}
             <CustomXAxis
               ticks={this.props.ticks}
-              hasBars={Boolean(this.props.dataSeries.find((ds) => ds.type === SeriesType.BAR))}
+              hasBars={this.props.dataSeries.some((ds) => ds.type === SeriesType.BAR)}
               numPoints={this.props.data.length}
+              domain={this.props.xAxisDomain}
               formatXAxisLabel={this.props.formatXAxisLabel}
             />
             <YAxis
@@ -785,12 +820,11 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
               <PointTooltipLayer config={this.props.pointTooltip} data={this.props.data} dataSeries={visibleSeries} />
             )}
             {this.state.refAreaLeft && this.state.refAreaRight ? (
-              <ReferenceArea
-                yAxisId="primary"
-                ifOverflow="visible"
-                x1={Math.min(+this.state.refAreaLeft, +this.state.refAreaRight)}
-                x2={Math.max(+this.state.refAreaLeft, +this.state.refAreaRight)}
-                strokeOpacity={0.3}
+              <ZoomRefArea
+                refAreaLeft={this.state.refAreaLeft}
+                refAreaRight={this.state.refAreaRight}
+                data={this.props.data}
+                domain={this.props.xAxisDomain}
               />
             ) : null}
           </ComposedChart>

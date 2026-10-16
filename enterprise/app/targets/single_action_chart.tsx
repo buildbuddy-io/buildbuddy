@@ -164,6 +164,11 @@ export default class SingleActionChartComponent extends React.Component<Props> {
       (a, b) => a - b
     );
 
+    const xAxisDomain: [number, number] = [
+      (bucketKeys[0] ?? this.props.domain[0].getTime()) * 1000,
+      this.props.domain[1].getTime() * 1000,
+    ];
+
     const series: ChartDataSeries[] = [];
 
     series.push({
@@ -200,6 +205,7 @@ export default class SingleActionChartComponent extends React.Component<Props> {
         title={this.props.title}
         data={timeKeys}
         ticks={ticks}
+        xAxisDomain={xAxisDomain}
         dataSeries={series}
         primaryYAxis={{
           formatTickValue: this.props.formatValue,
