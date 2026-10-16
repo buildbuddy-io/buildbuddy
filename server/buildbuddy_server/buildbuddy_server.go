@@ -1126,13 +1126,25 @@ func (s *BuildBuddyServer) apiKeyVisible(ctx context.Context, key *tables.APIKey
 		return err
 	}
 	callerKey := u.GetAPIKeyInfo()
-	if callerKey.ID == "" || callerKey.ID == key.APIKeyID {
+	if callerKey.ID != "" && callerKey.ID == key.APIKeyID {
 		return nil
 	}
-	if claims.AuthorizeServerAdmin(ctx) == nil || authutil.AuthorizeOrgAdmin(u, key.GroupID) == nil {
+	if claims.AuthorizeServerAdmin(ctx) == nil {
 		return nil
 	}
-	return status.PermissionDeniedError("API keys without the ORG_ADMIN capability may only retrieve themselves")
+	if key.Impersonation {
+		return status.PermissionDeniedError("API key is only visible to admins")
+	}
+	if authutil.AuthorizeOrgAdmin(u, key.GroupID) == nil {
+		return nil
+	}
+	if callerKey.ID != "" {
+		return status.PermissionDeniedError("API keys without the ORG_ADMIN capability may only retrieve themselves")
+	}
+	if key.UserID == "" && !key.VisibleToDevelopers {
+		return status.PermissionDeniedError("API key is only visible to admins")
+	}
+	return nil
 }
 
 func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyRequest) (*akpb.GetApiKeyResponse, error) {
