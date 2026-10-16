@@ -666,7 +666,7 @@ function ZoomRefArea({ refAreaLeft, refAreaRight, domain, data }: ZoomRefAreaPro
   // breakpoints instead of the full dataset so that it plays nice with lines
   // and scatters.
   domain = domain ?? [data[0], data[data.length - 1]];
-  let [leftNeighbor, rightNeighbor] = [domain[0], domain[1]];
+  let [leftNeighbor, rightNeighbor] = [-Infinity, Infinity];
   for (const d of data) {
     if (d < a && d > leftNeighbor) {
       leftNeighbor = d;
@@ -679,8 +679,8 @@ function ZoomRefArea({ refAreaLeft, refAreaRight, domain, data }: ZoomRefAreaPro
     return <></>;
   }
 
-  const leftEdge = leftNeighbor === domain[0] ? plotArea.x : xScale((leftNeighbor + a) / 2);
-  const rightEdge = rightNeighbor === domain[1] ? plotArea.x + plotArea.width : xScale((rightNeighbor + b) / 2);
+  const leftEdge = leftNeighbor === -Infinity ? plotArea.x : xScale((leftNeighbor + a) / 2);
+  const rightEdge = rightNeighbor === Infinity ? plotArea.x + plotArea.width : xScale((rightNeighbor + b) / 2);
   if (leftEdge === undefined || rightEdge === undefined) {
     return <></>;
   }
@@ -718,11 +718,11 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
   }
 
   onMouseDown(e: MouseHandlerDataParam) {
-    const numLabel = e.activeLabel ? +e.activeLabel : undefined;
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
+    const numLabel = e.activeLabel ? +e.activeLabel : undefined;
     this.setState({ refAreaLeft: numLabel, refAreaRight: numLabel });
   }
 
