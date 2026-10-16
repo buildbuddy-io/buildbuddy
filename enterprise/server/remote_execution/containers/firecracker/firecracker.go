@@ -603,6 +603,15 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	var vmConfig *fcpb.VMConfiguration
 	sizeEstimate := args.Task.GetSchedulingMetadata().GetTaskSize()
+	// Generic snapshot VMs get the rounded shape, but only the scheduled size
+	// is reserved; the excess is backed lazily, like overprovisioned CPUs.
+	var genericShape *scpb.TaskSize
+	if args.Props.UseGenericSnapshot {
+		genericShape = tasksize.GenericSnapshotSize(sizeEstimate)
+	}
+	if genericShape != nil {
+		sizeEstimate = genericShape
+	}
 	numCPUs := int64(max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000))
 	op := *overprovisionCPUs
 	if op == -1 {
@@ -631,21 +640,11 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		Ipv6Enabled:       args.Props.NetworkEnableIPv6,
 		EnablePci:         *enablePCI,
 	}
-	if args.Props.UseGenericSnapshot {
-		shape, err := tasksize.GenericSnapshotSize(sizeEstimate)
-		if err != nil {
-			return nil, err
-		}
-		if shape.GetEstimatedMilliCpu() != sizeEstimate.GetEstimatedMilliCpu() || shape.GetEstimatedMemoryBytes() != sizeEstimate.GetEstimatedMemoryBytes() {
-			return nil, status.FailedPreconditionErrorf("task size %s is not a generic snapshot shape; the app must round it when scheduling, so set use-generic-snapshot on the action (not only as an executor override) and make sure the app supports it", tasksize.String(sizeEstimate))
-		}
-		if sizeEstimate.GetEstimatedMilliCpu() > int64(runtime.NumCPU())*1000 {
-			return nil, status.ResourceExhaustedErrorf("generic snapshot shape requires %d CPUs but executor has %d", sizeEstimate.GetEstimatedMilliCpu()/1000, runtime.NumCPU())
-		}
-		// Keep the usual extra vCPUs from overprovisioning. Generic snapshots
-		// are stored per executor, so host-specific vCPU counts are fine.
+	if genericShape != nil {
+		// Generic snapshots are stored per executor, so host-specific vCPU
+		// counts from overprovisioning are fine.
 		vmConfig.GenericSnapshot = true
-		vmConfig.MemSizeMb = (sizeEstimate.GetEstimatedMemoryBytes() + (1 << 20) - 1) / (1 << 20)
+		vmConfig.MemSizeMb = genericShape.GetEstimatedMemoryBytes() / (1 << 20)
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{

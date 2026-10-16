@@ -567,8 +567,8 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	}
 
 	// Ignored for incompatible actions, so experiments can enable it broadly.
-	useGenericSnapshot := boolProp(m, UseGenericSnapshotPropertyName, false) &&
-		isolationType == string(FirecrackerContainerType) && !recycleRunner &&
+	// Only Firecracker reads it, after executor isolation defaults apply.
+	useGenericSnapshot := boolProp(m, UseGenericSnapshotPropertyName, false) && !recycleRunner &&
 		!boolProp(m, initDockerdPropertyName, false) && !vfsEnabled && overrideSnapshotKey == nil
 	return &Properties{
 		UseGenericSnapshot:        useGenericSnapshot,

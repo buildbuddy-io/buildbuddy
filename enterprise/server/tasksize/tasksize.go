@@ -178,10 +178,6 @@ func (s *taskSizer) Get(ctx context.Context, cmd *repb.Command, props *platform.
 	if props.DisableMeasuredTaskSize {
 		return nil
 	}
-	// Generic Firecracker snapshot tasks must keep their shape-rounded size.
-	if props.UseGenericSnapshot {
-		return nil
-	}
 	// Don't use measured task sizes for Firecracker tasks for now, since task
 	// sizes are used as hard limits on allowed resources.
 	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
@@ -217,7 +213,7 @@ func (s *taskSizer) Get(ctx context.Context, cmd *repb.Command, props *platform.
 }
 
 func (s *taskSizer) Predict(ctx context.Context, action *repb.Action, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
-	if s.model == nil || props.UseGenericSnapshot {
+	if s.model == nil {
 		return nil
 	}
 	return ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), cmd, props, s.model.Predict(ctx, action, cmd, props))
@@ -845,13 +841,13 @@ func String(size *scpb.TaskSize) string {
 	return strings.Join(resources, ", ")
 }
 
-// GenericSnapshotSize rounds a scheduled size up to a supported snapshot shape.
-// The input includes guest overhead; rounding must not add it again.
-func GenericSnapshotSize(size *scpb.TaskSize) (*scpb.TaskSize, error) {
+// GenericSnapshotSize rounds size up to a generic snapshot shape, or returns
+// nil if it's too big for any shape.
+func GenericSnapshotSize(size *scpb.TaskSize) *scpb.TaskSize {
 	if size == nil {
-		return nil, status.InvalidArgumentError("task size is required for generic Firecracker snapshots")
+		return nil
 	}
-	for _, cpus := range []int64{1, 2, 3, 4, 5, 6, 7, 8, 16, 32} {
+	for _, cpus := range []int64{1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16} {
 		memory := ((cpus*int64(ComputeUnitsToRAMBytes) + (1 << 20) - 1) / (1 << 20)) * (1 << 20)
 		if cpus*1000 < size.GetEstimatedMilliCpu() || memory < size.GetEstimatedMemoryBytes() {
 			continue
@@ -859,7 +855,7 @@ func GenericSnapshotSize(size *scpb.TaskSize) (*scpb.TaskSize, error) {
 		res := size.CloneVT()
 		res.EstimatedMilliCpu = cpus * 1000
 		res.EstimatedMemoryBytes = memory
-		return res, nil
+		return res
 	}
-	return nil, status.InvalidArgumentError("generic Firecracker snapshots support at most 32 CPUs and 80 GB of memory")
+	return nil
 }

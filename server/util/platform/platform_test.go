@@ -515,12 +515,10 @@ func TestParseGenericFirecrackerSnapshot(t *testing.T) {
 		{name: "dockerd", extra: &repb.Platform_Property{Name: "init-dockerd", Value: "true"}},
 		{name: "recycling", extra: &repb.Platform_Property{Name: "recycle-runner", Value: "true"}},
 		{name: "vfs", extra: &repb.Platform_Property{Name: "enable-vfs", Value: "true"}},
-		{name: "other isolation", extra: &repb.Platform_Property{Name: "workload-isolation-type", Value: "oci"}},
 		{name: "disabled", extra: &repb.Platform_Property{Name: UseGenericSnapshotPropertyName, Value: "false"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
-				{Name: "workload-isolation-type", Value: "firecracker"},
 				{Name: UseGenericSnapshotPropertyName, Value: "true"},
 			}}}}
 			if tc.extra != nil {

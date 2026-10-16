@@ -990,25 +990,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
-	// Experiments above can set the generic snapshot property, so re-check it
-	// with all platform overrides applied.
-	propsWithOverrides, err := platform.ParseProperties(executionTask)
-	if err != nil {
-		return nil, err
-	}
-	props.UseGenericSnapshot = propsWithOverrides.UseGenericSnapshot
-
 	// NOTE: compute the task size before applying any volatile env overrides below,
 	// since the command hash is used as part of the task sizing key.
 	defaultTaskSize := tasksize.Default(executionTask)
 	requestedTaskSize := tasksize.Requested(executionTask)
 	taskSize := tasksize.ApplyLimitsWithRequestedSize(ctx, s.env.GetExperimentFlagProvider(), command, props, defaultTaskSize, requestedTaskSize)
-	if props.UseGenericSnapshot {
-		taskSize, err = tasksize.GenericSnapshotSize(taskSize)
-		if err != nil {
-			return nil, err
-		}
-	}
 	measuredSize := s.taskSizer.Get(ctx, command, props)
 	var predictedSize *scpb.TaskSize
 	if measuredSize == nil {
