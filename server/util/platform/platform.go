@@ -568,8 +568,10 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 
 	// Ignored for incompatible actions, so experiments can enable it broadly.
 	// Only Firecracker reads it, after executor isolation defaults apply.
+	// Generic VMs use userspace networking, which doesn't support IPv6.
 	useGenericSnapshot := boolProp(m, UseGenericSnapshotPropertyName, false) && !recycleRunner &&
-		!boolProp(m, initDockerdPropertyName, false) && !vfsEnabled && overrideSnapshotKey == nil
+		!boolProp(m, initDockerdPropertyName, false) && !vfsEnabled && overrideSnapshotKey == nil &&
+		!boolProp(m, NetworkEnableIPv6PropertyName, false)
 	return &Properties{
 		UseGenericSnapshot:        useGenericSnapshot,
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),

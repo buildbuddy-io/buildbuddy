@@ -644,7 +644,6 @@ func genericVMConfig(shape *scpb.TaskSize, networkMode fcpb.NetworkMode) *fcpb.V
 		MemSizeMb:   shape.GetEstimatedMemoryBytes() / mib,
 		NetworkMode: networkMode,
 		HostCpuid:   getCPUID(),
-		Ipv6Enabled: true,
 		EnablePci:   *enablePCI,
 	}
 }
@@ -790,12 +789,12 @@ type FirecrackerContainer struct {
 	snapshotKeySet          *fcpb.SnapshotKeySet
 	createFromSnapshot      bool
 	supportsRemoteSnapshots bool
-	recyclingEnabled bool
+	recyclingEnabled        bool
 
 	// genericSnapshot is set if the VM boots without a container root, which
 	// attachContainerRoot adds later. This lets one snapshot of the booted VM
 	// serve any container image.
-	genericSnapshot  bool
+	genericSnapshot bool
 
 	// TODO: Cleanup after remote container image reads/writes are fully rolled out.
 	// remoteContainerImageAccess is resolved once per container so the remote
@@ -1486,8 +1485,12 @@ func (c *FirecrackerContainer) loadSnapshot(ctx context.Context, snap *snaploade
 	c.vmCtx = vmCtx
 	c.cancelVmCtx = cancelVmCtx
 
-	if err := c.newID(ctx); err != nil {
-		return err
+	// A generic VM restores into the chroot NewContainer gave it, where
+	// PullImage may have already put the image.
+	if !c.genericSnapshot {
+		if err := c.newID(ctx); err != nil {
+			return err
+		}
 	}
 
 	if err := c.setupCgroup(ctx); err != nil {
@@ -2519,16 +2522,6 @@ func BuildGenericSnapshot(ctx context.Context, env environment.Env, opts Contain
 
 func (c *FirecrackerContainer) createFromGenericSnapshot(ctx context.Context) (retErr error) {
 	c.currentTaskInitTime = time.Now()
-	// loadSnapshot switches to a new chroot; carry over any image PullImage
-	// put in the original one and delete it.
-	pulledChroot := c.getChroot()
-	defer func() {
-		if pulledChroot != c.getChroot() {
-			if err := os.RemoveAll(filepath.Dir(pulledChroot)); err != nil {
-				log.CtxWarningf(ctx, "Failed to remove chroot %q: %s", pulledChroot, err)
-			}
-		}
-	}()
 	defer func() {
 		if retErr != nil {
 			cleanupCtx, cancel := background.ExtendContextForFinalization(ctx, finalizationTimeout)
@@ -2557,10 +2550,6 @@ func (c *FirecrackerContainer) createFromGenericSnapshot(ctx context.Context) (r
 		if err := c.create(ctx); err != nil {
 			return err
 		}
-	}
-	pulledImage := filepath.Join(pulledChroot, containerFSName)
-	if err := os.Rename(pulledImage, filepath.Join(c.getChroot(), containerFSName)); err != nil && !os.IsNotExist(err) {
-		return status.UnavailableErrorf("move pulled image into chroot: %s", err)
 	}
 	return c.attachContainerRoot(ctx)
 }
