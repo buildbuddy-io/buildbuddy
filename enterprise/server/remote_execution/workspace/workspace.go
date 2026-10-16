@@ -880,6 +880,12 @@ type Pool struct {
 	// evicted. LRU performs significantly worse because the number of pooled
 	// workspaces is small.
 	workspaces *gds.Queue[*pooledWorkspace]
+	// The input directories of pooled workspaces, by hash. Workspaces from the
+	// same repo mostly hold the same directories, so pooled workspaces share
+	// one copy of each instead of keeping their own.
+	// We refcount by hand because unique.Make doesn't work for protos, and weak
+	// pointers need async cleanups that are harder to get right than refcounts.
+	dirs map[string]*internedDir
 }
 
 // NewPool returns a pool that keeps workspaces under buildRoot, or nil if
@@ -934,7 +940,7 @@ func NewPool(buildRoot string) (*Pool, error) {
 		log.Warningf("Not pooling workspaces, because the build root's filesystem doesn't record sub-second timestamps")
 		return nil, nil
 	}
-	return &Pool{dir: dir, size: size, workspaces: gds.New[*pooledWorkspace]()}, nil
+	return &Pool{dir: dir, size: size, workspaces: gds.New[*pooledWorkspace](), dirs: map[string]*internedDir{}}, nil
 }
 
 // take removes and returns the pooled workspace that saves the most work for
@@ -978,6 +984,8 @@ func (p *Pool) take(groupID string, newRoot *repb.Digest, newDirs map[string]*re
 		return nil
 	}
 	p.workspaces.Remove(best)
+	// Update directory interning structures.
+	p.release(best)
 	return best
 }
 
@@ -985,6 +993,16 @@ func (p *Pool) take(groupID string, newRoot *repb.Digest, newDirs map[string]*re
 // within its size limit, which may evict the new one.
 func (p *Pool) add(e *pooledWorkspace) {
 	p.mu.Lock()
+	// Intern Directory protos (saves memory). See the comment on Pool.dirs.
+	for k, d := range e.dirMap {
+		s := p.dirs[k]
+		if s == nil {
+			s = &internedDir{dir: d}
+			p.dirs[k] = s
+		}
+		s.refs++
+		e.dirMap[k] = s.dir
+	}
 	// We value a workspace by its file count, since reusing it saves up to
 	// that many links.
 	p.workspaces.Add(e, float64(e.totalFiles))
@@ -994,6 +1012,8 @@ func (p *Pool) add(e *pooledWorkspace) {
 		if !ok {
 			break
 		}
+		// Update directory interning structures.
+		p.release(v)
 		evicted = append(evicted, v)
 	}
 	p.mu.Unlock()
@@ -1007,6 +1027,26 @@ func (p *Pool) add(e *pooledWorkspace) {
 			return nil
 		})
 	}
+}
+
+// release updates the directory interning structures when a workspace leaves
+// the pool. See the comment on Pool.dirs. It is still safe to use e.dirMap
+// after calling this func.
+func (p *Pool) release(e *pooledWorkspace) {
+	for k := range e.dirMap {
+		s := p.dirs[k]
+		s.refs--
+		if s.refs == 0 {
+			delete(p.dirs, k)
+		}
+	}
+}
+
+// internedDir is an input directory that one or more pooled workspaces hold.
+type internedDir struct {
+	dir *repb.Directory
+	// The number of pooled workspaces whose dirMap holds dir.
+	refs int
 }
 
 type pooledWorkspace struct {
