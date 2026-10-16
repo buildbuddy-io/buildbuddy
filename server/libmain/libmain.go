@@ -48,6 +48,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -462,8 +463,11 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 	}
 	mux.Handle("/app/", interceptors.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
 	mux.Handle("/rpc/BuildBuddyService/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
-	mux.Handle("/file/download", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
-	mux.Handle("/file/view", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
+	// Preflight must run before authentication, but remain covered by recovery.
+	fileHandler := region.CORS(interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
+	fileHandler = interceptors.RecoverAndAlert(fileHandler)
+	mux.Handle("/file/download", fileHandler)
+	mux.Handle("/file/view", fileHandler)
 	if us := env.GetUsageService(); us != nil && us.GetExportEnabled() {
 		mux.Handle("/usage/download", interceptors.WrapAuthenticatedExternalHandler(env, us.GetUsageExportHandler()))
 	}
