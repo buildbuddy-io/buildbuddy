@@ -1302,16 +1302,30 @@ func snapshotWriteInterval(ctx context.Context, task *repb.ExecutionTask) time.D
 	return d
 }
 
-// LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
-// the VM.
+// LoadSnapshot looks up the container's snapshot and resumes the VM from it.
 func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
-	return c.loadSnapshot(ctx, nil)
-}
-
-func (c *FirecrackerContainer) loadSnapshot(ctx context.Context, snap *snaploader.Snapshot) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	getSnapshotOpts, err := c.getSnapshotOptions()
+	if err != nil {
+		return err
+	}
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, getSnapshotOpts)
+	if err != nil {
+		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
+	}
+
+	metrics.SnapshotSourceCount.With(prometheus.Labels{
+		metrics.ChunkSource: snap.GetManifestFetchSource().String(),
+	}).Inc()
+
+	return c.loadSnapshot(ctx, snap)
+}
+
+// loadSnapshot resumes the VM from snap. It modifies snap's VM metadata and
+// keeps a reference to snap, so snap must not be shared with another VM.
+func (c *FirecrackerContainer) loadSnapshot(ctx context.Context, snap *snaploader.Snapshot) error {
 	start := time.Now()
 	defer func() {
 		log.CtxDebugf(ctx, "LoadSnapshot took %s", time.Since(start))
@@ -1387,21 +1401,6 @@ func (c *FirecrackerContainer) loadSnapshot(ctx context.Context, snap *snaploade
 		return status.UnavailableErrorf("Failed creating machine: %s", err)
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
-
-	if snap == nil {
-		getSnapshotOpts, err := c.getSnapshotOptions()
-		if err != nil {
-			return err
-		}
-		snap, err = c.loader.GetSnapshot(ctx, c.snapshotKeySet, getSnapshotOpts)
-		if err != nil {
-			return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
-		}
-
-		metrics.SnapshotSourceCount.With(prometheus.Labels{
-			metrics.ChunkSource: snap.GetManifestFetchSource().String(),
-		}).Inc()
-	}
 
 	// Set unique per-run identifier on the vm metadata so this exact snapshot
 	// run can be identified
