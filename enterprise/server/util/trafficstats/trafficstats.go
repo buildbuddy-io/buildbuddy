@@ -295,7 +295,7 @@ func (h *StatsHandler) peerType(ctx context.Context) string {
 		return externalPeerType
 	}
 	si, err := h.cis.IdentityFromContext(ctx)
-	if err != nil || si == nil || si.Client == "" {
+	if err != nil {
 		return externalPeerType
 	}
 	return si.Client
