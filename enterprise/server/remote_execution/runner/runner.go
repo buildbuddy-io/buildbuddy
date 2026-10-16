@@ -23,8 +23,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
@@ -670,6 +672,9 @@ func (r *taskRunner) Remove(ctx context.Context) error {
 	}
 	if err := r.Container.Remove(ctx); err != nil {
 		errs = append(errs, err)
+	} else {
+		// Pool the workspace for later tasks, now that no container uses it.
+		r.Workspace.ReturnToPool(ctx)
 	}
 	if err := r.Workspace.Remove(ctx); err != nil {
 		errs = append(errs, err)
@@ -741,6 +746,9 @@ type pool struct {
 	overrideProvider   container.Provider
 	oomKiller          oomkiller.Killer
 	containerProviders map[platform.ContainerType]container.Provider
+	// workspacePool holds finished tasks' workspaces for reuse, or is
+	// nil if workspace reuse is disabled.
+	workspacePool *workspace.Pool
 
 	maxRunnerCount                 int
 	maxTotalRunnerMemoryUsageBytes int64
@@ -792,6 +800,10 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 	p.caseInsensitiveFS, err = fspath.IsCaseInsensitiveFS(p.buildRoot)
 	if err != nil {
 		return nil, status.InternalErrorf("test build root case sensitivity at path %q: %s", p.buildRoot, err)
+	}
+	p.workspacePool, err = workspace.NewPool(p.buildRoot)
+	if err != nil {
+		return nil, status.InternalErrorf("create workspace reuse pool: %s", err)
 	}
 	if opts.ContainerProvider != nil {
 		p.overrideProvider = opts.ContainerProvider
@@ -1315,6 +1327,30 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		UseOverlayfs:    useOverlayfs,
 		UseVFS:          useHostVFS,
 		VFSPrefetchMode: vfsPrefetchMode,
+	}
+	// We only pool workspaces if all of these are true:
+	//  - The executor.workspace_pool.enabled experiment is on for the task.
+	//  - It's a "normal," ephemeral action workspace (non-FUSE, non-overlayfs,
+	//    non-recycled, not preserved).
+	//  - It's a hardlinked workspace, not copy-on-write, with a file cache.
+	//    When the workspace returns to the pool, we only detect inputs that
+	//    the task added, removed or replaced, not inputs that it wrote to in
+	//    place. Tasks can write to cloned inputs, or to inputs written directly
+	//    when there's no file cache, in place, but writing to a hard-linked
+	//    input would also change the file cache's copy, which the file cache
+	//    already relies on tasks not doing.
+	//  - It's not bare isolation, since removing a bare container doesn't stop
+	//    background processes that the task started, which could keep writing
+	//    into the workspace after it's pooled.
+	//  - The task isn't anonymous, unless the executor isn't shared. This is
+	//    the same rule as for runner recycling, since on a shared executor,
+	//    unrelated users can send anonymous tasks under one group.
+	if p.workspacePool != nil && execution_experiments.WorkspacePoolEnabled.Get(ctx) &&
+		!props.RecycleRunner && !props.PreserveWorkspace && !useOverlayfs && !props.EnableVFS &&
+		!filecache.ClonesInputs(ctx) && p.env.GetFileCache() != nil &&
+		platform.ContainerType(props.WorkloadIsolationType) != platform.BareContainerType &&
+		(key.GetGroupId() != "" || container.AnonymousRecyclingEnabled()) {
+		wsOpts.Pool = p.workspacePool
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {
