@@ -718,14 +718,12 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
   }
 
   onMouseDown(e: MouseHandlerDataParam) {
+    const numLabel = e.activeLabel ? +e.activeLabel : undefined;
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
-    if (!e.activeLabel) {
-      return;
-    }
-    this.setState({ refAreaLeft: +e.activeLabel, refAreaRight: +e.activeLabel });
+    this.setState({ refAreaLeft: numLabel, refAreaRight: numLabel });
   }
 
   onMouseMove(e: MouseHandlerDataParam) {
