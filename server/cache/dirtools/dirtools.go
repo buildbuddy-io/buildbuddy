@@ -1378,6 +1378,54 @@ func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) erro
 	}
 }
 
+// ValidateTreeNames checks that every entry name in the tree is a single path
+// component, and that each directory's names are unique, as the REAPI spec
+// requires. The tree fetcher builds paths from these names, so a name like ".."
+// or two entries with the same name could otherwise make it write outside its
+// root directory. If caseInsensitive is true, names that differ only in case
+// count as the same name.
+func ValidateTreeNames(tree *repb.Tree, caseInsensitive bool) error {
+	checkDir := func(dir *repb.Directory) error {
+		seen := make(map[fspath.Key]bool, len(dir.GetFiles())+len(dir.GetDirectories())+len(dir.GetSymlinks()))
+		check := func(name string) error {
+			if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') || strings.ContainsRune(name, filepath.Separator) {
+				return status.InvalidArgumentErrorf("input tree entry name %q isn't a single path component", name)
+			}
+			key := fspath.NewKey(name, caseInsensitive)
+			if seen[key] {
+				return status.InvalidArgumentErrorf("input tree has more than one entry named %q in a directory", name)
+			}
+			seen[key] = true
+			return nil
+		}
+		for _, f := range dir.GetFiles() {
+			if err := check(f.GetName()); err != nil {
+				return err
+			}
+		}
+		for _, d := range dir.GetDirectories() {
+			if err := check(d.GetName()); err != nil {
+				return err
+			}
+		}
+		for _, s := range dir.GetSymlinks() {
+			if err := check(s.GetName()); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := checkDir(tree.GetRoot()); err != nil {
+		return err
+	}
+	for _, dir := range tree.GetChildren() {
+		if err := checkDir(dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func DirMapFromTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
 	dirMap = make(map[digest.Key]*repb.Directory, 1+len(tree.Children))
 
@@ -1672,6 +1720,9 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 
 	f.fetchStartTime = time.Now()
 
+	if err := ValidateTreeNames(f.tree, f.opts.CaseInsensitive); err != nil {
+		return nil, err
+	}
 	rootDirectoryDigest, dirMap, err := DirMapFromTree(f.tree, f.digestFunction)
 	if err != nil {
 		return nil, err

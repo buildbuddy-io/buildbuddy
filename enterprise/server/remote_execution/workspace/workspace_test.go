@@ -535,6 +535,54 @@ func TestDownloadInputs_WorkingDirectoryMissing(t *testing.T) {
 	assert.Contains(t, err.Error(), "nonexistent")
 }
 
+func TestDownloadInputs_RejectsEntryNamesThatAreNotSinglePathComponents(t *testing.T) {
+	emptyFile := &repb.Digest{Hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+	for _, test := range []struct {
+		name string
+		root *repb.Directory
+	}{
+		{
+			name: "ParentDirectory",
+			root: &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "..", Digest: emptyFile}}},
+		},
+		{
+			name: "FileWithSlash",
+			root: &repb.Directory{Files: []*repb.FileNode{{Name: "../escape.txt", Digest: emptyFile}}},
+		},
+		{
+			name: "CurrentDirectory",
+			root: &repb.Directory{Files: []*repb.FileNode{{Name: ".", Digest: emptyFile}}},
+		},
+		{
+			name: "EmptySymlinkName",
+			root: &repb.Directory{Symlinks: []*repb.SymlinkNode{{Name: "", Target: "x"}}},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			te := testenv.GetTestEnv(t)
+			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+			testcache.Setup(t, te, lis)
+			go runServer()
+			root := testfs.MakeTempDir(t)
+			ws, err := workspace.New(te, root, &workspace.Opts{})
+			require.NoError(t, err)
+			ws.SetTask(ctx, &repb.ExecutionTask{Command: &repb.Command{}})
+
+			err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+				DigestFunction: repb.DigestFunction_SHA256,
+				Inputs:         &repb.Tree{Root: test.root, Children: []*repb.Directory{{}}},
+			})
+
+			require.Error(t, err)
+			assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+			entries, err := os.ReadDir(root)
+			require.NoError(t, err)
+			assert.Len(t, entries, 1, "only the workspace directory should be under the build root")
+		})
+	}
+}
+
 func TestDownloadInputs_WorkingDirectoryExists(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
