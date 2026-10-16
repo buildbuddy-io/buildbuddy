@@ -12,7 +12,7 @@ import {
   LegendPayload,
   Line,
   MouseHandlerDataParam,
-  ReferenceArea,
+  Rectangle,
   ResponsiveContainer,
   Scatter,
   ScatterPointItem,
@@ -109,19 +109,14 @@ interface Props {
   // When set, replaces the default tooltip with one driven by the scatter
   // point nearest to the mouse.
   pointTooltip?: PointTooltipConfig;
-  // When set, the x axis is a continuous numeric axis spanning this range, so
-  // that `data` entries are positioned by their value rather than by their
-  // index.  Otherwise the x axis is categorical, with one equally sized slot
-  // per `data` entry.
-  // TODO(jdhollen): make all charts set this value and simplify.
   xAxisDomain?: [number, number];
 
   onZoomSelection?: (startDate: number, endDate: number) => void;
 }
 
 interface State {
-  refAreaLeft?: string | number;
-  refAreaRight?: string | number;
+  refAreaLeft?: number;
+  refAreaRight?: number;
   hiddenSeries: ReadonlySet<number>;
 }
 
@@ -616,6 +611,93 @@ function PointTooltipLayer({ config, data, dataSeries }: PointTooltipLayerProps)
   );
 }
 
+interface CustomXAxisProps {
+  hasBars: boolean;
+  numPoints: number;
+  ticks: number[];
+  domain?: [number, number];
+  formatXAxisLabel: (value: number, index: number) => string;
+}
+
+/**
+ * This custom axis provides the right amount of spacing so that bar charts
+ * don't center their first and last bars directly over the far left and
+ * far right ends of the X axis.
+ */
+function CustomXAxis({ domain, hasBars, numPoints, ticks, formatXAxisLabel }: CustomXAxisProps) {
+  const plotArea = usePlotArea();
+  const width = plotArea?.width ?? 0;
+
+  // NOTE: For bar charts, this currently assumes that every point in a dataset
+  // is evenly spaced--otherwise the rendered chart would be difficult to parse.
+  // If someone really needs it, this could be updated to filter down to just
+  // the points where the BAR series' extractor function returns a non-null
+  // value, but that's kinda funky and we don't need it right now.
+  // Always ensure that we have at least 1 pixel of padding in the bar case.
+  const extraPad = hasBars && numPoints > 1 ? width / numPoints / 2 || 1 : 0;
+
+  return (
+    <XAxis
+      dataKey={(v) => v}
+      tickFormatter={formatXAxisLabel}
+      ticks={ticks}
+      type={domain || numPoints > 1 ? "number" : "auto"}
+      padding={{ left: extraPad, right: extraPad }}
+      domain={domain ?? ["dataMin", "dataMax"]}
+    />
+  );
+}
+
+interface ZoomRefAreaProps {
+  refAreaLeft: number;
+  refAreaRight: number;
+  domain?: [number, number];
+  data: number[];
+}
+
+function ZoomRefArea({ refAreaLeft, refAreaRight, domain, data }: ZoomRefAreaProps) {
+  const [a, b] = [Math.min(refAreaLeft, refAreaRight), Math.max(refAreaLeft, refAreaRight)];
+  const xScale = useXAxisScale();
+  const plotArea = usePlotArea();
+  if (data.length === 0) {
+    return <></>;
+  }
+  // TODO(jdhollen): make this depend on a caller-provided set of valid zoom
+  // breakpoints instead of the full dataset so that it plays nice with lines
+  // and scatters.
+  domain = domain ?? [data[0], data[data.length - 1]];
+  let [leftNeighbor, rightNeighbor] = [-Infinity, Infinity];
+  for (const d of data) {
+    if (d < a && d > leftNeighbor) {
+      leftNeighbor = d;
+    } else if (d > b && d < rightNeighbor) {
+      rightNeighbor = d;
+    }
+  }
+
+  if (xScale === undefined || plotArea === undefined) {
+    return <></>;
+  }
+
+  const leftEdge = leftNeighbor === -Infinity ? plotArea.x : xScale((leftNeighbor + a) / 2);
+  const rightEdge = rightNeighbor === Infinity ? plotArea.x + plotArea.width : xScale((rightNeighbor + b) / 2);
+  if (leftEdge === undefined || rightEdge === undefined) {
+    return <></>;
+  }
+
+  return (
+    <Rectangle
+      x={leftEdge}
+      width={rightEdge - leftEdge}
+      y={plotArea.y}
+      height={plotArea.height}
+      strokeOpacity={0.3}
+      fill={"#ccc"}
+      fillOpacity={"0.3"}
+    />
+  );
+}
+
 export default class TrendsChartComponent extends React.Component<Props, State> {
   state: State = { hiddenSeries: new Set() };
 
@@ -640,7 +722,8 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
-    this.setState({ refAreaLeft: e.activeLabel, refAreaRight: e.activeLabel });
+    const numLabel = e.activeLabel ? +e.activeLabel : undefined;
+    this.setState({ refAreaLeft: numLabel, refAreaRight: numLabel });
   }
 
   onMouseMove(e: MouseHandlerDataParam) {
@@ -648,10 +731,10 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
-    if (!this.state.refAreaLeft) {
+    if (!this.state.refAreaLeft || !e.activeLabel) {
       return;
     }
-    this.setState({ refAreaRight: e.activeLabel });
+    this.setState({ refAreaRight: +e.activeLabel });
   }
 
   onMouseUp(e: MouseHandlerDataParam) {
@@ -699,11 +782,12 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" yAxisId="primary" />
             {!this.props.hideLegend && <Legend onClick={this.onLegendClick.bind(this)} />}
-            <XAxis
-              dataKey={(v) => v}
-              tickFormatter={this.props.formatXAxisLabel}
+            <CustomXAxis
               ticks={this.props.ticks}
-              {...(this.props.xAxisDomain ? { type: "number" as const, domain: this.props.xAxisDomain } : {})}
+              hasBars={this.props.dataSeries.some((ds) => ds.type === SeriesType.BAR)}
+              numPoints={this.props.data.length}
+              domain={this.props.xAxisDomain}
+              formatXAxisLabel={this.props.formatXAxisLabel}
             />
             <YAxis
               yAxisId="primary"
@@ -756,12 +840,11 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
               <PointTooltipLayer config={this.props.pointTooltip} data={this.props.data} dataSeries={visibleSeries} />
             )}
             {this.state.refAreaLeft && this.state.refAreaRight ? (
-              <ReferenceArea
-                yAxisId="primary"
-                ifOverflow="visible"
-                x1={Math.min(+this.state.refAreaLeft, +this.state.refAreaRight)}
-                x2={Math.max(+this.state.refAreaLeft, +this.state.refAreaRight)}
-                strokeOpacity={0.3}
+              <ZoomRefArea
+                refAreaLeft={this.state.refAreaLeft}
+                refAreaRight={this.state.refAreaRight}
+                data={this.props.data}
+                domain={this.props.xAxisDomain}
               />
             ) : null}
           </ComposedChart>
