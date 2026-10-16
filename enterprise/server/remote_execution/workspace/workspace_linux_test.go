@@ -4,6 +4,8 @@ package workspace_test
 
 import (
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -27,6 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -145,7 +148,7 @@ func TestPool_ReusedWorkspaceMatchesFreshSetup(t *testing.T) {
 				require.NoError(t, err)
 				entries[rel] = "symlink to " + target
 			case info.IsDir():
-				entries[rel] = info.Mode().String()
+				entries[rel] = info.Mode().String() + " xattrs=" + xattrs(t, path)
 			default:
 				content, err := os.ReadFile(path)
 				require.NoError(t, err)
@@ -234,6 +237,28 @@ func TestPool_ReusedWorkspaceMatchesFreshSetup(t *testing.T) {
 			},
 			changed: []string{"node_modules/pkg"},
 		},
+		{
+			name: "xattr set on input directory",
+			task: func(t *testing.T, root string) {
+				err := unix.Lsetxattr(filepath.Join(root, "node_modules/pkg"), "user.test", []byte("value"), 0)
+				if errors.Is(err, errors.ErrUnsupported) {
+					t.Skip("The filesystem doesn't support user xattrs")
+				}
+				require.NoError(t, err)
+			},
+			changed: []string{"node_modules/pkg"},
+		},
+		{
+			name: "ACL changed on input directory",
+			task: func(t *testing.T, root string) {
+				err := unix.Lsetxattr(filepath.Join(root, "node_modules/pkg"), "system.posix_acl_default", posixACL(5), 0)
+				if errors.Is(err, errors.ErrUnsupported) {
+					t.Skip("The filesystem doesn't support ACLs")
+				}
+				require.NoError(t, err)
+			},
+			changed: []string{"node_modules/pkg"},
+		},
 	} {
 		// A 4 byte limit removes the 5 byte inputs before pooling, which the
 		// next task then links again.
@@ -304,6 +329,50 @@ func TestPool_ReusedWorkspaceMatchesFreshSetup(t *testing.T) {
 			})
 		}
 	}
+}
+
+// xattrs returns the xattrs of the file at path as sorted "name=value" pairs,
+// leaving out security.selinux like hasXattrs does.
+func xattrs(t *testing.T, path string) string {
+	size, err := unix.Llistxattr(path, nil)
+	if errors.Is(err, errors.ErrUnsupported) {
+		return ""
+	}
+	require.NoError(t, err)
+	list := make([]byte, size)
+	n, err := unix.Llistxattr(path, list)
+	require.NoError(t, err)
+	var pairs []string
+	for name := range strings.SplitSeq(strings.TrimSuffix(string(list[:n]), "\x00"), "\x00") {
+		if name == "" || name == "security.selinux" {
+			continue
+		}
+		size, err := unix.Lgetxattr(path, name, nil)
+		require.NoError(t, err)
+		value := make([]byte, size)
+		n, err := unix.Lgetxattr(path, name, value)
+		require.NoError(t, err)
+		pairs = append(pairs, fmt.Sprintf("%s=%q", name, value[:n]))
+	}
+	slices.Sort(pairs)
+	return strings.Join(pairs, " ")
+}
+
+// posixACL returns a minimal POSIX ACL in the format of the
+// system.posix_acl_* xattrs, which gives the owner the given permissions and
+// everyone else read and execute permissions.
+func posixACL(ownerPerm uint16) []byte {
+	acl := binary.LittleEndian.AppendUint32(nil, 2) // POSIX_ACL_XATTR_VERSION
+	for _, e := range []struct{ tag, perm uint16 }{
+		{0x01, ownerPerm}, // ACL_USER_OBJ
+		{0x04, 5},         // ACL_GROUP_OBJ
+		{0x20, 5},         // ACL_OTHER
+	} {
+		acl = binary.LittleEndian.AppendUint16(acl, e.tag)
+		acl = binary.LittleEndian.AppendUint16(acl, e.perm)
+		acl = binary.LittleEndian.AppendUint32(acl, 0xffffffff) // ACL_UNDEFINED_ID
+	}
+	return acl
 }
 
 // newPoolTestEnv returns a test environment with a CAS and a file cache, for

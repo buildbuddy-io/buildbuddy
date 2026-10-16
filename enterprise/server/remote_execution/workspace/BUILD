@@ -84,6 +84,7 @@ go_test(
             "//server/util/claims",
             "//server/util/testing/flags",
             "@com_github_prometheus_client_golang//prometheus",
+            "@org_golang_x_sys//unix",
         ],
         "//conditions:default": [],
     }),

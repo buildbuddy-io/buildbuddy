@@ -1279,11 +1279,11 @@ func (ws *Workspace) ReturnToPool(ctx context.Context) {
 		return
 	}
 
-	// The task removed or replaced the input root itself, or changed its mode
-	// or owner, so we can't keep anything in it. Remove deletes the workspace
-	// instead.
+	// We can't reuse the input root if the task removed or replaced it,
+	// changed its mode or owner, or set new xattrs on it. Remove deletes the
+	// workspace instead.
 	if !rootIntact {
-		log.CtxWarningf(ctx, "Not pooling workspace, because the task removed or replaced its input root, or changed its mode or owner")
+		log.CtxWarningf(ctx, "Not pooling workspace, because the task removed or replaced its input root, changed its mode or owner, or set new xattrs on it")
 		return
 	}
 
@@ -1308,11 +1308,11 @@ func (ws *Workspace) ReturnToPool(ctx context.Context) {
 
 // cleanReturnedDir makes the directory at rel hold only the entries of the
 // input directory d that the task didn't change, removing everything else. It
-// returns false if the task removed or replaced the directory itself, or
-// changed its mode or owner, in which case the caller removes it. current holds
-// the result of lstatting each input directory once the task finished, before
-// the cleanup removed anything, and we add the paths of the inputs we remove to
-// missing.
+// returns false if the task removed or replaced the directory itself, changed
+// its mode or owner, or set new xattrs on it, in which case the caller removes
+// it. current holds the result of lstatting each input directory once the task
+// finished, before we removed anything, and we add the paths of the inputs we
+// remove to missing.
 func (ws *Workspace) cleanReturnedDir(ctx context.Context, rel string, d *repb.Digest, current map[string]dirStat, missing map[string]bool) (bool, error) {
 	full := filepath.Join(ws.inputRoot(), rel)
 	s := current[rel]
@@ -1332,6 +1332,17 @@ func (ws *Workspace) cleanReturnedDir(ctx context.Context, rel string, d *repb.D
 	// after input setup, which are just the inputs, so we only read
 	// directories that changed.
 	if fp != want {
+		// We don't set xattrs during input setup, so if there are any xattrs,
+		// they must've been set by the action (except for some known xattrs
+		// that get set unconditionally; see hasXattrs comment).
+		// For now just discard directories before pooling if they have xattrs.
+		hasXattrs, err := hasXattrs(full)
+		if err != nil {
+			return false, err
+		}
+		if hasXattrs {
+			return false, nil
+		}
 		if err := ws.cleanReturnedEntries(ctx, rel, dir, missing); err != nil {
 			return false, err
 		}
