@@ -536,6 +536,11 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	if opts.ReadPolicy == platform.ReadLocalSnapshotOnly {
 		return nil, snaputil.ChunkSourceUnmapped, status.NotFoundErrorf("local manifest not found")
 	}
+	// Remote manifests belong to the caller's group, so they must not be
+	// written into a shared namespace.
+	if isSharedNamespace(ctx) {
+		return nil, snaputil.ChunkSourceUnmapped, status.NotFoundErrorf("local manifest not found in shared namespace")
+	}
 
 	// Fall back to fetching remote manifest.
 	log.CtxInfof(ctx, "Fetching remote manifest")
@@ -809,6 +814,9 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 
 	if key == nil {
 		return status.InvalidArgumentErrorf("key required to cache snapshot")
+	}
+	if isSharedNamespace(ctx) && opts.CacheSnapshotRemotely {
+		return status.InvalidArgumentError("snapshots in a shared namespace can't be cached remotely")
 	}
 
 	if !opts.CacheSnapshotRemotely && !opts.WriteManifestLocally {
@@ -1508,7 +1516,29 @@ func hashStrings(strs ...string) string {
 	return hash.String(out.String())
 }
 
+type sharedNamespaceKey struct{}
+
+// WithSharedNamespace stores and reads snapshots in an executor-wide namespace
+// instead of the authenticated group's. Snapshots in it are local-only. Only
+// use it for snapshots that contain no group data.
+func WithSharedNamespace(ctx context.Context, env environment.Env, namespace string) context.Context {
+	sharedCtx := env.GetFileCache().WithSharedDirectory(ctx, namespace)
+	if sharedCtx == ctx {
+		// The filecache rejected the name, so don't share the keys either.
+		return ctx
+	}
+	return context.WithValue(sharedCtx, sharedNamespaceKey{}, namespace)
+}
+
+func isSharedNamespace(ctx context.Context) bool {
+	_, ok := ctx.Value(sharedNamespaceKey{}).(string)
+	return ok
+}
+
 func groupID(ctx context.Context, env environment.Env) (string, error) {
+	if namespace, ok := ctx.Value(sharedNamespaceKey{}).(string); ok {
+		return "_SHARED_" + namespace, nil
+	}
 	var gid string
 	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err == nil {

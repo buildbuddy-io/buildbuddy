@@ -76,6 +76,7 @@ import (
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -86,6 +87,8 @@ const (
 
 	diskCacheSize = 10_000_000_000  // 10GB
 	fileCacheSize = 100_000_000_000 // 100GB
+
+	mib = 1 << 20
 )
 
 var (
@@ -5123,4 +5126,222 @@ func assertCommandResult(t testing.TB, expected *interfaces.CommandResult, actua
 	actual.VMMetadata = nil
 	actual.VMMetrics = nil
 	assert.Equal(t, expected, actual)
+}
+
+func TestFirecrackerGenericSnapshot(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	env := getTestEnv(ctx, t, envOpts{})
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	env.SetAuthenticator(auth)
+	ctx, err := auth.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	cfg := getExecutorConfig(t)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	genericSnapshotCtx := snaploader.WithSharedNamespace(context.Background(), env, firecracker.GenericSnapshotNamespace)
+	vmConfig := func(cpus int64, mode fcpb.NetworkMode) *fcpb.VMConfiguration {
+		return &fcpb.VMConfiguration{
+			NumCpus: cpus, MemSizeMb: (cpus*2_500_000_000 + mib - 1) / mib,
+			ScratchDiskSizeMb: 100, NetworkMode: mode,
+		}
+	}
+	for _, cpus := range []int64{1, 2} {
+		err := firecracker.BuildGenericSnapshot(ctx, env, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig(cpus, fcpb.NetworkMode_NETWORK_MODE_LOCAL)})
+		require.NoError(t, err)
+	}
+	task := &repb.ExecutionTask{
+		InvocationId:   "generic-invocation",
+		ExecutionId:    "generic-execution",
+		ExecuteRequest: &repb.ExecuteRequest{InstanceName: "generic-instance", ActionDigest: &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}},
+		Command:        &repb.Command{OutputFiles: []string{"output"}},
+	}
+	newContainer := func(t *testing.T, ctx context.Context, image, user string, cpus int64, mode fcpb.NetworkMode) *firecracker.FirecrackerContainer {
+		opts := firecracker.ContainerOpts{ContainerImage: image, User: user, ExecutorConfig: cfg, VMConfiguration: vmConfig(cpus, mode), GenericSnapshot: true}
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		t.Cleanup(func() { assert.NoError(t, c.Remove(context.Background())) })
+		return c
+	}
+	var bootIDsMu sync.Mutex
+	bootIDs := map[string]bool{}
+	run := func(t *testing.T, ctx context.Context, image, user string, cpus int64, mode fcpb.NetworkMode) *snaploader.Snapshot {
+		workDir := testfs.MakeTempDir(t)
+		require.NoError(t, os.WriteFile(filepath.Join(workDir, "input"), []byte("hello"), 0644))
+		c := newContainer(t, ctx, image, user, cpus, mode)
+		command := `test ! -e /tmp/root-marker; touch /tmp/root-marker; test ! -e stale; cp input output; touch stale; test -d /proc/self; test -c /dev/null; test -s /etc/hosts; cat /proc/sys/kernel/random/boot_id; /bin/true`
+		if image == ubuntuImage {
+			// Creating a user namespace fails if the root is merely chrooted.
+			command += "; test -e /etc/lsb-release; unshare -Ur true"
+		} else {
+			command += "; test ! -e /etc/lsb-release"
+		}
+		command += fmt.Sprintf("; test \"$(grep -c '^processor' /proc/cpuinfo)\" -eq %d", cpus)
+		// Generic VMs always have a network interface.
+		command += `; test -n "$(awk '$2 == "00000000"' /proc/net/route)"`
+		if user != "" {
+			command = "id -u; touch /tmp/user-marker; /bin/true"
+		}
+		result := c.Run(ctx, &repb.Command{Arguments: []string{"sh", "-ec", command}, OutputFiles: []string{"output"}}, workDir, oci.Credentials{})
+		require.NoError(t, result.Error, "%s", result.AuxiliaryLogs)
+		require.Equal(t, 0, result.ExitCode, "%s", result.Stderr)
+		if user == "" {
+			data, err := os.ReadFile(filepath.Join(workDir, "output"))
+			require.NoError(t, err)
+			assert.Equal(t, "hello", string(data))
+			// The kernel generates boot_id on first read, so each VM restored
+			// from the snapshot must get its own as long as nothing reads it
+			// before the snapshot is taken.
+			bootID := string(result.Stdout)
+			require.Regexp(t, `^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\n$`, bootID)
+			bootIDsMu.Lock()
+			assert.False(t, bootIDs[bootID], "boot_id %q was reused", bootID)
+			bootIDs[bootID] = true
+			bootIDsMu.Unlock()
+		} else {
+			assert.Equal(t, "65534\n", string(result.Stdout))
+		}
+		snap, err := loader.GetSnapshot(genericSnapshotCtx, c.SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
+		require.NoError(t, err)
+		assert.Equal(t, snap.GetVMMetadata().GetSnapshotId(), result.VMMetadata.GetLastExecutedTask().GetSnapshotId())
+		// Generic snapshots are shared across groups, so they must not identify the task that built them.
+		lastTask := result.VMMetadata.GetLastExecutedTask()
+		assert.Empty(t, lastTask.GetInvocationId())
+		assert.Empty(t, lastTask.GetExecutionId())
+		assert.Nil(t, lastTask.GetActionDigest())
+		// Images are cached under the task's instance, not the generic snapshot's.
+		_, err = snaploader.GetCachedContainerImage(ctx, loader, "generic-instance", image, false /*=remoteEnabled*/)
+		assert.NoError(t, err)
+		return snap
+	}
+	// Generic VMs with network=off use local networking.
+	off := fcpb.NetworkMode_NETWORK_MODE_LOCAL
+	var snapshots [2]*snaploader.Snapshot
+	t.Run("concurrent", func(t *testing.T) {
+		for i := range snapshots {
+			t.Run(fmt.Sprint(i), func(t *testing.T) {
+				t.Parallel()
+				snapshots[i] = run(t, ctx, busyboxImage, "", 1, off)
+			})
+		}
+	})
+	require.NotNil(t, snapshots[0])
+	require.NotNil(t, snapshots[1])
+	genericSnapshotID := snapshots[0].GetVMMetadata().GetSnapshotId()
+	require.NotEmpty(t, genericSnapshotID)
+	require.Equal(t, genericSnapshotID, snapshots[1].GetVMMetadata().GetSnapshotId())
+	for _, image := range []string{ubuntuImage, busyboxImage} {
+		t.Run(image, func(t *testing.T) {
+			assert.Equal(t, genericSnapshotID, run(t, ctx, image, "", 1, off).GetVMMetadata().GetSnapshotId())
+		})
+	}
+	t.Run("nonroot", func(t *testing.T) {
+		assert.Equal(t, genericSnapshotID, run(t, ctx, ubuntuImage, "nobody", 1, off).GetVMMetadata().GetSnapshotId())
+	})
+	t.Run("external networking", func(t *testing.T) {
+		assert.Equal(t, genericSnapshotID, run(t, ctx, busyboxImage, "", 1, fcpb.NetworkMode_NETWORK_MODE_EXTERNAL).GetVMMetadata().GetSnapshotId())
+	})
+	t.Run("two CPUs", func(t *testing.T) {
+		assert.NotEqual(t, genericSnapshotID, run(t, ctx, busyboxImage, "", 2, off).GetVMMetadata().GetSnapshotId())
+	})
+	t.Run("other group", func(t *testing.T) {
+		otherCtx, err := auth.WithAuthenticatedUser(ctx, "US2")
+		require.NoError(t, err)
+		assert.Equal(t, genericSnapshotID, run(t, otherCtx, busyboxImage, "", 1, off).GetVMMetadata().GetSnapshotId())
+	})
+	// Without a usable snapshot, generic VMs boot from scratch.
+	runFromScratch := func(t *testing.T, cpus int64) {
+		c := newContainer(t, ctx, busyboxImage, "", cpus, off)
+		result := c.Run(ctx, &repb.Command{Arguments: []string{"sh", "-ec", "test -e /etc/hostname"}}, testfs.MakeTempDir(t), oci.Credentials{})
+		require.NoError(t, result.Error, "%s", result.AuxiliaryLogs)
+		require.Equal(t, 0, result.ExitCode, "%s", result.Stderr)
+		assert.NotEqual(t, genericSnapshotID, result.VMMetadata.GetLastExecutedTask().GetSnapshotId())
+	}
+	t.Run("not built", func(t *testing.T) {
+		runFromScratch(t, 3)
+	})
+	t.Run("evicted memory", func(t *testing.T) {
+		files := snapshots[0].GetChunkedFiles()
+		require.Len(t, files, 1)
+		require.NotEmpty(t, files[0].GetChunks())
+		require.True(t, env.GetFileCache().DeleteFile(genericSnapshotCtx, &repb.FileNode{Digest: files[0].GetChunks()[0].GetDigest()}))
+		runFromScratch(t, 1)
+	})
+}
+
+func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
+	ctx := context.Background()
+	flags.Set(b, "executor.enable_local_snapshot_sharing", true)
+	env := getTestEnv(ctx, b, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(b, testauth.TestUsers("US1", "GR1")))
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(b, err)
+	cfg := getExecutorConfig(b)
+	vmConfig := &fcpb.VMConfiguration{NumCpus: 1, MemSizeMb: 2385, ScratchDiskSizeMb: 100, NetworkMode: fcpb.NetworkMode_NETWORK_MODE_LOCAL}
+	require.NoError(b, firecracker.BuildGenericSnapshot(ctx, env, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig}))
+	for _, generic := range []bool{false, true} {
+		b.Run(fmt.Sprintf("generic=%t", generic), func(b *testing.B) {
+			b.StopTimer()
+			var createTime, execTime time.Duration
+			for i := -1; i < b.N; i++ {
+				workDir := testfs.MakeTempDir(b)
+				c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, firecracker.ContainerOpts{
+					ContainerImage: busyboxImage, ExecutorConfig: cfg,
+					VMConfiguration: vmConfig, GenericSnapshot: generic,
+				})
+				require.NoError(b, err)
+				require.NoError(b, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false))
+				if i >= 0 {
+					b.StartTimer()
+				}
+				start := time.Now()
+				err = c.Create(ctx, workDir)
+				created := time.Now()
+				if err != nil {
+					c.Remove(ctx)
+					b.Fatal(err)
+				}
+				result := c.Exec(ctx, &repb.Command{Arguments: []string{"/bin/true"}}, nil)
+				done := time.Now()
+				if i >= 0 {
+					b.StopTimer()
+					createTime += created.Sub(start)
+					execTime += done.Sub(created)
+				}
+				require.NoError(b, c.Remove(ctx))
+				require.NoError(b, result.Error)
+				require.Equal(b, 0, result.ExitCode)
+			}
+			b.ReportMetric(float64(createTime.Microseconds())/float64(b.N), "create-us/op")
+			b.ReportMetric(float64(execTime.Microseconds())/float64(b.N), "exec-us/op")
+		})
+	}
+}
+
+func TestGenericSnapshotShape(t *testing.T) {
+	flags.Set(t, "executor.firecracker_generic_snapshot_cpus", []int64{16, 1, 2, 8})
+	require.Nil(t, firecracker.GenericSnapshotShape(nil))
+	for _, tc := range []struct{ cpu, memory, wantCPU int64 }{
+		{250, 200_000_000, 1}, {1000, 2_500_000_000, 1},
+		{1001, 200_000_000, 2}, {1000, 2385*mib + 1, 2},
+		{2001, 200_000_000, 8}, {7000, 20_000_000_000, 8},
+		{8001, 200_000_000, 16}, {1000, 19074*mib + 1, 16},
+		{16000, 40_000_000_000, 16},
+		{16001, 200_000_000, 0}, {1000, 38147*mib + 1, 0},
+	} {
+		t.Run(fmt.Sprintf("cpu=%d/memory=%d", tc.cpu, tc.memory), func(t *testing.T) {
+			input := &scpb.TaskSize{EstimatedMilliCpu: tc.cpu, EstimatedMemoryBytes: tc.memory, EstimatedFreeDiskBytes: 1234}
+			original := input.CloneVT()
+			got := firecracker.GenericSnapshotShape(input)
+			if tc.wantCPU == 0 {
+				require.Nil(t, got)
+				return
+			}
+			assert.Equal(t, tc.wantCPU*1000, got.GetEstimatedMilliCpu())
+			assert.GreaterOrEqual(t, got.GetEstimatedMemoryBytes(), tc.memory)
+			assert.Less(t, got.GetEstimatedMemoryBytes()-tc.wantCPU*2_500_000_000, int64(mib))
+			assert.Equal(t, int64(1234), got.GetEstimatedFreeDiskBytes())
+			assert.Empty(t, cmp.Diff(original, input, protocmp.Transform()))
+		})
+	}
 }
