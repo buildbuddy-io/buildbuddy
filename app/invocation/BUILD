@@ -992,6 +992,28 @@ ts_jasmine_node_test(
 )
 
 ts_jasmine_node_test(
+    name = "workflow_rerun_button_test",
+    srcs = ["workflow_rerun_button_test.ts"],
+    deps = [
+        ":invocation_model",
+        ":workflow_rerun_button",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//app/capabilities",
+        "//app/errors:error_service",
+        "//app/router",
+        "//app/service:rpc_service",
+        "//proto:build_event_stream_ts_proto",
+        "//proto:config_ts_proto",
+        "//proto:execution_stats_ts_proto",
+        "//proto:firecracker_ts_proto",
+        "//proto:invocation_ts_proto",
+        "//proto:remote_execution_ts_proto",
+        "//proto:workflow_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
     name = "invocation_action_card_test",
     srcs = ["invocation_action_card_test.ts"],
     deps = [
