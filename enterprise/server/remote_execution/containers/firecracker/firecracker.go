@@ -695,8 +695,8 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	generic := false
 	// Generic snapshot VMs get the rounded shape, but the scheduler only
 	// reserves the scheduled size. This is fine enough because CPU and
-	// memory are lazily allocated.
-	if shape := GenericSnapshotShape(sizeEstimate); args.Props.UseGenericSnapshot && shape != nil {
+	// memory are lazily allocated. Debug terminal VMs always boot normally.
+	if shape := GenericSnapshotShape(sizeEstimate); args.Props.UseGenericSnapshot && shape != nil && !*debugTerminal {
 		vmConfig = genericVMConfig(shape, networkMode)
 		generic = true
 	} else {
@@ -790,12 +790,12 @@ type FirecrackerContainer struct {
 	snapshotKeySet          *fcpb.SnapshotKeySet
 	createFromSnapshot      bool
 	supportsRemoteSnapshots bool
+	recyclingEnabled bool
 
 	// genericSnapshot is set if the VM boots without a container root, which
 	// attachContainerRoot adds later. This lets one snapshot of the booted VM
 	// serve any container image.
 	genericSnapshot  bool
-	recyclingEnabled bool
 
 	// TODO: Cleanup after remote container image reads/writes are fully rolled out.
 	// remoteContainerImageAccess is resolved once per container so the remote
