@@ -840,22 +840,3 @@ func String(size *scpb.TaskSize) string {
 	}
 	return strings.Join(resources, ", ")
 }
-
-// GenericSnapshotSize rounds size up to a generic snapshot shape, or returns
-// nil if it's too big for any shape.
-func GenericSnapshotSize(size *scpb.TaskSize) *scpb.TaskSize {
-	if size == nil {
-		return nil
-	}
-	for _, cpus := range []int64{1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16} {
-		memory := ((cpus*int64(ComputeUnitsToRAMBytes) + (1 << 20) - 1) / (1 << 20)) * (1 << 20)
-		if cpus*1000 < size.GetEstimatedMilliCpu() || memory < size.GetEstimatedMemoryBytes() {
-			continue
-		}
-		res := size.CloneVT()
-		res.EstimatedMilliCpu = cpus * 1000
-		res.EstimatedMemoryBytes = memory
-		return res
-	}
-	return nil
-}

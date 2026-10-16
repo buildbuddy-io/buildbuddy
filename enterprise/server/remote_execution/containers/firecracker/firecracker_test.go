@@ -76,6 +76,7 @@ import (
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -5140,7 +5141,7 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 	vmConfig := func(cpus int64, mode fcpb.NetworkMode) *fcpb.VMConfiguration {
 		return &fcpb.VMConfiguration{
 			NumCpus: cpus, MemSizeMb: (cpus*2_500_000_000 + (1 << 20) - 1) / (1 << 20),
-			ScratchDiskSizeMb: 100, GenericSnapshot: true, NetworkMode: mode,
+			ScratchDiskSizeMb: 100, NetworkMode: mode,
 		}
 	}
 	for _, cpus := range []int64{1, 2} {
@@ -5154,7 +5155,7 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 		Command:        &repb.Command{OutputFiles: []string{"output"}},
 	}
 	newContainer := func(t *testing.T, ctx context.Context, image, user string, cpus int64, mode fcpb.NetworkMode) *firecracker.FirecrackerContainer {
-		opts := firecracker.ContainerOpts{ContainerImage: image, User: user, ExecutorConfig: cfg, VMConfiguration: vmConfig(cpus, mode)}
+		opts := firecracker.ContainerOpts{ContainerImage: image, User: user, ExecutorConfig: cfg, VMConfiguration: vmConfig(cpus, mode), GenericSnapshot: true}
 		c, err := firecracker.NewContainer(ctx, env, task, opts)
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, c.Remove(context.Background())) })
@@ -5166,7 +5167,6 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 		workDir := testfs.MakeTempDir(t)
 		require.NoError(t, os.WriteFile(filepath.Join(workDir, "input"), []byte("hello"), 0644))
 		c := newContainer(t, ctx, image, user, cpus, mode)
-		require.True(t, c.VMConfig().GetGenericSnapshot())
 		command := `test ! -e /tmp/root-marker; touch /tmp/root-marker; test ! -e stale; cp input output; touch stale; test -d /proc/self; test -c /dev/null; test -s /etc/hosts; cat /proc/sys/kernel/random/boot_id; /bin/true`
 		if image == ubuntuImage {
 			// Creating a user namespace fails if the root is merely chrooted.
@@ -5275,10 +5275,8 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
 	require.NoError(b, err)
 	cfg := getExecutorConfig(b)
-	benchConfig := func(generic bool) *fcpb.VMConfiguration {
-		return &fcpb.VMConfiguration{NumCpus: 1, MemSizeMb: 2385, ScratchDiskSizeMb: 100, GenericSnapshot: generic, NetworkMode: fcpb.NetworkMode_NETWORK_MODE_LOCAL}
-	}
-	require.NoError(b, firecracker.BuildGenericSnapshot(ctx, env, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: benchConfig(true)}))
+	vmConfig := &fcpb.VMConfiguration{NumCpus: 1, MemSizeMb: 2385, ScratchDiskSizeMb: 100, NetworkMode: fcpb.NetworkMode_NETWORK_MODE_LOCAL}
+	require.NoError(b, firecracker.BuildGenericSnapshot(ctx, env, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig}))
 	for _, generic := range []bool{false, true} {
 		b.Run(fmt.Sprintf("generic=%t", generic), func(b *testing.B) {
 			b.StopTimer()
@@ -5287,7 +5285,7 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 				workDir := testfs.MakeTempDir(b)
 				c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, firecracker.ContainerOpts{
 					ContainerImage: busyboxImage, ExecutorConfig: cfg,
-					VMConfiguration: benchConfig(generic),
+					VMConfiguration: vmConfig, GenericSnapshot: generic,
 				})
 				require.NoError(b, err)
 				require.NoError(b, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false))
@@ -5314,6 +5312,34 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 			}
 			b.ReportMetric(float64(createTime.Microseconds())/float64(b.N), "create-us/op")
 			b.ReportMetric(float64(execTime.Microseconds())/float64(b.N), "exec-us/op")
+		})
+	}
+}
+
+func TestGenericSnapshotShape(t *testing.T) {
+	flags.Set(t, "executor.firecracker_generic_snapshot_cpus", []int64{16, 1, 2, 8})
+	require.Nil(t, firecracker.GenericSnapshotShape(nil))
+	for _, tc := range []struct{ cpu, memory, wantCPU int64 }{
+		{250, 200_000_000, 1}, {1000, 2_500_000_000, 1},
+		{1001, 200_000_000, 2}, {1000, 2385*(1<<20) + 1, 2},
+		{2001, 200_000_000, 8}, {7000, 20_000_000_000, 8},
+		{8001, 200_000_000, 16}, {1000, 19074*(1<<20) + 1, 16},
+		{16000, 40_000_000_000, 16},
+		{16001, 200_000_000, 0}, {1000, 38147*(1<<20) + 1, 0},
+	} {
+		t.Run(fmt.Sprintf("cpu=%d/memory=%d", tc.cpu, tc.memory), func(t *testing.T) {
+			input := &scpb.TaskSize{EstimatedMilliCpu: tc.cpu, EstimatedMemoryBytes: tc.memory, EstimatedFreeDiskBytes: 1234}
+			original := input.CloneVT()
+			got := firecracker.GenericSnapshotShape(input)
+			if tc.wantCPU == 0 {
+				require.Nil(t, got)
+				return
+			}
+			assert.Equal(t, tc.wantCPU*1000, got.GetEstimatedMilliCpu())
+			assert.GreaterOrEqual(t, got.GetEstimatedMemoryBytes(), tc.memory)
+			assert.Less(t, got.GetEstimatedMemoryBytes()-tc.wantCPU*2_500_000_000, int64(1<<20))
+			assert.Equal(t, int64(1234), got.GetEstimatedFreeDiskBytes())
+			assert.Empty(t, cmp.Diff(original, input, protocmp.Transform()))
 		})
 	}
 }

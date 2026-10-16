@@ -214,6 +214,7 @@ go_test(
         "//enterprise/server/util/oci",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//server/backends/disk_cache",
         "//server/interfaces",
         "//server/metrics",

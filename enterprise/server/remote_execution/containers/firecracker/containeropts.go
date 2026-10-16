@@ -18,6 +18,11 @@ type ContainerOpts struct {
 	// is stored in the snapshot.
 	VMConfiguration *fcpb.VMConfiguration
 
+	// GenericSnapshot makes the VM start from this executor's generic snapshot
+	// for VMConfiguration, or boot from scratch the same way if there isn't
+	// one. It isn't part of VMConfiguration, so it isn't saved in snapshots.
+	GenericSnapshot bool
+
 	// OverrideSnapshotKey is an optional snapshot key to resume from, which
 	// overrides the snapshot key that is normally computed from task platform
 	// properties. If it is not found in cache, then an error will be returned
