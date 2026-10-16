@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -20,6 +20,18 @@ go_library(
         "@com_github_tink_crypto_tink_go_gcpkms_v2//integration/gcpkms",
         "@com_github_tink_crypto_tink_go_v2//core/registry",
         "@com_github_tink_crypto_tink_go_v2//tink",
+        "@org_golang_google_api//cloudkms/v1:cloudkms",
         "@org_golang_google_api//option",
+    ],
+)
+
+go_test(
+    name = "kms_test",
+    srcs = ["kms_test.go"],
+    deps = [
+        ":kms",
+        "//server/testutil/testfs",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
     ],
 )

@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -24,29 +25,34 @@ const (
 	keyLengthBytes = 32
 )
 
-// TODO: support supplying the local key via a KMS.
 var (
-	localKeyFile    = flag.String("crypter.local.key_file", "", "Path to a file containing a base64-encoded 32-byte encryption key. If set, the cache proxy encrypts data in its local cache for all groups with encryption enabled using this key, instead of keys fetched from the remote crypter backend. This is intended for customer-run cache proxies that cannot fetch customer-managed encryption keys. When changing this key, also increment crypter.local.key_version. Incompatible with crypter.remote_target and with setting crypter.allow_local_cache_encryption to false.")
-	localKeyVersion = flag.Int64("crypter.local.key_version", 1, "The version of the key in crypter.local.key_file. Increment this to rotate keys: local cache entries written with other versions are treated as cache misses, re-fetched from the app, and re-encrypted with the current key and version.")
+	localKeyFile    = flag.String("crypter.local.key_file", "", "Path to a file containing a base64-encoded 32-byte encryption key. If set, the cache proxy encrypts data in its local cache for all groups with encryption enabled using this key, instead of keys fetched from the remote crypter backend. This is intended for customer-run cache proxies that cannot fetch customer-managed encryption keys. When changing this key, also increment crypter.local.key_version. Incompatible with crypter.local.kms_key_uri, crypter.remote_target, and setting crypter.allow_local_cache_encryption to false.")
+	localKMSKeyURI  = flag.String("crypter.local.kms_key_uri", "", "The URI of a KMS HMAC-SHA256 key (e.g. gcp-kms://projects/.../cryptoKeyVersions/1 or aws-kms://arn:aws:kms:...). If set, the local encryption key is computed at startup as the HMAC of a fixed string that includes crypter.local.key_version, and is otherwise used like crypter.local.key_file. KMS credentials are configured with the keystore.* flags. Incompatible with crypter.local.key_file.")
+	localKeyVersion = flag.Int64("crypter.local.key_version", 1, "The version of the local encryption key. Increment this to rotate keys: local cache entries written with other versions are treated as cache misses, re-fetched from the app, and re-encrypted with the current key and version.")
 )
 
 func Register(env *real_environment.RealEnv) error {
-	if *localKeyFile == "" {
+	if *localKeyFile == "" && *localKMSKeyURI == "" {
 		return nil
 	}
+	if *localKeyFile != "" && *localKMSKeyURI != "" {
+		return status.InvalidArgumentError("only one of crypter.local.key_file and crypter.local.kms_key_uri can be set")
+	}
 	if env.GetCrypter() != nil {
-		return status.FailedPreconditionError("crypter.local.key_file is set, but a crypter is already registered")
+		return status.FailedPreconditionError("a local encryption key is configured, but a crypter is already registered")
 	}
 	if !authutil.AllowLocalCacheEncryption() {
-		return status.InvalidArgumentError("crypter.local.key_file cannot be used when crypter.allow_local_cache_encryption is false")
+		return status.InvalidArgumentError("a local encryption key cannot be used when crypter.allow_local_cache_encryption is false")
 	}
-	contents, err := os.ReadFile(*localKeyFile)
-	if err != nil {
-		return status.InvalidArgumentErrorf("could not read crypter.local.key_file: %s", err)
+	var key []byte
+	var err error
+	if *localKMSKeyURI != "" {
+		key, err = keyFromKMS(env.GetServerContext(), *localKMSKeyURI, *localKeyVersion)
+	} else {
+		key, err = keyFromFile(*localKeyFile)
 	}
-	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(contents)))
 	if err != nil {
-		return status.InvalidArgumentErrorf("crypter.local.key_file does not contain valid base64: %s", err)
+		return err
 	}
 	c, err := New(env.GetAuthenticator(), key, *localKeyVersion)
 	if err != nil {
@@ -54,6 +60,34 @@ func Register(env *real_environment.RealEnv) error {
 	}
 	env.SetCrypter(c)
 	return nil
+}
+
+func keyFromFile(path string) ([]byte, error) {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("could not read crypter.local.key_file: %s", err)
+	}
+	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(contents)))
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("crypter.local.key_file does not contain valid base64: %s", err)
+	}
+	return key, nil
+}
+
+// keyFromKMS computes the key as an HMAC with a KMS key, so the key is never
+// stored and can only be recomputed with access to the KMS key. The version is
+// part of the HMAC input so that incrementing it produces a new key. Changing
+// this input makes existing local cache entries unreadable.
+func keyFromKMS(ctx context.Context, keyURI string, version int64) ([]byte, error) {
+	k, err := kms.NewWithKeyURI(ctx, keyURI)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("could not initialize KMS for crypter.local.kms_key_uri: %s", err)
+	}
+	key, err := k.MAC(ctx, keyURI, []byte(fmt.Sprintf("buildbuddy-cache-proxy-local-key-v%d", version)))
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not compute local key with crypter.local.kms_key_uri: %s", err)
+	}
+	return key, nil
 }
 
 type LocalCrypter struct {
@@ -64,7 +98,7 @@ type LocalCrypter struct {
 
 func New(authenticator interfaces.Authenticator, key []byte, version int64) (*LocalCrypter, error) {
 	if len(key) != keyLengthBytes {
-		return nil, status.InvalidArgumentErrorf("the key in crypter.local.key_file must be %d bytes, got %d", keyLengthBytes, len(key))
+		return nil, status.InvalidArgumentErrorf("the local encryption key must be %d bytes, got %d", keyLengthBytes, len(key))
 	}
 	if version < 1 {
 		return nil, status.InvalidArgumentErrorf("crypter.local.key_version must be at least 1, got %d", version)
