@@ -738,6 +738,76 @@ func getDigestForMsg(t *testing.T, in proto.Message) *repb.Digest {
 	return d
 }
 
+func TestCreateOutputDirs(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		// inputs sets up the inputs under rootDir, given a directory outside of
+		// rootDir.
+		inputs func(t *testing.T, rootDir, outsideDir string)
+		cmd    *repb.Command
+		// wantDirs are the paths under rootDir that should be directories.
+		wantDirs []string
+		// wantSymlinks are the paths under rootDir that should still be
+		// symlinks.
+		wantSymlinks []string
+		wantErr      bool
+	}{
+		{
+			name:     "CreatesMissingDirectories",
+			cmd:      &repb.Command{OutputFiles: []string{"a/b/out.txt"}, OutputDirectories: []string{"c/d"}},
+			wantDirs: []string{"a", "a/b", "c", "c/d"},
+		},
+		{
+			name: "FailsOnSymlinkOutOfRoot",
+			inputs: func(t *testing.T, rootDir, outsideDir string) {
+				require.NoError(t, os.Symlink(outsideDir, filepath.Join(rootDir, "out")))
+			},
+			cmd:          &repb.Command{OutputDirectories: []string{"out/a/b"}},
+			wantSymlinks: []string{"out"},
+			wantErr:      true,
+		},
+		{
+			name: "FailsOnDanglingSymlink",
+			inputs: func(t *testing.T, rootDir, outsideDir string) {
+				require.NoError(t, os.Symlink("missing", filepath.Join(rootDir, "gen")))
+			},
+			cmd:          &repb.Command{OutputFiles: []string{"gen/out.txt"}},
+			wantSymlinks: []string{"gen"},
+			wantErr:      true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rootDir := testfs.MakeTempDir(t)
+			outsideDir := testfs.MakeTempDir(t)
+			if test.inputs != nil {
+				test.inputs(t, rootDir, outsideDir)
+			}
+			dirHelper := dirtools.NewDirHelper(rootDir, test.cmd, fs.FileMode(0o755))
+
+			err := dirHelper.CreateOutputDirs()
+
+			if test.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			for _, p := range test.wantDirs {
+				info, err := os.Lstat(filepath.Join(rootDir, p))
+				require.NoError(t, err)
+				assert.True(t, info.IsDir(), p)
+			}
+			for _, p := range test.wantSymlinks {
+				info, err := os.Lstat(filepath.Join(rootDir, p))
+				require.NoError(t, err)
+				assert.Equal(t, fs.ModeSymlink, info.Mode().Type(), p)
+			}
+			outside, err := os.ReadDir(outsideDir)
+			require.NoError(t, err)
+			assert.Empty(t, outside)
+		})
+	}
+}
+
 func TestDownloadTree(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
