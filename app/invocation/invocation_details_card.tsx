@@ -37,6 +37,10 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
 
   render() {
     const isBazelInvocation = this.props.model.isBazelInvocation();
+    const githubRepo = this.props.model.getGithubRepo();
+    const githubActionsRepo = this.props.model.getGithubActionsRepo();
+    const githubActionsUrl = this.props.model.getGithubActionsUrl();
+    const showSeparateGithubActionsRepo = Boolean(githubActionsRepo && githubActionsRepo !== githubRepo);
 
     const cumulativeMetrics = this.props.model.buildMetrics?.cumulativeMetrics;
     const numAnalyses = cumulativeMetrics?.numAnalyses ?? 0;
@@ -186,11 +190,22 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               </div>
             )}
 
-            {this.props.model.getGithubRepo() && (
+            {githubRepo && (
+              <div className="invocation-section">
+                <div className="invocation-section-title">
+                  {showSeparateGithubActionsRepo ? "Bazel workspace" : "GitHub repo"}
+                </div>
+                <div>
+                  <Link href={`${githubRepo}`}>{githubRepo}</Link>
+                </div>
+              </div>
+            )}
+
+            {showSeparateGithubActionsRepo && (
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub repo</div>
                 <div>
-                  <Link href={`${this.props.model.getGithubRepo()}`}>{this.props.model.getGithubRepo()}</Link>
+                  <Link href={`${githubActionsRepo}`}>{githubActionsRepo}</Link>
                 </div>
               </div>
             )}
@@ -220,13 +235,11 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               </div>
             )}
 
-            {this.props.model.getGithubRun() && (
+            {githubActionsUrl && (
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub run</div>
                 <div>
-                  <Link href={`${this.props.model.getGithubRepo()}/actions/runs/${this.props.model.getGithubRun()}`}>
-                    {this.props.model.getGithubRun()}
-                  </Link>
+                  <Link href={`${githubActionsUrl}`}>{this.props.model.getGithubRun()}</Link>
                 </div>
               </div>
             )}
