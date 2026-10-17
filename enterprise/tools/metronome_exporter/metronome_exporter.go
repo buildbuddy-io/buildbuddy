@@ -1,6 +1,6 @@
 // Metronome usage exporter.
 //
-// Reads usage data from ClickHouse for free tier and usage based groups and
+// Reads usage data from ClickHouse for selected groups and
 // ingests per-SKU events into Metronome. Designed to run as a scheduled
 // cronjob: each run exports the usage recorded since the previous run, tracked
 // in the BillingExportState table. A group gets a Metronome customer and
@@ -12,10 +12,17 @@
 // Example:
 //
 //	bazel run //enterprise/tools/metronome_exporter:metronome_exporter \
+//	  --group_ids=GR_CUSTOMER_ID \
 //	  --auto_migrate_db=false \
 //	  --database.data_source='mysql://user:password@tcp(mysql:3306)/buildbuddy' \
 //	  --olap_database.data_source='clickhouse://default:password@clickhouse:9000/buildbuddy' \
 //	  --billing.metronome.api_key=$METRONOME_API_KEY
+//
+// To select groups by status instead, use e.g.
+// --group_statuses='[1,5]' (free tier and usage based).
+// When both selectors are set, groups matching either are exported. At least
+// one selector is required.
+
 package main
 
 import (
@@ -24,6 +31,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -57,7 +65,9 @@ const (
 )
 
 var (
-	dryRun = flag.Bool("dry_run", false, "If true, log what would be sent without calling Metronome or updating the export state.")
+	dryRun        = flag.Bool("dry_run", false, "If true, log what would be sent without calling Metronome or updating the export state.")
+	groupIDs      = flag.Slice("group_ids", []string{}, "Comma-separated group IDs to export, regardless of status. Combined with group_statuses using OR. At least one selector is required.")
+	groupStatuses = flag.Slice("group_statuses", []grpb.Group_GroupStatus{}, "JSON array of integer GroupStatus enum values to export (e.g. [1,5] for free tier and usage based). Combined with group_ids using OR. At least one selector is required.")
 )
 
 func main() {
@@ -122,6 +132,9 @@ type metronomeClient interface {
 // A nil client is a dry run: nothing is sent and the export state is not
 // modified.
 func export(ctx context.Context, env *real_environment.RealEnv, client metronomeClient, now time.Time) error {
+	if err := validateGroupSelection(); err != nil {
+		return err
+	}
 	latest := now.UTC().Add(-minAge).Truncate(metronome.WindowSize)
 	state, err := loadState(ctx, env)
 	if err != nil {
@@ -196,11 +209,36 @@ func nextWindow(state *tables.BillingExportState, latest time.Time) (*window, er
 	return &window{from: from, to: latest}, nil
 }
 
+func validateGroupSelection() error {
+	if len(*groupIDs) == 0 && len(*groupStatuses) == 0 {
+		return errors.New("at least one of group_ids or group_statuses must be configured")
+	}
+	for _, id := range *groupIDs {
+		if strings.TrimSpace(id) == "" {
+			return errors.New("group_ids must not contain empty IDs")
+		}
+	}
+	for _, value := range *groupStatuses {
+		if _, ok := grpb.Group_GroupStatus_name[int32(value)]; !ok {
+			return fmt.Errorf("unknown group_statuses value %d; expected a GroupStatus enum value", value)
+		}
+	}
+	return nil
+}
+
 func exportedGroupIDs(ctx context.Context, env *real_environment.RealEnv) ([]string, error) {
-	groups, err := db.ScanAll(env.GetDBHandle().NewQuery(ctx, "metronome_exporter_groups").Raw(`
-		SELECT group_id FROM "Groups" WHERE status IN ?`,
-		[]grpb.Group_GroupStatus{grpb.Group_FREE_TIER_GROUP_STATUS, grpb.Group_USAGE_BASED_GROUP_STATUS},
-	), &tables.Group{})
+	var clauses []string
+	var args []any
+	if len(*groupIDs) > 0 {
+		clauses = append(clauses, "group_id IN ?")
+		args = append(args, *groupIDs)
+	}
+	if len(*groupStatuses) > 0 {
+		clauses = append(clauses, "status IN ?")
+		args = append(args, *groupStatuses)
+	}
+	query := `SELECT group_id FROM "Groups" WHERE ` + strings.Join(clauses, " OR ")
+	groups, err := db.ScanAll(env.GetDBHandle().NewQuery(ctx, "metronome_exporter_groups").Raw(query, args...), &tables.Group{})
 	if err != nil {
 		return nil, err
 	}
