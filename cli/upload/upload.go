@@ -167,16 +167,15 @@ func uploadFile(args []string) error {
 		if err != nil {
 			return fmt.Errorf("parse digest function: %w", err)
 		}
-		var d *repb.Digest
-		d, err = digest.Compute(inputReader, digestFunction)
+		info, err := inputFile.Stat()
+		if err != nil {
+			return fmt.Errorf("stat input file: %w", err)
+		}
+		d, err := digest.Compute(inputFile, digestFunction, info.Size())
 		if err != nil {
 			return fmt.Errorf("compute digest: %w", err)
 		}
-		seekableReader, ok := inputReader.(io.Seeker)
-		if !ok {
-			return fmt.Errorf("validate input stream: %w", errors.New("input stream is not seekable; provide --digest for streaming uploads"))
-		}
-		if _, err := seekableReader.Seek(0, io.SeekStart); err != nil {
+		if _, err := inputFile.Seek(0, io.SeekStart); err != nil {
 			return fmt.Errorf("rewind input: %w", err)
 		}
 		ind = digest.NewCASResourceName(d, *remoteInstanceName, digestFunction)

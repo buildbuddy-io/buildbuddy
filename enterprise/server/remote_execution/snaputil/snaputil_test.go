@@ -49,7 +49,7 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	randomStr, err := random.RandomString(length)
 	require.NoError(t, err)
 	b := []byte(randomStr)
-	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3)
+	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3, int64(len(b)))
 	require.NoError(t, err)
 	remoteInstanceName := ""
 	fileTypeLabel := "test"
@@ -110,7 +110,7 @@ func TestCacheAndFetchArtifact_LocalOnly(t *testing.T) {
 	randomStr, err := random.RandomString(length)
 	require.NoError(t, err)
 	b := []byte(randomStr)
-	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3)
+	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3, int64(len(b)))
 	require.NoError(t, err)
 	remoteInstanceName := ""
 	fileTypeLabel := "test"
@@ -145,7 +145,7 @@ func TestCacheAndFetchBytes(t *testing.T) {
 	randomStr, err := random.RandomString(length)
 	require.NoError(t, err)
 	b := []byte(randomStr)
-	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3)
+	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3, int64(len(b)))
 	require.NoError(t, err)
 	remoteInstanceName := ""
 	fileTypeLabel := "test"

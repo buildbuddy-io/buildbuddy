@@ -41,7 +41,7 @@ func NewReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
 
 func newRandomCompressibleDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
 	blob := compressibleBlobOfSize(int(sizeBytes))
-	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256, int64(len(blob)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func RandomACResourceBuf(t testing.TB, sizeBytes int64) (*rspb.ResourceName, []b
 
 func ReadDigestAndClose(t testing.TB, r io.ReadCloser) *repb.Digest {
 	defer r.Close()
-	d, err := digest.Compute(r, repb.DigestFunction_SHA256)
+	d, err := digest.Compute(r, repb.DigestFunction_SHA256, -1)
 	require.NoError(t, err)
 	return d
 }

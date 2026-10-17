@@ -652,7 +652,7 @@ func sharedValidationResourceName(cm *Manifest) (*rspb.ResourceName, []byte, err
 	}
 
 	content := inner.Sum(nil)
-	d, err := digest.Compute(bytes.NewReader(content), cm.DigestFunction)
+	d, err := digest.Compute(bytes.NewReader(content), cm.DigestFunction, int64(len(content)))
 	if err != nil {
 		return nil, nil, status.InvalidArgumentErrorf("compute shared validation key digest: %s", err)
 	}
@@ -671,7 +671,8 @@ func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction
 	// verification.
 	// TODO(buildbuddy-internal#6426): Consider using [HMAC](https://pkg.go.dev/crypto/hmac) for more robust keyed hashing.
 	if *chunkedManifestSalt != "" {
-		saltedDigest, err := digest.Compute(strings.NewReader(*chunkedManifestSalt+":"+blobDigest.GetHash()), digestFunction)
+		key := strings.NewReader(*chunkedManifestSalt + ":" + blobDigest.GetHash())
+		saltedDigest, err := digest.Compute(key, digestFunction, int64(key.Len()))
 		if err != nil {
 			return nil, err
 		}

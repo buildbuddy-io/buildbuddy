@@ -336,7 +336,7 @@ func fileDigest(filePath string) (*repb.Digest, error) {
 		return nil, err
 	}
 	defer file.Close()
-	return digest.Compute(file, repb.DigestFunction_BLAKE3)
+	return digest.Compute(file, repb.DigestFunction_BLAKE3, -1)
 }
 
 // Snapshot holds a snapshot manifest along with the corresponding cache key.
@@ -1198,7 +1198,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	}
 
 	emptyData := make([]byte, cow.ChunkSizeBytes())
-	allZerosDigest, err := digest.Compute(bytes.NewReader(emptyData), repb.DigestFunction_BLAKE3)
+	allZerosDigest, err := digest.Compute(bytes.NewReader(emptyData), repb.DigestFunction_BLAKE3, int64(len(emptyData)))
 	if err != nil {
 		return nil, err
 	}

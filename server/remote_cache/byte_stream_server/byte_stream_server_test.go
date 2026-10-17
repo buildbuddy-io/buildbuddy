@@ -431,7 +431,7 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 
 	blob, err := random.RandomString(10_000_000)
 	require.NoError(t, err)
-	d, err := digest.Compute(strings.NewReader(blob), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(strings.NewReader(blob), repb.DigestFunction_SHA256, int64(len(blob)))
 	require.NoError(t, err)
 	instanceNameDigest := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
 
@@ -800,7 +800,7 @@ func TestReadChunked(t *testing.T) {
 	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	fullBlob := append(append(chunk1, chunk2...), chunk3...)
 
-	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256, int64(len(fullBlob)))
 	require.NoError(t, err)
 
 	require.NoError(t, te.GetCache().Set(ctx, chunk1RN, chunk1))
@@ -837,7 +837,7 @@ func TestReadChunked_NonZeroOffset(t *testing.T) {
 	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, chunkSize)
 	fullBlob := append(append(chunk1, chunk2...), chunk3...)
 
-	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256, int64(len(fullBlob)))
 	require.NoError(t, err)
 
 	require.NoError(t, te.GetCache().Set(ctx, chunk1RN, chunk1))
@@ -909,13 +909,13 @@ func TestReadChunked_NonZeroOffset_ZstdBLAKE3(t *testing.T) {
 	_, chunk3 := testdigest.RandomCASResourceBuf(t, chunkSize)
 	fullBlob := append(append(chunk1, chunk2...), chunk3...)
 
-	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_BLAKE3)
+	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_BLAKE3, int64(len(chunk1)))
 	require.NoError(t, err)
-	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_BLAKE3)
+	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_BLAKE3, int64(len(chunk2)))
 	require.NoError(t, err)
-	chunk3Digest, err := digest.Compute(bytes.NewReader(chunk3), repb.DigestFunction_BLAKE3)
+	chunk3Digest, err := digest.Compute(bytes.NewReader(chunk3), repb.DigestFunction_BLAKE3, int64(len(chunk3)))
 	require.NoError(t, err)
-	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_BLAKE3, int64(len(fullBlob)))
 	require.NoError(t, err)
 
 	chunk1RN := digest.NewCASResourceName(chunk1Digest, "", repb.DigestFunction_BLAKE3)
@@ -958,7 +958,7 @@ func TestReadChunked_NonZeroOffset_ZstdBLAKE3(t *testing.T) {
 func TestChunkedBlobReaderReadChunk(t *testing.T) {
 	t.Run("identity returns exact bytes", func(t *testing.T) {
 		data := []byte("hello, world")
-		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3, int64(len(data)))
 		require.NoError(t, err)
 		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3).ToProto()
 		r := &chunkedBlobReader{
@@ -979,7 +979,7 @@ func TestChunkedBlobReaderReadChunk(t *testing.T) {
 
 	t.Run("identity rejects short reads", func(t *testing.T) {
 		data := []byte("hello, world")
-		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3, int64(len(data)))
 		require.NoError(t, err)
 		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3).ToProto()
 		r := &chunkedBlobReader{
@@ -1002,7 +1002,7 @@ func TestChunkedBlobReaderReadChunk(t *testing.T) {
 		compressed := compression.CompressZstd(nil, data)
 		require.Greater(t, len(compressed), len(data))
 
-		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3, int64(len(data)))
 		require.NoError(t, err)
 		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3)
 		rn.SetCompressor(repb.Compressor_ZSTD)
@@ -1066,9 +1066,9 @@ func TestChunkedBlobReader_ReadReturnsCurrentChunk(t *testing.T) {
 func TestChunkedBlobReader_CloseAfterErrorDoesNotBlock(t *testing.T) {
 	chunk1 := []byte("hello")
 	chunk2 := []byte("world")
-	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_BLAKE3)
+	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_BLAKE3, int64(len(chunk1)))
 	require.NoError(t, err)
-	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_BLAKE3)
+	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_BLAKE3, int64(len(chunk2)))
 	require.NoError(t, err)
 
 	rn1 := digest.NewCASResourceName(chunk1Digest, "", repb.DigestFunction_BLAKE3).ToProto()
@@ -1105,9 +1105,9 @@ func TestChunkedBlobReader_CloseAfterErrorDoesNotBlock(t *testing.T) {
 func TestChunkedBlobReader_CloseDoesNotWaitForActiveReads(t *testing.T) {
 	started := make(chan struct{}, 2)
 	unblock := make(chan struct{})
-	chunk1Digest, err := digest.Compute(bytes.NewReader([]byte("a")), repb.DigestFunction_BLAKE3)
+	chunk1Digest, err := digest.Compute(bytes.NewReader([]byte("a")), repb.DigestFunction_BLAKE3, int64(len("a")))
 	require.NoError(t, err)
-	chunk2Digest, err := digest.Compute(bytes.NewReader([]byte("b")), repb.DigestFunction_BLAKE3)
+	chunk2Digest, err := digest.Compute(bytes.NewReader([]byte("b")), repb.DigestFunction_BLAKE3, int64(len("b")))
 	require.NoError(t, err)
 
 	rn1 := digest.NewCASResourceName(chunk1Digest, "", repb.DigestFunction_BLAKE3).ToProto()
@@ -1175,13 +1175,13 @@ func TestReadChunked_ZstdBLAKE3_PassthroughIncompressible(t *testing.T) {
 	_, chunk3 := testdigest.RandomCASResourceBuf(t, chunkSize)
 	fullBlob := append(append(chunk1, chunk2...), chunk3...)
 
-	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_BLAKE3)
+	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_BLAKE3, int64(len(chunk1)))
 	require.NoError(t, err)
-	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_BLAKE3)
+	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_BLAKE3, int64(len(chunk2)))
 	require.NoError(t, err)
-	chunk3Digest, err := digest.Compute(bytes.NewReader(chunk3), repb.DigestFunction_BLAKE3)
+	chunk3Digest, err := digest.Compute(bytes.NewReader(chunk3), repb.DigestFunction_BLAKE3, int64(len(chunk3)))
 	require.NoError(t, err)
-	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_BLAKE3, int64(len(fullBlob)))
 	require.NoError(t, err)
 
 	baseCache := te.GetCache().(*casCompressionCache).Cache
@@ -1250,11 +1250,11 @@ func TestReadChunked_ZstdPassthroughCompressedChunkLargerThanCompressBound(t *te
 	}
 	fullBlob := append(append([]byte{}, chunk1...), chunk2...)
 
-	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_BLAKE3)
+	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_BLAKE3, int64(len(chunk1)))
 	require.NoError(t, err)
-	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_BLAKE3)
+	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_BLAKE3, int64(len(chunk2)))
 	require.NoError(t, err)
-	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_BLAKE3, int64(len(fullBlob)))
 	require.NoError(t, err)
 
 	baseCache := te.GetCache().(*casCompressionCache).Cache
@@ -1306,7 +1306,7 @@ func TestReadChunked_MissingManifest(t *testing.T) {
 	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	fullBlob := append(append(chunk1, chunk2...), chunk3...)
 
-	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256, int64(len(fullBlob)))
 	require.NoError(t, err)
 
 	require.NoError(t, te.GetCache().Set(ctx, chunk1RN, chunk1))
@@ -1376,7 +1376,7 @@ func TestReadChunked_UsesParallelReads(t *testing.T) {
 			require.NoError(t, cache.Set(ctx, chunkRN, chunkData))
 
 			fullBlob := bytes.Repeat(chunkData, tc.chunkCount)
-			blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+			blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256, int64(len(fullBlob)))
 			require.NoError(t, err)
 
 			chunkDigests := make([]*repb.Digest, tc.chunkCount)

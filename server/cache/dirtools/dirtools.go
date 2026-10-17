@@ -280,7 +280,7 @@ func newDirToUpload(digestFunction repb.DigestFunction_Value, fullPath string, i
 	}
 	reader := bytes.NewReader(data)
 
-	d, err := digest.Compute(reader, digestFunction)
+	d, err := digest.Compute(reader, digestFunction, int64(len(data)))
 	if err != nil {
 		return nil, err
 	}

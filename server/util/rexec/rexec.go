@@ -199,7 +199,7 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 	} else if action.InputRootDigest == nil {
 		// If running an action without an input root, set it to the digest of
 		// an empty directory, since the input_root_digest field is required.
-		d, err := digest.Compute(bytes.NewReader(nil), digestFunction)
+		d, err := digest.Compute(bytes.NewReader(nil), digestFunction, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -463,7 +463,7 @@ func GetCachedExecuteResponse(ctx context.Context, acClient repb.ActionCacheClie
 
 	var actionResult *repb.ActionResult
 	for i, lookupExecutionID := range lookupExecutionIDs {
-		executeResponseDigest, err := digest.Compute(strings.NewReader(lookupExecutionID), uploadResourceName.GetDigestFunction())
+		executeResponseDigest, err := digest.Compute(strings.NewReader(lookupExecutionID), uploadResourceName.GetDigestFunction(), int64(len(lookupExecutionID)))
 		if err != nil {
 			return nil, fmt.Errorf("compute execute response digest: %w", err)
 		}

@@ -225,7 +225,7 @@ func TestWriteChunkedValidatesBlobForUnvalidatedSplice(t *testing.T) {
 	}
 
 	data := make([]byte, 5*1024*1024)
-	d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256, int64(len(data)))
 	require.NoError(t, err)
 	data[0] = 'x'
 	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
@@ -429,7 +429,7 @@ func TestChunkUploaderGroupsFindMissingAndDedupesWithinBlob(t *testing.T) {
 	uniqueChunks := make([]chunkData, 9)
 	for i := range uniqueChunks {
 		_, rawData := testdigest.RandomCASResourceBuf(t, 700_000)
-		d, err := digest.Compute(bytes.NewReader(rawData), repb.DigestFunction_BLAKE3)
+		d, err := digest.Compute(bytes.NewReader(rawData), repb.DigestFunction_BLAKE3, int64(len(rawData)))
 		require.NoError(t, err)
 		uniqueChunks[i] = chunkData{
 			digest: d,
@@ -1358,14 +1358,14 @@ func TestReadChunked(t *testing.T) {
 	require.NoError(t, err)
 
 	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(t, err)
 
 	var chunkDigests []*repb.Digest
 	writeChunkFn := func(chunkData []byte) error {
 		chunkDataCopy := make([]byte, len(chunkData))
 		copy(chunkDataCopy, chunkData)
-		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3, int64(len(chunkDataCopy)))
 		if err != nil {
 			return err
 		}
@@ -1601,14 +1601,14 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 
 	// Write test data directly to the remote cache.
 	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(t, err)
 
 	var chunkDigests []*repb.Digest
 	writeChunkFn := func(chunkData []byte) error {
 		chunkDataCopy := make([]byte, len(chunkData))
 		copy(chunkDataCopy, chunkData)
-		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3, int64(len(chunkDataCopy)))
 		if err != nil {
 			return err
 		}
@@ -1755,14 +1755,14 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 	require.NoError(t, err)
 
 	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(t, err)
 
 	var chunkDigests []*repb.Digest
 	writeChunkFn := func(chunkData []byte) error {
 		chunkDataCopy := make([]byte, len(chunkData))
 		copy(chunkDataCopy, chunkData)
-		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3, int64(len(chunkDataCopy)))
 		if err != nil {
 			return err
 		}
@@ -1904,7 +1904,7 @@ func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 	require.NoError(t, err)
 
 	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(t, err)
 	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
 	require.NoError(t, remoteEnv.GetCache().Set(remoteCtx, blobRN.ToProto(), originalData))
@@ -2029,7 +2029,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	require.NoError(t, err)
 
 	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(t, err)
 	compressedData := compression.CompressZstd(nil, originalData)
 	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
@@ -2121,7 +2121,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 
 func TestReadChunkZstdLargerThanInitialBuffer(t *testing.T) {
 	chunk := bytes.Repeat([]byte("x"), 646321)
-	chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_BLAKE3)
+	chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_BLAKE3, int64(len(chunk)))
 	require.NoError(t, err)
 	chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
 	chunkRN.SetCompressor(repb.Compressor_ZSTD)
@@ -2260,7 +2260,7 @@ func TestReadChunkedWithOffset(t *testing.T) {
 
 	// Write the blob as CDC chunks and publish the manifest remotely.
 	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(t, err)
 
 	var chunkDigests []*repb.Digest
@@ -2268,7 +2268,7 @@ func TestReadChunkedWithOffset(t *testing.T) {
 	writeChunkFn := func(chunkData []byte) error {
 		chunkDataCopy := make([]byte, len(chunkData))
 		copy(chunkDataCopy, chunkData)
-		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3, int64(len(chunkDataCopy)))
 		if err != nil {
 			return err
 		}
@@ -2433,7 +2433,7 @@ func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
 	require.NoError(t, err)
 
 	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(t, err)
 	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
 	require.NoError(t, proxyEnv.GetCache().Set(ctx, blobRN.ToProto(), originalData))
@@ -2500,14 +2500,14 @@ func TestReadChunkedPartialLocalFailure(t *testing.T) {
 
 	// Write the blob as CDC chunks and publish the manifest remotely.
 	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(t, err)
 
 	var chunkDigests []*repb.Digest
 	writeChunkFn := func(chunkData []byte) error {
 		chunkDataCopy := make([]byte, len(chunkData))
 		copy(chunkDataCopy, chunkData)
-		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3, int64(len(chunkDataCopy)))
 		if err != nil {
 			return err
 		}
@@ -2683,7 +2683,7 @@ func TestWriteChunked(t *testing.T) {
 	require.NoError(t, err)
 
 	_, originalData := testdigest.RandomCASResourceBuf(t, 10*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(t, err)
 
 	compressedData := compression.CompressZstd(nil, originalData)
@@ -2861,7 +2861,7 @@ func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
 	require.NoError(t, err)
 
 	_, originalData := testdigest.RandomCASResourceBuf(t, 10*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(t, err)
 
 	compressedData := compression.CompressZstd(nil, originalData)
@@ -3002,7 +3002,7 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 	proxy := bspb.NewByteStreamClient(proxyConn)
 
 	_, originalData := testdigest.RandomCASResourceBuf(t, 10*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(t, err)
 
 	compressedData := compression.CompressZstd(nil, originalData)
@@ -3150,7 +3150,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 
 	// Create a blob smaller than the threshold.
 	_, originalData := testdigest.RandomCASResourceBuf(t, 1*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(t, err)
 
 	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
@@ -3461,12 +3461,12 @@ func benchmarkLocalChunkSet(chunks []benchmarkChunk, localPercent int) map[diges
 
 func prepareChunkedReadBenchmarkData(b *testing.B, ctx context.Context, size int64) (*repb.Digest, []benchmarkChunk) {
 	_, originalData := testdigest.RandomCASResourceBuf(b, size)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3, int64(len(originalData)))
 	require.NoError(b, err)
 
 	chunks := make([]benchmarkChunk, 0)
 	writeChunkFn := func(chunkData []byte) error {
-		chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), repb.DigestFunction_BLAKE3)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), repb.DigestFunction_BLAKE3, int64(len(chunkData)))
 		if err != nil {
 			return err
 		}
@@ -3519,7 +3519,7 @@ func BenchmarkWriteChunkedUnique(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				iter++
 				_, rawData := testdigest.NewRandomResourceAndBuf(b, size, rspb.CacheType_CAS, strconv.Itoa(iter))
-				blobDigest, err := digest.Compute(bytes.NewReader(rawData), repb.DigestFunction_BLAKE3)
+				blobDigest, err := digest.Compute(bytes.NewReader(rawData), repb.DigestFunction_BLAKE3, int64(len(rawData)))
 				require.NoError(b, err)
 				compressedData := compression.CompressZstd(nil, rawData)
 
@@ -3577,7 +3577,7 @@ func BenchmarkWriteChunkedWithDedup(b *testing.B) {
 					copy(data[overlapBytes:], randomPart)
 				}
 
-				blobDigest, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+				blobDigest, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3, int64(len(data)))
 				require.NoError(b, err)
 				compressedData := compression.CompressZstd(nil, data)
 

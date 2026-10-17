@@ -382,7 +382,7 @@ func TestGetCachedExecuteResponse(t *testing.T) {
 					require.NotEmpty(t, test.expectedLookupID, "unexpected action cache lookup")
 					rn, err := digest.ParseUploadResourceName(test.expectedLookupID)
 					require.NoError(t, err)
-					expectedDigest, err := digest.Compute(strings.NewReader(test.expectedLookupID), rn.GetDigestFunction())
+					expectedDigest, err := digest.Compute(strings.NewReader(test.expectedLookupID), rn.GetDigestFunction(), int64(len(test.expectedLookupID)))
 					require.NoError(t, err)
 					if !proto.Equal(expectedDigest, in.GetActionDigest()) {
 						return nil, gstatus.Error(codes.NotFound, "not found")
@@ -414,9 +414,9 @@ func TestGetExecutionLogs(t *testing.T) {
 	stdout := "hello stdout"
 	stderr := "hello stderr"
 
-	stdoutDigest, err := digest.Compute(strings.NewReader(stdout), digestFunction)
+	stdoutDigest, err := digest.Compute(strings.NewReader(stdout), digestFunction, int64(len(stdout)))
 	require.NoError(t, err)
-	stderrDigest, err := digest.Compute(strings.NewReader(stderr), digestFunction)
+	stderrDigest, err := digest.Compute(strings.NewReader(stderr), digestFunction, int64(len(stderr)))
 	require.NoError(t, err)
 
 	bsClient := &fakeByteStreamClient{

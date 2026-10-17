@@ -1311,7 +1311,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 				return err
 			}
 		}
-		chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), digestFunction)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), digestFunction, int64(len(chunkData)))
 		if err != nil {
 			return status.InternalErrorf("computing chunked digest for Write: %s", err)
 		}

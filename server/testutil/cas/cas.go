@@ -29,7 +29,7 @@ func MakeTree(ctx context.Context, t testing.TB, bsClient bspb.ByteStreamClient,
 			subdir := &repb.Directory{}
 			if d == depth {
 				rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-				_, err := cachetools.UploadBlob(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, bytes.NewReader(buf))
+				_, err := cachetools.UploadBlob(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, bytes.NewReader(buf), int64(len(buf)))
 				require.NoError(t, err)
 				fileName := fmt.Sprintf("leaf-file-%s-%d", rn.GetDigest().GetHash(), n)
 				fileNames = append(fileNames, fileName)

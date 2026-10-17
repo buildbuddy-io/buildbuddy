@@ -2595,7 +2595,7 @@ func TestExecute_RejectAnonymousExecutionsExperiment(t *testing.T) {
 			// FAILED_PRECONDITION (missing blob) when fetching the action,
 			// which proves that the check runs before the action is fetched
 			// and only rejects anonymous users.
-			ad, err := digest.Compute(strings.NewReader("nonexistent action"), repb.DigestFunction_SHA256)
+			ad, err := digest.Compute(strings.NewReader("nonexistent action"), repb.DigestFunction_SHA256, int64(len("nonexistent action")))
 			require.NoError(t, err)
 
 			client := repb.NewExecutionClient(conn)
@@ -2657,7 +2657,7 @@ func TestExecute_RejectAnonymousExecutionsExperiment_TargetsClientIP(t *testing.
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 
-	ad, err := digest.Compute(strings.NewReader("nonexistent action"), repb.DigestFunction_SHA256)
+	ad, err := digest.Compute(strings.NewReader("nonexistent action"), repb.DigestFunction_SHA256, int64(len("nonexistent action")))
 	require.NoError(t, err)
 	client := repb.NewExecutionClient(conn)
 

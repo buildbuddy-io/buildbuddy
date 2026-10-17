@@ -63,14 +63,14 @@ func (c *getErrorCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, 
 
 func storeChunkedBlob(t testing.TB, ctx context.Context, cache interfaces.Cache, data []byte, digestFunction repb.DigestFunction_Value) (*repb.Digest, []*rspb.ResourceName) {
 	t.Helper()
-	blobDigest, err := digest.Compute(bytes.NewReader(data), digestFunction)
+	blobDigest, err := digest.Compute(bytes.NewReader(data), digestFunction, int64(len(data)))
 	require.NoError(t, err)
 
 	split := len(data) / 2
 	chunkData := [][]byte{data[:split], data[split:]}
 	chunkRNs := make([]*rspb.ResourceName, 0, len(chunkData))
 	for _, data := range chunkData {
-		d, err := digest.Compute(bytes.NewReader(data), digestFunction)
+		d, err := digest.Compute(bytes.NewReader(data), digestFunction, int64(len(data)))
 		require.NoError(t, err)
 		rn := digest.NewCASResourceName(d, "", digestFunction).ToProto()
 		require.NoError(t, cache.Set(ctx, rn, data))
@@ -420,7 +420,7 @@ func TestHitTracking(t *testing.T) {
 			// applicable
 			instanceName := "test"
 			digestFn := repb.DigestFunction_SHA256
-			outputDigest, err := digest.Compute(strings.NewReader("hello world"), digestFn)
+			outputDigest, err := digest.Compute(strings.NewReader("hello world"), digestFn, int64(len("hello world")))
 			require.NoError(t, err)
 			uploadedActionResult := &repb.ActionResult{
 				OutputFiles: []*repb.OutputFile{
@@ -800,7 +800,7 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
 
 	allData := append(chunk1Data, chunk2Data...)
-	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256, int64(len(allData)))
 	require.NoError(t, err)
 
 	cm := &chunking.Manifest{
@@ -939,7 +939,7 @@ func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
 		require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
 		require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
 
-		blobDigest, err := digest.Compute(bytes.NewReader(append(chunk1Data, chunk2Data...)), repb.DigestFunction_SHA256)
+		blobDigest, err := digest.Compute(bytes.NewReader(append(chunk1Data, chunk2Data...)), repb.DigestFunction_SHA256, int64(len(chunk1Data)+len(chunk2Data)))
 		require.NoError(t, err)
 		cm := &chunking.Manifest{
 			BlobDigest:     blobDigest,
@@ -983,7 +983,7 @@ func TestValidateActionResult_DiscardsChunkedOutputFileBelowCurrentWriteThreshol
 	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3Data))
 
 	allData := append(append(chunk1Data, chunk2Data...), chunk3Data...)
-	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
+	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256, int64(len(allData)))
 	require.NoError(t, err)
 
 	cm := &chunking.Manifest{

@@ -362,7 +362,7 @@ func ComputeForMessage(in proto.Message, digestType repb.DigestFunction_Value) (
 	if err != nil {
 		return nil, err
 	}
-	return Compute(bytes.NewReader(data), digestType)
+	return Compute(bytes.NewReader(data), digestType, int64(len(data)))
 }
 
 func HashForDigestType(digestType repb.DigestFunction_Value) (hash.Hash, error) {
@@ -460,7 +460,9 @@ func isOldStyleDigestFunction(digestFunction repb.DigestFunction_Value) bool {
 
 var blake3Hashes = sync.Pool{New: func() any { return blake3.New() }}
 
-func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
+// Compute hashes in from its current position. sizeBytes is the expected
+// number of bytes remaining, or -1 if unknown.
+func Compute(in io.Reader, digestType repb.DigestFunction_Value, sizeBytes int64) (*repb.Digest, error) {
 	var h hash.Hash
 	if digestType == repb.DigestFunction_BLAKE3 {
 		// blake3.New() allocates over 10KiB. Use a pool to avoid this.
@@ -484,6 +486,9 @@ func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, 
 	if err != nil {
 		return nil, err
 	}
+	if sizeBytes >= 0 && n != sizeBytes {
+		return nil, status.DataLossErrorf("digest size mismatch: expected %d bytes, read %d", sizeBytes, n)
+	}
 	return &repb.Digest{
 		Hash:      hex.EncodeToString(h.Sum(nil)),
 		SizeBytes: n,
@@ -496,7 +501,11 @@ func ComputeForFile(path string, digestType repb.DigestFunction_Value) (*repb.Di
 		return nil, err
 	}
 	defer f.Close()
-	return Compute(f, digestType)
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	return Compute(f, digestType, info.Size())
 }
 
 // parseResourceName parses a resource-name URL into a ResourceName. For upload
@@ -899,7 +908,7 @@ func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, erro
 	g.fill(buf)
 
 	// Compute a digest for the random bytes.
-	d, err := Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
+	d, err := Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256, int64(len(buf)))
 	if err != nil {
 		return nil, nil, err
 	}

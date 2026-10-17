@@ -67,7 +67,7 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 	iid1 := uuid.New()
 	ad1 := &repb.Digest{Hash: "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae", SizeBytes: 100}
 	exid1 := digest.NewCASResourceName(ad1, "test-instance-name", repb.DigestFunction_SHA256).NewUploadString()
-	rd1, err := digest.Compute(strings.NewReader(exid1), repb.DigestFunction_SHA256)
+	rd1, err := digest.Compute(strings.NewReader(exid1), repb.DigestFunction_SHA256, int64(len(exid1)))
 	require.NoError(t, err)
 	testTimestampUsec := time.Now().UnixMicro()
 
@@ -418,13 +418,13 @@ func TestGetExecutionDownloads(t *testing.T) {
 	instanceName := "instance"
 
 	createExecution := func(name string, invocationPerms, executionPerms int32) (string, string, []*capb.ExecutionDownload) {
-		smallDigest, err := digest.Compute(strings.NewReader(name+"-small-data"), digestFunction)
+		smallDigest, err := digest.Compute(strings.NewReader(name+"-small-data"), digestFunction, int64(len(name+"-small-data")))
 		require.NoError(t, err)
-		mediumDigest, err := digest.Compute(strings.NewReader(name+"-medium-data-medium"), digestFunction)
+		mediumDigest, err := digest.Compute(strings.NewReader(name+"-medium-data-medium"), digestFunction, int64(len(name+"-medium-data-medium")))
 		require.NoError(t, err)
-		largeDigest, err := digest.Compute(strings.NewReader(name+"-large-data-large-data-large"), digestFunction)
+		largeDigest, err := digest.Compute(strings.NewReader(name+"-large-data-large-data-large"), digestFunction, int64(len(name+"-large-data-large-data-large")))
 		require.NoError(t, err)
-		tinyDigest, err := digest.Compute(strings.NewReader(name+"-tiny"), digestFunction)
+		tinyDigest, err := digest.Compute(strings.NewReader(name+"-tiny"), digestFunction, int64(len(name+"-tiny")))
 		require.NoError(t, err)
 		emptyDirDigest := &repb.Digest{Hash: digest.EmptySha256, SizeBytes: 0}
 
@@ -512,7 +512,7 @@ func TestGetExecutionDownloads(t *testing.T) {
 		executeResponseBytes, err := proto.Marshal(executeResponse)
 		require.NoError(t, err)
 
-		executeResponseDigest, err := digest.Compute(strings.NewReader(executionID), digestFunction)
+		executeResponseDigest, err := digest.Compute(strings.NewReader(executionID), digestFunction, int64(len(executionID)))
 		require.NoError(t, err)
 		// Store the synthetic ExecuteResponse in AC the same way production code
 		// does so GetExecutionDownloads can load it by execution ID.

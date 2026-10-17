@@ -3095,7 +3095,7 @@ func newReadthroughPeerSelectionCache(t *testing.T) *Cache {
 func digestWithNoSameZonePrimary(t *testing.T, c *Cache) *repb.Digest {
 	for i := range 10000 {
 		buf := []byte(fmt.Sprintf("readthrough-peer-selection-%d", i))
-		d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
+		d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256, int64(len(buf)))
 		require.NoError(t, err)
 		peers := c.consistentHash.GetAllReplicas(d.GetHash())
 		primaryPeers := peers[:c.opts.ReplicationFactor]
@@ -3536,7 +3536,7 @@ func TestLookasidePartitionIsolation(t *testing.T) {
 
 	// Generate some test data and write it only to partition 1.
 	dataA := []byte("data")
-	digestA, err := digest.Compute(bytes.NewReader(dataA), repb.DigestFunction_SHA256)
+	digestA, err := digest.Compute(bytes.NewReader(dataA), repb.DigestFunction_SHA256, int64(len(dataA)))
 	require.NoError(t, err)
 	rnA := digest.NewResourceName(digestA, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 	err = dc.Set(ctx1, rnA, dataA)

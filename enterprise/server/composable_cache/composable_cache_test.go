@@ -44,7 +44,7 @@ func writeDigest(ctx context.Context, t *testing.T, c interfaces.Cache, sizeByte
 func readAndVerifyDigest(ctx context.Context, t *testing.T, c interfaces.Cache, d *rspb.ResourceName) {
 	r, err := c.Reader(ctx, d, 0, 0)
 	require.NoError(t, err)
-	rd, err := digest.Compute(r, repb.DigestFunction_SHA256)
+	rd, err := digest.Compute(r, repb.DigestFunction_SHA256, d.GetDigest().GetSizeBytes())
 	require.NoError(t, err)
 	err = r.Close()
 	require.NoError(t, err)

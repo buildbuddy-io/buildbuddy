@@ -179,7 +179,7 @@ func TestReaderMaxOffset(t *testing.T) {
 	readSeeker := bytes.NewReader(buf.Bytes())
 
 	// Compute a digest for the random bytes.
-	d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
+	d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256, int64(readSeeker.Len()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +370,7 @@ func TestReader(t *testing.T) {
 		readSeeker := bytes.NewReader(buf.Bytes())
 
 		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
+		d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256, int64(readSeeker.Len()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -462,7 +462,7 @@ func TestWriter(t *testing.T) {
 		readSeeker := bytes.NewReader(buf.Bytes())
 
 		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
+		d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256, int64(readSeeker.Len()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -658,7 +658,7 @@ func TestContains(t *testing.T) {
 		readSeeker := bytes.NewReader(buf.Bytes())
 
 		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
+		d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256, int64(readSeeker.Len()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -731,7 +731,7 @@ func TestOversizeBlobs(t *testing.T) {
 		readSeeker := bytes.NewReader(buf.Bytes())
 
 		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
+		d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256, int64(readSeeker.Len()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -758,7 +758,7 @@ func TestOversizeBlobs(t *testing.T) {
 		// bytes that were uploaded, even though they are keyed
 		// under a different digest.
 		readSeeker.Seek(0, 0)
-		d1, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
+		d1, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256, int64(readSeeker.Len()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -815,7 +815,7 @@ func TestFindMissing(t *testing.T) {
 			readSeeker := bytes.NewReader(buf.Bytes())
 
 			// Compute a digest for the random bytes.
-			d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
+			d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256, int64(readSeeker.Len()))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -878,7 +878,7 @@ func TestGetMulti(t *testing.T) {
 			readSeeker := bytes.NewReader(buf.Bytes())
 
 			// Compute a digest for the random bytes.
-			d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
+			d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256, int64(readSeeker.Len()))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1287,7 +1287,7 @@ func BenchmarkRead(b *testing.B) {
 				// Read some random bytes.
 				readSeeker := bytes.NewReader(buf.Bytes())
 				// Compute a digest for the random bytes.
-				d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
+				d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256, int64(readSeeker.Len()))
 				require.NoError(b, err)
 				rn := &rspb.ResourceName{
 					Digest:       d,

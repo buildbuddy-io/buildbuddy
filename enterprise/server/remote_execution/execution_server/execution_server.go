@@ -1750,7 +1750,7 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	// store the digest anywhere. The key is the hash of the task ID, and the
 	// value is an ActionResult with stdout_raw set to the marshaled
 	// ExecuteResponse.
-	d, err := digest.Compute(strings.NewReader(taskID), taskRN.GetDigestFunction())
+	d, err := digest.Compute(strings.NewReader(taskID), taskRN.GetDigestFunction(), int64(len(taskID)))
 	if err != nil {
 		return err
 	}
