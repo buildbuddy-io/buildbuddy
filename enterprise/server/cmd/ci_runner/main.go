@@ -2695,6 +2695,9 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 		// Disable idle shutdown so a recycled runner doesn't resume a Bazel server
 		// whose idle timer is already expired.
 		"startup --max_idle_secs=0",
+		// Let Bazel use most of the runner's memory, leaving headroom for native
+		// JVM memory and other processes.
+		"startup --host_jvm_args=-XX:MaxRAMPercentage=75",
 		"common --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
 		"common --build_metadata=PARENT_RUN_ID=" + runID,
 		// Note: these pieces of metadata are set to match the WorkspaceStatus event
