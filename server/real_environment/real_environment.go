@@ -78,6 +78,7 @@ type RealEnv struct {
 	remoteExecutionClient                repb.ExecutionClient
 	contentAddressableStorageClient      repb.ContentAddressableStorageClient
 	localContentAddressableStorageClient repb.ContentAddressableStorageClient
+	localActionCacheClient               repb.ActionCacheClient
 	cacheRoutingService                  interfaces.CacheRoutingService
 	metricsCollector                     interfaces.MetricsCollector
 	keyValStore                          interfaces.KeyValStore
@@ -365,6 +366,13 @@ func (r *RealEnv) GetLocalContentAddressableStorageClient() repb.ContentAddressa
 }
 func (r *RealEnv) SetLocalContentAddressableStorageClient(c repb.ContentAddressableStorageClient) {
 	r.localContentAddressableStorageClient = c
+}
+
+func (r *RealEnv) GetLocalActionCacheClient() repb.ActionCacheClient {
+	return r.localActionCacheClient
+}
+func (r *RealEnv) SetLocalActionCacheClient(c repb.ActionCacheClient) {
+	r.localActionCacheClient = c
 }
 
 func (r *RealEnv) SetCacheRoutingService(s interfaces.CacheRoutingService) {
