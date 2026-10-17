@@ -177,7 +177,7 @@ func TestFindMissing(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := getAnonContext(t, te)
 
-	maxSizeBytes := int64(defaultExt4BlockSize * 1)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDir := testfs.MakeTempDir(t)
 	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
 	require.NoError(t, err)

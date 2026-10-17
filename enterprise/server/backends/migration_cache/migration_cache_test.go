@@ -241,7 +241,7 @@ func TestACIsolation(t *testing.T) {
 func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(defaultExt4BlockSize * 1)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -319,7 +319,7 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache := &errorCache{}
-	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(1000))
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(defaultExt4BlockSize*10))
 	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(te, &cache_config.MigrationConfig{}, srcCache, destCache)
 
@@ -535,7 +535,7 @@ func TestGet_DoubleRead(t *testing.T) {
 func TestGet_DestReadErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(defaultExt4BlockSize * 1)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
@@ -557,7 +557,7 @@ func TestGet_DestReadErr(t *testing.T) {
 func TestGet_SrcReadErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache := &errorCache{}
@@ -580,7 +580,7 @@ func TestGet_SrcReadErr(t *testing.T) {
 func TestGetSet_EmptyData(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -1011,7 +1011,7 @@ func TestContains(t *testing.T) {
 func TestContains_DestErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(defaultExt4BlockSize * 1)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
