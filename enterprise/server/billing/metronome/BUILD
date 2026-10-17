@@ -10,6 +10,7 @@ go_library(
         "//server/http/httpclient",
         "//server/usage/sku",
         "//server/util/flag",
+        "//server/util/log",
         "//server/util/region",
         "//server/util/retry",
         "//server/util/status",

@@ -235,6 +235,13 @@ type BuildBuddyServer interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
+type BillingService interface {
+	// CreateSetupSession returns the URL of a page where the group's payment method is entered.
+	CreateSetupSession(ctx context.Context, group *tables.Group) (string, error)
+	// CompleteSetup makes the group usage based, billed to the payment method entered in the session.
+	CompleteSetup(ctx context.Context, group *tables.Group, setupSessionID string) error
+}
+
 type SSLService interface {
 	IsEnabled() bool
 	IsCertGenerationEnabled() bool

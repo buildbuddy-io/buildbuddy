@@ -31,6 +31,7 @@ ts_library(
         "//enterprise/app/settings:github_link",
         "//enterprise/app/settings:group_status",
         "//enterprise/app/settings:sso_config",
+        "//enterprise/app/settings:usage_based_billing",
         "//enterprise/app/settings:user_github_link",
     ],
 )
@@ -132,6 +133,24 @@ ts_library(
         "//app/components/dialog",
         "//app/components/modal",
         "//app/components/select",
+        "//app/service:rpc_service",
+        "//proto:group_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "usage_based_billing",
+    srcs = ["usage_based_billing.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/alert:alert_service",
+        "//app/auth:auth_service",
+        "//app/capabilities",
+        "//app/components/button",
+        "//app/errors:error_service",
+        "//app/router",
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
     ],
