@@ -3,6 +3,7 @@ package login
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -32,9 +33,41 @@ import (
 const (
 	apiKeyRepoSetting = "api-key"
 	apiKeyHeader      = "remote_header=x-buildbuddy-api-key"
+	envAPIKeyVarName  = "BUILDBUDDY_API_KEY"
 	DefaultApiTarget  = "grpcs://remote.buildbuddy.io"
 	DefaultHTTPTarget = "https://app.buildbuddy.io"
 )
+
+// apiKeySource identifies which credential source supplied an API key, for use
+// in messages to the user.
+type apiKeySource int
+
+const (
+	apiKeySourceNone apiKeySource = iota
+	apiKeySourceEnv
+	apiKeySourceRepo
+)
+
+func (s apiKeySource) String() string {
+	switch s {
+	case apiKeySourceEnv:
+		return "$" + envAPIKeyVarName
+	case apiKeySourceRepo:
+		return ".git/config " + gitConfigAPIKeyName
+	default:
+		return "no credential source"
+	}
+}
+
+// gitConfigAPIKeyName is the fully qualified .git/config key, for use in
+// messages to the user.
+const gitConfigAPIKeyName = "buildbuddy." + apiKeyRepoSetting
+
+// envAPIKey returns the API key supplied by the environment, or an empty string
+// if there is none.
+func envAPIKey() string {
+	return strings.TrimSpace(os.Getenv(envAPIKeyVarName))
+}
 
 var (
 	flags = flag.NewFlagSet("login", flag.ContinueOnError)
@@ -62,8 +95,36 @@ The exit code indicates the result of the check:
 	0: credentials are valid
 	1: credentials are invalid
 	2: error validating credentials
+
+--check and --allow_existing each consider the BUILDBUDDY_API_KEY environment
+variable as well as the key saved in .git/config. BUILDBUDDY_API_KEY takes
+precedence: if it is set, that is the key that gets checked, and a key written
+to .git/config by a later login will not be used until the variable is unset.
+If BUILDBUDDY_API_KEY is set but rejected, --allow_existing exits 1 without
+logging in. A --remote_header=x-buildbuddy-api-key flag in a .bazelrc overrides
+both during a build and is not checked.
 `
 )
+
+var (
+	logoutFlags = flag.NewFlagSet("logout", flag.ContinueOnError)
+	LogoutFlags = logoutFlags
+
+	logoutUsage = `
+bb ` + logoutFlags.Name() + `
+
+Removes the personal API key that bb saved to .git/config.
+
+This only clears what bb itself wrote. It cannot clear a key supplied by the
+BUILDBUDDY_API_KEY environment variable, or by a
+--remote_header=x-buildbuddy-api-key flag in a .bazelrc; remove those yourself
+if you want builds to stop authenticating.
+`
+)
+
+// authenticateFn is replaced in tests to drive the credential-checking paths
+// without a network round-trip. Production code always uses authenticate.
+var authenticateFn = authenticate
 
 func authenticate(apiKey string) error {
 	conn, err := grpc_client.DialSimple(*apiTarget)
@@ -101,18 +162,20 @@ func HandleLogin(args []string) (exitCode int, err error) {
 	}
 	buildbuddyURL.Path = ""
 
-	repoRoot, err := storage.RepoRootPath()
-	if err != nil {
-		return -1, fmt.Errorf("locate .git repo root path: %w", err)
-	}
-
 	if *check || *allowExisting {
-		apiKey, err := storage.ReadRepoConfig(apiKeyRepoSetting)
+		// Check BUILDBUDDY_API_KEY as well as .git/config, in the order a build
+		// uses them.
+		apiKey, source, err := resolveAPIKey()
 		if err != nil {
-			return -1, fmt.Errorf("read .git/config: %w", err)
+			// Exit 2 ("error validating credentials"). Returning the error would reach
+			// log.Fatal in main and exit 1, which means "credentials are invalid".
+			log.Printf("Failed to read API key: %s", err)
+			return 2, nil
 		}
 		code := 0
-		if err := authenticate(apiKey); err != nil {
+		if apiKey == "" {
+			code = 1
+		} else if err := authenticateFn(apiKey); err != nil {
 			if status.IsUnauthenticatedError(err) {
 				code = 1
 			} else {
@@ -124,17 +187,31 @@ func HandleLogin(args []string) (exitCode int, err error) {
 			// In check mode, always exit.
 			return code, nil
 		}
-		if *allowExisting {
-			if code == 0 {
-				// Success, skip login.
-				return 0, nil
-			}
-			if code != 1 {
-				// Error, exit immediately without proceeding to login.
-				return code, nil
-			}
-			// Unauthenticated - proceed to login.
+		if code == 0 {
+			// Success, skip login. Name the source, so a user expecting a key in
+			// .git/config can tell that none was written.
+			log.Printf("Already logged in using %s. Skipping login.", source)
+			return 0, nil
 		}
+		if code != 1 {
+			// Error, exit immediately without proceeding to login.
+			return code, nil
+		}
+		// A new key in .git/config would not be used while BUILDBUDDY_API_KEY
+		// is set, so logging in cannot fix a rejected env key.
+		if source == apiKeySourceEnv {
+			log.Warnf("%s is set but its key was rejected. Builds use %s before .git/config, so logging in would not fix this. Update or unset %s.", envAPIKeyVarName, envAPIKeyVarName, envAPIKeyVarName)
+			return 1, nil
+		}
+		// Unauthenticated - proceed to login.
+	}
+
+	// Only the interactive login flow needs a repo to write the key to, so this
+	// is resolved after the --check path above, which must work outside a git
+	// repo.
+	repoRoot, err := storage.RepoRootPath()
+	if err != nil {
+		return -1, fmt.Errorf("locate .git repo root path: %w", err)
 	}
 
 	userInputCh := make(chan Result[string])
@@ -215,7 +292,7 @@ func HandleLogin(args []string) (exitCode int, err error) {
 		return -1, fmt.Errorf("invalid input: API key is empty")
 	}
 
-	if err := authenticate(apiKey); err != nil {
+	if err := authenticateFn(apiKey); err != nil {
 		return -1, fmt.Errorf("authenticate API key: %w", err)
 	}
 
@@ -224,19 +301,56 @@ func HandleLogin(args []string) (exitCode int, err error) {
 	}
 
 	log.Printf("Wrote API key to .git/config")
-	log.Printf("You are now building with BuildBuddy!")
+	logSavedKeyStatus(apiKey)
 
 	return 0, nil
 }
 
 func HandleLogout(args []string) (exitCode int, err error) {
-	if err := storage.WriteRepoConfig(apiKeyRepoSetting, ""); err != nil {
-		return -1, fmt.Errorf("failed to clear api key from local .git/config: %s", err)
+	if err := arg.ParseFlagSet(logoutFlags, args); err != nil {
+		if err == flag.ErrHelp {
+			log.Print(logoutUsage)
+			return 1, nil
+		}
+		return -1, err
+	}
+
+	removed, err := storage.UnsetRepoConfig(apiKeyRepoSetting)
+	switch {
+	case errors.Is(err, storage.ErrNotInRepo):
+		// Being outside a git repo is not a failure to log out: there is no
+		// repo-local key to clear, and the environment check below is still
+		// worth running.
+		log.Printf("Not in a git repo, so there is no saved API key to clear.")
+	case err != nil:
+		return -1, fmt.Errorf("failed to clear api key from local .git/config: %w", err)
+	case removed:
+		log.Printf("Cleared the saved API key from .git/config.")
+	default:
+		log.Printf("No API key was saved in .git/config.")
+	}
+
+	// Logout can only clear what bb itself wrote. If another source still
+	// supplies a key then builds will keep using it, so don't claim to be logged
+	// out.
+	if envAPIKey() != "" {
+		log.Warnf("%s is still set in the environment and will still be used. Unset it to finish logging out.", envAPIKeyVarName)
+		return 0, nil
 	}
 
 	log.Printf("You are now logged out!")
 
 	return 0, nil
+}
+
+// logSavedKeyStatus reports whether builds will use the key just saved to
+// .git/config. BUILDBUDDY_API_KEY takes precedence over it.
+func logSavedKeyStatus(savedKey string) {
+	if envKey := envAPIKey(); envKey != "" && envKey != savedKey {
+		log.Warnf("%s is set in the environment and takes precedence, so builds will keep using that key instead of the one just saved. Unset it to use your new key.", envAPIKeyVarName)
+		return
+	}
+	log.Printf("You are now building with BuildBuddy!")
 }
 
 type Result[T any] struct {
@@ -411,53 +525,74 @@ func GetAPIKey() (string, error) {
 	return getAPIKey(true /*=interactive*/)
 }
 
-func getAPIKey(interactive bool) (string, error) {
-	var err error
-	apiKey := strings.TrimSpace(os.Getenv("BUILDBUDDY_API_KEY"))
-	if apiKey != "" {
-		debugAPIKey("BUILDBUDDY_API_KEY", apiKey)
-		return apiKey, nil
+// resolveAPIKey returns the API key from the first credential source that has
+// one set, checking BUILDBUDDY_API_KEY before repo-local .git/config, along with
+// the source it came from. It never starts an interactive login, and returns an
+// empty string and apiKeySourceNone if no source has a key.
+//
+// Outside a git repo it returns an empty key and no error, because
+// BUILDBUDDY_API_KEY on its own is a valid way to be logged in.
+func resolveAPIKey() (string, apiKeySource, error) {
+	if apiKey := envAPIKey(); apiKey != "" {
+		debugAPIKey(apiKeySourceEnv, apiKey)
+		return apiKey, apiKeySourceEnv, nil
 	}
-	apiKey, err = storage.ReadRepoConfig("api-key")
+	apiKey, err := storage.ReadRepoConfig(apiKeyRepoSetting)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotInRepo) {
+			log.Debugf("Not in a git repo, so there is no repo-local API key.")
+			return "", apiKeySourceNone, nil
+		}
+		return "", apiKeySourceNone, err
+	}
 	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		log.Debugf("API key is empty")
+		return "", apiKeySourceNone, nil
+	}
+	debugAPIKey(apiKeySourceRepo, apiKey)
+	return apiKey, apiKeySourceRepo, nil
+}
+
+func getAPIKey(interactive bool) (string, error) {
+	apiKey, _, err := resolveAPIKey()
 	if err != nil {
 		log.Debugf("Could not read api key from bb config: %s", err)
-	} else if apiKey == "" {
-		log.Debugf("API key is empty")
-	} else {
-		debugAPIKey(".git/config buildbuddy.api-key", apiKey)
+	} else if apiKey != "" {
 		return apiKey, nil
 	}
 	// If an API key is not set, and we're running in a terminal, start the
 	// login flow.
 	if interactive && terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
-		if _, err = HandleLogin([]string{}); err != nil {
+		// HandleLogin parses into a package-global flag set that may hold values from
+		// an earlier parse. Clear the two flags that would skip the prompt.
+		if _, err = HandleLogin([]string{"--check=false", "--allow_existing=false"}); err != nil {
 			return "", status.WrapError(err, "handle login")
 		}
-		apiKey, err = storage.ReadRepoConfig("api-key")
+		apiKey, err = storage.ReadRepoConfig(apiKeyRepoSetting)
 		if err != nil {
 			return "", status.WrapError(err, "read api key from bb config")
 		}
 		if apiKey == "" {
 			return "", status.NotFoundErrorf("API key not set after login")
 		}
-		debugAPIKey(".git/config buildbuddy.api-key (after login)", apiKey)
+		log.Debugf("Obtained API key via interactive login")
+		debugAPIKey(apiKeySourceRepo, apiKey)
 		return apiKey, nil
 	} else {
 		return "", status.NotFoundErrorf("API key not set")
 	}
 }
 
-func debugAPIKey(source, apiKey string) {
+func debugAPIKey(source apiKeySource, apiKey string) {
 	log.Debugf("Using BuildBuddy API key from %s: %s", source, apiKeyDebugString(apiKey))
 }
 
+// apiKeyDebugString renders an API key for a debug log without revealing any of
+// its characters or its length.
 func apiKeyDebugString(apiKey string) string {
-	if len(apiKey) > 8 {
-		prefix := apiKey[:1]
-		suffix := apiKey[len(apiKey)-1:]
-		trunc := strings.Repeat("*", len(apiKey)-len(prefix)-len(suffix))
-		return prefix + trunc + suffix
+	if apiKey == "" {
+		return "(empty)"
 	}
-	return strings.Repeat("*", len(apiKey))
+	return "(redacted)"
 }
