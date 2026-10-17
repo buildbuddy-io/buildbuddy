@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -510,10 +511,16 @@ func runRemoteServices(ctx context.Context, env *testenv.TestEnv, t testing.TB) 
 }
 
 func runBSProxy(ctx context.Context, client bspb.ByteStreamClient, env *testenv.TestEnv, t testing.TB) bspb.ByteStreamClient {
+	return runBSProxyWithLocal(ctx, client, env, t, func(local interfaces.ByteStreamServer) interfaces.ByteStreamServer { return local })
+}
+
+// runBSProxyWithLocal is runBSProxy with the proxy's in-process ByteStream
+// server replaced by wrapLocal(real).
+func runBSProxyWithLocal(ctx context.Context, client bspb.ByteStreamClient, env *testenv.TestEnv, t testing.TB, wrapLocal func(interfaces.ByteStreamServer) interfaces.ByteStreamServer) bspb.ByteStreamClient {
 	env.SetByteStreamClient(client)
 	bss, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
-	env.SetLocalByteStreamServer(bss)
+	env.SetLocalByteStreamServer(wrapLocal(bss))
 	byteStreamServer, err := New(env)
 	require.NoError(t, err)
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
@@ -3649,5 +3656,405 @@ func BenchmarkReadChunkedMixedLocalRemote(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+// readWholeBlob reads a CAS blob through client with no read limit, as Bazel
+// does. A limited read cannot be served from a spliced (chunked) blob.
+func readWholeBlob(t *testing.T, ctx context.Context, client bspb.ByteStreamClient, rn *digest.CASResourceName) []byte {
+	stream, err := client.Read(ctx, &bspb.ReadRequest{ResourceName: rn.DownloadString()})
+	require.NoError(t, err)
+	var out []byte
+	for {
+		res, err := stream.Recv()
+		if err == io.EOF {
+			return out
+		}
+		require.NoError(t, err)
+		out = append(out, res.GetData()...)
+	}
+}
+
+// alreadyExistsRemote stands in for a remote cache that already holds every
+// blob. It ends each Write after the first request the way the BuildBuddy
+// server will once it honors the client feature header: with an
+// ALREADY_EXISTS status when the client advertised support for it, and with a
+// WriteResponse otherwise.
+type alreadyExistsRemote struct {
+	statusWrites   atomic.Int32
+	responseWrites atomic.Int32
+}
+
+func (s *alreadyExistsRemote) Write(stream bspb.ByteStream_WriteServer) error {
+	req, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	if clientfeatures.Supports(stream.Context(), clientfeatures.ByteStreamWriteAlreadyExists) {
+		s.statusWrites.Add(1)
+		return status.AlreadyExistsError("already exists")
+	}
+	s.responseWrites.Add(1)
+	rn, err := digest.ParseUploadResourceName(req.GetResourceName())
+	if err != nil {
+		return err
+	}
+	return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: rn.GetDigest().GetSizeBytes()})
+}
+
+func (s *alreadyExistsRemote) Read(*bspb.ReadRequest, bspb.ByteStream_ReadServer) error {
+	return status.UnimplementedError("alreadyExistsRemote only implements Write")
+}
+
+func (s *alreadyExistsRemote) QueryWriteStatus(context.Context, *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
+	return nil, status.UnimplementedError("alreadyExistsRemote only implements Write")
+}
+
+func runAlreadyExistsRemote(ctx context.Context, t *testing.T) (*alreadyExistsRemote, bspb.ByteStreamClient) {
+	remote := &alreadyExistsRemote{}
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, testenv.GetTestEnv(t))
+	bspb.RegisterByteStreamServer(grpcServer, remote)
+	go runFunc()
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	return remote, bspb.NewByteStreamClient(conn)
+}
+
+// alreadyExistsLocal wraps the proxy's in-process ByteStream server so that
+// every Write ends with an ALREADY_EXISTS status after the first request,
+// which is how the server will report a duplicate once it honors the client
+// feature header or the Bazel version. Reads pass through unchanged.
+type alreadyExistsLocal struct {
+	interfaces.ByteStreamServer
+	writes atomic.Int32
+}
+
+func (s *alreadyExistsLocal) Write(stream bspb.ByteStream_WriteServer) error {
+	s.writes.Add(1)
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
+	return status.AlreadyExistsError("already exists")
+}
+
+func wrapLocalAlreadyExists(local *alreadyExistsLocal) func(interfaces.ByteStreamServer) interfaces.ByteStreamServer {
+	return func(real interfaces.ByteStreamServer) interfaces.ByteStreamServer {
+		local.ByteStreamServer = real
+		return local
+	}
+}
+
+// The proxy tells the remote that the client handles ALREADY_EXISTS only when
+// the client told the proxy so. cachetools advertises it per Write stream;
+// Bazel does not, and the proxy must not add it on Bazel's behalf.
+func TestWriteForwardsAlreadyExistsSupportToRemote(t *testing.T) {
+	ctx := testContext()
+	proxyEnv := testenv.GetTestEnv(t)
+
+	// An encryption-enabled user makes the proxy bypass its local cache and
+	// take the remote-only write path.
+	userWithEncryption := testauth.User("user", "group")
+	userWithEncryption.CacheEncryptionEnabled = true
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{"user": userWithEncryption})
+	proxyEnv.SetAuthenticator(ta)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, ta)
+	require.NoError(t, err)
+	remoteOnlyCtx, err := ta.WithAuthenticatedUser(ctx, "user")
+	require.NoError(t, err)
+
+	remote, remoteClient := runAlreadyExistsRemote(ctx, t)
+	proxy := runBSProxy(ctx, remoteClient, proxyEnv, t)
+
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+	}{
+		{name: "dual_write", ctx: ctx},
+		{name: "remote_only", ctx: remoteOnlyCtx},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rnProto, blob := testdigest.RandomCASResourceBuf(t, 1000)
+			rn, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+
+			// cachetools advertises support, so the remote replies with the
+			// status, the proxy passes it through, and cachetools treats it
+			// as a successful upload.
+			statusBefore, responseBefore := remote.statusWrites.Load(), remote.responseWrites.Load()
+			_, _, err = cachetools.UploadFromReader(tc.ctx, proxy, rn, bytes.NewReader(blob))
+			require.NoError(t, err)
+			require.Equal(t, statusBefore+1, remote.statusWrites.Load(), "the remote should have seen the feature header")
+			require.Equal(t, responseBefore, remote.responseWrites.Load())
+
+			// A client that does not advertise support gets a WriteResponse
+			// carrying the full committed size.
+			statusBefore, responseBefore = remote.statusWrites.Load(), remote.responseWrites.Load()
+			byte_stream.MustUploadChunked(t, tc.ctx, proxy, "7.0.0", rn.NewUploadString(), blob, false /*=isFirstAttempt*/)
+			require.Equal(t, statusBefore, remote.statusWrites.Load(), "the proxy must not advertise on the client's behalf")
+			require.Equal(t, responseBefore+1, remote.responseWrites.Load())
+		})
+	}
+}
+
+// A duplicate reported by the proxy's own local server as an ALREADY_EXISTS
+// status must not fail or change a write that is forwarded to the remote.
+func TestWriteToleratesAlreadyExistsFromLocal(t *testing.T) {
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+	remote, _, _, _ := runRemoteServices(ctx, remoteEnv, t)
+	local := &alreadyExistsLocal{}
+	proxy := runBSProxyWithLocal(ctx, remote, proxyEnv, t, wrapLocalAlreadyExists(local))
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	// A client without the feature header is answered by the remote's
+	// WriteResponse for the whole blob.
+	rnProto, blob := testdigest.RandomCASResourceBuf(t, 1000)
+	rn, err := digest.CASResourceNameFromProto(rnProto)
+	require.NoError(t, err)
+	byte_stream.MustUploadChunked(t, ctx, proxy, "7.0.0", rn.NewUploadString(), blob, true /*=isFirstAttempt*/)
+	require.Equal(t, int32(1), local.writes.Load())
+	require.NoError(t, waitContains(ctx, remoteEnv, rn.ToProto()))
+
+	// So is a client that advertises the feature.
+	rnProto, blob = testdigest.RandomCASResourceBuf(t, 1000)
+	rn, err = digest.CASResourceNameFromProto(rnProto)
+	require.NoError(t, err)
+	_, _, err = cachetools.UploadFromReader(ctx, proxy, rn, bytes.NewReader(blob))
+	require.NoError(t, err)
+	require.Equal(t, int32(2), local.writes.Load())
+	require.NoError(t, waitContains(ctx, remoteEnv, rn.ToProto()))
+}
+
+// Content-defined chunks usually already exist locally, so the chunked write
+// path must treat the local server's ALREADY_EXISTS status as a successful
+// chunk write and carry on uploading to the remote.
+func TestWriteChunkedToleratesAlreadyExistsFromLocal(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache_proxy.intercept_and_chunk_large_writes": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	proxyEnv.SetExperimentFlagProvider(fp)
+
+	pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		MaxSizeBytes:  1_000_000_000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	t.Cleanup(func() { pc.Stop() })
+	proxyEnv.SetCache(pc)
+
+	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+	require.NoError(t, err)
+	remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+	require.NoError(t, err)
+	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
+	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	go remoteRun()
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { remoteConn.Close() })
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(remoteConn))
+
+	local := &alreadyExistsLocal{}
+	proxy := runBSProxyWithLocal(ctx, bspb.NewByteStreamClient(remoteConn), proxyEnv, t, wrapLocalAlreadyExists(local))
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	_, originalData := testdigest.RandomCASResourceBuf(t, 10*1024*1024)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	compressedData := compression.CompressZstd(nil, originalData)
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+
+	uploadStream, err := proxy.Write(ctx)
+	require.NoError(t, err)
+	remaining := compressedData
+	for len(remaining) > 0 {
+		chunkSize := min(1_000_000, len(remaining))
+		err = uploadStream.Send(&bspb.WriteRequest{
+			ResourceName: blobRN.NewUploadString(),
+			WriteOffset:  int64(len(compressedData) - len(remaining)),
+			Data:         remaining[:chunkSize],
+			FinishWrite:  chunkSize == len(remaining),
+		})
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		remaining = remaining[chunkSize:]
+	}
+	_, err = uploadStream.CloseAndRecv()
+	require.NoError(t, err)
+	chunkWrites := local.writes.Load()
+	require.Greater(t, chunkWrites, int32(1), "every chunk should have been offered to the local server")
+
+	// The blob is only on the remote. Reading it through the proxy writes it
+	// back locally, and that write-back is answered with ALREADY_EXISTS too.
+	downloadRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	require.Equal(t, originalData, readWholeBlob(t, ctx, proxy, downloadRN))
+	require.Greater(t, local.writes.Load(), chunkWrites, "the read-through write-back should have reached the local server")
+}
+
+// Chunks written back to the local cache after a chunked read may already be
+// there. The local server's ALREADY_EXISTS status must not count as a
+// write-back failure.
+func TestReadChunkedToleratesAlreadyExistsFromLocal(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache_proxy.attempt_chunked_reads": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	remoteEnv.SetExperimentFlagProvider(fp)
+	proxyEnv.SetExperimentFlagProvider(fp)
+
+	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+	require.NoError(t, err)
+	remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+	require.NoError(t, err)
+	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
+	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	go remoteRun()
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { remoteConn.Close() })
+	casClient := repb.NewContentAddressableStorageClient(remoteConn)
+	proxyEnv.SetContentAddressableStorageClient(casClient)
+
+	local := &alreadyExistsLocal{}
+	proxy := runBSProxyWithLocal(ctx, bspb.NewByteStreamClient(remoteConn), proxyEnv, t, wrapLocalAlreadyExists(local))
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	// Store the blob on the remote as CDC chunks plus a manifest.
+	_, originalData := testdigest.RandomCASResourceBuf(t, 5*1024*1024)
+	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	var chunkDigests []*repb.Digest
+	writeChunkFn := func(chunkData []byte) error {
+		chunkDataCopy := bytes.Clone(chunkData)
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkDataCopy), repb.DigestFunction_BLAKE3)
+		if err != nil {
+			return err
+		}
+		chunkDigests = append(chunkDigests, chunkDigest)
+		chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
+		return remoteEnv.GetCache().Set(ctx, chunkRN.ToProto(), chunkDataCopy)
+	}
+	cdcChunker, err := chunking.NewChunker(ctx, 64*1024, writeChunkFn)
+	require.NoError(t, err)
+	_, err = cdcChunker.Write(originalData)
+	require.NoError(t, err)
+	require.NoError(t, cdcChunker.Close())
+	require.Greater(t, len(chunkDigests), 1)
+	_, err = casClient.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   chunkDigests,
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	})
+	require.NoError(t, err)
+
+	failureLabels := prometheus.Labels{metrics.StatusHumanReadableLabel: "AlreadyExists"}
+	failuresBefore := testutil.ToFloat64(metrics.ByteStreamProxyChunkedReadLocalWriteBackFailures.With(failureLabels))
+
+	downloadRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	require.Equal(t, originalData, readWholeBlob(t, ctx, proxy, downloadRN))
+
+	// One write-back per chunk also proves the chunked read path ran rather
+	// than the full-blob fallback, which would make exactly one local write.
+	require.Equal(t, int32(len(chunkDigests)), local.writes.Load(), "every chunk fetched from the remote should have been written back")
+	require.Equal(t, failuresBefore, testutil.ToFloat64(metrics.ByteStreamProxyChunkedReadLocalWriteBackFailures.With(failureLabels)))
+}
+
+// With skip_write_validation the proxy waits for the remote before letting
+// the local server commit. A remote that already has the blob is a successful
+// remote write whether it says so with a WriteResponse or, for a client that
+// advertises the feature, with an ALREADY_EXISTS status, so the proxy must
+// store the blob locally in both cases.
+func TestSkipWriteValidationStoresRemoteDuplicateLocally(t *testing.T) {
+	flags.Set(t, "cache_proxy.skip_write_validation", true)
+
+	ctx := testContext()
+	proxyEnv := testenv.GetTestEnv(t)
+	remote, remoteClient := runAlreadyExistsRemote(ctx, t)
+	proxy := runBSProxy(ctx, remoteClient, proxyEnv, t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name      string
+		advertise bool
+	}{
+		{name: "advertised", advertise: true},
+		{name: "not_advertised", advertise: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rnProto, blob := testdigest.RandomCASResourceBuf(t, 1000)
+			rn, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+
+			writeCtx := ctx
+			if tc.advertise {
+				writeCtx = clientfeatures.Advertise(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
+			}
+			// Send the whole blob in one request so the finish request is
+			// forwarded before the remote can reply. That is the case where
+			// the proxy waits on the remote before the local server commits.
+			statusBefore, responseBefore := remote.statusWrites.Load(), remote.responseWrites.Load()
+			stream, err := proxy.Write(writeCtx)
+			require.NoError(t, err)
+			require.NoError(t, stream.Send(&bspb.WriteRequest{
+				ResourceName: rn.NewUploadString(),
+				Data:         blob,
+				FinishWrite:  true,
+			}))
+			resp, err := stream.CloseAndRecv()
+			if tc.advertise {
+				require.True(t, status.IsAlreadyExistsError(err), "err = %v", err)
+				require.Equal(t, statusBefore+1, remote.statusWrites.Load())
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, rn.GetDigest().GetSizeBytes(), resp.GetCommittedSize())
+				require.Equal(t, responseBefore+1, remote.responseWrites.Load())
+			}
+
+			// Either way the proxy keeps a local copy.
+			require.NoError(t, waitContains(ctx, proxyEnv, rn.ToProto()))
+		})
 	}
 }
