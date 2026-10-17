@@ -14,7 +14,7 @@ release.py - A simple script to create a release.
 This script will do the following:
 
   1) Check that your working repository is clean.
-  2) Compute a new version tag by bumping the latest remote version tag,
+  2) Compute a new version tag by bumping the highest remote version tag,
      and create the tag pointing at HEAD.
   3) Pushes the tag to GitHub.
      This kicks off some workflows which will build the release artifacts.
@@ -265,8 +265,12 @@ def generate_release_notes(old_version):
         buf += line.decode("utf-8")
     return buf
 
-def get_latest_version():
-    p = run_or_die("./tools/latest_version_tag.sh", capture_stdout=True)
+def get_highest_version():
+    p = run_or_die("./tools/repo_highest_version.sh", capture_stdout=True)
+    return p.stdout.strip()
+
+def get_branch_highest_version():
+    p = run_or_die("./tools/branch_highest_version.sh", capture_stdout=True)
     return p.stdout.strip()
 
 def tag_exists(tag):
@@ -292,7 +296,7 @@ def main():
     parser.add_argument('--allow_dirty', default=False, action='store_true')
     parser.add_argument('--force', default=False, action='store_true')
     parser.add_argument('--bump_version_type', default='minor', choices=['major', 'minor', 'patch', 'none'])
-    parser.add_argument('--base_version', default='', help='Existing version tag to bump, like v2.12.8. Defaults to the latest version tag.')
+    parser.add_argument('--base_version', default='', help='Existing version tag to bump, like v2.12.8. Defaults to the highest version tag.')
     parser.add_argument('--update_app_image', default=False, action='store_true')
     parser.add_argument('--update_enterprise_app_image', default=False, action='store_true')
     parser.add_argument('--update_executor_image', default=False, action='store_true')
@@ -316,10 +320,17 @@ def main():
             'Please run this in a clean workspace!')
 
     run_or_die('git fetch --all --tags')
-    old_version = args.base_version or get_latest_version()
+    # A patch bumps this branch's own version; anything else bumps the highest
+    # version in the repo.
+    if args.base_version:
+        old_version = args.base_version
+    elif args.bump_version_type == 'patch':
+        old_version = get_branch_highest_version()
+    else:
+        old_version = get_highest_version()
     if not tag_exists(old_version):
         die(f"Version tag {old_version} does not exist.")
-    # The latest version tag isn't always an ancestor of HEAD (release tags may
+    # The highest version tag isn't always an ancestor of HEAD (release tags may
     # be on cherry-picks), so only check an explicitly requested base.
     if args.base_version and not is_ancestor(old_version, 'HEAD'):
         die(f"HEAD does not contain {old_version}. Is --base_version from this branch, and is the full history fetched?")
