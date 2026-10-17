@@ -3995,6 +3995,66 @@ func TestReadChunkedToleratesAlreadyExistsFromLocal(t *testing.T) {
 	downloadRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
 	require.Equal(t, originalData, readWholeBlob(t, ctx, proxy, downloadRN))
 
-	require.Greater(t, local.writes.Load(), int32(0), "chunks fetched from the remote should have been written back")
+	// One write-back per chunk also proves the chunked read path ran rather
+	// than the full-blob fallback, which would make exactly one local write.
+	require.Equal(t, int32(len(chunkDigests)), local.writes.Load(), "every chunk fetched from the remote should have been written back")
 	require.Equal(t, failuresBefore, testutil.ToFloat64(metrics.ByteStreamProxyChunkedReadLocalWriteBackFailures.With(failureLabels)))
+}
+
+// With skip_write_validation the proxy waits for the remote before letting
+// the local server commit. A remote that already has the blob is a successful
+// remote write whether it says so with a WriteResponse or, for a client that
+// advertises the feature, with an ALREADY_EXISTS status, so the proxy must
+// store the blob locally in both cases.
+func TestSkipWriteValidationStoresRemoteDuplicateLocally(t *testing.T) {
+	flags.Set(t, "cache_proxy.skip_write_validation", true)
+
+	ctx := testContext()
+	proxyEnv := testenv.GetTestEnv(t)
+	remote, remoteClient := runAlreadyExistsRemote(ctx, t)
+	proxy := runBSProxy(ctx, remoteClient, proxyEnv, t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name      string
+		advertise bool
+	}{
+		{name: "advertised", advertise: true},
+		{name: "not_advertised", advertise: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rnProto, blob := testdigest.RandomCASResourceBuf(t, 1000)
+			rn, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+
+			writeCtx := ctx
+			if tc.advertise {
+				writeCtx = clientfeatures.Advertise(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
+			}
+			// Send the whole blob in one request so the finish request is
+			// forwarded before the remote can reply. That is the case where
+			// the proxy waits on the remote before the local server commits.
+			statusBefore, responseBefore := remote.statusWrites.Load(), remote.responseWrites.Load()
+			stream, err := proxy.Write(writeCtx)
+			require.NoError(t, err)
+			require.NoError(t, stream.Send(&bspb.WriteRequest{
+				ResourceName: rn.NewUploadString(),
+				Data:         blob,
+				FinishWrite:  true,
+			}))
+			resp, err := stream.CloseAndRecv()
+			if tc.advertise {
+				require.True(t, status.IsAlreadyExistsError(err), "err = %v", err)
+				require.Equal(t, statusBefore+1, remote.statusWrites.Load())
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, rn.GetDigest().GetSizeBytes(), resp.GetCommittedSize())
+				require.Equal(t, responseBefore+1, remote.responseWrites.Load())
+			}
+
+			// Either way the proxy keeps a local copy.
+			require.NoError(t, waitContains(ctx, proxyEnv, rn.ToProto()))
+		})
+	}
 }
