@@ -558,7 +558,7 @@ func TestGetLayout(t *testing.T) {
 		},
 	}
 	require.Empty(t, cmp.Diff(expectedRsp, rsp, protocmp.Transform(),
-		protocmp.IgnoreFields(&vfspb.Node{}, "id"), protocmp.IgnoreFields(&vfspb.Attrs{}, "atime_nanos", "mtime_nanos")))
+		protocmp.IgnoreFields(&vfspb.Node{}, "id", "directory_offset"), protocmp.IgnoreFields(&vfspb.Attrs{}, "atime_nanos", "mtime_nanos")))
 
 	subdirLookupRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "adirectory"})
 	require.NoError(t, err)
@@ -573,7 +573,53 @@ func TestGetLayout(t *testing.T) {
 		},
 	}
 	require.Empty(t, cmp.Diff(expectedRsp, rsp, protocmp.Transform(),
-		protocmp.IgnoreFields(&vfspb.Node{}, "id"), protocmp.IgnoreFields(&vfspb.Attrs{}, "atime_nanos", "mtime_nanos")))
+		protocmp.IgnoreFields(&vfspb.Node{}, "id", "directory_offset"), protocmp.IgnoreFields(&vfspb.Attrs{}, "atime_nanos", "mtime_nanos")))
+}
+
+func TestGetDirectoryContentsOffsetsRemainStableAcrossMutations(t *testing.T) {
+	server, _ := newServer(t)
+	ctx := t.Context()
+	writeToVFS(t, server, "b", "x")
+	id := writeToVFS(t, server, "c", "x")
+	writeToVFS(t, server, "d", "x")
+	_, err := server.Link(ctx, &vfspb.LinkRequest{ParentId: vfscommon.RootInodeId, TargetId: id, Name: "e"})
+	require.NoError(t, err)
+
+	req := &vfspb.GetDirectoryContentsRequest{Id: vfscommon.RootInodeId}
+	before, err := server.GetDirectoryContents(ctx, req)
+	require.NoError(t, err)
+	offsets := make(map[string]uint64)
+	for _, node := range before.GetNodes() {
+		require.NotZero(t, node.GetDirectoryOffset())
+		offsets[node.GetName()] = node.GetDirectoryOffset()
+	}
+	require.Len(t, offsets, 4)
+	require.NotEqual(t, offsets["c"], offsets["e"], "hardlinks need distinct directory offsets")
+
+	_, err = server.Unlink(ctx, &vfspb.UnlinkRequest{ParentId: vfscommon.RootInodeId, Name: "b"})
+	require.NoError(t, err)
+	writeToVFS(t, server, "a", "x")
+	_, err = server.Rename(ctx, &vfspb.RenameRequest{OldParentId: vfscommon.RootInodeId, OldName: "d", NewParentId: vfscommon.RootInodeId, NewName: "z"})
+	require.NoError(t, err)
+
+	after, err := server.GetDirectoryContents(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, after.GetNodes(), 4)
+	var afterOffsets []uint64
+	for _, node := range after.GetNodes() {
+		offset := node.GetDirectoryOffset()
+		require.NotZero(t, offset)
+		afterOffsets = append(afterOffsets, offset)
+		if node.GetName() == "c" || node.GetName() == "e" {
+			require.Equal(t, offsets[node.GetName()], offset)
+		} else {
+			for _, oldOffset := range offsets {
+				require.Greater(t, offset, oldOffset, "new entries must not reuse old offsets")
+			}
+		}
+	}
+	// Increasing order also implies that the offsets are unique.
+	require.IsIncreasing(t, afterOffsets, "entries must be returned in increasing offset order")
 }
 
 func TestLookupNonExistentFile(t *testing.T) {
