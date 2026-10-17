@@ -9,6 +9,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
+const rpcNamespacePrefix = "rpc:"
+
 func getGroupID(ctx context.Context, env environment.Env) string {
 	if a := env.GetAuthenticator(); a != nil {
 		user, err := a.AuthenticatedUser(ctx)
@@ -35,4 +37,9 @@ func GetKey(ctx context.Context, env environment.Env) (string, error) {
 
 func GetSKUKey(sku sku.SKU) string {
 	return "sku:" + string(sku)
+}
+
+// GetRPCKey returns the quota namespace key for a full RPC method name.
+func GetRPCKey(fullMethod string) string {
+	return rpcNamespacePrefix + fullMethod
 }
