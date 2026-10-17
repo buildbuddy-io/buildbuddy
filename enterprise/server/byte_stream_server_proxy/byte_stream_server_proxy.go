@@ -1053,8 +1053,11 @@ func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
 		if s.skipValidation {
 			// Wait for the remote to validate and commit before returning the
 			// final request to the local server; the local server commits after
-			// processing this request.
-			if err := s.closeRemote(); err != nil {
+			// processing this request. A remote that already has the blob
+			// reports that as ALREADY_EXISTS once the client advertises the
+			// feature. That is a successful remote write, so hand the final
+			// request to the local server just as for an early WriteResponse.
+			if err := s.closeRemote(); err != nil && !status.IsAlreadyExistsError(err) {
 				return nil, err
 			}
 		}
