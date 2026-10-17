@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
@@ -91,6 +92,11 @@ type TransferInfo struct {
 
 	LinkCount    int64
 	LinkDuration time.Duration
+
+	// FileCacheAddFailures is the number of downloaded files that we couldn't
+	// add to the file cache. They stay in the workspace as standalone copies,
+	// rather than hard links to the file cache's copy.
+	FileCacheAddFailures int64
 
 	// InputFetchMetadata describes which input files were fetched from
 	// remote CAS while materializing the input tree.
@@ -826,6 +832,8 @@ type BatchFileFetcher struct {
 
 	statsMu sync.Mutex
 	stats   repb.IOStats
+
+	fileCacheAddFailures atomic.Int64
 }
 
 // newBatchFileFetcher creates a CAS fetcher that can automatically batch small requests and stream large files.
@@ -1265,6 +1273,7 @@ func (ff *BatchFileFetcher) publishDownloadedFile(ctx context.Context, fp *FileP
 	if fileCache != nil {
 		if err := fileCache.AddFile(ff.ctx, fp.FileNode, fp.FullPath); err != nil {
 			log.Warningf("Error adding file to filecache: %s", err)
+			ff.fileCacheAddFailures.Add(1)
 		}
 	}
 	return nil
@@ -1860,6 +1869,7 @@ func (f *TreeFetcher) Wait() (*TransferInfo, error) {
 	f.txInfo.FileCount = stats.GetFileDownloadCount()
 	f.txInfo.LinkCount = stats.GetLocalCacheHits()
 	f.txInfo.LinkDuration = stats.GetLocalCacheLinkDuration().AsDuration()
+	f.txInfo.FileCacheAddFailures = f.ff.fileCacheAddFailures.Load()
 	f.txInfo.TransferDuration = time.Since(f.fetchStartTime)
 	if f.opts.RecordInputFetchMetadata {
 		bitmap, bitmapErr := f.ff.downloadedFileIndicesBitmap()

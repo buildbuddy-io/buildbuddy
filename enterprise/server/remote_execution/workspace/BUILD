@@ -74,8 +74,10 @@ go_test(
         "@com_github_stretchr_testify//require",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [
+            "//server/interfaces",
             "//server/util/claims",
             "//server/util/testing/flags",
+            "@org_golang_x_sys//unix",
         ],
         "//conditions:default": [],
     }),

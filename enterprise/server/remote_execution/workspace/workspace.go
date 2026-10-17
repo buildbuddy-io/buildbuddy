@@ -126,14 +126,19 @@ type Workspace struct {
 // when we recorded it. Writing to a file in place doesn't change its inode or
 // its directory's ctime, so we only pool workspaces whose inputs are hard links
 // to the file cache, which the file cache already relies on tasks not writing
-// to. We also record the mode and owner, so that we recreate a directory whose
-// mode or owner the task changed instead of passing it on to the next task.
+// to. We also record the mode, owner and extended attributes, which include
+// ACLs, so that we recreate a directory whose mode, owner or extended
+// attributes the task changed instead of passing them on to the next task.
 type dirFingerprint struct {
 	ino        uint64
 	ctimeNanos int64
 	mode       uint32
 	uid        uint32
 	gid        uint32
+	// The directory's extended attributes, encoded by readXattrs. Setting or
+	// removing them changes the directory's ctime, so ReturnToPool only reads
+	// them again for directories whose ctime changed.
+	xattrs string
 }
 
 type VFSPrefetchMode string
@@ -472,7 +477,16 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 			// record a fingerprint of each input directory. When the workspace
 			// returns to the pool, we compare against these, so that we only
 			// need to read the directories that the task changed.
-			if err := ws.recordDirFingerprints(); err != nil {
+			//
+			// Fingerprints don't detect writes to input files in place. That's
+			// fine for inputs that are hard links to the file cache, since the
+			// file cache already relies on tasks not writing to them, but
+			// inputs that the file cache failed to add are standalone copies.
+			// So we don't record fingerprints for workspaces that have any,
+			// which makes ReturnToPool leave them for Remove.
+			if txInfo.FileCacheAddFailures > 0 {
+				log.CtxInfof(ctx, "Workspace won't be pooled, because %d input files couldn't be added to the file cache", txInfo.FileCacheAddFailures)
+			} else if err := ws.recordDirFingerprints(); err != nil {
 				log.CtxWarningf(ctx, "Workspace won't be pooled, because recording directory fingerprints failed: %s", err)
 				ws.dirFingerprints = nil
 			}
@@ -862,13 +876,14 @@ func removeChildren(dirPath string) error {
 // The runner calls ReturnToPool after removing the task's container.
 // ReturnToPool removes everything from the workspace that isn't one of the
 // task's unchanged inputs, then moves the workspace into the pool. Directories
-// whose inode, ctime, mode and owner still match what we recorded after input
-// setup can't have had entries added, removed or replaced, so we skip them. In
-// the other directories, we compare each entry with the input tree and remove
-// entries that aren't inputs, such as outputs, and input files that aren't the
-// file cache's copy. Only the executor can reach pooled directories, so when
-// we reuse a pooled workspace for a later task, we don't look at its files
-// again, and only remove the inputs that the later task's tree doesn't have.
+// whose inode, ctime, mode, owner and extended attributes still match what we
+// recorded after input setup can't have had entries added, removed or
+// replaced, so we skip them. In the other directories, we compare each entry
+// with the input tree and remove entries that aren't inputs, such as outputs,
+// and input files that aren't the file cache's copy. Only the executor can
+// reach pooled directories, so when we reuse a pooled workspace for a later
+// task, we don't look at its files again, and only remove the inputs that the
+// later task's tree doesn't have.
 type Pool struct {
 	dir  string
 	size int
@@ -1106,7 +1121,7 @@ func (ws *Workspace) recordDirFingerprints() error {
 	walk("", ws.inputRootDigest)
 	fingerprints := make(map[string]dirFingerprint, len(dirs))
 	var latestCtime int64
-	for rel, s := range ws.lstatDirs(dirs) {
+	for rel, s := range ws.lstatDirs(dirs, true) {
 		if s.err != nil {
 			return s.err
 		}
@@ -1131,10 +1146,11 @@ type dirStat struct {
 }
 
 // lstatDirs lstats the given workspace-relative directories in parallel, and
-// returns the results by path. Both callers lstat every input directory, so
-// we use a fixed set of workers rather than a goroutine per directory, since
-// starting a goroutine costs about as much as an lstat.
-func (ws *Workspace) lstatDirs(dirs []string) map[string]dirStat {
+// returns the results by path. With withXattrs, it also reads each directory's
+// extended attributes into its fingerprint. Both callers lstat every input
+// directory, so we use a fixed set of workers rather than a goroutine per
+// directory, since starting a goroutine costs about as much as an lstat.
+func (ws *Workspace) lstatDirs(dirs []string, withXattrs bool) map[string]dirStat {
 	stats := make([]dirStat, len(dirs))
 	var next atomic.Int64
 	var wg sync.WaitGroup
@@ -1146,7 +1162,11 @@ func (ws *Workspace) lstatDirs(dirs []string) map[string]dirStat {
 					return
 				}
 				s := &stats[i]
-				s.fp, s.isDir, s.err = lstatDir(filepath.Join(ws.inputRoot(), dirs[i]))
+				path := filepath.Join(ws.inputRoot(), dirs[i])
+				s.fp, s.isDir, s.err = lstatDir(path)
+				if withXattrs && s.err == nil && s.isDir {
+					s.fp.xattrs, s.err = readXattrs(path)
+				}
 			}
 		})
 	}
@@ -1188,7 +1208,7 @@ func (ws *Workspace) ReturnToPool(ctx context.Context) {
 
 	// Collect the current directory fingerprints, so we can diff against the
 	// original fingerprint from before the task was started.
-	current := ws.lstatDirs(slices.Collect(maps.Keys(ws.dirFingerprints)))
+	current := ws.lstatDirs(slices.Collect(maps.Keys(ws.dirFingerprints)), false)
 
 	// Recursively clean up any paths that differ from the original input root,
 	// based on the fingerprints taken just after the task's inputs were
@@ -1208,11 +1228,11 @@ func (ws *Workspace) ReturnToPool(ctx context.Context) {
 		return
 	}
 
-	// The task removed or replaced the input root itself, or changed its mode
-	// or owner, so we can't keep anything in it. Remove deletes the workspace
-	// instead.
+	// The task removed or replaced the input root itself, or changed its mode,
+	// owner or extended attributes, so we can't keep anything in it. Remove
+	// deletes the workspace instead.
 	if !rootIntact {
-		log.CtxWarningf(ctx, "Not pooling workspace, because the task removed or replaced its input root, or changed its mode or owner")
+		log.CtxWarningf(ctx, "Not pooling workspace, because the task removed or replaced its input root, or changed its mode, owner or extended attributes")
 		return
 	}
 
@@ -1238,10 +1258,10 @@ func (ws *Workspace) ReturnToPool(ctx context.Context) {
 // cleanReturnedDir makes the directory at rel hold only the entries of the
 // input directory d that the task didn't change, removing everything else. It
 // returns false if the task removed or replaced the directory itself, or
-// changed its mode or owner, in which case the caller removes it. current holds
-// the result of lstatting each input directory once the task finished, before
-// the cleanup removed anything, and we add the paths of the inputs we remove to
-// missing.
+// changed its mode, owner or extended attributes, in which case the caller
+// removes it. current holds the result of lstatting each input directory once
+// the task finished, before the cleanup removed anything, and we add the paths
+// of the inputs we remove to missing.
 func (ws *Workspace) cleanReturnedDir(ctx context.Context, rel string, d *repb.Digest, current map[string]dirStat, missing map[string]bool) (bool, error) {
 	full := filepath.Join(ws.inputRoot(), rel)
 	s := current[rel]
@@ -1257,10 +1277,17 @@ func (ws *Workspace) cleanReturnedDir(ctx context.Context, rel string, d *repb.D
 		return false, nil
 	}
 	dir := ws.inputDirs[d.GetHash()]
-	// A directory with an unchanged fingerprint holds the same entries as
-	// after input setup, which are just the inputs, so we only read
-	// directories that changed.
-	if fp != want {
+	// A directory with an unchanged ctime holds the same entries and extended
+	// attributes as after input setup, so we only read directories whose ctime
+	// changed.
+	if fp.ctimeNanos != want.ctimeNanos {
+		xattrs, err := readXattrs(full)
+		if err != nil {
+			return false, err
+		}
+		if xattrs != want.xattrs {
+			return false, nil
+		}
 		if err := ws.cleanReturnedEntries(ctx, rel, dir, missing); err != nil {
 			return false, err
 		}
