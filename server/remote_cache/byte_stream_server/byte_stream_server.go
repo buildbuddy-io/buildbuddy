@@ -20,8 +20,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -50,7 +52,10 @@ var compressBufSize = int(4e6) // 4MB
 
 var (
 	bazel5_1_0              = bazel_request.MustParseVersion("5.1.0")
+	bazel6_2_0              = bazel_request.MustParseVersion("6.2.0")
 	maxDirectWriteSizeBytes = flag.Int64("cache.max_direct_write_size_bytes", 16384, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
+
+	alreadyExistsStatus = expflag.Bool("cache.bytestream_already_exists_status", false, "If true, a ByteStream Write for a blob that already exists ends with an ALREADY_EXISTS status instead of a WriteResponse, for clients that can handle it.")
 )
 
 type skipWriteValidationKey struct{}
@@ -626,13 +631,13 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 
 	if r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
 		// The protocol says it is *optional* to allow overwriting, but does
-		// not specify what errors should be returned in that case. We would
-		// like to return an "AlreadyExists" error here, but it causes errors
-		// with parallel actions during remote execution.
-		//
-		// Protocol does say that if another parallel write had finished while
-		// this one was ongoing, we can immediately return a response with the
-		// committed size, so we'll just do that.
+		// not specify what errors should be returned in that case. Clients
+		// known to handle it (see clientHandlesAlreadyExists) are sent an
+		// ALREADY_EXISTS status when the experiment is enabled. Other
+		// clients fail on that status, so they get a WriteResponse instead:
+		// the protocol does say that if another parallel write finished
+		// while this one was ongoing, we can immediately return a response
+		// with the committed size. See handleAlreadyExists.
 		exists, err := s.cache.Contains(ctx, casRN.ToProto())
 		if err != nil {
 			return nil, err
@@ -879,6 +884,18 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 	return nil, status.UnimplementedError("not implemented")
 }
 
+// clientHandlesAlreadyExists reports whether the client treats an
+// ALREADY_EXISTS status on a Write as a successful upload. Our clients
+// advertise that in the client features header. Bazel has supported these
+// errors since 6.2.0.
+func clientHandlesAlreadyExists(ctx context.Context) bool {
+	if clientfeatures.Supports(ctx, clientfeatures.ByteStreamWriteAlreadyExists) {
+		return true
+	}
+	v := bazel_request.GetVersion(ctx)
+	return v != nil && v.IsAtLeast(bazel6_2_0)
+}
+
 func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interfaces.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
 	r, err := digest.ParseUploadResourceName(firstRequest.ResourceName)
 	if err != nil {
@@ -892,6 +909,14 @@ func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interface
 			log.Debugf("handleAlreadyExists: uploadTracker.CloseWithBytesTransferred error: %s", err)
 		}
 	}()
+
+	// If the client supports it and the experiment is on, send the "already
+	// exists" indication via a status instead of a special WriteResponse.
+	// Sending the response as a status in the trailer has better compatibility
+	// with Envoy load balancers.
+	if clientHandlesAlreadyExists(ctx) && alreadyExistsStatus.Get(ctx) {
+		return status.AlreadyExistsError("blob already exists")
+	}
 
 	// Uncompressed uploads can always short-circuit, returning
 	// the digest size as the committed size.
