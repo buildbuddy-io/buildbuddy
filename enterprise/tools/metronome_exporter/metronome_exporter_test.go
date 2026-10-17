@@ -24,10 +24,12 @@ type fakeMetronomeClient struct {
 	reported   [][]metronome.UsageEvent
 	failOnCall int
 
-	customers map[string]string
-	created   []string
-	contracts map[string]time.Time
-	createErr error
+	customers         map[string]string
+	created           []string
+	contracts         map[string]time.Time
+	contractNames     []string
+	createErr         error
+	contractLookupErr error
 }
 
 func (c *fakeMetronomeClient) ReportUsage(ctx context.Context, events []metronome.UsageEvent) error {
@@ -54,12 +56,64 @@ func (c *fakeMetronomeClient) CreateCustomer(ctx context.Context, name, ingestAl
 	return c.customers[ingestAlias], nil
 }
 
-func (c *fakeMetronomeClient) CreateContract(ctx context.Context, customerID string, startingAt time.Time, uniquenessKey string) error {
+func (c *fakeMetronomeClient) CreateContract(ctx context.Context, customerID, contractName string, startingAt time.Time, uniquenessKey string) error {
+	c.contractNames = append(c.contractNames, contractName)
 	if c.contracts == nil {
 		c.contracts = map[string]time.Time{}
 	}
 	c.contracts[customerID] = startingAt
 	return nil
+}
+
+func (c *fakeMetronomeClient) HasContract(ctx context.Context, customerID string, usageTime time.Time) (bool, error) {
+	if c.contractLookupErr != nil {
+		return false, c.contractLookupErr
+	}
+	start, ok := c.contracts[customerID]
+	return ok && !usageTime.Before(start), nil
+}
+
+func TestEnsureCustomer(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		status           grpb.Group_GroupStatus
+		existingContract bool
+		lookupErr        error
+		wantCreate       bool
+		wantErr          bool
+	}{
+		{name: "preserve enterprise contract", status: grpb.Group_ENTERPRISE_GROUP_STATUS, existingContract: true},
+		{name: "missing enterprise contract", status: grpb.Group_ENTERPRISE_GROUP_STATUS, wantErr: true},
+		{name: "create free tier contract", status: grpb.Group_FREE_TIER_GROUP_STATUS, wantCreate: true},
+		{name: "lookup failure prevents creation", status: grpb.Group_FREE_TIER_GROUP_STATUS, lookupErr: errors.New("lookup unavailable"), wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "billing.metronome.default_contract_name", "self-serve-free")
+			usageTime := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+			client := &fakeMetronomeClient{customers: map[string]string{"GR1": "cust-1"}, contracts: map[string]time.Time{}, contractLookupErr: tc.lookupErr}
+			wantContracts := map[string]time.Time{}
+			if tc.existingContract {
+				start := usageTime.AddDate(0, -1, 0)
+				client.contracts["cust-1"] = start
+				wantContracts["cust-1"] = start
+			}
+			if tc.wantCreate {
+				wantContracts["cust-1"] = time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+			}
+			err := ensureCustomer(t.Context(), client, &tables.Group{GroupID: "GR1", Status: tc.status}, usageTime)
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, wantContracts, client.contracts)
+			if tc.wantCreate {
+				require.Equal(t, []string{"self-serve-free"}, client.contractNames)
+			} else {
+				require.Empty(t, client.contractNames)
+			}
+		})
+	}
 }
 
 func TestNextWindow(t *testing.T) {
@@ -102,6 +156,92 @@ func TestNextWindow(t *testing.T) {
 			require.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestValidateGroupSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		ids      []string
+		statuses []grpb.Group_GroupStatus
+		wantIDs  []string
+		wantErr  bool
+	}{
+		{name: "trim IDs", ids: []string{" GR1 ", "\tGR4\n"}, wantIDs: []string{"GR1", "GR4"}},
+		{name: "status only", statuses: []grpb.Group_GroupStatus{grpb.Group_USAGE_BASED_GROUP_STATUS}},
+		{name: "no selectors", wantErr: true},
+		{name: "empty ID", ids: []string{" "}, wantErr: true},
+		{name: "internal whitespace", ids: []string{"GR 1"}, wantErr: true},
+		{name: "invalid status", statuses: []grpb.Group_GroupStatus{999}, wantErr: true},
+		{name: "unknown status", statuses: []grpb.Group_GroupStatus{grpb.Group_UNKNOWN_GROUP_STATUS}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "group_ids", tc.ids)
+			flags.Set(t, "group_statuses", tc.statuses)
+			err := validateGroupSelection()
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantIDs, *groupIDs)
+		})
+	}
+}
+
+func TestExportedGroups(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		ids      []string
+		statuses []grpb.Group_GroupStatus
+		want     []*tables.Group
+	}{
+		{name: "IDs only", ids: []string{"GR4"}, want: []*tables.Group{{GroupID: "GR4", Status: grpb.Group_ENTERPRISE_GROUP_STATUS}}},
+		{name: "statuses only", statuses: []grpb.Group_GroupStatus{grpb.Group_FREE_TIER_GROUP_STATUS, grpb.Group_USAGE_BASED_GROUP_STATUS}, want: []*tables.Group{{GroupID: "GR1", Status: grpb.Group_USAGE_BASED_GROUP_STATUS}, {GroupID: "GR2", Status: grpb.Group_FREE_TIER_GROUP_STATUS}}},
+		{name: "union without duplicates", ids: []string{"GR1", "GR4"}, statuses: []grpb.Group_GroupStatus{grpb.Group_USAGE_BASED_GROUP_STATUS}, want: []*tables.Group{{GroupID: "GR1", Status: grpb.Group_USAGE_BASED_GROUP_STATUS}, {GroupID: "GR4", Status: grpb.Group_ENTERPRISE_GROUP_STATUS}}},
+		{name: "missing ID", ids: []string{"GR_MISSING"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			flags.Set(t, "group_ids", tc.ids)
+			flags.Set(t, "group_statuses", tc.statuses)
+			statuses := map[string]grpb.Group_GroupStatus{
+				"GR1": grpb.Group_USAGE_BASED_GROUP_STATUS,
+				"GR2": grpb.Group_FREE_TIER_GROUP_STATUS,
+				"GR4": grpb.Group_ENTERPRISE_GROUP_STATUS,
+			}
+			for id, status := range statuses {
+				require.NoError(t, env.GetDBHandle().NewQuery(t.Context(), "test_create_group").Create(&tables.Group{GroupID: id, Status: status}))
+			}
+			groups, err := exportedGroups(t.Context(), env)
+			require.NoError(t, err)
+			require.ElementsMatch(t, tc.want, groups)
+		})
+	}
+}
+
+func TestExport_GroupIDsAndStatuses(t *testing.T) {
+	env := setupClickHouseEnv(t)
+	flags.Set(t, "group_ids", []string{"GR1", "GR4"})
+	flags.Set(t, "group_statuses", []grpb.Group_GroupStatus{grpb.Group_USAGE_BASED_GROUP_STATUS})
+	require.NoError(t, validateGroupSelection())
+	from := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	to := from.Add(metronome.WindowSize)
+	labels := map[sku.LabelName]sku.LabelValue{sku.Client: sku.ClientBazel}
+	seedState(t, env, from)
+	require.NoError(t, env.GetOLAPDBHandle().FlushUsages(t.Context(), []*schema.RawUsage{
+		rawUsage("GR1", from, sku.BuildEventsBESCount, labels, 2),
+		rawUsage("GR2", from, sku.BuildEventsBESCount, labels, 3),
+		rawUsage("GR4", from, sku.BuildEventsBESCount, labels, 5),
+	}))
+
+	client := &fakeMetronomeClient{}
+	require.NoError(t, export(t.Context(), env, client, to.Add(minAge)))
+	require.Len(t, client.reported, 1)
+	require.ElementsMatch(t, []metronome.UsageEvent{
+		{GroupID: "GR1", PeriodStart: from, PeriodEnd: to, SKU: sku.BuildEventsBESCount, Labels: labels, Count: 2},
+		{GroupID: "GR4", PeriodStart: from, PeriodEnd: to, SKU: sku.BuildEventsBESCount, Labels: labels, Count: 5},
+	}, client.reported[0])
+	requireState(t, env, to)
 }
 
 func TestExport_InitializesStateOnFirstRun(t *testing.T) {
@@ -239,7 +379,7 @@ func TestExport_DryRunDoesNotModifyState(t *testing.T) {
 }
 
 func TestExport_CreatesCustomersForGroupsWithUsage(t *testing.T) {
-	flags.Set(t, "billing.metronome.package_alias", "self-serve-free")
+	flags.Set(t, "billing.metronome.default_contract_name", "self-serve-free")
 	env := setupClickHouseEnv(t)
 	ctx := t.Context()
 	from := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
@@ -264,25 +404,8 @@ func TestExport_CreatesCustomersForGroupsWithUsage(t *testing.T) {
 	require.Equal(t, []string{"GR1"}, client.created)
 }
 
-func TestExport_SkipsCustomersWithoutPackage(t *testing.T) {
-	env := setupClickHouseEnv(t)
-	ctx := t.Context()
-	from := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
-	seedState(t, env, from)
-	require.NoError(t, env.GetOLAPDBHandle().FlushUsages(ctx, []*schema.RawUsage{
-		rawUsage("GR1", from, sku.BuildEventsBESCount, map[sku.LabelName]sku.LabelValue{sku.Client: sku.ClientBazel}, 2),
-	}))
-
-	client := &fakeMetronomeClient{}
-	require.NoError(t, export(ctx, env, client, from.Add(metronome.WindowSize).Add(minAge)))
-
-	require.Len(t, client.reported, 1)
-	require.Empty(t, client.created)
-	require.Empty(t, client.contracts)
-}
-
 func TestExport_ReportsUsageWhenCustomerSetupFails(t *testing.T) {
-	flags.Set(t, "billing.metronome.package_alias", "self-serve-free")
+	flags.Set(t, "billing.metronome.default_contract_name", "self-serve-free")
 	env := setupClickHouseEnv(t)
 	ctx := t.Context()
 	from := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
@@ -353,6 +476,7 @@ func TestQueryUsageRows(t *testing.T) {
 }
 
 func setupClickHouseEnv(t *testing.T) *real_environment.RealEnv {
+	flags.Set(t, "billing.metronome.default_contract_name", "self-serve-free")
 	flags.Set(t, "group_statuses", []grpb.Group_GroupStatus{grpb.Group_FREE_TIER_GROUP_STATUS, grpb.Group_USAGE_BASED_GROUP_STATUS})
 	flags.Set(t, "olap_database.invocation_batch_insert_interval", 0*time.Second)
 	env := testenv.GetTestEnv(t)
