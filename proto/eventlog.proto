@@ -14,6 +14,16 @@ enum LogType {
   BUILD_LOG = 1;
   // Run logs from executing the binary associated with a build.
   RUN_LOG = 2;
+  // The three logs below hold the output of a producer that tells its streams
+  // apart, such as a remote runner. BUILD_LOG keeps the merged view.
+  //
+  // The stdout of the command the producer ran.
+  STDOUT_LOG = 3;
+  // The producer's own narration, so a reader can filter it out. Also
+  // interleaved into STDERR_LOG, which is where it is meant to be shown.
+  NARRATION_LOG = 4;
+  // The stderr of the command the producer ran, with narration interleaved.
+  STDERR_LOG = 5;
 }
 
 message GetEventLogChunkRequest {
@@ -48,6 +58,11 @@ message GetEventLogChunkResponse {
 
   // If the chunk is "live", i.e. not yet written to disk and subject to change.
   bool live = 5;
+
+  // Which log this chunk was served from. A server predating the split types
+  // leaves this unset and serves the build log for any type it does not
+  // recognize, so a client can tell the difference.
+  LogType served_type = 6;
 }
 
 message LiveEventLogChunk {

@@ -234,6 +234,19 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		args = append(args, "--bazel_command="+bazelCommandOverride)
 	}
 	args = append(args, ci_runner_util.GitFetchLowSpeedRetryFlags(ctx, experiments.WithContext("workflow_action_name", "remote_bazel"))...)
+	// Translate output options into flags for the runner this app ships, so the
+	// two never disagree about which flags exist.
+	if o := req.GetOutputOptions(); o != nil {
+		if o.GetQuiet() {
+			args = append(args, "--quiet")
+		}
+		if o.GetSplitStreams() {
+			args = append(args,
+				"--split_output_streams",
+				fmt.Sprintf("--stdout_is_tty=%v", o.GetStdoutIsTty()),
+				fmt.Sprintf("--stderr_is_tty=%v", o.GetStderrIsTty()))
+		}
+	}
 	args = append(args, req.GetRunnerFlags()...)
 
 	affinityKey := req.GetSessionAffinityKey()

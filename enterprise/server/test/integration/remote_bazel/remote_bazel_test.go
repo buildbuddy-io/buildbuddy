@@ -187,6 +187,28 @@ func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress
 	return string(b)
 }
 
+// runRemoteBazelCapturingEachStream runs remote bazel with its stdout and
+// stderr captured apart, so a test can assert which of them output reached.
+// The merged capture above cannot: it is the same fd twice.
+func runRemoteBazelCapturingEachStream(t *testing.T, workDir string, serverAddress string, args ...string) (stdout, stderr string) {
+	cmd := testcli.Command(t, workDir, append(
+		[]string{
+			"remote",
+			fmt.Sprintf("--remote_runner=%s", serverAddress),
+			"--runner_exec_properties=workload-isolation-type=none",
+			"--runner_exec_properties=container-image=",
+		},
+		args...)...)
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	err := cmd.Run()
+	t.Logf("stdout:\n%s", outBuf.String())
+	t.Logf("stderr:\n%s", errBuf.String())
+	require.NoError(t, err)
+	return outBuf.String(), errBuf.String()
+}
+
 func TestWithPrivateRepo(t *testing.T) {
 	gitRemote := testgit.StartServer(t, testgit.ServerOptions{})
 	repoDir := testbazel.MakeTempModule(t, map[string]string{
@@ -862,6 +884,102 @@ func TestBashScript(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Hello from the remote runner!")
+}
+
+// TestQuiet drives `bb remote -q` end to end - the CLI flag, the runner that
+// honors it - and checks that the invocation log holds only what the requested
+// command printed. The non-quiet case runs the same command as a control, so a
+// failure tells these apart: quiet mode stopped suppressing the narration, or
+// the narration stopped looking like this.
+func TestQuiet(t *testing.T) {
+	// Narration the runner writes around the requested command. These avoid
+	// the runner's color escapes, which fall between the `$` and the command
+	// line it echoes, so `$ git` never appears literally.
+	narration := []string{
+		"Configuring repository",
+		"Setup completed",
+		"command exited with code",
+		"Remote run completed at",
+	}
+	// Split in the script so the command line the runner echoes as narration
+	// does not itself contain the output, which would make "did this reach
+	// stdout" impossible to tell apart from "was the command line echoed".
+	const commandOutput = "OUTPUTOFTHEREQUESTEDCOMMAND"
+	const commandScript = `echo "OUTPUTOFTHE""REQUESTEDCOMMAND"`
+
+	for _, tc := range []struct {
+		name          string
+		args          []string
+		wantNarration bool
+	}{
+		{name: "quiet", args: []string{"-q"}, wantNarration: false},
+		{name: "default", wantNarration: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir, _ := makeLocalGitRepo(t, map[string]string{})
+
+			// Run a server and executor locally to run remote bazel against
+			env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
+
+			args := append([]string{}, tc.args...)
+			args = append(args,
+				"--script="+commandScript,
+				fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1),
+			)
+			cliStdout, cliStderr := runRemoteBazelCapturingEachStream(t, repoDir, bbServer.GRPCAddress(), args...)
+			cliOutput := cliStdout + cliStderr
+
+			// Verify invocation logs.
+			bbClient := env.GetBuildBuddyServiceClient()
+			ctx := env.WithUserID(context.Background(), env.UserID1)
+			reqCtx := &ctxpb.RequestContext{
+				UserId:  &uidpb.UserId{Id: env.UserID1},
+				GroupId: env.GroupID1,
+			}
+			searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
+				RequestContext: reqCtx,
+				Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
+			})
+			require.NoError(t, err)
+			require.Equal(t, 1, len(searchRsp.GetInvocation()))
+
+			logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
+				InvocationId: searchRsp.Invocation[0].InvocationId,
+				MinLines:     math.MaxInt32,
+			})
+			require.NoError(t, err)
+			eventLog := string(logResp.GetBuffer())
+
+			// The requested command's output reaches the log either way.
+			require.Contains(t, eventLog, commandOutput)
+			// And reaches this process's stdout either way, the way a local
+			// run's would: quiet mode routes the runner's narration, it does
+			// not touch the command's own output.
+			require.Contains(t, cliStdout, commandOutput)
+			// Nothing but the command's stdout may reach stdout, or piping a
+			// remote run gives something a local one would not.
+			require.NotContains(t, cliStderr, commandOutput)
+			for _, n := range narration {
+				require.NotContains(t, cliStdout, n)
+			}
+
+			for _, n := range narration {
+				if tc.wantNarration {
+					require.Contains(t, eventLog, n)
+				} else {
+					require.NotContains(t, eventLog, n)
+				}
+			}
+
+			// The CLI's own progress output is a log level, so it goes quiet
+			// with the rest of the narration.
+			if tc.wantNarration {
+				require.Contains(t, cliOutput, "Waiting for available remote runner")
+			} else {
+				require.NotContains(t, cliOutput, "Waiting for available remote runner")
+			}
+		})
+	}
 }
 
 func TestBBRC(t *testing.T) {

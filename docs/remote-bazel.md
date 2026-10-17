@@ -223,6 +223,15 @@ The following configuration options are supported:
 - `--disable_retry`: By default, remote runs are automatically retried on transient
   errors. If your remote command is not idempotent (such as if you're running
   a deploy command), you should set this to true to disable retries.
+- `-q`, `--quiet`: Print only the output of the command that ran remotely, so the
+  run reads like a local bazel invocation. The runner's narration - the repo sync,
+  the command lines it runs, artifact uploads - stays out of the invocation log,
+  as does the CLI's own progress output. Warnings and errors are still printed.
+  - The narration still goes to the runner's stderr, which the executor captures
+    as the action's stderr. Read it back with `bb execution get <execution_id>`
+    (the execution ID is on the invocation page), then `bb download <stderr digest>`.
+  - A run that fails while setting up therefore reports the failure without the
+    setup output explaining it. Rerun without `-q` to see it.
 
 In order to run the CLI with debug logs enabled, you can add `--verbose=1` between
 `bb` and `remote`. Note that this is a different syntax from the rest of the

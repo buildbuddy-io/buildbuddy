@@ -45,6 +45,7 @@ go_library(
         "@org_golang_google_grpc//metadata",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
+        "@org_golang_x_term//:term",
     ],
 )
 

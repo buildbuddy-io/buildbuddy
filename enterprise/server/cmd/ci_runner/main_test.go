@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -201,7 +202,7 @@ func TestGitFetchRetriesSlowTransfer(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWorkingDir))
 	})
 	invocationLog := newInvocationLog(nil)
-	invocationLog.writer = io.Discard
+	invocationLog.stderrWriter = io.Discard
 	ws := &workspace{
 		rootDir: checkoutDir,
 		log:     &buildEventReporter{log: invocationLog},
@@ -274,7 +275,7 @@ func TestGitCheckoutRetriesSlowLazyFetch(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWorkingDir))
 	})
 	invocationLog := newInvocationLog(nil)
-	invocationLog.writer = io.Discard
+	invocationLog.stderrWriter = io.Discard
 	ws := &workspace{
 		rootDir: checkoutDir,
 		log:     &buildEventReporter{log: invocationLog},
@@ -404,7 +405,7 @@ func TestGitMergeRetriesSlowLazyFetch(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWorkingDir))
 	})
 	invocationLog := newInvocationLog(nil)
-	invocationLog.writer = io.Discard
+	invocationLog.stderrWriter = io.Discard
 	ws := &workspace{
 		rootDir: checkoutDir,
 		log:     &buildEventReporter{log: invocationLog},
@@ -486,7 +487,7 @@ func TestWorkspaceConfigPartialCloneRemote(t *testing.T) {
 			checkoutDir := t.TempDir()
 			t.Chdir(checkoutDir)
 			invocationLog := newInvocationLog(nil)
-			invocationLog.writer = io.Discard
+			invocationLog.stderrWriter = io.Discard
 			ws := &workspace{
 				rootDir: checkoutDir,
 				log:     &buildEventReporter{log: invocationLog},
@@ -505,6 +506,124 @@ func TestWorkspaceConfigPartialCloneRemote(t *testing.T) {
 			require.NotContains(t, strings.Fields(runGit(checkoutDir, "remote")), "true")
 		})
 	}
+}
+
+// newTestInvocationLog returns a log whose destinations can be asserted apart:
+// streamed is what the client streams as the command's stderr, stderr the
+// complete record the action's stderr keeps.
+func newTestInvocationLog(t *testing.T) (log *invocationLog, streamed *lockingbuffer.LockingBuffer, stderr *bytes.Buffer) {
+	t.Helper()
+	stderr = &bytes.Buffer{}
+	log = newInvocationLog([]string{"SECRET_VALUE"})
+	log.stderrWriter = stderr
+	return log, &log.LockingBuffer, stderr
+}
+
+func TestQuiet(t *testing.T) {
+	t.Run("keeps the runner's narration out of the invocation log", func(t *testing.T) {
+		flags.Set(t, "quiet", true)
+		log, streamed, stderr := newTestInvocationLog(t)
+
+		writeCommandSummary(log, "Syncing existing repo...")
+		_, gitErr := git(t.Context(), log, "version")
+
+		require.Nil(t, gitErr)
+		require.Empty(t, streamed.String())
+		require.Contains(t, stderr.String(), "Syncing existing repo...")
+		require.Contains(t, stderr.String(), "git version")
+	})
+
+	t.Run("keeps the output of a requested command in the invocation log", func(t *testing.T) {
+		flags.Set(t, "quiet", true)
+		flags.Set(t, "split_output_streams", true)
+		log, streamed, _ := newTestInvocationLog(t)
+		reporter := &buildEventReporter{log: log}
+
+		require.NoError(t, runBashCommand(t.Context(), "echo hello", nil, "" /*=dir*/, reporter))
+
+		// The command line the runner echoes is narration, so only the
+		// command's own output reaches the log - on the stdout stream, which
+		// the client writes to its own stdout.
+		stdout, err := log.stdoutBuf.ReadAll()
+		require.NoError(t, err)
+		require.Equal(t, "hello", strings.TrimSpace(string(stdout)))
+		require.Empty(t, streamed.String())
+	})
+
+	t.Run("keeps narration in its own stream, shown only outside quiet mode", func(t *testing.T) {
+		log, streamed, _ := newTestInvocationLog(t)
+		reporter := &buildEventReporter{log: log}
+
+		writeCommandSummary(log, "Syncing existing repo...")
+
+		p, err := reporter.progress(streamed.String())
+		require.NoError(t, err)
+		// Narration is reported on its own field so it can be stored as a log
+		// of its own, and it is also in the console, interleaved with the
+		// command's stderr in the order it was written - that ordering is what
+		// gives the client one stream to show rather than two to merge.
+		require.Contains(t, p.GetNarration(), "Syncing existing repo...")
+		require.Contains(t, p.GetStderr(), "Syncing existing repo...")
+	})
+
+	t.Run("reports each stream on its own field", func(t *testing.T) {
+		flags.Set(t, "quiet", true)
+		log, streamed, stderr := newTestInvocationLog(t)
+		reporter := &buildEventReporter{log: log}
+
+		io.WriteString(log.commandStream(streamStdout), "out")
+		io.WriteString(log.commandStream(streamStderr), "err")
+		writeCommandSummary(log, "narration")
+
+		p, err := reporter.progress(streamed.String())
+		require.NoError(t, err)
+		require.Equal(t, "out", p.GetStdout())
+		require.Equal(t, "err", strings.TrimSpace(p.GetStderr()))
+		// Quiet mode is what keeps the narration out of the invocation log, so
+		// it is reported nowhere; the action's stderr still keeps it, so it
+		// stays a complete record on its own.
+		require.Empty(t, p.GetNarration())
+		require.NotContains(t, p.GetStderr(), "narration")
+		require.Contains(t, stderr.String(), "narration")
+	})
+
+	t.Run("splits the streams regardless of quiet mode", func(t *testing.T) {
+		log, streamed, _ := newTestInvocationLog(t)
+		reporter := &buildEventReporter{log: log}
+
+		io.WriteString(log.commandStream(streamStdout), "out")
+		io.WriteString(log.commandStream(streamStderr), "err")
+
+		p, err := reporter.progress(streamed.String())
+		require.NoError(t, err)
+		require.Equal(t, "out", p.GetStdout())
+		require.Equal(t, "err", strings.TrimSpace(p.GetStderr()))
+	})
+
+	t.Run("does not redirect a sink the caller chose", func(t *testing.T) {
+		flags.Set(t, "quiet", true)
+		var callerSink bytes.Buffer
+
+		// The runner passes io.Discard for git commands whose arguments can
+		// carry the repo access token, so quiet mode must not route around the
+		// sink the caller picked.
+		_, gitErr := git(t.Context(), &callerSink, "version")
+
+		require.Nil(t, gitErr)
+		require.Contains(t, callerSink.String(), "git version")
+	})
+
+	t.Run("redacts secrets on both paths", func(t *testing.T) {
+		for _, quietMode := range []bool{true, false} {
+			flags.Set(t, "quiet", quietMode)
+			log, streamed, stderr := newTestInvocationLog(t)
+
+			writeCommandSummary(log, "the token is SECRET_VALUE")
+
+			require.NotContains(t, streamed.String(), "SECRET_VALUE")
+			require.NotContains(t, stderr.String(), "SECRET_VALUE")
+		}
+	})
 }
 
 func TestIsTransferTooSlow(t *testing.T) {
@@ -615,4 +734,100 @@ not json at all
 			assert.Equal(t, tc.want, parseGitFetchedBytes(strings.NewReader(tc.trace2Log)))
 		})
 	}
+}
+
+// TestCommandStreamTTYs covers the permutations the client can report: each of
+// the command's streams sees a terminal exactly when the client's matching
+// stream does.
+func TestCommandStreamTTYs(t *testing.T) {
+	for _, tc := range []struct {
+		name                     string
+		stdoutIsTTY, stderrIsTTY bool
+	}{
+		{name: "both terminals", stdoutIsTTY: true, stderrIsTTY: true},
+		{name: "stdout piped", stdoutIsTTY: false, stderrIsTTY: true},
+		{name: "stderr piped", stdoutIsTTY: true, stderrIsTTY: false},
+		{name: "both piped", stdoutIsTTY: false, stderrIsTTY: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "split_output_streams", true)
+			// Quiet, so the console holds the command's stderr alone and can be
+			// compared exactly; narration would otherwise be interleaved in it.
+			flags.Set(t, "quiet", true)
+			flags.Set(t, "stdout_is_tty", tc.stdoutIsTTY)
+			flags.Set(t, "stderr_is_tty", tc.stderrIsTTY)
+			log, streamed, _ := newTestInvocationLog(t)
+			reporter := &buildEventReporter{log: log}
+
+			// `test -t FD` is the same check a tool makes to decide whether to
+			// colorize or to route output through a terminal UI.
+			err := runBashCommand(t.Context(),
+				`test -t 1 && echo -n tty > /dev/stdout || echo -n pipe > /dev/stdout;`+
+					`test -t 2 && echo -n tty >&2 || echo -n pipe >&2`,
+				nil, "" /*=dir*/, reporter)
+			require.NoError(t, err)
+
+			p, err := reporter.progress(streamed.String())
+			require.NoError(t, err)
+			require.Equal(t, ttyOrPipe(tc.stdoutIsTTY), strings.TrimSpace(p.GetStdout()))
+			require.Equal(t, ttyOrPipe(tc.stderrIsTTY), strings.TrimSpace(p.GetStderr()))
+		})
+	}
+}
+
+func ttyOrPipe(isTTY bool) string {
+	if isTTY {
+		return "tty"
+	}
+	return "pipe"
+}
+
+// TestCommandKeepsItsTerminalWithoutTheSplit covers callers that do not ask for
+// the split: they keep the single shared pty, so all three fds stay terminals.
+func TestCommandKeepsItsTerminalWithoutTheSplit(t *testing.T) {
+	log, streamed, _ := newTestInvocationLog(t)
+	reporter := &buildEventReporter{log: log}
+
+	err := runBashCommand(t.Context(),
+		`test -t 0 && echo -n "stdin=tty" || echo -n "stdin=pipe";`+
+			`test -t 1 && echo -n " stdout=tty" || echo -n " stdout=pipe";`+
+			`test -t 2 && echo -n " stderr=tty" || echo -n " stderr=pipe"`,
+		nil, "" /*=dir*/, reporter)
+	require.NoError(t, err)
+
+	require.Contains(t, streamed.String(), "stdin=tty stdout=tty stderr=tty")
+}
+
+// TestSplitIsNotReportedUnlessAsked covers the marker the app gates on: a
+// runner that is not splitting must not claim to be.
+func TestSplitIsNotReportedUnlessAsked(t *testing.T) {
+	log, _, _ := newTestInvocationLog(t)
+	reporter := &buildEventReporter{log: log}
+
+	p, err := reporter.progress("some output")
+	require.NoError(t, err)
+	require.False(t, p.GetSplitStreams())
+
+	flags.Set(t, "split_output_streams", true)
+	p, err = reporter.progress("some output")
+	require.NoError(t, err)
+	require.True(t, p.GetSplitStreams())
+}
+
+// TestQuietStillReportsFailures covers the line between chatter and errors: a
+// failing run must still say why, or a caller gets a non-zero exit and nothing.
+func TestQuietStillReportsFailures(t *testing.T) {
+	flags.Set(t, "quiet", true)
+	flags.Set(t, "split_output_streams", true)
+	log, streamed, _ := newTestInvocationLog(t)
+	reporter := &buildEventReporter{log: log}
+
+	err := runBashCommand(t.Context(), "exit 3", nil, "" /*=dir*/, reporter)
+	require.Error(t, err)
+
+	p, perr := reporter.progress(streamed.String())
+	require.NoError(t, perr)
+	require.Contains(t, p.GetStderr(), "Command failed")
+	// Still no narration: quiet mode drops the chatter, not the errors.
+	require.Empty(t, p.GetNarration())
 }
