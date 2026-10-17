@@ -634,10 +634,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		// not specify what errors should be returned in that case. Clients
 		// known to handle it (see clientHandlesAlreadyExists) are sent an
 		// ALREADY_EXISTS status when the experiment is enabled. Other
-		// clients fail on that status, so they get a WriteResponse instead:
-		// the protocol does say that if another parallel write finished
-		// while this one was ongoing, we can immediately return a response
-		// with the committed size. See handleAlreadyExists.
+		// clients fail on that status, so they get a WriteResponse instead.
 		exists, err := s.cache.Contains(ctx, casRN.ToProto())
 		if err != nil {
 			return nil, err
