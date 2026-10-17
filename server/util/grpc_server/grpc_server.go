@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"runtime/trace"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +52,8 @@ var (
 	enablePrometheusHistograms = flag.Bool("app.enable_prometheus_histograms", true, "If true, collect prometheus histograms for all RPCs")
 
 	serverWorkerMultiplier = flag.Int("grpc_server_worker_multiplier", 2, "Multiplier applied to GOMAXPROCS to determine the number of gRPC server workers. 0 disables workers")
+
+	enableTraceTasks = flag.Bool("monitoring.enable_trace_tasks", false, "If true, wrap each gRPC request in a runtime/trace task and region, so execution traces can be broken down per request.")
 )
 
 func GRPCPort() int {
@@ -246,8 +249,86 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 	for _, h := range config.ExtraStatsHandlers {
 		opts = append(opts, grpc.StatsHandler(h))
 	}
+	if *enableTraceTasks {
+		// gRPC calls stats handlers in registration order, so the task and
+		// region are started by the first handler and ended by the last one,
+		// to cover the other handlers' work too.
+		opts = append([]grpc.ServerOption{grpc.StatsHandler(traceTaskStartHandler{})}, opts...)
+		opts = append(opts, grpc.StatsHandler(traceTaskEndHandler{}))
+	}
 	return opts
 }
+
+type requestTraceKey struct{}
+
+// requestTrace is the runtime/trace task and region covering one RPC.
+type requestTrace struct {
+	method string
+	task   *trace.Task
+	region *trace.Region
+}
+
+// traceTaskStartHandler and traceTaskEndHandler wrap each RPC in a
+// runtime/trace task and region, so that execution traces can be broken down
+// per RPC in go tool trace. They are stats handlers rather than interceptors
+// because the Begin and End events run on the RPC's goroutine before unary
+// request decoding and after response encoding, so that work is covered too.
+type traceTaskStartHandler struct{}
+
+func (traceTaskStartHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
+	// Tasks and regions are only recorded while a trace is being collected, so
+	// skip the allocations otherwise.
+	if !trace.IsEnabled() {
+		return ctx
+	}
+	ctx, task := trace.NewTask(ctx, info.FullMethodName)
+	return context.WithValue(ctx, requestTraceKey{}, &requestTrace{method: info.FullMethodName, task: task})
+}
+
+func (traceTaskStartHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
+	if _, ok := s.(*stats.Begin); !ok {
+		return
+	}
+	// go tool trace breaks down running, waiting and blocked time only per
+	// region, and attributes goroutines to the task only if they're started
+	// inside a region. Begin and End run on the same goroutine, so the region
+	// can span the whole RPC. It's started on Begin rather than in TagRPC
+	// because gRPC calls TagRPC for unknown methods too, but then sends
+	// neither Begin nor End, which would leave the region open on a reused
+	// stream worker goroutine. Their tasks are never ended either, but an open
+	// task doesn't affect other RPCs' tasks.
+	if rt, ok := ctx.Value(requestTraceKey{}).(*requestTrace); ok {
+		rt.region = trace.StartRegion(ctx, rt.method)
+	}
+}
+
+func (traceTaskStartHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+
+func (traceTaskStartHandler) HandleConn(context.Context, stats.ConnStats) {}
+
+type traceTaskEndHandler struct{}
+
+func (traceTaskEndHandler) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
+	return ctx
+}
+
+func (traceTaskEndHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
+	if _, ok := s.(*stats.End); !ok {
+		return
+	}
+	if rt, ok := ctx.Value(requestTraceKey{}).(*requestTrace); ok {
+		rt.region.End()
+		rt.task.End()
+	}
+}
+
+func (traceTaskEndHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+
+func (traceTaskEndHandler) HandleConn(context.Context, stats.ConnStats) {}
 
 func KeepaliveEnforcementPolicy() grpc.ServerOption {
 	// Set to avoid errors: Bandwidth exhausted HTTP/2 error code: ENHANCE_YOUR_CALM Received Goaway too_many_pings
