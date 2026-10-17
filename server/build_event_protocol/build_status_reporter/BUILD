@@ -12,6 +12,7 @@ go_library(
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/util/git",
         "//server/util/log",
         "//server/util/timeutil",
