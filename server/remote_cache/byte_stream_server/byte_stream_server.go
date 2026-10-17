@@ -37,11 +37,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/peer"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const defaultChunkedReadMaxInFlight = 32
@@ -806,8 +806,16 @@ func (w *writeHandler) Close() error {
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
 	var streamState *writeHandler
+	// Receive into a pooled WriteRequest so the data buffer is reused across
+	// messages instead of reallocated per chunk. This loop never calls Recv,
+	// so in-process callers that pass wrapped streams (e.g.
+	// ByteStreamServerProxy) must put their receive logic in RecvMsg.
+	req := bspb.WriteRequestFromVTPool()
+	defer req.ReturnToVTPool()
 	for {
-		req, err := stream.Recv()
+		// VT unmarshal doesn't reset, so we need to reset manually.
+		req.ResetVT()
+		err := stream.RecvMsg(req)
 		if err == io.EOF {
 			return nil
 		}
