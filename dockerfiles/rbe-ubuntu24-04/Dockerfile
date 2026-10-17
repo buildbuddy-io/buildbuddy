@@ -53,6 +53,10 @@ RUN apt-get update && \
 
 # Docker
 #
+# Docker 29 uses the containerd image store on fresh installs, so images loaded
+# directly into Docker's containerd namespace are also visible to Docker.
+# Keep explicit package versions to make upgrades deliberate.
+#
 # Note: gnupg is only needed to install Docker, so we uninstall it at the end of
 # this step and also run `apt-get autoremove` to get rid of the unnecessary
 # packages it came with.
@@ -68,9 +72,9 @@ RUN apt-get update && \
     echo >/etc/apt/sources.list.d/docker.list "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" && \
     apt-get update && \
     apt-get install -y \
-      docker-ce=5:28.1.0-1~ubuntu.24.04~noble \
-      docker-ce-cli=5:28.1.0-1~ubuntu.24.04~noble \
-      containerd.io=1.7.27-1 \
+      docker-ce=5:29.8.1-1~ubuntu.24.04~noble \
+      docker-ce-cli=5:29.8.1-1~ubuntu.24.04~noble \
+      containerd.io=2.3.5-1~ubuntu.24.04~noble \
       && \
     apt-get remove -y gnupg && \
     apt-get autoremove -y && \
