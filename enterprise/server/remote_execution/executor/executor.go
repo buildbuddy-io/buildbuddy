@@ -248,6 +248,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		EstimatedTaskSize:        st.GetSchedulingMetadata().GetTaskSize(),
 		DoNotCache:               task.GetAction().GetDoNotCache(),
 	}
+	var executeResponse *repb.ExecuteResponse
 	finishWithErrFn := func(finalErr error) (retry bool, err error) {
 		if shouldRetry(task, finalErr) {
 			return true, finalErr
@@ -258,8 +259,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			log.CtxWarningf(ctx, "Failed to append ExecutionAuxiliaryMetadata: %s", err)
 		}
 		resp.Result = &repb.ActionResult{
+			// Output uploads may have failed after uploading these logs. Keep
+			// them without advertising any incomplete output files or trees.
+			StdoutDigest:      executeResponse.GetResult().GetStdoutDigest(),
+			StderrDigest:      executeResponse.GetResult().GetStderrDigest(),
 			ExecutionMetadata: md,
 		}
+		resp.ServerLogs = executeResponse.GetServerLogs()
 		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest.GetDigest(), resp); err != nil {
 			return true, err
 		}
@@ -520,7 +526,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	actionResult := &repb.ActionResult{}
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
 	actionMetrics.Result = actionResult
-	executeResponse := operation.ExecuteResponseWithResult(actionResult, cmdResult.Error)
+	executeResponse = operation.ExecuteResponseWithResult(actionResult, cmdResult.Error)
 
 	log.CtxDebugf(ctx, "Uploading outputs.")
 	stage.Set("output_upload")

@@ -511,9 +511,11 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	var txInfo *dirtools.TransferInfo
 	var stdoutDigest, stderrDigest *repb.Digest
 
+	// Use the caller's context for diagnostic uploads so another output's
+	// failure does not cancel them. Keep fail-fast cancellation for the tree.
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
+		d, err := cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
 		if err != nil {
 			return status.UnavailableErrorf("upload stdout: %s", err)
 		}
@@ -521,7 +523,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		return nil
 	})
 	eg.Go(func() error {
-		d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
+		d, err := cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
 		if err != nil {
 			return status.UnavailableErrorf("upload stderr: %s", err)
 		}
@@ -567,7 +569,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	serverLogs := make(map[string]*repb.LogFile, len(cmdResult.AuxiliaryLogs))
 	for name, b := range cmdResult.AuxiliaryLogs {
 		eg.Go(func() error {
-			d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(b))
+			d, err := cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(b))
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to upload auxiliary log %q: %s", name, err)
 				return nil
@@ -581,7 +583,11 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			return nil
 		})
 	}
-	if err := eg.Wait(); err != nil {
+	err := eg.Wait()
+	executeResponse.Result.StdoutDigest = stdoutDigest
+	executeResponse.Result.StderrDigest = stderrDigest
+	executeResponse.ServerLogs = serverLogs
+	if err != nil {
 		return nil, err
 	}
 	txInfo.FileCount += 2 // for stdout and stderr
@@ -590,9 +596,6 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	for _, b := range cmdResult.AuxiliaryLogs {
 		txInfo.BytesTransferred += int64(len(b))
 	}
-	executeResponse.Result.StdoutDigest = stdoutDigest
-	executeResponse.Result.StderrDigest = stderrDigest
-	executeResponse.ServerLogs = serverLogs
 	span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
 	span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
 	return txInfo, nil

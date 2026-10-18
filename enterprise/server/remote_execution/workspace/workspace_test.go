@@ -8,12 +8,16 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -21,9 +25,110 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
+
+type failingUploadCASClient struct {
+	repb.ContentAddressableStorageClient
+	onFailure func()
+}
+
+func (c *failingUploadCASClient) BatchUpdateBlobs(context.Context, *repb.BatchUpdateBlobsRequest, ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
+	c.onFailure()
+	return nil, status.InvalidArgumentError("injected output tree upload failure")
+}
+
+type interceptingByteStreamClient struct {
+	bspb.ByteStreamClient
+	onSend func(context.Context, *bspb.WriteRequest) error
+}
+
+func (c *interceptingByteStreamClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	stream, err := c.ByteStreamClient.Write(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &interceptingWriteClient{ByteStream_WriteClient: stream, onSend: c.onSend}, nil
+}
+
+type interceptingWriteClient struct {
+	bspb.ByteStream_WriteClient
+	onSend func(context.Context, *bspb.WriteRequest) error
+}
+
+func (c *interceptingWriteClient) Send(req *bspb.WriteRequest) error {
+	if err := c.onSend(c.Context(), req); err != nil {
+		return err
+	}
+	return c.ByteStream_WriteClient.Send(req)
+}
+
+func TestUploadOutputs_PreservesLogsOnFailure(t *testing.T) {
+	for _, failure := range []string{"output tree", "stderr"} {
+		t.Run(failure, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			te := testenv.GetTestEnv(t)
+			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+			testcache.Setup(t, te, lis)
+			go runServer()
+			bsClient := te.GetByteStreamClient()
+			failed := make(chan struct{})
+			signalFailure := sync.OnceFunc(func() { close(failed) })
+			stderrDigest, err := digest.Compute(strings.NewReader("stderr"), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			if failure == "output tree" {
+				te.SetContentAddressableStorageClient(&failingUploadCASClient{ContentAddressableStorageClient: te.GetContentAddressableStorageClient(), onFailure: signalFailure})
+			}
+			te.SetByteStreamClient(&interceptingByteStreamClient{ByteStreamClient: bsClient, onSend: func(ctx context.Context, req *bspb.WriteRequest) error {
+				if failure == "stderr" && strings.Contains(req.GetResourceName(), "/"+stderrDigest.GetHash()+"/") {
+					signalFailure()
+					return status.InvalidArgumentError("injected stderr upload failure")
+				}
+				// Hold log uploads until another upload reaches the injected failure.
+				select {
+				case <-failed:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}})
+			ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{})
+			require.NoError(t, err)
+			cmd := &repb.Command{OutputPaths: []string{"output"}}
+			ws.SetTask(ctx, &repb.ExecutionTask{
+				Command:        cmd,
+				ExecuteRequest: &repb.ExecuteRequest{DigestFunction: repb.DigestFunction_SHA256},
+			})
+			require.NoError(t, os.WriteFile(filepath.Join(ws.Path(), "output"), []byte("output"), 0600))
+			response := &repb.ExecuteResponse{Result: &repb.ActionResult{}}
+			_, err = ws.UploadOutputs(ctx, cmd, response, &interfaces.CommandResult{
+				Stdout:        []byte("stdout"),
+				Stderr:        []byte("stderr"),
+				AuxiliaryLogs: map[string][]byte{"auxiliary": []byte("auxiliary")},
+			})
+			require.ErrorContains(t, err, "injected "+failure+" upload failure")
+			logs := map[string]*repb.Digest{
+				"stdout":    response.GetResult().GetStdoutDigest(),
+				"auxiliary": response.GetServerLogs()["auxiliary"].GetDigest(),
+			}
+			if failure == "stderr" {
+				require.Nil(t, response.GetResult().GetStderrDigest())
+			} else {
+				logs["stderr"] = response.GetResult().GetStderrDigest()
+			}
+			for want, d := range logs {
+				require.NotNil(t, d, want)
+				var got strings.Builder
+				require.NoError(t, cachetools.GetBlob(ctx, bsClient, digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256), &got))
+				require.Equal(t, want, got.String())
+			}
+		})
+	}
+}
 
 func newWorkspace(t *testing.T, opts *workspace.Opts) *workspace.Workspace {
 	te := testenv.GetTestEnv(t)
