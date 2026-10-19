@@ -138,35 +138,6 @@ func TestHTTPForwarder_ClientIPThroughLoadBalancer(t *testing.T) {
 	require.Equal(t, testClientSocket, gotIP)
 }
 
-func TestHTTPForwarder_PreservesForwardedProtoAndHost(t *testing.T) {
-	env := newEnv(t, false)
-
-	var got http.Header
-	proxyServer := serveForwarder(t, env, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.Header.Clone()
-	}))
-	doRequest(t, proxyServer.URL, func(req *http.Request) {
-		req.Header.Set("X-Forwarded-Proto", "https")
-		req.Header.Set("X-Forwarded-Host", "app.buildbuddy.io")
-	})
-
-	require.Equal(t, []string{"https"}, got.Values("X-Forwarded-Proto"))
-	require.Equal(t, []string{"app.buildbuddy.io"}, got.Values("X-Forwarded-Host"))
-}
-
-func TestHTTPForwarder_DerivesForwardedProtoAndHostWhenAbsent(t *testing.T) {
-	env := newEnv(t, false)
-
-	var got http.Header
-	proxyServer := serveForwarder(t, env, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.Header.Clone()
-	}))
-	doForgedRequest(t, proxyServer.URL)
-
-	require.Equal(t, []string{"http"}, got.Values("X-Forwarded-Proto"))
-	require.Equal(t, []string{testClientHost}, got.Values("X-Forwarded-Host"))
-}
-
 func TestHTTPForwarder_KeepsClientSuppliedForwardedForChain(t *testing.T) {
 	env := newEnv(t, false)
 

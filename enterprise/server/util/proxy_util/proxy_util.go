@@ -74,8 +74,7 @@ func RequestTypeLabelFromContext(ctx context.Context) string {
 }
 
 // NewHTTPForwarder returns a handler that reverse-proxies HTTP requests to
-// target, preserving the incoming Host header (which the target uses to resolve
-// the subdomain).
+// target, as httputil.NewSingleHostReverseProxy does.
 //
 // Like the gRPC forwarder, it attests the client's IP to the target: it strips
 // all client-supplied internal headers, then sets the resolved client IP and,
@@ -84,56 +83,42 @@ func RequestTypeLabelFromContext(ctx context.Context) string {
 // identity. If env has no client identity service, nothing is attested.
 func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 	cis := env.GetClientIdentityService()
-	proxy := &httputil.ReverseProxy{
-		Rewrite: func(r *httputil.ProxyRequest) {
-			r.SetURL(target)
-			r.Out.Host = r.In.Host
-			// Append to the incoming X-Forwarded-For, as the default director
-			// does; Rewrite otherwise drops it.
-			r.Out.Header["X-Forwarded-For"] = r.In.Header["X-Forwarded-For"]
-			r.SetXForwarded()
-			// Keep the proto and host the original client used (e.g. https
-			// when TLS is terminated in front of this proxy); SetXForwarded
-			// would derive them from this proxy's own request.
-			for _, h := range []string{"X-Forwarded-Proto", "X-Forwarded-Host"} {
-				if v, ok := r.In.Header[h]; ok {
-					r.Out.Header[h] = v
-				}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	director := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		director(r)
+		for k := range r.Header {
+			if strings.HasPrefix(strings.ToLower(k), authutil.InternalHeaderPrefix) {
+				delete(r.Header, k)
 			}
-
-			for k := range r.Out.Header {
-				if strings.HasPrefix(strings.ToLower(k), authutil.InternalHeaderPrefix) {
-					delete(r.Out.Header, k)
-				}
-			}
-			if cis == nil {
-				return
-			}
-			clientIP := clientip.Get(r.In.Context())
-			if clientIP == "" {
-				return
-			}
-			// Always forward the resolved IP, so it survives proxy-to-proxy
-			// chains. The target only honors it alongside a valid grpc-proxy
-			// identity.
-			r.Out.Header.Set(clientip.HeaderName, clientIP)
-			// A caller carrying its own identity (e.g. an executor or workflow)
-			// keeps it, as in the gRPC forwarder: the target authorizes on it,
-			// and replacing it with grpc-proxy would lose that.
-			if r.In.Header.Get(authutil.ClientIdentityHeaderName) != "" {
-				return
-			}
-			header, err := cis.CachedIdentityHeader(&interfaces.ClientIdentity{
-				Origin: interfaces.ClientIdentityInternalOrigin,
-				Client: interfaces.ClientIdentityGRPCProxy,
-			})
-			if err != nil {
-				// Without the identity the target ignores the IP anyway.
-				log.CtxWarningf(r.In.Context(), "Could not create client identity header: %s", err)
-				return
-			}
-			r.Out.Header.Set(authutil.ClientIdentityHeaderName, header)
-		},
+		}
+		if cis == nil {
+			return
+		}
+		clientIP := clientip.Get(r.Context())
+		if clientIP == "" {
+			return
+		}
+		// Always forward the resolved IP, so it survives proxy-to-proxy
+		// chains. The target only honors it alongside a valid grpc-proxy
+		// identity.
+		r.Header.Set(clientip.HeaderName, clientIP)
+		// A caller carrying its own identity (e.g. an executor or workflow)
+		// keeps it, as in the gRPC forwarder: the target authorizes on it,
+		// and replacing it with grpc-proxy would lose that.
+		if r.Header.Get(authutil.ClientIdentityHeaderName) != "" {
+			return
+		}
+		header, err := cis.CachedIdentityHeader(&interfaces.ClientIdentity{
+			Origin: interfaces.ClientIdentityInternalOrigin,
+			Client: interfaces.ClientIdentityGRPCProxy,
+		})
+		if err != nil {
+			// Without the identity the target ignores the IP anyway.
+			log.CtxWarningf(r.Context(), "Could not create client identity header: %s", err)
+			return
+		}
+		r.Header.Set(authutil.ClientIdentityHeaderName, header)
 	}
 	return interceptors.ClientIP(env, proxy)
 }
