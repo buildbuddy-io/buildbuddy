@@ -317,8 +317,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	for k, v := range req.GetEnv() {
 		if k == "BUILD_USER" {
-			// Authenticated caller credentials determine attribution; request
-			// environment variables must not overwrite that identity.
+			// Older clients default BUILD_USER to the local username. Keep the
+			// server-selected display name instead.
 			continue
 		}
 		cmd.EnvironmentVariables = append(cmd.EnvironmentVariables, &repb.Command_EnvironmentVariable{

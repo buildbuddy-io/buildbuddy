@@ -1932,7 +1932,7 @@ func (ws *workspace) getHostAndUserName() (string, string) {
 	if username, ok := os.LookupEnv("BUILD_USER"); ok {
 		return hostname, username
 	}
-	// Workflows and direct runner calls may not supply a caller identity.
+	// Workflows and direct runner calls might not supply a caller identity.
 	user, err := user.Current()
 	username := ""
 	if err != nil {
