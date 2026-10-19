@@ -1144,6 +1144,91 @@ func TestExecutorShutdown_ReEnqueuedReservationCarriesTaskOwnerJWT(t *testing.T)
 	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor2, taskID)))
 }
 
+func TestExecutorShutdown_QueuedTaskSurvivesWithRetriesDisabled(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+
+	executor1 := newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
+	executor1.Register()
+	executor2 := newFakeExecutorWithId(ctx, t, "n2", env.GetSchedulerClient())
+	executor2.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{platform.RetryPropertyName: "false"})
+	nextReservation(t, executor1, taskID)
+	nextReservation(t, executor2, taskID)
+	task, err := s.readTask(ctx, taskID)
+	require.NoError(t, err)
+	require.Zero(t, task.attemptCount)
+
+	// Returning a queued reservation must still allow the task's first attempt,
+	// even when the client forbids retrying execution.
+	executor1.Send(&scpb.RegisterAndStreamWorkRequest{
+		ShuttingDownRequest: &scpb.ShuttingDownRequest{TaskId: []string{taskID}},
+	})
+	nextReservation(t, executor2, taskID)
+	task, err = s.readTask(ctx, taskID)
+	require.NoError(t, err)
+	require.Zero(t, task.attemptCount)
+	lease := executor2.Claim(taskID)
+	require.NoError(t, lease.Finalize())
+}
+
+func TestExecutorShutdown_PreservesTaskRunningOnAnotherExecutor(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		retry         string
+		priorAttempts int
+	}{
+		{name: "retries enabled", retry: "true"},
+		{name: "retries disabled", retry: "false"},
+		{name: "last allowed attempt", retry: "true", priorAttempts: maxTaskAttemptCount - 1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			s := env.GetSchedulerService().(*SchedulerServer)
+			executor1 := newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
+			executor1.Register()
+			executor2 := newFakeExecutorWithId(ctx, t, "n2", env.GetSchedulerClient())
+			executor2.Register()
+
+			taskID := scheduleTask(ctx, t, env, map[string]string{platform.RetryPropertyName: testCase.retry})
+			nextReservation(t, executor1, taskID)
+			nextReservation(t, executor2, taskID)
+			for range testCase.priorAttempts {
+				leaseID, err := s.claimTask(ctx, taskID, "" /*=reconnectToken*/, false /*=clientSupportsReconnect*/)
+				require.NoError(t, err)
+				require.NoError(t, s.unclaimTask(ctx, taskID, leaseID, "" /*=reconnectToken*/))
+			}
+			lease := executor2.Claim(taskID)
+
+			// Receiving the last reservation in the shutdown request tells us the
+			// scheduler has finished processing the reservation for the running task.
+			lastTaskID := scheduleTask(ctx, t, env, map[string]string{})
+			nextReservation(t, executor1, lastTaskID)
+			nextReservation(t, executor2, lastTaskID)
+			executor1.Send(&scpb.RegisterAndStreamWorkRequest{
+				ShuttingDownRequest: &scpb.ShuttingDownRequest{TaskId: []string{taskID, lastTaskID}},
+			})
+			for {
+				reservation := executor2.NextSchedulerMessage().GetEnqueueTaskReservationRequest()
+				require.NotNil(t, reservation)
+				if reservation.GetTaskId() == lastTaskID {
+					break
+				}
+				require.Equal(t, taskID, reservation.GetTaskId())
+			}
+
+			task, err := s.readTask(ctx, taskID)
+			require.NoError(t, err)
+			require.EqualValues(t, testCase.priorAttempts+1, task.attemptCount)
+			_, err = executor1.leaseTask(taskID, "" /*=reconnectToken*/)
+			require.True(t, status.IsNotFoundError(err), "another executor must not steal the running task: %v", err)
+			require.NoError(t, lease.Renew())
+			require.NoError(t, lease.Finalize())
+		})
+	}
+}
+
 func TestExecutorReEnqueue_ReservationCarriesTaskOwnerJWT(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 

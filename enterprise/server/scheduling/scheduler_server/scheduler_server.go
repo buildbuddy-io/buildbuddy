@@ -457,10 +457,8 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 						alert.CtxUnexpectedEvent(reEnqueueCtx, "shutdown_reenqueue_grace_period_expired", "Gave up re-enqueueing task reservations for executor %q going down: grace period of %s after stream cancellation expired with %d of %d reservations not re-enqueued", executorID, shutdownReEnqueueGracePeriod, len(taskIDs)-i, len(taskIDs))
 						break
 					}
-					leaseID := ""
-					reconnectToken := ""
 					taskCtx, cancelTask := context.WithTimeout(reEnqueueCtx, shutdownReEnqueuePerTaskTimeout)
-					err := h.scheduler.reEnqueueTask(taskCtx, taskID, leaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down")
+					err := h.scheduler.reEnqueueTaskReservation(taskCtx, taskID)
 					cancelTask()
 					if err != nil {
 						log.CtxWarningf(reEnqueueCtx, "Could not re-enqueue task reservation %q for executor %q going down: %s", taskID, executorID, err)
@@ -3182,6 +3180,35 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 		return nil, err
 	}
 	return &scpb.EnqueueTaskReservationResponse{}, nil
+}
+
+// reEnqueueTaskReservation replaces a queued reservation returned by an executor
+// during shutdown. This is not an execution retry, and another executor may
+// already be running the task, so it must not release a claim or fail execution.
+func (s *SchedulerServer) reEnqueueTaskReservation(ctx context.Context, taskID string) error {
+	scheduledTask, err := s.readTask(ctx, taskID)
+	if status.IsNotFoundError(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(scheduledTask.serializedTask, task); err != nil {
+		return status.InternalErrorf("unmarshal execution task: %s", err)
+	}
+	enqueueRequest := &scpb.EnqueueTaskReservationRequest{
+		TaskId:             taskID,
+		TaskSize:           scheduledTask.metadata.GetTaskSize(),
+		SchedulingMetadata: scheduledTask.metadata,
+		Delay:              durationpb.New(max(time.Until(scheduledTask.reconnectPeriodEnd), 0)),
+		Jwt:                scheduledTask.jwt,
+	}
+	opts := enqueueTaskReservationOpts{
+		numReplicas:                  1,
+		scheduleOnConnectedExecutors: false,
+	}
+	return s.enqueueTaskReservations(ctx, enqueueRequest, task, opts)
 }
 
 func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, reconnectToken string, numReplicas int, reason string) error {
