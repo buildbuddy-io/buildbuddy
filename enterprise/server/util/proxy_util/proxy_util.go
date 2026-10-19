@@ -78,11 +78,10 @@ func RequestTypeLabelFromContext(ctx context.Context) string {
 // the subdomain).
 //
 // Like the gRPC forwarder, it attests the client's IP to the target: it strips
-// all client-supplied internal and identity headers, then sets the resolved
-// client IP and a grpc-proxy client identity, which the target requires before
-// trusting the IP. If env has no client identity service, nothing is attested.
-// If the caller already carries a client identity, it is forwarded unchanged
-// instead of the grpc-proxy one, so the target ignores the IP header.
+// all client-supplied internal headers, then sets the resolved client IP and,
+// unless the caller already carries a client identity, a grpc-proxy client
+// identity. The target trusts the IP only alongside a valid grpc-proxy
+// identity. If env has no client identity service, nothing is attested.
 func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 	cis := env.GetClientIdentityService()
 	proxy := &httputil.ReverseProxy{

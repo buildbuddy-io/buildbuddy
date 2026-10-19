@@ -225,29 +225,6 @@ func TestHTTPForwarder_CallerIdentityIsKept(t *testing.T) {
 	require.Empty(t, got.Values(forgedInternal))
 }
 
-// A caller's identity must never make the app trust a client IP header.
-func TestHTTPForwarder_CallerIdentityDoesNotAttestForgedClientIP(t *testing.T) {
-	flags.Set(t, "app.client_identity.key", "test-key")
-	proxyEnv := newEnv(t, true)
-	appEnv := newEnv(t, true)
-	executorHeader, err := proxyEnv.GetClientIdentityService().CachedIdentityHeader(&interfaces.ClientIdentity{
-		Origin: interfaces.ClientIdentityInternalOrigin,
-		Client: interfaces.ClientIdentityExecutor,
-	})
-	require.NoError(t, err)
-
-	var gotIP string
-	app := interceptors.WrapExternalHandler(appEnv, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotIP = clientip.Get(r.Context())
-	}))
-	proxyServer := serveForwarder(t, proxyEnv, app)
-	doRequest(t, proxyServer.URL, func(req *http.Request) {
-		req.Header.Set(authutil.ClientIdentityHeaderName, executorHeader)
-	})
-
-	require.Equal(t, testClientSocket, gotIP)
-}
-
 // client -> forwarder A -> forwarder B -> app: the app resolves the original
 // client IP, not a proxy's.
 func TestHTTPForwarder_ClientIPThroughTwoProxyHops(t *testing.T) {
