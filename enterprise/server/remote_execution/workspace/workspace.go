@@ -14,11 +14,14 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	_ "embed"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
@@ -32,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/gds"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -59,7 +63,8 @@ var (
 	vfsLogFUSELatencyStats = flag.Bool("executor.vfs.log_fuse_latency_stats", false, "Enables logging of per-operation latency stats when VFS is unmounted. Implicitly enabled by --executor.vfs.verbose.")
 	vfsLogFUSEPerFileStats = flag.Bool("executor.vfs.log_fuse_per_file_stats", false, "Enables tracking and logging of per-file per-operation stats. Logged when VFS is unmounted.")
 
-	poolSlots = flag.Int("executor.workspace_pool.slots", 0, "Number of finished task workspaces that the pool can hold for reuse by later tasks with similar input trees, when the executor.workspace_pool.enabled experiment is on. 0 means the number of CPU cores allocated to tasks, i.e. how many 1-core tasks can run at once. A negative value disables reuse.")
+	poolSlots       = flag.Int("executor.workspace_pool.slots", 0, "Number of finished task workspaces that the pool can hold for reuse by later tasks with similar input trees, when the executor.workspace_pool.enabled experiment is on. 0 means the number of CPU cores allocated to tasks, i.e. how many 1-core tasks can run at once. A negative value disables reuse.")
+	poolMaxFileSize = flag.Int64("executor.workspace_pool.max_file_size_bytes", 1<<20, "Input files larger than this are removed from a workspace before it enters the reuse pool, so that pooled workspaces don't keep large files on disk after the file cache evicts them. This is mostly a hedge against rare edge cases, since pooled workspaces only hold hard links to file cache entries, and the file cache rarely evicts files that pooled workspaces still use. 0 means no size limit.")
 )
 
 func setDeleteLimit() {
@@ -101,6 +106,38 @@ type Workspace struct {
 	mu          sync.Mutex // protects(removing, treeFetcher)
 	removing    bool
 	treeFetcher *dirtools.TreeFetcher
+
+	// State for reusing the workspace through Opts.Pool, which we set when
+	// setting up inputs. It records the input tree that the workspace holds,
+	// and the group whose tasks may reuse the workspace once it returns to the
+	// pool. inputDirs holds the tree's directories by digest hash rather than
+	// by path, so we find a path's directory by walking down from
+	// inputRootDigest.
+	inputRootDigest     *repb.Digest
+	inputDirs           map[string]*repb.Directory
+	inputDigestFunction repb.DigestFunction_Value
+	groupID             string
+	// Each input directory's fingerprint right after inputs were set up, by
+	// workspace-relative path. ReturnToPool compares against them to find
+	// the directories the task changed.
+	dirFingerprints map[string]dirFingerprint
+}
+
+// dirFingerprint identifies the state of a directory. The kernel updates a
+// directory's ctime whenever an entry is added, removed or renamed, or the
+// directory's own attributes change, and userspace can't set ctime back. So if
+// a directory's fingerprint still matches, its entries are the same inodes as
+// when we recorded it. Writing to a file in place doesn't change its inode or
+// its directory's ctime, so we only pool workspaces whose inputs are hard links
+// to the file cache, which the file cache already relies on tasks not writing
+// to. We also record the mode and owner, so that we recreate a directory whose
+// mode or owner the task changed instead of passing it on to the next task.
+type dirFingerprint struct {
+	ino        uint64
+	ctimeNanos int64
+	mode       uint32
+	uid        uint32
+	gid        uint32
 }
 
 type VFSPrefetchMode string
@@ -262,6 +299,10 @@ func (ws *Workspace) CommandWorkingDirectory() string {
 
 // CreateOutputDirs creates the required output directories for the current
 // action.
+//
+// It must be called after DownloadInputs, which records the input directory
+// fingerprints of a workspace with a Pool, so that ReturnToPool sees the
+// directories it adds entries to as changed.
 func (ws *Workspace) CreateOutputDirs() error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
@@ -368,6 +409,21 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	// The runner only sets Opts.Pool for workspaces that we can pool.
 	reusable := ws.Opts.Pool != nil
 	if reusable {
+		// The tree fetcher checks names too, but we build paths from them
+		// earlier, when cleaning up a pooled workspace for reuse.
+		if err := dirtools.ValidateTreeNames(layout.Inputs, ws.Opts.CaseInsensitive); err != nil {
+			return err
+		}
+		root, dirMap, err := dirtools.DirMapFromTree(layout.Inputs, execReq.GetDigestFunction())
+		if err != nil {
+			return status.WrapError(err, "build directory map from input tree")
+		}
+		inputDirs := make(map[string]*repb.Directory, len(dirMap))
+		for k, d := range dirMap {
+			inputDirs[k.Hash] = d
+		}
+		ws.inputRootDigest, ws.inputDirs, ws.inputDigestFunction = root, inputDirs, execReq.GetDigestFunction()
+		ws.groupID = filecache.GroupIDStringFromContext(ctx)
 		kept, err := ws.reusePooledWorkspace(ctx)
 		if err != nil {
 			return status.UnavailableErrorf("clear workspace after failing to reuse a pooled one: %s", err)
@@ -409,6 +465,16 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
 		span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
 		log.CtxDebugf(ctx, "DownloadTree linked %d files in %s, downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.LinkCount, txInfo.LinkDuration, txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
+		if reusable {
+			// Now that the inputs are in place, and before the task runs, we
+			// record a fingerprint of each input directory. When the workspace
+			// returns to the pool, we compare against these, so that we only
+			// need to read the directories that the task changed.
+			if err := ws.recordDirFingerprints(); err != nil {
+				log.CtxWarningf(ctx, "Workspace won't be pooled, because recording directory fingerprints failed: %s", err)
+				ws.dirFingerprints = nil
+			}
+		}
 	}
 
 	// Now that the input tree is setup, remove any unwanted inputs.
@@ -802,6 +868,14 @@ func removeChildren(dirPath string) error {
 type Pool struct {
 	dir  string
 	size int
+
+	mu sync.Mutex // protects all of the fields below
+	// Pooled workspaces, stored using a GreedyDual-Size priority queue. This
+	// models the value of keeping large workspaces around for longer than small
+	// workspaces, while still allowing large workspaces to eventually get
+	// evicted. LRU performs significantly worse because the number of pooled
+	// workspaces is small.
+	workspaces *gds.Queue[*pooledWorkspace]
 }
 
 // NewPool returns a pool that keeps workspaces under buildRoot, or nil if
@@ -814,6 +888,10 @@ func NewPool(buildRoot string) (*Pool, error) {
 	if err := disk.ForceRemove(context.Background(), dir); err != nil {
 		return nil, fmt.Errorf("remove old workspace reuse pool: %w", err)
 	}
+	// Recording directory fingerprints (lstatDir) is only implemented on Linux.
+	if runtime.GOOS != "linux" {
+		return nil, nil
+	}
 	size := *poolSlots
 	if size == 0 {
 		size = int(resources.GetAllocatedCPUMillis() / 1000)
@@ -824,7 +902,172 @@ func NewPool(buildRoot string) (*Pool, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("create workspace reuse pool: %w", err)
 	}
-	return &Pool{dir: dir, size: size}, nil
+	// Fingerprints compare ctimes, so they can't detect changes that a task
+	// makes within the same second as input setup on filesystems that only
+	// record whole seconds.
+	fp, _, err := lstatDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("stat workspace reuse pool: %w", err)
+	}
+	if fp.ctimeNanos%int64(time.Second) == 0 {
+		log.Warningf("Not pooling workspaces, because the build root's filesystem doesn't record sub-second timestamps")
+		return nil, nil
+	}
+	return &Pool{dir: dir, size: size, workspaces: gds.New[*pooledWorkspace]()}, nil
+}
+
+// add adds a workspace to the pool, then evicts workspaces until the pool is
+// within its size limit, which may evict the new one.
+func (p *Pool) add(e *pooledWorkspace) {
+	p.mu.Lock()
+	// We value a workspace by its file count, since reusing it saves up to
+	// that many links.
+	p.workspaces.Add(e, float64(e.totalFiles))
+	var evicted []*pooledWorkspace
+	for p.workspaces.Len() > p.size {
+		v, ok := p.workspaces.Evict()
+		if !ok {
+			break
+		}
+		evicted = append(evicted, v)
+	}
+	p.mu.Unlock()
+	// deleteWaitGroup.Go blocks while too many deletions are running, so we
+	// start them only after unlocking, to not hold up other tasks' take calls.
+	for _, v := range evicted {
+		deleteWaitGroup.Go(func() error {
+			if err := disk.ForceRemove(context.Background(), v.path); err != nil {
+				log.Warningf("Failed to remove evicted workspace %q: %s", v.path, err)
+			}
+			return nil
+		})
+	}
+}
+
+type pooledWorkspace struct {
+	groupID        string
+	path           string
+	digestFunction repb.DigestFunction_Value
+	rootDigest     *repb.Digest
+	dirMap         map[string]*repb.Directory
+	// The number of files in the input tree that pooled workspaces preserve.
+	// It's counted from the input tree, so it includes files in missing.
+	totalFiles int
+	// The inputs that ReturnToPool found missing from the workspace. See
+	// ReturnToPool.
+	missing map[string]bool
+}
+
+// shouldRemoveBeforePooling returns whether we remove an input file from
+// workspaces before pooling them, rather than keeping it for reuse. We remove
+// files over the size limit, so that pooled workspaces don't hold large files
+// after the file cache evicts them. We also remove empty files, since the tree
+// fetcher writes them directly instead of linking them from the file cache, so
+// tasks can write to them in place without our noticing.
+func shouldRemoveBeforePooling(f *repb.FileNode) bool {
+	size := f.GetDigest().GetSizeBytes()
+	return size <= 0 || (*poolMaxFileSize > 0 && size > *poolMaxFileSize)
+}
+
+// countFilesRecursive returns the number of files in the input subtree rooted
+// at d that pooled workspaces preserve, counting a repeated subdirectory once
+// per place it appears. It counts from the input tree, so it includes inputs
+// that ReturnToPool removed from a pooled workspace. memo holds the counts
+// already computed, by directory hash.
+func countFilesRecursive(d *repb.Digest, dirMap map[string]*repb.Directory, memo map[string]int) int {
+	if n, ok := memo[d.GetHash()]; ok {
+		return n
+	}
+	dir := dirMap[d.GetHash()]
+	n := 0
+	for _, f := range dir.GetFiles() {
+		if !shouldRemoveBeforePooling(f) {
+			n++
+		}
+	}
+	for _, child := range dir.GetDirectories() {
+		n += countFilesRecursive(child.GetDigest(), dirMap, memo)
+	}
+	memo[d.GetHash()] = n
+	return n
+}
+
+// recordDirFingerprints walks the input tree and lstats each input directory in
+// the workspace, recording its fingerprint so that ReturnToPool can tell which
+// directories the task changed.
+func (ws *Workspace) recordDirFingerprints() error {
+	var dirs []string
+	var walk func(rel string, d *repb.Digest)
+	walk = func(rel string, d *repb.Digest) {
+		dirs = append(dirs, rel)
+		for _, child := range ws.inputDirs[d.GetHash()].GetDirectories() {
+			walk(joinRelPath(rel, child.GetName()), child.GetDigest())
+		}
+	}
+	walk("", ws.inputRootDigest)
+	fingerprints := make(map[string]dirFingerprint, len(dirs))
+	var latestCtime int64
+	for rel, s := range ws.lstatDirs(dirs) {
+		if s.err != nil {
+			return s.err
+		}
+		if !s.isDir {
+			return fmt.Errorf("input directory %q is not a directory", rel)
+		}
+		fingerprints[rel] = s.fp
+		latestCtime = max(latestCtime, s.fp.ctimeNanos)
+	}
+	if err := waitForTimestampTick(latestCtime); err != nil {
+		return err
+	}
+	ws.dirFingerprints = fingerprints
+	return nil
+}
+
+// dirStat is the result of lstatting an input directory.
+type dirStat struct {
+	fp    dirFingerprint
+	isDir bool
+	err   error
+}
+
+// lstatDirs lstats the given workspace-relative directories in parallel, and
+// returns the results by path. Both callers lstat every input directory, so
+// we use up to 16 workers rather than a goroutine per directory, since
+// starting a goroutine costs about as much as an lstat.
+func (ws *Workspace) lstatDirs(dirs []string) map[string]dirStat {
+	stats := make([]dirStat, len(dirs))
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	for range min(16, len(dirs)) {
+		wg.Go(func() {
+			for {
+				i := int(next.Add(1) - 1)
+				if i >= len(dirs) {
+					return
+				}
+				s := &stats[i]
+				s.fp, s.isDir, s.err = lstatDir(filepath.Join(ws.inputRoot(), dirs[i]))
+			}
+		})
+	}
+	wg.Wait()
+	byPath := make(map[string]dirStat, len(dirs))
+	for i, rel := range dirs {
+		byPath[rel] = stats[i]
+	}
+	return byPath
+}
+
+// joinRelPath joins a workspace-relative directory path and the name of an
+// entry in it. It's path.Join without the cleaning, which we don't need since
+// rel is already clean and names are single path components, and which is slow
+// when done for every input file.
+func joinRelPath(rel, name string) string {
+	if rel == "" {
+		return name
+	}
+	return rel + "/" + name
 }
 
 // ReturnToPool checks the workspace against the input tree that was set
@@ -834,7 +1077,7 @@ func NewPool(buildRoot string) (*Pool, error) {
 // delete. If the workspace can't be pooled, it's left for Remove.
 func (ws *Workspace) ReturnToPool(ctx context.Context) {
 	pool := ws.Opts.Pool
-	if pool == nil || ws.overlay != nil || ws.vfs != nil {
+	if pool == nil || ws.dirFingerprints == nil || ws.overlay != nil || ws.vfs != nil {
 		return
 	}
 	ws.mu.Lock()
@@ -843,8 +1086,218 @@ func (ws *Workspace) ReturnToPool(ctx context.Context) {
 	if removing {
 		return
 	}
-	// TODO: Remove everything that isn't an unchanged input, then move the
-	// workspace into the pool.
+
+	// Collect the current directory fingerprints, so we can diff against the
+	// original fingerprint from before the task was started.
+	current := ws.lstatDirs(slices.Collect(maps.Keys(ws.dirFingerprints)))
+
+	// Recursively clean up any paths that differ from the original input root,
+	// based on the fingerprints taken just after the task's inputs were
+	// fetched.
+	//
+	// The resulting workspace tree should contain a pristine, unmodified subset
+	// of the original input tree, as long as actions adhered to the contract of
+	// not overwriting input file data. The `missing` map collects the relative
+	// paths of inputs (files, symlinks or whole directories) that the workspace
+	// no longer has after the cleanup, either because the task removed or
+	// changed them, or because the cleanup removed a file that exceeds the size
+	// limit.
+	missing := map[string]bool{}
+	rootIntact, err := ws.cleanReturnedDir(ctx, "", ws.inputRootDigest, current, missing)
+	if err != nil {
+		log.CtxWarningf(ctx, "Not pooling workspace: %s", err)
+		return
+	}
+
+	// The task removed or replaced the input root itself, or changed its mode
+	// or owner, so we can't keep anything in it. Remove deletes the workspace
+	// instead.
+	if !rootIntact {
+		log.CtxWarningf(ctx, "Not pooling workspace, because the task removed or replaced its input root, or changed its mode or owner")
+		return
+	}
+
+	// Move the directory into the pool. Note that this changes its ctime,
+	// which is fine because we don't care about the fingerprints anymore at
+	// this stage.
+	pooledPath := filepath.Join(pool.dir, newRandomBuildDirCandidate())
+	if err := os.Rename(ws.rootDir, pooledPath); err != nil {
+		log.CtxWarningf(ctx, "Not pooling workspace: %s", err)
+		return
+	}
+	pool.add(&pooledWorkspace{
+		groupID:        ws.groupID,
+		path:           pooledPath,
+		digestFunction: ws.inputDigestFunction,
+		rootDigest:     ws.inputRootDigest,
+		dirMap:         ws.inputDirs,
+		totalFiles:     countFilesRecursive(ws.inputRootDigest, ws.inputDirs, map[string]int{}),
+		missing:        missing,
+	})
+}
+
+// cleanReturnedDir makes the directory at rel hold only the entries of the
+// input directory d that the task didn't change, removing everything else. It
+// returns false if the task removed or replaced the directory itself, or
+// changed its mode or owner, in which case the caller removes it. current holds
+// the result of lstatting each input directory once the task finished, before
+// the cleanup removed anything, and we add the paths of the inputs we remove to
+// missing.
+func (ws *Workspace) cleanReturnedDir(ctx context.Context, rel string, d *repb.Digest, current map[string]dirStat, missing map[string]bool) (bool, error) {
+	full := filepath.Join(ws.inputRoot(), rel)
+	s := current[rel]
+	if os.IsNotExist(s.err) {
+		return false, nil
+	}
+	if s.err != nil {
+		return false, s.err
+	}
+	fp := s.fp
+	want, ok := ws.dirFingerprints[rel]
+	if !ok || !s.isDir || fp.ino != want.ino || fp.mode != want.mode || fp.uid != want.uid || fp.gid != want.gid {
+		return false, nil
+	}
+	dir := ws.inputDirs[d.GetHash()]
+	// A directory with an unchanged fingerprint holds the same entries as
+	// after input setup, which are just the inputs, so we only read
+	// directories that changed.
+	if fp != want {
+		if err := ws.cleanReturnedEntries(ctx, rel, dir, missing); err != nil {
+			return false, err
+		}
+	}
+	for _, f := range dir.GetFiles() {
+		if !shouldRemoveBeforePooling(f) {
+			continue
+		}
+		fileRel := joinRelPath(rel, f.GetName())
+		if missing[fileRel] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(full, f.GetName())); err != nil && !os.IsNotExist(err) {
+			return false, err
+		}
+		missing[fileRel] = true
+	}
+	for _, child := range dir.GetDirectories() {
+		childRel := joinRelPath(rel, child.GetName())
+		if missing[childRel] {
+			continue
+		}
+		childIntact, err := ws.cleanReturnedDir(ctx, childRel, child.GetDigest(), current, missing)
+		if err != nil {
+			return false, err
+		}
+		if !childIntact {
+			missing[childRel] = true
+			if err := disk.ForceRemove(ctx, filepath.Join(full, child.GetName())); err != nil {
+				return false, err
+			}
+		}
+	}
+	return true, nil
+}
+
+// cleanReturnedEntries removes the entries of the directory at rel that aren't
+// in the input directory dir, such as outputs, and the inputs in it that the
+// task replaced, and adds the paths of those inputs to missing. Subdirectories
+// are left to cleanReturnedDir.
+func (ws *Workspace) cleanReturnedEntries(ctx context.Context, rel string, dir *repb.Directory, missing map[string]bool) error {
+	full := filepath.Join(ws.inputRoot(), rel)
+	entries, err := os.ReadDir(full)
+	if err != nil {
+		return err
+	}
+	files := make(map[string]*repb.FileNode, len(dir.GetFiles()))
+	for _, f := range dir.GetFiles() {
+		files[f.GetName()] = f
+	}
+	symlinks := make(map[string]string, len(dir.GetSymlinks()))
+	for _, s := range dir.GetSymlinks() {
+		// The tree fetcher creates empty symlink targets as ".".
+		target := s.GetTarget()
+		if target == "" {
+			target = "."
+		}
+		symlinks[s.GetName()] = target
+	}
+	children := make(map[string]*repb.Digest, len(dir.GetDirectories()))
+	for _, child := range dir.GetDirectories() {
+		children[child.GetName()] = child.GetDigest()
+	}
+	present := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		entryRel := joinRelPath(rel, name)
+		entryFull := filepath.Join(full, name)
+		present[name] = true
+		target, isSymlink := symlinks[name]
+		replaced := false
+		switch {
+		case children[name] != nil:
+			replaced = !entry.IsDir()
+		case files[name] != nil:
+			replaced = !entry.Type().IsRegular() || !ws.isCachedCopy(ctx, entryFull, files[name])
+		case isSymlink:
+			if entry.Type()&fs.ModeSymlink == 0 {
+				replaced = true
+			} else {
+				got, err := os.Readlink(entryFull)
+				replaced = err != nil || got != target
+			}
+		default:
+			// Not an input, such as an output.
+			if err := disk.ForceRemove(ctx, entryFull); err != nil {
+				return err
+			}
+			continue
+		}
+		if !replaced {
+			continue
+		}
+		missing[entryRel] = true
+		if err := disk.ForceRemove(ctx, entryFull); err != nil {
+			return err
+		}
+	}
+	for name := range files {
+		if !present[name] {
+			missing[joinRelPath(rel, name)] = true
+		}
+	}
+	for name := range symlinks {
+		if !present[name] {
+			missing[joinRelPath(rel, name)] = true
+		}
+	}
+	for name := range children {
+		if !present[name] {
+			missing[joinRelPath(rel, name)] = true
+		}
+	}
+	return nil
+}
+
+// isCachedCopy returns whether the file at fullPath is the file cache's copy
+// of node. Input setup hard-links each input file to the file cache's copy, so
+// an input that's no longer the file cache's copy is one that the task
+// replaced. We only check files in the directories that the task changed,
+// which are usually few. Recording each input file's inode during input setup
+// instead would take an lstat of every input file before the task starts.
+func (ws *Workspace) isCachedCopy(ctx context.Context, fullPath string, node *repb.FileNode) bool {
+	fc := ws.env.GetFileCache()
+	if fc == nil {
+		return false
+	}
+	cached, err := fc.Stat(ctx, node)
+	if err != nil {
+		return false
+	}
+	existing, err := os.Lstat(fullPath)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(cached, existing)
 }
 
 // reusePooledWorkspace replaces this workspace's directory, which is still

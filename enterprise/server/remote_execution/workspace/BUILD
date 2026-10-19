@@ -6,6 +6,8 @@ go_library(
     name = "workspace",
     srcs = [
         "workspace.go",
+        "workspace_linux.go",
+        "workspace_notlinux.go",
         "workspace_unix.go",
         "workspace_windows.go",
     ],
@@ -14,6 +16,7 @@ go_library(
         "//enterprise/server/cmd/ci_runner/bundle",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/execution_experiments",
+        "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/overlayfs",
         "//enterprise/server/remote_execution/vfs",
         "//enterprise/server/util/ci_runner_util",
@@ -29,6 +32,7 @@ go_library(
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/fspath",
+        "//server/util/gds",
         "//server/util/log",
         "//server/util/platform",
         "//server/util/status",
@@ -42,6 +46,7 @@ go_library(
         ],
         "@io_bazel_rules_go//go/platform:linux": [
             "@com_github_google_uuid//:uuid",
+            "@org_golang_x_sys//unix",
         ],
         "//conditions:default": [],
     }),
@@ -50,7 +55,10 @@ go_library(
 go_test(
     name = "workspace_test",
     size = "small",
-    srcs = ["workspace_test.go"],
+    srcs = [
+        "workspace_linux_test.go",
+        "workspace_test.go",
+    ],
     deps = [
         ":workspace",
         "//enterprise/server/remote_execution/container",
@@ -68,5 +76,10 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//server/util/testing/flags",
+        ],
+        "//conditions:default": [],
+    }),
 )
