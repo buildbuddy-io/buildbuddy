@@ -285,7 +285,7 @@ type workspace struct {
 	// The machine's hostname.
 	hostname string
 
-	// The operating user's username.
+	// The build's display username.
 	username string
 
 	// The buildbuddy API key, or "" if none was found.
@@ -1386,15 +1386,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 }
 
 func (ar *actionRunner) workspaceStatusEvent() *bespb.BuildEvent {
-	buildUser := os.Getenv("BUILD_USER")
-	if buildUser == "" {
-		buildUser = ar.username
-	}
 	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
 		Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bespb.WorkspaceStatus{
 			Item: []*bespb.WorkspaceStatus_Item{
-				{Key: "BUILD_USER", Value: buildUser},
+				{Key: "BUILD_USER", Value: ar.username},
 				{Key: "BUILD_HOST", Value: ar.hostname},
 				{Key: "GIT_BRANCH", Value: *pushedBranch},
 				{Key: "GIT_TAG", Value: *pushedTag},
@@ -1933,6 +1929,10 @@ func (ws *workspace) getHostAndUserName() (string, string) {
 		ws.log.Printf("failed to get hostname: %s", err)
 		hostname = ""
 	}
+	if username := os.Getenv("BUILD_USER"); username != "" {
+		return hostname, username
+	}
+	// Workflows and direct runner calls may not supply a caller identity.
 	user, err := user.Current()
 	username := ""
 	if err != nil {
