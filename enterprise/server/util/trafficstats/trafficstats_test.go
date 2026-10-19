@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
@@ -370,28 +369,6 @@ func TestStatsHandler_CountsRequestsOncePerRPC(t *testing.T) {
 
 	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerRequests, labels); got != 3 {
 		t.Fatalf("requests metric value = %v, want 3", got)
-	}
-}
-
-func TestStatsHandler_IgnoresHealthService(t *testing.T) {
-	resetCounters()
-	handler := newTestHandler(t)
-
-	ctx := context.WithValue(context.Background(), clientip.ContextKey, "3.4.12.4")
-	ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/grpc.health.v1.Health/Check"})
-	handler.initCounters(ctx)
-	handler.HandleRPC(ctx, &stats.InPayload{WireLength: 5})
-	handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 5})
-	handler.HandleRPC(ctx, &stats.End{})
-
-	for name, vec := range map[string]prometheus.Collector{
-		"requests": metrics.GRPCServerRequests,
-		"ingress":  metrics.GRPCServerIngressBytes,
-		"egress":   metrics.GRPCServerEgressBytes,
-	} {
-		if got := testutil.CollectAndCount(vec); got != 0 {
-			t.Errorf("%s series = %d, want 0", name, got)
-		}
 	}
 }
 

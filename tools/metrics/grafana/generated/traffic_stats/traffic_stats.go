@@ -143,7 +143,7 @@ func windowVariable() *dashboard.CustomVariableBuilder {
 		Current(dash.SelectedOption("5m", "5m"))
 }
 
-const dashboardDescription = `gRPC request rate and bytes, from the trafficstats handler on the app and the cache proxies. Only gRPC is counted; HTTP (UI) traffic is not. Health checks are not counted.
+const dashboardDescription = `gRPC request rate and bytes, from the trafficstats handler on the app and the cache proxies. Only gRPC is counted; HTTP (UI) traffic is not.
 
 Requests and bytes passing between BuildBuddy servers are counted at each server. Filter Peer Type = external to count each once, at the edge. RPCs rejected before classification (e.g. by auth) have unset labels.`
 

@@ -48,13 +48,12 @@ import (
 )
 
 const (
-	unknownGroupID     = "unknown"
-	otherProvider      = "other"
-	unknownRegion      = "unknown"
-	externalPeerType   = "external"
-	unsetLabel         = "unset"
-	healthMethodPrefix = "/grpc.health.v1.Health/"
-	cacheMaxSize       = 100_000
+	unknownGroupID   = "unknown"
+	otherProvider    = "other"
+	unknownRegion    = "unknown"
+	externalPeerType = "external"
+	unsetLabel       = "unset"
+	cacheMaxSize     = 100_000
 )
 
 type Destination struct {
@@ -125,8 +124,6 @@ type rpcCounters struct {
 	// its sending and receiving goroutines, which may run concurrently.
 	ingressBytes, egressBytes atomic.Int64
 	method                    string
-	// ignored RPCs (health checks) record nothing.
-	ignored bool
 }
 
 func (c *rpcCounters) String() string {
@@ -211,7 +208,6 @@ func (h *StatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) conte
 		peerType: unsetLabel,
 		dest:     Destination{Provider: unsetLabel, Region: unsetLabel},
 		method:   info.FullMethodName,
-		ignored:  strings.HasPrefix(info.FullMethodName, healthMethodPrefix),
 	})
 }
 
@@ -235,9 +231,6 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 		c, ok := ctx.Value(rpcCountersKey{}).(*rpcCounters)
 		if !ok {
 			alert.CtxUnexpectedEvent(ctx, "trafficstats_no_counters_in_handleprc", "They should be set in TagRPC.")
-			return
-		}
-		if c.ignored {
 			return
 		}
 		if ingress > 0 {
@@ -283,9 +276,6 @@ func (h *StatsHandler) initCounters(ctx context.Context) {
 	c, ok := ctx.Value(rpcCountersKey{}).(*rpcCounters)
 	if !ok {
 		alert.CtxUnexpectedEvent(ctx, "trafficstats_no_counters_in_interceptor", "Maybe you forgot to install the StatsHandler?")
-		return
-	}
-	if c.ignored {
 		return
 	}
 	c.groupID = unknownGroupID

@@ -47,7 +47,6 @@ go_test(
         "//server/util/clientip",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
-        "@com_github_prometheus_client_golang//prometheus/testutil",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//peer",
         "@org_golang_google_grpc//stats",
