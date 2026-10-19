@@ -84,12 +84,9 @@ type counterKey struct {
 }
 
 // counterHandles holds the pre-created Counters for a given counterKey tuple
-// to avoid creating counter handles per-RPC. The byte counters are created
-// lazily so that RPCs without payload bytes don't create empty series.
+// to avoid creating counter handles per-RPC.
 type counterHandles struct {
-	requests prometheus.Counter
-	ingress  func() prometheus.Counter
-	egress   func() prometheus.Counter
+	requests, ingress, egress prometheus.Counter
 }
 
 type StatsHandler struct {
@@ -113,12 +110,8 @@ func (h *StatsHandler) counterHandlesForLabels(groupID, peerType, provider, regi
 	}
 	handles := &counterHandles{
 		requests: metrics.GRPCServerRequests.WithLabelValues(groupID, peerType, provider, region),
-		ingress: sync.OnceValue(func() prometheus.Counter {
-			return metrics.GRPCServerIngressBytes.WithLabelValues(groupID, peerType, provider, region)
-		}),
-		egress: sync.OnceValue(func() prometheus.Counter {
-			return metrics.GRPCServerEgressBytes.WithLabelValues(groupID, peerType, provider, region)
-		}),
+		ingress:  metrics.GRPCServerIngressBytes.WithLabelValues(groupID, peerType, provider, region),
+		egress:   metrics.GRPCServerEgressBytes.WithLabelValues(groupID, peerType, provider, region),
 	}
 	actual, _ := h.counterHandles.LoadOrStore(key, handles)
 	return actual.(*counterHandles)
@@ -266,12 +259,8 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 			}
 			handles := h.counterHandlesForLabels(c.groupID, c.peerType, c.dest.Provider, c.dest.Region)
 			handles.requests.Inc()
-			if ingressBytes := c.ingressBytes.Load(); ingressBytes > 0 {
-				handles.ingress().Add(float64(ingressBytes))
-			}
-			if egressBytes := c.egressBytes.Load(); egressBytes > 0 {
-				handles.egress().Add(float64(egressBytes))
-			}
+			handles.ingress.Add(float64(c.ingressBytes.Load()))
+			handles.egress.Add(float64(c.egressBytes.Load()))
 		}
 	}
 }

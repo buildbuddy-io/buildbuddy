@@ -373,26 +373,6 @@ func TestStatsHandler_CountsRequestsOncePerRPC(t *testing.T) {
 	}
 }
 
-func TestStatsHandler_NoPayloadCreatesOnlyRequestSeries(t *testing.T) {
-	resetCounters()
-	handler := newTestHandler(t)
-
-	ctx := context.WithValue(context.Background(), clientip.ContextKey, "3.4.12.4")
-	ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
-	handler.initCounters(ctx)
-	handler.HandleRPC(ctx, &stats.End{})
-
-	if got := testutil.CollectAndCount(metrics.GRPCServerRequests); got != 1 {
-		t.Fatalf("request series = %d, want 1", got)
-	}
-	if got := testutil.CollectAndCount(metrics.GRPCServerEgressBytes); got != 0 {
-		t.Fatalf("egress series = %d, want 0", got)
-	}
-	if got := testutil.CollectAndCount(metrics.GRPCServerIngressBytes); got != 0 {
-		t.Fatalf("ingress series = %d, want 0", got)
-	}
-}
-
 func TestStatsHandler_IgnoresHealthService(t *testing.T) {
 	resetCounters()
 	handler := newTestHandler(t)
