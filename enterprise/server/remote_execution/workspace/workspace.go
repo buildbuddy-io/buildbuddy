@@ -511,9 +511,9 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	var txInfo *dirtools.TransferInfo
 	executeResponse.ServerLogs = make(map[string]*repb.LogFile, len(cmdResult.AuxiliaryLogs))
 
-	// Use the caller's context for diagnostic uploads so another output's
-	// failure does not cancel them. Keep fail-fast cancellation for the tree.
-	eg, egCtx := errgroup.WithContext(ctx)
+	// Let independent uploads finish even if another upload fails, preserving
+	// available outputs and diagnostics within the caller's deadline.
+	var eg errgroup.Group
 	eg.Go(func() error {
 		d, err := cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
 		if err != nil {
@@ -542,7 +542,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			// upperdir here rather than copying.
 			recyclingEnabled := platform.IsRecyclingEnabled(ws.task)
 			opts := overlayfs.ApplyOpts{AllowRename: !recyclingEnabled}
-			if err := ws.overlay.Apply(egCtx, opts); err != nil {
+			if err := ws.overlay.Apply(ctx, opts); err != nil {
 				return status.WrapError(err, "apply overlay upperdir changes")
 			}
 		}
@@ -552,7 +552,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		var err error
 
 		txInfo, err = dirtools.UploadTree(
-			egCtx,
+			ctx,
 			ws.env,
 			ws.dirHelper,
 			instanceName,

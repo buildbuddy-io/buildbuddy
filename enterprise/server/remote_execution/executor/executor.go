@@ -248,8 +248,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		EstimatedTaskSize:        st.GetSchedulingMetadata().GetTaskSize(),
 		DoNotCache:               task.GetAction().GetDoNotCache(),
 	}
-	var executeResponse *repb.ExecuteResponse
-	finishWithErrFn := func(finalErr error) (retry bool, err error) {
+	finishWithErrFn := func(finalErr error, uploadedResponse *repb.ExecuteResponse) (retry bool, err error) {
 		if shouldRetry(task, finalErr) {
 			return true, finalErr
 		}
@@ -261,11 +260,11 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		resp.Result = &repb.ActionResult{
 			// Output uploads may have failed after uploading these logs. Keep
 			// them without advertising any incomplete output files or trees.
-			StdoutDigest:      executeResponse.GetResult().GetStdoutDigest(),
-			StderrDigest:      executeResponse.GetResult().GetStderrDigest(),
+			StdoutDigest:      uploadedResponse.GetResult().GetStdoutDigest(),
+			StderrDigest:      uploadedResponse.GetResult().GetStderrDigest(),
 			ExecutionMetadata: md,
 		}
-		resp.ServerLogs = executeResponse.GetServerLogs()
+		resp.ServerLogs = uploadedResponse.GetServerLogs()
 		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest.GetDigest(), resp); err != nil {
 			return true, err
 		}
@@ -273,7 +272,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 
 	if err := validateCommand(st.GetExecutionTask().GetCommand()); err != nil {
-		return finishWithErrFn(status.WrapError(err, "validate command"))
+		return finishWithErrFn(status.WrapError(err, "validate command"), nil)
 	}
 
 	if *checkActionResultBeforeExecution && !req.GetSkipCacheLookup() {
@@ -298,7 +297,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	stage.Set("get_runner")
 	r, err := s.runnerPool.Get(ctx, st)
 	if err != nil {
-		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
+		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"), nil)
 	}
 	if span.IsRecording() {
 		span.SetAttributes(attribute.String("isolation_type", r.GetIsolationType()))
@@ -354,7 +353,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// an image.
 	_ = stream.SetState(repb.ExecutionProgress_PULLING_CONTAINER_IMAGE)
 	if err := r.PrepareForTask(ctx); err != nil {
-		return finishWithErrFn(status.WrapError(err, "prepare runner filesystem"))
+		return finishWithErrFn(status.WrapError(err, "prepare runner filesystem"), nil)
 	}
 
 	md.InputFetchStartTimestamp = timestamppb.New(s.env.GetClock().Now())
@@ -401,7 +400,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			err = digest.MissingDigestErrorf(task.GetAction().GetInputRootDigest(), "%s", err)
 		}
 
-		return finishWithErrFn(status.WrapError(err, "download inputs"))
+		return finishWithErrFn(status.WrapError(err, "download inputs"), nil)
 	}
 
 	md.ExecutionStartTimestamp = timestamppb.New(s.env.GetClock().Now())
@@ -410,7 +409,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// Don't fail recycling if the user requested invalid timeouts.
 		reuseRunner = true
 		// These errors are failure-specific. Pass through unchanged.
-		return finishWithErrFn(status.WrapError(err, "parse timeouts"))
+		return finishWithErrFn(status.WrapError(err, "parse timeouts"), nil)
 	}
 	auxMetadata.Timeout = durationpb.New(execTimeouts.TerminateAfter)
 
@@ -517,7 +516,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	md.UsageStats = cmdResult.UsageStats
 	if cmdResult.VMMetadata != nil {
 		if err := appendAuxiliaryMetadata(md, cmdResult.VMMetadata); err != nil {
-			return finishWithErrFn(status.InternalErrorf("append auxiliary metadata: %s", err))
+			return finishWithErrFn(status.InternalErrorf("append auxiliary metadata: %s", err), nil)
 		}
 	}
 	md.ExecutionCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
@@ -526,7 +525,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	actionResult := &repb.ActionResult{}
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
 	actionMetrics.Result = actionResult
-	executeResponse = operation.ExecuteResponseWithResult(actionResult, cmdResult.Error)
+	executeResponse := operation.ExecuteResponseWithResult(actionResult, cmdResult.Error)
 
 	log.CtxDebugf(ctx, "Uploading outputs.")
 	stage.Set("output_upload")
@@ -537,7 +536,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		if cmdResult.Error == nil && !platform.IsTrue(platform.FindEffectiveValue(task, platform.PreserveWorkspacePropertyName)) {
 			reuseRunner = true
 		}
-		return finishWithErrFn(status.UnavailableErrorf("upload outputs: %s", err.Error()))
+		return finishWithErrFn(status.UnavailableErrorf("upload outputs: %s", err.Error()), executeResponse)
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
@@ -546,7 +545,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// If there's an error that we know the client won't retry, return an error
 	// so that the scheduler can retry it.
 	if cmdResult.Error != nil && shouldRetry(task, cmdResult.Error) {
-		return finishWithErrFn(status.WrapError(cmdResult.Error, "command execution failed"))
+		return finishWithErrFn(status.WrapError(cmdResult.Error, "command execution failed"), executeResponse)
 	}
 	// Otherwise, send the error back to the client via the ExecuteResponse
 	// status.
@@ -555,7 +554,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		if cmdResult.Error == nil {
 			reuseRunner = true
 		}
-		return finishWithErrFn(status.WrapError(err, "publish execute response"))
+		return finishWithErrFn(status.WrapError(err, "publish execute response"), executeResponse)
 	}
 	firstCompletedPublished = true
 	if cmdResult.Error == nil {
