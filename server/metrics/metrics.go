@@ -4821,6 +4821,18 @@ var (
 		DestinationRegionLabel,
 	})
 
+	GRPCServerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "server_requests",
+		Help:      "The number of finished gRPC server requests, broken down by group, peer type, and source provider/region inferred from the peer IP. Requests forwarded by another BuildBuddy server were counted there too; filter peer_type=`external` to count each request once.",
+	}, []string{
+		GroupID,
+		PeerTypeLabel,
+		DestinationProviderLabel,
+		DestinationRegionLabel,
+	})
+
 	// ## DNS server metrics
 
 	DNSServerRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{

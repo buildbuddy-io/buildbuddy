@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
@@ -288,6 +289,7 @@ func TestStatsHandler_RecordsPeerType(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			metrics.GRPCServerEgressBytes.Reset()
+			metrics.GRPCServerRequests.Reset()
 			// Reset detaches any counters a handler has cached, so each
 			// subtest needs its own handler.
 			handler := &StatsHandler{classifier: classifier, cis: cis}
@@ -330,7 +332,62 @@ func TestStatsHandler_RecordsPeerType(t *testing.T) {
 			if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerEgressBytes, labels); got != 10 {
 				t.Fatalf("metric value = %v, want 10", got)
 			}
+			if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerRequests, labels); got != 1 {
+				t.Fatalf("requests metric value = %v, want 1", got)
+			}
 		})
+	}
+}
+
+func resetCounters() {
+	metrics.GRPCServerRequests.Reset()
+	metrics.GRPCServerEgressBytes.Reset()
+	metrics.GRPCServerIngressBytes.Reset()
+}
+
+func TestStatsHandler_CountsRequestsOncePerRPC(t *testing.T) {
+	resetCounters()
+	handler := newTestHandler(t)
+	labels := prometheus.Labels{
+		metrics.GroupID:                  "GR123",
+		metrics.PeerTypeLabel:            externalPeerType,
+		metrics.DestinationProviderLabel: "aws",
+		metrics.DestinationRegionLabel:   "eu-west-1",
+	}
+
+	for range 3 {
+		ctx := context.WithValue(context.Background(), clientip.ContextKey, "3.4.12.4")
+		ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
+		ctx = claims.AuthContext(ctx, &claims.Claims{GroupID: "GR123"})
+		handler.initCounters(ctx)
+		handler.HandleRPC(ctx, &stats.InPayload{WireLength: 1})
+		handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 1})
+		handler.HandleRPC(ctx, &stats.End{})
+		// A client-side End must not count.
+		handler.HandleRPC(ctx, &stats.End{Client: true})
+	}
+
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerRequests, labels); got != 3 {
+		t.Fatalf("requests metric value = %v, want 3", got)
+	}
+}
+
+func TestStatsHandler_UnsetLabelsWithoutInitCounters(t *testing.T) {
+	resetCounters()
+	handler := newTestHandler(t)
+
+	// An RPC rejected before the interceptor runs.
+	ctx := handler.TagRPC(context.Background(), &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
+	handler.HandleRPC(ctx, &stats.End{Error: status.UnauthenticatedError("nope")})
+
+	labels := prometheus.Labels{
+		metrics.GroupID:                  unsetLabel,
+		metrics.PeerTypeLabel:            unsetLabel,
+		metrics.DestinationProviderLabel: unsetLabel,
+		metrics.DestinationRegionLabel:   unsetLabel,
+	}
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerRequests, labels); got != 1 {
+		t.Fatalf("requests metric value = %v, want 1", got)
 	}
 }
 
