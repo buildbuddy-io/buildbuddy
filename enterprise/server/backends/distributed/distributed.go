@@ -917,7 +917,7 @@ func (c *Cache) remoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 	}
 	res, md, err := c.distributedProxy.RemoteGetWithMetadata(ctx, peer, r)
 	if err == nil {
-		recordRead(metricsLabel, "peer", r.GetDigest())
+		recordRead(metricsLabel, c.peerZoneLabel(peer), r.GetDigest())
 	}
 	return res, md, err
 }
@@ -927,6 +927,13 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.
 		return c.local.FindMissing(ctx, rns)
 	}
 	return c.distributedProxy.RemoteFindMissing(ctx, peer, rns)
+}
+
+func (c *Cache) peerZoneLabel(peer string) string {
+	if c.peerZone(peer) == c.zone {
+		return "same_zone_peer"
+	}
+	return "cross_zone_peer"
 }
 
 // recordRead records one object served by a distributed cache read, by
@@ -1001,7 +1008,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.Res
 		if !ok || len(buf) == 0 {
 			continue
 		}
-		recordRead("GetMulti", "peer", r.GetDigest())
+		recordRead("GetMulti", c.peerZoneLabel(peer), r.GetDigest())
 		c.addLookasideEntry(ctx, r, buf)
 		if c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(r) {
 			if err := c.local.Set(ctx, r, buf); err != nil {
@@ -1077,7 +1084,7 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		}
 		readCloser = rc
 		c.log.CtxDebugf(ctx, "Reader(%q) found on peer %s", distributed_client.ResourceIsolationString(r), peer)
-		recordRead("Reader", "peer", r.GetDigest())
+		recordRead("Reader", c.peerZoneLabel(peer), r.GetDigest())
 	}
 
 	// If the object is cacheable and lookasideWriter or localWriter are
