@@ -105,7 +105,7 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
   render() {
     const summary = this.state.details?.summary;
     return (
-      <div className="cache-proxies-page cache-proxy-page">
+      <div className="cache-proxy-page">
         <div className="shelf">
           <div className="container">
             <div className="cache-proxy-header-top">

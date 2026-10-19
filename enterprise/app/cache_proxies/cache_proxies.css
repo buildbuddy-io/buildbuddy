@@ -306,6 +306,11 @@
   overflow-wrap: anywhere;
 }
 
+.cache-proxy-page .title {
+  font-size: 32px;
+  font-weight: 700;
+}
+
 .cache-proxy-page .cache-proxy-header-top {
   display: flex;
   align-items: center;
@@ -416,11 +421,18 @@
 }
 
 .cache-proxy-page .cache-proxy-stat-rings {
+  display: flex;
   flex-wrap: wrap;
   gap: 24px 48px;
+  margin-top: 12px;
+}
+
+.cache-proxy-page .cache-proxy-stat-rings + .cache-proxy-stat-rings {
+  margin-top: 24px;
 }
 
 .cache-proxy-page .cache-proxy-stat-ring {
+  flex: 1 1 0;
   min-width: max-content;
   display: flex;
   flex-direction: column;
