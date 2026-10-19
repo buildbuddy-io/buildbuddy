@@ -374,6 +374,81 @@ func TestASNRoutingMultipleAddresses(t *testing.T) {
 	}, answers(m.Answer))
 }
 
+// zoneAddressesRoutingConfig overrides to 192.0.2.9 any A query whose static
+// zone answer contains 10.0.0.1.
+const zoneAddressesRoutingConfig = `{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "dns.asn_routing": {
+      "state": "ENABLED",
+      "variants": { "override": { "addresses": ["192.0.2.9"] }, "none": {} },
+      "defaultVariant": "none",
+      "targeting": { "if": [ { "in": [ "10.0.0.1", { "var": "zone_addresses" } ] }, "override", "none" ] }
+    }
+  }
+}`
+
+func TestASNRoutingZoneAddresses(t *testing.T) {
+	records := []dns.RR{
+		mustRR(t, "example. 60 IN SOA ns1.example. host.example. 1 21600 3600 259200 300"),
+		mustRR(t, "a.example. 60 IN A 10.0.0.1"),
+		mustRR(t, "b.example. 60 IN A 10.0.0.2"),
+		mustRR(t, "c.example. 60 IN A 10.0.0.3"),
+		mustRR(t, "c.example. 60 IN A 10.0.0.1"),
+		mustRR(t, "*.wild.example. 60 IN A 10.0.0.1"),
+		mustRR(t, "alias.example. 60 IN CNAME a.example."),
+	}
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(newFlagProvider(t, zoneAddressesRoutingConfig))
+	h := server.NewHandler(te, records, nil)
+
+	for _, tc := range []struct {
+		name  string
+		query string
+		want  []answer
+	}{
+		{
+			name:  "matching zone answer is overridden",
+			query: "a.example.",
+			want:  []answer{{"a.example.", "A", "192.0.2.9"}},
+		},
+		{
+			name:  "non-matching zone answer is kept",
+			query: "b.example.",
+			want:  []answer{{"b.example.", "A", "10.0.0.2"}},
+		},
+		{
+			name:  "wildcard answer is overridden",
+			query: "x.wild.example.",
+			want:  []answer{{"x.wild.example.", "A", "192.0.2.9"}},
+		},
+		{
+			name:  "match on a non-first record in a multi-record answer",
+			query: "c.example.",
+			want:  []answer{{"c.example.", "A", "192.0.2.9"}},
+		},
+		{
+			name:  "CNAME answer is not overridden",
+			query: "alias.example.",
+			want: []answer{
+				{"alias.example.", "CNAME", "a.example."},
+				{"a.example.", "A", "10.0.0.1"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := queryFromIP(t, h, tc.query, dns.TypeA, "10.1.2.3")
+			assert.Equal(t, dns.RcodeSuccess, m.Rcode)
+			assert.Equal(t, tc.want, answers(m.Answer))
+			for _, rr := range m.Answer {
+				if _, ok := rr.(*dns.A); ok && rr.Header().Name != "a.example." || tc.query != "alias.example." {
+					assert.Equal(t, uint32(60), rr.Header().Ttl)
+				}
+			}
+		})
+	}
+}
+
 // TestASNRoutingIgnoresNoSubnetECS verifies that a "no client subnet" ECS
 // option (an unspecified 0.0.0.0 address) is ignored in favor of the
 // transport source.

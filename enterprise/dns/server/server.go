@@ -240,7 +240,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	// TODO(tylerw): Consider supporting more than just A records here?
 	if qType == dns.TypeA && onlyARecords(m.Answer) {
 		if efp := h.env.GetExperimentFlagProvider(); efp != nil {
-			if rrs := asnRoutedAnswer(efp, w, r, qName); len(rrs) > 0 {
+			if rrs := asnRoutedAnswer(efp, w, r, qName, m.Answer); len(rrs) > 0 {
 				m.Answer = rrs
 			}
 			// Echo the EDNS Client Subnet scope (RFC 7871) so an ECS-aware
@@ -329,14 +329,20 @@ type asnRoutingConfig struct {
 
 // asnRoutedAnswer evaluates the ASN-routing experiment for qName and returns
 // the override A records, or nil when the experiment yields no addresses (the
-// caller then keeps the static zone answer).
-func asnRoutedAnswer(efp interfaces.ExperimentFlagProvider, w dns.ResponseWriter, r *dns.Msg, qName string) []dns.RR {
+// caller then keeps the static zone answer). The static answer's addresses are
+// exposed to the experiment as zone_addresses so rules can key on them.
+func asnRoutedAnswer(efp interfaces.ExperimentFlagProvider, w dns.ResponseWriter, r *dns.Msg, qName string, static []dns.RR) []dns.RR {
 	ip := clientIP(w, r)
 	asn := clientASN(ip)
+	zoneAddrs := make([]any, 0, len(static))
+	for _, rr := range static {
+		zoneAddrs = append(zoneAddrs, rr.(*dns.A).A.String())
+	}
 	obj := efp.Object(context.Background(), asnRoutingExperiment, nil,
 		experiments.WithContext("ip", ip.String()),
 		experiments.WithContext("asn", int64(asn)),
-		experiments.WithContext("name", qName))
+		experiments.WithContext("name", qName),
+		experiments.WithContext("zone_addresses", zoneAddrs))
 	if len(obj) == 0 {
 		return nil
 	}
