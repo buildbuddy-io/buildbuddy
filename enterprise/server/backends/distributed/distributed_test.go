@@ -90,6 +90,20 @@ func waitForReady(t *testing.T, addr string) {
 	conn.Close()
 }
 
+// waitForPeers waits until each of caches has ready connections to all of
+// them. A cache can dial a peer before that peer is listening (e.g. to send a
+// heartbeat), and the failed connection then sits in reconnect backoff, failing
+// RPCs, for a while after the peer comes up.
+func waitForPeers(t *testing.T, caches ...*Cache) {
+	ctx, cancel := context.WithTimeout(context.Background(), maxWaitForReadyDuration)
+	defer cancel()
+	for _, c := range caches {
+		for _, peer := range caches {
+			require.NoError(t, c.distributedProxy.WaitForPeer(ctx, peer.opts.ListenAddr))
+		}
+	}
+}
+
 func waitForShutdown(c *Cache) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), maxShutdownDuration)
 	c.Shutdown(shutdownCtx)
@@ -176,6 +190,7 @@ func TestBasicReadWrite(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	baseCaches := []interfaces.Cache{
 		memoryCache1,
@@ -252,6 +267,7 @@ func TestGetPeerLookupMetrics(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
@@ -399,6 +415,7 @@ func TestReadWrite_Compression(t *testing.T) {
 			waitForReady(t, config1.ListenAddr)
 			waitForReady(t, config2.ListenAddr)
 			waitForReady(t, config3.ListenAddr)
+			waitForPeers(t, dc1, dc2, dc3)
 
 			baseCaches := []interfaces.Cache{
 				cache1,
@@ -533,6 +550,7 @@ func TestContains(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	// Do a write - should be written to all nodes
 	rn1, buf := testdigest.RandomACResourceBuf(t, 100)
@@ -584,6 +602,7 @@ func TestContains_NotWritten(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	// Data is not written - no nodes should contain it
 	r, _ := testdigest.RandomCASResourceBuf(t, 100)
@@ -632,6 +651,7 @@ func TestReadMaxOffset(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
@@ -681,6 +701,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
@@ -741,6 +762,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
 	waitForReady(t, config4.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3, dc4)
 
 	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache4}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc4}
@@ -807,6 +829,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
 	waitForReady(t, config4.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3, dc4)
 
 	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache4}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc4}
@@ -882,6 +905,7 @@ func TestBackfill(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache3}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
@@ -964,16 +988,17 @@ func TestBackfillCopiesToAllMissingPeers(t *testing.T) {
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	_ = startNewDCache(t, env, config2, memoryCache2)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	_ = startNewDCache(t, env, config3, memoryCache3)
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
 	waitForReady(t, peer1)
 	waitForReady(t, peer2)
 	waitForReady(t, peer3)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	require.NoError(t, memoryCache1.Set(ctx, rn, buf))
@@ -1018,16 +1043,17 @@ func TestBackfillContinuesWhenOnePeerFails(t *testing.T) {
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	_ = startNewDCache(t, env, config2, memoryCache2)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	_ = startNewDCache(t, env, config3, &writeFailingCache{Cache: memoryCache3})
+	dc3 := startNewDCache(t, env, config3, &writeFailingCache{Cache: memoryCache3})
 
 	waitForReady(t, peer1)
 	waitForReady(t, peer2)
 	waitForReady(t, peer3)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	require.NoError(t, memoryCache1.Set(ctx, rn, buf))
@@ -1076,16 +1102,17 @@ func TestBackfillViaGet(t *testing.T) {
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	_ = startNewDCache(t, env, config2, memoryCache2)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	_ = startNewDCache(t, env, config3, memoryCache3)
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
 	waitForReady(t, peer1)
 	waitForReady(t, peer2)
 	waitForReady(t, peer3)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	baseCaches := map[string]interfaces.Cache{
 		peer1: memoryCache1,
@@ -1144,10 +1171,11 @@ func TestCopyFileDoesNotMutateResourceNameCompressor(t *testing.T) {
 	destCache := &testcompression.CompressionCache{Cache: newMemoryCache(t, singleCacheSizeBytes)}
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	_ = startNewDCache(t, env, config2, destCache)
+	dc2 := startNewDCache(t, env, config2, destCache)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
+	waitForPeers(t, dc1, dc2)
 
 	// Note: the value `200` here is intentionally greater than
 	// cache.pebble.min_bytes_auto_zstd_compression
@@ -1194,6 +1222,7 @@ func TestContainsMulti(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	baseCaches := []interfaces.Cache{
 		memoryCache1,
@@ -1256,6 +1285,7 @@ func TestMetadata(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
@@ -1310,6 +1340,7 @@ func TestFindMissing(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	baseCaches := []interfaces.Cache{
 		memoryCache1,
@@ -1407,6 +1438,7 @@ func TestGetMulti(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	baseCaches := []interfaces.Cache{
 		memoryCache1,
@@ -1537,6 +1569,7 @@ func TestHintedHandoff(t *testing.T) {
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
 	waitForReady(t, config4.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3, dc4)
 
 	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache4}
 	distributedCaches := []*Cache{dc1, dc2, dc4}
@@ -1634,6 +1667,7 @@ func TestDelete(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	baseCaches := []interfaces.Cache{
 		memoryCache1,
@@ -1697,6 +1731,7 @@ func TestDelete_NonExistentFile(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
@@ -1765,6 +1800,7 @@ func TestSupportsCompressor(t *testing.T) {
 
 			waitForReady(t, config1.ListenAddr)
 			waitForReady(t, config2.ListenAddr)
+			waitForPeers(t, dc1, dc2)
 
 			sc := dc1.SupportsCompressor(repb.Compressor_ZSTD)
 			require.Equal(t, tc.expected, sc)
@@ -1821,6 +1857,7 @@ func TestExtraNodes(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	written := make([]*rspb.ResourceName, 0)
 	for range numDigestsToWrite {
@@ -1944,6 +1981,7 @@ func TestExtraNodes(t *testing.T) {
 	waitForReady(t, config7.ListenAddr)
 	waitForReady(t, config8.ListenAddr)
 	waitForReady(t, config9.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3, dc4, dc5, dc6, dc7, dc8, dc9)
 
 	for range numDigestsToWrite {
 		// Do a write - should be written to new nodes
@@ -2021,6 +2059,7 @@ func TestExtraNodesReadOnly(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	// Write some data.
 	written := make([]*rspb.ResourceName, 0)
@@ -2109,6 +2148,7 @@ func TestExtraNodesReadOnly(t *testing.T) {
 	waitForReady(t, config4.ListenAddr)
 	waitForReady(t, config5.ListenAddr)
 	waitForReady(t, config6.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3, dc4, dc5, dc6)
 
 	// Read the data again from the same nodes we did originally.
 	for i, rn := range written {
@@ -2200,6 +2240,7 @@ func TestExtraNodesReadWrite(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	// Write some data.
 	written := make([]*rspb.ResourceName, 0)
@@ -2288,6 +2329,7 @@ func TestExtraNodesReadWrite(t *testing.T) {
 	waitForReady(t, config4.ListenAddr)
 	waitForReady(t, config5.ListenAddr)
 	waitForReady(t, config6.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3, dc4, dc5, dc6)
 
 	// Read the data again from the same nodes we did originally.
 	for i, rn := range written {
@@ -2360,6 +2402,7 @@ func TestReadThroughLookaside(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	baseCaches := []interfaces.Cache{
 		memoryCache1,
@@ -2509,6 +2552,7 @@ func TestGetMultiLookaside(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
@@ -2608,6 +2652,7 @@ func TestLookasideLimits(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
@@ -2679,6 +2724,7 @@ func TestTreeCacheLookaside(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
@@ -2785,6 +2831,7 @@ func TestReadThroughLocalCache(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	baseCaches := []interfaces.Cache{
 		memoryCache1,
@@ -2874,6 +2921,7 @@ func TestGetMultiReadThroughLocalCache(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
@@ -2961,6 +3009,7 @@ func TestGetMultiReadThroughLocalCacheSkipsMutableAC(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
@@ -3032,6 +3081,7 @@ func TestGetMultiReadThroughLocalCacheWithLookaside(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
@@ -3172,10 +3222,11 @@ func TestRemoteReaderSkipsLocalReadthroughForMutableAC(t *testing.T) {
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	startNewDCache(t, env, config2, memoryCache2)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	waitForReady(t, peer1)
 	waitForReady(t, peer2)
+	waitForPeers(t, dc1, dc2)
 
 	rn, _ := testdigest.RandomACResourceBuf(t, 100)
 	stale := []byte("stale action result")
@@ -3445,6 +3496,7 @@ func TestNoEncryptedContentsInLookaside(t *testing.T) {
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
@@ -3858,6 +3910,7 @@ func TestKubeDiscoveryReadWrite(t *testing.T) {
 	waitForReady(t, peer1)
 	waitForReady(t, peer2)
 	waitForReady(t, peer3)
+	waitForPeers(t, dc1, dc2, dc3)
 
 	// Wait for kubediscovery to populate the hash ring.
 	require.Eventually(t, func() bool {

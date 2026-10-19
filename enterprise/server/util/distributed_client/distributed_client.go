@@ -204,6 +204,32 @@ func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCac
 		}
 		return dcpb.NewDistributedCacheClient(client), nil
 	}
+	conn, err := c.newPool(peer)
+	if err != nil {
+		return nil, err
+	}
+	return dcpb.NewDistributedCacheClient(conn), nil
+}
+
+// WaitForPeer blocks until every connection to peer is ready, or until ctx is
+// done.
+func (c *Proxy) WaitForPeer(ctx context.Context, peer string) error {
+	c.mu.Lock()
+	conn, ok := c.clients[peer]
+	if !ok {
+		var err error
+		if conn, err = c.newPool(peer); err != nil {
+			c.mu.Unlock()
+			return err
+		}
+	}
+	c.mu.Unlock()
+	return conn.WaitUntilReady(ctx)
+}
+
+// newPool dials peer and adds the new connection pool to c.clients. c.mu must
+// be held.
+func (c *Proxy) newPool(peer string) (*grpc_client.ClientConnPool, error) {
 	log.Debugf("Creating new client for peer: %q", peer)
 
 	resolverPrefix := "grpc://"
@@ -221,7 +247,7 @@ func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCac
 		return nil, err
 	}
 	c.clients[peer] = conn
-	return dcpb.NewDistributedCacheClient(conn), nil
+	return conn, nil
 }
 
 func (c *Proxy) prepareContext(ctx context.Context) context.Context {

@@ -105,6 +105,31 @@ func (p *ClientConnPool) Check(ctx context.Context) error {
 	return nil
 }
 
+// WaitUntilReady connects every connection in the pool and blocks until they
+// are all ready, or until ctx is done.
+func (p *ClientConnPool) WaitUntilReady(ctx context.Context) error {
+	for _, c := range p.conns {
+		for {
+			connState := c.GetState()
+			if connState == connectivity.Ready {
+				c.wasEverReady.Store(true)
+				break
+			}
+			if connState == connectivity.Idle {
+				c.Connect()
+			}
+			if !c.WaitForStateChange(ctx, connState) {
+				return status.UnavailableErrorf(
+					"gRPC connection pool for %s not ready: %d connections in states: %v",
+					p.targetForLogging,
+					len(p.conns),
+					statesCount(p.conns))
+			}
+		}
+	}
+	return nil
+}
+
 func statesCount(conns []*clientConn) map[string]int {
 	states := make(map[string]int, len(conns))
 	for _, c := range conns {
