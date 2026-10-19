@@ -317,19 +317,15 @@
   gap: 16px;
 }
 
-.cache-proxy-page .cache-proxy-chips {
+/* Font size and weight override the shelf's to match the region on the proxies
+ * list page. */
+.cache-proxy-page .cache-proxy-region {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin-top: 8px;
-}
-
-.cache-proxy-page .cache-proxy-chip {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 13px;
-  background-color: var(--color-bg-tertiary);
-  color: var(--color-text-secondary);
+  font-size: 16px;
+  font-weight: bold;
 }
 
 .cache-proxy-page .cache-proxy-detail-page {
@@ -361,7 +357,6 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--color-text-secondary);
 }
 
 .cache-proxy-page .cache-proxy-panel-title svg {
@@ -442,6 +437,13 @@
 
 .cache-proxy-page .cache-proxy-stat-ring .donut-chart-title {
   justify-content: center;
+  text-align: center;
+}
+
+.cache-proxy-page .cache-proxy-stat-summary {
+  margin-top: 16px;
+  font-size: 16px;
+  font-weight: 700;
   text-align: center;
 }
 

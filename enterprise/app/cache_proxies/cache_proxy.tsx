@@ -1,4 +1,4 @@
-import { Cpu, Gauge, LucideIcon, Server, Settings } from "lucide-react";
+import { Cpu, Gauge, Globe, LucideIcon, Server, Settings } from "lucide-react";
 import React from "react";
 import { Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
@@ -117,8 +117,9 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
             </div>
             <div className="title">{summary?.host || "Cache proxy"}</div>
             {this.props.region && (
-              <div className="cache-proxy-chips">
-                <span className="cache-proxy-chip">{this.props.region}</span>
+              <div className="cache-proxy-region">
+                <Globe />
+                {this.props.region}
               </div>
             )}
           </div>
@@ -307,17 +308,17 @@ function statChart(
   title: string,
   data: Record<string, number>,
   valueFormatter: (v: number) => string,
-  subtitle?: string
+  summary: string
 ) {
   return (
     <div className="cache-proxy-stat-ring">
       <DonutChart
         title={title}
-        subtitle={subtitle}
         data={Object.entries(data).map(([name, value]) => ({ name, value }))}
         colorPicker={(name) => CACHE_COLORS[name as keyof typeof CACHE_COLORS]}
         valueFormatter={valueFormatter}
       />
+      <div className="cache-proxy-stat-summary">{summary}</div>
     </div>
   );
 }
