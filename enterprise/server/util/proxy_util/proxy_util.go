@@ -79,13 +79,19 @@ const attestHTTPForwardingFlag = "cache_proxy.attest_http_forwarding"
 // NewHTTPForwarder returns a handler that reverse-proxies HTTP requests to
 // target, keeping the incoming Host.
 //
-// With the cache_proxy.attest_http_forwarding experiment, the proxy builds
-// each outgoing request itself, like the gRPC forwarder: it rejects an invalid
-// caller client identity, drops client-supplied internal and forwarding
-// headers, and sets the resolved client IP, attested with a grpc-proxy
-// identity unless the caller has its own. Otherwise it forwards as
-// httputil.NewSingleHostReverseProxy does, counting the requests the attested
-// forwarder would treat differently.
+// Behavior depends on the cache_proxy.attest_http_forwarding experiment:
+//
+//   - Off (the default, and today's behavior): requests are forwarded
+//     unchanged by httputil.NewSingleHostReverseProxy, which passes all client
+//     headers through and appends the peer to X-Forwarded-For. Nothing is
+//     attested. Requests the "on" path would treat differently are counted in
+//     metrics.CacheProxyHTTPForwardingDiffs.
+//   - On: the proxy builds each outgoing request itself, like the gRPC
+//     forwarder. It rejects a request with an invalid client identity (403),
+//     drops client-supplied internal and Forwarded headers, sets
+//     X-Forwarded-For/-Proto/-Host itself, and attests the resolved client IP
+//     with a grpc-proxy identity, unless the caller has a valid identity of
+//     its own.
 func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 	efp := env.GetExperimentFlagProvider()
 	cis := env.GetClientIdentityService()
