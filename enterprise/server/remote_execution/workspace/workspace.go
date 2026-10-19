@@ -509,7 +509,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	digestFunction := ws.task.GetExecuteRequest().GetDigestFunction()
 
 	var txInfo *dirtools.TransferInfo
-	var stdoutDigest, stderrDigest *repb.Digest
+	executeResponse.ServerLogs = make(map[string]*repb.LogFile, len(cmdResult.AuxiliaryLogs))
 
 	// Use the caller's context for diagnostic uploads so another output's
 	// failure does not cancel them. Keep fail-fast cancellation for the tree.
@@ -519,7 +519,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		if err != nil {
 			return status.UnavailableErrorf("upload stdout: %s", err)
 		}
-		stdoutDigest = d
+		executeResponse.Result.StdoutDigest = d
 		return nil
 	})
 	eg.Go(func() error {
@@ -527,7 +527,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		if err != nil {
 			return status.UnavailableErrorf("upload stderr: %s", err)
 		}
-		stderrDigest = d
+		executeResponse.Result.StderrDigest = d
 		return nil
 	})
 	eg.Go(func() error {
@@ -566,7 +566,6 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		return err
 	})
 	var logsMu sync.Mutex
-	serverLogs := make(map[string]*repb.LogFile, len(cmdResult.AuxiliaryLogs))
 	for name, b := range cmdResult.AuxiliaryLogs {
 		eg.Go(func() error {
 			d, err := cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(b))
@@ -576,18 +575,14 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			}
 			logsMu.Lock()
 			defer logsMu.Unlock()
-			serverLogs[name] = &repb.LogFile{
+			executeResponse.ServerLogs[name] = &repb.LogFile{
 				Digest:        d,
 				HumanReadable: true,
 			}
 			return nil
 		})
 	}
-	err := eg.Wait()
-	executeResponse.Result.StdoutDigest = stdoutDigest
-	executeResponse.Result.StderrDigest = stderrDigest
-	executeResponse.ServerLogs = serverLogs
-	if err != nil {
+	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 	txInfo.FileCount += 2 // for stdout and stderr
