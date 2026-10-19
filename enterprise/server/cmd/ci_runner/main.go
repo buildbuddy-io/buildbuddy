@@ -114,12 +114,6 @@ const (
 	// maxGitFetchLowSpeedRetries caps --git_fetch_low_speed_retries.
 	maxGitFetchLowSpeedRetries = 3
 
-	// Env vars set by workflow runner
-	// NOTE: These env vars are not populated for non-private repos.
-
-	repoUserEnvVarName  = "REPO_USER"
-	repoTokenEnvVarName = "REPO_TOKEN"
-
 	// Exit code placeholder used when a command doesn't return an exit code on its own.
 	noExitCode         = -1
 	failedExitCodeName = "Failed"
@@ -2381,7 +2375,7 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	fetchURL := remoteURL
 	useSystemGitCredentials := os.Getenv("USE_SYSTEM_GIT_CREDENTIALS") == "1"
 	if !useSystemGitCredentials {
-		authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
+		authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(ci_runner_env.RepoUserEnvVarName), os.Getenv(ci_runner_env.RepoTokenEnvVarName))
 		if err != nil {
 			return err
 		}
@@ -2969,7 +2963,7 @@ func configureGlobalCredentialHelper(ctx context.Context) error {
 	if !strings.HasPrefix(baseRepoURL(), "https://") {
 		return nil
 	}
-	repoToken := os.Getenv(repoTokenEnvVarName)
+	repoToken := os.Getenv(ci_runner_env.RepoTokenEnvVarName)
 	if repoToken == "" {
 		return nil
 	}
@@ -3013,14 +3007,14 @@ func runCredentialHelper() error {
 	cmd := flag.Args()[0]
 	switch cmd {
 	case "get":
-		username := os.Getenv(repoUserEnvVarName)
+		username := os.Getenv(ci_runner_env.RepoUserEnvVarName)
 		if username == "" {
 			// git requires a username from the cred helper but GitHub doesn't
 			// care what the username is (it just looks at the token), so just
 			// set an arbitrary username.
 			username = "x-access-token"
 		}
-		fmt.Printf("username=%s\npassword=%s\n", username, os.Getenv(repoTokenEnvVarName))
+		fmt.Printf("username=%s\npassword=%s\n", username, os.Getenv(ci_runner_env.RepoTokenEnvVarName))
 		return nil
 	default:
 		// Do nothing
