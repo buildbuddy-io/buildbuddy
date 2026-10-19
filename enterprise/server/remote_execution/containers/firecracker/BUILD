@@ -156,6 +156,7 @@ go_test(
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest",
+        "//server/resources",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/util/status",

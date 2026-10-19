@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -67,6 +68,8 @@ func TestSelectGuestKernel(t *testing.T) {
 }
 
 func TestGuestKernelBootAndSnapshot(t *testing.T) {
+	// Configure the mmap budget before constructing the shared COW cache.
+	require.NoError(t, resources.Configure(true /* snapshotSharingEnabled */))
 	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", false)
 	flags.Set(t, "executor.firecracker_cgroup_version", "2")
