@@ -78,6 +78,7 @@ go_test(
         "@org_golang_google_grpc//:grpc",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [
+            "//server/util/claims",
             "//server/util/testing/flags",
         ],
         "//conditions:default": [],
