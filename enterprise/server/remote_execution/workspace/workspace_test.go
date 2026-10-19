@@ -34,11 +34,12 @@ import (
 type failingUploadCASClient struct {
 	repb.ContentAddressableStorageClient
 	onFailure func()
+	err       error
 }
 
 func (c *failingUploadCASClient) BatchUpdateBlobs(context.Context, *repb.BatchUpdateBlobsRequest, ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
 	c.onFailure()
-	return nil, status.InvalidArgumentError("injected output tree upload failure")
+	return nil, c.err
 }
 
 type interceptingByteStreamClient struct {
@@ -67,8 +68,16 @@ func (c *interceptingWriteClient) Send(req *bspb.WriteRequest) error {
 }
 
 func TestUploadOutputs_PreservesLogsOnFailure(t *testing.T) {
-	for _, failure := range []string{"output tree", "stderr"} {
-		t.Run(failure, func(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		failures []string
+	}{
+		{name: "output tree", failures: []string{"output tree"}},
+		{name: "stderr", failures: []string{"stderr"}},
+		{name: "auxiliary", failures: []string{"auxiliary"}},
+		{name: "multiple", failures: []string{"output tree", "stdout", "stderr", "auxiliary", "other auxiliary"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			te := testenv.GetTestEnv(t)
@@ -78,15 +87,23 @@ func TestUploadOutputs_PreservesLogsOnFailure(t *testing.T) {
 			bsClient := te.GetByteStreamClient()
 			failed := make(chan struct{})
 			signalFailure := sync.OnceFunc(func() { close(failed) })
-			stderrDigest, err := digest.Compute(strings.NewReader("stderr"), repb.DigestFunction_SHA256)
-			require.NoError(t, err)
-			if failure == "output tree" {
-				te.SetContentAddressableStorageClient(&failingUploadCASClient{ContentAddressableStorageClient: te.GetContentAddressableStorageClient(), onFailure: signalFailure})
+			failures := make(map[string]error, len(tc.failures))
+			failedDigests := make(map[string]error, len(tc.failures))
+			for _, name := range tc.failures {
+				failures[name] = status.InvalidArgumentError("injected " + name + " upload failure")
+				d, err := digest.Compute(strings.NewReader(name), repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				failedDigests["/"+d.GetHash()+"/"] = failures[name]
+			}
+			if err := failures["output tree"]; err != nil {
+				te.SetContentAddressableStorageClient(&failingUploadCASClient{ContentAddressableStorageClient: te.GetContentAddressableStorageClient(), onFailure: signalFailure, err: err})
 			}
 			te.SetByteStreamClient(&interceptingByteStreamClient{ByteStreamClient: bsClient, onSend: func(ctx context.Context, req *bspb.WriteRequest) error {
-				if failure == "stderr" && strings.Contains(req.GetResourceName(), "/"+stderrDigest.GetHash()+"/") {
-					signalFailure()
-					return status.InvalidArgumentError("injected stderr upload failure")
+				for hash, err := range failedDigests {
+					if strings.Contains(req.GetResourceName(), hash) {
+						signalFailure()
+						return err
+					}
 				}
 				// Hold log uploads until another upload reaches the injected failure.
 				select {
@@ -106,21 +123,29 @@ func TestUploadOutputs_PreservesLogsOnFailure(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(ws.Path(), "output"), []byte("output"), 0600))
 			response := &repb.ExecuteResponse{Result: &repb.ActionResult{}}
 			_, err = ws.UploadOutputs(ctx, cmd, response, &interfaces.CommandResult{
-				Stdout:        []byte("stdout"),
-				Stderr:        []byte("stderr"),
-				AuxiliaryLogs: map[string][]byte{"auxiliary": []byte("auxiliary")},
+				Stdout: []byte("stdout"),
+				Stderr: []byte("stderr"),
+				AuxiliaryLogs: map[string][]byte{
+					"auxiliary":       []byte("auxiliary"),
+					"other auxiliary": []byte("other auxiliary"),
+					"successful":      []byte("successful"),
+				},
 			})
-			require.ErrorContains(t, err, "injected "+failure+" upload failure")
-			logs := map[string]*repb.Digest{
-				"stdout":    response.GetResult().GetStdoutDigest(),
-				"auxiliary": response.GetServerLogs()["auxiliary"].GetDigest(),
+			for name, failure := range failures {
+				require.ErrorIs(t, err, failure, name)
 			}
-			if failure == "stderr" {
-				require.Nil(t, response.GetResult().GetStderrDigest())
-			} else {
-				logs["stderr"] = response.GetResult().GetStderrDigest()
+			logs := map[string]*repb.Digest{
+				"stdout":          response.GetResult().GetStdoutDigest(),
+				"stderr":          response.GetResult().GetStderrDigest(),
+				"auxiliary":       response.GetServerLogs()["auxiliary"].GetDigest(),
+				"other auxiliary": response.GetServerLogs()["other auxiliary"].GetDigest(),
+				"successful":      response.GetServerLogs()["successful"].GetDigest(),
 			}
 			for want, d := range logs {
+				if failures[want] != nil {
+					require.Nil(t, d, want)
+					continue
+				}
 				require.NotNil(t, d, want)
 				var got strings.Builder
 				require.NoError(t, cachetools.GetBlob(ctx, bsClient, digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256), &got))

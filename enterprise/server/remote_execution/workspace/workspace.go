@@ -3,8 +3,10 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -513,24 +515,25 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 
 	// Let independent uploads finish even if another upload fails, preserving
 	// available outputs and diagnostics within the caller's deadline.
-	var eg errgroup.Group
-	eg.Go(func() error {
+	var wg sync.WaitGroup
+	var stdoutErr, stderrErr, treeErr error
+	wg.Go(func() {
 		d, err := cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
 		if err != nil {
-			return status.UnavailableErrorf("upload stdout: %s", err)
+			stdoutErr = status.UnavailableErrorf("upload stdout: %w", err)
+			return
 		}
 		executeResponse.Result.StdoutDigest = d
-		return nil
 	})
-	eg.Go(func() error {
+	wg.Go(func() {
 		d, err := cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
 		if err != nil {
-			return status.UnavailableErrorf("upload stderr: %s", err)
+			stderrErr = status.UnavailableErrorf("upload stderr: %w", err)
+			return
 		}
 		executeResponse.Result.StderrDigest = d
-		return nil
 	})
-	eg.Go(func() error {
+	wg.Go(func() {
 		if ws.overlay != nil {
 			// When overlayfs is enabled, apply the changes from upperdir to
 			// lowerdir, since dirHelper's root dir is configured as the
@@ -543,15 +546,14 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			recyclingEnabled := platform.IsRecyclingEnabled(ws.task)
 			opts := overlayfs.ApplyOpts{AllowRename: !recyclingEnabled}
 			if err := ws.overlay.Apply(ctx, opts); err != nil {
-				return status.WrapError(err, "apply overlay upperdir changes")
+				treeErr = status.WrapError(err, "apply overlay upperdir changes")
+				return
 			}
 		}
 		// Don't try to add files to the filecache if VFS is enabled. We use hard links to store data in the file
 		// cache and hard links across filesystems are not possible.
 		addToFileCache := ws.vfs == nil
-		var err error
-
-		txInfo, err = dirtools.UploadTree(
+		txInfo, treeErr = dirtools.UploadTree(
 			ctx,
 			ws.env,
 			ws.dirHelper,
@@ -563,15 +565,15 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			addToFileCache,
 			ws.task.GetFastCdc_2020Params(),
 		)
-		return err
 	})
 	var logsMu sync.Mutex
-	for name, b := range cmdResult.AuxiliaryLogs {
-		eg.Go(func() error {
-			d, err := cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(b))
+	auxiliaryErrors := make([]error, len(cmdResult.AuxiliaryLogs))
+	for i, name := range slices.Sorted(maps.Keys(cmdResult.AuxiliaryLogs)) {
+		wg.Go(func() {
+			d, err := cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.AuxiliaryLogs[name]))
 			if err != nil {
-				log.CtxWarningf(ctx, "Failed to upload auxiliary log %q: %s", name, err)
-				return nil
+				auxiliaryErrors[i] = fmt.Errorf("upload auxiliary log %q: %w", name, err)
+				return
 			}
 			logsMu.Lock()
 			defer logsMu.Unlock()
@@ -579,10 +581,10 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 				Digest:        d,
 				HumanReadable: true,
 			}
-			return nil
 		})
 	}
-	if err := eg.Wait(); err != nil {
+	wg.Wait()
+	if err := errors.Join(stdoutErr, stderrErr, treeErr, errors.Join(auxiliaryErrors...)); err != nil {
 		return nil, err
 	}
 	txInfo.FileCount += 2 // for stdout and stderr
