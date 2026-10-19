@@ -455,7 +455,6 @@ export default class EnterpriseRootComponent extends React.Component {
                   )}
                   {cacheProxy && this.state.user && (
                     <CacheProxyComponent
-                      key={`${this.state.path}?${this.state.search.get("region") ?? ""}`}
                       user={this.state.user}
                       path={this.state.path}
                       region={this.state.search.get("region") ?? undefined}
