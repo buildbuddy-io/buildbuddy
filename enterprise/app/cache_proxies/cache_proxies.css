@@ -57,6 +57,10 @@
   height: 36px;
 }
 
+.cache-proxies-page .cache-proxy-filter .filter-input {
+  padding-right: 54px;
+}
+
 .cache-proxies-page .cache-proxy-no-matches {
   margin-top: 24px;
   color: var(--color-text-secondary);
