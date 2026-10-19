@@ -29,6 +29,7 @@ import (
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -250,6 +251,65 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	// Check that credential-related overrides were not overwritten
 	for _, expectedCredential := range []string{"BUILDBUDDY_API_KEY", "REPO_TOKEN", "REPO_USER"} {
 		require.Contains(t, appliedEnvOverrides, expectedCredential)
+	}
+}
+
+func TestRun_BuildUser(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		subID    string
+		fullName string
+		groupKey bool
+		want     string
+	}{
+		{name: "GitHub user", subID: "https://github.com/alice", fullName: "Alice Example", want: "alice"},
+		{name: "user name", subID: "sso/alice", fullName: "Alice Example", want: "Alice Example"},
+		{name: "unnamed user", subID: "sso/alice", want: "US1"},
+		{name: "organization key", subID: "sso/alice", groupKey: true, want: "Acme, Inc."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "app.user_owned_keys_enabled", true)
+			te, ctx := getEnv(t)
+			u, err := te.GetUserDB().GetUser(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, u.Groups)
+			groupID := u.Groups[0].Group.GroupID
+			err = te.GetDBHandle().NewQuery(ctx, "set_attribution_profile").Raw(
+				`UPDATE "Users" SET sub_id = ?, first_name = ? WHERE user_id = ?`,
+				tc.subID, tc.fullName, u.UserID).Exec().Error
+			require.NoError(t, err)
+			err = te.GetDBHandle().NewQuery(ctx, "set_attribution_organization").Raw(
+				`UPDATE "Groups" SET name = ? WHERE group_id = ?`, "Acme, Inc.", groupID).Exec().Error
+			require.NoError(t, err)
+			enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx, te, groupID, true)
+			var key *tables.APIKey
+			caps := []cappb.Capability{cappb.Capability_CACHE_WRITE}
+			if tc.groupKey {
+				key, err = te.GetAuthDB().CreateAPIKey(ctx, groupID, "test", caps, 0, false)
+			} else {
+				key, err = te.GetAuthDB().CreateUserAPIKey(ctx, groupID, u.UserID, "test", caps, 0)
+			}
+			require.NoError(t, err)
+			ctx = te.GetAuthenticator().AuthContextFromAPIKey(t.Context(), key.Value)
+			ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, key.Value)
+			r, err := New(te)
+			require.NoError(t, err)
+			_, err = r.Run(ctx, &rnpb.RunRequest{
+				Steps: []*rnpb.Step{{Run: "echo hello"}},
+				Env:   map[string]string{"BUILD_USER": "local-machine-user"},
+			})
+			require.NoError(t, err)
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			require.Len(t, execClient.executeRequests, 1)
+			exec := getExecution(t, ctx, te, execClient.executeRequests[0].Payload)
+			var users []string
+			for _, env := range exec.Command.GetEnvironmentVariables() {
+				if env.GetName() == "BUILD_USER" {
+					users = append(users, env.GetValue())
+				}
+			}
+			require.Equal(t, []string{tc.want}, users)
+		})
 	}
 }
 

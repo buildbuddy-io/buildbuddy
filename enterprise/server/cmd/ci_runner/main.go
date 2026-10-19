@@ -3092,6 +3092,10 @@ func runBazelWrapper() error {
 	bazelArgs := append(bbStartupArgs, originalArgs...)
 	bazelCmd := append([]string{bazelBin}, bazelArgs...)
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
+	if buildUser := os.Getenv("BUILD_USER"); buildUser != "" {
+		// Child invocations should have the same attribution as their runner.
+		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--build_metadata=USER="+buildUser)
+	}
 
 	// When using the bb CLI and running `bb run`, stream the run logs to the server.
 	if isExecutableName(filepath.Base(bazelBin), bbBinaryName) && bazelSubcmd == "run" {
