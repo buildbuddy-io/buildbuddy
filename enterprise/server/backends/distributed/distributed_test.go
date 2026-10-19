@@ -4327,6 +4327,7 @@ func TestWriteByReference(t *testing.T) {
 		for _, peer := range peers {
 			waitForReady(t, peer)
 		}
+		waitForPeers(t, dcs...)
 		return peers, dcs, locals, store
 	}
 	totals := func(locals []*referenceMemoryCache) (byteCommits, refWrites, refWritesCloned int) {
@@ -4592,6 +4593,7 @@ func TestWriteByReference(t *testing.T) {
 		for _, peer := range peers {
 			waitForReady(t, peer)
 		}
+		waitForPeers(t, dcs...)
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, dcs[0].Set(ctx, rn, buf))
 		for _, base := range bases {
@@ -4641,6 +4643,7 @@ func TestBackfillByReference(t *testing.T) {
 		for _, peer := range peers {
 			waitForReady(t, peer)
 		}
+		waitForPeers(t, dcs...)
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, dcs[0].Set(ctx, rn, buf))
 		for _, local := range locals {
@@ -4870,18 +4873,17 @@ func TestFindMissing_Quorum(t *testing.T) {
 				peers[i] = fmt.Sprintf("localhost:%d", testport.FindFree(t))
 			}
 			caches := make([]*quorumTestCache, replicationFactor)
-			var dc *Cache
+			var dcs []*Cache
 			for i, peer := range peers {
 				caches[i] = &quorumTestCache{Cache: newMemoryCache(t, 1000000), lookups: make(map[string]int)}
-				c := startNewDCache(t, env, Options{
+				dcs = append(dcs, startNewDCache(t, env, Options{
 					ListenAddr: peer, Nodes: slices.Clone(peers), ReplicationFactor: replicationFactor,
 					DisableLocalLookup: true, LookasideCacheSizeBytes: 1000000,
-				}, caches[i])
-				if i == 0 {
-					dc = c
-				}
+				}, caches[i]))
 				waitForReady(t, peer)
 			}
+			waitForPeers(t, dcs...)
+			dc := dcs[0]
 			quorumCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(findmissing.RequireQuorumHeader, "true"))
 
 			rn, buf := testdigest.RandomCASResourceBuf(t, 100)

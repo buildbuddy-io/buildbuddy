@@ -118,7 +118,7 @@ func (p *ClientConnPool) WaitUntilReady(ctx context.Context) error {
 			if connState == connectivity.Idle {
 				c.Connect()
 			}
-			if !c.WaitForStateChange(ctx, connState) {
+			if connState == connectivity.Shutdown || !c.WaitForStateChange(ctx, connState) {
 				return status.UnavailableErrorf(
 					"gRPC connection pool for %s not ready: %d connections in states: %v",
 					p.targetForLogging,
