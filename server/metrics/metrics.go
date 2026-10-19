@@ -328,7 +328,8 @@ const (
 	DistributedCacheWriteRequestType = "request_type"
 
 	// Where a distributed cache read was served from: "local" (this node is a
-	// replica), "read_through" (local read-through cache), "lookaside" or "peer".
+	// replica), "read_through" (local read-through cache), "lookaside",
+	// "same_zone peer" or "cross_zone_peer".
 	DistributedCacheReadSource = "source"
 
 	// ContentAddressableStorage Server operation: "FindMissingBlobs",
