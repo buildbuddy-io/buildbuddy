@@ -391,41 +391,56 @@ const zoneAddressesRoutingConfig = `{
 func TestASNRoutingZoneAddresses(t *testing.T) {
 	records := []dns.RR{
 		mustRR(t, "example. 60 IN SOA ns1.example. host.example. 1 21600 3600 259200 300"),
-		mustRR(t, "a.example. 60 IN A 10.0.0.1"),
-		mustRR(t, "b.example. 60 IN A 10.0.0.2"),
-		mustRR(t, "c.example. 60 IN A 10.0.0.3"),
-		mustRR(t, "c.example. 60 IN A 10.0.0.1"),
-		mustRR(t, "*.wild.example. 60 IN A 10.0.0.1"),
-		mustRR(t, "alias.example. 60 IN CNAME a.example."),
+		// Static TTLs differ from asnRoutingTTL (60) so overrides are
+		// distinguishable by TTL.
+		mustRR(t, "a.example. 300 IN A 10.0.0.1"),
+		mustRR(t, "b.example. 300 IN A 10.0.0.2"),
+		mustRR(t, "c.example. 300 IN A 10.0.0.3"),
+		mustRR(t, "c.example. 300 IN A 10.0.0.1"),
+		// "10.0.0.10" contains "10.0.0.1" as a substring.
+		mustRR(t, "d.example. 300 IN A 10.0.0.10"),
+		mustRR(t, "*.wild.example. 300 IN A 10.0.0.1"),
+		mustRR(t, "alias.example. 300 IN CNAME a.example."),
 	}
 	te := testenv.GetTestEnv(t)
 	te.SetExperimentFlagProvider(newFlagProvider(t, zoneAddressesRoutingConfig))
 	h := server.NewHandler(te, records, nil)
 
 	for _, tc := range []struct {
-		name  string
-		query string
-		want  []answer
+		name    string
+		query   string
+		want    []answer
+		wantTTL uint32
 	}{
 		{
-			name:  "matching zone answer is overridden",
-			query: "a.example.",
-			want:  []answer{{"a.example.", "A", "192.0.2.9"}},
+			name:    "matching zone answer is overridden",
+			query:   "a.example.",
+			want:    []answer{{"a.example.", "A", "192.0.2.9"}},
+			wantTTL: 60,
 		},
 		{
-			name:  "non-matching zone answer is kept",
-			query: "b.example.",
-			want:  []answer{{"b.example.", "A", "10.0.0.2"}},
+			name:    "non-matching zone answer is kept",
+			query:   "b.example.",
+			want:    []answer{{"b.example.", "A", "10.0.0.2"}},
+			wantTTL: 300,
 		},
 		{
-			name:  "wildcard answer is overridden",
-			query: "x.wild.example.",
-			want:  []answer{{"x.wild.example.", "A", "192.0.2.9"}},
+			name:    "zone address is matched exactly, not as a substring",
+			query:   "d.example.",
+			want:    []answer{{"d.example.", "A", "10.0.0.10"}},
+			wantTTL: 300,
 		},
 		{
-			name:  "match on a non-first record in a multi-record answer",
-			query: "c.example.",
-			want:  []answer{{"c.example.", "A", "192.0.2.9"}},
+			name:    "wildcard answer is overridden",
+			query:   "x.wild.example.",
+			want:    []answer{{"x.wild.example.", "A", "192.0.2.9"}},
+			wantTTL: 60,
+		},
+		{
+			name:    "match on a non-first record in a multi-record answer",
+			query:   "c.example.",
+			want:    []answer{{"c.example.", "A", "192.0.2.9"}},
+			wantTTL: 60,
 		},
 		{
 			name:  "CNAME answer is not overridden",
@@ -434,6 +449,7 @@ func TestASNRoutingZoneAddresses(t *testing.T) {
 				{"alias.example.", "CNAME", "a.example."},
 				{"a.example.", "A", "10.0.0.1"},
 			},
+			wantTTL: 300,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -441,9 +457,7 @@ func TestASNRoutingZoneAddresses(t *testing.T) {
 			assert.Equal(t, dns.RcodeSuccess, m.Rcode)
 			assert.Equal(t, tc.want, answers(m.Answer))
 			for _, rr := range m.Answer {
-				if _, ok := rr.(*dns.A); ok && rr.Header().Name != "a.example." || tc.query != "alias.example." {
-					assert.Equal(t, uint32(60), rr.Header().Ttl)
-				}
+				assert.Equal(t, tc.wantTTL, rr.Header().Ttl, "TTL of %s", rr.Header().Name)
 			}
 		})
 	}
