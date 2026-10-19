@@ -133,7 +133,7 @@ func readMetricsFor(t *testing.T, op string) readMetrics {
 	return readMetrics{
 		readThroughCount: testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadCount, labels("read_through")),
 		readThroughBytes: testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadDigestSize, labels("read_through")),
-		peerCount:        testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadCount, labels("peer")),
+		peerCount:        testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadCount, labels("same_zone_peer")),
 	}
 }
 

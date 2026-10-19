@@ -1003,12 +1003,13 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.Res
 		return nil, err
 	}
 
+	peerZoneLabel := c.peerZoneLabel(peer)
 	for _, r := range stillMissing {
 		buf, ok := remoteResults[r.GetDigest()]
 		if !ok || len(buf) == 0 {
 			continue
 		}
-		recordRead("GetMulti", c.peerZoneLabel(peer), r.GetDigest())
+		recordRead("GetMulti", peerZoneLabel, r.GetDigest())
 		c.addLookasideEntry(ctx, r, buf)
 		if c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(r) {
 			if err := c.local.Set(ctx, r, buf); err != nil {
