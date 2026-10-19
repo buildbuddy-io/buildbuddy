@@ -482,7 +482,7 @@ type leaser struct {
 	waiters  sync.WaitGroup
 	closedMu sync.RWMutex // PROTECTS(closed)
 	closed   bool
-	counter  atomic.Int64
+	dbCalls  atomic.Int64
 }
 
 // NewDBLeaser returns a new DB leaser that wraps db and serializes access to
@@ -500,7 +500,7 @@ func NewDBLeaser(db IPebbleDB) Leaser {
 		waiters:  sync.WaitGroup{},
 		closedMu: sync.RWMutex{},
 		closed:   false,
-		counter:  atomic.Int64{},
+		dbCalls:  atomic.Int64{},
 	}
 }
 
@@ -528,7 +528,7 @@ func (l *leaser) DB() (IPebbleDB, error) {
 		newRefCounter(&l.waiters),
 	}
 
-	if *warnAboutLeaks && l.counter.Add(1)%100 == 1 {
+	if *warnAboutLeaks && l.dbCalls.Add(1)%100 == 1 {
 		location := "unknown"
 		if _, file, no, ok := runtime.Caller(1); ok {
 			location = fmt.Sprintf("%s:%d", file, no)
