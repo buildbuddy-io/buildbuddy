@@ -495,13 +495,7 @@ type leaser struct {
 // Once the DB leaser has been closed with Close(), no new handles can be
 // acquired, instead an error is returned.
 func NewDBLeaser(db IPebbleDB) Leaser {
-	return &leaser{
-		db:       db,
-		waiters:  sync.WaitGroup{},
-		closedMu: sync.RWMutex{},
-		closed:   false,
-		dbCalls:  atomic.Int64{},
-	}
+	return &leaser{db: db}
 }
 
 func (l *leaser) Close() {
