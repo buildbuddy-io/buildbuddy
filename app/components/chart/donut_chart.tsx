@@ -122,7 +122,6 @@ export default class DonutChart extends React.Component<Props> {
     );
   }
 
-  // The empty ring passes no fill and is colored by CSS instead.
   renderRing(data: NamedValue[], fill: (entry: NamedValue, index: number) => string | undefined) {
     return (
       <ResponsiveContainer width={80} height={80}>
