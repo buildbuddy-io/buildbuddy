@@ -278,10 +278,10 @@ func TestRun_BuildUser(t *testing.T) {
 				`UPDATE "Users" SET sub_id = ?, first_name = ? WHERE user_id = ?`,
 				tc.subID, tc.fullName, u.UserID).Exec().Error
 			require.NoError(t, err)
+			enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx, te, groupID, true)
 			err = te.GetDBHandle().NewQuery(ctx, "set_attribution_organization").Raw(
 				`UPDATE "Groups" SET name = ? WHERE group_id = ?`, "Acme, Inc.", groupID).Exec().Error
 			require.NoError(t, err)
-			enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx, te, groupID, true)
 			var key *tables.APIKey
 			caps := []cappb.Capability{cappb.Capability_CACHE_WRITE}
 			if tc.groupKey {
