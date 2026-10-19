@@ -74,13 +74,9 @@ func RequestTypeLabelFromContext(ctx context.Context) string {
 }
 
 // NewHTTPForwarder returns a handler that reverse-proxies HTTP requests to
-// target, as httputil.NewSingleHostReverseProxy does.
-//
-// Like the gRPC forwarder, it attests the client's IP to the target: it strips
-// all client-supplied internal headers, then sets the resolved client IP and,
-// unless the caller already carries a client identity, a grpc-proxy client
-// identity. The target trusts the IP only alongside a valid grpc-proxy
-// identity. If env has no client identity service, nothing is attested.
+// target. Like the gRPC forwarder, it strips client-supplied internal headers
+// and sets the resolved client IP, attested with a grpc-proxy client identity
+// unless the caller already has its own.
 func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 	cis := env.GetClientIdentityService()
 	proxy := httputil.NewSingleHostReverseProxy(target)
@@ -99,13 +95,7 @@ func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 		if clientIP == "" {
 			return
 		}
-		// Always forward the resolved IP, so it survives proxy-to-proxy
-		// chains. The target only honors it alongside a valid grpc-proxy
-		// identity.
 		r.Header.Set(clientip.HeaderName, clientIP)
-		// A caller carrying its own identity (e.g. an executor or workflow)
-		// keeps it, as in the gRPC forwarder: the target authorizes on it,
-		// and replacing it with grpc-proxy would lose that.
 		if r.Header.Get(authutil.ClientIdentityHeaderName) != "" {
 			return
 		}
@@ -114,7 +104,6 @@ func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 			Client: interfaces.ClientIdentityGRPCProxy,
 		})
 		if err != nil {
-			// Without the identity the target ignores the IP anyway.
 			log.CtxWarningf(r.Context(), "Could not create client identity header: %s", err)
 			return
 		}
