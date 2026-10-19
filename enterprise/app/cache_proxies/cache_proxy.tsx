@@ -333,7 +333,6 @@ function statChart(
         data={Object.entries(data).map(([name, value]) => ({ name, value }))}
         colorPicker={(name) => statColors[name]}
         valueFormatter={valueFormatter}
-        showEmpty
       />
     </div>
   );

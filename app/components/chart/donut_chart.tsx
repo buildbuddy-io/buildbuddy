@@ -18,9 +18,6 @@ interface Props {
 
   /** Returns a human-readable string for a given value in the data. */
   valueFormatter?: (v: number) => string;
-
-  /** Render an empty ring (instead of nothing) when all values are zero. */
-  showEmpty?: boolean;
 }
 
 const OTHER_LABEL = "&&__Other__&&";
@@ -55,7 +52,7 @@ export default class DonutChart extends React.Component<Props> {
       { name: "Sum", value: 0 }
     );
 
-    if (this.props.showEmpty && sum.value === 0) {
+    if (sum.value === 0) {
       return this.withTitle(this.renderEmpty(valueFormatter));
     }
 
