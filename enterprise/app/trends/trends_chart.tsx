@@ -655,6 +655,9 @@ interface ZoomRefAreaProps {
   data: number[];
 }
 
+/**
+ * Selection highlight rendered while dragging to zoom.
+ */
 function ZoomRefArea({ refAreaLeft, refAreaRight, domain, data }: ZoomRefAreaProps) {
   const [a, b] = [Math.min(refAreaLeft, refAreaRight), Math.max(refAreaLeft, refAreaRight)];
   const xScale = useXAxisScale();
