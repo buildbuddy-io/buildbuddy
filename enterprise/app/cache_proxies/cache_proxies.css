@@ -43,6 +43,25 @@
   margin-top: 24px;
 }
 
+.cache-proxies-page .cache-proxy-list-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+  margin-top: 8px;
+}
+
+/* Match the height of the expando next to it. */
+.cache-proxies-page .cache-proxy-filter {
+  width: 280px;
+  height: 36px;
+}
+
+.cache-proxies-page .cache-proxy-no-matches {
+  margin-top: 24px;
+  color: var(--color-text-secondary);
+}
+
 .cache-proxies-page .cache-proxy-detail {
   display: flex;
   align-items: center;
