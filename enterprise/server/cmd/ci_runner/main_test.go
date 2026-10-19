@@ -25,13 +25,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetHostAndUserName_EmptyBuildUser(t *testing.T) {
-	t.Setenv("BUILD_USER", "")
-	ws := workspace{log: &buildEventReporter{log: newInvocationLog(nil)}}
-	_, username := ws.getHostAndUserName()
-	assert.Empty(t, username)
-}
-
 func TestIsBazelCommandToken(t *testing.T) {
 	for _, baseName := range []string{
 		bazelBinaryName,

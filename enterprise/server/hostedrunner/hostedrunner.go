@@ -317,6 +317,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	for k, v := range req.GetEnv() {
 		if k == "BUILD_USER" {
+			// Authenticated caller credentials determine attribution; request
+			// environment variables must not overwrite that identity.
 			continue
 		}
 		cmd.EnvironmentVariables = append(cmd.EnvironmentVariables, &repb.Command_EnvironmentVariable{
