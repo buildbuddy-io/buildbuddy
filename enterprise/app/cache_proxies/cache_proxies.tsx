@@ -110,7 +110,7 @@ interface CacheProxiesListProps {
 class CacheProxiesList extends React.Component<CacheProxiesListProps> {
   render() {
     // Cluster proxies by region + OS + architecture.
-    const filter = this.props.filter.toLowerCase();
+    const filter = this.props.filter.trim().toLowerCase();
     const proxiesByCluster = new Map<string, RegionalCacheProxy[]>();
     for (const region of this.props.regions) {
       for (const proxy of region.response.cacheProxy) {
@@ -313,7 +313,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
   }
 
   renderFilterCount() {
-    const filter = this.state.filter.toLowerCase();
+    const filter = this.state.filter.trim().toLowerCase();
     let total = 0;
     let matching = 0;
     for (const region of this.state.regions) {
@@ -388,7 +388,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                         placeholder="Filter cache proxies..."
                         value={this.state.filter}
                         onChange={(e) => this.setState({ filter: e.target.value })}
-                        rightElement={this.state.filter ? this.renderFilterCount() : undefined}
+                        rightElement={this.state.filter.trim() ? this.renderFilterCount() : undefined}
                       />
                       <ViewModeToggle viewMode={this.state.viewMode} onChange={this.onChangeViewMode.bind(this)} />
                     </div>
