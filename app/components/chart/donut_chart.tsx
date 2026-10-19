@@ -53,7 +53,7 @@ export default class DonutChart extends React.Component<Props> {
     );
 
     if (sum.value === 0) {
-      return this.withTitle(this.renderEmpty(valueFormatter));
+      return this.maybeAddTitle(this.renderEmpty(valueFormatter));
     }
 
     let other = 0;
@@ -100,7 +100,7 @@ export default class DonutChart extends React.Component<Props> {
       </div>
     );
 
-    return this.withTitle(donut);
+    return this.maybeAddTitle(donut);
   }
 
   renderEmpty(valueFormatter: (v: number) => string) {
@@ -137,7 +137,7 @@ export default class DonutChart extends React.Component<Props> {
     );
   }
 
-  withTitle(donut: React.ReactNode) {
+  maybeAddTitle(donut: React.ReactNode) {
     if (!this.props.title) {
       return donut;
     }
