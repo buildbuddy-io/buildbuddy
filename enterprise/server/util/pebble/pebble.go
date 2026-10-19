@@ -528,18 +528,16 @@ func (l *leaser) DB() (IPebbleDB, error) {
 		newRefCounter(&l.waiters),
 	}
 
-	if *warnAboutLeaks {
-		if l.counter.Add(1)%100 == 1 {
-			location := "unknown"
-			if _, file, no, ok := runtime.Caller(1); ok {
-				location = fmt.Sprintf("%s:%d", file, no)
-			}
-			runtime.SetFinalizer(handle, func(h *refCountedDB) {
-				if !h.refCounter.closed {
-					alert.UnexpectedEvent("pebble_db_handle_leak", "DB() handle leak at %s!", location)
-				}
-			})
+	if *warnAboutLeaks && l.counter.Add(1)%100 == 1 {
+		location := "unknown"
+		if _, file, no, ok := runtime.Caller(1); ok {
+			location = fmt.Sprintf("%s:%d", file, no)
 		}
+		runtime.SetFinalizer(handle, func(h *refCountedDB) {
+			if !h.refCounter.closed {
+				alert.UnexpectedEvent("pebble_db_handle_leak", "DB() handle leak at %s!", location)
+			}
+		})
 	}
 	return handle, nil
 }
