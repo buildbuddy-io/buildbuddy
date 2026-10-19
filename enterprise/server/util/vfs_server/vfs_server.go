@@ -371,17 +371,16 @@ type Server struct {
 
 	server *grpc.Server
 
-	mu                 sync.Mutex
-	blocks             int64
-	nextId             atomic.Uint64
-	nodes              map[uint64]*fsNode
-	internalTaskCtx    context.Context
-	root               *fsNode
-	inputFetcher       container.InputFetcher
-	retryInputFetcher  *casFetcher
+	mu              sync.Mutex
+	blocks          int64
+	nextId          atomic.Uint64
+	nodes           map[uint64]*fsNode
+	internalTaskCtx context.Context
+	root            *fsNode
+	// casFiles opens the task's CAS inputs, once Prepare has set it.
+	casFiles           *CASFiles
 	remoteInstanceName string
 	fileHandles        map[uint64]*fileHandle
-	taskError          error
 
 	// total number of CAS files in the tree.
 	casFileCount int64
@@ -421,8 +420,12 @@ func (p *Server) Path() string {
 // or nil if no download failed after retries. Prepare clears this error.
 func (p *Server) TaskError() error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.taskError
+	casFiles := p.casFiles
+	p.mu.Unlock()
+	if casFiles == nil {
+		return nil
+	}
+	return casFiles.TaskError()
 }
 
 func (p *Server) generateScratchPath(name string) (string, error) {
@@ -658,22 +661,36 @@ func outputPaths(layout *container.FileSystemLayout) []string {
 	return slices.Concat(layout.OutputFiles, layout.OutputDirectories)
 }
 
-func (p *Server) createOutputDirectories(layout *container.FileSystemLayout) error {
+// OutputDirectories returns the directories the task writes its outputs
+// into, relative to the input root, so that they can be created before the
+// task runs. They are the parent of each output path and each output
+// directory.
+func OutputDirectories(layout *container.FileSystemLayout) ([]string, error) {
+	var dirs []string
 	for _, outputPath := range outputPaths(layout) {
 		path, err := joinRelativePath(layout.WorkingDirectory, outputPath)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if err := p.mkdirAll(filepath.Dir(path)); err != nil {
-			return err
-		}
+		dirs = append(dirs, filepath.Dir(path))
 	}
 	for _, outputDirectory := range layout.OutputDirectories {
 		path, err := joinRelativePath(layout.WorkingDirectory, outputDirectory)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if err := p.mkdirAll(path); err != nil {
+		dirs = append(dirs, path)
+	}
+	return dirs, nil
+}
+
+func (p *Server) createOutputDirectories(layout *container.FileSystemLayout) error {
+	dirs, err := OutputDirectories(layout)
+	if err != nil {
+		return err
+	}
+	for _, dir := range dirs {
+		if err := p.mkdirAll(dir); err != nil {
 			return err
 		}
 	}
@@ -701,14 +718,10 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 		}
 	}
 	walkNode(p.root)
-	inputFetcher := p.inputFetcher
-	retryInputFetcher := p.retryInputFetcher
+	casFiles := p.casFiles
 	p.mu.Unlock()
-	if statsProvider, ok := inputFetcher.(interface{ UpdateIOStats(*repb.VfsStats) }); ok {
-		statsProvider.UpdateIOStats(stats)
-	}
-	if _, ok := inputFetcher.(*casFetcher); !ok && retryInputFetcher != nil {
-		retryInputFetcher.UpdateIOStats(stats)
+	if casFiles != nil {
+		casFiles.UpdateStats(stats)
 	}
 
 	return stats
@@ -732,14 +745,8 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	retryInputFetcher := newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
-	if inputFetcher == nil {
-		inputFetcher = retryInputFetcher
-	}
-	p.inputFetcher = inputFetcher
-	p.retryInputFetcher = retryInputFetcher
+	p.casFiles = NewCASFiles(p.env, layout, inputFetcher)
 	p.internalTaskCtx = ctx
-	p.taskError = nil
 	return invalidatedInodes, nil
 }
 
@@ -1125,31 +1132,106 @@ func (cf *casFetcher) UpdateIOStats(stats *repb.VfsStats) {
 	stats.FileDownloadDurationUsec += cf.downloadDuration.Microseconds()
 }
 
-func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error) {
-	p.mu.Lock()
-	inputFetcher := p.inputFetcher
-	retryInputFetcher := p.retryInputFetcher
-	p.mu.Unlock()
-	if inputFetcher == nil || retryInputFetcher == nil {
-		return nil, status.FailedPreconditionError("no input fetcher is configured")
+// CASFiles opens a task's input files, downloading them into the file cache
+// first when needed. The VFS server and the lazily populated Firecracker
+// workspace image both use it, so that inputs are fetched, retried and
+// reported the same way whichever serves them.
+type CASFiles struct {
+	env environment.Env
+	// inputFetcher is the workspace's prefetcher when there is one, which
+	// has usually downloaded a file by the time it is opened, and otherwise
+	// retryInputFetcher.
+	inputFetcher container.InputFetcher
+	// retryInputFetcher downloads a file directly from the CAS. A failed
+	// prefetcher cannot restart its downloads, so this is the fallback when
+	// the prefetcher failed or the file was evicted before it was opened.
+	retryInputFetcher *casFetcher
+
+	mu        sync.Mutex
+	taskError error
+}
+
+func NewCASFiles(env environment.Env, layout *container.FileSystemLayout, inputFetcher container.InputFetcher) *CASFiles {
+	retryInputFetcher := newCASFetcher(env, layout.RemoteInstanceName, layout.DigestFunction)
+	if inputFetcher == nil {
+		inputFetcher = retryInputFetcher
 	}
-	if err := inputFetcher.Fetch(ctx, node.fileNode); err != nil {
+	return &CASFiles{
+		env:               env,
+		inputFetcher:      inputFetcher,
+		retryInputFetcher: retryInputFetcher,
+	}
+}
+
+// Open returns the file cache's copy of the input file node, at path
+// within the input tree, downloading it first if needed. A download error
+// is also kept for TaskError, because the task only sees an I/O error and
+// may go on to produce a result that must not be used.
+func (c *CASFiles) Open(ctx context.Context, path string, node *repb.FileNode) (*os.File, error) {
+	f, err := c.open(ctx, node)
+	if err == nil {
+		return f, nil
+	}
+	if s := gstatus.FromContextError(err); s.Code() != codes.Unknown {
+		err = s.Err()
+	}
+	err = status.WrapErrorf(gstatus.Convert(err).Err(), "download VFS input %q", path)
+	c.mu.Lock()
+	if c.taskError == nil {
+		c.taskError = err
+	}
+	c.mu.Unlock()
+	// TODO: Cancel action execution here to avoid work whose result will
+	// be discarded because of this error. Keep the original download error
+	// as the action failure so cancellation does not hide its cause.
+	log.CtxWarningf(ctx, "Could not fetch input %q from CAS: %s", path, err)
+	return nil, err
+}
+
+func (c *CASFiles) open(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+	if err := c.inputFetcher.Fetch(ctx, node); err != nil {
 		// The CAS downloader already handles retryable failures.
-		if inputFetcher == retryInputFetcher {
+		if c.inputFetcher == c.retryInputFetcher {
 			return nil, err
 		}
 	} else {
-		f, err := p.env.GetFileCache().Open(ctx, node.fileNode)
+		f, err := c.env.GetFileCache().Open(ctx, node)
 		if err == nil {
 			return f, nil
 		}
 	}
-	// A failed prefetcher cannot restart its downloads. Fetch directly from
-	// CAS if prefetch failed or the file was evicted before it could be opened.
-	if err := retryInputFetcher.Fetch(ctx, node.fileNode); err != nil {
+	if err := c.retryInputFetcher.Fetch(ctx, node); err != nil {
 		return nil, err
 	}
-	return p.env.GetFileCache().Open(ctx, node.fileNode)
+	return c.env.GetFileCache().Open(ctx, node)
+}
+
+// TaskError returns the first download error shown to the task, or nil if
+// no download failed after retries.
+func (c *CASFiles) TaskError() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.taskError
+}
+
+// UpdateStats adds the downloads made for the task to stats.
+func (c *CASFiles) UpdateStats(stats *repb.VfsStats) {
+	if statsProvider, ok := c.inputFetcher.(interface{ UpdateIOStats(*repb.VfsStats) }); ok {
+		statsProvider.UpdateIOStats(stats)
+	}
+	if c.inputFetcher != c.retryInputFetcher {
+		c.retryInputFetcher.UpdateIOStats(stats)
+	}
+}
+
+func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error) {
+	p.mu.Lock()
+	casFiles := p.casFiles
+	p.mu.Unlock()
+	if casFiles == nil {
+		return nil, status.FailedPreconditionError("no input fetcher is configured")
+	}
+	return casFiles.Open(ctx, node.Path(), node.fileNode)
 }
 
 func (p *Server) lookupPath(path string) (*fsNode, error) {
@@ -1362,24 +1444,10 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 		}
 		openedFile = f
 	} else if node.fileNode != nil {
+		// FUSE can only return an errno to the process, so CASFiles keeps
+		// the error for TaskError.
 		f, err := p.openCASFile(p.taskCtx(), node)
 		if err != nil {
-			// FUSE can only return an errno to the process. Record the gRPC
-			// error here so that we can later return it, taking precedence
-			// over any result that might be returned by command execution.
-			if s := gstatus.FromContextError(err); s.Code() != codes.Unknown {
-				err = s.Err()
-			}
-			err = status.WrapErrorf(gstatus.Convert(err).Err(), "download VFS input %q", node.Path())
-			p.mu.Lock()
-			if p.taskError == nil {
-				p.taskError = err
-			}
-			p.mu.Unlock()
-			// TODO: Cancel action execution here to avoid work whose result will
-			// be discarded because of this error. Keep the original download error
-			// as the action failure so cancellation does not hide its cause.
-			log.CtxWarningf(p.taskCtx(), "Open %q could not fetch file from CAS: %s", node.Path(), err)
 			return nil, err
 		}
 		openedFile = f

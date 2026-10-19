@@ -46,15 +46,31 @@ type BlockDevice interface {
 // the file are backed by the wrapped BlockDevice.
 type FS struct {
 	store     BlockDevice
+	opts      Options
 	root      *Node
 	server    *fuse.Server
 	lockFile  *os.File
 	mountPath string
 }
 
+// Options configures an FS.
+type Options struct {
+	// DirectIO serves the file without the host page cache, so that every
+	// read and write reaches the BlockDevice at the size the reader asked
+	// for, and nothing is read ahead or kept. Reading ahead costs the
+	// BlockDevice reads nobody asked for, which matters when serving a
+	// block can mean fetching a file.
+	DirectIO bool
+}
+
 // New returns a new FS serving the given file.
 func New(store BlockDevice) (*FS, error) {
-	f := &FS{store: store}
+	return NewWithOptions(store, Options{})
+}
+
+// NewWithOptions returns a new FS serving the given file with the options.
+func NewWithOptions(store BlockDevice, opts Options) (*FS, error) {
+	f := &FS{store: store, opts: opts}
 	f.root = &Node{fs: f}
 	return f, nil
 }
@@ -195,7 +211,11 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fusefs.FileHandle, uint3
 		log.CtxErrorf(ctx, "open root dir: not supported")
 		return nil, 0, syscall.EOPNOTSUPP
 	}
-	return &fileHandle{file: n.file}, 0, 0
+	var fuseFlags uint32
+	if n.fs.opts.DirectIO {
+		fuseFlags = fuse.FOPEN_DIRECT_IO
+	}
+	return &fileHandle{file: n.file}, fuseFlags, 0
 }
 
 func (n *Node) Getattr(ctx context.Context, _ fusefs.FileHandle, out *fuse.AttrOut) syscall.Errno {

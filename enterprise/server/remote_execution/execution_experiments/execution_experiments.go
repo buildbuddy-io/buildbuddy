@@ -10,7 +10,9 @@ import (
 )
 
 var (
-	PersistentVolumes        = expflag.String("executor.persistent_volumes", "", "Persistent volumes to mount into each task's container, in the same format as the persistent-volumes platform property. When set, this takes precedence over the platform property.")
-	UserspaceNetworking      = expflag.Bool("executor.userspace_networking", false, "Enable userspace networking for OCI and Firecracker containers.")
-	RecordInputFetchMetadata = expflag.Bool("executor.record_input_fetch_metadata", true, "If true, record and report metadata describing which action inputs were fetched from remote CAS.", expflag.DeprecatedExperimentName("remote_execution.record_input_fetch_metadata"))
+	PersistentVolumes          = expflag.String("executor.persistent_volumes", "", "Persistent volumes to mount into each task's container, in the same format as the persistent-volumes platform property. When set, this takes precedence over the platform property.")
+	UserspaceNetworking        = expflag.Bool("executor.userspace_networking", false, "Enable userspace networking for OCI and Firecracker containers.")
+	FirecrackerVEXT4           = expflag.Bool("executor.firecracker_vext4_enabled", false, "Build Firecracker workspace disk images in-process as virtualized ext4 images that hold only the filesystem metadata and serve file contents to the VM from the workspace directory on demand, instead of copying the whole workspace into an image with mke2fs.")
+	FirecrackerVEXT4LazyInputs = expflag.Bool("executor.firecracker_vext4_lazy_inputs_enabled", false, "For Firecracker tasks with the enable-vfs platform property, build the virtualized ext4 workspace image from the action's input tree and fetch each file from the file cache or remote cache when the VM first reads it, instead of mounting a FUSE filesystem in the guest. Inputs are prefetched as they are for enable-vfs.")
+	RecordInputFetchMetadata   = expflag.Bool("executor.record_input_fetch_metadata", true, "If true, record and report metadata describing which action inputs were fetched from remote CAS.", expflag.DeprecatedExperimentName("remote_execution.record_input_fetch_metadata"))
 )

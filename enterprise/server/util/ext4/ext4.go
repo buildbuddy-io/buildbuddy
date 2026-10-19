@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -240,6 +241,30 @@ func isDirEmpty(dir string) (bool, error) {
 	return false, err
 }
 
+// outermostPaths returns the given paths, cleaned and rooted at "/", without
+// those inside another of the paths. Dumping a path dumps everything under
+// it, and dumping a nested path separately would fail, because debugfs
+// refuses to create a directory that the outer dump already created.
+func outermostPaths(paths []string) []string {
+	cleaned := make([]string, 0, len(paths))
+	for _, p := range paths {
+		cleaned = append(cleaned, filepath.Clean("/"+p))
+	}
+	// Sorting puts a path right before the paths inside it.
+	sort.Strings(cleaned)
+	var outermost []string
+	for _, p := range cleaned {
+		if n := len(outermost); n > 0 {
+			outer := outermost[n-1]
+			if p == outer || outer == "/" || strings.HasPrefix(p, outer+"/") {
+				continue
+			}
+		}
+		outermost = append(outermost, p)
+	}
+	return outermost
+}
+
 // ImageToDirectory unpacks an ext4 image into outputDir, which must be empty.
 // Only the given paths are unpacked. Paths are unpacked recursively, which
 // means that they can reference either directories or files. Non-existent
@@ -253,9 +278,7 @@ func ImageToDirectory(ctx context.Context, inputFile, outputDir string, paths []
 		return status.FailedPreconditionError("Unpacking image in non-empty directory is unsupported.")
 	}
 	requests := make([]string, 0, len(paths))
-	for _, p := range paths {
-		p = filepath.Clean(filepath.Join(outputDir, p))
-		p = strings.TrimPrefix(p, filepath.Clean(outputDir))
+	for _, p := range outermostPaths(paths) {
 		parent := filepath.Dir(p)
 		if err := os.MkdirAll(filepath.Join(outputDir, parent), 0755); err != nil {
 			return status.InternalErrorf("make parent dir %q: %s", parent, err)

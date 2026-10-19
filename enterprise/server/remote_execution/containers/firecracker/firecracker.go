@@ -45,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/usernet"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -617,7 +618,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		InitDockerd:       args.Props.InitDockerd,
 		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
 		HostCpuid:         getCPUID(),
-		EnableVfs:         args.Props.EnableVFS,
+		EnableVfs:         args.Props.EnableVFS && !execution_experiments.FirecrackerVEXT4LazyInputs.Get(ctx),
 		Ipv6Enabled:       args.Props.NetworkEnableIPv6,
 		EnablePci:         *enablePCI,
 	}
@@ -732,6 +733,19 @@ type FirecrackerContainer struct {
 	rootStore               *copy_on_write.COWStore
 	rootVBD                 *vbd.FS
 	memorySnapshotExportVBD *vbd.FS
+	// vext4Workspace and vext4LazyInputs hold the FirecrackerVEXT4 and
+	// FirecrackerVEXT4LazyInputs experiment values for the task the
+	// container was created for. They are fixed for the container's
+	// lifetime, so a recycled VM keeps the mode it was created with.
+	vext4Workspace  bool
+	vext4LazyInputs bool
+	// workspaceStore and workspaceVBD serve the virtualized EXT4 workspace
+	// image to the VM while a task runs, when either experiment is on.
+	workspaceStore *vext4.Store
+	workspaceVBD   *vbd.FS
+	// workspaceInputs opens the input files that a lazily populated
+	// workspace image serves, for the current task.
+	workspaceInputs *vfs_server.CASFiles
 
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
@@ -822,6 +836,8 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	}
 
 	c := &FirecrackerContainer{
+		vext4Workspace:         execution_experiments.FirecrackerVEXT4.Get(ctx),
+		vext4LazyInputs:        execution_experiments.FirecrackerVEXT4LazyInputs.Get(ctx),
 		vmConfig:               opts.VMConfiguration.CloneVT(),
 		executorConfig:         opts.ExecutorConfig,
 		marshalledDNSOverrides: opts.MarshalledDNSOverrides,
@@ -1613,6 +1629,151 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	return nil
 }
 
+// buildAndMountWorkspaceVEXT4 builds a virtualized EXT4 image for the
+// workspace, holding only its metadata, and mounts a VBD that serves it
+// with file contents read on demand from the action working dir, or from
+// the task's CAS inputs when they are fetched lazily. It returns the image
+// size.
+func (c *FirecrackerContainer) buildAndMountWorkspaceVEXT4(ctx context.Context, workspaceDir, imagePath string) (int64, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		c.observeStageDuration("create_workspace_image", time.Since(start))
+	}()
+
+	// The previous task's VBD is normally unmounted once its outputs are
+	// copied. If that failed, the image file is still open and mounting
+	// over the stale mount would hide it, so don't start another task.
+	if err := c.unmountWorkspaceVBD(ctx); err != nil {
+		return 0, err
+	}
+	if err := os.RemoveAll(imagePath); err != nil {
+		return 0, status.WrapError(err, "delete existing workspace disk image")
+	}
+	store, err := c.buildWorkspaceVEXT4(ctx, workspaceDir, imagePath)
+	if err != nil {
+		return 0, status.WrapError(err, "build workspace image")
+	}
+	c.workspaceStore = store
+	// The host page cache's read-ahead on the VBD file pulls in the files
+	// laid out next to the one the guest is reading. With the workspace
+	// files on the host that is a cheap prefetch, which makes a sequential
+	// read of many small files about 20% faster in the guest. With lazily
+	// fetched inputs it would instead block each read until the neighbours
+	// have been downloaded, so those images are served without the page
+	// cache.
+	d, err := vbd.NewWithOptions(store, vbd.Options{DirectIO: c.usesLazyWorkspaceImage()})
+	if err != nil {
+		return 0, err
+	}
+	mountPath := filepath.Join(c.getChroot(), workspaceDriveID+vbdMountDirSuffix)
+	// Use vmCtx since the VBD outlives the task context if the VM is kept.
+	if err := d.Mount(c.vmCtx, mountPath); err != nil {
+		return 0, status.WrapError(err, "mount workspace VBD")
+	}
+	c.workspaceVBD = d
+	stats := store.Stats()
+	log.CtxInfof(ctx, "Built virtualized EXT4 workspace image in %s: %d files, %d directories, %d symlinks, %d MB of virtual file data", time.Since(start), stats.Files, stats.Directories, stats.Symlinks, stats.VirtualBytes/1e6)
+	return store.SizeBytes()
+}
+
+// buildWorkspaceVEXT4 builds the virtualized EXT4 image for the workspace
+// at imagePath from the workspace directory, or from the task's input tree
+// when its inputs are fetched lazily, in which case the files are opened
+// through the task's CAS inputs as the guest reads them.
+func (c *FirecrackerContainer) buildWorkspaceVEXT4(ctx context.Context, workspaceDir, imagePath string) (*vext4.Store, error) {
+	freeBytes := *workspaceDiskSlackSpaceMB * 1e6
+	if !c.usesLazyWorkspaceImage() {
+		return vext4.Build(ctx, workspaceDir, imagePath, freeBytes)
+	}
+	c.workspaceInputs = nil
+	dirs, err := vfs_server.OutputDirectories(c.fsLayout)
+	if err != nil {
+		return nil, err
+	}
+	inputs := vfs_server.NewCASFiles(c.env, c.fsLayout, c.fsLayout.InputFetcher)
+	t := &vext4.Tree{
+		Inputs:         c.fsLayout.Inputs,
+		DigestFunction: c.fsLayout.DigestFunction,
+		Dirs:           dirs,
+		Source: func(path string, node *repb.FileNode) vext4.Source {
+			return &casFileSource{inputs: inputs, path: path, node: node}
+		},
+	}
+	store, err := vext4.BuildTree(ctx, t, imagePath, freeBytes)
+	if err != nil {
+		return nil, err
+	}
+	c.workspaceInputs = inputs
+	return store, nil
+}
+
+// usesGuestVFS returns whether the task's inputs are served through the
+// FUSE filesystem mounted in the guest. The runner asks for VFS by setting
+// a filesystem layout, and the lazily populated workspace image serves the
+// same layout through a block device instead.
+func (c *FirecrackerContainer) usesGuestVFS() bool {
+	return c.fsLayout != nil && !c.vext4LazyInputs
+}
+
+// usesLazyWorkspaceImage returns whether the task's inputs are served
+// through a workspace image built from its input tree and populated as the
+// guest reads it.
+func (c *FirecrackerContainer) usesLazyWorkspaceImage() bool {
+	return c.fsLayout != nil && c.vext4LazyInputs
+}
+
+// lazyWorkspaceStats reports the lazily populated workspace image's inputs
+// and downloads the way the VFS reports them, since both serve the
+// enable-vfs platform property.
+func (c *FirecrackerContainer) lazyWorkspaceStats() *repb.VfsStats {
+	s := c.workspaceStore.Stats()
+	stats := &repb.VfsStats{
+		CasFilesCount:         int64(s.Files),
+		CasFilesSizeBytes:     s.FileBytes,
+		CasFilesAccessedCount: int64(s.FilesRead),
+		CasFilesAccessedBytes: s.ReadFileBytes,
+	}
+	c.workspaceInputs.UpdateStats(stats)
+	return stats
+}
+
+// detachWorkspace points the workspace drive at an empty file and unmounts
+// the virtualized EXT4 workspace image, once the guest has unmounted it and its
+// outputs have been copied. The VM must be running.
+func (c *FirecrackerContainer) detachWorkspace(ctx context.Context) error {
+	if c.workspaceVBD == nil {
+		return nil
+	}
+	if err := c.updateWorkspaceDriveToEmptyFile(ctx); err != nil {
+		return err
+	}
+	return c.unmountWorkspaceVBD(ctx)
+}
+
+// unmountWorkspaceVBD unmounts the virtualized EXT4 workspace image's VBD and closes
+// its store, if any. The VM must not have the VBD file open, or the
+// unmount fails with EBUSY.
+func (c *FirecrackerContainer) unmountWorkspaceVBD(ctx context.Context) error {
+	if c.workspaceVBD != nil {
+		if err := c.workspaceVBD.Unmount(ctx); err != nil {
+			return status.WrapError(err, "unmount workspace VBD")
+		}
+		c.workspaceVBD = nil
+	}
+	if c.workspaceStore != nil {
+		stats := c.workspaceStore.Stats()
+		log.CtxInfof(ctx, "Virtualized EXT4 workspace image served %d MB from %d of %d files, and the guest overwrote %d MB of virtual file data", stats.SourceReadBytes/1e6, stats.FilesRead, stats.Files, stats.DirtyBytes/1e6)
+		if err := c.workspaceStore.Close(); err != nil {
+			log.CtxWarningf(ctx, "Failed to close workspace image store: %s", err)
+		}
+		c.workspaceStore = nil
+	}
+	return nil
+}
+
 func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunkDir string, concurrency int) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -1688,8 +1849,26 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 	}
 
 	workspaceExt4Path := filepath.Join(c.getChroot(), workspaceFSName)
-	if err := c.createWorkspaceImage(ctx, c.actionWorkingDir, workspaceExt4Path); err != nil {
-		return status.WrapError(err, "failed to create workspace image")
+	// The drive's backing file, relative to the chroot. A virtualized EXT4 image is
+	// served through a VBD mount, like the root and scratch drives.
+	chrootRelativeImagePath := workspaceFSName
+	var sizeBytes int64
+	if c.vext4Workspace || c.usesLazyWorkspaceImage() {
+		size, err := c.buildAndMountWorkspaceVEXT4(ctx, c.actionWorkingDir, workspaceExt4Path)
+		if err != nil {
+			return status.WrapError(err, "failed to create workspace image")
+		}
+		sizeBytes = size
+		chrootRelativeImagePath = filepath.Join(workspaceDriveID+vbdMountDirSuffix, vbd.FileName)
+	} else {
+		if err := c.createWorkspaceImage(ctx, c.actionWorkingDir, workspaceExt4Path); err != nil {
+			return status.WrapError(err, "failed to create workspace image")
+		}
+		info, err := os.Stat(workspaceExt4Path)
+		if err != nil {
+			return status.UnavailableErrorf("stat workspace image: %s", err)
+		}
+		sizeBytes = info.Size()
 	}
 
 	conn, err := c.vmExecConn(ctx)
@@ -1702,16 +1881,11 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 	// The only way to tell if the VM booted seems to be monitoring its stdout.
 	// Instead we'll just wait for the vm exec server to start above, which
 	// happens after boot.
-	chrootRelativeImagePath := workspaceFSName
 	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
 		return status.UnavailableErrorf("error updating workspace drive attached to snapshot: %s", err)
 	}
 
-	info, err := os.Stat(workspaceExt4Path)
-	if err != nil {
-		return status.UnavailableErrorf("stat workspace image: %s", err)
-	}
-	if err := c.mountWorkspace(ctx, execClient, info.Size()); err != nil {
+	if err := c.mountWorkspace(ctx, execClient, sizeBytes); err != nil {
 		// Translate deadline-exceeded to unavailable so the caller retries.
 		if status.IsDeadlineExceededError(err) {
 			return status.UnavailableErrorf("failed to remount workspace after update: %v", err)
@@ -1961,6 +2135,15 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	defer span.End()
 
 	workspaceExt4Path := filepath.Join(c.getChroot(), workspaceFSName)
+	if c.workspaceVBD != nil {
+		// Read the virtualized EXT4 image through the VBD, so that unchanged file
+		// contents come from the workspace files.
+		p, err := c.workspaceVBD.FilePath()
+		if err != nil {
+			return err
+		}
+		workspaceExt4Path = p
+	}
 
 	start := time.Now()
 	defer func() {
@@ -2120,7 +2303,7 @@ func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
-	if c.fsLayout == nil {
+	if !c.usesGuestVFS() {
 		return nil
 	}
 	if c.vfsServer != nil {
@@ -2742,7 +2925,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	stage := "init"
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
-	if c.fsLayout != nil {
+	if c.usesGuestVFS() {
 		// Recycling is not supported for firecracker + fuse yet.
 		result.DoNotRecycle = true
 	}
@@ -2757,11 +2940,21 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		result.VMMetrics.VmExecDialAttempts = c.vmExec.dialAttempts
 		result.VMMetrics.VmExecReadySignalReceived = c.vmExec.readySignalReceived
 
-		// If a VFS (FUSE) download failed, always return that as the command
-		// error so that the task can be retried (even if the task ignored the
-		// FS error and succeeded, it may have produced an incorrect result).
-		if c.fsLayout != nil && c.vfsServer != nil {
+		// If an input download failed, whether for the guest FUSE
+		// filesystem or the lazily populated workspace image, always return
+		// that as the command error so that the task can be retried (even if
+		// the task ignored the I/O error and succeeded, it may have produced
+		// an incorrect result). The image's inputs are per task, so they
+		// are dropped once reported.
+		workspaceInputs := c.workspaceInputs
+		c.workspaceInputs = nil
+		if c.usesGuestVFS() && c.vfsServer != nil {
 			if err := c.vfsServer.TaskError(); err != nil {
+				result.Error = err
+				result.ExitCode = commandutil.NoExitCode
+			}
+		} else if workspaceInputs != nil {
+			if err := workspaceInputs.TaskError(); err != nil {
 				result.Error = err
 				result.ExitCode = commandutil.NoExitCode
 			}
@@ -2789,7 +2982,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		c.emitFirecrackerErrorMetric(result, string(result.AuxiliaryLogs[vmLogTailFileName]))
 	}()
 
-	if c.fsLayout == nil {
+	if !c.usesGuestVFS() {
 		if err := c.createAndAttachWorkspace(ctx); err != nil {
 			result.Error = status.WrapError(err, "failed to sync workspace")
 			return result
@@ -2811,7 +3004,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	guestWorkspaceMountDir := "/workspace/"
-	if c.fsLayout != nil {
+	if c.usesGuestVFS() {
 		guestWorkspaceMountDir = guestVFSMountDir
 	}
 
@@ -2866,7 +3059,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	stage = "exec"
 	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), stdio)
-	if c.fsLayout != nil {
+	if c.usesGuestVFS() {
 		// Recycling is not supported for firecracker + fuse yet.
 		result.DoNotRecycle = true
 	}
@@ -2874,7 +3067,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
 
-	if c.fsLayout != nil {
+	if c.usesGuestVFS() {
 		stage = "materialize_vfs_outputs"
 		if err := c.vfsServer.MaterializeOutputs(ctx, c.fsLayout, c.actionWorkingDir); err != nil {
 			result.Error = status.WrapError(err, "materialize VFS outputs")
@@ -2918,9 +3111,21 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			result.Error = status.WrapError(err, "failed to copy action outputs from VM workspace")
 			return result
 		}
+		if c.workspaceInputs != nil && c.workspaceStore != nil {
+			result.VfsStats = c.lazyWorkspaceStats()
+		}
 		if err := c.machine.ResumeVM(ctx); err != nil {
 			result.Error = status.UnavailableErrorf("error resuming VM after copying workspace outputs: %s", err)
 			return result
+		}
+		// Release the workspace files now rather than when the VM is paused
+		// or removed. If the guest still has the workspace mounted, the VM
+		// is not recycled and Remove unmounts the VBD after stopping it.
+		if !result.DoNotRecycle {
+			if err := c.detachWorkspace(ctx); err != nil {
+				log.CtxWarningf(ctx, "Failed to detach workspace - not recycling VM: %s", err)
+				result.DoNotRecycle = true
+			}
 		}
 	}
 
@@ -3198,6 +3403,10 @@ func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, fromRemove bo
 			lastErr = err
 		}
 		c.memorySnapshotExportVBD = nil
+	}
+	if err := c.unmountWorkspaceVBD(ctx); err != nil {
+		logErr("workspace", err)
+		lastErr = err
 	}
 	return lastErr
 }
@@ -4126,4 +4335,16 @@ func snapshotReadPolicy(task *repb.ExecutionTask) (string, error) {
 	default:
 		return "", status.InvalidArgumentErrorf("invalid snapshot read policy %s", policy)
 	}
+}
+
+// casFileSource is the vext4.Source for an input file of a lazily
+// populated workspace image, opened through the task's CAS inputs.
+type casFileSource struct {
+	inputs *vfs_server.CASFiles
+	path   string
+	node   *repb.FileNode
+}
+
+func (s *casFileSource) Open(ctx context.Context) (*os.File, error) {
+	return s.inputs.Open(ctx, s.path, s.node)
 }
