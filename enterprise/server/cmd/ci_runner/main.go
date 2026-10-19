@@ -1929,7 +1929,7 @@ func (ws *workspace) getHostAndUserName() (string, string) {
 		ws.log.Printf("failed to get hostname: %s", err)
 		hostname = ""
 	}
-	if username := os.Getenv("BUILD_USER"); username != "" {
+	if username, ok := os.LookupEnv("BUILD_USER"); ok {
 		return hostname, username
 	}
 	// Workflows and direct runner calls may not supply a caller identity.
@@ -3092,7 +3092,7 @@ func runBazelWrapper() error {
 	bazelArgs := append(bbStartupArgs, originalArgs...)
 	bazelCmd := append([]string{bazelBin}, bazelArgs...)
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
-	if buildUser := os.Getenv("BUILD_USER"); buildUser != "" {
+	if buildUser, ok := os.LookupEnv("BUILD_USER"); ok {
 		// Child invocations should have the same attribution as their runner.
 		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--build_metadata=USER="+buildUser)
 	}
