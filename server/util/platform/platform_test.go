@@ -504,3 +504,20 @@ func TestParse_ExecrootPath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", platformProps.ExecrootPath)
 }
+
+func TestParse_GuestKernelVersion(t *testing.T) {
+	for _, version := range []string{"", "5.15", "6.18"} {
+		t.Run(version, func(t *testing.T) {
+			task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: GuestKernelVersionPropertyName, Value: version},
+			}}}}
+			props, err := ParseProperties(task)
+			require.NoError(t, err)
+			assert.Equal(t, version, props.GuestKernelVersion)
+			task.PlatformOverrides = &repb.Platform{Properties: []*repb.Platform_Property{{Name: GuestKernelVersionPropertyName, Value: "5.15"}}}
+			props, err = ParseProperties(task)
+			require.NoError(t, err)
+			assert.Equal(t, "5.15", props.GuestKernelVersion)
+		})
+	}
+}

@@ -577,3 +577,31 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 func (x *xcodeLocator) Versions() []string {
 	return []string{}
 }
+
+func TestGuestKernelRequiresFirecracker(t *testing.T) {
+	for _, tc := range []struct {
+		name, requested, forced string
+		supported               []platform.ContainerType
+		wantError               bool
+	}{
+		{name: "explicit", requested: "firecracker", supported: []platform.ContainerType{platform.FirecrackerContainerType}},
+		{name: "default", supported: []platform.ContainerType{platform.FirecrackerContainerType}},
+		{name: "bare", requested: "bare", supported: []platform.ContainerType{platform.BareContainerType}, wantError: true},
+		{name: "docker", requested: "docker", supported: []platform.ContainerType{platform.DockerContainerType}, wantError: true},
+		{name: "forced firecracker", requested: "docker", forced: "firecracker", supported: []platform.ContainerType{platform.FirecrackerContainerType}},
+		{name: "forced docker", requested: "firecracker", forced: "docker", supported: []platform.ContainerType{platform.DockerContainerType}, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.forced_network_isolation_type", tc.forced)
+			flags.Set(t, "executor.default_isolation_type", "")
+			props := &platform.Properties{GuestKernelVersion: "6.18", WorkloadIsolationType: tc.requested}
+			err := ApplyOverrides(t.Context(), testenv.GetTestEnv(t), &ExecutorProperties{SupportedIsolationTypes: tc.supported}, props, &repb.Command{})
+			if tc.wantError {
+				require.ErrorContains(t, err, "guest-kernel-version requires firecracker")
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, "6.18", props.GuestKernelVersion)
+			}
+		})
+	}
+}

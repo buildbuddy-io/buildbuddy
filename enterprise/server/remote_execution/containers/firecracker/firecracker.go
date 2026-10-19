@@ -420,6 +420,8 @@ type ExecutorConfig struct {
 	FirecrackerVersion string
 	GuestAPIVersion    string
 
+	GuestKernelImagePath5_15 string
+	GuestKernelVersion5_15   string
 	GuestKernelImagePath6_18 string
 	GuestKernelVersion6_18   string
 }
@@ -518,6 +520,8 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 		HostKernelVersion:        hostKernelVersion,
 		FirecrackerVersion:       firecrackerDigest.GetHash(),
 		GuestAPIVersion:          GuestAPIVersion,
+		GuestKernelImagePath5_15: guestKernelPath5_15,
+		GuestKernelVersion5_15:   guestKernelDigest5_15.GetHash(),
 		GuestKernelImagePath6_18: guestKernelPath6_18,
 		GuestKernelVersion6_18:   guestKernelDigest6_18.GetHash(),
 	}, nil
@@ -632,6 +636,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		BlockDevice:            args.BlockDevice,
 		OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
 		ExecutorConfig:         p.executorConfig,
+		GuestKernelVersion:     args.Props.GuestKernelVersion,
 		ExternalNetworkPool:    p.externalNetworkPool,
 		LocalNetworkPool:       p.localNetworkPool,
 		MarshalledDNSOverrides: p.marshalledDNSOverrides,
@@ -719,6 +724,11 @@ type FirecrackerContainer struct {
 	// including VM startup time
 	currentTaskInitTime time.Time
 
+	// Resolved once so boot, jailer staging, and snapshot contents use the
+	// same kernel whose digest is in vmConfig.
+	guestKernelImagePath        string
+	requestedGuestKernelVersion string
+
 	executorConfig         *ExecutorConfig
 	marshalledDNSOverrides string
 	hostResolvConf         string
@@ -804,6 +814,10 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	if opts.ExecutorConfig == nil {
 		return nil, status.InvalidArgumentError("missing opts.ExecutorConfig")
 	}
+	kernelPath, kernelDigest, err := opts.ExecutorConfig.selectGuestKernel(opts.GuestKernelVersion, task.GetExperiments())
+	if err != nil {
+		return nil, err
+	}
 	if len(opts.ExecutorConfig.JailerRoot) > 38 {
 		return nil, status.InvalidArgumentErrorf("build root dir %q length %d exceeds 38 character limit", opts.ExecutorConfig.JailerRoot, len(opts.ExecutorConfig.JailerRoot))
 	}
@@ -822,36 +836,35 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	}
 
 	c := &FirecrackerContainer{
-		vmConfig:               opts.VMConfiguration.CloneVT(),
-		executorConfig:         opts.ExecutorConfig,
-		marshalledDNSOverrides: opts.MarshalledDNSOverrides,
-		hostResolvConf:         opts.HostResolvConf,
-		jailerRoot:             opts.ExecutorConfig.JailerRoot,
-		containerImage:         opts.ContainerImage,
-		user:                   opts.User,
-		actionWorkingDir:       opts.ActionWorkingDirectory,
-		cgroupParent:           opts.CgroupParent,
-		externalNetworkPool:    opts.ExternalNetworkPool,
-		localNetworkPool:       opts.LocalNetworkPool,
-		cgroupSettings:         &scpb.CgroupSettings{},
-		blockDevice:            opts.BlockDevice,
-		env:                    env,
-		resolver:               resolver,
-		task:                   task,
-		loader:                 loader,
-		vmLog:                  vmLog,
-		cancelVmCtx:            func(err error) {},
-		useOCIFetcher:          opts.UseOCIFetcher,
+		vmConfig:                    opts.VMConfiguration.CloneVT(),
+		guestKernelImagePath:        kernelPath,
+		requestedGuestKernelVersion: opts.GuestKernelVersion,
+		executorConfig:              opts.ExecutorConfig,
+		marshalledDNSOverrides:      opts.MarshalledDNSOverrides,
+		hostResolvConf:              opts.HostResolvConf,
+		jailerRoot:                  opts.ExecutorConfig.JailerRoot,
+		containerImage:              opts.ContainerImage,
+		user:                        opts.User,
+		actionWorkingDir:            opts.ActionWorkingDirectory,
+		cgroupParent:                opts.CgroupParent,
+		externalNetworkPool:         opts.ExternalNetworkPool,
+		localNetworkPool:            opts.LocalNetworkPool,
+		cgroupSettings:              &scpb.CgroupSettings{},
+		blockDevice:                 opts.BlockDevice,
+		env:                         env,
+		resolver:                    resolver,
+		task:                        task,
+		loader:                      loader,
+		vmLog:                       vmLog,
+		cancelVmCtx:                 func(err error) {},
+		useOCIFetcher:               opts.UseOCIFetcher,
 	}
 
 	if opts.CgroupSettings != nil {
 		c.cgroupSettings = opts.CgroupSettings
 	}
 
-	c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion
-	if c.shouldUpgradeGuestKernel() {
-		c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion6_18
-	}
+	c.vmConfig.GuestKernelVersion = kernelDigest
 	c.vmConfig.HostKernelVersion = c.executorConfig.HostKernelVersion
 	c.vmConfig.FirecrackerVersion = c.executorConfig.FirecrackerVersion
 	c.vmConfig.GuestApiVersion = c.executorConfig.GuestAPIVersion
@@ -1152,7 +1165,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		VMMetadata:                       vmd,
 		VMConfiguration:                  c.vmConfig,
 		VMStateSnapshotPath:              filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:                  c.executorConfig.GuestKernelImagePath,
+		KernelImagePath:                  c.guestKernelImagePath,
 		InitrdImagePath:                  c.executorConfig.InitrdImagePath,
 		ChunkedFiles:                     map[string]*copy_on_write.COWStore{},
 		Recycled:                         c.recycled,
@@ -1336,6 +1349,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 // loadSnapshot resumes the VM from snap. It modifies snap's VM metadata and
 // keeps a reference to snap, so snap must not be shared with another VM.
 func (c *FirecrackerContainer) loadSnapshot(ctx context.Context, snap *snaploader.Snapshot) error {
+	kernelName, err := c.snapshotKernelImageName(snap.GetVMConfiguration(), snap.GetFiles())
+	if err != nil {
+		return err
+	}
 	start := time.Now()
 	defer func() {
 		log.CtxDebugf(ctx, "LoadSnapshot took %s", time.Since(start))
@@ -1446,6 +1463,9 @@ func (c *FirecrackerContainer) loadSnapshot(ctx context.Context, snap *snaploade
 	unpacked, err := c.loader.UnpackSnapshot(vmCtx, snap, c.getChroot())
 	if err != nil {
 		return status.WrapError(err, "failed to unpack snapshot")
+	}
+	if err := c.adoptSnapshotKernel(snap.GetVMConfiguration(), kernelName); err != nil {
+		return err
 	}
 	if len(unpacked.ChunkedFiles) > 0 && !snapshotSharingEnabled {
 		return status.InternalError("copy_on_write support is disabled but snapshot contains chunked files")
@@ -1821,18 +1841,14 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		netnsPath = c.network.NamespacePath()
 	}
 	bootArgs := getBootArgs(c.vmConfig)
-	guestKernelPath := c.executorConfig.GuestKernelImagePath
-	if c.shouldUpgradeGuestKernel() {
-		guestKernelPath = c.executorConfig.GuestKernelImagePath6_18
-	}
-	jailerCfg, err := c.getJailerConfig(ctx, c.executorConfig.GuestKernelImagePath)
+	jailerCfg, err := c.getJailerConfig(ctx, c.guestKernelImagePath)
 	if err != nil {
 		return nil, status.WrapError(err, "get jailer config")
 	}
 	cfg := &fcclient.Config{
 		VMID:            c.id,
 		SocketPath:      firecrackerSocketPath,
-		KernelImagePath: guestKernelPath,
+		KernelImagePath: c.guestKernelImagePath,
 		InitrdPath:      c.executorConfig.InitrdImagePath,
 		KernelArgs:      bootArgs,
 		ForwardSignals:  make([]os.Signal, 0),
@@ -4111,8 +4127,80 @@ func workspacePathsToExtract(task *repb.ExecutionTask) []string {
 	return paths
 }
 
-func (c *FirecrackerContainer) shouldUpgradeGuestKernel() bool {
-	return c.executorConfig.GuestKernelImagePath6_18 != "" && slices.Contains(c.task.Experiments, "upgrade-fc-guest-kernel")
+func (cfg *ExecutorConfig) selectGuestKernel(version string, experiments []string) (path, digest string, err error) {
+	switch version {
+	case "":
+		path, digest = cfg.GuestKernelImagePath, cfg.GuestKernelVersion
+		if cfg.GuestKernelImagePath6_18 != "" && slices.Contains(experiments, "upgrade-fc-guest-kernel") {
+			path, digest = cfg.GuestKernelImagePath6_18, cfg.GuestKernelVersion6_18
+		}
+	case "5.15":
+		path, digest = cfg.GuestKernelImagePath5_15, cfg.GuestKernelVersion5_15
+	case "6.18":
+		path, digest = cfg.GuestKernelImagePath6_18, cfg.GuestKernelVersion6_18
+	default:
+		return "", "", status.InvalidArgumentErrorf("unsupported %s %q; supported versions are 5.15 and 6.18", platform.GuestKernelVersionPropertyName, version)
+	}
+	if path == "" || digest == "" {
+		return "", "", status.FailedPreconditionErrorf("guest kernel %q is not available on this executor", version)
+	}
+	return path, digest, nil
+}
+
+func (c *FirecrackerContainer) validateSnapshotKernel(config *fcpb.VMConfiguration) error {
+	if config.GetGuestKernelVersion() == "" {
+		return status.FailedPreconditionError("snapshot guest kernel digest is missing")
+	}
+	// OverrideSnapshotKey bypasses the configuration-derived lookup key. Do not
+	// let it silently restore a different kernel than the explicitly requested one.
+	if c.requestedGuestKernelVersion != "" && config.GetGuestKernelVersion() != c.vmConfig.GuestKernelVersion {
+		return status.FailedPreconditionErrorf("snapshot guest kernel digest %q does not match requested %s %q (digest %q)", config.GetGuestKernelVersion(), platform.GuestKernelVersionPropertyName, c.requestedGuestKernelVersion, c.vmConfig.GuestKernelVersion)
+	}
+	return nil
+}
+
+func (c *FirecrackerContainer) snapshotKernelImageName(config *fcpb.VMConfiguration, files []*repb.FileNode) (string, error) {
+	if err := c.validateSnapshotKernel(config); err != nil {
+		return "", err
+	}
+	var name string
+	for _, file := range files {
+		for _, kernelPath := range []string{c.executorConfig.GuestKernelImagePath, c.executorConfig.GuestKernelImagePath5_15, c.executorConfig.GuestKernelImagePath6_18} {
+			if kernelPath == "" || file.GetName() != filepath.Base(kernelPath) {
+				continue
+			}
+			if name != "" {
+				return "", status.FailedPreconditionError("snapshot contains multiple guest kernel artifacts")
+			}
+			name = file.GetName()
+			break
+		}
+	}
+	if name == "" {
+		return "", status.FailedPreconditionError("snapshot guest kernel artifact is missing")
+	}
+	return name, nil
+}
+
+func (c *FirecrackerContainer) adoptSnapshotKernel(config *fcpb.VMConfiguration, name string) error {
+	kernelPath := filepath.Join(c.getChroot(), name)
+	if config.GetGuestKernelVersion() != c.vmConfig.GuestKernelVersion || name != filepath.Base(c.guestKernelImagePath) {
+		// An implicit snapshot override can restore an older kernel build. Its
+		// file-cache digest uses BLAKE3 (or a legacy synthetic key), whereas the
+		// VM configuration records SHA256. Verify that pairing before adopting it.
+		// Also reject old rollout snapshots that saved the default kernel under
+		// a different name while claiming the experimental kernel's digest.
+		d, err := digest.ComputeForFile(kernelPath, repb.DigestFunction_SHA256)
+		if err != nil {
+			return status.WrapError(err, "hash restored guest kernel")
+		}
+		if d.GetHash() != config.GetGuestKernelVersion() {
+			return status.FailedPreconditionError("restored guest kernel does not match snapshot configuration")
+		}
+	}
+	c.guestKernelImagePath = kernelPath
+	c.vmConfig.GuestKernelVersion = config.GetGuestKernelVersion()
+	return nil
 }
 
 func snapshotReadPolicy(task *repb.ExecutionTask) (string, error) {

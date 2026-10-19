@@ -139,6 +139,26 @@ _TEST_IMAGE_X_DEFS = {
     "ubuntu24_04Ext4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_24_04.ext4)",
 }
 
+go_test(
+    name = "guest_kernel_test",
+    size = "small",
+    srcs = ["guest_kernel_test.go"],
+    embed = [":firecracker"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/remote_execution/snaploader",
+        "//proto:firecracker_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//server/remote_cache/digest",
+        "//server/testutil/testcache",
+        "//server/testutil/testenv",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
 # NOTE: to run this test locally, use `test.sh` or `bench.sh`
 #
 # To remotely execute this test, select the bare test suite:

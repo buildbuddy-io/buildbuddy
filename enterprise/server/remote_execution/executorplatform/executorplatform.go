@@ -265,6 +265,10 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 		return status.InvalidArgumentErrorf("The requested workload isolation type %q is unsupported by this executor. Supported types: %s)", platformProps.WorkloadIsolationType, executorProps.SupportedIsolationTypes)
 	}
 
+	if platformProps.GuestKernelVersion != "" && platformProps.WorkloadIsolationType != string(platform.FirecrackerContainerType) {
+		return status.InvalidArgumentErrorf("%s requires firecracker workload isolation", platform.GuestKernelVersionPropertyName)
+	}
+
 	// Normalize the container image string
 	if platformProps.WorkloadIsolationType == string(platform.BareContainerType) {
 		// BareRunner strings become ""
