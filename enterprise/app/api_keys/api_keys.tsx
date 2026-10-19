@@ -1,4 +1,5 @@
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
+import moment from "moment";
 import React from "react";
 import alert_service from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
@@ -108,6 +109,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       const response = await this.props.get(
         api_key.GetApiKeysRequest.create({
           groupId: this.props.user.selectedGroup.id,
+          includeExpired: true,
         })
       );
       this.setState({ getApiKeysResponse: response });
@@ -583,6 +585,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       initialLoadError,
     } = this.state;
     const apiKeyValueReadbackEnabled = !this.isAPIKeyValueReadbackExplicitlyDisabled();
+    const canUpdate = this.props.user.canCall(this.props.userOwnedOnly ? "updateUserApiKey" : "updateApiKey");
 
     if (!getApiKeysResponse) {
       return (
@@ -668,20 +671,28 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   <span className="untitled-key">Untitled key</span>
                 )}
               </div>
-              {renderCreationDetails(key)}
+              {renderDetails(key, apiKeyValueReadbackEnabled)}
               <div
                 className="api-key-capabilities"
                 title={key.visibleToDevelopers ? "Visible to non-admin members of this organization" : undefined}>
                 <span>{describeCapabilities(key)}</span>
               </div>
-              {apiKeyValueReadbackEnabled && <ApiKeyField apiKey={key} />}
-              {this.props.user.canCall(this.props.userOwnedOnly ? "updateUserApiKey" : "updateApiKey") && (
+              {isExpired(key) && apiKeyValueReadbackEnabled ? (
+                <div className="api-key-value api-key-value-expired">
+                  <span className="display-value">EXPIRED</span>
+                </div>
+              ) : (
+                apiKeyValueReadbackEnabled && <ApiKeyField apiKey={key} />
+              )}
+              {canUpdate && !isExpired(key) && (
                 <OutlinedButton className="api-key-edit-button" onClick={this.onClickUpdate.bind(this, key)}>
                   Edit
                 </OutlinedButton>
               )}
               {this.props.user.canCall(this.props.userOwnedOnly ? "deleteUserApiKey" : "deleteApiKey") && (
-                <OutlinedButton onClick={this.onClickDelete.bind(this, key)} className="destructive">
+                <OutlinedButton
+                  onClick={this.onClickDelete.bind(this, key)}
+                  className={`destructive ${canUpdate && isExpired(key) ? "api-key-delete-button-wide" : ""}`}>
                   Delete
                 </OutlinedButton>
               )}
@@ -794,15 +805,56 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
   return capabilities;
 }
 
-// Renders creation details as a subtitle under the key label.
-function renderCreationDetails(apiKey: api_key.ApiKey) {
+function isExpired(apiKey: api_key.ApiKey): boolean {
+  return +apiKey.expiryUsec > 0 && +apiKey.expiryUsec <= Date.now() * 1000;
+}
+
+function renderCreation(apiKey: api_key.ApiKey): string | null {
   const metadata = apiKey.creationMetadata;
   if (!metadata) return null;
   const parts = ["Created"];
   if (metadata.createdBy) parts.push(`by ${metadata.createdBy}`);
   if (metadata.createdAt) parts.push(`on ${format.formatDate(timestampToDate(metadata.createdAt))}`);
   if (parts.length == 1) return null;
-  return <div className="api-key-creation-details">{parts.join(" ")}</div>;
+  return parts.join(" ");
+}
+
+function expirationUrgencyClass(apiKey: api_key.ApiKey): string {
+  const remainingMs = +apiKey.expiryUsec / 1000 - Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  if (remainingMs <= dayMs) return "expires-imminently";
+  if (remainingMs <= 2 * dayMs) return "expires-very-soon";
+  if (remainingMs <= 5 * dayMs) return "expires-soon";
+  return "";
+}
+
+function renderExpiration(apiKey: api_key.ApiKey, apiKeyValueReadbackEnabled: boolean) {
+  if (!+apiKey.expiryUsec) return null;
+  if (isExpired(apiKey)) {
+    // With readback enabled, the expired state is shown in place of the value.
+    return apiKeyValueReadbackEnabled ? null : <span className="api-key-expiration expires-imminently">Expired</span>;
+  }
+  return (
+    <span
+      className={`api-key-expiration ${expirationUrgencyClass(apiKey)}`}
+      title={format.formatTimestampUsec(apiKey.expiryUsec)}>
+      Expires {moment(+apiKey.expiryUsec / 1000).fromNow()}
+    </span>
+  );
+}
+
+// Renders creation and expiration details as a subtitle under the key label.
+function renderDetails(apiKey: api_key.ApiKey, apiKeyValueReadbackEnabled: boolean) {
+  const creation = renderCreation(apiKey);
+  const expiration = renderExpiration(apiKey, apiKeyValueReadbackEnabled);
+  if (!creation && !expiration) return null;
+  return (
+    <div className="api-key-creation-details">
+      {creation}
+      {creation && expiration && " — "}
+      {expiration}
+    </div>
+  );
 }
 
 function newFormState<T extends ApiKeyFields>(request: T): FormState<T> {
