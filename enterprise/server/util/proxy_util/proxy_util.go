@@ -81,6 +81,8 @@ func RequestTypeLabelFromContext(ctx context.Context) string {
 // all client-supplied internal and identity headers, then sets the resolved
 // client IP and a grpc-proxy client identity, which the target requires before
 // trusting the IP. If env has no client identity service, nothing is attested.
+// If the caller already carries a client identity, it is forwarded unchanged
+// and the client IP is not attested.
 func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 	cis := env.GetClientIdentityService()
 	proxy := &httputil.ReverseProxy{
@@ -91,14 +93,24 @@ func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 			// does; Rewrite otherwise drops it.
 			r.Out.Header["X-Forwarded-For"] = r.In.Header["X-Forwarded-For"]
 			r.SetXForwarded()
+			// Keep the proto and host the original client used (e.g. https
+			// when TLS is terminated in front of this proxy); SetXForwarded
+			// would derive them from this proxy's own request.
+			for _, h := range []string{"X-Forwarded-Proto", "X-Forwarded-Host"} {
+				if v, ok := r.In.Header[h]; ok {
+					r.Out.Header[h] = v
+				}
+			}
 
 			for k := range r.Out.Header {
 				if strings.HasPrefix(strings.ToLower(k), authutil.InternalHeaderPrefix) {
 					delete(r.Out.Header, k)
 				}
 			}
-			r.Out.Header.Del(authutil.ClientIdentityHeaderName)
-			if cis == nil {
+			// A caller carrying its own identity (e.g. an executor or workflow)
+			// keeps it, as in the gRPC forwarder: the target authorizes on it,
+			// and replacing it with grpc-proxy would lose that.
+			if cis == nil || r.In.Header.Get(authutil.ClientIdentityHeaderName) != "" {
 				return
 			}
 			clientIP := clientip.Get(r.In.Context())

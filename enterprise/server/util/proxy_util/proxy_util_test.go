@@ -48,15 +48,21 @@ func serveForwarder(t *testing.T, env environment.Env, backend http.Handler) *ht
 	return proxyServer
 }
 
-// doForgedRequest sends a request carrying forged trust headers through the
+// doForgedRequest sends a request carrying forged internal headers through the
 // forwarder.
 func doForgedRequest(t *testing.T, proxyURL string) {
+	doRequest(t, proxyURL, func(req *http.Request) {})
+}
+
+// doRequest sends a request carrying forged trust headers through the
+// forwarder, after applying mutate.
+func doRequest(t *testing.T, proxyURL string, mutate func(*http.Request)) {
 	req, err := http.NewRequest("GET", proxyURL+"/some/path", nil)
 	require.NoError(t, err)
 	req.Host = testClientHost
 	req.Header.Set(clientip.HeaderName, forgedClientIP)
 	req.Header.Set(forgedInternal, "forged")
-	req.Header.Set(authutil.ClientIdentityHeaderName, "forged")
+	mutate(req)
 	rsp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	rsp.Body.Close()
@@ -128,6 +134,130 @@ func TestHTTPForwarder_ClientIPThroughLoadBalancer(t *testing.T) {
 	})
 	proxyServer := serveForwarder(t, proxyEnv, lb)
 	doForgedRequest(t, proxyServer.URL)
+
+	require.Equal(t, testClientSocket, gotIP)
+}
+
+// validatedClientIdentity returns the client of the identity in header, or
+// fails the test if it does not validate.
+func validatedClientIdentity(t *testing.T, env environment.Env, header string) string {
+	cis := env.GetClientIdentityService()
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.MD{
+		authutil.ClientIdentityHeaderName: {header},
+	})
+	ctx, err := cis.ValidateIncomingIdentity(ctx)
+	require.NoError(t, err)
+	identity, err := cis.IdentityFromContext(ctx)
+	require.NoError(t, err)
+	return identity.Client
+}
+
+func TestHTTPForwarder_PreservesForwardedProtoAndHost(t *testing.T) {
+	env := newEnv(t, false)
+
+	var got http.Header
+	proxyServer := serveForwarder(t, env, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+	}))
+	doRequest(t, proxyServer.URL, func(req *http.Request) {
+		req.Header.Set("X-Forwarded-Proto", "https")
+		req.Header.Set("X-Forwarded-Host", testClientHost)
+	})
+
+	require.Equal(t, []string{"https"}, got.Values("X-Forwarded-Proto"))
+	require.Equal(t, []string{testClientHost}, got.Values("X-Forwarded-Host"))
+}
+
+func TestHTTPForwarder_DerivesForwardedProtoAndHostWhenAbsent(t *testing.T) {
+	env := newEnv(t, false)
+
+	var got http.Header
+	proxyServer := serveForwarder(t, env, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+	}))
+	doForgedRequest(t, proxyServer.URL)
+
+	require.Equal(t, []string{"http"}, got.Values("X-Forwarded-Proto"))
+	require.Equal(t, []string{testClientHost}, got.Values("X-Forwarded-Host"))
+}
+
+func TestHTTPForwarder_KeepsClientSuppliedForwardedForChain(t *testing.T) {
+	env := newEnv(t, false)
+
+	var got http.Header
+	proxyServer := serveForwarder(t, env, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+	}))
+	doRequest(t, proxyServer.URL, func(req *http.Request) {
+		req.Header.Set("X-Forwarded-For", "203.0.113.7, 10.9.9.9")
+	})
+
+	require.Equal(t, []string{"203.0.113.7, 10.9.9.9, " + testClientSocket}, got.Values("X-Forwarded-For"))
+}
+
+// TestHTTPForwarder_ClientIPFromIncomingForwardedFor covers customer -> Envoy
+// -> proxy -> app: the proxy trusts the XFF set by Envoy and attests the
+// client IP in it, rather than the Envoy peer address.
+func TestHTTPForwarder_ClientIPFromIncomingForwardedFor(t *testing.T) {
+	flags.Set(t, "app.client_identity.key", "test-key")
+	flags.Set(t, "auth.trust_xforwardedfor_header", true)
+	require.NoError(t, clientip.Init())
+	proxyEnv := newEnv(t, true)
+
+	var got http.Header
+	proxyServer := serveForwarder(t, proxyEnv, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+	}))
+	doRequest(t, proxyServer.URL, func(req *http.Request) {
+		req.Header.Set("X-Forwarded-For", "203.0.113.7, 10.9.9.9")
+	})
+
+	require.Equal(t, []string{"203.0.113.7"}, got.Values(clientip.HeaderName))
+}
+
+func TestHTTPForwarder_CallerIdentityIsKept(t *testing.T) {
+	flags.Set(t, "app.client_identity.key", "test-key")
+	env := newEnv(t, true)
+	executorHeader, err := env.GetClientIdentityService().CachedIdentityHeader(&interfaces.ClientIdentity{
+		Origin: interfaces.ClientIdentityInternalOrigin,
+		Client: interfaces.ClientIdentityExecutor,
+	})
+	require.NoError(t, err)
+
+	var got http.Header
+	proxyServer := serveForwarder(t, env, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+	}))
+	doRequest(t, proxyServer.URL, func(req *http.Request) {
+		req.Header.Set(authutil.ClientIdentityHeaderName, executorHeader)
+	})
+
+	require.Equal(t, []string{executorHeader}, got.Values(authutil.ClientIdentityHeaderName))
+	require.Equal(t, interfaces.ClientIdentityExecutor, validatedClientIdentity(t, env, executorHeader))
+	// Internal headers are still stripped and the IP is not attested.
+	require.Empty(t, got.Values(clientip.HeaderName))
+	require.Empty(t, got.Values(forgedInternal))
+}
+
+// A caller's identity must never make the app trust a client IP header.
+func TestHTTPForwarder_CallerIdentityDoesNotAttestForgedClientIP(t *testing.T) {
+	flags.Set(t, "app.client_identity.key", "test-key")
+	proxyEnv := newEnv(t, true)
+	appEnv := newEnv(t, true)
+	executorHeader, err := proxyEnv.GetClientIdentityService().CachedIdentityHeader(&interfaces.ClientIdentity{
+		Origin: interfaces.ClientIdentityInternalOrigin,
+		Client: interfaces.ClientIdentityExecutor,
+	})
+	require.NoError(t, err)
+
+	var gotIP string
+	app := interceptors.WrapExternalHandler(appEnv, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotIP = clientip.Get(r.Context())
+	}))
+	proxyServer := serveForwarder(t, proxyEnv, app)
+	doRequest(t, proxyServer.URL, func(req *http.Request) {
+		req.Header.Set(authutil.ClientIdentityHeaderName, executorHeader)
+	})
 
 	require.Equal(t, testClientSocket, gotIP)
 }
