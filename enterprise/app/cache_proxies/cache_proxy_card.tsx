@@ -4,26 +4,10 @@ import React from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { Link } from "../../../app/components/link/link";
 import format from "../../../app/format/format";
+import { CACHE_COLORS } from "../../../app/util/color";
 import { cache_proxy } from "../../../proto/cache_proxy_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
 
-// Chart slice colors are pulled from the same CSS variables as the legend
-// swatches in cache_proxies.css, so the ring and its legend stay in sync
-// across theme changes. Recharts paints into SVG `fill` attributes, which
-// don't resolve CSS `var(...)` references, so we have to read the computed
-// value ourselves; the literal fallbacks are last-resort defaults for
-// non-DOM environments (e.g. unit tests).
-function cssColor(name: string, fallback: string): string {
-  if (typeof document === "undefined") return fallback;
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || fallback;
-}
-
-export const HIT_COLOR = cssColor("--color-green-500", "#4caf50");
-export const MISS_COLOR = cssColor("--color-status-error", "#f44336");
-export const UNCACHEABLE_COLOR = cssColor("--color-amber-500", "#f59e0b");
-export const READ_COLOR = cssColor("--color-light-blue-500", "#03a9f4");
-export const WRITE_COLOR = cssColor("--color-indigo-500", "#3f51b5");
 const EMPTY_COLOR = "#eee";
 
 interface Props {
@@ -290,9 +274,9 @@ export function readWriteRatio(reads: number, writes: number): string {
 }
 
 function drawReadRing(hits: number, misses: number, uncacheable: number = 0) {
-  let colorHit = HIT_COLOR;
-  let colorMiss = MISS_COLOR;
-  let colorUncacheable = UNCACHEABLE_COLOR;
+  let colorHit = CACHE_COLORS.hits;
+  let colorMiss = CACHE_COLORS.misses;
+  let colorUncacheable = CACHE_COLORS.uncacheable;
   let h = hits;
   let m = misses;
   if (h === 0 && m === 0 && uncacheable === 0) {
@@ -312,8 +296,8 @@ function drawReadWriteRing(reads: number, writes: number) {
     return drawPie([{ value: 1, color: EMPTY_COLOR }]);
   }
   return drawPie([
-    { value: reads, color: READ_COLOR },
-    { value: writes, color: WRITE_COLOR },
+    { value: reads, color: CACHE_COLORS.reads },
+    { value: writes, color: CACHE_COLORS.writes },
   ]);
 }
 

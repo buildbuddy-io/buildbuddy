@@ -11,16 +11,8 @@ import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { cache_proxy } from "../../../proto/cache_proxy_ts_proto";
-import {
-  HIT_COLOR,
-  hitRate,
-  MISS_COLOR,
-  READ_COLOR,
-  readWriteRatio,
-  toNumber,
-  UNCACHEABLE_COLOR,
-  WRITE_COLOR,
-} from "./cache_proxy_card";
+import { CACHE_COLORS } from "../../../app/util/color";
+import { hitRate, readWriteRatio, toNumber } from "./cache_proxy_card";
 
 // cacheProxyIdFromPath returns the proxy ID from a /cache-proxy/<id> path, or
 // "" if the path has no ID or its escapes are malformed.
@@ -311,14 +303,6 @@ function KeyValue({ label, mono, children }: { label: string; mono?: boolean; ch
   );
 }
 
-const statColors: Record<string, string> = {
-  hits: HIT_COLOR,
-  misses: MISS_COLOR,
-  uncacheable: UNCACHEABLE_COLOR,
-  reads: READ_COLOR,
-  writes: WRITE_COLOR,
-};
-
 function statChart(
   title: string,
   data: Record<string, number>,
@@ -331,7 +315,7 @@ function statChart(
         title={title}
         subtitle={subtitle}
         data={Object.entries(data).map(([name, value]) => ({ name, value }))}
-        colorPicker={(name) => statColors[name]}
+        colorPicker={(name) => CACHE_COLORS[name as keyof typeof CACHE_COLORS]}
         valueFormatter={valueFormatter}
       />
     </div>
