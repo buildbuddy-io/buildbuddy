@@ -82,7 +82,7 @@ func RequestTypeLabelFromContext(ctx context.Context) string {
 // client IP and a grpc-proxy client identity, which the target requires before
 // trusting the IP. If env has no client identity service, nothing is attested.
 // If the caller already carries a client identity, it is forwarded unchanged
-// and the client IP is not attested.
+// instead of the grpc-proxy one, so the target ignores the IP header.
 func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 	cis := env.GetClientIdentityService()
 	proxy := &httputil.ReverseProxy{
@@ -107,14 +107,21 @@ func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 					delete(r.Out.Header, k)
 				}
 			}
-			// A caller carrying its own identity (e.g. an executor or workflow)
-			// keeps it, as in the gRPC forwarder: the target authorizes on it,
-			// and replacing it with grpc-proxy would lose that.
-			if cis == nil || r.In.Header.Get(authutil.ClientIdentityHeaderName) != "" {
+			if cis == nil {
 				return
 			}
 			clientIP := clientip.Get(r.In.Context())
 			if clientIP == "" {
+				return
+			}
+			// Always forward the resolved IP, so it survives proxy-to-proxy
+			// chains. The target only honors it alongside a valid grpc-proxy
+			// identity.
+			r.Out.Header.Set(clientip.HeaderName, clientIP)
+			// A caller carrying its own identity (e.g. an executor or workflow)
+			// keeps it, as in the gRPC forwarder: the target authorizes on it,
+			// and replacing it with grpc-proxy would lose that.
+			if r.In.Header.Get(authutil.ClientIdentityHeaderName) != "" {
 				return
 			}
 			header, err := cis.CachedIdentityHeader(&interfaces.ClientIdentity{
@@ -126,7 +133,6 @@ func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 				log.CtxWarningf(r.In.Context(), "Could not create client identity header: %s", err)
 				return
 			}
-			r.Out.Header.Set(clientip.HeaderName, clientIP)
 			r.Out.Header.Set(authutil.ClientIdentityHeaderName, header)
 		},
 	}

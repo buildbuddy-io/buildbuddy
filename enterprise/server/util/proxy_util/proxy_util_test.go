@@ -138,20 +138,6 @@ func TestHTTPForwarder_ClientIPThroughLoadBalancer(t *testing.T) {
 	require.Equal(t, testClientSocket, gotIP)
 }
 
-// validatedClientIdentity returns the client of the identity in header, or
-// fails the test if it does not validate.
-func validatedClientIdentity(t *testing.T, env environment.Env, header string) string {
-	cis := env.GetClientIdentityService()
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.MD{
-		authutil.ClientIdentityHeaderName: {header},
-	})
-	ctx, err := cis.ValidateIncomingIdentity(ctx)
-	require.NoError(t, err)
-	identity, err := cis.IdentityFromContext(ctx)
-	require.NoError(t, err)
-	return identity.Client
-}
-
 func TestHTTPForwarder_PreservesForwardedProtoAndHost(t *testing.T) {
 	env := newEnv(t, false)
 
@@ -161,11 +147,11 @@ func TestHTTPForwarder_PreservesForwardedProtoAndHost(t *testing.T) {
 	}))
 	doRequest(t, proxyServer.URL, func(req *http.Request) {
 		req.Header.Set("X-Forwarded-Proto", "https")
-		req.Header.Set("X-Forwarded-Host", testClientHost)
+		req.Header.Set("X-Forwarded-Host", "app.buildbuddy.io")
 	})
 
 	require.Equal(t, []string{"https"}, got.Values("X-Forwarded-Proto"))
-	require.Equal(t, []string{testClientHost}, got.Values("X-Forwarded-Host"))
+	require.Equal(t, []string{"app.buildbuddy.io"}, got.Values("X-Forwarded-Host"))
 }
 
 func TestHTTPForwarder_DerivesForwardedProtoAndHostWhenAbsent(t *testing.T) {
@@ -233,9 +219,9 @@ func TestHTTPForwarder_CallerIdentityIsKept(t *testing.T) {
 	})
 
 	require.Equal(t, []string{executorHeader}, got.Values(authutil.ClientIdentityHeaderName))
-	require.Equal(t, interfaces.ClientIdentityExecutor, validatedClientIdentity(t, env, executorHeader))
-	// Internal headers are still stripped and the IP is not attested.
-	require.Empty(t, got.Values(clientip.HeaderName))
+	// Internal headers are still stripped, and the resolved IP replaces the
+	// forged one.
+	require.Equal(t, []string{testClientSocket}, got.Values(clientip.HeaderName))
 	require.Empty(t, got.Values(forgedInternal))
 }
 
@@ -259,5 +245,56 @@ func TestHTTPForwarder_CallerIdentityDoesNotAttestForgedClientIP(t *testing.T) {
 		req.Header.Set(authutil.ClientIdentityHeaderName, executorHeader)
 	})
 
+	require.Equal(t, testClientSocket, gotIP)
+}
+
+// client -> forwarder A -> forwarder B -> app: the app resolves the original
+// client IP, not a proxy's.
+func TestHTTPForwarder_ClientIPThroughTwoProxyHops(t *testing.T) {
+	flags.Set(t, "app.client_identity.key", "test-key")
+	flags.Set(t, "auth.trust_xforwardedfor_header", true)
+	require.NoError(t, clientip.Init())
+
+	var gotIP string
+	app := interceptors.WrapExternalHandler(newEnv(t, true), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotIP = clientip.Get(r.Context())
+	}))
+	proxyB := serveForwarder(t, newEnv(t, true), app)
+	proxyBURL, err := url.Parse(proxyB.URL)
+	require.NoError(t, err)
+	proxyA := httptest.NewServer(proxy_util.NewHTTPForwarder(newEnv(t, true), proxyBURL))
+	t.Cleanup(proxyA.Close)
+
+	doRequest(t, proxyA.URL, func(req *http.Request) {
+		req.Header.Set("X-Forwarded-For", "203.0.113.7, 10.9.9.9")
+	})
+
+	require.Equal(t, "203.0.113.7", gotIP)
+}
+
+// A grpc-proxy identity signed with another key must not make the app trust a
+// forged client IP header.
+func TestHTTPForwarder_IdentitySignedWithOtherKeyIsNotTrusted(t *testing.T) {
+	flags.Set(t, "app.client_identity.key", "attacker-key")
+	attackerEnv := newEnv(t, true)
+	forgedIdentity, err := attackerEnv.GetClientIdentityService().CachedIdentityHeader(&interfaces.ClientIdentity{
+		Origin: interfaces.ClientIdentityInternalOrigin,
+		Client: interfaces.ClientIdentityGRPCProxy,
+	})
+	require.NoError(t, err)
+
+	flags.Set(t, "app.client_identity.key", "test-key")
+	proxyEnv := newEnv(t, true)
+	appEnv := newEnv(t, true)
+	var gotIP string
+	app := interceptors.WrapExternalHandler(appEnv, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotIP = clientip.Get(r.Context())
+	}))
+	proxyServer := serveForwarder(t, proxyEnv, app)
+	doRequest(t, proxyServer.URL, func(req *http.Request) {
+		req.Header.Set(authutil.ClientIdentityHeaderName, forgedIdentity)
+	})
+
+	require.NotEqual(t, forgedClientIP, gotIP)
 	require.Equal(t, testClientSocket, gotIP)
 }
