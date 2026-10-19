@@ -528,7 +528,8 @@ func (l *leaser) DB() (IPebbleDB, error) {
 		newRefCounter(&l.waiters),
 	}
 
-	if *warnAboutLeaks && l.dbCalls.Add(1)%100 == 1 {
+	// mod by a prime number to avoid always warning about the same call site.
+	if *warnAboutLeaks && l.dbCalls.Add(1)%11 == 1 {
 		location := "unknown"
 		if _, file, no, ok := runtime.Caller(1); ok {
 			location = fmt.Sprintf("%s:%d", file, no)
@@ -569,6 +570,7 @@ type refCountedDB struct {
 }
 
 func (r *refCountedDB) Close() error {
+	runtime.SetFinalizer(r, nil)
 	// Just close the refcounter, not the DB.
 	return r.refCounter.Close()
 }
