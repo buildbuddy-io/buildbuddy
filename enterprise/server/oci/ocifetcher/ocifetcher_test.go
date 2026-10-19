@@ -74,6 +74,9 @@ func setupRegistry(t *testing.T, creds *testregistry.BasicAuthCreds, interceptor
 			return true
 		},
 	})
+	t.Cleanup(func() {
+		require.NoError(t, reg.Shutdown())
+	})
 	return reg, counter
 }
 
@@ -1262,6 +1265,36 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 
 		require.Equal(t, 0, getCount)
 	})
+}
+
+func TestServerRetryAfterCanceledPullerInitialization(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var cancelPing atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/v2/" && cancelPing.Swap(false) {
+			cancel()
+			<-r.Context().Done()
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, size, mediaType := imageMetadata(t, img)
+	server := newTestServer(t)
+	req := &ofpb.FetchManifestMetadataRequest{Ref: imageName}
+
+	// Cancel the initial registry handshake, before the Puller is initialized.
+	counter.Reset()
+	cancelPing.Store(true)
+	_, err := server.FetchManifestMetadata(ctx, req)
+	require.ErrorIs(t, err, context.Canceled)
+	assertRequests(t, counter, map[string]int{http.MethodGet + " /v2/": 1})
+
+	// A fresh request must not inherit the first request's cancellation.
+	resp, err := server.FetchManifestMetadata(t.Context(), req)
+	require.NoError(t, err)
+	assertMetadata(t, resp, digest, size, mediaType)
 }
 
 func TestServerNoRetryOnContextErrors(t *testing.T) {

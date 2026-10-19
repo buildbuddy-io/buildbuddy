@@ -722,7 +722,9 @@ func withPullerRetry[T any](
 	if err == nil {
 		return result, nil
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	// Puller initialization caches errors, including cancellation from earlier
+	// requests. Only the current request's context should prevent a retry.
+	if ctx.Err() != nil {
 		return zero, err
 	}
 
@@ -734,7 +736,7 @@ func withPullerRetry[T any](
 	}
 
 	result, err = op(puller)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if err != nil && ctx.Err() != nil {
 		return zero, err
 	}
 	if err != nil {
