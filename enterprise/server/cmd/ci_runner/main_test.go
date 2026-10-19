@@ -56,6 +56,21 @@ func TestBazelChildProcessResult_StartError(t *testing.T) {
 	require.False(t, errors.As(err, &result))
 }
 
+func TestParseRunScript_TrailingNewline(t *testing.T) {
+	wsRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(wsRoot, "MODULE.bazel"), nil, 0644))
+	bin := filepath.Join(wsRoot, "bin/tool")
+	script := "#!/bin/bash\ncd " + bin + ".runfiles/_main && \\\n  exec env \\\n  " + bin + ` "$@"`
+
+	for _, suffix := range []string{"", "\n"} {
+		scriptPath := filepath.Join(t.TempDir(), "run.sh")
+		require.NoError(t, os.WriteFile(scriptPath, []byte(script+suffix), 0755))
+		parsed, err := parseRunScript(scriptPath)
+		require.NoError(t, err)
+		assert.Equal(t, bin, parsed.bin)
+	}
+}
+
 func TestCollectRunfiles_RelativeDirectorySymlink(t *testing.T) {
 	rootDir := t.TempDir()
 	targetDir := filepath.Join(rootDir, "target")
