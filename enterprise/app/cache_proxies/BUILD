@@ -29,6 +29,30 @@ ts_library(
 )
 
 ts_library(
+    name = "cache_proxy",
+    srcs = ["cache_proxy.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
+        "//app/auth:auth_service",
+        "//app/components/breadcrumbs",
+        "//app/components/chart:donut_chart",
+        "//app/components/filter_input",
+        "//app/components/link",
+        "//app/format",
+        "//app/router",
+        "//app/service:rpc_service",
+        "//app/util:color",
+        "//app/util:errors",
+        "//enterprise/app/cache_proxies:cache_proxy_card",
+        "//proto:cache_proxy_ts_proto",
+    ],
+)
+
+ts_library(
     name = "cache_proxy_card",
     srcs = ["cache_proxy_card.tsx"],
     deps = [
@@ -38,9 +62,9 @@ ts_library(
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/recharts",
-        "//:node_modules/tslib",
-        "//app/components/button",
+        "//app/components/link",
         "//app/format",
+        "//app/util:color",
         "//proto:cache_proxy_ts_proto",
         "//proto:timestamp_ts_proto",
     ],

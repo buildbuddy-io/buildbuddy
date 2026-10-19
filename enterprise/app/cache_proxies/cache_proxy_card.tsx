@@ -1,55 +1,36 @@
 import Long from "long";
-import { ChartColumn, Cloud, Flag } from "lucide-react";
+import { ChevronRight, Cloud } from "lucide-react";
 import React from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
-import { OutlinedButton } from "../../../app/components/button/button";
+import { Link } from "../../../app/components/link/link";
 import format from "../../../app/format/format";
+import { CACHE_COLORS } from "../../../app/util/color";
 import { cache_proxy } from "../../../proto/cache_proxy_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
 
-// Chart slice colors are pulled from the same CSS variables as the legend
-// swatches in cache_proxies.css, so the ring and its legend stay in sync
-// across theme changes. Recharts paints into SVG `fill` attributes, which
-// don't resolve CSS `var(...)` references, so we have to read the computed
-// value ourselves; the literal fallbacks are last-resort defaults for
-// non-DOM environments (e.g. unit tests).
-function cssColor(name: string, fallback: string): string {
-  if (typeof document === "undefined") return fallback;
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || fallback;
-}
-
-const HIT_COLOR = cssColor("--color-green-500", "#4caf50");
-const MISS_COLOR = cssColor("--color-status-error", "#f44336");
-const UNCACHEABLE_COLOR = cssColor("--color-amber-500", "#f59e0b");
-const READ_COLOR = cssColor("--color-light-blue-500", "#03a9f4");
-const WRITE_COLOR = cssColor("--color-indigo-500", "#3f51b5");
 const EMPTY_COLOR = "#eee";
 
 interface Props {
   proxy: cache_proxy.CacheProxySummary;
   lastCheckInTime?: google_timestamp.protobuf.Timestamp | null;
   statistics?: cache_proxy.IStatistics | null;
-  // Sets the default visibility of flags and statistics for all cards.
+  // When true, the card is in summary mode and flags and statistics are hidden.
   summary?: boolean;
-}
-
-interface State {
-  showFlags: boolean;
-  showStats: boolean;
+  // The URL of this proxy's details page.
+  href: string;
 }
 
 // toNumber accepts the int64-as-number-or-Long values that protobuf-ts
 // produces and returns a plain number. Total cache counts could in theory
 // exceed Number.MAX_SAFE_INTEGER, but for the purposes of a percentage
 // readout that's fine.
-function toNumber(value: number | Long | null | undefined): number {
+export function toNumber(value: number | Long | null | undefined): number {
   if (value === null || value === undefined) return 0;
   if (typeof value === "number") return value;
   return value.toNumber();
 }
 
-function hitRate(hits: number, misses: number): string {
+export function hitRate(hits: number, misses: number): string {
   const total = hits + misses;
   if (total === 0) return "—";
   return format.percent(hits / total) + "%";
@@ -68,22 +49,11 @@ function isFresh(t?: google_timestamp.protobuf.Timestamp | null): boolean {
   return Date.now() - ms < freshThresholdMs;
 }
 
-export default class CacheProxyCardComponent extends React.Component<Props, State> {
-  state: State = {
-    showFlags: !this.props.summary,
-    showStats: !this.props.summary,
-  };
-
-  componentDidUpdate(prevProps: Props) {
-    if (prevProps.summary !== this.props.summary) {
-      this.setState({ showFlags: !this.props.summary, showStats: !this.props.summary });
-    }
-  }
-
+export default class CacheProxyCardComponent extends React.Component<Props> {
   render() {
     const fresh = isFresh(this.props.lastCheckInTime);
     return (
-      <div className={`card ${fresh ? "card-success" : "card-neutral"}`}>
+      <Link className={`card ${fresh ? "card-success" : "card-neutral"} cache-proxy-card-link`} href={this.props.href}>
         <Cloud />
         <div className="content">
           <div className="details">
@@ -143,25 +113,7 @@ export default class CacheProxyCardComponent extends React.Component<Props, Stat
                 </div>
               </div>
             )}
-            <div className="cache-proxy-card-actions">
-              <OutlinedButton
-                type="button"
-                className="small-button"
-                aria-expanded={this.state.showFlags}
-                onClick={() => this.setState((state) => ({ showFlags: !state.showFlags }))}>
-                <Flag className="icon" aria-hidden="true" />
-                {this.state.showFlags ? "Hide flags" : "View flags"}
-              </OutlinedButton>
-              <OutlinedButton
-                type="button"
-                className="small-button"
-                aria-expanded={this.state.showStats}
-                onClick={() => this.setState((state) => ({ showStats: !state.showStats }))}>
-                <ChartColumn className="icon" aria-hidden="true" />
-                {this.state.showStats ? "Hide stats" : "View stats"}
-              </OutlinedButton>
-            </div>
-            {this.state.showFlags && (
+            {!this.props.summary && (
               <div className="cache-proxy-section cache-proxy-flags-section">
                 <div className="cache-proxy-section-title">Configuration:</div>
                 <div className="cache-proxy-configured-flags">
@@ -171,7 +123,7 @@ export default class CacheProxyCardComponent extends React.Component<Props, Stat
                 </div>
               </div>
             )}
-            {this.state.showStats &&
+            {!this.props.summary &&
               (this.props.statistics ? (
                 this.renderStatistics(this.props.statistics)
               ) : (
@@ -179,7 +131,8 @@ export default class CacheProxyCardComponent extends React.Component<Props, Stat
               ))}
           </div>
         </div>
-      </div>
+        <ChevronRight className="cache-proxy-card-chevron" />
+      </Link>
     );
   }
 
@@ -308,7 +261,7 @@ export default class CacheProxyCardComponent extends React.Component<Props, Stat
   }
 }
 
-function readWriteRatio(reads: number, writes: number): string {
+export function readWriteRatio(reads: number, writes: number): string {
   if (reads === 0 && writes === 0) return "—";
   if (writes === 0) return "∞:1";
   if (reads === 0) return "1:∞";
@@ -321,9 +274,9 @@ function readWriteRatio(reads: number, writes: number): string {
 }
 
 function drawReadRing(hits: number, misses: number, uncacheable: number = 0) {
-  let colorHit = HIT_COLOR;
-  let colorMiss = MISS_COLOR;
-  let colorUncacheable = UNCACHEABLE_COLOR;
+  let colorHit = CACHE_COLORS.hits;
+  let colorMiss = CACHE_COLORS.misses;
+  let colorUncacheable = CACHE_COLORS.uncacheable;
   let h = hits;
   let m = misses;
   if (h === 0 && m === 0 && uncacheable === 0) {
@@ -343,8 +296,8 @@ function drawReadWriteRing(reads: number, writes: number) {
     return drawPie([{ value: 1, color: EMPTY_COLOR }]);
   }
   return drawPie([
-    { value: reads, color: READ_COLOR },
-    { value: writes, color: WRITE_COLOR },
+    { value: reads, color: CACHE_COLORS.reads },
+    { value: writes, color: CACHE_COLORS.writes },
   ]);
 }
 
