@@ -73,30 +73,61 @@ func RequestTypeLabelFromContext(ctx context.Context) string {
 	return metrics.DefaultCacheProxyRequestLabel
 }
 
+// attestHTTPForwardingFlag enables the attested HTTP forwarder.
+const attestHTTPForwardingFlag = "cache_proxy.attest_http_forwarding"
+
 // NewHTTPForwarder returns a handler that reverse-proxies HTTP requests to
-// target. Like the gRPC forwarder, it strips client-supplied internal headers
-// and sets the resolved client IP, attested with a grpc-proxy client identity
-// unless the caller already has its own.
+// target, keeping the incoming Host.
+//
+// With the cache_proxy.attest_http_forwarding experiment, the proxy builds
+// each outgoing request itself, like the gRPC forwarder: it rejects an invalid
+// caller client identity, drops client-supplied internal and forwarding
+// headers, and sets the resolved client IP, attested with a grpc-proxy
+// identity unless the caller has its own. Otherwise it forwards as
+// httputil.NewSingleHostReverseProxy does, counting the requests the attested
+// forwarder would treat differently.
 func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
+	efp := env.GetExperimentFlagProvider()
 	cis := env.GetClientIdentityService()
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	director := proxy.Director
-	proxy.Director = func(r *http.Request) {
-		director(r)
-		for k := range r.Header {
+	legacy := httputil.NewSingleHostReverseProxy(target)
+	attested := interceptors.ClientIP(env, &httputil.ReverseProxy{Rewrite: attestingRewrite(cis, target)})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identityErr := validateCallerIdentity(cis, r)
+		if efp == nil || !efp.Boolean(r.Context(), attestHTTPForwardingFlag, false) {
+			countForwardingDiffs(r, identityErr)
+			legacy.ServeHTTP(w, r)
+			return
+		}
+		if identityErr != nil {
+			log.CtxInfof(r.Context(), "Rejecting forwarded HTTP request with invalid client identity: %s", identityErr)
+			http.Error(w, "invalid client identity", http.StatusForbidden)
+			return
+		}
+		attested.ServeHTTP(w, r)
+	})
+}
+
+func attestingRewrite(cis interfaces.ClientIdentityService, target *url.URL) func(*httputil.ProxyRequest) {
+	return func(r *httputil.ProxyRequest) {
+		r.SetURL(target)
+		r.Out.Host = r.In.Host
+		r.Out.Header["X-Forwarded-For"] = r.In.Header["X-Forwarded-For"]
+		r.SetXForwarded()
+		for k := range r.Out.Header {
 			if strings.HasPrefix(strings.ToLower(k), authutil.InternalHeaderPrefix) {
-				delete(r.Header, k)
+				delete(r.Out.Header, k)
 			}
 		}
 		if cis == nil {
 			return
 		}
-		clientIP := clientip.Get(r.Context())
+		clientIP := clientip.Get(r.In.Context())
 		if clientIP == "" {
 			return
 		}
-		r.Header.Set(clientip.HeaderName, clientIP)
-		if r.Header.Get(authutil.ClientIdentityHeaderName) != "" {
+		r.Out.Header.Set(clientip.HeaderName, clientIP)
+		// The caller's own identity was validated before forwarding.
+		if r.Out.Header.Get(authutil.ClientIdentityHeaderName) != "" {
 			return
 		}
 		header, err := cis.CachedIdentityHeader(&interfaces.ClientIdentity{
@@ -104,10 +135,42 @@ func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 			Client: interfaces.ClientIdentityGRPCProxy,
 		})
 		if err != nil {
-			log.CtxWarningf(r.Context(), "Could not create client identity header: %s", err)
+			log.CtxWarningf(r.In.Context(), "Could not create client identity header: %s", err)
 			return
 		}
-		r.Header.Set(authutil.ClientIdentityHeaderName, header)
+		r.Out.Header.Set(authutil.ClientIdentityHeaderName, header)
 	}
-	return interceptors.ClientIP(env, proxy)
+}
+
+// validateCallerIdentity validates the caller's client identity, if it sent
+// one.
+func validateCallerIdentity(cis interfaces.ClientIdentityService, r *http.Request) error {
+	identities := r.Header.Values(authutil.ClientIdentityHeaderName)
+	if cis == nil || len(identities) == 0 {
+		return nil
+	}
+	ctx := metadata.NewIncomingContext(r.Context(), metadata.MD{authutil.ClientIdentityHeaderName: identities})
+	_, err := cis.ValidateIncomingIdentity(ctx)
+	return err
+}
+
+func countForwardingDiffs(r *http.Request, identityErr error) {
+	proto := "http"
+	if r.TLS != nil {
+		proto = "https"
+	}
+	for _, d := range []struct {
+		header, reason, attestedValue string
+	}{
+		{"Forwarded", "forwarded", ""},
+		{"X-Forwarded-Host", "x_forwarded_host", r.Host},
+		{"X-Forwarded-Proto", "x_forwarded_proto", proto},
+	} {
+		if v := r.Header.Values(d.header); len(v) > 0 && (len(v) > 1 || v[0] != d.attestedValue) {
+			metrics.CacheProxyHTTPForwardingDiffs.WithLabelValues(d.reason).Inc()
+		}
+	}
+	if identityErr != nil {
+		metrics.CacheProxyHTTPForwardingDiffs.WithLabelValues("invalid_client_identity").Inc()
+	}
 }
