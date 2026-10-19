@@ -42,6 +42,30 @@ const (
 	cacheDigestFunction = repb.DigestFunction_SHA256
 )
 
+// ValidateBlobHash returns an InvalidArgument error if blobs with the given
+// hash can't be cached. Blobs are stored in the CAS under their OCI digest, so
+// the digest algorithm must match the cache's digest function.
+func ValidateBlobHash(hash ctr.Hash) error {
+	if hash.Algorithm != "sha256" {
+		return status.InvalidArgumentErrorf("unsupported blob digest algorithm %q: only sha256 is supported", hash.Algorithm)
+	}
+	return nil
+}
+
+// blobCASResourceName returns the CAS resource name of an OCI blob, which is
+// stored under its OCI digest.
+func blobCASResourceName(hash ctr.Hash, contentLength int64) (*digest.CASResourceName, error) {
+	if err := ValidateBlobHash(hash); err != nil {
+		return nil, err
+	}
+	blobRN := digest.NewCASResourceName(&repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
+	}, blobInstanceName, cacheDigestFunction)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	return blobRN, nil
+}
+
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, contentType string, originalRef ctrname.Reference) error {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
@@ -219,16 +243,10 @@ func blobHit(ctx context.Context) {
 }
 
 func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash ctr.Hash, contentLength int64) error {
-	blobCASDigest := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: contentLength,
+	blobRN, err := blobCASResourceName(hash, contentLength)
+	if err != nil {
+		return err
 	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		blobInstanceName,
-		cacheDigestFunction,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
 	counter := &ioutil.Counter{}
 	mw := io.MultiWriter(w, counter)
 	defer func() {
@@ -294,17 +312,11 @@ func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClien
 }
 
 func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, contentType string, contentLength int64) error {
-	blobCASDigest := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: contentLength,
+	blobRN, err := blobCASResourceName(hash, contentLength)
+	if err != nil {
+		return err
 	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		blobInstanceName,
-		cacheDigestFunction,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, r)
+	_, _, err = cachetools.UploadFromReader(ctx, bsClient, blobRN, r)
 	if err != nil {
 		return err
 	}
@@ -316,16 +328,10 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 // Once contentLength bytes have been written, the blobUploader will commit the blob.
 // It is an error to attempt to Write after commit, and to write more than contentLength bytes.
 func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, contentType string, contentLength int64) (interfaces.CommittedWriteCloser, error) {
-	blobCASDigest := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: contentLength,
+	blobRN, err := blobCASResourceName(hash, contentLength)
+	if err != nil {
+		return nil, err
 	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		blobInstanceName,
-		cacheDigestFunction,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
 	uw, err := cachetools.NewUploadWriter(ctx, bsClient, blobRN)
 	if err != nil {
 		return nil, err

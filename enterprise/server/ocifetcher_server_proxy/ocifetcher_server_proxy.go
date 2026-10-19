@@ -110,6 +110,9 @@ func parseBlobDigestRef(ref string) (ctrname.Digest, ctr.Hash, error) {
 	if err != nil {
 		return ctrname.Digest{}, ctr.Hash{}, status.InvalidArgumentErrorf("invalid blob digest in reference %q: %s", ref, err)
 	}
+	if err := ocicache.ValidateBlobHash(hash); err != nil {
+		return ctrname.Digest{}, ctr.Hash{}, err
+	}
 	return digestRef, hash, nil
 }
 

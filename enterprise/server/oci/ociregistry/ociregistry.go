@@ -439,10 +439,17 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 
-	identifierIsDigest := isDigest(identifier)
-	if ociResourceType == ocipb.OCIResourceType_BLOB && !identifierIsDigest {
-		http.Error(w, fmt.Sprintf("Can only retrieve blobs by digest, received '%q'", identifier), http.StatusNotFound)
-		return
+	identifierHash, err := ctr.NewHash(identifier)
+	identifierIsDigest := err == nil
+	if ociResourceType == ocipb.OCIResourceType_BLOB {
+		if !identifierIsDigest {
+			http.Error(w, fmt.Sprintf("Can only retrieve blobs by digest, received '%q'", identifier), http.StatusNotFound)
+			return
+		}
+		if err := ocicache.ValidateBlobHash(identifierHash); err != nil {
+			http.Error(w, status.Message(err), http.StatusBadRequest)
+			return
+		}
 	}
 
 	ref, err := parseReference(repository, identifier)

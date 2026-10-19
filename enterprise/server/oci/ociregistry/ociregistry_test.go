@@ -85,6 +85,18 @@ func TestCacheAPIKey(t *testing.T) {
 	require.Empty(t, recordingClient.requestSubdomain)
 }
 
+func TestRejectsUnsupportedBlobDigestAlgorithm(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ocireg, err := ociregistry.New(te)
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodGet, "/v2/library/alpine/blobs/sha512:"+strings.Repeat("a", 128), nil)
+	rsp := httptest.NewRecorder()
+	ocireg.ServeHTTP(rsp, req)
+
+	require.Equal(t, http.StatusBadRequest, rsp.Code)
+	require.Contains(t, rsp.Body.String(), "unsupported blob digest algorithm")
+}
+
 func TestInvalidCacheAPIKeyFailsStartup(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))

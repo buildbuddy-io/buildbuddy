@@ -2,6 +2,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+# gazelle:go_test file
+
 go_library(
     name = "ocifetcher",
     srcs = ["ocifetcher.go"],
@@ -60,5 +62,18 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
+    ],
+)
+
+go_test(
+    name = "ocifetcher_internal_test",
+    srcs = ["ocifetcher_internal_test.go"],
+    embed = [":ocifetcher"],
+    deps = [
+        "//proto:remote_execution_go_proto",
+        "@com_github_google_go_containerregistry//pkg/name",
+        "@com_github_google_go_containerregistry//pkg/v1/remote",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )

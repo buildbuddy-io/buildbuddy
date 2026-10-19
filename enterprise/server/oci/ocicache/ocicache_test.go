@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/crane"
@@ -511,4 +513,22 @@ func TestNewBlobFetchKey_DifferentDigestsDifferentKeys(t *testing.T) {
 	key1 := ocicache.NewBlobFetchKey(repo, mustHash(t, testDigest1), creds)
 	key2 := ocicache.NewBlobFetchKey(repo, mustHash(t, testDigest2), creds)
 	require.NotEqual(t, key1, key2, "different digests must produce different keys")
+}
+
+func TestBlobCacheRejectsUnsupportedDigestAlgorithm(t *testing.T) {
+	ctx := context.Background()
+	repo, err := ctrname.NewRepository("example.com/repo")
+	require.NoError(t, err)
+	hash, err := ctr.NewHash("sha512:" + strings.Repeat("a", 128))
+	require.NoError(t, err)
+
+	// The checks happen before any cache requests, so no clients are needed.
+	err = ocicache.FetchBlobFromCache(ctx, io.Discard, nil, hash, 1)
+	require.True(t, status.IsInvalidArgumentError(err), "error: %v", err)
+	err = ocicache.WriteBlobToCache(ctx, strings.NewReader("a"), nil, nil, repo, hash, "", 1)
+	require.True(t, status.IsInvalidArgumentError(err), "error: %v", err)
+	_, err = ocicache.NewBlobUploader(ctx, nil, nil, repo, hash, "", 1)
+	require.True(t, status.IsInvalidArgumentError(err), "error: %v", err)
+	_, err = ocicache.NewBlobReadThroughCacher(ctx, io.NopCloser(strings.NewReader("a")), nil, nil, repo, hash, "", 1)
+	require.True(t, status.IsInvalidArgumentError(err), "error: %v", err)
 }

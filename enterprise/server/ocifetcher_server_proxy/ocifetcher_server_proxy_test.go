@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -229,6 +230,18 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 			require.Empty(t, cmp.Diff(req, remoteClient.fetchBlobRequest, protocmp.Transform()))
 		})
 	}
+}
+
+func TestFetchBlob_RejectsUnsupportedDigestAlgorithm(t *testing.T) {
+	ctx := context.Background()
+	remoteClient := &recordingOCIFetcherClient{}
+	proxyClient := runOCIFetcherProxy(ctx, t, remoteClient)
+
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: "example.com/repo@sha512:" + strings.Repeat("a", 128)})
+	require.NoError(t, err)
+	_, err = stream.Recv()
+	require.True(t, status.IsInvalidArgumentError(err), "error: %v", err)
+	require.Nil(t, remoteClient.fetchBlobRequest)
 }
 
 // TestFetchBlob_LocalCacheWriteThrough verifies that after a FetchBlob call,

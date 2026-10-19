@@ -307,6 +307,9 @@ func parseBlobDigestRef(ref string) (ctrname.Digest, ctr.Hash, error) {
 	if err != nil {
 		return ctrname.Digest{}, ctr.Hash{}, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 	}
+	if err := ocicache.ValidateBlobHash(hash); err != nil {
+		return ctrname.Digest{}, ctr.Hash{}, err
+	}
 	return digestRef, hash, nil
 }
 
@@ -668,11 +671,15 @@ func (s *ociFetcherServer) getOrCreatePuller(ctx context.Context, imageRef ctrna
 	return puller, nil
 }
 
-func (s *ociFetcherServer) evictPuller(imageRef ctrname.Reference, creds *rgpb.Credentials) {
+// evictPuller removes puller from the cache, unless a concurrent request has
+// already replaced it with a new Puller.
+func (s *ociFetcherServer) evictPuller(imageRef ctrname.Reference, creds *rgpb.Credentials, puller *remote.Puller) {
 	key := pullerKey(imageRef, creds)
 	s.mu.Lock()
-	s.pullerLRU.Remove(key)
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+	if entry, ok := s.pullerLRU.Get(key); ok && entry.puller == puller {
+		s.pullerLRU.Remove(key)
+	}
 }
 
 // repoAccessKey returns the access-proof cache key for the given repository and
@@ -722,25 +729,26 @@ func withPullerRetry[T any](
 	if err == nil {
 		return result, nil
 	}
-	// Puller initialization caches errors, including cancellation from earlier
-	// requests. Only the current request's context should prevent a retry.
-	if ctx.Err() != nil {
-		return zero, err
+	// Requests sharing a Puller also share its registry handshake, so err may be
+	// another request's cancellation. Only the current request's context should
+	// prevent a retry.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return zero, ctxErr
 	}
 
 	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
-	s.evictPuller(ref, creds)
+	s.evictPuller(ref, creds, puller)
 	puller, err = s.getOrCreatePuller(ctx, ref, creds)
 	if err != nil {
 		return zero, err
 	}
 
 	result, err = op(puller)
-	if err != nil && ctx.Err() != nil {
-		return zero, err
-	}
 	if err != nil {
-		s.evictPuller(ref, creds)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return zero, ctxErr
+		}
+		s.evictPuller(ref, creds, puller)
 		return zero, RemoteRegistryError(err, "could not fetch from remote registry")
 	}
 

@@ -1297,6 +1297,72 @@ func TestServerRetryAfterCanceledPullerInitialization(t *testing.T) {
 	assertMetadata(t, resp, digest, size, mediaType)
 }
 
+// Requests that fail on the same cached Puller should share one replacement,
+// rather than evicting each other's replacements.
+func TestServerConcurrentRetriesShareReplacementPuller(t *testing.T) {
+	var blockPing atomic.Bool
+	pingStarted := make(chan struct{}, 1)
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/v2/" && blockPing.Swap(false) {
+			pingStarted <- struct{}{}
+			<-r.Context().Done()
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, size, mediaType := imageMetadata(t, img)
+	server := newTestServer(t)
+	req := &ofpb.FetchManifestMetadataRequest{Ref: imageName}
+
+	// Block the first request's handshake, so that the other requests wait on
+	// it and inherit its cancellation.
+	counter.Reset()
+	blockPing.Store(true)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	errFirst := make(chan error, 1)
+	go func() {
+		_, err := server.FetchManifestMetadata(ctx, req)
+		errFirst <- err
+	}()
+	<-pingStarted
+
+	const numWaiters = 10
+	var wg sync.WaitGroup
+	errs := make([]error, numWaiters)
+	resps := make([]*ofpb.FetchManifestMetadataResponse, numWaiters)
+	for i := range numWaiters {
+		wg.Go(func() {
+			resps[i], errs[i] = server.FetchManifestMetadata(t.Context(), req)
+		})
+	}
+	// Give the waiters time to block on the first request's handshake.
+	time.Sleep(200 * time.Millisecond)
+	require.Equal(t, 1, counter.Snapshot()[http.MethodGet+" /v2/"])
+	cancel()
+
+	require.ErrorIs(t, <-errFirst, context.Canceled)
+	wg.Wait()
+	for i := range numWaiters {
+		require.NoError(t, errs[i])
+		assertMetadata(t, resps[i], digest, size, mediaType)
+	}
+	// The canceled handshake, plus one handshake for the shared replacement.
+	require.Equal(t, 2, counter.Snapshot()[http.MethodGet+" /v2/"])
+}
+
+func TestServerRejectsUnsupportedBlobDigestAlgorithm(t *testing.T) {
+	server := newTestServer(t)
+	ref := "example.com/repo@sha512:" + strings.Repeat("a", 128)
+
+	_, err := server.FetchBlobMetadata(t.Context(), &ofpb.FetchBlobMetadataRequest{Ref: ref})
+	require.True(t, status.IsInvalidArgumentError(err), "error: %v", err)
+
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: ref}, &mockFetchBlobServer{ctx: t.Context()})
+	require.True(t, status.IsInvalidArgumentError(err), "error: %v", err)
+}
+
 func TestServerNoRetryOnContextErrors(t *testing.T) {
 	var headAttempts, getAttempts, blobAttempts atomic.Int32
 	var blockHead, blockGet, blockBlob atomic.Bool
