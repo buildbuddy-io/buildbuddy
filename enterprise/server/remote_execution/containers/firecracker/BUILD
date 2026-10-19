@@ -12,6 +12,9 @@ load(
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+# Keep VM-free kernel tests separate from the bare Firecracker suite.
+# gazelle:go_test file
+
 go_library(
     name = "firecracker",
     srcs = [
@@ -146,8 +149,10 @@ go_test(
     embed = [":firecracker"],
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
+        "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/snaploader",
+        "//enterprise/server/remote_execution/snaputil",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest",

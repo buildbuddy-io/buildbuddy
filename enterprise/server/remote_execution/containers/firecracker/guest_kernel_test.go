@@ -5,8 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -65,7 +67,7 @@ func TestSelectGuestKernel(t *testing.T) {
 }
 
 func TestGuestKernelBootAndSnapshot(t *testing.T) {
-	flags.Set(t, "executor.enable_local_snapshot_sharing", false)
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", false)
 	flags.Set(t, "executor.firecracker_cgroup_version", "2")
 	env := testenv.GetTestEnv(t)
@@ -80,22 +82,38 @@ func TestGuestKernelBootAndSnapshot(t *testing.T) {
 	root, err := os.MkdirTemp("/tmp", "fc-kernel-")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(root)) })
-	write := func(path, contents string) string {
+	write := func(t *testing.T, path, contents string) string {
+		t.Helper()
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
 		require.NoError(t, os.WriteFile(path, []byte(contents), 0644))
 		return path
 	}
-	kernel515 := write(filepath.Join(root, "vmlinux-5.15"), "kernel 5.15")
-	kernel618 := write(filepath.Join(root, "vmlinux-6.18"), "kernel 6.18")
+	kernel515 := write(t, filepath.Join(root, "vmlinux-5.15"), "kernel 5.15")
+	kernel618 := write(t, filepath.Join(root, "vmlinux-6.18"), "kernel 6.18")
 	hash515, err := digest.ComputeForFile(kernel515, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	hash618, err := digest.ComputeForFile(kernel618, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	cfg := &ExecutorConfig{
-		JailerRoot: root, InitrdImagePath: write(filepath.Join(root, "initrd.cpio"), "initrd"),
+		JailerRoot: root, InitrdImagePath: write(t, filepath.Join(root, "initrd.cpio"), "initrd"),
 		GuestKernelImagePath: kernel515, GuestKernelVersion: hash515.GetHash(),
 		GuestKernelImagePath5_15: kernel515, GuestKernelVersion5_15: hash515.GetHash(),
 		GuestKernelImagePath6_18: kernel618, GuestKernelVersion6_18: hash618.GetHash(),
+	}
+	prepareSnapshot := func(t *testing.T, c *FirecrackerContainer) {
+		t.Helper()
+		for _, name := range []string{containerFSName, scratchFSName, "memory.snap", "vmstate.snap"} {
+			write(t, filepath.Join(c.getChroot(), name), name)
+		}
+		// Use the same local chunked-cache path as ordinary snapshots.
+		store := func(name string) *copy_on_write.COWStore {
+			cow, err := copy_on_write.ConvertFileToCOW(t.Context(), env, filepath.Join(c.getChroot(), name), 4096, t.TempDir(), "", false, snaputil.ConvertToCOWConcurrency)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, cow.Close()) })
+			return cow
+		}
+		c.scratchStore = store(scratchFSName)
+		c.memoryStore = store("memory.snap")
 	}
 	keys := map[string]string{}
 	for _, version := range []string{"5.15", "6.18"} {
@@ -117,9 +135,7 @@ func TestGuestKernelBootAndSnapshot(t *testing.T) {
 			boot, err := c.getConfig(t.Context(), "rootfs", "containerfs", "scratchfs", "workspacefs")
 			require.NoError(t, err)
 			require.Equal(t, wantPath, boot.KernelImagePath)
-			for _, name := range []string{containerFSName, scratchFSName, "memory.snap", "vmstate.snap"} {
-				write(filepath.Join(c.getChroot(), name), name)
-			}
+			prepareSnapshot(t, c)
 			require.NoError(t, c.saveSnapshot(t.Context(), &snapshotDetails{
 				memSnapshotName: "memory.snap", vmStateSnapshotName: "vmstate.snap", saveLocalSnapshot: true,
 			}))
@@ -151,7 +167,6 @@ func TestGuestKernelBootAndSnapshot(t *testing.T) {
 			// An implicit override may restore a kernel other than this
 			// executor's default. Its next snapshot must keep those same bytes.
 			receiverTask := &repb.ExecutionTask{ExecuteRequest: &repb.ExecuteRequest{DigestFunction: repb.DigestFunction_SHA256}}
-			flags.Set(t, "executor.enable_local_snapshot_sharing", true)
 			receiver, err := NewContainer(t.Context(), env, receiverTask, ContainerOpts{
 				VMConfiguration:     &fcpb.VMConfiguration{NumCpus: 1, MemSizeMb: 128},
 				ExecutorConfig:      cfg,
@@ -160,15 +175,12 @@ func TestGuestKernelBootAndSnapshot(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, keys[version], receiver.SnapshotKeySet().GetWriteKey().GetConfigurationHash())
 			require.NoError(t, receiver.newID(t.Context()))
-			// Cache ordinary tiny files; no COW drives or VM are needed for
-			// the kernel artifact/metadata pairing exercised below.
-			flags.Set(t, "executor.enable_local_snapshot_sharing", false)
 			name, err := receiver.snapshotKernelImageName(manifest.GetVmConfiguration(), manifest.GetFiles())
 			require.NoError(t, err)
 			unpackedKernel := filepath.Join(receiver.getChroot(), name)
 			require.NoError(t, os.MkdirAll(receiver.getChroot(), 0755))
 			if wantDigest != receiver.vmConfig.GuestKernelVersion {
-				write(unpackedKernel, "wrong kernel")
+				write(t, unpackedKernel, "wrong kernel")
 				require.True(t, status.IsFailedPreconditionError(receiver.adoptSnapshotKernel(manifest.GetVmConfiguration(), name)))
 				require.Equal(t, hash515.GetHash(), receiver.vmConfig.GuestKernelVersion)
 				require.NoError(t, os.Remove(unpackedKernel))
@@ -177,9 +189,7 @@ func TestGuestKernelBootAndSnapshot(t *testing.T) {
 			require.NoError(t, receiver.adoptSnapshotKernel(manifest.GetVmConfiguration(), name))
 			require.Equal(t, wantDigest, receiver.vmConfig.GuestKernelVersion)
 			require.Equal(t, unpackedKernel, receiver.guestKernelImagePath)
-			for _, name := range []string{containerFSName, scratchFSName, "memory.snap", "vmstate.snap"} {
-				write(filepath.Join(receiver.getChroot(), name), name)
-			}
+			prepareSnapshot(t, receiver)
 			require.NoError(t, receiver.saveSnapshot(t.Context(), &snapshotDetails{
 				memSnapshotName: "memory.snap", vmStateSnapshotName: "vmstate.snap", saveLocalSnapshot: true,
 			}))

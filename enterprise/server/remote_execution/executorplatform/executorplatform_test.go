@@ -586,7 +586,7 @@ func TestGuestKernelRequiresFirecracker(t *testing.T) {
 	}{
 		{name: "explicit", requested: "firecracker", supported: []platform.ContainerType{platform.FirecrackerContainerType}},
 		{name: "default", supported: []platform.ContainerType{platform.FirecrackerContainerType}},
-		{name: "bare", requested: "bare", supported: []platform.ContainerType{platform.BareContainerType}, wantError: true},
+		{name: "bare", requested: string(platform.BareContainerType), supported: []platform.ContainerType{platform.BareContainerType}, wantError: true},
 		{name: "docker", requested: "docker", supported: []platform.ContainerType{platform.DockerContainerType}, wantError: true},
 		{name: "forced firecracker", requested: "docker", forced: "firecracker", supported: []platform.ContainerType{platform.FirecrackerContainerType}},
 		{name: "forced docker", requested: "firecracker", forced: "docker", supported: []platform.ContainerType{platform.DockerContainerType}, wantError: true},
