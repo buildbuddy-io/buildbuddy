@@ -78,15 +78,22 @@ the review concise, clear and pleasant to receive. Don't change what any
 finding claims, and don't add facts. You may cut detail, merge duplicates,
 split a finding that covers unrelated issues, and reword anything.
 
-The reader knows the system at a high level, but might be new to this
-subsystem. They should read each comment once and know what's wrong and what
-to do. If they would want to ask for a summary, the comment is too long.
+The reader may be the PR's author or a reviewer. Assume they know the system
+at a high level, but not this change's code: an agent may have written it,
+so even the author may not remember its function, type or variable names,
+and a reviewer may know little about the change beyond its description. In
+the pitch, describe behavior, not code: what the system does, and what will
+go wrong. Names that are part of the design, such as flags, config keys or
+API fields, are fine. Code names belong in Details, where they help someone
+find the code.
+
+The reader should read each comment once and know what's wrong and what to
+do. If they would want to ask for a summary, the comment is too long.
 
 For each finding:
 - Open with a pitch of two or three short sentences: what goes wrong, why,
   and what should be done. Lead with the consequence. Use plain words, one
-  idea per sentence, and no asides in parentheses. Mention an identifier only
-  when the reader needs it to find the problem. For example:
+  idea per sentence, and no asides in parentheses. For example:
 
     This can show one user's data to another. The response cache no longer
     includes the user ID in its key, so two users requesting the same path
