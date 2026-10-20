@@ -353,6 +353,7 @@ func TestQueryUsageRows(t *testing.T) {
 }
 
 func setupClickHouseEnv(t *testing.T) *real_environment.RealEnv {
+	flags.Set(t, "group_statuses", []grpb.Group_GroupStatus{grpb.Group_FREE_TIER_GROUP_STATUS, grpb.Group_USAGE_BASED_GROUP_STATUS})
 	flags.Set(t, "olap_database.invocation_batch_insert_interval", 0*time.Second)
 	env := testenv.GetTestEnv(t)
 	testclickhouse.Configure(t, env)
