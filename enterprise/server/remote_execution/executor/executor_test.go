@@ -33,6 +33,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -276,6 +277,64 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 				))
 			}
 		})
+	}
+}
+
+type failingUploadCASClient struct {
+	repb.ContentAddressableStorageClient
+}
+
+func (c *failingUploadCASClient) BatchUpdateBlobs(context.Context, *repb.BatchUpdateBlobsRequest, ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
+	return nil, status.InvalidArgumentError("injected output tree upload failure")
+}
+
+func TestExecuteTaskAndStreamResults_PreservesLogsOnUploadFailure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	exec, env, execClient, mockServer, _ := getExecutor(t, func(ctx context.Context, original rbetest.RunFunc) *interfaces.CommandResult {
+		result := original(ctx, &repb.IOStats{})
+		result.AuxiliaryLogs = map[string][]byte{"auxiliary": []byte("auxiliary")}
+		return result
+	})
+	env.SetContentAddressableStorageClient(&failingUploadCASClient{ContentAddressableStorageClient: env.GetContentAddressableStorageClient()})
+	task := getTask()
+	task.ExecutionTask.Command.Arguments = []string{"/bin/sh", "-c", "printf output > output; printf stdout; printf stderr >&2"}
+	task.ExecutionTask.Command.OutputPaths = []string{"output"}
+	publisher, err := operation.Publish(ctx, execClient, task.GetExecutionTask().GetExecutionId())
+	require.NoError(t, err)
+
+	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+	require.ErrorContains(t, err, "injected output tree upload failure")
+	require.False(t, retry)
+	select {
+	case <-mockServer.finished:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	ops := mockServer.getOperations()
+	require.Equal(t, 1, operationsStageCounts(ops)[repb.ExecutionStage_COMPLETED])
+	completed, err := rexec.UnpackOperation(ops[len(ops)-1])
+	require.NoError(t, err)
+	rsp := completed.ExecuteResponse
+	require.Equal(t, int32(codes.Unavailable), rsp.GetStatus().GetCode())
+	require.Contains(t, rsp.GetStatus().GetMessage(), "injected output tree upload failure")
+	require.Empty(t, rsp.GetResult().GetOutputFiles())
+	require.Empty(t, rsp.GetResult().GetOutputDirectories())
+	md := rsp.GetResult().GetExecutionMetadata()
+	require.Equal(t, "host-id", md.GetWorker())
+	require.Equal(t, "executor-id", md.GetExecutorId())
+	require.NotNil(t, md.GetExecutionCompletedTimestamp())
+	require.NotNil(t, md.GetOutputUploadStartTimestamp())
+	require.NotNil(t, md.GetWorkerCompletedTimestamp())
+	for want, d := range map[string]*repb.Digest{
+		"stdout":    rsp.GetResult().GetStdoutDigest(),
+		"stderr":    rsp.GetResult().GetStderrDigest(),
+		"auxiliary": rsp.GetServerLogs()["auxiliary"].GetDigest(),
+	} {
+		require.NotNil(t, d, want)
+		var got strings.Builder
+		require.NoError(t, cachetools.GetBlob(ctx, env.GetByteStreamClient(), digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256), &got))
+		require.Equal(t, want, got.String())
 	}
 }
 
