@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,7 +28,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-func TestPool_ReturnedWorkspaceHoldsOnlyUnchangedInputs(t *testing.T) {
+func TestPool_ReusedWorkspaceMatchesFreshSetup(t *testing.T) {
 	flags.Set(t, "executor.workspace_pool.slots", 4)
 	te := newPoolTestEnv(t)
 	ctx := t.Context()
@@ -48,12 +49,73 @@ func TestPool_ReturnedWorkspaceHoldsOnlyUnchangedInputs(t *testing.T) {
 		Directories: []*repb.DirectoryNode{dirNode("out", out)},
 	}
 	oldOnly := &repb.Directory{Files: []*repb.FileNode{uploadFile(t, te, "stale.txt", "stale")}}
+	// newLib differs from oldLib in every entry except "kept_link" and "same",
+	// so when the second task reuses the first workspace, syncDir has to remove
+	// each of those entries before the tree fetcher creates the new one:
+	//   - content.txt has different content.
+	//   - exec.sh is executable only in newLib.
+	//   - Each entry named <a>_to_<b> is an a in oldLib and a b in newLib.
+	//   - retargeted_link has a different target.
+	// We make the old content.txt longer than the new one. If syncDir left the
+	// old copy in place, the tree fetcher would write the new content over it
+	// and leave old bytes at the end, which the comparison with a fresh setup
+	// would catch.
+	//
+	// take only reuses a pooled workspace that shares more files with the new
+	// tree than it doesn't, so we put same in both trees, and its files
+	// outweigh the ones that differ.
+	empty := &repb.Directory{}
+	same := &repb.Directory{Files: []*repb.FileNode{
+		uploadFile(t, te, "a.txt", "a"),
+		uploadFile(t, te, "b.txt", "b"),
+		uploadFile(t, te, "c.txt", "c"),
+		uploadFile(t, te, "d.txt", "d"),
+	}}
+	oldLib := &repb.Directory{
+		Files: []*repb.FileNode{
+			uploadFile(t, te, "content.txt", "old!"),
+			uploadFile(t, te, "exec.sh", "sh"),
+			uploadFile(t, te, "file_to_dir", "f"),
+			uploadFile(t, te, "file_to_link", "f"),
+		},
+		Directories: []*repb.DirectoryNode{dirNode("dir_to_file", empty), dirNode("dir_to_link", empty), dirNode("same", same)},
+		Symlinks: []*repb.SymlinkNode{
+			{Name: "kept_link", Target: "exec.sh"},
+			{Name: "link_to_dir", Target: "exec.sh"},
+			{Name: "link_to_file", Target: "exec.sh"},
+			{Name: "retargeted_link", Target: "content.txt"},
+		},
+	}
+	executable := uploadFile(t, te, "exec.sh", "sh")
+	executable.IsExecutable = true
+	newLib := &repb.Directory{
+		Files: []*repb.FileNode{
+			uploadFile(t, te, "content.txt", "new"),
+			uploadFile(t, te, "dir_to_file", "f"),
+			executable,
+			uploadFile(t, te, "link_to_file", "f"),
+		},
+		Directories: []*repb.DirectoryNode{dirNode("file_to_dir", empty), dirNode("link_to_dir", empty), dirNode("same", same)},
+		Symlinks: []*repb.SymlinkNode{
+			{Name: "dir_to_link", Target: "exec.sh"},
+			{Name: "file_to_link", Target: "exec.sh"},
+			{Name: "kept_link", Target: "exec.sh"},
+			{Name: "retargeted_link", Target: "exec.sh"},
+		},
+	}
 	oldTree := &repb.Tree{
 		Root: &repb.Directory{
 			Files:       []*repb.FileNode{uploadFile(t, te, "keep.txt", "keep")},
-			Directories: []*repb.DirectoryNode{dirNode("bin", bin), dirNode("node_modules", nodeModules), dirNode("old_only", oldOnly)},
+			Directories: []*repb.DirectoryNode{dirNode("bin", bin), dirNode("lib", oldLib), dirNode("node_modules", nodeModules), dirNode("old_only", oldOnly)},
 		},
-		Children: []*repb.Directory{bin, out, nodeModules, pkg, oldOnly},
+		Children: []*repb.Directory{bin, out, oldLib, empty, same, nodeModules, pkg, oldOnly},
+	}
+	newTree := &repb.Tree{
+		Root: &repb.Directory{
+			Files:       []*repb.FileNode{uploadFile(t, te, "keep.txt", "keep"), uploadFile(t, te, "new.txt", "new")},
+			Directories: []*repb.DirectoryNode{dirNode("bin", bin), dirNode("lib", newLib), dirNode("node_modules", nodeModules)},
+		},
+		Children: []*repb.Directory{bin, out, newLib, empty, same, nodeModules, pkg},
 	}
 	cmd := &repb.Command{
 		OutputDirectories: []string{"bin/out"},
@@ -170,7 +232,8 @@ func TestPool_ReturnedWorkspaceHoldsOnlyUnchangedInputs(t *testing.T) {
 			changed: []string{"node_modules/pkg"},
 		},
 	} {
-		// A 4 byte limit removes the 5 byte inputs before pooling.
+		// A 4 byte limit removes the 5 byte inputs before pooling, which the
+		// next task then links again.
 		for _, maxFileSize := range []int64{0, 4} {
 			t.Run(fmt.Sprintf("%s/max_file_size=%d", test.name, maxFileSize), func(t *testing.T) {
 				flags.Set(t, "executor.workspace_pool.max_file_size_bytes", maxFileSize)
@@ -219,6 +282,22 @@ func TestPool_ReturnedWorkspaceHoldsOnlyUnchangedInputs(t *testing.T) {
 				}
 				got := snapshot(pooledPath)
 				assert.Equal(t, want, got)
+
+				// The next task, whose tree shares most of its inputs with the
+				// first one's, reuses the pooled directory, and gets the same
+				// workspace as a fresh setup of its tree.
+				second, err := workspace.New(te, buildRoot, opts)
+				require.NoError(t, err)
+				setUp(second, newTree)
+				secondRoot, err := os.Lstat(second.Path())
+				require.NoError(t, err)
+				assert.True(t, os.SameFile(firstRoot, secondRoot), "second workspace should have reused the pooled one")
+				freshSecond, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{})
+				require.NoError(t, err)
+				setUp(freshSecond, newTree)
+				want = snapshot(freshSecond.Path())
+				got = snapshot(second.Path())
+				assert.Equal(t, want, got)
 			})
 		}
 	}
@@ -261,6 +340,58 @@ func runPooledTask(t *testing.T, ctx context.Context, te *testenv.TestEnv, build
 	err = ws.Remove(ctx)
 	require.NoError(t, err)
 	return root
+}
+
+func TestPool_TakesOnlySimilarWorkspacesFromTheSameGroup(t *testing.T) {
+	flags.Set(t, "executor.workspace_pool.slots", 4)
+	te := newPoolTestEnv(t)
+	ctx := t.Context()
+	groupA := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR1"}, nil)
+	groupB := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR2"}, nil)
+	a := uploadFile(t, te, "a.txt", "a")
+	b := uploadFile(t, te, "b.txt", "b")
+	c := uploadFile(t, te, "c.txt", "c")
+	d := uploadFile(t, te, "d.txt", "d")
+	pooledTree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{a, b, c}}}
+
+	for _, test := range []struct {
+		name       string
+		ctx        context.Context
+		tree       *repb.Tree
+		wantReused bool
+	}{
+		{
+			name:       "same group and inputs",
+			ctx:        groupA,
+			tree:       pooledTree,
+			wantReused: true,
+		},
+		{
+			name:       "other group",
+			ctx:        groupB,
+			tree:       pooledTree,
+			wantReused: false,
+		},
+		{
+			name: "low overlap",
+			ctx:  groupA,
+			// The pooled workspace has only one of its three files in common
+			// with this tree, so reusing it would remove more files than it
+			// keeps.
+			tree:       &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{a, d}}},
+			wantReused: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			buildRoot := testfs.MakeTempDir(t)
+			pool, err := workspace.NewPool(buildRoot)
+			require.NoError(t, err)
+			pooled := runPooledTask(t, groupA, te, buildRoot, pool, pooledTree)
+			next := runPooledTask(t, test.ctx, te, buildRoot, pool, test.tree)
+			reused := os.SameFile(pooled, next)
+			assert.Equal(t, test.wantReused, reused)
+		})
+	}
 }
 
 func TestPool_EvictsWorkspacesOverSlotLimit(t *testing.T) {
