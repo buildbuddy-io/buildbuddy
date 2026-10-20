@@ -143,7 +143,9 @@ func TestXForwardedForMultipleHeaderLines(t *testing.T) {
 		{name: "2 hops, entries split across lines", hops: 2, values: []string{"forged, client", "lb"}, wantIP: "client", wantSet: true},
 		{name: "2 hops counts across lines", hops: 2, values: []string{"a", "b"}, wantIP: "a", wantSet: true},
 		{name: "3 hops with two entries falls back to peer", hops: 3, values: []string{"a", "b"}},
-		{name: "unset uses only the first line", hops: 0, values: []string{"x", "y, z"}, wantIP: "x", wantSet: true},
+		{name: "unset counts across lines", hops: 0, values: []string{"x", "y, z"}, wantIP: "y", wantSet: true},
+		{name: "unset ignores client-supplied first line", hops: 0, values: []string{"forged", "client, lb"}, wantIP: "client", wantSet: true},
+		{name: "unset single entry split from empty line", hops: 0, values: []string{"", "a"}, wantIP: "a", wantSet: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			flags.Set(t, "auth.trust_xforwardedfor_header", true)

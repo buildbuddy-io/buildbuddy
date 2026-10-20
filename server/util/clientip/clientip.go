@@ -87,30 +87,23 @@ func SetFromXForwardedForHeader(ctx context.Context, values []string, peerIP str
 		return ctx, false
 	}
 
-	if n := *xForwardedForTrustedHops; n > 0 {
-		ip, ok := nthEntryFromRight(values, n)
-		if !ok {
-			return ctx, false
+	n := *xForwardedForTrustedHops
+	if n == 0 {
+		// For GCLB, the header format is [client supplied IP,]client IP, LB IP
+		// We always look at the client IP as seen by GCLB as the client supplied
+		// value can't be trusted if it's present.
+		if ip, ok := nthEntryFromRight(values, 2); ok {
+			return context.WithValue(ctx, ContextKey, ip), true
 		}
-		return context.WithValue(ctx, ContextKey, ip), true
+		// If there's only a single IP in the header, return it directly.
+		// This handles the header format set by NGINX.
+		n = 1
 	}
-
-	header := values[0]
-	if header == "" {
+	ip, ok := nthEntryFromRight(values, n)
+	if !ok {
 		return ctx, false
 	}
-	ips := strings.Split(header, ",")
-
-	// If there's only a single IP in the header, return it directly.
-	// This handles the header format set by NGINX.
-	if len(ips) == 1 {
-		return context.WithValue(ctx, ContextKey, strings.TrimSpace(ips[0])), true
-	}
-
-	// For GCLB, the header format is [client supplied IP,]client IP, LB IP
-	// We always look at the client IP as seen by GCLB as the client supplied
-	// value can't be trusted if it's present.
-	return context.WithValue(ctx, ContextKey, strings.TrimSpace(ips[len(ips)-2])), true
+	return context.WithValue(ctx, ContextKey, ip), true
 }
 
 // nthEntryFromRight returns the nth comma-separated entry counting from the
