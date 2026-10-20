@@ -24,14 +24,10 @@ go_library(
 
 go_test(
     name = "resources_test",
-    srcs = [
-        "resources_test.go",
-        "zone_test.go",
-    ],
-    embed = [":resources"],
+    srcs = ["resources_test.go"],
     deps = [
+        ":resources",
         "//server/util/testing/flags",
-        "@com_github_aws_aws_sdk_go_v2_feature_ec2_imds//:imds",
         "@com_github_stretchr_testify//require",
     ],
 )
