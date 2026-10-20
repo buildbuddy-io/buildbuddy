@@ -14,8 +14,11 @@ release.py - A simple script to create a release.
 This script will do the following:
 
   1) Check that your working repository is clean.
-  2) Compute a new version tag by bumping the highest remote version tag,
-     and create the tag pointing at HEAD.
+  2) Compute a new version tag by bumping a base version tag, and create the
+     tag pointing at HEAD. By default, a patch release (or
+     --bump_version_type=none) is based on the highest version tag reachable
+     from HEAD, i.e. the branch's own version, and a minor release is based on
+     the highest version tag in the repo.
   3) Pushes the tag to GitHub.
      This kicks off some workflows which will build the release artifacts.
   4) Builds and tags new Docker images locally, and pushes them to the registry.
@@ -277,6 +280,10 @@ def tag_exists(tag):
     p = subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/tags/{tag}'], stdout=subprocess.DEVNULL)
     return p.returncode == 0
 
+def is_shallow_repository():
+    p = run_or_die('git rev-parse --is-shallow-repository', capture_stdout=True)
+    return p.stdout.strip() == 'true'
+
 def is_ancestor(ancestor, descendant):
     p = subprocess.run(['git', 'merge-base', '--is-ancestor', ancestor, descendant])
     return p.returncode == 0
@@ -296,7 +303,7 @@ def main():
     parser.add_argument('--allow_dirty', default=False, action='store_true')
     parser.add_argument('--force', default=False, action='store_true')
     parser.add_argument('--bump_version_type', default='minor', choices=['major', 'minor', 'patch', 'none'])
-    parser.add_argument('--base_version', default='', help='Existing version tag to bump, like v2.12.8. Defaults to the highest version tag.')
+    parser.add_argument('--base_version', default='', help='Existing version tag to bump, like v2.12.8. Defaults to the highest version tag reachable from HEAD (the branch\'s own version) for patch and none, and to the highest version tag in the repo for minor.')
     parser.add_argument('--update_app_image', default=False, action='store_true')
     parser.add_argument('--update_enterprise_app_image', default=False, action='store_true')
     parser.add_argument('--update_executor_image', default=False, action='store_true')
@@ -311,6 +318,14 @@ def main():
     if args.mark_workspace_as_safe:
         run_or_die('git config --global --add safe.directory %s' % args.mark_workspace_as_safe)
 
+    # Images are built with --stamp, and a shallow clone may be missing the
+    # version tag from its history, so the images would be stamped "unknown".
+    updating_images = (args.update_app_image or args.update_enterprise_app_image or
+                       args.update_executor_image or args.update_proxy_image)
+    if updating_images and is_shallow_repository():
+        die('Refusing to build images in a shallow clone: they would be stamped with version "unknown". ' +
+            'Fetch the full history first (e.g. fetch-depth: 0, or git fetch --unshallow).')
+
     if workspace_is_clean():
         print("Workspace is clean!")
     elif args.allow_dirty:
@@ -320,11 +335,11 @@ def main():
             'Please run this in a clean workspace!')
 
     run_or_die('git fetch --all --tags')
-    # A patch bumps this branch's own version; anything else bumps the highest
-    # version in the repo.
+    # A patch bumps this branch's own version, and none reuses it; anything else
+    # bumps the highest version in the repo.
     if args.base_version:
         old_version = args.base_version
-    elif args.bump_version_type == 'patch':
+    elif args.bump_version_type in ('patch', 'none'):
         old_version = get_branch_highest_version()
     else:
         old_version = get_highest_version()
