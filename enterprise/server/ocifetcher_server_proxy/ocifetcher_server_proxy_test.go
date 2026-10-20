@@ -3,10 +3,10 @@ package ocifetcher_server_proxy
 import (
 	"context"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
@@ -764,7 +764,7 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 		require.Equal(t, expectedData, results[i], "client %d got wrong data", i)
 	}
 
-	require.Equal(t, int32(1), counter.fetchBlobCount.Load(),
+	require.Equal(t, 1, counter.callCounts()["FetchBlob"],
 		"expected exactly 1 upstream FetchBlob call due to singleflight deduplication")
 }
 
@@ -876,32 +876,46 @@ func layerData(t *testing.T, layer ctr.Layer) []byte {
 	return data
 }
 
-// countingOCIFetcherClient wraps an OCIFetcherClient and counts calls, and
-// FetchBlob calls separately.
+// countingOCIFetcherClient wraps an OCIFetcherClient and counts calls by
+// method.
 type countingOCIFetcherClient struct {
-	inner          ofpb.OCIFetcherClient
-	calls          atomic.Int32
-	fetchBlobCount atomic.Int32
+	inner  ofpb.OCIFetcherClient
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+func (c *countingOCIFetcherClient) count(method string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.counts == nil {
+		c.counts = map[string]int{}
+	}
+	c.counts[method]++
+}
+
+func (c *countingOCIFetcherClient) callCounts() map[string]int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return maps.Clone(c.counts)
 }
 
 func (c *countingOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
-	c.calls.Add(1)
+	c.count("FetchManifest")
 	return c.inner.FetchManifest(ctx, req, opts...)
 }
 
 func (c *countingOCIFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
-	c.calls.Add(1)
+	c.count("FetchManifestMetadata")
 	return c.inner.FetchManifestMetadata(ctx, req, opts...)
 }
 
 func (c *countingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
-	c.calls.Add(1)
-	c.fetchBlobCount.Add(1)
+	c.count("FetchBlob")
 	return c.inner.FetchBlob(ctx, req, opts...)
 }
 
 func (c *countingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
-	c.calls.Add(1)
+	c.count("FetchBlobMetadata")
 	return c.inner.FetchBlobMetadata(ctx, req, opts...)
 }
 
@@ -1042,14 +1056,15 @@ func pushTestImage(t *testing.T, reg *testregistry.Registry, creds *testregistry
 	return imageName, imageName + "@" + digest.String(), layerData(t, layers[0])
 }
 
-// fetchAll makes each OCIFetcher RPC, and returns their errors by method and
-// the blob's data.
-func fetchAll(client ofpb.OCIFetcherClient, imageRef, blobRef string, creds *rgpb.Credentials, bypassRegistry bool) (map[string]error, []byte) {
+// fetchAll makes each OCIFetcher RPC, and returns their errors by method, the
+// unary RPCs' responses by method, and the blob's data.
+func fetchAll(client ofpb.OCIFetcherClient, imageRef, blobRef string, creds *rgpb.Credentials, bypassRegistry bool) (map[string]error, map[string]gproto.Message, []byte) {
 	ctx := context.Background()
 	errs := map[string]error{}
-	_, errs["FetchManifest"] = client.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: imageRef, Credentials: creds, BypassRegistry: bypassRegistry})
-	_, errs["FetchManifestMetadata"] = client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: imageRef, Credentials: creds, BypassRegistry: bypassRegistry})
-	_, errs["FetchBlobMetadata"] = client.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: blobRef, Credentials: creds, BypassRegistry: bypassRegistry})
+	resps := map[string]gproto.Message{}
+	resps["FetchManifest"], errs["FetchManifest"] = client.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: imageRef, Credentials: creds, BypassRegistry: bypassRegistry})
+	resps["FetchManifestMetadata"], errs["FetchManifestMetadata"] = client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: imageRef, Credentials: creds, BypassRegistry: bypassRegistry})
+	resps["FetchBlobMetadata"], errs["FetchBlobMetadata"] = client.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: blobRef, Credentials: creds, BypassRegistry: bypassRegistry})
 	var blob []byte
 	stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: blobRef, Credentials: creds, BypassRegistry: bypassRegistry})
 	for err == nil {
@@ -1061,7 +1076,18 @@ func fetchAll(client ofpb.OCIFetcherClient, imageRef, blobRef string, creds *rgp
 		err = nil
 	}
 	errs["FetchBlob"] = err
-	return errs, blob
+	return errs, resps, blob
+}
+
+// fallbackCount returns the number of fallbacks to the apps recorded for the
+// given method, ref, registry error code and apps result code.
+func fallbackCount(method, ref string, registryCode, appsCode codes.Code) float64 {
+	return testutil.ToFloat64(metrics.OCIFetcherProxyFallbackCount.With(prometheus.Labels{
+		metrics.OCIFetcherMethodLabel:         method,
+		metrics.ImageFetchRegistryLabel:       registryLabel(ref),
+		metrics.StatusHumanReadableLabel:      registryCode.String(),
+		metrics.OCIFetcherFallbackResultLabel: appsCode.String(),
+	}))
 }
 
 // fakeRegistryFetcher fails every request with err. If err is nil, it fails
@@ -1108,12 +1134,12 @@ func TestFetchFromRegistry(t *testing.T) {
 	_, client, apps := runRegistryFetchingProxy(t, true, nil)
 
 	for range 2 {
-		errs, got := fetchAll(client, imageRef, blobRef, nil, false)
+		errs, _, got := fetchAll(client, imageRef, blobRef, nil, false)
 		require.Equal(t, map[string]error{"FetchManifest": nil, "FetchManifestMetadata": nil, "FetchBlobMetadata": nil, "FetchBlob": nil}, errs)
 		require.Equal(t, want, got)
 	}
 
-	require.Zero(t, apps.calls.Load())
+	require.Empty(t, apps.callCounts())
 	// The second round is served from the proxy's cache.
 	_, digest, _ := strings.Cut(blobRef, "@")
 	snapshot := counter.Snapshot()
@@ -1133,14 +1159,25 @@ func TestFetchFromRegistryGatedOff(t *testing.T) {
 		{name: "BypassRegistry", enabled: true, bypassRegistry: true, code: codes.PermissionDenied},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			imageRef, blobRef, _ := pushTestImage(t, setupTestRegistry(t, nil), nil)
+			imageRef, blobRef, blob := pushTestImage(t, setupTestRegistry(t, nil), nil)
 			_, client, apps := runRegistryFetchingProxy(t, tc.enabled, &fakeRegistryFetcher{t: t})
+			// What the apps return when called directly (not counted).
+			_, wantResps, _ := fetchAll(apps.inner, imageRef, blobRef, nil, tc.bypassRegistry)
 
-			errs, _ := fetchAll(client, imageRef, blobRef, nil, tc.bypassRegistry)
+			errs, resps, got := fetchAll(client, imageRef, blobRef, nil, tc.bypassRegistry)
 			for method, err := range errs {
 				require.Equal(t, tc.code, gstatus.Code(err), "%s: %v", method, err)
 			}
-			require.NotZero(t, apps.calls.Load())
+			require.Empty(t, cmp.Diff(wantResps, resps, protocmp.Transform()))
+			// FetchBlob checks the blob's metadata with the apps first, and
+			// stops there if that fails.
+			wantCalls := map[string]int{"FetchManifest": 1, "FetchManifestMetadata": 1, "FetchBlobMetadata": 2}
+			if tc.code == codes.OK {
+				require.NotEmpty(t, resps["FetchManifest"].(*ofpb.FetchManifestResponse).GetManifest())
+				require.Equal(t, blob, got)
+				wantCalls["FetchBlob"] = 1
+			}
+			require.Equal(t, wantCalls, apps.callCounts())
 		})
 	}
 }
@@ -1162,34 +1199,26 @@ func TestFetchFromRegistryFallsBackToApps(t *testing.T) {
 			registryErr := gstatus.Error(tc.code, "registry error")
 			_, client, apps := runRegistryFetchingProxy(t, true, &fakeRegistryFetcher{t: t, err: registryErr})
 			refs := map[string]string{"FetchManifest": imageRef, "FetchManifestMetadata": imageRef, "FetchBlobMetadata": blobRef, "FetchBlob": blobRef}
-			fallbacks := func(method string) float64 {
-				return testutil.ToFloat64(metrics.OCIFetcherProxyFallbackCount.With(prometheus.Labels{
-					metrics.OCIFetcherMethodLabel:         method,
-					metrics.ImageFetchRegistryLabel:       registryLabel(refs[method]),
-					metrics.StatusHumanReadableLabel:      tc.code.String(),
-					metrics.OCIFetcherFallbackResultLabel: codes.OK.String(),
-				}))
-			}
 			before := map[string]float64{}
-			for method := range refs {
-				before[method] = fallbacks(method)
+			for method, ref := range refs {
+				before[method] = fallbackCount(method, ref, tc.code, codes.OK)
 			}
 
-			errs, got := fetchAll(client, imageRef, blobRef, nil, false)
+			errs, _, got := fetchAll(client, imageRef, blobRef, nil, false)
 
 			for method, err := range errs {
 				if tc.fallBack {
 					require.NoError(t, err, method)
-					require.Equal(t, before[method]+1, fallbacks(method), method)
+					require.Equal(t, before[method]+1, fallbackCount(method, refs[method], tc.code, codes.OK), method)
 				} else {
 					require.Equal(t, tc.code, gstatus.Code(err), "%s: %v", method, err)
 				}
 			}
 			if tc.fallBack {
 				require.Equal(t, want, got)
-				require.NotZero(t, apps.calls.Load())
+				require.Equal(t, map[string]int{"FetchManifest": 1, "FetchManifestMetadata": 1, "FetchBlobMetadata": 2, "FetchBlob": 1}, apps.callCounts())
 			} else {
-				require.Zero(t, apps.calls.Load())
+				require.Empty(t, apps.callCounts())
 			}
 		})
 	}
@@ -1226,7 +1255,20 @@ func TestFetchFromRegistryDoesNotFallBackAfterFailedSend(t *testing.T) {
 
 	err := proxy.FetchBlob(&ofpb.FetchBlobRequest{Ref: "localhost/repo@sha256:" + strings.Repeat("a", 64)}, failingSendStream{})
 	require.True(t, status.IsUnavailableError(err), "unexpected error: %v", err)
-	require.Zero(t, apps.calls.Load())
+	require.Empty(t, apps.callCounts())
+}
+
+func TestFetchFromRegistryDoesNotFallBackAfterPartialBlob(t *testing.T) {
+	_, client, apps := runRegistryFetchingProxy(t, true, partialBlobFetcher{})
+
+	stream, err := client.FetchBlob(context.Background(), &ofpb.FetchBlobRequest{Ref: "localhost/repo@sha256:" + strings.Repeat("a", 64)})
+	require.NoError(t, err)
+	resp, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, []byte("partial"), resp.GetData())
+	_, err = stream.Recv()
+	require.True(t, status.IsUnavailableError(err), "unexpected error: %v", err)
+	require.Empty(t, apps.callCounts())
 }
 
 func TestFetchFromRegistryWarmCacheRequiresValidCredentials(t *testing.T) {
@@ -1235,21 +1277,27 @@ func TestFetchFromRegistryWarmCacheRequiresValidCredentials(t *testing.T) {
 	_, client, apps := runRegistryFetchingProxy(t, true, nil)
 
 	// Warm the proxy's cache with valid credentials.
-	errs, got := fetchAll(client, imageRef, blobRef, &rgpb.Credentials{Username: "testuser", Password: "testpass"}, false)
+	errs, _, got := fetchAll(client, imageRef, blobRef, &rgpb.Credentials{Username: "testuser", Password: "testpass"}, false)
 	for method, err := range errs {
 		require.NoError(t, err, method)
 	}
 	require.Equal(t, want, got)
-	require.Zero(t, apps.calls.Load())
+	require.Empty(t, apps.callCounts())
 
 	// The registry rejects the proxy, so it falls back to the apps, which
 	// reject the credentials too.
-	errs, got = fetchAll(client, imageRef, blobRef, &rgpb.Credentials{Username: "testuser", Password: "wrong"}, false)
+	refs := map[string]string{"FetchManifest": imageRef, "FetchManifestMetadata": imageRef, "FetchBlobMetadata": blobRef, "FetchBlob": blobRef}
+	before := map[string]float64{}
+	for method, ref := range refs {
+		before[method] = fallbackCount(method, ref, codes.Unauthenticated, codes.Unauthenticated)
+	}
+	errs, _, got = fetchAll(client, imageRef, blobRef, &rgpb.Credentials{Username: "testuser", Password: "wrong"}, false)
 	for method, err := range errs {
 		require.True(t, status.IsUnauthenticatedError(err), "%s: %v", method, err)
+		require.Equal(t, before[method]+1, fallbackCount(method, refs[method], codes.Unauthenticated, codes.Unauthenticated), method)
 	}
 	require.Empty(t, got)
-	require.NotZero(t, apps.calls.Load())
+	require.Equal(t, map[string]int{"FetchManifest": 1, "FetchManifestMetadata": 1, "FetchBlobMetadata": 2}, apps.callCounts())
 }
 
 func TestFetchFromRegistryFetcherCreationFails(t *testing.T) {
