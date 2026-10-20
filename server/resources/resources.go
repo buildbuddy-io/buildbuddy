@@ -455,6 +455,13 @@ func GetMyPort() (int32, error) {
 // GetZone returns the zone this process runs in: the zone_override flag if
 // set, else the GCE zone (e.g. "us-west1-b") or the EC2 availability zone
 // (e.g. "us-west-2a"), or "" if neither can be determined.
+//
+// Zones are only comparable within one deployment. GCE zone names are
+// global, but AWS maps availability zone names to physical zones
+// independently per account, so "us-west-2a" in two accounts is generally
+// two different zones. The account-independent AZ IDs (e.g. "usw2-az1")
+// would avoid that, but callers only compare zones among peers in one
+// account, and the name is what appears in the AWS console and in metrics.
 func GetZone() string {
 	if *zoneOverride != "" {
 		return *zoneOverride
@@ -468,8 +475,7 @@ func GetZone() string {
 	return awsZone()
 }
 
-// awsZone returns the EC2 availability zone, or "" if this is not an EC2
-// instance or the metadata lookup fails.
+// awsZone is the EC2 availability zone, or "" off EC2 or if the lookup fails.
 var awsZone = sync.OnceValue(func() string {
 	if !onEC2() {
 		return ""
@@ -482,23 +488,16 @@ var awsZone = sync.OnceValue(func() string {
 	return z
 })
 
-// onEC2 reports whether the system firmware identifies this machine as a
-// Nitro-based Amazon EC2 instance, which reports "Amazon EC2" as the system
-// vendor. Legacy Xen-based instance types are not detected. Unlike
-// metadata.OnGCE, this never touches the network: it only reads sysfs (which
-// is visible from containers), so it is cheap and cannot hang on hosts where
-// the metadata service address is unroutable. See
+// onEC2 reports whether this is a (Nitro-based) EC2 instance, per
 // https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/identify_ec2_instances.html.
+// It only reads sysfs, so unlike metadata.OnGCE it cannot hang on a host
+// where the metadata service address is unroutable.
 func onEC2() bool {
 	b, err := os.ReadFile("/sys/class/dmi/id/sys_vendor")
 	return err == nil && strings.TrimSpace(string(b)) == "Amazon EC2"
 }
 
-// ec2AvailabilityZone returns the availability zone this instance runs in
-// (e.g. "us-west-2a") from the EC2 instance metadata service. Reaching it
-// from a pod requires the instance's IMDSv2 hop limit to be at least 2. The
-// client honors AWS_EC2_METADATA_DISABLED and
-// AWS_EC2_METADATA_SERVICE_ENDPOINT.
+// ec2AvailabilityZone reads the zone from the EC2 instance metadata service.
 func ec2AvailabilityZone() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
