@@ -15,6 +15,7 @@ import Button from "../../../app/components/button/button";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
+import errorService from "../../../app/errors/error_service";
 import router from "../../../app/router/router";
 import rpc_service from "../../../app/service/rpc_service";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
@@ -35,10 +36,19 @@ interface Props {
 }
 
 interface State {
+  // True while the first page of results is being (re)loaded.
   loading: boolean;
+  // True while an additional page of results is being loaded.
+  loadingMore: boolean;
   failed: boolean;
-  data?: stats.GetTargetTrendsResponse;
-  displayCount: number;
+  // All target stats loaded so far, across every page fetched for the current
+  // query. Undefined until the first page has loaded.
+  targetStats?: stats.TargetStats[];
+  // Token for the next page of results, or empty if there are no more pages.
+  nextPageToken: string;
+  // The current contents of the filter input. This may be ahead of the filter
+  // in the URL (and therefore the loaded data) while a debounced update is
+  // pending.
   filterText: string;
 }
 
@@ -59,6 +69,13 @@ interface AggOption {
 
 const TARGET_SELECTED_METRIC_URL_PARAM: string = "targetsMetric";
 const TARGET_SELECTED_AGG_URL_PARAM: string = "targetsAgg";
+const TARGET_LABEL_FILTER_URL_PARAM: string = "targetsFilter";
+
+// How long to wait after the user stops typing before applying the label
+// filter, so that we don't issue a query on every keystroke.
+const FILTER_DEBOUNCE_INTERVAL_MS = 300;
+// The number of top targets shown in the bar chart.
+const CHART_TARGET_COUNT = 20;
 
 const METRIC_OPTIONS: MetricOption[] = [
   {
@@ -142,16 +159,26 @@ function convertAggUrlParam(param: string): AggOption {
   return AGG_OPTIONS[0];
 }
 
+function getFilterUrlParam(search: URLSearchParams): string {
+  return search.get(TARGET_LABEL_FILTER_URL_PARAM) ?? "";
+}
+
 export default class TrendsComponent extends React.Component<Props, State> {
   selectedMetric: MetricOption = METRIC_OPTIONS[0];
   selectedAgg: AggOption = AGG_OPTIONS[0];
 
   state: State = {
     loading: false,
+    loadingMore: false,
     failed: false,
-    displayCount: 50,
+    nextPageToken: "",
     filterText: "",
   };
+
+  private filterTimeout = 0;
+  // Incremented on every fetch so that responses to superseded requests (for
+  // example, from a filter that has since changed) can be ignored.
+  private fetchId = 0;
 
   private getPageTitle() {
     return "Target Performance";
@@ -166,6 +193,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     this.selectedMetric =
       convertMetricUrlParam(this.props.search.get(TARGET_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
     this.selectedAgg = convertAggUrlParam(this.props.search.get(TARGET_SELECTED_AGG_URL_PARAM) || "");
+    this.setState({ filterText: getFilterUrlParam(this.props.search) });
     this.fetchTargetTrends();
   }
 
@@ -175,16 +203,43 @@ export default class TrendsComponent extends React.Component<Props, State> {
       this.selectedMetric =
         convertMetricUrlParam(this.props.search.get(TARGET_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
       this.selectedAgg = convertAggUrlParam(this.props.search.get(TARGET_SELECTED_AGG_URL_PARAM) || "");
+      // Only sync the input from the URL when the URL's filter actually
+      // changed, so that an unrelated URL change (e.g. picking a new metric)
+      // doesn't clobber text the user is still typing.
+      const filterParam = getFilterUrlParam(this.props.search);
+      if (filterParam !== getFilterUrlParam(prevProps.search) && filterParam !== this.state.filterText) {
+        this.setState({ filterText: filterParam });
+      }
       this.fetchTargetTrends();
     }
   }
 
-  fetchTargetTrends() {
-    this.setState({ loading: true, failed: false });
+  componentWillUnmount(): void {
+    window.clearTimeout(this.filterTimeout);
+    // Make sure any in-flight responses are dropped rather than applied to an
+    // unmounted component.
+    this.fetchId++;
+  }
+
+  /**
+   * Fetches a page of target trends for the current URL state. With no page
+   * token, this replaces the loaded results with the first page; with a page
+   * token, the fetched page is appended to the results loaded so far.
+   */
+  fetchTargetTrends(pageToken: string = "") {
+    const fetchId = ++this.fetchId;
+    const isFirstPage = !pageToken;
+    if (isFirstPage) {
+      this.setState({ loading: true, loadingMore: false, failed: false });
+    } else {
+      this.setState({ loadingMore: true });
+    }
     const filterParams = getProtoFilterParams(this.props.search);
     const request = stats.GetTargetTrendsRequest.create({
       metric: this.selectedMetric.metric.execution!,
       agg: this.selectedAgg.agg,
+      targetLabelFilter: getFilterUrlParam(this.props.search),
+      pageToken: pageToken,
     });
     request.query = new stats.TrendQuery({
       host: filterParams.host,
@@ -206,13 +261,27 @@ export default class TrendsComponent extends React.Component<Props, State> {
     rpc_service.service
       .getTargetTrends(request)
       .then((response) => {
-        this.setState({ data: response });
+        if (fetchId !== this.fetchId) return;
+        this.setState({
+          targetStats: isFirstPage
+            ? response.targetStats
+            : [...(this.state.targetStats ?? []), ...response.targetStats],
+          nextPageToken: response.nextPageToken,
+          loading: false,
+          loadingMore: false,
+        });
       })
       .catch((e) => {
-        console.log(e);
-        this.setState({ failed: true, data: undefined });
-      })
-      .finally(() => this.setState({ loading: false }));
+        if (fetchId !== this.fetchId) return;
+        if (isFirstPage) {
+          console.log(e);
+          this.setState({ failed: true, targetStats: undefined, nextPageToken: "", loading: false });
+        } else {
+          // Keep the results loaded so far and let the user retry.
+          errorService.handleError(e);
+          this.setState({ loadingMore: false });
+        }
+      });
   }
 
   handleMetricChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -226,7 +295,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
       ...Object.fromEntries(this.props.search.entries()),
       [TARGET_SELECTED_METRIC_URL_PARAM]: encodeMetricUrlParam(option.metric),
     });
-    this.setState({ displayCount: 50 }); // Reset pagination when changing metrics
   };
 
   handleAggChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -240,43 +308,46 @@ export default class TrendsComponent extends React.Component<Props, State> {
       ...Object.fromEntries(this.props.search.entries()),
       [TARGET_SELECTED_AGG_URL_PARAM]: option.agg.toString(),
     });
-    this.setState({ displayCount: 50 }); // Reset pagination when changing aggregation.
   };
 
   handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    this.setState({ filterText: e.target.value, displayCount: 50 }); // Reset pagination when filtering
+    const filterText = e.target.value;
+    // Update the input immediately, but debounce the URL update (which
+    // triggers the fetch) so we don't query on every keystroke.
+    this.setState({ filterText });
+    window.clearTimeout(this.filterTimeout);
+    this.filterTimeout = window.setTimeout(() => this.applyFilter(filterText), FILTER_DEBOUNCE_INTERVAL_MS);
   };
 
+  handleFilterKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      window.clearTimeout(this.filterTimeout);
+      this.applyFilter(this.state.filterText);
+    }
+  };
+
+  applyFilter(filterText: string) {
+    if (filterText === getFilterUrlParam(this.props.search)) {
+      return;
+    }
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [TARGET_LABEL_FILTER_URL_PARAM]: filterText,
+    });
+  }
+
   handleShowMore = () => {
-    this.setState({ displayCount: this.state.displayCount + 50 });
+    if (!this.state.nextPageToken || this.state.loadingMore) {
+      return;
+    }
+    this.fetchTargetTrends(this.state.nextPageToken);
   };
 
   getChartData = (): TargetChartData[] => {
-    const filteredData = this.getFilteredData();
-    return filteredData.slice(0, 20).map((target) => ({
+    return (this.state.targetStats ?? []).slice(0, CHART_TARGET_COUNT).map((target) => ({
       target: target.target || "Unknown",
       value: +(target.value || 0),
     }));
-  };
-
-  getFilteredData = (): stats.TargetStats[] => {
-    if (!this.state.data) return [];
-
-    // Take up to 1000 results for client-side filtering
-    const maxData = this.state.data.targetStats.slice(0, 1000);
-
-    if (!this.state.filterText) {
-      return maxData;
-    }
-
-    // Filter by target name
-    const filterLower = this.state.filterText.toLowerCase();
-    return maxData.filter((target) => (target.target || "").toLowerCase().includes(filterLower));
-  };
-
-  getTableData = (): stats.TargetStats[] => {
-    const filteredData = this.getFilteredData();
-    return filteredData.slice(0, this.state.displayCount);
   };
 
   handleBarClick = (data: TargetChartData) => {
@@ -324,10 +395,20 @@ export default class TrendsComponent extends React.Component<Props, State> {
     return null;
   };
 
+  renderMatchCount(): string | null {
+    // We only know a count once a filter has been applied and loaded; the
+    // count is a lower bound if there are more pages to load.
+    if (!getFilterUrlParam(this.props.search) || this.state.loading || !this.state.targetStats) {
+      return null;
+    }
+    return `${this.state.targetStats.length}${this.state.nextPageToken ? "+" : ""} matches`;
+  }
+
   render(): React.ReactNode {
     const pageTitle = this.getPageTitle();
     const chartData = this.getChartData();
-    const tableData = this.getTableData();
+    const tableData = this.state.targetStats ?? [];
+    const isFiltering = Boolean(getFilterUrlParam(this.props.search));
 
     return (
       <div className="targets">
@@ -369,11 +450,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 placeholder="Filter targets..."
                 value={this.state.filterText}
                 onChange={this.handleFilterChange}
-                rightElement={
-                  this.getFilteredData().length !== (this.state.data?.targetStats.length ?? 0)
-                    ? `${this.getFilteredData().length} matches`
-                    : null
-                }
+                onKeyDown={this.handleFilterKeyDown}
+                rightElement={this.renderMatchCount()}
               />
             </div>
           </div>
@@ -390,9 +468,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
             </div>
           )}
 
-          {!this.state.loading && !this.state.failed && this.state.data && (
+          {!this.state.loading && !this.state.failed && this.state.targetStats && (
             <>
-              {chartData.length > 0 ? (
+              {tableData.length > 0 ? (
                 <>
                   <div className="targets-chart-section">
                     <div className="targets-section-title">
@@ -444,20 +522,24 @@ export default class TrendsComponent extends React.Component<Props, State> {
                           ))}
                         </div>
                       </div>
-                      {this.getFilteredData().length > this.state.displayCount && (
+                      {this.state.nextPageToken && (
                         <div className="table-footer-controls">
                           <Button
                             className="load-more-button"
                             onClick={this.handleShowMore}
-                            disabled={this.state.loading}>
+                            disabled={this.state.loadingMore}>
                             <span>Show more</span>
-                            {this.state.loading && <Spinner className="white" />}
+                            {this.state.loadingMore && <Spinner className="white" />}
                           </Button>
                         </div>
                       )}
                     </div>
                   </div>
                 </>
+              ) : isFiltering ? (
+                <div className="targets-empty">
+                  <div className="empty-message">No targets match the current filter.</div>
+                </div>
               ) : (
                 <div className="targets-empty">
                   <div className="empty-message">

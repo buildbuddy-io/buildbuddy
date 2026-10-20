@@ -333,6 +333,11 @@ message GetTargetTrendsRequest {
 
   // If unspecified, defaults to SUM_TARGET_AGGREGATION.
   TargetAggregation agg = 4;
+
+  // A substring-match for the target label.
+  string target_label_filter = 5;
+
+  string page_token = 6;
 }
 
 message TargetStats {
@@ -352,4 +357,6 @@ message GetTargetTrendsResponse {
   // descending order by the summed total of the requested execution metric
   // in RBE for each target.
   repeated TargetStats target_stats = 2;
+
+  string next_page_token = 3;
 }
