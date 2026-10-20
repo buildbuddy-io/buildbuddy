@@ -202,6 +202,7 @@ type TabId = "status" | "setup";
 interface Props {
   user: User;
   path: string;
+  search: URLSearchParams;
 }
 
 type RegionalCacheProxy = {
@@ -231,7 +232,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
     loading: [],
     error: null,
     viewMode: "summary",
-    filter: "",
+    filter: this.props.search.get("filter") ?? "",
   };
 
   subscription?: Subscription;
@@ -320,6 +321,12 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
     this.setState({ viewMode });
   }
 
+  onChangeFilter(e: React.ChangeEvent<HTMLInputElement>) {
+    const filter = e.target.value;
+    this.setState({ filter });
+    router.setQueryParam("filter", filter || undefined);
+  }
+
   renderFilterCount() {
     const filter = this.state.filter.trim().toLowerCase();
     let total = 0;
@@ -395,7 +402,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                         className="cache-proxy-filter"
                         placeholder="Filter cache proxies..."
                         value={this.state.filter}
-                        onChange={(e) => this.setState({ filter: e.target.value })}
+                        onChange={this.onChangeFilter.bind(this)}
                         rightElement={this.state.filter.trim() ? this.renderFilterCount() : undefined}
                       />
                       <ViewModeToggle viewMode={this.state.viewMode} onChange={this.onChangeViewMode.bind(this)} />
