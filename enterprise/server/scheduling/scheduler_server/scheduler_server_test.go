@@ -1418,8 +1418,9 @@ func TestLeaseReconnect_BrokenStreamFailsTaskThatCannotBeRetried(t *testing.T) {
 
 func TestLeaseReconnect_BeforeOldStreamIsCleanedUp(t *testing.T) {
 	for _, testCase := range []struct {
-		name  string
-		props map[string]string
+		name     string
+		props    map[string]string
+		shutdown bool
 	}{
 		{
 			name:  "retries enabled",
@@ -1428,6 +1429,11 @@ func TestLeaseReconnect_BeforeOldStreamIsCleanedUp(t *testing.T) {
 		{
 			name:  "retries disabled",
 			props: map[string]string{platform.RetryPropertyName: "false"},
+		},
+		{
+			name:     "scheduler shutting down",
+			props:    map[string]string{},
+			shutdown: true,
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -1442,15 +1448,32 @@ func TestLeaseReconnect_BeforeOldStreamIsCleanedUp(t *testing.T) {
 
 			reconnectedLease, err := holder.Reconnect(taskID, lease.leaseID)
 			require.NoError(t, err)
-			// Run the old stream's cleanup after the reconnect, as is the case
-			// when the scheduler notices the broken stream late.
-			err = s.reEnqueueTask(ctx, taskID, lease.leaseID, "" /*=reconnectToken*/, 1 /*=numReplicas*/, "stream closed with task still claimed")
+			require.NotEmpty(t, reconnectedLease.leaseID)
+			require.NotEqual(t, lease.leaseID, reconnectedLease.leaseID)
 
-			require.True(t, status.IsPermissionDeniedError(err), "unexpected re-enqueue error: %v", err)
+			if testCase.shutdown {
+				// During shutdown, the old stream's cleanup preserves its
+				// reconnect token. It must still leave the new lease alone.
+				env.GetHealthChecker().Shutdown()
+				select {
+				case <-s.shutdownCtx.Done():
+				case <-time.After(5 * time.Second):
+					require.FailNow(t, "scheduler did not start shutting down")
+				}
+			}
+
+			// Close the old stream after the reconnect. Receiving EOF waits
+			// for its deferred cleanup to finish before checking the new lease.
+			require.NoError(t, lease.stream.CloseSend())
+			_, err = lease.stream.Recv()
+			require.ErrorIs(t, err, io.EOF)
+
 			holder.EnsureTaskNotReceived(taskID)
-			task, err := s.readTask(ctx, taskID)
+			task, err := s.rdb.HGetAll(ctx, s.redisKeyForTask(taskID)).Result()
 			require.NoError(t, err)
-			require.EqualValues(t, 1, task.attemptCount)
+			require.Equal(t, reconnectedLease.leaseID, task["leaseId"])
+			require.Equal(t, "1", task[redisTaskClaimedField])
+			require.Equal(t, "1", task[redisTaskAttempCountField])
 			require.NoError(t, reconnectedLease.Finalize())
 		})
 	}
@@ -1458,7 +1481,6 @@ func TestLeaseReconnect_BeforeOldStreamIsCleanedUp(t *testing.T) {
 
 func TestLeaseReconnect_OldStreamCleanupAfterNewLeaseReleasedTask(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
-	s := env.GetSchedulerService().(*SchedulerServer)
 	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
 	holder.Register()
 	taskID := scheduleTask(ctx, t, env, map[string]string{})
@@ -1474,10 +1496,11 @@ func TestLeaseReconnect_OldStreamCleanupAfterNewLeaseReleasedTask(t *testing.T) 
 	holder.WaitForTask(taskID)
 	holder.ResetTasks()
 
-	// The old stream's cleanup runs late. It should leave the task alone
-	// instead of re-enqueueing it again.
-	err = s.reEnqueueTask(ctx, taskID, lease.leaseID, "" /*=reconnectToken*/, 1 /*=numReplicas*/, "stream closed with task still claimed")
-	require.True(t, status.IsPermissionDeniedError(err), "unexpected re-enqueue error: %v", err)
+	// Close the old stream and wait for its cleanup. It should leave the task
+	// alone instead of re-enqueueing it again.
+	require.NoError(t, lease.stream.CloseSend())
+	_, err = lease.stream.Recv()
+	require.ErrorIs(t, err, io.EOF)
 	holder.EnsureTaskNotReceived(taskID)
 }
 
