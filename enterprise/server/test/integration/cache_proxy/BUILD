@@ -2,14 +2,13 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+# gazelle:go_test file
+
 go_test(
     name = "cache_proxy_test",
     size = "small",
     timeout = "short",
-    srcs = [
-        "cache_proxy_test.go",
-        "oci_fetcher_test.go",
-    ],
+    srcs = ["cache_proxy_test.go"],
     deps = [
         "//enterprise/server/action_cache_server_proxy",
         "//enterprise/server/backends/pebble_cache",
@@ -19,17 +18,12 @@ go_test(
         "//enterprise/server/content_addressable_storage_server_proxy",
         "//enterprise/server/experiments",
         "//enterprise/server/local_crypter",
-        "//enterprise/server/oci/ocicache",
         "//enterprise/server/test/integration/remote_execution/rbetest",
-        "//enterprise/server/testutil/testregistry",
-        "//enterprise/server/util/proxy_util",
         "//proto:buildbuddy_service_go_proto",
         "//proto:context_go_proto",
         "//proto:encryption_go_proto",
         "//proto:iprules_go_proto",
-        "//proto:oci_fetcher_go_proto",
         "//proto:remote_execution_go_proto",
-        "//server/backends/memory_cache",
         "//server/interfaces",
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/byte_stream_server",
@@ -48,7 +42,6 @@ go_test(
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_golang_jwt_jwt_v4//:jwt",
-        "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk//pkg/openfeature/memprovider",
