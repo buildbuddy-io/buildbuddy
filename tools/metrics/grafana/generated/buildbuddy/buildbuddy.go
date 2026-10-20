@@ -299,10 +299,6 @@ func distributedCacheRow() *dashboard.RowBuilder {
 			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (status, response_type) (rate(buildbuddy_remote_cache_distributed_cache_read_response_count{region="${region}", job="buildbuddy-app", status!="OK"}[${window}]))`, "read {{response_type}} {{status}}").RefId("A")).
 			WithTarget(dash.PromQuery(`sum by (status, request_type) (rate(buildbuddy_remote_cache_distributed_cache_write_request_count{region="${region}", job="buildbuddy-app", status!~"OK|AlreadyExists"}[${window}]))`, "write {{request_type}} {{status}}").RefId("B"))).
-		WithPanel(ts("Read Throughput by Source", dash.UnitBytesPerSec).
-			Description("Digest sizes of objects served by distributed cache reads, by where they were served from. Ranged or abandoned reads count the full blob.").
-			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum by (source) (rate(buildbuddy_remote_cache_distributed_cache_read_digest_size{region="${region}", job="buildbuddy-app"}[${window}]))`, "{{source}}"))).
 		WithPanel(ts("Lookaside cache hits and misses", dash.UnitRequestsPerSec).
 			AxisPlacement(common.AxisPlacementLeft).
 			Legend(rightLegend()).

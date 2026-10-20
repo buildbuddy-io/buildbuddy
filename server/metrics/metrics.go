@@ -329,7 +329,7 @@ const (
 
 	// Where a distributed cache read was served from: "local" (this node is a
 	// replica), "read_through" (local read-through cache), "lookaside",
-	// "same_zone peer" or "cross_zone_peer".
+	// "same_zone_peer" or "cross_zone_peer".
 	DistributedCacheReadSource = "source"
 
 	// ContentAddressableStorage Server operation: "FindMissingBlobs",
