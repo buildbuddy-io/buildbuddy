@@ -164,34 +164,26 @@ who owns this code.
 
 Start every finding with exactly one of these labels:
 
-**Address before merge:** the PR shouldn't land until this is addressed. Use it only for:
-- Regressions or bugs the change introduces: wrong results, crashes, data
-  loss, security holes, broken compatibility with existing clients, data or
-  config, or real performance regressions on hot paths.
-- Missing tests for new or changed behavior that could otherwise regress
-  without anyone noticing.
-- Severe design regressions, meaning ones that make the code substantially
-  harder to change correctly. Examples: duplicated logic that must stay in
-  sync, bypassing an established layer or pattern, or a lot of needless
-  complexity where a much simpler approach clearly exists.
+**Address before merge:** issues that will cause harm, to users or the
+system, if the PR ships as is. Typically:
+- bugs and regressions: wrong results, crashes, data loss, security holes
+- broken compatibility with existing clients, stored data or config
+- real performance regressions
+- missing tests for new or changed behavior
+- severe design problems that make the code much harder to change correctly
 
-Stay inside the PR's scope. Don't ask for unrelated improvements, cleanup of
-code the PR didn't touch, or extra features, even good ones. The exception is
-a pre-existing bug that this change makes reachable or worse: that is a
-regression.
+If a finding would cause harm, it belongs here even when you're unsure or
+the fix needs discussion; say so in the comment. Stay within the PR's scope:
+a pre-existing problem belongs here only if this change makes it reachable
+or worse.
 
-**Address in a follow-on:** worth doing, but in a separate PR. This is usually a refactor
-for a design concern, lower-priority test coverage, or a significant
-pre-existing problem you noticed nearby.
+**Address in a follow-on:** worth doing, but in a separate PR. This is
+usually a refactor for a design concern, lower-priority test coverage, or a
+significant pre-existing problem you noticed nearby.
 
-**Item for discussion:** use rarely. This is for something a human reviewer needs to know
-that isn't a targeted fix. The most important use is "there's a better way":
-if a substantially different approach, or a larger restructuring, would
-clearly serve the PR's goal better, say so here even though it is out of
-proportion to a line comment. Explain what the approach is and why it's
-better, concretely enough to act on. Only do this when the case is clear, not
-for an approach that's merely different. Other uses: a risk that needs human
-judgment, or an important assumption you couldn't verify.
+**Item for discussion:** use rarely, for an issue that seems worth raising
+but doesn't fit either category above. For example, a substantially simpler
+or better approach to the whole change.
 
 ## What counts as a finding
 
