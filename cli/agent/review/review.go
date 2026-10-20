@@ -82,7 +82,7 @@ subsystem. They should read each comment once and know what's wrong and what
 to do. If they would want to ask for a summary, the comment is too long.
 
 For each finding:
-- Keep its label (Before merge, Follow-up or Note) and its file:line location
+- Keep its label (Address before merge, Address in a follow-on or Item for discussion) and its file:line location
   exactly as they are.
 - Open with a pitch of two or three short sentences: what goes wrong, why,
   and what should be done. Lead with the consequence. Use plain words, one
@@ -93,11 +93,12 @@ For each finding:
     includes the user ID in its key, so two users requesting the same path
     share a cache entry. The user ID should be added back to the key.
 
-- Most findings need nothing more. If a reader who wants to verify or dig in
-  needs more, such as the mechanism, an example or alternative fixes, put it
-  after the pitch in a paragraph starting with "**Details:**". The pitch stays
-  short; the details can be longer than the pitch, but only as long as they
-  need to be.
+- Most findings need nothing more. If a reader who wants to dig in needs
+  more, put it after the pitch in a section starting with "**Details:**".
+  Details answer "how do I know this is true, and what are my options?": the
+  mechanism, at most one example, and the main alternative fix if there is
+  one. They are not a complete record of what the reviewer found. Order them
+  so the reader can stop at any point, most important first.
 - Cut proof the reader can get by reading the code, repeated or variant
   scenarios, hedging that argues both sides, extra fixes when one is clearly
   best, and closing restatements.
@@ -163,7 +164,7 @@ who owns this code.
 
 Start every finding with exactly one of these labels:
 
-**Before merge:** the PR shouldn't land until this is addressed. Use it only for:
+**Address before merge:** the PR shouldn't land until this is addressed. Use it only for:
 - Regressions or bugs the change introduces: wrong results, crashes, data
   loss, security holes, broken compatibility with existing clients, data or
   config, or real performance regressions on hot paths.
@@ -179,11 +180,11 @@ code the PR didn't touch, or extra features, even good ones. The exception is
 a pre-existing bug that this change makes reachable or worse: that is a
 regression.
 
-**Follow-up:** worth doing, but in a separate PR. This is usually a refactor
+**Address in a follow-on:** worth doing, but in a separate PR. This is usually a refactor
 for a design concern, lower-priority test coverage, or a significant
 pre-existing problem you noticed nearby.
 
-**Note:** use rarely. This is for something a human reviewer needs to know
+**Item for discussion:** use rarely. This is for something a human reviewer needs to know
 that isn't a targeted fix. The most important use is "there's a better way":
 if a substantially different approach, or a larger restructuring, would
 clearly serve the PR's goal better, say so here even though it is out of
@@ -227,7 +228,7 @@ Schema:
     {
       "file": "<file path relative to repo root, e.g. server/foo.go>",
       "line": <integer — the line number in the NEW version of the file>,
-      "category": "<before_merge, follow_up, or note, from the label the finding starts with: Before merge, Follow-up, or Note>",
+      "category": "<before_merge, follow_up, or discussion, from the label the finding starts with: Address before merge, Address in a follow-on, or Item for discussion>",
       "body": "<full comment text as markdown, without the leading label>"
     }
   ]
@@ -241,7 +242,7 @@ Rules:
 - File paths must be relative (no leading slash, no absolute paths).
 - Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
 - Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern or suggesting an improvement (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
-- Remove the leading "Before merge:", "Follow-up:" or "Note:" label from each comment body and put it in "category" instead. Keep the "**Details:**" label on supporting-detail paragraphs. Otherwise avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
+- Remove the leading "Address before merge:", "Address in a follow-on:" or "Item for discussion:" label from each comment body and put it in "category" instead. Keep the "**Details:**" label on supporting-detail paragraphs. Otherwise avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
 - The summary should only explain the purpose of the diff. It must not contain findings, caveats or notes, and should not summarize any of the comments.
 - Output ONLY the JSON object. No other text before or after it.
 
@@ -268,9 +269,9 @@ type reviewComment struct {
 
 // categoryLabels maps a review category to the label prefixed to the comment.
 var categoryLabels = map[string]string{
-	"before_merge": "**Before merge:**",
-	"follow_up":    "**Follow-up:**",
-	"note":         "**Note:**",
+	"before_merge": "**Address before merge:**",
+	"follow_up":    "**Address in a follow-on:**",
+	"discussion":   "**Item for discussion:**",
 }
 
 // text returns the comment body, prefixed with its category label. A missing

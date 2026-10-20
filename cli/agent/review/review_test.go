@@ -14,9 +14,9 @@ func TestReviewCommentText(t *testing.T) {
 		category string
 		want     string
 	}{
-		{"before_merge", "before_merge", "**Before merge:** body"},
-		{"follow_up", "follow_up", "**Follow-up:** body"},
-		{"note", "note", "**Note:** body"},
+		{"before_merge", "before_merge", "**Address before merge:** body"},
+		{"follow_up", "follow_up", "**Address in a follow-on:** body"},
+		{"discussion", "discussion", "**Item for discussion:** body"},
 		{"missing category", "", "body"},
 		{"unknown category", "blocker", "body"},
 	} {
@@ -38,6 +38,6 @@ func TestReviewJSONCategory(t *testing.T) {
 	}`), &review)
 	require.NoError(t, err)
 	require.Len(t, review.Comments, 2)
-	assert.Equal(t, "**Follow-up:** x", review.Comments[0].text())
+	assert.Equal(t, "**Address in a follow-on:** x", review.Comments[0].text())
 	assert.Equal(t, "y", review.Comments[1].text())
 }
