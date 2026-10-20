@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -20,8 +22,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -30,6 +35,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gstatus "google.golang.org/grpc/status"
 	gproto "google.golang.org/protobuf/proto"
 )
 
@@ -835,7 +841,11 @@ func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCI
 
 	proxy, err := New(env)
 	require.NoError(t, err)
+	return serveOCIFetcherProxy(ctx, t, env, proxy)
+}
 
+// serveOCIFetcherProxy serves proxy and returns a client connected to it.
+func serveOCIFetcherProxy(ctx context.Context, t *testing.T, env *testenv.TestEnv, proxy *OCIFetcherServerProxy) ofpb.OCIFetcherClient {
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	ofpb.RegisterOCIFetcherServer(grpcServer, proxy)
 	go runFunc()
@@ -866,26 +876,32 @@ func layerData(t *testing.T, layer ctr.Layer) []byte {
 	return data
 }
 
-// countingOCIFetcherClient wraps an OCIFetcherClient and counts FetchBlob calls.
+// countingOCIFetcherClient wraps an OCIFetcherClient and counts calls, and
+// FetchBlob calls separately.
 type countingOCIFetcherClient struct {
 	inner          ofpb.OCIFetcherClient
+	calls          atomic.Int32
 	fetchBlobCount atomic.Int32
 }
 
 func (c *countingOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
+	c.calls.Add(1)
 	return c.inner.FetchManifest(ctx, req, opts...)
 }
 
 func (c *countingOCIFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
+	c.calls.Add(1)
 	return c.inner.FetchManifestMetadata(ctx, req, opts...)
 }
 
 func (c *countingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
+	c.calls.Add(1)
 	c.fetchBlobCount.Add(1)
 	return c.inner.FetchBlob(ctx, req, opts...)
 }
 
 func (c *countingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	c.calls.Add(1)
 	return c.inner.FetchBlobMetadata(ctx, req, opts...)
 }
 
@@ -989,4 +1005,263 @@ func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 			}, counter.Snapshot()))
 		})
 	}
+}
+
+// runRegistryFetchingProxy returns a proxy that can fetch from registries
+// itself if enabled, a client for it, and its upstream (the apps), which
+// fetches from registries too. If registryFetcher is set, it replaces the
+// proxy's own.
+func runRegistryFetchingProxy(t *testing.T, enabled bool, registryFetcher ofpb.OCIFetcherServer) (*OCIFetcherServerProxy, ofpb.OCIFetcherClient, *countingOCIFetcherClient) {
+	ctx := context.Background()
+	flags.Set(t, "cache_proxy.oci_fetch_from_registry", enabled)
+	_, appsBSClient, appsACClient := setupCacheEnv(t)
+	apps := &countingOCIFetcherClient{inner: runOCIFetcherServer(ctx, t, appsBSClient, appsACClient)}
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	env := testenv.GetTestEnv(t)
+	env.SetOCIFetcherClient(apps)
+	env.SetLocalByteStreamClient(bsClient)
+	env.SetLocalActionCacheClient(acClient)
+	proxy, err := New(env)
+	require.NoError(t, err)
+	require.NotNil(t, proxy.registryFetcher)
+	if registryFetcher != nil {
+		proxy.registryFetcher = registryFetcher
+	}
+	return proxy, serveOCIFetcherProxy(ctx, t, env, proxy), apps
+}
+
+// pushTestImage pushes an image and returns its ref, its only layer's ref, and
+// that layer's data.
+func pushTestImage(t *testing.T, reg *testregistry.Registry, creds *testregistry.BasicAuthCreds) (imageRef, blobRef string, blob []byte) {
+	imageName, img := reg.PushNamedImage(t, "test-image", creds)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	digest, err := layers[0].Digest()
+	require.NoError(t, err)
+	return imageName, imageName + "@" + digest.String(), layerData(t, layers[0])
+}
+
+// fetchAll makes each OCIFetcher RPC, and returns their errors by method and
+// the blob's data.
+func fetchAll(client ofpb.OCIFetcherClient, imageRef, blobRef string, creds *rgpb.Credentials, bypassRegistry bool) (map[string]error, []byte) {
+	ctx := context.Background()
+	errs := map[string]error{}
+	_, errs["FetchManifest"] = client.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: imageRef, Credentials: creds, BypassRegistry: bypassRegistry})
+	_, errs["FetchManifestMetadata"] = client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: imageRef, Credentials: creds, BypassRegistry: bypassRegistry})
+	_, errs["FetchBlobMetadata"] = client.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: blobRef, Credentials: creds, BypassRegistry: bypassRegistry})
+	var blob []byte
+	stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: blobRef, Credentials: creds, BypassRegistry: bypassRegistry})
+	for err == nil {
+		var resp *ofpb.FetchBlobResponse
+		resp, err = stream.Recv()
+		blob = append(blob, resp.GetData()...)
+	}
+	if err == io.EOF {
+		err = nil
+	}
+	errs["FetchBlob"] = err
+	return errs, blob
+}
+
+// fakeRegistryFetcher fails every request with err. If err is nil, it fails
+// the test if it's called at all.
+type fakeRegistryFetcher struct {
+	t   *testing.T
+	err error
+}
+
+func (f *fakeRegistryFetcher) fail() error {
+	if f.err == nil {
+		f.t.Error("unexpected registry fetch")
+		return status.InternalError("unexpected registry fetch")
+	}
+	return f.err
+}
+
+func (f *fakeRegistryFetcher) FetchManifest(context.Context, *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
+	return nil, f.fail()
+}
+
+func (f *fakeRegistryFetcher) FetchManifestMetadata(context.Context, *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
+	return nil, f.fail()
+}
+
+func (f *fakeRegistryFetcher) FetchBlobMetadata(context.Context, *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
+	return nil, f.fail()
+}
+
+func (f *fakeRegistryFetcher) FetchBlob(*ofpb.FetchBlobRequest, ofpb.OCIFetcher_FetchBlobServer) error {
+	return f.fail()
+}
+
+func TestFetchFromRegistry(t *testing.T) {
+	counter := testhttp.NewRequestCounter()
+	reg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+	imageRef, blobRef, want := pushTestImage(t, reg, nil)
+	counter.Reset()
+	_, client, apps := runRegistryFetchingProxy(t, true, nil)
+
+	for range 2 {
+		errs, got := fetchAll(client, imageRef, blobRef, nil, false)
+		require.Equal(t, map[string]error{"FetchManifest": nil, "FetchManifestMetadata": nil, "FetchBlobMetadata": nil, "FetchBlob": nil}, errs)
+		require.Equal(t, want, got)
+	}
+
+	require.Zero(t, apps.calls.Load())
+	// The second round is served from the proxy's cache.
+	_, digest, _ := strings.Cut(blobRef, "@")
+	snapshot := counter.Snapshot()
+	require.Equal(t, 1, snapshot[http.MethodGet+" /v2/test-image/manifests/latest"], "requests: %v", snapshot)
+	require.Equal(t, 1, snapshot[http.MethodGet+" /v2/test-image/blobs/"+digest], "requests: %v", snapshot)
+}
+
+func TestFetchFromRegistryGatedOff(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		enabled        bool
+		bypassRegistry bool
+		code           codes.Code
+	}{
+		{name: "ExperimentOff", enabled: false, code: codes.OK},
+		// The apps reject bypassing the registry, as the caller isn't an admin.
+		{name: "BypassRegistry", enabled: true, bypassRegistry: true, code: codes.PermissionDenied},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			imageRef, blobRef, _ := pushTestImage(t, setupTestRegistry(t, nil), nil)
+			_, client, apps := runRegistryFetchingProxy(t, tc.enabled, &fakeRegistryFetcher{t: t})
+
+			errs, _ := fetchAll(client, imageRef, blobRef, nil, tc.bypassRegistry)
+			for method, err := range errs {
+				require.Equal(t, tc.code, gstatus.Code(err), "%s: %v", method, err)
+			}
+			require.NotZero(t, apps.calls.Load())
+		})
+	}
+}
+
+func TestFetchFromRegistryFallsBackToApps(t *testing.T) {
+	for _, tc := range []struct {
+		code     codes.Code
+		fallBack bool
+	}{
+		{codes.Unavailable, true},
+		{codes.ResourceExhausted, true},
+		{codes.Unauthenticated, true},
+		{codes.PermissionDenied, true},
+		{codes.NotFound, false},
+		{codes.Internal, false},
+	} {
+		t.Run(tc.code.String(), func(t *testing.T) {
+			imageRef, blobRef, want := pushTestImage(t, setupTestRegistry(t, nil), nil)
+			registryErr := gstatus.Error(tc.code, "registry error")
+			_, client, apps := runRegistryFetchingProxy(t, true, &fakeRegistryFetcher{t: t, err: registryErr})
+			refs := map[string]string{"FetchManifest": imageRef, "FetchManifestMetadata": imageRef, "FetchBlobMetadata": blobRef, "FetchBlob": blobRef}
+			fallbacks := func(method string) float64 {
+				return testutil.ToFloat64(metrics.OCIFetcherProxyFallbackCount.With(prometheus.Labels{
+					metrics.OCIFetcherMethodLabel:         method,
+					metrics.ImageFetchRegistryLabel:       registryLabel(refs[method]),
+					metrics.StatusHumanReadableLabel:      tc.code.String(),
+					metrics.OCIFetcherFallbackResultLabel: codes.OK.String(),
+				}))
+			}
+			before := map[string]float64{}
+			for method := range refs {
+				before[method] = fallbacks(method)
+			}
+
+			errs, got := fetchAll(client, imageRef, blobRef, nil, false)
+
+			for method, err := range errs {
+				if tc.fallBack {
+					require.NoError(t, err, method)
+					require.Equal(t, before[method]+1, fallbacks(method), method)
+				} else {
+					require.Equal(t, tc.code, gstatus.Code(err), "%s: %v", method, err)
+				}
+			}
+			if tc.fallBack {
+				require.Equal(t, want, got)
+				require.NotZero(t, apps.calls.Load())
+			} else {
+				require.Zero(t, apps.calls.Load())
+			}
+		})
+	}
+}
+
+// partialBlobFetcher sends part of a blob, then fails with an error that
+// would otherwise cause a fallback to the apps.
+type partialBlobFetcher struct {
+	ofpb.UnimplementedOCIFetcherServer
+}
+
+func (partialBlobFetcher) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	if err := stream.Send(&ofpb.FetchBlobResponse{Data: []byte("partial")}); err != nil {
+		return err
+	}
+	return status.UnavailableError("registry connection reset")
+}
+
+// failingSendStream is a FetchBlob stream whose client is gone.
+type failingSendStream struct {
+	ofpb.OCIFetcher_FetchBlobServer
+}
+
+func (failingSendStream) Context() context.Context {
+	return context.Background()
+}
+
+func (failingSendStream) Send(*ofpb.FetchBlobResponse) error {
+	return status.UnavailableError("client is gone")
+}
+
+func TestFetchFromRegistryDoesNotFallBackAfterFailedSend(t *testing.T) {
+	proxy, _, apps := runRegistryFetchingProxy(t, true, partialBlobFetcher{})
+
+	err := proxy.FetchBlob(&ofpb.FetchBlobRequest{Ref: "localhost/repo@sha256:" + strings.Repeat("a", 64)}, failingSendStream{})
+	require.True(t, status.IsUnavailableError(err), "unexpected error: %v", err)
+	require.Zero(t, apps.calls.Load())
+}
+
+func TestFetchFromRegistryWarmCacheRequiresValidCredentials(t *testing.T) {
+	registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
+	imageRef, blobRef, want := pushTestImage(t, setupTestRegistry(t, registryCreds), registryCreds)
+	_, client, apps := runRegistryFetchingProxy(t, true, nil)
+
+	// Warm the proxy's cache with valid credentials.
+	errs, got := fetchAll(client, imageRef, blobRef, &rgpb.Credentials{Username: "testuser", Password: "testpass"}, false)
+	for method, err := range errs {
+		require.NoError(t, err, method)
+	}
+	require.Equal(t, want, got)
+	require.Zero(t, apps.calls.Load())
+
+	// The registry rejects the proxy, so it falls back to the apps, which
+	// reject the credentials too.
+	errs, got = fetchAll(client, imageRef, blobRef, &rgpb.Credentials{Username: "testuser", Password: "wrong"}, false)
+	for method, err := range errs {
+		require.True(t, status.IsUnauthenticatedError(err), "%s: %v", method, err)
+	}
+	require.Empty(t, got)
+	require.NotZero(t, apps.calls.Load())
+}
+
+func TestFetchFromRegistryFetcherCreationFails(t *testing.T) {
+	_, bsClient, acClient := setupCacheEnv(t)
+	env := testenv.GetTestEnv(t)
+	env.SetOCIFetcherClient(&countingOCIFetcherClient{})
+	env.SetLocalByteStreamClient(bsClient)
+	env.SetLocalActionCacheClient(acClient)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"not a CIDR"})
+
+	// The proxy starts, and forwards all requests to the apps.
+	proxy, err := New(env)
+	require.NoError(t, err)
+	require.Nil(t, proxy.registryFetcher)
 }
