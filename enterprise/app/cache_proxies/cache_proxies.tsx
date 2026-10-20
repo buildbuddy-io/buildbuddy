@@ -84,15 +84,17 @@ class CacheProxySetup extends React.Component<CacheProxySetupProps> {
   }
 }
 
-// matchesFilter reports whether any one of the proxy's identifying fields,
-// labels, or its region contains every part of the (lowercased) filter, split
-// on '=' and ':' so that "env: prod" matches the label "env=prod".
+// matchesFilter reports whether every whitespace-separated term of the
+// (lowercased) filter matches one of the proxy's identifying fields, labels, or
+// its region. Terms are further split on '=' and ':', and all of those parts
+// must match the same field, so that "env: prod" matches the label "env=prod".
 function matchesFilter(region: string, summary: cache_proxy.ICacheProxySummary, filter: string): boolean {
-  const parts = filter
-    .split(/[=:]/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-  if (!parts.length) return true;
+  const terms = filter
+    .replace(/\s*([=:])\s*/g, "$1")
+    .split(/\s+/)
+    .map((t) => t.split(/[=:]/).filter(Boolean))
+    .filter((t) => t.length);
+  if (!terms.length) return true;
   const fields = [
     region,
     summary.host,
@@ -103,7 +105,8 @@ function matchesFilter(region: string, summary: cache_proxy.ICacheProxySummary, 
     summary.arch,
     ...Object.entries(summary.labels ?? {}).map(([k, v]) => `${k}=${v}`),
   ];
-  return fields.some((f) => f && parts.every((p) => f.toLowerCase().includes(p)));
+  const lowered = fields.filter((f): f is string => !!f).map((f) => f.toLowerCase());
+  return terms.every((parts) => lowered.some((f) => parts.every((p) => f.includes(p))));
 }
 
 interface CacheProxiesListProps {
