@@ -115,7 +115,7 @@ func TestStatsHandler_RecordsTrafficByDestination(t *testing.T) {
 		},
 		{
 			name:     "latitude",
-			ip:       "152.236.30.1",
+			ip:       "177.54.154.1", // In 177.54.144.0/21, allocated to Latitude.sh LTDA.
 			groupID:  "GR106",
 			provider: "latitude.sh",
 			region:   "",

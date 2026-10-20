@@ -143,9 +143,6 @@ var (
 	//go:embed data/github.csv
 	githubRangesCSV []byte
 
-	//go:embed data/macstadium.csv
-	macstadiumRangesCSV []byte
-
 	//go:embed data/digitalocean.csv
 	digitaloceanRangesCSV []byte
 
@@ -154,6 +151,9 @@ var (
 
 	// The providers below do not publish a range list; their CSVs hold the
 	// prefixes announced by their ASNs (see providerips).
+
+	//go:embed data/macstadium.csv
+	macstadiumRangesCSV []byte
 
 	//go:embed data/phoenixnap.csv
 	phoenixnapRangesCSV []byte
@@ -335,6 +335,7 @@ func newClassifier() (*classifier, error) {
 		name string
 		data []byte
 	}{
+		{"Metal", metalRangesCSV},   // Our own sites go first so that no third-party aggregate can claim them.
 		{"GitHub", githubRangesCSV}, // GitHub needs to be before Azure because some GitHub IPs are subsets of Azure IPs.
 		{"AWS", awsRangesCSV},
 		{"Azure", azureRangesCSV},
@@ -347,7 +348,6 @@ func newClassifier() (*classifier, error) {
 		{"OVH", ovhRangesCSV},
 		{"Latitude.sh", latitudeRangesCSV},
 		{"Namespace", namespaceRangesCSV},
-		{"Metal", metalRangesCSV},
 		{"PSC", pscRangesCSV},
 		{"PrivateLink", privatelinkRangesCSV},
 	} {

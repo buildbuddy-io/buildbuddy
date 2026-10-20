@@ -415,8 +415,12 @@ const (
 	// for data we receive).
 	GRPCFlowControlDirectionLabel = "direction"
 
-	// Destination cloud provider inferred from the remote IP range: `aws`,
-	// `gcp`, or `other`.
+	// Destination provider inferred from the remote IP range: a cloud or
+	// hosting provider (`aws`, `gcp`, `azure`, `github`, `digitalocean`,
+	// `oracle`, `macstadium`, `phoenixnap`, `hetzner`, `ovh`, `latitude.sh`,
+	// `namespace`), one of our own networks (`metal`, `psc`, `privatelink`,
+	// `internal`, `loopback`), or `other` for any public IP outside every known
+	// range. See enterprise/server/util/trafficstats.
 	DestinationProviderLabel = "provider"
 
 	// Destination region inferred from the remote IP range, or `unknown` if no
