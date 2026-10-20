@@ -30,9 +30,16 @@ func main() {
 	}{
 		{"aws", providerips.FetchAWS},
 		{"azure", providerips.FetchAzure},
+		{"digitalocean", providerips.FetchDigitalOcean},
 		{"gcp", providerips.FetchGCP},
 		{"github", providerips.FetchGitHub},
+		{"hetzner", providerips.FetchHetzner},
+		{"latitude", providerips.FetchLatitude},
 		{"macstadium", providerips.FetchMacStadium},
+		{"namespace", providerips.FetchNamespace},
+		{"oracle", providerips.FetchOracle},
+		{"ovh", providerips.FetchOVH},
+		{"phoenixnap", providerips.FetchPhoenixNAP},
 	}
 	for _, p := range providers {
 		ranges, err := p.fn()

@@ -8,9 +8,16 @@ go_library(
     embedsrcs = [
         "data/aws.csv",
         "data/azure.csv",
+        "data/digitalocean.csv",
         "data/gcp.csv",
         "data/github.csv",
+        "data/hetzner.csv",
+        "data/latitude.csv",
         "data/macstadium.csv",
+        "data/namespace.csv",
+        "data/oracle.csv",
+        "data/ovh.csv",
+        "data/phoenixnap.csv",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats",
     deps = [

@@ -146,6 +146,30 @@ var (
 	//go:embed data/macstadium.csv
 	macstadiumRangesCSV []byte
 
+	//go:embed data/digitalocean.csv
+	digitaloceanRangesCSV []byte
+
+	//go:embed data/oracle.csv
+	oracleRangesCSV []byte
+
+	// The providers below do not publish a range list; their CSVs hold the
+	// prefixes announced by their ASNs (see providerips).
+
+	//go:embed data/phoenixnap.csv
+	phoenixnapRangesCSV []byte
+
+	//go:embed data/hetzner.csv
+	hetznerRangesCSV []byte
+
+	//go:embed data/ovh.csv
+	ovhRangesCSV []byte
+
+	//go:embed data/latitude.csv
+	latitudeRangesCSV []byte
+
+	//go:embed data/namespace.csv
+	namespaceRangesCSV []byte
+
 	// BuildBuddy-owned ranges used by our bare-metal datacenters. We own
 	// 23.176.168.0/24 (all SJC) and 216.226.68.0/22, which is split between
 	// sites: 216.226.68.0/24 is NUQ, the other three /24s are SJC.
@@ -316,6 +340,13 @@ func newClassifier() (*classifier, error) {
 		{"Azure", azureRangesCSV},
 		{"GCP", gcpRangesCSV},
 		{"MacStadium", macstadiumRangesCSV},
+		{"DigitalOcean", digitaloceanRangesCSV},
+		{"Oracle", oracleRangesCSV},
+		{"PhoenixNAP", phoenixnapRangesCSV},
+		{"Hetzner", hetznerRangesCSV},
+		{"OVH", ovhRangesCSV},
+		{"Latitude.sh", latitudeRangesCSV},
+		{"Namespace", namespaceRangesCSV},
 		{"Metal", metalRangesCSV},
 		{"PSC", pscRangesCSV},
 		{"PrivateLink", privatelinkRangesCSV},
