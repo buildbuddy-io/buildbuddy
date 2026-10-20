@@ -361,6 +361,10 @@ func HandleReview(args []string) (int, error) {
 	if strings.TrimSpace(reviewText) == "" {
 		return -1, fmt.Errorf("review produced no output.")
 	}
+	if *dryRun {
+		fmt.Println("Dry run — review before structuring:")
+		fmt.Println(reviewText)
+	}
 
 	// Have the agent convert the review to structured JSON. If that fails,
 	// post the unstructured review as a single body comment.
