@@ -4,7 +4,10 @@ package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
     name = "review",
-    srcs = ["review.go"],
+    srcs = [
+        "fix.go",
+        "review.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/agent/review",
     deps = [
         "//cli/agent/agentflags",
@@ -12,6 +15,7 @@ go_library(
         "//cli/terminal",
         "//cli/util/agent",
         "//cli/util/agent/agentutil",
+        "//cli/util/git",
         "@com_github_google_go_github_v59//github",
     ],
 )
