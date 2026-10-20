@@ -69,6 +69,33 @@ var reviewAllowedTools = []string{
 	"Bash(gh pr view *)",
 }
 
+// writingStyle is how review comments should read. The review agent writes to
+// it, and the parse step edits each comment to match it.
+const writingStyle = `Each comment is an elevator pitch: the reader should understand the problem
+on the first read. In a few short sentences, say what goes wrong, why, and
+what should be done. Use one idea per sentence. Describe things in plain
+words; mention an identifier only when the reader needs it to find the
+problem, and leave out asides in parentheses. If a sentence would need
+rereading, split it. For example:
+
+  This can show one user's data to another. The response cache no longer
+  includes the user ID in its key, so two users requesting the same path
+  share a cache entry. The user ID should be added back to the key.
+
+Add supporting detail only when it's clearly necessary, in a separate
+paragraph that starts with "**Details:**", so the pitch can be read on its
+own. A serious finding doesn't need a longer comment; the label already
+signals how much it matters.
+
+- Lead with the consequence, not the mechanism.
+- State uncertainty briefly ("this could", "I couldn't check X").
+- Take a position. If you're not sure what the right fix is, say so and
+  suggest discussing it.
+
+Short doesn't mean dense. Write in plain, complete sentences, not fragments,
+chains of symbols or stacked jargon.
+`
+
 // reviewPrompt is a format string taking the PR number. It is deliberately
 // generic: repo-specific guidance comes from the repo's own CLAUDE.md or
 // AGENTS.md.
@@ -166,28 +193,7 @@ judgment, or an important assumption you couldn't verify.
 Write for a reader who knows the system at a high level, but might be new to
 this subsystem.
 
-Each comment is an elevator pitch: get the point across as quickly as
-possible. In a few sentences, say what goes wrong, why, and what should be
-done. For example:
-
-  This can show one user's data to another. The response cache key
-  (cacheKey) no longer includes the user ID, so two users requesting the
-  same path share a cache entry. The user ID should be added back to the key.
-
-Add supporting detail only when it's clearly necessary, in a separate
-paragraph that starts with "**Details:**", so the pitch can be read on its
-own. A serious finding doesn't need a longer comment; the label already
-signals how much it matters.
-
-- Lead with the consequence, not the mechanism.
-- The first time you use an internal name, say what it is in a few words.
-- State uncertainty briefly ("this could", "I couldn't check X").
-- Take a position. If you're not sure what the right fix is, say so and
-  suggest discussing it.
-
-Short doesn't mean dense. Write in plain, complete sentences, not fragments,
-chains of symbols or stacked jargon.
-
+` + writingStyle + `
 Give each finding's location as ` + "`path/to/file.go:42`" + ` so it can be posted as an
 inline comment. Every finding needs a location, so it can be resolved on its
 own. For a finding about the PR as a whole, use the changed line it relates
@@ -217,10 +223,14 @@ Rules:
 - File paths must be relative (no leading slash, no absolute paths).
 - Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
 - Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern or suggesting an improvement (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
-- Remove the leading "Before merge:", "Follow-up:" or "Note:" label from each comment body and put it in "category" instead. Keep any "**Details:**" paragraph as written. Otherwise avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
+- Remove the leading "Before merge:", "Follow-up:" or "Note:" label from each comment body and put it in "category" instead. Keep the "**Details:**" label on supporting-detail paragraphs. Otherwise avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
 - The summary should only explain the purpose of the diff. It must not contain findings, caveats or notes, and should not summarize any of the comments.
+- Edit each comment body so it follows the writing style below. Keep every claim, fix and caveat that matters, and don't add facts or change what a comment says. Cut supporting detail the reader doesn't need, and move what remains into a "**Details:**" paragraph. If a comment covers unrelated issues, split it into separate entries.
 - Output ONLY the JSON object. No other text before or after it.
 
+Writing style for comments, written for a reader who knows the system at a high level, but might be new to this subsystem:
+
+` + writingStyle + `
 REVIEW:
 `
 
