@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -91,6 +92,11 @@ func TestOCIFetcher_LocalFetcher(t *testing.T) {
 	cp := rbe.AddCacheProxyWithOptions(&rbetest.CacheProxyOptions{
 		EnvModifier: func(env *testenv.TestEnv) {
 			proxyEnv = env
+			// Give the proxy its own local cache, so that the ProxyLocalCache
+			// check below only passes if the proxy itself wrote the blob.
+			mc, err := memory_cache.NewMemoryCache(100_000_000)
+			require.NoError(t, err)
+			env.SetCache(mc)
 			env.SetOCIFetcherClient(apps)
 			// Unused: the legacy FetchBlob path fails on the apps'
 			// FetchBlobMetadata before reading the local cache.

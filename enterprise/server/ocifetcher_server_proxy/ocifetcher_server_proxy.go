@@ -93,7 +93,7 @@ func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 // leaves the fetcher unset, so all requests take the forwarding path.
 func (s *OCIFetcherServerProxy) initLocalFetcher(env environment.Env, target string) {
 	if env.GetClientIdentityService() == nil {
-		log.Warningf("OCIFetcherServerProxy: no client identity service configured. With %s enabled, the local OCI fetcher's _bb_ociregistry_ cache reads and writes will all fail as Unauthenticated, and since the fetcher only logs those failures, the OCI caches will stay empty.", useLocalFetcher.Name())
+		log.Warningf("OCIFetcherServerProxy: no client identity service configured. This only matters if %s is enabled; if it is, the local OCI fetcher's _bb_ociregistry_ cache reads and writes will all fail as Unauthenticated, and since the fetcher only logs those failures, the OCI caches will stay empty.", useLocalFetcher.Name())
 	}
 	conn, err := grpc_client.DialInternalWithoutPooling(env, target)
 	if err != nil {
