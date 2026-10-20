@@ -3,6 +3,7 @@ package clientip
 import (
 	"context"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -76,19 +77,25 @@ func peerIsTrusted(peerIP string) bool {
 	return false
 }
 
-func SetFromXForwardedForHeader(ctx context.Context, header, peerIP string) (context.Context, bool) {
-	if header == "" || (!peerIsTrusted(peerIP)) {
+// SetFromXForwardedForHeader sets the client IP from the values of the
+// X-Forwarded-For header, one per header line in the order received.
+func SetFromXForwardedForHeader(ctx context.Context, values []string, peerIP string) (context.Context, bool) {
+	if len(values) == 0 || (!peerIsTrusted(peerIP)) {
 		return ctx, false
 	}
 
 	if n := *xForwardedForTrustedHops; n > 0 {
-		ip, ok := nthEntryFromRight(header, n)
+		ip, ok := nthEntryFromRight(values, n)
 		if !ok {
 			return ctx, false
 		}
 		return context.WithValue(ctx, ContextKey, ip), true
 	}
 
+	header := values[0]
+	if header == "" {
+		return ctx, false
+	}
 	ips := strings.Split(header, ",")
 
 	// If there's only a single IP in the header, return it directly.
@@ -103,19 +110,23 @@ func SetFromXForwardedForHeader(ctx context.Context, header, peerIP string) (con
 	return context.WithValue(ctx, ContextKey, strings.TrimSpace(ips[len(ips)-2])), true
 }
 
-// nthEntryFromRight returns the nth comma-separated entry of header counting
-// from the right (1 is the last entry), without allocating.
-func nthEntryFromRight(header string, n int) (string, bool) {
-	for ; n > 1; n-- {
-		i := strings.LastIndexByte(header, ',')
-		if i < 0 {
-			return "", false
+// nthEntryFromRight returns the nth comma-separated entry counting from the
+// right (1 is the last entry), treating the header values as if they were
+// joined with commas in order (RFC 9110 5.3). It does not allocate.
+func nthEntryFromRight(values []string, n int) (string, bool) {
+	for _, v := range slices.Backward(values) {
+		for {
+			j := strings.LastIndexByte(v, ',')
+			n--
+			if n == 0 {
+				ip := strings.TrimSpace(v[j+1:])
+				return ip, ip != ""
+			}
+			if j < 0 {
+				break
+			}
+			v = v[:j]
 		}
-		header = header[:i]
 	}
-	if i := strings.LastIndexByte(header, ','); i >= 0 {
-		header = header[i+1:]
-	}
-	ip := strings.TrimSpace(header)
-	return ip, ip != ""
+	return "", false
 }
