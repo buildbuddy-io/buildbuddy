@@ -780,6 +780,14 @@ func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, er
 	}
 
 	if d.pos >= len(d.children) {
+		if len(d.children) == 0 {
+			// go-fuse only calls Seekdir when the kernel's offset differs
+			// from the handle's, and after an empty listing both are still
+			// 0, so a read after a rewind on this handle arrives here without
+			// a seek. Drop the empty listing so that read fetches a fresh
+			// one, because the kernel caches whatever it returns.
+			d.pos = -1
+		}
 		return nil, 0
 	}
 	node := d.children[d.pos]
@@ -818,10 +826,12 @@ func (d *dirHandle) Seekdir(ctx context.Context, off uint64) syscall.Errno {
 		d.pos = -1
 		return 0
 	}
-	if d.pos == -1 {
-		if errno := d.loadChildren(); errno != 0 {
-			return errno
-		}
+	// The kernel may have served this handle entries from its own cache,
+	// which another handle filled from a newer listing, so the listing this
+	// handle holds may be stale even if it was loaded. Always fetch a fresh
+	// one.
+	if errno := d.loadChildren(); errno != 0 {
+		return errno
 	}
 	// Entries are in offset order, so this finds the first entry after the
 	// bookmark.
