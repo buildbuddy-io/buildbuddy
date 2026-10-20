@@ -187,12 +187,21 @@ example:
   that prove your point, additional examples of the same problem, and steps
   the author would work out on their own.
 
-A "better way" note can be longer. Concise doesn't mean packing the same
-content into fewer words. Write in plain, complete sentences, not fragments,
-chains of symbols or stacked jargon.
+The bar: the author should never need to ask for a summary of your comment.
+A serious finding doesn't need a longer comment; the label already signals
+how much it matters. When a comment does need more (a "better way" note, or
+a subtle mechanism), the first paragraph must stand alone: what goes wrong,
+why, and what you recommend. Put supporting detail after it, for readers who
+want it.
+
+Concise doesn't mean packing the same content into fewer words. Write in
+plain, complete sentences, not fragments, chains of symbols or stacked
+jargon.
 
 Give each finding's location as ` + "`path/to/file.go:42`" + ` so it can be posted as an
-inline comment. A finding about the PR as a whole can go without a location.
+inline comment. Every finding needs a location, so it can be resolved on its
+own. For a finding about the PR as a whole, use the changed line it relates
+to most closely.
 `
 
 const parsePrompt = `Parse the code review below and output ONLY a valid JSON object — no markdown fences, no explanation.
@@ -214,12 +223,12 @@ Rules:
 - Include a comment entry for every unique finding that mentions a file path, even if the line number is approximate — use the nearest relevant line you can infer from context.
   Avoid including redundant comments; instead of making the same comment on every line where a particular issue occurs,
   you can say things like "(same comment applies to ...)" or "... (here and below)."
-- Findings with no file reference at all go into "summary", in full and keeping their leading "Before merge:", "Follow-up:" or "Note:" label.
+- Every finding becomes a comment entry. If a finding has no file reference, attach it to the changed file and line it relates to most closely.
 - File paths must be relative (no leading slash, no absolute paths).
 - Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
 - Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern or suggesting an improvement (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
 - Remove the leading "Before merge:", "Follow-up:" or "Note:" label from each comment body and put it in "category" instead. Otherwise avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
-- The summary section should not summarize any of the individual comments. It should only explain the purpose of the diff and findings with no file reference.
+- The summary should only explain the purpose of the diff. It must not contain findings, caveats or notes, and should not summarize any of the comments.
 - Output ONLY the JSON object. No other text before or after it.
 
 REVIEW:
