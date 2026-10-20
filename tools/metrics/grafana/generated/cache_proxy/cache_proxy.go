@@ -353,6 +353,7 @@ func distributedCacheRow() *dashboard.RowBuilder {
 	lookups := `buildbuddy_remote_cache_lookaside_cache_lookup_count`
 	evictionAge := `buildbuddy_remote_cache_lookaside_cache_eviction_age_msec`
 	backfill := `buildbuddy_remote_cache_distributed_cache_backfill_latency_usec`
+	readSize := `buildbuddy_remote_cache_distributed_cache_read_digest_size`
 	return row("Distributed Cache").
 		WithPanel(ts("Request Mix", "").
 			WithTarget(dash.PromQuery(`sum(rate(grpc_server_started_total{`+proxyFilter+`, grpc_service="distributed_cache.DistributedCache"}[${window}])) by (grpc_method)`, "{{grpc_method}}"))).
@@ -362,6 +363,10 @@ func distributedCacheRow() *dashboard.RowBuilder {
 		WithPanel(methodPanel("FindMissing")).
 		WithPanel(methodPanel("Write")).
 		WithPanel(methodPanel("Read")).
+		WithPanel(ts("Read Throughput by Source", dash.UnitBytesPerSec).
+			Description("Digest sizes of objects served by distributed cache reads, by where they were served from. Ranged or abandoned reads count the full blob.").
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`sum by (source) (rate(`+readSize+`{`+proxyFilter+`}[${window}]))`, "{{source}}"))).
 		WithPanel(ts("Lookaside cache hits and misses", dash.UnitRequestsPerSec).
 			AxisPlacement(common.AxisPlacementLeft).
 			Tooltip(multiTooltip()).
