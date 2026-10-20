@@ -89,14 +89,12 @@ func SetFromXForwardedForHeader(ctx context.Context, values []string, peerIP str
 
 	n := *xForwardedForTrustedHops
 	if n == 0 {
-		// For GCLB, the header format is [client supplied IP,]client IP, LB IP
-		// We always look at the client IP as seen by GCLB as the client supplied
-		// value can't be trusted if it's present.
+		// Legacy behavior: take the second-to-last entry, which is the client
+		// IP as seen by GCLB ("[client supplied IP,] client IP, LB IP"), or the
+		// only entry if there is just one.
 		if ip, ok := nthEntryFromRight(values, 2); ok {
 			return context.WithValue(ctx, ContextKey, ip), true
 		}
-		// If there's only a single IP in the header, return it directly.
-		// This handles the header format set by NGINX.
 		n = 1
 	}
 	ip, ok := nthEntryFromRight(values, n)
@@ -106,9 +104,6 @@ func SetFromXForwardedForHeader(ctx context.Context, values []string, peerIP str
 	return context.WithValue(ctx, ContextKey, ip), true
 }
 
-// nthEntryFromRight returns the nth comma-separated entry counting from the
-// right (1 is the last entry), treating the header values as if they were
-// joined with commas in order (RFC 9110 5.3). It does not allocate.
 func nthEntryFromRight(values []string, n int) (string, bool) {
 	for _, v := range slices.Backward(values) {
 		for {
