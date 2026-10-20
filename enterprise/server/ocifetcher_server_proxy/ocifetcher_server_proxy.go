@@ -1,7 +1,7 @@
 // Package ocifetcher_server_proxy provides an OCIFetcherServer
 // implementation for the cache proxy.
 //
-// For groups in the cache_proxy.oci_fetch_from_registry experiment, the proxy
+// If cache_proxy.oci_fetch_from_registry is enabled for a group, the proxy
 // fetches from remote registries itself, caching in its local cache, and
 // only falls back to the upstream OCIFetcher service (the apps) if the
 // registry can't be reached or rejects the proxy.
@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -40,11 +41,9 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-const (
-	cacheDigestFunction = repb.DigestFunction_SHA256
+const cacheDigestFunction = repb.DigestFunction_SHA256
 
-	fetchFromRegistryExperiment = "cache_proxy.oci_fetch_from_registry"
-)
+var fetchFromRegistryEnabled = expflag.Bool("cache_proxy.oci_fetch_from_registry", false, "If true, the cache proxy fetches OCI images from remote registries itself, and only forwards requests to the apps if a registry can't be reached or rejects the proxy.")
 
 type OCIFetcherServerProxy struct {
 	remote        ofpb.OCIFetcherClient
@@ -52,9 +51,8 @@ type OCIFetcherServerProxy struct {
 
 	// registryFetcher fetches from remote registries itself, caching in the
 	// proxy's local cache. It's nil if the proxy has no local action cache
-	// client.
+	// client, or the fetcher couldn't be created.
 	registryFetcher ofpb.OCIFetcherServer
-	efp             interfaces.ExperimentFlagProvider
 
 	// fetchGroup deduplicates concurrent FetchBlob requests for the same
 	// blob and credentials. The leader fetches from the upstream (apps)
@@ -82,14 +80,16 @@ func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 	proxy := &OCIFetcherServerProxy{
 		remote:        env.GetOCIFetcherClient(),
 		localBSClient: env.GetLocalByteStreamClient(),
-		efp:           env.GetExperimentFlagProvider(),
 	}
 	if localACClient := env.GetLocalActionCacheClient(); localACClient != nil {
+		// Fetching from registries is optional, so don't fail to start
+		// the proxy if the fetcher can't be created.
 		registryFetcher, err := ocifetcher.NewServer(env.GetLocalByteStreamClient(), localACClient)
 		if err != nil {
-			return nil, err
+			log.Warningf("OCI fetcher proxy: can't fetch from registries, will forward all requests to the apps: %s", err)
+		} else {
+			proxy.registryFetcher = registryFetcher
 		}
-		proxy.registryFetcher = registryFetcher
 	}
 	return proxy, nil
 }
@@ -100,7 +100,7 @@ func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 // Requests that bypass the registry always go to the apps, which check that
 // the caller is a server admin.
 func (s *OCIFetcherServerProxy) fetchFromRegistry(ctx context.Context, bypassRegistry bool) bool {
-	return s.registryFetcher != nil && !bypassRegistry && s.efp != nil && s.efp.Boolean(ctx, fetchFromRegistryExperiment, false)
+	return s.registryFetcher != nil && !bypassRegistry && fetchFromRegistryEnabled.Get(ctx)
 }
 
 // shouldFallBackToApps returns whether a request that failed when the proxy
@@ -114,15 +114,18 @@ func shouldFallBackToApps(err error) bool {
 		status.IsResourceExhaustedError(err)
 }
 
-func recordFallbackToApps(ctx context.Context, method, ref string, err error) {
+// recordFallbackToApps records that a request failed with registryErr when
+// the proxy fetched from the registry itself, and then got appsErr from the
+// apps. If the apps fail too, the caller's credentials might be bad, rather
+// than the registry rejecting the proxy.
+func recordFallbackToApps(ctx context.Context, method, ref string, registryErr, appsErr error) {
 	registry := registryLabel(ref)
-	group := groupID(ctx)
-	log.CtxWarningf(ctx, "OCI fetcher proxy: %s for %q from registry %q failed for group %q, falling back to the apps: %s", method, ref, registry, group, err)
+	log.CtxWarningf(ctx, "OCI fetcher proxy: %s for %q from registry %q failed for group %q, fell back to the apps: %s (apps result: %v)", method, ref, registry, groupID(ctx), registryErr, appsErr)
 	metrics.OCIFetcherProxyFallbackCount.With(prometheus.Labels{
-		metrics.OCIFetcherMethodLabel:    method,
-		metrics.GroupID:                  group,
-		metrics.ImageFetchRegistryLabel:  registry,
-		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		metrics.OCIFetcherMethodLabel:         method,
+		metrics.ImageFetchRegistryLabel:       registry,
+		metrics.StatusHumanReadableLabel:      status.MetricsLabel(registryErr),
+		metrics.OCIFetcherFallbackResultLabel: status.MetricsLabel(appsErr),
 	}).Inc()
 }
 
@@ -153,7 +156,9 @@ func (s *OCIFetcherServerProxy) FetchManifest(ctx context.Context, req *ofpb.Fet
 		if !shouldFallBackToApps(err) {
 			return resp, err
 		}
-		recordFallbackToApps(ctx, "FetchManifest", req.GetRef(), err)
+		resp, appsErr := s.remote.FetchManifest(ctx, req)
+		recordFallbackToApps(ctx, "FetchManifest", req.GetRef(), err, appsErr)
+		return resp, appsErr
 	}
 	return s.remote.FetchManifest(ctx, req)
 }
@@ -164,7 +169,9 @@ func (s *OCIFetcherServerProxy) FetchManifestMetadata(ctx context.Context, req *
 		if !shouldFallBackToApps(err) {
 			return resp, err
 		}
-		recordFallbackToApps(ctx, "FetchManifestMetadata", req.GetRef(), err)
+		resp, appsErr := s.remote.FetchManifestMetadata(ctx, req)
+		recordFallbackToApps(ctx, "FetchManifestMetadata", req.GetRef(), err, appsErr)
+		return resp, appsErr
 	}
 	return s.remote.FetchManifestMetadata(ctx, req)
 }
@@ -175,7 +182,9 @@ func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb
 		if !shouldFallBackToApps(err) {
 			return resp, err
 		}
-		recordFallbackToApps(ctx, "FetchBlobMetadata", req.GetRef(), err)
+		resp, appsErr := s.remote.FetchBlobMetadata(ctx, req)
+		recordFallbackToApps(ctx, "FetchBlobMetadata", req.GetRef(), err, appsErr)
+		return resp, appsErr
 	}
 	return s.remote.FetchBlobMetadata(ctx, req)
 }
@@ -186,15 +195,22 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 	if s.fetchFromRegistry(ctx, req.GetBypassRegistry()) {
 		counter := &countingFetchBlobStream{OCIFetcher_FetchBlobServer: stream}
 		err := s.registryFetcher.FetchBlob(req, counter)
-		// Once bytes have been sent, falling back would replay the blob
-		// from the start. Before that, also fall back on Internal errors,
-		// which is how the fetcher reports failing to read the blob from
-		// the registry.
-		if counter.bytesSent.Load() > 0 || !(shouldFallBackToApps(err) || status.IsInternalError(err)) {
+		// Once a Send has been attempted, falling back would replay the
+		// blob from the start, or the client is gone.
+		if counter.sendAttempts.Load() > 0 || !shouldFallBackToApps(err) {
 			return err
 		}
-		recordFallbackToApps(ctx, "FetchBlob", req.GetRef(), err)
+		appsErr := s.fetchBlobFromApps(req, stream)
+		recordFallbackToApps(ctx, "FetchBlob", req.GetRef(), err, appsErr)
+		return appsErr
 	}
+	return s.fetchBlobFromApps(req, stream)
+}
+
+// fetchBlobFromApps serves a blob from the local byte stream cache, or else
+// fetches it through the apps, writing it to the local byte stream cache.
+func (s *OCIFetcherServerProxy) fetchBlobFromApps(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	ctx := stream.Context()
 
 	digestRef, hash, err := parseBlobDigestRef(req.GetRef())
 	if err != nil {
@@ -326,21 +342,18 @@ func newLocalBSWriter(ctx context.Context, bsClient bspb.ByteStreamClient, hash 
 	return cachetools.NewUploadWriter(ctx, bsClient, rn)
 }
 
-// countingFetchBlobStream counts the bytes sent through a FetchBlob stream.
+// countingFetchBlobStream counts the Sends attempted on a FetchBlob stream.
 // The fetcher may still be sending from another goroutine after FetchBlob
 // returns (if the request was canceled while it was deduplicated with
 // another one), so the count is atomic.
 type countingFetchBlobStream struct {
 	ofpb.OCIFetcher_FetchBlobServer
-	bytesSent atomic.Int64
+	sendAttempts atomic.Int64
 }
 
 func (s *countingFetchBlobStream) Send(resp *ofpb.FetchBlobResponse) error {
-	if err := s.OCIFetcher_FetchBlobServer.Send(resp); err != nil {
-		return err
-	}
-	s.bytesSent.Add(int64(len(resp.GetData())))
-	return nil
+	s.sendAttempts.Add(1)
+	return s.OCIFetcher_FetchBlobServer.Send(resp)
 }
 
 type grpcStreamWriter struct {

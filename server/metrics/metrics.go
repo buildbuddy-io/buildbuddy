@@ -430,6 +430,9 @@ const (
 	OCIFetcherMethodLabel = "method"
 	OCIFetcherRoleLabel   = "role"
 	OCIFetcherStatusLabel = "status"
+	// Status of the apps' response to a request that a cache proxy forwarded
+	// to them after failing to fetch from the registry itself.
+	OCIFetcherFallbackResultLabel = "fallback_result"
 
 	// Label name for the eTLD+1 of the container image registry.
 	ImageFetchRegistryLabel = "registry"
@@ -4701,9 +4704,9 @@ var (
 		Help:      "Number of OCIFetcher requests that a cache proxy tried to fetch from the registry itself, but forwarded to the apps after the registry was unreachable or rejected the proxy.",
 	}, []string{
 		OCIFetcherMethodLabel,
-		GroupID,
 		ImageFetchRegistryLabel,
 		StatusHumanReadableLabel,
+		OCIFetcherFallbackResultLabel,
 	})
 
 	OCIFetcherRequestDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
