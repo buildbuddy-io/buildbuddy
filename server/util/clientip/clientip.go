@@ -23,7 +23,7 @@ const HeaderName = "x-buildbuddy-internal-client-ip"
 
 var (
 	trustXForwardedForHeader  = flag.Bool("auth.trust_xforwardedfor_header", false, "If true, client IP information will be retrieved from the X-Forwarded-For header. Should only be enabled if the BuildBuddy server is only accessible behind a trusted proxy.")
-	xForwardedForTrustedHops  = flag.Int("auth.xforwardedfor_trusted_hops", 0, "If greater than 0, the client IP is taken from the Nth entry from the right of the X-Forwarded-For header (1 is the last entry), where N is the number of load balancers/proxies in front of the server that append to the header: GCLB counts as 2, Envoy, AWS ALB and nginx as 1. If the header has fewer than N entries, the peer address is used. If 0, the second-to-last entry is used (or the only entry, if there is just one). Has no effect unless the header is trusted via auth.trust_xforwardedfor_header or auth.trusted_xforwardedfor_peers.")
+	xForwardedForTrustedHops  = flag.Int("auth.xforwardedfor_trusted_hops", 0, "If greater than 0, the client IP is taken from the Nth entry from the right of the X-Forwarded-For header, where N is the number of trusted proxies that append to it. If the header has fewer than N entries, the peer address is used. If 0, the second-to-last entry is used (or the only entry, if there is just one).")
 	trustedXForwardedForPeers = flag.Slice("auth.trusted_xforwardedfor_peers", []string{}, "CIDRs of peers from which the X-Forwarded-For header is trusted. The CIDRs in this flag are ORed with auth.trust_xforwardedfor_header. If that flag is true, all peers are trusted, otherwise, only peers matching CIDRs in this slice are trusted.")
 )
 
