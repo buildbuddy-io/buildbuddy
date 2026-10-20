@@ -121,7 +121,7 @@ PRs from forks are refused by default, because reviewing one runs the agent over
 
 Pass `--fix` to `bb agent review` to fetch existing PR feedback and have the agent address actionable requests.
 
-By default, `--fix` pushes changes to the PR branch. Pass `--dry_run` to leave edits uncomitted in the working tree without pushing to GitHub.
+By default, `--fix` pushes changes to the PR branch. Pass `--dry_run` to leave edits uncommitted in the working tree without pushing to GitHub.
 
 #### Usage
 
