@@ -158,7 +158,7 @@ func TestXForwardedForMultipleHeaderLines(t *testing.T) {
 	}
 }
 
-func TestInitTrustedHopsRequiresTrust(t *testing.T) {
+func TestInitTrustedHops(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		hops    int
@@ -170,6 +170,7 @@ func TestInitTrustedHopsRequiresTrust(t *testing.T) {
 		{name: "hops with trust header", hops: 1, trust: true},
 		{name: "hops with trusted peers", hops: 1, peers: []string{"10.0.0.0/8"}},
 		{name: "no hops without trust", hops: 0},
+		{name: "negative hops", hops: -1, trust: true, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, clientip.Init()) })

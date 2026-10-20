@@ -39,6 +39,9 @@ var trustedPeerPrefixes atomic.Pointer[[]netip.Prefix]
 // Init validates the X-Forwarded-For flags. It is safe to call multiple times;
 // each call re-reads the flags.
 func Init() error {
+	if *xForwardedForTrustedHops < 0 {
+		return status.InvalidArgumentErrorf("auth.xforwardedfor_trusted_hops must not be negative, got %d", *xForwardedForTrustedHops)
+	}
 	if *xForwardedForTrustedHops > 0 && !*trustXForwardedForHeader && len(*trustedXForwardedForPeers) == 0 {
 		return status.InvalidArgumentError("auth.xforwardedfor_trusted_hops requires auth.trust_xforwardedfor_header or auth.trusted_xforwardedfor_peers to be set")
 	}
