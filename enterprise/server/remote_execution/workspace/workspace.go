@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
@@ -57,6 +58,8 @@ var (
 	vfsVerboseFUSEOps      = flag.Bool("executor.vfs.verbose_fuse", false, "Enables low-level verbose logs in the go-fuse library.")
 	vfsLogFUSELatencyStats = flag.Bool("executor.vfs.log_fuse_latency_stats", false, "Enables logging of per-operation latency stats when VFS is unmounted. Implicitly enabled by --executor.vfs.verbose.")
 	vfsLogFUSEPerFileStats = flag.Bool("executor.vfs.log_fuse_per_file_stats", false, "Enables tracking and logging of per-file per-operation stats. Logged when VFS is unmounted.")
+
+	poolSlots = flag.Int("executor.workspace_pool.slots", 0, "Number of finished task workspaces that the pool can hold for reuse by later tasks with similar input trees, when the executor.workspace_pool.enabled experiment is on. 0 means the number of CPU cores allocated to tasks, i.e. how many 1-core tasks can run at once. A negative value disables reuse.")
 )
 
 func setDeleteLimit() {
@@ -123,6 +126,11 @@ type Opts struct {
 	UseVFS bool
 	// VFSPrefetchMode controls whether VFS inputs are prefetched.
 	VFSPrefetchMode VFSPrefetchMode
+	// Pool, if set, lets this workspace start from the directory of a
+	// finished task with a similar input tree, and lets ReturnToPool keep this
+	// workspace's directory for later tasks. Workspaces are only reused within
+	// the group of the task's authenticated user.
+	Pool *Pool
 }
 
 // New creates a new workspace directly under the given parent directory.
@@ -356,6 +364,17 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	if ws.Opts.Preserve {
 		opts.KnownInputs = ws.Inputs
 		opts.TrackTransfers = true
+	}
+	// The runner only sets Opts.Pool for workspaces that we can pool.
+	reusable := ws.Opts.Pool != nil
+	if reusable {
+		kept, err := ws.reusePooledWorkspace(ctx)
+		if err != nil {
+			return status.UnavailableErrorf("clear workspace after failing to reuse a pooled one: %s", err)
+		}
+		if kept != nil {
+			opts.KnownInputs = kept
+		}
 	}
 	tf, err := dirtools.NewTreeFetcher(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)
 	if err != nil {
@@ -762,4 +781,81 @@ func removeChildren(dirPath string) error {
 		}
 	}
 	return nil
+}
+
+// Pool holds the workspaces of finished tasks, so that a later task with
+// a similar input tree can start from one of them. For the later task, the
+// executor then only creates and removes the entries that differ, instead of
+// hard-linking its whole input tree into an empty directory and deleting all
+// of it afterwards, which costs a journaled metadata update per file.
+//
+// The runner calls ReturnToPool after removing the task's container.
+// ReturnToPool removes everything from the workspace that isn't one of the
+// task's unchanged inputs, then moves the workspace into the pool. Directories
+// whose inode, ctime, mode and owner still match what we recorded after input
+// setup can't have had entries added, removed or replaced, so we skip them. In
+// the other directories, we compare each entry with the input tree and remove
+// entries that aren't inputs, such as outputs, and input files that aren't the
+// file cache's copy. Only the executor can reach pooled directories, so when
+// we reuse a pooled workspace for a later task, we don't look at its files
+// again, and only remove the inputs that the later task's tree doesn't have.
+type Pool struct {
+	dir  string
+	size int
+}
+
+// NewPool returns a pool that keeps workspaces under buildRoot, or nil if
+// workspace reuse is disabled.
+func NewPool(buildRoot string) (*Pool, error) {
+	// Workspaces pooled by a previous executor process aren't tracked, so we
+	// start with an empty pool, and delete the old one even if reuse is now
+	// disabled.
+	dir := filepath.Join(buildRoot, "_WORKSPACE_POOL")
+	if err := disk.ForceRemove(context.Background(), dir); err != nil {
+		return nil, fmt.Errorf("remove old workspace reuse pool: %w", err)
+	}
+	size := *poolSlots
+	if size == 0 {
+		size = int(resources.GetAllocatedCPUMillis() / 1000)
+	}
+	if size <= 0 {
+		return nil, nil
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("create workspace reuse pool: %w", err)
+	}
+	return &Pool{dir: dir, size: size}, nil
+}
+
+// ReturnToPool checks the workspace against the input tree that was set
+// up in it, removes everything that isn't an unchanged input, and moves it
+// into the reuse pool. It must be called after the container using the
+// workspace has been removed, and before Remove, which then finds nothing to
+// delete. If the workspace can't be pooled, it's left for Remove.
+func (ws *Workspace) ReturnToPool(ctx context.Context) {
+	pool := ws.Opts.Pool
+	if pool == nil || ws.overlay != nil || ws.vfs != nil {
+		return
+	}
+	ws.mu.Lock()
+	removing := ws.removing
+	ws.mu.Unlock()
+	if removing {
+		return
+	}
+	// TODO: Remove everything that isn't an unchanged input, then move the
+	// workspace into the pool.
+}
+
+// reusePooledWorkspace replaces this workspace's directory, which is still
+// empty, with the pooled workspace that best matches the input tree, and
+// removes every entry in it that the input tree doesn't have. It returns the
+// input files already in place, which the tree fetcher can skip, or nil,
+// leaving the workspace empty, if no pooled workspace is worth reusing. It
+// returns an error if it can't get back to an empty workspace after a failed
+// reuse.
+func (ws *Workspace) reusePooledWorkspace(ctx context.Context) (map[fspath.Key]*repb.FileNode, error) {
+	// TODO: Take the pooled workspace that best matches the input tree, and
+	// remove the entries that the input tree doesn't have.
+	return nil, nil
 }
