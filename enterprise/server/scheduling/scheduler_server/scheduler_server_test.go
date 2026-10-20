@@ -1416,6 +1416,137 @@ func TestLeaseReconnect_BrokenStreamFailsTaskThatCannotBeRetried(t *testing.T) {
 	}
 }
 
+func TestLeaseReconnect_BeforeOldStreamIsCleanedUp(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		props    map[string]string
+		shutdown bool
+	}{
+		{
+			name:  "retries enabled",
+			props: map[string]string{},
+		},
+		{
+			name:  "retries disabled",
+			props: map[string]string{platform.RetryPropertyName: "false"},
+		},
+		{
+			name:     "scheduler shutting down",
+			props:    map[string]string{},
+			shutdown: true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			s := env.GetSchedulerService().(*SchedulerServer)
+			holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+			holder.Register()
+			taskID := scheduleTask(ctx, t, env, testCase.props)
+			holder.WaitForTask(taskID)
+			lease := holder.Claim(taskID)
+			holder.ResetTasks()
+
+			reconnectedLease, err := holder.Reconnect(taskID, lease.leaseID)
+			require.NoError(t, err)
+			require.NotEmpty(t, reconnectedLease.leaseID)
+			require.NotEqual(t, lease.leaseID, reconnectedLease.leaseID)
+
+			if testCase.shutdown {
+				// During shutdown, the old stream's cleanup preserves its
+				// reconnect token. It must still leave the new lease alone.
+				env.GetHealthChecker().Shutdown()
+				select {
+				case <-s.shutdownCtx.Done():
+				case <-time.After(5 * time.Second):
+					require.FailNow(t, "scheduler did not start shutting down")
+				}
+			}
+
+			// Close the old stream after the reconnect. Receiving EOF waits
+			// for its deferred cleanup to finish before checking the new lease.
+			require.NoError(t, lease.stream.CloseSend())
+			_, err = lease.stream.Recv()
+			require.ErrorIs(t, err, io.EOF)
+
+			holder.EnsureTaskNotReceived(taskID)
+			task, err := s.rdb.HGetAll(ctx, s.redisKeyForTask(taskID)).Result()
+			require.NoError(t, err)
+			require.Equal(t, reconnectedLease.leaseID, task["leaseId"])
+			require.Equal(t, "1", task[redisTaskClaimedField])
+			require.Equal(t, "1", task[redisTaskAttempCountField])
+			require.NoError(t, reconnectedLease.Finalize())
+		})
+	}
+}
+
+func TestLeaseReconnect_OldStreamCleanupAfterNewLeaseReleasedTask(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+
+	// The executor re-claims the task on a new stream, and then releases it
+	// from there, which re-enqueues it.
+	reconnectedLease, err := holder.Reconnect(taskID, lease.leaseID)
+	require.NoError(t, err)
+	holder.ResetTasks()
+	require.NoError(t, reconnectedLease.ReEnqueue())
+	holder.WaitForTask(taskID)
+	holder.ResetTasks()
+
+	// Close the old stream and wait for its cleanup. It should leave the task
+	// alone instead of re-enqueueing it again.
+	require.NoError(t, lease.stream.CloseSend())
+	_, err = lease.stream.Recv()
+	require.ErrorIs(t, err, io.EOF)
+	holder.EnsureTaskNotReceived(taskID)
+}
+
+func TestDeleteTaskForLease_ReturnsNotFoundForFinalizedTask(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+	require.NoError(t, lease.Finalize())
+
+	// A late cleanup from an old stream finds the task already finalized, and
+	// shouldn't go on to fail the execution.
+	for _, testCase := range []struct {
+		name            string
+		expectedLeaseID string
+	}{
+		{name: "with lease ID", expectedLeaseID: "old-lease-id"},
+		{name: "without lease ID"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := s.deleteTaskForLease(ctx, taskID, testCase.expectedLeaseID)
+			require.True(t, status.IsNotFoundError(err), "unexpected delete error: %v", err)
+		})
+	}
+}
+
+func TestUnclaimTask_ReturnsNotFoundForFinalizedTask(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+	require.NoError(t, lease.Finalize())
+
+	// A late cleanup from an old stream finds the task already finalized, and
+	// shouldn't go on to re-enqueue it.
+	err := s.unclaimTask(ctx, taskID, lease.leaseID, "" /*=reconnectToken*/)
+
+	require.True(t, status.IsNotFoundError(err), "unexpected release error: %v", err)
+}
+
 // scheduleTaskForGroup schedules a task owned by the given group.
 func scheduleTaskForGroup(ctx context.Context, t *testing.T, env environment.Env, groupID string) string {
 	req := newScheduleRequest(ctx, t, env, scheduleOpts{})
