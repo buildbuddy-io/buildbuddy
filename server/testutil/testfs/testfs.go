@@ -1,7 +1,10 @@
 package testfs
 
 import (
+	"fmt"
 	"io/fs"
+	"math"
+	"math/rand/v2"
 	"os"
 	"path"
 	"path/filepath"
@@ -201,6 +204,14 @@ func WriteRandomString(t testing.TB, rootDir, path string, n int) string {
 	return s
 }
 
+func ReadFile(t testing.TB, rootDir, path string) []byte {
+	b, err := os.ReadFile(filepath.Join(rootDir, path))
+	if err != nil {
+		assert.FailNow(t, "read failed", err)
+	}
+	return b
+}
+
 func ReadFileAsString(t testing.TB, rootDir, path string) string {
 	b, err := os.ReadFile(filepath.Join(rootDir, path))
 	if err != nil {
@@ -271,4 +282,86 @@ func AssertExactFileContents(t testing.TB, rootDir string, contents map[string]s
 		t, expectedFilePaths, actualFilePaths,
 		"some files were missing or unexpected files were found",
 	)
+}
+
+// WriteRandomTree fills rootDir with numFiles entries of random contents
+// totalling about totalBytes, spread over nested directories. File sizes
+// follow a log-normal distribution, so most files are small and a few are
+// large, like a typical source tree, and a few entries are hard links or
+// symlinks to earlier files. The tree is the same on every call with the
+// same arguments.
+func WriteRandomTree(t testing.TB, rootDir string, numFiles int, totalBytes int64) {
+	rng := rand.New(rand.NewPCG(uint64(numFiles), uint64(totalBytes)))
+	sizes := make([]float64, numFiles)
+	sum := 0.0
+	for i := range sizes {
+		sizes[i] = math.Exp(rng.NormFloat64() * 2)
+		sum += sizes[i]
+	}
+	scale := float64(totalBytes) / sum
+	// Reuse one buffer of random bytes, starting each file at a different
+	// offset so that files differ.
+	content := make([]byte, 4<<20)
+	rand.NewChaCha8([32]byte{1}).Read(content)
+	dirs := map[string]bool{}
+	// files holds the regular files written so far, which the links point at.
+	var files []string
+	for i := range numFiles {
+		dir := filepath.Join(rootDir, fmt.Sprintf("dir%04d", i/200), fmt.Sprintf("sub%02d", (i/20)%10))
+		if !dirs[dir] {
+			require.NoError(t, os.MkdirAll(dir, 0755))
+			dirs[dir] = true
+		}
+		name := filepath.Join(dir, fmt.Sprintf("file%06d", i))
+		// One entry in 50 is a hard link to an earlier file, as inputs linked
+		// from the file cache are, and another is a relative symlink to one.
+		if len(files) > 0 {
+			switch rng.IntN(50) {
+			case 0:
+				require.NoError(t, os.Link(files[rng.IntN(len(files))], name))
+				continue
+			case 1:
+				target, err := filepath.Rel(dir, files[rng.IntN(len(files))])
+				require.NoError(t, err)
+				require.NoError(t, os.Symlink(target, name))
+				continue
+			}
+		}
+		f, err := os.Create(name)
+		require.NoError(t, err)
+		files = append(files, name)
+		remaining := int64(sizes[i] * scale)
+		off := rng.IntN(len(content) / 2)
+		for remaining > 0 {
+			n := min(remaining, int64(len(content)-off))
+			_, err := f.Write(content[off : off+int(n)])
+			require.NoError(t, err)
+			remaining -= n
+			off = 0
+		}
+		require.NoError(t, f.Close())
+	}
+}
+
+// LinkTree recreates the directory tree under srcDir at dstDir, hard-linking
+// each regular file instead of copying it, as the executor does when it sets
+// up a workspace from the file cache.
+func LinkTree(t testing.TB, srcDir, dstDir string) {
+	err := filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
+		require.NoError(t, err)
+		rel, err := filepath.Rel(srcDir, path)
+		require.NoError(t, err)
+		dst := filepath.Join(dstDir, rel)
+		switch {
+		case d.IsDir():
+			return os.MkdirAll(dst, 0755)
+		case d.Type()&fs.ModeSymlink != 0:
+			target, err := os.Readlink(path)
+			require.NoError(t, err)
+			return os.Symlink(target, dst)
+		default:
+			return os.Link(path, dst)
+		}
+	})
+	require.NoError(t, err)
 }

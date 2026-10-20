@@ -49,6 +49,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -5123,4 +5124,401 @@ func assertCommandResult(t testing.TB, expected *interfaces.CommandResult, actua
 	actual.VMMetadata = nil
 	actual.VMMetrics = nil
 	assert.Equal(t, expected, actual)
+}
+
+func TestFirecrackerVEXT4Workspace(t *testing.T) {
+	flags.Set(t, "executor.firecracker_vext4_enabled", true)
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	// The inputs are a file spanning several blocks with a partial last
+	// block, a second path hard-linked to it like inputs linked from the
+	// file cache, a small file, a symlink and an empty file.
+	multi := make([]byte, 3*4096+100)
+	for i := range multi {
+		multi[i] = byte(i * 7)
+	}
+	testfs.MakeDirAll(t, workDir, "in")
+	err := os.WriteFile(filepath.Join(workDir, "in/multi.bin"), multi, 0644)
+	require.NoError(t, err)
+	err = os.Link(filepath.Join(workDir, "in/multi.bin"), filepath.Join(workDir, "in/multi-link"))
+	require.NoError(t, err)
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"in/small.txt": "hello\n",
+		"in/empty":     "",
+	})
+	err = os.Symlink("small.txt", filepath.Join(workDir, "in/link"))
+	require.NoError(t, err)
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+			OutputDirectories: []string{"out"},
+		},
+	}
+	c, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
+	require.NoError(t, err)
+	err = c.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		assert.NoError(t, err)
+	})
+
+	// Read the inputs, then change them in place with a write inside a
+	// block, a whole-file overwrite and a delete, which only the guest should
+	// see. Copy the changed file through both of its paths into the output
+	// directory.
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-ec", `
+cat in/small.txt
+readlink in/link
+stat -c '%s' in/empty
+printf XY | dd of=in/multi.bin bs=1 seek=4100 conv=notrunc 2>/dev/null
+printf new > in/small.txt
+rm in/empty
+mkdir -p out/dir
+cat in/multi.bin > out/dir/multi-after.bin
+cat in/multi-link > out/dir/link-after.bin
+echo done > out/result.txt
+`},
+		OutputDirectories: []string{"out"},
+	}
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+	require.Equal(t, "hello\nsmall.txt\n0\n", string(res.Stdout))
+
+	wantAfter := slices.Clone(multi)
+	copy(wantAfter[4100:], "XY")
+	require.Equal(t, wantAfter, testfs.ReadFile(t, workDir, "out/dir/multi-after.bin"))
+	// Both paths share an inode in the image, so the change shows through
+	// the hard link too.
+	require.Equal(t, wantAfter, testfs.ReadFile(t, workDir, "out/dir/link-after.bin"))
+	require.Equal(t, "done\n", testfs.ReadFileAsString(t, workDir, "out/result.txt"))
+	// The workspace files on the host are untouched.
+	require.Equal(t, multi, testfs.ReadFile(t, workDir, "in/multi.bin"))
+	require.Equal(t, "hello\n", testfs.ReadFileAsString(t, workDir, "in/small.txt"))
+	require.True(t, testfs.Exists(t, workDir, "in/empty"))
+
+	// Run a second task on the recycled VM with new workspace contents.
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+	err = os.RemoveAll(filepath.Join(workDir, "out"))
+	require.NoError(t, err)
+	testfs.WriteAllFileContents(t, workDir, map[string]string{"in/small.txt": "second\n"})
+	err = c.Unpause(ctx)
+	require.NoError(t, err)
+
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "-ec", "cat in/small.txt; ls out 2>/dev/null || echo no-out"}}, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, "second\nno-out\n", string(res.Stdout))
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+}
+
+// Benchmark_WorkspaceImage compares the mke2fs and virtualized EXT4 workspace images
+// across workspaces of several sizes and guest workloads. ns/op is the Exec
+// time, which includes building the image, mounting it in the guest and
+// copying outputs. guest_ms/op is the time the command itself took in the
+// guest, so overhead_ms/op is the rest.
+func Benchmark_WorkspaceImage(b *testing.B) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, b, envOpts{})
+	cfg := getExecutorConfig(b)
+	treeRoot := testfs.MakeTempDir(b)
+	for _, tree := range []struct {
+		name  string
+		files int
+		bytes int64
+	}{
+		{"1k_files_10MB", 1_000, 10e6},
+		{"10k_files_100MB", 10_000, 100e6},
+		{"50k_files_1GB", 50_000, 1e9},
+	} {
+		src := filepath.Join(treeRoot, tree.name)
+		testfs.WriteRandomTree(b, src, tree.files, tree.bytes)
+		// Finish writing the tree back to disk, so that the writeback does
+		// not compete with the first runs.
+		require.NoError(b, exec.Command("sync").Run())
+		for _, workload := range []struct {
+			name   string
+			script string
+		}{
+			{"noop", "true"},
+			{"read_all", "find . -type f | xargs cat > /dev/null"},
+			{"stat_all", "find . -type f | xargs stat > /dev/null"},
+			{"write_outputs", "mkdir -p out && i=0; while [ $i -lt 1000 ]; do head -c 65536 /dev/zero > out/$i; i=$((i+1)); done"},
+			{"modify_inputs", "find . -type f -size +8k | head -n 1000 | while read f; do printf X | dd of=\"$f\" bs=1 seek=100 conv=notrunc 2>/dev/null; done"},
+		} {
+			for _, vext4 := range []bool{false, true} {
+				b.Run(fmt.Sprintf("%s/%s/vext4=%t", tree.name, workload.name, vext4), func(b *testing.B) {
+					flags.Set(b, "executor.firecracker_vext4_enabled", vext4)
+					var execTotal, guestTotal time.Duration
+					for range b.N {
+						b.StopTimer()
+						workDir := testfs.MakeTempDir(b)
+						testfs.LinkTree(b, src, workDir)
+						opts := firecracker.ContainerOpts{
+							ContainerImage:         busyboxImage,
+							ActionWorkingDirectory: workDir,
+							VMConfiguration: &fcpb.VMConfiguration{
+								NumCpus:           2,
+								MemSizeMb:         4000,
+								NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+								ScratchDiskSizeMb: 100,
+							},
+							ExecutorConfig: cfg,
+						}
+						task := &repb.ExecutionTask{Command: &repb.Command{OutputDirectories: []string{"out"}}}
+						c, err := firecracker.NewContainer(ctx, env, task, opts)
+						require.NoError(b, err)
+						err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
+						require.NoError(b, err)
+						err = c.Create(ctx, workDir)
+						require.NoError(b, err)
+						// /proc/uptime has centisecond resolution, which is
+						// enough for these workloads.
+						cmd := &repb.Command{
+							Arguments: []string{"sh", "-ec", `
+start=$(cut -d' ' -f1 /proc/uptime)
+` + workload.script + `
+end=$(cut -d' ' -f1 /proc/uptime)
+echo "guest $start $end"
+`},
+							OutputDirectories: []string{"out"},
+						}
+						b.StartTimer()
+						start := time.Now()
+						res := c.Exec(ctx, cmd, nil /*=stdio*/)
+						execTotal += time.Since(start)
+						b.StopTimer()
+						require.NoError(b, res.Error)
+						require.Equal(b, 0, res.ExitCode, "stderr: %s", res.Stderr)
+						var guestStart, guestEnd float64
+						_, err = fmt.Sscanf(string(res.Stdout), "guest %f %f", &guestStart, &guestEnd)
+						require.NoError(b, err, "stdout: %s", res.Stdout)
+						guestTotal += time.Duration((guestEnd - guestStart) * float64(time.Second))
+						err = c.Remove(ctx)
+						require.NoError(b, err)
+						err = os.RemoveAll(workDir)
+						require.NoError(b, err)
+					}
+					b.ReportMetric(float64(guestTotal.Milliseconds())/float64(b.N), "guest_ms/op")
+					b.ReportMetric(float64((execTotal-guestTotal).Milliseconds())/float64(b.N), "overhead_ms/op")
+				})
+			}
+		}
+	}
+}
+
+// lazyWorkspaceInputs puts the given files in the CAS and returns an input
+// tree of them, all in the directory "in" along with a symlink to small.txt.
+// A random shell comment is appended to each non-empty file, and returned,
+// so that each run downloads the files afresh.
+func lazyWorkspaceInputs(ctx context.Context, t *testing.T, env *testenv.TestEnv, files map[string][]byte, executable string) (*repb.Tree, []byte) {
+	salt := []byte(fmt.Sprintf("# salt %d\n", rand.Int63()))
+	var nodes []*repb.FileNode
+	for name, content := range files {
+		if len(content) > 0 {
+			content = append(slices.Clone(content), salt...)
+		}
+		d, err := digest.Compute(bytes.NewReader(content), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		err = env.GetCache().Set(ctx, digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256).ToProto(), content)
+		require.NoError(t, err)
+		nodes = append(nodes, &repb.FileNode{Name: name, Digest: d, IsExecutable: name == executable})
+	}
+	in := &repb.Directory{
+		Files:    nodes,
+		Symlinks: []*repb.SymlinkNode{{Name: "link", Target: "small.txt"}},
+	}
+	inDigest, err := digest.ComputeForMessage(in, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	return &repb.Tree{
+		Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "in", Digest: inDigest}}},
+		Children: []*repb.Directory{in},
+	}, salt
+}
+
+func TestFirecrackerLazyWorkspace(t *testing.T) {
+	flags.Set(t, "executor.firecracker_vext4_lazy_inputs_enabled", true)
+	// The VM is removed in a cleanup function, after the test context ends.
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(authenticator)
+	ctx, err := authenticator.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, authenticator)
+	require.NoError(t, err)
+	workDir := testfs.MakeTempDir(t)
+
+	// The inputs exist only in the CAS: a file spanning several blocks, a
+	// small file, an executable, an empty file and a file the command never
+	// reads. There is no prefetcher, so each file is downloaded when the
+	// guest first reads it.
+	multi := make([]byte, 3*4096+100)
+	for i := range multi {
+		multi[i] = byte(i * 7)
+	}
+	inputs, salt := lazyWorkspaceInputs(ctx, t, env, map[string][]byte{
+		"multi.bin": multi,
+		"small.txt": []byte("hello\n"),
+		"tool":      []byte("#!/bin/sh\necho tool\n"),
+		"empty":     nil,
+		"unread":    []byte("never read\n"),
+	}, "tool")
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+			OutputFiles:       []string{"out/result.txt"},
+			OutputDirectories: []string{"out"},
+		},
+	}
+	c, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
+	require.NoError(t, err)
+	err = c.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		assert.NoError(t, err)
+	})
+
+	// Read the inputs, change one in place and write outputs into the
+	// output directory, which the layout creates since it is not an input.
+	cmd := &repb.Command{
+		OutputFiles:       task.GetCommand().GetOutputFiles(),
+		OutputDirectories: task.GetCommand().GetOutputDirectories(),
+		Arguments: []string{"sh", "-ec", `
+head -c 6 in/small.txt
+readlink in/link
+stat -c '%s' in/empty
+in/tool
+printf XY | dd of=in/multi.bin bs=1 seek=4100 conv=notrunc 2>/dev/null
+cat in/multi.bin > out/multi-after.bin
+echo done > out/result.txt
+printf ignored > ignored.txt
+`},
+	}
+	c.SetTaskFileSystemLayout(&container.FileSystemLayout{
+		DigestFunction:    repb.DigestFunction_SHA256,
+		Inputs:            inputs,
+		OutputFiles:       cmd.GetOutputFiles(),
+		OutputDirectories: cmd.GetOutputDirectories(),
+	})
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+	require.Equal(t, "hello\nsmall.txt\n0\ntool\n", string(res.Stdout))
+	require.False(t, res.DoNotRecycle)
+
+	wantAfter := append(slices.Clone(multi), salt...)
+	copy(wantAfter[4100:], "XY")
+	require.Equal(t, wantAfter, testfs.ReadFile(t, workDir, "out/multi-after.bin"))
+	require.Equal(t, "done\n", testfs.ReadFileAsString(t, workDir, "out/result.txt"))
+	// Nothing but the outputs is copied back to the host workspace.
+	require.False(t, testfs.Exists(t, workDir, "ignored.txt"))
+	require.False(t, testfs.Exists(t, workDir, "in"))
+	// Only the files the guest read were downloaded, since the empty file
+	// has no data blocks and the unread one was never touched.
+	require.Equal(t, int64(5), res.VfsStats.GetCasFilesCount())
+	require.Equal(t, int64(3), res.VfsStats.GetCasFilesAccessedCount())
+	require.Equal(t, int64(3), res.VfsStats.GetFileDownloadCount())
+
+	// Run a second task on the recycled VM with a new input tree.
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+	err = os.RemoveAll(filepath.Join(workDir, "out"))
+	require.NoError(t, err)
+	err = c.Unpause(ctx)
+	require.NoError(t, err)
+	inputs, _ = lazyWorkspaceInputs(ctx, t, env, map[string][]byte{"small.txt": []byte("second\n")}, "")
+	c.SetTaskFileSystemLayout(&container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs:         inputs,
+	})
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "-ec", "head -c 7 in/small.txt; ls in/tool out 2>/dev/null || echo gone"}}, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+	require.Equal(t, "second\ngone\n", string(res.Stdout))
+}
+
+func TestFirecrackerLazyWorkspaceDownloadError(t *testing.T) {
+	flags.Set(t, "executor.firecracker_vext4_lazy_inputs_enabled", true)
+	ctx := t.Context()
+	env := getTestEnv(ctx, t, envOpts{})
+	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(authenticator)
+	ctx, err := authenticator.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, authenticator)
+	require.NoError(t, err)
+	workDir := testfs.MakeTempDir(t)
+
+	// The input is not in the CAS, so the guest's read fails. The command
+	// ignores the error and exits successfully, but the task must still
+	// fail with the download error.
+	inputResource, _ := testdigest.RandomCASResourceBuf(t, 32)
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", "cat input.txt || true"}}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Command: cmd}, opts)
+	require.NoError(t, err)
+	c.SetTaskFileSystemLayout(&container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{
+			{Name: "input.txt", Digest: inputResource.GetDigest()},
+		}}},
+	})
+
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	require.True(t, status.IsFailedPreconditionError(res.Error), "%v", res.Error)
+	require.Equal(t, commandutil.NoExitCode, res.ExitCode)
+	require.Contains(t, string(res.Stderr), "Input/output error")
 }

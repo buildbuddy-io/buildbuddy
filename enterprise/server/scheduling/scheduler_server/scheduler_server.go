@@ -2756,6 +2756,8 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 			execution_experiments.PersistentVolumes.GetProto(ctx, expOptions...),
 			execution_experiments.UserspaceNetworking.GetProto(ctx, expOptions...),
 			execution_experiments.RecordInputFetchMetadata.GetProto(ctx, expOptions...),
+			execution_experiments.FirecrackerVEXT4.GetProto(ctx, expOptions...),
+			execution_experiments.FirecrackerVEXT4LazyInputs.GetProto(ctx, expOptions...),
 		}
 	}
 

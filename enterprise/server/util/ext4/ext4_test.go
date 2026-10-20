@@ -245,6 +245,19 @@ func TestImageToDirectory(t *testing.T) {
 			},
 		},
 		{
+			name: "a path inside another path does not stop the outer path from being extracted",
+			image: map[string]string{
+				"parent1/hello.txt":  "hello",
+				"parent1/world.txt":  "world",
+				"parent2/ignore.txt": "IGNORE_ME",
+			},
+			paths: []string{"/parent1/hello.txt", "/parent1"},
+			expected: map[string]string{
+				"parent1/hello.txt": "hello",
+				"parent1/world.txt": "world",
+			},
+		},
+		{
 			name: "paths not beginning with slash are allowed",
 			image: map[string]string{
 				"parent1/hello.txt": "hello",
