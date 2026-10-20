@@ -41,8 +41,8 @@ func TestPlaceComment(t *testing.T) {
 		want fileLine
 	}{
 		{"in diff", "a.go", 20, fileLine{"a.go", 20}},
-		{"nearest line below", "a.go", 12, fileLine{"a.go", 10}},
-		{"nearest line above", "a.go", 18, fileLine{"a.go", 20}},
+		{"nearest is an earlier line", "a.go", 12, fileLine{"a.go", 10}},
+		{"nearest is a later line", "a.go", 18, fileLine{"a.go", 20}},
 		{"tie picks the earlier line", "a.go", 15, fileLine{"a.go", 10}},
 		{"file not in diff", "d.go", 3, fileLine{"a.go", 10}},
 	} {
