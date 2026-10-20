@@ -760,7 +760,7 @@ type dirHandle struct {
 func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, errno syscall.Errno) {
 	d.node.startOP("Readdirent")
 	if d.vfs.verbose {
-		log.CtxDebugf(d.vfs.rpcCtx, "Readdirent %q", d.node.relativePath())
+		log.CtxDebugf(d.vfs.getRPCContext(), "Readdirent %q", d.node.relativePath())
 		defer func() {
 			if errno == 0 {
 				if dirEntry == nil {
@@ -808,10 +808,12 @@ func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, er
 // off is a bookmark. Every entry handed to the kernel carries a DirectoryOffset,
 // and the kernel passes back the offset of the last entry it received to ask for
 // the entries after it. The VFS server backing this mount assigns those offsets.
-// An entry keeps its offset for as long as it exists, and a new entry always gets
-// a higher offset than any before it, so the entries after a bookmark are exactly
-// those with a greater offset, even if entries were added or removed in the
-// meantime.
+// A name keeps its offset across listings while it stays in the directory, and a
+// name that was absent at the previous listing gets a higher offset than any
+// before it, so the entries after a bookmark are those with a greater offset,
+// even if entries were added or removed in the meantime. A name removed and
+// re-created between two listings keeps its old offset, so a pass that already
+// returned that name does not return it again.
 //
 // A seek to offset 0 is a rewind. The kernel reads from offset 0 on an existing
 // handle when an application calls rewinddir after the directory changed, and
@@ -820,7 +822,7 @@ func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, er
 func (d *dirHandle) Seekdir(ctx context.Context, off uint64) syscall.Errno {
 	d.node.startOP("Seekdir")
 	if d.vfs.verbose {
-		log.CtxDebugf(d.vfs.rpcCtx, "Seekdir %q to %d", d.node.relativePath(), off)
+		log.CtxDebugf(d.vfs.getRPCContext(), "Seekdir %q to %d", d.node.relativePath(), off)
 	}
 	if off == 0 {
 		d.pos = -1
@@ -851,19 +853,13 @@ func (d *dirHandle) Seekdir(ctx context.Context, off uint64) syscall.Errno {
 func (d *dirHandle) loadChildren() syscall.Errno {
 	directoryGeneration, directoryCacheable := d.node.directorySnapshotGeneration()
 	attrsGeneration, attrsCacheable := d.vfs.attrsSnapshotGeneration()
-	rsp, err := d.vfs.vfsClient.GetDirectoryContents(d.vfs.rpcCtx, &vfspb.GetDirectoryContentsRequest{
+	rsp, err := d.vfs.vfsClient.GetDirectoryContents(d.vfs.getRPCContext(), &vfspb.GetDirectoryContentsRequest{
 		Id: d.node.StableAttr().Ino,
 	})
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
 	d.children = rsp.Nodes
-	for i, child := range d.children {
-		if child.GetDirectoryOffset() == 0 {
-			// Older servers return entries in name order without stable offsets.
-			child.DirectoryOffset = uint64(i + 1)
-		}
-	}
 	if directoryCacheable && attrsCacheable {
 		attrsGenerations, ok := d.vfs.attrsGenerationsForSnapshot(attrsGeneration, rsp.Nodes)
 		if ok {

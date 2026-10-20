@@ -572,8 +572,9 @@ func TestReaddirAfterMutationAndPartialCacheEviction(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, f.Close()) })
 			require.NoError(t, unix.Fadvise(int(f.Fd()), int64(os.Getpagesize()), 0, unix.FADV_DONTNEED))
 
-			// Read only part of the first cached page, so this handle has not fetched
-			// a listing yet. Use getdents directly to avoid os.File's read-ahead buffer.
+			// Read only part of the first cached page, so this handle has not
+			// fetched a listing yet. Use getdents directly to avoid os.File's
+			// read-ahead buffer.
 			buf := make([]byte, 256)
 			n, err := unix.ReadDirent(int(f.Fd()), buf)
 			require.NoError(t, err)
@@ -708,60 +709,21 @@ func TestReaddirAfterRewindFromCacheAndPartialCacheEviction(t *testing.T) {
 				return client
 			})
 
-			// Open the VFS root directory. We reply with FOPEN_CACHE_DIR, so
-			// the kernel is allowed to cache our responses to READDIR
-			// requests.
 			f, err := os.Open(fsPath)
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, f.Close()) })
 
-			// Read all names from the directory. This should fetch from VFS. As
-			// a side effect, because FOPEN_CACHE_DIR is set, this populates the
-			// cache for later reads.
 			got, err := f.Readdirnames(-1)
 			require.NoError(t, err)
 			require.Len(t, got, len(names))
 			require.EqualValues(t, 1, client.getDirectoryContentsCount.Load(), "the first listing must be fetched from the VFS")
 
-			// Mutate the directory contents using the mutation func for this
-			// specific test case, then open a new directory file descriptor and
-			// read its contents (via ReadDir). In detail:
-			//
-			//  1. The kernel sends the create or unlink to the VFS server as a
-			//     FUSE request. Once the server reports success, the kernel
-			//     bumps the directory's version counter.
-			//  2. ReadDir opens a new descriptor, which gets its own FUSE
-			//     handle, and reads from offset 0.
-			//  3. A read from offset 0 is the only point where the kernel
-			//     validates its cached listing. It compares the version counter
-			//     and the directory mtime against the values recorded when the
-			//     listing was cached, sees the mismatch, and drops the cached
-			//     listing.
-			//  4. The kernel sends READDIR requests on the new handle, which
-			//     fetches a fresh listing with another GetDirectoryContents
-			//     request, and the kernel refills the cache from the replies.
-			//
-			// The cache is shared by every descriptor open on the directory,
-			// but FUSE handles are not, so the original descriptor's handle
-			// hears nothing and still holds the old listing.
 			require.NoError(t, testCase.mutate(fsPath))
 			entries, err := os.ReadDir(fsPath)
 			require.NoError(t, err)
 			require.Len(t, entries, len(testCase.want))
 			require.EqualValues(t, 2, client.getDirectoryContentsCount.Load(), "the listing after the change must be fetched from the VFS")
 
-			// With the original file descriptor, rewind the dir handle by
-			// seeking to the start, then call getdents to read as many
-			// directory entries as can fit into 256 bytes (to keep the position
-			// within the first cached page).
-			//
-			// The kernel should serve this from its directory cache, without
-			// needing to call GetDirectoryContents again, because the read from
-			// offset 0 validates the cache against the directory's version
-			// counter and mtime, and both still match the values recorded when
-			// the previous step refilled it. Neither the seek nor the read
-			// reaches the FUSE server, so the handle still holds its old
-			// listing and still believes it is at the end of it.
 			_, err = f.Seek(0, io.SeekStart)
 			require.NoError(t, err)
 			buf := make([]byte, 256)
@@ -771,13 +733,6 @@ func TestReaddirAfterRewindFromCacheAndPartialCacheEviction(t *testing.T) {
 			require.NotEmpty(t, got)
 			require.EqualValues(t, 2, client.getDirectoryContentsCount.Load(), "the read after the rewind must be served from the kernel cache")
 
-			// Simulate memory reclaim evicting the rest of the cached listing,
-			// so the kernel asks the VFS to continue this handle from the
-			// offset of the last entry it served from the cache. The
-			// continuation must reflect the change rather than the handle's old
-			// listing. The result is compared as a set because the server
-			// returns entries in directory offset order, which is not name
-			// order in general.
 			require.NoError(t, unix.Fadvise(int(f.Fd()), int64(os.Getpagesize()), 0, unix.FADV_DONTNEED))
 			for {
 				n, err := unix.ReadDirent(int(f.Fd()), buf)
@@ -788,15 +743,13 @@ func TestReaddirAfterRewindFromCacheAndPartialCacheEviction(t *testing.T) {
 				_, _, got = unix.ParseDirent(buf[:n], -1, got)
 				require.Less(t, len(got), 2*len(names), "directory read must make progress")
 			}
-			counts := make(map[string]int)
-			for _, name := range got {
-				counts[name]++
-			}
-			for _, name := range testCase.want {
-				require.Equal(t, 1, counts[name], "entry %q must be returned exactly once", name)
-				delete(counts, name)
-			}
-			require.Empty(t, counts, "entries that no longer exist must not be returned")
+			// Make sure that the entries read after the eviction are the entries
+			// after the change. If Seekdir searches the listing from the first
+			// read instead of fetching a fresh one, the added entry is missing
+			// and the removed entry comes back. Entries arrive in directory
+			// offset order, so compare after sorting by name.
+			slices.Sort(got)
+			require.Equal(t, testCase.want, got)
 		})
 	}
 }
@@ -808,9 +761,6 @@ func TestReaddirAfterRewindOfEmptyDirectory(t *testing.T) {
 	tree := createInputTree(t, ctx, env, map[string]string{"input.txt": "x"})
 	_, _, fsPath := setupVFSWithInputTree(t, env, tree)
 
-	// Create an empty directory, open it, and read its listing. This should
-	// fetch from VFS. The listing is empty, and because we reply with
-	// FOPEN_CACHE_DIR, the kernel caches the empty listing as complete.
 	dir := filepath.Join(fsPath, "out")
 	require.NoError(t, os.Mkdir(dir, 0755))
 	f, err := os.Open(dir)
@@ -820,40 +770,20 @@ func TestReaddirAfterRewindOfEmptyDirectory(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, names)
 
-	// Create a file in the directory, then rewind the original descriptor and
-	// read the listing again. In detail:
-	//
-	//  1. The kernel sends the create to the VFS server as a FUSE request.
-	//     Once the server reports success, the kernel bumps the directory's
-	//     version counter.
-	//  2. The seek sets the descriptor's position to 0 without any FUSE
-	//     request.
-	//  3. The read from offset 0 validates the cached listing against the
-	//     version counter and mtime, sees the mismatch, drops the cached
-	//     empty listing, and sends a READDIR at offset 0 on the original
-	//     descriptor's FUSE handle.
-	//  4. go-fuse calls Seekdir only when the requested offset differs from
-	//     the position it recorded for the handle. That position is the
-	//     offset of the last entry the handle returned, and the empty listing
-	//     returned none, so it is still 0. go-fuse therefore calls Readdirent
-	//     directly, without a Seekdir.
-	//
-	// Readdirent must fetch a fresh listing here rather than report end of
-	// directory from the stale empty one, because the kernel caches whatever
-	// this read returns.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "result.txt"), []byte("x"), 0644))
 	_, err = f.Seek(0, io.SeekStart)
 	require.NoError(t, err)
 	names, err = f.Readdirnames(-1)
 	require.NoError(t, err)
+	// Make sure that the read after the rewind returns the new file. go-fuse
+	// does not call Seekdir for this read, because the position it recorded
+	// after the empty listing is still 0, so Readdirent must drop the stale
+	// empty listing itself instead of reporting end of directory from it.
 	require.Equal(t, []string{"result.txt"}, names)
 
-	// Open a new descriptor and read the directory. The kernel cached the
-	// previous read's result as the complete listing, so this read is served
-	// from the cache and must see the file too. If the previous read had
-	// returned the stale empty listing, the kernel would have cached that,
-	// and every descriptor would see an empty directory until the next change
-	// to it bumps the version counter.
+	// Make sure that a new descriptor sees the file too. The kernel caches
+	// whatever the read above returns, so a stale empty result would leave
+	// every descriptor seeing an empty directory until the next change.
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	require.Len(t, entries, 1)

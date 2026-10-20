@@ -235,8 +235,9 @@ type fsNode struct {
 	children    map[string]*fsNode
 	backingPath string
 
-	// Directory offsets must survive additions and removals so a reader can
-	// resume from an older listing without skipping or repeating other entries.
+	// Directory offset of each child entry, keyed by name. An offset survives
+	// additions and removals of other entries so a reader can resume an older
+	// listing without skipping or repeating entries.
 	directoryOffsets    map[string]uint64
 	nextDirectoryOffset uint64
 }

@@ -87,7 +87,6 @@ message Node {
   // removed. Distinct names have distinct offsets, including hardlinks.
   // GetDirectoryContents returns entries in increasing offset order, so a
   // client resumes a listing at the first entry with a greater offset.
-  // Zero means the server does not provide stable directory offsets.
   uint64 directory_offset = 5;
 }
 
