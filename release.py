@@ -14,11 +14,8 @@ release.py - A simple script to create a release.
 This script will do the following:
 
   1) Check that your working repository is clean.
-  2) Compute a new version tag by bumping a base version tag, and create the
-     tag pointing at HEAD. By default, a patch release (or
-     --bump_version_type=none) is based on the highest version tag reachable
-     from HEAD, i.e. the branch's own version, and a minor release is based on
-     the highest version tag in the repo.
+  2) Compute a new version tag by bumping a base version tag (see
+     --base_version), and create the tag pointing at HEAD.
   3) Pushes the tag to GitHub.
      This kicks off some workflows which will build the release artifacts.
   4) Builds and tags new Docker images locally, and pushes them to the registry.
@@ -314,15 +311,25 @@ def main():
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
     parser.add_argument('--mark_workspace_as_safe', default='')
     args = parser.parse_args()
+    if args.version:
+        args.bump_version_type = 'none'
+
+    images = []
+    if args.update_app_image:
+        images.append("buildbuddy-app-onprem")
+    if args.update_enterprise_app_image:
+        images.append("buildbuddy-app-enterprise")
+    if args.update_executor_image:
+        images.append("buildbuddy-executor-enterprise")
+    if args.update_proxy_image:
+        images.append("buildbuddy-proxy-enterprise")
 
     if args.mark_workspace_as_safe:
         run_or_die('git config --global --add safe.directory %s' % args.mark_workspace_as_safe)
 
     # Images are built with --stamp, and a shallow clone may be missing the
     # version tag from its history, so the images would be stamped "unknown".
-    updating_images = (args.update_app_image or args.update_enterprise_app_image or
-                       args.update_executor_image or args.update_proxy_image)
-    if updating_images and is_shallow_repository():
+    if images and is_shallow_repository():
         die('Refusing to build images in a shallow clone: they would be stamped with version "unknown". ' +
             'Fetch the full history first (e.g. fetch-depth: 0, or git fetch --unshallow).')
 
@@ -386,16 +393,6 @@ def main():
         with open(github_outputs_file, 'a') as f:
             f.write('version_tag=' + new_version + '\n')
         print("Wrote version_tag output to $GITHUB_OUTPUT")
-
-    images = []
-    if args.update_app_image:
-        images.append("buildbuddy-app-onprem")
-    if args.update_enterprise_app_image:
-        images.append("buildbuddy-app-enterprise")
-    if args.update_executor_image:
-        images.append("buildbuddy-executor-enterprise")
-    if args.update_proxy_image:
-        images.append("buildbuddy-proxy-enterprise")
 
     if images:
         print('Building and pushing docker images', images)
