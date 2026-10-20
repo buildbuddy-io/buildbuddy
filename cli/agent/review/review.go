@@ -388,27 +388,35 @@ func HandleReview(args []string) (int, error) {
 	}
 	validLines := diffLines(diff)
 
-	// Partition comments into inline and body overflow.
+	// Post every comment inline, so each can be resolved on its own. Only if
+	// the diff has no lines at all do comments fall back to the review body.
 	var inlineComments []*github.DraftReviewComment
 	var overflowLines []string
+	moved := 0
 	for _, c := range review.Comments {
-		if validLines[fileLine{c.File, c.Line}] {
-			inlineComments = append(inlineComments, &github.DraftReviewComment{
-				Path: new(c.File),
-				Line: new(c.Line),
-				Side: new("RIGHT"),
-				Body: new(c.text()),
-			})
-		} else {
+		loc, ok := placeComment(c, validLines)
+		if !ok {
 			overflowLines = append(overflowLines, fmt.Sprintf("- `%s:%d` — %s", c.File, c.Line, c.text()))
+			continue
 		}
+		body := c.text()
+		if loc != (fileLine{c.File, c.Line}) {
+			moved++
+			body += fmt.Sprintf("\n\n<sub>About `%s:%d`, which isn't in the diff.</sub>", c.File, c.Line)
+		}
+		inlineComments = append(inlineComments, &github.DraftReviewComment{
+			Path: new(loc.file),
+			Line: new(loc.line),
+			Side: new("RIGHT"),
+			Body: new(body),
+		})
 	}
 
 	fullBody := review.Summary
 	if len(overflowLines) > 0 {
-		fullBody += "\n\n### Additional findings (lines outside the diff)\n" + strings.Join(overflowLines, "\n")
+		fullBody += "\n\n### Additional findings\n" + strings.Join(overflowLines, "\n")
 	}
-	log.Printf("    %d inline comment(s), %d folded into body.", len(inlineComments), len(overflowLines))
+	log.Printf("    %d inline comment(s), %d moved to the nearest diff line, %d folded into body.", len(inlineComments), moved, len(overflowLines))
 
 	return postReview(ctx, gh, owner, repo, pr, fullBody, inlineComments)
 }
@@ -551,6 +559,40 @@ func structureReview(ctx context.Context, reviewText string) (*reviewJSON, error
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 	return review, nil
+}
+
+// placeComment returns where to post c inline. GitHub only accepts inline
+// comments on lines in the diff, so a comment on any other line moves to the
+// nearest diff line in the same file, or else to the PR's first diff line.
+// ok is false only if the diff has no lines.
+func placeComment(c reviewComment, validLines map[fileLine]bool) (loc fileLine, ok bool) {
+	want := fileLine{c.File, c.Line}
+	if validLines[want] {
+		return want, true
+	}
+	var nearest, first fileLine
+	for l := range validLines {
+		if l.file == c.File {
+			d, best := abs(l.line-c.Line), abs(nearest.line-c.Line)
+			if nearest.file == "" || d < best || (d == best && l.line < nearest.line) {
+				nearest = l
+			}
+		}
+		if first.file == "" || l.file < first.file || (l.file == first.file && l.line < first.line) {
+			first = l
+		}
+	}
+	if nearest.file != "" {
+		return nearest, true
+	}
+	return first, first.file != ""
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // diffLines returns the set of lines in the new version of each file that

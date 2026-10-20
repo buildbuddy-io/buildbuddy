@@ -27,6 +27,36 @@ func TestReviewCommentText(t *testing.T) {
 	}
 }
 
+func TestPlaceComment(t *testing.T) {
+	validLines := map[fileLine]bool{
+		{"a.go", 10}: true,
+		{"a.go", 20}: true,
+		{"b.go", 5}:  true,
+		{"c.go", 1}:  true,
+	}
+	for _, tc := range []struct {
+		name string
+		file string
+		line int
+		want fileLine
+	}{
+		{"in diff", "a.go", 20, fileLine{"a.go", 20}},
+		{"nearest line below", "a.go", 12, fileLine{"a.go", 10}},
+		{"nearest line above", "a.go", 18, fileLine{"a.go", 20}},
+		{"tie picks the earlier line", "a.go", 15, fileLine{"a.go", 10}},
+		{"file not in diff", "d.go", 3, fileLine{"a.go", 10}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			loc, ok := placeComment(reviewComment{File: tc.file, Line: tc.line}, validLines)
+			require.True(t, ok)
+			assert.Equal(t, tc.want, loc)
+		})
+	}
+
+	_, ok := placeComment(reviewComment{File: "a.go", Line: 1}, map[fileLine]bool{})
+	assert.False(t, ok)
+}
+
 func TestReviewJSONCategory(t *testing.T) {
 	var review reviewJSON
 	err := json.Unmarshal([]byte(`{
