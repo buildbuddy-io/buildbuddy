@@ -328,7 +328,8 @@ const (
 	DistributedCacheWriteRequestType = "request_type"
 
 	// Where a distributed cache read was served from: "local" (this node is a
-	// replica), "read_through" (local read-through cache), "lookaside" or "peer".
+	// replica), "read_through" (local read-through cache), "lookaside",
+	// "same_zone peer" or "cross_zone_peer".
 	DistributedCacheReadSource = "source"
 
 	// ContentAddressableStorage Server operation: "FindMissingBlobs",
@@ -421,6 +422,10 @@ const (
 	// Destination region inferred from the remote IP range, or `unknown` if no
 	// known cloud range matches.
 	DestinationRegionLabel = "remote_region"
+
+	// Verified client identity of the peer (e.g. `cache-proxy`, `executor`), or
+	// `external` when it presented none.
+	PeerTypeLabel = "peer_type"
 
 	OCIFetcherMethodLabel = "method"
 	OCIFetcherRoleLabel   = "role"
@@ -1622,6 +1627,20 @@ var (
 	// ```promql
 	// # Total number of execution requests with client waiting for result.
 	// sum(buildbuddy_remote_execution_waiting_execution_result)
+	// ```
+
+	RemoteExecutionLostTasks = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "lost_tasks",
+		Help:      "Number of tasks that the scheduler reported lost after they stayed missing from Redis while clients were waiting on them.",
+	})
+
+	// #### Examples
+	//
+	// ```promql
+	// # Rate at which the app tells clients to retry executions whose task the scheduler lost.
+	// rate(buildbuddy_remote_execution_lost_tasks[5m])
 	// ```
 
 	RemoteExecutionRequests = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -4784,9 +4803,10 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "grpc",
 		Name:      "server_egress_bytes",
-		Help:      "The number of gRPC server response bytes sent over the wire, broken down by gRPC method and destination provider/region inferred from the peer IP. Note: this metric tracks gRPC payload bytes, which may be compressed, and does not include HTTP/2 framing or response headers.",
+		Help:      "The number of gRPC server response bytes sent over the wire, broken down by group, peer type, and destination provider/region inferred from the peer IP. Bytes forwarded by another BuildBuddy server are counted there too; filter peer_type=`external` to count each byte once. Note: this metric tracks gRPC payload bytes, which may be compressed, and does not include HTTP/2 framing or response headers.",
 	}, []string{
 		GroupID,
+		PeerTypeLabel,
 		DestinationProviderLabel,
 		DestinationRegionLabel,
 	})
@@ -4794,9 +4814,22 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "grpc",
 		Name:      "server_ingress_bytes",
-		Help:      "The number of gRPC server request bytes received over the wire, broken down by source provider/region inferred from the peer IP. Note: this metric tracks gRPC payload bytes, which may be compressed, and does not include HTTP/2 framing or request headers.",
+		Help:      "The number of gRPC server request bytes received over the wire, broken down by group, peer type, and source provider/region inferred from the peer IP. Bytes relayed by another BuildBuddy server were counted there too; filter peer_type=`external` to count each byte once. Note: this metric tracks gRPC payload bytes, which may be compressed, and does not include HTTP/2 framing or request headers.",
 	}, []string{
 		GroupID,
+		PeerTypeLabel,
+		DestinationProviderLabel,
+		DestinationRegionLabel,
+	})
+
+	GRPCServerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "server_requests",
+		Help:      "The number of finished gRPC server requests, broken down by group, peer type, and source provider/region inferred from the peer IP. Requests forwarded by another BuildBuddy server were counted there too; filter peer_type=`external` to count each request once.",
+	}, []string{
+		GroupID,
+		PeerTypeLabel,
 		DestinationProviderLabel,
 		DestinationRegionLabel,
 	})

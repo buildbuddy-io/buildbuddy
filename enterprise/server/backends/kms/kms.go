@@ -158,8 +158,9 @@ func (k *KMS) initAWSClient(ctx context.Context) error {
 		}
 	}
 	if strings.HasPrefix(*masterKeyURI, awsKMSPrefix) {
-		_, err := k.clientForURI(*masterKeyURI)
-		return status.FailedPreconditionErrorf("could not initialize KMS client for master key: %s", err)
+		if _, err := k.clientForURI(*masterKeyURI); err != nil {
+			return status.FailedPreconditionErrorf("could not initialize KMS client for master key: %s", err)
+		}
 	}
 	return nil
 }

@@ -11,7 +11,7 @@ PODMAN_VERSION = "v5.7.0"
 PODMAN_STATIC_SHA256_AMD64 = "6a1c06b78d7dad15d8d7155a180874939a04bd39ce2f64726c7f11142ab7aa7d"
 PODMAN_STATIC_SHA256_ARM64 = "703ffad8972aa2db70a173c80804a88185e6c2dc8a88a247a8ebffeac424b0ba"
 
-# The bb CLI version used by //tools/lint for `bb fix` and `bb mod deps`.
+# The bb CLI version used by //tools/lint for `bb mod deps`.
 BB_CLI_VERSION = "5.0.466"
 
 # Manually created
@@ -286,20 +286,20 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
-        sha256 = "157eb023df7c83abf377837941fcda6e2a9e1bf93475ac3b237bbff7bb9eb1ef",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-157eb023df7c83abf377837941fcda6e2a9e1bf93475ac3b237bbff7bb9eb1ef"],
+        sha256 = "c6dd56fff7dada624dcb68db317541f45504261ae6f2aae5dc91848aacbbfda3",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-c6dd56fff7dada624dcb68db317541f45504261ae6f2aae5dc91848aacbbfda3"],
         executable = True,
     )
     http_file(
-        name = "org_kernel_git_linux_kernel-vmlinux-6.1",
-        sha256 = "83cd371cf5d3590d63e69e8c4d15307cfc415fee9468e8c9b4d205d52bbc546e",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-83cd371cf5d3590d63e69e8c4d15307cfc415fee9468e8c9b4d205d52bbc546e"],
+        name = "org_kernel_git_linux_kernel-vmlinux-6.18",
+        sha256 = "757012f067c4db854f2a9bea6d76ce30242480c621114da8c07055bf1735819e",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.18-757012f067c4db854f2a9bea6d76ce30242480c621114da8c07055bf1735819e"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-arm64",
-        sha256 = "f568e484084a29c3b8a57f6c681e270374b505a35973b734cd520efe8e08ea6e",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-f568e484084a29c3b8a57f6c681e270374b505a35973b734cd520efe8e08ea6e"],
+        sha256 = "957d6da5c7ee7869c8a285784a201ac3928393087e2542131d4d107fc9556b45",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-957d6da5c7ee7869c8a285784a201ac3928393087e2542131d4d107fc9556b45"],
         executable = True,
     )
 

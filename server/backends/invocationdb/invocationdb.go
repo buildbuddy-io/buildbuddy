@@ -32,6 +32,9 @@ import (
 // last DB update the invocation may still be retried. An incomplete
 // invocation whose row has not been updated within this window is assumed to
 // be abandoned and may not be retried.
+//
+// Note: keep this in sync with executionExpiration in
+// enterprise/server/backends/redis_execution_collector/redis_execution_collector.go.
 const invocationReconnectWindow = 4 * time.Hour
 
 type InvocationDB struct {

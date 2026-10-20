@@ -719,6 +719,7 @@ func (e *fakeExecutor) ResetTasks() {
 type taskLease struct {
 	t       *testing.T
 	stream  scpb.Scheduler_LeaseTaskClient
+	cancel  context.CancelFunc
 	leaseID string
 	taskID  string
 	task    *repb.ExecutionTask
@@ -736,6 +737,12 @@ func (tl *taskLease) Renew() error {
 		return err
 	}
 	return nil
+}
+
+// Drop breaks the lease stream without releasing the lease, as is the case
+// when the connection between the executor and the scheduler is broken.
+func (tl *taskLease) Drop() {
+	tl.cancel()
 }
 
 func (tl *taskLease) Finalize() error {
@@ -781,7 +788,9 @@ func (e *fakeExecutor) Reconnect(taskID, reconnectToken string) (*taskLease, err
 }
 
 func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, error) {
-	stream, err := e.schedulerClient.LeaseTask(e.ctx)
+	ctx, cancel := context.WithCancel(e.ctx)
+	e.t.Cleanup(cancel)
+	stream, err := e.schedulerClient.LeaseTask(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -812,6 +821,7 @@ func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, err
 	lease := &taskLease{
 		t:       e.t,
 		stream:  stream,
+		cancel:  cancel,
 		taskID:  taskID,
 		task:    task,
 		leaseID: rsp.GetLeaseId(),
@@ -1194,9 +1204,14 @@ func TestLeaseExpiration(t *testing.T) {
 	fakeClock.Advance(2 * time.Second)
 	fe.WaitForTask(taskID)
 
-	// Lease renewal should fail as the stream should be broken.
+	// Lease renewal should fail with the reason the lease ended.
 	err = lease.Renew()
-	require.ErrorIs(t, io.EOF, err)
+	if err == io.EOF {
+		// Send returns io.EOF once the stream has ended, and Recv returns the
+		// stream's status.
+		_, err = lease.stream.Recv()
+	}
+	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got: %v", err)
 }
 
 func TestLeaseReconnectGrace_OtherExecutorsCannotStealTask(t *testing.T) {
@@ -1285,6 +1300,120 @@ func TestLeaseReconnectGrace_RetriesDisabled(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, reconnectedLease.leaseID)
 	require.NoError(t, reconnectedLease.Finalize())
+}
+
+func TestLeaseReconnect_AfterBrokenStreamIsCleanedUp(t *testing.T) {
+	// Set a high reconnect grace period since we use real time in the test.
+	flags.Set(t, "remote_execution.lease_reconnect_grace_period", 24*time.Hour)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+
+	// "holder" executor establishes a lease.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+
+	// Lease breaks non-gracefully, e.g. broken connection.
+	lease.Drop()
+
+	// The task should now be in "reconnecting" state.
+	require.Eventually(t, func() bool {
+		task, err := s.readTask(ctx, taskID)
+		return err == nil && !task.reconnectPeriodEnd.IsZero()
+	}, 5*time.Second, 10*time.Millisecond, "task was not reserved for its executor to reconnect")
+
+	// Other "thief" executors cannot steal the task while it's in this
+	// "reconnecting" state.
+	thief := newFakeExecutorWithId(ctx, t, "thief", env.GetSchedulerClient())
+	thief.Register()
+	_, err := thief.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.True(t, status.IsNotFoundError(err), "unexpected claim error: %v", err)
+
+	// Original "holder" executor is able to reconnect.
+	reconnectedLease, err := holder.Reconnect(taskID, lease.leaseID)
+	require.NoError(t, err)
+	task, err := s.readTask(ctx, taskID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, task.attemptCount)
+	require.NoError(t, reconnectedLease.Finalize())
+}
+
+func TestLeaseReconnect_AnotherExecutorClaimsTaskAfterGracePeriod(t *testing.T) {
+	gracePeriod := 200 * time.Millisecond
+	flags.Set(t, "remote_execution.lease_reconnect_grace_period", gracePeriod)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	other := newFakeExecutorWithId(ctx, t, "other", env.GetSchedulerClient())
+	other.Register()
+
+	// "holder" executor establishes a lease. Other executors clear their
+	// queues, as though they tried and fail to lease.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+	other.ResetTasks()
+
+	// The lease stream breaks, and "holder" never reconnects, e.g. because it
+	// died.
+	lease.Drop()
+
+	// The scheduler re-enqueues the task, delayed by the grace period.
+	other.WaitForTaskWithDelay(taskID, gracePeriod)
+
+	// Once the grace period has ended, "other" can claim the task as a new
+	// attempt.
+	time.Sleep(gracePeriod)
+	otherLease := other.Claim(taskID)
+	task, err := s.readTask(ctx, taskID)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, task.attemptCount)
+	require.NoError(t, otherLease.Finalize())
+}
+
+func TestLeaseReconnect_BrokenStreamFailsTaskThatCannotBeRetried(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		props map[string]string
+		// Attempt count to set after the claim, if non-zero.
+		attemptCount int
+	}{
+		{
+			name:  "retries disabled",
+			props: map[string]string{platform.RetryPropertyName: "false"},
+		},
+		{
+			name:         "attempts used up",
+			props:        map[string]string{},
+			attemptCount: maxTaskAttemptCount,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			s := env.GetSchedulerService().(*SchedulerServer)
+			holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+			holder.Register()
+			taskID := scheduleTask(ctx, t, env, testCase.props)
+			holder.WaitForTask(taskID)
+			lease := holder.Claim(taskID)
+			if testCase.attemptCount != 0 {
+				err := s.rdb.HSet(ctx, s.redisKeyForTask(taskID), redisTaskAttempCountField, testCase.attemptCount).Err()
+				require.NoError(t, err)
+			}
+
+			// The scheduler only reserves tasks that it could later hand to
+			// another executor, so it fails these after a broken stream.
+			lease.Drop()
+
+			require.Eventually(t, func() bool {
+				_, err := s.readTask(ctx, taskID)
+				return status.IsNotFoundError(err)
+			}, 5*time.Second, 10*time.Millisecond, "task was not deleted")
+		})
+	}
 }
 
 func TestLeaseReconnect_BeforeOldStreamIsCleanedUp(t *testing.T) {
@@ -2754,4 +2883,114 @@ func TestShutdown_StopsBackgroundGoroutines(t *testing.T) {
 
 	env.GetHealthChecker().Shutdown()
 	env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
+func TestWatchTaskLiveness(t *testing.T) {
+	// Set the check interval far beyond how far the test advances the fake
+	// clock, so that the scheduler never checks on its own and the test
+	// decides when checks happen.
+	flags.Set(t, "remote_execution.task_liveness_check_interval", 999*time.Hour)
+	// The scheduler reports a task lost once it has been missing for the
+	// lease duration plus grace period, 20s here.
+	clock := clockwork.NewFakeClock()
+	env, _ := getEnv(t, &schedulerOpts{options: Options{
+		Clock:            clock,
+		LeaseDuration:    10 * time.Second,
+		LeaseGracePeriod: 10 * time.Second,
+	}}, "")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	rdb := env.GetRemoteExecutionRedisClient()
+	ctx := t.Context()
+	taskKey := s.redisKeyForTask("task1")
+	err := rdb.Set(ctx, taskKey, "1", 0).Err()
+	require.NoError(t, err)
+	lost := s.WatchTaskLiveness(ctx, "task1")
+	isLost := func() bool {
+		select {
+		case <-lost:
+			return true
+		default:
+			return false
+		}
+	}
+
+	// While the task exists, the scheduler leaves the channel open.
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+
+	// After the test deletes the task, the scheduler does not report it lost
+	// until it has been missing for 20s, since an executor running it may
+	// still publish its final update until it fails a lease renewal.
+	err = rdb.Del(ctx, taskKey).Err()
+	require.NoError(t, err)
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+	clock.Advance(19 * time.Second)
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+
+	// If the scheduler finds the task again, it restarts the count, so it
+	// reports the task lost only after the task has been missing continually
+	// for 20s.
+	err = rdb.Set(ctx, taskKey, "1", 0).Err()
+	require.NoError(t, err)
+	s.checkTaskLivenessOnce(ctx)
+	err = rdb.Del(ctx, taskKey).Err()
+	require.NoError(t, err)
+	s.checkTaskLivenessOnce(ctx)
+	clock.Advance(19 * time.Second)
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+
+	// A failed check also restarts the count, since the scheduler cannot tell
+	// whether the task existed at that time. The test makes the check fail by
+	// running it with a canceled context.
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	s.checkTaskLivenessOnce(canceledCtx)
+	s.checkTaskLivenessOnce(ctx)
+	clock.Advance(19 * time.Second)
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+
+	// Once the task has been missing for 20s, the scheduler reports it lost
+	// and stops watching it.
+	clock.Advance(time.Second)
+	s.checkTaskLivenessOnce(ctx)
+	require.True(t, isLost())
+	s.livenessMu.Lock()
+	defer s.livenessMu.Unlock()
+	require.Empty(t, s.livenessWatches)
+}
+
+func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
+	// Enable the check, which is off by default. The fake clock never
+	// advances, so the scheduler never runs it on its own.
+	flags.Set(t, "remote_execution.task_liveness_check_interval", 999*time.Hour)
+	env, _ := getEnv(t, &schedulerOpts{options: Options{Clock: clockwork.NewFakeClock()}}, "")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	watcherCount := func() int {
+		s.livenessMu.Lock()
+		defer s.livenessMu.Unlock()
+		if w, ok := s.livenessWatches["task1"]; ok {
+			return w.watchers
+		}
+		return 0
+	}
+
+	// Two clients watch the same task, so they share a single check.
+	ctx1, cancel1 := context.WithCancel(t.Context())
+	ctx2, cancel2 := context.WithCancel(t.Context())
+	s.WatchTaskLiveness(ctx1, "task1")
+	s.WatchTaskLiveness(ctx2, "task1")
+	require.Equal(t, 2, watcherCount())
+
+	// The scheduler keeps watching the task until both clients are done.
+	cancel1()
+	require.Eventually(t, func() bool { return watcherCount() == 1 }, 5*time.Second, time.Millisecond)
+	cancel2()
+	require.Eventually(t, func() bool { return watcherCount() == 0 }, 5*time.Second, time.Millisecond)
+	s.livenessMu.Lock()
+	defer s.livenessMu.Unlock()
+	require.Empty(t, s.livenessWatches)
 }

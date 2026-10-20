@@ -27,6 +27,15 @@
   margin-top: 16px;
 }
 
+.cache-proxies-page .cache-proxy-flags-section,
+.cache-proxies-page .cache-proxy-stats-empty {
+  margin-top: 16px;
+}
+
+.cache-proxies-page .cache-proxy-stats-empty {
+  color: var(--color-text-secondary);
+}
+
 .cache-proxies-page .cache-proxy-details {
   display: flex;
   align-items: center;
@@ -44,6 +53,136 @@
   margin-top: 32px;
 }
 
+.cache-proxies-page .cache-proxy-setup {
+  max-width: 960px;
+  margin: 32px 0 48px;
+}
+
+.cache-proxies-page .cache-proxy-setup-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.cache-proxies-page .cache-proxy-setup h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.cache-proxies-page .cache-proxy-setup p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.cache-proxies-page .cache-proxy-setup-header .link-button {
+  align-self: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.cache-proxies-page .cache-proxy-setup-header .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.cache-proxies-page .cache-proxy-setup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cache-proxies-page .cache-proxy-setup-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 12px;
+  background: var(--color-bg-card);
+}
+
+.cache-proxies-page .cache-proxy-setup-step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cache-proxies-page .cache-proxy-setup-step-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.cache-proxies-page .cache-proxy-setup h2 {
+  margin: 4px 0 -8px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.cache-proxies-page .cache-proxy-setup-key-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.cache-proxies-page .cache-proxy-setup-key-status svg {
+  width: 18px;
+  height: 18px;
+  color: var(--color-status-success);
+}
+
+.cache-proxies-page .cache-proxy-setup-flags {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--color-bg-secondary);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.cache-proxies-page .cache-proxy-setup-flags code {
+  white-space: pre;
+}
+
+.cache-proxies-page .cache-proxy-setup-hint {
+  font-size: 14px;
+}
+
+@media (max-width: 700px) {
+  .cache-proxies-page .cache-proxy-setup-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .cache-proxies-page .cache-proxy-setup-step {
+    padding: 16px;
+    gap: 12px;
+  }
+}
+
 .cache-proxies-page .cache-proxy-stat-rings {
   display: flex;
   flex-wrap: nowrap;
@@ -58,7 +197,14 @@
 
 .cache-proxies-page .cache-proxy-stat-ring-title {
   font-weight: 700;
+  text-align: center;
+}
+
+.cache-proxies-page .cache-proxy-stat-ring-subtitle {
+  margin-top: 2px;
   margin-bottom: 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
   text-align: center;
 }
 
@@ -91,19 +237,13 @@
   justify-content: flex-start;
 }
 
-.cache-proxies-page .cache-proxy-stats-divider {
-  height: 1px;
-  background: var(--color-border-muted);
-  margin: 16px 4px 8px 0;
-}
-
 .cache-proxies-page .cache-proxy-stats-heading {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  margin: 0 0 4px 0;
+  margin: 16px 0 4px 0;
 }
 
 .cache-proxies-page .cache-proxy-stat-rings + .cache-proxy-stat-rings {
@@ -164,4 +304,195 @@
 .cache-proxies-page .cache-proxy-configured-flags {
   font-family: monospace;
   overflow-wrap: anywhere;
+}
+
+.cache-proxy-page .title {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.cache-proxy-page .cache-proxy-header-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Font size and weight override the shelf's to match the region on the proxies
+ * list page. */
+.cache-proxy-page .cache-proxy-region {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.cache-proxy-page .cache-proxy-detail-page {
+  padding-top: 24px;
+  padding-bottom: 32px;
+}
+
+.cache-proxy-page .cache-proxy-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.cache-proxy-page .cache-proxy-panel {
+  background-color: var(--color-bg-card);
+  box-shadow: var(--shadow-4);
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.cache-proxy-page .cache-proxy-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cache-proxy-page .cache-proxy-panel-title svg {
+  width: 14px;
+  height: 14px;
+}
+
+.cache-proxy-page .cache-proxy-kv {
+  display: flex;
+  gap: 16px;
+  padding: 6px 0;
+}
+
+.cache-proxy-page .cache-proxy-kv-label {
+  width: 160px;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+
+.cache-proxy-page .cache-proxy-kv-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cache-proxy-page .mono {
+  font-family: monospace;
+}
+
+.cache-proxy-page .cache-proxy-muted {
+  color: var(--color-text-secondary);
+}
+
+.cache-proxy-page .cache-proxy-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* --label-hue is derived from the label key, and the lightness variable
+ * (shared with digest hashes) adapts the color to light and dark themes. */
+.cache-proxy-page .cache-proxy-label {
+  display: inline-flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid hsl(var(--label-hue), 50%, var(--color-digest-color-lightness));
+  font-size: 13px;
+}
+
+.cache-proxy-page .cache-proxy-label-key {
+  padding: 2px 8px;
+  background-color: hsl(var(--label-hue), 50%, var(--color-digest-color-lightness));
+  font-weight: 600;
+}
+
+.cache-proxy-page .cache-proxy-label-value {
+  padding: 2px 8px;
+}
+
+.cache-proxy-page .cache-proxy-stat-rings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px 48px;
+  margin-top: 12px;
+}
+
+.cache-proxy-page .cache-proxy-stat-rings + .cache-proxy-stat-rings {
+  margin-top: 24px;
+}
+
+.cache-proxy-page .cache-proxy-stat-ring {
+  flex: 1 1 0;
+  min-width: max-content;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: 16px;
+}
+
+.cache-proxy-page .cache-proxy-stat-ring .donut-chart-title {
+  justify-content: center;
+  text-align: center;
+}
+
+.cache-proxy-page .cache-proxy-stat-summary {
+  margin-top: 16px;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.cache-proxy-page .cache-proxy-flag-filter {
+  margin-bottom: 12px;
+}
+
+.cache-proxy-page .cache-proxy-flags {
+  font-family: monospace;
+  font-size: 13px;
+  background-color: var(--color-bg-code);
+  border-radius: 6px;
+  padding: 12px 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.cache-proxy-page .cache-proxy-flag {
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.cache-proxy-page .cache-proxy-flag-name {
+  color: var(--color-link);
+}
+
+.cache-proxy-page .cache-proxy-flag-value {
+  color: var(--color-code-text);
+}
+
+.cache-proxies-page .cache-proxy-card-link {
+  padding: 32px 8px 32px 32px;
+}
+
+.cache-proxies-page .cache-proxy-card-link .content {
+  flex-grow: 1;
+}
+
+.cache-proxies-page .cache-proxy-card-chevron {
+  align-self: center;
+  flex-shrink: 0;
+  margin-left: 16px;
+  color: var(--color-text-secondary);
+  transition:
+    transform 0.15s ease,
+    color 0.15s ease;
+}
+
+.cache-proxies-page .cache-proxy-card-link:hover .cache-proxy-card-chevron {
+  color: var(--color-text-primary);
+  transform: translateX(4px);
 }

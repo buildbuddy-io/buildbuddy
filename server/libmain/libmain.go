@@ -106,6 +106,7 @@ var (
 		"/workflows/",
 		"/executors/",
 		"/cache-proxies/",
+		"/cache-proxy/",
 		"/code/",
 		"/search/",
 		"/audit-logs/",

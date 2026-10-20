@@ -178,9 +178,26 @@ func NewDirHelper(rootDir string, cmd *repb.Command, dirPerms fs.FileMode) *DirH
 	return c
 }
 
+// CreateOutputDirs creates the output directories and the parent directory of
+// each output path. The input tree is already in place when this runs, so we
+// create them through an os.Root, which fails rather than follow a symlink out
+// of rootDir, since an input symlink could otherwise make us create
+// directories outside the workspace.
 func (c *DirHelper) CreateOutputDirs() error {
+	if err := os.MkdirAll(c.rootDir, c.dirPerms); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(c.rootDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	for _, dir := range c.dirsToCreate {
-		if err := os.MkdirAll(dir, c.dirPerms); err != nil {
+		rel, err := filepath.Rel(c.rootDir, dir)
+		if err != nil {
+			return err
+		}
+		if err := root.MkdirAll(rel, c.dirPerms); err != nil {
 			return err
 		}
 	}
@@ -237,6 +254,15 @@ func trimPathPrefix(fullPath, prefix string) string {
 	return r
 }
 
+// uploadable is an output blob (a regular file or a Directory proto) which
+// may need to be uploaded to the CAS.
+type uploadable interface {
+	Digest() *repb.Digest
+	// Open returns a reader over the blob contents. The caller is responsible
+	// for closing it.
+	Open() (io.ReadSeekCloser, error)
+}
+
 // dirToUpload represents a directory to be uploaded to cache.
 type dirToUpload struct {
 	info     os.FileInfo
@@ -274,6 +300,14 @@ func (d *dirToUpload) DirectoryNode() *repb.DirectoryNode {
 	}
 }
 
+func (d *dirToUpload) Digest() *repb.Digest {
+	return d.directoryDigest
+}
+
+func (d *dirToUpload) Open() (io.ReadSeekCloser, error) {
+	return cachetools.NewBytesReadSeekCloser(d.directoryBytes), nil
+}
+
 // fileToUpload represents a regular file to be uploaded to cache.
 type fileToUpload struct {
 	fullPath string
@@ -309,27 +343,39 @@ func (f *fileToUpload) FileNode() *repb.FileNode {
 	}
 }
 
-func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, env environment.Env, filesToUpload []*fileToUpload, instanceName string, digestFunction repb.DigestFunction_Value, addToFileCache bool) (alreadyPresentBytes int64, _ error) {
+func (f *fileToUpload) Digest() *repb.Digest {
+	return f.digest
+}
+
+func (f *fileToUpload) Open() (io.ReadSeekCloser, error) {
+	file, err := os.Open(f.fullPath)
+	if err != nil {
+		return nil, status.UnavailableErrorf("open output file: %s", err)
+	}
+	return file, nil
+}
+
+func uploadMissingBlobs(ctx context.Context, uploader *cachetools.BatchCASUploader, env environment.Env, blobsToUpload []uploadable, instanceName string, digestFunction repb.DigestFunction_Value, addToFileCache bool) (int64, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	type batchResult struct {
-		files        []*fileToUpload
+		blobs        []uploadable
 		presentBytes int64
 	}
 	batches := make(chan batchResult, 1)
 	var wg sync.WaitGroup
 	cas := env.GetContentAddressableStorageClient()
 
-	for batch := range slices.Chunk(filesToUpload, 1000) {
+	for batch := range slices.Chunk(blobsToUpload, 1000) {
 		wg.Go(func() {
 			req := &repb.FindMissingBlobsRequest{
 				DigestFunction: digestFunction,
 				InstanceName:   instanceName,
 				Purpose:        repb.FindMissingBlobsRequest_EXECUTOR_OUTPUT_UPLOAD,
 			}
-			for _, f := range batch {
-				req.BlobDigests = append(req.BlobDigests, f.digest)
+			for _, b := range batch {
+				req.BlobDigests = append(req.BlobDigests, b.Digest())
 			}
 			var presentBytes int64
 			resp, err := cachetools.FindMissingBlobs(ctx, cas, req)
@@ -341,12 +387,12 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 					missing[d.GetHash()] = struct{}{}
 				}
 				missingLen := 0
-				for _, uploadableFile := range batch {
-					if _, ok := missing[uploadableFile.digest.GetHash()]; ok {
-						batch[missingLen] = uploadableFile
+				for _, b := range batch {
+					if _, ok := missing[b.Digest().GetHash()]; ok {
+						batch[missingLen] = b
 						missingLen++
 					} else {
-						presentBytes += uploadableFile.digest.GetSizeBytes()
+						presentBytes += b.Digest().GetSizeBytes()
 					}
 				}
 				batch = batch[:missingLen]
@@ -354,7 +400,7 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 			select {
 			case <-ctx.Done():
 				// If the reader errored and returned, don't block forever
-			case batches <- batchResult{files: batch, presentBytes: presentBytes}:
+			case batches <- batchResult{blobs: batch, presentBytes: presentBytes}:
 			}
 		})
 	}
@@ -365,30 +411,37 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 	}()
 
 	fc := env.GetFileCache()
+	alreadyPresentBytes := int64(0)
 	for batch := range batches {
 		alreadyPresentBytes += batch.presentBytes
-		if err := uploadFiles(ctx, uploader, fc, batch.files, addToFileCache); err != nil {
+		if err := uploadBlobs(ctx, uploader, fc, batch.blobs, addToFileCache); err != nil {
 			return 0, err
 		}
+	}
+	// Batches are silently dropped above once the context is cancelled, so
+	// don't report success in that case: the uploader may have nothing left
+	// to send and would otherwise never surface the cancellation. The local
+	// cancel has not fired yet, so this only reflects the parent context.
+	if ctx.Err() != nil {
+		return 0, status.FromContextError(ctx)
 	}
 	return alreadyPresentBytes, nil
 }
 
-func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload, addToFileCache bool) error {
-	for _, uploadableFile := range filesToUpload {
+func uploadBlobs(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, blobsToUpload []uploadable, addToFileCache bool) error {
+	for _, b := range blobsToUpload {
 		// Add output files to the filecache.
-		if fc != nil && addToFileCache {
-			node := uploadableFile.FileNode()
-			if err := fc.AddFile(ctx, node, uploadableFile.fullPath); err != nil {
+		if f, ok := b.(*fileToUpload); ok && fc != nil && addToFileCache {
+			if err := fc.AddFile(ctx, f.FileNode(), f.fullPath); err != nil {
 				log.Warningf("Error adding file to filecache: %s", err)
 			}
 		}
-		f, err := os.Open(uploadableFile.fullPath)
+		rsc, err := b.Open()
 		if err != nil {
-			return status.UnavailableErrorf("open output file: %s", err)
+			return err
 		}
-		// Note: uploader.Upload closes the file after it is uploaded.
-		if err := uploader.Upload(uploadableFile.digest, f); err != nil {
+		// Note: uploader.Upload will close the reader for us.
+		if err := uploader.Upload(b.Digest(), rsc); err != nil {
 			return err
 		}
 	}
@@ -465,7 +518,8 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, addToFileCache bool, chunkingParams *repb.FastCdc2020Params) (*TransferInfo, error) {
 	startTime := time.Now()
 	outputDirectoryPaths := make([]string, 0)
-	filesToUpload := make([]*fileToUpload, 0)
+	// Output files and Directory protos, in the order they were visited.
+	blobsToUpload := make([]uploadable, 0)
 	visitedDirectories := make([]*dirToUpload, 0)
 
 	visitFile := func(fullPath string, info os.FileInfo) (*repb.FileNode, error) {
@@ -473,7 +527,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		if err != nil {
 			return nil, err
 		}
-		filesToUpload = append(filesToUpload, uploadableFile)
+		blobsToUpload = append(blobsToUpload, uploadableFile)
 		if _, ok := dirHelper.FindParentOutputPath(fullPath); !ok {
 			// If this file is *not* a descendant of any output_path but wasn't
 			// skipped before the call to uploadFileFn, then it must be
@@ -542,6 +596,8 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 			return nil, err
 		}
 		visitedDirectories = append(visitedDirectories, d)
+		// TODO: skip uploading Directory protos which are not part of any tree?
+		blobsToUpload = append(blobsToUpload, d)
 		return d.DirectoryNode(), nil
 	}
 	if _, err := walkDir(rootDir, ""); err != nil {
@@ -550,20 +606,12 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 
 	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction, chunkingParams)
 
-	// Upload output files to the remote cache and also add them to the local
-	// cache since they are likely to be used as inputs to subsequent actions.
-	alreadyPresentBytes, err := uploadMissingFiles(ctx, uploader, env, filesToUpload, instanceName, digestFunction, addToFileCache)
+	// Upload output files and Directory protos which are not already present
+	// in the remote cache. Output files are also added to the local cache
+	// since they are likely to be used as inputs to subsequent actions.
+	alreadyPresentBytes, err := uploadMissingBlobs(ctx, uploader, env, blobsToUpload, instanceName, digestFunction, addToFileCache)
 	if err != nil {
 		return nil, err
-	}
-
-	// Upload Directory protos.
-	// TODO: skip uploading Directory protos which are not part of any tree?
-	for _, d := range visitedDirectories {
-		rsc := cachetools.NewBytesReadSeekCloser(d.directoryBytes)
-		if err := uploader.Upload(d.directoryDigest, rsc); err != nil {
-			return nil, err
-		}
 	}
 
 	// Make Trees for all of the paths specified in output_paths which were
@@ -1330,6 +1378,53 @@ func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) erro
 	}
 }
 
+// ValidateTreeNames checks that every entry name in the tree is a single path
+// component, and that each directory's names are unique, as the REAPI spec
+// requires. The tree fetcher builds paths from these names, so a name like ".."
+// or two entries with the same name could otherwise make it write outside its
+// root directory. If caseInsensitive is true, names that differ only in case
+// count as the same name.
+func ValidateTreeNames(tree *repb.Tree, caseInsensitive bool) error {
+	// Reuse the buffer across directories to avoid allocating it for each one.
+	// Growing the buffer and converting names to lowercase can still allocate.
+	var names []string
+	checkDir := func(dir *repb.Directory) error {
+		names = names[:0]
+		for _, f := range dir.GetFiles() {
+			names = append(names, f.GetName())
+		}
+		for _, d := range dir.GetDirectories() {
+			names = append(names, d.GetName())
+		}
+		for _, s := range dir.GetSymlinks() {
+			names = append(names, s.GetName())
+		}
+		for i, name := range names {
+			if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') || (filepath.Separator != '/' && strings.ContainsRune(name, filepath.Separator)) {
+				return status.InvalidArgumentErrorf("input tree entry name %q isn't a single path component", name)
+			}
+			names[i] = fspath.NewKey(name, caseInsensitive).NormalizedString()
+		}
+		// Sorting puts duplicate names next to each other.
+		slices.Sort(names)
+		for i := 1; i < len(names); i++ {
+			if names[i] == names[i-1] {
+				return status.InvalidArgumentErrorf("input tree has more than one entry named %q in a directory", names[i])
+			}
+		}
+		return nil
+	}
+	if err := checkDir(tree.GetRoot()); err != nil {
+		return err
+	}
+	for _, dir := range tree.GetChildren() {
+		if err := checkDir(dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func DirMapFromTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
 	dirMap = make(map[digest.Key]*repb.Directory, 1+len(tree.Children))
 
@@ -1624,6 +1719,9 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 
 	f.fetchStartTime = time.Now()
 
+	if err := ValidateTreeNames(f.tree, f.opts.CaseInsensitive); err != nil {
+		return nil, err
+	}
 	rootDirectoryDigest, dirMap, err := DirMapFromTree(f.tree, f.digestFunction)
 	if err != nil {
 		return nil, err

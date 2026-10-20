@@ -4,7 +4,9 @@
 // $ kubectl port-forward -n redis-prod redis-sharded-3 6380:6379
 //
 // Then run the tool:
-// $ bazel run tools/redissize
+// $ bb run -- //tools/redissize
+// To include only keys matching a Redis glob pattern:
+// $ bb run -- //tools/redissize --match='exec/*'
 package main
 
 import (
@@ -28,6 +30,7 @@ import (
 
 var (
 	target              = flag.String("target", "localhost:6380", "")
+	match               = flag.String("match", "*", "Only include keys matching this Redis glob pattern (for example, exec/*). Make sure to quote the arg to avoid your shell expanding the pattern, e.g. --match='exec/*'")
 	printThresholdBytes = flag.Int("print_larger_than", 0, "Print keys larger than this size in bytes")
 	outputFormat        = flag.String("output_format", "human_readable", "Output format: human_readable or csv")
 	maxRemainingTTL     = flag.Duration("max_ttl", 0*time.Second, "Only includes keys if the remaining TTL is less than this value, for measuring data expiring soon")
@@ -156,7 +159,7 @@ func main() {
 	count := 0
 	totalSize := int64(0)
 	for {
-		keys, newCursor, err := c.Scan(ctx, cursor, "*", 4096).Result()
+		keys, newCursor, err := c.Scan(ctx, cursor, *match, 4096).Result()
 		if err != nil {
 			log.Fatalf("scan err: %s", err)
 		}

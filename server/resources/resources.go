@@ -1,7 +1,9 @@
 package resources
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -9,8 +11,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
@@ -447,6 +452,16 @@ func GetMyPort() (int32, error) {
 	return int32(i), nil
 }
 
+// GetZone returns the zone this process runs in: the zone_override flag if
+// set, else the GCE zone (e.g. "us-west1-b") or the EC2 availability zone
+// (e.g. "us-west-2a"), or "" if neither can be determined.
+//
+// Zones are only comparable within one deployment. GCE zone names are
+// global, but AWS maps availability zone names to physical zones
+// independently per account, so "us-west-2a" in two accounts is generally
+// two different zones. The account-independent AZ IDs (e.g. "usw2-az1")
+// would avoid that, but callers only compare zones among peers in one
+// account, and the name is what appears in the AWS console and in metrics.
 func GetZone() string {
 	if *zoneOverride != "" {
 		return *zoneOverride
@@ -455,8 +470,48 @@ func GetZone() string {
 		if z, err := metadata.Zone(); err == nil {
 			return z
 		}
+		return ""
 	}
-	return ""
+	return awsZone()
+}
+
+// awsZone is the EC2 availability zone, or "" off EC2 or if the lookup fails.
+var awsZone = sync.OnceValue(func() string {
+	if !onEC2() {
+		return ""
+	}
+	z, err := ec2AvailabilityZone()
+	if err != nil {
+		log.Warningf("Failed to get availability zone from EC2 instance metadata: %s", err)
+		return ""
+	}
+	return z
+})
+
+// onEC2 reports whether this is a (Nitro-based) EC2 instance, per
+// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/identify_ec2_instances.html.
+// It only reads sysfs, so unlike metadata.OnGCE it cannot hang on a host
+// where the metadata service address is unroutable.
+func onEC2() bool {
+	b, err := os.ReadFile("/sys/class/dmi/id/sys_vendor")
+	return err == nil && strings.TrimSpace(string(b)) == "Amazon EC2"
+}
+
+// ec2AvailabilityZone reads the zone from the EC2 instance metadata service.
+func ec2AvailabilityZone() (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client := imds.New(imds.Options{})
+	out, err := client.GetMetadata(ctx, &imds.GetMetadataInput{Path: "placement/availability-zone"})
+	if err != nil {
+		return "", err
+	}
+	defer out.Content.Close()
+	b, err := io.ReadAll(out.Content)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
 }
 
 func GetK8sNamespace() string {

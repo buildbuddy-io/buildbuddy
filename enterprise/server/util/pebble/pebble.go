@@ -480,6 +480,7 @@ type Leaser interface {
 type leaser struct {
 	db       IPebbleDB
 	waiters  sync.WaitGroup
+	dbCalls  atomic.Int64
 	closedMu sync.RWMutex // PROTECTS(closed)
 	closed   bool
 }
@@ -494,21 +495,17 @@ type leaser struct {
 // Once the DB leaser has been closed with Close(), no new handles can be
 // acquired, instead an error is returned.
 func NewDBLeaser(db IPebbleDB) Leaser {
-	return &leaser{
-		db:       db,
-		waiters:  sync.WaitGroup{},
-		closedMu: sync.RWMutex{},
-		closed:   false,
-	}
+	return &leaser{db: db}
 }
 
 func (l *leaser) Close() {
 	l.closedMu.Lock()
-	defer l.closedMu.Unlock()
 	if l.closed {
+		l.closedMu.Unlock()
 		return
 	}
 	l.closed = true
+	l.closedMu.Unlock()
 
 	// wait for all db users to finish up.
 	l.waiters.Wait()
@@ -522,15 +519,17 @@ func (l *leaser) DB() (IPebbleDB, error) {
 	}
 
 	handle := &refCountedDB{
-		l.db,
-		newRefCounter(&l.waiters),
+		IPebbleDB:  l.db,
+		refCounter: newRefCounter(&l.waiters),
 	}
 
-	if *warnAboutLeaks {
+	// mod by a prime number to avoid always warning about the same call site.
+	if *warnAboutLeaks && l.dbCalls.Add(1)%11 == 1 {
 		location := "unknown"
 		if _, file, no, ok := runtime.Caller(1); ok {
 			location = fmt.Sprintf("%s:%d", file, no)
 		}
+		handle.finalizerSet = true
 		runtime.SetFinalizer(handle, func(h *refCountedDB) {
 			if !h.refCounter.closed {
 				alert.UnexpectedEvent("pebble_db_handle_leak", "DB() handle leak at %s!", location)
@@ -564,9 +563,13 @@ func (r *refCounter) Close() error {
 type refCountedDB struct {
 	IPebbleDB
 	*refCounter
+	finalizerSet bool
 }
 
 func (r *refCountedDB) Close() error {
+	if r.finalizerSet {
+		runtime.SetFinalizer(r, nil)
+	}
 	// Just close the refcounter, not the DB.
 	return r.refCounter.Close()
 }

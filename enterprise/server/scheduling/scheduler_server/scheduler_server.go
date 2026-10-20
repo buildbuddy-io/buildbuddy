@@ -65,7 +65,7 @@ var (
 	requireExecutorAuthorization = flag.Bool("remote_execution.require_executor_authorization", false, "If true, executors connecting to this server must provide a valid executor API key.")
 	leaseDuration                = flag.Duration("remote_execution.lease_duration", 10*time.Second, "How long before a task lease must be renewed by the executor client.")
 	leaseGracePeriod             = flag.Duration("remote_execution.lease_grace_period", 10*time.Second, "How long to wait for the executor to renew the lease after the TTL duration has elapsed.")
-	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown).")
+	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown or a broken lease stream).")
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
 	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", true, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
@@ -73,6 +73,7 @@ var (
 	unclaimedTasksSetMaxSize     = flag.Int64("remote_execution.unclaimed_tasks_set_max_size", 100_000, "Max number of unclaimed tasks to track in redis per executor pool, per shard (see remote_execution.unclaimed_tasks_shard_count). This set of tasks is used for eager work assignments (when executors newly join a pool) and work-stealing requests (when executors are nearly idle).")
 	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
 	unclaimedTasksShardCount     = flag.Int("remote_execution.unclaimed_tasks_shard_count", 1, "Number of Redis sets that each executor pool's unclaimed tasks are split across. With a sharded Redis client, this spreads the load of large pools across Redis shards. If the unclaimedTasks/* keys become a source of contention, try setting this value to twice the number of Redis shards. Since remote_execution.unclaimed_tasks_set_max_size applies to each set, consider lowering it when raising this. Changing this value is relatively safe, but it may temporarily increase Redis memory usage, failed task lease attempts, and execution latency in some cases.")
+	taskLivenessCheckInterval    = flag.Duration("remote_execution.task_liveness_check_interval", 0, "How often the scheduler checks that the tasks clients are waiting on still exist. Once a task has been missing for remote_execution.lease_duration plus remote_execution.lease_grace_period, the app ends the clients' waits with a NOT_FOUND error so that they retry the execution. 0 (the default) disables the check.")
 
 	upgradePromptMaxLags     = flag.Map("remote_execution.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) an executor may fall behind the newest registered version before GetExecutionNodes prompts an upgrade at that urgency.")
 	upgradePromptMinVersions = flag.Map("remote_execution.upgrade_prompt_min_versions", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the minimum version (semver) below which GetExecutionNodes prompts an upgrade at that urgency.")
@@ -115,6 +116,10 @@ const (
 
 	// Maximum task TTL in Redis.
 	taskTTL = 24 * time.Hour
+
+	// Deadline for the pipeline that checks whether watched tasks still
+	// exist, so that a slow shard delays the next check by at most this much.
+	taskLivenessCheckTimeout = 3 * time.Second
 
 	// Names of task fields in Redis task hash.
 	redisTaskProtoField              = "taskProto"
@@ -1446,6 +1451,19 @@ func (c *schedulerClientCache) stop() {
 	c.conns.StopExpiring()
 }
 
+// taskLivenessWatch tracks the clients watching a task. See
+// SchedulerServer.WatchTaskLiveness.
+type taskLivenessWatch struct {
+	// The scheduler closes lost once it finds the task lost.
+	lost chan struct{}
+	// watchers counts the clients whose contexts are not done yet.
+	watchers int
+	// missingSince is when the current run of checks that found the task
+	// missing began, or zero if the most recent check found the task or
+	// failed.
+	missingSince time.Time
+}
+
 // Options for overriding server behavior needed for testing.
 type Options struct {
 	LocalPortOverride               int32
@@ -1511,6 +1529,11 @@ type SchedulerServer struct {
 
 	// Maintains the unclaimed task sets of all pools.
 	unclaimedTasksJanitor *unclaimedTasksJanitor
+
+	// livenessWatches holds the tasks that clients are watching, keyed by
+	// task ID.
+	livenessMu      sync.Mutex
+	livenessWatches map[string]*taskLivenessWatch
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -1595,6 +1618,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		detector:                          options.UpgradeDetector,
 		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
 		unclaimedTasksJanitor:             newUnclaimedTasksJanitor(env.GetRemoteExecutionRedisClient(), clock),
+		livenessWatches:                   make(map[string]*taskLivenessWatch),
 	}
 	s.schedulerClientCache, err = newSchedulerClientCache(env, clock, s.ownHostPort, s)
 	if err != nil {
@@ -1624,6 +1648,9 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		}
 	})
 	s.goBackground(context.Background(), s.unclaimedTasksJanitor.run)
+	if *taskLivenessCheckInterval > 0 {
+		s.goBackground(context.Background(), s.checkTaskLiveness)
+	}
 	return s, nil
 }
 
@@ -2393,6 +2420,9 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	taskID := ""
 	reconnectToken := ""
 	leaseID := ""
+	// Set when the stream breaks, e.g. because the connection to the executor
+	// dropped. The executor may still be running the task.
+	streamBroken := false
 
 	// TODO(vadim): remove after executor ID in lease request is rolled out
 	executorID := peerAddress(ctx)
@@ -2404,18 +2434,31 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			return
 		}
 		schedulerShuttingDown := s.isShuttingDown()
-		log.CtxWarningf(ctx, "LeaseTask stream closed with task still claimed (shutting_down=%t). Re-enqueueing task.", schedulerShuttingDown)
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
 		defer cancel()
 		reEnqueueReason := "stream closed with task still claimed"
-		if !schedulerShuttingDown {
-			// TODO: figure out if we can reliably detect whether the executor
-			// gave up on the lease due to an executor shutdown vs. a transient
-			// issue with the lease stream. Transient disconnects should also
-			// get a reconnect grace period, since the executor should quickly
-			// retry them.
+
+		// Decide whether to hold the task for its current executor to reconnect
+		// (by keeping the reconnect token) or to count this as a failed
+		// attempt.
+		//
+		// If the scheduler is shutting down, the executor is likely still
+		// running the task and will reconnect to another app, so hold the task
+		// even if it can't be retried. This way, rollouts don't fail tasks with
+		// retries disabled.
+		//
+		// If the stream broke, the executor may have died instead, and then
+		// another executor has to retry the task. So hold the task only if it
+		// can still be retried. Otherwise, holding it would either orphan a
+		// task with retries disabled or skip the attempt limit.
+		//
+		// In all other cases, count this as a failed attempt.
+		allowReconnect := schedulerShuttingDown || (streamBroken && reconnectToken != "" && s.taskCanBeRetried(ctx, taskID))
+		if !allowReconnect {
 			reconnectToken = ""
 		}
+		log.CtxWarningf(ctx, "LeaseTask stream closed with task still claimed (shutting_down=%t, stream_broken=%t, allow_reconnect=%t)", schedulerShuttingDown, streamBroken, allowReconnect)
+
 		if err := s.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, probesPerTask, reEnqueueReason); err != nil {
 			switch {
 			case status.IsPermissionDeniedError(err):
@@ -2425,7 +2468,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 				// finished the task before we cleaned up this one.
 				log.CtxInfo(ctx, "Not re-enqueueing task because it no longer exists")
 			default:
-				log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task but failed with err: %s", taskID, err.Error())
+				log.CtxErrorf(ctx, "LeaseTask failed to re-enqueue task: %s", err)
 			}
 		} // Success case will be logged by ReEnqueueTask flow.
 	}()
@@ -2459,11 +2502,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			// the stream is done, so check for that here.
 			err = ctx.Err()
 		case <-livenessTicker.Chan():
-			if s.clock.Since(lastCheckin) > (s.leaseDuration + s.leaseGracePeriod) {
-				err = status.DeadlineExceededErrorf("lease was not renewed by executor and expired (last renewal: %s)", lastCheckin)
-			} else {
+			if s.clock.Since(lastCheckin) <= s.leaseDuration+s.leaseGracePeriod {
 				continue
 			}
+			err := status.DeadlineExceededErrorf("lease was not renewed by executor and expired (last renewal: %s)", lastCheckin)
+			log.CtxWarningf(ctx, "LeaseTask %q: %s", taskID, err)
+			return err
 		}
 		if err == io.EOF {
 			log.CtxWarningf(ctx, "LeaseTask %q got EOF: %s", taskID, err)
@@ -2471,6 +2515,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 		if err != nil {
 			log.CtxWarningf(ctx, "LeaseTask %q recv with err: %s", taskID, err)
+			streamBroken = true
 			break
 		}
 		if req.GetTaskId() == "" || taskID != "" && req.GetTaskId() != taskID {
@@ -2615,6 +2660,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		rsp.ClosedCleanly = !claimed
 		lastCheckin = s.clock.Now()
 		if err := stream.Send(rsp); err != nil {
+			streamBroken = true
 			return err
 		}
 		if done {
@@ -3119,6 +3165,119 @@ func (s *SchedulerServer) TaskExists(ctx context.Context, req *scpb.TaskExistsRe
 	}, nil
 }
 
+// WatchTaskLiveness returns a channel that the scheduler closes if it loses
+// the task, meaning that the task no longer exists in Redis and so no executor
+// will run it again. The scheduler watches the task until ctx is done. With
+// liveness checks disabled, it never closes the channel.
+//
+// The execution server waits for an execution's final update with no deadline
+// of its own, and some clients, including Bazel, set none either. So when the
+// scheduler deletes a task and then fails to publish its final update (for
+// example because of a Redis error), those clients wait forever unless
+// something else ends the wait.
+//
+// In rare cases (e.g. stalled lease renewals, or apps with different views of
+// the Redis ring) the scheduler may report a task lost while an executor is
+// still running it (see checkTaskLivenessOnce).
+func (s *SchedulerServer) WatchTaskLiveness(ctx context.Context, taskID string) <-chan struct{} {
+	if *taskLivenessCheckInterval <= 0 {
+		return nil
+	}
+	s.livenessMu.Lock()
+	defer s.livenessMu.Unlock()
+	w, ok := s.livenessWatches[taskID]
+	if !ok {
+		w = &taskLivenessWatch{lost: make(chan struct{})}
+		s.livenessWatches[taskID] = w
+	}
+	w.watchers++
+	context.AfterFunc(ctx, func() {
+		s.livenessMu.Lock()
+		defer s.livenessMu.Unlock()
+		w.watchers--
+		if w.watchers == 0 && s.livenessWatches[taskID] == w {
+			delete(s.livenessWatches, taskID)
+		}
+	})
+	return w.lost
+}
+
+// checkTaskLiveness periodically checks the tasks that clients are watching.
+func (s *SchedulerServer) checkTaskLiveness(ctx context.Context) {
+	ticker := s.clock.NewTicker(*taskLivenessCheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.Chan():
+		}
+		s.checkTaskLivenessOnce(ctx)
+	}
+}
+
+// checkTaskLivenessOnce checks whether the watched tasks still exist, using a
+// single pipeline for all active watchers, and closes the channel of each task
+// that has been missing for the lease duration plus grace period. By then, any
+// executor running the task has most likely failed a lease renewal and stopped,
+// and the client has received any final update the scheduler published right
+// after deleting the task. In rare cases (e.g. stalled lease renewals, or apps
+// with different views of the Redis ring) the scheduler may report a task lost
+// early, and the client retries.
+func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
+	type check struct {
+		taskID string
+		watch  *taskLivenessWatch
+		exists *redis.IntCmd
+	}
+	ctx, cancel := context.WithTimeout(ctx, taskLivenessCheckTimeout)
+	defer cancel()
+	pipe := s.rdb.Pipeline()
+	s.livenessMu.Lock()
+	checks := make([]check, 0, len(s.livenessWatches))
+	for taskID, w := range s.livenessWatches {
+		checks = append(checks, check{taskID, w, pipe.Exists(ctx, s.redisKeyForTask(taskID))})
+	}
+	s.livenessMu.Unlock()
+	if len(checks) == 0 {
+		return
+	}
+	// Exec returns the first failed command's error, but with a Redis ring,
+	// healthy shards still answer their commands, so look at each command's
+	// own result below.
+	_, _ = pipe.Exec(ctx)
+	now := s.clock.Now()
+
+	s.livenessMu.Lock()
+	defer s.livenessMu.Unlock()
+	for _, c := range checks {
+		if s.livenessWatches[c.taskID] != c.watch {
+			// All of the task's watchers finished while the scheduler was running
+			// this check.
+			continue
+		}
+		n, err := c.exists.Result()
+		if err != nil || n == 1 {
+			// Restart the count if the task exists or the check failed (for
+			// example because a shard did not answer in time), so that the
+			// scheduler reports a task lost only if every check over the whole
+			// period found it missing.
+			c.watch.missingSince = time.Time{}
+			continue
+		}
+		if c.watch.missingSince.IsZero() {
+			c.watch.missingSince = now
+		}
+		if now.Sub(c.watch.missingSince) < s.leaseDuration+s.leaseGracePeriod {
+			continue
+		}
+		metrics.RemoteExecutionLostTasks.Inc()
+		log.CtxWarningf(ctx, "Ending waits for task %q, which has been missing from Redis for %s", c.taskID, now.Sub(c.watch.missingSince))
+		close(c.watch.lost)
+		delete(s.livenessWatches, c.taskID)
+	}
+}
+
 func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	// TODO(vadim): verify user is authorized to use executor pool
 
@@ -3131,6 +3290,23 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 		return nil, err
 	}
 	return &scpb.EnqueueTaskReservationResponse{}, nil
+}
+
+// taskCanBeRetried returns whether the task has retries enabled and hasn't
+// used up its attempts. It returns false if the task can't be read.
+func (s *SchedulerServer) taskCanBeRetried(ctx context.Context, taskID string) bool {
+	scheduledTask, err := s.readTask(ctx, taskID)
+	if err != nil {
+		return false
+	}
+	if scheduledTask.attemptCount >= maxTaskAttemptCount {
+		return false
+	}
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(scheduledTask.serializedTask, task); err != nil {
+		return false
+	}
+	return platform.Retryable(task)
 }
 
 // reEnqueueTask releases a task's claim and schedules reservations for another

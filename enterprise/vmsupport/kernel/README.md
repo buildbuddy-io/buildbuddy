@@ -46,8 +46,8 @@ arch, version, and runfile path:
 # x86_64 v5.15
 bb run //enterprise/vmsupport/kernel:guest_kernel_x86_64_v5_15_upload --config=remote
 
-# x86_64 v6.1
-bb run //enterprise/vmsupport/kernel:guest_kernel_x86_64_v6_1_upload --config=remote
+# x86_64 v6.18
+bb run //enterprise/vmsupport/kernel:guest_kernel_x86_64_v6_18_upload --config=remote
 
 # aarch64 v5.10
 # --config=target-linux-x86-exec-multiarch enables the BB arm64 platform in the build graph

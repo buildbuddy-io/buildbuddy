@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -141,7 +142,7 @@ func TestImpersonationKeys(t *testing.T) {
 	targetGroupID := u.Groups[0].Group.GroupID
 	targetGroupAdminCtx, err := auth.WithAuthenticatedUser(ctx, u.UserID)
 	require.NoError(t, err)
-	_, err = adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID)
+	_, err = adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 
 	req := &akpb.CreateImpersonationApiKeyRequest{
@@ -157,7 +158,7 @@ func TestImpersonationKeys(t *testing.T) {
 
 	// Verify a regular (non-impersonation) API key is not marked as impersonating.
 	adminGroupID := admin.Groups[0].Group.GroupID
-	regularKeys, err := adb.GetAPIKeys(serverAdminCtx, adminGroupID)
+	regularKeys, err := adb.GetAPIKeys(serverAdminCtx, adminGroupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	require.NotEmpty(t, regularKeys)
 	regularAKG, err := adb.GetAPIKeyGroupFromAPIKey(ctx, regularKeys[0].Value)
@@ -181,6 +182,8 @@ func TestGroupKeyExpiration(t *testing.T) {
 	env.SetClock(fakeClock)
 	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
 	require.NoError(t, err)
+	// Use the same clock for keys accessed through the BuildBuddy server.
+	env.SetAuthDB(adb)
 
 	users := enterprise_testauth.CreateRandomGroups(t, env)
 	// Get a random admin user.
@@ -208,22 +211,43 @@ func TestGroupKeyExpiration(t *testing.T) {
 	key, err := adb.GetAPIKey(authCtx, rsp.GetApiKey().GetId())
 	require.NoError(t, err)
 	require.Equal(t, rsp.GetApiKey().GetValue(), key.Value)
-	keys, err := adb.GetAPIKeys(authCtx, admin.Groups[0].Group.GroupID)
+	keys, err := adb.GetAPIKeys(authCtx, admin.Groups[0].Group.GroupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	require.Contains(t, apiKeyIDs(keys), rsp.GetApiKey().GetId())
 
-	// Expire the key; should no longer be usable or retrievable.
+	// Expire the key; should no longer be usable, and its value should no
+	// longer be retrievable.
 	fakeClock.Advance(2 * time.Hour)
 
 	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
 	require.Error(t, err)
 	require.True(t, status.IsUnauthenticatedError(err))
-	_, err = adb.GetAPIKey(authCtx, rsp.GetApiKey().GetId())
-	require.Error(t, err)
-	require.True(t, status.IsNotFoundError(err))
-	keys, err = adb.GetAPIKeys(authCtx, admin.Groups[0].Group.GroupID)
+	key, err = adb.GetAPIKey(authCtx, rsp.GetApiKey().GetId())
+	require.NoError(t, err)
+	require.Empty(t, key.Value)
+	keys, err = adb.GetAPIKeys(authCtx, admin.Groups[0].Group.GroupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	require.NotContains(t, apiKeyIDs(keys), rsp.GetApiKey().GetId())
+
+	// Expired keys are listed without their values if requested.
+	keys, err = adb.GetAPIKeys(authCtx, admin.Groups[0].Group.GroupID, true /*=includeExpired*/)
+	require.NoError(t, err)
+	i := slices.IndexFunc(keys, func(k *tables.APIKey) bool { return k.APIKeyID == rsp.GetApiKey().GetId() })
+	require.NotEqual(t, -1, i)
+	require.Empty(t, keys[i].Value)
+	require.Equal(t, rsp.GetApiKey().GetExpiryUsec(), keys[i].ExpiryUsec)
+	getRsp, err := env.GetBuildBuddyServer().GetApiKey(authCtx, &akpb.GetApiKeyRequest{
+		ApiKeyId:           rsp.GetApiKey().GetId(),
+		IncludeCertificate: true,
+	})
+	require.NoError(t, err)
+	require.Empty(t, getRsp.GetApiKey().GetValue())
+	require.Nil(t, getRsp.GetApiKey().GetCertificate())
+	require.Equal(t, rsp.GetApiKey().GetExpiryUsec(), getRsp.GetApiKey().GetExpiryUsec())
+
+	// Expired keys can still be deleted.
+	_, err = env.GetBuildBuddyServer().DeleteApiKey(authCtx, &akpb.DeleteApiKeyRequest{Id: rsp.GetApiKey().GetId()})
+	require.NoError(t, err)
 }
 
 func TestUserKeyExpiration(t *testing.T) {
@@ -273,22 +297,31 @@ func TestUserKeyExpiration(t *testing.T) {
 	key, err := adb.GetAPIKey(authCtx, rsp.GetApiKey().GetId())
 	require.NoError(t, err)
 	require.Equal(t, rsp.GetApiKey().GetValue(), key.Value)
-	keys, err := adb.GetUserAPIKeys(authCtx, admin.UserID, admin.Groups[0].Group.GroupID)
+	keys, err := adb.GetUserAPIKeys(authCtx, admin.UserID, admin.Groups[0].Group.GroupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	require.Contains(t, apiKeyIDs(keys), rsp.GetApiKey().GetId())
 
-	// Expire the key; should no longer be usable or retrievable.
+	// Expire the key; should no longer be usable, and its value should no
+	// longer be retrievable.
 	fakeClock.Advance(2 * time.Hour)
 
 	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
 	require.Error(t, err)
 	require.True(t, status.IsUnauthenticatedError(err))
-	_, err = adb.GetAPIKey(authCtx, rsp.GetApiKey().GetId())
-	require.Error(t, err)
-	require.True(t, status.IsNotFoundError(err))
-	keys, err = adb.GetUserAPIKeys(authCtx, admin.UserID, admin.Groups[0].Group.GroupID)
+	key, err = adb.GetAPIKey(authCtx, rsp.GetApiKey().GetId())
+	require.NoError(t, err)
+	require.Empty(t, key.Value)
+	keys, err = adb.GetUserAPIKeys(authCtx, admin.UserID, admin.Groups[0].Group.GroupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	require.NotContains(t, apiKeyIDs(keys), rsp.GetApiKey().GetId())
+
+	// Expired keys are listed without their values if requested.
+	keys, err = adb.GetUserAPIKeys(authCtx, admin.UserID, admin.Groups[0].Group.GroupID, true /*=includeExpired*/)
+	require.NoError(t, err)
+	i := slices.IndexFunc(keys, func(k *tables.APIKey) bool { return k.APIKeyID == rsp.GetApiKey().GetId() })
+	require.NotEqual(t, -1, i)
+	require.Empty(t, keys[i].Value)
+	require.Equal(t, rsp.GetApiKey().GetExpiryUsec(), keys[i].ExpiryUsec)
 }
 
 func TestAPIKeyValueReadbackDisabled(t *testing.T) {
@@ -335,7 +368,7 @@ func TestAPIKeyValueReadbackDisabled(t *testing.T) {
 	// authdb should also omit values when readback is disabled, even for legacy
 	// unencrypted keys.
 	require.Empty(t, orgKey.Value)
-	orgKeys, err := env.GetAuthDB().GetAPIKeys(adminCtx, groupID)
+	orgKeys, err := env.GetAuthDB().GetAPIKeys(adminCtx, groupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	for _, k := range orgKeys {
 		require.Empty(t, k.Value)
@@ -368,7 +401,7 @@ func TestAPIKeyValueReadbackDisabled(t *testing.T) {
 	require.NoError(t, err)
 	// Same expectation for direct authdb access to user-owned keys.
 	require.Empty(t, userKey.Value)
-	userKeys, err := env.GetAuthDB().GetUserAPIKeys(adminCtx, admin.UserID, groupID)
+	userKeys, err := env.GetAuthDB().GetUserAPIKeys(adminCtx, admin.UserID, groupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	for _, k := range userKeys {
 		require.Empty(t, k.Value)
@@ -511,7 +544,7 @@ func TestGetAPIKeys(t *testing.T) {
 			auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
 			adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
 			require.NoError(t, err)
-			keys, err := adb.GetAPIKeys(adminCtx, groupID)
+			keys, err := adb.GetAPIKeys(adminCtx, groupID, false /*=includeExpired*/)
 			require.NoError(t, err)
 
 			// Verify that we can auth using all of the returned keys.
@@ -551,7 +584,7 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
 	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
 	require.NoError(t, err)
-	keys, err := adb.GetAPIKeys(adminCtx, groupID)
+	keys, err := adb.GetAPIKeys(adminCtx, groupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	key := keys[0]
 	key.UserID = admin.UserID
@@ -794,7 +827,7 @@ func TestSubdomainRestrictions(t *testing.T) {
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
 	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
 	require.NoError(t, err)
-	keys, err := adb.GetAPIKeys(adminCtx, groupID)
+	keys, err := adb.GetAPIKeys(adminCtx, groupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 
 	for _, k := range keys {
@@ -856,7 +889,7 @@ func TestImpersonationAPIKeys(t *testing.T) {
 		targetGroupID := u.Groups[0].Group.GroupID
 		targetGroupAdminCtx, err := auth.WithAuthenticatedUser(ctx, u.UserID)
 		require.NoError(t, err)
-		prevKeys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID)
+		prevKeys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID, false /*=includeExpired*/)
 		require.NoError(t, err)
 
 		req := &akpb.CreateImpersonationApiKeyRequest{
@@ -886,7 +919,7 @@ func TestImpersonationAPIKeys(t *testing.T) {
 
 		// Verify "list" operation does not include the impersonation key.
 		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
-			keys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID)
+			keys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID, false /*=includeExpired*/)
 			require.NoError(t, err)
 			require.Equal(t, prevKeys, keys)
 		}
@@ -904,7 +937,7 @@ func createRandomAPIKeys(t *testing.T, ctx context.Context, env environment.Env)
 		if !u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			continue
 		}
-		keys, err := env.GetAuthDB().GetAPIKeys(authCtx, u.Groups[0].Group.GroupID)
+		keys, err := env.GetAuthDB().GetAPIKeys(authCtx, u.Groups[0].Group.GroupID, false /*=includeExpired*/)
 		require.NoError(t, err)
 		allKeys = append(allKeys, keys...)
 	}
@@ -944,7 +977,7 @@ func TestAPIKeyCreationMetadata(t *testing.T) {
 
 	// The metadata should have been persisted, not just set on the returned
 	// key.
-	keys, err := adb.GetAPIKeys(adminCtx, groupID)
+	keys, err := adb.GetAPIKeys(adminCtx, groupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	var fetched *tables.APIKey
 	for _, k := range keys {

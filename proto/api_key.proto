@@ -118,6 +118,10 @@ message GetApiKeysRequest {
   // The ID of the group to get API keys for.
   // ex: "GR123456789"
   string group_id = 2;
+
+  // Whether to include expired API keys in the response. The values of
+  // expired API keys are not returned.
+  bool include_expired = 4;
 }
 
 message GetApiKeysResponse {

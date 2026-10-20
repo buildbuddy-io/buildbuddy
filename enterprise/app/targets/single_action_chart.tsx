@@ -4,7 +4,13 @@ import format from "../../../app/format/format";
 import ActionCompareButtonComponent from "../../../app/invocation/action_compare_button";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
-import { computeTimeKeys, getQuantile, intervalEndUsec } from "../trends/common";
+import {
+  computeTimeKeys,
+  getQuantile,
+  intervalEndUsec,
+  longFormatTsForInterval,
+  shortFormatTsForAxis,
+} from "../trends/common";
 import TrendsChartComponent, {
   ChartColor,
   ChartDataSeries,
@@ -158,10 +164,6 @@ export default class SingleActionChartComponent extends React.Component<Props> {
       (a, b) => a - b
     );
 
-    // Space the x axis by time rather than by entry, so that buckets without
-    // executions still take up room and sampled executions land at their
-    // actual start times.  The axis runs from the start of the first bucket
-    // to the end of the queried range.
     const xAxisDomain: [number, number] = [
       (bucketKeys[0] ?? this.props.domain[0].getTime()) * 1000,
       this.props.domain[1].getTime() * 1000,
@@ -209,12 +211,10 @@ export default class SingleActionChartComponent extends React.Component<Props> {
           formatTickValue: this.props.formatValue,
           allowDecimals: false,
         }}
-        formatXAxisLabel={(startTimeUsec) =>
-          moment(startTimeUsec / 1000).format(
-            this.props.interval.type === stats.IntervalType.INTERVAL_TYPE_DAY ? "MMM D" : "MMM D, h:mm a"
-          )
+        formatXAxisLabel={(startTimeUsec) => shortFormatTsForAxis(startTimeUsec / 1000)}
+        formatHoverXAxisLabel={(startTimeUsec) =>
+          longFormatTsForInterval(this.props.interval.type, startTimeUsec / 1000)
         }
-        formatHoverXAxisLabel={(startTimeUsec) => moment(startTimeUsec / 1000).format("dddd, MMMM Do YYYY, h:mm:ss a")}
         hideLegend={true}
         standaloneChart={true}
         pointTooltip={{

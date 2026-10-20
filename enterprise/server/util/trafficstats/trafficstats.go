@@ -1,6 +1,7 @@
 // Package trafficstats classifies gRPC traffic by cloud provider and region
-// using embedded IP range data, and records per-RPC byte counts as Prometheus
-// metrics labeled with the caller's group ID, cloud provider, and region.
+// using embedded IP range data, and records per-RPC request and byte counts as Prometheus
+// metrics labeled with the caller's group ID, peer type, cloud provider, and
+// region.
 //
 // It requires both a [stats.Handler] and post-auth interceptors because gRPC
 // stats handlers and interceptors operate on separate context chains. The
@@ -27,8 +28,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -36,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
 
@@ -43,10 +48,12 @@ import (
 )
 
 const (
-	unknownGroupID = "unknown"
-	otherProvider  = "other"
-	unknownRegion  = "unknown"
-	cacheMaxSize   = 100_000
+	unknownGroupID   = "unknown"
+	otherProvider    = "other"
+	unknownRegion    = "unknown"
+	externalPeerType = "external"
+	unsetLabel       = "unset"
+	cacheMaxSize     = 100_000
 )
 
 type Destination struct {
@@ -70,21 +77,22 @@ type classifier struct {
 	occasionallLogger log.Logger
 }
 
-// byteCounterKey is a single label tuple for the ingress/egress byte counters.
-type byteCounterKey struct {
-	groupID, provider, region string
+// counterKey is a single label tuple for the request and byte counters.
+type counterKey struct {
+	groupID, peerType, provider, region string
 }
 
-// byteCounterHandles holds the pre-created Counters for a given byteCounterKey
-// tuple to avoid creating counter handles per-RPC.
-type byteCounterHandles struct {
-	ingress, egress prometheus.Counter
+// counterHandles holds the pre-created Counters for a given counterKey tuple
+// to avoid creating counter handles per-RPC.
+type counterHandles struct {
+	requests, ingress, egress prometheus.Counter
 }
 
 type StatsHandler struct {
 	classifier *classifier
+	cis        interfaces.ClientIdentityService
 
-	// Map from byteCounterKey -> byteCounterHandles
+	// Map from counterKey -> *counterHandles
 	counterHandles sync.Map
 }
 
@@ -94,22 +102,24 @@ type rpcCountersKey struct{}
 // labels.
 //
 // Avoids locking / allocating per-RPC inside prometheus code.
-func (h *StatsHandler) counterHandlesForLabels(groupID, provider, region string) *byteCounterHandles {
-	key := byteCounterKey{groupID: groupID, provider: provider, region: region}
+func (h *StatsHandler) counterHandlesForLabels(groupID, peerType, provider, region string) *counterHandles {
+	key := counterKey{groupID: groupID, peerType: peerType, provider: provider, region: region}
 	if v, ok := h.counterHandles.Load(key); ok {
-		return v.(*byteCounterHandles)
+		return v.(*counterHandles)
 	}
-	handles := &byteCounterHandles{
-		ingress: metrics.GRPCServerIngressBytes.WithLabelValues(groupID, provider, region),
-		egress:  metrics.GRPCServerEgressBytes.WithLabelValues(groupID, provider, region),
+	handles := &counterHandles{
+		requests: metrics.GRPCServerRequests.WithLabelValues(groupID, peerType, provider, region),
+		ingress:  metrics.GRPCServerIngressBytes.WithLabelValues(groupID, peerType, provider, region),
+		egress:   metrics.GRPCServerEgressBytes.WithLabelValues(groupID, peerType, provider, region),
 	}
 	actual, _ := h.counterHandles.LoadOrStore(key, handles)
-	return actual.(*byteCounterHandles)
+	return actual.(*counterHandles)
 }
 
 type rpcCounters struct {
-	groupID string
-	dest    Destination
+	groupID  string
+	peerType string
+	dest     Destination
 	// Updated atomically, since gRPC reports payloads for a stream from both
 	// its sending and receiving goroutines, which may run concurrently.
 	ingressBytes, egressBytes atomic.Int64
@@ -117,7 +127,7 @@ type rpcCounters struct {
 }
 
 func (c *rpcCounters) String() string {
-	return fmt.Sprintf("{groupID:%s dest:%+v ingressBytes:%d egressBytes:%d method:%s}", c.groupID, c.dest, c.ingressBytes.Load(), c.egressBytes.Load(), c.method)
+	return fmt.Sprintf("{groupID:%s peerType:%s dest:%+v ingressBytes:%d egressBytes:%d method:%s}", c.groupID, c.peerType, c.dest, c.ingressBytes.Load(), c.egressBytes.Load(), c.method)
 }
 
 var (
@@ -175,14 +185,15 @@ PrivateLink,us-west-2,192.168.242.116/32
 
 // NewServerHandler returns the gRPC stats.Handler for traffic classification.
 // It's UnaryInterceptor and StreamInterceptor methods must be installed in the
-// gRPC server after the auth and clientip interceptors, so that it can access
-// the claims and client IP for traffic classification.
-func NewServerHandler() (*StatsHandler, error) {
+// gRPC server after the auth, client identity, and clientip interceptors, so
+// that it can access the claims, verified client identity, and client IP for
+// traffic classification.
+func NewServerHandler(env environment.Env) (*StatsHandler, error) {
 	classifier, err := classifierOnce()
 	if err != nil {
 		return nil, err
 	}
-	return &StatsHandler{classifier: classifier}, nil
+	return &StatsHandler{classifier: classifier, cis: env.GetClientIdentityService()}, nil
 }
 
 func (h *StatsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) context.Context {
@@ -192,7 +203,12 @@ func (h *StatsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) con
 func (*StatsHandler) HandleConn(context.Context, stats.ConnStats) {}
 
 func (h *StatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
-	return context.WithValue(ctx, rpcCountersKey{}, &rpcCounters{groupID: "unset", dest: Destination{Provider: "unset", Region: "unset"}, method: info.FullMethodName})
+	return context.WithValue(ctx, rpcCountersKey{}, &rpcCounters{
+		groupID:  unsetLabel,
+		peerType: unsetLabel,
+		dest:     Destination{Provider: unsetLabel, Region: unsetLabel},
+		method:   info.FullMethodName,
+	})
 }
 
 func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
@@ -227,23 +243,17 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 			// Exporting metrics has to happen at the end of the RPC to make
 			// that the interceptor populated the dimensions. For unary RPCs,
 			// intercetors run after InPayload.
-			if c.groupID == "unset" || c.dest.Provider == "unset" {
+			if c.groupID == unsetLabel || c.peerType == unsetLabel || c.dest.Provider == unsetLabel {
 				if endErr == nil {
 					alert.CtxUnexpectedEvent(ctx, "trafficstats_unset_dimensions_at_end", "Maybe you forgot to install the interceptor? %+v", c)
 				} else {
 					log.Debugf("Traffic stats unset dimensions at end: %+v. Error: %v", c, endErr)
 				}
 			}
-			ingressBytes, egressBytes := c.ingressBytes.Load(), c.egressBytes.Load()
-			if ingressBytes > 0 || egressBytes > 0 {
-				handles := h.counterHandlesForLabels(c.groupID, c.dest.Provider, c.dest.Region)
-				if ingressBytes > 0 {
-					handles.ingress.Add(float64(ingressBytes))
-				}
-				if egressBytes > 0 {
-					handles.egress.Add(float64(egressBytes))
-				}
-			}
+			handles := h.counterHandlesForLabels(c.groupID, c.peerType, c.dest.Provider, c.dest.Region)
+			handles.requests.Inc()
+			handles.ingress.Add(float64(c.ingressBytes.Load()))
+			handles.egress.Add(float64(c.egressBytes.Load()))
 		}
 	}
 }
@@ -272,6 +282,7 @@ func (h *StatsHandler) initCounters(ctx context.Context) {
 	if cl, err := claims.ClaimsFromContext(ctx); err == nil && cl.GetGroupID() != "" {
 		c.groupID = cl.GetGroupID()
 	}
+	c.peerType = h.peerType(ctx)
 	ip := clientip.Get(ctx)
 	if ip == "" {
 		if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
@@ -279,6 +290,19 @@ func (h *StatsHandler) initCounters(ctx context.Context) {
 		}
 	}
 	c.dest = h.classifier.classify(ip)
+}
+
+// peerType returns the peer's verified client identity, or externalPeerType.
+func (h *StatsHandler) peerType(ctx context.Context) string {
+	// IdentityFromContext builds an error for every unsigned request.
+	if h.cis == nil || len(metadata.ValueFromIncomingContext(ctx, authutil.ClientIdentityHeaderName)) == 0 {
+		return externalPeerType
+	}
+	si, err := h.cis.IdentityFromContext(ctx)
+	if err != nil {
+		return externalPeerType
+	}
+	return si.Client
 }
 
 func newClassifier() (*classifier, error) {

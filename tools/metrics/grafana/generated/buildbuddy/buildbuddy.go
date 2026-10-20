@@ -620,16 +620,33 @@ func sqlRow() *dashboard.RowBuilder {
 
 func redisRow() *dashboard.RowBuilder {
 	return row("Redis").
-		WithPanel(ts("Memory usage", dash.UnitPercentUnit).
+		WithPanel(ts("Memory usage (percent of maxmemory)", dash.UnitPercentUnit).
 			Height(9).
+			AxisSoftMax(1).
 			WithTarget(dash.PromQuery(`sum by(pod_name) (redis_memory_used_bytes{region="${region}"} / redis_memory_max_bytes{region="${region}"})`, "{{pod_name}}"))).
 		WithPanel(ts("CPU Usage", dash.UnitPercentUnit).
 			Height(9).
 			WithTarget(dash.PromQuery(`sum by (pod_name) (rate(redis_cpu_user_seconds_total{region="${region}"}[${window}]) + rate(redis_cpu_sys_seconds_total{region="${region}"}[${window}]))`, "{{pod_name}}"))).
-		WithPanel(ts("Total items", "").
+		WithPanel(ts("Memory usage (bytes)", dash.UnitBytes).
 			Height(9).
+			AxisSoftMin(0).
+			Tooltip(multiTooltip()).
+			OverrideByName("maxmemory", []dashboard.DynamicConfigValue{
+				{Id: "color", Value: map[string]any{"fixedColor": "orange", "mode": "fixed"}},
+				{Id: "custom.lineStyle", Value: map[string]any{"fill": "dash", "dash": []any{10, 10}}},
+			}).
+			OverrideByName("pod memory limit", []dashboard.DynamicConfigValue{
+				{Id: "color", Value: map[string]any{"fixedColor": "red", "mode": "fixed"}},
+				{Id: "custom.lineStyle", Value: map[string]any{"fill": "dash", "dash": []any{10, 10}}},
+			}).
+			WithTarget(dash.PromQuery(`sum by(pod_name) (redis_memory_used_bytes{region="${region}"})`, "{{pod_name}}").RefId("A")).
+			WithTarget(dash.PromQuery(`max(redis_memory_max_bytes{region="${region}"})`, "maxmemory").RefId("B")).
+			WithTarget(dash.PromQuery(`max(kube_pod_container_resource_limits{region="${region}", pod=~"redis-sharded-[0-9]+", container="redis", resource="memory"})`, "pod memory limit").RefId("C"))).
+		WithPanel(ts("Total items", dash.UnitShort).
+			Height(9).
+			AxisSoftMin(0).
 			WithTarget(dash.PromQuery(`sum by (pod_name) (redis_db_keys{region="${region}"})`, "{{pod_name}}"))).
-		WithPanel(ts("Expiration Rate", "").
+		WithPanel(ts("Expiration Rate", dash.UnitOps).
 			Height(9).
 			WithTarget(dash.PromQuery(`sum by (pod_name) (rate(redis_expired_keys_total{region="${region}"}[${window}]))`, "{{pod_name}}"))).
 		WithPanel(ts("Total number of clients", "").
@@ -1127,16 +1144,16 @@ func appNodesRow() *dashboard.RowBuilder {
 		WithPanel(ts("CPU", dash.UnitPercentUnit).
 			Max(1).
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`1 - (avg by (mode, nodename) ((rate(node_cpu_seconds_total{region="${region}", mode="idle"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${appnode}"})))`, "{{nodename}}"))).
+			WithTarget(dash.PromQuery(`1 - avg by (nodename) (rate(node_cpu_seconds_total{region="${region}", mode="idle", nodename=~"^${appnode}"}[1m]))`, "{{nodename}}"))).
 		WithPanel(ts("Disk", dash.UnitBytesPerSec).
 			AxisSoftMax(100000000).
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_read_bytes_total{region="${region}"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${appnode}"}))`, "reads {{nodename}}").RefId("A")).
-			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_written_bytes_total{region="${region}"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${appnode}"}))`, "writes {{nodename}}").RefId("B"))).
+			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_read_bytes_total{region="${region}", nodename=~"^${appnode}"}[1m]))`, "reads {{nodename}}").RefId("A")).
+			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_written_bytes_total{region="${region}", nodename=~"^${appnode}"}[1m]))`, "writes {{nodename}}").RefId("B"))).
 		WithPanel(ts("Network", dash.UnitBytesPerSec).
 			AxisSoftMax(100000000).
-			WithTarget(dash.PromQuery(`rate(node_network_receive_bytes_total{region="${region}", device=~"(ens|eth).*"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${appnode}"})`, "rx {{nodename}}").RefId("A")).
-			WithTarget(dash.PromQuery(`rate(node_network_transmit_bytes_total{region="${region}", device=~"(ens|eth).*"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${appnode}"})`, "tx {{nodename}}").RefId("B")))
+			WithTarget(dash.PromQuery(`rate(node_network_receive_bytes_total{region="${region}", device=~"(ens|eth).*", nodename=~"^${appnode}"}[1m])`, "rx {{nodename}}").RefId("A")).
+			WithTarget(dash.PromQuery(`rate(node_network_transmit_bytes_total{region="${region}", device=~"(ens|eth).*", nodename=~"^${appnode}"}[1m])`, "tx {{nodename}}").RefId("B")))
 }
 
 func executorNodesRow() *dashboard.RowBuilder {
@@ -1144,16 +1161,16 @@ func executorNodesRow() *dashboard.RowBuilder {
 		WithPanel(ts("CPU", dash.UnitPercentUnit).
 			Max(1).
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`1 - (avg by (mode, nodename) ((rate(node_cpu_seconds_total{region="${region}", mode="idle"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${executornode}"})))`, "{{nodename}}"))).
+			WithTarget(dash.PromQuery(`1 - avg by (nodename) (rate(node_cpu_seconds_total{region="${region}", mode="idle", nodename=~"^${executornode}"}[1m]))`, "{{nodename}}"))).
 		WithPanel(ts("Disk", dash.UnitBytesPerSec).
 			AxisSoftMax(100000000).
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_read_bytes_total{region="${region}"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${executornode}"}))`, "reads {{nodename}}").RefId("A")).
-			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_written_bytes_total{region="${region}"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${executornode}"}))`, "writes {{nodename}}").RefId("B"))).
+			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_read_bytes_total{region="${region}", nodename=~"^${executornode}"}[1m]))`, "reads {{nodename}}").RefId("A")).
+			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_written_bytes_total{region="${region}", nodename=~"^${executornode}"}[1m]))`, "writes {{nodename}}").RefId("B"))).
 		WithPanel(ts("Network", dash.UnitBytesPerSec).
 			AxisSoftMax(100000000).
-			WithTarget(dash.PromQuery(`rate(node_network_receive_bytes_total{region="${region}", device=~"(ens|eth).*"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${executornode}"})`, "rx {{nodename}}").RefId("A")).
-			WithTarget(dash.PromQuery(`rate(node_network_transmit_bytes_total{region="${region}", device=~"(ens|eth).*"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${executornode}"})`, "tx {{nodename}}").RefId("B")))
+			WithTarget(dash.PromQuery(`rate(node_network_receive_bytes_total{region="${region}", device=~"(ens|eth).*", nodename=~"^${executornode}"}[1m])`, "rx {{nodename}}").RefId("A")).
+			WithTarget(dash.PromQuery(`rate(node_network_transmit_bytes_total{region="${region}", device=~"(ens|eth).*", nodename=~"^${executornode}"}[1m])`, "tx {{nodename}}").RefId("B")))
 }
 
 func gkeNodepoolRow() *dashboard.RowBuilder {
@@ -1162,16 +1179,16 @@ func gkeNodepoolRow() *dashboard.RowBuilder {
 		WithPanel(ts("CPU", dash.UnitPercentUnit).
 			Max(1).
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`1 - (avg by (mode, nodename) ((rate(node_cpu_seconds_total{region="${region}", mode="idle"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${gkepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$"})))`, "{{nodename}}"))).
+			WithTarget(dash.PromQuery(`1 - avg by (nodename) (rate(node_cpu_seconds_total{region="${region}", mode="idle", nodename=~"^${gkepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$"}[1m]))`, "{{nodename}}"))).
 		WithPanel(ts("Disk", dash.UnitBytesPerSec).
 			AxisSoftMax(100000000).
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_read_bytes_total{region="${region}"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${gkepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$"}))`, "reads {{nodename}}").RefId("A")).
-			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_written_bytes_total{region="${region}"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${gkepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$"}))`, "writes {{nodename}}").RefId("B"))).
+			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_read_bytes_total{region="${region}", nodename=~"^${gkepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$"}[1m]))`, "reads {{nodename}}").RefId("A")).
+			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_written_bytes_total{region="${region}", nodename=~"^${gkepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$"}[1m]))`, "writes {{nodename}}").RefId("B"))).
 		WithPanel(ts("Network", dash.UnitBytesPerSec).
 			AxisSoftMax(100000000).
-			WithTarget(dash.PromQuery(`rate(node_network_receive_bytes_total{region="${region}", device=~"(ens|eth).*"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${gkepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$"})`, "rx {{nodename}}").RefId("A")).
-			WithTarget(dash.PromQuery(`rate(node_network_transmit_bytes_total{region="${region}", device=~"(ens|eth).*"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region="${region}", nodename=~"^${gkepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$"})`, "tx {{nodename}}").RefId("B")))
+			WithTarget(dash.PromQuery(`rate(node_network_receive_bytes_total{region="${region}", device=~"(ens|eth).*", nodename=~"^${gkepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$"}[1m])`, "rx {{nodename}}").RefId("A")).
+			WithTarget(dash.PromQuery(`rate(node_network_transmit_bytes_total{region="${region}", device=~"(ens|eth).*", nodename=~"^${gkepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$"}[1m])`, "tx {{nodename}}").RefId("B")))
 }
 
 func internalRow() *dashboard.RowBuilder {

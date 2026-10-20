@@ -536,11 +536,15 @@ type AuthDB interface {
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (APIKeyGroup, error)
 
-	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
-	// group. It is only to be used in situations where the user has a
-	// pre-authorized grant to access resources on behalf of the org, such as a
-	// publicly shared invocation. The returned API key must only be used to
-	// access internal resources and must not be returned to the caller.
+	// GetAPIKeyForInternalUseOnly returns the API key that the caller
+	// authenticated with, or PermissionDenied if that key is owned by a
+	// different group. Callers authenticated with a web UI session or an
+	// impersonation key, and unauthenticated callers, instead get the
+	// group-level API key with the greatest cache capabilities, regardless of
+	// the caller's own permissions. It is only to be used in situations where
+	// the user has a pre-authorized grant to access resources on behalf of the
+	// org. The returned API key must only be used to access internal resources
+	// and must not be returned to the caller.
 	GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error)
 
 	// API Keys API.
@@ -553,8 +557,9 @@ type AuthDB interface {
 	// keys are not enabled by the org.
 
 	// GetAPIKeys returns group-level API keys that the user is authorized to
-	// access.
-	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+	// access. If includeExpired is set, expired keys are returned without
+	// their values.
+	GetAPIKeys(ctx context.Context, groupID string, includeExpired bool) ([]*tables.APIKey, error)
 
 	// CreateAPIKey creates a group-level API key.
 	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []cappb.Capability, expiresIn time.Duration, visibleToDevelopers bool) (*tables.APIKey, error)
@@ -575,8 +580,9 @@ type AuthDB interface {
 	// retrieved after creation by API key read methods.
 	GetAPIKeyValueReadbackEnabled() bool
 
-	// GetUserAPIKeys returns all user-owned API keys within a group.
-	GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]*tables.APIKey, error)
+	// GetUserAPIKeys returns all user-owned API keys within a group. If
+	// includeExpired is set, expired keys are returned without their values.
+	GetUserAPIKeys(ctx context.Context, userID, groupID string, includeExpired bool) ([]*tables.APIKey, error)
 
 	// CreateUserAPIKey creates a user-owned API key within the group. The given
 	// user must be a member of the group. If the request is not authenticated
@@ -585,7 +591,7 @@ type AuthDB interface {
 	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []cappb.Capability, expiresIn time.Duration) (*tables.APIKey, error)
 
 	// GetAPIKey returns an API key by ID. The key may be user-owned or
-	// group-owned.
+	// group-owned. Expired keys are returned without their values.
 	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
 
 	// UpdateAPIKey updates an API key by ID. The key may be user-owned or
@@ -1041,6 +1047,11 @@ type FileCache interface {
 
 	// Open returns a file handle to a file in the cache, if one exists.
 	Open(ctx context.Context, f *repb.FileNode) (*os.File, error)
+
+	// Stat returns info about a file in the cache, if one exists. Unlike
+	// the other lookups, it doesn't mark the file as recently used, or count
+	// as a cache request in metrics.
+	Stat(ctx context.Context, f *repb.FileNode) (os.FileInfo, error)
 	WaitForDirectoryScanToComplete()
 
 	Read(ctx context.Context, node *repb.FileNode) ([]byte, error)
@@ -1085,6 +1096,14 @@ type SchedulerService interface {
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
 	CancelTask(ctx context.Context, taskID string) (bool, error)
 	ExistsTask(ctx context.Context, taskID string) (bool, error)
+	// WatchTaskLiveness returns a channel that the scheduler closes if it
+	// loses the task, meaning that the task no longer exists and so no
+	// executor will run it again. The scheduler watches the task until ctx is
+	// done. In rare cases (e.g. stalled lease renewals, or apps with different
+	// views of the Redis ring) it may report a task lost while an executor is
+	// still running it, so callers should treat the signal as a reason to
+	// retry.
+	WatchTaskLiveness(ctx context.Context, taskID string) <-chan struct{}
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error)
@@ -1248,7 +1267,7 @@ type Runner interface {
 	PrepareForTask(ctx context.Context) error
 
 	// DownloadInputs downloads any input files associated with the task assigned
-	// to the runner.
+	// to the runner, then creates the task's output directories.
 	DownloadInputs(ctx context.Context) error
 
 	// Run runs the task that is currently assigned to the runner.
@@ -1686,6 +1705,9 @@ type ExecutionCollector interface {
 	// available starting from the start index.
 	GetExecutions(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error)
 	ExpireExecutions(ctx context.Context, iid string, ttl time.Duration) error
+	// RefreshExecutions resets the TTL of any executions appended for the given
+	// invocation ID.
+	RefreshExecutions(ctx context.Context, iid string) error
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
 	AddExecutionInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, bidirectional bool) error

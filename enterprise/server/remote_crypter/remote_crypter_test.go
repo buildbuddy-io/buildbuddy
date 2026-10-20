@@ -320,6 +320,17 @@ func TestAuth(t *testing.T) {
 	}
 }
 
+func TestRegisterWithExistingCrypter(t *testing.T) {
+	flags.Set(t, "crypter.remote_target", "grpc://localhost:1234")
+	te := testenv.GetTestEnv(t)
+	_, existing, _, _ := setup(t)
+	te.SetCrypter(existing)
+
+	err := remote_crypter.Register(te)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got %v", err)
+	require.Same(t, existing, te.GetCrypter())
+}
+
 func TestActiveKey(t *testing.T) {
 	authenticator, crypter, _, service := setup(t)
 	group1Key := "group1key"

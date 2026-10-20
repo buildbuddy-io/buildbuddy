@@ -10,6 +10,7 @@ ts_library(
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
+        "//:node_modules/moment",
         "//:node_modules/react",
         "//:node_modules/tslib",
         "//app/alert:alert_service",

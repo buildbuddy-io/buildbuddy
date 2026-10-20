@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -12,9 +13,12 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -68,6 +72,9 @@ const (
 	// device is mounted.
 	workspaceMountPath = "/workspace"
 
+	// RootfsDevice is the merged rootfs block device when rootfs is enabled.
+	RootfsDevice = "/dev/vda"
+
 	// Stats polling starts off high-frequency to improve the chances of
 	// collecting some stats for short-running tasks, then slowly backs off to
 	// avoid adding excessive overhead for longer-running tasks.
@@ -85,6 +92,8 @@ var (
 )
 
 type execServer struct {
+	rootMu             sync.Mutex
+	rootMountAttempted bool
 	// workspaceDevice is the path to the hot-swappable workspace block device.
 	workspaceDevice string
 
@@ -295,12 +304,6 @@ func isWorkspaceMounted() (bool, error) {
 }
 
 func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeRequest) (*vmxpb.InitializeResponse, error) {
-	if req.GetClearArpCache() {
-		if err := clearARPCache(); err != nil {
-			return nil, err
-		}
-		log.Debugf("Cleared ARP cache")
-	}
 	if req.GetUnixTimestampNanoseconds() > 1 {
 		tv := syscall.NsecToTimeval(req.GetUnixTimestampNanoseconds())
 		if err := syscall.Settimeofday(&tv); err != nil {
@@ -308,7 +311,50 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 		}
 		log.Debugf("Set time of day to %d", req.GetUnixTimestampNanoseconds())
 	}
-	return &vmxpb.InitializeResponse{}, nil
+	if len(req.GetEntropy()) > 0 {
+		// Require sufficient entropy.
+		if len(req.GetEntropy()) < 32 {
+			return nil, status.InvalidArgumentError("at least 32 bytes of entropy are required")
+		}
+
+		if err := reseedRNG(req.GetEntropy()); err != nil {
+			return nil, status.WrapError(err, "reseed RNG")
+		}
+	}
+	if req.GetMountContainerRoot() {
+		// Without fresh entropy, every VM restored from the snapshot would
+		// generate the same boot ID.
+		if len(req.GetEntropy()) == 0 {
+			return nil, status.InvalidArgumentError("mounting the container root requires entropy")
+		}
+		x.rootMu.Lock()
+		defer x.rootMu.Unlock()
+		if x.rootMountAttempted {
+			return nil, status.FailedPreconditionError("container root initialization already attempted")
+		}
+		// The new root would hide a workspace mounted on the old one.
+		if mounted, err := isWorkspaceMounted(); err != nil {
+			return nil, err
+		} else if mounted {
+			return nil, status.FailedPreconditionError("workspace must be mounted after the container root")
+		}
+		if req.GetContainerRootSizeBytes() > 0 {
+			if err := waitForBlockDeviceSize(ctx, RootfsDevice, req.GetContainerRootSizeBytes()); err != nil {
+				return nil, err
+			}
+		}
+		x.rootMountAttempted = true
+		if err := mountContainerRoot(); err != nil {
+			return nil, status.WrapError(err, "mount container root")
+		}
+	}
+	if req.GetClearArpCache() {
+		if err := clearARPCache(); err != nil {
+			return nil, err
+		}
+		log.Debugf("Cleared ARP cache")
+	}
+	return &vmxpb.InitializeResponse{ContainerRootMounted: req.GetMountContainerRoot()}, nil
 }
 
 func (x *execServer) Sync(ctx context.Context, req *vmxpb.SyncRequest) (*vmxpb.SyncResponse, error) {
@@ -353,12 +399,61 @@ func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspa
 		return nil, status.InternalErrorf("workspace is already mounted at %s", workspaceMountPath)
 	}
 
+	// Firecracker applies a drive update by sending the guest a config change
+	// notification, and the virtio_blk driver reads the new capacity
+	// asynchronously. Until it does, the kernel rejects reads past the old
+	// capacity with EIO, which makes the mount fail. The old capacity is
+	// usually 0, because the host attaches an empty file to the workspace
+	// drive between actions.
+	if req.GetSizeBytes() > 0 {
+		if err := waitForBlockDeviceSize(ctx, x.workspaceDevice, req.GetSizeBytes()); err != nil {
+			log.Errorf("Failed to wait for workspace device size: %s", err)
+			return nil, err
+		}
+	}
 	if err := syscall.Mount(x.workspaceDevice, workspaceMountPath, "ext4", syscall.MS_NOATIME, ""); err != nil {
 		log.Errorf("Failed to mount workspace: %s", err)
 		return nil, err
 	}
 	log.Infof("Mounted workspace %s to %s", x.workspaceDevice, workspaceMountPath)
 	return &vmxpb.MountWorkspaceResponse{}, nil
+}
+
+// waitForBlockDeviceSize polls until the block device reports the given size.
+func waitForBlockDeviceSize(ctx context.Context, device string, sizeBytes int64) error {
+	// We stop waiting a second before the caller's deadline so that the caller
+	// receives our error, which includes the device size, rather than its own
+	// deadline error. If our response takes longer than that to arrive, the
+	// caller just sees the less detailed error.
+	if deadline, ok := ctx.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline.Add(-time.Second))
+		defer cancel()
+	}
+	// sysfs reports the size in 512-byte sectors, regardless of the device's
+	// logical block size.
+	sizePath := filepath.Join("/sys/class/block", filepath.Base(device), "size")
+	wantSectors := sizeBytes / 512
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		b, err := os.ReadFile(sizePath)
+		if err != nil {
+			return status.InternalErrorf("read device size: %s", err)
+		}
+		sectors, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+		if err != nil {
+			return status.InternalErrorf("parse device size: %s", err)
+		}
+		if sectors == wantSectors {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return status.WrapErrorf(status.FromContextError(ctx), "device %s has %d sectors, want %d", device, sectors, wantSectors)
+		case <-ticker.C:
+		}
+	}
 }
 
 func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
@@ -801,4 +896,144 @@ func updatePeakFileSystemUsage(peak, current []*repb.UsageStats_FileSystemUsage)
 	})
 
 	return peak
+}
+
+// reseedRNG credits seed to the kernel entropy pool and forces a CRNG reseed,
+// so VMs restored from the same snapshot don't share RNG state.
+func reseedRNG(seed []byte) error {
+	f, err := os.OpenFile("/dev/urandom", os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	// struct rand_pool_info { int entropy_count; int buf_size; __u32 buf[]; }
+	info := make([]byte, 8+len(seed))
+	binary.NativeEndian.PutUint32(info[0:], uint32(len(seed)*8))
+	binary.NativeEndian.PutUint32(info[4:], uint32(len(seed)))
+	copy(info[8:], seed)
+	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, f.Fd(), unix.RNDADDENTROPY, uintptr(unsafe.Pointer(&info[0]))); errno != 0 {
+		return status.InternalErrorf("RNDADDENTROPY: %s", errno)
+	}
+	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, f.Fd(), unix.RNDRESEEDCRNG, 0); errno != 0 {
+		return status.InternalErrorf("RNDRESEEDCRNG: %s", errno)
+	}
+	return nil
+}
+
+func mountContainerRoot() error {
+	const root = "/mnt"
+	if err := os.MkdirAll(root, 0755); err != nil {
+		return err
+	}
+	if err := syscall.Mount(RootfsDevice, root, "ext4", syscall.MS_NOATIME, ""); err != nil {
+		return err
+	}
+	if err := ResizeExt4FS(RootfsDevice, root); err != nil {
+		return err
+	}
+	for _, name := range []string{"dev", "proc", "sys", "run"} {
+		target := filepath.Join(root, name)
+		if err := os.Mkdir(target, 0755); err != nil && !os.IsExist(err) {
+			return err
+		}
+		info, err := os.Lstat(target)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return status.InvalidArgumentErrorf("container /%s must be a directory", name)
+		}
+		if err := syscall.Mount("/"+name, target, "", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
+			return err
+		}
+	}
+	config := make(map[string][]byte)
+	for _, name := range []string{"hostname", "hosts", "resolv.conf"} {
+		data, err := os.ReadFile("/etc/" + name)
+		if err != nil {
+			return err
+		}
+		config[name] = data
+	}
+	// Move the root over / rather than chrooting into it: the kernel won't
+	// create user namespaces for a chrooted process.
+	if err := os.Chdir(root); err != nil {
+		return err
+	}
+	if err := syscall.Mount(".", "/", "", syscall.MS_MOVE, ""); err != nil {
+		return err
+	}
+	if err := syscall.Chroot("."); err != nil {
+		return err
+	}
+	if err := os.Chdir("/"); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(workspaceMountPath, 0755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll("/root", syscall.S_IRWXU); err != nil {
+		return err
+	}
+	if err := os.MkdirAll("/etc", 0755); err != nil {
+		return err
+	}
+	for name, data := range config {
+		path := "/etc/" + name
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			return err
+		}
+	}
+	if _, err := os.Lstat("/etc/mtab"); os.IsNotExist(err) {
+		if err := os.Symlink("/proc/mounts", "/etc/mtab"); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
+// ResizeExt4FS resizes the ext4 filesystem mounted at the given path to match the underlying
+// block device size.
+func ResizeExt4FS(devicePath, mountPath string) error {
+	blockSizePath := fmt.Sprintf("/sys/class/block/%s/size", filepath.Base(devicePath))
+	log.Debugf("os.ReadFile(%q)", blockSizePath)
+	sizeBuf, err := os.ReadFile(blockSizePath)
+	if err != nil {
+		return status.InternalErrorf("read block device size: %s", err)
+	}
+	// Here, the block size is always 512.
+	// So the size in bytes is deviceSizeBlocks*512.
+	deviceSizeBlocks, err := strconv.Atoi(strings.TrimSpace(string(sizeBuf)))
+	if err != nil {
+		return status.InternalErrorf("failed to parse block device size %q", string(sizeBuf))
+	}
+
+	log.Debugf("statfs %q", mountPath)
+	s := &syscall.Statfs_t{}
+	if err := syscall.Statfs(mountPath, s); err != nil {
+		return status.InternalErrorf("statfs %s: %s", mountPath, err)
+	}
+	blocks := int64(deviceSizeBlocks*512) / s.Bsize
+	log.Debugf("open %q", mountPath)
+	fd, err := syscall.Open(mountPath, syscall.O_RDONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(fd)
+	log.Debugf("IOC_RESIZE_FS(%q) to %v blocks (%v byte)", mountPath, blocks, deviceSizeBlocks*512)
+	_, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		uintptr(fd),
+		uintptr(0x40086610), // EXT4_IOC_RESIZE_FS
+		uintptr(unsafe.Pointer(&blocks)),
+	)
+	if errno != 0 {
+		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
+	}
+	return nil
 }

@@ -1694,11 +1694,50 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir, executableP
 // processRunScript processes the contents of a bazel run script (produced via bazel run --script_path) and extracts
 // information about the default binary arguments as well as about supporting files (runfiles).
 func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
+	parsed, err := parseRunScript(runScript)
+	if err != nil {
+		return nil, err
+	}
+
+	runfilesDir := parsed.bin + ".runfiles"
+	runfilesRoot := parsed.runfilesRoot
+	// Executable genrules do not have a runfiles tree. In that case, the cd
+	// command in points into the remote checkout, which is not valid for a
+	// local run.
+	if _, err := os.Stat(runfilesDir); os.IsNotExist(err) {
+		runfilesRoot = ""
+	}
+	runfiles, runfileDirs, runfileEntries, err := uploadRunfiles(ctx, parsed.wsRoot, runfilesDir, parsed.bin)
+	if err != nil {
+		return nil, err
+	}
+
+	return &runInfo{
+		args: parsed.args,
+		// TODO(Maggie): Delete deprecated field
+		runfiles:       runfiles,
+		runfileEntries: runfileEntries,
+		runfileDirs:    runfileDirs,
+		runfilesRoot:   runfilesRoot,
+		executablePath: parsed.executablePath,
+	}, nil
+}
+
+type parsedRunScript struct {
+	bin            string
+	args           []string
+	wsRoot         string
+	executablePath string
+	runfilesRoot   string
+}
+
+func parseRunScript(runScript string) (*parsedRunScript, error) {
 	runScriptBytes, err := os.ReadFile(runScript)
 	if err != nil {
 		return nil, status.UnknownErrorf("error reading run script: %s", err)
 	}
-	runScriptLines := strings.Split(string(runScriptBytes), "\n")
+	// Bazel 10+ terminates the script with a newline; older versions don't.
+	runScriptLines := strings.Split(strings.TrimRight(string(runScriptBytes), "\n"), "\n")
 	if len(runScriptLines) < 3 {
 		return nil, status.UnknownErrorf("run script not in expected format, too short")
 	}
@@ -1707,6 +1746,9 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 	binAndArgs, err := shlex.Split(runScriptLines[len(runScriptLines)-1])
 	if err != nil {
 		return nil, status.UnknownErrorf("error parsing run script: %s", err)
+	}
+	if len(binAndArgs) == 0 {
+		return nil, status.UnknownErrorf("run script not in expected format: binary not found on last line")
 	}
 	bin := binAndArgs[0]
 	var args []string
@@ -1745,26 +1787,12 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 		return nil, err
 	}
 
-	runfilesDir := bin + ".runfiles"
-	// Executable genrules do not have a runfiles tree. In that case, the cd
-	// command in points into the remote checkout, which is not valid for a
-	// local run.
-	if _, err := os.Stat(runfilesDir); os.IsNotExist(err) {
-		runfilesRoot = ""
-	}
-	runfiles, runfileDirs, runfileEntries, err := uploadRunfiles(ctx, wsRoot, runfilesDir, bin)
-	if err != nil {
-		return nil, err
-	}
-
-	return &runInfo{
-		args: args,
-		// TODO(Maggie): Delete deprecated field
-		runfiles:       runfiles,
-		runfileEntries: runfileEntries,
-		runfileDirs:    runfileDirs,
-		runfilesRoot:   runfilesRoot,
+	return &parsedRunScript{
+		bin:            bin,
+		args:           args,
+		wsRoot:         wsRoot,
 		executablePath: executablePath,
+		runfilesRoot:   runfilesRoot,
 	}, nil
 }
 

@@ -720,9 +720,8 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 	p.casFileCount = 0
 	p.casFileSizeBytes = 0
 	p.mu.Unlock()
-	// There may already be nodes in the tree prior to `Prepare` to be called,
-	// for example by the workspace code pre-creating the action output
-	// directories. We merge the known CAS inputs with the tree we already have.
+	// There may already be nodes in the tree before `Prepare` is called. We
+	// merge the known CAS inputs with the tree we already have.
 	invalidatedInodes, err := p.updateLayout(ctx, layout.Inputs, layout.DigestFunction)
 	if err != nil {
 		return nil, err
@@ -1501,7 +1500,7 @@ func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*v
 	return &vfspb.GetAttrResponse{Attrs: node.attrs}, nil
 }
 
-func (p *Server) processSetAttr(node *fsNode, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
+func (p *Server) processSetAttr(node *fsNode, file *os.File, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
 	// Ownership is tracked virtually; backing files are owned by the executor.
 	if err := checkChown(request, newAttrs); err != nil {
 		return err
@@ -1517,10 +1516,14 @@ func (p *Server) processSetAttr(node *fsNode, request *vfspb.SetAttrRequest, new
 	}
 
 	if request.SetSize != nil {
-		if node.backingPath == "" {
+		if file != nil {
+			// The backing path may no longer exist if the file was unlinked.
+			if err := file.Truncate(request.SetSize.GetSize()); err != nil {
+				return err
+			}
+		} else if node.backingPath == "" {
 			return syscall.EPERM
-		}
-		if err := os.Truncate(node.backingPath, request.SetSize.GetSize()); err != nil {
+		} else if err := os.Truncate(node.backingPath, request.SetSize.GetSize()); err != nil {
 			return err
 		}
 		newAttrs.Size = request.SetSize.GetSize()
@@ -1607,6 +1610,20 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 		return nil, err
 	}
 
+	var file *os.File
+	if request.HandleId != nil {
+		fh, err := p.getFileHandle(request.GetHandleId())
+		if err != nil {
+			return nil, err
+		}
+		fh.mu.Lock()
+		defer fh.mu.Unlock()
+		if fh.node != node {
+			return nil, syscallErrStatus(syscall.EBADF)
+		}
+		file = fh.f
+	}
+
 	node.mu.Lock()
 	defer node.mu.Unlock()
 
@@ -1619,7 +1636,7 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 			return nil, syscallErrStatus(err)
 		}
 	} else {
-		if err := p.processSetAttr(node, request, newAttrs); err != nil {
+		if err := p.processSetAttr(node, file, request, newAttrs); err != nil {
 			return nil, syscallErrStatus(err)
 		}
 	}

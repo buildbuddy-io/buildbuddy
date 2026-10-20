@@ -22,7 +22,7 @@ go_library(
         "//platforms/configs:linux_x86_64": [
             "//enterprise/vmsupport/bin:initrd.cpio",
             "//enterprise/vmsupport/bin:vmlinux",
-            "//enterprise/vmsupport/bin:vmlinux_6.1",
+            "//enterprise/vmsupport/bin:vmlinux_6.18",
         ],
         "//platforms/configs:linux_arm64": [
             "//enterprise/vmsupport/bin:initrd.cpio",
@@ -38,7 +38,7 @@ go_library(
         "//platforms/configs:linux_x86_64": {
             "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
             "vmlinuxRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux)",
-            "vmlinux6_1RunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux_6.1)",
+            "vmlinux6_18RunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux_6.18)",
         },
         "//platforms/configs:linux_arm64": {
             "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
@@ -150,9 +150,9 @@ go_test(
     srcs = ["firecracker_test.go"],
     args = [
         "--executor.enable_remote_snapshot_sharing=true",
-        # Uncomment to test the 6.1 kernel.
-        # TODO: turn this on by default once the 6.1 kernel is used everywhere
-        # "--executor.firecracker_enable_linux_6_1=true",
+        # Uncomment to test the 6.18 kernel.
+        # TODO: turn this on by default once the 6.18 kernel is used everywhere
+        # "--executor.firecracker_enable_linux_6_18=true",
     ],
     data = [
         "//enterprise/server/remote_execution/containers/firecracker/testdata:busybox.ext4",

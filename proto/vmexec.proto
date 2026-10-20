@@ -152,10 +152,21 @@ message InitializeRequest {
 
   // If true, the arp cache will be cleared.
   bool clear_arp_cache = 2;
+
+  // Mount the action root after restoring a generic snapshot.
+  bool mount_container_root = 3;
+
+  // Random bytes to mix into the guest RNG, which is reseeded when set.
+  bytes entropy = 4;
+
+  // Size of the container root device. The guest waits for the device to
+  // report this size before mounting it.
+  int64 container_root_size_bytes = 5;
 }
 
 message InitializeResponse {
-  // This page intentionally left empty.
+  // Set if the container root was mounted for this request.
+  bool container_root_mounted = 1;
 }
 
 message SyncRequest {}
@@ -167,5 +178,9 @@ message UnmountWorkspaceResponse {
   bool busy = 1;
 }
 
-message MountWorkspaceRequest {}
+message MountWorkspaceRequest {
+  // Size of the image that the host attached to the workspace drive. If set,
+  // the guest waits for the drive to report this size before mounting it.
+  int64 size_bytes = 1;
+}
 message MountWorkspaceResponse {}

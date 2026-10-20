@@ -16,6 +16,7 @@ set -e
 # Once it's done running, copy the output into deps.bzl.
 #
 # Optional env vars:
+#   KERNEL_GIT_TAG=v6.18.57       # stable git tag to build; defaults to KERNEL_VERSION
 #   OUTPUT_FILE=/path/to/output   # if set, copies built kernel here
 #   SKIP_UPLOAD=1                 # if set, does not upload to GCS
 
@@ -32,16 +33,22 @@ ARCH=$(uname -m)
 if [[ -n "${KERNEL_VERSION:-}" ]]; then
   VERSION="$KERNEL_VERSION"
 elif [[ "$ARCH" == "x86_64" ]]; then
-  VERSION=v6.1
+  VERSION=v6.18
 elif [[ "$ARCH" == "aarch64" ]]; then
-  # TODO: update arm64 to v6.1 as well
+  # TODO: update arm64 to v6.18 as well
   VERSION=v5.10
 else
   echo >&2 "Unsupported architecture: $ARCH"
   exit 1
 fi
 
-: "${WORKDIR:=/tmp/buildbuddy-guest-kernel-${ARCH}-${VERSION}}"
+# KERNEL_VERSION selects the config file, while KERNEL_GIT_TAG selects the
+# source to build. Tags like "v6.18" point at the initial release of a stable
+# series, which lacks every fix backported to the series since then, so
+# prefer pinning a point release like "v6.18.57".
+GIT_TAG="${KERNEL_GIT_TAG:-$VERSION}"
+
+: "${WORKDIR:=/tmp/buildbuddy-guest-kernel-${ARCH}-${GIT_TAG}}"
 
 # Get version-specific config file.
 #
@@ -56,12 +63,12 @@ fi
 mkdir -p "$WORKDIR" && cd "$WORKDIR"
 echo "Working directory: $PWD"
 if ! [[ -e .git ]]; then
-  git clone --depth 1 --branch "$VERSION" git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git .
+  git clone --depth 1 --branch "$GIT_TAG" git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git .
 fi
 if [[ "${CLEAN:-}" == 1 ]]; then
   git clean -fdx
 fi
-git fetch origin "$VERSION" --depth=1
+git fetch origin "$GIT_TAG" --depth=1
 git checkout FETCH_HEAD --
 
 cp "$KERNEL_CONFIG_PATH" .config

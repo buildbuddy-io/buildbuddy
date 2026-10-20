@@ -24,9 +24,11 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//enterprise/app/filter:date_range_picker_button",
+        "//enterprise/app/trends:common",
         "//enterprise/app/trends:trends_chart",
         "//enterprise/app/usage:usage_alerts",
         "//enterprise/app/usage:usage_bill",
+        "//proto:stats_ts_proto",
         "//proto:usage_ts_proto",
     ],
 )

@@ -160,7 +160,7 @@
                 "uid": "vm"
               },
               "exemplar": false,
-              "expr": "rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "expr": "rate(node_disk_read_bytes_total{region=\"${region}\", nodename=\"${kubenode}\"}[1m])",
               "interval": "",
               "legendFormat": "{{device}} reads",
               "refId": "A"
@@ -171,7 +171,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "expr": "rate(node_disk_written_bytes_total{region=\"${region}\", nodename=\"${kubenode}\"}[1m])",
               "hide": false,
               "interval": "",
               "legendFormat": "{{device}} writes",
@@ -183,7 +183,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "rate(node_network_receive_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "expr": "rate(node_network_receive_bytes_total{device=~\"(ens|eth).*\", region=\"${region}\", nodename=\"${kubenode}\"}[1m])",
               "hide": false,
               "interval": "",
               "legendFormat": "{{device}} rx",
@@ -195,7 +195,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "rate(node_network_transmit_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "expr": "rate(node_network_transmit_bytes_total{device=~\"(ens|eth).*\", region=\"${region}\", nodename=\"${kubenode}\"}[1m])",
               "hide": false,
               "interval": "",
               "legendFormat": "{{device}} tx",
@@ -207,7 +207,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "1 - (avg by(mode) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})))",
+              "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\", region=\"${region}\", nodename=\"${kubenode}\"}[1m]))",
               "hide": false,
               "interval": "",
               "legendFormat": "cpu",
@@ -409,7 +409,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "node_memory_wired_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "expr": "node_memory_wired_bytes{region=\"${region}\", nodename=\"${kubenode}\"}",
               "hide": false,
               "interval": "",
               "legendFormat": "Wired memory",
@@ -421,7 +421,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "node_memory_compressed_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "expr": "node_memory_compressed_bytes{region=\"${region}\", nodename=\"${kubenode}\"}",
               "hide": false,
               "interval": "",
               "legendFormat": "Compressed memory",
@@ -433,7 +433,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "node_memory_active_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "expr": "node_memory_active_bytes{region=\"${region}\", nodename=\"${kubenode}\"}",
               "interval": "",
               "legendFormat": "Active memory",
               "refId": "A"
@@ -444,7 +444,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "node_memory_inactive_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "expr": "node_memory_inactive_bytes{region=\"${region}\", nodename=\"${kubenode}\"}",
               "hide": false,
               "interval": "",
               "legendFormat": "Inactive memory",
@@ -456,7 +456,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "node_memory_free_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "expr": "node_memory_free_bytes{region=\"${region}\", nodename=\"${kubenode}\"}",
               "hide": false,
               "interval": "",
               "legendFormat": "Free memory",
@@ -578,7 +578,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "node_memory_swap_used_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "expr": "node_memory_swap_used_bytes{region=\"${region}\", nodename=\"${kubenode}\"}",
               "interval": "",
               "legendFormat": "Swap memory used",
               "refId": "A"
@@ -731,7 +731,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "rate(node_memory_swapped_in_bytes_total[${window}]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "expr": "rate(node_memory_swapped_in_bytes_total{region=\"${region}\", nodename=\"${kubenode}\"}[${window}])",
               "interval": "",
               "legendFormat": "Swap in rate",
               "refId": "A"
@@ -742,7 +742,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "rate(node_memory_swapped_out_bytes_total[${window}]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "expr": "rate(node_memory_swapped_out_bytes_total{region=\"${region}\", nodename=\"${kubenode}\"}[${window}])",
               "hide": false,
               "interval": "",
               "legendFormat": "Swap out rate",

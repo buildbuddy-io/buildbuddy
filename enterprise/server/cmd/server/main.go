@@ -364,7 +364,7 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	trafficHandler, err := trafficstats.NewServerHandler()
+	trafficHandler, err := trafficstats.NewServerHandler(realEnv)
 	if err != nil {
 		log.Fatalf("Error creating traffic stats handlers: %v", err)
 	}
