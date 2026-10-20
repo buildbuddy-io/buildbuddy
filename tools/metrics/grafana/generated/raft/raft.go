@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana/generated/dash"
+	"github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana/generated/pebble_dash"
 	"github.com/grafana/grafana-foundation-sdk/go/cog"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
@@ -146,48 +147,6 @@ func splitsMovesSplitDurationPanel() *timeseries.PanelBuilder {
 			Exemplar(true).
 			Interval("").
 			RefId("C"))
-}
-
-func pebbleBlockCacheHitsAndMissesPanel() *timeseries.PanelBuilder {
-	return ts("block cache hits and misses", dash.UnitRequestsPerSec).
-		Description("").
-		Legend(common.NewVizLegendOptionsBuilder().
-			DisplayMode(common.LegendDisplayModeList).
-			Placement(common.LegendPlacementRight).
-			ShowLegend(true)).
-		Tooltip(common.NewVizTooltipOptionsBuilder().
-			Mode(common.TooltipDisplayModeMulti).
-			Sort(common.SortOrderDescending)).
-		AxisPlacement(common.AxisPlacementLeft).
-		WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "hit_ratio"}, []dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "custom.axisPlacement", Value: "right"}, dashboard.DynamicConfigValue{Id: "unit", Value: "percentunit"}}).
-		WithTarget(q("sum by (cache_status) (rate(buildbuddy_remote_cache_pebble_cache_pebble_block_cache_requests_count{region=\"${region}\", job=\"metadata-server\"}[${window}]))", "{{cache_status}}").
-			Interval("").
-			QueryType("randomWalk").
-			RefId("A")).
-		WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_block_cache_requests_count{region=\"${region}\", job=\"metadata-server\", cache_status=\"hit\"}[${window}])) / sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_block_cache_requests_count{region=\"${region}\", job=\"metadata-server\"}[${window}]))", "hit_ratio").
-			Interval("").
-			QueryType("randomWalk").
-			RefId("B"))
-}
-
-func pebbleCompactionStatePanel() *timeseries.PanelBuilder {
-	return ts("Compaction state", dash.UnitBytes).
-		WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "in progress (count)"}, []dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "custom.axisPlacement", Value: "right"}, dashboard.DynamicConfigValue{Id: "unit", Value: "none"}}).
-		WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "marked files"}, []dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "custom.axisPlacement", Value: "right"}, dashboard.DynamicConfigValue{Id: "unit", Value: "none"}}).
-		WithTarget(q("sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress_bytes{region=\"${region}\",cache_name=\"raft\", namespace=\"${namespace}\"})", "in progress (bytes)").
-			RefId("B")).
-		WithTarget(q("sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress{region=\"${region}\",cache_name=\"raft\", namespace=\"${namespace}\"})", "in progress (count)").
-			RefId("C")).
-		WithTarget(q("sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_marked_files{region=\"${region}\",cache_name=\"raft\", namespace=\"${namespace}\"})", "marked files").
-			RefId("D"))
-}
-
-func pebbleCompactionEstimatedDebtPanel() *timeseries.PanelBuilder {
-	return ts("Compaction estimated debt", dash.UnitBytes).
-		WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "in progress (count)"}, []dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "custom.axisPlacement", Value: "right"}, dashboard.DynamicConfigValue{Id: "unit", Value: "none"}}).
-		WithOverride(dashboard.MatcherConfig{Id: "byName", Options: "marked files"}, []dashboard.DynamicConfigValue{dashboard.DynamicConfigValue{Id: "custom.axisPlacement", Value: "right"}, dashboard.DynamicConfigValue{Id: "unit", Value: "none"}}).
-		WithTarget(q("sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}) by (pod_name)", "{{pod_name}}").
-			RefId("A"))
 }
 
 func evictionDiskCachePartitionUsagePanel() *timeseries.PanelBuilder {
@@ -583,78 +542,12 @@ func dragonboatTransportRow() *dashboard.RowBuilder {
 				RefId("A")))
 }
 
-func pebbleRow() *dashboard.RowBuilder {
-	return row("Pebble").
-		WithPanel(ts("block cache size", dash.UnitBytes).
-			WithTarget(q("sum by (pod_name) (buildbuddy_remote_cache_pebble_cache_pebble_block_cache_size_bytes{region=\"${region}\", job=\"metadata-server\"})", "{{pod_name}}").
-				RefId("A"))).
-		WithPanel(pebbleBlockCacheHitsAndMissesPanel()).
-		WithPanel(ts("Compaction rate  (by type)", "").
-			WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_compact_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (compaction_type)\n", "__auto").
-				RefId("A"))).
-		WithPanel(pebbleCompactionStatePanel()).
-		WithPanel(pebbleCompactionEstimatedDebtPanel()).
-		WithPanel(ts("Op Rate", dash.UnitOps).
-			WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_count{region=\"${region}\", pebble_id=\"raft_store\", namespace=\"${namespace}\"}[1m])) by (pebble_op)", "__auto").
-				RefId("A"))).
-		WithPanel(ts("Op p50 Latency", dash.UnitMicroseconds).
-			WithTarget(q("histogram_quantile(0.50, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"raft_store\", namespace=\"${namespace}\"}[1m])) by (le,pebble_op))", "__auto").
-				RefId("A"))).
-		WithPanel(ts("Op p95 Latency", dash.UnitMicroseconds).
-			WithTarget(q("histogram_quantile(0.95, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"raft_store\", namespace=\"${namespace}\"}[1m])) by (le,pebble_op))", "__auto").
-				RefId("A"))).
-		WithPanel(ts("Op p99 Latency", dash.UnitMicroseconds).
-			WithTarget(q("histogram_quantile(0.99, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"raft_store\", namespace=\"${namespace}\"}[1m])) by (le,pebble_op))", "__auto").
-				RefId("A"))).
-		WithPanel(ts("Zombie Table Size", dash.UnitDecimalBytes).
-			WithTarget(q("sum(buildbuddy_remote_cache_pebble_cache_zombie_table_size_bytes{region=\"${region}\", namespace=\"${namespace}\"}) ", "__auto").
-				RefId("A"))).
-		WithPanel(ts("Zombie Table Count", "").
-			WithTarget(q("sum(buildbuddy_remote_cache_pebble_cache_zombie_table_count{region=\"${region}\", namespace=\"${namespace}\"}) ", "__auto").
-				RefId("A")))
-}
-
-func pebbleLevelsRow() *dashboard.RowBuilder {
-	return row("Pebble Levels").
-		WithPanel(ts("Number files (by level)", "").
-			WithTarget(q("sum(buildbuddy_remote_cache_pebble_cache_pebble_level_num_files{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}) by (level)", "{{level}}").
-				RefId("A"))).
-		WithPanel(ts("Size (by level)", dash.UnitBytes).
-			WithTarget(q("sum(buildbuddy_remote_cache_pebble_cache_pebble_level_size_bytes{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}) by (level)", "{{level}}").
-				RefId("A"))).
-		WithPanel(ts("Compaction score (by level)", dash.UnitNone).
-			WithTarget(q("sum(buildbuddy_remote_cache_pebble_cache_pebble_level_score{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}) by (level)", "{{level}}").
-				RefId("A"))).
-		WithPanel(ts("Bytes in (by level)", dash.UnitBytes).
-			WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_in_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)", "{{level}}").
-				RefId("A"))).
-		WithPanel(ts("Bytes ingested (by level)", dash.UnitBytes).
-			WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_ingested_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)", "{{level}}").
-				RefId("A"))).
-		WithPanel(ts("Bytes moved (by level)", dash.UnitBytes).
-			WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_moved_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)", "{{level}}").
-				RefId("A"))).
-		WithPanel(ts("Bytes read (by level)", dash.UnitBytes).
-			WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_read_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)", "{{level}}").
-				RefId("A"))).
-		WithPanel(ts("Bytes compacted (by level)", dash.UnitBytes).
-			WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_compacted_count{region=\"${region}\", cache_name=\"raft\"}[1m])) by (level)", "{{level}}").
-				RefId("A"))).
-		WithPanel(ts("Bytes flushed (by level)", dash.UnitBytes).
-			WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_flushed_count{region=\"${region}\", cache_name=\"raft\"}[1m])) by (level)", "{{level}}").
-				RefId("A"))).
-		WithPanel(ts("Tables compacted (by level)", dash.UnitNone).
-			WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_compacted_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)", "{{level}}").
-				RefId("A"))).
-		WithPanel(ts("Tables flushed (by level)", dash.UnitNone).
-			WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_flushed_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)", "{{level}}").
-				RefId("A"))).
-		WithPanel(ts("Tables ingested (by level)", dash.UnitNone).
-			WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_ingested_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)", "{{level}}").
-				RefId("A"))).
-		WithPanel(ts("Tables moved (by level)", dash.UnitNone).
-			WithTarget(q("sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_moved_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)", "{{level}}").
-				RefId("A")))
+// raftPebble configures the pebble rows for the raft store: one database
+// per metadata server, labeled cache_name="raft" but opened as "raft_store".
+var raftPebble = pebble_dash.Config{
+	Filter:    `region="${region}", namespace="${namespace}"`,
+	CacheName: "raft",
+	PebbleID:  "raft_store",
 }
 
 func evictionRow() *dashboard.RowBuilder {
@@ -834,8 +727,8 @@ func build() (dashboard.Dashboard, error) {
 		WithRow(golangRow()).
 		WithRow(dragonboatRow()).
 		WithRow(dragonboatTransportRow()).
-		WithRow(pebbleRow()).
-		WithRow(pebbleLevelsRow()).
+		WithRow(pebble_dash.Row(raftPebble)).
+		WithRow(pebble_dash.LevelsRow(raftPebble)).
 		WithRow(evictionRow()).
 		WithRow(atimeUpdateRow()).
 		Build()

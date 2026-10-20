@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana/generated/dash"
+	"github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana/generated/pebble_dash"
 	"github.com/grafana/grafana-foundation-sdk/go/cog"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
@@ -18,30 +19,9 @@ func row(title string) *dashboard.RowBuilder {
 		Collapsed(true)
 }
 
-// ts returns a timeseries panel with this dashboard's baseline style: thin
-// lines with no fill, a list legend at the bottom, and a single-series
-// tooltip. Panels default to half the grid wide and 8 units tall; override
-// with Span/Height. An empty unit leaves the panel on Grafana's default unit.
+// ts is shorthand for dash.PlainTimeseries.
 func ts(title, unit string) *timeseries.PanelBuilder {
-	p := timeseries.NewPanelBuilder().
-		Title(title).
-		Datasource(dash.Prometheus()).
-		LineWidth(1).
-		FillOpacity(0).
-		GradientMode(common.GraphGradientModeNone).
-		Legend(common.NewVizLegendOptionsBuilder().
-			DisplayMode(common.LegendDisplayModeList).
-			Placement(common.LegendPlacementBottom).
-			ShowLegend(true)).
-		Tooltip(common.NewVizTooltipOptionsBuilder().
-			Mode(common.TooltipDisplayModeSingle).
-			Sort(common.SortOrderNone)).
-		Height(8).
-		Span(12)
-	if unit != "" {
-		p.Unit(unit)
-	}
-	return p
+	return dash.PlainTimeseries(title, unit)
 }
 
 // tableLegend returns a legend shown as a table at the bottom with the given
@@ -54,11 +34,9 @@ func tableLegend(calcs ...string) *common.VizLegendOptionsBuilder {
 		Calcs(calcs)
 }
 
+// rightLegend is shorthand for dash.RightLegend.
 func rightLegend() *common.VizLegendOptionsBuilder {
-	return common.NewVizLegendOptionsBuilder().
-		DisplayMode(common.LegendDisplayModeList).
-		Placement(common.LegendPlacementRight).
-		ShowLegend(true)
+	return dash.RightLegend()
 }
 
 func hiddenLegend() *common.VizLegendOptionsBuilder {
@@ -68,12 +46,9 @@ func hiddenLegend() *common.VizLegendOptionsBuilder {
 		ShowLegend(false)
 }
 
-// multiTooltip returns a tooltip that lists every series under the cursor,
-// sorted by value.
+// multiTooltip is shorthand for dash.MultiTooltip.
 func multiTooltip() *common.VizTooltipOptionsBuilder {
-	return common.NewVizTooltipOptionsBuilder().
-		Mode(common.TooltipDisplayModeMulti).
-		Sort(common.SortOrderDescending)
+	return dash.MultiTooltip()
 }
 
 // colorProp pins a series to a fixed color; for use with OverrideByName.
@@ -83,13 +58,9 @@ func colorProp(color string) []dashboard.DynamicConfigValue {
 	}
 }
 
-// rightAxisProps moves a series to a separate right-hand axis with the given
-// unit; for use with OverrideByName.
+// rightAxisProps is shorthand for dash.RightAxisProps.
 func rightAxisProps(unit string) []dashboard.DynamicConfigValue {
-	return []dashboard.DynamicConfigValue{
-		{Id: "custom.axisPlacement", Value: "right"},
-		{Id: "unit", Value: unit},
-	}
+	return dash.RightAxisProps(unit)
 }
 
 // yAxisLeft returns a left-placed heatmap y axis with the given unit. An
@@ -462,113 +433,14 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`max(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region="${region}",job="buildbuddy-app", cache_name="${cache_name}"}/buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region="${region}",job="buildbuddy-app", cache_name="${cache_name}"}) by (pod_name, partition_id)`, "{{pod_name}} {{partition_id}}")))
 }
 
-func pebbleRow() *dashboard.RowBuilder {
-	return row("Remote cache pebble").
-		WithPanel(ts("Compression Ratio", "").
-			Span(24).
-			Description("How many times smaller pebble's compression makes a stream of data (decompressed / compressed bytes), at percentiles of that factor across streams: p90 is what the best-compressing 10% of streams exceed, p1 is what 99% of streams achieve. Each series is the inverse of the matching quantile of the compressed/decompressed ratio histogram.").
-			WithTarget(dash.PromQuery(`1 / histogram_quantile(0.1, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "p90").RefId("A")).
-			WithTarget(dash.PromQuery(`1 / histogram_quantile(0.5, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "p50").RefId("B")).
-			WithTarget(dash.PromQuery(`1 / histogram_quantile(0.99, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "p1").RefId("C"))).
-		WithPanel(ts("Compaction rate (${cache_name}) (by type)", "").
-			Span(24).
-			Repeat("cache_name").
-			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_compact_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (compaction_type)`, ""))).
-		WithPanel(ts("Compaction state (${cache_name})", dash.UnitBytes).
-			Span(24).
-			Repeat("cache_name").
-			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			OverrideByName("in progress (count)", rightAxisProps(dash.UnitNone)).
-			OverrideByName("marked files", rightAxisProps(dash.UnitNone)).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress_bytes{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"})`, "in progress (bytes)").RefId("B")).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"})`, "in progress (count)").RefId("C")).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_marked_files{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"})`, "marked files").RefId("D"))).
-		WithPanel(ts("Compaction estimated debt (${cache_name})", dash.UnitBytes).
-			Span(24).
-			Repeat("cache_name").
-			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}) by (pod_name)`, "{{pod_name}}"))).
-		WithPanel(ts("Op Rate (${cache_name})", dash.UnitOps).
-			Span(24).
-			Repeat("cache_name").
-			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_count{region="${region}", job="buildbuddy-app", pebble_id="${cache_name}"}[1m])) by (pebble_op)`, ""))).
-		WithPanel(ts("Op p50 Latency (${cache_name})", dash.UnitMicroseconds).
-			Span(24).
-			Repeat("cache_name").
-			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.50, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region="${region}", job="buildbuddy-app", pebble_id="${cache_name}"}[1m])) by (le,pebble_op))`, ""))).
-		WithPanel(ts("Op p95 Latency (${cache_name})", dash.UnitMicroseconds).
-			Span(24).
-			Repeat("cache_name").
-			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.95, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region="${region}", job="buildbuddy-app", pebble_id="${cache_name}"}[1m])) by (le,pebble_op))`, ""))).
-		WithPanel(ts("Op p99 Latency (${cache_name})", dash.UnitMicroseconds).
-			Span(24).
-			Repeat("cache_name").
-			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.99, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region="${region}", job="buildbuddy-app", pebble_id="${cache_name}"}[1m])) by (le,pebble_op))`, ""))).
-		WithPanel(ts("block cache size (${cache_name})", dash.UnitBytes).
-			Height(10).
-			Span(24).
-			Repeat("cache_name").
-			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			WithTarget(dash.PromQuery(`sum by (pod_name) (buildbuddy_remote_cache_pebble_cache_pebble_block_cache_size_bytes{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"})`, "{{pod_name}}"))).
-		WithPanel(ts("block cache hits and misses (${cache_name})", dash.UnitRequestsPerSec).
-			Height(10).
-			Span(24).
-			Repeat("cache_name").
-			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			AxisPlacement(common.AxisPlacementLeft).
-			Legend(rightLegend()).
-			Tooltip(multiTooltip()).
-			OverrideByName("hit_ratio", rightAxisProps(dash.UnitPercentUnit)).
-			WithTarget(dash.PromQuery(`sum by (cache_status) (rate(buildbuddy_remote_cache_pebble_cache_pebble_block_cache_requests_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[${window}]))`, "{{cache_status}}").RefId("A")).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_block_cache_requests_count{region="${region}", job="buildbuddy-app", cache_status="hit", cache_name="${cache_name}"}[${window}])) / sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_block_cache_requests_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[${window}]))`, "hit_ratio").RefId("B"))).
-		WithPanel(ts("Zombie Table Count (${cache_name})", "").
-			Height(10).
-			Span(24).
-			Repeat("cache_name").
-			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_zombie_table_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"})`, ""))).
-		WithPanel(ts("Zombie Table Size ($cache_name)", dash.UnitDecimalBytes).
-			Height(10).
-			Span(24).
-			Repeat("cache_name").
-			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_zombie_table_size_bytes{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"})`, "")))
-}
-
-func pebbleLevelsRow() *dashboard.RowBuilder {
-	return row("Remote cache pebble levels (${cache_name})").
-		Repeat("cache_name").
-		WithPanel(ts("Number files (by level)", "").
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_pebble_level_num_files{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}) by (level)`, "{{level}}"))).
-		WithPanel(ts("Size (by level)", dash.UnitBytes).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_pebble_level_size_bytes{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}) by (level)`, "{{level}}"))).
-		WithPanel(ts("Compaction score (by level)", dash.UnitNone).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_pebble_level_score{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}) by (level)`, "{{level}}"))).
-		WithPanel(ts("Bytes in (by level)", dash.UnitBytes).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_in_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}"))).
-		WithPanel(ts("Bytes ingested (by level)", dash.UnitBytes).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_ingested_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}"))).
-		WithPanel(ts("Bytes moved (by level)", dash.UnitBytes).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_moved_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}"))).
-		WithPanel(ts("Bytes read (by level)", dash.UnitBytes).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_read_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}"))).
-		WithPanel(ts("Bytes compacted (by level)", dash.UnitBytes).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_compacted_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}"))).
-		WithPanel(ts("Bytes flushed (by level)", dash.UnitBytes).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_flushed_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}"))).
-		WithPanel(ts("Tables compacted (by level)", dash.UnitNone).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_compacted_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}"))).
-		WithPanel(ts("Tables flushed (by level)", dash.UnitNone).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_flushed_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}"))).
-		WithPanel(ts("Tables ingested (by level)", dash.UnitNone).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_ingested_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}"))).
-		WithPanel(ts("Tables moved (by level)", dash.UnitNone).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_moved_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}")))
+// appPebble configures the pebble rows for the app's pebble caches, which
+// the dashboard repeats per ${cache_name}.
+var appPebble = pebble_dash.Config{
+	Filter:      `region="${region}", job="buildbuddy-app"`,
+	CacheName:   "${cache_name}",
+	PebbleID:    "${cache_name}",
+	Repeat:      true,
+	Compression: true,
 }
 
 func sqlRow() *dashboard.RowBuilder {
@@ -1438,8 +1310,8 @@ func build() (dashboard.Dashboard, error) {
 		WithRow(workflowsRow()).
 		WithRow(distributedCacheRow()).
 		WithRow(remoteCacheRow()).
-		WithRow(pebbleRow()).
-		WithRow(pebbleLevelsRow()).
+		WithRow(pebble_dash.Row(appPebble)).
+		WithRow(pebble_dash.LevelsRow(appPebble)).
 		WithRow(sqlRow()).
 		WithRow(redisRow()).
 		WithRow(blobstoreRow()).

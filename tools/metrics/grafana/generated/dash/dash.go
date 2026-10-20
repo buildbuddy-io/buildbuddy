@@ -114,6 +114,58 @@ func Timeseries(title, unit string) *timeseries.PanelBuilder {
 		Span(12)
 }
 
+// PlainTimeseries returns a timeseries panel with thin lines and no fill, a
+// list legend at the bottom and a single-series tooltip: the baseline style
+// of the BuildBuddy and cache proxy dashboards. Compare Timeseries, whose
+// table legend and multi-series tooltip suit dashboards with fewer, denser
+// panels. An empty unit leaves the panel on Grafana's default unit.
+func PlainTimeseries(title, unit string) *timeseries.PanelBuilder {
+	p := timeseries.NewPanelBuilder().
+		Title(title).
+		Datasource(Prometheus()).
+		LineWidth(1).
+		FillOpacity(0).
+		GradientMode(common.GraphGradientModeNone).
+		Legend(common.NewVizLegendOptionsBuilder().
+			DisplayMode(common.LegendDisplayModeList).
+			Placement(common.LegendPlacementBottom).
+			ShowLegend(true)).
+		Tooltip(common.NewVizTooltipOptionsBuilder().
+			Mode(common.TooltipDisplayModeSingle).
+			Sort(common.SortOrderNone)).
+		Height(8).
+		Span(12)
+	if unit != "" {
+		p.Unit(unit)
+	}
+	return p
+}
+
+// RightLegend returns a list legend placed to the right of the graph.
+func RightLegend() *common.VizLegendOptionsBuilder {
+	return common.NewVizLegendOptionsBuilder().
+		DisplayMode(common.LegendDisplayModeList).
+		Placement(common.LegendPlacementRight).
+		ShowLegend(true)
+}
+
+// MultiTooltip returns a tooltip that lists every series under the cursor,
+// sorted by value.
+func MultiTooltip() *common.VizTooltipOptionsBuilder {
+	return common.NewVizTooltipOptionsBuilder().
+		Mode(common.TooltipDisplayModeMulti).
+		Sort(common.SortOrderDescending)
+}
+
+// RightAxisProps moves a series to a separate right-hand axis with the given
+// unit; for use with OverrideByName.
+func RightAxisProps(unit string) []dashboard.DynamicConfigValue {
+	return []dashboard.DynamicConfigValue{
+		{Id: "custom.axisPlacement", Value: "right"},
+		{Id: "unit", Value: unit},
+	}
+}
+
 // StackedTimeseries returns a timeseries panel suitable for stacked rates.
 func StackedTimeseries(title, unit string) *timeseries.PanelBuilder {
 	return Timeseries(title, unit).
