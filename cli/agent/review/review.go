@@ -186,6 +186,9 @@ example:
 - Leave out what the reader doesn't need: evidence such as line numbers
   that prove your point, additional examples of the same problem, and steps
   the author would work out on their own.
+- Some findings need no explanation, only the facts. For missing tests, say
+  which behavior is untested and ask for cases that cover it. Don't explain
+  why tests matter or how to write them.
 
 The bar: the author should never need to ask for a summary of your comment.
 A serious finding doesn't need a longer comment; the label already signals
