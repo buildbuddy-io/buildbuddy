@@ -69,21 +69,20 @@ var reviewAllowedTools = []string{
 	"Bash(gh pr view *)",
 }
 
-// editPrompt asks the agent to rewrite the review for its reader. The review
-// agent focuses on finding problems; this pass focuses on how they read.
-const editPrompt = `You are editing a code review before it is posted on a pull request. The
-reviewer has done the analysis. Your only job is to make the review concise,
-clear and pleasant to receive. Don't change what any finding claims, and
-don't add facts. You may cut detail, merge duplicates, split a finding that
-covers unrelated issues, and reword anything.
+// editPrompt asks the agent to edit the review for its reader and convert it
+// to JSON. The review agent focuses on finding problems; this pass focuses on
+// how they read.
+const editPrompt = `You are editing a code review before it is posted on a pull request, and
+converting it to JSON. The reviewer has done the analysis. Your job is to make
+the review concise, clear and pleasant to receive. Don't change what any
+finding claims, and don't add facts. You may cut detail, merge duplicates,
+split a finding that covers unrelated issues, and reword anything.
 
 The reader knows the system at a high level, but might be new to this
 subsystem. They should read each comment once and know what's wrong and what
 to do. If they would want to ask for a summary, the comment is too long.
 
 For each finding:
-- Keep its label (Address before merge, Address in a follow-on or Item for discussion) and its file:line location
-  exactly as they are.
 - Open with a pitch of two or three short sentences: what goes wrong, why,
   and what should be done. Lead with the consequence. Use plain words, one
   idea per sentence, and no asides in parentheses. Mention an identifier only
@@ -108,9 +107,30 @@ For each finding:
 Write like a helpful colleague: direct but not curt, with no praise or
 filler.
 
-Output the edited review and nothing else. Keep one block per finding, each
-starting with its location and label. If the review has a summary of what the
-PR does, keep it to one or two sentences.
+Output ONLY a valid JSON object, with no markdown fences and no explanation:
+{
+  "summary": "<what the PR does, in one or two sentences of markdown>",
+  "comments": [
+    {
+      "file": "<file path relative to repo root, e.g. server/foo.go>",
+      "line": <integer, the line number in the NEW version of the file>,
+      "category": "<before_merge, follow_up or discussion, from the finding's label: Address before merge, Address in a follow-on or Item for discussion>",
+      "body": "<the edited comment as markdown, without the label>"
+    }
+  ]
+}
+
+Rules:
+- Every finding becomes a comment entry, with the file and line the reviewer
+  gave. If a finding has no location, attach it to the changed file and line
+  it relates to most closely.
+- File paths must be relative, with no leading slash.
+- Remove footnote-style references such as "(#1)" from comment bodies and the
+  summary; GitHub turns them into issue links.
+- Omit comments that only praise or acknowledge the change without raising a
+  concern.
+- The summary only explains what the PR does. It must not contain findings,
+  caveats or notes, and doesn't summarize the comments.
 
 REVIEW:
 `
@@ -209,36 +229,6 @@ Give each finding's location as ` + "`path/to/file.go:42`" + ` so it can be post
 inline comment. Every finding needs a location, so it can be resolved on its
 own. For a finding about the PR as a whole, use the changed line it relates
 to most closely.
-`
-
-const parsePrompt = `Parse the code review below and output ONLY a valid JSON object — no markdown fences, no explanation.
-
-Schema:
-{
-  "summary": "<concise summary of the diff as markdown, max ~3 sentences but aim for fewer>",
-  "comments": [
-    {
-      "file": "<file path relative to repo root, e.g. server/foo.go>",
-      "line": <integer — the line number in the NEW version of the file>,
-      "category": "<before_merge, follow_up, or discussion, from the label the finding starts with: Address before merge, Address in a follow-on, or Item for discussion>",
-      "body": "<full comment text as markdown, without the leading label>"
-    }
-  ]
-}
-
-Rules:
-- Include a comment entry for every unique finding that mentions a file path, even if the line number is approximate — use the nearest relevant line you can infer from context.
-  Avoid including redundant comments; instead of making the same comment on every line where a particular issue occurs,
-  you can say things like "(same comment applies to ...)" or "... (here and below)."
-- Every finding becomes a comment entry. If a finding has no file reference, attach it to the changed file and line it relates to most closely.
-- File paths must be relative (no leading slash, no absolute paths).
-- Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
-- Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern or suggesting an improvement (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
-- Remove the leading "Address before merge:", "Address in a follow-on:" or "Item for discussion:" label from each comment body and put it in "category" instead. Keep the "**Details:**" label on supporting-detail paragraphs. Otherwise avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
-- The summary should only explain the purpose of the diff. It must not contain findings, caveats or notes, and should not summarize any of the comments.
-- Output ONLY the JSON object. No other text before or after it.
-
-REVIEW:
 `
 
 // reviewLinkMarker identifies the comment posted by postReviewLink, so that
@@ -373,22 +363,9 @@ func HandleReview(args []string) (int, error) {
 		fmt.Println(reviewText)
 	}
 
-	// Have the agent edit the review for readability. If that fails, keep
-	// the review as written.
-	log.Printf("Editing review...")
-	if edited, err := editReview(ctx, reviewText); err != nil {
-		log.Warnf("Failed to edit review (%s); using it as written.", err)
-	} else {
-		reviewText = edited
-	}
-	if *dryRun {
-		fmt.Println("Dry run — review after editing:")
-		fmt.Println(reviewText)
-	}
-
-	// Have the agent convert the review to structured JSON. If that fails,
+	// Have the agent edit the review and convert it to JSON. If that fails,
 	// post the unstructured review as a single body comment.
-	log.Printf("Structuring review output into JSON...")
+	log.Printf("Editing and structuring review...")
 	review, err := structureReview(ctx, reviewText)
 	if err != nil {
 		log.Warnf("Failed to structure review (%s); posting it as a single body comment.", err)
@@ -539,34 +516,13 @@ func reviewFooter(pr *github.PullRequest) string {
 }
 
 // structureReview has the agent convert a free-form review into reviewJSON.
-func editReview(ctx context.Context, reviewText string) (string, error) {
-	buf := &bytes.Buffer{}
-	err := agent.Run(ctx, &agentutil.RunRequest{
-		Agent:           *agentflags.Agent,
-		Model:           *agentflags.Model,
-		ReasoningEffort: *agentflags.Effort,
-		Prompt:          editPrompt + reviewText,
-		CodexSandbox:    agentutil.SandboxReadOnly,
-		Output:          buf,
-		Progress:        io.Discard,
-	})
-	if err != nil {
-		return "", err
-	}
-	edited := buf.String()
-	if strings.TrimSpace(edited) == "" {
-		return "", fmt.Errorf("edit produced no output")
-	}
-	return edited, nil
-}
-
 func structureReview(ctx context.Context, reviewText string) (*reviewJSON, error) {
 	buf := &bytes.Buffer{}
 	err := agent.Run(ctx, &agentutil.RunRequest{
 		Agent:           *agentflags.Agent,
 		Model:           *agentflags.Model,
 		ReasoningEffort: *agentflags.Effort,
-		Prompt:          parsePrompt + reviewText,
+		Prompt:          editPrompt + reviewText,
 		CodexSandbox:    agentutil.SandboxReadOnly,
 		Output:          buf,
 		Progress:        io.Discard,
