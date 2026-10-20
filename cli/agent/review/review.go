@@ -157,8 +157,8 @@ judgment, or an important assumption you couldn't verify.
 
 ## Writing
 
-Write for a reviewer who knows how to code but doesn't know this part of the
-codebase. Don't explain general programming concepts to them.
+Write for a reader who knows the system at a high level, but might be new to
+this subsystem.
 
 Each comment has at most two short paragraphs:
 
