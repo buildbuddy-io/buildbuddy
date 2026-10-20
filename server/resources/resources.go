@@ -474,7 +474,12 @@ var awsZone = sync.OnceValue(func() string {
 	if !onEC2() {
 		return ""
 	}
-	z, err := ec2AvailabilityZone()
+	// Reaching the metadata service from a pod requires the instance's
+	// IMDSv2 hop limit to be at least 2. The client honors
+	// AWS_EC2_METADATA_DISABLED and AWS_EC2_METADATA_SERVICE_ENDPOINT.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	z, err := ec2AvailabilityZone(ctx, imds.New(imds.Options{}))
 	if err != nil {
 		log.Warningf("Failed to get availability zone from EC2 instance metadata: %s", err)
 		return ""
@@ -482,29 +487,25 @@ var awsZone = sync.OnceValue(func() string {
 	return z
 })
 
-// onEC2 reports whether the system firmware identifies this machine as an
-// Amazon EC2 instance. Like the GCE check in the metadata package, this only
-// reads sysfs (which is visible from containers) and never touches the
-// network, so it is cheap and cannot hang on hosts where the metadata service
-// address is unroutable. See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/identify_ec2_instances.html.
+// ec2SysVendorPath is the sysfs file that identifies Nitro-based EC2
+// instances. It is a variable so tests can point it at a fixture.
+var ec2SysVendorPath = "/sys/class/dmi/id/sys_vendor"
+
+// onEC2 reports whether the system firmware identifies this machine as a
+// Nitro-based Amazon EC2 instance, which reports "Amazon EC2" as the system
+// vendor. Legacy Xen-based instance types are not detected. Unlike
+// metadata.OnGCE, this never touches the network: it only reads sysfs (which
+// is visible from containers), so it is cheap and cannot hang on hosts where
+// the metadata service address is unroutable. See
+// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/identify_ec2_instances.html.
 func onEC2() bool {
-	// Nitro-based instances report "Amazon EC2" as the system vendor.
-	if b, err := os.ReadFile("/sys/class/dmi/id/sys_vendor"); err == nil && strings.TrimSpace(string(b)) == "Amazon EC2" {
-		return true
-	}
-	// Xen-based instances report a hypervisor UUID that starts with "ec2".
-	if b, err := os.ReadFile("/sys/hypervisor/uuid"); err == nil && strings.HasPrefix(strings.ToLower(strings.TrimSpace(string(b))), "ec2") {
-		return true
-	}
-	return false
+	b, err := os.ReadFile(ec2SysVendorPath)
+	return err == nil && strings.TrimSpace(string(b)) == "Amazon EC2"
 }
 
 // ec2AvailabilityZone returns the availability zone this instance runs in
 // (e.g. "us-west-2a") from the EC2 instance metadata service.
-func ec2AvailabilityZone() (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	client := imds.New(imds.Options{})
+func ec2AvailabilityZone(ctx context.Context, client *imds.Client) (string, error) {
 	out, err := client.GetMetadata(ctx, &imds.GetMetadataInput{Path: "placement/availability-zone"})
 	if err != nil {
 		return "", err
