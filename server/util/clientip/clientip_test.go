@@ -92,6 +92,71 @@ func TestTrustHeaderOverridesTrustedPeers(t *testing.T) {
 	require.Equal(t, "1.2.3.4", clientip.Get(ctx))
 }
 
+func TestXForwardedForTrustedHops(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		hops    int
+		peers   []string
+		header  string
+		peer    string
+		wantIP  string
+		wantSet bool
+	}{
+		{name: "unset: single entry", header: "1.2.3.4", peer: "10.0.0.1", wantIP: "1.2.3.4", wantSet: true},
+		{name: "unset: GCLB uses second to last", header: "forged, client, lb", peer: "10.0.0.1", wantIP: "client", wantSet: true},
+		{name: "unset: untrusted peer", peers: []string{"192.168.0.0/16"}, header: "forged, client, lb", peer: "10.0.0.1"},
+		{name: "1 hop uses last entry", hops: 1, header: "forged, real", peer: "10.0.0.1", wantIP: "real", wantSet: true},
+		{name: "1 hop single entry", hops: 1, header: "real", peer: "10.0.0.1", wantIP: "real", wantSet: true},
+		{name: "2 hops uses second to last", hops: 2, header: "forged, client, lb", peer: "10.0.0.1", wantIP: "client", wantSet: true},
+		{name: "2 hops trims whitespace", hops: 2, header: "forged,  client  ,lb", peer: "10.0.0.1", wantIP: "client", wantSet: true},
+		{name: "2 hops with one entry falls back to peer", hops: 2, header: "client", peer: "10.0.0.1"},
+		{name: "3 hops with two entries falls back to peer", hops: 3, header: "client, lb", peer: "10.0.0.1"},
+		{name: "empty entry falls back to peer", hops: 1, header: "client, ", peer: "10.0.0.1"},
+		{name: "untrusted peer", hops: 1, peers: []string{"192.168.0.0/16"}, header: "forged, real", peer: "10.0.0.1"},
+		{name: "trusted peer", hops: 1, peers: []string{"10.0.0.0/8"}, header: "forged, real", peer: "10.0.0.1", wantIP: "real", wantSet: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.peers == nil {
+				flags.Set(t, "auth.trust_xforwardedfor_header", true)
+			}
+			setTrustedPeers(t, tc.peers)
+			flags.Set(t, "auth.xforwardedfor_trusted_hops", tc.hops)
+			require.NoError(t, clientip.Init())
+
+			ctx, ok := clientip.SetFromXForwardedForHeader(context.Background(), tc.header, tc.peer)
+			require.Equal(t, tc.wantSet, ok)
+			require.Equal(t, tc.wantIP, clientip.Get(ctx))
+		})
+	}
+}
+
+func TestInitTrustedHopsRequiresTrust(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		hops    int
+		trust   bool
+		peers   []string
+		wantErr bool
+	}{
+		{name: "hops without trust", hops: 1, wantErr: true},
+		{name: "hops with trust header", hops: 1, trust: true},
+		{name: "hops with trusted peers", hops: 1, peers: []string{"10.0.0.0/8"}},
+		{name: "no hops without trust", hops: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() { require.NoError(t, clientip.Init()) })
+			flags.Set(t, "auth.trust_xforwardedfor_header", tc.trust)
+			flags.Set(t, "auth.trusted_xforwardedfor_peers", tc.peers)
+			flags.Set(t, "auth.xforwardedfor_trusted_hops", tc.hops)
+			if tc.wantErr {
+				require.Error(t, clientip.Init())
+			} else {
+				require.NoError(t, clientip.Init())
+			}
+		})
+	}
+}
+
 func TestHeaderIsInternal(t *testing.T) {
 	require.True(t, strings.HasPrefix(clientip.HeaderName, authutil.InternalHeaderPrefix))
 }
