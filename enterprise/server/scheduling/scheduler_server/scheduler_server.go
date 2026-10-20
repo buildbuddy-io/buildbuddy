@@ -259,14 +259,19 @@ var (
 	//  - 0 if task is not claimed
 	//  - 1 if the claim was released
 	//  - 2 if lease ID was supplied and did not match the current lease ID
+	//  - 3 if the task doesn't exist
 	redisReleaseClaim = redis.NewScript(`
+		if redis.call("exists", KEYS[1]) == 0 then
+			return 3
+		end
+		-- Ignore the request if the task has a lease ID that doesn't match the
+		-- supplied ID. Check this even if the task is unclaimed, since a newer
+		-- lease may have released it already.
+		local leaseId = redis.call("hget", KEYS[1], "leaseId")
+		if leaseId and ARGV[3] ~= "" and leaseId ~= ARGV[3] then
+			return 2
+		end
 		if redis.call("hget", KEYS[1], "claimed") == "1" then
-			local leaseId = redis.call("hget", KEYS[1], "leaseId")
-			-- Ignore the request if the claim has an ID but it doesn't match
-			-- the supplied ID.
-			if leaseId and ARGV[3] ~= "" and leaseId ~= ARGV[3] then
-				return 2
-			end
 			if ARGV[1] ~= "" then
 				redis.call("hset", KEYS[1], "reconnectToken", ARGV[1])
 				redis.call("hset", KEYS[1], "reconnectPeriodEnd", ARGV[2])
@@ -2029,16 +2034,34 @@ func (s *SchedulerServer) deleteTask(ctx context.Context, taskID string) (bool, 
 // the task has a different stored lease ID. This protects tasks re-claimed on a
 // new stream from cleanup by an old stream. An empty expectedLeaseID skips the
 // check.
+//
+// It returns NotFound if the task is already gone. Cleanup cannot distinguish
+// a lost task from one that finished on a newer stream, so it must not publish
+// a failure based only on the task's absence.
 func (s *SchedulerServer) deleteTaskForLease(ctx context.Context, taskID, expectedLeaseID string) error {
 	key := s.redisKeyForTask(taskID)
 	if expectedLeaseID == "" {
-		return s.rdb.Del(ctx, key).Err()
+		n, err := s.rdb.Del(ctx, key).Result()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return status.NotFoundErrorf("task %q no longer exists", taskID)
+		}
+		return nil
 	}
 	r, err := redisDeleteTaskForLease.Run(ctx, s.rdb, []string{key}, expectedLeaseID).Result()
 	if err != nil {
 		return err
 	}
-	if c, ok := r.(int64); ok && c == 2 {
+	c, ok := r.(int64)
+	if !ok {
+		return status.InternalErrorf("unexpected result from delete script: %v", r)
+	}
+	switch c {
+	case 0:
+		return status.NotFoundErrorf("task %q no longer exists", taskID)
+	case 2:
 		return status.PermissionDeniedErrorf("task %q was re-claimed under another lease", taskID)
 	}
 	return nil
@@ -2080,11 +2103,20 @@ func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, expectedLease
 	if err != nil {
 		return err
 	}
-	if c, ok := r.(int64); !ok || c != 1 {
-		if c == 2 {
-			return status.PermissionDeniedErrorf("task %q already been re-claimed", taskID)
-		}
-		return status.NotFoundErrorf("unable to release task claim for task %s", taskID)
+	c, ok := r.(int64)
+	if !ok {
+		return status.InternalErrorf("unexpected result from release script: %v", r)
+	}
+	switch c {
+	case 0:
+		return status.FailedPreconditionErrorf("task %q is not claimed", taskID)
+	case 2:
+		return status.PermissionDeniedErrorf("task %q already been re-claimed", taskID)
+	case 3:
+		// The task was finalized or cancelled since the caller last saw it,
+		// e.g. by its executor on a new stream while an old stream's cleanup
+		// was still running.
+		return status.NotFoundErrorf("task %q no longer exists", taskID)
 	}
 	log.CtxDebugf(ctx, "Released task claim in Redis (reconnecting=%t)", reconnectToken != "")
 
@@ -3162,8 +3194,11 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, expectedLea
 
 	if err := s.unclaimTask(ctx, taskID, expectedLeaseID, reconnectToken); err != nil {
 		// A "permission denied" error means the task is already claimed
-		// by a different leaseholder so we shouldn't touch it.
-		if status.IsPermissionDeniedError(err) {
+		// by a different leaseholder so we shouldn't touch it. A "not found"
+		// error means the task was finalized or cancelled since we read it,
+		// so there is nothing left to re-enqueue, and enqueueing anyway could
+		// fail an execution that already finished.
+		if status.IsPermissionDeniedError(err) || status.IsNotFoundError(err) {
 			return err
 		}
 		log.CtxDebugf(ctx, "Failed to unclaim task: %s", err)
