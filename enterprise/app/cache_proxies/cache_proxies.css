@@ -49,12 +49,18 @@
   gap: 16px;
   margin-left: auto;
   margin-top: 8px;
+  min-width: 0;
 }
 
-/* Match the height of the expando next to it. */
+/* Match the height of the expando next to it, and shrink on narrow screens. */
 .cache-proxies-page .cache-proxy-filter {
-  width: 280px;
+  flex: 0 1 280px;
+  min-width: 0;
   height: 36px;
+}
+
+.cache-proxies-page .cache-proxy-list-controls .view-mode-toggle {
+  flex-shrink: 0;
 }
 
 .cache-proxies-page .cache-proxy-filter .filter-input {
