@@ -14,10 +14,8 @@ package ocifetcher_server_proxy
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"sync/atomic"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
@@ -28,11 +26,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
-	"google.golang.org/grpc"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -59,12 +55,22 @@ type OCIFetcherServerProxy struct {
 	fetcher ofpb.OCIFetcherServer
 }
 
-func Register(env *real_environment.RealEnv) error {
+// Register creates the OCIFetcherServerProxy and sets it as env's
+// OCIFetcherServer. localTarget is this proxy's own (non-SSL) gRPC server,
+// which the local OCI fetcher's cache clients connect to.
+//
+// If env already has an OCIFetcherServer, Register leaves it in place, so
+// that the proxy (and its local fetcher) is built once and the same instance
+// is served on every port.
+func Register(env *real_environment.RealEnv, localTarget string) error {
+	if env.GetOCIFetcherServer() != nil {
+		return nil
+	}
 	proxy, err := New(env)
 	if err != nil {
 		return status.InternalErrorf("Error initializing OCIFetcherServerProxy: %s", err)
 	}
-	proxy.initLocalFetcher(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort()))
+	proxy.initLocalFetcher(env, localTarget)
 	env.SetOCIFetcherServer(proxy)
 	return nil
 }
@@ -85,8 +91,11 @@ func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 // initLocalFetcher builds the local OCI fetcher, with ByteStream and
 // ActionCache clients connected to target. On failure it logs a warning and
 // leaves the fetcher unset, so all requests take the forwarding path.
-func (s *OCIFetcherServerProxy) initLocalFetcher(env environment.Env, target string, opts ...grpc.DialOption) {
-	conn, err := grpc_client.DialInternalWithoutPooling(env, target, opts...)
+func (s *OCIFetcherServerProxy) initLocalFetcher(env environment.Env, target string) {
+	if env.GetClientIdentityService() == nil {
+		log.Warningf("OCIFetcherServerProxy: no client identity service configured. With %s enabled, the local OCI fetcher's _bb_ociregistry_ cache reads and writes will all fail as Unauthenticated, and since the fetcher only logs those failures, the OCI caches will stay empty.", useLocalFetcher.Name())
+	}
+	conn, err := grpc_client.DialInternalWithoutPooling(env, target)
 	if err != nil {
 		log.Warningf("OCIFetcherServerProxy: could not dial %s, local OCI fetcher disabled: %s", target, err)
 		return
@@ -107,24 +116,28 @@ func (s *OCIFetcherServerProxy) useFetcher(ctx context.Context, bypassRegistry b
 }
 
 // shouldFallBack returns whether a request that failed on the local fetcher
-// with err should be retried on the forwarding path.
+// with err should be retried on the forwarding path. Requests are only retried
+// while the caller's ctx is still alive.
 func shouldFallBack(ctx context.Context, err error) bool {
-	switch {
-	case status.IsUnavailableError(err),
-		status.IsUnauthenticatedError(err),
-		status.IsPermissionDeniedError(err),
-		status.IsResourceExhaustedError(err):
-		return true
-	case status.IsDeadlineExceededError(err):
-		return ctx.Err() == nil
+	if ctx.Err() != nil {
+		return false
 	}
-	return false
+	return status.IsUnavailableError(err) ||
+		status.IsUnauthenticatedError(err) ||
+		status.IsPermissionDeniedError(err) ||
+		status.IsResourceExhaustedError(err) ||
+		status.IsDeadlineExceededError(err)
 }
 
-func recordRequest(method, path string, err error, start time.Time) {
-	statusLabel := status.MetricsLabel(err)
-	metrics.CacheProxyOCIFetcherRequestCount.WithLabelValues(method, path, statusLabel).Inc()
-	metrics.CacheProxyOCIFetcherRequestDurationUsec.WithLabelValues(method, path, statusLabel).Observe(float64(time.Since(start).Microseconds()))
+// shouldFallBackFetchBlob is like shouldFallBack, but also retries Canceled:
+// a FetchBlob that waited on a deduplicated fetch gets the leader's Canceled
+// error if the leader's caller went away.
+func shouldFallBackFetchBlob(ctx context.Context, err error) bool {
+	return shouldFallBack(ctx, err) || (ctx.Err() == nil && status.IsCanceledError(err))
+}
+
+func recordRequest(method, path string, err error) {
+	metrics.CacheProxyOCIFetcherRequestCount.WithLabelValues(method, path, status.MetricsLabel(err)).Inc()
 }
 
 func recordFallback(ctx context.Context, method string, err error) {
@@ -136,17 +149,15 @@ func recordFallback(ctx context.Context, method string, err error) {
 // (legacy) path, falling back to the legacy path on registry errors.
 func serveUnary[T any](ctx context.Context, s *OCIFetcherServerProxy, method string, bypassRegistry bool, fetcher, legacy func(context.Context) (T, error)) (T, error) {
 	if s.useFetcher(ctx, bypassRegistry) {
-		start := time.Now()
 		resp, err := fetcher(ctx)
-		recordRequest(method, metrics.OCIFetcherPathFetcher, err, start)
+		recordRequest(method, metrics.OCIFetcherPathFetcher, err)
 		if err == nil || !shouldFallBack(ctx, err) {
 			return resp, err
 		}
 		recordFallback(ctx, method, err)
 	}
-	start := time.Now()
 	resp, err := legacy(ctx)
-	recordRequest(method, metrics.OCIFetcherPathLegacy, err, start)
+	recordRequest(method, metrics.OCIFetcherPathLegacy, err)
 	return resp, err
 }
 
@@ -196,18 +207,16 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 	ctx := stream.Context()
 	method := metrics.OCIFetcherMethodFetchBlob
 	if s.useFetcher(ctx, req.GetBypassRegistry()) {
-		start := time.Now()
 		countingStream := &sendCountingStream{OCIFetcher_FetchBlobServer: stream}
 		err := s.fetcher.FetchBlob(req, countingStream)
-		recordRequest(method, metrics.OCIFetcherPathFetcher, err, start)
-		if err == nil || countingStream.sends.Load() > 0 || !shouldFallBack(ctx, err) {
+		recordRequest(method, metrics.OCIFetcherPathFetcher, err)
+		if err == nil || countingStream.sends.Load() > 0 || !shouldFallBackFetchBlob(ctx, err) {
 			return err
 		}
 		recordFallback(ctx, method, err)
 	}
-	start := time.Now()
 	err := s.legacyFetchBlob(req, stream)
-	recordRequest(method, metrics.OCIFetcherPathLegacy, err, start)
+	recordRequest(method, metrics.OCIFetcherPathLegacy, err)
 	return err
 }
 

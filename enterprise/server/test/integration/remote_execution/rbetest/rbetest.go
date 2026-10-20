@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ocifetcher_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
@@ -98,6 +99,7 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	iprpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -1157,6 +1159,11 @@ func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 	bspb.RegisterByteStreamServer(s.GetServer(), proxyEnv.GetByteStreamServer())
 	repb.RegisterContentAddressableStorageServer(s.GetServer(), proxyEnv.GetCASServer())
 	repb.RegisterCapabilitiesServer(s.GetServer(), proxyEnv.GetCapabilitiesServer())
+	// Serve OCIFetcher if the EnvModifier set the clients it needs.
+	if proxyEnv.GetOCIFetcherClient() != nil {
+		require.NoError(r.t, ocifetcher_server_proxy.Register(proxyEnv, fmt.Sprintf("grpc://localhost:%d", port)))
+		ofpb.RegisterOCIFetcherServer(s.GetServer(), proxyEnv.GetOCIFetcherServer())
+	}
 	require.NoError(r.t, s.Start())
 
 	// Finally, create the client connection.

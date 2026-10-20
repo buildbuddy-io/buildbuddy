@@ -4725,18 +4725,6 @@ var (
 		StatusHumanReadableLabel,
 	})
 
-	CacheProxyOCIFetcherRequestDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "proxy",
-		Name:      "oci_fetcher_request_duration_usec",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Hour, 5),
-		Help:      "Duration of OCIFetcher requests served by the cache proxy, by method, path (legacy or fetcher), and gRPC status, in **microseconds**.",
-	}, []string{
-		OCIFetcherMethodLabel,
-		OCIFetcherPathLabel,
-		StatusHumanReadableLabel,
-	})
-
 	CacheProxyOCIFetcherFallbackCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",

@@ -378,7 +378,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if err := content_addressable_storage_server_proxy.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := ocifetcher_server_proxy.Register(env); err != nil {
+	if err := ocifetcher_server_proxy.Register(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort())); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := cache_server.Register(env); err != nil {
