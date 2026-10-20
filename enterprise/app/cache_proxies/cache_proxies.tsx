@@ -110,28 +110,20 @@ function matchesFilter(region: string, summary: cache_proxy.ICacheProxySummary, 
 }
 
 interface CacheProxiesListProps {
-  regions: RegionalCacheProxyResponse[];
+  proxies: RegionalCacheProxy[];
   summary: boolean;
-  filter: string;
 }
 
 class CacheProxiesList extends React.Component<CacheProxiesListProps> {
   render() {
     // Cluster proxies by region + OS + architecture.
-    const filter = this.props.filter.trim().toLowerCase();
     const proxiesByCluster = new Map<string, RegionalCacheProxy[]>();
-    for (const region of this.props.regions) {
-      for (const proxy of region.response.cacheProxy) {
-        if (!proxy.summary || !matchesFilter(region.name, proxy.summary, filter)) {
-          continue;
-        }
-        const summary = proxy.summary as cache_proxy.CacheProxySummary;
-        const key = `${region.name}-${summary.osFamily || ""}-${summary.arch || ""}`;
-        if (!proxiesByCluster.has(key)) {
-          proxiesByCluster.set(key, []);
-        }
-        proxiesByCluster.get(key)!.push({ region: region.name, proxy, summary });
+    for (const proxy of this.props.proxies) {
+      const key = `${proxy.region}-${proxy.summary.osFamily || ""}-${proxy.summary.arch || ""}`;
+      if (!proxiesByCluster.has(key)) {
+        proxiesByCluster.set(key, []);
       }
+      proxiesByCluster.get(key)!.push(proxy);
     }
     const keys = Array.from(proxiesByCluster.keys()).sort();
     if (keys.length === 0) {
@@ -327,20 +319,6 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
     router.setQueryParam("filter", filter || undefined);
   }
 
-  renderFilterCount() {
-    const filter = this.state.filter.trim().toLowerCase();
-    let total = 0;
-    let matching = 0;
-    for (const region of this.state.regions) {
-      for (const proxy of region.response.cacheProxy) {
-        if (!proxy.summary) continue;
-        total++;
-        if (matchesFilter(region.name, proxy.summary, filter)) matching++;
-      }
-    }
-    return `${matching} of ${total}`;
-  }
-
   renderEmpty() {
     return (
       <div className="empty-state">
@@ -359,7 +337,14 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
   }
 
   render() {
-    const hasProxies = this.state.regions.some((r) => r.response.cacheProxy.some((proxy) => proxy.summary));
+    const allProxies: RegionalCacheProxy[] = this.state.regions.flatMap((r) =>
+      r.response.cacheProxy
+        .filter((proxy) => proxy.summary)
+        .map((proxy) => ({ region: r.name, proxy, summary: proxy.summary as cache_proxy.CacheProxySummary }))
+    );
+    const filter = this.state.filter.trim().toLowerCase();
+    const proxies = allProxies.filter((p) => matchesFilter(p.region, p.summary, filter));
+    const hasProxies = allProxies.length > 0;
     const hasKeys = this.state.proxyKeys.length > 0;
     // When neither proxies nor cache-proxy API keys exist, skip the tab UI
     // and show a single clean empty-state view (matching the executors page
@@ -403,7 +388,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                         placeholder="Filter cache proxies..."
                         value={this.state.filter}
                         onChange={this.onChangeFilter.bind(this)}
-                        rightElement={this.state.filter.trim() ? this.renderFilterCount() : undefined}
+                        rightElement={filter ? `${proxies.length} of ${allProxies.length}` : undefined}
                       />
                       <ViewModeToggle viewMode={this.state.viewMode} onChange={this.onChangeViewMode.bind(this)} />
                     </div>
@@ -418,13 +403,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                         <p>Click the "Setup" tab for instructions on self-hosting cache proxies.</p>
                       </div>
                     )}
-                    {hasProxies && (
-                      <CacheProxiesList
-                        regions={this.state.regions}
-                        summary={this.state.viewMode === "summary"}
-                        filter={this.state.filter}
-                      />
-                    )}
+                    {hasProxies && <CacheProxiesList proxies={proxies} summary={this.state.viewMode === "summary"} />}
                   </>
                 )}
                 {activeTab === "setup" && <CacheProxySetup user={this.props.user} proxyKeys={this.state.proxyKeys} />}
