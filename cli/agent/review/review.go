@@ -69,7 +69,104 @@ var reviewAllowedTools = []string{
 	"Bash(gh pr view *)",
 }
 
-const reviewPrompt = "Review PR #%d. /review\n\nFor every finding, include the exact file path and line number in the format `path/to/file.go:42` so findings can be posted as inline GitHub comments.\n\nReview by reading the diff and the surrounding source. Do not build, run, or test the code — that can be slow and is not the goal of this review. Do not edit any files, and do not commit, push, or post anything to GitHub. Only report the findings."
+// reviewPrompt is a format string taking the PR number. It is deliberately
+// generic: repo-specific guidance comes from the repo's own CLAUDE.md or
+// AGENTS.md.
+const reviewPrompt = `Review PR #%d. Only report findings: don't build, run, or test the code, and
+don't edit files, commit, push, or post to GitHub.
+
+## Process
+
+1. Read the PR description and the diff to understand what the change is for.
+2. Read the repo's guidance files (CLAUDE.md, AGENTS.md, CONTRIBUTING and
+   similar) for its conventions.
+3. Read the surrounding code as needed: callers, related code and existing
+   tests. Read enough to know what the change affects and how similar things
+   are done elsewhere in the repo.
+4. Collect findings, verify each one against the code, and drop any that
+   don't hold up.
+
+## Goal
+
+Catch the problems that matter, without noise. In priority order:
+
+1. **Prevent regressions.** The change must not break behavior that works today.
+2. **Make it a good change.** It should be correct and tested, and the code
+   should be no harder to maintain than before.
+
+Simple is better than complicated. The most valuable design feedback is "if
+you did X instead, all of Y would go away": a simpler approach that makes a
+large part of the change, or of the existing code, unnecessary. Look for these
+actively. Simple is also better than clever: a dense line that would be
+clearer unpacked is worth a mention, but matters much less.
+
+Apply the same standard to your own suggestions. Don't suggest added
+abstraction, configurability or defensive code unless a concrete problem
+requires it.
+
+A review with no findings is a good outcome when the change is sound. Every
+comment costs the author time, so only write ones you'd defend to the engineer
+who owns this code.
+
+## Categories
+
+Start every finding with exactly one of these labels:
+
+**Before merge:** the PR shouldn't land until this is addressed. Use it only for:
+- Regressions or bugs the change introduces: wrong results, crashes, data
+  loss, security holes, broken compatibility with existing clients, data or
+  config, or real performance regressions on hot paths.
+- Missing tests for new or changed behavior that could otherwise regress
+  without anyone noticing.
+- Severe design regressions, meaning ones that make the code substantially
+  harder to change correctly. Examples: duplicated logic that must stay in
+  sync, bypassing an established layer or pattern, or a lot of needless
+  complexity where a much simpler approach clearly exists.
+
+Stay inside the PR's scope. Don't ask for unrelated improvements, cleanup of
+code the PR didn't touch, or extra features, even good ones. The exception is
+a pre-existing bug that this change makes reachable or worse: that is a
+regression.
+
+**Follow-up:** worth doing, but in a separate PR. This is usually a refactor
+for a design concern, lower-priority test coverage, or a significant
+pre-existing problem you noticed nearby.
+
+**Note:** use rarely. This is for something a human reviewer needs to know
+that isn't a targeted fix. The most important use is "there's a better way":
+if a substantially different approach, or a larger restructuring, would
+clearly serve the PR's goal better, say so here even though it is out of
+proportion to a line comment. Explain what the approach is and why it's
+better, concretely enough to act on. Only do this when the case is clear, not
+for an approach that's merely different. Other uses: a risk that needs human
+judgment, or an important assumption you couldn't verify.
+
+## What counts as a finding
+
+- Verify against the code before reporting. Trace the callers and check
+  whether the case is already handled elsewhere. If you can't describe a
+  concrete situation where it goes wrong, drop it. If you're unsure but the
+  stakes are high, report it and say what you couldn't confirm.
+- Breaking the repo's conventions can be a finding. Your own preferences
+  are not.
+- Skip: style, naming and formatting; anything a linter or compiler catches;
+  hypothetical hardening for cases that can't happen; restating what the code
+  does; praise.
+- One finding per issue. If it repeats, list the other places in the same
+  comment.
+
+## Writing
+
+Each comment gives the label, what's wrong, why it matters (the concrete
+failure or cost), and what to do. Usually that takes one to three sentences;
+a "better way" note can take more. Being concise means making the important
+points clearly and leaving out detail the author doesn't need. It doesn't
+mean packing the same content into fewer words. Write in plain, complete
+sentences, not fragments, chains of symbols or stacked jargon.
+
+Give each finding's location as ` + "`path/to/file.go:42`" + ` so it can be posted as an
+inline comment. A finding about the PR as a whole can go without a location.
+`
 
 const parsePrompt = `Parse the code review below and output ONLY a valid JSON object — no markdown fences, no explanation.
 
@@ -80,7 +177,8 @@ Schema:
     {
       "file": "<file path relative to repo root, e.g. server/foo.go>",
       "line": <integer — the line number in the NEW version of the file>,
-      "body": "<full comment text as markdown>"
+      "category": "<before_merge, follow_up, or note, from the label the finding starts with: Before merge, Follow-up, or Note>",
+      "body": "<full comment text as markdown, without the leading label>"
     }
   ]
 }
@@ -93,7 +191,7 @@ Rules:
 - File paths must be relative (no leading slash, no absolute paths).
 - Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
 - Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern or suggesting an improvement (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
-- Avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
+- Remove the leading "Before merge:", "Follow-up:" or "Note:" label from each comment body and put it in "category" instead. Otherwise avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
 - The summary section should not summarize any of the individual comments. It should only explain the purpose of the diff and findings with no file reference.
 - Output ONLY the JSON object. No other text before or after it.
 
@@ -112,9 +210,26 @@ var (
 )
 
 type reviewComment struct {
-	File string `json:"file"`
-	Line int    `json:"line"`
-	Body string `json:"body"`
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Category string `json:"category"`
+	Body     string `json:"body"`
+}
+
+// categoryLabels maps a review category to the label prefixed to the comment.
+var categoryLabels = map[string]string{
+	"before_merge": "**Before merge:**",
+	"follow_up":    "**Follow-up:**",
+	"note":         "**Note:**",
+}
+
+// text returns the comment body, prefixed with its category label. A missing
+// or unknown category yields the body without a label.
+func (c reviewComment) text() string {
+	if label, ok := categoryLabels[c.Category]; ok {
+		return label + " " + c.Body
+	}
+	return c.Body
 }
 
 type reviewJSON struct {
@@ -238,10 +353,10 @@ func HandleReview(args []string) (int, error) {
 				Path: new(c.File),
 				Line: new(c.Line),
 				Side: new("RIGHT"),
-				Body: new(c.Body),
+				Body: new(c.text()),
 			})
 		} else {
-			overflowLines = append(overflowLines, fmt.Sprintf("- `%s:%d` — %s", c.File, c.Line, c.Body))
+			overflowLines = append(overflowLines, fmt.Sprintf("- `%s:%d` — %s", c.File, c.Line, c.text()))
 		}
 	}
 
