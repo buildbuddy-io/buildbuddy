@@ -400,6 +400,11 @@ message SchedulingMetadata {
   //
   // Ex. "firecracker"
   string requested_isolation_type = 18;
+
+  // Whether the effective "enable-vfs" platform property is true. Only
+  // executors advertising supports_vfs may receive this task. Absent or false
+  // preserves scheduling on executors without VFS, including older versions.
+  bool requires_vfs = 19;
 }
 
 message RoutingConfig {
@@ -628,6 +633,12 @@ message ExecutionNode {
   // Supported isolation types for this executor.
   // Ex. ["docker", "firecracker", "none"]
   repeated string supported_isolation_types = 12;
+
+  // Whether VFS is enabled on this executor's supported host platform.
+  // Older executors do not advertise this capability and are not eligible for
+  // tasks requiring VFS. Deploy capability advertisement before enforcing the
+  // requirement on the scheduler.
+  bool supports_vfs = 27;
 
   // Current number of tasks in the executor's queue.
   int32 current_queue_length = 13;
