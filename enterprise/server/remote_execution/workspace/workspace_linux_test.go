@@ -49,19 +49,73 @@ func TestPool_ReusedWorkspaceMatchesFreshSetup(t *testing.T) {
 		Directories: []*repb.DirectoryNode{dirNode("out", out)},
 	}
 	oldOnly := &repb.Directory{Files: []*repb.FileNode{uploadFile(t, te, "stale.txt", "stale")}}
+	// newLib differs from oldLib in every entry except "kept_link" and "same",
+	// so when the second task reuses the first workspace, syncDir has to remove
+	// each of those entries before the tree fetcher creates the new one:
+	//   - content.txt has different content.
+	//   - exec.sh is executable only in newLib.
+	//   - Each entry named <a>_to_<b> is an a in oldLib and a b in newLib.
+	//   - retargeted_link has a different target.
+	// We make the old content.txt longer than the new one. If syncDir left the
+	// old copy in place, the tree fetcher would write the new content over it
+	// and leave old bytes at the end, which the comparison with a fresh setup
+	// would catch.
+	//
+	// take only reuses a pooled workspace that shares more files with the new
+	// tree than it doesn't, so we put same in both trees, and its files
+	// outweigh the ones that differ.
+	empty := &repb.Directory{}
+	same := &repb.Directory{Files: []*repb.FileNode{
+		uploadFile(t, te, "a.txt", "a"),
+		uploadFile(t, te, "b.txt", "b"),
+		uploadFile(t, te, "c.txt", "c"),
+		uploadFile(t, te, "d.txt", "d"),
+	}}
+	oldLib := &repb.Directory{
+		Files: []*repb.FileNode{
+			uploadFile(t, te, "content.txt", "old!"),
+			uploadFile(t, te, "exec.sh", "sh"),
+			uploadFile(t, te, "file_to_dir", "f"),
+			uploadFile(t, te, "file_to_link", "f"),
+		},
+		Directories: []*repb.DirectoryNode{dirNode("dir_to_file", empty), dirNode("dir_to_link", empty), dirNode("same", same)},
+		Symlinks: []*repb.SymlinkNode{
+			{Name: "kept_link", Target: "exec.sh"},
+			{Name: "link_to_dir", Target: "exec.sh"},
+			{Name: "link_to_file", Target: "exec.sh"},
+			{Name: "retargeted_link", Target: "content.txt"},
+		},
+	}
+	executable := uploadFile(t, te, "exec.sh", "sh")
+	executable.IsExecutable = true
+	newLib := &repb.Directory{
+		Files: []*repb.FileNode{
+			uploadFile(t, te, "content.txt", "new"),
+			uploadFile(t, te, "dir_to_file", "f"),
+			executable,
+			uploadFile(t, te, "link_to_file", "f"),
+		},
+		Directories: []*repb.DirectoryNode{dirNode("file_to_dir", empty), dirNode("link_to_dir", empty), dirNode("same", same)},
+		Symlinks: []*repb.SymlinkNode{
+			{Name: "dir_to_link", Target: "exec.sh"},
+			{Name: "file_to_link", Target: "exec.sh"},
+			{Name: "kept_link", Target: "exec.sh"},
+			{Name: "retargeted_link", Target: "exec.sh"},
+		},
+	}
 	oldTree := &repb.Tree{
 		Root: &repb.Directory{
 			Files:       []*repb.FileNode{uploadFile(t, te, "keep.txt", "keep")},
-			Directories: []*repb.DirectoryNode{dirNode("bin", bin), dirNode("node_modules", nodeModules), dirNode("old_only", oldOnly)},
+			Directories: []*repb.DirectoryNode{dirNode("bin", bin), dirNode("lib", oldLib), dirNode("node_modules", nodeModules), dirNode("old_only", oldOnly)},
 		},
-		Children: []*repb.Directory{bin, out, nodeModules, pkg, oldOnly},
+		Children: []*repb.Directory{bin, out, oldLib, empty, same, nodeModules, pkg, oldOnly},
 	}
 	newTree := &repb.Tree{
 		Root: &repb.Directory{
 			Files:       []*repb.FileNode{uploadFile(t, te, "keep.txt", "keep"), uploadFile(t, te, "new.txt", "new")},
-			Directories: []*repb.DirectoryNode{dirNode("bin", bin), dirNode("node_modules", nodeModules)},
+			Directories: []*repb.DirectoryNode{dirNode("bin", bin), dirNode("lib", newLib), dirNode("node_modules", nodeModules)},
 		},
-		Children: []*repb.Directory{bin, out, nodeModules, pkg},
+		Children: []*repb.Directory{bin, out, newLib, empty, same, nodeModules, pkg},
 	}
 	cmd := &repb.Command{
 		OutputDirectories: []string{"bin/out"},

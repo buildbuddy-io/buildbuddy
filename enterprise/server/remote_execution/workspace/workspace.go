@@ -982,15 +982,10 @@ func (p *Pool) add(e *pooledWorkspace) {
 		evicted = append(evicted, v)
 	}
 	p.mu.Unlock()
-	// deleteWaitGroup.Go blocks while too many deletions are running, so we
+	// removePooledWorkspace blocks while too many deletions are running, so we
 	// start them only after unlocking, to not hold up other tasks' take calls.
 	for _, v := range evicted {
-		deleteWaitGroup.Go(func() error {
-			if err := disk.ForceRemove(context.Background(), v.path); err != nil {
-				log.Warningf("Failed to remove evicted workspace %q: %s", v.path, err)
-			}
-			return nil
-		})
+		removePooledWorkspace(v.path)
 	}
 }
 
@@ -1006,6 +1001,17 @@ type pooledWorkspace struct {
 	// The inputs that ReturnToPool found missing from the workspace. See
 	// ReturnToPool.
 	missing map[string]bool
+}
+
+// removePooledWorkspace deletes a workspace directory in the pool dir in the
+// background. It blocks while too many deletions are running.
+func removePooledWorkspace(path string) {
+	deleteWaitGroup.Go(func() error {
+		if err := disk.ForceRemove(context.Background(), path); err != nil {
+			log.Warningf("Failed to remove pooled workspace %q: %s", path, err)
+		}
+		return nil
+	})
 }
 
 // shouldRemoveBeforePooling returns whether we remove an input file from
@@ -1399,13 +1405,15 @@ func (ws *Workspace) reusePooledWorkspace(ctx context.Context) (map[fspath.Key]*
 	// os.Rename won't replace an existing directory, so we remove the
 	// workspace directory first, which is still empty.
 	if err := os.Remove(ws.rootDir); err != nil {
+		// We haven't touched the pooled workspace, so it can go back into the
+		// pool.
 		log.CtxWarningf(ctx, "Not reusing pooled workspace: %s", err)
-		deleteWaitGroup.Go(func() error { return disk.ForceRemove(context.Background(), e.path) })
+		ws.Opts.Pool.add(e)
 		return nil, nil
 	}
 	if err := os.Rename(e.path, ws.rootDir); err != nil {
 		log.CtxWarningf(ctx, "Not reusing pooled workspace: %s", err)
-		deleteWaitGroup.Go(func() error { return disk.ForceRemove(context.Background(), e.path) })
+		removePooledWorkspace(e.path)
 		if err := os.Mkdir(ws.rootDir, ws.dirPerms); err != nil {
 			return nil, err
 		}
@@ -1415,11 +1423,14 @@ func (ws *Workspace) reusePooledWorkspace(ctx context.Context) (map[fspath.Key]*
 	kept := make(map[fspath.Key]*repb.FileNode, e.totalFiles)
 	if err := ws.syncDir(ctx, e, "", e.rootDigest, ws.inputRootDigest, kept); err != nil {
 		// Start over from an empty workspace rather than trusting a partly
-		// synced one.
+		// synced one. We move the partly synced one back to its path in the
+		// pool dir, which is still free, then remove in the background so that
+		// the task doesn't wait for us to delete it.
 		log.CtxWarningf(ctx, "Not reusing pooled workspace: %s", err)
-		if err := disk.ForceRemove(ctx, ws.rootDir); err != nil {
+		if err := os.Rename(ws.rootDir, e.path); err != nil {
 			return nil, err
 		}
+		removePooledWorkspace(e.path)
 		if err := os.Mkdir(ws.rootDir, ws.dirPerms); err != nil {
 			return nil, err
 		}
