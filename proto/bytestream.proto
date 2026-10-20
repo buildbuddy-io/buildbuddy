@@ -16,6 +16,8 @@ syntax = "proto3";
 
 package google.bytestream;
 
+import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
+
 option go_package = "bytestream";
 option java_outer_classname = "ByteStreamProto";
 option java_package = "com.google.bytestream";
@@ -124,6 +126,8 @@ message ReadResponse {
 
 // Request object for ByteStream.Write.
 message WriteRequest {
+  option (vtproto.mempool) = true;
+
   // The name of the resource to write. This **must** be set on the first
   // `WriteRequest` of each `Write()` action. If it is set on subsequent calls,
   // it **must** match the value of the first request.
