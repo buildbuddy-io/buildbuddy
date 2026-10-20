@@ -172,7 +172,7 @@ example:
 
   This can show one user's data to another. The response cache key
   (cacheKey) no longer includes the user ID, so two users requesting the
-  same path share a cache entry. We should add the user ID back to the key.
+  same path share a cache entry. The user ID should be added back to the key.
 
 - Lead with the consequence, not the mechanism.
 - The first time you use an internal name, say what it is in a few words.
