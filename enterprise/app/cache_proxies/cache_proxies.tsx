@@ -386,6 +386,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                       <FilterInput
                         className="cache-proxy-filter"
                         placeholder="Filter cache proxies..."
+                        aria-label="Filter cache proxies"
                         value={this.state.filter}
                         onChange={this.onChangeFilter.bind(this)}
                         rightElement={filter ? `${proxies.length} of ${allProxies.length}` : undefined}
