@@ -84,10 +84,15 @@ class CacheProxySetup extends React.Component<CacheProxySetupProps> {
   }
 }
 
-// matchesFilter reports whether any of the proxy's identifying fields, labels,
-// or its region contain the (lowercased) filter.
+// matchesFilter reports whether any one of the proxy's identifying fields,
+// labels, or its region contains every part of the (lowercased) filter, split
+// on '=' and ':' so that "env: prod" matches the label "env=prod".
 function matchesFilter(region: string, summary: cache_proxy.ICacheProxySummary, filter: string): boolean {
-  if (!filter) return true;
+  const parts = filter
+    .split(/[=:]/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (!parts.length) return true;
   const fields = [
     region,
     summary.host,
@@ -98,7 +103,7 @@ function matchesFilter(region: string, summary: cache_proxy.ICacheProxySummary, 
     summary.arch,
     ...Object.entries(summary.labels ?? {}).map(([k, v]) => `${k}=${v}`),
   ];
-  return fields.some((f) => f?.toLowerCase().includes(filter));
+  return fields.some((f) => f && parts.every((p) => f.toLowerCase().includes(p)));
 }
 
 interface CacheProxiesListProps {
