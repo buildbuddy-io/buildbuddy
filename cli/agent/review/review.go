@@ -166,40 +166,27 @@ judgment, or an important assumption you couldn't verify.
 Write for a reader who knows the system at a high level, but might be new to
 this subsystem.
 
-Write each comment the way a teammate would leave it on a PR: what goes
-wrong, how, and what to do about it. Usually that's one paragraph. For
-example:
+Each comment is an elevator pitch: get the point across as quickly as
+possible. In a few sentences, say what goes wrong, why, and what should be
+done. For example:
 
   This can show one user's data to another. The response cache key
   (cacheKey) no longer includes the user ID, so two users requesting the
   same path share a cache entry. The user ID should be added back to the key.
 
+Add supporting detail only when it's clearly necessary, in a separate
+paragraph that starts with "**Details:**", so the pitch can be read on its
+own. A serious finding doesn't need a longer comment; the label already
+signals how much it matters.
+
 - Lead with the consequence, not the mechanism.
 - The first time you use an internal name, say what it is in a few words.
-- Explain the mechanism clearly enough that the failure is obvious. Add an
-  example only when it isn't, and keep the example small.
-- State uncertainty briefly ("this could", "I couldn't check X") instead of
-  arguing both sides.
-- Take a position. If you think something needs fixing, say so. If you're
-  not sure what the right fix is, say that and suggest discussing it,
-  rather than presenting a guess as the answer.
-- Leave out what the reader doesn't need: evidence such as line numbers
-  that prove your point, additional examples of the same problem, and steps
-  the author would work out on their own.
-- Some findings need no explanation, only the facts. For missing tests, say
-  which behavior is untested and ask for cases that cover it. Don't explain
-  why tests matter or how to write them.
+- State uncertainty briefly ("this could", "I couldn't check X").
+- Take a position. If you're not sure what the right fix is, say so and
+  suggest discussing it.
 
-The bar: the author should never need to ask for a summary of your comment.
-A serious finding doesn't need a longer comment; the label already signals
-how much it matters. When a comment does need more (a "better way" note, or
-a subtle mechanism), the first paragraph must stand alone: what goes wrong,
-why, and what you recommend. Put supporting detail after it, for readers who
-want it.
-
-Concise doesn't mean packing the same content into fewer words. Write in
-plain, complete sentences, not fragments, chains of symbols or stacked
-jargon.
+Short doesn't mean dense. Write in plain, complete sentences, not fragments,
+chains of symbols or stacked jargon.
 
 Give each finding's location as ` + "`path/to/file.go:42`" + ` so it can be posted as an
 inline comment. Every finding needs a location, so it can be resolved on its
@@ -230,7 +217,7 @@ Rules:
 - File paths must be relative (no leading slash, no absolute paths).
 - Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
 - Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern or suggesting an improvement (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
-- Remove the leading "Before merge:", "Follow-up:" or "Note:" label from each comment body and put it in "category" instead. Otherwise avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
+- Remove the leading "Before merge:", "Follow-up:" or "Note:" label from each comment body and put it in "category" instead. Keep any "**Details:**" paragraph as written. Otherwise avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
 - The summary should only explain the purpose of the diff. It must not contain findings, caveats or notes, and should not summarize any of the comments.
 - Output ONLY the JSON object. No other text before or after it.
 
