@@ -166,23 +166,30 @@ judgment, or an important assumption you couldn't verify.
 Write for a reader who knows the system at a high level, but might be new to
 this subsystem.
 
-A comment usually has two short paragraphs:
+Write each comment the way a teammate would leave it on a PR: what goes
+wrong, how, and what to do about it. Usually that's one paragraph. For
+example:
 
-1. The problem. After the label, open with the consequence in terms of what
-   breaks for users or the system (for example "This can lose billing data"),
-   not with the mechanism. Then explain how it happens. The first time you use
-   an internal name, say what it is in a few words, such as "a single
-   timestamp (the BillingExportState row)". If the code used to be fine, say
-   in one sentence what changed. One example scenario is usually enough.
-2. The fix, in a sentence or two. If there are alternatives, name them
-   briefly.
+  This can show one user's data to another. The response cache key
+  (cacheKey) no longer includes the user ID, so two users requesting the
+  same path share a cache entry. We should add the user ID back to the key.
 
-A "better way" note can be longer. Being concise means making the important
-points clearly and leaving out detail the reader doesn't need, such as line
-numbers that prove your point or test cases the author would think of
-themselves. It doesn't mean packing the same content into fewer words. Write
-in plain, complete sentences, not fragments, chains of symbols or stacked
-jargon.
+- Lead with the consequence, not the mechanism.
+- The first time you use an internal name, say what it is in a few words.
+- Explain the mechanism clearly enough that the failure is obvious. Add an
+  example only when it isn't, and keep the example small.
+- State uncertainty briefly ("this could", "I couldn't check X") instead of
+  arguing both sides.
+- Take a position. If you think something needs fixing, say so. If you're
+  not sure what the right fix is, say that and suggest discussing it,
+  rather than presenting a guess as the answer.
+- Leave out what the reader doesn't need: evidence such as line numbers
+  that prove your point, additional examples of the same problem, and steps
+  the author would work out on their own.
+
+A "better way" note can be longer. Concise doesn't mean packing the same
+content into fewer words. Write in plain, complete sentences, not fragments,
+chains of symbols or stacked jargon.
 
 Give each finding's location as ` + "`path/to/file.go:42`" + ` so it can be posted as an
 inline comment. A finding about the PR as a whole can go without a location.
