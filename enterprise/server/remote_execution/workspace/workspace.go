@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
@@ -882,12 +883,15 @@ type Pool struct {
 	// evicted. LRU performs significantly worse because the number of pooled
 	// workspaces is small.
 	workspaces *gds.Queue[*pooledWorkspace]
-	// The input directories of pooled workspaces, by hash. Workspaces from the
-	// same repo mostly hold the same directories, so pooled workspaces share
-	// one copy of each instead of keeping their own.
+	// The input directories of pooled workspaces, by group and digest function,
+	// then by hash. Workspaces from the same repo mostly hold the same
+	// directories, so pooled workspaces share one copy of each instead of
+	// keeping their own. We keep groups and digest functions apart, as take
+	// does, so that we never give a workspace another group's Directory proto,
+	// even if their hashes collide.
 	// We refcount by hand because unique.Make doesn't work for protos, and weak
 	// pointers need async cleanups that are harder to get right than refcounts.
-	dirs map[string]*internedDir
+	dirs map[internedDirsKey]map[string]*internedDir
 }
 
 // NewPool returns a pool that keeps workspaces under buildRoot, or nil if
@@ -925,7 +929,7 @@ func NewPool(buildRoot string) (*Pool, error) {
 		log.Warningf("Not pooling workspaces, because the build root's filesystem doesn't record sub-second timestamps")
 		return nil, nil
 	}
-	return &Pool{dir: dir, size: size, workspaces: gds.New[*pooledWorkspace](), dirs: map[string]*internedDir{}}, nil
+	return &Pool{dir: dir, size: size, workspaces: gds.New[*pooledWorkspace](), dirs: map[internedDirsKey]map[string]*internedDir{}}, nil
 }
 
 // take removes and returns the pooled workspace that saves the most work for
@@ -978,28 +982,42 @@ func (p *Pool) take(groupID string, newRoot *repb.Digest, newDirs map[string]*re
 // within its size limit, which may evict the new one.
 func (p *Pool) add(e *pooledWorkspace) {
 	p.mu.Lock()
-	// Intern Directory protos (saves memory). See the comment on Pool.dirs.
-	for k, d := range e.dirMap {
-		s := p.dirs[k]
-		if s == nil {
-			s = &internedDir{dir: d}
-			p.dirs[k] = s
-		}
-		s.refs++
-		e.dirMap[k] = s.dir
-	}
 	// We value a workspace by its file count, since reusing it saves up to
 	// that many links.
 	p.workspaces.Add(e, float64(e.totalFiles))
 	var evicted []*pooledWorkspace
+	added := true
 	for p.workspaces.Len() > p.size {
 		v, ok := p.workspaces.Evict()
 		if !ok {
 			break
 		}
-		// Update directory interning structures.
-		p.release(v)
+		// Decrement Directory refcounts for evicted workspaces, unless the
+		// evicted workspace is e (since we haven't interned it yet).
+		if v == e {
+			added = false
+		} else {
+			p.release(v)
+		}
 		evicted = append(evicted, v)
+	}
+	if added {
+		// Intern Directory protos (saves memory). See the comment on Pool.dirs.
+		dk := internedDirsKey{groupID: e.groupID, digestFunction: e.digestFunction}
+		dirs := p.dirs[dk]
+		if dirs == nil {
+			dirs = make(map[string]*internedDir, len(e.dirMap))
+			p.dirs[dk] = dirs
+		}
+		for k, d := range e.dirMap {
+			s := dirs[k]
+			if s == nil {
+				s = &internedDir{dir: d}
+				dirs[k] = s
+			}
+			s.refs++
+			e.dirMap[k] = s.dir
+		}
 	}
 	p.mu.Unlock()
 	// removePooledWorkspace blocks while too many deletions are running, so we
@@ -1009,17 +1027,39 @@ func (p *Pool) add(e *pooledWorkspace) {
 	}
 }
 
-// release updates the directory interning structures when a workspace leaves
-// the pool. See the comment on Pool.dirs. It is still safe to use e.dirMap
-// after calling this func.
+// release updates the directory interning structures when a workspace whose
+// directories add interned leaves the pool. See the comment on Pool.dirs. It is
+// still safe to use e.dirMap after calling this func.
 func (p *Pool) release(e *pooledWorkspace) {
+	dk := internedDirsKey{groupID: e.groupID, digestFunction: e.digestFunction}
+	dirs := p.dirs[dk]
+	notInterned := 0
 	for k := range e.dirMap {
-		s := p.dirs[k]
+		s := dirs[k]
+		if s == nil {
+			// add interned every directory in e.dirMap, so this means we have a
+			// bug that changed e.dirMap after add.
+			notInterned++
+			continue
+		}
 		s.refs--
 		if s.refs == 0 {
-			delete(p.dirs, k)
+			delete(dirs, k)
 		}
 	}
+	if len(dirs) == 0 {
+		delete(p.dirs, dk)
+	}
+	if notInterned > 0 {
+		alert.UnexpectedEvent("workspace_pool_dir_not_interned", "Released a pooled workspace with %d directories that weren't interned", notInterned)
+	}
+}
+
+// internedDirsKey identifies the pooled workspaces whose directories we intern
+// together.
+type internedDirsKey struct {
+	groupID        string
+	digestFunction repb.DigestFunction_Value
 }
 
 // internedDir is an input directory that one or more pooled workspaces hold.
