@@ -234,8 +234,10 @@ complete, and keep your position on what should be done.
 
 Give each finding's location as ` + "`path/to/file.go:42`" + ` so it can be posted as an
 inline comment. Every finding needs a location, so it can be resolved on its
-own. For a finding about the PR as a whole, use the changed line it relates
-to most closely.
+own, and the location must be a line the PR changed. If the problem shows up
+in code the PR didn't change, use the changed line that causes it, and name
+the affected code in the comment. For a finding about the PR as a whole, use
+the changed line it relates to most closely.
 `
 
 // reviewLinkMarker identifies the comment posted by postReviewLink, so that
@@ -402,7 +404,9 @@ func HandleReview(args []string) (int, error) {
 		body := c.text()
 		if loc != (fileLine{c.File, c.Line}) {
 			moved++
-			body += fmt.Sprintf("\n\n<sub>About `%s:%d`, which isn't in the diff.</sub>", c.File, c.Line)
+			if c.File != "" {
+				body += fmt.Sprintf("\n\n<sub>About `%s:%d`, which isn't in the diff.</sub>", c.File, c.Line)
+			}
 		}
 		inlineComments = append(inlineComments, &github.DraftReviewComment{
 			Path: new(loc.file),
