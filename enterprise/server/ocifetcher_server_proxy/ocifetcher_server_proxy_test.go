@@ -3,6 +3,7 @@ package ocifetcher_server_proxy
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -22,6 +23,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	gstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -827,14 +829,18 @@ func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteSt
 }
 
 // runOCIFetcherProxy sets up the proxy server connecting to the remote client
-// and returns a client connected to the proxy.
-func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient) ofpb.OCIFetcherClient {
+// and returns a client connected to the proxy. Any configure funcs are applied
+// to the proxy before it starts serving.
+func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient, configure ...func(*testenv.TestEnv, *OCIFetcherServerProxy)) ofpb.OCIFetcherClient {
 	env := testenv.GetTestEnv(t)
 	env.SetOCIFetcherClient(remoteClient)
 	env.SetLocalByteStreamClient(setupLocalBSClient(t))
 
 	proxy, err := New(env)
 	require.NoError(t, err)
+	for _, c := range configure {
+		c(env, proxy)
+	}
 
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	ofpb.RegisterOCIFetcherServer(grpcServer, proxy)
@@ -987,6 +993,247 @@ func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 				http.MethodGet + " /v2/": 2,
 				manifestHead:             2,
 			}, counter.Snapshot()))
+		})
+	}
+}
+
+const helloRef = "example.com/repo@sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+
+// stubOCIFetcherClient is a remote (apps) OCIFetcher that counts calls and
+// either returns err or serves a blob containing "hello".
+type stubOCIFetcherClient struct {
+	calls atomic.Int32
+	err   error
+}
+
+func (c *stubOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
+	c.calls.Add(1)
+	if c.err != nil {
+		return nil, c.err
+	}
+	return &ofpb.FetchManifestResponse{Manifest: []byte("manifest")}, nil
+}
+
+func (c *stubOCIFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
+	c.calls.Add(1)
+	if c.err != nil {
+		return nil, c.err
+	}
+	return &ofpb.FetchManifestMetadataResponse{Size: 8}, nil
+}
+
+func (c *stubOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
+	c.calls.Add(1)
+	if c.err != nil {
+		return nil, c.err
+	}
+	return &fakeFetchBlobClient{data: []byte("hello")}, nil
+}
+
+func (c *stubOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	c.calls.Add(1)
+	if c.err != nil {
+		return nil, c.err
+	}
+	return &ofpb.FetchBlobMetadataResponse{Size: 5}, nil
+}
+
+// fakeLocalFetcher is a local fetcher that counts calls and fails with err,
+// optionally sending a chunk from FetchBlob first.
+type fakeLocalFetcher struct {
+	ofpb.UnimplementedOCIFetcherServer
+	calls     atomic.Int32
+	err       error
+	sendFirst bool
+}
+
+func (f *fakeLocalFetcher) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
+	f.calls.Add(1)
+	return nil, f.err
+}
+
+func (f *fakeLocalFetcher) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
+	f.calls.Add(1)
+	return nil, f.err
+}
+
+func (f *fakeLocalFetcher) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
+	f.calls.Add(1)
+	return nil, f.err
+}
+
+func (f *fakeLocalFetcher) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	f.calls.Add(1)
+	if f.sendFirst {
+		if err := stream.Send(&ofpb.FetchBlobResponse{Data: []byte("partial")}); err != nil {
+			return err
+		}
+	}
+	return f.err
+}
+
+func withFetcher(f ofpb.OCIFetcherServer) func(*testenv.TestEnv, *OCIFetcherServerProxy) {
+	return func(_ *testenv.TestEnv, p *OCIFetcherServerProxy) { p.fetcher = f }
+}
+
+// withLoopbackFetcher builds the proxy's real local fetcher, dialing a cache
+// server that serves ByteStream and ActionCache in place of the proxy's own.
+func withLoopbackFetcher(t *testing.T) func(*testenv.TestEnv, *OCIFetcherServerProxy) {
+	te := testenv.GetTestEnv(t)
+	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	return func(env *testenv.TestEnv, p *OCIFetcherServerProxy) {
+		// Loopback calls carry the proxy's client identity, which the cache
+		// requires for the OCI action cache instance name prefix.
+		env.SetClientIdentityService(te.GetClientIdentityService())
+		p.initLocalFetcher(env, "grpc://localhost:0", grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}))
+		require.NotNil(t, p.fetcher)
+	}
+}
+
+// fetchAll calls all four RPCs against helloRef and checks the responses
+// served by stubOCIFetcherClient.
+func fetchAll(ctx context.Context, t *testing.T, client ofpb.OCIFetcherClient, bypassRegistry bool) {
+	_, err := client.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: "example.com/repo:latest", BypassRegistry: bypassRegistry})
+	require.NoError(t, err)
+	_, err = client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: "example.com/repo:latest", BypassRegistry: bypassRegistry})
+	require.NoError(t, err)
+	_, err = client.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: helloRef, BypassRegistry: bypassRegistry})
+	require.NoError(t, err)
+	stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: helloRef, BypassRegistry: bypassRegistry})
+	require.NoError(t, err)
+	require.Equal(t, []byte("hello"), collectBlobData(t, stream))
+}
+
+func TestLocalFetcher_LegacyPath(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		gate           bool
+		bypassRegistry bool
+		brokenFetcher  bool
+	}{
+		{name: "GateOff"},
+		{name: "BypassRegistry", gate: true, bypassRegistry: true},
+		{name: "FetcherConstructionFails", gate: true, brokenFetcher: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			flags.Set(t, "cache_proxy.oci_fetcher.use_local_fetcher", tc.gate)
+			remote := &stubOCIFetcherClient{}
+			fetcher := &fakeLocalFetcher{err: status.UnavailableError("unused")}
+			configure := withFetcher(fetcher)
+			if tc.brokenFetcher {
+				configure = func(env *testenv.TestEnv, p *OCIFetcherServerProxy) {
+					flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"not-a-cidr"})
+					p.initLocalFetcher(env, "grpc://localhost:1")
+					require.Nil(t, p.fetcher)
+				}
+			}
+			client := runOCIFetcherProxy(ctx, t, remote, configure)
+
+			fetchAll(ctx, t, client, tc.bypassRegistry)
+			require.Equal(t, int32(0), fetcher.calls.Load())
+			require.Positive(t, remote.calls.Load())
+		})
+	}
+}
+
+func TestLocalFetcher_GateOn(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "cache_proxy.oci_fetcher.use_local_fetcher", true)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
+	counter := testhttp.NewRequestCounter()
+	reg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	manifestDigest, _, _ := imageMetadata(t, img)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+	blobRef := imageName + "@" + layerDigest.String()
+
+	// The remote (apps) must not be used.
+	remote := &stubOCIFetcherClient{err: status.UnimplementedError("remote should not be called")}
+	client := runOCIFetcherProxy(ctx, t, remote, withLoopbackFetcher(t))
+
+	manifest, err := client.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	require.Equal(t, manifestDigest, manifest.GetDigest())
+	_, err = client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.NoError(t, err)
+	_, err = client.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: blobRef})
+	require.NoError(t, err)
+	for range 2 {
+		stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: blobRef})
+		require.NoError(t, err)
+		require.Equal(t, layerData(t, layers[0]), collectBlobData(t, stream))
+	}
+	require.Equal(t, 1, counter.Snapshot()[http.MethodGet+" /v2/test-image/blobs/"+layerDigest.String()])
+	require.Equal(t, int32(0), remote.calls.Load())
+}
+
+func TestLocalFetcher_Fallback(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		blob         bool
+		fetcherErr   error
+		sendFirst    bool
+		wantFallback bool
+	}{
+		{name: "Unary/Unavailable", fetcherErr: status.UnavailableError("registry down"), wantFallback: true},
+		{name: "Unary/NotFound", fetcherErr: status.NotFoundError("no such manifest")},
+		{name: "FetchBlob/BeforeSend", blob: true, fetcherErr: status.UnavailableError("registry down"), wantFallback: true},
+		{name: "FetchBlob/AfterSend", blob: true, fetcherErr: status.UnavailableError("registry down"), sendFirst: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			flags.Set(t, "cache_proxy.oci_fetcher.use_local_fetcher", true)
+			remote := &stubOCIFetcherClient{}
+			fetcher := &fakeLocalFetcher{err: tc.fetcherErr, sendFirst: tc.sendFirst}
+			client := runOCIFetcherProxy(ctx, t, remote, withFetcher(fetcher))
+
+			var err error
+			if tc.blob {
+				var stream ofpb.OCIFetcher_FetchBlobClient
+				stream, err = client.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: helloRef})
+				require.NoError(t, err)
+				var data []byte
+				for {
+					resp, recvErr := stream.Recv()
+					if recvErr != nil {
+						if recvErr != io.EOF {
+							err = recvErr
+						}
+						break
+					}
+					data = append(data, resp.GetData()...)
+				}
+				if tc.wantFallback {
+					require.Equal(t, []byte("hello"), data)
+				} else {
+					require.Equal(t, []byte("partial"), data)
+				}
+			} else {
+				_, err = client.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: "example.com/repo:latest"})
+			}
+
+			require.Equal(t, int32(1), fetcher.calls.Load())
+			if tc.wantFallback {
+				require.NoError(t, err)
+				require.Positive(t, remote.calls.Load())
+			} else {
+				require.Equal(t, gstatus.Code(tc.fetcherErr), gstatus.Code(err))
+				require.Equal(t, int32(0), remote.calls.Load())
+			}
 		})
 	}
 }

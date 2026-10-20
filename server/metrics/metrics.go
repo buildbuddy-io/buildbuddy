@@ -430,6 +430,9 @@ const (
 	OCIFetcherMethodLabel = "method"
 	OCIFetcherRoleLabel   = "role"
 	OCIFetcherStatusLabel = "status"
+	// Which implementation served a cache proxy OCIFetcher request: `legacy`
+	// (forwarded to the apps) or `fetcher` (local OCI fetcher).
+	OCIFetcherPathLabel = "path"
 
 	// Label name for the eTLD+1 of the container image registry.
 	ImageFetchRegistryLabel = "registry"
@@ -491,6 +494,12 @@ const (
 	OCIFetcherStatusUserError = "user_error"
 	OCIFetcherStatusTimeout   = "timeout"
 	OCIFetcherStatusCanceled  = "canceled"
+
+	OCIFetcherMethodFetchBlobMetadata     = "FetchBlobMetadata"
+	OCIFetcherMethodFetchManifest         = "FetchManifest"
+	OCIFetcherMethodFetchManifestMetadata = "FetchManifestMetadata"
+	OCIFetcherPathLegacy                  = "legacy"
+	OCIFetcherPathFetcher                 = "fetcher"
 
 	ImageFetchTriggerExecution = "execution"
 	ImageFetchTriggerWarmup    = "warmup"
@@ -4703,6 +4712,39 @@ var (
 	}, []string{
 		OCIFetcherMethodLabel,
 		OCIFetcherRoleLabel,
+	})
+
+	CacheProxyOCIFetcherRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "oci_fetcher_requests",
+		Help:      "Number of OCIFetcher requests served by the cache proxy, by method, path (legacy or fetcher), and gRPC status.",
+	}, []string{
+		OCIFetcherMethodLabel,
+		OCIFetcherPathLabel,
+		StatusHumanReadableLabel,
+	})
+
+	CacheProxyOCIFetcherRequestDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "oci_fetcher_request_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Hour, 5),
+		Help:      "Duration of OCIFetcher requests served by the cache proxy, by method, path (legacy or fetcher), and gRPC status, in **microseconds**.",
+	}, []string{
+		OCIFetcherMethodLabel,
+		OCIFetcherPathLabel,
+		StatusHumanReadableLabel,
+	})
+
+	CacheProxyOCIFetcherFallbackCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "oci_fetcher_fallbacks",
+		Help:      "Number of cache proxy OCIFetcher requests that failed on the local fetcher and were retried on the legacy path, by method and the fetcher's gRPC status.",
+	}, []string{
+		OCIFetcherMethodLabel,
+		StatusHumanReadableLabel,
 	})
 
 	InputTreeSetupOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
