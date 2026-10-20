@@ -17,7 +17,7 @@ import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
 import router from "../../../app/router/router";
-import rpc_service from "../../../app/service/rpc_service";
+import rpc_service, { CancelablePromise } from "../../../app/service/rpc_service";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
 import FilterComponent from "../filter/filter";
@@ -176,9 +176,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   };
 
   private filterTimeout = 0;
-  // Incremented on every fetch so that responses to superseded requests (for
-  // example, from a filter that has since changed) can be ignored.
-  private fetchId = 0;
+  private pendingRpc?: CancelablePromise;
 
   private getPageTitle() {
     return "Target Performance";
@@ -207,8 +205,12 @@ export default class TrendsComponent extends React.Component<Props, State> {
       // changed, so that an unrelated URL change (e.g. picking a new metric)
       // doesn't clobber text the user is still typing.
       const filterParam = getFilterUrlParam(this.props.search);
-      if (filterParam !== getFilterUrlParam(prevProps.search) && filterParam !== this.state.filterText) {
-        this.setState({ filterText: filterParam });
+      if (filterParam !== getFilterUrlParam(prevProps.search)) {
+        // Something other than user input did this (manually edited URL?)
+        window.clearTimeout(this.filterTimeout);
+        if (filterParam !== this.state.filterText) {
+          this.setState({ filterText: filterParam });
+        }
       }
       this.fetchTargetTrends();
     }
@@ -216,9 +218,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
   componentWillUnmount(): void {
     window.clearTimeout(this.filterTimeout);
-    // Make sure any in-flight responses are dropped rather than applied to an
-    // unmounted component.
-    this.fetchId++;
+    this.pendingRpc?.cancel();
   }
 
   /**
@@ -227,7 +227,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
    * token, the fetched page is appended to the results loaded so far.
    */
   fetchTargetTrends(pageToken: string = "") {
-    const fetchId = ++this.fetchId;
+    this.pendingRpc?.cancel();
     const isFirstPage = !pageToken;
     if (isFirstPage) {
       this.setState({ loading: true, loadingMore: false, failed: false });
@@ -238,7 +238,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     const request = stats.GetTargetTrendsRequest.create({
       metric: this.selectedMetric.metric.execution!,
       agg: this.selectedAgg.agg,
-      targetLabelFilter: getFilterUrlParam(this.props.search),
+      targetLabelFilter: getFilterUrlParam(this.props.search).trim(),
       pageToken: pageToken,
     });
     request.query = new stats.TrendQuery({
@@ -258,10 +258,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
       genericFilters: filterParams.genericFilters,
     });
 
-    rpc_service.service
+    this.pendingRpc = rpc_service.service
       .getTargetTrends(request)
       .then((response) => {
-        if (fetchId !== this.fetchId) return;
         this.setState({
           targetStats: isFirstPage
             ? response.targetStats
@@ -272,7 +271,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
         });
       })
       .catch((e) => {
-        if (fetchId !== this.fetchId) return;
         if (isFirstPage) {
           console.log(e);
           this.setState({ failed: true, targetStats: undefined, nextPageToken: "", loading: false });

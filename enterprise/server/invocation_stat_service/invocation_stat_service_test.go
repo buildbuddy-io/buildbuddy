@@ -226,6 +226,13 @@ func newTargetTrendsRequest(labelFilter string, windowStart time.Time, pageToken
 	}
 }
 
+// A target with a non-ASCII label, inserted by setupTargetTrendsTest with a
+// lower value than every other target so that it always sorts last.
+const (
+	unicodeTargetLabel    = "//pkg:Ünïcödé_target"
+	unicodeTargetCPUNanos = int64(5)
+)
+
 type expectedStatsFunc func(first, last int) []*statspb.TargetStats
 
 func setupTargetTrendsTest(t *testing.T) (context.Context, *InvocationStatService, int, time.Time, expectedStatsFunc) {
@@ -282,6 +289,15 @@ func setupTargetTrendsTest(t *testing.T) (context.Context, *InvocationStatServic
 		CPUNanos:       1_000_000,
 		CachedResult:   true,
 	})
+	// A target with a non-ASCII label, to check case folding in the filter.
+	executions = append(executions, olaptables.Execution{
+		GroupID:        "GR1",
+		UpdatedAtUsec:  updatedAt,
+		InvocationUUID: "00000000000000000000000000000001",
+		ExecutionUUID:  executionUUID(numTargets + 1),
+		TargetLabel:    unicodeTargetLabel,
+		CPUNanos:       unicodeTargetCPUNanos,
+	})
 	err := te.GetOLAPDBHandle().GORM(ctx, "test_create_executions").Create(executions).Error
 	require.NoError(t, err)
 
@@ -311,10 +327,15 @@ func TestGetTargetTrends_Basic(t *testing.T) {
 	require.Empty(t, cmp.Diff(expectedStats(numTargets-targetTrendsPageSize, numTargets-1), rsp.GetTargetStats(), protocmp.Transform()))
 	require.NotEmpty(t, rsp.GetNextPageToken())
 
-	// The second page holds the remaining targets and is the last page.
+	// The second page holds the remaining targets (with the non-ASCII target
+	// last, since it has the lowest value) and is the last page.
 	rsp, err = iss.GetTargetTrends(authCtx, newTargetTrendsRequest("", windowStart, rsp.GetNextPageToken()))
 	require.NoError(t, err)
-	require.Empty(t, cmp.Diff(expectedStats(0, numTargets-targetTrendsPageSize-1), rsp.GetTargetStats(), protocmp.Transform()))
+	wantSecondPage := append(
+		expectedStats(0, numTargets-targetTrendsPageSize-1),
+		&statspb.TargetStats{Target: unicodeTargetLabel, Value: unicodeTargetCPUNanos},
+	)
+	require.Empty(t, cmp.Diff(wantSecondPage, rsp.GetTargetStats(), protocmp.Transform()))
 	require.Empty(t, rsp.GetNextPageToken())
 }
 
@@ -324,6 +345,18 @@ func TestGetTargetTrends_Filtering(t *testing.T) {
 	rsp, err := iss.GetTargetTrends(authCtx, newTargetTrendsRequest("PKG:TARGET0", windowStart, ""))
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(expectedStats(0, 9), rsp.GetTargetStats(), protocmp.Transform()))
+	require.Empty(t, rsp.GetNextPageToken())
+}
+
+func TestGetTargetTrends_FilteringFoldsNonASCIICase(t *testing.T) {
+	authCtx, iss, _, windowStart, _ := setupTargetTrendsTest(t)
+
+	// Case folding applies to non-ASCII letters as well, so a filter whose
+	// accented letters differ in case from the label still matches it.
+	rsp, err := iss.GetTargetTrends(authCtx, newTargetTrendsRequest("üNÏCÖDÉ", windowStart, ""))
+	require.NoError(t, err)
+	want := []*statspb.TargetStats{{Target: unicodeTargetLabel, Value: unicodeTargetCPUNanos}}
+	require.Empty(t, cmp.Diff(want, rsp.GetTargetStats(), protocmp.Transform()))
 	require.Empty(t, rsp.GetNextPageToken())
 }
 

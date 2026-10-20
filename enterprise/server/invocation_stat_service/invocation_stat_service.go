@@ -1370,7 +1370,7 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 	// executions for matching targets. Using a position function rather than
 	// LIKE means we don't need to escape wildcard characters in the filter.
 	if labelFilter := req.GetTargetLabelFilter(); labelFilter != "" {
-		innerQ.AddWhereClause("positionCaseInsensitive(target_label, ?) > 0", labelFilter)
+		innerQ.AddWhereClause("positionCaseInsensitiveUTF8(target_label, ?) > 0", labelFilter)
 	}
 	innerQ.SetGroupBy("target_label, execution_uuid")
 
