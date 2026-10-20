@@ -69,31 +69,49 @@ var reviewAllowedTools = []string{
 	"Bash(gh pr view *)",
 }
 
-// writingStyle is how review comments should read. The review agent writes to
-// it, and the parse step edits each comment to match it.
-const writingStyle = `Each comment is an elevator pitch: the reader should understand the problem
-on the first read. In a few short sentences, say what goes wrong, why, and
-what should be done. Use one idea per sentence. Describe things in plain
-words; mention an identifier only when the reader needs it to find the
-problem, and leave out asides in parentheses. If a sentence would need
-rereading, split it. For example:
+// editPrompt asks the agent to rewrite the review for its reader. The review
+// agent focuses on finding problems; this pass focuses on how they read.
+const editPrompt = `You are editing a code review before it is posted on a pull request. The
+reviewer has done the analysis. Your only job is to make the review concise,
+clear and pleasant to receive. Don't change what any finding claims, and
+don't add facts. You may cut detail, merge duplicates, split a finding that
+covers unrelated issues, and reword anything.
 
-  This can show one user's data to another. The response cache no longer
-  includes the user ID in its key, so two users requesting the same path
-  share a cache entry. The user ID should be added back to the key.
+The reader knows the system at a high level, but might be new to this
+subsystem. They should read each comment once and know what's wrong and what
+to do. If they would want to ask for a summary, the comment is too long.
 
-Add supporting detail only when it's clearly necessary, in a separate
-paragraph that starts with "**Details:**", so the pitch can be read on its
-own. A serious finding doesn't need a longer comment; the label already
-signals how much it matters.
+For each finding:
+- Keep its label (Before merge, Follow-up or Note) and its file:line location
+  exactly as they are.
+- Open with a pitch of two or three short sentences: what goes wrong, why,
+  and what should be done. Lead with the consequence. Use plain words, one
+  idea per sentence, and no asides in parentheses. Mention an identifier only
+  when the reader needs it to find the problem. For example:
 
-- Lead with the consequence, not the mechanism.
-- State uncertainty briefly ("this could", "I couldn't check X").
-- Take a position. If you're not sure what the right fix is, say so and
-  suggest discussing it.
+    This can show one user's data to another. The response cache no longer
+    includes the user ID in its key, so two users requesting the same path
+    share a cache entry. The user ID should be added back to the key.
 
-Short doesn't mean dense. Write in plain, complete sentences, not fragments,
-chains of symbols or stacked jargon.
+- Most findings need nothing more. If a reader who wants to verify or dig in
+  needs more, such as the mechanism, an example or alternative fixes, put it
+  after the pitch in a paragraph starting with "**Details:**". The pitch stays
+  short; the details can be longer than the pitch, but only as long as they
+  need to be.
+- Cut proof the reader can get by reading the code, repeated or variant
+  scenarios, hedging that argues both sides, extra fixes when one is clearly
+  best, and closing restatements.
+- Keep the reviewer's position, and keep uncertainty ("I couldn't check X"),
+  stated briefly.
+
+Write like a helpful colleague: direct but not curt, with no praise or
+filler.
+
+Output the edited review and nothing else. Keep one block per finding, each
+starting with its location and label. If the review has a summary of what the
+PR does, keep it to one or two sentences.
+
+REVIEW:
 `
 
 // reviewPrompt is a format string taking the PR number. It is deliberately
@@ -190,10 +208,10 @@ judgment, or an important assumption you couldn't verify.
 
 ## Writing
 
-Write for a reader who knows the system at a high level, but might be new to
-this subsystem.
+Write each finding plainly, with the evidence that supports it. A separate
+editing pass will tighten the wording, so focus on being accurate and
+complete, and keep your position on what should be done.
 
-` + writingStyle + `
 Give each finding's location as ` + "`path/to/file.go:42`" + ` so it can be posted as an
 inline comment. Every finding needs a location, so it can be resolved on its
 own. For a finding about the PR as a whole, use the changed line it relates
@@ -225,12 +243,8 @@ Rules:
 - Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern or suggesting an improvement (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
 - Remove the leading "Before merge:", "Follow-up:" or "Note:" label from each comment body and put it in "category" instead. Keep the "**Details:**" label on supporting-detail paragraphs. Otherwise avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
 - The summary should only explain the purpose of the diff. It must not contain findings, caveats or notes, and should not summarize any of the comments.
-- Edit each comment body so it follows the writing style below. Keep every claim, fix and caveat that matters, and don't add facts or change what a comment says. Cut supporting detail the reader doesn't need, and move what remains into a "**Details:**" paragraph. If a comment covers unrelated issues, split it into separate entries.
 - Output ONLY the JSON object. No other text before or after it.
 
-Writing style for comments, written for a reader who knows the system at a high level, but might be new to this subsystem:
-
-` + writingStyle + `
 REVIEW:
 `
 
@@ -362,7 +376,20 @@ func HandleReview(args []string) (int, error) {
 		return -1, fmt.Errorf("review produced no output.")
 	}
 	if *dryRun {
-		fmt.Println("Dry run — review before structuring:")
+		fmt.Println("Dry run — review before editing:")
+		fmt.Println(reviewText)
+	}
+
+	// Have the agent edit the review for readability. If that fails, keep
+	// the review as written.
+	log.Printf("Editing review...")
+	if edited, err := editReview(ctx, reviewText); err != nil {
+		log.Warnf("Failed to edit review (%s); using it as written.", err)
+	} else {
+		reviewText = edited
+	}
+	if *dryRun {
+		fmt.Println("Dry run — review after editing:")
 		fmt.Println(reviewText)
 	}
 
@@ -519,6 +546,27 @@ func reviewFooter(pr *github.PullRequest) string {
 }
 
 // structureReview has the agent convert a free-form review into reviewJSON.
+func editReview(ctx context.Context, reviewText string) (string, error) {
+	buf := &bytes.Buffer{}
+	err := agent.Run(ctx, &agentutil.RunRequest{
+		Agent:           *agentflags.Agent,
+		Model:           *agentflags.Model,
+		ReasoningEffort: *agentflags.Effort,
+		Prompt:          editPrompt + reviewText,
+		CodexSandbox:    agentutil.SandboxReadOnly,
+		Output:          buf,
+		Progress:        io.Discard,
+	})
+	if err != nil {
+		return "", err
+	}
+	edited := buf.String()
+	if strings.TrimSpace(edited) == "" {
+		return "", fmt.Errorf("edit produced no output")
+	}
+	return edited, nil
+}
+
 func structureReview(ctx context.Context, reviewText string) (*reviewJSON, error) {
 	buf := &bytes.Buffer{}
 	err := agent.Run(ctx, &agentutil.RunRequest{
