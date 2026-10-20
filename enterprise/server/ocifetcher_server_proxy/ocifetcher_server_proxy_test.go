@@ -1300,6 +1300,28 @@ func TestFetchFromRegistryWarmCacheRequiresValidCredentials(t *testing.T) {
 	require.Equal(t, map[string]int{"FetchManifest": 1, "FetchManifestMetadata": 1, "FetchBlobMetadata": 2}, apps.callCounts())
 }
 
+func TestFetchFromRegistryFallbackMetricRecordsAppsResult(t *testing.T) {
+	registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
+	imageRef, blobRef, _ := pushTestImage(t, setupTestRegistry(t, registryCreds), registryCreds)
+	registryErr := status.UnavailableError("registry error")
+	_, client, apps := runRegistryFetchingProxy(t, true, &fakeRegistryFetcher{t: t, err: registryErr})
+
+	// The proxy's registry fetch fails with Unavailable, so it falls back to
+	// the apps, which reject the credentials with Unauthenticated.
+	refs := map[string]string{"FetchManifest": imageRef, "FetchManifestMetadata": imageRef, "FetchBlobMetadata": blobRef, "FetchBlob": blobRef}
+	before := map[string]float64{}
+	for method, ref := range refs {
+		before[method] = fallbackCount(method, ref, codes.Unavailable, codes.Unauthenticated)
+	}
+	errs, _, got := fetchAll(client, imageRef, blobRef, &rgpb.Credentials{Username: "testuser", Password: "wrong"}, false)
+	for method, err := range errs {
+		require.True(t, status.IsUnauthenticatedError(err), "%s: %v", method, err)
+		require.Equal(t, before[method]+1, fallbackCount(method, refs[method], codes.Unavailable, codes.Unauthenticated), method)
+	}
+	require.Empty(t, got)
+	require.Equal(t, map[string]int{"FetchManifest": 1, "FetchManifestMetadata": 1, "FetchBlobMetadata": 2}, apps.callCounts())
+}
+
 func TestFetchFromRegistryFetcherCreationFails(t *testing.T) {
 	_, bsClient, acClient := setupCacheEnv(t)
 	env := testenv.GetTestEnv(t)
