@@ -83,7 +83,13 @@ don't edit files, commit, push, or post to GitHub.
 3. Read the surrounding code as needed: callers, related code and existing
    tests. Read enough to know what the change affects and how similar things
    are done elsewhere in the repo.
-4. Collect findings, verify each one against the code, and drop any that
+4. Look for broken assumptions. For each behavior the change alters, ask
+   what depends on it: other code, tools, users, stored data, other services
+   or versions. Include guarantees that were never written down, such as
+   ordering, determinism, timing, error behavior and formats. Then check
+   whether they still hold. Many regressions sit outside the diff, in code
+   that was correct until something it relied on changed.
+5. Collect findings, verify each one against the code, and drop any that
    don't hold up.
 
 ## Goal
@@ -160,14 +166,14 @@ judgment, or an important assumption you couldn't verify.
 Write for a reader who knows the system at a high level, but might be new to
 this subsystem.
 
-Each comment has at most two short paragraphs:
+A comment usually has two short paragraphs:
 
 1. The problem. After the label, open with the consequence in terms of what
    breaks for users or the system (for example "This can lose billing data"),
    not with the mechanism. Then explain how it happens. The first time you use
    an internal name, say what it is in a few words, such as "a single
    timestamp (the BillingExportState row)". If the code used to be fine, say
-   in one sentence what changed. Give at most one example scenario.
+   in one sentence what changed. One example scenario is usually enough.
 2. The fix, in a sentence or two. If there are alternatives, name them
    briefly.
 
