@@ -157,12 +157,26 @@ judgment, or an important assumption you couldn't verify.
 
 ## Writing
 
-Each comment gives the label, what's wrong, why it matters (the concrete
-failure or cost), and what to do. Usually that takes one to three sentences;
-a "better way" note can take more. Being concise means making the important
-points clearly and leaving out detail the author doesn't need. It doesn't
-mean packing the same content into fewer words. Write in plain, complete
-sentences, not fragments, chains of symbols or stacked jargon.
+Write for a reviewer who knows how to code but doesn't know this part of the
+codebase. Don't explain general programming concepts to them.
+
+Each comment has at most two short paragraphs:
+
+1. The problem. After the label, open with the consequence in terms of what
+   breaks for users or the system (for example "This can lose billing data"),
+   not with the mechanism. Then explain how it happens. The first time you use
+   an internal name, say what it is in a few words, such as "a single
+   timestamp (the BillingExportState row)". If the code used to be fine, say
+   in one sentence what changed. Give at most one example scenario.
+2. The fix, in a sentence or two. If there are alternatives, name them
+   briefly.
+
+A "better way" note can be longer. Being concise means making the important
+points clearly and leaving out detail the reader doesn't need, such as line
+numbers that prove your point or test cases the author would think of
+themselves. It doesn't mean packing the same content into fewer words. Write
+in plain, complete sentences, not fragments, chains of symbols or stacked
+jargon.
 
 Give each finding's location as ` + "`path/to/file.go:42`" + ` so it can be posted as an
 inline comment. A finding about the PR as a whole can go without a location.
