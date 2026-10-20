@@ -16,8 +16,14 @@ jobs:
         uses: ./.github/actions/setup-bazel-go-mod-cache
 
       - name: Test
+        env:
+          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_ORG_API_KEY }}
         run: |
+          auth_args=()
+          if [[ -n "$BUILDBUDDY_API_KEY" ]]; then
+            auth_args+=("--remote_header=x-buildbuddy-api-key=$BUILDBUDDY_API_KEY")
+          fi
           bazelisk test \
             --config=untrusted-ci \
-            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+            "${auth_args[@]}" \
             //...
