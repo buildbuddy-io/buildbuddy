@@ -85,6 +85,7 @@ import (
 )
 
 var (
+	useGuestVFSServer                     = flag.Bool("executor.firecracker_guest_vfs_server", false, "Run VFS metadata inside the guest. Experimental; declared outputs are not supported.", flag.Internal)
 	firecrackerCgroupVersion              = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
 	debugStreamVMLogs                     = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
 	debugTerminal                         = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
@@ -2680,7 +2681,21 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 	if c.vfsServer == nil || c.fsLayout == nil {
 		return nil, status.FailedPreconditionError("Firecracker VFS server is not configured")
 	}
-	if _, err := c.vfsServer.Prepare(ctx, c.fsLayout, c.fsLayout.InputFetcher); err != nil {
+	if *useGuestVFSServer {
+		if len(c.fsLayout.OutputFiles)+len(c.fsLayout.OutputDirectories)+len(c.fsLayout.OutputPaths) != 0 {
+			return nil, status.UnimplementedError("guest VFS metadata prototype does not support output extraction")
+		}
+		c.vfsServer.PrepareContentProxy(ctx)
+		req.UseGuestServer = true
+		req.RemoteInstanceName = c.fsLayout.RemoteInstanceName
+		req.DigestFunction = c.fsLayout.DigestFunction
+		req.WorkingDirectory = c.fsLayout.WorkingDirectory
+		var err error
+		req.InputRootDigest, err = digest.ComputeForMessage(c.fsLayout.Inputs.GetRoot(), c.fsLayout.DigestFunction)
+		if err != nil {
+			return nil, err
+		}
+	} else if _, err := c.vfsServer.Prepare(ctx, c.fsLayout, c.fsLayout.InputFetcher); err != nil {
 		return nil, status.WrapError(err, "prepare host VFS server")
 	}
 
@@ -2876,11 +2891,13 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	if c.fsLayout != nil {
 		stage = "materialize_vfs_outputs"
-		if err := c.vfsServer.MaterializeOutputs(ctx, c.fsLayout, c.actionWorkingDir); err != nil {
-			result.Error = status.WrapError(err, "materialize VFS outputs")
-			return result
+		if !*useGuestVFSServer {
+			if err := c.vfsServer.MaterializeOutputs(ctx, c.fsLayout, c.actionWorkingDir); err != nil {
+				result.Error = status.WrapError(err, "materialize VFS outputs")
+				return result
+			}
+			result.VfsStats = c.vfsServer.ComputeStats()
 		}
-		result.VfsStats = c.vfsServer.ComputeStats()
 	} else if !*disableWorkspaceSync {
 		c.emitCOWAndUFFDMetrics(stage)
 		stage = "copy_workspace_outputs"

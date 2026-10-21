@@ -5,10 +5,25 @@ package vmvfs;
 import "proto/remote_execution.proto";
 
 // Set up the FUSE filesystem.
-// The filesystem layout will be retrieved from the VFS server.
-message PrepareRequest {}
+message PrepareRequest {
+  // Run the VFS namespace server in the guest. Input metadata and contents are
+  // fetched from the host using GetTree and ByteStream respectively.
+  bool use_guest_server = 1;
+  string remote_instance_name = 2;
+  build.bazel.remote.execution.v2.Digest input_root_digest = 3;
+  build.bazel.remote.execution.v2.DigestFunction.Value digest_function = 4;
+  string working_directory = 5;
+  repeated string output_directories = 6;
+  repeated string output_files = 7;
+  repeated string output_paths = 8;
+  bool profile_preparation = 9;
+}
 
-message PrepareResponse {}
+message PrepareResponse {
+  int64 get_tree_duration_usec = 1;
+  int64 namespace_prepare_duration_usec = 2;
+  bytes preparation_cpu_profile = 3;
+}
 
 // Indicates that the FUSE filesystem is no longer needed.
 // All remote IO will fail until the next Prepare call.
