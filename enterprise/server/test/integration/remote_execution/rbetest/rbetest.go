@@ -1161,7 +1161,13 @@ func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 	repb.RegisterCapabilitiesServer(s.GetServer(), proxyEnv.GetCapabilitiesServer())
 	// Serve OCIFetcher if the EnvModifier set the clients it needs.
 	if proxyEnv.GetOCIFetcherClient() != nil {
-		require.NoError(r.t, ocifetcher_server_proxy.Register(proxyEnv, fmt.Sprintf("grpc://localhost:%d", port)))
+		// The local OCI fetcher caches through this proxy's own servers.
+		localConn, err := grpc_client.DialInternalWithoutPooling(proxyEnv, fmt.Sprintf("grpc://localhost:%d", port))
+		require.NoError(r.t, err)
+		r.t.Cleanup(func() {
+			require.NoError(r.t, localConn.Close())
+		})
+		require.NoError(r.t, ocifetcher_server_proxy.Register(proxyEnv, bspb.NewByteStreamClient(localConn), repb.NewActionCacheClient(localConn)))
 		ofpb.RegisterOCIFetcherServer(s.GetServer(), proxyEnv.GetOCIFetcherServer())
 	}
 	require.NoError(r.t, s.Start())

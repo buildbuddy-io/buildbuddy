@@ -18,7 +18,6 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/expflag",
-        "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/status",
         "//third_party/singleflight",

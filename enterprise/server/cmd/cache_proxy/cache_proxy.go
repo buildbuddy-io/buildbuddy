@@ -267,28 +267,29 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		ExtraStatsHandlers:         []stats.Handler{trafficStatsHandler},
 	}
 
+	// Register local clients pointing to the proxy servers. The local OCI
+	// fetcher also caches through them.
+	localConn, err := grpc_client.DialInternalWithoutPooling(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort()))
+	if err != nil {
+		return status.InternalErrorf("Error dialing local gRPC server: %s", err.Error())
+	}
+	env.SetLocalCacheClient(cspb.NewCacheClient(localConn))
+
 	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false, grpcServerConfig)
 	if err != nil {
 		return err
 	}
-	registerGRPCServices(s.GetServer(), env)
+	registerGRPCServices(s.GetServer(), env, localConn)
 	if err := s.Start(); err != nil {
 		return err
 	}
-
-	// Register local clients pointing to the proxy servers.
-	conn, err := grpc_client.DialInternalWithoutPooling(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort()))
-	if err != nil {
-		return status.InternalErrorf("Error dialing local gRPC server: %s", err.Error())
-	}
-	env.SetLocalCacheClient(cspb.NewCacheClient(conn))
 
 	if env.GetSSLService().IsEnabled() {
 		s, err = grpc_server.New(env, grpc_server.GRPCSPort(), true, grpcServerConfig)
 		if err != nil {
 			return err
 		}
-		registerGRPCServices(s.GetServer(), env)
+		registerGRPCServices(s.GetServer(), env, localConn)
 		if err := s.Start(); err != nil {
 			return err
 		}
@@ -315,7 +316,7 @@ func startInternalGRPCServers(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv) {
+func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv, localConn *grpc.ClientConn) {
 	// Connect to the remote cache and initialize gRPC clients.
 	conn, err := grpc_client.DialInternal(env, cache_proxy_config.RemoteCacheTarget())
 	if err != nil {
@@ -378,7 +379,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if err := content_addressable_storage_server_proxy.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := ocifetcher_server_proxy.Register(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort())); err != nil {
+	if err := ocifetcher_server_proxy.Register(env, bspb.NewByteStreamClient(localConn), repb.NewActionCacheClient(localConn)); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := cache_server.Register(env); err != nil {

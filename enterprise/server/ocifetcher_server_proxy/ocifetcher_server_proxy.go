@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -53,9 +52,9 @@ type OCIFetcherServerProxy struct {
 }
 
 // Register creates the OCIFetcherServerProxy and sets it as env's
-// OCIFetcherServer. localTarget is this proxy's own (non-SSL) gRPC server,
-// which the local OCI fetcher's cache clients connect to.
-func Register(env *real_environment.RealEnv, localTarget string) error {
+// OCIFetcherServer. bsClient and acClient are the cache clients used by the
+// local OCI fetcher; they should point at this proxy's own gRPC servers.
+func Register(env *real_environment.RealEnv, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) error {
 	// Reuse one instance across ports so they share one singleflight group.
 	if env.GetOCIFetcherServer() != nil {
 		return nil
@@ -64,9 +63,11 @@ func Register(env *real_environment.RealEnv, localTarget string) error {
 	if err != nil {
 		return status.InternalErrorf("Error initializing OCIFetcherServerProxy: %s", err)
 	}
-	if err := proxy.initLocalFetcher(env, localTarget); err != nil {
+	fetcher, err := ocifetcher.NewServer(bsClient, acClient)
+	if err != nil {
 		return status.InternalErrorf("Error initializing OCIFetcherServerProxy local fetcher: %s", err)
 	}
+	proxy.fetcher = fetcher
 	env.SetOCIFetcherServer(proxy)
 	return nil
 }
@@ -82,22 +83,6 @@ func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 		remote:        env.GetOCIFetcherClient(),
 		localBSClient: env.GetLocalByteStreamClient(),
 	}, nil
-}
-
-// initLocalFetcher builds the local OCI fetcher, with ByteStream and
-// ActionCache clients connected to target.
-func (s *OCIFetcherServerProxy) initLocalFetcher(env environment.Env, target string) error {
-	conn, err := grpc_client.DialInternalWithoutPooling(env, target)
-	if err != nil {
-		return err
-	}
-	fetcher, err := ocifetcher.NewServer(bspb.NewByteStreamClient(conn), repb.NewActionCacheClient(conn))
-	if err != nil {
-		conn.Close()
-		return err
-	}
-	s.fetcher = fetcher
-	return nil
 }
 
 // useFetcher returns whether a request should be served by the local fetcher.
