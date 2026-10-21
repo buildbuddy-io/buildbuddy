@@ -84,17 +84,16 @@ class CacheProxySetup extends React.Component<CacheProxySetupProps> {
   }
 }
 
-// matchesFilter reports whether every whitespace-separated term of the
-// (lowercased) filter matches one of the proxy's identifying fields, labels, or
-// its region. Terms are further split on '=' and ':', and all of those parts
-// must match the same field, so that "env: prod" matches the label "env=prod".
-function matchesFilter(region: string, summary: cache_proxy.ICacheProxySummary, filter: string): boolean {
-  const terms = filter
-    .replace(/\s*([=:])\s*/g, "$1")
-    .split(/\s+/)
-    .map((t) => t.split(/[=:]/).filter(Boolean))
-    .filter((t) => t.length);
-  if (!terms.length) return true;
+// Parses a filter by splitting it on whitespace, '=' and ':' and lowercasing
+// the resulting, split terms. For example, the filter "foo bar:baz qux=foo"
+// becomes ["foo", "bar", "baz", "qux", "foo"].
+function parseFilter(filter: string): string[] {
+  const terms = filter.toLowerCase().split(/[\s=:]+/);
+  return terms.filter((t) => t !== "");
+}
+
+// Returns the list of searchable fields for a cache proxy.
+function searchableFields(region: string, summary: cache_proxy.ICacheProxySummary): string[] {
   const fields = [
     region,
     summary.host,
@@ -103,10 +102,25 @@ function matchesFilter(region: string, summary: cache_proxy.ICacheProxySummary, 
     summary.version,
     summary.osFamily,
     summary.arch,
-    ...Object.entries(summary.labels ?? {}).map(([k, v]) => `${k}=${v}`),
   ];
-  const lowered = fields.filter((f): f is string => !!f).map((f) => f.toLowerCase());
-  return terms.every((parts) => lowered.some((f) => parts.every((p) => f.includes(p))));
+  for (const [key, value] of Object.entries(summary.labels ?? {})) {
+    fields.push(key, value);
+  }
+  const nonEmpty = fields.filter((f): f is string => f != null && f !== "");
+  return nonEmpty.map((f) => f.toLowerCase());
+}
+
+// matchesFilter reports whether every provided term appears in at least one of
+// the proxy's searchable fields.
+function matchesFilter(region: string, summary: cache_proxy.ICacheProxySummary, terms: string[]): boolean {
+  const fields = searchableFields(region, summary);
+  for (const term of terms) {
+    const termMatches = fields.some((field) => field.includes(term));
+    if (!termMatches) {
+      return false;
+    }
+  }
+  return true;
 }
 
 interface CacheProxiesListProps {
@@ -342,8 +356,8 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
         .filter((proxy) => proxy.summary)
         .map((proxy) => ({ region: r.name, proxy, summary: proxy.summary as cache_proxy.CacheProxySummary }))
     );
-    const filter = this.state.filter.trim().toLowerCase();
-    const proxies = allProxies.filter((p) => matchesFilter(p.region, p.summary, filter));
+    const terms = parseFilter(this.state.filter);
+    const proxies = allProxies.filter((p) => matchesFilter(p.region, p.summary, terms));
     const hasProxies = allProxies.length > 0;
     const hasKeys = this.state.proxyKeys.length > 0;
     // When neither proxies nor cache-proxy API keys exist, skip the tab UI
@@ -389,7 +403,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                         aria-label="Filter cache proxies"
                         value={this.state.filter}
                         onChange={this.onChangeFilter.bind(this)}
-                        rightElement={filter ? `${proxies.length} of ${allProxies.length}` : undefined}
+                        rightElement={terms.length > 0 ? `${proxies.length} of ${allProxies.length}` : undefined}
                       />
                       <ViewModeToggle viewMode={this.state.viewMode} onChange={this.onChangeViewMode.bind(this)} />
                     </div>
