@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -55,6 +56,8 @@ const (
 var (
 	disableCDC          = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
 	skipWriteValidation = flag.Bool("cache_proxy.skip_write_validation", false, "If true, skip local cache write validation and rely on remote validation for cache proxy dual writes.")
+
+	interceptAndChunkLargeWrites = expflag.Bool("cache_proxy.intercept_and_chunk_large_writes", false, "If true, store large client uploads in the remote cache as content-defined chunks instead of forwarding them whole.")
 )
 
 func groupIDForMetrics(ctx context.Context) string {
@@ -1232,7 +1235,7 @@ func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	if cdc.IsChunked(ctx) {
 		return false
 	}
-	return s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false)
+	return interceptAndChunkLargeWrites.Get(ctx)
 }
 
 type writeChunkedResult struct {

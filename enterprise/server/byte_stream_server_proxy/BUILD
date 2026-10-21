@@ -26,6 +26,7 @@ go_library(
         "//server/util/cdc",
         "//server/util/claims",
         "//server/util/compression",
+        "//server/util/expflag",
         "//server/util/findmissing",
         "//server/util/lib/set",
         "//server/util/log",
