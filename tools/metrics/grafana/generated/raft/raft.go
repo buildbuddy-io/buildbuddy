@@ -542,14 +542,6 @@ func dragonboatTransportRow() *dashboard.RowBuilder {
 				RefId("A")))
 }
 
-// raftPebble configures the pebble rows for the raft store: one database
-// per metadata server, labeled cache_name="raft" but opened as "raft_store".
-var raftPebble = pebble_dash.Config{
-	Filter:    `region="${region}", namespace="${namespace}"`,
-	CacheName: "raft",
-	PebbleID:  "raft_store",
-}
-
 func evictionRow() *dashboard.RowBuilder {
 	return row("Eviction").
 		WithPanel(ts("Disk Cache Filesystem Usage ", dash.UnitPercentUnit).
@@ -699,6 +691,11 @@ func namespaceVariable() *dashboard.QueryVariableBuilder {
 }
 
 func build() (dashboard.Dashboard, error) {
+	raftPebble := pebble_dash.Config{
+		Filter:    `region="${region}", namespace="${namespace}"`,
+		CacheName: "raft",
+		PebbleID:  "raft_store",
+	}
 	return dashboard.NewDashboardBuilder("Raft").
 		Uid("dbbffdbe-e2d2-4297-bd36-2544b51850ef").
 		Tags([]string{"generated", "file:raft.json"}).

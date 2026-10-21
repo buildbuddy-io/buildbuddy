@@ -393,9 +393,6 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`max(`+diskCache+`_partition_size_bytes{`+cacheFilter+`} / `+diskCache+`_partition_capacity_bytes{`+cacheFilter+`}) by (pod_name, partition_id)`, "{{pod_name}} {{partition_id}}")))
 }
 
-// proxyPebble configures the pebble rows for the proxy's pebble caches.
-var proxyPebble = pebble_dash.PerCache(proxyFilter)
-
 func encryptionRow() *dashboard.RowBuilder {
 	encryption := `buildbuddy_encryption`
 	return row("Encryption").
@@ -565,6 +562,7 @@ func nodeVariable() *dashboard.QueryVariableBuilder {
 }
 
 func build() (dashboard.Dashboard, error) {
+	proxyPebble := pebble_dash.PerCache(proxyFilter)
 	return dashboard.NewDashboardBuilder("Cache Proxy Metrics").
 		Uid("lVC084qx5").
 		Tags([]string{"generated", "file:cache-proxy.json"}).

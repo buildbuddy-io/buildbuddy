@@ -1,10 +1,5 @@
-// Package pebble_dash builds the Grafana rows that show the health of a
-// pebble database: compaction, operation latency, the block cache, zombie
-// tables and per-level LSM statistics. Every binary that opens a database
-// through enterprise/server/util/pebble exports the same metrics (apps and
-// cache proxies through pebble_cache, metadata servers through the raft
-// store), so each dashboard builds the rows from here with its own Config
-// instead of keeping a copy of the panels.
+// Package pebble_dash builds the Grafana rows for a pebble database's
+// metrics, which apps, cache proxies and raft metadata servers all export.
 package pebble_dash
 
 import (
@@ -20,32 +15,23 @@ const (
 	level       = pebble + `_level`
 	zombie      = pebbleCache + `_zombie_table`
 
-	// cacheNameVar is the dashboard variable that PerCache repeats over.
+	// The dashboard variable PerCache repeats over.
 	cacheNameVar = "cache_name"
 )
 
-// Config says which pebble database a dashboard shows.
+// Config selects the pebble database a dashboard shows.
 type Config struct {
-	// Filter is the label selector for this dashboard's pods, including the
-	// region, e.g. `region="${region}", job="buildbuddy-app"`.
+	// Selects the dashboard's pods, e.g. `region="${region}", job="buildbuddy-app"`.
 	Filter string
-	// CacheName is the cache_name label value of the database, such as
-	// "raft". PerCache sets it to the ${cache_name} variable instead, which
-	// also repeats every panel, and the levels row, once per selected cache.
+	// The cache_name label value. "${cache_name}" repeats the rows per cache.
 	CacheName string
-	// PebbleID is the pebble_id label value, which the operation count and
-	// latency metrics carry instead of cache_name. Empty means CacheName:
-	// pebble_cache opens its database under the cache name, while the raft
-	// store is opened as "raft_store" and names its cache "raft".
+	// The pebble_id label value of the op metrics; empty means CacheName.
 	PebbleID string
-	// Compression adds the compression ratio panel, which caches that write
-	// through the zstd stream compressor (pebble_cache, metacache) observe;
-	// the raft store does not.
+	// Adds the compression ratio panel, which the raft store does not feed.
 	Compression bool
 }
 
-// PerCache returns the Config for a dashboard whose pods run pebble_cache,
-// repeating the rows once per value of its ${cache_name} variable.
+// PerCache configures a pebble_cache dashboard, repeated per ${cache_name}.
 func PerCache(filter string) Config {
 	return Config{
 		Filter:      filter,
@@ -54,17 +40,14 @@ func PerCache(filter string) Config {
 	}
 }
 
-// repeat reports whether CacheName follows the ${cache_name} variable.
 func (c Config) repeat() bool {
 	return c.CacheName == "${"+cacheNameVar+"}"
 }
 
-// cacheFilter selects this database's series by cache_name.
 func (c Config) cacheFilter() string {
 	return c.Filter + `, cache_name="` + c.CacheName + `"`
 }
 
-// pebbleFilter selects this database's series by pebble_id.
 func (c Config) pebbleFilter() string {
 	id := c.PebbleID
 	if id == "" {
@@ -73,8 +56,7 @@ func (c Config) pebbleFilter() string {
 	return c.Filter + `, pebble_id="` + id + `"`
 }
 
-// panel returns a full-width panel titled for this database, repeated per
-// cache when CacheName follows the ${cache_name} variable.
+// panel returns a full-width panel titled for the cache, repeated if needed.
 func (c Config) panel(title, unit string) *timeseries.PanelBuilder {
 	p := dash.PlainTimeseries(title+" ("+c.CacheName+")", unit).
 		Span(24)
@@ -85,12 +67,10 @@ func (c Config) panel(title, unit string) *timeseries.PanelBuilder {
 	return p
 }
 
-// Row returns the "Remote cache pebble" row: compaction, operation rate and
-// latency, the block cache and zombie tables.
+// Row returns the "Remote cache pebble" row.
 func Row(c Config) *dashboard.RowBuilder {
 	cf := c.cacheFilter()
 	requests := pebble + `_block_cache_requests_count`
-	// opLatency is quantile q of operation latency, by operation.
 	opLatency := func(q string) string {
 		return `histogram_quantile(` + q + `, sum(rate(` + pebble + `_op_latency_usec_bucket{` + c.pebbleFilter() + `}[1m])) by (le, pebble_op))`
 	}
@@ -137,13 +117,9 @@ func Row(c Config) *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`sum by (pod_name) (`+zombie+`_size_bytes{`+cf+`})`, "{{pod_name}}")))
 }
 
-// compressionPanel shows how many times smaller compression makes a stream
-// of data, at percentiles of that factor across streams.
 func (c Config) compressionPanel() *timeseries.PanelBuilder {
-	// factor is the inverse of the compression ratio (compressed /
-	// decompressed bytes) at quantile q of the ratio distribution, i.e. how
-	// many times smaller the data got. Because of the inversion, quantile q
-	// of the ratio is percentile 1-q of the factor.
+	// Quantile q of the compressed/decompressed ratio is percentile 1-q of
+	// the compression factor.
 	factor := func(q string) string {
 		return `1 / histogram_quantile(` + q + `, sum(rate(buildbuddy_pebble_compression_ratio_bucket{` + c.cacheFilter() + `}[10m])) by (le))`
 	}
@@ -154,17 +130,13 @@ func (c Config) compressionPanel() *timeseries.PanelBuilder {
 		WithTarget(dash.PromQuery(factor("0.99"), "p1").RefId("C"))
 }
 
-// LevelsRow returns the "Remote cache pebble levels" row: file counts,
-// sizes, compaction scores and the byte and table flow rates of each LSM
-// level.
+// LevelsRow returns the "Remote cache pebble levels" row.
 func LevelsRow(c Config) *dashboard.RowBuilder {
 	cf := c.cacheFilter()
-	// gauge sums a per-level gauge across pods.
 	gauge := func(title, unit, metric string) *timeseries.PanelBuilder {
 		return dash.PlainTimeseries(title, unit).
 			WithTarget(dash.PromQuery(`sum(`+level+`_`+metric+`{`+cf+`}) by (level)`, "{{level}}"))
 	}
-	// rate sums the per-second rate of a per-level counter across pods.
 	rate := func(title, unit, metric string) *timeseries.PanelBuilder {
 		return dash.PlainTimeseries(title, unit).
 			WithTarget(dash.PromQuery(`sum(rate(`+level+`_`+metric+`{`+cf+`}[1m])) by (level)`, "{{level}}"))

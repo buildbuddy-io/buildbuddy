@@ -114,11 +114,8 @@ func Timeseries(title, unit string) *timeseries.PanelBuilder {
 		Span(12)
 }
 
-// PlainTimeseries returns a timeseries panel with thin lines and no fill, a
-// list legend at the bottom and a single-series tooltip: the baseline style
-// of the BuildBuddy and cache proxy dashboards. Compare Timeseries, whose
-// table legend and multi-series tooltip suit dashboards with fewer, denser
-// panels. An empty unit leaves the panel on Grafana's default unit.
+// PlainTimeseries returns a timeseries panel with a list legend and a
+// single-series tooltip. An empty unit keeps Grafana's default.
 func PlainTimeseries(title, unit string) *timeseries.PanelBuilder {
 	p := timeseries.NewPanelBuilder().
 		Title(title).
@@ -141,7 +138,7 @@ func PlainTimeseries(title, unit string) *timeseries.PanelBuilder {
 	return p
 }
 
-// RightLegend returns a list legend placed to the right of the graph.
+// RightLegend returns a list legend to the right of the graph.
 func RightLegend() *common.VizLegendOptionsBuilder {
 	return common.NewVizLegendOptionsBuilder().
 		DisplayMode(common.LegendDisplayModeList).
@@ -149,16 +146,14 @@ func RightLegend() *common.VizLegendOptionsBuilder {
 		ShowLegend(true)
 }
 
-// MultiTooltip returns a tooltip that lists every series under the cursor,
-// sorted by value.
+// MultiTooltip returns a tooltip listing every series, sorted by value.
 func MultiTooltip() *common.VizTooltipOptionsBuilder {
 	return common.NewVizTooltipOptionsBuilder().
 		Mode(common.TooltipDisplayModeMulti).
 		Sort(common.SortOrderDescending)
 }
 
-// RightAxisProps moves a series to a separate right-hand axis with the given
-// unit; for use with OverrideByName or OverrideByQuery.
+// RightAxisProps moves a series to a right-hand axis with the given unit.
 func RightAxisProps(unit string) []dashboard.DynamicConfigValue {
 	return []dashboard.DynamicConfigValue{
 		{Id: "custom.axisPlacement", Value: "right"},

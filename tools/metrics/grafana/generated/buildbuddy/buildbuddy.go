@@ -421,9 +421,6 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`max(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region="${region}",job="buildbuddy-app", cache_name="${cache_name}"}/buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region="${region}",job="buildbuddy-app", cache_name="${cache_name}"}) by (pod_name, partition_id)`, "{{pod_name}} {{partition_id}}")))
 }
 
-// appPebble configures the pebble rows for the app's pebble caches.
-var appPebble = pebble_dash.PerCache(`region="${region}", job="buildbuddy-app"`)
-
 func sqlRow() *dashboard.RowBuilder {
 	return row("SQL").
 		WithPanel(ts("SQL queries per second (by query template)", dash.UnitOps).
@@ -1265,6 +1262,7 @@ func proberVariable() *dashboard.QueryVariableBuilder {
 }
 
 func build() (dashboard.Dashboard, error) {
+	appPebble := pebble_dash.PerCache(`region="${region}", job="buildbuddy-app"`)
 	return dashboard.NewDashboardBuilder("BuildBuddy Metrics").
 		Uid("1rsE5yoGz").
 		Tags([]string{"generated", "file:buildbuddy.json"}).
