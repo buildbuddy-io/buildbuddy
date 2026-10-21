@@ -2247,7 +2247,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "workspace_pool_kept_inputs",
-		Buckets:   prometheus.ExponentialBuckets(1, 4, 11),
+		Buckets:   append([]float64{0}, prometheus.ExponentialBuckets(1, 4, 11)...),
 		Help:      "Number of input files that were already in place in each reused pooled workspace, so the executor didn't link or download them. Use the **`_sum`** suffix to get the total number of kept files.",
 	})
 
@@ -2255,7 +2255,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "workspace_pool_missing_inputs",
-		Buckets:   prometheus.ExponentialBuckets(1, 4, 11),
+		Buckets:   append([]float64{0}, prometheus.ExponentialBuckets(1, 4, 11)...),
 		Help:      "Number of input files that the executor expected to find in each reused pooled workspace, but had removed before pooling it, because the task that last used the workspace deleted or changed them. Use the **`_sum`** suffix to get the total number of missing files.",
 	})
 
@@ -2263,7 +2263,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "workspace_pool_removed_inputs",
-		Buckets:   prometheus.ExponentialBuckets(1, 4, 11),
+		Buckets:   append([]float64{0}, prometheus.ExponentialBuckets(1, 4, 11)...),
 		Help:      "Number of files that the executor removed from each reused pooled workspace before the task started, because the task's input tree didn't have them. Use the **`_sum`** suffix to get the total number of removed files.",
 	})
 
@@ -2271,7 +2271,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "workspace_pool_new_inputs",
-		Buckets:   prometheus.ExponentialBuckets(1, 4, 11),
+		Buckets:   append([]float64{0}, prometheus.ExponentialBuckets(1, 4, 11)...),
 		Help:      "Number of input files that each reused pooled workspace didn't have, so the executor linked or downloaded them, as it would for an empty workspace. Use the **`_sum`** suffix to get the total number of new files.",
 	})
 

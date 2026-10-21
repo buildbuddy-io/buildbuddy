@@ -121,10 +121,17 @@ type Workspace struct {
 	inputDirs           map[string]*repb.Directory
 	inputDigestFunction repb.DigestFunction_Value
 	groupID             string
+	// The number of files in the input tree, or 0 if inputFileCount hasn't
+	// counted them yet.
+	inputFiles int
 	// Each input directory's fingerprint right after inputs were set up, by
 	// workspace-relative path. ReturnToPool compares against them to find
 	// the directories the task changed.
 	dirFingerprints map[string]dirFingerprint
+	// Whether recording dirFingerprints failed. We can't tell what the task
+	// changed without them, so ReturnToPool counts the workspace as an error
+	// instead of pooling it.
+	fingerprintFailed bool
 }
 
 // dirFingerprint identifies the state of a directory. The kernel updates a
@@ -483,6 +490,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 			if err := ws.recordDirFingerprints(ctx); err != nil {
 				log.CtxWarningf(ctx, "Workspace won't be pooled, because recording directory fingerprints failed: %s", err)
 				ws.dirFingerprints = nil
+				ws.fingerprintFailed = true
 			}
 		}
 	}
@@ -895,6 +903,8 @@ type Pool struct {
 	// We refcount by hand because unique.Make doesn't work for protos, and weak
 	// pointers need async cleanups that are harder to get right than refcounts.
 	dirs map[internedDirsKey]map[string]*internedDir
+	// The number of pooled workspaces of each group that has any.
+	groupWorkspaces map[string]int
 }
 
 // NewPool returns a pool that keeps workspaces under buildRoot, or nil if
@@ -932,7 +942,7 @@ func NewPool(buildRoot string) (*Pool, error) {
 		log.Warningf("Not pooling workspaces, because the build root's filesystem doesn't record sub-second timestamps")
 		return nil, nil
 	}
-	return &Pool{dir: dir, size: size, workspaces: gds.New[*pooledWorkspace](), dirs: map[internedDirsKey]map[string]*internedDir{}}, nil
+	return &Pool{dir: dir, size: size, workspaces: gds.New[*pooledWorkspace](), dirs: map[internedDirsKey]map[string]*internedDir{}, groupWorkspaces: map[string]int{}}, nil
 }
 
 // take removes and returns the pooled workspace that saves the most work for
@@ -1032,6 +1042,7 @@ func (p *Pool) add(e *pooledWorkspace) bool {
 			e.dirMap[k] = s.dir
 		}
 		groupLabel := prometheus.Labels{metrics.GroupID: e.groupID}
+		p.groupWorkspaces[e.groupID]++
 		metrics.WorkspacePoolCount.With(groupLabel).Inc()
 		metrics.WorkspacePoolInputFiles.With(groupLabel).Add(float64(e.totalFiles))
 	}
@@ -1068,8 +1079,17 @@ func (p *Pool) release(e *pooledWorkspace) {
 		delete(p.dirs, dk)
 	}
 	groupLabel := prometheus.Labels{metrics.GroupID: e.groupID}
-	metrics.WorkspacePoolCount.With(groupLabel).Dec()
-	metrics.WorkspacePoolInputFiles.With(groupLabel).Sub(float64(e.totalFiles))
+	p.groupWorkspaces[e.groupID]--
+	if p.groupWorkspaces[e.groupID] == 0 {
+		// Delete the group's series once it has no pooled workspaces, so that
+		// shared executors don't keep series for every group they ever served.
+		delete(p.groupWorkspaces, e.groupID)
+		metrics.WorkspacePoolCount.Delete(groupLabel)
+		metrics.WorkspacePoolInputFiles.Delete(groupLabel)
+	} else {
+		metrics.WorkspacePoolCount.With(groupLabel).Dec()
+		metrics.WorkspacePoolInputFiles.With(groupLabel).Sub(float64(e.totalFiles))
+	}
 	if notInterned > 0 {
 		alert.UnexpectedEvent("workspace_pool_dir_not_interned", "Released a pooled workspace with %d directories that weren't interned", notInterned)
 	}
@@ -1182,6 +1202,16 @@ func countSharedFiles(oldDigest *repb.Digest, oldDirs map[string]*repb.Directory
 	return n
 }
 
+// inputFileCount returns the number of files in the input tree. It saves the
+// count, so that reusing a pooled workspace and returning the workspace to the
+// pool don't both count them.
+func (ws *Workspace) inputFileCount() int {
+	if ws.inputFiles == 0 {
+		ws.inputFiles = countFilesRecursive(ws.inputRootDigest, ws.inputDirs, map[string]int{})
+	}
+	return ws.inputFiles
+}
+
 // recordDirFingerprints walks the input tree and lstats each input directory in
 // the workspace, recording its fingerprint so that ReturnToPool can tell which
 // directories the task changed.
@@ -1269,13 +1299,22 @@ func joinRelPath(rel, name string) string {
 // delete. If the workspace can't be pooled, it's left for Remove.
 func (ws *Workspace) ReturnToPool(ctx context.Context) {
 	pool := ws.Opts.Pool
-	if pool == nil || ws.dirFingerprints == nil || ws.overlay != nil || ws.vfs != nil {
+	if pool == nil || ws.overlay != nil || ws.vfs != nil {
 		return
 	}
 	ws.mu.Lock()
 	removing := ws.removing
 	ws.mu.Unlock()
 	if removing {
+		return
+	}
+	if ws.fingerprintFailed {
+		recordReturnStatus("error")
+		return
+	}
+	// Without fingerprints, input setup didn't finish, so the workspace
+	// doesn't hold the input tree.
+	if ws.dirFingerprints == nil {
 		return
 	}
 	ctx, span := tracing.StartSpan(ctx)
@@ -1332,7 +1371,7 @@ func (ws *Workspace) ReturnToPool(ctx context.Context) {
 		digestFunction: ws.inputDigestFunction,
 		rootDigest:     ws.inputRootDigest,
 		dirMap:         ws.inputDirs,
-		totalFiles:     countFilesRecursive(ws.inputRootDigest, ws.inputDirs, map[string]int{}),
+		totalFiles:     ws.inputFileCount(),
 		missing:        missing,
 	})
 	if added {
@@ -1569,7 +1608,7 @@ func (ws *Workspace) reusePooledWorkspace(ctx context.Context) (map[fspath.Key]*
 	metrics.WorkspacePoolRemovedInputs.Observe(float64(removed))
 	// The rest of the new input tree wasn't in the pooled workspace, so the
 	// tree fetcher links or downloads it, as it would for an empty workspace.
-	newCount := countFilesRecursive(ws.inputRootDigest, ws.inputDirs, map[string]int{}) - shared
+	newCount := ws.inputFileCount() - shared
 	metrics.WorkspacePoolNewInputs.Observe(float64(newCount))
 	span.SetAttributes(
 		attribute.Int("kept_file_count", len(kept)),

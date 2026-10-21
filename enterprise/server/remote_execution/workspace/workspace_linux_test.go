@@ -306,6 +306,103 @@ func TestPool_ReusedWorkspaceMatchesFreshSetup(t *testing.T) {
 	}
 }
 
+func TestPool_RecordsReuseMetrics(t *testing.T) {
+	flags.Set(t, "executor.workspace_pool.slots", 4)
+	te := newPoolTestEnv(t)
+	ctx := claims.AuthContextWithJWT(t.Context(), &claims.Claims{GroupID: "GR1"}, nil)
+	groupLabel := prometheus.Labels{metrics.GroupID: "GR1"}
+	metrics.WorkspacePoolReturns.Reset()
+	metrics.WorkspacePoolReuseAttempts.Reset()
+	metrics.WorkspacePoolCount.Reset()
+	metrics.WorkspacePoolInputFiles.Reset()
+	a := uploadFile(t, te, "a.txt", "a")
+	b := uploadFile(t, te, "b.txt", "b")
+	c := uploadFile(t, te, "c.txt", "c")
+	x := uploadFile(t, te, "x.txt", "x")
+	sub := &repb.Directory{Files: []*repb.FileNode{uploadFile(t, te, "d.txt", "d"), uploadFile(t, te, "e.txt", "e")}}
+	subDigest, err := cachetools.UploadProto(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, sub)
+	require.NoError(t, err)
+	firstTree := &repb.Tree{
+		Root: &repb.Directory{
+			Files:       []*repb.FileNode{a, b, c, x, uploadFile(t, te, "y.txt", "y")},
+			Directories: []*repb.DirectoryNode{{Name: "sub", Digest: subDigest}},
+		},
+		Children: []*repb.Directory{sub},
+	}
+	// The second tree shares a, b, c and x with the first, which outweighs
+	// the 3 files that only the first has, so the second task reuses the
+	// first workspace.
+	secondTree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{a, b, c, x, uploadFile(t, te, "f.txt", "f")}}}
+	buildRoot := testfs.MakeTempDir(t)
+	pool, err := workspace.NewPool(buildRoot)
+	require.NoError(t, err)
+
+	// The first task deletes its input b.txt, so the pool removes it from the
+	// workspace, but still counts it among the workspace's input files.
+	first, err := workspace.New(te, buildRoot, &workspace.Opts{Pool: pool})
+	require.NoError(t, err)
+	first.SetTask(ctx, &repb.ExecutionTask{Command: &repb.Command{}})
+	err = first.DownloadInputs(ctx, &container.FileSystemLayout{DigestFunction: repb.DigestFunction_SHA256, Inputs: firstTree})
+	require.NoError(t, err)
+	err = os.Remove(filepath.Join(first.Path(), "b.txt"))
+	require.NoError(t, err)
+	first.ReturnToPool(ctx)
+	err = first.Remove(ctx)
+	require.NoError(t, err)
+	pooledReturns := testmetrics.CounterValueForLabels(t, metrics.WorkspacePoolReturns, prometheus.Labels{metrics.WorkspacePoolReturnStatusLabel: "pooled"})
+	assert.Equal(t, 1.0, pooledReturns)
+	pooledCount := testmetrics.GaugeValueForLabels(t, metrics.WorkspacePoolCount, groupLabel)
+	assert.Equal(t, 1.0, pooledCount)
+	pooledFiles := testmetrics.GaugeValueForLabels(t, metrics.WorkspacePoolInputFiles, groupLabel)
+	assert.Equal(t, 7.0, pooledFiles)
+
+	// The second task keeps a, c and x, links b again, since the first task
+	// deleted it, and links the new f. It removes y and the 2 files in sub.
+	histograms := []struct {
+		name        string
+		metric      prometheus.Histogram
+		want        float64
+		countBefore uint64
+		sumBefore   float64
+	}{
+		{name: "kept", metric: metrics.WorkspacePoolKeptInputs, want: 3},
+		{name: "missing", metric: metrics.WorkspacePoolMissingInputs, want: 1},
+		{name: "removed", metric: metrics.WorkspacePoolRemovedInputs, want: 3},
+		{name: "new", metric: metrics.WorkspacePoolNewInputs, want: 1},
+	}
+	for i, h := range histograms {
+		histograms[i].countBefore, histograms[i].sumBefore = testmetrics.HistogramCountAndSum(t, h.metric)
+	}
+	second, err := workspace.New(te, buildRoot, &workspace.Opts{Pool: pool})
+	require.NoError(t, err)
+	second.SetTask(ctx, &repb.ExecutionTask{Command: &repb.Command{}})
+	err = second.DownloadInputs(ctx, &container.FileSystemLayout{DigestFunction: repb.DigestFunction_SHA256, Inputs: secondTree})
+	require.NoError(t, err)
+	reused := testmetrics.CounterValueForLabels(t, metrics.WorkspacePoolReuseAttempts, prometheus.Labels{metrics.WorkspacePoolReuseStatusLabel: "reused"})
+	assert.Equal(t, 1.0, reused)
+	for _, h := range histograms {
+		count, sum := testmetrics.HistogramCountAndSum(t, h.metric)
+		assert.Equal(t, h.countBefore+1, count, h.name)
+		assert.Equal(t, h.sumBefore+h.want, sum, h.name)
+	}
+
+	// The pool no longer holds any of the group's workspaces, so it deleted
+	// the group's series.
+	countDeleted := metrics.WorkspacePoolCount.Delete(groupLabel)
+	assert.False(t, countDeleted)
+	filesDeleted := metrics.WorkspacePoolInputFiles.Delete(groupLabel)
+	assert.False(t, filesDeleted)
+
+	// Returning the second workspace brings the group's series back.
+	second.ReturnToPool(ctx)
+	err = second.Remove(ctx)
+	require.NoError(t, err)
+	pooledCount = testmetrics.GaugeValueForLabels(t, metrics.WorkspacePoolCount, groupLabel)
+	assert.Equal(t, 1.0, pooledCount)
+	pooledFiles = testmetrics.GaugeValueForLabels(t, metrics.WorkspacePoolInputFiles, groupLabel)
+	assert.Equal(t, 5.0, pooledFiles)
+}
+
 // newPoolTestEnv returns a test environment with a CAS and a file cache, for
 // setting up workspaces.
 func newPoolTestEnv(t *testing.T) *testenv.TestEnv {
@@ -413,13 +510,20 @@ func TestPool_EvictsWorkspacesOverSlotLimit(t *testing.T) {
 		// wantSecondKept is whether the pool keeps the second workspace
 		// rather than the first.
 		wantSecondKept bool
+		// wantReturns is the number of returned workspaces by status.
+		wantReturns map[string]float64
+		// wantPooledFiles is the number of input files in the workspace that
+		// the pool keeps.
+		wantPooledFiles float64
 	}{
 		{
 			name:   "same file count",
 			first:  &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{a}}},
 			second: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{b}}},
 			// The pool evicts the older of two workspaces with the same value.
-			wantSecondKept: true,
+			wantSecondKept:  true,
+			wantReturns:     map[string]float64{"pooled": 2, "evicted": 0},
+			wantPooledFiles: 1,
 		},
 		{
 			name:   "new workspace holds fewer files",
@@ -427,11 +531,16 @@ func TestPool_EvictsWorkspacesOverSlotLimit(t *testing.T) {
 			second: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{c}}},
 			// The pool evicts the workspace with the lowest value, even if it's
 			// the one being added.
-			wantSecondKept: false,
+			wantSecondKept:  false,
+			wantReturns:     map[string]float64{"pooled": 1, "evicted": 1},
+			wantPooledFiles: 2,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			metrics.UnexpectedEvent.Reset()
+			metrics.WorkspacePoolReturns.Reset()
+			metrics.WorkspacePoolCount.Reset()
+			metrics.WorkspacePoolInputFiles.Reset()
 			buildRoot := testfs.MakeTempDir(t)
 			pool, err := workspace.NewPool(buildRoot)
 			require.NoError(t, err)
@@ -455,6 +564,18 @@ func TestPool_EvictsWorkspacesOverSlotLimit(t *testing.T) {
 			assert.Equal(t, !test.wantSecondKept, firstKept)
 			notInterned := testmetrics.CounterValueForLabels(t, metrics.UnexpectedEvent, prometheus.Labels{metrics.EventName: "workspace_pool_dir_not_interned"})
 			assert.Zero(t, notInterned)
+
+			// The metrics count the evicted workspace, and show the one that
+			// the pool kept.
+			for status, want := range test.wantReturns {
+				returns := testmetrics.CounterValueForLabels(t, metrics.WorkspacePoolReturns, prometheus.Labels{metrics.WorkspacePoolReturnStatusLabel: status})
+				assert.Equal(t, want, returns, status)
+			}
+			groupLabel := prometheus.Labels{metrics.GroupID: filecache.GroupIDStringFromContext(ctx)}
+			pooledCount := testmetrics.GaugeValueForLabels(t, metrics.WorkspacePoolCount, groupLabel)
+			assert.Equal(t, 1.0, pooledCount)
+			pooledFiles := testmetrics.GaugeValueForLabels(t, metrics.WorkspacePoolInputFiles, groupLabel)
+			assert.Equal(t, test.wantPooledFiles, pooledFiles)
 		})
 	}
 }
