@@ -60,6 +60,7 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	noRemoteCacheBuildArgs := append(buildArgs, "--noremote_accept_cached")
 	testbazel.Clean(context.Background(), t, workspacePath)
 	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", noRemoteCacheBuildArgs...)
+	require.NoError(t, result.Error, "inner bazel build failed; stderr:\n%s", result.Stderr)
 	require.NotEmpty(t, result.InvocationID)
 
 	// Make sure we can view the invocation while logged in
@@ -82,6 +83,7 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	// Second build of the same target
 	testbazel.Clean(context.Background(), t, workspacePath)
 	result = testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
+	require.NoError(t, result.Error, "inner bazel build failed; stderr:\n%s", result.Stderr)
 	require.NotEmpty(t, result.InvocationID)
 
 	wt.Get(target.HTTPURL() + "/invocation/" + result.InvocationID)
@@ -196,6 +198,7 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 	buildArgs = append(buildArgs, fmt.Sprintf("--remote_instance_name=%d", rand.Int63()))
 	testbazel.Clean(context.Background(), t, workspacePath)
 	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
+	require.NoError(t, result.Error, "inner bazel build failed; stderr:\n%s", result.Stderr)
 	require.NotEmpty(t, result.InvocationID)
 
 	// Make sure we can view the invocation while logged in
@@ -264,6 +267,7 @@ func TestInvocationWithRemoteExecution(t *testing.T) {
 	buildArgs = append(buildArgs, buildbuddyBuildFlags...)
 
 	result := testbazel.Invoke(ctx, t, workspacePath, "build", buildArgs...)
+	require.NoError(t, result.Error, "inner bazel build failed; stderr:\n%s", result.Stderr)
 	require.NotEmpty(t, result.InvocationID)
 
 	wt.Get(target.HTTPURL() + "/invocation/" + result.InvocationID)

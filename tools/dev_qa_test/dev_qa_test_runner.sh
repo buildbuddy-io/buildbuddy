@@ -54,7 +54,7 @@ echo "=================================================="
 
 cd "${workspace_dir}"
 
-if ! curl -L "${tarball_url}" -o repo.tar.gz; then
+if ! curl -fsSL --retry 5 --retry-all-errors "${tarball_url}" -o repo.tar.gz; then
   echo >&2 "ERROR: Failed to download tarball from ${tarball_url}"
   exit 1
 fi
