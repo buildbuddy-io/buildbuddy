@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -196,11 +195,10 @@ func updateSystemInstall(version string) error {
 	// replacement is atomic.
 	stagingPath := filepath.Join(installDir, fmt.Sprintf(".bb.tmp.%d", os.Getpid()))
 	if err := sudo("install", "-m", "0755", tmpPath, stagingPath); err != nil {
-		sudo("-n", "rm", "-f", stagingPath)
 		return fmt.Errorf("sudo install: %s", err)
 	}
 	if err := sudo("mv", "-f", stagingPath, installPath); err != nil {
-		sudo("-n", "rm", "-f", stagingPath)
+		sudo("rm", "-f", stagingPath)
 		return fmt.Errorf("sudo mv: %s", err)
 	}
 	return nil
@@ -222,7 +220,10 @@ func releaseAssetURL(version, goos, goarch string) (string, error) {
 // Returns an HTTP client with timeouts that refuses to follow redirects to
 // non-https URLs.
 func newDownloadClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
+	if t, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = t.Clone()
+	}
 	transport.TLSHandshakeTimeout = 30 * time.Second
 	transport.ResponseHeaderTimeout = 30 * time.Second
 	return &http.Client{
@@ -275,8 +276,8 @@ func downloadAndVerify(client *http.Client, url, dest string) error {
 	return nil
 }
 
-// Fetches url + ".sha256" and returns the sha256 it lists for url, which must
-// be in `shasum -a 256` format.
+// Fetches url + ".sha256" and returns the sha256 it lists for url. Only the
+// leading hex digest of the `shasum -a 256` output is used.
 func fetchChecksum(client *http.Client, url string) (string, error) {
 	shaURL := url + ".sha256"
 	res, err := httpGet(client, shaURL)
@@ -288,13 +289,9 @@ func fetchChecksum(client *http.Client, url string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read %s: %s", shaURL, err)
 	}
-	lines := strings.Split(strings.TrimRight(string(b), "\r\n"), "\n")
-	fields := strings.Fields(lines[0])
-	if len(lines) != 1 || len(fields) != 2 {
-		return "", fmt.Errorf("malformed checksum file at %s", shaURL)
-	}
-	if fields[1] != path.Base(url) {
-		return "", fmt.Errorf("checksum file at %s is for %q, want %q", shaURL, fields[1], path.Base(url))
+	fields := strings.Fields(string(b))
+	if len(fields) == 0 {
+		return "", fmt.Errorf("empty checksum file at %s", shaURL)
 	}
 	sum := strings.ToLower(fields[0])
 	if _, err := hex.DecodeString(sum); err != nil || len(sum) != 64 {

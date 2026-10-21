@@ -2,6 +2,8 @@ package update
 
 import (
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
@@ -71,10 +73,9 @@ func TestDownloadAndVerify(t *testing.T) {
 			wantError: "non-https",
 		},
 		{
-			name:      "ChecksumFilenameMismatch",
-			binary:    serve(binaryContents),
-			sha256:    serve(shasumLine(binaryContents, "other")),
-			wantError: `is for "other"`,
+			name:   "ChecksumExtraContentIgnored",
+			binary: serve(binaryContents),
+			sha256: serve(shasumLine(binaryContents, "other") + "extra line\n"),
 		},
 		{
 			name:      "MalformedChecksum",
@@ -96,8 +97,10 @@ func TestDownloadAndVerify(t *testing.T) {
 			mux.HandleFunc("/bb.sha256", tc.sha256)
 			server := httptest.NewTLSServer(mux)
 			t.Cleanup(server.Close)
-			client := server.Client()
-			client.CheckRedirect = checkRedirect
+			client := newDownloadClient()
+			roots := x509.NewCertPool()
+			roots.AddCert(server.Certificate())
+			client.Transport.(*http.Transport).TLSClientConfig = &tls.Config{RootCAs: roots}
 			url := server.URL + "/bb"
 			if tc.httpStart {
 				url = strings.Replace(url, "https://", "http://", 1)
@@ -124,6 +127,8 @@ func TestReleaseAssetURL(t *testing.T) {
 		want         string
 	}{
 		{"linux", "amd64", releaseDownloadBaseURL + "/5.0.1/bazel-5.0.1-linux-x86_64"},
+		{"linux", "arm64", releaseDownloadBaseURL + "/5.0.1/bazel-5.0.1-linux-arm64"},
+		{"darwin", "amd64", releaseDownloadBaseURL + "/5.0.1/bazel-5.0.1-darwin-x86_64"},
 		{"darwin", "arm64", releaseDownloadBaseURL + "/5.0.1/bazel-5.0.1-darwin-arm64"},
 		{"windows", "amd64", ""},
 	} {
