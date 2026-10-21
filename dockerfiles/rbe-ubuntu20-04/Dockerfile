@@ -127,6 +127,8 @@ for f in "$tmp"/*.pem; do openssl x509 -in "$f" -noout -fingerprint -sha256; don
 [ -s "$tmp/bundle" ] || fail "no certificates in /etc/ssl/certs/ca-certificates.crt"
 : >"$tmp/keystores"
 for ks in $(find / -xdev -name cacerts \( -type f -o -type l \) -exec readlink -f {} \; | sort -u); do
+  # Skip text files such as ca-certificates-java's /etc/default/cacerts.
+  if grep -Iq . "$ks"; then echo "skipped text file $ks"; continue; fi
   command -v keytool >/dev/null || fail "$ks exists but keytool is not installed"
   keytool -list -v -keystore "$ks" -storepass changeit >"$tmp/ks" 2>&1 || fail "keytool cannot read $ks"
   grep -q '^Alias name:' "$tmp/ks" || fail "no entries in $ks"
