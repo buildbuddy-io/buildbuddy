@@ -3328,9 +3328,15 @@ func (s *SchedulerServer) reEnqueueTaskReservation(ctx context.Context, taskID s
 		Jwt:                scheduledTask.jwt,
 		Delay:              durationpb.New(max(time.Until(scheduledTask.reconnectPeriodEnd), 0)),
 	}
-	return s.enqueueTaskReservations(ctx, req, task, enqueueTaskReservationOpts{
+	err = s.enqueueTaskReservations(ctx, req, task, enqueueTaskReservationOpts{
 		numReplicas: 1,
 	})
+	if status.IsUnavailableError(err) {
+		if markErr := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, err); markErr != nil {
+			log.CtxWarningf(ctx, "Could not mark execution failed for task %q: %s", taskID, markErr)
+		}
+	}
+	return err
 }
 
 // reEnqueueTask releases a task's claim and schedules reservations for another
