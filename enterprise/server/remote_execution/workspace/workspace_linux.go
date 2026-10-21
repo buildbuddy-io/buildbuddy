@@ -3,7 +3,9 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -26,6 +28,47 @@ func lstatDir(path string) (dirFingerprint, bool, error) {
 		uid:        st.Uid,
 		gid:        st.Gid,
 	}, true, nil
+}
+
+// hasXattrs returns whether the file at path has xattrs other than its SELinux
+// label, security.selinux, which hosts that run SELinux give every new file.
+//
+// TODO: On hosts that give new directories other xattrs, such as Smack labels
+// (security.SMACK64) or ACLs inherited from a default ACL (system.posix_acl_*),
+// we discard every input directory that a task changes. If self-hosted
+// executors need it, record each input directory's xattrs after input setup
+// and compare against them instead.
+func hasXattrs(path string) (bool, error) {
+	// Most directories have no xattrs, or only an SELinux label, so we first
+	// ask for the size of the list, which doesn't need a buffer.
+	size, err := unix.Llistxattr(path, nil)
+	if errors.Is(err, errors.ErrUnsupported) {
+		// The filesystem doesn't support xattrs.
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("list xattrs: %w", err)
+	}
+	if size == 0 {
+		return false, nil
+	}
+	list := make([]byte, size)
+	n, err := unix.Llistxattr(path, list)
+	if errors.Is(err, unix.ERANGE) {
+		// The kernel returns ERANGE if someone added xattrs after we asked for
+		// the size of the list, so the directory has at least one xattr besides
+		// an SELinux label.
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("list xattrs: %w", err)
+	}
+	for name := range strings.SplitSeq(strings.TrimSuffix(string(list[:n]), "\x00"), "\x00") {
+		if name != "" && name != "security.selinux" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // waitForTimestampTick waits until the kernel's coarse clock is past t so we
