@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana/generated/dash"
+	"github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana/generated/pebble_dash"
 	"github.com/grafana/grafana-foundation-sdk/go/cog"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
@@ -51,31 +52,13 @@ func row(title string) *dashboard.RowBuilder {
 		Collapsed(true)
 }
 
-// ts returns a timeseries panel with this dashboard's baseline style: thin
-// lines with no fill, a list legend at the bottom, and a single-series
-// tooltip. Panels default to half the grid wide and 8 units tall; override
-// with Span/Height. An empty unit leaves the panel on Grafana's default unit.
-func ts(title, unit string) *timeseries.PanelBuilder {
-	p := timeseries.NewPanelBuilder().
-		Title(title).
-		Datasource(dash.Prometheus()).
-		LineWidth(1).
-		FillOpacity(0).
-		GradientMode(common.GraphGradientModeNone).
-		Legend(common.NewVizLegendOptionsBuilder().
-			DisplayMode(common.LegendDisplayModeList).
-			Placement(common.LegendPlacementBottom).
-			ShowLegend(true)).
-		Tooltip(common.NewVizTooltipOptionsBuilder().
-			Mode(common.TooltipDisplayModeSingle).
-			Sort(common.SortOrderNone)).
-		Height(8).
-		Span(12)
-	if unit != "" {
-		p.Unit(unit)
-	}
-	return p
-}
+// Shorthands for the panel-style helpers shared through dash.
+var (
+	ts             = dash.PlainTimeseries
+	rightLegend    = dash.RightLegend
+	multiTooltip   = dash.MultiTooltip
+	rightAxisProps = dash.RightAxisProps
+)
 
 // tableLegend returns a legend shown as a table at the bottom with the given
 // summary calculations.
@@ -95,35 +78,11 @@ func lastValueLegend() *common.VizLegendOptionsBuilder {
 		SortDesc(true)
 }
 
-func rightLegend() *common.VizLegendOptionsBuilder {
-	return common.NewVizLegendOptionsBuilder().
-		DisplayMode(common.LegendDisplayModeList).
-		Placement(common.LegendPlacementRight).
-		ShowLegend(true)
-}
-
 func hiddenLegend() *common.VizLegendOptionsBuilder {
 	return common.NewVizLegendOptionsBuilder().
 		DisplayMode(common.LegendDisplayModeList).
 		Placement(common.LegendPlacementBottom).
 		ShowLegend(false)
-}
-
-// multiTooltip returns a tooltip that lists every series under the cursor,
-// sorted by value.
-func multiTooltip() *common.VizTooltipOptionsBuilder {
-	return common.NewVizTooltipOptionsBuilder().
-		Mode(common.TooltipDisplayModeMulti).
-		Sort(common.SortOrderDescending)
-}
-
-// rightAxisProps moves a series to a separate right-hand axis with the given
-// unit; for use with OverrideByName/OverrideByQuery.
-func rightAxisProps(unit string) []dashboard.DynamicConfigValue {
-	return []dashboard.DynamicConfigValue{
-		{Id: "custom.axisPlacement", Value: "right"},
-		{Id: "unit", Value: unit},
-	}
 }
 
 // dashedThreshold draws a dashed line at value and colors the series red
@@ -171,10 +130,10 @@ func systemStatusRow() *dashboard.RowBuilder {
 			FillOpacity(10).
 			ShowPoints(common.VisibilityModeNever).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum(increase(kube_pod_container_status_restarts_total{`+podFilter+`}[1m])) by (pod, container, namespace) > 0`, ""))).
+			WithTarget(dash.PromQuery(`sum(increase(kube_pod_container_status_restarts_total{`+podFilter+`}[${window}])) by (pod, container, namespace) > 0`, ""))).
 		WithPanel(ts("CPU usage", "").
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`sum(rate(container_cpu_usage_seconds_total{`+podFilter+`, container=""}[1m])) by (pod)`, "__auto").RefId("A")).
+			WithTarget(dash.PromQuery(`sum(rate(container_cpu_usage_seconds_total{`+podFilter+`, container=""}[${window}])) by (pod)`, "__auto").RefId("A")).
 			WithTarget(dash.PromQuery(`max(container_spec_cpu_quota{`+podFilter+`, container=""} / container_spec_cpu_period{`+podFilter+`, container=""}) by (pod)`, "{{pod}} limit").RefId("B"))).
 		WithPanel(ts("Memory usage", dash.UnitBytes).
 			Legend(hiddenLegend()).
@@ -185,7 +144,7 @@ func systemStatusRow() *dashboard.RowBuilder {
 			Min(0).
 			Max(1).
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{`+podFilter+`, container="cache-proxy"}[1m])) / sum by (pod) (rate(container_cpu_cfs_periods_total{`+podFilter+`, container="cache-proxy"}[1m]))`, "__auto")))
+			WithTarget(dash.PromQuery(`sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{`+podFilter+`, container="cache-proxy"}[${window}])) / sum by (pod) (rate(container_cpu_cfs_periods_total{`+podFilter+`, container="cache-proxy"}[${window}]))`, "__auto")))
 }
 
 // ingressRow shows the cache proxies from the Envoy's point of view.
@@ -353,6 +312,7 @@ func distributedCacheRow() *dashboard.RowBuilder {
 	lookups := `buildbuddy_remote_cache_lookaside_cache_lookup_count`
 	evictionAge := `buildbuddy_remote_cache_lookaside_cache_eviction_age_msec`
 	backfill := `buildbuddy_remote_cache_distributed_cache_backfill_latency_usec`
+	readSize := `buildbuddy_remote_cache_distributed_cache_read_digest_size`
 	return row("Distributed Cache").
 		WithPanel(ts("Request Mix", "").
 			WithTarget(dash.PromQuery(`sum(rate(grpc_server_started_total{`+proxyFilter+`, grpc_service="distributed_cache.DistributedCache"}[${window}])) by (grpc_method)`, "{{grpc_method}}"))).
@@ -362,6 +322,10 @@ func distributedCacheRow() *dashboard.RowBuilder {
 		WithPanel(methodPanel("FindMissing")).
 		WithPanel(methodPanel("Write")).
 		WithPanel(methodPanel("Read")).
+		WithPanel(ts("Read Throughput by Source", dash.UnitBytesPerSec).
+			Description("Digest sizes of objects served by distributed cache reads, by where they were served from. Ranged or abandoned reads count the full blob.").
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`sum by (source) (rate(`+readSize+`{`+proxyFilter+`}[${window}]))`, "{{source}}"))).
 		WithPanel(ts("Lookaside cache hits and misses", dash.UnitRequestsPerSec).
 			AxisPlacement(common.AxisPlacementLeft).
 			Tooltip(multiTooltip()).
@@ -414,7 +378,7 @@ func remoteCacheRow() *dashboard.RowBuilder {
 				SortBy("Last *")).
 			WithTarget(dash.PromQuery(`max((`+diskCache+`_filesystem_total_bytes{`+cacheFilter+`} - `+diskCache+`_filesystem_avail_bytes{`+cacheFilter+`}) / `+diskCache+`_filesystem_total_bytes{`+cacheFilter+`}) by (pod_name)`, "{{pod_name}}"))).
 		WithPanel(perCache("Disk Cache eviction rate (${cache_name})", "").
-			WithTarget(dash.PromQuery(`max(rate(`+diskCache+`_num_evictions{`+cacheFilter+`}[10m])) by (pod_name, partition_id)`, "__auto"))).
+			WithTarget(dash.PromQuery(`max(rate(`+diskCache+`_num_evictions{`+cacheFilter+`}[${window}])) by (pod_name, partition_id)`, "__auto"))).
 		WithPanel(perCache("Eviction resample latency (${cache_name})", dash.UnitMicroseconds).
 			WithTarget(dash.PromQuery(`histogram_quantile(${quantile}, sum(rate(`+eviction+`_resample_latency_usec_bucket{`+cacheFilter+`}[${window}])) by (le, partition_id))`, "__auto"))).
 		WithPanel(perCache("Eviction sample queue length (${cache_name})", dash.UnitShort).
@@ -427,75 +391,6 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			Min(0).
 			Max(1).
 			WithTarget(dash.PromQuery(`max(`+diskCache+`_partition_size_bytes{`+cacheFilter+`} / `+diskCache+`_partition_capacity_bytes{`+cacheFilter+`}) by (pod_name, partition_id)`, "{{pod_name}} {{partition_id}}")))
-}
-
-func pebbleRow() *dashboard.RowBuilder {
-	pebble := `buildbuddy_remote_cache_pebble_cache_pebble`
-	// compressionFactor is the inverse of the compression ratio
-	// (compressed / decompressed bytes) at quantile q of the ratio
-	// distribution, i.e. how many times smaller the data got. Because of the
-	// inversion, quantile q of the ratio is percentile 1-q of the factor.
-	compressionFactor := func(q string) string {
-		return `1 / histogram_quantile(` + q + `, sum(rate(buildbuddy_pebble_compression_ratio_bucket{` + cacheFilter + `}[10m])) by (le))`
-	}
-	// opLatency is quantile q of pebble operation latency, by operation.
-	opLatency := func(q string) string {
-		return `histogram_quantile(` + q + `, sum(rate(` + pebble + `_op_latency_usec_bucket{` + proxyFilter + `, pebble_id="${cache_name}"}[1m])) by (le, pebble_op))`
-	}
-	return row("Remote Cache Pebble").
-		WithPanel(ts("Compression Ratio", "").
-			Span(24).
-			Description("How many times smaller pebble's compression makes a stream of data (decompressed / compressed bytes), at percentiles of that factor across streams: p90 is what the best-compressing 10% of streams exceed, p1 is what 99% of streams achieve. Each series is the inverse of the matching quantile of the compressed/decompressed ratio histogram.").
-			WithTarget(dash.PromQuery(compressionFactor("0.1"), "p90").RefId("A")).
-			WithTarget(dash.PromQuery(compressionFactor("0.5"), "p50").RefId("B")).
-			WithTarget(dash.PromQuery(compressionFactor("0.99"), "p1").RefId("C"))).
-		WithPanel(perCache("Compaction rate (${cache_name}) (by type)", "").
-			WithTarget(dash.PromQuery(`sum(rate(`+pebble+`_compact_count{`+cacheFilter+`}[1m])) by (compaction_type)`, "__auto"))).
-		WithPanel(perCache("Compaction state (${cache_name})", dash.UnitBytes).
-			OverrideByName("in progress (count)", rightAxisProps(dash.UnitNone)).
-			OverrideByName("marked files", rightAxisProps(dash.UnitNone)).
-			WithTarget(dash.PromQuery(`sum(`+pebble+`_compact_in_progress_bytes{`+cacheFilter+`})`, "in progress (bytes)").RefId("A")).
-			WithTarget(dash.PromQuery(`sum(`+pebble+`_compact_in_progress{`+cacheFilter+`})`, "in progress (count)").RefId("B")).
-			WithTarget(dash.PromQuery(`sum(`+pebble+`_compact_marked_files{`+cacheFilter+`})`, "marked files").RefId("C"))).
-		WithPanel(perCache("Compaction estimated debt (${cache_name})", dash.UnitBytes).
-			WithTarget(dash.PromQuery(`sum(`+pebble+`_compact_estimated_debt_bytes{`+cacheFilter+`}) by (pod_name)`, "{{pod_name}}"))).
-		WithPanel(perCache("Op Rate (${cache_name})", dash.UnitOps).
-			WithTarget(dash.PromQuery(`sum(rate(`+pebble+`_op_count{`+proxyFilter+`, pebble_id="${cache_name}"}[1m])) by (pebble_op)`, "__auto"))).
-		WithPanel(perCache("Op p50 Latency (${cache_name})", dash.UnitMicroseconds).
-			WithTarget(dash.PromQuery(opLatency("0.50"), "__auto"))).
-		WithPanel(perCache("Op p95 Latency (${cache_name})", dash.UnitMicroseconds).
-			WithTarget(dash.PromQuery(opLatency("0.95"), "__auto"))).
-		WithPanel(perCache("Op p99 Latency (${cache_name})", dash.UnitMicroseconds).
-			WithTarget(dash.PromQuery(opLatency("0.99"), "__auto")))
-}
-
-func pebbleLevelsRow() *dashboard.RowBuilder {
-	level := `buildbuddy_remote_cache_pebble_cache_pebble_level`
-	// gauge sums a per-level gauge across pods.
-	gauge := func(title, unit, metric string) *timeseries.PanelBuilder {
-		return ts(title, unit).
-			WithTarget(dash.PromQuery(`sum(`+level+`_`+metric+`{`+cacheFilter+`}) by (level)`, "{{level}}"))
-	}
-	// rate sums the per-second rate of a per-level counter across pods.
-	rate := func(title, unit, metric string) *timeseries.PanelBuilder {
-		return ts(title, unit).
-			WithTarget(dash.PromQuery(`sum(rate(`+level+`_`+metric+`{`+cacheFilter+`}[1m])) by (level)`, "{{level}}"))
-	}
-	return row("Remote Cache Pebble Levels (${cache_name})").
-		Repeat("cache_name").
-		WithPanel(gauge("Number files (by level)", "", "num_files")).
-		WithPanel(gauge("Size (by level)", dash.UnitBytes, "size_bytes")).
-		WithPanel(gauge("Compaction score (by level)", dash.UnitNone, "score")).
-		WithPanel(rate("Bytes in (by level)", dash.UnitBytes, "bytes_in_count")).
-		WithPanel(rate("Bytes ingested (by level)", dash.UnitBytes, "bytes_ingested_count")).
-		WithPanel(rate("Bytes moved (by level)", dash.UnitBytes, "bytes_moved_count")).
-		WithPanel(rate("Bytes read (by level)", dash.UnitBytes, "bytes_read_count")).
-		WithPanel(rate("Bytes compacted (by level)", dash.UnitBytes, "bytes_compacted_count")).
-		WithPanel(rate("Bytes flushed (by level)", dash.UnitBytes, "bytes_flushed_count")).
-		WithPanel(rate("Tables compacted (by level)", dash.UnitNone, "tables_compacted_count")).
-		WithPanel(rate("Tables flushed (by level)", dash.UnitNone, "tables_flushed_count")).
-		WithPanel(rate("Tables ingested (by level)", dash.UnitNone, "tables_ingested_count")).
-		WithPanel(rate("Tables moved (by level)", dash.UnitNone, "tables_moved_count"))
 }
 
 func encryptionRow() *dashboard.RowBuilder {
@@ -605,16 +500,16 @@ func nodesRow() *dashboard.RowBuilder {
 		WithPanel(ts("CPU", dash.UnitPercentUnit).
 			Max(1).
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`1 - avg by (nodename) (rate(node_cpu_seconds_total{`+nodeFilter+`, mode="idle"}[1m]))`, "{{nodename}}"))).
+			WithTarget(dash.PromQuery(`1 - avg by (nodename) (rate(node_cpu_seconds_total{`+nodeFilter+`, mode="idle"}[${window}]))`, "{{nodename}}"))).
 		WithPanel(ts("Disk", dash.UnitBytesPerSec).
 			AxisSoftMax(100000000).
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_read_bytes_total{`+nodeFilter+`}[1m]))`, "reads {{nodename}}").RefId("A")).
-			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_written_bytes_total{`+nodeFilter+`}[1m]))`, "writes {{nodename}}").RefId("B"))).
+			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_read_bytes_total{`+nodeFilter+`}[${window}]))`, "reads {{nodename}}").RefId("A")).
+			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_written_bytes_total{`+nodeFilter+`}[${window}]))`, "writes {{nodename}}").RefId("B"))).
 		WithPanel(ts("Network", dash.UnitBytesPerSec).
 			AxisSoftMax(100000000).
-			WithTarget(dash.PromQuery(`rate(node_network_receive_bytes_total{`+nodeFilter+`, device=~"(ens|eth).*"}[1m])`, "rx {{nodename}}").RefId("A")).
-			WithTarget(dash.PromQuery(`rate(node_network_transmit_bytes_total{`+nodeFilter+`, device=~"(ens|eth).*"}[1m])`, "tx {{nodename}}").RefId("B")))
+			WithTarget(dash.PromQuery(`rate(node_network_receive_bytes_total{`+nodeFilter+`, device=~"(ens|eth).*"}[${window}])`, "rx {{nodename}}").RefId("A")).
+			WithTarget(dash.PromQuery(`rate(node_network_transmit_bytes_total{`+nodeFilter+`, device=~"(ens|eth).*"}[${window}])`, "tx {{nodename}}").RefId("B")))
 }
 
 func internalRow() *dashboard.RowBuilder {
@@ -633,11 +528,11 @@ func regionVariable() *dashboard.QueryVariableBuilder {
 }
 
 func windowVariable() *dashboard.CustomVariableBuilder {
-	values := "30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d"
+	values := "$__rate_interval, 30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d"
 	return dashboard.NewCustomVariableBuilder("window").
 		Label("Averaging Window").
 		Values(dashboard.StringOrMap{String: &values}).
-		Current(dash.SelectedOption("1m", "1m"))
+		Current(dash.SelectedOption("$__rate_interval", "$__rate_interval"))
 }
 
 func quantileVariable() *dashboard.CustomVariableBuilder {
@@ -667,6 +562,7 @@ func nodeVariable() *dashboard.QueryVariableBuilder {
 }
 
 func build() (dashboard.Dashboard, error) {
+	proxyPebble := pebble_dash.PerCache(proxyFilter)
 	return dashboard.NewDashboardBuilder("Cache Proxy Metrics").
 		Uid("lVC084qx5").
 		Tags([]string{"generated", "file:cache-proxy.json"}).
@@ -689,8 +585,8 @@ func build() (dashboard.Dashboard, error) {
 		WithRow(cacheProxyRow()).
 		WithRow(distributedCacheRow()).
 		WithRow(remoteCacheRow()).
-		WithRow(pebbleRow()).
-		WithRow(pebbleLevelsRow()).
+		WithRow(pebble_dash.Row(proxyPebble)).
+		WithRow(pebble_dash.LevelsRow(proxyPebble)).
 		WithRow(encryptionRow()).
 		WithRow(grpcRow()).
 		WithRow(trafficStatsRow()).

@@ -468,12 +468,32 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 }
 
 func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  string
+		want string
+	}{
+		{name: "organization", want: "Acme, Inc."},
+		{name: "explicit user", env: "    env: { BUILD_USER: custom-user }\n", want: "custom-user"},
+		{name: "explicit empty user", env: "    env: { BUILD_USER: \"\" }\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testTrustedWorkflowBuildUser(t, tc.env, tc.want)
+		})
+	}
+}
+
+func testTrustedWorkflowBuildUser(t *testing.T, configuredUser, wantUser string) {
+	t.Helper()
 	ctx := context.Background()
 	u, lis := testhttp.NewServer(t)
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
 	ctx, _, gid := authenticate(t, ctx, te)
+	err := te.GetDBHandle().NewQuery(ctx, "set_workflow_organization").Raw(
+		`UPDATE "Groups" SET name = ? WHERE group_id = ?`, "Acme, Inc.", gid).Exec().Error
+	require.NoError(t, err)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
@@ -492,15 +512,17 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 		IsTargetRepoPublic: true,
 		PullRequestAuthor:  "acme-inc-user-1",
 	}
-	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow + configuredUser}
 
-	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	err = te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
 	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
+	require.Equal(t, wantUser, env["BUILD_USER"])
+	require.Contains(t, env, "BUILD_USER")
 	assert.NotContains(t,
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")

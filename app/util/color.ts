@@ -12,6 +12,15 @@ const MATERIAL_CHART_COLORS = [
   "#3F51B5", // indigo-500
 ];
 
+/** Colors for cache charts. */
+export const CACHE_COLORS = {
+  hits: "#4CAF50", // --color-green-500
+  misses: "#F44336", // --color-red-500
+  uncacheable: "#FFC107", // --color-amber-500
+  reads: "#03A9F4", // --color-light-blue-500
+  writes: "#3F51B5", // --color-indigo-500
+};
+
 /**
  * A subset of material color pairs. Each pair includes a dark version and
  * a light version.

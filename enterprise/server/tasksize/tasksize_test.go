@@ -232,6 +232,18 @@ func TestApplyLimitsNonRecyleableLargeDisk(t *testing.T) {
 	assert.Equal(t, tasksize.MaxEstimatedFreeDiskRecycleFalse, sz.EstimatedFreeDiskBytes)
 }
 
+func TestApplyLimits_NonRecyclableDiskBelowLimit(t *testing.T) {
+	const requestedDisk = int64(150 * 1e9)
+	sz := tasksize.ApplyLimits(
+		t.Context(),
+		nil,
+		&repb.Command{},
+		&platform.Properties{RecycleRunner: false},
+		&scpb.TaskSize{EstimatedFreeDiskBytes: requestedDisk},
+	)
+	assert.Equal(t, requestedDisk, sz.EstimatedFreeDiskBytes)
+}
+
 func TestApplyLimits_LargeTest(t *testing.T) {
 	sz := tasksize.ApplyLimits(
 		context.Background(),

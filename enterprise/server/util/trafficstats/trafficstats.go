@@ -1,5 +1,5 @@
 // Package trafficstats classifies gRPC traffic by cloud provider and region
-// using embedded IP range data, and records per-RPC byte counts as Prometheus
+// using embedded IP range data, and records per-RPC request and byte counts as Prometheus
 // metrics labeled with the caller's group ID, peer type, cloud provider, and
 // region.
 //
@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -39,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
 
@@ -50,6 +52,7 @@ const (
 	otherProvider    = "other"
 	unknownRegion    = "unknown"
 	externalPeerType = "external"
+	unsetLabel       = "unset"
 	cacheMaxSize     = 100_000
 )
 
@@ -74,22 +77,22 @@ type classifier struct {
 	occasionallLogger log.Logger
 }
 
-// byteCounterKey is a single label tuple for the ingress/egress byte counters.
-type byteCounterKey struct {
+// counterKey is a single label tuple for the request and byte counters.
+type counterKey struct {
 	groupID, peerType, provider, region string
 }
 
-// byteCounterHandles holds the pre-created Counters for a given byteCounterKey
-// tuple to avoid creating counter handles per-RPC.
-type byteCounterHandles struct {
-	ingress, egress prometheus.Counter
+// counterHandles holds the pre-created Counters for a given counterKey tuple
+// to avoid creating counter handles per-RPC.
+type counterHandles struct {
+	requests, ingress, egress prometheus.Counter
 }
 
 type StatsHandler struct {
 	classifier *classifier
 	cis        interfaces.ClientIdentityService
 
-	// Map from byteCounterKey -> byteCounterHandles
+	// Map from counterKey -> *counterHandles
 	counterHandles sync.Map
 }
 
@@ -99,17 +102,18 @@ type rpcCountersKey struct{}
 // labels.
 //
 // Avoids locking / allocating per-RPC inside prometheus code.
-func (h *StatsHandler) counterHandlesForLabels(groupID, peerType, provider, region string) *byteCounterHandles {
-	key := byteCounterKey{groupID: groupID, peerType: peerType, provider: provider, region: region}
+func (h *StatsHandler) counterHandlesForLabels(groupID, peerType, provider, region string) *counterHandles {
+	key := counterKey{groupID: groupID, peerType: peerType, provider: provider, region: region}
 	if v, ok := h.counterHandles.Load(key); ok {
-		return v.(*byteCounterHandles)
+		return v.(*counterHandles)
 	}
-	handles := &byteCounterHandles{
-		ingress: metrics.GRPCServerIngressBytes.WithLabelValues(groupID, peerType, provider, region),
-		egress:  metrics.GRPCServerEgressBytes.WithLabelValues(groupID, peerType, provider, region),
+	handles := &counterHandles{
+		requests: metrics.GRPCServerRequests.WithLabelValues(groupID, peerType, provider, region),
+		ingress:  metrics.GRPCServerIngressBytes.WithLabelValues(groupID, peerType, provider, region),
+		egress:   metrics.GRPCServerEgressBytes.WithLabelValues(groupID, peerType, provider, region),
 	}
 	actual, _ := h.counterHandles.LoadOrStore(key, handles)
-	return actual.(*byteCounterHandles)
+	return actual.(*counterHandles)
 }
 
 type rpcCounters struct {
@@ -139,8 +143,32 @@ var (
 	//go:embed data/github.csv
 	githubRangesCSV []byte
 
+	//go:embed data/digitalocean.csv
+	digitaloceanRangesCSV []byte
+
+	//go:embed data/oracle.csv
+	oracleRangesCSV []byte
+
+	// The providers below do not publish a range list; their CSVs hold the
+	// prefixes announced by their ASNs (see providerips).
+
 	//go:embed data/macstadium.csv
 	macstadiumRangesCSV []byte
+
+	//go:embed data/phoenixnap.csv
+	phoenixnapRangesCSV []byte
+
+	//go:embed data/hetzner.csv
+	hetznerRangesCSV []byte
+
+	//go:embed data/ovh.csv
+	ovhRangesCSV []byte
+
+	//go:embed data/latitude.csv
+	latitudeRangesCSV []byte
+
+	//go:embed data/namespace.csv
+	namespaceRangesCSV []byte
 
 	// BuildBuddy-owned ranges used by our bare-metal datacenters. We own
 	// 23.176.168.0/24 (all SJC) and 216.226.68.0/22, which is split between
@@ -199,7 +227,12 @@ func (h *StatsHandler) TagConn(ctx context.Context, info *stats.ConnTagInfo) con
 func (*StatsHandler) HandleConn(context.Context, stats.ConnStats) {}
 
 func (h *StatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
-	return context.WithValue(ctx, rpcCountersKey{}, &rpcCounters{groupID: "unset", peerType: "unset", dest: Destination{Provider: "unset", Region: "unset"}, method: info.FullMethodName})
+	return context.WithValue(ctx, rpcCountersKey{}, &rpcCounters{
+		groupID:  unsetLabel,
+		peerType: unsetLabel,
+		dest:     Destination{Provider: unsetLabel, Region: unsetLabel},
+		method:   info.FullMethodName,
+	})
 }
 
 func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
@@ -234,23 +267,17 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 			// Exporting metrics has to happen at the end of the RPC to make
 			// that the interceptor populated the dimensions. For unary RPCs,
 			// intercetors run after InPayload.
-			if c.groupID == "unset" || c.peerType == "unset" || c.dest.Provider == "unset" {
+			if c.groupID == unsetLabel || c.peerType == unsetLabel || c.dest.Provider == unsetLabel {
 				if endErr == nil {
 					alert.CtxUnexpectedEvent(ctx, "trafficstats_unset_dimensions_at_end", "Maybe you forgot to install the interceptor? %+v", c)
 				} else {
 					log.Debugf("Traffic stats unset dimensions at end: %+v. Error: %v", c, endErr)
 				}
 			}
-			ingressBytes, egressBytes := c.ingressBytes.Load(), c.egressBytes.Load()
-			if ingressBytes > 0 || egressBytes > 0 {
-				handles := h.counterHandlesForLabels(c.groupID, c.peerType, c.dest.Provider, c.dest.Region)
-				if ingressBytes > 0 {
-					handles.ingress.Add(float64(ingressBytes))
-				}
-				if egressBytes > 0 {
-					handles.egress.Add(float64(egressBytes))
-				}
-			}
+			handles := h.counterHandlesForLabels(c.groupID, c.peerType, c.dest.Provider, c.dest.Region)
+			handles.requests.Inc()
+			handles.ingress.Add(float64(c.ingressBytes.Load()))
+			handles.egress.Add(float64(c.egressBytes.Load()))
 		}
 	}
 }
@@ -291,7 +318,8 @@ func (h *StatsHandler) initCounters(ctx context.Context) {
 
 // peerType returns the peer's verified client identity, or externalPeerType.
 func (h *StatsHandler) peerType(ctx context.Context) string {
-	if h.cis == nil {
+	// IdentityFromContext builds an error for every unsigned request.
+	if h.cis == nil || len(metadata.ValueFromIncomingContext(ctx, authutil.ClientIdentityHeaderName)) == 0 {
 		return externalPeerType
 	}
 	si, err := h.cis.IdentityFromContext(ctx)
@@ -307,12 +335,19 @@ func newClassifier() (*classifier, error) {
 		name string
 		data []byte
 	}{
+		{"Metal", metalRangesCSV},   // Our own sites go first so that no third-party aggregate can claim them.
 		{"GitHub", githubRangesCSV}, // GitHub needs to be before Azure because some GitHub IPs are subsets of Azure IPs.
 		{"AWS", awsRangesCSV},
 		{"Azure", azureRangesCSV},
 		{"GCP", gcpRangesCSV},
 		{"MacStadium", macstadiumRangesCSV},
-		{"Metal", metalRangesCSV},
+		{"DigitalOcean", digitaloceanRangesCSV},
+		{"Oracle", oracleRangesCSV},
+		{"PhoenixNAP", phoenixnapRangesCSV},
+		{"Hetzner", hetznerRangesCSV},
+		{"OVH", ovhRangesCSV},
+		{"Latitude.sh", latitudeRangesCSV},
+		{"Namespace", namespaceRangesCSV},
 		{"PSC", pscRangesCSV},
 		{"PrivateLink", privatelinkRangesCSV},
 	} {
