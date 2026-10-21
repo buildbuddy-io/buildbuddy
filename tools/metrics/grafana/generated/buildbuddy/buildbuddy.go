@@ -542,7 +542,7 @@ func remoteExecutionRow() *dashboard.RowBuilder {
 				SortBy("Last *").
 				SortDesc(true)).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_execution_requests{region="${region}"}[5m])) by (group_id, os, arch)`, "{{group_id}} ({{os}}_{{arch}})"))).
+			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_execution_requests{region="${region}"}[${window}])) by (group_id, os, arch)`, "{{group_id}} ({{os}}_{{arch}})"))).
 		WithPanel(ts("Num Execution Result Waiters (Sum Across Apps)", dash.UnitShort).
 			FillOpacity(10).
 			ShowPoints(common.VisibilityModeNever).
