@@ -3743,6 +3743,7 @@ AWS,sa-east-1,54.240.244.0/22
 AWS,us-east-1,69.107.7.96/29
 AWS,ca-west-1,76.223.170.0/28
 AWS,us-west-2,150.222.102.0/24
+AWS,ap-southeast-3,1.178.86.0/24
 AWS,GLOBAL,1.178.172.0/23
 AWS,us-west-2,3.2.106.0/24
 AWS,ap-southeast-2,3.4.12.2/32
@@ -8090,6 +8091,7 @@ AWS,us-east-1,13.128.0.0/16
 AWS,eu-west-3,35.55.22.0/24
 AWS,eusc-de-east-1,51.74.128.0/18
 AWS,eu-west-1,54.194.0.0/15
+AWS,ap-southeast-3,1.178.86.0/24
 AWS,us-west-2,3.2.106.0/24
 AWS,eu-west-1,15.129.80.0/22
 AWS,ap-south-1,35.50.232.0/24
