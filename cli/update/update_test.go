@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -14,42 +15,96 @@ import (
 
 const binaryContents = "fake bb binary"
 
-func shasumLine(contents string) string {
+func shasumLine(contents, filename string) string {
 	sum := sha256.Sum256([]byte(contents))
-	return hex.EncodeToString(sum[:]) + "  bazel-1.0.0-linux-x86_64\n"
+	return hex.EncodeToString(sum[:]) + "  " + filename + "\n"
 }
 
-// Returns a TLS test server and a download client that trusts it and uses
-// the production redirect policy.
-func newTestServer(t *testing.T, handler http.Handler) (*httptest.Server, *http.Client) {
-	server := httptest.NewTLSServer(handler)
-	t.Cleanup(server.Close)
-	client := server.Client()
-	client.CheckRedirect = newDownloadClient().CheckRedirect
-	return server, client
+func serve(body string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(body))
+	}
 }
 
 func TestDownloadAndVerify(t *testing.T) {
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request to http server: %s", r.URL)
+	}))
+	t.Cleanup(httpServer.Close)
+
 	for _, tc := range []struct {
 		name      string
-		sha256    string
+		binary    http.HandlerFunc
+		sha256    http.HandlerFunc
+		httpStart bool
 		wantError string
 	}{
-		{name: "Success", sha256: shasumLine(binaryContents)},
-		{name: "ChecksumMismatch", sha256: shasumLine("something else"), wantError: "checksum mismatch"},
+		{
+			name:   "Success",
+			binary: serve(binaryContents),
+			sha256: serve(shasumLine(binaryContents, "bb")),
+		},
+		{
+			name:      "ChecksumMismatch",
+			binary:    serve(binaryContents),
+			sha256:    serve(shasumLine("something else", "bb")),
+			wantError: "checksum mismatch",
+		},
+		{
+			name:      "ChecksumNotFound",
+			binary:    serve(binaryContents),
+			sha256:    http.NotFound,
+			wantError: "404",
+		},
+		{
+			name:      "BinaryNotFound",
+			binary:    http.NotFound,
+			sha256:    serve(shasumLine(binaryContents, "bb")),
+			wantError: "404",
+		},
+		{
+			name: "BinaryRedirectedToHTTP",
+			binary: func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, httpServer.URL+r.URL.Path, http.StatusFound)
+			},
+			sha256:    serve(shasumLine(binaryContents, "bb")),
+			wantError: "non-https",
+		},
+		{
+			name:      "ChecksumFilenameMismatch",
+			binary:    serve(binaryContents),
+			sha256:    serve(shasumLine(binaryContents, "other")),
+			wantError: `is for "other"`,
+		},
+		{
+			name:      "MalformedChecksum",
+			binary:    serve(binaryContents),
+			sha256:    serve("abc123  bb\n"),
+			wantError: "malformed checksum",
+		},
+		{
+			name:      "NonHTTPSStartURL",
+			binary:    serve(binaryContents),
+			sha256:    serve(shasumLine(binaryContents, "bb")),
+			httpStart: true,
+			wantError: "non-https",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mux := http.NewServeMux()
-			mux.HandleFunc("/bb", func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte(binaryContents))
-			})
-			mux.HandleFunc("/bb.sha256", func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte(tc.sha256))
-			})
-			server, client := newTestServer(t, mux)
+			mux.HandleFunc("/bb", tc.binary)
+			mux.HandleFunc("/bb.sha256", tc.sha256)
+			server := httptest.NewTLSServer(mux)
+			t.Cleanup(server.Close)
+			client := server.Client()
+			client.CheckRedirect = checkRedirect
+			url := server.URL + "/bb"
+			if tc.httpStart {
+				url = strings.Replace(url, "https://", "http://", 1)
+			}
 			dest := filepath.Join(t.TempDir(), "bb")
 
-			err := downloadAndVerify(client, server.URL+"/bb", dest)
+			err := downloadAndVerify(client, url, dest)
 
 			if tc.wantError != "" {
 				require.ErrorContains(t, err, tc.wantError)
@@ -63,24 +118,23 @@ func TestDownloadAndVerify(t *testing.T) {
 	}
 }
 
-func TestDownloadAndVerify_Non2xx(t *testing.T) {
-	server, client := newTestServer(t, http.NotFoundHandler())
-
-	err := downloadAndVerify(client, server.URL+"/bb", filepath.Join(t.TempDir(), "bb"))
-
-	require.ErrorContains(t, err, "404")
-}
-
-func TestDownloadAndVerify_RejectsRedirectToHTTP(t *testing.T) {
-	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("unexpected request to http server: %s", r.URL)
-	}))
-	t.Cleanup(httpServer.Close)
-	server, client := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, httpServer.URL+r.URL.Path, http.StatusFound)
-	}))
-
-	err := downloadAndVerify(client, server.URL+"/bb", filepath.Join(t.TempDir(), "bb"))
-
-	require.ErrorContains(t, err, "non-https")
+func TestReleaseAssetURL(t *testing.T) {
+	for _, tc := range []struct {
+		goos, goarch string
+		want         string
+	}{
+		{"linux", "amd64", releaseDownloadBaseURL + "/5.0.1/bazel-5.0.1-linux-x86_64"},
+		{"darwin", "arm64", releaseDownloadBaseURL + "/5.0.1/bazel-5.0.1-darwin-arm64"},
+		{"windows", "amd64", ""},
+	} {
+		t.Run(tc.goos+"_"+tc.goarch, func(t *testing.T) {
+			got, err := releaseAssetURL("5.0.1", tc.goos, tc.goarch)
+			if tc.want == "" {
+				require.ErrorContains(t, err, "Could not find a CLI release")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
 }

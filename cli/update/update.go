@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
@@ -26,14 +28,12 @@ var (
 	Flags         = flags
 	workspaceFlag = flags.Bool("workspace", false, "")
 	systemFlag    = flags.Bool("system", false, "")
-
-	// Base URL for release assets. Overridden in tests.
-	releaseDownloadBaseURL = "https://github.com/buildbuddy-io/bazel/releases/download"
 )
 
 const (
-	installPath      = "/usr/local/bin/bb"
-	latestVersionURL = "https://api.github.com/repos/buildbuddy-io/bazel/releases/latest"
+	installPath            = "/usr/local/bin/bb"
+	latestVersionURL       = "https://api.github.com/repos/buildbuddy-io/bazel/releases/latest"
+	releaseDownloadBaseURL = "https://github.com/buildbuddy-io/bazel/releases/download"
 
 	usage = `
 usage: bb update
@@ -87,7 +87,7 @@ func HandleUpdate(args []string) (exitCode int, err error) {
 }
 
 func fetchLatestVersion() (string, error) {
-	res, err := http.Get(latestVersionURL)
+	res, err := httpGet(newDownloadClient(), latestVersionURL)
 	if err != nil {
 		return "", err
 	}
@@ -189,17 +189,19 @@ func updateSystemInstall(version string) error {
 	}
 	installDir := filepath.Dir(installPath)
 	log.Printf("Will write the CLI to %s - this may ask for your password.", installDir)
+	if err := sudo("mkdir", "-p", installDir); err != nil {
+		return fmt.Errorf("sudo mkdir: %s", err)
+	}
 	// Install to a temp file in the same dir, then rename, so that the
 	// replacement is atomic.
-	stagingPath := filepath.Join(installDir, ".bb.tmp")
-	for _, args := range [][]string{
-		{"mkdir", "-p", installDir},
-		{"install", "-m", "0755", tmpPath, stagingPath},
-		{"mv", "-f", stagingPath, installPath},
-	} {
-		if err := sudo(args...); err != nil {
-			return fmt.Errorf("sudo %s: %s", strings.Join(args, " "), err)
-		}
+	stagingPath := filepath.Join(installDir, fmt.Sprintf(".bb.tmp.%d", os.Getpid()))
+	if err := sudo("install", "-m", "0755", tmpPath, stagingPath); err != nil {
+		sudo("rm", "-f", stagingPath)
+		return fmt.Errorf("sudo install: %s", err)
+	}
+	if err := sudo("mv", "-f", stagingPath, installPath); err != nil {
+		sudo("rm", "-f", stagingPath)
+		return fmt.Errorf("sudo mv: %s", err)
 	}
 	return nil
 }
@@ -217,9 +219,17 @@ func releaseAssetURL(version, goos, goarch string) (string, error) {
 	return fmt.Sprintf("%s/%s/bazel-%s-%s-%s", releaseDownloadBaseURL, version, version, goos, arch), nil
 }
 
-// Returns an HTTP client that refuses to follow redirects to non-https URLs.
+// Returns an HTTP client with timeouts that refuses to follow redirects to
+// non-https URLs.
 func newDownloadClient() *http.Client {
-	return &http.Client{CheckRedirect: checkRedirect}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSHandshakeTimeout = 30 * time.Second
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	return &http.Client{
+		Transport:     transport,
+		CheckRedirect: checkRedirect,
+		Timeout:       10 * time.Minute,
+	}
 }
 
 func checkRedirect(req *http.Request, via []*http.Request) error {
@@ -235,22 +245,12 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 // Downloads url to dest, verifying its contents against the sha256 published
 // at url + ".sha256".
 func downloadAndVerify(client *http.Client, url, dest string) error {
-	shaRes, err := httpGet(client, url+".sha256")
+	if !strings.HasPrefix(url, "https://") {
+		return fmt.Errorf("refusing to download from non-https URL %s", url)
+	}
+	expected, err := fetchChecksum(client, url)
 	if err != nil {
 		return err
-	}
-	b, err := io.ReadAll(shaRes.Body)
-	shaRes.Body.Close()
-	if err != nil {
-		return fmt.Errorf("read %s.sha256: %s", url, err)
-	}
-	fields := strings.Fields(string(b))
-	if len(fields) == 0 {
-		return fmt.Errorf("empty checksum file at %s.sha256", url)
-	}
-	expected := strings.ToLower(fields[0])
-	if _, err := hex.DecodeString(expected); err != nil || len(expected) != 64 {
-		return fmt.Errorf("malformed checksum %q at %s.sha256", fields[0], url)
 	}
 
 	res, err := httpGet(client, url)
@@ -274,6 +274,34 @@ func downloadAndVerify(client *http.Client, url, dest string) error {
 		return fmt.Errorf("checksum mismatch for %s: expected %s, got %s", url, expected, actual)
 	}
 	return nil
+}
+
+// Fetches url + ".sha256" and returns the sha256 it lists for url, which must
+// be in `shasum -a 256` format.
+func fetchChecksum(client *http.Client, url string) (string, error) {
+	shaURL := url + ".sha256"
+	res, err := httpGet(client, shaURL)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(res.Body, 4096))
+	if err != nil {
+		return "", fmt.Errorf("read %s: %s", shaURL, err)
+	}
+	lines := strings.Split(strings.TrimRight(string(b), "\r\n"), "\n")
+	fields := strings.Fields(lines[0])
+	if len(lines) != 1 || len(fields) != 2 {
+		return "", fmt.Errorf("malformed checksum file at %s", shaURL)
+	}
+	if fields[1] != path.Base(url) {
+		return "", fmt.Errorf("checksum file at %s is for %q, want %q", shaURL, fields[1], path.Base(url))
+	}
+	sum := strings.ToLower(fields[0])
+	if _, err := hex.DecodeString(sum); err != nil || len(sum) != 64 {
+		return "", fmt.Errorf("malformed checksum %q at %s", fields[0], shaURL)
+	}
+	return sum, nil
 }
 
 func httpGet(client *http.Client, url string) (*http.Response, error) {
