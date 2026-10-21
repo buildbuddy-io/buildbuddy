@@ -51,6 +51,7 @@ go_test(
         "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/workflow/service",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:capability_go_proto",
         "//proto:git_go_proto",
         "//proto:group_go_proto",
         "//proto:remote_execution_go_proto",

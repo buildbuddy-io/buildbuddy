@@ -1098,15 +1098,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		envVars[envVar] = val
 	}
 
-	// If not explicitly set, set the build user (the user that initiated the build).
-	if !contains(envVars, "BUILD_USER") {
-		val := os.Getenv("BUILD_USER")
-		if val == "" {
-			val = os.Getenv("USER")
-		}
-		envVars["BUILD_USER"] = val
-	}
-
 	// If not explicitly set, try to set the default and base branch env vars,
 	// because it will allow us to fallback to snapshots for those branches
 	// if there is no snapshot for the current branch
