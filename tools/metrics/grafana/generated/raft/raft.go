@@ -266,7 +266,7 @@ func metadataServerOverallRow() *dashboard.RowBuilder {
 	return row("Metadata Server Overall").
 		WithPanel(ts("CPU", dash.UnitPercentUnit).
 			Max(1).
-			WithTarget(q("1 - avg by (nodename) (rate(node_cpu_seconds_total{region=\"${region}\", mode=\"idle\", nodename=~\"^gke-.*-mds-.*-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"}[1m]))", "{{nodename}}").
+			WithTarget(q("1 - avg by (nodename) (rate(node_cpu_seconds_total{region=\"${region}\", mode=\"idle\", nodename=~\"^gke-.*-mds-.*-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"}[${window}]))", "{{nodename}}").
 				RefId("A"))).
 		WithPanel(metadataServerOverallPodNhidGkeNodePanel()).
 		WithPanel(ts("instances", dash.UnitShort).
@@ -522,7 +522,7 @@ func dragonboatRow() *dashboard.RowBuilder {
 			WithTarget(q("sum by (pod_name) (increase(dragonboat_raftnode_proposal_dropped_total{namespace=\"${namespace}\", region=\"${region}\"}[${window}]))", "__auto").
 				RefId("A"))).
 		WithPanel(ts("Number of shards with less than 3 shards", "").
-			WithTarget(q("min_over_time(count( count by (shardid)(dragonboat_raftnode_has_leader{namespace=\"${namespace}\",region=\"${region}\"}) < 3)[5m:])", "__auto").
+			WithTarget(q("min_over_time(count( count by (shardid)(dragonboat_raftnode_has_leader{namespace=\"${namespace}\",region=\"${region}\"}) < 3)[${window}]:])", "__auto").
 				RefId("A")))
 }
 
@@ -588,7 +588,7 @@ func evictionRow() *dashboard.RowBuilder {
 				RefId("A"))).
 		WithPanel(evictionEvictionAgePartitionIdPanel()).
 		WithPanel(ts("Disk Cache eviction rate", "").
-			WithTarget(q("max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",cache_name=\"raft\", namespace=\"${namespace}\"}[10m])) by (pod_name, partition_id)", "{{partition_id}} {{pod_name}}").
+			WithTarget(q("max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",cache_name=\"raft\", namespace=\"${namespace}\"}[${window}])) by (pod_name, partition_id)", "{{partition_id}} {{pod_name}}").
 				RefId("A"))).
 		WithPanel(ts("batch delete latency", dash.UnitMicroseconds).
 			Legend(common.NewVizLegendOptionsBuilder().
@@ -661,8 +661,8 @@ func regionVariable() *dashboard.QueryVariableBuilder {
 
 func windowVariable() *dashboard.CustomVariableBuilder {
 	return dashboard.NewCustomVariableBuilder("window").
-		Values(dashboard.StringOrMap{String: new("30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d")}).
-		Current(dash.SelectedOption("30s", "30s")).
+		Values(dashboard.StringOrMap{String: new("$__rate_interval, 30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d")}).
+		Current(dash.SelectedOption("$__rate_interval", "$__rate_interval")).
 		Label("Averaging Window")
 }
 

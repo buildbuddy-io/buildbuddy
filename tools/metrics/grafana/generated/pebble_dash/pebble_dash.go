@@ -116,7 +116,7 @@ func (c Config) compressionPanel() *timeseries.PanelBuilder {
 	// Quantile q of the compressed/decompressed ratio is percentile 1-q of
 	// the compression factor.
 	factor := func(q string) string {
-		return `1 / histogram_quantile(` + q + `, sum(rate(buildbuddy_pebble_compression_ratio_bucket{` + c.cacheNameFilter() + `}[10m])) by (le))`
+		return `1 / histogram_quantile(` + q + `, sum(rate(buildbuddy_pebble_compression_ratio_bucket{` + c.cacheNameFilter() + `}[${window}])) by (le))`
 	}
 	return c.panel("Compression Ratio", "").
 		Description("How many times smaller pebble's compression makes a stream of data (decompressed / compressed bytes), at percentiles of that factor across streams: p90 is what the best-compressing 10% of streams exceed, p1 is what 99% of streams achieve. Each series is the inverse of the matching quantile of the compressed/decompressed ratio histogram.").

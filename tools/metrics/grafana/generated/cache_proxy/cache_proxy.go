@@ -130,10 +130,10 @@ func systemStatusRow() *dashboard.RowBuilder {
 			FillOpacity(10).
 			ShowPoints(common.VisibilityModeNever).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum(increase(kube_pod_container_status_restarts_total{`+podFilter+`}[1m])) by (pod, container, namespace) > 0`, ""))).
+			WithTarget(dash.PromQuery(`sum(increase(kube_pod_container_status_restarts_total{`+podFilter+`}[${window}])) by (pod, container, namespace) > 0`, ""))).
 		WithPanel(ts("CPU usage", "").
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`sum(rate(container_cpu_usage_seconds_total{`+podFilter+`, container=""}[1m])) by (pod)`, "__auto").RefId("A")).
+			WithTarget(dash.PromQuery(`sum(rate(container_cpu_usage_seconds_total{`+podFilter+`, container=""}[${window}])) by (pod)`, "__auto").RefId("A")).
 			WithTarget(dash.PromQuery(`max(container_spec_cpu_quota{`+podFilter+`, container=""} / container_spec_cpu_period{`+podFilter+`, container=""}) by (pod)`, "{{pod}} limit").RefId("B"))).
 		WithPanel(ts("Memory usage", dash.UnitBytes).
 			Legend(hiddenLegend()).
@@ -144,7 +144,7 @@ func systemStatusRow() *dashboard.RowBuilder {
 			Min(0).
 			Max(1).
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{`+podFilter+`, container="cache-proxy"}[1m])) / sum by (pod) (rate(container_cpu_cfs_periods_total{`+podFilter+`, container="cache-proxy"}[1m]))`, "__auto")))
+			WithTarget(dash.PromQuery(`sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{`+podFilter+`, container="cache-proxy"}[${window}])) / sum by (pod) (rate(container_cpu_cfs_periods_total{`+podFilter+`, container="cache-proxy"}[${window}]))`, "__auto")))
 }
 
 // ingressRow shows the cache proxies from the Envoy's point of view.
@@ -378,7 +378,7 @@ func remoteCacheRow() *dashboard.RowBuilder {
 				SortBy("Last *")).
 			WithTarget(dash.PromQuery(`max((`+diskCache+`_filesystem_total_bytes{`+cacheFilter+`} - `+diskCache+`_filesystem_avail_bytes{`+cacheFilter+`}) / `+diskCache+`_filesystem_total_bytes{`+cacheFilter+`}) by (pod_name)`, "{{pod_name}}"))).
 		WithPanel(perCache("Disk Cache eviction rate (${cache_name})", "").
-			WithTarget(dash.PromQuery(`max(rate(`+diskCache+`_num_evictions{`+cacheFilter+`}[10m])) by (pod_name, partition_id)`, "__auto"))).
+			WithTarget(dash.PromQuery(`max(rate(`+diskCache+`_num_evictions{`+cacheFilter+`}[${window}])) by (pod_name, partition_id)`, "__auto"))).
 		WithPanel(perCache("Eviction resample latency (${cache_name})", dash.UnitMicroseconds).
 			WithTarget(dash.PromQuery(`histogram_quantile(${quantile}, sum(rate(`+eviction+`_resample_latency_usec_bucket{`+cacheFilter+`}[${window}])) by (le, partition_id))`, "__auto"))).
 		WithPanel(perCache("Eviction sample queue length (${cache_name})", dash.UnitShort).
@@ -500,16 +500,16 @@ func nodesRow() *dashboard.RowBuilder {
 		WithPanel(ts("CPU", dash.UnitPercentUnit).
 			Max(1).
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`1 - avg by (nodename) (rate(node_cpu_seconds_total{`+nodeFilter+`, mode="idle"}[1m]))`, "{{nodename}}"))).
+			WithTarget(dash.PromQuery(`1 - avg by (nodename) (rate(node_cpu_seconds_total{`+nodeFilter+`, mode="idle"}[${window}]))`, "{{nodename}}"))).
 		WithPanel(ts("Disk", dash.UnitBytesPerSec).
 			AxisSoftMax(100000000).
 			Legend(hiddenLegend()).
-			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_read_bytes_total{`+nodeFilter+`}[1m]))`, "reads {{nodename}}").RefId("A")).
-			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_written_bytes_total{`+nodeFilter+`}[1m]))`, "writes {{nodename}}").RefId("B"))).
+			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_read_bytes_total{`+nodeFilter+`}[${window}]))`, "reads {{nodename}}").RefId("A")).
+			WithTarget(dash.PromQuery(`max by (nodename) (rate(node_disk_written_bytes_total{`+nodeFilter+`}[${window}]))`, "writes {{nodename}}").RefId("B"))).
 		WithPanel(ts("Network", dash.UnitBytesPerSec).
 			AxisSoftMax(100000000).
-			WithTarget(dash.PromQuery(`rate(node_network_receive_bytes_total{`+nodeFilter+`, device=~"(ens|eth).*"}[1m])`, "rx {{nodename}}").RefId("A")).
-			WithTarget(dash.PromQuery(`rate(node_network_transmit_bytes_total{`+nodeFilter+`, device=~"(ens|eth).*"}[1m])`, "tx {{nodename}}").RefId("B")))
+			WithTarget(dash.PromQuery(`rate(node_network_receive_bytes_total{`+nodeFilter+`, device=~"(ens|eth).*"}[${window}])`, "rx {{nodename}}").RefId("A")).
+			WithTarget(dash.PromQuery(`rate(node_network_transmit_bytes_total{`+nodeFilter+`, device=~"(ens|eth).*"}[${window}])`, "tx {{nodename}}").RefId("B")))
 }
 
 func internalRow() *dashboard.RowBuilder {
@@ -528,11 +528,11 @@ func regionVariable() *dashboard.QueryVariableBuilder {
 }
 
 func windowVariable() *dashboard.CustomVariableBuilder {
-	values := "30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d"
+	values := "$__rate_interval, 30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d"
 	return dashboard.NewCustomVariableBuilder("window").
 		Label("Averaging Window").
 		Values(dashboard.StringOrMap{String: &values}).
-		Current(dash.SelectedOption("1m", "1m"))
+		Current(dash.SelectedOption("$__rate_interval", "$__rate_interval"))
 }
 
 func quantileVariable() *dashboard.CustomVariableBuilder {
