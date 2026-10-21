@@ -31,8 +31,12 @@ jobs:
 
       - name: Run tests
         env:
-          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_ORG_API_KEY }}
+          IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != '' && github.event.pull_request.head.repo.full_name != github.repository }}
+          BUILDBUDDY_API_KEY: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && secrets.BUILDBUDDY_ORG_API_KEY || '' }}
         run: |
+          if [[ "$IS_FORK_PR" != "true" ]]; then
+            : "${BUILDBUDDY_API_KEY:?BUILDBUDDY_ORG_API_KEY is required for trusted CI}"
+          fi
           cat >> user.bazelrc <<'EOF'
           common --config=cache
           common --repository_cache=~/repo-cache
@@ -47,9 +51,9 @@ jobs:
           common --color=yes
           EOF
 
-          # Fork PRs do not receive secrets. An empty API-key header is invalid
-          # even when the server permits anonymous build-event uploads.
-          if [[ -n "$BUILDBUDDY_API_KEY" ]]; then
+          if [[ "$IS_FORK_PR" == "true" ]]; then
+            echo 'common --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-arm64/rin20260818' >> user.bazelrc
+          else
             printf 'common --remote_header=x-buildbuddy-api-key=%s\n' "$BUILDBUDDY_API_KEY" >> user.bazelrc
           fi
 

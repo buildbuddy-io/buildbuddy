@@ -17,10 +17,12 @@ jobs:
 
       - name: Test
         env:
-          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_ORG_API_KEY }}
+          IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != '' && github.event.pull_request.head.repo.full_name != github.repository }}
+          BUILDBUDDY_API_KEY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.BUILDBUDDY_ORG_API_KEY || '' }}
         run: |
           auth_args=()
-          if [[ -n "$BUILDBUDDY_API_KEY" ]]; then
+          if [[ "$IS_FORK_PR" != "true" ]]; then
+            : "${BUILDBUDDY_API_KEY:?BUILDBUDDY_ORG_API_KEY is required for trusted CI}"
             auth_args+=("--remote_header=x-buildbuddy-api-key=$BUILDBUDDY_API_KEY")
           fi
           bazelisk test \
