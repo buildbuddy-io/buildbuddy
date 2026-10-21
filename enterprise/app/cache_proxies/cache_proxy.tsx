@@ -12,7 +12,7 @@ import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { cache_proxy } from "../../../proto/cache_proxy_ts_proto";
 import { CACHE_COLORS } from "../../../app/util/color";
-import { hitRate, readWriteRatio, toNumber } from "./cache_proxy_card";
+import { readWriteRatio, toNumber } from "./cache_proxy_card";
 
 // cacheProxyIdFromPath returns the proxy ID from a /cache-proxy/<id> path, or
 // "" if the path has no ID or its escapes are malformed.
@@ -183,14 +183,16 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
           <Panel Icon={Gauge} title="CAS Performance">
             <div className="cache-proxy-stat-rings">
               {readChart(
-                "CAS hits (digests)",
+                "Hit Rate",
+                "CAS Requests",
                 toNumber(stats.casReadHits),
                 toNumber(stats.casReadMisses),
                 toNumber(stats.casReadUncacheable),
                 format.count
               )}
               {readChart(
-                "CAS hits (bytes)",
+                "Hit Rate",
+                "CAS Bytes",
                 toNumber(stats.casReadHitBytes),
                 toNumber(stats.casReadMissBytes),
                 toNumber(stats.casReadUncacheableBytes),
@@ -199,13 +201,15 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
             </div>
             <div className="cache-proxy-stat-rings">
               {readWriteChart(
-                "CAS reads/writes (digests)",
+                "Read Ratio",
+                "CAS Requests",
                 toNumber(stats.casReadHits) + toNumber(stats.casReadMisses),
                 toNumber(stats.casWrites),
                 format.count
               )}
               {readWriteChart(
-                "CAS reads/writes (bytes)",
+                "Read Ratio",
+                "CAS Bytes",
                 toNumber(stats.casReadHitBytes) + toNumber(stats.casReadMissBytes),
                 toNumber(stats.casWriteBytes),
                 format.bytes
@@ -218,14 +222,16 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
           <Panel Icon={Gauge} title="AC Performance">
             <div className="cache-proxy-stat-rings">
               {readChart(
-                "AC hits (digests)",
+                "Hit Rate",
+                "AC Requests",
                 toNumber(stats.acReadHits),
                 toNumber(stats.acReadMisses),
                 0,
                 format.count
               )}
               {readChart(
-                "AC hits (bytes)",
+                "Hit Rate",
+                "AC Bytes",
                 toNumber(stats.acReadHitBytes),
                 toNumber(stats.acReadMissBytes),
                 0,
@@ -234,13 +240,15 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
             </div>
             <div className="cache-proxy-stat-rings">
               {readWriteChart(
-                "AC reads/writes (digests)",
+                "Read Ratio",
+                "AC Requests",
                 toNumber(stats.acReadHits) + toNumber(stats.acReadMisses),
                 toNumber(stats.acWrites),
                 format.count
               )}
               {readWriteChart(
-                "AC reads/writes (bytes)",
+                "Read Ratio",
+                "AC Bytes",
                 toNumber(stats.acReadHitBytes) + toNumber(stats.acReadMissBytes),
                 toNumber(stats.acWriteBytes),
                 format.bytes
@@ -306,27 +314,36 @@ function KeyValue({ label, mono, children }: { label: string; mono?: boolean; ch
 
 function statChart(
   title: string,
+  subtitle: string,
   data: Record<string, number>,
   valueFormatter: (v: number) => string,
-  summary: string
+  summary?: string
 ) {
   return (
     <div className="cache-proxy-stat-ring">
       <DonutChart
         title={title}
+        subtitle={subtitle}
         data={Object.entries(data).map(([name, value]) => ({ name, value }))}
         colorPicker={(name) => CACHE_COLORS[name as keyof typeof CACHE_COLORS]}
         valueFormatter={valueFormatter}
       />
-      <div className="cache-proxy-stat-summary">{summary}</div>
+      {summary && <div className="cache-proxy-stat-summary">{summary}</div>}
     </div>
   );
 }
 
-function readChart(title: string, hits: number, misses: number, uncacheable: number, format: (v: number) => string) {
-  return statChart(title, { hits, misses, uncacheable }, format, `${hitRate(hits, misses)} hit rate`);
+function readChart(
+  title: string,
+  subtitle: string,
+  hits: number,
+  misses: number,
+  uncacheable: number,
+  format: (v: number) => string
+) {
+  return statChart(title, subtitle, { hits, misses, uncacheable }, format);
 }
 
-function readWriteChart(title: string, reads: number, writes: number, format: (v: number) => string) {
-  return statChart(title, { reads, writes }, format, `${readWriteRatio(reads, writes)} read:write`);
+function readWriteChart(title: string, subtitle: string, reads: number, writes: number, format: (v: number) => string) {
+  return statChart(title, subtitle, { reads, writes }, format, `${readWriteRatio(reads, writes)} read:write`);
 }

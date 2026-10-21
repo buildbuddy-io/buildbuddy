@@ -440,6 +440,10 @@
   text-align: center;
 }
 
+.cache-proxy-page .cache-proxy-stat-ring .donut-chart-subtitle {
+  text-align: center;
+}
+
 .cache-proxy-page .cache-proxy-stat-summary {
   margin-top: 16px;
   font-size: 16px;
