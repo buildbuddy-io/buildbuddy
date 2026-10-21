@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vishvananda/netlink"
 	"golang.org/x/net/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -29,8 +30,15 @@ func TestContainerNetwork(t *testing.T) {
 	// The test servers listen on the host's default IP, which may be private.
 	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
 	ctx := context.Background()
-	hostIP, err := networking.DefaultIP(ctx)
+	hostIP4, err := networking.DefaultIP(ctx)
 	require.NoError(t, err)
+	// Add a public IPv6 address to the host, which may have none.
+	hostIP6 := net.ParseIP("2001:db8::1")
+	lo, err := netlink.LinkByName("lo")
+	require.NoError(t, err)
+	addr6 := &netlink.Addr{IPNet: &net.IPNet{IP: hostIP6, Mask: net.CIDRMask(128, 128)}}
+	require.NoError(t, netlink.AddrAdd(lo, addr6))
+	t.Cleanup(func() { netlink.AddrDel(lo, addr6) })
 
 	n, err := NewContainerNetwork(ctx)
 	require.NoError(t, err)
@@ -47,73 +55,83 @@ func TestContainerNetwork(t *testing.T) {
 		return conn, err
 	}
 
-	t.Run("tcp", func(t *testing.T) {
-		lis, err := net.Listen("tcp", net.JoinHostPort(hostIP.String(), "0"))
-		require.NoError(t, err)
-		defer lis.Close()
-		go func() {
-			conn, err := lis.Accept()
-			if err != nil {
-				return
-			}
-			defer conn.Close()
-			io.Copy(conn, conn)
-		}()
-
-		conn, err := dial("tcp", lis.Addr().String())
-		require.NoError(t, err)
-		defer conn.Close()
-		msg := make([]byte, 1<<20)
-		go conn.Write(msg)
-		_, err = io.ReadFull(conn, make([]byte, len(msg)))
-		require.NoError(t, err)
-	})
-
-	t.Run("udp", func(t *testing.T) {
-		pc, err := net.ListenPacket("udp", net.JoinHostPort(hostIP.String(), "0"))
-		require.NoError(t, err)
-		defer pc.Close()
-		go func() {
-			buf := make([]byte, 1500)
-			for {
-				size, addr, err := pc.ReadFrom(buf)
+	for _, hostIP := range []net.IP{hostIP4, hostIP6} {
+		t.Run(hostIP.String()+"/tcp", func(t *testing.T) {
+			lis, err := net.Listen("tcp", net.JoinHostPort(hostIP.String(), "0"))
+			require.NoError(t, err)
+			defer lis.Close()
+			go func() {
+				conn, err := lis.Accept()
 				if err != nil {
 					return
 				}
-				pc.WriteTo(buf[:size], addr)
+				defer conn.Close()
+				io.Copy(conn, conn)
+			}()
+
+			conn, err := dial("tcp", lis.Addr().String())
+			require.NoError(t, err)
+			defer conn.Close()
+			msg := make([]byte, 1<<20)
+			go conn.Write(msg)
+			_, err = io.ReadFull(conn, make([]byte, len(msg)))
+			require.NoError(t, err)
+		})
+
+		t.Run(hostIP.String()+"/udp", func(t *testing.T) {
+			pc, err := net.ListenPacket("udp", net.JoinHostPort(hostIP.String(), "0"))
+			require.NoError(t, err)
+			defer pc.Close()
+			go func() {
+				buf := make([]byte, 1500)
+				for {
+					size, addr, err := pc.ReadFrom(buf)
+					if err != nil {
+						return
+					}
+					pc.WriteTo(buf[:size], addr)
+				}
+			}()
+
+			conn, err := dial("udp", pc.LocalAddr().String())
+			require.NoError(t, err)
+			defer conn.Close()
+			_, err = conn.Write([]byte("hello"))
+			require.NoError(t, err)
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			buf := make([]byte, 1500)
+			size, err := conn.Read(buf)
+			require.NoError(t, err)
+			require.Equal(t, "hello", string(buf[:size]))
+		})
+
+		t.Run(hostIP.String()+"/icmp", func(t *testing.T) {
+			network, listenAddr, echo, echoReply := "ip4:icmp", "0.0.0.0", uint8(header.ICMPv4Echo), uint8(header.ICMPv4EchoReply)
+			if hostIP.To4() == nil {
+				network, listenAddr, echo, echoReply = "ip6:ipv6-icmp", "::", uint8(header.ICMPv6EchoRequest), uint8(header.ICMPv6EchoReply)
 			}
-		}()
-
-		conn, err := dial("udp", pc.LocalAddr().String())
-		require.NoError(t, err)
-		defer conn.Close()
-		_, err = conn.Write([]byte("hello"))
-		require.NoError(t, err)
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		buf := make([]byte, 1500)
-		size, err := conn.Read(buf)
-		require.NoError(t, err)
-		require.Equal(t, "hello", string(buf[:size]))
-	})
-
-	t.Run("icmp", func(t *testing.T) {
-		var conn *icmp.PacketConn
-		require.NoError(t, inNamespace(n.netns, func() error {
-			var err error
-			conn, err = icmp.ListenPacket("ip4:icmp", "0.0.0.0")
-			return err
-		}))
-		defer conn.Close()
-		_, err := conn.WriteTo(icmpEcho(header.ICMPv4Echo, 1, 1, []byte("ping")), &net.IPAddr{IP: hostIP})
-		require.NoError(t, err)
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		buf := make([]byte, 1500)
-		size, _, err := conn.ReadFrom(buf)
-		require.NoError(t, err)
-		reply := header.ICMPv4(buf[:size])
-		require.Equal(t, header.ICMPv4EchoReply, reply.Type())
-		require.Equal(t, "ping", string(reply.Payload()))
-	})
+			var conn *icmp.PacketConn
+			require.NoError(t, inNamespace(n.netns, func() error {
+				var err error
+				conn, err = icmp.ListenPacket(network, listenAddr)
+				return err
+			}))
+			defer conn.Close()
+			_, err := conn.WriteTo(icmpEcho(echo, 1, 1, []byte("ping")), &net.IPAddr{IP: hostIP})
+			require.NoError(t, err)
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			buf := make([]byte, 1500)
+			// Skip other messages, such as neighbor discovery.
+			for {
+				size, _, err := conn.ReadFrom(buf)
+				require.NoError(t, err)
+				if buf[0] == echoReply {
+					require.Equal(t, "ping", string(header.ICMPv4(buf[:size]).Payload()))
+					break
+				}
+			}
+		})
+	}
 
 	t.Run("icmp over limit", func(t *testing.T) {
 		var conn *icmp.PacketConn
@@ -124,7 +142,7 @@ func TestContainerNetwork(t *testing.T) {
 		}))
 		defer conn.Close()
 		ping := func(seq uint16) error {
-			if _, err := conn.WriteTo(icmpEcho(header.ICMPv4Echo, 1, seq, []byte("ping")), &net.IPAddr{IP: hostIP}); err != nil {
+			if _, err := conn.WriteTo(icmpEcho(header.ICMPv4Echo, 1, seq, []byte("ping")), &net.IPAddr{IP: hostIP4}); err != nil {
 				return err
 			}
 			conn.SetReadDeadline(time.Now().Add(time.Second))
@@ -170,6 +188,8 @@ func TestContainerNetwork(t *testing.T) {
 	t.Run("blocked private IP", func(t *testing.T) {
 		_, err := dial("tcp", "10.0.0.1:80")
 		require.ErrorIs(t, err, syscall.ECONNREFUSED)
+		_, err = dial("tcp", "[fc00::1]:80")
+		require.ErrorIs(t, err, syscall.ECONNREFUSED)
 	})
 
 	stats, err := n.Stats(ctx)
@@ -196,8 +216,15 @@ func TestIsAllowed(t *testing.T) {
 		{"127.0.0.1", false},
 		{"224.0.0.1", false},
 		{"255.255.255.255", false},
+		{"2001:4860:4860::8888", true},
+		{"::ffff:10.1.2.3", true},
+		{"::ffff:10.1.2.4", false},
+		{"::1", false},
+		{"fd20:ce::254", false},
+		{"fe80::1", false},
+		{"ff02::1", false},
 	} {
-		addr := tcpip.AddrFrom4(netip.MustParseAddr(tc.addr).As4())
+		addr := tcpip.AddrFromSlice(netip.MustParseAddr(tc.addr).AsSlice())
 		require.Equal(t, tc.allowed, n.isAllowed(addr), tc.addr)
 		require.False(t, local.isAllowed(addr), tc.addr)
 	}
