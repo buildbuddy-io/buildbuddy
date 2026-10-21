@@ -16,12 +16,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -398,26 +401,60 @@ func TestPool_EvictsWorkspacesOverSlotLimit(t *testing.T) {
 	flags.Set(t, "executor.workspace_pool.slots", 1)
 	te := newPoolTestEnv(t)
 	ctx := t.Context()
-	tree1 := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{uploadFile(t, te, "a.txt", "a")}}}
-	tree2 := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{uploadFile(t, te, "b.txt", "b")}}}
-	buildRoot := testfs.MakeTempDir(t)
-	pool, err := workspace.NewPool(buildRoot)
-	require.NoError(t, err)
+	a := uploadFile(t, te, "a.txt", "a")
+	b := uploadFile(t, te, "b.txt", "b")
+	c := uploadFile(t, te, "c.txt", "c")
 
-	runPooledTask(t, ctx, te, buildRoot, pool, tree1)
-	second := runPooledTask(t, ctx, te, buildRoot, pool, tree2)
+	for _, test := range []struct {
+		name string
+		// The trees share no files, so the second task doesn't reuse the first
+		// workspace, and pooling the second workspace evicts one of the two.
+		first, second *repb.Tree
+		// wantSecondKept is whether the pool keeps the second workspace
+		// rather than the first.
+		wantSecondKept bool
+	}{
+		{
+			name:   "same file count",
+			first:  &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{a}}},
+			second: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{b}}},
+			// The pool evicts the older of two workspaces with the same value.
+			wantSecondKept: true,
+		},
+		{
+			name:   "new workspace holds fewer files",
+			first:  &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{a, b}}},
+			second: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{c}}},
+			// The pool evicts the workspace with the lowest value, even if it's
+			// the one being added.
+			wantSecondKept: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			metrics.UnexpectedEvent.Reset()
+			buildRoot := testfs.MakeTempDir(t)
+			pool, err := workspace.NewPool(buildRoot)
+			require.NoError(t, err)
 
-	// Both workspaces hold one file, so pooling the second one evicts the
-	// first, which is older, and the pool deletes it in the background.
-	poolDir := filepath.Join(buildRoot, "_WORKSPACE_POOL")
-	require.Eventually(t, func() bool {
-		entries, err := os.ReadDir(poolDir)
-		return err == nil && len(entries) == 1
-	}, 10*time.Second, 10*time.Millisecond)
-	entries, err := os.ReadDir(poolDir)
-	require.NoError(t, err)
-	remaining, err := os.Lstat(filepath.Join(poolDir, entries[0].Name()))
-	require.NoError(t, err)
-	kept := os.SameFile(second, remaining)
-	assert.True(t, kept, "pool should keep the second workspace")
+			first := runPooledTask(t, ctx, te, buildRoot, pool, test.first)
+			second := runPooledTask(t, ctx, te, buildRoot, pool, test.second)
+
+			// The pool deletes the evicted workspace in the background.
+			poolDir := filepath.Join(buildRoot, "_WORKSPACE_POOL")
+			require.Eventually(t, func() bool {
+				entries, err := os.ReadDir(poolDir)
+				return err == nil && len(entries) == 1
+			}, 10*time.Second, 10*time.Millisecond)
+			entries, err := os.ReadDir(poolDir)
+			require.NoError(t, err)
+			remaining, err := os.Lstat(filepath.Join(poolDir, entries[0].Name()))
+			require.NoError(t, err)
+			secondKept := os.SameFile(second, remaining)
+			assert.Equal(t, test.wantSecondKept, secondKept)
+			firstKept := os.SameFile(first, remaining)
+			assert.Equal(t, !test.wantSecondKept, firstKept)
+			notInterned := testmetrics.CounterValueForLabels(t, metrics.UnexpectedEvent, prometheus.Labels{metrics.EventName: "workspace_pool_dir_not_interned"})
+			assert.Zero(t, notInterned)
+		})
+	}
 }

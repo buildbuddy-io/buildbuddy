@@ -28,6 +28,7 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/resources",
+        "//server/util/alert",
         "//server/util/bb",
         "//server/util/disk",
         "//server/util/flag",
@@ -78,8 +79,11 @@ go_test(
         "@org_golang_google_grpc//:grpc",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [
+            "//server/metrics",
+            "//server/testutil/testmetrics",
             "//server/util/claims",
             "//server/util/testing/flags",
+            "@com_github_prometheus_client_golang//prometheus",
         ],
         "//conditions:default": [],
     }),
