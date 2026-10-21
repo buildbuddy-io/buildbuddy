@@ -522,7 +522,7 @@ func dragonboatRow() *dashboard.RowBuilder {
 			WithTarget(q("sum by (pod_name) (increase(dragonboat_raftnode_proposal_dropped_total{namespace=\"${namespace}\", region=\"${region}\"}[${window}]))", "__auto").
 				RefId("A"))).
 		WithPanel(ts("Number of shards with less than 3 shards", "").
-			WithTarget(q("min_over_time(count( count by (shardid)(dragonboat_raftnode_has_leader{namespace=\"${namespace}\",region=\"${region}\"}) < 3)[5m:])", "__auto").
+			WithTarget(q("min_over_time(count( count by (shardid)(dragonboat_raftnode_has_leader{namespace=\"${namespace}\",region=\"${region}\"}) < 3)[${window}]:])", "__auto").
 				RefId("A")))
 }
 
@@ -662,7 +662,7 @@ func regionVariable() *dashboard.QueryVariableBuilder {
 func windowVariable() *dashboard.CustomVariableBuilder {
 	return dashboard.NewCustomVariableBuilder("window").
 		Values(dashboard.StringOrMap{String: new("30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d")}).
-		Current(dash.SelectedOption("30s", "30s")).
+		Current(dash.SelectedOption("1m", "1m")).
 		Label("Averaging Window")
 }
 
