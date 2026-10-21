@@ -482,10 +482,8 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 						alert.CtxUnexpectedEvent(reEnqueueCtx, "shutdown_reenqueue_grace_period_expired", "Gave up re-enqueueing task reservations for executor %q going down: grace period of %s after stream cancellation expired with %d of %d reservations not re-enqueued", executorID, shutdownReEnqueueGracePeriod, len(taskIDs)-i, len(taskIDs))
 						break
 					}
-					expectedLeaseID := ""
-					reconnectToken := ""
 					taskCtx, cancelTask := context.WithTimeout(reEnqueueCtx, shutdownReEnqueuePerTaskTimeout)
-					err := h.scheduler.reEnqueueTask(taskCtx, taskID, expectedLeaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down")
+					err := h.scheduler.reEnqueueTaskReservation(taskCtx, taskID)
 					cancelTask()
 					if err != nil {
 						log.CtxWarningf(reEnqueueCtx, "Could not re-enqueue task reservation %q for executor %q going down: %s", taskID, executorID, err)
@@ -3307,6 +3305,32 @@ func (s *SchedulerServer) taskCanBeRetried(ctx context.Context, taskID string) b
 		return false
 	}
 	return platform.Retryable(task)
+}
+
+// reEnqueueTaskReservation sends a replacement reservation without releasing
+// the task's claim or applying execution retry limits.
+func (s *SchedulerServer) reEnqueueTaskReservation(ctx context.Context, taskID string) error {
+	scheduledTask, err := s.readTask(ctx, taskID)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return nil
+		}
+		return err
+	}
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(scheduledTask.serializedTask, task); err != nil {
+		return status.InternalErrorf("deserialize task: %s", err)
+	}
+	req := &scpb.EnqueueTaskReservationRequest{
+		TaskId:             taskID,
+		TaskSize:           scheduledTask.metadata.GetTaskSize(),
+		SchedulingMetadata: scheduledTask.metadata,
+		Jwt:                scheduledTask.jwt,
+		Delay:              durationpb.New(max(time.Until(scheduledTask.reconnectPeriodEnd), 0)),
+	}
+	return s.enqueueTaskReservations(ctx, req, task, enqueueTaskReservationOpts{
+		numReplicas: 1,
+	})
 }
 
 // reEnqueueTask releases a task's claim and schedules reservations for another
