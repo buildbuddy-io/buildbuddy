@@ -181,6 +181,7 @@ func main() {
 func startGRPCServers(env *real_environment.RealEnv) error {
 	// Add the API-Key, JWT, client-identity, etc... propagating interceptor.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
+		EnableConnectionAging: true,
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
 			interceptors.PropagateMetadataUnaryInterceptor(headersToPropagate...),
 		},
