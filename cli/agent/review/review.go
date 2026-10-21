@@ -69,35 +69,175 @@ var reviewAllowedTools = []string{
 	"Bash(gh pr view *)",
 }
 
-const reviewPrompt = "Review PR #%d. /review\n\nFor every finding, include the exact file path and line number in the format `path/to/file.go:42` so findings can be posted as inline GitHub comments.\n\nReview by reading the diff and the surrounding source. Do not build, run, or test the code — that can be slow and is not the goal of this review. Do not edit any files, and do not commit, push, or post anything to GitHub. Only report the findings."
+// editPrompt asks the agent to edit the review for its reader and convert it
+// to JSON. The review agent focuses on finding problems; this pass focuses on
+// how they read.
+const editPrompt = `You are editing a code review before it is posted on a pull request, and
+converting it to JSON. The reviewer has done the analysis. Your job is to make
+the review concise, clear and pleasant to receive. Don't change what any
+finding claims, and don't add facts. You may cut detail, merge duplicates,
+split a finding that covers unrelated issues, and reword anything.
 
-const parsePrompt = `Parse the code review below and output ONLY a valid JSON object — no markdown fences, no explanation.
+The reader may be the PR's author or a reviewer. Assume they know the system
+at a high level, but not this change's code: an agent may have written it,
+so even the author may not remember its function, type or variable names,
+and a reviewer may know little about the change beyond its description. In
+the pitch, describe behavior, not code: what the system does, and what will
+go wrong. Names that are part of the design, such as flags, config keys or
+API fields, are fine. Code names belong in Details, where they help someone
+find the code.
 
-Schema:
+The reader should read each comment once and know what's wrong and what to
+do. If they would want to ask for a summary, the comment is too long.
+
+For each finding:
+- Open with a pitch of two or three short sentences: what goes wrong, why,
+  and what should be done. Lead with the consequence. Use plain words, one
+  idea per sentence, and no asides in parentheses. For example:
+
+    This can show one user's data to another. The response cache no longer
+    includes the user ID in its key, so two users requesting the same path
+    share a cache entry. The user ID should be added back to the key.
+
+- Most findings need nothing more. If a reader who wants to dig in needs
+  more, put it after the pitch in a section starting with "**Details:**".
+  Details answer "how do I know this is true, and what are my options?": the
+  mechanism, at most one example, and the main alternative fix if there is
+  one. They are not a complete record of what the reviewer found. Order them
+  so the reader can stop at any point, most important first.
+- Cut proof the reader can get by reading the code, repeated or variant
+  scenarios, hedging that argues both sides, extra fixes when one is clearly
+  best, and closing restatements.
+- Keep the reviewer's position, and keep uncertainty ("I couldn't check X"),
+  stated briefly.
+
+Write like a helpful colleague: direct but not curt, with no praise or
+filler.
+
+Output ONLY a valid JSON object, with no markdown fences and no explanation:
 {
-  "summary": "<concise summary of the diff as markdown, max ~3 sentences but aim for fewer>",
+  "summary": "<what the PR does, in one or two sentences of markdown>",
   "comments": [
     {
       "file": "<file path relative to repo root, e.g. server/foo.go>",
-      "line": <integer — the line number in the NEW version of the file>,
-      "body": "<full comment text as markdown>"
+      "line": <integer, the line number in the NEW version of the file>,
+      "category": "<before_merge, follow_up or discussion, from the finding's label: Address before merge, Address in a follow-on or Item for discussion>",
+      "body": "<the edited comment as markdown, without the label>"
     }
   ]
 }
 
 Rules:
-- Include a comment entry for every unique finding that mentions a file path, even if the line number is approximate — use the nearest relevant line you can infer from context.
-  Avoid including redundant comments; instead of making the same comment on every line where a particular issue occurs,
-  you can say things like "(same comment applies to ...)" or "... (here and below)."
-- Findings with no file reference at all go into "summary".
-- File paths must be relative (no leading slash, no absolute paths).
-- Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
-- Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern or suggesting an improvement (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
-- Avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
-- The summary section should not summarize any of the individual comments. It should only explain the purpose of the diff and findings with no file reference.
-- Output ONLY the JSON object. No other text before or after it.
+- Every finding becomes a comment entry, with the file and line the reviewer
+  gave. If a finding has no location, attach it to the changed file and line
+  it relates to most closely.
+- File paths must be relative, with no leading slash.
+- Remove footnote-style references such as "(#1)" from comment bodies and the
+  summary; GitHub turns them into issue links.
+- Omit comments that only praise or acknowledge the change without raising a
+  concern.
+- The summary only explains what the PR does. It must not contain findings,
+  caveats or notes, and doesn't summarize the comments.
 
 REVIEW:
+`
+
+// reviewPrompt is a format string taking the PR number. It is deliberately
+// generic: repo-specific guidance comes from the repo's own CLAUDE.md or
+// AGENTS.md.
+const reviewPrompt = `Review PR #%d. Only report findings: don't build, run, or test the code, and
+don't edit files, commit, push, or post to GitHub.
+
+## Process
+
+1. Read the PR description and the diff to understand what the change is for.
+2. Read the repo's guidance files (CLAUDE.md, AGENTS.md, CONTRIBUTING and
+   similar) for its conventions.
+3. Read the surrounding code as needed: callers, related code and existing
+   tests. Read enough to know what the change affects and how similar things
+   are done elsewhere in the repo.
+4. Look for broken assumptions. For each behavior the change alters, ask
+   what depends on it: other code, tools, users, stored data, other services
+   or versions. Include guarantees that were never written down, such as
+   ordering, determinism, timing, error behavior and formats. Then check
+   whether they still hold. Many regressions sit outside the diff, in code
+   that was correct until something it relied on changed.
+5. Collect findings, verify each one against the code, and drop any that
+   don't hold up.
+
+## Goal
+
+Catch the problems that matter, without noise. In priority order:
+
+1. **Prevent regressions.** The change must not break behavior that works today.
+2. **Make it a good change.** It should be correct and tested, and the code
+   should be no harder to maintain than before.
+
+Simple is better than complicated. The most valuable design feedback is "if
+you did X instead, all of Y would go away": a simpler approach that makes a
+large part of the change, or of the existing code, unnecessary. Look for these
+actively. Simple is also better than clever: a dense line that would be
+clearer unpacked is worth a mention, but matters much less.
+
+Apply the same standard to your own suggestions. Don't suggest added
+abstraction, configurability or defensive code unless a concrete problem
+requires it.
+
+A review with no findings is a good outcome when the change is sound. Every
+comment costs the author time, so only write ones you'd defend to the engineer
+who owns this code.
+
+## Categories
+
+Start every finding with exactly one of these labels:
+
+**Address before merge:** issues that will cause harm, to users or the
+system, if the PR ships as is. Typically:
+- bugs and regressions: wrong results, crashes, data loss, security holes
+- broken compatibility with existing clients, stored data or config
+- real performance regressions
+- missing tests for new or changed behavior
+- severe design problems that make the code much harder to change correctly
+
+If a finding would cause harm, it belongs here even when you're unsure or
+the fix needs discussion; say so in the comment. Stay within the PR's scope:
+a pre-existing problem belongs here only if this change makes it reachable
+or worse.
+
+**Address in a follow-on:** worth doing, but in a separate PR. This is
+usually a refactor for a design concern, lower-priority test coverage, or a
+significant pre-existing problem you noticed nearby.
+
+**Item for discussion:** use rarely, for an issue that seems worth raising
+but doesn't fit either category above. For example, a substantially simpler
+or better approach to the whole change.
+
+## What counts as a finding
+
+- Verify against the code before reporting. Trace the callers and check
+  whether the case is already handled elsewhere. If you can't describe a
+  concrete situation where it goes wrong, drop it. If you're unsure but the
+  stakes are high, report it and say what you couldn't confirm.
+- Breaking the repo's conventions can be a finding. Your own preferences
+  are not.
+- Skip: style, naming and formatting; anything a linter or compiler catches;
+  hypothetical hardening for cases that can't happen; restating what the code
+  does; praise.
+- One finding per issue. If it repeats, list the other places in the same
+  comment.
+
+## Writing
+
+Write each finding plainly, with the evidence that supports it. A separate
+editing pass will tighten the wording, so focus on being accurate and
+complete, and keep your position on what should be done.
+
+Give each finding's location as ` + "`path/to/file.go:42`" + ` so it can be posted as an
+inline comment. Every finding needs a location, so it can be resolved on its
+own, and the location must be a line the PR changed. If the problem shows up
+in code the PR didn't change, use the changed line that causes it, and name
+the affected code in the comment. For a finding about the PR as a whole, use
+the changed line it relates to most closely.
 `
 
 // reviewLinkMarker identifies the comment posted by postReviewLink, so that
@@ -112,9 +252,26 @@ var (
 )
 
 type reviewComment struct {
-	File string `json:"file"`
-	Line int    `json:"line"`
-	Body string `json:"body"`
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Category string `json:"category"`
+	Body     string `json:"body"`
+}
+
+// categoryLabels maps a review category to the label prefixed to the comment.
+var categoryLabels = map[string]string{
+	"before_merge": "**Address before merge:**",
+	"follow_up":    "**Address in a follow-on:**",
+	"discussion":   "**Item for discussion:**",
+}
+
+// text returns the comment body, prefixed with its category label. A missing
+// or unknown category yields the body without a label.
+func (c reviewComment) text() string {
+	if label, ok := categoryLabels[c.Category]; ok {
+		return label + " " + c.Body
+	}
+	return c.Body
 }
 
 type reviewJSON struct {
@@ -210,10 +367,14 @@ func HandleReview(args []string) (int, error) {
 	if strings.TrimSpace(reviewText) == "" {
 		return -1, fmt.Errorf("review produced no output.")
 	}
+	if *dryRun {
+		fmt.Println("Dry run — review before editing:")
+		fmt.Println(reviewText)
+	}
 
-	// Have the agent convert the review to structured JSON. If that fails,
+	// Have the agent edit the review and convert it to JSON. If that fails,
 	// post the unstructured review as a single body comment.
-	log.Printf("Structuring review output into JSON...")
+	log.Printf("Editing and structuring review...")
 	review, err := structureReview(ctx, reviewText)
 	if err != nil {
 		log.Warnf("Failed to structure review (%s); posting it as a single body comment.", err)
@@ -229,27 +390,37 @@ func HandleReview(args []string) (int, error) {
 	}
 	validLines := diffLines(diff)
 
-	// Partition comments into inline and body overflow.
+	// Post every comment inline, so each can be resolved on its own. Only if
+	// the diff has no lines at all do comments fall back to the review body.
 	var inlineComments []*github.DraftReviewComment
 	var overflowLines []string
+	moved := 0
 	for _, c := range review.Comments {
-		if validLines[fileLine{c.File, c.Line}] {
-			inlineComments = append(inlineComments, &github.DraftReviewComment{
-				Path: new(c.File),
-				Line: new(c.Line),
-				Side: new("RIGHT"),
-				Body: new(c.Body),
-			})
-		} else {
-			overflowLines = append(overflowLines, fmt.Sprintf("- `%s:%d` — %s", c.File, c.Line, c.Body))
+		loc, ok := placeComment(c, validLines)
+		if !ok {
+			overflowLines = append(overflowLines, fmt.Sprintf("- `%s:%d` — %s", c.File, c.Line, c.text()))
+			continue
 		}
+		body := c.text()
+		if loc != (fileLine{c.File, c.Line}) {
+			moved++
+			if c.File != "" {
+				body += fmt.Sprintf("\n\n<sub>About `%s:%d`, which isn't in the diff.</sub>", c.File, c.Line)
+			}
+		}
+		inlineComments = append(inlineComments, &github.DraftReviewComment{
+			Path: new(loc.file),
+			Line: new(loc.line),
+			Side: new("RIGHT"),
+			Body: new(body),
+		})
 	}
 
 	fullBody := review.Summary
 	if len(overflowLines) > 0 {
-		fullBody += "\n\n### Additional findings (lines outside the diff)\n" + strings.Join(overflowLines, "\n")
+		fullBody += "\n\n### Additional findings\n" + strings.Join(overflowLines, "\n")
 	}
-	log.Printf("    %d inline comment(s), %d folded into body.", len(inlineComments), len(overflowLines))
+	log.Printf("    %d inline comment(s), %d moved to the nearest diff line, %d folded into body.", len(inlineComments), moved, len(overflowLines))
 
 	return postReview(ctx, gh, owner, repo, pr, fullBody, inlineComments)
 }
@@ -370,7 +541,7 @@ func structureReview(ctx context.Context, reviewText string) (*reviewJSON, error
 		Agent:           *agentflags.Agent,
 		Model:           *agentflags.Model,
 		ReasoningEffort: *agentflags.Effort,
-		Prompt:          parsePrompt + reviewText,
+		Prompt:          editPrompt + reviewText,
 		CodexSandbox:    agentutil.SandboxReadOnly,
 		Output:          buf,
 		Progress:        io.Discard,
@@ -392,6 +563,40 @@ func structureReview(ctx context.Context, reviewText string) (*reviewJSON, error
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 	return review, nil
+}
+
+// placeComment returns where to post c inline. GitHub only accepts inline
+// comments on lines in the diff, so a comment on any other line moves to the
+// nearest diff line in the same file, or else to the PR's first diff line.
+// ok is false only if the diff has no lines.
+func placeComment(c reviewComment, validLines map[fileLine]bool) (loc fileLine, ok bool) {
+	want := fileLine{c.File, c.Line}
+	if validLines[want] {
+		return want, true
+	}
+	var nearest, first fileLine
+	for l := range validLines {
+		if l.file == c.File {
+			d, best := abs(l.line-c.Line), abs(nearest.line-c.Line)
+			if nearest.file == "" || d < best || (d == best && l.line < nearest.line) {
+				nearest = l
+			}
+		}
+		if first.file == "" || l.file < first.file || (l.file == first.file && l.line < first.line) {
+			first = l
+		}
+	}
+	if nearest.file != "" {
+		return nearest, true
+	}
+	return first, first.file != ""
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // diffLines returns the set of lines in the new version of each file that
