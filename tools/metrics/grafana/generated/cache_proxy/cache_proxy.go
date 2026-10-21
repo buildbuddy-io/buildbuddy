@@ -52,10 +52,13 @@ func row(title string) *dashboard.RowBuilder {
 		Collapsed(true)
 }
 
-// ts is shorthand for dash.PlainTimeseries.
-func ts(title, unit string) *timeseries.PanelBuilder {
-	return dash.PlainTimeseries(title, unit)
-}
+// Shorthands for the panel-style helpers shared through dash.
+var (
+	ts             = dash.PlainTimeseries
+	rightLegend    = dash.RightLegend
+	multiTooltip   = dash.MultiTooltip
+	rightAxisProps = dash.RightAxisProps
+)
 
 // tableLegend returns a legend shown as a table at the bottom with the given
 // summary calculations.
@@ -75,26 +78,11 @@ func lastValueLegend() *common.VizLegendOptionsBuilder {
 		SortDesc(true)
 }
 
-// rightLegend is shorthand for dash.RightLegend.
-func rightLegend() *common.VizLegendOptionsBuilder {
-	return dash.RightLegend()
-}
-
 func hiddenLegend() *common.VizLegendOptionsBuilder {
 	return common.NewVizLegendOptionsBuilder().
 		DisplayMode(common.LegendDisplayModeList).
 		Placement(common.LegendPlacementBottom).
 		ShowLegend(false)
-}
-
-// multiTooltip is shorthand for dash.MultiTooltip.
-func multiTooltip() *common.VizTooltipOptionsBuilder {
-	return dash.MultiTooltip()
-}
-
-// rightAxisProps is shorthand for dash.RightAxisProps.
-func rightAxisProps(unit string) []dashboard.DynamicConfigValue {
-	return dash.RightAxisProps(unit)
 }
 
 // dashedThreshold draws a dashed line at value and colors the series red
@@ -405,15 +393,8 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`max(`+diskCache+`_partition_size_bytes{`+cacheFilter+`} / `+diskCache+`_partition_capacity_bytes{`+cacheFilter+`}) by (pod_name, partition_id)`, "{{pod_name}} {{partition_id}}")))
 }
 
-// proxyPebble configures the pebble rows for the proxy's pebble caches,
-// which the dashboard repeats per ${cache_name}.
-var proxyPebble = pebble_dash.Config{
-	Filter:      proxyFilter,
-	CacheName:   "${cache_name}",
-	PebbleID:    "${cache_name}",
-	Repeat:      true,
-	Compression: true,
-}
+// proxyPebble configures the pebble rows for the proxy's pebble caches.
+var proxyPebble = pebble_dash.PerCache(proxyFilter)
 
 func encryptionRow() *dashboard.RowBuilder {
 	encryption := `buildbuddy_encryption`

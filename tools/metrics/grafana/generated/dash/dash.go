@@ -158,7 +158,7 @@ func MultiTooltip() *common.VizTooltipOptionsBuilder {
 }
 
 // RightAxisProps moves a series to a separate right-hand axis with the given
-// unit; for use with OverrideByName.
+// unit; for use with OverrideByName or OverrideByQuery.
 func RightAxisProps(unit string) []dashboard.DynamicConfigValue {
 	return []dashboard.DynamicConfigValue{
 		{Id: "custom.axisPlacement", Value: "right"},

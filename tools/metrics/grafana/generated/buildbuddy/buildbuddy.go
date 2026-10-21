@@ -19,10 +19,13 @@ func row(title string) *dashboard.RowBuilder {
 		Collapsed(true)
 }
 
-// ts is shorthand for dash.PlainTimeseries.
-func ts(title, unit string) *timeseries.PanelBuilder {
-	return dash.PlainTimeseries(title, unit)
-}
+// Shorthands for the panel-style helpers shared through dash.
+var (
+	ts             = dash.PlainTimeseries
+	rightLegend    = dash.RightLegend
+	multiTooltip   = dash.MultiTooltip
+	rightAxisProps = dash.RightAxisProps
+)
 
 // tableLegend returns a legend shown as a table at the bottom with the given
 // summary calculations.
@@ -34,11 +37,6 @@ func tableLegend(calcs ...string) *common.VizLegendOptionsBuilder {
 		Calcs(calcs)
 }
 
-// rightLegend is shorthand for dash.RightLegend.
-func rightLegend() *common.VizLegendOptionsBuilder {
-	return dash.RightLegend()
-}
-
 func hiddenLegend() *common.VizLegendOptionsBuilder {
 	return common.NewVizLegendOptionsBuilder().
 		DisplayMode(common.LegendDisplayModeList).
@@ -46,21 +44,11 @@ func hiddenLegend() *common.VizLegendOptionsBuilder {
 		ShowLegend(false)
 }
 
-// multiTooltip is shorthand for dash.MultiTooltip.
-func multiTooltip() *common.VizTooltipOptionsBuilder {
-	return dash.MultiTooltip()
-}
-
 // colorProp pins a series to a fixed color; for use with OverrideByName.
 func colorProp(color string) []dashboard.DynamicConfigValue {
 	return []dashboard.DynamicConfigValue{
 		{Id: "color", Value: map[string]any{"fixedColor": color, "mode": "fixed"}},
 	}
-}
-
-// rightAxisProps is shorthand for dash.RightAxisProps.
-func rightAxisProps(unit string) []dashboard.DynamicConfigValue {
-	return dash.RightAxisProps(unit)
 }
 
 // yAxisLeft returns a left-placed heatmap y axis with the given unit. An
@@ -433,15 +421,8 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`max(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region="${region}",job="buildbuddy-app", cache_name="${cache_name}"}/buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region="${region}",job="buildbuddy-app", cache_name="${cache_name}"}) by (pod_name, partition_id)`, "{{pod_name}} {{partition_id}}")))
 }
 
-// appPebble configures the pebble rows for the app's pebble caches, which
-// the dashboard repeats per ${cache_name}.
-var appPebble = pebble_dash.Config{
-	Filter:      `region="${region}", job="buildbuddy-app"`,
-	CacheName:   "${cache_name}",
-	PebbleID:    "${cache_name}",
-	Repeat:      true,
-	Compression: true,
-}
+// appPebble configures the pebble rows for the app's pebble caches.
+var appPebble = pebble_dash.PerCache(`region="${region}", job="buildbuddy-app"`)
 
 func sqlRow() *dashboard.RowBuilder {
 	return row("SQL").
