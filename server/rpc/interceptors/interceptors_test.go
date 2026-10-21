@@ -299,7 +299,10 @@ func TestTrustedClientIPInterceptor(t *testing.T) {
 		name string
 		// clientIdentity is sent in the client-identity header; "" sends none.
 		clientIdentity string
-		wantIP         string
+		// xff is sent as X-Forwarded-For header lines, one per element. When
+		// set, the server trusts X-Forwarded-For and picks its last entry.
+		xff    []string
+		wantIP string
 	}{
 		{
 			name:           "proxy identity may assert client IP",
@@ -321,8 +324,30 @@ func TestTrustedClientIPInterceptor(t *testing.T) {
 			clientIdentity: "",
 			wantIP:         "127.0.0.1",
 		},
+		{
+			name:           "proxy identity takes precedence over X-Forwarded-For",
+			clientIdentity: interfaces.ClientIdentityGRPCProxy,
+			xff:            []string{"9.9.9.9, 8.8.8.8"},
+			wantIP:         assertedIP,
+		},
+		{
+			name:           "app identity ignores asserted IP and uses last X-Forwarded-For entry",
+			clientIdentity: interfaces.ClientIdentityApp,
+			xff:            []string{"9.9.9.9, 8.8.8.8"},
+			wantIP:         "8.8.8.8",
+		},
+		{
+			name:           "uses last entry across multiple X-Forwarded-For lines",
+			clientIdentity: interfaces.ClientIdentityApp,
+			xff:            []string{"9.9.9.9", "8.8.8.8"},
+			wantIP:         "8.8.8.8",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if len(tc.xff) > 0 {
+				flags.Set(t, "auth.trust_xforwardedfor_header", true)
+				flags.Set(t, "auth.xforwardedfor_trusted_hops", 1)
+			}
 			listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
 			env := testenv.GetTestEnv(t)
@@ -342,6 +367,9 @@ func TestTrustedClientIPInterceptor(t *testing.T) {
 			t.Cleanup(func() { conn.Close() })
 
 			ctx := metadata.AppendToOutgoingContext(context.Background(), clientip.HeaderName, assertedIP)
+			for _, v := range tc.xff {
+				ctx = metadata.AppendToOutgoingContext(ctx, "x-forwarded-for", v)
+			}
 			if tc.clientIdentity != "" {
 				ctx = metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, tc.clientIdentity)
 			}

@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -1079,8 +1080,13 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, status.UnavailableError("No cache configured.")
 	}
 
+	group, err := ws.env.GetUserDB().GetGroupByID(ctx, wf.GroupID)
+	if err != nil {
+		return nil, err
+	}
 	envVars := []*repb.Command_EnvironmentVariable{
 		{Name: "CI", Value: "true"},
+		{Name: "BUILD_USER", Value: cmp.Or(group.Name, wf.GroupID)},
 		{Name: "GIT_COMMIT", Value: wd.SHA},
 		{Name: "GIT_BRANCH", Value: wd.PushedBranch},
 		{Name: "GIT_TAG", Value: wd.PushedTag},

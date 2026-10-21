@@ -144,7 +144,7 @@ func addClientIPToContext(ctx context.Context, env environment.Env) context.Cont
 		return addPeerIPToContext(ctx)
 	}
 
-	ctx, ok := clientip.SetFromXForwardedForHeader(ctx, hdrs[0], peerIPFromContext(ctx))
+	ctx, ok := clientip.SetFromXForwardedForHeader(ctx, hdrs, peerIPFromContext(ctx))
 	if ok {
 		return ctx
 	}

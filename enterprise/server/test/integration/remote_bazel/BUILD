@@ -19,6 +19,7 @@ go_test(
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/secrets",
         "//enterprise/server/test/integration/remote_execution/rbetest",
+        "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/util/keystore",
         "//enterprise/server/workflow/service",
         "//proto:api_key_go_proto",

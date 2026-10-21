@@ -348,7 +348,7 @@ func ClientIP(next http.Handler) http.Handler {
 		if ip, _, err := net.SplitHostPort(peerIP); err == nil {
 			peerIP = ip
 		}
-		if v := r.Header.Get("X-Forwarded-For"); v != "" {
+		if v := r.Header.Values("X-Forwarded-For"); len(v) > 0 {
 			ctx, ok := clientip.SetFromXForwardedForHeader(r.Context(), v, peerIP)
 			if ok {
 				next.ServeHTTP(w, r.WithContext(ctx))

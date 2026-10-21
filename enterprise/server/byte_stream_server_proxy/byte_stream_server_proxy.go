@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
@@ -398,7 +399,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 				resourceName: rn.NewUploadString(),
 				data:         data,
 			}
-			if err := s.local.Write(rawStream); err != nil {
+			if err := s.local.Write(rawStream); err != nil && !status.IsAlreadyExistsError(err) {
 				metrics.ByteStreamProxyChunkedReadLocalWriteBackFailures.With(prometheus.Labels{
 					metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 				}).Inc()
@@ -803,8 +804,8 @@ func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stre
 	}
 	localErr := s.local.Write(readThrough)
 
-	if localErr != nil {
-		log.CtxDebugf(ctx, "Error writing to local ByteStreamServer: %v", err)
+	if localErr != nil && !status.IsAlreadyExistsError(localErr) {
+		log.CtxDebugf(ctx, "Error writing to local ByteStreamServer: %v", localErr)
 	}
 	if readThrough.clientSendErr != nil {
 		return readThrough.clientSendErr
@@ -994,6 +995,11 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 }
 
 func (s *ByteStreamServerProxy) writeRemoteOnly(ctx context.Context, stream bspb.ByteStream_WriteServer) error {
+	// If our client supports "already exists" errors then propagate that to
+	// the remote server.
+	if clientfeatures.Supports(ctx, clientfeatures.ByteStreamWriteAlreadyExists) {
+		ctx = clientfeatures.Advertise(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
+	}
 	remoteStream, err := s.remote.Write(ctx)
 	if err != nil {
 		return err
@@ -1050,8 +1056,11 @@ func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
 		if s.skipValidation {
 			// Wait for the remote to validate and commit before returning the
 			// final request to the local server; the local server commits after
-			// processing this request.
-			if err := s.closeRemote(); err != nil {
+			// processing this request. A remote that already has the blob
+			// reports that as ALREADY_EXISTS once the client advertises the
+			// feature. That is a successful remote write, so hand the final
+			// request to the local server just as for an early WriteResponse.
+			if err := s.closeRemote(); err != nil && !status.IsAlreadyExistsError(err) {
 				return nil, err
 			}
 		}
@@ -1079,6 +1088,11 @@ func (s *forwardingWriteStream) Context() context.Context {
 }
 
 func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteStream_WriteServer, skipValidation bool) error {
+	// If our client supports "already exists" errors then propagate that to
+	// the remote server.
+	if clientfeatures.Supports(ctx, clientfeatures.ByteStreamWriteAlreadyExists) {
+		ctx = clientfeatures.Advertise(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
+	}
 	remoteStream, err := s.remote.Write(ctx)
 	if err != nil {
 		return err
@@ -1101,7 +1115,7 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 	if forwarding.recvErr != nil && forwarding.recvErr != io.EOF {
 		return forwarding.recvErr
 	}
-	if localErr != nil && forwarding.remoteCloseErr == nil {
+	if localErr != nil && !status.IsAlreadyExistsError(localErr) && forwarding.remoteCloseErr == nil {
 		log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", localErr)
 	}
 	if forwarding.remoteSendErr != nil && forwarding.remoteSendErr != io.EOF {
@@ -1342,7 +1356,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 				resourceName: chunkRN.NewUploadString(),
 				data:         compressedData,
 			}
-			if err := s.local.Write(rawStream); err != nil {
+			if err := s.local.Write(rawStream); err != nil && !status.IsAlreadyExistsError(err) {
 				localWriteSpn.End()
 				s.bufPool.Put(poolBuf)
 				return status.InternalErrorf("writing chunk %s to local: %s", chunkRN.DownloadString(), err)

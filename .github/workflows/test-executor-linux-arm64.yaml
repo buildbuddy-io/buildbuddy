@@ -30,7 +30,13 @@ jobs:
           find /dev/shm -name 'libpod*' | xargs -r sudo rm -rf
 
       - name: Run tests
+        env:
+          IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != '' && github.event.pull_request.head.repo.full_name != github.repository }}
+          BUILDBUDDY_API_KEY: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && secrets.BUILDBUDDY_ORG_API_KEY || '' }}
         run: |
+          if [[ "$IS_FORK_PR" != "true" ]]; then
+            : "${BUILDBUDDY_API_KEY:?BUILDBUDDY_ORG_API_KEY is required for trusted CI}"
+          fi
           cat >> user.bazelrc <<'EOF'
           common --config=cache
           common --repository_cache=~/repo-cache
@@ -43,8 +49,13 @@ jobs:
           common --build_metadata=ROLE=CI
           common --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true
           common --color=yes
-          common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           EOF
+
+          if [[ "$IS_FORK_PR" == "true" ]]; then
+            echo 'common --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-arm64/rin20260818' >> user.bazelrc
+          else
+            printf 'common --remote_header=x-buildbuddy-api-key=%s\n' "$BUILDBUDDY_API_KEY" >> user.bazelrc
+          fi
 
           bazelisk test --config=race --test_tag_filters= \
             //enterprise/server/remote_execution/vbd:vbd_test \

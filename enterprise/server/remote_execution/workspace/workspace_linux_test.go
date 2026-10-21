@@ -4,6 +4,8 @@ package workspace_test
 
 import (
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -16,18 +18,23 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-func TestPool_ReturnedWorkspaceHoldsOnlyUnchangedInputs(t *testing.T) {
+func TestPool_ReusedWorkspaceMatchesFreshSetup(t *testing.T) {
 	flags.Set(t, "executor.workspace_pool.slots", 4)
 	te := newPoolTestEnv(t)
 	ctx := t.Context()
@@ -48,12 +55,73 @@ func TestPool_ReturnedWorkspaceHoldsOnlyUnchangedInputs(t *testing.T) {
 		Directories: []*repb.DirectoryNode{dirNode("out", out)},
 	}
 	oldOnly := &repb.Directory{Files: []*repb.FileNode{uploadFile(t, te, "stale.txt", "stale")}}
+	// newLib differs from oldLib in every entry except "kept_link" and "same",
+	// so when the second task reuses the first workspace, syncDir has to remove
+	// each of those entries before the tree fetcher creates the new one:
+	//   - content.txt has different content.
+	//   - exec.sh is executable only in newLib.
+	//   - Each entry named <a>_to_<b> is an a in oldLib and a b in newLib.
+	//   - retargeted_link has a different target.
+	// We make the old content.txt longer than the new one. If syncDir left the
+	// old copy in place, the tree fetcher would write the new content over it
+	// and leave old bytes at the end, which the comparison with a fresh setup
+	// would catch.
+	//
+	// take only reuses a pooled workspace that shares more files with the new
+	// tree than it doesn't, so we put same in both trees, and its files
+	// outweigh the ones that differ.
+	empty := &repb.Directory{}
+	same := &repb.Directory{Files: []*repb.FileNode{
+		uploadFile(t, te, "a.txt", "a"),
+		uploadFile(t, te, "b.txt", "b"),
+		uploadFile(t, te, "c.txt", "c"),
+		uploadFile(t, te, "d.txt", "d"),
+	}}
+	oldLib := &repb.Directory{
+		Files: []*repb.FileNode{
+			uploadFile(t, te, "content.txt", "old!"),
+			uploadFile(t, te, "exec.sh", "sh"),
+			uploadFile(t, te, "file_to_dir", "f"),
+			uploadFile(t, te, "file_to_link", "f"),
+		},
+		Directories: []*repb.DirectoryNode{dirNode("dir_to_file", empty), dirNode("dir_to_link", empty), dirNode("same", same)},
+		Symlinks: []*repb.SymlinkNode{
+			{Name: "kept_link", Target: "exec.sh"},
+			{Name: "link_to_dir", Target: "exec.sh"},
+			{Name: "link_to_file", Target: "exec.sh"},
+			{Name: "retargeted_link", Target: "content.txt"},
+		},
+	}
+	executable := uploadFile(t, te, "exec.sh", "sh")
+	executable.IsExecutable = true
+	newLib := &repb.Directory{
+		Files: []*repb.FileNode{
+			uploadFile(t, te, "content.txt", "new"),
+			uploadFile(t, te, "dir_to_file", "f"),
+			executable,
+			uploadFile(t, te, "link_to_file", "f"),
+		},
+		Directories: []*repb.DirectoryNode{dirNode("file_to_dir", empty), dirNode("link_to_dir", empty), dirNode("same", same)},
+		Symlinks: []*repb.SymlinkNode{
+			{Name: "dir_to_link", Target: "exec.sh"},
+			{Name: "file_to_link", Target: "exec.sh"},
+			{Name: "kept_link", Target: "exec.sh"},
+			{Name: "retargeted_link", Target: "exec.sh"},
+		},
+	}
 	oldTree := &repb.Tree{
 		Root: &repb.Directory{
 			Files:       []*repb.FileNode{uploadFile(t, te, "keep.txt", "keep")},
-			Directories: []*repb.DirectoryNode{dirNode("bin", bin), dirNode("node_modules", nodeModules), dirNode("old_only", oldOnly)},
+			Directories: []*repb.DirectoryNode{dirNode("bin", bin), dirNode("lib", oldLib), dirNode("node_modules", nodeModules), dirNode("old_only", oldOnly)},
 		},
-		Children: []*repb.Directory{bin, out, nodeModules, pkg, oldOnly},
+		Children: []*repb.Directory{bin, out, oldLib, empty, same, nodeModules, pkg, oldOnly},
+	}
+	newTree := &repb.Tree{
+		Root: &repb.Directory{
+			Files:       []*repb.FileNode{uploadFile(t, te, "keep.txt", "keep"), uploadFile(t, te, "new.txt", "new")},
+			Directories: []*repb.DirectoryNode{dirNode("bin", bin), dirNode("lib", newLib), dirNode("node_modules", nodeModules)},
+		},
+		Children: []*repb.Directory{bin, out, newLib, empty, same, nodeModules, pkg},
 	}
 	cmd := &repb.Command{
 		OutputDirectories: []string{"bin/out"},
@@ -80,7 +148,7 @@ func TestPool_ReturnedWorkspaceHoldsOnlyUnchangedInputs(t *testing.T) {
 				require.NoError(t, err)
 				entries[rel] = "symlink to " + target
 			case info.IsDir():
-				entries[rel] = info.Mode().String()
+				entries[rel] = info.Mode().String() + " xattrs=" + xattrs(t, path)
 			default:
 				content, err := os.ReadFile(path)
 				require.NoError(t, err)
@@ -169,8 +237,31 @@ func TestPool_ReturnedWorkspaceHoldsOnlyUnchangedInputs(t *testing.T) {
 			},
 			changed: []string{"node_modules/pkg"},
 		},
+		{
+			name: "xattr set on input directory",
+			task: func(t *testing.T, root string) {
+				err := unix.Lsetxattr(filepath.Join(root, "node_modules/pkg"), "user.test", []byte("value"), 0)
+				if errors.Is(err, errors.ErrUnsupported) {
+					t.Skip("The filesystem doesn't support user xattrs")
+				}
+				require.NoError(t, err)
+			},
+			changed: []string{"node_modules/pkg"},
+		},
+		{
+			name: "ACL changed on input directory",
+			task: func(t *testing.T, root string) {
+				err := unix.Lsetxattr(filepath.Join(root, "node_modules/pkg"), "system.posix_acl_default", posixACL(5), 0)
+				if errors.Is(err, errors.ErrUnsupported) {
+					t.Skip("The filesystem doesn't support ACLs")
+				}
+				require.NoError(t, err)
+			},
+			changed: []string{"node_modules/pkg"},
+		},
 	} {
-		// A 4 byte limit removes the 5 byte inputs before pooling.
+		// A 4 byte limit removes the 5 byte inputs before pooling, which the
+		// next task then links again.
 		for _, maxFileSize := range []int64{0, 4} {
 			t.Run(fmt.Sprintf("%s/max_file_size=%d", test.name, maxFileSize), func(t *testing.T) {
 				flags.Set(t, "executor.workspace_pool.max_file_size_bytes", maxFileSize)
@@ -219,9 +310,69 @@ func TestPool_ReturnedWorkspaceHoldsOnlyUnchangedInputs(t *testing.T) {
 				}
 				got := snapshot(pooledPath)
 				assert.Equal(t, want, got)
+
+				// The next task, whose tree shares most of its inputs with the
+				// first one's, reuses the pooled directory, and gets the same
+				// workspace as a fresh setup of its tree.
+				second, err := workspace.New(te, buildRoot, opts)
+				require.NoError(t, err)
+				setUp(second, newTree)
+				secondRoot, err := os.Lstat(second.Path())
+				require.NoError(t, err)
+				assert.True(t, os.SameFile(firstRoot, secondRoot), "second workspace should have reused the pooled one")
+				freshSecond, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{})
+				require.NoError(t, err)
+				setUp(freshSecond, newTree)
+				want = snapshot(freshSecond.Path())
+				got = snapshot(second.Path())
+				assert.Equal(t, want, got)
 			})
 		}
 	}
+}
+
+// xattrs returns the xattrs of the file at path as sorted "name=value" pairs,
+// leaving out security.selinux like hasXattrs does.
+func xattrs(t *testing.T, path string) string {
+	size, err := unix.Llistxattr(path, nil)
+	if errors.Is(err, errors.ErrUnsupported) {
+		return ""
+	}
+	require.NoError(t, err)
+	list := make([]byte, size)
+	n, err := unix.Llistxattr(path, list)
+	require.NoError(t, err)
+	var pairs []string
+	for name := range strings.SplitSeq(strings.TrimSuffix(string(list[:n]), "\x00"), "\x00") {
+		if name == "" || name == "security.selinux" {
+			continue
+		}
+		size, err := unix.Lgetxattr(path, name, nil)
+		require.NoError(t, err)
+		value := make([]byte, size)
+		n, err := unix.Lgetxattr(path, name, value)
+		require.NoError(t, err)
+		pairs = append(pairs, fmt.Sprintf("%s=%q", name, value[:n]))
+	}
+	slices.Sort(pairs)
+	return strings.Join(pairs, " ")
+}
+
+// posixACL returns a minimal POSIX ACL in the format of the
+// system.posix_acl_* xattrs, which gives the owner the given permissions and
+// everyone else read and execute permissions.
+func posixACL(ownerPerm uint16) []byte {
+	acl := binary.LittleEndian.AppendUint32(nil, 2) // POSIX_ACL_XATTR_VERSION
+	for _, e := range []struct{ tag, perm uint16 }{
+		{0x01, ownerPerm}, // ACL_USER_OBJ
+		{0x04, 5},         // ACL_GROUP_OBJ
+		{0x20, 5},         // ACL_OTHER
+	} {
+		acl = binary.LittleEndian.AppendUint16(acl, e.tag)
+		acl = binary.LittleEndian.AppendUint16(acl, e.perm)
+		acl = binary.LittleEndian.AppendUint32(acl, 0xffffffff) // ACL_UNDEFINED_ID
+	}
+	return acl
 }
 
 // newPoolTestEnv returns a test environment with a CAS and a file cache, for
@@ -263,30 +414,116 @@ func runPooledTask(t *testing.T, ctx context.Context, te *testenv.TestEnv, build
 	return root
 }
 
+func TestPool_TakesOnlySimilarWorkspacesFromTheSameGroup(t *testing.T) {
+	flags.Set(t, "executor.workspace_pool.slots", 4)
+	te := newPoolTestEnv(t)
+	ctx := t.Context()
+	groupA := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR1"}, nil)
+	groupB := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR2"}, nil)
+	a := uploadFile(t, te, "a.txt", "a")
+	b := uploadFile(t, te, "b.txt", "b")
+	c := uploadFile(t, te, "c.txt", "c")
+	d := uploadFile(t, te, "d.txt", "d")
+	pooledTree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{a, b, c}}}
+
+	for _, test := range []struct {
+		name       string
+		ctx        context.Context
+		tree       *repb.Tree
+		wantReused bool
+	}{
+		{
+			name:       "same group and inputs",
+			ctx:        groupA,
+			tree:       pooledTree,
+			wantReused: true,
+		},
+		{
+			name:       "other group",
+			ctx:        groupB,
+			tree:       pooledTree,
+			wantReused: false,
+		},
+		{
+			name: "low overlap",
+			ctx:  groupA,
+			// The pooled workspace has only one of its three files in common
+			// with this tree, so reusing it would remove more files than it
+			// keeps.
+			tree:       &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{a, d}}},
+			wantReused: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			buildRoot := testfs.MakeTempDir(t)
+			pool, err := workspace.NewPool(buildRoot)
+			require.NoError(t, err)
+			pooled := runPooledTask(t, groupA, te, buildRoot, pool, pooledTree)
+			next := runPooledTask(t, test.ctx, te, buildRoot, pool, test.tree)
+			reused := os.SameFile(pooled, next)
+			assert.Equal(t, test.wantReused, reused)
+		})
+	}
+}
+
 func TestPool_EvictsWorkspacesOverSlotLimit(t *testing.T) {
 	flags.Set(t, "executor.workspace_pool.slots", 1)
 	te := newPoolTestEnv(t)
 	ctx := t.Context()
-	tree1 := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{uploadFile(t, te, "a.txt", "a")}}}
-	tree2 := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{uploadFile(t, te, "b.txt", "b")}}}
-	buildRoot := testfs.MakeTempDir(t)
-	pool, err := workspace.NewPool(buildRoot)
-	require.NoError(t, err)
+	a := uploadFile(t, te, "a.txt", "a")
+	b := uploadFile(t, te, "b.txt", "b")
+	c := uploadFile(t, te, "c.txt", "c")
 
-	runPooledTask(t, ctx, te, buildRoot, pool, tree1)
-	second := runPooledTask(t, ctx, te, buildRoot, pool, tree2)
+	for _, test := range []struct {
+		name string
+		// The trees share no files, so the second task doesn't reuse the first
+		// workspace, and pooling the second workspace evicts one of the two.
+		first, second *repb.Tree
+		// wantSecondKept is whether the pool keeps the second workspace
+		// rather than the first.
+		wantSecondKept bool
+	}{
+		{
+			name:   "same file count",
+			first:  &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{a}}},
+			second: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{b}}},
+			// The pool evicts the older of two workspaces with the same value.
+			wantSecondKept: true,
+		},
+		{
+			name:   "new workspace holds fewer files",
+			first:  &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{a, b}}},
+			second: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{c}}},
+			// The pool evicts the workspace with the lowest value, even if it's
+			// the one being added.
+			wantSecondKept: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			metrics.UnexpectedEvent.Reset()
+			buildRoot := testfs.MakeTempDir(t)
+			pool, err := workspace.NewPool(buildRoot)
+			require.NoError(t, err)
 
-	// Both workspaces hold one file, so pooling the second one evicts the
-	// first, which is older, and the pool deletes it in the background.
-	poolDir := filepath.Join(buildRoot, "_WORKSPACE_POOL")
-	require.Eventually(t, func() bool {
-		entries, err := os.ReadDir(poolDir)
-		return err == nil && len(entries) == 1
-	}, 10*time.Second, 10*time.Millisecond)
-	entries, err := os.ReadDir(poolDir)
-	require.NoError(t, err)
-	remaining, err := os.Lstat(filepath.Join(poolDir, entries[0].Name()))
-	require.NoError(t, err)
-	kept := os.SameFile(second, remaining)
-	assert.True(t, kept, "pool should keep the second workspace")
+			first := runPooledTask(t, ctx, te, buildRoot, pool, test.first)
+			second := runPooledTask(t, ctx, te, buildRoot, pool, test.second)
+
+			// The pool deletes the evicted workspace in the background.
+			poolDir := filepath.Join(buildRoot, "_WORKSPACE_POOL")
+			require.Eventually(t, func() bool {
+				entries, err := os.ReadDir(poolDir)
+				return err == nil && len(entries) == 1
+			}, 10*time.Second, 10*time.Millisecond)
+			entries, err := os.ReadDir(poolDir)
+			require.NoError(t, err)
+			remaining, err := os.Lstat(filepath.Join(poolDir, entries[0].Name()))
+			require.NoError(t, err)
+			secondKept := os.SameFile(second, remaining)
+			assert.Equal(t, test.wantSecondKept, secondKept)
+			firstKept := os.SameFile(first, remaining)
+			assert.Equal(t, !test.wantSecondKept, firstKept)
+			notInterned := testmetrics.CounterValueForLabels(t, metrics.UnexpectedEvent, prometheus.Labels{metrics.EventName: "workspace_pool_dir_not_interned"})
+			assert.Zero(t, notInterned)
+		})
+	}
 }

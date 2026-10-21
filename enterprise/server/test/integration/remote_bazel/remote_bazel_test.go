@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
@@ -207,7 +208,12 @@ sh_binary(
 	repoURL := gitRemote.RepoURL("test-org", "test-repo", "" /* accessToken */)
 
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, repoURL, gitRemote.AccessToken(), nil)
+	const groupName = "Remote Bazel, Inc."
+	env, bbServer, _ := runLocalServerAndExecutor(t, repoURL, gitRemote.AccessToken(), func(env *rbetest.Env, e *testenv.TestEnv) {
+		err := e.GetDBHandle().NewQuery(t.Context(), "set_build_organization").Raw(
+			`UPDATE "Groups" SET name = ? WHERE group_id = ?`, groupName, env.GroupID1).Exec().Error
+		require.NoError(t, err)
+	})
 
 	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		"run",
@@ -226,9 +232,11 @@ sh_binary(
 		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
 	})
 	require.NoError(t, err)
+	require.Len(t, searchRsp.GetInvocation(), 2)
 
 	var inv *inpb.Invocation
 	for _, i := range searchRsp.GetInvocation() {
+		require.Equal(t, groupName, i.GetUser())
 		if i.GetRole() == "HOSTED_BAZEL" {
 			inv = i
 		}
@@ -433,6 +441,25 @@ genrule(
 }
 
 func TestBuildRemotelyRunLocally(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "caller default", want: "Alice Example"},
+		{name: "explicit user", args: []string{"--build_metadata=USER=custom-user"}, want: "custom-user"},
+		{name: "explicit empty user", args: []string{"--build_metadata=USER="}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testBuildRemotelyRunLocally(t, tc.args, tc.want)
+		})
+	}
+}
+
+func testBuildRemotelyRunLocally(t *testing.T, extraArgs []string, childUser string) {
+	t.Helper()
+	flags.Set(t, "app.user_owned_keys_enabled", true)
+	t.Setenv("BUILD_USER", "local-machine-user")
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{
 		"BUILD": `
 genrule(
@@ -447,21 +474,36 @@ genrule(
 	})
 
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
+	const userName = "Alice Example"
+	var apiKey string
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", func(env *rbetest.Env, e *testenv.TestEnv) {
+		ctx := env.WithUserID(t.Context(), env.UserID1)
+		err := e.GetDBHandle().NewQuery(ctx, "set_build_user").Raw(
+			`UPDATE "Users" SET first_name = ?, last_name = '' WHERE user_id = ?`, userName, env.UserID1).Exec().Error
+		require.NoError(t, err)
+		enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx, e, env.GroupID1, true)
+		key, err := e.GetAuthDB().CreateUserAPIKey(ctx, env.GroupID1, env.UserID1, "remote bazel", []cappb.Capability{
+			cappb.Capability_CACHE_WRITE,
+		}, 0)
+		require.NoError(t, err)
+		apiKey = key.Value
+	})
 
 	// Run remote bazel
 	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
-	output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+	args := []string{
 		// Ensure the build is happening on a clean runner, because if the build
 		// artifact is locally cached, we won't upload it to the remote cache
 		// and we won't be able to fetch it.
-		"--runner_exec_properties=instance_name="+randomStr,
+		"--runner_exec_properties=instance_name=" + randomStr,
 		// Pass a startup flag to test parsing
 		"--digest_function=BLAKE3",
 		"--run_remotely=0",
 		"run",
 		":main",
-		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", apiKey),
+	}
+	output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(), append(args, extraArgs...)...)
 	require.Contains(t, output, "Hello from main!")
 
 	// Check that the remote runner didn't run the script
@@ -478,13 +520,38 @@ genrule(
 	require.NoError(t, err)
 	require.Equal(t, 2, len(searchRsp.GetInvocation()))
 
-	var parentInv *inpb.Invocation
+	var parentInv, childInv *inpb.Invocation
 	for _, inv := range searchRsp.GetInvocation() {
 		if inv.GetParentRunId() == "" {
+			require.Equal(t, userName, inv.GetUser())
 			parentInv = inv
+		} else {
+			if childUser != "" {
+				require.Equal(t, childUser, inv.GetUser())
+			}
+			childInv = inv
 		}
 	}
 	require.NotNil(t, parentInv)
+	require.NotNil(t, childInv)
+
+	// Empty USER metadata preserves the server's workspace-status fallback.
+	// Check the emitted metadata itself so an empty override is not mistaken
+	// for a missing override.
+	invResp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{
+		RequestContext: reqCtx,
+		Lookup:         &inpb.InvocationLookup{InvocationId: childInv.GetInvocationId()},
+	})
+	require.NoError(t, err)
+	require.Len(t, invResp.GetInvocation(), 1)
+	userMetadataCount := 0
+	for _, event := range invResp.GetInvocation()[0].GetEvent() {
+		if user, ok := event.GetBuildEvent().GetBuildMetadata().GetMetadata()["USER"]; ok {
+			require.Equal(t, childUser, user)
+			userMetadataCount++
+		}
+	}
+	require.Equal(t, 1, userMetadataCount)
 
 	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 		InvocationId: parentInv.InvocationId,

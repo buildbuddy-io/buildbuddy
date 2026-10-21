@@ -1,18 +1,10 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
-
-genrule(
-    name = "copy_install",
-    srcs = ["//cli:install.sh"],
-    outs = ["install.sh"],
-    cmd_bash = "cp $(SRCS) $@",
-)
 
 go_library(
     name = "update",
     srcs = ["update.go"],
-    embedsrcs = ["install.sh"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/update",
     deps = [
         "//cli/arg",
@@ -20,4 +12,12 @@ go_library(
         "//cli/log",
         "//cli/workspace",
     ],
+)
+
+go_test(
+    name = "update_test",
+    size = "small",
+    srcs = ["update_test.go"],
+    embed = [":update"],
+    deps = ["@com_github_stretchr_testify//require"],
 )

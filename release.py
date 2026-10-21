@@ -14,10 +14,11 @@ release.py - A simple script to create a release.
 This script will do the following:
 
   1) Check that your working repository is clean.
-  2) Compute a new version tag by bumping the latest remote version tag,
-     and create the tag pointing at HEAD.
+  2) Compute a new version tag by bumping a base version tag (see
+     --base_version), and create the tag pointing at HEAD.
   3) Pushes the tag to GitHub.
      This kicks off some workflows which will build the release artifacts.
+     With --version, steps 2 and 3 are skipped and that version is used.
   4) Builds and tags new Docker images locally, and pushes them to the registry.
      Also updates the ":latest" tag for each image.
 """
@@ -265,13 +266,21 @@ def generate_release_notes(old_version):
         buf += line.decode("utf-8")
     return buf
 
-def get_latest_version():
-    p = run_or_die("./tools/latest_version_tag.sh", capture_stdout=True)
+def get_highest_version():
+    p = run_or_die("./tools/repo_highest_version.sh", capture_stdout=True)
+    return p.stdout.strip()
+
+def get_branch_highest_version():
+    p = run_or_die("./tools/branch_highest_version.sh", capture_stdout=True)
     return p.stdout.strip()
 
 def tag_exists(tag):
     p = subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/tags/{tag}'], stdout=subprocess.DEVNULL)
     return p.returncode == 0
+
+def is_shallow_repository():
+    p = run_or_die('git rev-parse --is-shallow-repository', capture_stdout=True)
+    return p.stdout.strip() == 'true'
 
 def is_ancestor(ancestor, descendant):
     p = subprocess.run(['git', 'merge-base', '--is-ancestor', ancestor, descendant])
@@ -286,40 +295,18 @@ def get_cpu_architecture():
     else:
         die('unknown CPU architecture ' + arch)
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--auto', default=False, action='store_true')
-    parser.add_argument('--allow_dirty', default=False, action='store_true')
-    parser.add_argument('--force', default=False, action='store_true')
-    parser.add_argument('--bump_version_type', default='minor', choices=['major', 'minor', 'patch', 'none'])
-    parser.add_argument('--base_version', default='', help='Existing version tag to bump, like v2.12.8. Defaults to the latest version tag.')
-    parser.add_argument('--update_app_image', default=False, action='store_true')
-    parser.add_argument('--update_enterprise_app_image', default=False, action='store_true')
-    parser.add_argument('--update_executor_image', default=False, action='store_true')
-    parser.add_argument('--update_proxy_image', default=False, action='store_true')
-    parser.add_argument('--arch_specific_executor_tag', default=False, action='store_true', help='Suffix the executor image tag with the CPU architecture (amd64 or arm64)')
-    parser.add_argument('--arch_specific_proxy_tag', default=False, action='store_true', help='Suffix the cache proxy image tag with the CPU architecture (amd64 or arm64)')
-    parser.add_argument('--version', default='', help='Version tag override, used when pushing docker images. Implies --bump_version_type=none')
-    parser.add_argument('--skip_latest_tag', default=False, action='store_true')
-    parser.add_argument('--mark_workspace_as_safe', default='')
-    args = parser.parse_args()
-
-    if args.mark_workspace_as_safe:
-        run_or_die('git config --global --add safe.directory %s' % args.mark_workspace_as_safe)
-
-    if workspace_is_clean():
-        print("Workspace is clean!")
-    elif args.allow_dirty:
-        print("WARNING: Workspace contains uncommitted changes; ignoring due to --allow_dirty.")
+def bump_and_tag_version(args):
+    # A patch bumps this branch's own version, and none reuses it; anything else
+    # bumps the highest version in the repo.
+    if args.base_version:
+        old_version = args.base_version
+    elif args.bump_version_type in ('patch', 'none'):
+        old_version = get_branch_highest_version()
     else:
-        die('Your workspace has uncommitted changes. ' +
-            'Please run this in a clean workspace!')
-
-    run_or_die('git fetch --all --tags')
-    old_version = args.base_version or get_latest_version()
+        old_version = get_highest_version()
     if not tag_exists(old_version):
         die(f"Version tag {old_version} does not exist.")
-    # The latest version tag isn't always an ancestor of HEAD (release tags may
+    # The highest version tag isn't always an ancestor of HEAD (release tags may
     # be on cherry-picks), so only check an explicitly requested base.
     if args.base_version and not is_ancestor(old_version, 'HEAD'):
         die(f"HEAD does not contain {old_version}. Is --base_version from this branch, and is the full history fetched?")
@@ -330,36 +317,51 @@ def main():
         " It may be a draft release or it may have never been created." +
         " If you still want to upgrade the version, rerun the script with --force.")
 
-    new_version = old_version
-    if args.version:
-        new_version = args.version
-    elif args.bump_version_type != 'none':
-        if args.bump_version_type == 'patch':
-            new_version = bump_patch_version(old_version)
-        elif args.bump_version_type == 'minor':
-            new_version = bump_minor_version(old_version)
-        else:
-            die(f"Unimplemented bump version type: {args.bump_version_type}")
+    if args.bump_version_type == 'none':
+        return old_version
 
-        release_notes = generate_release_notes(old_version)
-        print("release notes:\n %s" % release_notes)
-        print('I found existing version: %s' % old_version)
-        if not args.auto:
-            new_version = confirm_new_version(new_version)
-        if tag_exists(new_version):
-            die(f"Version tag {new_version} already exists.")
-        print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
+    if args.bump_version_type == 'patch':
+        new_version = bump_patch_version(old_version)
+    elif args.bump_version_type == 'minor':
+        new_version = bump_minor_version(old_version)
+    else:
+        die(f"Unimplemented bump version type: {args.bump_version_type}")
 
-        time.sleep(2)
-        create_and_push_tag(old_version, new_version, release_notes)
-        print("Pushed tag for new version %s" % new_version)
+    release_notes = generate_release_notes(old_version)
+    print("release notes:\n %s" % release_notes)
+    print('I found existing version: %s' % old_version)
+    if not args.auto:
+        new_version = confirm_new_version(new_version)
+    if tag_exists(new_version):
+        die(f"Version tag {new_version} already exists.")
+    print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
 
-    # Write the version tag to $GITHUB_OUTPUT if it exists.
-    github_outputs_file = os.environ.get('GITHUB_OUTPUT')
-    if github_outputs_file:
-        with open(github_outputs_file, 'a') as f:
-            f.write('version_tag=' + new_version + '\n')
-        print("Wrote version_tag output to $GITHUB_OUTPUT")
+    time.sleep(2)
+    create_and_push_tag(old_version, new_version, release_notes)
+    print("Pushed tag for new version %s" % new_version)
+    return new_version
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--auto', default=False, action='store_true')
+    parser.add_argument('--allow_dirty', default=False, action='store_true')
+    parser.add_argument('--force', default=False, action='store_true')
+    parser.add_argument('--bump_version_type', default=None, choices=['major', 'minor', 'patch', 'none'], help='Defaults to minor. Not allowed with --version.')
+    parser.add_argument('--base_version', default='', help='Existing version tag to bump, like v2.12.8. Defaults to the highest version tag reachable from HEAD (the branch\'s own version) for patch and none, and to the highest version tag in the repo for minor. Ignored with --version.')
+    parser.add_argument('--update_app_image', default=False, action='store_true')
+    parser.add_argument('--update_enterprise_app_image', default=False, action='store_true')
+    parser.add_argument('--update_executor_image', default=False, action='store_true')
+    parser.add_argument('--update_proxy_image', default=False, action='store_true')
+    parser.add_argument('--arch_specific_executor_tag', default=False, action='store_true', help='Suffix the executor image tag with the CPU architecture (amd64 or arm64)')
+    parser.add_argument('--arch_specific_proxy_tag', default=False, action='store_true', help='Suffix the cache proxy image tag with the CPU architecture (amd64 or arm64)')
+    parser.add_argument('--version', default='', help='Existing version tag to build docker images with, like v2.12.8. Skips looking up, bumping and tagging a version.')
+    parser.add_argument('--skip_latest_tag', default=False, action='store_true')
+    parser.add_argument('--mark_workspace_as_safe', default='')
+    args = parser.parse_args()
+    if args.version and args.bump_version_type:
+        die('--version and --bump_version_type are mutually exclusive: --version skips bumping and tagging.')
+    if not args.bump_version_type:
+        args.bump_version_type = 'minor'
 
     images = []
     if args.update_app_image:
@@ -370,6 +372,36 @@ def main():
         images.append("buildbuddy-executor-enterprise")
     if args.update_proxy_image:
         images.append("buildbuddy-proxy-enterprise")
+
+    if args.mark_workspace_as_safe:
+        run_or_die('git config --global --add safe.directory %s' % args.mark_workspace_as_safe)
+
+    # Images are built with --stamp, and a shallow clone may be missing the
+    # version tag from its history, so the images would be stamped "unknown".
+    if images and is_shallow_repository():
+        die('Refusing to build images in a shallow clone: they would be stamped with version "unknown". ' +
+            'Fetch the full history first (e.g. fetch-depth: 0, or git fetch --unshallow).')
+
+    if workspace_is_clean():
+        print("Workspace is clean!")
+    elif args.allow_dirty:
+        print("WARNING: Workspace contains uncommitted changes; ignoring due to --allow_dirty.")
+    else:
+        die('Your workspace has uncommitted changes. ' +
+            'Please run this in a clean workspace!')
+
+    run_or_die('git fetch --all --tags')
+    if args.version:
+        new_version = args.version
+    else:
+        new_version = bump_and_tag_version(args)
+
+    # Write the version tag to $GITHUB_OUTPUT if it exists.
+    github_outputs_file = os.environ.get('GITHUB_OUTPUT')
+    if github_outputs_file:
+        with open(github_outputs_file, 'a') as f:
+            f.write('version_tag=' + new_version + '\n')
+        print("Wrote version_tag output to $GITHUB_OUTPUT")
 
     if images:
         print('Building and pushing docker images', images)
