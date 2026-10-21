@@ -52,6 +52,14 @@
   font-size: 14px;
 }
 
+.donut-chart-title-block-centered {
+  text-align: center;
+}
+
+.donut-chart-title-block-centered .donut-chart-title {
+  justify-content: center;
+}
+
 .donut-chart-label-empty {
   color: var(--color-text-secondary);
 }

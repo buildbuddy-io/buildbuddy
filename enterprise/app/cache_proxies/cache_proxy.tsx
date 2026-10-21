@@ -199,14 +199,12 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
             </div>
             <div className="cache-proxy-stat-rings">
               {readWriteChart(
-                "Read ratio",
                 "CAS requests",
                 toNumber(stats.casReadHits) + toNumber(stats.casReadMisses),
                 toNumber(stats.casWrites),
                 format.count
               )}
               {readWriteChart(
-                "Read ratio",
                 "CAS bytes",
                 toNumber(stats.casReadHitBytes) + toNumber(stats.casReadMissBytes),
                 toNumber(stats.casWriteBytes),
@@ -236,14 +234,12 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
             </div>
             <div className="cache-proxy-stat-rings">
               {readWriteChart(
-                "Read ratio",
                 "AC requests",
                 toNumber(stats.acReadHits) + toNumber(stats.acReadMisses),
                 toNumber(stats.acWrites),
                 format.count
               )}
               {readWriteChart(
-                "Read ratio",
                 "AC bytes",
                 toNumber(stats.acReadHitBytes) + toNumber(stats.acReadMissBytes),
                 toNumber(stats.acWriteBytes),
@@ -320,6 +316,7 @@ function statChart(
       <DonutChart
         title={title}
         subtitle={subtitle}
+        centerTitle
         data={Object.entries(data).map(([name, value]) => ({ name, value }))}
         colorPicker={(name) => CACHE_COLORS[name as keyof typeof CACHE_COLORS]}
         valueFormatter={valueFormatter}

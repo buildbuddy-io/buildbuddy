@@ -11,6 +11,8 @@ export interface NamedValue {
 interface Props {
   title?: string;
   subtitle?: string;
+  /** Centers the title and subtitle horizontally. */
+  centerTitle?: boolean;
   data: NamedValue[] | undefined;
 
   /** Returns a valid css color string (e.g., #ffff00) given a key from data. */
@@ -142,7 +144,7 @@ export default class DonutChart extends React.Component<Props> {
     }
     return (
       <>
-        <div className="donut-chart-title-block">
+        <div className={`donut-chart-title-block ${this.props.centerTitle ? "donut-chart-title-block-centered" : ""}`}>
           <div className="donut-chart-title">{this.props.title}</div>
           {Boolean(this.props.subtitle) && <div className="donut-chart-subtitle">{this.props.subtitle}</div>}
         </div>
