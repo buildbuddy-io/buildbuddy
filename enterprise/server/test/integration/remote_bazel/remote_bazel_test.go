@@ -441,6 +441,23 @@ genrule(
 }
 
 func TestBuildRemotelyRunLocally(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "caller default", want: "Alice Example"},
+		{name: "explicit user", args: []string{"--build_metadata=USER=custom-user"}, want: "custom-user"},
+		{name: "explicit empty user", args: []string{"--build_metadata=USER="}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testBuildRemotelyRunLocally(t, tc.args, tc.want)
+		})
+	}
+}
+
+func testBuildRemotelyRunLocally(t *testing.T, extraArgs []string, childUser string) {
+	t.Helper()
 	flags.Set(t, "app.user_owned_keys_enabled", true)
 	t.Setenv("BUILD_USER", "local-machine-user")
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{
@@ -474,17 +491,19 @@ genrule(
 
 	// Run remote bazel
 	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
-	output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+	args := []string{
 		// Ensure the build is happening on a clean runner, because if the build
 		// artifact is locally cached, we won't upload it to the remote cache
 		// and we won't be able to fetch it.
-		"--runner_exec_properties=instance_name="+randomStr,
+		"--runner_exec_properties=instance_name=" + randomStr,
 		// Pass a startup flag to test parsing
 		"--digest_function=BLAKE3",
 		"--run_remotely=0",
 		"run",
 		":main",
-		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", apiKey))
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", apiKey),
+	}
+	output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(), append(args, extraArgs...)...)
 	require.Contains(t, output, "Hello from main!")
 
 	// Check that the remote runner didn't run the script
@@ -501,14 +520,38 @@ genrule(
 	require.NoError(t, err)
 	require.Equal(t, 2, len(searchRsp.GetInvocation()))
 
-	var parentInv *inpb.Invocation
+	var parentInv, childInv *inpb.Invocation
 	for _, inv := range searchRsp.GetInvocation() {
-		require.Equal(t, userName, inv.GetUser())
 		if inv.GetParentRunId() == "" {
+			require.Equal(t, userName, inv.GetUser())
 			parentInv = inv
+		} else {
+			if childUser != "" {
+				require.Equal(t, childUser, inv.GetUser())
+			}
+			childInv = inv
 		}
 	}
 	require.NotNil(t, parentInv)
+	require.NotNil(t, childInv)
+
+	// Empty USER metadata preserves the server's workspace-status fallback.
+	// Check the emitted metadata itself so an empty override is not mistaken
+	// for a missing override.
+	invResp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{
+		RequestContext: reqCtx,
+		Lookup:         &inpb.InvocationLookup{InvocationId: childInv.GetInvocationId()},
+	})
+	require.NoError(t, err)
+	require.Len(t, invResp.GetInvocation(), 1)
+	userMetadataCount := 0
+	for _, event := range invResp.GetInvocation()[0].GetEvent() {
+		if user, ok := event.GetBuildEvent().GetBuildMetadata().GetMetadata()["USER"]; ok {
+			require.Equal(t, childUser, user)
+			userMetadataCount++
+		}
+	}
+	require.Equal(t, 1, userMetadataCount)
 
 	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 		InvocationId: parentInv.InvocationId,

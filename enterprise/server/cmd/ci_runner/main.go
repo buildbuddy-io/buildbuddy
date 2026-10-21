@@ -1932,7 +1932,7 @@ func (ws *workspace) getHostAndUserName() (string, string) {
 	if username, ok := os.LookupEnv("BUILD_USER"); ok {
 		return hostname, username
 	}
-	// Workflows and direct runner calls might not supply a caller identity.
+	// Direct runner calls might not supply a caller identity.
 	user, err := user.Current()
 	username := ""
 	if err != nil {
@@ -3089,13 +3089,14 @@ func runBazelWrapper() error {
 		return err
 	}
 
-	bazelArgs := append(bbStartupArgs, originalArgs...)
+	bazelArgs := append(bbStartupArgs, originalArgs[:cmdIdx+1]...)
+	if buildUser, ok := os.LookupEnv("BUILD_USER"); ok {
+		// Default child attribution to the runner, allowing explicit flags to win.
+		bazelArgs = append(bazelArgs, "--build_metadata=USER="+buildUser)
+	}
+	bazelArgs = append(bazelArgs, originalArgs[cmdIdx+1:]...)
 	bazelCmd := append([]string{bazelBin}, bazelArgs...)
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
-	if buildUser, ok := os.LookupEnv("BUILD_USER"); ok {
-		// Child invocations should have the same attribution as their runner.
-		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--build_metadata=USER="+buildUser)
-	}
 
 	// When using the bb CLI and running `bb run`, stream the run logs to the server.
 	if isExecutableName(filepath.Base(bazelBin), bbBinaryName) && bazelSubcmd == "run" {

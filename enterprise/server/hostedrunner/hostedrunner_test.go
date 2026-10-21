@@ -260,12 +260,15 @@ func TestRun_BuildUser(t *testing.T) {
 		subID    string
 		fullName string
 		groupKey bool
+		env      map[string]string
 		want     string
 	}{
 		{name: "GitHub user", subID: "https://github.com/alice", fullName: "Alice Example", want: "alice"},
 		{name: "user name", subID: "sso/alice", fullName: "Alice Example", want: "Alice Example"},
 		{name: "unnamed user", subID: "sso/alice", want: "US1"},
 		{name: "organization key", subID: "sso/alice", groupKey: true, want: "Acme, Inc."},
+		{name: "explicit user", subID: "sso/alice", env: map[string]string{"BUILD_USER": "custom-user"}, want: "custom-user"},
+		{name: "explicit empty user", subID: "sso/alice", env: map[string]string{"BUILD_USER": ""}, want: ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			flags.Set(t, "app.user_owned_keys_enabled", true)
@@ -296,7 +299,7 @@ func TestRun_BuildUser(t *testing.T) {
 			require.NoError(t, err)
 			_, err = r.Run(ctx, &rnpb.RunRequest{
 				Steps: []*rnpb.Step{{Run: "echo hello"}},
-				Env:   map[string]string{"BUILD_USER": "local-machine-user"},
+				Env:   tc.env,
 			})
 			require.NoError(t, err)
 			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
