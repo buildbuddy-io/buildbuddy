@@ -196,11 +196,11 @@ func updateSystemInstall(version string) error {
 	// replacement is atomic.
 	stagingPath := filepath.Join(installDir, fmt.Sprintf(".bb.tmp.%d", os.Getpid()))
 	if err := sudo("install", "-m", "0755", tmpPath, stagingPath); err != nil {
-		sudo("rm", "-f", stagingPath)
+		sudo("-n", "rm", "-f", stagingPath)
 		return fmt.Errorf("sudo install: %s", err)
 	}
 	if err := sudo("mv", "-f", stagingPath, installPath); err != nil {
-		sudo("rm", "-f", stagingPath)
+		sudo("-n", "rm", "-f", stagingPath)
 		return fmt.Errorf("sudo mv: %s", err)
 	}
 	return nil
@@ -228,7 +228,6 @@ func newDownloadClient() *http.Client {
 	return &http.Client{
 		Transport:     transport,
 		CheckRedirect: checkRedirect,
-		Timeout:       10 * time.Minute,
 	}
 }
 
