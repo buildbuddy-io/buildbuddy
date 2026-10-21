@@ -185,6 +185,13 @@ const (
 	EstimatedCPUPropertyName    = "EstimatedCPU"
 	EstimatedMemoryPropertyName = "EstimatedMemory"
 
+	// EstimatedGPUMemoryPropertyName specifies the fallback GPU memory capacity
+	// when no measured or predicted GPU estimate is available.
+	EstimatedGPUMemoryPropertyName = "EstimatedGPUMemory"
+	// MinGPUMemoryPropertyName specifies a minimum GPU memory allocation,
+	// including when an automatic estimate is available.
+	MinGPUMemoryPropertyName = "MinGPUMemory"
+
 	// Property name prefix indicating a custom resource assignment.
 	customResourcePrefix = "resources:"
 
@@ -254,13 +261,18 @@ const (
 
 // Properties represents the platform properties parsed from a command.
 type Properties struct {
-	OS                        string
-	Arch                      string
-	Pool                      string
-	PoolType                  PoolType
-	EstimatedComputeUnits     float64
-	EstimatedMilliCPU         int64
-	EstimatedMemoryBytes      int64
+	OS                    string
+	Arch                  string
+	Pool                  string
+	PoolType              PoolType
+	EstimatedComputeUnits float64
+	EstimatedMilliCPU     int64
+	EstimatedMemoryBytes  int64
+	// EstimatedGPUMemoryBytes is the GPU memory fallback when no automatic
+	// estimate is available. Compute units do not imply a GPU allocation.
+	EstimatedGPUMemoryBytes int64
+	// MinGPUMemoryBytes is the minimum GPU memory allocation for the task.
+	MinGPUMemoryBytes         int64
 	EstimatedFreeDiskBytes    int64
 	CustomResources           []*scpb.CustomResource
 	ContainerImage            string
@@ -572,6 +584,8 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		EstimatedComputeUnits:     float64Prop(m, EstimatedComputeUnitsPropertyName, 0),
 		EstimatedMemoryBytes:      iecBytesProp(m, EstimatedMemoryPropertyName, 0),
 		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
+		EstimatedGPUMemoryBytes:   iecBytesProp(m, EstimatedGPUMemoryPropertyName, 0),
+		MinGPUMemoryBytes:         iecBytesProp(m, MinGPUMemoryPropertyName, 0),
 		EstimatedFreeDiskBytes:    iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
 		CustomResources:           customResources,
 		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
