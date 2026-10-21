@@ -183,16 +183,14 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
           <Panel Icon={Gauge} title="CAS Performance">
             <div className="cache-proxy-stat-rings">
               {readChart(
-                "Hit Rate",
-                "CAS Requests",
+                "CAS requests",
                 toNumber(stats.casReadHits),
                 toNumber(stats.casReadMisses),
                 toNumber(stats.casReadUncacheable),
                 format.count
               )}
               {readChart(
-                "Hit Rate",
-                "CAS Bytes",
+                "CAS bytes",
                 toNumber(stats.casReadHitBytes),
                 toNumber(stats.casReadMissBytes),
                 toNumber(stats.casReadUncacheableBytes),
@@ -201,15 +199,15 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
             </div>
             <div className="cache-proxy-stat-rings">
               {readWriteChart(
-                "Read Ratio",
-                "CAS Requests",
+                "Read ratio",
+                "CAS requests",
                 toNumber(stats.casReadHits) + toNumber(stats.casReadMisses),
                 toNumber(stats.casWrites),
                 format.count
               )}
               {readWriteChart(
-                "Read Ratio",
-                "CAS Bytes",
+                "Read ratio",
+                "CAS bytes",
                 toNumber(stats.casReadHitBytes) + toNumber(stats.casReadMissBytes),
                 toNumber(stats.casWriteBytes),
                 format.bytes
@@ -222,33 +220,31 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
           <Panel Icon={Gauge} title="AC Performance">
             <div className="cache-proxy-stat-rings">
               {readChart(
-                "Hit Rate",
-                "AC Requests",
+                "AC requests",
                 toNumber(stats.acReadHits),
                 toNumber(stats.acReadMisses),
-                0,
+                toNumber(stats.acReadUncacheable),
                 format.count
               )}
               {readChart(
-                "Hit Rate",
-                "AC Bytes",
+                "AC bytes",
                 toNumber(stats.acReadHitBytes),
                 toNumber(stats.acReadMissBytes),
-                0,
+                toNumber(stats.acReadUncacheableBytes),
                 format.bytes
               )}
             </div>
             <div className="cache-proxy-stat-rings">
               {readWriteChart(
-                "Read Ratio",
-                "AC Requests",
+                "Read ratio",
+                "AC requests",
                 toNumber(stats.acReadHits) + toNumber(stats.acReadMisses),
                 toNumber(stats.acWrites),
                 format.count
               )}
               {readWriteChart(
-                "Read Ratio",
-                "AC Bytes",
+                "Read ratio",
+                "AC bytes",
                 toNumber(stats.acReadHitBytes) + toNumber(stats.acReadMissBytes),
                 toNumber(stats.acWriteBytes),
                 format.bytes
@@ -333,17 +329,10 @@ function statChart(
   );
 }
 
-function readChart(
-  title: string,
-  subtitle: string,
-  hits: number,
-  misses: number,
-  uncacheable: number,
-  format: (v: number) => string
-) {
-  return statChart(title, subtitle, { hits, misses, uncacheable }, format);
+function readChart(subtitle: string, hits: number, misses: number, uncacheable: number, format: (v: number) => string) {
+  return statChart("Hit rate", subtitle, { hits, misses, uncacheable }, format);
 }
 
-function readWriteChart(title: string, subtitle: string, reads: number, writes: number, format: (v: number) => string) {
-  return statChart(title, subtitle, { reads, writes }, format, `${readWriteRatio(reads, writes)} read:write`);
+function readWriteChart(subtitle: string, reads: number, writes: number, format: (v: number) => string) {
+  return statChart("Read ratio", subtitle, { reads, writes }, format, `${readWriteRatio(reads, writes)} read:write`);
 }
