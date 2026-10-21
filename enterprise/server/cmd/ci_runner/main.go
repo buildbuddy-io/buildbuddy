@@ -2714,6 +2714,9 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 		// artifact for easier debugging.
 		"common --heap_dump_on_oom",
 	}
+	if buildUser, ok := os.LookupEnv("BUILD_USER"); ok {
+		lines = append(lines, "common "+toShellToken("--build_metadata=USER="+buildUser))
+	}
 	isWorkflow := *workflowID != ""
 	if isWorkflow {
 		lines = append(lines, "common --build_metadata=WORKFLOW_ID="+*workflowID)
@@ -3089,12 +3092,7 @@ func runBazelWrapper() error {
 		return err
 	}
 
-	bazelArgs := append(bbStartupArgs, originalArgs[:cmdIdx+1]...)
-	if buildUser, ok := os.LookupEnv("BUILD_USER"); ok {
-		// Default child attribution to the runner, allowing explicit flags to win.
-		bazelArgs = append(bazelArgs, "--build_metadata=USER="+buildUser)
-	}
-	bazelArgs = append(bazelArgs, originalArgs[cmdIdx+1:]...)
+	bazelArgs := append(bbStartupArgs, originalArgs...)
 	bazelCmd := append([]string{bazelBin}, bazelArgs...)
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
 
