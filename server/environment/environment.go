@@ -72,6 +72,7 @@ type Env interface {
 	GetRemoteExecutionClient() repb.ExecutionClient
 	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
 	GetLocalContentAddressableStorageClient() repb.ContentAddressableStorageClient
+	GetLocalActionCacheClient() repb.ActionCacheClient
 	GetAPIService() interfaces.ApiService
 	GetFileCache() interfaces.FileCache
 	GetRemoteExecutionService() interfaces.RemoteExecutionService
