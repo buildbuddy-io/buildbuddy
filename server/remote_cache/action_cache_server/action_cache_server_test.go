@@ -898,8 +898,30 @@ func TestValidateActionResult_ChunkedOutputDirectoryTreeInfersDigestFunction(t *
 	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_UNKNOWN, ar))
 }
 
+func TestValidateActionResult_ChunkedOutputDirectoryTreeAboveDefaultChunkThreshold(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	// Only Trees larger than MaxChunkSizeBytes are stored chunked, and with
+	// the default chunk size that is also larger than GRPCMaxSizeBytes.
+	nameSizeBytes := int(chunking.MaxChunkSizeBytes()) + 1024
+	require.Greater(t, int64(nameSizeBytes), rpcutil.GRPCMaxSizeBytes)
+	treeData, err := proto.Marshal(&repb.Tree{Root: &repb.Directory{
+		Files: []*repb.FileNode{{Name: strings.Repeat("x", nameSizeBytes)}},
+	}})
+	require.NoError(t, err)
+	treeDigest, _ := storeChunkedBlob(t, ctx, cache, treeData, repb.DigestFunction_SHA256)
+	ar := &repb.ActionResult{OutputDirectories: []*repb.OutputDirectory{{TreeDigest: treeDigest}}}
+
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar))
+}
+
 func TestValidateActionResult_DoesNotReconstructOversizedOutputDirectoryTree(t *testing.T) {
-	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 1)
+	const maxTreeSizeBytes = 8 * 1024 * 1024
+	flags.Set(t, "cache.max_chunked_output_tree_size_bytes", maxTreeSizeBytes)
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
@@ -914,7 +936,7 @@ func TestValidateActionResult_DoesNotReconstructOversizedOutputDirectoryTree(t *
 	}
 	ar := &repb.ActionResult{OutputDirectories: []*repb.OutputDirectory{{TreeDigest: &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
-		SizeBytes: rpcutil.GRPCMaxSizeBytes + 1,
+		SizeBytes: maxTreeSizeBytes + 1,
 	}}}}
 
 	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
