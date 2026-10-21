@@ -1,8 +1,23 @@
-# For bases whose apt archive has no fixed ca-certificates package (Ubuntu
-# 20.04): adds one layer that deselects the two affected roots in
-# /etc/ca-certificates.conf ("!" prefix, the format debconf itself writes) and
-# regenerates the bundle. No packages change. See README.md.
+# For bases whose archive has no fixed ca-certificates package (Ubuntu 16.04,
+# 18.04, 20.04). Adds one layer that deselects CERTS in
+# /etc/ca-certificates.conf (the "!" prefix debconf itself writes) and runs
+# update-ca-certificates, which also rebuilds the Debian Java keystore. No
+# packages change. Every entry must be present and selected in the base.
+# Ubuntu 16.04's bundle predates the emSign root, so pass only the Comodo AAA
+# root there. Build from this directory; see README.md.
+# None of the bases set USER. If one does, add it back after the RUN step.
 ARG BASE
 FROM ${BASE}
-RUN sed -i -E 's@^(mozilla/(emSign_ECC_Root_CA_-_G3|Comodo_AAA_Services_root)\.crt)$@!\1@' /etc/ca-certificates.conf && \
-    update-ca-certificates
+
+ARG CERTS="mozilla/emSign_ECC_Root_CA_-_G3.crt mozilla/Comodo_AAA_Services_root.crt"
+
+RUN --mount=type=bind,source=check_roots_removed.sh,target=/ca_patch_check.sh \
+    set -eu; \
+    test -n "$(echo ${CERTS})" || { echo "CERTS build arg is empty" >&2; exit 1; }; \
+    for c in ${CERTS}; do \
+      test -f "/usr/share/ca-certificates/$c" || { echo "missing /usr/share/ca-certificates/$c" >&2; exit 1; }; \
+      grep -qxF "$c" /etc/ca-certificates.conf || { echo "$c is not selected in /etc/ca-certificates.conf" >&2; exit 1; }; \
+      sed -i "s|^$c\$|!$c|" /etc/ca-certificates.conf; \
+    done; \
+    update-ca-certificates; \
+    sh /ca_patch_check.sh ${CERTS}
