@@ -98,8 +98,7 @@ func TestOCIFetcher_LocalFetcher(t *testing.T) {
 			require.NoError(t, err)
 			env.SetCache(mc)
 			env.SetOCIFetcherClient(apps)
-			// Unused: the legacy FetchBlob path fails on the apps'
-			// FetchBlobMetadata before reading the local cache.
+			// Unused: legacy FetchBlob fails on the apps before reading it.
 			env.SetLocalByteStreamClient(bspb.NewByteStreamClient(nil))
 		},
 	})

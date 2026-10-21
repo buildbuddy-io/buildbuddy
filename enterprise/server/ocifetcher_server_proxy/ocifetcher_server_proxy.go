@@ -6,10 +6,8 @@
 // forwarding to the upstream. On upstream fetch, the blob is written
 // to the local byte stream cache for future requests.
 //
-// When the cache_proxy.oci_fetcher.use_local_fetcher experiment is enabled,
-// requests are instead served by a local OCI fetcher whose ByteStream and
-// ActionCache clients loop back to this proxy's own gRPC servers, so cached
-// manifests and blobs are read through and written through the proxy caches.
+// When cache_proxy.oci_fetcher.use_local_fetcher is enabled, requests are
+// instead served by a local OCI fetcher that caches through this proxy.
 package ocifetcher_server_proxy
 
 import (
@@ -50,18 +48,15 @@ type OCIFetcherServerProxy struct {
 	fetchGroup singleflight.Group[ocicache.BlobFetchKey, struct{}]
 
 	// fetcher is a local OCI fetcher whose cache clients loop back to this
-	// proxy's own public gRPC servers. It is nil if it couldn't be built.
+	// proxy's own public gRPC servers.
 	fetcher ofpb.OCIFetcherServer
 }
 
 // Register creates the OCIFetcherServerProxy and sets it as env's
 // OCIFetcherServer. localTarget is this proxy's own (non-SSL) gRPC server,
 // which the local OCI fetcher's cache clients connect to.
-//
-// If env already has an OCIFetcherServer, Register leaves it in place, so
-// that the proxy (and its local fetcher) is built once and the same instance
-// is served on every port.
 func Register(env *real_environment.RealEnv, localTarget string) error {
+	// Reuse one instance across ports so they share one singleflight group.
 	if env.GetOCIFetcherServer() != nil {
 		return nil
 	}
@@ -69,7 +64,9 @@ func Register(env *real_environment.RealEnv, localTarget string) error {
 	if err != nil {
 		return status.InternalErrorf("Error initializing OCIFetcherServerProxy: %s", err)
 	}
-	proxy.initLocalFetcher(env, localTarget)
+	if err := proxy.initLocalFetcher(env, localTarget); err != nil {
+		return status.InternalErrorf("Error initializing OCIFetcherServerProxy local fetcher: %s", err)
+	}
 	env.SetOCIFetcherServer(proxy)
 	return nil
 }
@@ -88,77 +85,65 @@ func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 }
 
 // initLocalFetcher builds the local OCI fetcher, with ByteStream and
-// ActionCache clients connected to target. On failure it logs a warning and
-// leaves the fetcher unset, so all requests take the forwarding path.
-func (s *OCIFetcherServerProxy) initLocalFetcher(env environment.Env, target string) {
-	if env.GetClientIdentityService() == nil {
-		log.Warningf("OCIFetcherServerProxy: no client identity service configured. This only matters if %s is enabled; if it is, the local OCI fetcher's _bb_ociregistry_ cache reads and writes will all fail as Unauthenticated, and since the fetcher only logs those failures, the OCI caches will stay empty.", useLocalFetcher.Name())
-	}
+// ActionCache clients connected to target.
+func (s *OCIFetcherServerProxy) initLocalFetcher(env environment.Env, target string) error {
 	conn, err := grpc_client.DialInternalWithoutPooling(env, target)
 	if err != nil {
-		log.Warningf("OCIFetcherServerProxy: could not dial %s, local OCI fetcher disabled: %s", target, err)
-		return
+		return err
 	}
 	fetcher, err := ocifetcher.NewServer(bspb.NewByteStreamClient(conn), repb.NewActionCacheClient(conn))
 	if err != nil {
-		log.Warningf("OCIFetcherServerProxy: could not create local OCI fetcher, local OCI fetcher disabled: %s", err)
 		conn.Close()
-		return
+		return err
 	}
 	s.fetcher = fetcher
+	return nil
 }
 
 // useFetcher returns whether a request should be served by the local fetcher.
 // Requests that bypass the registry always take the forwarding path.
 func (s *OCIFetcherServerProxy) useFetcher(ctx context.Context, bypassRegistry bool) bool {
-	return s.fetcher != nil && !bypassRegistry && useLocalFetcher.Get(ctx)
+	return !bypassRegistry && useLocalFetcher.Get(ctx)
 }
 
 func recordRequest(method, path string, err error) {
 	metrics.CacheProxyOCIFetcherRequestCount.WithLabelValues(method, path, status.MetricsLabel(err)).Inc()
 }
 
-// serveUnary serves a unary request with the local fetcher or the forwarding
-// (legacy) path.
-func serveUnary[T any](ctx context.Context, s *OCIFetcherServerProxy, method string, bypassRegistry bool, fetcher, legacy func(context.Context) (T, error)) (T, error) {
-	if s.useFetcher(ctx, bypassRegistry) {
-		resp, err := fetcher(ctx)
+func (s *OCIFetcherServerProxy) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
+	method := metrics.OCIFetcherMethodFetchManifest
+	if s.useFetcher(ctx, req.GetBypassRegistry()) {
+		resp, err := s.fetcher.FetchManifest(ctx, req)
 		recordRequest(method, metrics.OCIFetcherPathFetcher, err)
 		return resp, err
 	}
-	resp, err := legacy(ctx)
+	resp, err := s.remote.FetchManifest(ctx, req)
 	recordRequest(method, metrics.OCIFetcherPathLegacy, err)
 	return resp, err
 }
 
-func (s *OCIFetcherServerProxy) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
-	return serveUnary(ctx, s, metrics.OCIFetcherMethodFetchManifest, req.GetBypassRegistry(),
-		func(ctx context.Context) (*ofpb.FetchManifestResponse, error) {
-			return s.fetcher.FetchManifest(ctx, req)
-		},
-		func(ctx context.Context) (*ofpb.FetchManifestResponse, error) {
-			return s.remote.FetchManifest(ctx, req)
-		})
-}
-
 func (s *OCIFetcherServerProxy) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
-	return serveUnary(ctx, s, metrics.OCIFetcherMethodFetchManifestMetadata, req.GetBypassRegistry(),
-		func(ctx context.Context) (*ofpb.FetchManifestMetadataResponse, error) {
-			return s.fetcher.FetchManifestMetadata(ctx, req)
-		},
-		func(ctx context.Context) (*ofpb.FetchManifestMetadataResponse, error) {
-			return s.remote.FetchManifestMetadata(ctx, req)
-		})
+	method := metrics.OCIFetcherMethodFetchManifestMetadata
+	if s.useFetcher(ctx, req.GetBypassRegistry()) {
+		resp, err := s.fetcher.FetchManifestMetadata(ctx, req)
+		recordRequest(method, metrics.OCIFetcherPathFetcher, err)
+		return resp, err
+	}
+	resp, err := s.remote.FetchManifestMetadata(ctx, req)
+	recordRequest(method, metrics.OCIFetcherPathLegacy, err)
+	return resp, err
 }
 
 func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
-	return serveUnary(ctx, s, metrics.OCIFetcherMethodFetchBlobMetadata, req.GetBypassRegistry(),
-		func(ctx context.Context) (*ofpb.FetchBlobMetadataResponse, error) {
-			return s.fetcher.FetchBlobMetadata(ctx, req)
-		},
-		func(ctx context.Context) (*ofpb.FetchBlobMetadataResponse, error) {
-			return s.remote.FetchBlobMetadata(ctx, req)
-		})
+	method := metrics.OCIFetcherMethodFetchBlobMetadata
+	if s.useFetcher(ctx, req.GetBypassRegistry()) {
+		resp, err := s.fetcher.FetchBlobMetadata(ctx, req)
+		recordRequest(method, metrics.OCIFetcherPathFetcher, err)
+		return resp, err
+	}
+	resp, err := s.remote.FetchBlobMetadata(ctx, req)
+	recordRequest(method, metrics.OCIFetcherPathLegacy, err)
+	return resp, err
 }
 
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
