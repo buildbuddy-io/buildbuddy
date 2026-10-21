@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana/generated/cache_proxy",
     deps = [
         "//tools/metrics/grafana/generated/dash",
+        "//tools/metrics/grafana/generated/pebble_dash",
         "@com_github_grafana_grafana_foundation_sdk_go//cog",
         "@com_github_grafana_grafana_foundation_sdk_go//common",
         "@com_github_grafana_grafana_foundation_sdk_go//dashboard",
