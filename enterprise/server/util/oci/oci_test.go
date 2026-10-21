@@ -1178,6 +1178,33 @@ func TestResolveImageDigest_TagExists(t *testing.T) {
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 }
 
+func TestResolveImageDigest_ReusesConnections(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	registry := testregistry.Run(t, testregistry.Opts{})
+	registry.PushNamedImage(t, "image_a", nil)
+	registry.PushNamedImage(t, "image_b", nil)
+	resolver := newResolver(t, te)
+
+	// Count the connections opened by each lookup. Resolve different tags, so
+	// that the second lookup isn't a cache hit.
+	var conns []int64
+	for _, imageName := range []string{"image_a", "image_b"} {
+		before := registry.NumConnections()
+		_, err := resolver.ResolveImageDigest(
+			context.Background(),
+			registry.ImageAddress(imageName),
+			oci.RuntimePlatform(),
+			oci.Credentials{},
+		)
+		require.NoError(t, err)
+		conns = append(conns, registry.NumConnections()-before)
+	}
+	// Each lookup also makes a failed HTTPS attempt, which opens a connection
+	// that can't be reused, so the second lookup still opens one connection.
+	require.Less(t, conns[1], conns[0], "the second lookup should reuse the first lookup's connection; connections opened per lookup: %v", conns)
+}
+
 func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})

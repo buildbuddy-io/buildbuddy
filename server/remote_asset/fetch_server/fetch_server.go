@@ -81,9 +81,10 @@ func makeUnsupportedQualifiersErrStatus(qualifierNames []string) error {
 }
 
 type FetchServer struct {
-	env                  environment.Env
-	allowedPrivateIPNets []*net.IPNet
-	fetchGroup           singleflight.Group[fetchKey, *repb.Digest]
+	env environment.Env
+	// httpClient is shared by all fetches, so that they reuse connections.
+	httpClient *http.Client
+	fetchGroup singleflight.Group[fetchKey, *repb.Digest]
 }
 
 // fetchKey shares equivalent requests across users and API keys in one group.
@@ -147,9 +148,21 @@ func NewFetchServer(env environment.Env) (*FetchServer, error) {
 		}
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
+	httpClient := httpclient.New(allowedPrivateIPNets, "fetch_server")
+	// Don't send Referer headers on redirects. Go's http.Client adds these
+	// automatically, but some sites (e.g. SourceForge) use the Referer to
+	// detect non-browser clients and serve HTML instead of the file download.
+	// Curl doesn't automatically set this after redirects either.
+	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		req.Header.Del("Referer")
+		return nil
+	}
 	return &FetchServer{
-		env:                  env,
-		allowedPrivateIPNets: allowedPrivateIPNets,
+		env:        env,
+		httpClient: httpClient,
 	}, nil
 }
 
@@ -342,18 +355,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		key.ChecksumHash = checksumHash(checksums)
 	}
 
-	httpClient := httpclient.New(p.allowedPrivateIPNets, "fetch_server")
-	// Don't send Referer headers on redirects. Go's http.Client adds these
-	// automatically, but some sites (e.g. SourceForge) use the Referer to
-	// detect non-browser clients and serve HTML instead of the file download.
-	// Curl doesn't automatically set this after redirects either.
-	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 10 {
-			return fmt.Errorf("stopped after 10 redirects")
-		}
-		req.Header.Del("Referer")
-		return nil
-	}
+	httpClient := p.httpClient
 	bsClient := getByteStreamClient(p.env)
 
 	// Each caller has its own wait budget; shared work has the server limit.
