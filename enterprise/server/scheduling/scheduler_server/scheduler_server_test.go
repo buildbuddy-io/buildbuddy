@@ -1171,6 +1171,56 @@ func TestExecutorReEnqueue_ReservationCarriesTaskOwnerJWT(t *testing.T) {
 	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor, taskID)))
 }
 
+func TestExecutorShutdown_ReturnedReservationDoesNotAllowConcurrentClaim(t *testing.T) {
+	// Set up 3 executors: holder (holds a valid task lease), thief (tries to
+	// steal the lease), and shuttingdown (shuts down and leaves the pool)
+	//
+	// Set thief as the preferred executor, so the replacement reservation sent
+	// during shutdown goes to the thief.
+	env, ctx := getEnv(t, &schedulerOpts{preferredExecutors: []string{"thief"}}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	thief := newFakeExecutorWithId(ctx, t, "thief", env.GetSchedulerClient())
+	thief.Register()
+	shuttingdown := newFakeExecutorWithId(ctx, t, "shuttingdown", env.GetSchedulerClient())
+	shuttingdown.Register()
+
+	// Schedule a task with reservations on all 3 executors. This is a normal,
+	// retryable task.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	nextReservation(t, holder, taskID)
+	nextReservation(t, thief, taskID)
+	nextReservation(t, shuttingdown, taskID)
+
+	// Have holder claim the task.
+	holderLease := holder.Claim(taskID)
+
+	// Other executors should get a NotFound error if they try to lease the
+	// task. (This is just a sanity check demonstrating normal behavior; things
+	// get more interesting after shutdown below.)
+	_, err := thief.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.True(t, status.IsNotFoundError(err), "thief must not claim holder's running task before shuttingdown shuts down: %v", err)
+	task, err := s.readTask(ctx, taskID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, task.attemptCount)
+
+	// Simulate shuttingdown returning its queued reservation during shutdown.
+	// This should not affect the holder's in-flight execution of the task.
+	shuttingdown.Send(&scpb.RegisterAndStreamWorkRequest{
+		ShuttingDownRequest: &scpb.ShuttingDownRequest{TaskId: []string{taskID}},
+	})
+	nextReservation(t, thief, taskID)
+
+	// The holder still has a valid claim on the task, so the thief should still
+	// be unable to claim it, even though it received another reservation as a
+	// result of shuttingdown handing off the task reservation.
+	_, claimErr := thief.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.NoError(t, holderLease.Renew(), "holder's original lease should still be active")
+	require.True(t, status.IsNotFoundError(claimErr), "returning shuttingdown's queued reservation must not let thief claim holder's running task; thief's claim returned: %v", claimErr)
+	require.NoError(t, holderLease.Finalize())
+}
+
 func TestLeaseExpiration(t *testing.T) {
 	fakeClock := clockwork.NewFakeClock()
 	env, ctx := getEnv(t, &schedulerOpts{options: Options{
