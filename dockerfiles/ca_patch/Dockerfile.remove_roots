@@ -1,0 +1,8 @@
+# For bases whose apt archive has no fixed ca-certificates package (Ubuntu
+# 20.04): adds one layer that deselects the two affected roots in
+# /etc/ca-certificates.conf ("!" prefix, the format debconf itself writes) and
+# regenerates the bundle. No packages change. See README.md.
+ARG BASE
+FROM ${BASE}
+RUN sed -i -E 's@^(mozilla/(emSign_ECC_Root_CA_-_G3|Comodo_AAA_Services_root)\.crt)$@!\1@' /etc/ca-certificates.conf && \
+    update-ca-certificates
