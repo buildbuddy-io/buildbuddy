@@ -37,6 +37,7 @@ go_test(
         "//server/real_environment",
         "//server/testutil/testauth",
         "//server/util/authutil",
+        "//server/util/clientip",
         "//server/util/healthcheck",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
