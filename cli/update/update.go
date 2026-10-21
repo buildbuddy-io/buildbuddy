@@ -192,9 +192,12 @@ func updateSystemInstall(version string) error {
 		return fmt.Errorf("sudo mkdir: %s", err)
 	}
 	// Install to a temp file in the same dir, then rename, so that the
-	// replacement is atomic.
+	// replacement is atomic. If install fails partway, try to remove the
+	// staging file without prompting; this quietly does nothing if sudo
+	// auth itself failed.
 	stagingPath := filepath.Join(installDir, fmt.Sprintf(".bb.tmp.%d", os.Getpid()))
 	if err := sudo("install", "-m", "0755", tmpPath, stagingPath); err != nil {
+		exec.Command("sudo", "-n", "rm", "-f", stagingPath).Run()
 		return fmt.Errorf("sudo install: %s", err)
 	}
 	if err := sudo("mv", "-f", stagingPath, installPath); err != nil {
