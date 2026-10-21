@@ -256,32 +256,32 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-darwin-amd64"],
-        sha256 = "0af019eeb642fa70744419d02aa32df55e6e7a084105d49fb26801a660aa56d3",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-darwin-amd64"],
+        sha256 = "a0e6468b0c6b812f782d8cbfb05824121f6980c0bd70aaa1774fb8272bb7b2ad",
         executable = True,
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-darwin-arm64"],
-        sha256 = "b13dd89c6ecd90944ca3539f5a2c715a18f69b7458878c471a902a8e482ceb4b",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-darwin-arm64"],
+        sha256 = "555d2ff912ccd336d0060bdb5251ef2f62629c6f8fbadb59005a45d5625793ec",
         executable = True,
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-linux-amd64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64"],
-        sha256 = "fd8fdff418a1758887520fa42da7e6ae39aefc788cf5e7f7bb8db6934d279fc4",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-linux-amd64"],
+        sha256 = "a248ae2b2b62b5baebb748f6fba7203bff1a27e5d01b55399a8406744cb539e8",
         executable = True,
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-linux-arm64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-arm64"],
-        sha256 = "4c8d966e40ac2c4efcc7f1a5a5cceef2c0a2f16b957e791fa7a867cce31e8fcb",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-linux-arm64"],
+        sha256 = "b2bcc040c213b44586b121bda6d983c35df121b917c3a7a66fb16f2fa0df1a4f",
         executable = True,
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-windows-amd64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-windows-amd64.exe"],
-        sha256 = "641a3dfebd717703675f912917735c44b45cf6300bfdfb924537f3cfbffcdd92",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-windows-amd64.exe"],
+        sha256 = "5d14a31e9d8a363c48ba1900dbd56764d730835232eb0d113cce255856ffe3ef",
         executable = True,
     )
     http_file(
