@@ -266,7 +266,7 @@ func metadataServerOverallRow() *dashboard.RowBuilder {
 	return row("Metadata Server Overall").
 		WithPanel(ts("CPU", dash.UnitPercentUnit).
 			Max(1).
-			WithTarget(q("1 - avg by (nodename) (rate(node_cpu_seconds_total{region=\"${region}\", mode=\"idle\", nodename=~\"^gke-.*-mds-.*-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"}[1m]))", "{{nodename}}").
+			WithTarget(q("1 - avg by (nodename) (rate(node_cpu_seconds_total{region=\"${region}\", mode=\"idle\", nodename=~\"^gke-.*-mds-.*-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"}[${window}]))", "{{nodename}}").
 				RefId("A"))).
 		WithPanel(metadataServerOverallPodNhidGkeNodePanel()).
 		WithPanel(ts("instances", dash.UnitShort).
@@ -588,7 +588,7 @@ func evictionRow() *dashboard.RowBuilder {
 				RefId("A"))).
 		WithPanel(evictionEvictionAgePartitionIdPanel()).
 		WithPanel(ts("Disk Cache eviction rate", "").
-			WithTarget(q("max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",cache_name=\"raft\", namespace=\"${namespace}\"}[10m])) by (pod_name, partition_id)", "{{partition_id}} {{pod_name}}").
+			WithTarget(q("max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",cache_name=\"raft\", namespace=\"${namespace}\"}[${window}])) by (pod_name, partition_id)", "{{partition_id}} {{pod_name}}").
 				RefId("A"))).
 		WithPanel(ts("batch delete latency", dash.UnitMicroseconds).
 			Legend(common.NewVizLegendOptionsBuilder().
