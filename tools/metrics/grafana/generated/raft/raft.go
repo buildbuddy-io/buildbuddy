@@ -661,8 +661,8 @@ func regionVariable() *dashboard.QueryVariableBuilder {
 
 func windowVariable() *dashboard.CustomVariableBuilder {
 	return dashboard.NewCustomVariableBuilder("window").
-		Values(dashboard.StringOrMap{String: new("30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d")}).
-		Current(dash.SelectedOption("1m", "1m")).
+		Values(dashboard.StringOrMap{String: new("$__rate_interval, 30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d")}).
+		Current(dash.SelectedOption("$__rate_interval", "$__rate_interval")).
 		Label("Averaging Window")
 }
 

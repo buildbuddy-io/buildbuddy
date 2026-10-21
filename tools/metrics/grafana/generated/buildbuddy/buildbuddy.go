@@ -124,7 +124,7 @@ func probersRow() *dashboard.RowBuilder {
 			ThresholdsStyle(common.NewGraphThresholdsStyleConfigBuilder().Mode(common.GraphThresholdsStyleModeDashed)).
 			Legend(tableLegend("min").
 				SortBy("Min")).
-			WithTarget(dash.PromQuery(`sum(increase(cloudprober_success{region="${region}"}[${window}])) by (probe) / sum(increase(cloudprober_total{region="${region}"}[${window}])) by (probe)`, "{{probe}}"))).
+			WithTarget(dash.PromQuery(`sum(increase(cloudprober_success{region="${region}"}[10m])) by (probe) / sum(increase(cloudprober_total{region="${region}"}[10m])) by (probe)`, "{{probe}}"))).
 		WithPanel(ts("RBE Prober Latency", dash.UnitMicroseconds).
 			WithTarget(dash.PromQuery(`histogram_quantile(
   0.99,
@@ -1173,11 +1173,11 @@ func regionVariable() *dashboard.QueryVariableBuilder {
 }
 
 func windowVariable() *dashboard.CustomVariableBuilder {
-	values := "30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d"
+	values := "$__rate_interval, 30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d"
 	return dashboard.NewCustomVariableBuilder("window").
 		Label("Averaging Window").
 		Values(dashboard.StringOrMap{String: &values}).
-		Current(dash.SelectedOption("1m", "1m"))
+		Current(dash.SelectedOption("$__rate_interval", "$__rate_interval"))
 }
 
 func jobVariable() *dashboard.QueryVariableBuilder {

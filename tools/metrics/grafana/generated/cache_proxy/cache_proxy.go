@@ -181,7 +181,7 @@ func probersRow() *dashboard.RowBuilder {
 			AxisSoftMin(0).
 			AxisSoftMax(1).
 			ShowPoints(common.VisibilityModeNever).
-			WithTarget(dash.PromQuery(`sum(increase(cloudprober_success{region="${region}", probe=~".*proxy.*"}[${window}])) by (probe) / sum(increase(cloudprober_total{region="${region}", probe=~".*proxy.*"}[${window}])) by (probe)`, "{{probe}} Up")))
+			WithTarget(dash.PromQuery(`sum(increase(cloudprober_success{region="${region}", probe=~".*proxy.*"}[10m])) by (probe) / sum(increase(cloudprober_total{region="${region}", probe=~".*proxy.*"}[10m])) by (probe)`, "{{probe}} Up")))
 }
 
 func atimeUpdaterRow() *dashboard.RowBuilder {
@@ -528,11 +528,11 @@ func regionVariable() *dashboard.QueryVariableBuilder {
 }
 
 func windowVariable() *dashboard.CustomVariableBuilder {
-	values := "30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d"
+	values := "$__rate_interval, 30s, 1m, 5m, 10m, 15m, 30m, 1h, 2h, 4h, 8h, 16h, 1d, 2d, 5d, 7d, 14d, 30d"
 	return dashboard.NewCustomVariableBuilder("window").
 		Label("Averaging Window").
 		Values(dashboard.StringOrMap{String: &values}).
-		Current(dash.SelectedOption("1m", "1m"))
+		Current(dash.SelectedOption("$__rate_interval", "$__rate_interval"))
 }
 
 func quantileVariable() *dashboard.CustomVariableBuilder {
