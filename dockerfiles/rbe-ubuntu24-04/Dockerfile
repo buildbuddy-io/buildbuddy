@@ -102,15 +102,19 @@ RUN useradd --create-home buildbuddy --groups sudo,docker && \
 # Fail the build if the 'emSign ECC Root CA - G3' or 'Comodo AAA Services'
 # root is still trusted (eMudhra intermediate CA compromise, see
 # buildbuddy-io/buildbuddy-internal#8615): selected in /etc/ca-certificates.conf,
-# linked in /etc/ssl/certs, or present by SHA-256 fingerprint in
-# ca-certificates.crt or any Java cacerts keystore in the image.
+# or present by SHA-256 fingerprint in ca-certificates.crt, any certificate
+# link in /etc/ssl/certs, or any Java cacerts keystore in the image.
 RUN <<'EOF'
 set -eu
 fail() { echo "CA root check: $*" >&2; exit 1; }
 tmp=$(mktemp -d)
 awk -v d="$tmp" '/BEGIN CERTIFICATE/ { if (f) close(f); f = d "/" (++n) ".pem" } f { print > f }' /etc/ssl/certs/ca-certificates.crt
-for f in "$tmp"/*.pem; do openssl x509 -in "$f" -noout -fingerprint -sha256; done | cut -d= -f2 >"$tmp/bundle"
-[ -s "$tmp/bundle" ] || fail "no certificates in /etc/ssl/certs/ca-certificates.crt"
+[ -e "$tmp/1.pem" ] || fail "no certificates in /etc/ssl/certs/ca-certificates.crt"
+# Every certificate in the bundle and every .pem and hash link in /etc/ssl/certs.
+for f in "$tmp"/*.pem /etc/ssl/certs/*.pem /etc/ssl/certs/*.[0-9]; do
+  openssl x509 -in "$f" -noout -fingerprint -sha256 >>"$tmp/fps" || fail "cannot read certificate $f"
+done
+cut -d= -f2 "$tmp/fps" >"$tmp/bundle"
 : >"$tmp/keystores"
 for ks in $(find / -xdev -name cacerts \( -type f -o -type l \) -exec readlink -f {} \; | sort -u); do
   # Skip text files such as ca-certificates-java's /etc/default/cacerts.
@@ -128,10 +132,10 @@ for root in \
   fp=${root#*=}
   ! grep -qxF "mozilla/$name.crt" /etc/ca-certificates.conf || fail "$name is selected in /etc/ca-certificates.conf"
   ! [ -e "/etc/ssl/certs/$name.pem" ] && ! [ -L "/etc/ssl/certs/$name.pem" ] || fail "/etc/ssl/certs/$name.pem exists"
-  ! grep -qxF "$fp" "$tmp/bundle" || fail "$name is in /etc/ssl/certs/ca-certificates.crt"
+  ! grep -qxF "$fp" "$tmp/bundle" || fail "$name is in /etc/ssl/certs"
   ! grep -qF "$fp" "$tmp/keystores" || fail "$name is in a Java cacerts keystore"
 done
-echo "CA root check passed: $(wc -l <"$tmp/bundle") certificates in bundle"
+echo "CA root check passed: $(ls "$tmp"/*.pem | wc -l) certificates in bundle"
 rm -rf "$tmp"
 EOF
 
