@@ -128,6 +128,21 @@ const (
 	// Reason for a runner not being added to the runner pool.
 	RunnerPoolFailedRecycleReason = "reason"
 
+	// Status of looking for a pooled workspace to reuse for a task: `reused`,
+	// `no_match` if no pooled workspace was worth reusing, or `failed` if
+	// reusing one failed and the task started from an empty workspace.
+	WorkspacePoolReuseStatusLabel = "status"
+
+	// Status of returning a finished task's workspace to the workspace pool:
+	// `pooled`, `evicted` if the pool was full and evicted the workspace right
+	// away, `root_changed` if the task removed or replaced its input root, or
+	// `error`.
+	WorkspacePoolReturnStatusLabel = "status"
+
+	// Whether an evicted workspace was the one that was just added to the
+	// workspace pool: `true` or `false`.
+	WorkspacePoolEvictedNewlyAdded = "newly_added"
+
 	// Reason for a Firecracker task execution failure.
 	FirecrackerErrorReason = "reason"
 
@@ -2209,6 +2224,99 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "runner_pool_disk_usage_bytes",
 		Help:      "Total disk usage of pooled command runners, in **bytes**.",
+	})
+
+	WorkspacePoolReuseAttempts = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_reuse_attempts",
+		Help:      "Number of tasks that looked for a pooled workspace to reuse, by status.",
+	}, []string{
+		WorkspacePoolReuseStatusLabel,
+	})
+
+	WorkspacePoolTakeDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_take_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Minute, 4),
+		Help:      "How long each task spent picking a pooled workspace to reuse, including the wait for other tasks that were picking or returning workspaces, in **microseconds**.",
+	})
+
+	WorkspacePoolKeptInputs = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_kept_inputs",
+		Buckets:   append([]float64{0}, prometheus.ExponentialBuckets(1, 4, 11)...),
+		Help:      "Number of input files that were already in place in each reused pooled workspace, so the executor didn't link or download them. Use the **`_sum`** suffix to get the total number of kept files.",
+	})
+
+	WorkspacePoolMissingInputs = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_missing_inputs",
+		Buckets:   append([]float64{0}, prometheus.ExponentialBuckets(1, 4, 11)...),
+		Help:      "Number of input files that the executor expected to find in each reused pooled workspace, but had removed before pooling it, because the task that last used the workspace deleted or changed them. Use the **`_sum`** suffix to get the total number of missing files.",
+	})
+
+	WorkspacePoolRemovedInputs = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_removed_inputs",
+		Buckets:   append([]float64{0}, prometheus.ExponentialBuckets(1, 4, 11)...),
+		Help:      "Number of files that the executor removed from each reused pooled workspace before the task started, because the task's input tree didn't have them. Use the **`_sum`** suffix to get the total number of removed files.",
+	})
+
+	WorkspacePoolNewInputs = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_new_inputs",
+		Buckets:   append([]float64{0}, prometheus.ExponentialBuckets(1, 4, 11)...),
+		Help:      "Number of input files that each reused pooled workspace didn't have, so the executor linked or downloaded them, as it would for an empty workspace. Use the **`_sum`** suffix to get the total number of new files.",
+	})
+
+	WorkspacePoolReturns = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_returns",
+		Help:      "Number of finished tasks' workspaces returned to the workspace pool, by status.",
+	}, []string{
+		WorkspacePoolReturnStatusLabel,
+	})
+
+	WorkspacePoolReturnDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_return_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Minute, 4),
+		Help:      "How long the executor spent returning each finished task's workspace to the workspace pool, in **microseconds**. The executor does this before it frees the task's resources.",
+	})
+
+	WorkspacePoolEvictions = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_evictions",
+		Help:      "Number of workspaces evicted from the workspace pool to free up a slot.",
+	}, []string{
+		WorkspacePoolEvictedNewlyAdded,
+	})
+
+	WorkspacePoolCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_count",
+		Help:      "Number of workspaces in the workspace pool, by group.",
+	}, []string{
+		GroupID,
+	})
+
+	WorkspacePoolInputFiles = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "workspace_pool_input_files",
+		Help:      "Number of input files in the input trees of the workspaces in the workspace pool, by group. This includes the inputs that the executor removed from a workspace before pooling it, because the task deleted or changed them.",
+	}, []string{
+		GroupID,
 	})
 
 	FileCacheRequests = promauto.NewCounterVec(prometheus.CounterOpts{

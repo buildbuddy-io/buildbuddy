@@ -1026,7 +1026,77 @@ sum(rate(buildbuddy_remote_execution_file_cache_requests{region="${region}", job
 		WithPanel(ts("Runner pool total memory usage", dash.UnitDecimalBytes).
 			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region="${region}", job="${pool}"})`, ""))).
 		WithPanel(ts("Runner pool total workspace size", dash.UnitDecimalBytes).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region="${region}", job="${pool}"})`, "")))
+			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region="${region}", job="${pool}"})`, ""))).
+		WithPanel(ts("Workspace pool input matching", dash.UnitOps).
+			Description("Input files per second for tasks that reused a pooled workspace. Reused files were already in place. Missing files were in both input trees, but the task that last used the workspace deleted or changed them, so the executor linked them again. New files weren't in the pooled workspace, so the executor linked or downloaded them, as it would for an empty workspace. Reused, missing and new files add up to the tasks' input files, apart from empty files and files over the pool's size limit. Removed files were in the pooled workspace but not in the task's input tree, so the executor deleted them before the task started.").
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_execution_workspace_pool_kept_inputs_sum{region="${region}", job="${pool}"}[${window}]))`, "Reused").RefId("A")).
+			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_execution_workspace_pool_missing_inputs_sum{region="${region}", job="${pool}"}[${window}]))`, "Missing").RefId("B")).
+			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_execution_workspace_pool_new_inputs_sum{region="${region}", job="${pool}"}[${window}]))`, "New").RefId("C")).
+			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_execution_workspace_pool_removed_inputs_sum{region="${region}", job="${pool}"}[${window}]))`, "Removed").RefId("D"))).
+		WithPanel(ts("Workspace pool reuse attempts by status", dash.UnitOps).
+			OverrideByName("reused", colorProp("green")).
+			OverrideByName("no_match", colorProp("yellow")).
+			OverrideByName("failed", colorProp("red")).
+			WithTarget(dash.PromQuery(`sum by (status) (rate(buildbuddy_remote_execution_workspace_pool_reuse_attempts{region="${region}", job="${pool}"}[${window}]))`, "{{status}}"))).
+		WithPanel(ts("Workspace pool returns by status", dash.UnitOps).
+			OverrideByName("pooled", colorProp("green")).
+			OverrideByName("evicted", colorProp("yellow")).
+			OverrideByName("root_changed", colorProp("orange")).
+			OverrideByName("error", colorProp("red")).
+			WithTarget(dash.PromQuery(`sum by (status) (rate(buildbuddy_remote_execution_workspace_pool_returns{region="${region}", job="${pool}"}[${window}]))`, "{{status}}"))).
+		WithPanel(ts("Pooled workspaces by group", "").
+			Description("The 8 groups with the most pooled workspaces at each point in time, and the rest as Other.").
+			FillOpacity(100).
+			Stacking(common.NewStackingConfigBuilder().Mode(common.StackingModeNormal)).
+			Tooltip(multiTooltip()).
+			OverrideByName("Other", colorProp("gray")).
+			WithTarget(dash.PromQuery(`topk(8, sum by (group_id) (buildbuddy_remote_execution_workspace_pool_count{region="${region}", job="${pool}"}) > 0)`, "{{group_id}}").RefId("A")).
+			WithTarget(dash.PromQuery(`(sum(buildbuddy_remote_execution_workspace_pool_count{region="${region}", job="${pool}"}) - sum(topk(8, sum by (group_id) (buildbuddy_remote_execution_workspace_pool_count{region="${region}", job="${pool}"})))) > 0`, "Other").RefId("B"))).
+		WithPanel(ts("Pooled input files by group", dash.UnitShort).
+			Description("The 8 groups with the most pooled input files at each point in time, and the rest as Other. Counted from the input trees of pooled workspaces, so this includes inputs that the executor removed before pooling a workspace.").
+			FillOpacity(100).
+			Stacking(common.NewStackingConfigBuilder().Mode(common.StackingModeNormal)).
+			Tooltip(multiTooltip()).
+			OverrideByName("Other", colorProp("gray")).
+			WithTarget(dash.PromQuery(`topk(8, sum by (group_id) (buildbuddy_remote_execution_workspace_pool_input_files{region="${region}", job="${pool}"}) > 0)`, "{{group_id}}").RefId("A")).
+			WithTarget(dash.PromQuery(`(sum(buildbuddy_remote_execution_workspace_pool_input_files{region="${region}", job="${pool}"}) - sum(topk(8, sum by (group_id) (buildbuddy_remote_execution_workspace_pool_input_files{region="${region}", job="${pool}"})))) > 0`, "Other").RefId("B"))).
+		WithPanel(schemeHeatmap("Workspace pool missing input files per reuse").
+			Description("For each reused pooled workspace, the number of input files that both the workspace's input tree and the new task's input tree had, but that the workspace no longer held, because the task that last used it deleted or changed them. The executor links these files again. Empty files and files over the pool's size limit don't count, since the pool never keeps them. Ideally this value is always 0. Values above 0 mean that tasks change their inputs, which currently makes the pool overestimate how much reusing a workspace saves.").
+			YAxis(yAxisLeft(dash.UnitShort)).
+			WithTarget(dash.PromHeatmapQuery(`sum by (le) (rate(buildbuddy_remote_execution_workspace_pool_missing_inputs_bucket{region="${region}", job="${pool}"}[${window}]))`))).
+		WithPanel(ts("Workspace pool take duration", dash.UnitMicroseconds).
+			Description("Time each task spent picking a pooled workspace to reuse, including the wait for other tasks that were picking or returning workspaces.").
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`histogram_quantile(
+  0.5,
+  sum by (le) (rate(buildbuddy_remote_execution_workspace_pool_take_duration_usec_bucket{region="${region}", job="${pool}"}[${window}]))
+)`, "p50").RefId("A")).
+			WithTarget(dash.PromQuery(`histogram_quantile(
+  0.9,
+  sum by (le) (rate(buildbuddy_remote_execution_workspace_pool_take_duration_usec_bucket{region="${region}", job="${pool}"}[${window}]))
+)`, "p90").RefId("B")).
+			WithTarget(dash.PromQuery(`histogram_quantile(
+  0.99,
+  sum by (le) (rate(buildbuddy_remote_execution_workspace_pool_take_duration_usec_bucket{region="${region}", job="${pool}"}[${window}]))
+)`, "p99").RefId("C"))).
+		WithPanel(ts("Workspace pool return duration", dash.UnitMicroseconds).
+			Description("Time the executor spent returning each finished task's workspace to the pool. The executor does this before it frees the task's resources.").
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`histogram_quantile(
+  0.5,
+  sum by (le) (rate(buildbuddy_remote_execution_workspace_pool_return_duration_usec_bucket{region="${region}", job="${pool}"}[${window}]))
+)`, "p50").RefId("A")).
+			WithTarget(dash.PromQuery(`histogram_quantile(
+  0.9,
+  sum by (le) (rate(buildbuddy_remote_execution_workspace_pool_return_duration_usec_bucket{region="${region}", job="${pool}"}[${window}]))
+)`, "p90").RefId("B")).
+			WithTarget(dash.PromQuery(`histogram_quantile(
+  0.99,
+  sum by (le) (rate(buildbuddy_remote_execution_workspace_pool_return_duration_usec_bucket{region="${region}", job="${pool}"}[${window}]))
+)`, "p99").RefId("C"))).
+		WithPanel(ts("Workspace pool evictions", dash.UnitOps).
+			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_execution_workspace_pool_evictions{region="${region}", job="${pool}"}[${window}]))`, "")))
 }
 
 func golangRow() *dashboard.RowBuilder {
