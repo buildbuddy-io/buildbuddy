@@ -27,18 +27,22 @@ import (
 
 func TestContainerNetwork(t *testing.T) {
 	testnetworking.Setup(t)
-	// The test servers listen on the host's default IP, which may be private.
-	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
+	// The host's own addresses are blocked unless allowed, so allow the ones
+	// the test servers listen on.
+	flags.Set(t, "executor.task_allowed_private_ips", []string{"default", "2001:db8::1"})
 	ctx := context.Background()
 	hostIP4, err := networking.DefaultIP(ctx)
 	require.NoError(t, err)
-	// Add a public IPv6 address to the host, which may have none.
+	// Add IPv6 addresses to the host, which may have none.
 	hostIP6 := net.ParseIP("2001:db8::1")
+	blockedHostIP6 := net.ParseIP("2001:db8::2")
 	lo, err := netlink.LinkByName("lo")
 	require.NoError(t, err)
-	addr6 := &netlink.Addr{IPNet: &net.IPNet{IP: hostIP6, Mask: net.CIDRMask(128, 128)}}
-	require.NoError(t, netlink.AddrAdd(lo, addr6))
-	t.Cleanup(func() { netlink.AddrDel(lo, addr6) })
+	for _, ip := range []net.IP{hostIP6, blockedHostIP6} {
+		addr := &netlink.Addr{IPNet: &net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}}
+		require.NoError(t, netlink.AddrAdd(lo, addr))
+		t.Cleanup(func() { netlink.AddrDel(lo, addr) })
+	}
 
 	n, err := NewContainerNetwork(ctx)
 	require.NoError(t, err)
@@ -192,6 +196,14 @@ func TestContainerNetwork(t *testing.T) {
 		require.ErrorIs(t, err, syscall.ECONNREFUSED)
 	})
 
+	t.Run("blocked host IP", func(t *testing.T) {
+		lis, err := net.Listen("tcp", net.JoinHostPort(blockedHostIP6.String(), "0"))
+		require.NoError(t, err)
+		defer lis.Close()
+		_, err = dial("tcp", lis.Addr().String())
+		require.ErrorIs(t, err, syscall.ECONNREFUSED)
+	})
+
 	stats, err := n.Stats(ctx)
 	require.NoError(t, err)
 	require.Greater(t, stats.GetBytesSent(), int64(1<<20))
@@ -202,7 +214,8 @@ func TestIsAllowed(t *testing.T) {
 	flags.Set(t, "executor.task_allowed_private_ips", []string{"10.1.2.3"})
 	allowed, err := networking.TaskAllowedPrivateIPs(context.Background())
 	require.NoError(t, err)
-	n := &Network{externalNetwork: true, allowedPrefixes: allowed}
+	hostIP := netip.MustParsePrefix("2600:1900::1/128")
+	n := &Network{externalNetwork: true, allowedPrefixes: allowed, blockedPrefixes: append(slices.Clone(blockedPrefixes), hostIP)}
 	local := &Network{externalNetwork: false}
 	for _, tc := range []struct {
 		addr    string
@@ -223,6 +236,13 @@ func TestIsAllowed(t *testing.T) {
 		{"fd20:ce::254", false},
 		{"fe80::1", false},
 		{"ff02::1", false},
+		{"2600:1900::1", false},
+		{"2600:1900::2", true},
+		{"::a00:1", false},
+		{"64:ff9b::a9fe:a9fe", false},
+		{"64:ff9b:1::1", false},
+		{"2001:0:4136:e378::1", false},
+		{"2002:a00:1::1", false},
 	} {
 		addr := tcpip.AddrFromSlice(netip.MustParseAddr(tc.addr).AsSlice())
 		require.Equal(t, tc.allowed, n.isAllowed(addr), tc.addr)

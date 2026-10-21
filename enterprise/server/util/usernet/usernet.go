@@ -28,6 +28,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -101,7 +102,10 @@ var gatewayLinkAddress = tcpip.LinkAddress("\x02\x00\x00\x00\x00\x01")
 // --executor.task_allowed_private_ips.
 var blockedPrefixes = func() []netip.Prefix {
 	var prefixes []netip.Prefix
-	for _, r := range append(slices.Clone(networking.PrivateIPRanges), "0.0.0.0/8", "127.0.0.0/8", "224.0.0.0/4", "255.255.255.255/32", "::/128", "::1/128", "fc00::/7", "fe80::/10", "ff00::/8") {
+	for _, r := range append(slices.Clone(networking.PrivateIPRanges), "0.0.0.0/8", "127.0.0.0/8", "224.0.0.0/4", "255.255.255.255/32",
+		// IPv6 ranges that embed IPv4 addresses: IPv4-compatible, NAT64, Teredo and 6to4.
+		"::/96", "64:ff9b::/96", "64:ff9b:1::/48", "2001::/32", "2002::/16",
+		"fc00::/7", "fe80::/10", "ff00::/8") {
 		prefixes = append(prefixes, netip.MustParsePrefix(r))
 	}
 	return prefixes
@@ -123,6 +127,8 @@ type Network struct {
 	gateway         tcpip.Address
 	externalNetwork bool
 	allowedPrefixes []netip.Prefix
+	// blockedPrefixes includes the host's own addresses.
+	blockedPrefixes []netip.Prefix
 	pings           chan struct{}
 	udpIdleTimeout  time.Duration
 }
@@ -173,8 +179,9 @@ func NewContainerNetwork(ctx context.Context) (*Network, error) {
 		if err := netlink.RouteAdd(&netlink.Route{LinkIndex: eth0.Attrs().Index, Gw: gateway.Addr().AsSlice()}); err != nil {
 			return err
 		}
-		// Hosts booted with ipv6.disable=1 can't configure IPv6.
-		if _, err := os.Stat("/proc/sys/net/ipv6"); err != nil {
+		// Skip IPv6 if the host was booted with ipv6.disable=1 or the namespace
+		// disables it.
+		if b, err := os.ReadFile("/proc/sys/net/ipv6/conf/" + containerDevice + "/disable_ipv6"); err != nil || strings.TrimSpace(string(b)) != "0" {
 			return nil
 		}
 		addr6 := &netlink.Addr{IPNet: &net.IPNet{IP: net.ParseIP(ContainerIP6), Mask: net.CIDRMask(gateway6.Bits(), 128)}, Flags: unix.IFA_F_NODAD}
@@ -196,11 +203,24 @@ func newNetwork(ctx context.Context, gatewayCIDR string, enableExternalNetworkin
 	if err != nil {
 		return nil, err
 	}
+	hostAddrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil, status.UnavailableErrorf("list host addresses: %s", err)
+	}
+	blocked := slices.Clone(blockedPrefixes)
+	for _, a := range hostAddrs {
+		if ipNet, ok := a.(*net.IPNet); ok {
+			if ip, ok := netip.AddrFromSlice(ipNet.IP); ok {
+				blocked = append(blocked, netip.PrefixFrom(ip.Unmap(), ip.Unmap().BitLen()))
+			}
+		}
+	}
 	n := &Network{
 		fd:              -1,
 		gateway:         tcpip.AddrFrom4(gateway.Addr().As4()),
 		externalNetwork: enableExternalNetworking,
 		allowedPrefixes: allowed,
+		blockedPrefixes: blocked,
 		pings:           make(chan struct{}, maxPingsInFlight),
 		udpIdleTimeout:  udpIdleTimeout,
 	}
@@ -324,7 +344,7 @@ func (n *Network) isAllowed(addr tcpip.Address) bool {
 			return true
 		}
 	}
-	for _, p := range blockedPrefixes {
+	for _, p := range n.blockedPrefixes {
 		if p.Contains(ip) {
 			return false
 		}
