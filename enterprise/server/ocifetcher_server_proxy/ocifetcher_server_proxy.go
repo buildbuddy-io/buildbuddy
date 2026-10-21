@@ -15,7 +15,6 @@ package ocifetcher_server_proxy
 import (
 	"context"
 	"io"
-	"sync/atomic"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
@@ -39,7 +38,7 @@ import (
 
 const cacheDigestFunction = repb.DigestFunction_SHA256
 
-var useLocalFetcher = expflag.Bool("cache_proxy.oci_fetcher.use_local_fetcher", false, "If true, serve OCIFetcher requests with a local OCI fetcher that reads and writes through this proxy's own ByteStream and ActionCache servers, instead of forwarding them to the apps. Failed registry requests are retried on the forwarding path.")
+var useLocalFetcher = expflag.Bool("cache_proxy.oci_fetcher.use_local_fetcher", false, "If true, serve OCIFetcher requests with a local OCI fetcher that reads and writes through this proxy's own ByteStream and ActionCache servers, instead of forwarding them to the apps.")
 
 type OCIFetcherServerProxy struct {
 	remote        ofpb.OCIFetcherClient
@@ -115,46 +114,17 @@ func (s *OCIFetcherServerProxy) useFetcher(ctx context.Context, bypassRegistry b
 	return s.fetcher != nil && !bypassRegistry && useLocalFetcher.Get(ctx)
 }
 
-// shouldFallBack returns whether a request that failed on the local fetcher
-// with err should be retried on the forwarding path. Requests are only retried
-// while the caller's ctx is still alive.
-func shouldFallBack(ctx context.Context, err error) bool {
-	if ctx.Err() != nil {
-		return false
-	}
-	return status.IsUnavailableError(err) ||
-		status.IsUnauthenticatedError(err) ||
-		status.IsPermissionDeniedError(err) ||
-		status.IsResourceExhaustedError(err) ||
-		status.IsDeadlineExceededError(err)
-}
-
-// shouldFallBackFetchBlob is like shouldFallBack, but also retries Canceled:
-// a FetchBlob that waited on a deduplicated fetch gets the leader's Canceled
-// error if the leader's caller went away.
-func shouldFallBackFetchBlob(ctx context.Context, err error) bool {
-	return shouldFallBack(ctx, err) || (ctx.Err() == nil && status.IsCanceledError(err))
-}
-
 func recordRequest(method, path string, err error) {
 	metrics.CacheProxyOCIFetcherRequestCount.WithLabelValues(method, path, status.MetricsLabel(err)).Inc()
 }
 
-func recordFallback(ctx context.Context, method string, err error) {
-	log.CtxInfof(ctx, "OCIFetcherServerProxy: local fetcher %s failed, falling back to remote: %s", method, err)
-	metrics.CacheProxyOCIFetcherFallbackCount.WithLabelValues(method, status.MetricsLabel(err)).Inc()
-}
-
 // serveUnary serves a unary request with the local fetcher or the forwarding
-// (legacy) path, falling back to the legacy path on registry errors.
+// (legacy) path.
 func serveUnary[T any](ctx context.Context, s *OCIFetcherServerProxy, method string, bypassRegistry bool, fetcher, legacy func(context.Context) (T, error)) (T, error) {
 	if s.useFetcher(ctx, bypassRegistry) {
 		resp, err := fetcher(ctx)
 		recordRequest(method, metrics.OCIFetcherPathFetcher, err)
-		if err == nil || !shouldFallBack(ctx, err) {
-			return resp, err
-		}
-		recordFallback(ctx, method, err)
+		return resp, err
 	}
 	resp, err := legacy(ctx)
 	recordRequest(method, metrics.OCIFetcherPathLegacy, err)
@@ -191,29 +161,13 @@ func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb
 		})
 }
 
-// sendCountingStream counts Send attempts on a FetchBlob stream, so that a
-// failed local fetch is only retried if nothing was sent to the caller.
-type sendCountingStream struct {
-	ofpb.OCIFetcher_FetchBlobServer
-	sends atomic.Int64
-}
-
-func (s *sendCountingStream) Send(resp *ofpb.FetchBlobResponse) error {
-	s.sends.Add(1)
-	return s.OCIFetcher_FetchBlobServer.Send(resp)
-}
-
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 	method := metrics.OCIFetcherMethodFetchBlob
 	if s.useFetcher(ctx, req.GetBypassRegistry()) {
-		countingStream := &sendCountingStream{OCIFetcher_FetchBlobServer: stream}
-		err := s.fetcher.FetchBlob(req, countingStream)
+		err := s.fetcher.FetchBlob(req, stream)
 		recordRequest(method, metrics.OCIFetcherPathFetcher, err)
-		if err == nil || countingStream.sends.Load() > 0 || !shouldFallBackFetchBlob(ctx, err) {
-			return err
-		}
-		recordFallback(ctx, method, err)
+		return err
 	}
 	err := s.legacyFetchBlob(req, stream)
 	recordRequest(method, metrics.OCIFetcherPathLegacy, err)

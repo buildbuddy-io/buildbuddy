@@ -4725,16 +4725,6 @@ var (
 		StatusHumanReadableLabel,
 	})
 
-	CacheProxyOCIFetcherFallbackCount = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "proxy",
-		Name:      "oci_fetcher_fallbacks",
-		Help:      "Number of cache proxy OCIFetcher requests that failed on the local fetcher and were retried on the legacy path, by method and the fetcher's gRPC status.",
-	}, []string{
-		OCIFetcherMethodLabel,
-		StatusHumanReadableLabel,
-	})
-
 	InputTreeSetupOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
