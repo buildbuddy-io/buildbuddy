@@ -18,6 +18,7 @@ This script will do the following:
      --base_version), and create the tag pointing at HEAD.
   3) Pushes the tag to GitHub.
      This kicks off some workflows which will build the release artifacts.
+     With --version, steps 2 and 3 are skipped and that version is used.
   4) Builds and tags new Docker images locally, and pushes them to the registry.
      Also updates the ":latest" tag for each image.
 """
@@ -294,25 +295,73 @@ def get_cpu_architecture():
     else:
         die('unknown CPU architecture ' + arch)
 
+def bump_and_tag_version(args):
+    # A patch bumps this branch's own version, and none reuses it; anything else
+    # bumps the highest version in the repo.
+    if args.base_version:
+        old_version = args.base_version
+    elif args.bump_version_type in ('patch', 'none'):
+        old_version = get_branch_highest_version()
+    else:
+        old_version = get_highest_version()
+    if not tag_exists(old_version):
+        die(f"Version tag {old_version} does not exist.")
+    # The highest version tag isn't always an ancestor of HEAD (release tags may
+    # be on cherry-picks), so only check an explicitly requested base.
+    if args.base_version and not is_ancestor(old_version, 'HEAD'):
+        die(f"HEAD does not contain {old_version}. Is --base_version from this branch, and is the full history fetched?")
+    is_old_version_published = is_published_release(old_version)
+
+    if not is_old_version_published and not args.force:
+        die(f"The tag {old_version} does not correspond to a published github release." +
+        " It may be a draft release or it may have never been created." +
+        " If you still want to upgrade the version, rerun the script with --force.")
+
+    if args.bump_version_type == 'none':
+        return old_version
+
+    if args.bump_version_type == 'patch':
+        new_version = bump_patch_version(old_version)
+    elif args.bump_version_type == 'minor':
+        new_version = bump_minor_version(old_version)
+    else:
+        die(f"Unimplemented bump version type: {args.bump_version_type}")
+
+    release_notes = generate_release_notes(old_version)
+    print("release notes:\n %s" % release_notes)
+    print('I found existing version: %s' % old_version)
+    if not args.auto:
+        new_version = confirm_new_version(new_version)
+    if tag_exists(new_version):
+        die(f"Version tag {new_version} already exists.")
+    print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
+
+    time.sleep(2)
+    create_and_push_tag(old_version, new_version, release_notes)
+    print("Pushed tag for new version %s" % new_version)
+    return new_version
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--auto', default=False, action='store_true')
     parser.add_argument('--allow_dirty', default=False, action='store_true')
     parser.add_argument('--force', default=False, action='store_true')
-    parser.add_argument('--bump_version_type', default='minor', choices=['major', 'minor', 'patch', 'none'])
-    parser.add_argument('--base_version', default='', help='Existing version tag to bump, like v2.12.8. Defaults to the highest version tag reachable from HEAD (the branch\'s own version) for patch and none, and to the highest version tag in the repo for minor.')
+    parser.add_argument('--bump_version_type', default=None, choices=['major', 'minor', 'patch', 'none'], help='Defaults to minor. Not allowed with --version.')
+    parser.add_argument('--base_version', default='', help='Existing version tag to bump, like v2.12.8. Defaults to the highest version tag reachable from HEAD (the branch\'s own version) for patch and none, and to the highest version tag in the repo for minor. Ignored with --version.')
     parser.add_argument('--update_app_image', default=False, action='store_true')
     parser.add_argument('--update_enterprise_app_image', default=False, action='store_true')
     parser.add_argument('--update_executor_image', default=False, action='store_true')
     parser.add_argument('--update_proxy_image', default=False, action='store_true')
     parser.add_argument('--arch_specific_executor_tag', default=False, action='store_true', help='Suffix the executor image tag with the CPU architecture (amd64 or arm64)')
     parser.add_argument('--arch_specific_proxy_tag', default=False, action='store_true', help='Suffix the cache proxy image tag with the CPU architecture (amd64 or arm64)')
-    parser.add_argument('--version', default='', help='Version tag override, used when pushing docker images. Implies --bump_version_type=none')
+    parser.add_argument('--version', default='', help='Existing version tag to build docker images with, like v2.12.8. Skips looking up, bumping and tagging a version.')
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
     parser.add_argument('--mark_workspace_as_safe', default='')
     args = parser.parse_args()
-    if args.version:
-        args.bump_version_type = 'none'
+    if args.version and args.bump_version_type:
+        die('--version and --bump_version_type are mutually exclusive: --version skips bumping and tagging.')
+    if not args.bump_version_type:
+        args.bump_version_type = 'minor'
 
     images = []
     if args.update_app_image:
@@ -342,50 +391,10 @@ def main():
             'Please run this in a clean workspace!')
 
     run_or_die('git fetch --all --tags')
-    # A patch bumps this branch's own version, and none reuses it; anything else
-    # bumps the highest version in the repo.
-    if args.base_version:
-        old_version = args.base_version
-    elif args.bump_version_type in ('patch', 'none'):
-        old_version = get_branch_highest_version()
-    else:
-        old_version = get_highest_version()
-    if not tag_exists(old_version):
-        die(f"Version tag {old_version} does not exist.")
-    # The highest version tag isn't always an ancestor of HEAD (release tags may
-    # be on cherry-picks), so only check an explicitly requested base.
-    if args.base_version and not is_ancestor(old_version, 'HEAD'):
-        die(f"HEAD does not contain {old_version}. Is --base_version from this branch, and is the full history fetched?")
-    is_old_version_published = is_published_release(old_version)
-
-    if not is_old_version_published and not args.force:
-        die(f"The tag {old_version} does not correspond to a published github release." +
-        " It may be a draft release or it may have never been created." +
-        " If you still want to upgrade the version, rerun the script with --force.")
-
-    new_version = old_version
     if args.version:
         new_version = args.version
-    elif args.bump_version_type != 'none':
-        if args.bump_version_type == 'patch':
-            new_version = bump_patch_version(old_version)
-        elif args.bump_version_type == 'minor':
-            new_version = bump_minor_version(old_version)
-        else:
-            die(f"Unimplemented bump version type: {args.bump_version_type}")
-
-        release_notes = generate_release_notes(old_version)
-        print("release notes:\n %s" % release_notes)
-        print('I found existing version: %s' % old_version)
-        if not args.auto:
-            new_version = confirm_new_version(new_version)
-        if tag_exists(new_version):
-            die(f"Version tag {new_version} already exists.")
-        print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
-
-        time.sleep(2)
-        create_and_push_tag(old_version, new_version, release_notes)
-        print("Pushed tag for new version %s" % new_version)
+    else:
+        new_version = bump_and_tag_version(args)
 
     # Write the version tag to $GITHUB_OUTPUT if it exists.
     github_outputs_file = os.environ.get('GITHUB_OUTPUT')
