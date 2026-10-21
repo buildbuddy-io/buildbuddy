@@ -3569,18 +3569,7 @@ func runAlreadyExistsProxy(t *testing.T) *alreadyExistsProxy {
 	flags.Set(t, "cache.bytestream_already_exists_status", true)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 	// Large writes are chunked. Small ones take the dual write path.
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants:       map[string]any{"true": true},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	encryptedUser := testauth.User("encrypted", "encrypted-group")
 	encryptedUser.CacheEncryptionEnabled = true

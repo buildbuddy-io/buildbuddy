@@ -58,7 +58,7 @@ var (
 	disableCDC          = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
 	skipWriteValidation = flag.Bool("cache_proxy.skip_write_validation", false, "If true, skip local cache write validation and rely on remote validation for cache proxy dual writes.")
 
-	interceptAndChunkLargeWrites = expflag.Bool("cache_proxy.intercept_and_chunk_large_writes", false, "If true, store large client uploads in the remote cache as content-defined chunks instead of forwarding them whole.")
+	interceptAndChunkLargeWrites = expflag.Bool("cache_proxy.intercept_and_chunk_large_writes", false, "If true, store large client uploads as content-defined chunks in the local and remote caches instead of forwarding them whole.")
 )
 
 func groupIDForMetrics(ctx context.Context) string {
@@ -1242,7 +1242,7 @@ func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	if *disableCDC || s.localCache == nil || s.remoteCAS == nil {
 		return false
 	}
-	if bazel_request.GetRequestMetadata(ctx).GetActionId() == "bes-upload" {
+	if bazel_request.GetRequestMetadata(ctx).GetActionId() == bazel_request.BESUploadActionID {
 		return false
 	}
 	// The write is already a content-defined chunk — never re-chunk it.
