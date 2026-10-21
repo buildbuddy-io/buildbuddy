@@ -9,15 +9,8 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/timeseries"
 )
 
-const (
-	pebbleCache = `buildbuddy_remote_cache_pebble_cache`
-	pebble      = pebbleCache + `_pebble`
-	level       = pebble + `_level`
-	zombie      = pebbleCache + `_zombie_table`
-
-	// The dashboard variable PerCache repeats over.
-	cacheNameVar = "cache_name"
-)
+// The dashboard variable PerCache repeats over.
+const cacheNameVar = "cache_name"
 
 // Config selects the pebble database a dashboard shows.
 type Config struct {
@@ -44,11 +37,11 @@ func (c Config) repeat() bool {
 	return c.CacheName == "${"+cacheNameVar+"}"
 }
 
-func (c Config) cacheFilter() string {
+func (c Config) cacheNameFilter() string {
 	return c.Filter + `, cache_name="` + c.CacheName + `"`
 }
 
-func (c Config) pebbleFilter() string {
+func (c Config) pebbleIDFilter() string {
 	id := c.PebbleID
 	if id == "" {
 		id = c.CacheName
@@ -69,10 +62,12 @@ func (c Config) panel(title, unit string) *timeseries.PanelBuilder {
 
 // Row returns the "Remote cache pebble" row.
 func Row(c Config) *dashboard.RowBuilder {
-	cf := c.cacheFilter()
+	cf := c.cacheNameFilter()
+	pebble := `buildbuddy_remote_cache_pebble_cache_pebble`
+	zombie := `buildbuddy_remote_cache_pebble_cache_zombie_table`
 	requests := pebble + `_block_cache_requests_count`
 	opLatency := func(q string) string {
-		return `histogram_quantile(` + q + `, sum(rate(` + pebble + `_op_latency_usec_bucket{` + c.pebbleFilter() + `}[1m])) by (le, pebble_op))`
+		return `histogram_quantile(` + q + `, sum(rate(` + pebble + `_op_latency_usec_bucket{` + c.pebbleIDFilter() + `}[${window}])) by (le, pebble_op))`
 	}
 	r := dashboard.NewRowBuilder("Remote cache pebble").
 		Collapsed(true)
@@ -81,7 +76,7 @@ func Row(c Config) *dashboard.RowBuilder {
 	}
 	return r.
 		WithPanel(c.panel("Compaction rate by type", "").
-			WithTarget(dash.PromQuery(`sum(rate(`+pebble+`_compact_count{`+cf+`}[1m])) by (compaction_type)`, "__auto"))).
+			WithTarget(dash.PromQuery(`sum(rate(`+pebble+`_compact_count{`+cf+`}[${window}])) by (compaction_type)`, "__auto"))).
 		WithPanel(c.panel("Compaction state", dash.UnitBytes).
 			OverrideByName("in progress (count)", dash.RightAxisProps(dash.UnitNone)).
 			OverrideByName("marked files", dash.RightAxisProps(dash.UnitNone)).
@@ -91,7 +86,7 @@ func Row(c Config) *dashboard.RowBuilder {
 		WithPanel(c.panel("Compaction estimated debt", dash.UnitBytes).
 			WithTarget(dash.PromQuery(`sum(`+pebble+`_compact_estimated_debt_bytes{`+cf+`}) by (pod_name)`, "{{pod_name}}"))).
 		WithPanel(c.panel("Op Rate", dash.UnitOps).
-			WithTarget(dash.PromQuery(`sum(rate(`+pebble+`_op_count{`+c.pebbleFilter()+`}[1m])) by (pebble_op)`, "__auto"))).
+			WithTarget(dash.PromQuery(`sum(rate(`+pebble+`_op_count{`+c.pebbleIDFilter()+`}[${window}])) by (pebble_op)`, "__auto"))).
 		WithPanel(c.panel("Op p50 Latency", dash.UnitMicroseconds).
 			WithTarget(dash.PromQuery(opLatency("0.50"), "__auto"))).
 		WithPanel(c.panel("Op p95 Latency", dash.UnitMicroseconds).
@@ -121,7 +116,7 @@ func (c Config) compressionPanel() *timeseries.PanelBuilder {
 	// Quantile q of the compressed/decompressed ratio is percentile 1-q of
 	// the compression factor.
 	factor := func(q string) string {
-		return `1 / histogram_quantile(` + q + `, sum(rate(buildbuddy_pebble_compression_ratio_bucket{` + c.cacheFilter() + `}[10m])) by (le))`
+		return `1 / histogram_quantile(` + q + `, sum(rate(buildbuddy_pebble_compression_ratio_bucket{` + c.cacheNameFilter() + `}[10m])) by (le))`
 	}
 	return c.panel("Compression Ratio", "").
 		Description("How many times smaller pebble's compression makes a stream of data (decompressed / compressed bytes), at percentiles of that factor across streams: p90 is what the best-compressing 10% of streams exceed, p1 is what 99% of streams achieve. Each series is the inverse of the matching quantile of the compressed/decompressed ratio histogram.").
@@ -132,14 +127,15 @@ func (c Config) compressionPanel() *timeseries.PanelBuilder {
 
 // LevelsRow returns the "Remote cache pebble levels" row.
 func LevelsRow(c Config) *dashboard.RowBuilder {
-	cf := c.cacheFilter()
+	level := `buildbuddy_remote_cache_pebble_cache_pebble_level`
+	cf := c.cacheNameFilter()
 	gauge := func(title, unit, metric string) *timeseries.PanelBuilder {
 		return dash.PlainTimeseries(title, unit).
 			WithTarget(dash.PromQuery(`sum(`+level+`_`+metric+`{`+cf+`}) by (level)`, "{{level}}"))
 	}
 	rate := func(title, unit, metric string) *timeseries.PanelBuilder {
 		return dash.PlainTimeseries(title, unit).
-			WithTarget(dash.PromQuery(`sum(rate(`+level+`_`+metric+`{`+cf+`}[1m])) by (level)`, "{{level}}"))
+			WithTarget(dash.PromQuery(`sum(rate(`+level+`_`+metric+`{`+cf+`}[${window}])) by (level)`, "{{level}}"))
 	}
 	r := dashboard.NewRowBuilder("Remote cache pebble levels (" + c.CacheName + ")").
 		Collapsed(true)
