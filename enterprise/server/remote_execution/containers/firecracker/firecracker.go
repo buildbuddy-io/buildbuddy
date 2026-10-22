@@ -657,6 +657,9 @@ func (p *Provider) BuildGenericSnapshots(ctx context.Context, cgroupParent strin
 	if p.executorConfig.GuestKernelImagePath6_18 == "" {
 		return status.FailedPreconditionError("generic snapshots require the 6.18 guest kernel")
 	}
+	if !*snaputil.EnableLocalSnapshotSharing {
+		return status.FailedPreconditionError("generic snapshots require local snapshot sharing")
+	}
 	var eg errgroup.Group
 	eg.SetLimit(4)
 	// Deduplicate so that no two builds write the same snapshot.
@@ -690,52 +693,52 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	if err != nil {
 		return nil, err
 	}
-	var vmConfig *fcpb.VMConfiguration
-	generic := false
+	newContainer := func(vmConfig *fcpb.VMConfiguration, generic bool) (*FirecrackerContainer, error) {
+		vmConfig.ScratchDiskSizeMb = int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6)
+		vmConfig.EnableLogging = platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs"))
+		vmConfig.BootArgs = getBootArgs(vmConfig, generic /*=deferRootfsMount*/)
+		return NewContainer(ctx, p.env, args.Task.GetExecutionTask(), ContainerOpts{
+			VMConfiguration:        vmConfig,
+			GenericSnapshot:        generic,
+			ContainerImage:         args.Props.ContainerImage,
+			User:                   args.Props.DockerUser,
+			ActionWorkingDirectory: args.WorkDir,
+			CgroupParent:           args.CgroupParent,
+			CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
+			BlockDevice:            args.BlockDevice,
+			OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
+			ExecutorConfig:         p.executorConfig,
+			ExternalNetworkPool:    p.externalNetworkPool,
+			LocalNetworkPool:       p.localNetworkPool,
+			MarshalledDNSOverrides: p.marshalledDNSOverrides,
+			HostResolvConf:         p.hostResolvConf,
+			UseOCIFetcher:          args.Props.UseOCIFetcher,
+		})
+	}
 	// Generic snapshot VMs get the rounded shape, but the scheduler only
 	// reserves the scheduled size. This is fine enough because CPU and
-	// memory are lazily allocated. Debug terminal VMs always boot normally.
+	// memory are lazily allocated. Debug terminal VMs, and tasks whose
+	// shape has no snapshot on this executor, boot normally.
 	if shape := GenericSnapshotShape(sizeEstimate); args.Props.UseGenericSnapshot && shape != nil && !*debugTerminal {
-		vmConfig = genericVMConfig(shape, networkMode)
-		generic = true
-	} else {
-		vmConfig = &fcpb.VMConfiguration{
-			NumCpus:          vcpuCount(sizeEstimate.GetEstimatedMilliCpu()),
-			MemSizeMb:        int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-			NetworkMode:      networkMode,
-			InitDockerd:      args.Props.InitDockerd,
-			EnableDockerdTcp: args.Props.EnableDockerdTCP,
-			HostCpuid:        getCPUID(),
-			EnableVfs:        args.Props.EnableVFS,
-			Ipv6Enabled:      args.Props.NetworkEnableIPv6,
-			EnablePci:        *enablePCI,
+		c, err := newContainer(genericVMConfig(shape, networkMode), true /*=generic*/)
+		if err != nil {
+			return nil, err
+		}
+		if c.hasGenericSnapshot() {
+			return c, nil
 		}
 	}
-	vmConfig.ScratchDiskSizeMb = int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6)
-	vmConfig.EnableLogging = platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs"))
-	vmConfig.BootArgs = getBootArgs(vmConfig, generic /*=deferRootfsMount*/)
-	opts := ContainerOpts{
-		VMConfiguration:        vmConfig,
-		GenericSnapshot:        generic,
-		ContainerImage:         args.Props.ContainerImage,
-		User:                   args.Props.DockerUser,
-		ActionWorkingDirectory: args.WorkDir,
-		CgroupParent:           args.CgroupParent,
-		CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
-		BlockDevice:            args.BlockDevice,
-		OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
-		ExecutorConfig:         p.executorConfig,
-		ExternalNetworkPool:    p.externalNetworkPool,
-		LocalNetworkPool:       p.localNetworkPool,
-		MarshalledDNSOverrides: p.marshalledDNSOverrides,
-		HostResolvConf:         p.hostResolvConf,
-		UseOCIFetcher:          args.Props.UseOCIFetcher,
-	}
-	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
+	return newContainer(&fcpb.VMConfiguration{
+		NumCpus:          vcpuCount(sizeEstimate.GetEstimatedMilliCpu()),
+		MemSizeMb:        int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+		NetworkMode:      networkMode,
+		InitDockerd:      args.Props.InitDockerd,
+		EnableDockerdTcp: args.Props.EnableDockerdTCP,
+		HostCpuid:        getCPUID(),
+		EnableVfs:        args.Props.EnableVFS,
+		Ipv6Enabled:      args.Props.NetworkEnableIPv6,
+		EnablePci:        *enablePCI,
+	}, false /*=generic*/)
 }
 
 // parseDNSOverrides validates the `dnsOverrides` flag and marshalls it to a string.
@@ -2532,16 +2535,19 @@ func (c *FirecrackerContainer) createFromGenericSnapshot(ctx context.Context) (r
 		}
 	}()
 	restored := false
-	if _, ok := genericSnapshots.Load(c.snapshotKeySet.GetWriteKey().GetConfigurationHash()); ok {
+	if c.hasGenericSnapshot() {
 		if err := c.restoreGenericSnapshot(ctx); err != nil {
 			if ctx.Err() != nil {
 				return err
 			}
-			log.CtxErrorf(ctx, "Failed to restore generic snapshot, booting from scratch: %s", err)
-			if err := c.remove(ctx); err != nil {
-				log.CtxWarningf(ctx, "Failed to clean up generic snapshot restore: %s", err)
+			// Evicted snapshots are never rebuilt, so later tasks boot normally.
+			if status.IsNotFoundError(err) {
+				genericSnapshots.Delete(c.snapshotKeySet.GetWriteKey().GetConfigurationHash())
 			}
-			c.snapshot = nil
+			log.CtxErrorf(ctx, "Failed to restore generic snapshot, booting from scratch: %s", err)
+			if err := c.resetFailedRestore(ctx); err != nil {
+				return err
+			}
 		} else {
 			restored = true
 		}
@@ -2552,6 +2558,35 @@ func (c *FirecrackerContainer) createFromGenericSnapshot(ctx context.Context) (r
 		}
 	}
 	return c.attachContainerRoot(ctx)
+}
+
+func (c *FirecrackerContainer) hasGenericSnapshot() bool {
+	_, ok := genericSnapshots.Load(c.snapshotKeySet.GetWriteKey().GetConfigurationHash())
+	return ok
+}
+
+// resetFailedRestore removes the VM from a failed restore and moves the
+// pulled image into a new chroot, so the next VM gets a fresh ID.
+func (c *FirecrackerContainer) resetFailedRestore(ctx context.Context) error {
+	image := filepath.Join(c.getChroot(), containerFSName)
+	savedImage := filepath.Join(c.jailerRoot, c.id+"-"+containerFSName)
+	if err := os.Rename(image, savedImage); err != nil && !os.IsNotExist(err) {
+		return status.UnavailableErrorf("save container image: %s", err)
+	}
+	if err := c.remove(ctx); err != nil {
+		log.CtxWarningf(ctx, "Failed to clean up generic snapshot restore: %s", err)
+	}
+	c.snapshot = nil
+	if err := c.newID(ctx); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
+		return status.UnavailableErrorf("create chroot dir: %s", err)
+	}
+	if err := os.Rename(savedImage, image); err != nil && !os.IsNotExist(err) {
+		return status.UnavailableErrorf("restore container image: %s", err)
+	}
+	return nil
 }
 
 func (c *FirecrackerContainer) restoreGenericSnapshot(ctx context.Context) error {
@@ -4239,9 +4274,6 @@ func (c *FirecrackerContainer) machineHasBalloon(ctx context.Context) bool {
 // getSnapshotOptions builds the options describing which snapshots this task
 // is willing to read
 func (c *FirecrackerContainer) getSnapshotOptions() (*snaploader.GetSnapshotOptions, error) {
-	if c.genericSnapshot {
-		return &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly}, nil
-	}
 	readPolicy, err := snapshotReadPolicy(c.task)
 	if err != nil {
 		return nil, err
