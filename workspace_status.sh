@@ -45,9 +45,10 @@ echo "GIT_TREE_STATUS $git_tree_status"
 # Note: the "STABLE_" suffix causes these to be part of the "stable" workspace
 # status, which may trigger rebuilds of certain targets if these values change
 # and you're building with the "--stamp" flag.
-# The commit's own label: its vX.Y.Z tag if it has one, else the hosted label
-# "hosted-YYYYMMDD-<sha7>". "unknown" if HEAD can't be resolved.
-version_tag=$(./tools/version_label.sh) || version_tag=unknown
+# The highest version tag in HEAD's own history, so the stamp depends only on
+# the commit being built, not on tags cut elsewhere. "unknown" if it can't be
+# determined (shallow clone, or no version tag reachable from HEAD).
+version_tag=$(./tools/branch_highest_version.sh) || version_tag=unknown
 echo "STABLE_VERSION_TAG $version_tag"
 echo "STABLE_COMMIT_SHA $commit_sha"
 

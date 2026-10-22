@@ -4,9 +4,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "branch_highest_version.sh",
-    "hosted_label.sh",
     "repo_highest_version.sh",
-    "version_label.sh",
 ])
 
 py_binary(
