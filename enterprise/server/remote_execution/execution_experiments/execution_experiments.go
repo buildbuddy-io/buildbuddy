@@ -1,9 +1,12 @@
-// Package execution_experiments declares experiments that are evaluated by the
-// scheduler when an executor leases a task, and read by the executor.
+// Package execution_experiments declares experiments that can either be
+// controlled by the scheduler (typically just for BuildBuddy Cloud, and for
+// some BuildBuddy managed executors) or set in the executor config file or at
+// the command line (typically just for on-prem and self-hosted setups).
 //
-// In addition to the "common" experiment targeting attributes such as group ID,
-// invocation ID, action mnemonic, etc., all of the experiments in this package
-// have additional targeting attributes available:
+// When controlled by the scheduler, experiments are evaluated by the scheduler,
+// when the task is leased. In addition to the "common" experiment targeting
+// attributes such as group ID, invocation ID, action mnemonic, etc., all of the
+// experiments in this package have additional targeting attributes available:
 //   - executor_hostname (string): the hostname of the leasing executor.
 //   - self_hosted (bool): true if the executor is self-hosted rather than
 //     managed by BuildBuddy. This is always false if app.client_identity.key
