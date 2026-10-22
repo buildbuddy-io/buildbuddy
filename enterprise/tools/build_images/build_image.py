@@ -4,7 +4,7 @@ Script to build multi-platform docker images.
 
 Example command usage:
 
-./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu22-04 --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu22-04/Dockerfile --platform=amd64 --platform=arm64 --user=_token
+./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu22-04 --tag=$(git rev-parse --short HEAD) --no-suffix --dockerfile=dockerfiles/rbe-ubuntu22-04/Dockerfile --platform=amd64 --platform=arm64 --user=_token
 
 """
 
@@ -53,7 +53,8 @@ def parse_program_arguments():
     parser.add_argument(
             "--tag",
             type=str,
-            help="Tag to use in the target repository for the built image (if any).",
+            required=True,
+            help="Tag to use in the target repository for the built image.",
             dest="tag",
             )
     parser.add_argument(
@@ -140,6 +141,14 @@ def parse_program_arguments():
 
     return parser.parse_args(namespace=ArgsNamespace)
 
+# These images are built by CI (see dockerfiles/README.md), and their :latest
+# tag is only moved deliberately, by hand, after a new digest has soaked.
+CI_BUILT_REPOSITORIES = {
+        "flame-public/rbe-ubuntu20-04",
+        "flame-public/rbe-ubuntu22-04",
+        "flame-public/rbe-ubuntu24-04",
+        }
+
 def set_up_buildx_container(container_name, stdout=sys.stdout, stderr=sys.stderr):
     """Sets up a buildx container with the given name."""
     completed_process = subprocess.run(["docker", "buildx", "inspect", container_name], capture_output=True)
@@ -217,6 +226,12 @@ def repeated_opts(opt: str, params: list[str]):
 def main():
     args = parse_program_arguments()
 
+    repository = f"{args.repository}{'-' + args.suffix if args.suffix else ''}"
+
+    if args.tag == "latest" and repository in CI_BUILT_REPOSITORIES:
+        print(f"Refusing --tag=latest for {repository}: this image is built by CI, and :latest is only moved deliberately once a pinned digest has soaked. See dockerfiles/README.md.", file=sys.stderr)
+        return 1
+
     userpass = resolve_userpass(args.userpass, args.registry)
 
     if not check_buildx_support():
@@ -227,8 +242,6 @@ def main():
         context_dir = args.context_dir
     elif os.path.dirname(os.path.abspath(args.dockerfile)) != "":
         context_dir = os.path.dirname(os.path.abspath(args.dockerfile))
-
-    repository = f"{args.repository}{'-' + args.suffix if args.suffix else ''}"
 
     if args.push:
         if args.do_prod_checks and not perform_prod_checks(repository):
@@ -250,7 +263,7 @@ def main():
             ["docker", "buildx"] +
             ["--builder", str(args.buildx_container_name)] +
             ["build"] +
-            ["--tag", f"{args.registry}/{repository}{':' + args.tag if args.tag else ''}"] +
+            ["--tag", f"{args.registry}/{repository}:{args.tag}"] +
             (["--file", args.dockerfile] if args.dockerfile else []) +
             repeated_opts("--platform", args.platforms) +
             (["--push"] if args.push else []) +
@@ -260,4 +273,4 @@ def main():
     print(f"Executed command:\n{completed_process.args}", file=sys.stdout)
     return completed_process.returncode
 
-main()
+sys.exit(main())
