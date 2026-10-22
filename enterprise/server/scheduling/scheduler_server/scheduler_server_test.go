@@ -3067,3 +3067,73 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 	defer s.livenessMu.Unlock()
 	require.Empty(t, s.livenessWatches)
 }
+
+func TestNewestVersionFromFlags(t *testing.T) {
+	v, err := newestVersionFromFlags()
+	require.NoError(t, err)
+	require.Nil(t, v)
+
+	flags.Set(t, "remote_execution.upgrade_prompt_newest_version", "v2.41.0")
+	v, err = newestVersionFromFlags()
+	require.NoError(t, err)
+	require.Equal(t, "2.41.0", v.String())
+
+	flags.Set(t, "remote_execution.upgrade_prompt_newest_version", "hosted-x")
+	_, err = newestVersionFromFlags()
+	require.Error(t, err)
+}
+
+func TestGetExecutionNodes_UpgradePrompt_ConfiguredNewestVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		registered string
+		customer   string
+		maxLagLow  string
+	}{
+		{
+			// The hosted label is not semver, so without the configured
+			// version there would be no newest version and no prompt.
+			name:       "hosted label registrations",
+			registered: "hosted-20261021-abc1234",
+			customer:   "v2.30.0",
+			maxLagLow:  "0.5.0",
+		},
+		{
+			name:       "takes precedence over registrations",
+			registered: "v2.50.0",
+			customer:   "v2.40.0",
+			maxLagLow:  "0.0.1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.upgrade_prompt_newest_version", "v2.41.0")
+			newest, err := newestVersionFromFlags()
+			require.NoError(t, err)
+			detector := upgrade.NewDetector(map[uppb.Prompt_Urgency]upgrade.Trigger{
+				uppb.Prompt_LOW: {MaxLag: semver.MustParse(tc.maxLagLow)},
+			})
+			clock := clockwork.NewFakeClock()
+			env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: detector, NewestVersion: newest}}, "user1")
+			enterprise_testauth.Configure(t, env)
+
+			for id, version := range map[string]string{"shared": tc.registered, "customer": tc.customer} {
+				executor := newFakeExecutorWithId(ctx, t, id, env.GetSchedulerClient())
+				executor.node.Version = version
+				executor.Register()
+			}
+
+			u := enterprise_testauth.CreateRandomUser(t, env, "org1.invalid")
+			auther := env.GetAuthenticator().(*testauth.TestAuthenticator)
+			authCtx, err := auther.WithAuthenticatedUser(ctx, u.UserID)
+			require.NoError(t, err)
+
+			rsp, err := env.GetSchedulerService().GetExecutionNodes(authCtx, &scpb.GetExecutionNodesRequest{
+				RequestContext: &ctxpb.RequestContext{GroupId: u.Groups[0].Group.GroupID},
+			})
+			require.NoError(t, err)
+			require.NotNil(t, rsp.GetUpgradePrompt())
+			require.Equal(t, uppb.Prompt_LOW, rsp.GetUpgradePrompt().GetUrgency())
+			require.Contains(t, rsp.GetUpgradePrompt().GetMessage(), "2.41.0")
+		})
+	}
+}

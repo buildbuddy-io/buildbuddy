@@ -49,6 +49,10 @@ echo "GIT_TREE_STATUS $git_tree_status"
 # the commit being built, not on tags cut elsewhere. "unknown" if it can't be
 # determined (shallow clone, or no version tag reachable from HEAD).
 version_tag=$(./tools/branch_highest_version.sh) || version_tag=unknown
+# Hosted builds, which have no public version tag, set this to their label.
+if [[ -n "$BB_VERSION_TAG_OVERRIDE" ]]; then
+  version_tag="$BB_VERSION_TAG_OVERRIDE"
+fi
 echo "STABLE_VERSION_TAG $version_tag"
 echo "STABLE_COMMIT_SHA $commit_sha"
 

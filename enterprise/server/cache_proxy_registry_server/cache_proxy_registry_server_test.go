@@ -963,3 +963,71 @@ func writeRegistration(t *testing.T, s *CacheProxyRegistryServer, reg *cppb.Regi
 	require.NoError(t, err)
 	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies(reg.GetGroupId()), reg.GetSummary().GetProxyId(), b).Err())
 }
+
+func TestNewestVersionFromFlags(t *testing.T) {
+	v, err := newestVersionFromFlags()
+	require.NoError(t, err)
+	assert.Nil(t, v)
+
+	flags.Set(t, "cache_proxy.upgrade_prompt_newest_version", "v2.41.0")
+	v, err = newestVersionFromFlags()
+	require.NoError(t, err)
+	assert.Equal(t, "2.41.0", v.String())
+
+	flags.Set(t, "cache_proxy.upgrade_prompt_newest_version", "hosted-x")
+	_, err = newestVersionFromFlags()
+	require.Error(t, err)
+}
+
+func TestListCacheProxies_UpgradePrompt_ConfiguredNewestVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		registered string
+		customer   string
+	}{
+		// The hosted label is not semver, so without the configured version
+		// there would be no newest version and no prompt.
+		{name: "hosted label registrations", registered: "hosted-20261021-abc1234", customer: "v2.30.0"},
+		{name: "takes precedence over registrations", registered: "v2.50.0", customer: "v2.30.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+			s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+			s.configuredNewestVersion = semver.MustParse("v2.41.0")
+
+			require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxySummary{
+				Host: "host-new", ProxyId: "id-new", Version: tc.registered,
+			}, nil))
+			require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
+				Host: "host-old", ProxyId: "id-old", Version: tc.customer,
+			}, nil))
+
+			ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+			resp, err := s.ListCacheProxies(ctx, &cppb.ListCacheProxiesRequest{
+				RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+			})
+			require.NoError(t, err)
+			require.NotNil(t, resp.GetUpgradePrompt())
+			assert.Equal(t, uppb.Prompt_LOW, resp.GetUpgradePrompt().GetUrgency())
+			assert.Contains(t, resp.GetUpgradePrompt().GetMessage(), "2.41.0")
+		})
+	}
+}
+
+func TestListCacheProxies_UpgradePrompt_ConfiguredNewestVersionWithoutSharedPool(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+	flags.Set(t, "cache_proxy.shared_pool_group_id", "")
+	s.configuredNewestVersion = semver.MustParse("v2.41.0")
+
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
+		Host: "host-old", ProxyId: "id-old", Version: "v2.30.0",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	resp, err := s.ListCacheProxies(ctx, &cppb.ListCacheProxiesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetUpgradePrompt())
+}
