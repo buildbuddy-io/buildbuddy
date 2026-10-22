@@ -141,14 +141,10 @@ def parse_program_arguments():
 
     return parser.parse_args(namespace=ArgsNamespace)
 
-# These images are only pushed by the internal build-rbe-image workflow (see
-# dockerfiles/README.md), and their :latest tag is only moved deliberately, by
-# hand, after a new digest has soaked.
-CI_BUILT_REPOSITORIES = {
-        "gcr.io/flame-public/rbe-ubuntu20-04",
-        "gcr.io/flame-public/rbe-ubuntu22-04",
-        "gcr.io/flame-public/rbe-ubuntu24-04",
-        }
+# Only the internal build-rbe-image workflow pushes these; see
+# dockerfiles/README.md. Matched on the repository's last path component, so
+# any registry name or mirror that reaches them is covered.
+CI_BUILT_IMAGES = {"rbe-ubuntu20-04", "rbe-ubuntu22-04", "rbe-ubuntu24-04"}
 
 def set_up_buildx_container(container_name, stdout=sys.stdout, stderr=sys.stderr):
     """Sets up a buildx container with the given name."""
@@ -229,10 +225,9 @@ def main():
 
     repository = f"{args.repository}{'-' + args.suffix if args.suffix else ''}"
 
-    # Normalize so that e.g. a trailing slash can't sneak past the check.
-    full_repository = "/".join(p for p in f"{args.registry}/{repository}".lower().split("/") if p)
-    if args.push and full_repository in CI_BUILT_REPOSITORIES:
-        print(f"Refusing to push {full_repository}: this image is only pushed by the internal build-rbe-image workflow. See dockerfiles/README.md. (--no-push builds it locally.)", file=sys.stderr)
+    image_name = ([p for p in repository.lower().split("/") if p] or [""])[-1]
+    if args.push and image_name in CI_BUILT_IMAGES:
+        print(f"Refusing to push {args.registry}/{repository}: {image_name} is only pushed by the internal build-rbe-image workflow. See dockerfiles/README.md. (--no-push builds it locally.)", file=sys.stderr)
         return 1
 
     userpass = resolve_userpass(args.userpass, args.registry)
