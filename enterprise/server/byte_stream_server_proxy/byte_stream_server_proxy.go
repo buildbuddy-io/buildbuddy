@@ -932,7 +932,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	meteredStream := &meteredServerSideClientStream{compressor: "unknown", ByteStream_WriteServer: stream}
 	stream = meteredStream
 
-	if s.writeChunkingEnabled(ctx) && !proxy_util.SkipRemote(ctx) {
+	if !proxy_util.SkipRemote(ctx) && s.writeChunkingEnabled(ctx) {
 		result, err := s.writeChunked(ctx, stream)
 		if err == nil {
 			recordWriteMetrics(byteStreamMetrics{
