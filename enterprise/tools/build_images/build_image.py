@@ -157,9 +157,9 @@ def set_up_buildx_container(container_name, stdout=sys.stdout, stderr=sys.stderr
         print(f"No buildx container named {container_name}, creating it...", file=stdout)
         completed_process = subprocess.run(["docker", "buildx", "create", "--name", container_name])
         if completed_process.returncode == 0:
-            print("Success!", stdout)
+            print("Success!", file=stdout)
         else:
-            print("Failed to create buildx container.", stderr)
+            print("Failed to create buildx container.", file=stderr)
 
 def resolve_userpass(userpass: str, registry: str):
     """Returns (user, password), prompting for the password if necessary."""
@@ -248,17 +248,17 @@ def main():
 
     if args.push:
         if args.do_prod_checks and not perform_prod_checks(repository):
-            print("Exiting...", file=sys.stdout)
-            return 0
+            print("Exiting...", file=sys.stderr)
+            return 1
 
         if args.do_new_repository_check and not perform_new_repository_check(args.registry, repository, userpass):
-            print("Exiting...", file=sys.stdout)
-            return 0
+            print("Exiting...", file=sys.stderr)
+            return 1
 
         if userpass is not None and args.do_login:
             if not perform_login(args.registry, userpass):
-                print("Exiting...", file=sys.stdout)
-                return 0
+                print("Exiting...", file=sys.stderr)
+                return 1
 
     set_up_buildx_container(args.buildx_container_name)
 
