@@ -1499,7 +1499,6 @@ type chunkUploader struct {
 	s              *ByteStreamServerProxy
 	instanceName   string
 	digestFunction repb.DigestFunction_Value
-	concurrency    int
 
 	fmbG     *errgroup.Group
 	fmbCtx   context.Context
@@ -1518,22 +1517,14 @@ type chunkUploader struct {
 
 // newChunkUploader batches chunks into FMB groups and upload requests of up to 2 MiB.
 func newChunkUploader(ctx context.Context, s *ByteStreamServerProxy, instanceName string, digestFunction repb.DigestFunction_Value) (*chunkUploader, error) {
-	concurrency := defaultChunkTransferConcurrency
-	if s.efp != nil {
-		concurrency = int(s.efp.Int64(ctx, "cache_proxy.chunk_upload_concurrency", defaultChunkTransferConcurrency))
-	}
-	if concurrency <= 0 {
-		concurrency = defaultChunkTransferConcurrency
-	}
 	fmbG, fmbCtx := errgroup.WithContext(ctx)
 	fmbG.SetLimit(1)
 	batchG, batchCtx := errgroup.WithContext(ctx)
-	batchG.SetLimit(concurrency)
+	batchG.SetLimit(defaultChunkTransferConcurrency)
 	return &chunkUploader{
 		s:              s,
 		instanceName:   instanceName,
 		digestFunction: digestFunction,
-		concurrency:    concurrency,
 		fmbG:           fmbG,
 		fmbCtx:         fmbCtx,
 		batchG:         batchG,
@@ -1562,7 +1553,7 @@ func (c *chunkUploader) addChunk(compressedData []byte, poolBuf []byte, d *repb.
 	}
 
 	c.pendingFMB = append(c.pendingFMB, chunk)
-	if len(c.pendingFMB) >= c.concurrency {
+	if len(c.pendingFMB) >= defaultChunkTransferConcurrency {
 		c.flushPendingFMB()
 	}
 }
