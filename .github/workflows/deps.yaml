@@ -30,7 +30,6 @@ jobs:
           repository: "buildbuddy-io/buildbuddy-internal"
           ref: ${{ github.ref_name }}
           token: ${{ secrets.BUILDBUDDY_APP_TOKEN }}
-          persist-credentials: false
           path: buildbuddy-internal
 
       - name: Copy files from OSS to internal
@@ -85,10 +84,8 @@ jobs:
       - name: Push changes
         env:
           BRANCH: ${{ github.ref_name }}
-          PUSH_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-internal
-          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/buildbuddy-io/buildbuddy-internal.git"
           # If another push landed meanwhile, rebase onto it and retry. Only this
           # job writes the copied files, so a conflict means something unexpected
           # happened; fail rather than guess.
