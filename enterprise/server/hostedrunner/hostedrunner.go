@@ -316,6 +316,11 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	for k, v := range req.GetEnv() {
+		// Credentials are passed via env overrides (see credentialEnvOverrides)
+		// so they aren't persisted in the Command, where they could be shown in the UI.
+		if k == ci_runner_env.RepoUserEnvVarName || k == ci_runner_env.RepoTokenEnvVarName {
+			continue
+		}
 		cmd.EnvironmentVariables = append(cmd.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 			Name:  k,
 			Value: v,
@@ -399,15 +404,15 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 		return nil, err
 	}
 
-	// If no access token is provided explicitly, try reading from the REPO_TOKEN env var.
+	// If credentials aren't set on the GitRepo, fall back to the REPO_USER
+	// and REPO_TOKEN env vars.
+	username := req.GetGitRepo().GetUsername()
+	if username == "" {
+		username = req.GetEnv()[ci_runner_env.RepoUserEnvVarName]
+	}
 	accessToken := req.GetGitRepo().GetAccessToken()
 	if accessToken == "" {
-		for k, v := range req.GetEnv() {
-			if k == "REPO_TOKEN" {
-				accessToken = v
-				break
-			}
-		}
+		accessToken = req.GetEnv()[ci_runner_env.RepoTokenEnvVarName]
 	}
 	// If the token is still not set, try fetching the token from a Workflow
 	// configured for the same repo.
@@ -429,8 +434,8 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 	// TODO(Maggie): Remove REPO_TOKEN once the leaser fetches the token.
 	envOverrides := []string{
 		ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=" + apiKey.Value,
-		"REPO_USER=" + req.GetGitRepo().GetUsername(),
-		"REPO_TOKEN=" + accessToken,
+		ci_runner_env.RepoUserEnvVarName + "=" + username,
+		ci_runner_env.RepoTokenEnvVarName + "=" + accessToken,
 	}
 	return envOverrides, nil
 }
