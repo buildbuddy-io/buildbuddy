@@ -9,15 +9,15 @@ on:
       - "docs/**"
       - "website/**"
 
-# Run in push order per branch, so a retried push can't move the pin backwards.
-concurrency:
-  group: update-deps-${{ github.ref_name }}
-  cancel-in-progress: false
-
 jobs:
   update:
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'deps skip')"
+    # New release branches are cut at the already-pinned commit, so there's nothing to update.
+    if: "!github.event.created && !contains(github.event.head_commit.message, 'deps skip')"
+    # Run in push order per branch, so an older commit can't overwrite a newer pin.
+    concurrency:
+      group: update-deps-${{ github.ref_name }}
+      cancel-in-progress: false
 
     steps:
       - name: Checkout
@@ -35,62 +35,67 @@ jobs:
           persist-credentials: false
           path: buildbuddy-internal
 
-      - name: Update internal and push
+      - name: Copy files from OSS to internal
+        run: |
+          cp buildbuddy/deps.bzl buildbuddy-internal/deps.bzl
+          cp buildbuddy/.bazelversion buildbuddy-internal/.bazelversion
+          cp buildbuddy/shared.bazelrc buildbuddy-internal/shared.bazelrc
+          cp buildbuddy/bazel_downloader.cfg buildbuddy-internal/bazel_downloader.cfg
+          mkdir -p buildbuddy-internal/buildpatches/bazel_dep
+          cp buildbuddy/buildpatches/bazel_dep/* buildbuddy-internal/buildpatches/bazel_dep/
+          mkdir -p buildbuddy-internal/deps
+          cp buildbuddy/deps/* buildbuddy-internal/deps/
+          cp buildbuddy/MODULE.bazel.lock buildbuddy-internal/MODULE.bazel.lock
+
+      - name: Update SHA and lockfile
+        run: |
+          cd "$GITHUB_WORKSPACE"/buildbuddy-internal
+          sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" MODULE.bazel
+          # Retry flaky downloads (e.g. snapshot.debian.org timeouts).
+          for attempt in 1 2 3; do
+            bazel mod deps --lockfile_mode=update && break
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            echo "bazel mod deps failed; retrying in 30s"
+            sleep 30
+          done
+
+      - name: Commit
         env:
           AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
           AUTHOR_NAME: ${{ github.event.head_commit.author.name }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           COMMIT_URL: ${{ github.event.head_commit.url }}
-          BRANCH: ${{ github.ref_name }}
-          PUSH_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-internal
           git config --local user.email "$AUTHOR_EMAIL"
           git config --local user.name "$AUTHOR_NAME"
-          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/buildbuddy-io/buildbuddy-internal.git"
-
-          for attempt in 1 2 3; do
-            if [ "$attempt" -gt 1 ]; then
-              echo "Push rejected; retrying (attempt $attempt of 3)"
-              git fetch origin "$BRANCH"
-              git reset --hard "origin/$BRANCH"
-            fi
-
-            cp ../buildbuddy/deps.bzl deps.bzl
-            cp ../buildbuddy/.bazelversion .bazelversion
-            cp ../buildbuddy/shared.bazelrc shared.bazelrc
-            cp ../buildbuddy/bazel_downloader.cfg bazel_downloader.cfg
-            mkdir -p buildpatches/bazel_dep
-            cp ../buildbuddy/buildpatches/bazel_dep/* buildpatches/bazel_dep/
-            mkdir -p deps
-            cp ../buildbuddy/deps/* deps/
-            cp ../buildbuddy/MODULE.bazel.lock MODULE.bazel.lock
-
-            sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" MODULE.bazel
-            # sed succeeds even if nothing matched; don't report a stale pin as up to date.
-            if ! grep -qF "commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io/buildbuddy" MODULE.bazel; then
-              echo "The autoupdate pin line wasn't found in buildbuddy-internal's MODULE.bazel on $BRANCH"
-              exit 1
-            fi
-            bazel mod deps --lockfile_mode=update
-
-            git add deps.bzl .bazelversion shared.bazelrc bazel_downloader.cfg buildpatches deps MODULE.bazel.lock
-            # E.g. a new release branch whose internal branch already pins this commit.
-            if git diff --quiet HEAD; then
-              echo "Internal $BRANCH is already up to date"
-              exit 0
-            fi
-            cat <<EOF > "$RUNNER_TEMP/message.txt"
+          git add deps.bzl
+          git add .bazelversion
+          git add shared.bazelrc
+          git add bazel_downloader.cfg
+          git add buildpatches
+          git add deps
+          git add MODULE.bazel.lock
+          cat <<EOF > message.txt
           🔄 $COMMIT_MESSAGE
           Update buildbuddy-io/buildbuddy commit SHA
 
           🔗 $COMMIT_URL
           EOF
-            git commit -F "$RUNNER_TEMP/message.txt" -a
+          git commit -F message.txt -a
 
-            if git push origin "HEAD:refs/heads/$BRANCH"; then
-              exit 0
-            fi
+      - name: Push changes
+        env:
+          BRANCH: ${{ github.ref_name }}
+          PUSH_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+        run: |
+          cd "$GITHUB_WORKSPACE"/buildbuddy-internal
+          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/buildbuddy-io/buildbuddy-internal.git"
+          # If another push landed meanwhile, rebase onto it and retry. Only this
+          # job writes the copied files, so a conflict means something unexpected
+          # happened; fail rather than guess.
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:refs/heads/$BRANCH"; then exit 0; fi
+            git pull --rebase origin "$BRANCH" || { git rebase --abort; exit 1; }
           done
-          echo "Failed to push after 3 attempts"
           exit 1
