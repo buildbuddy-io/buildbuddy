@@ -57,10 +57,6 @@ const (
 	// parallel. Each lookup issues independent cache reads, so the work is
 	// I/O-bound.
 	defaultFindMissingChunkFallbackConcurrency = 8
-
-	// Values for the metrics.SpliceBlobValidation label.
-	spliceValidationFull    = "full"
-	spliceValidationSkipped = "skipped"
 )
 
 var (
@@ -1303,15 +1299,11 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 		DigestFunction: req.GetDigestFunction(),
 	}
 
-	efp := s.env.GetExperimentFlagProvider()
-	skipValidation := cdc.IsSpliceWithoutValidation(ctx) &&
-		s.isTrustedSpliceClient(ctx) &&
-		efp != nil &&
-		efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false)
+	skipValidation := cdc.IsSpliceWithoutValidation(ctx) && s.isTrustedSpliceClient(ctx)
 
-	validation := spliceValidationFull
+	validation := metrics.SpliceBlobValidationFull
 	if skipValidation {
-		validation = spliceValidationSkipped
+		validation = metrics.SpliceBlobValidationSkipped
 	}
 	metrics.SpliceBlobCount.With(prometheus.Labels{
 		metrics.SpliceBlobValidation: validation,

@@ -23,6 +23,7 @@ go_test(
         "//enterprise/server/tasksize",
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//enterprise/server/testutil/buildbuddy_enterprise",
+        "//enterprise/server/testutil/exptest",
         "//enterprise/server/testutil/testexecutor",
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/execution",

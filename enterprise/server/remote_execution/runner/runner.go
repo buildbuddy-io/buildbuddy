@@ -600,7 +600,7 @@ func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *rep
 }
 
 func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) error {
-	if slices.Contains(r.task.GetExperiments(), cdc.SpliceWithoutValidationExperiment) {
+	if execution_experiments.SpliceWithoutValidation.Get(ctx) {
 		ctx = cdc.ContextWithSpliceWithoutValidation(ctx)
 	}
 	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, executeResponse, cmdResult)

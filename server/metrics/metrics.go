@@ -347,6 +347,10 @@ const (
 	// the blob digest (`full`) or skipped that check (`skipped`).
 	SpliceBlobValidation = "splice_validation"
 
+	// Values for the SpliceBlobValidation label.
+	SpliceBlobValidationFull    = "full"
+	SpliceBlobValidationSkipped = "skipped"
+
 	// TreeCache directory depth: 0 for the root dir, 1 for a direct child of
 	// the root dir, and so on.
 	TreeCacheLookupLevel = "level"

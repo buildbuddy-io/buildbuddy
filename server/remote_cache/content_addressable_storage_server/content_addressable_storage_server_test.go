@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -27,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -38,8 +36,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
 	"github.com/google/uuid"
-	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
-	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1058,79 +1054,80 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 
 func TestSpliceBlobWithoutValidation(t *testing.T) {
 	for _, tc := range []struct {
-		name           string
-		groupID        string
-		clientIdentity string
-		sendHeader     bool
-		missingChunk   bool
-		wrongBlobSize  bool
-		wantSuccess    bool
-		wantValidation string
+		name              string
+		groupID           string
+		clientIdentity    string
+		noIdentityService bool
+		sendHeader        bool
+		missingChunk      bool
+		wrongBlobSize     bool
+		wantSuccess       bool
+		wantValidation    string
 	}{
 		{
-			name:           "trusted executor in experiment",
-			groupID:        "GR_ALLOWED",
+			name:           "trusted executor",
+			groupID:        "GR1",
 			clientIdentity: interfaces.ClientIdentityExecutor,
 			sendHeader:     true,
 			wantSuccess:    true,
-			wantValidation: "skipped",
+			wantValidation: metrics.SpliceBlobValidationSkipped,
 		},
 		{
-			name:           "trusted cache proxy forwards experiment",
-			groupID:        "GR_ALLOWED",
+			name:           "trusted cache proxy forwards header",
+			groupID:        "GR1",
 			clientIdentity: interfaces.ClientIdentityCacheProxy,
 			sendHeader:     true,
 			wantSuccess:    true,
-			wantValidation: "skipped",
+			wantValidation: metrics.SpliceBlobValidationSkipped,
 		},
 		{
-			name:           "trusted executor without experiment header",
-			groupID:        "GR_ALLOWED",
+			name:           "trusted executor without header",
+			groupID:        "GR1",
 			clientIdentity: interfaces.ClientIdentityExecutor,
-			wantValidation: "full",
+			wantValidation: metrics.SpliceBlobValidationFull,
 		},
 		{
 			name:           "trusted executor cannot reference a missing chunk",
-			groupID:        "GR_ALLOWED",
+			groupID:        "GR1",
 			clientIdentity: interfaces.ClientIdentityExecutor,
 			sendHeader:     true,
 			missingChunk:   true,
-			wantValidation: "skipped",
+			wantValidation: metrics.SpliceBlobValidationSkipped,
 		},
 		{
 			name:           "trusted executor cannot claim wrong blob size",
-			groupID:        "GR_ALLOWED",
+			groupID:        "GR1",
 			clientIdentity: interfaces.ClientIdentityExecutor,
 			sendHeader:     true,
 			wrongBlobSize:  true,
-			wantValidation: "skipped",
+			wantValidation: metrics.SpliceBlobValidationSkipped,
 		},
 		{
-			name:           "trusted executor from group outside experiment",
-			groupID:        "GR_OTHER",
-			clientIdentity: interfaces.ClientIdentityExecutor,
-			sendHeader:     true,
-			wantValidation: "full",
+			name:              "server without client identity service",
+			groupID:           "GR1",
+			noIdentityService: true,
+			sendHeader:        true,
+			wantValidation:    metrics.SpliceBlobValidationFull,
 		},
 		{
-			name:           "untrusted caller cannot spoof experiment header",
-			groupID:        "GR_ALLOWED",
+			name:           "untrusted caller cannot spoof header",
+			groupID:        "GR1",
 			sendHeader:     true,
-			wantValidation: "full",
+			wantValidation: metrics.SpliceBlobValidationFull,
 		},
 		{
 			name:           "app identity cannot skip validation",
-			groupID:        "GR_ALLOWED",
+			groupID:        "GR1",
 			clientIdentity: interfaces.ClientIdentityApp,
 			sendHeader:     true,
-			wantValidation: "full",
+			wantValidation: metrics.SpliceBlobValidationFull,
 		},
 		{
-			name:           "signed unknown client cannot spoof experiment header",
-			groupID:        "GR_ALLOWED",
+			name:           "signed unknown client cannot spoof header",
+			groupID:        "GR1",
 			clientIdentity: "unknown-client",
 			sendHeader:     true,
-			wantValidation: "full",
+			wantValidation: metrics.SpliceBlobValidationFull,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1140,39 +1137,17 @@ func TestSpliceBlobWithoutValidation(t *testing.T) {
 				user.GetUserID(): user,
 			}))
 
-			flags.Set(t, "app.client_identity.key", "test-client-identity-key")
-			identityService, err := clientidentity.New(env.GetClock())
-			require.NoError(t, err)
-			env.SetClientIdentityService(identityService)
+			var identityService *clientidentity.Service
+			if !tc.noIdentityService {
+				flags.Set(t, "app.client_identity.key", "test-client-identity-key")
+				var err error
+				identityService, err = clientidentity.New(env.GetClock())
+				require.NoError(t, err)
+				env.SetClientIdentityService(identityService)
+			}
 
-			tmp := testfs.MakeTempDir(t)
-			offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
-{
-  "$schema": "https://flagd.dev/schema/v0/flags.json",
-  "flags": {
-    "splice-without-validation": {
-      "state": "ENABLED",
-      "variants": {"enabled": true, "disabled": false},
-      "defaultVariant": "disabled",
-      "targeting": {
-        "if": [
-          {"==": [{"var": "group_id"}, "GR_ALLOWED"]},
-          "enabled",
-          "disabled"
-        ]
-      }
-    }
-  }
-}
-`)
-			provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
-			require.NoError(t, err)
-			require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), provider))
-			fp, err := experiments.NewFlagProvider(t.Name())
-			require.NoError(t, err)
-			env.SetExperimentFlagProvider(fp)
 			ctx := testauth.WithAuthenticatedUserInfo(t.Context(), user)
-			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 			require.NoError(t, err)
 			if tc.sendHeader {
 				ctx = cdc.ContextWithSpliceWithoutValidation(ctx)

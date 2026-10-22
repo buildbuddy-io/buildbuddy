@@ -14,4 +14,5 @@ var (
 	UserspaceNetworking      = expflag.Bool("executor.userspace_networking", false, "Enable userspace networking for OCI and Firecracker containers.")
 	RecordInputFetchMetadata = expflag.Bool("executor.record_input_fetch_metadata", true, "If true, record and report metadata describing which action inputs were fetched from remote CAS.", expflag.DeprecatedExperimentName("remote_execution.record_input_fetch_metadata"))
 	WorkspacePoolEnabled     = expflag.Bool("executor.workspace_pool.enabled", false, "If true, keep finished task workspaces in a pool, and set up later tasks with similar input trees from them instead of from an empty directory. See the executor.workspace_pool.* flags.")
+	SpliceWithoutValidation  = expflag.Bool("executor.splice_without_validation", true, "If true, ask the cache to splice chunked action outputs without re-verifying each chunk's contents. The cache only honors this from executors with a trusted client identity.", expflag.DeprecatedExperimentName("splice-without-validation"))
 )
