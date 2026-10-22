@@ -22,7 +22,7 @@ for arg in "$@"; do
     --family=*) family="${arg#--family=}" ;;
     --packages) packages=1 ;;
     -*) echo "unknown flag: $arg" >&2; exit 2 ;;
-    *) image="$arg" ;;
+    *) [[ -z "$image" ]] || { echo "only one IMAGE allowed" >&2; exit 2; }; image="$arg" ;;
   esac
 done
 if [[ -z "$image" ]]; then
@@ -42,7 +42,7 @@ if [[ -z "$family" ]]; then
 fi
 
 # Tools each family's Dockerfile (dockerfiles/rbe-ubuntu*-04) installs.
-common="gcc g++ make python3 git curl wget unzip zip ssh docker"
+common="gcc g++ make python3 git curl wget ed file less nc unzip zip ssh docker"
 case "$family" in
   20.04) tools="$common python2 python java javac clang go" ;;
   22.04) tools="$common python sudo" ;;

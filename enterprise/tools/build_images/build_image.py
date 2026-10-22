@@ -144,9 +144,9 @@ def parse_program_arguments():
 # These images are built by CI (see dockerfiles/README.md), and their :latest
 # tag is only moved deliberately, by hand, after a new digest has soaked.
 CI_BUILT_REPOSITORIES = {
-        "flame-public/rbe-ubuntu20-04",
-        "flame-public/rbe-ubuntu22-04",
-        "flame-public/rbe-ubuntu24-04",
+        "gcr.io/flame-public/rbe-ubuntu20-04",
+        "gcr.io/flame-public/rbe-ubuntu22-04",
+        "gcr.io/flame-public/rbe-ubuntu24-04",
         }
 
 def set_up_buildx_container(container_name, stdout=sys.stdout, stderr=sys.stderr):
@@ -228,8 +228,8 @@ def main():
 
     repository = f"{args.repository}{'-' + args.suffix if args.suffix else ''}"
 
-    if args.tag == "latest" and repository in CI_BUILT_REPOSITORIES:
-        print(f"Refusing --tag=latest for {repository}: this image is built by CI, and :latest is only moved deliberately once a pinned digest has soaked. See dockerfiles/README.md.", file=sys.stderr)
+    if args.tag == "latest" and f"{args.registry}/{repository}" in CI_BUILT_REPOSITORIES:
+        print(f"Refusing --tag=latest for {args.registry}/{repository}: this image is built by CI, and :latest is only moved deliberately once a pinned digest has soaked. See dockerfiles/README.md.", file=sys.stderr)
         return 1
 
     userpass = resolve_userpass(args.userpass, args.registry)
