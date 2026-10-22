@@ -55,6 +55,9 @@ RUN apt-get update && \
 # Note: gnupg is only needed to install Docker, so we uninstall it at the end of
 # this step and also run `apt-get autoremove` to get rid of the unnecessary
 # packages it came with.
+#
+# The apt key is pinned by fingerprint so that a tampered download fails the
+# build instead of letting arbitrary packages in.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ca-certificates \
@@ -63,7 +66,11 @@ RUN apt-get update && \
       lsb-release \
       && \
     mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.asc && \
+    fprs=$(gpg --show-keys --with-colons /tmp/docker.asc | awk -F: '$1=="pub"{p=1} $1=="fpr"&&p{print $10; p=0}') && \
+    { [ "$fprs" = "9DC858229FC7DD38854AE2D88D81803C0EBFCD88" ] || { echo "unexpected Docker apt key(s): $fprs" >&2; exit 1; }; } && \
+    gpg --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.asc && \
+    rm /tmp/docker.asc && \
     echo >/etc/apt/sources.list.d/docker.list "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" && \
     apt-get update && \
     apt-get install -y \
