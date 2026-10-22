@@ -12,7 +12,6 @@ on:
 jobs:
   update:
     runs-on: ubuntu-latest
-    # New release branches are cut at the already-pinned commit, so there's nothing to update.
     if: "!github.event.created && !contains(github.event.head_commit.message, 'deps skip')"
     # Run in push order per branch, so an older commit can't overwrite a newer pin.
     concurrency:
