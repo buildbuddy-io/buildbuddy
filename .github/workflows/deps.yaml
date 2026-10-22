@@ -67,6 +67,11 @@ jobs:
             cp ../buildbuddy/MODULE.bazel.lock MODULE.bazel.lock
 
             sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" MODULE.bazel
+            # sed succeeds even if nothing matched; don't report a stale pin as up to date.
+            if ! grep -qF "commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io/buildbuddy" MODULE.bazel; then
+              echo "The autoupdate pin line wasn't found in buildbuddy-internal's MODULE.bazel on $BRANCH"
+              exit 1
+            fi
             bazel mod deps --lockfile_mode=update
 
             git add deps.bzl .bazelversion shared.bazelrc bazel_downloader.cfg buildpatches deps MODULE.bazel.lock
