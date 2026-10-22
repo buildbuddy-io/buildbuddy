@@ -94,7 +94,7 @@ BuildBuddy will automatically pull your commit SHA from environment variables if
 
 ## Role
 
-The role metadata field allows you to specify whether this invocation was done on behalf of a CI (continuous integration) system. If set, this enables features like Github commit status reporting (if a Github account is linked).
+The role metadata field identifies how an invocation was started. The `CI` role marks builds run by a CI (continuous integration) system and enables features like GitHub commit status reporting (if a GitHub account is linked).
 
 For CI builds, you can add the following line to your `.bazelrc` and run your CI builds with the `--config=ci` flag:
 
@@ -102,7 +102,17 @@ For CI builds, you can add the following line to your `.bazelrc` and run your CI
 build:ci --build_metadata=ROLE=CI
 ```
 
-This role will automatically be populated if the environment variable `CI` is set, which it is in most CI systems like Github Actions, CircleCI, Travis, Gitlab CI, BuildKite, Bitrise, and others.
+The `CI` role is automatically populated if the environment variable `CI` is non-empty, which it is in most CI systems like GitHub Actions, CircleCI, Travis, GitLab CI, Buildkite, Bitrise, and others.
+
+BuildBuddy assigns the `AGENT` role when Bazel's client environment contains `CLAUDECODE` (Claude Code) or `CODEX_SESSION_ID` (Codex). Presence is sufficient, including an empty value. Unset both variables to disable automatic agent detection. The Codex session ID is retained in the recorded client environment so you can associate a build with its local session.
+
+CI and Workflow roles take precedence over inferred Agent roles. Explicit roles supplied through build metadata or workspace status also take precedence. An agent build that would otherwise have the Default role now has the Agent role; select Agent as well as Default if you want both in filtered results.
+
+Agent versions or wrappers that do not pass these markers to Bazel can set the role explicitly:
+
+```bash
+bazel build //... --build_metadata=ROLE=AGENT
+```
 
 ## Commit statuses
 

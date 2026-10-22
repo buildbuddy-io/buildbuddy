@@ -70,6 +70,10 @@ func TestFillInvocation(t *testing.T) {
 		OptionName:   "client_env",
 		OptionValue:  "SECRET=<REDACTED>",
 	}
+	agentOption := &command_line.Option{
+		OptionName:  "client_env",
+		OptionValue: "CODEX_SESSION_ID=<REDACTED>",
+	}
 	remoteCacheOption := &command_line.Option{
 		CombinedForm: "--remote_cache=grpcs://buildbuddy.buildbuddy.io",
 		OptionName:   "remote_cache",
@@ -124,6 +128,7 @@ func TestFillInvocation(t *testing.T) {
 				SectionType: &command_line.CommandLineSection_OptionList{
 					OptionList: &command_line.OptionList{
 						Option: []*command_line.Option{
+							agentOption,
 							shellOption,
 							secretOption,
 							remoteCacheOption,
@@ -415,17 +420,90 @@ func TestTagMerging(t *testing.T) {
 
 func TestEnvVarDiscovery(t *testing.T) {
 	tests := []struct {
-		name      string
-		envVars   map[string]string
-		repoUrl   string
-		branch    string
-		commitSha string
-		role      string
+		name          string
+		envVars       map[string]string
+		metadataRole  string
+		workspaceRole string
+		user          string
+		repoUrl       string
+		branch        string
+		commitSha     string
+		role          string
 	}{
+		{
+			name: "No agent marker keeps default role",
+		},
+		{
+			name:    "Claude Code sets agent role",
+			envVars: map[string]string{"CLAUDECODE": "1"},
+			role:    "AGENT",
+		},
+		{
+			name:    "Codex sets agent role",
+			envVars: map[string]string{"CODEX_SESSION_ID": "agent-session-id"},
+			role:    "AGENT",
+		},
+		{
+			name:    "Agent marker values may contain equals signs",
+			envVars: map[string]string{"CODEX_SESSION_ID": "session=value"},
+			role:    "AGENT",
+		},
+		{
+			name:    "Empty agent marker still sets agent role",
+			envVars: map[string]string{"CLAUDECODE": ""},
+			role:    "AGENT",
+		},
+		{
+			name:    "Empty Codex session marker still sets agent role",
+			envVars: map[string]string{"CODEX_SESSION_ID": ""},
+			role:    "AGENT",
+		},
+		{
+			name:    "Both agent markers set agent role",
+			envVars: map[string]string{"CLAUDECODE": "<REDACTED>", "CODEX_SESSION_ID": "<REDACTED>"},
+			role:    "AGENT",
+		},
+		{
+			name:    "CI takes precedence over agent role",
+			envVars: map[string]string{"CI": "true", "CODEX_SESSION_ID": "<REDACTED>"},
+			role:    "CI",
+		},
+		{
+			name:    "Workflow takes precedence over CI and agent roles",
+			envVars: map[string]string{"CI": "true", "CI_RUNNER": "1", "CLAUDECODE": "<REDACTED>"},
+			role:    "CI_RUNNER",
+		},
+		{
+			name:         "Explicit metadata role takes precedence over agent role",
+			envVars:      map[string]string{"CODEX_SESSION_ID": "<REDACTED>"},
+			metadataRole: "HOSTED_BAZEL",
+			role:         "HOSTED_BAZEL",
+		},
+		{
+			name:          "Workspace role takes precedence over agent role",
+			envVars:       map[string]string{"CLAUDECODE": "<REDACTED>"},
+			workspaceRole: "CI",
+			role:          "CI",
+		},
 		{
 			name:    "GITHUB_REPOSITORY sets repo URL defaulting to github.com",
 			envVars: map[string]string{"GITHUB_REPOSITORY": "buildbuddy-io/buildbuddy"},
 			repoUrl: "https://github.com/buildbuddy-io/buildbuddy",
+		},
+		{
+			name:    "Repo URL query may contain equals signs",
+			envVars: map[string]string{"GIT_URL": "https://example.com/owner/repo?ref=main"},
+			repoUrl: "https://example.com/owner/repo?ref=main",
+		},
+		{
+			name:    "Branch name may contain equals signs",
+			envVars: map[string]string{"BUILDKITE_BRANCH": "feature=agent"},
+			branch:  "feature=agent",
+		},
+		{
+			name:    "User may contain equals signs",
+			envVars: map[string]string{"USER": "builder=agent"},
+			user:    "builder=agent",
 		},
 		{
 			name:    "GITHUB_REF sets branch for heads ref",
@@ -473,6 +551,20 @@ func TestEnvVarDiscovery(t *testing.T) {
 				InvocationId: "test-invocation",
 			}
 			parser := event_parser.NewStreamingEventParser(invocation)
+			if tc.metadataRole != "" {
+				assert.NoError(t, parser.ParseEvent(&build_event_stream.BuildEvent{
+					Payload: &build_event_stream.BuildEvent_BuildMetadata{
+						BuildMetadata: &build_event_stream.BuildMetadata{Metadata: map[string]string{"ROLE": tc.metadataRole}},
+					},
+				}))
+			}
+			if tc.workspaceRole != "" {
+				assert.NoError(t, parser.ParseEvent(&build_event_stream.BuildEvent{
+					Payload: &build_event_stream.BuildEvent_WorkspaceStatus{
+						WorkspaceStatus: &build_event_stream.WorkspaceStatus{Item: []*build_event_stream.WorkspaceStatus_Item{{Key: "ROLE", Value: tc.workspaceRole}}},
+					},
+				}))
+			}
 			parser.ParseEvent(&build_event_stream.BuildEvent{
 				Payload: &build_event_stream.BuildEvent_StructuredCommandLine{
 					StructuredCommandLine: &command_line.CommandLine{
@@ -499,9 +591,8 @@ func TestEnvVarDiscovery(t *testing.T) {
 			if tc.commitSha != "" {
 				assert.Equal(t, tc.commitSha, invocation.CommitSha)
 			}
-			if tc.role != "" {
-				assert.Equal(t, tc.role, invocation.Role)
-			}
+			assert.Equal(t, tc.role, invocation.Role)
+			assert.Equal(t, tc.user, invocation.User)
 		})
 	}
 }

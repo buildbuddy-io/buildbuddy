@@ -6,6 +6,10 @@ import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
 import { isExecutionMetric } from "../filter/filter_util";
 
+// Exclude workflow and other wrapper roles to avoid double-counting build times
+// for workflows and their nested CI runs, even when "All roles" is selected.
+export const DEFAULT_TRENDS_ROLES = ["", "CI", "AGENT"];
+
 export enum TrendsTab {
   OVERVIEW,
   BUILDS,

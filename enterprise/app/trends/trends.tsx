@@ -12,7 +12,14 @@ import { stats } from "../../../proto/stats_ts_proto";
 import FilterComponent from "../filter/filter";
 import { getEndDate, getProtoFilterParams } from "../filter/filter_util";
 import CacheChartComponent from "./cache_chart";
-import { computeTimeKeys, getAverage, getTotal, longFormatTsForInterval, shortFormatTsForAxis } from "./common";
+import {
+  computeTimeKeys,
+  DEFAULT_TRENDS_ROLES,
+  getAverage,
+  getTotal,
+  longFormatTsForInterval,
+  shortFormatTsForAxis,
+} from "./common";
 import DrilldownPageComponent from "./drilldown_page";
 import PercentilesChartComponent from "./percentile_chart";
 import TrendsSummaryCard from "./summary_card";
@@ -103,10 +110,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     if (filterParams.role) {
       request.query.role = filterParams.role;
     } else {
-      // Note: Technically we're filtering out workflows and unknown roles,
-      // even though the user has selected "All roles". But we do this to
-      // avoid double-counting build times for workflows and their nested CI runs.
-      request.query.role = ["", "CI"];
+      request.query.role = [...DEFAULT_TRENDS_ROLES];
     }
 
     if (filterParams.host) request.query.host = filterParams.host;

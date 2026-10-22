@@ -367,6 +367,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             )}
             {selectedRoles.has("") && <span className="role-badge DEFAULT">Default</span>}
             {selectedRoles.has("CI") && <span className="role-badge CI">CI</span>}
+            {selectedRoles.has("AGENT") && <span className="role-badge AGENT">Agent</span>}
             {selectedRoles.has("CI_RUNNER") && <span className="role-badge CI_RUNNER">Workflow</span>}
             {selectedRoles.has("HOSTED_BAZEL") && <span className="role-badge HOSTED_BAZEL">Remote Bazel</span>}
             {userValue && (
@@ -531,6 +532,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                 <div className="option-group-options">
                   {this.renderRoleCheckbox("Default", "", selectedRoles)}
                   {this.renderRoleCheckbox("CI", "CI", selectedRoles)}
+                  {this.renderRoleCheckbox("Agent", "AGENT", selectedRoles)}
                   {this.renderRoleCheckbox("Workflow", "CI_RUNNER", selectedRoles)}
                   {this.renderRoleCheckbox("Remote Bazel", "HOSTED_BAZEL", selectedRoles)}
                 </div>
