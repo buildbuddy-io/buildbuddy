@@ -1266,6 +1266,9 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		Platform:            platform.GetProto(task.GetAction(), task.GetCommand()),
 		PersistentWorkerKey: persistentWorkerKey,
 	}
+	if platform.ContainerType(props.WorkloadIsolationType) == platform.OCIContainerType {
+		key.OciSeccompAdditionalSyscalls = execution_experiments.SeccompAdditionalSyscalls.Get(ctx)
+	}
 
 	// If snapshot sharing is enabled, a firecracker VM can be cloned from the
 	// cache and does not rely on previous state set on the runner, so we can

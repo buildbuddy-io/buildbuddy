@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testtar"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -49,7 +50,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
@@ -63,6 +66,7 @@ var (
 	busyboxImageRlocationpath  string
 	netToolsImageRlocationpath string
 	testworkerRlocationpath    string
+	testsyscallRlocationpath   string
 )
 
 func init() {
@@ -247,6 +251,52 @@ func TestRun(t *testing.T) {
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
+func TestRunUnshare(t *testing.T) {
+	setupNetworking(t)
+	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	image := busyboxImage(t)
+
+	for _, testCase := range []struct {
+		name         string
+		user         string
+		args         []string
+		wantExitCode int
+	}{
+		{name: "root_no_flags", user: "0", args: []string{"unshare", "true"}},
+		{name: "root_user_namespace", user: "0", args: []string{"unshare", "-U", "true"}, wantExitCode: 1},
+		{name: "nonroot_no_flags", user: "1000:1000", args: []string{"unshare", "true"}},
+		{name: "nonroot_user_namespace", user: "1000:1000", args: []string{"unshare", "-U", "true"}, wantExitCode: 1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+				ContainerImage: image,
+				DockerUser:     testCase.user,
+			}})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, c.Remove(ctx)) })
+
+			wd := testfs.MakeDirAll(t, buildRoot, testCase.name)
+			res := c.Run(ctx, &repb.Command{Arguments: testCase.args}, wd, oci.Credentials{})
+			require.NoError(t, res.Error)
+			assert.Equal(t, testCase.wantExitCode, res.ExitCode, "stderr: %s", res.Stderr)
+			assert.Empty(t, string(res.Stdout))
+			if testCase.wantExitCode == 0 {
+				assert.Empty(t, string(res.Stderr))
+			} else {
+				assert.Contains(t, string(res.Stderr), "Operation not permitted")
+			}
+		})
+	}
+}
+
 func TestRunNofileLimit(t *testing.T) {
 	setupNetworking(t)
 	flags.Set(t, "executor.oci.nofile_limit", uint64(65536))
@@ -272,6 +322,71 @@ func TestRunNofileLimit(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, "65536\n65536\n", string(res.Stdout))
+}
+
+func TestSeccompSyscalls(t *testing.T) {
+	setupNetworking(t)
+	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	image := busyboxImage(t)
+	testsyscallPath, err := runfiles.Rlocation(testsyscallRlocationpath)
+	require.NoError(t, err)
+
+	for _, testCase := range []struct {
+		name               string
+		syscall            string
+		additionalSyscalls string
+		capAdd             []string
+		createExec         bool
+		wantErrno          unix.Errno
+	}{
+		{name: "run_unshare_denied", syscall: "unshare", wantErrno: unix.EPERM},
+		{name: "run_unshare_allowed", syscall: "unshare", additionalSyscalls: " unshare, unshare, ", wantErrno: unix.EINVAL},
+		{name: "run_unshare_sys_admin", syscall: "unshare", capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
+		{name: "exec_unshare_denied", syscall: "unshare", createExec: true, wantErrno: unix.EPERM},
+		{name: "exec_unshare_allowed", syscall: "unshare", additionalSyscalls: "unshare", createExec: true, wantErrno: unix.EINVAL},
+		{name: "run_clone_denied", syscall: "clone", wantErrno: unix.EPERM},
+		{name: "run_clone_allowed", syscall: "clone", additionalSyscalls: "clone", wantErrno: unix.EINVAL},
+		{name: "run_clone_sys_admin", syscall: "clone", capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
+		{name: "run_clone3_denied", syscall: "clone3", wantErrno: unix.ENOSYS},
+		{name: "run_clone3_allowed", syscall: "clone3", additionalSyscalls: "clone3", wantErrno: unix.EINVAL},
+		{name: "run_clone3_sys_admin", syscall: "clone3", capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
+		{name: "exec_clone3_denied", syscall: "clone3", createExec: true, wantErrno: unix.ENOSYS},
+		{name: "exec_clone3_sys_admin", syscall: "clone3", capAdd: []string{"CAP_SYS_ADMIN"}, createExec: true, wantErrno: unix.EINVAL},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "executor.oci.cap_add", testCase.capAdd)
+			ctx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{{
+				Name:  "executor.oci.seccomp_additional_syscalls",
+				Value: &expb.EvaluatedFlag_StringValue{StringValue: testCase.additionalSyscalls},
+			}})
+			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{ContainerImage: image}})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, c.Remove(env.GetServerContext())) })
+			wd := testfs.MakeDirAll(t, buildRoot, testCase.name)
+			testfs.CopyFile(t, testsyscallPath, wd, "testsyscall")
+			cmd := &repb.Command{Arguments: []string{"./testsyscall", testCase.syscall}}
+			var res *interfaces.CommandResult
+			if testCase.createExec {
+				require.NoError(t, c.PullImage(ctx, oci.Credentials{}))
+				require.NoError(t, c.Create(ctx, wd))
+				res = c.Exec(ctx, cmd, &interfaces.Stdio{})
+			} else {
+				res = c.Run(ctx, cmd, wd, oci.Credentials{})
+			}
+			require.NoError(t, res.Error)
+			assert.Equal(t, int(testCase.wantErrno), res.ExitCode, "stderr: %s", res.Stderr)
+			assert.Empty(t, string(res.Stdout))
+			assert.Empty(t, string(res.Stderr))
+		})
+	}
 }
 
 func TestCgroupSettings(t *testing.T) {

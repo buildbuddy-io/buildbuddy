@@ -17,11 +17,14 @@ func TestNew_Default(t *testing.T) {
 	want := &specs.LinuxSeccomp{}
 	require.NoError(t, json.Unmarshal(defaultProfileJSON, want))
 
-	got, err := New(nil)
+	got, err := New(nil, nil)
 	require.NoError(t, err)
-	// Architecture conversion is asserted separately. All other fields must
-	// retain the existing OCI decoding behavior.
+	// Exclude architecture conversion and generated namespace rules. OCI tests
+	// cover namespace restrictions; other fields retain the JSON decoding behavior.
 	got.Architectures = nil
+	got.Syscalls = slices.DeleteFunc(got.Syscalls, func(rule specs.LinuxSyscall) bool {
+		return slices.Contains(rule.Names, "clone") || slices.Contains(rule.Names, "unshare")
+	})
 	assert.Equal(t, want, got)
 }
 
@@ -38,7 +41,7 @@ func TestNew_DefaultArchitectures(t *testing.T) {
 		t.Skipf("embedded profile has no compatibility architectures for %s", runtime.GOARCH)
 	}
 	for _, additionalSyscalls := range [][]string{nil, {"userfaultfd"}} {
-		profile, err := New(additionalSyscalls)
+		profile, err := New(additionalSyscalls, nil)
 		require.NoError(t, err)
 		assert.Equal(t, want, profile.Architectures)
 	}
@@ -51,7 +54,7 @@ func TestNew_AdditionalSyscalls(t *testing.T) {
 		"io_uring_register",
 		"io_uring_setup",
 	}
-	profile, err := New(additionalSyscalls)
+	profile, err := New(additionalSyscalls, nil)
 	require.NoError(t, err)
 
 	wantNames := []string{
@@ -87,7 +90,7 @@ func TestNew_AdditionalSyscallsOverrideDefaultDenyRules(t *testing.T) {
 	// rules: the default allow list, then a cap-conditional allow and a
 	// cap-conditional deny whose conditions are dropped when parsing the JSON
 	// into specs.LinuxSeccomp.
-	defaultProfile, err := New(nil)
+	defaultProfile, err := New(nil, nil)
 	require.NoError(t, err)
 	for _, name := range []string{"userfaultfd", "setns"} {
 		denyRules := 0
@@ -105,7 +108,7 @@ func TestNew_AdditionalSyscallsOverrideDefaultDenyRules(t *testing.T) {
 	// rule for a syscall comes first, so userfaultfd would stay denied.
 	// setns exercises removing a name that appears in several rules,
 	// including allow rules that precede its deny rule.
-	profile, err := New([]string{"userfaultfd", "setns"})
+	profile, err := New([]string{"userfaultfd", "setns"}, nil)
 	require.NoError(t, err)
 	for _, name := range []string{"userfaultfd", "setns"} {
 		var matchingRules []specs.LinuxSyscall
