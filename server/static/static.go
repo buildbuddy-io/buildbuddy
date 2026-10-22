@@ -277,6 +277,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		UsageAlertsEnabled:                     env.GetUsageService() != nil && env.GetUsageService().GetAlertsEnabled(),
 		UsageBillEnabled:                       env.GetUsageService() != nil && env.GetUsageService().GetBillEnabled(),
 		UsageExportEnabled:                     env.GetUsageService() != nil && env.GetUsageService().GetExportEnabled(),
+		UsageBasedBillingEnabled:               env.GetBillingService() != nil,
 		InvocationLogStreamingEnabled:          *invocationLogStreamingEnabled,
 		TargetFlakesUiEnabled:                  *targetFlakesUIEnabled && env.GetOLAPDBHandle() != nil,
 		CodeEditorV2Enabled:                    *features.CodeEditorV2Enabled,
