@@ -1499,7 +1499,6 @@ type chunkUploader struct {
 	s              *ByteStreamServerProxy
 	instanceName   string
 	digestFunction repb.DigestFunction_Value
-	concurrency    int
 
 	fmbG     *errgroup.Group
 	fmbCtx   context.Context
@@ -1526,7 +1525,6 @@ func newChunkUploader(ctx context.Context, s *ByteStreamServerProxy, instanceNam
 		s:              s,
 		instanceName:   instanceName,
 		digestFunction: digestFunction,
-		concurrency:    defaultChunkTransferConcurrency,
 		fmbG:           fmbG,
 		fmbCtx:         fmbCtx,
 		batchG:         batchG,
@@ -1555,7 +1553,7 @@ func (c *chunkUploader) addChunk(compressedData []byte, poolBuf []byte, d *repb.
 	}
 
 	c.pendingFMB = append(c.pendingFMB, chunk)
-	if len(c.pendingFMB) >= c.concurrency {
+	if len(c.pendingFMB) >= defaultChunkTransferConcurrency {
 		c.flushPendingFMB()
 	}
 }
