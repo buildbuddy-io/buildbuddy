@@ -443,11 +443,11 @@ func TestStatsHandler_UnsetLabelsWithoutInitCounters(t *testing.T) {
 func BenchmarkClassifierClassify(b *testing.B) {
 	b.Run("cached_hit", func(b *testing.B) {
 		classifier := newTestClassifier(b)
-		classifier.classify("3.4.12.4")
+		classifier.classify(b.Context(), "3.4.12.4")
 
 		b.ReportAllocs()
 		for b.Loop() {
-			classifier.classify("3.4.12.4")
+			classifier.classify(b.Context(), "3.4.12.4")
 		}
 	})
 
@@ -457,7 +457,7 @@ func BenchmarkClassifierClassify(b *testing.B) {
 		b.ReportAllocs()
 		i := 0
 		for b.Loop() {
-			classifier.classify(benchmarkIP(i))
+			classifier.classify(b.Context(), benchmarkIP(i))
 			i++
 		}
 	})
@@ -480,7 +480,7 @@ func TestClassifier_MetalRanges(t *testing.T) {
 		{name: "sjc_first_ip_after_nuq", ip: "216.226.69.0", want: Destination{Provider: "metal", Region: "us-sjc"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := classifier.classify(tc.ip); got != tc.want {
+			if got := classifier.classify(t.Context(), tc.ip); got != tc.want {
 				t.Errorf("classify(%q) = %+v, want %+v", tc.ip, got, tc.want)
 			}
 		})
@@ -507,7 +507,7 @@ func TestClassifier_PrivateRanges(t *testing.T) {
 		{name: "public_ip_uses_provider_data", ip: "3.4.12.4", want: Destination{Provider: "aws", Region: "eu-west-1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := classifier.classify(tc.ip); got != tc.want {
+			if got := classifier.classify(t.Context(), tc.ip); got != tc.want {
 				t.Errorf("classify(%q) = %+v, want %+v", tc.ip, got, tc.want)
 			}
 		})
