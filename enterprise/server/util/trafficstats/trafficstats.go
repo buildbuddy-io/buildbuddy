@@ -313,7 +313,7 @@ func (h *StatsHandler) initCounters(ctx context.Context) {
 			ip = p.Addr.String()
 		}
 	}
-	c.dest = h.classifier.classify(ip)
+	c.dest = h.classifier.classify(ctx, ip)
 }
 
 // peerType returns the peer's verified client identity, or externalPeerType.
@@ -412,7 +412,7 @@ func parseRangeEntries(csvBytes []byte) ([]ipRange, error) {
 	return entries, nil
 }
 
-func (c *classifier) classify(ipStr string) Destination {
+func (c *classifier) classify(ctx context.Context, ipStr string) Destination {
 	ip, err := netip.ParseAddr(ipStr)
 	if err != nil {
 		// Try host:port format.
@@ -445,16 +445,16 @@ func (c *classifier) classify(ipStr string) Destination {
 			return entry.destination
 		}
 	}
-	c.occasionallLogger.Infof("traffic classifier didn't find IP: %s", ip)
+	c.occasionallLogger.CtxInfof(ctx, "traffic classifier didn't find IP: %s", ip)
 	unknown := Destination{Provider: otherProvider, Region: unknownRegion}
 	c.cache.Add(cacheKey, unknown)
 	return unknown
 }
 
-func Classify(ip string) (Destination, error) {
+func Classify(ctx context.Context, ip string) (Destination, error) {
 	c, err := classifierOnce()
 	if err != nil {
 		return Destination{}, err
 	}
-	return c.classify(ip), nil
+	return c.classify(ctx, ip), nil
 }
