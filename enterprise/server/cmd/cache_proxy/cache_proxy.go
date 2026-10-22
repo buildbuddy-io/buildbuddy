@@ -256,6 +256,7 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	}
 	// Add metadata-propagating interceptors for configured request headers.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
+		EnableConnectionAging: true,
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
 			interceptors.PropagateMetadataUnaryInterceptor(proxy_util.HeadersToPropagate...),
 		},
