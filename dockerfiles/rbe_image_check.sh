@@ -3,43 +3,43 @@
 # `docker run --rm`.
 #
 # Usage:
-#   rbe_image_check.sh [--family=20.04|22.04|24.04] IMAGE
-#       Checks that the tools the family's Dockerfile installs are present,
-#       that https works, and that `git ls-remote` against GitHub works.
+#   rbe_image_check.sh IMAGE
+#       Checks that the tools the image's Dockerfile installs are present, that
+#       https works, and that `git ls-remote` against GitHub works. The Ubuntu
+#       release is read from /etc/os-release in the image.
 #       Exits nonzero if anything fails.
 #   rbe_image_check.sh --packages IMAGE
 #       Prints "<package> <version>" for every installed dpkg package, sorted,
-#       to stdout.
-#
-# If --family is not given, it is read from /etc/os-release in the image.
+#       to stdout. Fails if the list is empty.
 set -euo pipefail
 
-family=""
 packages=0
 image=""
 for arg in "$@"; do
   case "$arg" in
-    --family=*) family="${arg#--family=}" ;;
     --packages) packages=1 ;;
     -*) echo "unknown flag: $arg" >&2; exit 2 ;;
     *) [[ -z "$image" ]] || { echo "only one IMAGE allowed" >&2; exit 2; }; image="$arg" ;;
   esac
 done
 if [[ -z "$image" ]]; then
-  echo "usage: $0 [--family=20.04|22.04|24.04] [--packages] IMAGE" >&2
+  echo "usage: $0 [--packages] IMAGE" >&2
   exit 2
 fi
 
 run() { docker run --rm "$image" bash -c "$1"; }
 
 if ((packages)); then
-  run "dpkg-query -W -f='\${Package} \${Version}\n'" | LC_ALL=C sort
+  pkgs=$(run "dpkg-query -W -f='\${Package} \${Version}\n'" | LC_ALL=C sort)
+  if [[ -z "$pkgs" ]]; then
+    echo "dpkg-query listed no packages in $image" >&2
+    exit 1
+  fi
+  printf '%s\n' "$pkgs"
   exit 0
 fi
 
-if [[ -z "$family" ]]; then
-  family=$(run '. /etc/os-release && echo "$VERSION_ID"')
-fi
+family=$(run '. /etc/os-release && echo "$VERSION_ID"')
 
 # Tools each family's Dockerfile (dockerfiles/rbe-ubuntu*-04) installs.
 common="gcc g++ make python3 git curl wget ed file less nc unzip zip ssh docker"

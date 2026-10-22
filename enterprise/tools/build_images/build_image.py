@@ -4,7 +4,7 @@ Script to build multi-platform docker images.
 
 Example command usage:
 
-./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu22-04 --tag=$(git rev-parse --short HEAD) --no-suffix --dockerfile=dockerfiles/rbe-ubuntu22-04/Dockerfile --platform=amd64 --platform=arm64 --user=_token
+./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu20-04-workflows --tag=$(git rev-parse --short HEAD) --no-suffix --dockerfile=dockerfiles/rbe-ubuntu20-04-workflows/Dockerfile --platform=amd64 --platform=arm64 --user=_token
 
 """
 
@@ -141,8 +141,9 @@ def parse_program_arguments():
 
     return parser.parse_args(namespace=ArgsNamespace)
 
-# These images are built by CI (see dockerfiles/README.md), and their :latest
-# tag is only moved deliberately, by hand, after a new digest has soaked.
+# These images are only pushed by the internal build-rbe-image workflow (see
+# dockerfiles/README.md), and their :latest tag is only moved deliberately, by
+# hand, after a new digest has soaked.
 CI_BUILT_REPOSITORIES = {
         "gcr.io/flame-public/rbe-ubuntu20-04",
         "gcr.io/flame-public/rbe-ubuntu22-04",
@@ -228,8 +229,10 @@ def main():
 
     repository = f"{args.repository}{'-' + args.suffix if args.suffix else ''}"
 
-    if args.tag == "latest" and f"{args.registry}/{repository}" in CI_BUILT_REPOSITORIES:
-        print(f"Refusing --tag=latest for {args.registry}/{repository}: this image is built by CI, and :latest is only moved deliberately once a pinned digest has soaked. See dockerfiles/README.md.", file=sys.stderr)
+    # Normalize so that e.g. a trailing slash can't sneak past the check.
+    full_repository = "/".join(p for p in f"{args.registry}/{repository}".lower().split("/") if p)
+    if args.push and full_repository in CI_BUILT_REPOSITORIES:
+        print(f"Refusing to push {full_repository}: this image is only pushed by the internal build-rbe-image workflow. See dockerfiles/README.md. (--no-push builds it locally.)", file=sys.stderr)
         return 1
 
     userpass = resolve_userpass(args.userpass, args.registry)

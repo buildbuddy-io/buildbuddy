@@ -2,13 +2,17 @@
 
 The default RBE images (`gcr.io/flame-public/rbe-ubuntu{20,22,24}-04`) are
 built from the Dockerfiles in this directory by CI, not by hand.
-`build_image.py` refuses `--tag=latest` for them.
+`build_image.py` refuses `--push` for them; it can still build them locally
+with `--no-push`.
 
 To ship a new image:
 
 1. Dispatch the internal `build-rbe-image` workflow with inputs `image` (which
    RBE image to build) and `ref` (the buildbuddy ref to build from). It builds
-   and pushes a new digest without touching `:latest`.
+   and pushes each arch untagged by digest, runs the checks and a remote build
+   against those digests, and only if they pass gives the image a new, unique
+   tag (`<YYYYMMDD>-<sha7>-<run_id>-<run_attempt>`). It never touches
+   `:latest` or any existing tag.
 2. Read the run summary: the dpkg diff against the currently pinned image, the
    smoke check results (`rbe_image_check.sh`), and the remote build results.
 3. Open a PR that pins the new digest in `server/util/platform/platform.go`.
@@ -24,6 +28,6 @@ To ship a new image:
 To check an image locally:
 
 ```sh
-dockerfiles/rbe_image_check.sh [--family=22.04] <image>   # tools, https, git
-dockerfiles/rbe_image_check.sh --packages <image>          # sorted dpkg list
+dockerfiles/rbe_image_check.sh <image>             # tools, https, git
+dockerfiles/rbe_image_check.sh --packages <image>  # sorted dpkg list
 ```
