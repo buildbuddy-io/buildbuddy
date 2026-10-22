@@ -68,10 +68,12 @@ done
 for r in "${runs[@]}"; do
   check "$r" $r
 done
+check 'en_US.UTF-8 locale' bash -c "locale -a | grep -qix 'en_US.utf8'"
 if ((setup)); then
-  check 'en_US.UTF-8 locale' bash -c "locale -a | grep -qix 'en_US.utf8'"
   check 'buildbuddy user' id buildbuddy
+  check 'buildbuddy in sudo, docker' bash -c "id -nG buildbuddy | tr ' ' '\\n' | grep -qx sudo && id -nG buildbuddy | tr ' ' '\\n' | grep -qx docker"
   check 'iptables-legacy' bash -c "update-alternatives --query iptables | grep -qx 'Value: /usr/sbin/iptables-legacy'"
+  check 'ip6tables-legacy' bash -c "update-alternatives --query ip6tables | grep -qx 'Value: /usr/sbin/ip6tables-legacy'"
 fi
 check https curl -fsS --connect-timeout 10 --max-time 30 -o /dev/null https://www.google.com
 check 'git ls-remote' timeout 60 git ls-remote https://github.com/bazelbuild/bazel HEAD
