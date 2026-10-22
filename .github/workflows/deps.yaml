@@ -10,6 +10,11 @@ on:
       - "docs/**"
       - "website/**"
 
+# Run in push order per branch, so a retried push can't move the pin backwards.
+concurrency:
+  group: update-deps-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -66,6 +71,11 @@ jobs:
             bazel mod deps --lockfile_mode=update
 
             git add deps.bzl .bazelversion shared.bazelrc bazel_downloader.cfg buildpatches deps MODULE.bazel.lock
+            # E.g. a new release branch whose internal branch already pins this commit.
+            if git diff --quiet HEAD; then
+              echo "Internal $BRANCH is already up to date"
+              exit 0
+            fi
             cat <<EOF > "$RUNNER_TEMP/message.txt"
           🔄 $COMMIT_MESSAGE
           Update buildbuddy-io/buildbuddy commit SHA
