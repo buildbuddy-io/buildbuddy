@@ -9,12 +9,12 @@ To ship a new image:
 
 1. Dispatch the internal `build-rbe-image` workflow with inputs `image` (which
    RBE image to build) and `ref` (the buildbuddy ref to build from). It builds
-   and pushes each arch untagged by digest, runs the checks and a remote build
+   and pushes each arch untagged by digest, runs the checks on BuildBuddy RBE
    against those digests, and only if they pass gives the image a new, unique
    tag (`<YYYYMMDD>-<sha7>-<run_id>-<run_attempt>`). It never touches
    `:latest` or any existing tag.
-2. Read the run summary: the dpkg diff against the currently pinned image, the
-   smoke check results (`rbe_image_check.sh`), and the remote build results.
+2. Read the run summary: the dpkg diff against the currently pinned image and
+   the smoke check results (`rbe_image_check.sh`, run on RBE).
 3. Open a PR that pins the new digest in `server/util/platform/platform.go`.
 4. Ship it in a release and let it soak.
 5. Only then move `:latest`, by hand, recording the old digest first so it can
@@ -25,9 +25,10 @@ To ship a new image:
    gcloud container images add-tag <image>@<digest> <image>:latest
    ```
 
-To check an image locally:
+`rbe_image_check.sh` runs inside the image it checks; the workflow runs it as
+an action on BuildBuddy RBE. To check an image locally:
 
 ```sh
-dockerfiles/rbe_image_check.sh <image>             # tools, https, git
-dockerfiles/rbe_image_check.sh --packages <image>  # sorted dpkg list
+docker run --rm -v "$PWD/dockerfiles:/c:ro" <image> /c/rbe_image_check.sh             # tools, https, git
+docker run --rm -v "$PWD/dockerfiles:/c:ro" <image> /c/rbe_image_check.sh --packages  # sorted dpkg list
 ```
