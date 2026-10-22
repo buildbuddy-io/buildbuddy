@@ -18,8 +18,8 @@
 //     executor uses its own flag values. When the flag is set, the values that
 //     the scheduler sends with each task, including its defaults, take priority
 //     over the executor's own flag values.
-//     It is NOT generally recommended to enable this flag for self-hosted
-//     executors.
+//     This flag is internal and experimental, and only executors that
+//     BuildBuddy manages should set it.
 //   - Experiments are only available per-task. Global/executor-level
 //     experiments are not supported.
 //   - All expflags must be defined in the execution_experiments package, and
