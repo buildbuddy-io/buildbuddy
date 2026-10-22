@@ -30,6 +30,7 @@ import (
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 )
 
 // targetTrendsPageSize is the number of targets returned per page by
@@ -209,7 +210,7 @@ func (i *InvocationStatService) flattenTrendsQuery(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, includeExecutionDimensionFilters bool, reqCtx *ctxpb.RequestContext) error {
+func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, isExecutionQuery bool, reqCtx *ctxpb.RequestContext) error {
 
 	if user := tq.GetUser(); user != "" {
 		q.AddWhereClause("\"user\" = ?", user)
@@ -289,7 +290,7 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		q.AddWhereClause(str, args...)
 	}
 	for _, f := range tq.GetDimensionFilter() {
-		if !includeExecutionDimensionFilters && f.GetDimension().Execution != nil {
+		if !isExecutionQuery && f.GetDimension().Execution != nil {
 			continue
 		}
 		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
@@ -298,8 +299,14 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		}
 		q.AddWhereClause(str, args...)
 	}
+	if isExecutionQuery {
+		// Merged links reuse work rather than adding executions to aggregates.
+		// If the original link is missing or outside the query, these aggregates
+		// intentionally omit the execution; selected examples retain merged links.
+		q.AddWhereClause("invocation_link_type != ?", int(sipb.StoredInvocationLink_MERGED))
+	}
 	queryObjects := sfpb.ObjectTypes_INVOCATION_OBJECTS
-	if includeExecutionDimensionFilters {
+	if isExecutionQuery {
 		queryObjects = sfpb.ObjectTypes_EXECUTION_OBJECTS
 	}
 
@@ -1234,7 +1241,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	}
 	placeholderQuery := query_builder.NewQuery("")
 
-	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC, req.GetRequestContext()); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetDrilldownMetric().Execution != nil, req.GetRequestContext()); err != nil {
 		return "", nil, err
 	}
 
