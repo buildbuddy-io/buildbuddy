@@ -108,7 +108,9 @@ RUN useradd --create-home buildbuddy --groups sudo,docker && \
 
 # Fail if the eMudhra-compromised roots are still trusted, e.g. from a stale cached apt layer (buildbuddy-io/buildbuddy-internal#8615).
 RUN subjects=$(openssl crl2pkcs7 -nocrl -certfile /etc/ssl/certs/ca-certificates.crt | openssl pkcs7 -print_certs -noout | grep '^subject=') && \
-    [ "$(echo "$subjects" | wc -l)" -gt 100 ] && \
-    if echo "$subjects" | grep -E 'emSign ECC Root CA - G3|AAA Certificate Services'; then exit 1; fi
+    [ "$(echo "$subjects" | wc -l)" -gt 100 ] || { echo "too few certificates in /etc/ssl/certs/ca-certificates.crt" >&2; exit 1; }; \
+    if echo "$subjects" | grep -E 'emSign ECC Root CA - G3|AAA Certificate Services'; then \
+      echo "compromised root still trusted in /etc/ssl/certs/ca-certificates.crt" >&2; exit 1; \
+    fi
 
 CMD bash
