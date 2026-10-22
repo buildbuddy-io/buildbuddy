@@ -310,7 +310,7 @@ func (c *Proxy) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRe
 
 func (c *Proxy) getWithMetadataReference(ctx context.Context, rn *rspb.ResourceName) *refpb.Reference {
 	fp := c.env.GetExperimentFlagProvider()
-	if fp == nil || !fp.Boolean(ctx, "distributed_cache.get_with_metadata_gcs_references", false) {
+	if fp == nil || !fp.Boolean(ctx, "distributed_cache.get_with_metadata_gcs_references", true) {
 		return nil
 	}
 	refCache, ok := c.cache.(interfaces.ReferenceCache)
