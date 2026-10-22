@@ -293,61 +293,6 @@ func TestWriteChunkingEnabledSkipsChunkedWrites(t *testing.T) {
 	require.False(t, s.writeChunkingEnabled(ctx))
 }
 
-func TestWriteChunkingEnabledRequiresExperimentInterceptFlag(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		hasEFP bool
-		efp    bool
-		want   bool
-	}{
-		{
-			name: "default disabled without experiment flag provider",
-			want: false,
-		},
-		{
-			name:   "experiment flag disabled",
-			hasEFP: true,
-			efp:    false,
-			want:   false,
-		},
-		{
-			name:   "experiment flag enabled",
-			hasEFP: true,
-			efp:    true,
-			want:   true,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var fp interfaces.ExperimentFlagProvider
-			if tc.hasEFP {
-				providerName := t.Name()
-				provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-					"cache_proxy.intercept_and_chunk_large_writes": {
-						State:          memprovider.Enabled,
-						DefaultVariant: strconv.FormatBool(tc.efp),
-						Variants: map[string]any{
-							"true":  true,
-							"false": false,
-						},
-					},
-				})
-				require.NoError(t, openfeature.SetNamedProviderAndWait(providerName, provider))
-				var err error
-				fp, err = experiments.NewFlagProvider(providerName)
-				require.NoError(t, err)
-			}
-
-			ctx := context.Background()
-			s := &ByteStreamServerProxy{
-				localCache: testenv.GetTestEnv(t).GetCache(),
-				remoteCAS:  &noOpCASClient{},
-				efp:        fp,
-			}
-			require.Equal(t, tc.want, s.writeChunkingEnabled(ctx))
-		})
-	}
-}
-
 type casRPCRecorder struct {
 	mu           sync.Mutex
 	fmbGroups    [][]string
@@ -2618,162 +2563,231 @@ func TestReadRemoteChunkRetryClassification(t *testing.T) {
 }
 
 func TestWriteChunked(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
+	enabled, disabled := true, false
+	for _, tc := range []struct {
+		name          string
+		configEnabled *bool
+		provider      openfeature.FeatureProvider
+		disableCDC    bool
+		wantChunked   bool
+	}{
+		{
+			name: "disabled by default",
 		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+		{
+			name:          "enabled without experiment provider",
+			configEnabled: &enabled,
+			wantChunked:   true,
+		},
+		{
+			name:          "enabled with noop experiment provider",
+			configEnabled: &enabled,
+			provider:      openfeature.NoopProvider{},
+			wantChunked:   true,
+		},
+		{
+			name:          "disabled with noop experiment provider",
+			configEnabled: &disabled,
+			provider:      openfeature.NoopProvider{},
+		},
+		{
+			name:          "experiment enables despite config",
+			configEnabled: &disabled,
+			provider: memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+				"cache_proxy.intercept_and_chunk_large_writes": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "enabled",
+					Variants:       map[string]any{"enabled": true},
+				},
+			}),
+			wantChunked: true,
+		},
+		{
+			name:          "experiment disables despite config",
+			configEnabled: &enabled,
+			provider: memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+				"cache_proxy.intercept_and_chunk_large_writes": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "disabled",
+					Variants:       map[string]any{"disabled": false},
+				},
+			}),
+		},
+		{
+			name:          "kill switch overrides config and experiment",
+			configEnabled: &enabled,
+			provider: memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+				"cache_proxy.intercept_and_chunk_large_writes": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "enabled",
+					Variants:       map[string]any{"enabled": true},
+				},
+			}),
+			disableCDC: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.configEnabled != nil {
+				flags.Set(t, "cache_proxy.chunking_enabled", *tc.configEnabled)
+			}
+			flags.Set(t, "cache_proxy.disable_cdc", tc.disableCDC)
+			flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
-	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+			ctx := testContext()
+			remoteEnv := testenv.GetTestEnv(t)
+			proxyEnv := testenv.GetTestEnv(t)
 
-	ctx := testContext()
-	remoteEnv := testenv.GetTestEnv(t)
-	proxyEnv := testenv.GetTestEnv(t)
+			if tc.provider != nil {
+				require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), tc.provider))
+				fp, err := experiments.NewFlagProvider(t.Name())
+				require.NoError(t, err)
+				proxyEnv.SetExperimentFlagProvider(fp)
+			}
 
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
+			pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
+				RootDirectory: testfs.MakeTempDir(t),
+				MaxSizeBytes:  1_000_000_000,
+			})
+			require.NoError(t, err)
+			err = pc.Start()
+			require.NoError(t, err)
+			t.Cleanup(func() { pc.Stop() })
+			proxyEnv.SetCache(pc)
 
-	pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
-		RootDirectory: testfs.MakeTempDir(t),
-		MaxSizeBytes:  1_000_000_000,
-	})
-	require.NoError(t, err)
-	err = pc.Start()
-	require.NoError(t, err)
-	t.Cleanup(func() { pc.Stop() })
-	proxyEnv.SetCache(pc)
+			remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+			require.NoError(t, err)
+			remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+			require.NoError(t, err)
+			remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+			bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
+			repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+			go remoteRun()
+			remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis)
+			require.NoError(t, err)
+			t.Cleanup(func() { remoteConn.Close() })
+			bsClient := bspb.NewByteStreamClient(remoteConn)
+			casClient := repb.NewContentAddressableStorageClient(remoteConn)
 
-	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
-	require.NoError(t, err)
-	remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
-	require.NoError(t, err)
-	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
-	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
-	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
-	go remoteRun()
-	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis)
-	require.NoError(t, err)
-	t.Cleanup(func() { remoteConn.Close() })
-	bsClient := bspb.NewByteStreamClient(remoteConn)
-	casClient := repb.NewContentAddressableStorageClient(remoteConn)
+			proxyEnv.SetByteStreamClient(bsClient)
+			proxyEnv.SetContentAddressableStorageClient(casClient)
+			proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+			require.NoError(t, err)
+			proxyEnv.SetLocalByteStreamServer(proxyBSS)
+			proxyServer, err := New(proxyEnv)
+			require.NoError(t, err)
+			proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
+			bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
+			go proxyRun()
+			proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
+			require.NoError(t, err)
+			t.Cleanup(func() { proxyConn.Close() })
+			proxy := bspb.NewByteStreamClient(proxyConn)
 
-	proxyEnv.SetByteStreamClient(bsClient)
-	proxyEnv.SetContentAddressableStorageClient(casClient)
-	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
-	require.NoError(t, err)
-	proxyEnv.SetLocalByteStreamServer(proxyBSS)
-	proxyServer, err := New(proxyEnv)
-	require.NoError(t, err)
-	proxyGRPC, proxyRun, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
-	bspb.RegisterByteStreamServer(proxyGRPC, proxyServer)
-	go proxyRun()
-	proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyLis)
-	require.NoError(t, err)
-	t.Cleanup(func() { proxyConn.Close() })
-	proxy := bspb.NewByteStreamClient(proxyConn)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+			require.NoError(t, err)
 
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
-	require.NoError(t, err)
+			_, originalData := testdigest.RandomCASResourceBuf(t, 10*1024*1024)
+			blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
+			require.NoError(t, err)
 
-	_, originalData := testdigest.RandomCASResourceBuf(t, 10*1024*1024)
-	blobDigest, err := digest.Compute(bytes.NewReader(originalData), repb.DigestFunction_BLAKE3)
-	require.NoError(t, err)
+			compressedData := compression.CompressZstd(nil, originalData)
 
-	compressedData := compression.CompressZstd(nil, originalData)
+			blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+			blobRN.SetCompressor(repb.Compressor_ZSTD)
 
-	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
+			// Capture metric values before the write
+			writeLabels := prometheus.Labels{
+				metrics.StatusLabel:     "OK",
+				metrics.CompressionType: "ZSTD",
+			}
+			writeLabelsWithGroup := prometheus.Labels{
+				metrics.StatusLabel:     "OK",
+				metrics.CompressionType: "ZSTD",
+				metrics.GroupID:         interfaces.AuthAnonymousUser,
+			}
+			writeBlobBytesBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteBlobBytes.With(writeLabels))
+			writeChunksTotalBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksTotal.With(writeLabelsWithGroup))
+			writeChunksDedupedBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksDeduped.With(writeLabelsWithGroup))
+			writeChunkBytesBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunkBytes.With(writeLabels))
+			writeDedupedBytesBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteDedupedChunkBytes.With(writeLabels))
 
-	// Capture metric values before the write
-	writeLabels := prometheus.Labels{
-		metrics.StatusLabel:     "OK",
-		metrics.CompressionType: "ZSTD",
-	}
-	writeLabelsWithGroup := prometheus.Labels{
-		metrics.StatusLabel:     "OK",
-		metrics.CompressionType: "ZSTD",
-		metrics.GroupID:         interfaces.AuthAnonymousUser,
-	}
-	writeBlobBytesBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteBlobBytes.With(writeLabels))
-	writeChunksTotalBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksTotal.With(writeLabelsWithGroup))
-	writeChunksDedupedBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksDeduped.With(writeLabelsWithGroup))
-	writeChunkBytesBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunkBytes.With(writeLabels))
-	writeDedupedBytesBefore := testutil.ToFloat64(metrics.ByteStreamChunkedWriteDedupedChunkBytes.With(writeLabels))
+			uploadStream, err := proxy.Write(ctx)
+			require.NoError(t, err)
+			uploadString := blobRN.NewUploadString()
+			remaining := compressedData
+			for len(remaining) > 0 {
+				chunkSize := min(1_000_000, len(remaining))
+				err = uploadStream.Send(&bspb.WriteRequest{
+					ResourceName: uploadString,
+					WriteOffset:  int64(len(compressedData) - len(remaining)),
+					Data:         remaining[:chunkSize],
+					FinishWrite:  chunkSize == len(remaining),
+				})
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err)
+				remaining = remaining[chunkSize:]
+			}
+			_, err = uploadStream.CloseAndRecv()
+			require.NoError(t, err)
 
-	uploadStream, err := proxy.Write(ctx)
-	require.NoError(t, err)
-	remaining := compressedData
-	for len(remaining) > 0 {
-		chunkSize := min(1_000_000, len(remaining))
-		err = uploadStream.Send(&bspb.WriteRequest{
-			ResourceName: blobRN.NewUploadString(),
-			WriteOffset:  int64(len(compressedData) - len(remaining)),
-			Data:         remaining[:chunkSize],
-			FinishWrite:  chunkSize == len(remaining),
+			writeBlobBytesAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteBlobBytes.With(writeLabels))
+			writeChunksTotalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksTotal.With(writeLabelsWithGroup))
+			writeChunksDedupedAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksDeduped.With(writeLabelsWithGroup))
+			writeChunkBytesAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunkBytes.With(writeLabels))
+			writeDedupedBytesAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteDedupedChunkBytes.With(writeLabels))
+
+			if tc.wantChunked {
+				require.Equal(t, float64(len(originalData)), writeBlobBytesAfter-writeBlobBytesBefore, "blob bytes = original uncompressed size")
+				require.Greater(t, writeChunksTotalAfter-writeChunksTotalBefore, float64(0), "should have produced multiple chunks")
+				require.Equal(t, float64(0), writeChunksDedupedAfter-writeChunksDedupedBefore, "first write: no chunks existed on remote yet")
+				require.Greater(t, writeChunkBytesAfter-writeChunkBytesBefore, float64(0), "chunk bytes = sum of all chunk sizes")
+				require.Equal(t, float64(0), writeDedupedBytesAfter-writeDedupedBytesBefore, "first write: no bytes deduped")
+			} else {
+				require.Equal(t, writeBlobBytesBefore, writeBlobBytesAfter)
+				require.Equal(t, writeChunksTotalBefore, writeChunksTotalAfter)
+				require.Equal(t, writeChunksDedupedBefore, writeChunksDedupedAfter)
+				require.Equal(t, writeChunkBytesBefore, writeChunkBytesAfter)
+				require.Equal(t, writeDedupedBytesBefore, writeDedupedBytesAfter)
+			}
+
+			downloadRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+			downloadRN.SetCompressor(repb.Compressor_ZSTD)
+			downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadRN.DownloadString()})
+			require.NoError(t, err)
+
+			var downloadedCompressedData []byte
+			for {
+				res, err := downloadStream.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err)
+				downloadedCompressedData = append(downloadedCompressedData, res.Data...)
+			}
+
+			decompressedData, err := compression.DecompressZstd(nil, downloadedCompressedData)
+			require.NoError(t, err)
+			require.Equal(t, originalData, decompressedData)
+
+			downloadRN.SetCompressor(repb.Compressor_IDENTITY)
+			downloadStream, err = proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadRN.DownloadString()})
+			require.NoError(t, err)
+
+			var reconstructedData []byte
+			for {
+				res, err := downloadStream.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err)
+				reconstructedData = append(reconstructedData, res.Data...)
+			}
+
+			require.Equal(t, originalData, reconstructedData)
 		})
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		remaining = remaining[chunkSize:]
 	}
-	_, err = uploadStream.CloseAndRecv()
-	require.NoError(t, err)
-
-	writeBlobBytesAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteBlobBytes.With(writeLabels))
-	writeChunksTotalAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksTotal.With(writeLabelsWithGroup))
-	writeChunksDedupedAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunksDeduped.With(writeLabelsWithGroup))
-	writeChunkBytesAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteChunkBytes.With(writeLabels))
-	writeDedupedBytesAfter := testutil.ToFloat64(metrics.ByteStreamChunkedWriteDedupedChunkBytes.With(writeLabels))
-
-	require.Equal(t, float64(len(originalData)), writeBlobBytesAfter-writeBlobBytesBefore, "blob bytes = original uncompressed size")
-	require.Greater(t, writeChunksTotalAfter-writeChunksTotalBefore, float64(0), "should have produced multiple chunks")
-	require.Equal(t, float64(0), writeChunksDedupedAfter-writeChunksDedupedBefore, "first write: no chunks existed on remote yet")
-	require.Greater(t, writeChunkBytesAfter-writeChunkBytesBefore, float64(0), "chunk bytes = sum of all chunk sizes")
-	require.Equal(t, float64(0), writeDedupedBytesAfter-writeDedupedBytesBefore, "first write: no bytes deduped")
-
-	downloadRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
-	downloadRN.SetCompressor(repb.Compressor_ZSTD)
-	downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadRN.DownloadString()})
-	require.NoError(t, err)
-
-	var downloadedCompressedData []byte
-	for {
-		res, err := downloadStream.Recv()
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		downloadedCompressedData = append(downloadedCompressedData, res.Data...)
-	}
-
-	decompressedData, err := compression.DecompressZstd(nil, downloadedCompressedData)
-	require.NoError(t, err)
-	require.Equal(t, originalData, decompressedData)
-
-	downloadRN.SetCompressor(repb.Compressor_IDENTITY)
-	downloadStream, err = proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadRN.DownloadString()})
-	require.NoError(t, err)
-
-	var reconstructedData []byte
-	for {
-		res, err := downloadStream.Recv()
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		reconstructedData = append(reconstructedData, res.Data...)
-	}
-
-	require.Equal(t, originalData, reconstructedData)
 }
 
 func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {

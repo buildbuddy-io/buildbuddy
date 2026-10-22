@@ -54,6 +54,7 @@ const (
 )
 
 var (
+	chunkingEnabled     = flag.Bool("cache_proxy.chunking_enabled", false, "If true, intercept and upload large blobs using content-defined chunks. Used as the default when the cache_proxy.intercept_and_chunk_large_writes experiment is not configured.")
 	disableCDC          = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
 	skipWriteValidation = flag.Bool("cache_proxy.skip_write_validation", false, "If true, skip local cache write validation and rely on remote validation for cache proxy dual writes.")
 )
@@ -1246,7 +1247,10 @@ func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	if cdc.IsChunked(ctx) {
 		return false
 	}
-	return s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false)
+	if s.efp != nil {
+		return s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", *chunkingEnabled)
+	}
+	return *chunkingEnabled
 }
 
 type writeChunkedResult struct {
