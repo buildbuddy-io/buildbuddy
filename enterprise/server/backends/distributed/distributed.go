@@ -1847,21 +1847,22 @@ func (mc *multiWriteCloser) Write(data []byte) (int, error) {
 
 func (mc *multiWriteCloser) Commit() error {
 	isolationStringer := distributed_client.ResourceIsolationString(mc.r)
-	var err error
+	var lastErr error
 	for peer, wc := range mc.peerClosers {
-		if err = wc.Commit(); err != nil {
-			break
+		if err := wc.Commit(); err != nil {
+			lastErr = err
+		} else {
+			mc.log.CtxDebugf(mc.ctx, "Successfully wrote %s to %q", isolationStringer, peer)
 		}
-		mc.log.CtxDebugf(mc.ctx, "Successfully wrote %s to %q", isolationStringer, peer)
 	}
-	if err == nil && *log.LogLevel == "debug" {
+	if lastErr == nil && *log.LogLevel == "debug" {
 		peers := make([]string, 0, len(mc.peerClosers))
 		for peer := range mc.peerClosers {
 			peers = append(peers, peer)
 		}
 		mc.log.CtxDebugf(mc.ctx, "Writer(%q) successfully wrote to peers %s", isolationStringer, peers)
 	}
-	return err
+	return lastErr
 }
 
 func (mc *multiWriteCloser) Close() error {
