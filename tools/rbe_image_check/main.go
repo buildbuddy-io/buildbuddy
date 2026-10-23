@@ -1,20 +1,18 @@
 // rbe_image_check smoke-checks the BuildBuddy RBE image it runs in
-// (gcr.io/flame-public/rbe-ubuntu{20,22,24}-04). It checks that the tools the
-// image's Dockerfile installs are present (and that the ones downloaded outside
-// apt run), the glibc version, the en_US.UTF-8 locale, the buildbuddy user and
-// iptables setup, that `git ls-remote` against GitHub works, and that the CA
-// bundle doesn't trust any distrusted root.
+// (gcr.io/flame-public/rbe-ubuntu{20,22,24}-04): installed tools, glibc,
+// locale, the buildbuddy user and iptables setup, git over https, and that the
+// CA bundle doesn't trust any distrusted root.
 //
-// It's meant to run inside a candidate image, e.g. as a BuildBuddy RBE action
-// whose container-image is that image. It prints one line per check and exits
-// 1 if any check failed, or 2 if the image isn't a supported Ubuntu release.
+// It runs inside a candidate image, e.g. as a BuildBuddy RBE action whose
+// container-image is that image. It exits 1 if any check failed, or 2 if the
+// image isn't a supported Ubuntu release.
 package main
 
 import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/asn1"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -35,11 +33,11 @@ const (
 )
 
 // RBE actions don't inherit the image's ENV PATH, and Go doesn't default PATH
-// when it's unset, so the PATH is set explicitly for lookups and children.
-var basePath = []string{"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"}
+// when it's unset, so it's set explicitly. 20.04 installs Go in /usr/local/go.
+const path = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin"
 
 // distrustedRoots are SHA-256 fingerprints of the DER encoding of roots the
-// image must not trust. To distrust another root, add a line.
+// image must not trust.
 //
 // In October 2026 eMudhra intermediate CAs were compromised
 // (buildbuddy-io/buildbuddy-internal#8615); the intermediates chain to these
@@ -51,26 +49,37 @@ var distrustedRoots = map[string]string{
 }
 
 type family struct {
-	glibc     string
-	tools     []string
-	extraPath []string
-	// runs are run once each, to catch binaries built for the wrong arch.
+	glibc string
+	// tools must be on the PATH, in addition to commonTools.
+	tools []string
+	// runs must succeed, in addition to commonRuns. Running a binary also
+	// catches one built for the wrong arch.
 	runs [][]string
 	// setup is whether the image sets up the buildbuddy user and
 	// iptables-legacy.
 	setup bool
 }
 
-// commonTools are installed by every family's Dockerfile
+// commonTools and commonRuns are installed by every family's Dockerfile
 // (dockerfiles/rbe-ubuntu*-04).
-var commonTools = []string{"gcc", "g++", "make", "python3", "git", "curl", "wget", "ed", "file", "less", "nc", "unzip", "zip", "ssh", "docker"}
+var commonTools = []string{"wget", "ed", "file", "less", "nc", "unzip", "zip", "ssh"}
+
+var commonRuns = [][]string{
+	{"gcc", "--version"},
+	{"g++", "--version"},
+	{"make", "--version"},
+	{"python3", "--version"},
+	{"git", "--version"},
+	{"curl", "--version"},
+	{"docker", "--version"},
+}
 
 var families = map[string]family{
 	"20.04": {
-		glibc:     "2.31",
-		tools:     append(slices.Clone(commonTools), "python2", "python", "java", "javac", "clang", "go"),
-		extraPath: []string{"/usr/local/go/bin"},
+		glibc: "2.31",
+		tools: []string{"python2"},
 		runs: [][]string{
+			{"python", "--version"},
 			{"go", "version"},
 			{"clang", "--version"},
 			{"java", "-version"},
@@ -79,47 +88,32 @@ var families = map[string]family{
 	},
 	"22.04": {
 		glibc: "2.35",
-		tools: append(slices.Clone(commonTools), "python", "sudo"),
+		tools: []string{"sudo"},
+		runs:  [][]string{{"python", "--version"}},
 		setup: true,
 	},
 	"24.04": {
 		glibc: "2.39",
-		tools: append(slices.Clone(commonTools), "python", "sudo", "cmake"),
+		tools: []string{"sudo"},
+		runs:  [][]string{{"python", "--version"}, {"cmake", "--version"}},
 		setup: true,
 	},
 }
 
-// parseOSRelease returns the VERSION_ID from /etc/os-release contents, and
-// fails if ID isn't ubuntu.
-func parseOSRelease(data []byte) (string, error) {
+// lookupFamily returns the Ubuntu release and family described by
+// /etc/os-release contents.
+func lookupFamily(osRelease []byte) (string, family, error) {
 	vals := map[string]string{}
-	for line := range strings.SplitSeq(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
+	for line := range strings.SplitSeq(string(osRelease), "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if ok && !strings.HasPrefix(k, "#") {
+			vals[k] = strings.Trim(v, `"'`)
 		}
-		k, v, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		vals[k] = strings.Trim(v, `"'`)
 	}
 	if vals["ID"] != "ubuntu" {
-		return "", fmt.Errorf("ID is %q, not ubuntu", vals["ID"])
+		return "", family{}, fmt.Errorf("ID is %q, not ubuntu", vals["ID"])
 	}
-	if vals["VERSION_ID"] == "" {
-		return "", fmt.Errorf("no VERSION_ID")
-	}
-	return vals["VERSION_ID"], nil
-}
-
-// lookupFamily returns the release and family described by /etc/os-release
-// contents.
-func lookupFamily(osRelease []byte) (string, family, error) {
-	version, err := parseOSRelease(osRelease)
-	if err != nil {
-		return "", family{}, err
-	}
+	version := vals["VERSION_ID"]
 	f, ok := families[version]
 	if !ok {
 		return "", family{}, fmt.Errorf("unsupported Ubuntu release %q", version)
@@ -127,87 +121,62 @@ func lookupFamily(osRelease []byte) (string, family, error) {
 	return version, f, nil
 }
 
-// parseGlibcVersion parses `getconf GNU_LIBC_VERSION` output ("glibc 2.35").
-func parseGlibcVersion(out string) (string, error) {
-	fields := strings.Fields(out)
-	if len(fields) != 2 || fields[0] != "glibc" {
-		return "", fmt.Errorf("unexpected getconf output %q", out)
+// fingerprint returns the SHA-256 of der in the form distrustedRoots uses.
+func fingerprint(der []byte) string {
+	sum := sha256.Sum256(der)
+	parts := make([]string, len(sum))
+	for i, b := range sum {
+		parts[i] = fmt.Sprintf("%02X", b)
 	}
-	return fields[1], nil
+	return strings.Join(parts, ":")
 }
 
-// hasLocale reports whether `locale -a` output lists want, ignoring case.
-func hasLocale(out, want string) bool {
-	for line := range strings.SplitSeq(out, "\n") {
-		if strings.EqualFold(strings.TrimSpace(line), want) {
-			return true
-		}
-	}
-	return false
-}
-
-// parseFingerprint parses a colon-separated hex SHA-256 fingerprint.
-func parseFingerprint(s string) ([32]byte, error) {
-	var fp [32]byte
-	b, err := hex.DecodeString(strings.ReplaceAll(s, ":", ""))
-	if err != nil {
-		return fp, fmt.Errorf("fingerprint %q: %w", s, err)
-	}
-	if len(b) != len(fp) {
-		return fp, fmt.Errorf("fingerprint %q has %d bytes, want %d", s, len(b), len(fp))
-	}
-	copy(fp[:], b)
-	return fp, nil
-}
-
-func parseDenylist(m map[string]string) (map[[32]byte]string, error) {
-	deny := make(map[[32]byte]string, len(m))
-	for s, name := range m {
-		fp, err := parseFingerprint(s)
-		if err != nil {
-			return nil, err
-		}
-		deny[fp] = name
-	}
-	return deny, nil
-}
-
-// checkBundle checks a PEM CA bundle: every block must be a CERTIFICATE, the
-// whole bundle must parse, it must hold at least min certificates, and none of
-// them may be in deny.
+// checkBundle checks a PEM CA bundle: it must be nothing but CERTIFICATE
+// blocks separated by whitespace, each holding one DER SEQUENCE, at least min
+// of them, and none in deny.
 //
 // Certificates are matched by the SHA-256 of their DER bytes. They're
 // deliberately not parsed with crypto/x509, which rejects some legitimate
 // roots (e.g. ones with negative serials), and not checked with x509 Verify,
 // which since Go 1.27.3 blocks the eMudhra intermediates itself and so would
 // pass a bundle that still trusts their roots.
-func checkBundle(data []byte, deny map[[32]byte]string, min int) error {
+func checkBundle(data []byte, deny map[string]string, min int) error {
+	begin := []byte("-----BEGIN")
 	n := 0
 	var found []string
-	rest := data
-	for {
-		block, r := pem.Decode(rest)
-		if block == nil {
-			break
+	rest := bytes.TrimLeft(data, " \t\r\n")
+	for len(rest) > 0 {
+		// pem.Decode silently skips anything that isn't a valid block,
+		// including a corrupt block, so each block must start right here and
+		// be the only one consumed.
+		if !bytes.HasPrefix(rest, begin) {
+			return fmt.Errorf("unparseable data after %d PEM blocks", n)
 		}
-		rest = r
+		block, r := pem.Decode(rest)
+		if block == nil || bytes.Count(rest[:len(rest)-len(r)], begin) != 1 {
+			return fmt.Errorf("PEM block %d doesn't parse", n+1)
+		}
+		rest = bytes.TrimLeft(r, " \t\r\n")
 		n++
 		// OpenSSL also loads TRUSTED CERTIFICATE blocks, so any other type
 		// could hide a root.
 		if block.Type != "CERTIFICATE" {
 			return fmt.Errorf("PEM block %d is %q, not CERTIFICATE", n, block.Type)
 		}
-		fp := sha256.Sum256(block.Bytes)
-		if name, ok := deny[fp]; ok {
-			found = append(found, fmt.Sprintf("%s (%X)", name, fp[:]))
+		if len(block.Headers) > 0 {
+			return fmt.Errorf("PEM block %d has headers", n)
 		}
-	}
-	if len(bytes.TrimSpace(rest)) > 0 {
-		return fmt.Errorf("unparseable data after PEM block %d", n)
-	}
-	// pem.Decode skips a malformed block and goes on to the next one.
-	if begins := bytes.Count(data, []byte("-----BEGIN")); begins != n {
-		return fmt.Errorf("%d of %d PEM blocks don't parse", begins-n, begins)
+		// A root with bytes appended would hash differently, but OpenSSL may
+		// still load it.
+		var raw asn1.RawValue
+		tail, err := asn1.Unmarshal(block.Bytes, &raw)
+		if err != nil || len(tail) > 0 || raw.Class != asn1.ClassUniversal || raw.Tag != asn1.TagSequence || !raw.IsCompound {
+			return fmt.Errorf("PEM block %d isn't a single DER SEQUENCE", n)
+		}
+		fp := fingerprint(block.Bytes)
+		if name, ok := deny[fp]; ok {
+			found = append(found, fmt.Sprintf("%s (%s)", name, fp))
+		}
 	}
 	if n < min {
 		return fmt.Errorf("only %d certificates (need at least %d)", n, min)
@@ -222,7 +191,10 @@ func checkBundle(data []byte, deny map[[32]byte]string, min int) error {
 func run(timeout time.Duration, name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, name, args...)
+	// Don't wait forever on a child that holds the output pipe open.
+	cmd.WaitDelay = 5 * time.Second
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), fmt.Errorf("%s: %w: %s", strings.Join(append([]string{name}, args...), " "), err, strings.TrimSpace(string(out)))
 	}
@@ -234,12 +206,8 @@ func checkGlibc(want string) error {
 	if err != nil {
 		return err
 	}
-	got, err := parseGlibcVersion(out)
-	if err != nil {
-		return err
-	}
-	if got != want {
-		return fmt.Errorf("glibc %s, want %s", got, want)
+	if got := strings.TrimSpace(out); got != "glibc "+want {
+		return fmt.Errorf("getconf GNU_LIBC_VERSION = %q, want glibc %s", got, want)
 	}
 	return nil
 }
@@ -249,7 +217,7 @@ func checkLocale() error {
 	if err != nil {
 		return err
 	}
-	if !hasLocale(out, "en_US.utf8") {
+	if !slices.Contains(strings.Fields(out), "en_US.utf8") {
 		return fmt.Errorf("en_US.utf8 not in `locale -a`")
 	}
 	return nil
@@ -280,34 +248,23 @@ func checkUserGroups() error {
 	return nil
 }
 
-func checkAlternative(link, want string) error {
-	got, err := os.Readlink(link)
+func checkLegacy(name string) error {
+	out, err := run(cmdTimeout, name, "--version")
 	if err != nil {
 		return err
 	}
-	if got != want {
-		return fmt.Errorf("%s -> %s, want %s", link, got, want)
-	}
-	fi, err := os.Stat(want)
-	if err != nil {
-		return err
-	}
-	if !fi.Mode().IsRegular() || fi.Mode().Perm()&0o111 == 0 {
-		return fmt.Errorf("%s is not an executable file", want)
+	if !strings.Contains(out, "(legacy)") {
+		return fmt.Errorf("%s --version = %q, want (legacy)", name, strings.TrimSpace(out))
 	}
 	return nil
 }
 
 func checkCARoots() error {
-	deny, err := parseDenylist(distrustedRoots)
-	if err != nil {
-		return err
-	}
 	data, err := os.ReadFile(bundlePath)
 	if err != nil {
 		return err
 	}
-	if err := checkBundle(data, deny, minBundleCerts); err != nil {
+	if err := checkBundle(data, distrustedRoots, minBundleCerts); err != nil {
 		return fmt.Errorf("%s: %w", bundlePath, err)
 	}
 	return nil
@@ -326,21 +283,21 @@ func checkGit() error {
 
 func main() {
 	osRelease, err := os.ReadFile("/etc/os-release")
-	if err == nil {
-		var version string
-		var f family
-		version, f, err = lookupFamily(osRelease)
-		if err == nil {
-			os.Exit(checkImage(version, f))
-		}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
 	}
-	fmt.Fprintf(os.Stderr, "unsupported OS: %s\n", err)
-	os.Exit(2)
+	version, f, err := lookupFamily(osRelease)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "unsupported OS: %s\n", err)
+		os.Exit(2)
+	}
+	os.Exit(checkImage(version, f))
 }
 
 // checkImage runs every check and returns the exit code.
 func checkImage(version string, f family) int {
-	os.Setenv("PATH", strings.Join(append(slices.Clone(basePath), f.extraPath...), ":"))
+	os.Setenv("PATH", path)
 	fmt.Printf("Checking Ubuntu %s (%s)\n", version, runtime.GOARCH)
 
 	failed := false
@@ -352,13 +309,13 @@ func checkImage(version string, f family) int {
 		}
 		fmt.Printf("ok      %s\n", name)
 	}
-	for _, t := range f.tools {
+	for _, t := range slices.Concat(commonTools, f.tools) {
 		check(t, func() error {
 			_, err := exec.LookPath(t)
 			return err
 		})
 	}
-	for _, r := range f.runs {
+	for _, r := range slices.Concat(commonRuns, f.runs) {
 		check(strings.Join(r, " "), func() error {
 			_, err := run(cmdTimeout, r[0], r[1:]...)
 			return err
@@ -368,12 +325,8 @@ func checkImage(version string, f family) int {
 	check("en_US.UTF-8 locale", checkLocale)
 	if f.setup {
 		check("buildbuddy in sudo, docker", checkUserGroups)
-		check("iptables-legacy", func() error {
-			return checkAlternative("/etc/alternatives/iptables", "/usr/sbin/iptables-legacy")
-		})
-		check("ip6tables-legacy", func() error {
-			return checkAlternative("/etc/alternatives/ip6tables", "/usr/sbin/ip6tables-legacy")
-		})
+		check("iptables legacy", func() error { return checkLegacy("iptables") })
+		check("ip6tables legacy", func() error { return checkLegacy("ip6tables") })
 	}
 	check("no distrusted CA roots", checkCARoots)
 	check("git ls-remote", checkGit)

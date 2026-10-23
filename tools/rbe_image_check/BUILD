@@ -19,4 +19,5 @@ go_test(
     name = "rbe_image_check_test",
     srcs = ["main_test.go"],
     embed = [":rbe_image_check_lib"],
+    deps = ["@com_github_stretchr_testify//require"],
 )
