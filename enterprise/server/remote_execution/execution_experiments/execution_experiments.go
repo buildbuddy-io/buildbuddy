@@ -1,9 +1,19 @@
-// Package execution_experiments declares experiments that are evaluated by the
-// scheduler when an executor leases a task, and read by the executor.
+// Package execution_experiments declares experiments that executors read for
+// each task. The values come from one of two places:
+//   - If the executor sets executor.scheduler_controlled_experiments_enabled,
+//     the scheduler evaluates each experiment with flagd when the executor
+//     leases a task, and sends the values with the task. These values,
+//     including the scheduler's defaults when no experiment applies, take
+//     priority over the executor's config file and command line. This flag is
+//     internal and experimental, and only executors that BuildBuddy manages
+//     should set it.
+//   - Otherwise, the executor uses the values from its config file or command
+//     line. All other executors, including on-prem and self-hosted ones,
+//     should use this mode.
 //
-// In addition to the "common" experiment targeting attributes such as group ID,
-// invocation ID, action mnemonic, etc., all of the experiments in this package
-// have additional targeting attributes available:
+// When the scheduler controls experiments, it provides additional targeting
+// attributes beyond the "common" ones such as group ID, invocation ID, action
+// mnemonic, etc.:
 //   - executor_hostname (string): the hostname of the leasing executor.
 //   - self_hosted (bool): true if the executor is self-hosted rather than
 //     managed by BuildBuddy. This is always false if app.client_identity.key
@@ -16,8 +26,8 @@
 //     isolation type, so it is only reliable for targeting tasks that
 //     explicitly request an isolation type.
 //
-// For each execution, the evaluated flag variant is available in the Executions
-// table in ClickHouse, which stores a map of experiment name to experiment
+// When the scheduler controls experiments, the Executions table in ClickHouse
+// records each execution's experiment variants, as a map of experiment name to
 // variant. If no variant is selected (e.g. if the flag is not configured in
 // flagd), no map entry is recorded.
 package execution_experiments
