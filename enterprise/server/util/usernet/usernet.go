@@ -28,6 +28,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -59,6 +61,10 @@ const (
 	ContainerIP          = "10.0.2.100"
 	containerGatewayCIDR = "10.0.2.2/24"
 	containerDevice      = "eth0"
+
+	// ContainerIP6 and gateway6CIDR also match slirp4netns.
+	ContainerIP6 = "fd00::100"
+	gateway6CIDR = "fd00::2/64"
 
 	// stackDevice is the end of a container's veth pair that the gvisor netstack uses.
 	stackDevice = "usernet0"
@@ -96,11 +102,19 @@ var gatewayLinkAddress = tcpip.LinkAddress("\x02\x00\x00\x00\x00\x01")
 // --executor.task_allowed_private_ips.
 var blockedPrefixes = func() []netip.Prefix {
 	var prefixes []netip.Prefix
-	for _, r := range append(slices.Clone(networking.PrivateIPRanges), "0.0.0.0/8", "127.0.0.0/8", "224.0.0.0/4", "255.255.255.255/32") {
+	for _, r := range append(slices.Clone(networking.PrivateIPRanges), "0.0.0.0/8", "127.0.0.0/8", "224.0.0.0/4", "255.255.255.255/32",
+		// IPv6 ranges that embed IPv4 addresses: IPv4-compatible, NAT64, Teredo and 6to4.
+		"::/96", "64:ff9b::/96", "64:ff9b:1::/48", "2001::/32", "2002::/16",
+		"fc00::/7", "fe80::/10", "ff00::/8") {
 		prefixes = append(prefixes, netip.MustParsePrefix(r))
 	}
 	return prefixes
 }()
+
+var (
+	gateway6        = netip.MustParsePrefix(gateway6CIDR)
+	gateway6Address = tcpip.AddrFrom16(gateway6.Addr().As16())
+)
 
 // Network is a net namespace whose traffic is served by a userspace stack.
 type Network struct {
@@ -113,6 +127,8 @@ type Network struct {
 	gateway         tcpip.Address
 	externalNetwork bool
 	allowedPrefixes []netip.Prefix
+	// blockedPrefixes includes the host's own addresses.
+	blockedPrefixes []netip.Prefix
 	pings           chan struct{}
 	udpIdleTimeout  time.Duration
 }
@@ -160,7 +176,19 @@ func NewContainerNetwork(ctx context.Context) (*Network, error) {
 		if err := netlink.AddrAdd(eth0, addr); err != nil {
 			return err
 		}
-		return netlink.RouteAdd(&netlink.Route{LinkIndex: eth0.Attrs().Index, Gw: gateway.Addr().AsSlice()})
+		if err := netlink.RouteAdd(&netlink.Route{LinkIndex: eth0.Attrs().Index, Gw: gateway.Addr().AsSlice()}); err != nil {
+			return err
+		}
+		// Skip IPv6 if the host was booted with ipv6.disable=1 or the namespace
+		// disables it.
+		if b, err := os.ReadFile("/proc/sys/net/ipv6/conf/" + containerDevice + "/disable_ipv6"); err != nil || strings.TrimSpace(string(b)) != "0" {
+			return nil
+		}
+		addr6 := &netlink.Addr{IPNet: &net.IPNet{IP: net.ParseIP(ContainerIP6), Mask: net.CIDRMask(gateway6.Bits(), 128)}, Flags: unix.IFA_F_NODAD}
+		if err := netlink.AddrAdd(eth0, addr6); err != nil {
+			return err
+		}
+		return netlink.RouteAdd(&netlink.Route{LinkIndex: eth0.Attrs().Index, Gw: gateway6.Addr().AsSlice()})
 	})
 }
 
@@ -175,11 +203,24 @@ func newNetwork(ctx context.Context, gatewayCIDR string, enableExternalNetworkin
 	if err != nil {
 		return nil, err
 	}
+	hostAddrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil, status.UnavailableErrorf("list host addresses: %s", err)
+	}
+	blocked := slices.Clone(blockedPrefixes)
+	for _, a := range hostAddrs {
+		if ipNet, ok := a.(*net.IPNet); ok {
+			if ip, ok := netip.AddrFromSlice(ipNet.IP); ok {
+				blocked = append(blocked, netip.PrefixFrom(ip.Unmap(), ip.Unmap().BitLen()))
+			}
+		}
+	}
 	n := &Network{
 		fd:              -1,
 		gateway:         tcpip.AddrFrom4(gateway.Addr().As4()),
 		externalNetwork: enableExternalNetworking,
 		allowedPrefixes: allowed,
+		blockedPrefixes: blocked,
 		pings:           make(chan struct{}, maxPingsInFlight),
 		udpIdleTimeout:  udpIdleTimeout,
 	}
@@ -217,8 +258,8 @@ func newNetwork(ctx context.Context, gatewayCIDR string, enableExternalNetworkin
 // https://github.com/containers/gvisor-tap-vsock/blob/ad36eb20acfae43f5df9f0807201f5059073b881/pkg/virtualnetwork/virtualnetwork.go#L122
 func (n *Network) startStack(prefixLen int) error {
 	n.stack = stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, gicmp.NewProtocol4},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol, arp.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, gicmp.NewProtocol4, gicmp.NewProtocol6},
 	})
 	sack := tcpip.TCPSACKEnabled(true)
 	moderateReceiveBuffer := tcpip.TCPModerateReceiveBufferOption(true)
@@ -255,9 +296,8 @@ func (n *Network) startStack(prefixLen int) error {
 		}
 		return udpForwarder.HandlePacket(id, pkt)
 	})
-	n.stack.SetTransportProtocolHandler(gicmp.ProtocolNumber4, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-		return n.forwardEcho(id, pkt)
-	})
+	n.stack.SetTransportProtocolHandler(gicmp.ProtocolNumber4, n.forwardEcho)
+	n.stack.SetTransportProtocolHandler(gicmp.ProtocolNumber6, n.forwardEcho)
 
 	ep, err := fdbased.New(&fdbased.Options{
 		FDs:                []int{n.fd},
@@ -277,17 +317,18 @@ func (n *Network) startStack(prefixLen int) error {
 	if err := n.stack.CreateNIC(nicID, ep); err != nil {
 		return status.InternalErrorf("create NIC: %s", err)
 	}
-	addr := tcpip.ProtocolAddress{
-		Protocol:          ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{Address: n.gateway, PrefixLen: prefixLen},
-	}
-	if err := n.stack.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
-		return status.InternalErrorf("add gateway address: %s", err)
+	for _, addr := range []tcpip.ProtocolAddress{
+		{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: tcpip.AddressWithPrefix{Address: n.gateway, PrefixLen: prefixLen}},
+		{Protocol: ipv6.ProtocolNumber, AddressWithPrefix: tcpip.AddressWithPrefix{Address: gateway6Address, PrefixLen: gateway6.Bits()}},
+	} {
+		if err := n.stack.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+			return status.InternalErrorf("add gateway address: %s", err)
+		}
 	}
 	// Accept packets for any destination, and reply as that destination.
 	n.stack.SetPromiscuousMode(nicID, true)
 	n.stack.SetSpoofing(nicID, true)
-	n.stack.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicID}})
+	n.stack.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicID}, {Destination: header.IPv6EmptySubnet, NIC: nicID}})
 	return nil
 }
 
@@ -295,13 +336,15 @@ func (n *Network) isAllowed(addr tcpip.Address) bool {
 	if !n.externalNetwork {
 		return false
 	}
-	ip := netip.AddrFrom4(addr.As4())
+	ip, _ := netip.AddrFromSlice(addr.AsSlice())
+	// IPv4-mapped addresses are checked as IPv4.
+	ip = ip.Unmap()
 	for _, p := range n.allowedPrefixes {
 		if p.Contains(ip) {
 			return true
 		}
 	}
-	for _, p := range blockedPrefixes {
+	for _, p := range n.blockedPrefixes {
 		if p.Contains(ip) {
 			return false
 		}
@@ -399,13 +442,21 @@ func relayUDP(ctx context.Context, guest *gonet.UDPConn, dst string, idleTimeout
 
 // forwardEcho sends echo requests from the host with ping sockets and relays
 // the replies.
+//
+// ICMPv4 and ICMPv6 echo messages share a layout, so both are accessed with
+// header.ICMPv4.
 func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
+	v6 := id.LocalAddress.Len() == header.IPv6AddressSize
+	echo, echoReply, network, listenAddr, gateway := uint8(header.ICMPv4Echo), uint8(header.ICMPv4EchoReply), "udp4", "0.0.0.0", n.gateway
+	if v6 {
+		echo, echoReply, network, listenAddr, gateway = uint8(header.ICMPv6EchoRequest), uint8(header.ICMPv6EchoReply), "udp6", "::", gateway6Address
+	}
 	h := header.ICMPv4(pkt.TransportHeader().Slice())
-	if len(h) < header.ICMPv4MinimumSize || h.Type() != header.ICMPv4Echo {
+	if len(h) < header.ICMPv4MinimumSize || uint8(h.Type()) != echo {
 		return false
 	}
 	// Leave echo requests to the gateway unhandled so the stack answers them.
-	if id.LocalAddress == n.gateway {
+	if id.LocalAddress == gateway {
 		return false
 	}
 	if !n.isAllowed(id.LocalAddress) {
@@ -420,13 +471,13 @@ func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuf
 	ident, seq, data := h.Ident(), h.Sequence(), pkt.Data().AsRange().ToSlice()
 	go func() {
 		defer func() { <-n.pings }()
-		conn, err := icmp.ListenPacket("udp4", "0.0.0.0")
+		conn, err := icmp.ListenPacket(network, listenAddr)
 		if err != nil {
 			return
 		}
 		defer conn.Close()
 		// The kernel replaces the ident, and delivers only this socket's replies.
-		if _, err := conn.WriteTo(icmpEcho(header.ICMPv4Echo, 0, seq, data), &net.UDPAddr{IP: id.LocalAddress.AsSlice()}); err != nil {
+		if _, err := conn.WriteTo(icmpEcho(echo, 0, seq, data), &net.UDPAddr{IP: id.LocalAddress.AsSlice()}); err != nil {
 			return
 		}
 		conn.SetReadDeadline(time.Now().Add(pingTimeout))
@@ -437,8 +488,8 @@ func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuf
 				return
 			}
 			reply := header.ICMPv4(buf[:size])
-			if size >= header.ICMPv4MinimumSize && reply.Type() == header.ICMPv4EchoReply && reply.Sequence() == seq {
-				n.writeICMP(id.LocalAddress, id.RemoteAddress, icmpEcho(header.ICMPv4EchoReply, ident, seq, reply.Payload()))
+			if size >= header.ICMPv4MinimumSize && uint8(reply.Type()) == echoReply && reply.Sequence() == seq {
+				n.writeICMP(id.LocalAddress, id.RemoteAddress, icmpEcho(echoReply, ident, seq, reply.Payload()))
 				return
 			}
 		}
@@ -449,20 +500,35 @@ func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuf
 // reject answers a packet to a blocked destination with ICMP port
 // unreachable, like an iptables REJECT rule.
 func (n *Network) reject(pkt *stack.PacketBuffer) {
-	ip := header.IPv4(pkt.NetworkHeader().Slice())
-	original := append(slices.Clone(pkt.NetworkHeader().Slice()), pkt.TransportHeader().Slice()...)
-	original = original[:min(len(original), int(ip.HeaderLength())+8)]
+	ip := pkt.NetworkHeader().Slice()
+	original := append(slices.Clone(ip), pkt.TransportHeader().Slice()...)
+	original = original[:min(len(original), len(ip)+8)]
+	// ICMPv4 and ICMPv6 destination unreachable messages share a layout.
 	msg := make([]byte, header.ICMPv4MinimumSize+len(original))
 	h := header.ICMPv4(msg)
 	h.SetType(header.ICMPv4DstUnreachable)
 	h.SetCode(header.ICMPv4PortUnreachable)
+	gateway := n.gateway
+	if pkt.NetworkProtocolNumber == ipv6.ProtocolNumber {
+		h.SetType(header.ICMPv4Type(header.ICMPv6DstUnreachable))
+		h.SetCode(header.ICMPv4Code(header.ICMPv6PortUnreachable))
+		gateway = gateway6Address
+	}
 	copy(h.Payload(), original)
-	h.SetChecksum(^checksum.Checksum(msg, 0))
-	n.writeICMP(n.gateway, ip.SourceAddress(), msg)
+	n.writeICMP(gateway, pkt.Network().SourceAddress(), msg)
 }
 
+// writeICMP sets msg's checksum and sends it to the guest.
 func (n *Network) writeICMP(from, to tcpip.Address, msg []byte) {
-	r, err := n.stack.FindRoute(nicID, from, to, ipv4.ProtocolNumber, false /*=multicastLoop*/)
+	netProto, proto, xsum := ipv4.ProtocolNumber, header.ICMPv4ProtocolNumber, uint16(0)
+	if to.Len() == header.IPv6AddressSize {
+		netProto, proto = ipv6.ProtocolNumber, header.ICMPv6ProtocolNumber
+		xsum = header.PseudoHeaderChecksum(proto, from, to, uint16(len(msg)))
+	}
+	h := header.ICMPv4(msg)
+	h.SetChecksum(0)
+	h.SetChecksum(^checksum.Checksum(msg, xsum))
+	r, err := n.stack.FindRoute(nicID, from, to, netProto, false /*=multicastLoop*/)
 	if err != nil {
 		return
 	}
@@ -472,8 +538,8 @@ func (n *Network) writeICMP(from, to tcpip.Address, msg []byte) {
 		Payload:            buffer.MakeWithData(msg),
 	})
 	defer pkt.DecRef()
-	pkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
-	r.WritePacket(stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: 64}, pkt)
+	pkt.TransportProtocolNumber = proto
+	r.WritePacket(stack.NetworkHeaderParams{Protocol: proto, TTL: 64}, pkt)
 }
 
 // NamespacePath returns the path of the net namespace to run in.
@@ -578,10 +644,10 @@ func copyBuffered(dst io.Writer, src io.Reader) {
 	io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{src}, *buf)
 }
 
-func icmpEcho(typ header.ICMPv4Type, ident, seq uint16, data []byte) []byte {
+func icmpEcho[T ~uint8](typ T, ident, seq uint16, data []byte) []byte {
 	msg := make([]byte, header.ICMPv4MinimumSize+len(data))
 	h := header.ICMPv4(msg)
-	h.SetType(typ)
+	h.SetType(header.ICMPv4Type(typ))
 	h.SetIdent(ident)
 	h.SetSequence(seq)
 	copy(h.Payload(), data)
