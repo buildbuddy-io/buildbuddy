@@ -1459,17 +1459,20 @@ func TestReadChecksPreconditions(t *testing.T) {
 }
 
 func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
+	testReadChunkedFastPath(t, true)
+}
+
+func TestReadChunkedFastPathDisabledCallsSplitBlob(t *testing.T) {
+	testReadChunkedFastPath(t, false)
+}
+
+// testReadChunkedFastPath reads a chunked blob through the proxy twice. The
+// first read always calls SplitBlob and populates the proxy-local manifest and
+// chunks; whether the second read calls SplitBlob again depends on fastPath.
+func testReadChunkedFastPath(t *testing.T, fastPath bool) {
 	// Setup environment.
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-		"cache_proxy.cdc_read_fast_path": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -1488,6 +1491,7 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 	require.NoError(t, err)
 	remoteEnv.SetExperimentFlagProvider(fp)
 	proxyEnv.SetExperimentFlagProvider(fp)
+	flags.Set(t, "cache_proxy.cdc_read_fast_path", fastPath)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
@@ -1599,25 +1603,22 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 		require.NoError(t, waitContains(ctx, proxyEnv, chunkRN.ToProto()))
 	}
 
-	// Do a second read and check that it was served through the fast path.
+	// The second read is served from the local manifest and chunks when the
+	// fast path is on, and calls SplitBlob again when it is off.
+	wantSplitBlobCalls, wantFastPathAttempts, wantManifestStores := int32(1), float64(1), float64(1)
+	if !fastPath {
+		wantSplitBlobCalls, wantFastPathAttempts, wantManifestStores = 2, 0, 2
+	}
 	require.Equal(t, originalData, readBlob())
-	require.Equal(t, int32(1), splitBlobCalls.Load(), "second read should use the proxy-local manifest and chunks")
-	require.Equal(t, float64(1), testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathManifestMissLabels))-fastPathManifestMissBefore)
-	require.Equal(t, float64(1), testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathHitLabels))-fastPathHitBefore)
-	require.Equal(t, float64(1), testutil.ToFloat64(metrics.ByteStreamChunkedReadLocalManifestStoreAttempts.With(storeOKLabels))-storeOKBefore)
+	require.Equal(t, wantSplitBlobCalls, splitBlobCalls.Load())
+	require.Equal(t, wantFastPathAttempts, testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathManifestMissLabels))-fastPathManifestMissBefore)
+	require.Equal(t, wantFastPathAttempts, testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathHitLabels))-fastPathHitBefore)
+	require.Equal(t, wantManifestStores, testutil.ToFloat64(metrics.ByteStreamChunkedReadLocalManifestStoreAttempts.With(storeOKLabels))-storeOKBefore)
 }
 
 func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-		"cache_proxy.cdc_read_fast_path": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
 			Variants: map[string]any{
@@ -1642,6 +1643,8 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 	require.NoError(t, err)
 	remoteEnv.SetExperimentFlagProvider(fp)
 	proxyEnv.SetExperimentFlagProvider(fp)
+	// Encrypted reads must bypass the fast path even when it is enabled.
+	flags.Set(t, "cache_proxy.cdc_read_fast_path", true)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
@@ -1879,14 +1882,6 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 				"false": false,
 			},
 		},
-		"cache_proxy.cdc_read_fast_path": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
@@ -1901,6 +1896,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	remoteEnv.SetExperimentFlagProvider(fp)
 	uploadProxyEnv.SetExperimentFlagProvider(fp)
 	proxyEnv.SetExperimentFlagProvider(fp)
+	flags.Set(t, "cache_proxy.cdc_read_fast_path", true)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
