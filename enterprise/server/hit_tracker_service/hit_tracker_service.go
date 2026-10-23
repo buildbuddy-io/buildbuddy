@@ -33,6 +33,7 @@ func (h HitTrackerService) Track(ctx context.Context, req *hitpb.TrackRequest) (
 		var hitTracker interfaces.HitTracker
 		if hit.GetResource().GetCacheType() == rspb.CacheType_AC {
 			hitTracker = h.hitTrackerFactory.NewRemoteACHitTracker(ctx, hit.GetRequestMetadata(), req.GetServer())
+			hitTracker.SetExecutedActionMetadata(hit.GetExecutedActionMetadata())
 		} else if hit.GetResource().GetCacheType() == rspb.CacheType_CAS {
 			hitTracker = h.hitTrackerFactory.NewRemoteCASHitTracker(ctx, hit.GetRequestMetadata(), req.GetServer())
 		} else {
