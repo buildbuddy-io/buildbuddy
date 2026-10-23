@@ -298,6 +298,94 @@ func TestExport_ReportsUsageWhenCustomerSetupFails(t *testing.T) {
 	requireState(t, env, from.Add(metronome.WindowSize))
 }
 
+func TestExport_OnlyCreatesCustomersForSelfServeGroups(t *testing.T) {
+	flags.Set(t, "billing.metronome.package_alias", "self-serve-free")
+	env := setupClickHouseEnv(t)
+	flags.Set(t, "group_ids", []string{"GR4"})
+	ctx := t.Context()
+	from := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	labels := map[sku.LabelName]sku.LabelValue{sku.Client: sku.ClientBazel}
+	seedState(t, env, from)
+	require.NoError(t, env.GetOLAPDBHandle().FlushUsages(ctx, []*schema.RawUsage{
+		rawUsage("GR1", from, sku.BuildEventsBESCount, labels, 2),
+		rawUsage("GR4", from, sku.BuildEventsBESCount, labels, 3),
+	}))
+
+	client := &fakeMetronomeClient{}
+	require.NoError(t, export(ctx, env, client, from.Add(metronome.WindowSize).Add(minAge)))
+
+	require.Len(t, client.reported, 1)
+	require.Len(t, client.reported[0], 2)
+	require.Equal(t, []string{"GR1"}, client.created)
+}
+
+func TestExportedGroups(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		ids      []string
+		statuses []grpb.Group_GroupStatus
+		want     []string
+	}{
+		{
+			name: "ids only",
+			ids:  []string{"GR2", "GR4"},
+			want: []string{"GR2", "GR4"},
+		},
+		{
+			name:     "statuses only",
+			statuses: []grpb.Group_GroupStatus{grpb.Group_USAGE_BASED_GROUP_STATUS},
+			want:     []string{"GR1"},
+		},
+		{
+			name:     "ids or statuses",
+			ids:      []string{"GR4"},
+			statuses: []grpb.Group_GroupStatus{grpb.Group_FREE_TIER_GROUP_STATUS},
+			want:     []string{"GR2", "GR4"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := setupClickHouseEnv(t)
+			flags.Set(t, "group_ids", tc.ids)
+			flags.Set(t, "group_statuses", tc.statuses)
+			groups, err := exportedGroups(t.Context(), env)
+			require.NoError(t, err)
+			var got []string
+			for _, g := range groups {
+				got = append(got, g.GroupID)
+			}
+			require.ElementsMatch(t, tc.want, got)
+		})
+	}
+}
+
+func TestValidateGroupSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		ids      []string
+		statuses []grpb.Group_GroupStatus
+		wantErr  bool
+	}{
+		{name: "no selector", wantErr: true},
+		{name: "ids", ids: []string{"GR1"}},
+		{name: "statuses", statuses: []grpb.Group_GroupStatus{grpb.Group_FREE_TIER_GROUP_STATUS}},
+		{name: "empty id", ids: []string{"GR1", ""}, wantErr: true},
+		{name: "blank id", ids: []string{" "}, wantErr: true},
+		{name: "id with surrounding whitespace", ids: []string{"GR1", " GR2"}, wantErr: true},
+		{name: "unknown status", statuses: []grpb.Group_GroupStatus{99}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "group_ids", tc.ids)
+			flags.Set(t, "group_statuses", tc.statuses)
+			err := validateGroupSelection()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestQueryUsageRows(t *testing.T) {
 	env := setupClickHouseEnv(t)
 	ctx := t.Context()
@@ -353,6 +441,7 @@ func TestQueryUsageRows(t *testing.T) {
 }
 
 func setupClickHouseEnv(t *testing.T) *real_environment.RealEnv {
+	flags.Set(t, "group_statuses", []grpb.Group_GroupStatus{grpb.Group_FREE_TIER_GROUP_STATUS, grpb.Group_USAGE_BASED_GROUP_STATUS})
 	flags.Set(t, "olap_database.invocation_batch_insert_interval", 0*time.Second)
 	env := testenv.GetTestEnv(t)
 	testclickhouse.Configure(t, env)
