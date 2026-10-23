@@ -22,6 +22,9 @@
 // --group_statuses='[1,5]' (free tier and usage based).
 // When both selectors are set, groups matching either are exported. At least
 // one selector is required.
+//
+// Export progress is tracked by a single period end shared by all groups, so
+// adding groups to the selection does not backfill their earlier usage.
 package main
 
 import (
@@ -65,8 +68,8 @@ const (
 
 var (
 	dryRun        = flag.Bool("dry_run", false, "If true, log what would be sent without calling Metronome or updating the export state.")
-	groupIDs      = flag.Slice("group_ids", []string{}, "Comma-separated group IDs to export, regardless of status. Combined with group_statuses using OR. At least one selector is required.")
-	groupStatuses = flag.Slice("group_statuses", []grpb.Group_GroupStatus{}, "JSON array of integer GroupStatus enum values to export (e.g. [1,5] for free tier and usage based). Combined with group_ids using OR. At least one selector is required.")
+	groupIDs      = flag.Slice("group_ids", []string{}, "Comma-separated group IDs to export, regardless of status. Combined with group_statuses using OR. At least one selector is required. Newly selected groups are not backfilled: export progress is shared by all groups, so their usage before they were selected is never exported.")
+	groupStatuses = flag.Slice("group_statuses", []grpb.Group_GroupStatus{}, "JSON array of integer GroupStatus enum values to export (e.g. [1,5] for free tier and usage based). Combined with group_ids using OR. At least one selector is required. Newly selected groups are not backfilled: export progress is shared by all groups, so their usage before they were selected is never exported.")
 )
 
 func main() {
