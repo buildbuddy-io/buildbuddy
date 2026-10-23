@@ -1,11 +1,14 @@
 package interceptors
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -14,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestRedirectIfNotForwardedHTTPS(t *testing.T) {
@@ -170,7 +174,7 @@ func TestAuthorizeSelectedGroupRole_AdaptsHTTPRPCPaths(t *testing.T) {
 	}
 }
 
-func TestClientIP(t *testing.T) {
+func TestClientIP_XForwardedForHops(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		hops   int
@@ -199,8 +203,10 @@ func TestClientIP(t *testing.T) {
 			flags.Set(t, "auth.trust_xforwardedfor_header", true)
 			flags.Set(t, "auth.xforwardedfor_trusted_hops", tc.hops)
 
+			env := real_environment.NewRealEnv(healthcheck.NewHealthChecker("test"))
+			t.Cleanup(env.GetHealthChecker().Shutdown)
 			var gotIP string
-			handler := ClientIP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := ClientIP(env, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				gotIP = clientip.Get(r.Context())
 			}))
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -211,6 +217,116 @@ func TestClientIP(t *testing.T) {
 			handler.ServeHTTP(httptest.NewRecorder(), req)
 
 			assert.Equal(t, tc.wantIP, gotIP)
+		})
+	}
+}
+
+// fakeClientIdentityService treats identity header values as the client name,
+// and rejects the value "invalid".
+type fakeClientIdentityService struct {
+	interfaces.ClientIdentityService
+}
+
+type validatedKey struct{}
+
+func (fakeClientIdentityService) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {
+	vals := metadata.ValueFromIncomingContext(ctx, authutil.ClientIdentityHeaderName)
+	if len(vals) != 1 || vals[0] == "invalid" {
+		return ctx, errors.New("invalid identity")
+	}
+	return context.WithValue(ctx, validatedKey{}, vals[0]), nil
+}
+
+func (fakeClientIdentityService) IdentityFromContext(ctx context.Context) (*interfaces.ClientIdentity, error) {
+	client, ok := ctx.Value(validatedKey{}).(string)
+	if !ok {
+		return nil, errors.New("no identity")
+	}
+	return &interfaces.ClientIdentity{Client: client}, nil
+}
+
+func TestClientIP(t *testing.T) {
+	require.NoError(t, clientip.Init())
+	flags.Set(t, "auth.trust_xforwardedfor_header", true)
+
+	for _, tc := range []struct {
+		name     string
+		cis      bool
+		headers  map[string][]string
+		expected string
+	}{
+		{
+			name: "attested header with grpc-proxy identity is honored",
+			cis:  true,
+			headers: map[string][]string{
+				clientip.HeaderName:               {"1.2.3.4"},
+				authutil.ClientIdentityHeaderName: {interfaces.ClientIdentityGRPCProxy},
+			},
+			expected: "1.2.3.4",
+		},
+		{
+			name: "attested header without identity is ignored",
+			cis:  true,
+			headers: map[string][]string{
+				clientip.HeaderName: {"1.2.3.4"},
+			},
+			expected: "9.9.9.9",
+		},
+		{
+			name: "attested header with invalid identity is ignored",
+			cis:  true,
+			headers: map[string][]string{
+				clientip.HeaderName:               {"1.2.3.4"},
+				authutil.ClientIdentityHeaderName: {"invalid"},
+			},
+			expected: "9.9.9.9",
+		},
+		{
+			name: "attested header with non-proxy identity is ignored",
+			cis:  true,
+			headers: map[string][]string{
+				clientip.HeaderName:               {"1.2.3.4"},
+				authutil.ClientIdentityHeaderName: {interfaces.ClientIdentityExecutor},
+			},
+			expected: "9.9.9.9",
+		},
+		{
+			name: "multiple attested headers are ignored",
+			cis:  true,
+			headers: map[string][]string{
+				clientip.HeaderName:               {"1.2.3.4", "1.1.1.1"},
+				authutil.ClientIdentityHeaderName: {interfaces.ClientIdentityGRPCProxy},
+			},
+			expected: "9.9.9.9",
+		},
+		{
+			name: "attested header is ignored without a client identity service",
+			cis:  false,
+			headers: map[string][]string{
+				clientip.HeaderName:               {"1.2.3.4"},
+				authutil.ClientIdentityHeaderName: {interfaces.ClientIdentityGRPCProxy},
+			},
+			expected: "9.9.9.9",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := real_environment.NewRealEnv(healthcheck.NewHealthChecker("test"))
+			t.Cleanup(env.GetHealthChecker().Shutdown)
+			if tc.cis {
+				env.SetClientIdentityService(fakeClientIdentityService{})
+			}
+			req := httptest.NewRequest("GET", "/", nil)
+			req.Header.Set("X-Forwarded-For", "9.9.9.9, 5.5.5.5")
+			for k, vs := range tc.headers {
+				for _, v := range vs {
+					req.Header.Add(k, v)
+				}
+			}
+			var got string
+			ClientIP(env, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = clientip.Get(r.Context())
+			})).ServeHTTP(httptest.NewRecorder(), req)
+			require.Equal(t, tc.expected, got)
 		})
 	}
 }

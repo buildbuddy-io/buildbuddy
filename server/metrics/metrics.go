@@ -391,6 +391,12 @@ const (
 	// Source used by a cache proxy request to produce a response.
 	CacheProxyResultSource = "result_source"
 
+	// Why the cache proxy's attested HTTP forwarder would treat a request
+	// differently from the legacy one: a forwarding header it would drop or
+	// change ("forwarded", "x_forwarded_host", "x_forwarded_proto"), or an
+	// invalid caller client identity ("invalid_client_identity").
+	CacheProxyHTTPForwardingDiffReason = "reason"
+
 	OCIResourceTypeLabel = "oci_resource_type"
 
 	OpLabel = "op"
@@ -4119,6 +4125,14 @@ var (
 	})
 
 	// ## Cache Proxy metrics
+	CacheProxyHTTPForwardingDiffs = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "http_forwarding_diffs",
+		Help:      "The number of HTTP requests forwarded by the legacy cache proxy HTTP forwarder that the attested forwarder would treat differently, by reason.",
+	}, []string{
+		CacheProxyHTTPForwardingDiffReason,
+	})
 	ActionCacheProxiedReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
