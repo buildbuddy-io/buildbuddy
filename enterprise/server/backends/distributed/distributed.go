@@ -1833,41 +1833,33 @@ type multiWriteCloser struct {
 }
 
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {
-	var eg errgroup.Group
 	for _, wc := range mc.peerClosers {
-		eg.Go(func() error {
-			n, err := wc.Write(data)
-			if err != nil {
-				return err
-			}
-			if n != len(data) {
-				return io.ErrShortWrite
-			}
-			return nil
-		})
+		n, err := wc.Write(data)
+		if err != nil {
+			return 0, err
+		}
+		if n != len(data) {
+			return 0, io.ErrShortWrite
+		}
 	}
-
-	return len(data), eg.Wait()
+	return len(data), nil
 }
 
 func (mc *multiWriteCloser) Commit() error {
-	var eg errgroup.Group
+	isolationStringer := distributed_client.ResourceIsolationString(mc.r)
+	var err error
 	for peer, wc := range mc.peerClosers {
-		eg.Go(func() error {
-			if err := wc.Commit(); err != nil {
-				return err
-			}
-			mc.log.CtxDebugf(mc.ctx, "Successfully wrote %s to %q", distributed_client.ResourceIsolationString(mc.r), peer)
-			return nil
-		})
+		if err = wc.Commit(); err != nil {
+			break
+		}
+		mc.log.CtxDebugf(mc.ctx, "Successfully wrote %s to %q", isolationStringer, peer)
 	}
-	err := eg.Wait()
-	if err == nil {
+	if err == nil && *log.LogLevel == "debug" {
 		peers := make([]string, 0, len(mc.peerClosers))
 		for peer := range mc.peerClosers {
 			peers = append(peers, peer)
 		}
-		mc.log.CtxDebugf(mc.ctx, "Writer(%q) successfully wrote to peers %s", distributed_client.ResourceIsolationString(mc.r), peers)
+		mc.log.CtxDebugf(mc.ctx, "Writer(%q) successfully wrote to peers %s", isolationStringer, peers)
 	}
 	return err
 }
@@ -2136,7 +2128,7 @@ func (c *Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) erro
 
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
-
+	eg.SetLimit(100) // arbitrary large number that isn't infinity.
 	for r, data := range kvs {
 		setFn := func(r *rspb.ResourceName, data []byte) {
 			eg.Go(func() error {
