@@ -549,8 +549,6 @@ service Scheduler {
 
   rpc TaskExists(TaskExistsRequest) returns (TaskExistsResponse) {}
 
-  rpc ScheduleTask(ScheduleTaskRequest) returns (ScheduleTaskResponse) {}
-
   rpc ReEnqueueTask(ReEnqueueTaskRequest) returns (ReEnqueueTaskResponse) {}
 
   // Request to enqueue a task reservation for an existing task to a locally
