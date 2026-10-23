@@ -8,6 +8,7 @@ import rpcService from "../service/rpc_service";
 
 export interface InvocationCancelButtonComponentProps {
   invocationId: string;
+  executionEndpoint: string;
 }
 
 type State = {
@@ -20,7 +21,8 @@ export default class InvocationCancelButtonComponent extends React.Component<Inv
 
   private onClick() {
     this.setState({ isLoading: true, cancelled: true });
-    rpcService.service
+    rpcService
+      .getRegionalServiceOrDefault(this.props.executionEndpoint)
       .cancelExecutions(new invocation.CancelExecutionsRequest({ invocationId: this.props.invocationId }))
       .catch((e) => {
         errorService.handleError(e);

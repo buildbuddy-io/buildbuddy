@@ -5,7 +5,7 @@ import { OutlinedButton } from "../components/button/button";
 import Select, { Option } from "../components/select/select";
 import errorService from "../errors/error_service";
 import format from "../format/format";
-import rpcService from "../service/rpc_service";
+import rpcService, { CancelablePromise } from "../service/rpc_service";
 import InvocationExecutionTable from "./invocation_execution_table";
 import {
   downloadDuration,
@@ -50,6 +50,7 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
   };
 
   timeoutRef?: number;
+  private executionRPC?: CancelablePromise;
 
   componentDidMount() {
     this.fetchExecution();
@@ -60,8 +61,10 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     const invocationStatusChanged =
       this.props.model.invocation.invocationStatus !== prevProps.model.invocation.invocationStatus;
     const targetLabelChanged = this.props.targetLabel !== prevProps.targetLabel;
+    const executionEndpointChanged =
+      this.props.model.getRemoteExecutorEndpoint() !== prevProps.model.getRemoteExecutorEndpoint();
 
-    if (invocationIdChanged || invocationStatusChanged || targetLabelChanged) {
+    if (invocationIdChanged || invocationStatusChanged || targetLabelChanged || executionEndpointChanged) {
       clearTimeout(this.timeoutRef);
       this.timeoutRef = undefined;
       this.fetchExecution();
@@ -69,10 +72,12 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
   }
 
   componentWillUnmount() {
+    this.executionRPC?.cancel();
     clearTimeout(this.timeoutRef);
   }
 
   fetchExecution() {
+    this.executionRPC?.cancel();
     let request = new execution_stats.GetExecutionRequest();
     request.executionLookup = new execution_stats.ExecutionLookup();
     request.executionLookup.invocationId = this.props.model.getInvocationId();
@@ -81,8 +86,8 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     }
     let inProgressBeforeRequestWasMade = this.props.model.isInProgress();
     // Live executions are buffered in the remote executor's region.
-    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
-    service
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.getRemoteExecutorEndpoint());
+    this.executionRPC = service
       .getExecution(request)
       .then((response) => {
         this.setState({ executions: response.execution, loading: false });
