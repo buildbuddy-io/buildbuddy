@@ -174,6 +174,12 @@ func IsAnonymousRequest(ctx context.Context, authenticator interfaces.Authentica
 	return IsAnonymousUserError(err)
 }
 
+// IsUserAPIKeyRequest reports whether the authenticated identity comes from a
+// user-owned API key, rather than an organization key or a user session.
+func IsUserAPIKeyRequest(user interfaces.UserInfo) bool {
+	return user != nil && user.GetAPIKeyInfo().ID != "" && user.GetUserID() != ""
+}
+
 // Parses and returns a BuildBuddy API key from the given string.
 func ParseAPIKeyFromString(input string) (string, error) {
 	matches := apiKeyRegex.FindAllStringSubmatch(input, -1)
