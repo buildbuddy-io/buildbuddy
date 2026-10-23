@@ -822,11 +822,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     return "";
   }
 
-  getEventsListTitle(): React.ReactElement {
-    const content = this.isLoadingSelection() ? <Spinner></Spinner> : this.getEventListTitleString();
-    return <div className="trend-chart-title">{content}</div>;
-  }
-
   getDrilldownChartsTitle(): string {
     if (this.isLoadingSelection()) {
       return "Loading drilldown dimensions";
@@ -1035,7 +1030,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   selectedData={this.currentHeatmapSelection}></HeatmapComponent>
                 <div className="trend-chart">
                   <div className="trend-chart-title">{this.getDrilldownChartsTitle()}</div>
-                  {loadingSelection && <div className="loading"></div>}
+                  {loadingSelection && (
+                    <div className="spinner-center">
+                      <Spinner />
+                    </div>
+                  )}
                   {!loadingSelection && this.state.drilldownData && (
                     <>
                       {this.summarizeSelection()}
@@ -1094,9 +1093,9 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   )}
                 </div>
                 <div className="trend-chart">
-                  {this.getEventsListTitle()}
                   {!loadingSelection && (
                     <>
+                      <div className="trend-chart-title">{this.getEventListTitleString()}</div>
                       {this.state.eventData?.invocations && (
                         <div className="history">
                           <div className="container nopadding-dense">
