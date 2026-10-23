@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -56,6 +57,8 @@ const (
 var (
 	disableCDC          = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
 	skipWriteValidation = flag.Bool("cache_proxy.skip_write_validation", false, "If true, skip local cache write validation and rely on remote validation for cache proxy dual writes.")
+
+	interceptAndChunkLargeWrites = expflag.Bool("cache_proxy.intercept_and_chunk_large_writes", false, "If true, store large client uploads as content-defined chunks in the local and remote caches instead of forwarding them whole.")
 )
 
 func groupIDForMetrics(ctx context.Context) string {
@@ -929,7 +932,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	meteredStream := &meteredServerSideClientStream{compressor: "unknown", ByteStream_WriteServer: stream}
 	stream = meteredStream
 
-	if s.writeChunkingEnabled(ctx) && !proxy_util.SkipRemote(ctx) {
+	if !proxy_util.SkipRemote(ctx) && s.writeChunkingEnabled(ctx) {
 		result, err := s.writeChunked(ctx, stream)
 		if err == nil {
 			recordWriteMetrics(byteStreamMetrics{
@@ -1239,14 +1242,14 @@ func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	if *disableCDC || s.localCache == nil || s.remoteCAS == nil {
 		return false
 	}
-	if bazel_request.GetRequestMetadata(ctx).GetActionId() == "bes-upload" {
+	if bazel_request.GetRequestMetadata(ctx).GetActionId() == bazel_request.BESUploadActionID {
 		return false
 	}
 	// The write is already a content-defined chunk — never re-chunk it.
 	if cdc.IsChunked(ctx) {
 		return false
 	}
-	return s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false)
+	return interceptAndChunkLargeWrites.Get(ctx)
 }
 
 type writeChunkedResult struct {

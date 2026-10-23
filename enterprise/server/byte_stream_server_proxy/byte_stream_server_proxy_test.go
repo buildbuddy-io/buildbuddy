@@ -241,25 +241,12 @@ func TestWriteChunkedValidatesBlobForUnvalidatedSplice(t *testing.T) {
 }
 
 func TestWriteChunkingEnabledSkipsBESUpload(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 	ctx := context.Background()
 	ctx = bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{ActionId: "bes-upload"})
 	s := &ByteStreamServerProxy{
 		localCache: testenv.GetTestEnv(t).GetCache(),
 		remoteCAS:  &noOpCASClient{},
-		efp:        fp,
 	}
 	require.False(t, s.writeChunkingEnabled(ctx))
 
@@ -268,84 +255,27 @@ func TestWriteChunkingEnabledSkipsBESUpload(t *testing.T) {
 }
 
 func TestWriteChunkingEnabledSkipsChunkedWrites(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 		cdc.ChunkedHeaderName, "true",
 	))
 	s := &ByteStreamServerProxy{
 		localCache: testenv.GetTestEnv(t).GetCache(),
 		remoteCAS:  &noOpCASClient{},
-		efp:        fp,
 	}
 	require.False(t, s.writeChunkingEnabled(ctx))
 }
 
-func TestWriteChunkingEnabledRequiresExperimentInterceptFlag(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		hasEFP bool
-		efp    bool
-		want   bool
-	}{
-		{
-			name: "default disabled without experiment flag provider",
-			want: false,
-		},
-		{
-			name:   "experiment flag disabled",
-			hasEFP: true,
-			efp:    false,
-			want:   false,
-		},
-		{
-			name:   "experiment flag enabled",
-			hasEFP: true,
-			efp:    true,
-			want:   true,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var fp interfaces.ExperimentFlagProvider
-			if tc.hasEFP {
-				providerName := t.Name()
-				provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-					"cache_proxy.intercept_and_chunk_large_writes": {
-						State:          memprovider.Enabled,
-						DefaultVariant: strconv.FormatBool(tc.efp),
-						Variants: map[string]any{
-							"true":  true,
-							"false": false,
-						},
-					},
-				})
-				require.NoError(t, openfeature.SetNamedProviderAndWait(providerName, provider))
-				var err error
-				fp, err = experiments.NewFlagProvider(providerName)
-				require.NoError(t, err)
-			}
-
-			ctx := context.Background()
-			s := &ByteStreamServerProxy{
-				localCache: testenv.GetTestEnv(t).GetCache(),
-				remoteCAS:  &noOpCASClient{},
-				efp:        fp,
-			}
-			require.Equal(t, tc.want, s.writeChunkingEnabled(ctx))
-		})
+func TestWriteChunkingEnabledRequiresInterceptFlag(t *testing.T) {
+	ctx := context.Background()
+	s := &ByteStreamServerProxy{
+		localCache: testenv.GetTestEnv(t).GetCache(),
+		remoteCAS:  &noOpCASClient{},
 	}
+	require.False(t, s.writeChunkingEnabled(ctx), "intercepting writes should be off by default")
+
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
+	require.True(t, s.writeChunkingEnabled(ctx))
 }
 
 type casRPCRecorder struct {
@@ -1957,16 +1887,9 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 				"false": false,
 			},
 		},
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 	})
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
@@ -2618,28 +2541,13 @@ func TestReadRemoteChunkRetryClassification(t *testing.T) {
 }
 
 func TestWriteChunked(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(t),
@@ -2777,17 +2685,7 @@ func TestWriteChunked(t *testing.T) {
 }
 
 func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
@@ -2800,11 +2698,6 @@ func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
 	users := map[string]interfaces.UserInfo{"user": userWithEncryption}
 	ta := testauth.NewTestAuthenticator(t, users)
 	proxyEnv.SetAuthenticator(ta)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	proxyPC, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(t),
@@ -2929,27 +2822,12 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 	flags.Set(t, "cache.avg_chunk_size_bytes", 64*1024)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	rec := &casRPCRecorder{}
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	proxyPC, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(t),
@@ -3084,28 +2962,13 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 }
 
 func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(t),
@@ -3261,28 +3124,13 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 	*log.LogLevel = "error"
 	log.Configure()
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(b, openfeature.SetNamedProviderAndWait(b.Name(), testProvider))
+	flags.Set(b, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	flags.Set(b, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(b)
 	proxyEnv := testenv.GetTestEnv(b)
-
-	fp, err := experiments.NewFlagProvider(b.Name())
-	require.NoError(b, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	// Use pebble cache for the proxy (required for chunking)
 	pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
@@ -3721,18 +3569,7 @@ func runAlreadyExistsProxy(t *testing.T) *alreadyExistsProxy {
 	flags.Set(t, "cache.bytestream_already_exists_status", true)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 	// Large writes are chunked. Small ones take the dual write path.
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants:       map[string]any{"true": true},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	encryptedUser := testauth.User("encrypted", "encrypted-group")
 	encryptedUser.CacheEncryptionEnabled = true
