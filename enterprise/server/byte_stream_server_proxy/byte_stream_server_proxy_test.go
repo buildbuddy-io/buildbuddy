@@ -266,6 +266,21 @@ func TestWriteChunkingEnabledSkipsChunkedWrites(t *testing.T) {
 	require.False(t, s.writeChunkingEnabled(ctx))
 }
 
+func TestShouldReadChunkedRequiresAttemptFlag(t *testing.T) {
+	ctx := context.Background()
+	s := &ByteStreamServerProxy{
+		localCache: testenv.GetTestEnv(t).GetCache(),
+		remoteCAS:  &noOpCASClient{},
+	}
+	d := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: chunking.MaxChunkSizeBytes() + 1}
+	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+	req := &bspb.ReadRequest{ResourceName: rn.DownloadString()}
+	require.True(t, s.shouldReadChunked(ctx, req, rn), "chunked reads should be attempted by default")
+
+	flags.Set(t, "cache_proxy.attempt_chunked_reads", false)
+	require.False(t, s.shouldReadChunked(ctx, req, rn))
+}
+
 func TestWriteChunkingEnabledRequiresInterceptFlag(t *testing.T) {
 	ctx := context.Background()
 	s := &ByteStreamServerProxy{
@@ -1235,26 +1250,9 @@ func BenchmarkWriteUnique(b *testing.B) {
 }
 
 func TestReadChunked(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
@@ -1471,26 +1469,10 @@ func TestReadChunkedFastPathDisabledCallsSplitBlob(t *testing.T) {
 // chunks; whether the second read calls SplitBlob again depends on fastPath.
 func testReadChunkedFastPath(t *testing.T, fastPath bool) {
 	// Setup environment.
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
 
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 	flags.Set(t, "cache_proxy.cdc_read_fast_path", fastPath)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
@@ -1617,18 +1599,6 @@ func testReadChunkedFastPath(t *testing.T, fastPath bool) {
 }
 
 func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
@@ -1639,10 +1609,6 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, users)
 	proxyEnv.SetAuthenticator(ta)
 
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 	// Encrypted reads must bypass the fast path even when it is enabled.
 	flags.Set(t, "cache_proxy.cdc_read_fast_path", true)
 
@@ -1767,18 +1733,6 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 }
 
 func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
@@ -1788,11 +1742,6 @@ func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 	users := map[string]interfaces.UserInfo{"user": userWithEncryption}
 	ta := testauth.NewTestAuthenticator(t, users)
 	proxyEnv.SetAuthenticator(ta)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
@@ -1873,17 +1822,6 @@ func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 }
 
 func TestReadChunkedCompressedWarmLocal(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	ctx := testContext()
@@ -1891,11 +1829,6 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	uploadProxyEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
 
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	uploadProxyEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 	flags.Set(t, "cache_proxy.cdc_read_fast_path", true)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
@@ -2123,26 +2056,9 @@ func (r *faultyReader) Read(p []byte) (int, error) {
 }
 
 func TestReadChunkedWithOffset(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	// Start the backing remote cache services.
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
@@ -2292,26 +2208,9 @@ func TestReadChunkedWithOffset(t *testing.T) {
 }
 
 func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
@@ -2376,26 +2275,9 @@ func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
 }
 
 func TestReadChunkedPartialLocalFailure(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	// Start the backing remote cache services.
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
@@ -3189,28 +3071,11 @@ func setupChunkedReadBenchmarkEnv(b *testing.B) *chunkedReadBenchmarkEnv {
 	*log.LogLevel = "error"
 	log.Configure()
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(b, openfeature.SetNamedProviderAndWait(b.Name(), testProvider))
-
 	flags.Set(b, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(b)
 	proxyEnv := testenv.GetTestEnv(b)
-
-	fp, err := experiments.NewFlagProvider(b.Name())
-	require.NoError(b, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(b),
