@@ -29,12 +29,10 @@ usage: bb agent review [ --fix ] [ --dry_run ] [ --verify=false ] [ --force ] [ 
 Reviews the open GitHub pull request for the checked-out branch, then posts the
 findings as PR review comments.
 
-With --fix, fetches existing PR feedback, addresses actionable comments, verifies
-the changes, then commits and pushes them to the PR branch. Requires a clean
-checkout at the PR head. After pushing, replies to each addressed comment with
-a one-line summary of what changed. Pass --verify=false to skip verification.
-With --fix --dry_run, applies and verifies changes in the local working tree
-without committing, pushing, or replying to comments.
+With --fix, fetches existing PR feedback, addresses actionable comments, then commits and pushes them to the PR branch.
+Requires a clean checkout at the PR head.
+Pass --verify=false to skip verification.
+With --fix --dry_run, applies changes in the local working tree without committing, pushing, or replying to comments.
 Fixing PRs from forks is not supported.
 
 The review reads the source from the local checkout, so to review another PR,
