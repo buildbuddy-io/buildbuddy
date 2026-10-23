@@ -827,18 +827,14 @@ func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteSt
 }
 
 // runOCIFetcherProxy sets up the proxy server connecting to the remote client
-// and returns a client connected to the proxy. Any configure funcs are applied
-// to the proxy before it starts serving.
-func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient, configure ...func(*OCIFetcherServerProxy)) ofpb.OCIFetcherClient {
+// and returns a client connected to the proxy.
+func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient) ofpb.OCIFetcherClient {
 	env := testenv.GetTestEnv(t)
 	env.SetOCIFetcherClient(remoteClient)
 	env.SetLocalByteStreamClient(setupLocalBSClient(t))
 
 	proxy, err := New(env)
 	require.NoError(t, err)
-	for _, c := range configure {
-		c(proxy)
-	}
 
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	ofpb.RegisterOCIFetcherServer(grpcServer, proxy)
@@ -930,34 +926,16 @@ func (c *fakeFetchBlobClient) Recv() (*ofpb.FetchBlobResponse, error) {
 
 // collectBlobData reads all data from a FetchBlob stream.
 func collectBlobData(t *testing.T, stream ofpb.OCIFetcher_FetchBlobClient) []byte {
-	data, err := readBlobData(stream)
-	require.NoError(t, err)
-	return data
-}
-
-// readBlobData reads a FetchBlob stream, returning the data received and the
-// stream's error, if any.
-func readBlobData(stream ofpb.OCIFetcher_FetchBlobClient) ([]byte, error) {
 	var data []byte
 	for {
 		resp, err := stream.Recv()
 		if err == io.EOF {
-			return data, nil
+			break
 		}
-		if err != nil {
-			return data, err
-		}
+		require.NoError(t, err)
 		data = append(data, resp.GetData()...)
 	}
-}
-
-// fetchBlob calls FetchBlob and reads the whole response stream.
-func fetchBlob(ctx context.Context, client ofpb.OCIFetcherClient, req *ofpb.FetchBlobRequest) ([]byte, error) {
-	stream, err := client.FetchBlob(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	return readBlobData(stream)
+	return data
 }
 
 // TestPrivateImageManifestCacheRequiresCredentials confirms the cached
@@ -1009,116 +987,6 @@ func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 				http.MethodGet + " /v2/": 2,
 				manifestHead:             2,
 			}, counter.Snapshot()))
-		})
-	}
-}
-
-const helloRef = "example.com/repo@sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
-
-// stubOCIFetcherClient is a remote (apps) OCIFetcher that counts calls and
-// either returns err or serves a blob containing "hello". FetchBlobMetadata is
-// used by the legacy FetchBlob path.
-type stubOCIFetcherClient struct {
-	ofpb.OCIFetcherClient
-	calls atomic.Int32
-	err   error
-}
-
-func (c *stubOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
-	c.calls.Add(1)
-	if c.err != nil {
-		return nil, c.err
-	}
-	return &ofpb.FetchManifestResponse{Manifest: []byte("manifest")}, nil
-}
-
-func (c *stubOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
-	c.calls.Add(1)
-	if c.err != nil {
-		return nil, c.err
-	}
-	return &ofpb.FetchBlobMetadataResponse{Size: 5}, nil
-}
-
-func (c *stubOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
-	c.calls.Add(1)
-	if c.err != nil {
-		return nil, c.err
-	}
-	return &fakeFetchBlobClient{data: []byte("hello")}, nil
-}
-
-// fakeLocalFetcher is a local fetcher that counts calls and fails with err,
-// or serves an empty manifest and a blob containing "local" if err is nil.
-type fakeLocalFetcher struct {
-	ofpb.UnimplementedOCIFetcherServer
-	calls atomic.Int32
-	err   error
-}
-
-func (f *fakeLocalFetcher) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
-	f.calls.Add(1)
-	if f.err != nil {
-		return nil, f.err
-	}
-	return &ofpb.FetchManifestResponse{}, nil
-}
-
-func (f *fakeLocalFetcher) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
-	f.calls.Add(1)
-	if f.err != nil {
-		return f.err
-	}
-	return stream.Send(&ofpb.FetchBlobResponse{Data: []byte("local")})
-}
-
-func withFetcher(f ofpb.OCIFetcherServer) func(*OCIFetcherServerProxy) {
-	return func(p *OCIFetcherServerProxy) { p.fetcher = f }
-}
-
-func TestLocalFetcherGate(t *testing.T) {
-	for _, tc := range []struct {
-		name           string
-		gate           bool
-		bypassRegistry bool
-		fetcherErr     error
-		wantFetcher    bool
-	}{
-		{name: "GateOff"},
-		{name: "BypassRegistry", gate: true, bypassRegistry: true},
-		{name: "GateOn", gate: true, wantFetcher: true},
-		{name: "GateOnFetcherError", gate: true, fetcherErr: status.UnavailableError("local fetcher unavailable"), wantFetcher: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
-			flags.Set(t, "cache_proxy.oci_fetcher.use_local_fetcher", tc.gate)
-			remote := &stubOCIFetcherClient{}
-			fetcher := &fakeLocalFetcher{err: tc.fetcherErr}
-			client := runOCIFetcherProxy(ctx, t, remote, withFetcher(fetcher))
-
-			_, manifestErr := client.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: "example.com/repo:latest", BypassRegistry: tc.bypassRegistry})
-			data, blobErr := fetchBlob(ctx, client, &ofpb.FetchBlobRequest{Ref: helloRef, BypassRegistry: tc.bypassRegistry})
-			if !tc.wantFetcher {
-				require.NoError(t, manifestErr)
-				require.NoError(t, blobErr)
-				require.Equal(t, []byte("hello"), data)
-				require.Equal(t, int32(0), fetcher.calls.Load())
-				require.Positive(t, remote.calls.Load())
-				return
-			}
-			if tc.fetcherErr != nil {
-				for _, err := range []error{manifestErr, blobErr} {
-					require.True(t, status.IsUnavailableError(err), "expected Unavailable, got: %v", err)
-					require.Equal(t, status.Message(tc.fetcherErr), status.Message(err))
-				}
-				require.Empty(t, data)
-			} else {
-				require.NoError(t, manifestErr)
-				require.NoError(t, blobErr)
-				require.Equal(t, []byte("local"), data)
-			}
-			require.Equal(t, int32(2), fetcher.calls.Load())
-			require.Equal(t, int32(0), remote.calls.Load())
 		})
 	}
 }

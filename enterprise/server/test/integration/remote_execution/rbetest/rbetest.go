@@ -1167,7 +1167,7 @@ func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 		r.t.Cleanup(func() {
 			require.NoError(r.t, localConn.Close())
 		})
-		require.NoError(r.t, ocifetcher_server_proxy.Register(proxyEnv, bspb.NewByteStreamClient(localConn), repb.NewActionCacheClient(localConn)))
+		require.NoError(r.t, ocifetcher_server_proxy.RegisterWithLocalFetcher(proxyEnv, bspb.NewByteStreamClient(localConn), repb.NewActionCacheClient(localConn)))
 		ofpb.RegisterOCIFetcherServer(s.GetServer(), proxyEnv.GetOCIFetcherServer())
 	}
 	require.NoError(r.t, s.Start())

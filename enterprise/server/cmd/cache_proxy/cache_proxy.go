@@ -379,7 +379,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if err := content_addressable_storage_server_proxy.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := ocifetcher_server_proxy.Register(env, bspb.NewByteStreamClient(localConn), repb.NewActionCacheClient(localConn)); err != nil {
+	if err := ocifetcher_server_proxy.RegisterWithLocalFetcher(env, bspb.NewByteStreamClient(localConn), repb.NewActionCacheClient(localConn)); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := cache_server.Register(env); err != nil {

@@ -5,9 +5,6 @@
 // For FetchBlob, the proxy checks the local byte stream cache before
 // forwarding to the upstream. On upstream fetch, the blob is written
 // to the local byte stream cache for future requests.
-//
-// When cache_proxy.oci_fetcher.use_local_fetcher is enabled, requests are
-// instead served by a local OCI fetcher that caches through this proxy.
 package ocifetcher_server_proxy
 
 import (
@@ -15,13 +12,10 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -35,8 +29,6 @@ import (
 
 const cacheDigestFunction = repb.DigestFunction_SHA256
 
-var useLocalFetcher = expflag.Bool("cache_proxy.oci_fetcher.use_local_fetcher", false, "If true, serve OCIFetcher requests with a local OCI fetcher that reads and writes through this proxy's own ByteStream and ActionCache servers, instead of forwarding them to the apps.")
-
 type OCIFetcherServerProxy struct {
 	remote        ofpb.OCIFetcherClient
 	localBSClient bspb.ByteStreamClient
@@ -45,29 +37,13 @@ type OCIFetcherServerProxy struct {
 	// and writes to local BSS; waiters block until the leader finishes,
 	// then all callers stream from local BSS.
 	fetchGroup singleflight.Group[ocicache.BlobFetchKey, struct{}]
-
-	// fetcher is a local OCI fetcher whose cache clients loop back to this
-	// proxy's own public gRPC servers.
-	fetcher ofpb.OCIFetcherServer
 }
 
-// Register creates the OCIFetcherServerProxy and sets it as env's
-// OCIFetcherServer. bsClient and acClient are the cache clients used by the
-// local OCI fetcher; they should point at this proxy's own gRPC servers.
-func Register(env *real_environment.RealEnv, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) error {
-	// Reuse one instance across ports so they share one singleflight group.
-	if env.GetOCIFetcherServer() != nil {
-		return nil
-	}
+func Register(env *real_environment.RealEnv) error {
 	proxy, err := New(env)
 	if err != nil {
 		return status.InternalErrorf("Error initializing OCIFetcherServerProxy: %s", err)
 	}
-	fetcher, err := ocifetcher.NewServer(bsClient, acClient)
-	if err != nil {
-		return status.InternalErrorf("Error initializing OCIFetcherServerProxy local fetcher: %s", err)
-	}
-	proxy.fetcher = fetcher
 	env.SetOCIFetcherServer(proxy)
 	return nil
 }
@@ -85,68 +61,19 @@ func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 	}, nil
 }
 
-// useFetcher returns whether a request should be served by the local fetcher.
-// Requests that bypass the registry always take the forwarding path.
-func (s *OCIFetcherServerProxy) useFetcher(ctx context.Context, bypassRegistry bool) bool {
-	return !bypassRegistry && useLocalFetcher.Get(ctx)
-}
-
-func recordRequest(method, path string, err error) {
-	metrics.CacheProxyOCIFetcherRequestCount.WithLabelValues(method, path, status.MetricsLabel(err)).Inc()
-}
-
 func (s *OCIFetcherServerProxy) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
-	method := metrics.OCIFetcherMethodFetchManifest
-	if s.useFetcher(ctx, req.GetBypassRegistry()) {
-		resp, err := s.fetcher.FetchManifest(ctx, req)
-		recordRequest(method, metrics.OCIFetcherPathFetcher, err)
-		return resp, err
-	}
-	resp, err := s.remote.FetchManifest(ctx, req)
-	recordRequest(method, metrics.OCIFetcherPathLegacy, err)
-	return resp, err
+	return s.remote.FetchManifest(ctx, req)
 }
 
 func (s *OCIFetcherServerProxy) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
-	method := metrics.OCIFetcherMethodFetchManifestMetadata
-	if s.useFetcher(ctx, req.GetBypassRegistry()) {
-		resp, err := s.fetcher.FetchManifestMetadata(ctx, req)
-		recordRequest(method, metrics.OCIFetcherPathFetcher, err)
-		return resp, err
-	}
-	resp, err := s.remote.FetchManifestMetadata(ctx, req)
-	recordRequest(method, metrics.OCIFetcherPathLegacy, err)
-	return resp, err
+	return s.remote.FetchManifestMetadata(ctx, req)
 }
 
 func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
-	method := metrics.OCIFetcherMethodFetchBlobMetadata
-	if s.useFetcher(ctx, req.GetBypassRegistry()) {
-		resp, err := s.fetcher.FetchBlobMetadata(ctx, req)
-		recordRequest(method, metrics.OCIFetcherPathFetcher, err)
-		return resp, err
-	}
-	resp, err := s.remote.FetchBlobMetadata(ctx, req)
-	recordRequest(method, metrics.OCIFetcherPathLegacy, err)
-	return resp, err
+	return s.remote.FetchBlobMetadata(ctx, req)
 }
 
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
-	ctx := stream.Context()
-	method := metrics.OCIFetcherMethodFetchBlob
-	if s.useFetcher(ctx, req.GetBypassRegistry()) {
-		err := s.fetcher.FetchBlob(req, stream)
-		recordRequest(method, metrics.OCIFetcherPathFetcher, err)
-		return err
-	}
-	err := s.legacyFetchBlob(req, stream)
-	recordRequest(method, metrics.OCIFetcherPathLegacy, err)
-	return err
-}
-
-// legacyFetchBlob serves FetchBlob from the local byte stream cache, falling
-// back to the upstream (apps) OCIFetcher.
-func (s *OCIFetcherServerProxy) legacyFetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
 	digestRef, hash, err := parseBlobDigestRef(req.GetRef())
