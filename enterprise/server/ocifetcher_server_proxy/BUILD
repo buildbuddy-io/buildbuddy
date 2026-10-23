@@ -2,19 +2,27 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+# gazelle:go_test file
+
 go_library(
     name = "ocifetcher_server_proxy",
-    srcs = ["ocifetcher_server_proxy.go"],
+    srcs = [
+        "ocifetcher_server_proxy.go",
+        "router.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/ocifetcher_server_proxy",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/oci/ocicache",
+        "//enterprise/server/oci/ocifetcher",
         "//proto:oci_fetcher_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
+        "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/expflag",
         "//server/util/log",
         "//server/util/status",
         "//third_party/singleflight",
@@ -52,5 +60,21 @@ go_test(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
+    ],
+)
+
+go_test(
+    name = "router_test",
+    size = "small",
+    srcs = ["router_test.go"],
+    embed = [":ocifetcher_server_proxy"],
+    deps = [
+        "//proto:oci_fetcher_go_proto",
+        "//server/metrics",
+        "//server/testutil/testmetrics",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_stretchr_testify//require",
     ],
 )

@@ -2,6 +2,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+# gazelle:go_test file
+
 go_test(
     name = "cache_proxy_test",
     size = "small",
@@ -43,6 +45,33 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk//pkg/openfeature/memprovider",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+    ],
+)
+
+go_test(
+    name = "oci_fetcher_test",
+    size = "medium",
+    srcs = ["oci_fetcher_test.go"],
+    deps = [
+        "//enterprise/server/oci/ocicache",
+        "//enterprise/server/test/integration/remote_execution/rbetest",
+        "//enterprise/server/testutil/testregistry",
+        "//enterprise/server/util/proxy_util",
+        "//proto:oci_fetcher_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//server/backends/memory_cache",
+        "//server/testutil/testenv",
+        "//server/testutil/testkeys",
+        "//server/util/authutil",
+        "//server/util/claims",
+        "//server/util/grpc_client",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",

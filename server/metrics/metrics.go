@@ -434,6 +434,9 @@ const (
 	OCIFetcherMethodLabel = "method"
 	OCIFetcherRoleLabel   = "role"
 	OCIFetcherStatusLabel = "status"
+	// Which implementation served a cache proxy OCIFetcher request: `legacy`
+	// (forwarded to the apps) or `fetcher` (local OCI fetcher).
+	OCIFetcherPathLabel = "path"
 
 	// Label name for the eTLD+1 of the container image registry.
 	ImageFetchRegistryLabel = "registry"
@@ -495,6 +498,12 @@ const (
 	OCIFetcherStatusUserError = "user_error"
 	OCIFetcherStatusTimeout   = "timeout"
 	OCIFetcherStatusCanceled  = "canceled"
+
+	OCIFetcherMethodFetchBlobMetadata     = "FetchBlobMetadata"
+	OCIFetcherMethodFetchManifest         = "FetchManifest"
+	OCIFetcherMethodFetchManifestMetadata = "FetchManifestMetadata"
+	OCIFetcherPathLegacy                  = "legacy"
+	OCIFetcherPathFetcher                 = "fetcher"
 
 	ImageFetchTriggerExecution = "execution"
 	ImageFetchTriggerWarmup    = "warmup"
@@ -4707,6 +4716,17 @@ var (
 	}, []string{
 		OCIFetcherMethodLabel,
 		OCIFetcherRoleLabel,
+	})
+
+	CacheProxyOCIFetcherRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "oci_fetcher_requests",
+		Help:      "Number of OCIFetcher requests served by the cache proxy, by method, path (legacy or fetcher), and gRPC status.",
+	}, []string{
+		OCIFetcherMethodLabel,
+		OCIFetcherPathLabel,
+		StatusHumanReadableLabel,
 	})
 
 	InputTreeSetupOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
