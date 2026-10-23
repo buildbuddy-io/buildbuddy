@@ -249,53 +249,6 @@ func TestRun(t *testing.T) {
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
-func TestRunUnshare(t *testing.T) {
-	setupNetworking(t)
-	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
-	flags.Set(t, "executor.oci.seccomp_disable_new_userns", true)
-
-	ctx := t.Context()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
-	installFileCacheInEnv(t, env)
-	buildRoot := testfs.MakeTempDir(t)
-	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
-	require.NoError(t, err)
-	image := busyboxImage(t)
-
-	for _, testCase := range []struct {
-		name         string
-		user         string
-		args         []string
-		wantExitCode int
-	}{
-		{name: "root_no_flags", user: "0", args: []string{"unshare", "true"}},
-		{name: "root_user_namespace", user: "0", args: []string{"unshare", "-U", "true"}, wantExitCode: 1},
-		{name: "nonroot_no_flags", user: "1000:1000", args: []string{"unshare", "true"}},
-		{name: "nonroot_user_namespace", user: "1000:1000", args: []string{"unshare", "-U", "true"}, wantExitCode: 1},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
-				ContainerImage: image,
-				DockerUser:     testCase.user,
-			}})
-			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, c.Remove(ctx)) })
-
-			wd := testfs.MakeDirAll(t, buildRoot, testCase.name)
-			res := c.Run(ctx, &repb.Command{Arguments: testCase.args}, wd, oci.Credentials{})
-			require.NoError(t, res.Error)
-			assert.Equal(t, testCase.wantExitCode, res.ExitCode, "stderr: %s", res.Stderr)
-			assert.Empty(t, string(res.Stdout))
-			if testCase.wantExitCode == 0 {
-				assert.Empty(t, string(res.Stderr))
-			} else {
-				assert.Contains(t, string(res.Stderr), "Operation not permitted")
-			}
-		})
-	}
-}
-
 func TestRunNofileLimit(t *testing.T) {
 	setupNetworking(t)
 	flags.Set(t, "executor.oci.nofile_limit", uint64(65536))
@@ -336,8 +289,12 @@ func TestSeccompSyscalls(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, testCase := range []struct {
-		name               string
-		syscall            string
+		name    string
+		syscall string
+		// Container user. Non-root users are the ones that would gain
+		// capabilities from a new user namespace, so the filter must apply to
+		// them as well as to root.
+		user               string
 		disableNewUserNS   bool
 		additionalSyscalls []string
 		capAdd             []string
@@ -345,7 +302,9 @@ func TestSeccompSyscalls(t *testing.T) {
 		wantErrno          unix.Errno
 	}{
 		{name: "run_unshare_default", syscall: "unshare", wantErrno: unix.EINVAL},
+		{name: "run_unshare_default_nonroot", syscall: "unshare", user: "1000:1000", wantErrno: unix.EINVAL},
 		{name: "run_unshare_denied", syscall: "unshare", disableNewUserNS: true, wantErrno: unix.EPERM},
+		{name: "run_unshare_denied_nonroot", syscall: "unshare", user: "1000:1000", disableNewUserNS: true, wantErrno: unix.EPERM},
 		{name: "run_unshare_additional", syscall: "unshare", disableNewUserNS: true, additionalSyscalls: []string{"unshare"}, wantErrno: unix.EINVAL},
 		{name: "run_unshare_sys_admin", syscall: "unshare", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
 		{name: "exec_unshare_denied", syscall: "unshare", disableNewUserNS: true, createExec: true, wantErrno: unix.EPERM},
@@ -368,7 +327,10 @@ func TestSeccompSyscalls(t *testing.T) {
 			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 			require.NoError(t, err)
 			ctx := t.Context()
-			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{ContainerImage: image}})
+			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+				ContainerImage: image,
+				DockerUser:     testCase.user,
+			}})
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, c.Remove(env.GetServerContext())) })
 			wd := testfs.MakeDirAll(t, buildRoot, testCase.name)
