@@ -401,7 +401,7 @@ func (c *Proxy) getMultiSendsReferences(ctx context.Context) bool {
 	if fp == nil {
 		return false
 	}
-	return fp.Boolean(ctx, "distributed_cache.get_multi_gcs_references", false)
+	return fp.Boolean(ctx, "distributed_cache.get_multi_gcs_references", true)
 }
 
 func (c *Proxy) sendReadReferences(ctx context.Context) bool {
