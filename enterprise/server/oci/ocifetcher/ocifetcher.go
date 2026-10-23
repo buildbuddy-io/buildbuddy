@@ -44,6 +44,7 @@ import (
 const (
 	blobChunkSize       = 256 * 1000 // 256 KB to match cachetools buffer size
 	pullerLRUMaxEntries = 1000
+	pullerLRUTTL        = 1 * time.Hour
 
 	accessProofCacheTTL        = 15 * time.Minute
 	accessProofCacheMaxEntries = 1000
@@ -117,6 +118,7 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 	pullerLRU, err := lru.New[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
 		SizeFn:  func(_ *pullerLRUEntry) int64 { return 1 },
 		MaxSize: int64(pullerLRUMaxEntries),
+		TTL:     pullerLRUTTL,
 	})
 	if err != nil {
 		return nil, status.InternalErrorf("error initializing puller cache: %s", err)
