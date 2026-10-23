@@ -727,9 +727,14 @@ func withPullerRetry[T any](
 	if ctx.Err() != nil {
 		return zero, err
 	}
-
 	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
 	s.evictPuller(ref, creds)
+	// The transport already retried 429s with backoff, so retrying again would
+	// only add load to a registry that is rate limiting us.
+	var transportErr *transport.Error
+	if errors.As(err, &transportErr) && transportErr.StatusCode == http.StatusTooManyRequests {
+		return zero, RemoteRegistryError(err, "could not fetch from remote registry")
+	}
 	puller, err = s.getOrCreatePuller(ctx, ref, creds)
 	if err != nil {
 		return zero, err
