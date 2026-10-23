@@ -176,7 +176,7 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	provider := "unknown"
 	region := "unknown"
 	ip := clientip.Get(req.Context())
-	dest, err := trafficstats.Classify(ip)
+	dest, err := trafficstats.Classify(req.Context(), ip)
 	if err == nil {
 		provider, region = dest.Provider, dest.Region
 	}
