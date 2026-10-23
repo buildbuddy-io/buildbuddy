@@ -8,9 +8,8 @@
 #       Checks that the tools the image's Dockerfile installs are present (and
 #       that the ones it downloads outside apt run), the image's locale, user
 #       and iptables setup, that https works, and that `git ls-remote` against
-#       GitHub works. It also checks that the system CA bundle doesn't trust
-#       the distrusted roots listed below, or the compromised eMudhra chains
-#       (see "CA checks"). The Ubuntu release is read from /etc/os-release.
+#       GitHub works, and that the image doesn't trust the compromised eMudhra
+#       CAs (see "CA checks"). The Ubuntu release is read from /etc/os-release.
 #       Exits nonzero if anything fails.
 #   rbe_image_check.sh --packages
 #       Prints "<package> <version>" for every installed dpkg package (status
@@ -48,7 +47,8 @@ setup=0
 case "$family" in
   20.04)
     tools="$common python2 python java javac clang go"
-    runs=("go version" "clang --version" "java -version" "javac -version")
+    # java and javac print their version to stderr.
+    runs=("go version" "clang --version" "java -version 2>&1" "javac -version 2>&1")
     # The Dockerfile adds this with ENV PATH, which RBE actions don't inherit.
     PATH="$PATH:/usr/local/go/bin"
     ;;
@@ -67,8 +67,9 @@ distrusted_roots='
 86:A1:EC:BA:08:9C:4A:8D:3B:BE:27:34:C6:12:BA:34:1D:81:3E:04:3C:F9:E8:A8:62:CD:5C:57:A3:6B:BE:6B emSign ECC Root CA - G3
 D7:A7:A0:FB:5D:7E:27:31:D7:71:E9:48:4E:BC:DE:F7:1D:5F:0C:3E:0A:29:48:78:2B:C8:3E:E0:EA:69:9E:F4 Comodo AAA Certificate Services
 '
-# Only the bundle is checked: update-ca-certificates derives the hash links in
-# /etc/ssl/certs and the Java keystore from the same selection of certificates.
+# The roots are looked for only in the bundle: update-ca-certificates derives
+# the hash links in /etc/ssl/certs and the Java keystore from the same
+# selection of certificates.
 bundle=/etc/ssl/certs/ca-certificates.crt
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -76,8 +77,8 @@ trap 'rm -rf "$tmp"' EXIT
 # These run inside `if`, where set -e is off, so each step returns on failure
 # and the reason is printed to stderr.
 distrusted_roots_absent() {
-  local begins fps= fp out f cert n=0 line found=0
-  begins=$(grep -c -- '-----BEGIN CERTIFICATE-----' "$bundle") || { echo "no certificates in $bundle" >&2; return 1; }
+  local fp out f cert n=0 line found=0
+  local -A fps=()
   mkdir "$tmp/bundle" || return 1
   awk -v d="$tmp/bundle" '
     /-----BEGIN CERTIFICATE-----/ { f = d "/" ++n ".pem" }
@@ -88,21 +89,17 @@ distrusted_roots_absent() {
     out=$(openssl x509 -noout -fingerprint -sha256 -in "$f" 2>&1) || { echo "openssl x509 failed on certificate ${cert%.pem} in $bundle: $out" >&2; return 1; }
     # OpenSSL 1.1.1 prints "SHA256 Fingerprint=AB:...", 3.x "sha256 Fingerprint=AB:...".
     fp=${out#*=}
-    fp=${fp^^}
     if [[ ! "$fp" =~ ^([0-9A-F]{2}:){31}[0-9A-F]{2}$ ]]; then
       echo "unexpected openssl x509 output: $out" >&2
       return 1
     fi
-    fps+="$fp"$'\n'
+    fps[$fp]=1
     n=$((n + 1))
   done
-  if ((n != begins || n < 50)); then
-    echo "fingerprinted $n certificates but $bundle has $begins BEGIN CERTIFICATE lines (need at least 50)" >&2
-    return 1
-  fi
+  ((n >= 50)) || { echo "found only $n certificates in $bundle (need at least 50)" >&2; return 1; }
   while read -r fp line; do
     [[ -n "$fp" ]] || continue
-    if grep -qx -- "$fp" <<<"$fps"; then echo "$bundle trusts $line ($fp)" >&2; found=1; fi
+    if [[ -n "${fps[$fp]:-}" ]]; then echo "$bundle trusts $line ($fp)" >&2; found=1; fi
   done <<<"$distrusted_roots"
   ((!found))
 }
@@ -217,18 +214,23 @@ EOF
 # Passes only if openssl can't build the chain to a trusted root (error 20,
 # "unable to get local issuer certificate", on both OpenSSL 1.1.1 and 3.x).
 chain_untrusted() {
-  local pem=$1 out errs nostore=(-no-CAstore)
-  # -no-CApath and (on OpenSSL 3.x, which otherwise also loads the default
-  # store) -no-CAstore keep verify to the bundle.
-  [[ "$(openssl version)" != "OpenSSL 1."* ]] || nostore=()
-  # 1793491200 is 2026-11-01T00:00:00Z. verify checks the file's first
-  # certificate; the rest serve as untrusted intermediates.
-  if out=$(openssl verify -attime 1793491200 -no-CApath "${nostore[@]}" -CAfile "$bundle" -untrusted "$pem" "$pem" 2>&1); then
-    printf '%s trusts the compromised chain:\n%s\n' "$bundle" "$out" >&2
+  local pem=$1 out line n=0
+  # The default CApath/store openssl also loads only add trust anchors, so they
+  # can only make this stricter. 1793491200 is 2026-11-01T00:00:00Z. verify
+  # checks the file's first certificate; the rest serve as untrusted
+  # intermediates.
+  if out=$(openssl verify -attime 1793491200 -CAfile "$bundle" -untrusted "$pem" "$pem" 2>&1); then
+    printf 'the image trusts the compromised chain:\n%s\n' "$out" >&2
     return 1
   fi
-  errs=$(grep -oE 'error [0-9]+ at [0-9]+ depth lookup' <<<"$out" | awk '{print $2}' | sort -u)
-  if [[ "$errs" != 20 ]]; then
+  # Needs at least one "error N at" line, all with N = 20, and no "OK".
+  while IFS= read -r line; do
+    if [[ "$line" == *": OK" ]]; then n=0; break; fi
+    [[ "$line" =~ ^error\ ([0-9]+)\ at\ [0-9]+\ depth\ lookup ]] || continue
+    if [[ "${BASH_REMATCH[1]}" != 20 ]]; then n=0; break; fi
+    n=$((n + 1))
+  done <<<"$out"
+  if ((n == 0)); then
     printf 'unexpected openssl verify result:\n%s\n' "$out" >&2
     return 1
   fi
@@ -239,19 +241,14 @@ fail=0
 check() {
   local name=$1
   shift
-  if "$@" >/dev/null 2>&1; then echo "ok      $name"; else echo "FAILED  $name"; fail=1; fi
-}
-# Like check, but keeps the command's output, which explains a failure.
-check_verbose() {
-  local name=$1
-  shift
-  if "$@"; then echo "ok      $name"; else echo "FAILED  $name"; fail=1; fi
+  # stderr is kept: it explains a failure.
+  if "$@" >/dev/null; then echo "ok      $name"; else echo "FAILED  $name"; fail=1; fi
 }
 for t in $tools; do
   if command -v "$t" >/dev/null; then echo "ok      $t"; else echo "MISSING $t"; fail=1; fi
 done
 for r in "${runs[@]}"; do
-  check "$r" $r
+  check "${r% 2>&1}" bash -c "$r"
 done
 check 'en_US.UTF-8 locale' bash -c "locale -a | grep -qix 'en_US.utf8'"
 if ((setup)); then
@@ -260,9 +257,9 @@ if ((setup)); then
   check 'iptables-legacy' bash -c "update-alternatives --query iptables | grep -qx 'Value: /usr/sbin/iptables-legacy'"
   check 'ip6tables-legacy' bash -c "update-alternatives --query ip6tables | grep -qx 'Value: /usr/sbin/ip6tables-legacy'"
 fi
-check_verbose 'no distrusted CA roots' distrusted_roots_absent
-check_verbose 'eMudhra chain via emSign ECC Root CA - G3 untrusted' chain_untrusted "$tmp/emudhra.pem"
-check_verbose 'eMudhra chain via AAA Certificate Services untrusted' chain_untrusted "$tmp/aaa-emudhra.pem"
+check 'no distrusted CA roots' distrusted_roots_absent
+check 'eMudhra chain via emSign ECC Root CA - G3 untrusted' chain_untrusted "$tmp/emudhra.pem"
+check 'eMudhra chain via AAA Certificate Services untrusted' chain_untrusted "$tmp/aaa-emudhra.pem"
 check https curl -fsS --connect-timeout 10 --max-time 30 -o /dev/null https://www.google.com
 check 'git ls-remote' timeout 60 git ls-remote https://github.com/bazelbuild/bazel HEAD
 exit "$fail"
