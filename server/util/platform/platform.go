@@ -172,6 +172,8 @@ const (
 	// boot with IPv6 enabled.
 	NetworkEnableIPv6PropertyName = "network-enable-ipv6"
 
+	UseGenericSnapshotPropertyName = "use-generic-snapshot"
+
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
 
@@ -277,6 +279,7 @@ type Properties struct {
 
 	// ShmSizeBytes is the requested size of the /dev/shm tmpfs mount.
 	ShmSizeBytes           *int64
+	UseGenericSnapshot     bool
 	RecycleRunner          bool
 	RunnerRecyclingMaxWait time.Duration
 
@@ -563,7 +566,14 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		shmSizeBytes = &n
 	}
 
+	// Ignored for incompatible actions, so experiments can enable it broadly.
+	// Only Firecracker reads it, after executor isolation defaults apply.
+	// Generic VMs use userspace networking, which doesn't support IPv6.
+	useGenericSnapshot := boolProp(m, UseGenericSnapshotPropertyName, false) && !recycleRunner &&
+		!boolProp(m, initDockerdPropertyName, false) && !vfsEnabled && overrideSnapshotKey == nil &&
+		!boolProp(m, NetworkEnableIPv6PropertyName, false)
 	return &Properties{
+		UseGenericSnapshot:        useGenericSnapshot,
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),

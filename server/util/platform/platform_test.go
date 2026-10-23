@@ -504,3 +504,30 @@ func TestParse_ExecrootPath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", platformProps.ExecrootPath)
 }
+
+func TestParseGenericFirecrackerSnapshot(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		extra *repb.Platform_Property
+		want  bool
+	}{
+		{name: "enabled", want: true},
+		{name: "dockerd", extra: &repb.Platform_Property{Name: "init-dockerd", Value: "true"}},
+		{name: "recycling", extra: &repb.Platform_Property{Name: "recycle-runner", Value: "true"}},
+		{name: "vfs", extra: &repb.Platform_Property{Name: "enable-vfs", Value: "true"}},
+		{name: "ipv6", extra: &repb.Platform_Property{Name: NetworkEnableIPv6PropertyName, Value: "true"}},
+		{name: "disabled", extra: &repb.Platform_Property{Name: UseGenericSnapshotPropertyName, Value: "false"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: UseGenericSnapshotPropertyName, Value: "true"},
+			}}}}
+			if tc.extra != nil {
+				task.PlatformOverrides = &repb.Platform{Properties: []*repb.Platform_Property{tc.extra}}
+			}
+			props, err := ParseProperties(task)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, props.UseGenericSnapshot)
+		})
+	}
+}
