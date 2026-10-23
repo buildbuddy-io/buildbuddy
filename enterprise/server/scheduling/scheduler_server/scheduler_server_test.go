@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -46,6 +47,7 @@ import (
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -2006,6 +2008,48 @@ func TestEnqueueTaskReservation_DoesntOverwriteDelay(t *testing.T) {
 	taskID := enqueueTaskReservation(ctx, t, env, 3*time.Second)
 
 	fe1.WaitForTaskWithDelay(taskID, 3*time.Second)
+}
+
+func TestEnqueueTaskReservation_RequiresAppClientIdentity(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityApp)
+	scheduler := env.GetSchedulerService().(*SchedulerServer)
+
+	request := func() *scpb.EnqueueTaskReservationRequest {
+		return &scpb.EnqueueTaskReservationRequest{
+			TaskId:   "task-id",
+			TaskSize: &scpb.TaskSize{},
+			SchedulingMetadata: &scpb.SchedulingMetadata{
+				Os:   defaultOS,
+				Arch: defaultArch,
+			},
+		}
+	}
+	contextWithIdentity := func(client string) context.Context {
+		identityService := env.GetClientIdentityService()
+		header, err := identityService.NewIdentityHeader(&interfaces.ClientIdentity{
+			Origin: interfaces.ClientIdentityInternalOrigin,
+			Client: client,
+		}, time.Minute)
+		require.NoError(t, err)
+		incomingCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, header))
+		validatedCtx, err := identityService.ValidateIncomingIdentity(incomingCtx)
+		require.NoError(t, err)
+		return validatedCtx
+	}
+
+	_, err := scheduler.EnqueueTaskReservation(ctx, request())
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	_, err = scheduler.EnqueueTaskReservation(contextWithIdentity(interfaces.ClientIdentityExecutor), request())
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	_, err = scheduler.EnqueueTaskReservation(contextWithIdentity(interfaces.ClientIdentityApp), request())
+	require.True(t, status.IsUnavailableError(err))
+
+	localClient := &schedulerClient{localServer: scheduler}
+	_, err = localClient.EnqueueTaskReservation(ctx, request())
+	require.True(t, status.IsUnavailableError(err))
 }
 
 func TestEnqueueTaskReservation_Exists(t *testing.T) {

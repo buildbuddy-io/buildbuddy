@@ -1401,7 +1401,7 @@ type schedulerClient struct {
 
 func (c *schedulerClient) EnqueueTaskReservation(ctx context.Context, request *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	if c.localServer != nil {
-		return c.localServer.EnqueueTaskReservation(ctx, request)
+		return c.localServer.enqueueTaskReservation(ctx, request)
 	}
 	return c.rpcClient.EnqueueTaskReservation(ctx, request)
 }
@@ -3278,8 +3278,16 @@ func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 }
 
 func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
-	// TODO(vadim): verify user is authorized to use executor pool
+	if identityService := s.env.GetClientIdentityService(); identityService != nil {
+		identity, err := identityService.IdentityFromContext(ctx)
+		if err != nil || identity == nil || identity.Client != interfaces.ClientIdentityApp {
+			return nil, status.PermissionDeniedError("app client identity required")
+		}
+	}
+	return s.enqueueTaskReservation(ctx, req)
+}
 
+func (s *SchedulerServer) enqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	opts := enqueueTaskReservationOpts{
 		numReplicas:                  1,
 		maxAttempts:                  10,
