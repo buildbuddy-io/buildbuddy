@@ -59,6 +59,7 @@ var (
 	skipWriteValidation = flag.Bool("cache_proxy.skip_write_validation", false, "If true, skip local cache write validation and rely on remote validation for cache proxy dual writes.")
 
 	interceptAndChunkLargeWrites = expflag.Bool("cache_proxy.intercept_and_chunk_large_writes", false, "If true, store large client uploads as content-defined chunks in the local and remote caches instead of forwarding them whole.")
+	cdcReadFastPath              = expflag.Bool("cache_proxy.cdc_read_fast_path", true, "If true, serve a chunked read from the proxy's local cache when it holds the blob's chunk manifest and every chunk, instead of first asking the remote cache to split the blob.")
 )
 
 func groupIDForMetrics(ctx context.Context) string {
@@ -426,8 +427,7 @@ func sendChunkFrames(stream bspb.ByteStream_ReadServer, data []byte) error {
 }
 
 func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CASResourceName, remoteOnly bool) ([]*repb.Digest, error) {
-	fastPathEnabled := s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.cdc_read_fast_path", false)
-	if fastPathEnabled && !remoteOnly {
+	if !remoteOnly && cdcReadFastPath.Get(ctx) {
 		if chunkDigests, ok := s.localChunkDigests(ctx, rn); ok {
 			return chunkDigests, nil
 		}
