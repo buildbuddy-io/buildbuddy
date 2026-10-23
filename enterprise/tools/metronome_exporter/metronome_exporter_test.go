@@ -319,6 +319,72 @@ func TestExport_OnlyCreatesCustomersForSelfServeGroups(t *testing.T) {
 	require.Equal(t, []string{"GR1"}, client.created)
 }
 
+func TestExportedGroups(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		ids      []string
+		statuses []grpb.Group_GroupStatus
+		want     []string
+	}{
+		{
+			name: "ids only",
+			ids:  []string{"GR2", "GR4"},
+			want: []string{"GR2", "GR4"},
+		},
+		{
+			name:     "statuses only",
+			statuses: []grpb.Group_GroupStatus{grpb.Group_USAGE_BASED_GROUP_STATUS},
+			want:     []string{"GR1"},
+		},
+		{
+			name:     "ids or statuses",
+			ids:      []string{"GR4"},
+			statuses: []grpb.Group_GroupStatus{grpb.Group_FREE_TIER_GROUP_STATUS},
+			want:     []string{"GR2", "GR4"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := setupClickHouseEnv(t)
+			flags.Set(t, "group_ids", tc.ids)
+			flags.Set(t, "group_statuses", tc.statuses)
+			groups, err := exportedGroups(t.Context(), env)
+			require.NoError(t, err)
+			var got []string
+			for _, g := range groups {
+				got = append(got, g.GroupID)
+			}
+			require.ElementsMatch(t, tc.want, got)
+		})
+	}
+}
+
+func TestValidateGroupSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		ids      []string
+		statuses []grpb.Group_GroupStatus
+		wantErr  bool
+	}{
+		{name: "no selector", wantErr: true},
+		{name: "ids", ids: []string{"GR1"}},
+		{name: "statuses", statuses: []grpb.Group_GroupStatus{grpb.Group_FREE_TIER_GROUP_STATUS}},
+		{name: "empty id", ids: []string{"GR1", ""}, wantErr: true},
+		{name: "blank id", ids: []string{" "}, wantErr: true},
+		{name: "unknown status", statuses: []grpb.Group_GroupStatus{99}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "group_ids", tc.ids)
+			flags.Set(t, "group_statuses", tc.statuses)
+			err := validateGroupSelection()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestQueryUsageRows(t *testing.T) {
 	env := setupClickHouseEnv(t)
 	ctx := t.Context()
