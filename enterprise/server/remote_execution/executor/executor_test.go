@@ -204,6 +204,7 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 		name                string
 		runOverride         rbetest.RunInterceptor
 		expectFinishCleanly bool
+		expectExitCode      int32
 
 		expectInputFetchMetadata *espb.InputFetchMetadata
 	}{
@@ -215,6 +216,21 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 			name:                "Run failure",
 			runOverride:         rbetest.AlwaysReturn(commandutil.ErrorResult(errors.New("run failed"))),
 			expectFinishCleanly: false,
+		},
+		{
+			name: "Segmentation fault",
+			runOverride: rbetest.AlwaysReturn(&interfaces.CommandResult{
+				ExitCode: commandutil.SegmentationFaultExitCode,
+			}),
+			expectExitCode: int32(commandutil.SegmentationFaultExitCode),
+		},
+		{
+			name: "Ordinary action failure",
+			runOverride: rbetest.AlwaysReturn(&interfaces.CommandResult{
+				ExitCode: 1,
+			}),
+			expectExitCode:      1,
+			expectFinishCleanly: true,
 		},
 		{
 			name: "Auxiliary metadata",
@@ -264,6 +280,10 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 			unpackedCompletedOp, err := rexec.UnpackOperation(completedOp)
 			require.NoError(t, err)
 			rsp := unpackedCompletedOp.ExecuteResponse
+			if tc.expectExitCode != 0 {
+				require.Equal(t, tc.expectExitCode, rsp.GetResult().GetExitCode())
+				require.Zero(t, rsp.GetStatus().GetCode())
+			}
 
 			if tc.expectInputFetchMetadata != nil {
 				auxMeta := &espb.ExecutionAuxiliaryMetadata{}
