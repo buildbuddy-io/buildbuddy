@@ -22,7 +22,6 @@
 // --group_statuses='[1,5]' (free tier and usage based).
 // When both selectors are set, groups matching either are exported. At least
 // one selector is required.
-
 package main
 
 import (
