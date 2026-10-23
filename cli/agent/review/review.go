@@ -24,18 +24,24 @@ import (
 )
 
 const Usage = `
-usage: bb agent review [ --dry_run ] [ --force ] [ --allow_fork ]
+usage: bb agent review [ --fix ] [ --dry_run ] [ --verify=false ] [ --force ] [ --allow_fork ]
 
 Reviews the open GitHub pull request for the checked-out branch, then posts the
 findings as PR review comments.
+
+With --fix, fetches existing PR feedback, addresses actionable comments, then commits and pushes them to the PR branch.
+Requires a clean checkout at the PR head.
+Pass --verify=false to skip verification.
+With --fix --dry_run, applies changes in the local working tree without committing, pushing, or replying to comments.
+Fixing PRs from forks is not supported.
 
 The review reads the source from the local checkout, so to review another PR,
 check it out first with ` + "`gh pr checkout <pr>`" + `.
 
 Requires gh and a GitHub token in REPO_TOKEN, GH_TOKEN, or GITHUB_TOKEN.
 
-Drafts and PRs that already have a bot review are skipped; pass --force (or
-set AGENT_REVIEW_FORCE=1) to review them anyway.
+When generating reviews, drafts and PRs that already have a bot review are
+skipped; pass --force (or set AGENT_REVIEW_FORCE=1) to review them anyway.
 
 By default, PRs from forks are refused, because reviewing one runs the agent over
 untrusted code; pass --allow_fork to review one anyway.
@@ -43,6 +49,8 @@ untrusted code; pass --allow_fork to review one anyway.
 Examples:
   bb agent review
   bb agent review --dry_run
+  bb agent review --fix
+  bb agent review --fix --dry_run
 `
 
 // Flags holds the flags unique to this subcommand. The flags shared by all
@@ -50,7 +58,9 @@ Examples:
 var (
 	Flags = flag.NewFlagSet("review", flag.ContinueOnError)
 
-	dryRun    = Flags.Bool("dry_run", false, "Print the review payload without posting it.")
+	dryRun    = Flags.Bool("dry_run", false, "Print the review payload without posting it, or with --fix, apply changes locally without committing or pushing.")
+	fix       = Flags.Bool("fix", false, "Address existing PR feedback, then commit and push the changes. With --dry_run, leave changes uncommitted in the working tree.")
+	verify    = Flags.Bool("verify", true, "Verify changes when using --fix. Set --verify=false to skip verification.")
 	force     = Flags.Bool("force", false, "Review the PR even if it is a draft or already has a bot review.")
 	allowFork = Flags.Bool("allow_fork", false, "Review the PR even if it comes from a fork. See the warning that --allow_fork suppresses.")
 )
@@ -184,6 +194,10 @@ func HandleReview(args []string) (int, error) {
 		headShort = headShort[:8]
 	}
 	log.Printf("PR #%d on %s/%s  (head: %s, base: %s)", pr.GetNumber(), owner, repo, headShort, pr.GetBase().GetRef())
+
+	if *fix {
+		return fixReview(ctx, gh, owner, repo, pr)
+	}
 
 	if !*allowFork && isFork(pr, owner, repo) {
 		log.Warnf("Reviewing this code runs an agent over untrusted code, which the agent reads as input. Proceed with caution. Read the diff yourself first, and pass --allow_fork to review it anyway.")
