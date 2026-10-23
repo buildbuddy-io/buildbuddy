@@ -625,8 +625,8 @@ func (s *ociFetcherServer) fetchManifestMetadataFromRemote(ctx context.Context, 
 	}, nil
 }
 
-func (s *ociFetcherServer) getRemoteOpts(ctx context.Context, creds *rgpb.Credentials) []remote.Option {
-	opts := []remote.Option{remote.WithContext(ctx)}
+func (s *ociFetcherServer) getRemoteOpts(creds *rgpb.Credentials) []remote.Option {
+	var opts []remote.Option
 
 	if creds != nil && creds.GetUsername() != "" && creds.GetPassword() != "" {
 		opts = append(opts, remote.WithAuth(&authn.Basic{
@@ -647,7 +647,7 @@ func (s *ociFetcherServer) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 	return opts
 }
 
-func (s *ociFetcherServer) getOrCreatePuller(ctx context.Context, imageRef ctrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {
+func (s *ociFetcherServer) getOrCreatePuller(imageRef ctrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {
 	key := pullerKey(imageRef, creds)
 
 	s.mu.Lock()
@@ -658,7 +658,7 @@ func (s *ociFetcherServer) getOrCreatePuller(ctx context.Context, imageRef ctrna
 		return entry.puller, nil
 	}
 
-	remoteOpts := s.getRemoteOpts(ctx, creds)
+	remoteOpts := s.getRemoteOpts(creds)
 	puller, err := remote.NewPuller(remoteOpts...)
 	if err != nil {
 		return nil, status.InternalErrorf("error creating puller: %s", err)
@@ -713,7 +713,7 @@ func withPullerRetry[T any](
 ) (T, error) {
 	var zero T
 
-	puller, err := s.getOrCreatePuller(ctx, ref, creds)
+	puller, err := s.getOrCreatePuller(ref, creds)
 	if err != nil {
 		return zero, err
 	}
@@ -730,7 +730,7 @@ func withPullerRetry[T any](
 
 	// Pullers from the LRU may have expired Bearer tokens, so we evict and retry on most errors.
 	s.evictPuller(ref, creds)
-	puller, err = s.getOrCreatePuller(ctx, ref, creds)
+	puller, err = s.getOrCreatePuller(ref, creds)
 	if err != nil {
 		return zero, err
 	}
