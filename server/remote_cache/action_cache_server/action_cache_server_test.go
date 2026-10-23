@@ -921,7 +921,6 @@ func TestValidateActionResult_ChunkedOutputDirectoryTreeAboveDefaultChunkThresho
 
 func TestValidateActionResult_DoesNotReconstructOversizedOutputDirectoryTree(t *testing.T) {
 	const maxTreeSizeBytes = 8 * 1024 * 1024
-	flags.Set(t, "cache.max_chunked_output_tree_size_bytes", maxTreeSizeBytes)
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
