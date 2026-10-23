@@ -20,7 +20,9 @@ The 20.04 image is amd64-only: its Dockerfile downloads amd64 Go and clang and
 hard-codes an amd64 `JAVA_HOME`.
 
 `rbe_image_check.sh` runs inside the image it checks, e.g. as an action on
-BuildBuddy RBE. To check an image locally:
+BuildBuddy RBE. Among other things it checks that the image's CA bundle doesn't
+trust the roots in its `distrusted_roots` list (add a fingerprint there to
+distrust another root). To check an image locally:
 
 ```sh
 docker run --rm -v "$PWD/dockerfiles:/c:ro" <image> /c/rbe_image_check.sh             # tools, setup, https, git
