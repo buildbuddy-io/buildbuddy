@@ -1535,7 +1535,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (pooltype) (\n    label_replace(\n    label_replace(\n    label_replace(\n    label_replace(\n        node_uname_info{nodename=~\".*executor.*\", region=~\"(us-central1|us-west1|us-west2)\"},\n        \"nodepool\", \"$2\", \"nodename\", \"^gke-(dev|prod)-[^-]*-(.*)-[0-9a-f]{8}-(grp-)?.{4}$\"\n    ),\n        \"pooltype\", \"spot\", \"nodepool\", \"^spot-.*$\"\n    ),\n        \"pooltype\", \"non-spot\", \"nodepool\", \"^(bb|executor)-.*$\"\n    ),\n        \"pooltype\", \"workflows\", \"nodepool\", \"^(workflow-executor)-.*$\"\n    )\n)",
+          "expr": "sum by (pooltype) (\n    label_replace(\n    label_replace(\n    label_replace(\n    label_replace(\n        node_uname_info{nodename=~\".*executor.*\", cloud=\"gcp\"},\n        \"nodepool\", \"$2\", \"nodename\", \"^gke-(dev|prod)-[^-]*-(.*)-[0-9a-f]{8}-(grp-)?.{4}$\"\n    ),\n        \"pooltype\", \"spot\", \"nodepool\", \"^spot-.*$\"\n    ),\n        \"pooltype\", \"non-spot\", \"nodepool\", \"^(bb|executor)-.*$\"\n    ),\n        \"pooltype\", \"workflows\", \"nodepool\", \"^(workflow-executor)-.*$\"\n    )\n)",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -1732,7 +1732,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{region!=\"us-sjc\", job=\"executor\"}))",
+          "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{cloud!=\"metal\", job=\"executor\"}))",
           "interval": "",
           "legendFormat": "Avg executor queue length",
           "queryType": "randomWalk",
@@ -1910,10 +1910,10 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=~\"cache-proxy-autoscaler.*\"}) + sum(up{region=\"us-sjc\", job=\"cache-proxy.*\"}) + sum(up{region=\"us-nuq\", job=\"cache-proxy.*\"}) + sum(up{region=~\"^aws-.*\", job=\"cache-proxy.*\"})",
+          "expr": "sum(kube_replicaset_spec_replicas{replicaset=~\"cache-proxy.*\"}) + sum(kube_statefulset_replicas{statefulset=~\"cache-proxy.*\"})",
           "hide": false,
           "instant": false,
-          "legendFormat": "Autoscaler target",
+          "legendFormat": "Desired replicas",
           "range": true,
           "refId": "B"
         }
