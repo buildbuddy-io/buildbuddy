@@ -4,6 +4,7 @@ import capabilities from "../../../app/capabilities/capabilities";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { stats } from "../../../proto/stats_ts_proto";
 import { getProtoFilterParams } from "../filter/filter_util";
+import { DEFAULT_TRENDS_ROLES } from "./common";
 import TrendsModel from "./trends_model";
 
 function getKey(prefix: string, request: { toJSON(): Object }, ...extras: any[]): string {
@@ -38,10 +39,7 @@ export function fetchTrends(
   if (filterParams.role) {
     request.query.role = filterParams.role;
   } else {
-    // Note: Technically we're filtering out workflows and unknown roles,
-    // even though the user has selected "All roles". But we do this to
-    // avoid double-counting build times for workflows and their nested CI runs.
-    request.query.role = ["", "CI"];
+    request.query.role = [...DEFAULT_TRENDS_ROLES];
   }
 
   if (filterParams.host) request.query.host = filterParams.host;

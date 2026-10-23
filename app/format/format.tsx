@@ -396,6 +396,9 @@ export function formatRole(role: string): string | null {
   if (role === "CI") {
     return "CI";
   }
+  if (role === "AGENT") {
+    return "Agent";
+  }
   if (role === "HOSTED_BAZEL") {
     return "Remote Bazel";
   }

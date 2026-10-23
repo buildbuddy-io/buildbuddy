@@ -23,6 +23,9 @@ const (
 const (
 	envVarOptionName = "client_env"
 	envVarSeparator  = "="
+
+	claudeCodeEnvVar     = "CLAUDECODE"
+	codexSessionIDEnvVar = "CODEX_SESSION_ID"
 )
 
 var (
@@ -45,6 +48,8 @@ const (
 )
 
 var (
+	agentEnvVars = []string{claudeCodeEnvVar, codexSessionIDEnvVar}
+
 	optionsToParse = map[string]struct{}{
 		"remote_cache":                {},
 		"remote_upload_local_results": {},
@@ -76,9 +81,8 @@ func parseCommandLine(commandLine *command_line.CommandLine) cmdOptions {
 		}
 		for _, option := range p.OptionList.GetOption() {
 			if option.OptionName == envVarOptionName {
-				parts := strings.Split(option.OptionValue, envVarSeparator)
-				if len(parts) == 2 {
-					res.envVarMap[parts[0]] = parts[1]
+				if name, value, ok := strings.Cut(option.OptionValue, envVarSeparator); ok {
+					res.envVarMap[name] = value
 				}
 			} else if _, ok := optionsToParse[option.OptionName]; ok {
 				res.optionsMap[option.OptionName] = option.OptionValue
@@ -325,6 +329,14 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 	}
 	if sha, ok := envVarMap["VOLATILE_GIT_COMMIT"]; ok && sha != "" {
 		sep.setCommitSha(sha, priority)
+	}
+	// Marker presence is sufficient, even if the value is empty or redacted.
+	// Keep CI roles below so agent-launched CI builds retain their CI behavior.
+	for _, name := range agentEnvVars {
+		if _, ok := envVarMap[name]; ok {
+			sep.setRole("AGENT", priority)
+			break
+		}
 	}
 	if ci, ok := envVarMap["CI"]; ok && ci != "" {
 		sep.setRole("CI", priority)

@@ -81,6 +81,7 @@ ts_library(
         "//app/capabilities",
         "//app/service:rpc_service",
         "//enterprise/app/filter:filter_util",
+        "//enterprise/app/trends:common",
         "//enterprise/app/trends:trends_model",
         "//proto:stats_ts_proto",
     ],

@@ -486,6 +486,7 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		expectedValue string
 	}{
 		{"client_env", "SECRET=codez", "SECRET=<REDACTED>"},
+		{"client_env", "CODEX_SESSION_ID=agent-session-id", "CODEX_SESSION_ID=agent-session-id"},
 		{"client_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
 		{"client_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
 		{"test_env", "SECRET=codez", "SECRET=<REDACTED>"},

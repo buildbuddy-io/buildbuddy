@@ -781,6 +781,7 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 			"--build_metadata='ALLOW_ENV=FOO_ALLOWED' "+
 			"--build_metadata='REPO_URL=https://username:githubToken@github.com/acme-inc/acme'",
 		&bspb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bspb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "original command line"}},
+		&bspb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bspb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "canonical"}},
 		&bspb.BuildEventId_BuildMetadata{},
 		&bspb.BuildEventId_WorkspaceStatus{},
 	), testInvocationID, 1)
@@ -788,10 +789,21 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Send env and metadata with info that should be redacted
-	request = streamRequest(structuredCommandLineEvent(map[string]string{
-		"FOO_ALLOWED": "public_env_value",
-		"FOO_SECRET":  "secret_env_value",
-	}), testInvocationID, 2)
+	commandLineAny := structuredCommandLineEvent(map[string]string{
+		"FOO_ALLOWED":      "public_env_value",
+		"FOO_SECRET":       "secret_env_value",
+		"CLAUDECODE":       "1",
+		"CODEX_SESSION_ID": "agent-session-id",
+	})
+	request = streamRequest(commandLineAny, testInvocationID, 2)
+	require.NoError(t, channel.HandleEvent(request))
+
+	commandLineEvent := &bspb.BuildEvent{}
+	require.NoError(t, commandLineAny.UnmarshalTo(commandLineEvent))
+	commandLineEvent.GetStructuredCommandLine().CommandLineLabel = "canonical"
+	commandLineEvent.GetId().GetStructuredCommandLine().CommandLineLabel = "canonical"
+	require.NoError(t, commandLineAny.MarshalFrom(commandLineEvent))
+	request = streamRequest(commandLineAny, testInvocationID, 3)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -802,14 +814,14 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 		// redact properly in this case.
 		"ALLOW_ENV": "FOO_ALLOWED",
 		"REPO_URL":  "https://username:githubToken@github.com/acme-inc/acme",
-	}), testInvocationID, 3)
+	}), testInvocationID, 4)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
 	// Send workspace status so events get flushed. Include a secret here as well.
 	request = streamRequest(workspaceStatusEvent(
 		"REPO_URL", "https://username:githubToken@github.com/acme-inc/acme",
-	), testInvocationID, 4)
+	), testInvocationID, 5)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -817,10 +829,22 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 	invocation, err := build_event_handler.LookupInvocation(te, ctx, testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "https://github.com/acme-inc/acme", invocation.RepoUrl)
+	assert.Equal(t, "AGENT", invocation.Role)
+	var commandLineLabels []string
+	for _, commandLine := range invocation.GetStructuredCommandLine() {
+		commandLineLabels = append(commandLineLabels, commandLine.GetCommandLineLabel())
+		commandLineText, err := prototext.Marshal(commandLine)
+		require.NoError(t, err)
+		assert.Contains(t, string(commandLineText), "--client_env=FOO_SECRET=<REDACTED>")
+		assert.NotContains(t, string(commandLineText), "secret_env_value")
+	}
+	assert.ElementsMatch(t, []string{"original command line", "canonical"}, commandLineLabels)
 	txt, err := prototext.Marshal(invocation)
 	require.NoError(t, err)
 	assert.NotContains(t, string(txt), "secret_env_value", "Env secrets should not appear in invocation")
 	assert.NotContains(t, string(txt), "githubToken", "URL secrets should not appear in invocation")
+	assert.Contains(t, string(txt), "--client_env=CLAUDECODE=<REDACTED>")
+	assert.Contains(t, string(txt), "--client_env=CODEX_SESSION_ID=agent-session-id")
 	assert.Contains(t, string(txt), "--client_env=FOO_ALLOWED=public_env_value", "Values of allowed env vars should not be redacted")
 	assert.Contains(t, string(txt), "--client_env=FOO_SECRET=<REDACTED>", "Values of non-allowed env vars should be redacted")
 }
