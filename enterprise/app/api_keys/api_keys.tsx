@@ -22,7 +22,7 @@ import format from "../../../app/format/format";
 import rpcService, { CancelablePromise, UnaryRpcMethod } from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { BuildBuddyError } from "../../../app/util/errors";
-import { timestampToDate } from "../../../app/util/proto";
+import { parseDurationString, timestampToDate } from "../../../app/util/proto";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import { capability } from "../../../proto/capability_ts_proto";
 import { withKey } from "../../../app/util/react";
@@ -78,10 +78,15 @@ type ApiKeyFields = api_key.ICreateApiKeyRequest | api_key.IUpdateApiKeyRequest;
 
 const DEFAULT_VISIBILITY = [api_key.Visibility.VISIBLE_TO_GROUP_ADMINS];
 
+const EXPIRES_IN_PATTERN = /^[1-9]\d*[mhd]$/;
+
 type FormState<T extends ApiKeyFields> = {
   isOpen: boolean;
   isSubmitting: boolean;
   request: T;
+  // Raw expiration text, parsed on submit to allow invalid values while the
+  // user is typing.
+  expiresIn: string;
 };
 
 export default class ApiKeysComponent extends React.Component<ApiKeysComponentProps, State> {
@@ -156,6 +161,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           capability: this.defaultCapabilities(),
           visibility: DEFAULT_VISIBILITY,
         }),
+        expiresIn: "",
       },
     });
     setTimeout(() => {
@@ -164,6 +170,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
   private async onCloseCreateForm() {
     this.setState({ createForm: newFormState(api_key.CreateApiKeyRequest.create()) });
+  }
+  private onChangeCreateFormExpiresIn(e: React.ChangeEvent<HTMLInputElement>) {
+    const expiresIn = e.target.value;
+    this.setState((state) => ({ createForm: { ...state.createForm, expiresIn } }));
   }
   private onChangeCreateForm(name: string, value: any) {
     this.setState((state) => ({
@@ -182,6 +192,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       const response = await this.props.create(
         new api_key.CreateApiKeyRequest({
           ...this.state.createForm.request,
+          expiresIn: parseDurationString(this.state.createForm.expiresIn),
         })
       );
       if (response.apiKey) {
@@ -214,6 +225,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           visibleToDevelopers: apiKey.visibleToDevelopers,
           visibility: [...apiKey.visibility],
         }),
+        expiresIn: "",
       },
     });
     setTimeout(() => {
@@ -387,7 +399,8 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onSubmit,
     onChange,
     ref,
-    formState: { request, isOpen, isSubmitting },
+    formState: { request, isOpen, isSubmitting, expiresIn },
+    showExpiration,
   }: {
     title: string;
     submitLabel: string;
@@ -396,6 +409,8 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange: (name: string, value: any) => any;
     ref: React.RefObject<HTMLFormElement>;
     formState: FormState<T>;
+    // Disallow expiration time updates for existing keys.
+    showExpiration?: boolean;
   }) {
     return (
       <Modal isOpen={isOpen} onRequestClose={onRequestClose} shouldFocusAfterRender={false}>
@@ -553,6 +568,21 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   </div>
                 </fieldset>
               )}
+              {showExpiration && (
+                <fieldset className="form-section">
+                  <legend>Expiration</legend>
+                  <div className="field-container expires-in-row">
+                    <TextInput
+                      className="expires-in-input"
+                      placeholder="Never"
+                      pattern={EXPIRES_IN_PATTERN.source}
+                      onChange={this.onChangeCreateFormExpiresIn.bind(this)}
+                      value={expiresIn}
+                    />
+                    <span className="field-description">e.g. '10m', '1h', '7d'. Leave blank to never expire.</span>
+                  </div>
+                </fieldset>
+              )}
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
@@ -645,6 +675,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           onChange: this.onChangeCreateForm.bind(this),
           onSubmit: this.onSubmitCreateNewForm.bind(this),
           onRequestClose: this.onCloseCreateForm.bind(this),
+          showExpiration: true,
         })}
         {this.renderModal({
           title: "Edit API key",
@@ -862,6 +893,7 @@ function newFormState<T extends ApiKeyFields>(request: T): FormState<T> {
     isOpen: false,
     isSubmitting: false,
     request,
+    expiresIn: "",
   };
 }
 
