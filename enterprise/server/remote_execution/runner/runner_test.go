@@ -454,9 +454,8 @@ func TestRunnerPool_CanAddAndGetBackSameRunner_DockerReuseAlias(t *testing.T) {
 	assert.Equal(t, 0, pool.PausedRunnerCount())
 }
 
-func TestRunnerPool_OCISeccompOverrides(t *testing.T) {
+func TestRunnerPool_OCISeccompDisableNewUserNS(t *testing.T) {
 	flags.Set(t, "executor.enable_oci", true)
-	flags.Set(t, "executor.oci.seccomp_additional_syscalls", "")
 	expflag.SetFlagProvider(expflag.NewContextProvider())
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 	env := newTestEnv(t)
@@ -467,12 +466,12 @@ func TestRunnerPool_OCISeccompOverrides(t *testing.T) {
 	pool := newRunnerPool(t, env, cfg)
 	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
 	deniedCtx := expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
-		Name:  "executor.oci.seccomp_additional_syscalls",
-		Value: &expb.EvaluatedFlag_StringValue{StringValue: ""},
+		Name:  "executor.oci.seccomp_disable_new_userns",
+		Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true},
 	}})
 	allowedCtx := expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
-		Name:  "executor.oci.seccomp_additional_syscalls",
-		Value: &expb.EvaluatedFlag_StringValue{StringValue: "unshare"},
+		Name:  "executor.oci.seccomp_disable_new_userns",
+		Value: &expb.EvaluatedFlag_BoolValue{BoolValue: false},
 	}})
 
 	denied := mustGetNewRunner(t, deniedCtx, pool, newTask())

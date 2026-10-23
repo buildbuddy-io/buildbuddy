@@ -1267,7 +1267,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		PersistentWorkerKey: persistentWorkerKey,
 	}
 	if platform.ContainerType(props.WorkloadIsolationType) == platform.OCIContainerType {
-		key.OciSeccompAdditionalSyscalls = execution_experiments.SeccompAdditionalSyscalls.Get(ctx)
+		key.OciSeccompDisableNewUserns = execution_experiments.SeccompDisableNewUserNS.Get(ctx)
 	}
 
 	// If snapshot sharing is enabled, a firecracker VM can be cloned from the

@@ -30,9 +30,9 @@ var (
 	// IMPORTANT: when adding a new experiment to this list, also update
 	// modifyTaskForExperiments in scheduler_server.go to evaluate it.
 
-	PersistentVolumes         = expflag.String("executor.persistent_volumes", "", "Persistent volumes to mount into each task's container, in the same format as the persistent-volumes platform property. When set, this takes precedence over the platform property.")
-	UserspaceNetworking       = expflag.Bool("executor.userspace_networking", false, "Enable userspace networking for OCI and Firecracker containers.")
-	RecordInputFetchMetadata  = expflag.Bool("executor.record_input_fetch_metadata", true, "If true, record and report metadata describing which action inputs were fetched from remote CAS.", expflag.DeprecatedExperimentName("remote_execution.record_input_fetch_metadata"))
-	WorkspacePoolEnabled      = expflag.Bool("executor.workspace_pool.enabled", false, "If true, keep finished task workspaces in a pool, and set up later tasks with similar input trees from them instead of from an empty directory. See the executor.workspace_pool.* flags.")
-	SeccompAdditionalSyscalls = expflag.String("executor.oci.seccomp_additional_syscalls", "", "Comma-separated additional syscalls to allow in OCI containers. Can be targeted per group using scheduler-controlled experiments; otherwise applies executor-wide. Adding syscalls weakens syscall-level sandboxing. Listing any of clone, clone3, or unshare removes the seccomp restriction on user namespace creation via that syscall.")
+	PersistentVolumes        = expflag.String("executor.persistent_volumes", "", "Persistent volumes to mount into each task's container, in the same format as the persistent-volumes platform property. When set, this takes precedence over the platform property.")
+	UserspaceNetworking      = expflag.Bool("executor.userspace_networking", false, "Enable userspace networking for OCI and Firecracker containers.")
+	RecordInputFetchMetadata = expflag.Bool("executor.record_input_fetch_metadata", true, "If true, record and report metadata describing which action inputs were fetched from remote CAS.", expflag.DeprecatedExperimentName("remote_execution.record_input_fetch_metadata"))
+	WorkspacePoolEnabled     = expflag.Bool("executor.workspace_pool.enabled", false, "If true, keep finished task workspaces in a pool, and set up later tasks with similar input trees from them instead of from an empty directory. See the executor.workspace_pool.* flags.")
+	SeccompDisableNewUserNS  = expflag.Bool("executor.oci.seccomp_disable_new_userns", false, "If true, the OCI seccomp profile prevents containers from creating user namespaces, unless executor.oci.cap_add includes CAP_SYS_ADMIN. This does not restrict syscalls listed in executor.oci.seccomp_additional_syscalls.")
 )

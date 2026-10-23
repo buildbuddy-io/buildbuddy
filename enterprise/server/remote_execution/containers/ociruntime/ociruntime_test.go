@@ -38,7 +38,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testtar"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -52,7 +51,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
-	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
@@ -254,6 +252,7 @@ func TestRun(t *testing.T) {
 func TestRunUnshare(t *testing.T) {
 	setupNetworking(t)
 	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	flags.Set(t, "executor.oci.seccomp_disable_new_userns", true)
 
 	ctx := t.Context()
 	env := testenv.GetTestEnv(t)
@@ -327,14 +326,11 @@ func TestRunNofileLimit(t *testing.T) {
 func TestSeccompSyscalls(t *testing.T) {
 	setupNetworking(t)
 	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
-	expflag.SetFlagProvider(expflag.NewContextProvider())
-	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 	buildRoot := testfs.MakeTempDir(t)
-	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
-	require.NoError(t, err)
+	cacheRoot := testfs.MakeTempDir(t)
 	image := busyboxImage(t)
 	testsyscallPath, err := runfiles.Rlocation(testsyscallRlocationpath)
 	require.NoError(t, err)
@@ -342,31 +338,36 @@ func TestSeccompSyscalls(t *testing.T) {
 	for _, testCase := range []struct {
 		name               string
 		syscall            string
-		additionalSyscalls string
+		disableNewUserNS   bool
+		additionalSyscalls []string
 		capAdd             []string
 		createExec         bool
 		wantErrno          unix.Errno
 	}{
-		{name: "run_unshare_denied", syscall: "unshare", wantErrno: unix.EPERM},
-		{name: "run_unshare_allowed", syscall: "unshare", additionalSyscalls: " unshare, unshare, ", wantErrno: unix.EINVAL},
-		{name: "run_unshare_sys_admin", syscall: "unshare", capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
-		{name: "exec_unshare_denied", syscall: "unshare", createExec: true, wantErrno: unix.EPERM},
-		{name: "exec_unshare_allowed", syscall: "unshare", additionalSyscalls: "unshare", createExec: true, wantErrno: unix.EINVAL},
-		{name: "run_clone_denied", syscall: "clone", wantErrno: unix.EPERM},
-		{name: "run_clone_allowed", syscall: "clone", additionalSyscalls: "clone", wantErrno: unix.EINVAL},
-		{name: "run_clone_sys_admin", syscall: "clone", capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
-		{name: "run_clone3_denied", syscall: "clone3", wantErrno: unix.ENOSYS},
-		{name: "run_clone3_allowed", syscall: "clone3", additionalSyscalls: "clone3", wantErrno: unix.EINVAL},
-		{name: "run_clone3_sys_admin", syscall: "clone3", capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
-		{name: "exec_clone3_denied", syscall: "clone3", createExec: true, wantErrno: unix.ENOSYS},
-		{name: "exec_clone3_sys_admin", syscall: "clone3", capAdd: []string{"CAP_SYS_ADMIN"}, createExec: true, wantErrno: unix.EINVAL},
+		{name: "run_unshare_default", syscall: "unshare", wantErrno: unix.EINVAL},
+		{name: "run_unshare_denied", syscall: "unshare", disableNewUserNS: true, wantErrno: unix.EPERM},
+		{name: "run_unshare_additional", syscall: "unshare", disableNewUserNS: true, additionalSyscalls: []string{"unshare"}, wantErrno: unix.EINVAL},
+		{name: "run_unshare_sys_admin", syscall: "unshare", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
+		{name: "exec_unshare_denied", syscall: "unshare", disableNewUserNS: true, createExec: true, wantErrno: unix.EPERM},
+		{name: "exec_unshare_additional", syscall: "unshare", disableNewUserNS: true, additionalSyscalls: []string{"unshare"}, createExec: true, wantErrno: unix.EINVAL},
+		{name: "run_clone_default", syscall: "clone", wantErrno: unix.EINVAL},
+		{name: "run_clone_denied", syscall: "clone", disableNewUserNS: true, wantErrno: unix.EPERM},
+		{name: "run_clone_additional", syscall: "clone", disableNewUserNS: true, additionalSyscalls: []string{"clone"}, wantErrno: unix.EINVAL},
+		{name: "run_clone_sys_admin", syscall: "clone", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
+		{name: "run_clone3_default", syscall: "clone3", wantErrno: unix.EINVAL},
+		{name: "run_clone3_denied", syscall: "clone3", disableNewUserNS: true, wantErrno: unix.ENOSYS},
+		{name: "run_clone3_additional", syscall: "clone3", disableNewUserNS: true, additionalSyscalls: []string{"clone3"}, wantErrno: unix.EINVAL},
+		{name: "run_clone3_sys_admin", syscall: "clone3", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
+		{name: "exec_clone3_denied", syscall: "clone3", disableNewUserNS: true, createExec: true, wantErrno: unix.ENOSYS},
+		{name: "exec_clone3_sys_admin", syscall: "clone3", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, createExec: true, wantErrno: unix.EINVAL},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "executor.oci.seccomp_disable_new_userns", testCase.disableNewUserNS)
+			flags.Set(t, "executor.oci.seccomp_additional_syscalls", testCase.additionalSyscalls)
 			flags.Set(t, "executor.oci.cap_add", testCase.capAdd)
-			ctx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{{
-				Name:  "executor.oci.seccomp_additional_syscalls",
-				Value: &expb.EvaluatedFlag_StringValue{StringValue: testCase.additionalSyscalls},
-			}})
+			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+			require.NoError(t, err)
+			ctx := t.Context()
 			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{ContainerImage: image}})
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, c.Remove(env.GetServerContext())) })
