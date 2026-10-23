@@ -82,6 +82,12 @@ message Node {
   uint32 mode = 2;
   string name = 3;
   Attrs attrs = 4;
+  // Position after this entry in a directory stream. Nonzero and stable across
+  // listings while the entry is unchanged, even if other entries are added or
+  // removed. Distinct names have distinct offsets, including hardlinks.
+  // GetDirectoryContents returns entries in increasing offset order, so a
+  // client resumes a listing at the first entry with a greater offset.
+  uint64 directory_offset = 5;
 }
 
 message GetDirectoryContentsResponse {

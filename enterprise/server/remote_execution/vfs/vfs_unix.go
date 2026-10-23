@@ -16,13 +16,12 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfscommon"
-	"golang.org/x/sys/unix"
-
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/go-units"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"golang.org/x/sys/unix"
 
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	gstatus "google.golang.org/grpc/status"
@@ -761,7 +760,7 @@ type dirHandle struct {
 func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, errno syscall.Errno) {
 	d.node.startOP("Readdirent")
 	if d.vfs.verbose {
-		log.CtxDebugf(d.vfs.rpcCtx, "Readdirent %q", d.node.relativePath())
+		log.CtxDebugf(d.vfs.getRPCContext(), "Readdirent %q", d.node.relativePath())
 		defer func() {
 			if errno == 0 {
 				if dirEntry == nil {
@@ -775,25 +774,20 @@ func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, er
 		}()
 	}
 	if d.pos == -1 {
-		directoryGeneration, directoryCacheable := d.node.directorySnapshotGeneration()
-		attrsGeneration, attrsCacheable := d.vfs.attrsSnapshotGeneration()
-		rsp, err := d.vfs.vfsClient.GetDirectoryContents(d.vfs.rpcCtx, &vfspb.GetDirectoryContentsRequest{
-			Id: d.node.StableAttr().Ino,
-		})
-		if err != nil {
-			return nil, rpcErrToSyscallErrno(err)
+		if errno := d.loadChildren(); errno != 0 {
+			return nil, errno
 		}
-		d.children = rsp.Nodes
-		if directoryCacheable && attrsCacheable {
-			attrsGenerations, ok := d.vfs.attrsGenerationsForSnapshot(attrsGeneration, rsp.Nodes)
-			if ok {
-				d.node.cacheDirectoryEntries(rsp.Nodes, directoryGeneration, attrsGenerations)
-			}
-		}
-		d.pos = 0
 	}
 
 	if d.pos >= len(d.children) {
+		if len(d.children) == 0 {
+			// go-fuse only calls Seekdir when the kernel's offset differs
+			// from the handle's, and after an empty listing both are still
+			// 0, so a read after a rewind on this handle arrives here without
+			// a seek. Drop the empty listing so that read fetches a fresh
+			// one, because the kernel caches whatever it returns.
+			d.pos = -1
+		}
 		return nil, 0
 	}
 	node := d.children[d.pos]
@@ -802,7 +796,78 @@ func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, er
 		Mode: node.Mode,
 		Name: node.Name,
 		Ino:  node.Id,
+		Off:  node.GetDirectoryOffset(),
 	}, 0
+}
+
+// Seekdir positions the directory stream for a read at off. With FOPEN_CACHE_DIR,
+// partial cache eviction can cause the first directory read request on a handle
+// to start at a nonzero offset, after entries the kernel served from cache.
+// go-fuse requires Seekdir to handle that request; otherwise it returns ENOTSUP.
+//
+// off is a bookmark. Every entry handed to the kernel carries a DirectoryOffset,
+// and the kernel passes back the offset of the last entry it received to ask for
+// the entries after it. The VFS server backing this mount assigns those offsets.
+// A name keeps its offset across listings while it stays in the directory, and a
+// name that was absent at the previous listing gets a higher offset than any
+// before it, so the entries after a bookmark are those with a greater offset,
+// even if entries were added or removed in the meantime. A name removed and
+// re-created between two listings keeps its old offset, so a pass that already
+// returned that name does not return it again.
+//
+// A seek to offset 0 is a rewind. The kernel reads from offset 0 on an existing
+// handle when an application calls rewinddir after the directory changed, and
+// it caches whatever that read returns, so discard the entries loaded for the
+// previous pass and let the next read fetch a fresh listing.
+func (d *dirHandle) Seekdir(ctx context.Context, off uint64) syscall.Errno {
+	d.node.startOP("Seekdir")
+	if d.vfs.verbose {
+		log.CtxDebugf(d.vfs.getRPCContext(), "Seekdir %q to %d", d.node.relativePath(), off)
+	}
+	if off == 0 {
+		d.pos = -1
+		return 0
+	}
+	// The kernel may have served this handle entries from its own cache,
+	// which another handle filled from a newer listing, so the listing this
+	// handle holds may be stale even if it was loaded. Always fetch a fresh
+	// one.
+	if errno := d.loadChildren(); errno != 0 {
+		return errno
+	}
+	// Entries are in offset order, so this finds the first entry after the
+	// bookmark.
+	d.pos = sort.Search(len(d.children), func(i int) bool {
+		return d.children[i].GetDirectoryOffset() > off
+	})
+	return 0
+}
+
+// loadChildren fetches the directory listing from the VFS server and positions
+// the handle at its start. The server returns entries in increasing directory
+// offset order, which is what lets a handle resume a cached listing even if
+// other entries have been added or removed since. When no directory or
+// attribute mutation was in flight around the fetch, the listing also seeds the
+// node's directory entry cache so the lookups that usually follow a readdir do
+// not need their own RPCs.
+func (d *dirHandle) loadChildren() syscall.Errno {
+	directoryGeneration, directoryCacheable := d.node.directorySnapshotGeneration()
+	attrsGeneration, attrsCacheable := d.vfs.attrsSnapshotGeneration()
+	rsp, err := d.vfs.vfsClient.GetDirectoryContents(d.vfs.getRPCContext(), &vfspb.GetDirectoryContentsRequest{
+		Id: d.node.StableAttr().Ino,
+	})
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	d.children = rsp.Nodes
+	if directoryCacheable && attrsCacheable {
+		attrsGenerations, ok := d.vfs.attrsGenerationsForSnapshot(attrsGeneration, rsp.Nodes)
+		if ok {
+			d.node.cacheDirectoryEntries(rsp.Nodes, directoryGeneration, attrsGenerations)
+		}
+	}
+	d.pos = 0
+	return 0
 }
 
 func (d *dirHandle) Fsyncdir(ctx context.Context, flags uint32) syscall.Errno {
