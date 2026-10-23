@@ -4,7 +4,7 @@ Script to build multi-platform docker images.
 
 Example command usage:
 
-./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu22-04 --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu22-04/Dockerfile --platform=amd64 --platform=arm64 --user=_token
+./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu20-04-workflows --tag=$(git rev-parse --short HEAD) --no-suffix --dockerfile=dockerfiles/rbe-ubuntu20-04-workflows/Dockerfile --platform=amd64 --platform=arm64 --user=_token
 
 """
 
@@ -53,7 +53,8 @@ def parse_program_arguments():
     parser.add_argument(
             "--tag",
             type=str,
-            help="Tag to use in the target repository for the built image (if any).",
+            required=True,
+            help="Tag to use in the target repository for the built image.",
             dest="tag",
             )
     parser.add_argument(
@@ -140,6 +141,11 @@ def parse_program_arguments():
 
     return parser.parse_args(namespace=ArgsNamespace)
 
+# Only the internal build-rbe-image workflow pushes these; see
+# dockerfiles/README.md. Matched on the repository's last path component, so
+# any registry name or mirror that reaches them is covered.
+CI_BUILT_IMAGES = {"rbe-ubuntu20-04", "rbe-ubuntu22-04", "rbe-ubuntu24-04"}
+
 def set_up_buildx_container(container_name, stdout=sys.stdout, stderr=sys.stderr):
     """Sets up a buildx container with the given name."""
     completed_process = subprocess.run(["docker", "buildx", "inspect", container_name], capture_output=True)
@@ -147,9 +153,9 @@ def set_up_buildx_container(container_name, stdout=sys.stdout, stderr=sys.stderr
         print(f"No buildx container named {container_name}, creating it...", file=stdout)
         completed_process = subprocess.run(["docker", "buildx", "create", "--name", container_name])
         if completed_process.returncode == 0:
-            print("Success!", stdout)
+            print("Success!", file=stdout)
         else:
-            print("Failed to create buildx container.", stderr)
+            print("Failed to create buildx container.", file=stderr)
 
 def resolve_userpass(userpass: str, registry: str):
     """Returns (user, password), prompting for the password if necessary."""
@@ -217,6 +223,13 @@ def repeated_opts(opt: str, params: list[str]):
 def main():
     args = parse_program_arguments()
 
+    repository = f"{args.repository}{'-' + args.suffix if args.suffix else ''}"
+
+    image_name = ([p for p in repository.lower().split("/") if p] or [""])[-1]
+    if args.push and image_name in CI_BUILT_IMAGES:
+        print(f"Refusing to push {args.registry}/{repository}: {image_name} is only pushed by the internal build-rbe-image workflow. See dockerfiles/README.md. (--no-push builds it locally.)", file=sys.stderr)
+        return 1
+
     userpass = resolve_userpass(args.userpass, args.registry)
 
     if not check_buildx_support():
@@ -228,21 +241,19 @@ def main():
     elif os.path.dirname(os.path.abspath(args.dockerfile)) != "":
         context_dir = os.path.dirname(os.path.abspath(args.dockerfile))
 
-    repository = f"{args.repository}{'-' + args.suffix if args.suffix else ''}"
-
     if args.push:
         if args.do_prod_checks and not perform_prod_checks(repository):
-            print("Exiting...", file=sys.stdout)
-            return 0
+            print("Exiting...", file=sys.stderr)
+            return 1
 
         if args.do_new_repository_check and not perform_new_repository_check(args.registry, repository, userpass):
-            print("Exiting...", file=sys.stdout)
-            return 0
+            print("Exiting...", file=sys.stderr)
+            return 1
 
         if userpass is not None and args.do_login:
             if not perform_login(args.registry, userpass):
-                print("Exiting...", file=sys.stdout)
-                return 0
+                print("Exiting...", file=sys.stderr)
+                return 1
 
     set_up_buildx_container(args.buildx_container_name)
 
@@ -250,7 +261,7 @@ def main():
             ["docker", "buildx"] +
             ["--builder", str(args.buildx_container_name)] +
             ["build"] +
-            ["--tag", f"{args.registry}/{repository}{':' + args.tag if args.tag else ''}"] +
+            ["--tag", f"{args.registry}/{repository}:{args.tag}"] +
             (["--file", args.dockerfile] if args.dockerfile else []) +
             repeated_opts("--platform", args.platforms) +
             (["--push"] if args.push else []) +
@@ -260,4 +271,4 @@ def main():
     print(f"Executed command:\n{completed_process.args}", file=sys.stdout)
     return completed_process.returncode
 
-main()
+sys.exit(main())
