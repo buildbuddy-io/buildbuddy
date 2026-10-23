@@ -370,6 +370,7 @@ func TestValidateGroupSelection(t *testing.T) {
 		{name: "statuses", statuses: []grpb.Group_GroupStatus{grpb.Group_FREE_TIER_GROUP_STATUS}},
 		{name: "empty id", ids: []string{"GR1", ""}, wantErr: true},
 		{name: "blank id", ids: []string{" "}, wantErr: true},
+		{name: "id with surrounding whitespace", ids: []string{"GR1", " GR2"}, wantErr: true},
 		{name: "unknown status", statuses: []grpb.Group_GroupStatus{99}, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

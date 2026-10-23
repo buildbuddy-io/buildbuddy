@@ -233,6 +233,9 @@ func validateGroupSelection() error {
 		if strings.TrimSpace(id) == "" {
 			return errors.New("group_ids must not contain empty IDs")
 		}
+		if strings.TrimSpace(id) != id {
+			return fmt.Errorf("group_ids entry %q must not contain surrounding whitespace", id)
+		}
 	}
 	for _, value := range *groupStatuses {
 		if _, ok := grpb.Group_GroupStatus_name[int32(value)]; !ok {
