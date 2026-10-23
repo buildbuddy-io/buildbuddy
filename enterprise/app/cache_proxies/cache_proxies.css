@@ -329,8 +329,12 @@
 }
 
 .cache-proxy-page .cache-proxy-detail-page {
-  padding-top: 24px;
+  padding-top: 16px;
   padding-bottom: 32px;
+}
+
+.cache-proxy-page .upgrade-prompt-banner {
+  margin: 0;
 }
 
 .cache-proxy-page .cache-proxy-panels {
