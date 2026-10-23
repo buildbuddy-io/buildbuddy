@@ -34,5 +34,7 @@ var (
 	UserspaceNetworking      = expflag.Bool("executor.userspace_networking", false, "Enable userspace networking for OCI and Firecracker containers.")
 	RecordInputFetchMetadata = expflag.Bool("executor.record_input_fetch_metadata", true, "If true, record and report metadata describing which action inputs were fetched from remote CAS.", expflag.DeprecatedExperimentName("remote_execution.record_input_fetch_metadata"))
 	WorkspacePoolEnabled     = expflag.Bool("executor.workspace_pool.enabled", false, "If true, keep finished task workspaces in a pool, and set up later tasks with similar input trees from them instead of from an empty directory. See the executor.workspace_pool.* flags.")
-	SeccompDisableNewUserNS  = expflag.Bool("executor.oci.seccomp_disable_new_userns", false, "If true, the OCI seccomp profile prevents containers from creating user namespaces, unless executor.oci.cap_add includes CAP_SYS_ADMIN. This does not restrict syscalls listed in executor.oci.seccomp_additional_syscalls.")
+	// TODO(bduffany): once expflag supports expflag.Slice, remove this and
+	// consolidate with executor.oci.seccomp_additional_syscalls
+	SeccompDisableNewUserNS = expflag.Bool("executor.oci.seccomp_disable_new_userns", false, "If true, the OCI seccomp profile prevents containers from creating user namespaces, unless executor.oci.cap_add includes CAP_SYS_ADMIN. This does not restrict syscalls listed in executor.oci.seccomp_additional_syscalls.")
 )
