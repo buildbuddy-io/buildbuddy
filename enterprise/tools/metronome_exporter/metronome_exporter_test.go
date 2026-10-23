@@ -298,6 +298,27 @@ func TestExport_ReportsUsageWhenCustomerSetupFails(t *testing.T) {
 	requireState(t, env, from.Add(metronome.WindowSize))
 }
 
+func TestExport_OnlyCreatesCustomersForSelfServeGroups(t *testing.T) {
+	flags.Set(t, "billing.metronome.package_alias", "self-serve-free")
+	env := setupClickHouseEnv(t)
+	flags.Set(t, "group_ids", []string{"GR4"})
+	ctx := t.Context()
+	from := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	labels := map[sku.LabelName]sku.LabelValue{sku.Client: sku.ClientBazel}
+	seedState(t, env, from)
+	require.NoError(t, env.GetOLAPDBHandle().FlushUsages(ctx, []*schema.RawUsage{
+		rawUsage("GR1", from, sku.BuildEventsBESCount, labels, 2),
+		rawUsage("GR4", from, sku.BuildEventsBESCount, labels, 3),
+	}))
+
+	client := &fakeMetronomeClient{}
+	require.NoError(t, export(ctx, env, client, from.Add(metronome.WindowSize).Add(minAge)))
+
+	require.Len(t, client.reported, 1)
+	require.Len(t, client.reported[0], 2)
+	require.Equal(t, []string{"GR1"}, client.created)
+}
+
 func TestQueryUsageRows(t *testing.T) {
 	env := setupClickHouseEnv(t)
 	ctx := t.Context()

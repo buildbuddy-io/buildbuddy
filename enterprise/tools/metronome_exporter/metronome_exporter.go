@@ -21,7 +21,8 @@
 // To select groups by status instead, use e.g.
 // --group_statuses='[1,5]' (free tier and usage based).
 // When both selectors are set, groups matching either are exported. At least
-// one selector is required.
+// one selector is required. Metronome customers and self-serve contracts are
+// only created for free tier and usage based groups.
 //
 // Export progress is tracked by a single period end shared by all groups, so
 // adding groups to the selection does not backfill their earlier usage.
@@ -71,6 +72,13 @@ var (
 	groupIDs      = flag.Slice("group_ids", []string{}, "Comma-separated group IDs to export, regardless of status. Combined with group_statuses using OR. At least one selector is required. Newly selected groups are not backfilled: export progress is shared by all groups, so their usage before they were selected is never exported.")
 	groupStatuses = flag.Slice("group_statuses", []grpb.Group_GroupStatus{}, "JSON array of integer GroupStatus enum values to export (e.g. [1,5] for free tier and usage based). Combined with group_ids using OR. At least one selector is required. Newly selected groups are not backfilled: export progress is shared by all groups, so their usage before they were selected is never exported.")
 )
+
+// Only groups with these statuses get a Metronome customer and a contract on
+// the self-serve package.
+var selfServeStatuses = map[grpb.Group_GroupStatus]bool{
+	grpb.Group_FREE_TIER_GROUP_STATUS:   true,
+	grpb.Group_USAGE_BASED_GROUP_STATUS: true,
+}
 
 func main() {
 	flag.Parse()
@@ -160,7 +168,7 @@ func export(ctx context.Context, env *real_environment.RealEnv, client metronome
 		log.Infof("Usage is exported through %s; nothing to do", latest.Format(time.RFC3339))
 		return nil
 	}
-	groups, err := exportedGroupIDs(ctx, env)
+	groups, err := exportedGroups(ctx, env)
 	if err != nil {
 		return fmt.Errorf("list groups: %w", err)
 	}
@@ -168,8 +176,14 @@ func export(ctx context.Context, env *real_environment.RealEnv, client metronome
 		log.Infof("No groups to export; skipping window [%s, %s)", w.from.Format(time.RFC3339), w.to.Format(time.RFC3339))
 		return advanceState(ctx, env, client, state, w.to)
 	}
-	log.Infof("Exporting usage for %d group(s) in window [%s, %s)", len(groups), w.from.Format(time.RFC3339), w.to.Format(time.RFC3339))
-	return exportAll(ctx, env, client, groups, w, state)
+	ids := make([]string, 0, len(groups))
+	selfServe := make(map[string]bool, len(groups))
+	for _, g := range groups {
+		ids = append(ids, g.GroupID)
+		selfServe[g.GroupID] = selfServeStatuses[g.Status]
+	}
+	log.Infof("Exporting usage for %d group(s) in window [%s, %s)", len(ids), w.from.Format(time.RFC3339), w.to.Format(time.RFC3339))
+	return exportAll(ctx, env, client, ids, selfServe, w, state)
 }
 
 // loadState returns nil if the exporter has not run yet.
@@ -228,7 +242,7 @@ func validateGroupSelection() error {
 	return nil
 }
 
-func exportedGroupIDs(ctx context.Context, env *real_environment.RealEnv) ([]string, error) {
+func exportedGroups(ctx context.Context, env *real_environment.RealEnv) ([]*tables.Group, error) {
 	var clauses []string
 	var args []any
 	if len(*groupIDs) > 0 {
@@ -239,19 +253,13 @@ func exportedGroupIDs(ctx context.Context, env *real_environment.RealEnv) ([]str
 		clauses = append(clauses, "status IN ?")
 		args = append(args, *groupStatuses)
 	}
-	query := `SELECT group_id FROM "Groups" WHERE ` + strings.Join(clauses, " OR ")
-	groups, err := db.ScanAll(env.GetDBHandle().NewQuery(ctx, "metronome_exporter_groups").Raw(query, args...), &tables.Group{})
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, 0, len(groups))
-	for _, g := range groups {
-		ids = append(ids, g.GroupID)
-	}
-	return ids, nil
+	query := `SELECT group_id, status FROM "Groups" WHERE ` + strings.Join(clauses, " OR ")
+	return db.ScanAll(env.GetDBHandle().NewQuery(ctx, "metronome_exporter_groups").Raw(query, args...), &tables.Group{})
 }
 
-func exportAll(ctx context.Context, env *real_environment.RealEnv, client metronomeClient, groups []string, w *window, state *tables.BillingExportState) error {
+// selfServe reports which groups may be set up as self-serve Metronome
+// customers.
+func exportAll(ctx context.Context, env *real_environment.RealEnv, client metronomeClient, groups []string, selfServe map[string]bool, w *window, state *tables.BillingExportState) error {
 	customersChecked := map[string]bool{}
 	totalEventCount := 0
 	// Export in increments of metronome.WindowSize.
@@ -283,6 +291,9 @@ func exportAll(ctx context.Context, env *real_environment.RealEnv, client metron
 						continue
 					}
 					customersChecked[r.GroupID] = true
+					if !selfServe[r.GroupID] {
+						continue
+					}
 					// Not fatal: Metronome matches the usage to the customer
 					// once a later run creates it.
 					if err := ensureCustomer(ctx, client, r.GroupID, start); err != nil {
