@@ -5,6 +5,7 @@ package vfs_server
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfscommon"
@@ -27,6 +28,10 @@ func (s *Server) TaskError() error {
 }
 
 func New(env environment.Env, workspacePath string) (*Server, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func NewLocal(workspacePath string, inputOpener func(context.Context, *repb.FileNode) (*os.File, error)) (*Server, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

@@ -43,6 +43,53 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
+func TestDirMapFromTree(t *testing.T) {
+	for _, df := range []repb.DigestFunction_Value{repb.DigestFunction_UNKNOWN, repb.DigestFunction_SHA256, repb.DigestFunction_BLAKE3, repb.DigestFunction_SHA512} {
+		t.Run(df.String(), func(t *testing.T) {
+			largeDir := &repb.Directory{}
+			for i := range 1000 {
+				largeDir.Files = append(largeDir.Files, &repb.FileNode{
+					Name: fmt.Sprintf("file-%d", i), Digest: &repb.Digest{Hash: hash.String("contents"), SizeBytes: 8}, IsExecutable: i%2 == 0,
+				})
+			}
+			smallDir := &repb.Directory{Symlinks: []*repb.SymlinkNode{{Name: "link", Target: "file"}}}
+			for _, root := range []*repb.Directory{nil, {}, smallDir, largeDir} {
+				tree := &repb.Tree{Root: root, Children: []*repb.Directory{largeDir, smallDir, {}, largeDir}}
+				rootDigest, dirMap, err := dirtools.DirMapFromTree(tree, df)
+				require.NoError(t, err)
+				expectedRootDigest, err := digest.ComputeForMessage(root, df)
+				require.NoError(t, err)
+				require.True(t, proto.Equal(expectedRootDigest, rootDigest))
+				for _, dir := range append([]*repb.Directory{root}, tree.GetChildren()...) {
+					d, err := digest.ComputeForMessage(dir, df)
+					require.NoError(t, err)
+					got, ok := dirMap[digest.NewKey(d)]
+					require.True(t, ok)
+					// Nil and empty directories have the same encoding.
+					expectedBytes, err := proto.Marshal(dir)
+					require.NoError(t, err)
+					gotBytes, err := proto.Marshal(got)
+					require.NoError(t, err)
+					require.True(t, bytes.Equal(expectedBytes, gotBytes))
+				}
+			}
+		})
+	}
+	_, _, err := dirtools.DirMapFromTree(&repb.Tree{}, repb.DigestFunction_Value(-1))
+	require.Error(t, err)
+}
+
+func TestValidateWorkingDirectoryInTree_EmptyDirectory(t *testing.T) {
+	tree := &repb.Tree{Root: &repb.Directory{
+		Directories: []*repb.DirectoryNode{{Name: "dir", Digest: &repb.Digest{Hash: digest.EmptySha256}}},
+		Files:       []*repb.FileNode{{Name: "file", Digest: &repb.Digest{Hash: digest.EmptySha256}}},
+	}}
+	require.NoError(t, dirtools.ValidateWorkingDirectoryInTree(tree, repb.DigestFunction_SHA256, "dir"))
+	for _, wd := range []string{"missing", "file", "dir/missing"} {
+		require.Error(t, dirtools.ValidateWorkingDirectoryInTree(tree, repb.DigestFunction_SHA256, wd))
+	}
+}
+
 func TestUploadTree(t *testing.T) {
 	for _, tc := range []struct {
 		name           string

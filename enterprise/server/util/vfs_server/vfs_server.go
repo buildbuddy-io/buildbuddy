@@ -34,8 +34,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"golang.org/x/sys/unix"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/mem"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
@@ -93,8 +96,15 @@ func syscallErrStatus(sysErr error) error {
 	return makeSyscallErrStatus(sysErr)
 }
 
+// A range fetcher populates sparse input files before they are read. It must
+// only be used with FUSE passthrough disabled.
+type inputRangeFetcher interface {
+	FetchRange(context.Context, *repb.FileNode, int64, int64) error
+}
+
 type fileHandle struct {
-	node *fsNode
+	node         *fsNode
+	rangeFetcher inputRangeFetcher
 
 	mu        sync.Mutex
 	f         *os.File
@@ -220,11 +230,12 @@ const (
 )
 
 type fsNode struct {
-	server   *Server
-	id       uint64
-	nodeType byte
-	fileNode *repb.FileNode
-	target   string
+	server         *Server
+	id             uint64
+	nodeType       byte
+	fileNode       *repb.FileNode
+	target         string
+	inputTimestamp uint64
 
 	mu          sync.Mutex
 	accessed    bool
@@ -267,6 +278,25 @@ func updateAttr(attr *vfspb.Attrs, mod func(attr *vfspb.Attrs)) *vfspb.Attrs {
 	return newAttrs
 }
 
+// getAttrs initializes CAS attributes on first use. fsn.mu must be held.
+func (fsn *fsNode) getAttrs() *vfspb.Attrs {
+	if fsn.attrs == nil {
+		perms := uint32(0644)
+		if fsn.fileNode.GetIsExecutable() {
+			perms |= 0111
+		}
+		fsn.attrs = &vfspb.Attrs{
+			Size:       fsn.fileNode.GetDigest().GetSizeBytes(),
+			Perm:       perms,
+			Immutable:  true,
+			Nlink:      1,
+			MtimeNanos: fsn.inputTimestamp,
+			AtimeNanos: fsn.inputTimestamp,
+		}
+	}
+	return fsn.attrs
+}
+
 // statBlocksToFSBlocks converts block count from 512-byte blocks (as reported
 // by Stat) to block count based on the filesystem block size.
 func (p *Server) statBlocksToFSBlocks(statBlocks int64) int64 {
@@ -284,8 +314,8 @@ func (fsn *fsNode) refreshAttrs() error {
 	if err != nil {
 		return syscallErrStatus(err)
 	}
-	oldBlocks := fsn.attrs.Blocks
-	fsn.attrs = updateAttr(fsn.attrs, func(attr *vfspb.Attrs) {
+	oldBlocks := fsn.getAttrs().Blocks
+	fsn.attrs = updateAttr(fsn.getAttrs(), func(attr *vfspb.Attrs) {
 		attr.Size = fi.Size()
 		attr.MtimeNanos = uint64(fi.ModTime().UnixNano())
 		rawStat := fi.Sys().(*syscall.Stat_t)
@@ -329,25 +359,13 @@ func newDirNode(parent *fsNode, name string) *fsNode {
 	}
 }
 
-func newCASFileNode(parent *fsNode, refn *repb.FileNode) *fsNode {
-	perms := 0644
-	if refn.IsExecutable {
-		perms |= 0111
-	}
-	now := time.Now()
+func newCASFileNode(parent *fsNode, refn *repb.FileNode, timestamp uint64) *fsNode {
 	return &fsNode{
-		nodeType: fsFileNode,
-		name:     refn.GetName(),
-		attrs: &vfspb.Attrs{
-			Size:       refn.GetDigest().GetSizeBytes(),
-			Perm:       uint32(perms),
-			Immutable:  true,
-			Nlink:      1,
-			MtimeNanos: uint64(now.UnixNano()),
-			AtimeNanos: uint64(now.UnixNano()),
-		},
-		fileNode: refn,
-		parent:   parent,
+		nodeType:       fsFileNode,
+		name:           refn.GetName(),
+		fileNode:       refn,
+		parent:         parent,
+		inputTimestamp: timestamp,
 	}
 }
 
@@ -367,6 +385,7 @@ func newSymlinkNode(parent *fsNode, name string, target string) *fsNode {
 type Server struct {
 	env              environment.Env
 	workspacePath    string
+	inputOpener      func(context.Context, *repb.FileNode) (*os.File, error)
 	backingBlockSize int64
 
 	server *grpc.Server
@@ -390,6 +409,28 @@ type Server struct {
 }
 
 func New(env environment.Env, workspacePath string) (*Server, error) {
+	s, err := newServer(workspacePath)
+	if err != nil {
+		return nil, err
+	}
+	s.env = env
+	s.inputOpener = func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+		return env.GetFileCache().Open(ctx, node)
+	}
+	return s, nil
+}
+
+// NewLocal creates a VFS server whose CAS inputs are opened using inputOpener.
+func NewLocal(workspacePath string, inputOpener func(context.Context, *repb.FileNode) (*os.File, error)) (*Server, error) {
+	s, err := newServer(workspacePath)
+	if err != nil {
+		return nil, err
+	}
+	s.inputOpener = inputOpener
+	return s, nil
+}
+
+func newServer(workspacePath string) (*Server, error) {
 	rootNode := newDirNode(nil, "")
 	rootNode.id = vfscommon.RootInodeId
 	nodes := make(map[uint64]*fsNode)
@@ -402,7 +443,6 @@ func New(env environment.Env, workspacePath string) (*Server, error) {
 	}
 
 	s := &Server{
-		env:              env,
 		workspacePath:    workspacePath,
 		backingBlockSize: fs.Bsize,
 		fileHandles:      make(map[uint64]*fileHandle),
@@ -458,6 +498,19 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 	if err != nil {
 		return nil, err
 	}
+	// Reserve space on the initial preparation; later preparations merge with
+	// the existing namespace. Shared subtrees can exceed this estimate.
+	nodeCount := 1
+	for _, dir := range dirMap {
+		nodeCount += len(dir.GetDirectories()) + len(dir.GetFiles()) + len(dir.GetSymlinks())
+	}
+	p.mu.Lock()
+	if len(p.nodes) == 1 {
+		p.nodes = make(map[uint64]*fsNode, nodeCount)
+		p.nodes[p.root.id] = p.root
+	}
+	p.mu.Unlock()
+	timestamp := uint64(time.Now().UnixNano())
 	numDirs := 0
 	numFiles := 0
 	numSymlinks := 0
@@ -495,9 +548,10 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 	var walkDir func(dir *repb.Directory, parentNode *fsNode) error
 	walkDir = func(dir *repb.Directory, parentNode *fsNode) error {
 		numDirs++
+		childCount := len(dir.GetDirectories()) + len(dir.GetFiles()) + len(dir.GetSymlinks())
 		parentNode.mu.Lock()
-		if parentNode.children == nil && (len(dir.GetDirectories()) > 0 || len(dir.GetFiles()) > 0 || len(dir.GetSymlinks()) > 0) {
-			parentNode.children = make(map[string]*fsNode)
+		if parentNode.children == nil && childCount > 0 {
+			parentNode.children = make(map[string]*fsNode, childCount)
 		}
 		parentNode.mu.Unlock()
 		for _, childDirNode := range dir.GetDirectories() {
@@ -543,7 +597,7 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 				existingNode = nil
 			}
 			if existingNode == nil {
-				fileNode := newCASFileNode(parentNode, childFileNode)
+				fileNode := newCASFileNode(parentNode, childFileNode, timestamp)
 				if _, err := addChild(parentNode, fileNode, childFileNode.GetName()); err != nil {
 					return err
 				}
@@ -732,8 +786,14 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	retryInputFetcher := newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
+	var retryInputFetcher *casFetcher
+	if p.env != nil {
+		retryInputFetcher = newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
+	}
 	if inputFetcher == nil {
+		if retryInputFetcher == nil {
+			return nil, status.FailedPreconditionError("no input fetcher is configured")
+		}
 		inputFetcher = retryInputFetcher
 	}
 	p.inputFetcher = inputFetcher
@@ -791,9 +851,11 @@ func (p *Server) Lookup(ctx context.Context, request *vfspb.LookupRequest) (*vfs
 	if err != nil {
 		return nil, err
 	}
+	childNode.mu.Lock()
+	defer childNode.mu.Unlock()
 	return &vfspb.LookupResponse{
 		Mode:          childNode.mode(),
-		Attrs:         childNode.attrs,
+		Attrs:         childNode.getAttrs(),
 		Id:            childNode.id,
 		SymlinkTarget: childNode.target,
 	}, nil
@@ -830,7 +892,7 @@ func (p *Server) GetDirectoryContents(ctx context.Context, request *vfspb.GetDir
 			Id:    child.id,
 			Mode:  child.mode(),
 			Name:  name,
-			Attrs: child.attrs,
+			Attrs: child.getAttrs(),
 		})
 		child.mu.Unlock()
 	}
@@ -851,7 +913,20 @@ func (h *fileHandle) open(fullPath string, req *vfspb.OpenRequest) (*vfspb.OpenR
 	return &vfspb.OpenResponse{}, nil
 }
 
-func (h *fileHandle) read(req *vfspb.ReadRequest) (*vfspb.ReadResponse, error) {
+func (h *fileHandle) fetchRange(ctx context.Context, offset, length int64) error {
+	if h.rangeFetcher == nil {
+		return nil
+	}
+	return h.rangeFetcher.FetchRange(ctx, h.node.fileNode, offset, length)
+}
+
+func (h *fileHandle) read(ctx context.Context, req *vfspb.ReadRequest) (*vfspb.ReadResponse, error) {
+	if req.GetOffset() < 0 || req.GetNumBytes() < 0 {
+		return nil, syscallStatusEINVAL
+	}
+	if err := h.fetchRange(ctx, req.GetOffset(), int64(req.GetNumBytes())); err != nil {
+		return nil, err
+	}
 	h.mu.Lock()
 	f := h.f
 	h.mu.Unlock()
@@ -896,6 +971,17 @@ func (h *fileHandle) lseek(request *vfspb.LseekRequest) (*vfspb.LseekResponse, e
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	// Missing cached ranges are not holes in the logical CAS file.
+	if h.rangeFetcher != nil && (request.GetWhence() == unix.SEEK_DATA || request.GetWhence() == unix.SEEK_HOLE) {
+		size := uint64(h.node.fileNode.GetDigest().GetSizeBytes())
+		if request.GetOffset() >= size {
+			return nil, syscallErrStatus(syscall.ENXIO)
+		}
+		if request.GetWhence() == unix.SEEK_HOLE {
+			return &vfspb.LseekResponse{Offset: size}, nil
+		}
+		return &vfspb.LseekResponse{Offset: request.GetOffset()}, nil
+	}
 	off, err := h.f.Seek(int64(request.GetOffset()), int(request.GetWhence()))
 	if err != nil {
 		return nil, syscallErrStatus(err)
@@ -1129,19 +1215,23 @@ func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error
 	p.mu.Lock()
 	inputFetcher := p.inputFetcher
 	retryInputFetcher := p.retryInputFetcher
+	inputOpener := p.inputOpener
 	p.mu.Unlock()
-	if inputFetcher == nil || retryInputFetcher == nil {
+	if inputFetcher == nil || inputOpener == nil {
 		return nil, status.FailedPreconditionError("no input fetcher is configured")
 	}
 	if err := inputFetcher.Fetch(ctx, node.fileNode); err != nil {
 		// The CAS downloader already handles retryable failures.
-		if inputFetcher == retryInputFetcher {
+		if inputFetcher == retryInputFetcher || retryInputFetcher == nil {
 			return nil, err
 		}
 	} else {
-		f, err := p.env.GetFileCache().Open(ctx, node.fileNode)
+		f, err := inputOpener(ctx, node.fileNode)
 		if err == nil {
 			return f, nil
+		}
+		if retryInputFetcher == nil {
+			return nil, err
 		}
 	}
 	// A failed prefetcher cannot restart its downloads. Fetch directly from
@@ -1149,7 +1239,7 @@ func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error
 	if err := retryInputFetcher.Fetch(ctx, node.fileNode); err != nil {
 		return nil, err
 	}
-	return p.env.GetFileCache().Open(ctx, node.fileNode)
+	return inputOpener(ctx, node.fileNode)
 }
 
 func (p *Server) lookupPath(path string) (*fsNode, error) {
@@ -1198,7 +1288,7 @@ func copyFile(source *os.File, destination string, mode os.FileMode) error {
 func (p *Server) materializeNode(ctx context.Context, node *fsNode, destination string) error {
 	node.mu.Lock()
 	nodeType := node.nodeType
-	mode := os.FileMode(node.attrs.GetPerm())
+	mode := os.FileMode(node.getAttrs().GetPerm())
 	target := node.target
 	backingPath := node.backingPath
 	children := make(map[string]*fsNode, len(node.children))
@@ -1233,6 +1323,16 @@ func (p *Server) materializeNode(ctx context.Context, node *fsNode, destination 
 			return err
 		}
 		defer source.Close()
+		if backingPath == "" {
+			p.mu.Lock()
+			fetcher, _ := p.inputFetcher.(inputRangeFetcher)
+			p.mu.Unlock()
+			if fetcher != nil {
+				if err := fetcher.FetchRange(ctx, node.fileNode, 0, node.fileNode.GetDigest().GetSizeBytes()); err != nil {
+					return err
+				}
+			}
+		}
 		return copyFile(source, destination, mode)
 	case fsSymlinkNode:
 		if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
@@ -1348,7 +1448,7 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	// Update atime for CAS nodes. For other nodes, we use the atime from the
 	// backing file.
 	if backingFile == "" {
-		node.attrs = updateAttr(node.attrs, func(attr *vfspb.Attrs) {
+		node.attrs = updateAttr(node.getAttrs(), func(attr *vfspb.Attrs) {
 			attr.AtimeNanos = uint64(time.Now().UnixNano())
 		})
 	}
@@ -1393,6 +1493,11 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 		f:         openedFile,
 		openFlags: request.GetFlags(),
 	}
+	if backingFile == "" && node.fileNode != nil {
+		p.mu.Lock()
+		fh.rangeFetcher, _ = p.inputFetcher.(inputRangeFetcher)
+		p.mu.Unlock()
+	}
 	// We use the file descriptor as the file handle ID so that we can directly
 	// use the flock/fcntl syscalls to implement file locking (SetLk, SetLkw,
 	// GetLk). This is needed because file locking works on descriptors, not
@@ -1427,7 +1532,7 @@ func (p *Server) Read(ctx context.Context, request *vfspb.ReadRequest) (*vfspb.R
 	if err != nil {
 		return nil, err
 	}
-	return fh.read(request)
+	return fh.read(ctx, request)
 }
 
 func (p *Server) Write(ctx context.Context, request *vfspb.WriteRequest) (*vfspb.WriteResponse, error) {
@@ -1497,7 +1602,7 @@ func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*v
 	}
 	node.mu.Lock()
 	defer node.mu.Unlock()
-	return &vfspb.GetAttrResponse{Attrs: node.attrs}, nil
+	return &vfspb.GetAttrResponse{Attrs: node.getAttrs()}, nil
 }
 
 func (p *Server) processSetAttr(node *fsNode, file *os.File, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
@@ -1629,7 +1734,7 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 
 	// Not using updateAttr here to avoid putting all the setattr logic
 	// inside a nested function.
-	newAttrs := proto.Clone(node.attrs).(*vfspb.Attrs)
+	newAttrs := proto.Clone(node.getAttrs()).(*vfspb.Attrs)
 
 	if request.SetExtended != nil || request.RemoveExtended != nil {
 		if err := p.processSetExtendedAttr(node, request, newAttrs); err != nil {
@@ -1756,7 +1861,7 @@ func (p *Server) Link(ctx context.Context, request *vfspb.LinkRequest) (*vfspb.L
 	}
 
 	existingNode.mu.Lock()
-	newAttrs := updateAttr(existingNode.attrs, func(attr *vfspb.Attrs) {
+	newAttrs := updateAttr(existingNode.getAttrs(), func(attr *vfspb.Attrs) {
 		attr.Nlink++
 	})
 	existingNode.attrs = newAttrs
@@ -1799,7 +1904,7 @@ func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*v
 
 func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
 	childNode.mu.Lock()
-	childNode.attrs = updateAttr(childNode.attrs, func(attr *vfspb.Attrs) {
+	childNode.attrs = updateAttr(childNode.getAttrs(), func(attr *vfspb.Attrs) {
 		attr.Nlink--
 	})
 	if childNode.backingPath != "" && childNode.attrs.Nlink == 0 {
@@ -1940,6 +2045,9 @@ func (p *Server) CopyFileRange(ctx context.Context, request *vfspb.CopyFileRange
 	if err != nil {
 		return nil, err
 	}
+	if err := rh.fetchRange(ctx, int64(request.GetReadHandleOffset()), int64(request.GetNumBytes())); err != nil {
+		return nil, err
+	}
 
 	var lockFirst, lockSecond *fileHandle
 	if request.GetReadHandleId() <= request.GetWriteHandleId() {
@@ -1983,13 +2091,111 @@ func (p *Server) Statfs(ctx context.Context, request *vfspb.StatfsRequest) (*vfs
 
 func (p *Server) Start(lis net.Listener) error {
 	p.mu.Lock()
-	p.server = grpc.NewServer(grpc_server.CommonGRPCServerOptions(p.env)...)
+	opts := append(grpc_server.CommonGRPCServerOptions(p.env), grpc.ForceServerCodecV2(&getTreeProxyCodec{encoding.GetCodecV2("proto")}))
+	p.server = grpc.NewServer(opts...)
 	p.mu.Unlock()
 	vfspb.RegisterFileSystemServer(p.server, p)
+	repb.RegisterContentAddressableStorageServer(p.server, &contentAddressableStorageProxy{vfsServer: p})
+	bspb.RegisterByteStreamServer(p.server, &byteStreamProxy{vfsServer: p})
 	go func() {
 		_ = p.server.Serve(lis)
 	}()
 	return nil
+}
+
+// PrepareContentProxy authorizes CAS proxy requests using ctx without building
+// a host-side VFS namespace.
+func (p *Server) PrepareContentProxy(ctx context.Context) {
+	p.mu.Lock()
+	p.internalTaskCtx = ctx
+	p.mu.Unlock()
+}
+
+type contentAddressableStorageProxy struct {
+	repb.UnimplementedContentAddressableStorageServer
+	vfsServer *Server
+}
+
+// Forward serialized GetTree responses without decoding or coalescing buffers.
+// Other messages use the normal protobuf codec.
+type getTreeProxyCodec struct {
+	encoding.CodecV2
+}
+
+func (c *getTreeProxyCodec) Marshal(v any) (mem.BufferSlice, error) {
+	if data, ok := v.(*mem.BufferSlice); ok {
+		data.Ref() // gRPC owns the returned references until transmission completes.
+		return *data, nil
+	}
+	return c.CodecV2.Marshal(v)
+}
+
+func (c *getTreeProxyCodec) Unmarshal(data mem.BufferSlice, v any) error {
+	if out, ok := v.(*mem.BufferSlice); ok {
+		data.Ref() // Keep the receive buffers alive until the proxy forwards them.
+		*out = data
+		return nil
+	}
+	return c.CodecV2.Unmarshal(data, v)
+}
+
+func (p *contentAddressableStorageProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	client := p.vfsServer.env.GetContentAddressableStorageClient()
+	if client == nil {
+		return status.FailedPreconditionError("content addressable storage client is not configured")
+	}
+	ctx, cancel := context.WithCancel(p.vfsServer.taskCtx())
+	defer cancel()
+	stop := context.AfterFunc(stream.Context(), cancel)
+	defer stop()
+	remote, err := client.GetTree(ctx, req, grpc.ForceCodecV2(&getTreeProxyCodec{encoding.GetCodecV2("proto")}))
+	if err != nil {
+		return err
+	}
+	for {
+		var data mem.BufferSlice
+		err := remote.RecvMsg(&data)
+		if err != nil {
+			data.Free()
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+		err = stream.SendMsg(&data)
+		data.Free()
+		if err != nil {
+			return err
+		}
+	}
+}
+
+type byteStreamProxy struct {
+	bspb.UnimplementedByteStreamServer
+	vfsServer *Server
+}
+
+func (p *byteStreamProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+	client := p.vfsServer.env.GetByteStreamClient()
+	if client == nil {
+		return status.FailedPreconditionError("ByteStream client is not configured")
+	}
+	remote, err := client.Read(p.vfsServer.taskCtx(), req)
+	if err != nil {
+		return err
+	}
+	for {
+		rsp, err := remote.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(rsp); err != nil {
+			return err
+		}
+	}
 }
 
 func (p *Server) Stop() {

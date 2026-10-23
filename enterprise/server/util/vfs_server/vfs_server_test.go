@@ -1,7 +1,10 @@
 package vfs_server_test
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -24,14 +27,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -184,6 +191,218 @@ func prepare(t *testing.T, env environment.Env, server *vfs_server.Server, tree 
 	require.NoError(t, err)
 	_, err = server.Prepare(t.Context(), &container.FileSystemLayout{Inputs: tree}, tf)
 	require.NoError(t, err)
+}
+
+type rawTestCodec struct{}
+
+func (rawTestCodec) Name() string { return "proto" }
+
+func (rawTestCodec) Marshal(v any) ([]byte, error) {
+	if data, ok := v.(*[]byte); ok {
+		return *data, nil
+	}
+	return proto.Marshal(v.(proto.Message))
+}
+
+func (rawTestCodec) Unmarshal(data []byte, v any) error {
+	if out, ok := v.(*[]byte); ok {
+		*out = append((*out)[:0], data...)
+		return nil
+	}
+	return proto.Unmarshal(data, v.(proto.Message))
+}
+
+type rawTreeServer struct {
+	repb.UnimplementedContentAddressableStorageServer
+	responses [][]byte
+	err       error
+	canceled  chan struct{}
+}
+
+func (s *rawTreeServer) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	md, _ := metadata.FromIncomingContext(stream.Context())
+	if values := md.Get("task-context"); len(values) != 1 || values[0] != "executor" {
+		return gstatus.Error(codes.PermissionDenied, "missing executor task context")
+	}
+	for _, data := range s.responses {
+		if err := stream.SendMsg(&data); err != nil {
+			return err
+		}
+	}
+	if s.canceled != nil {
+		<-stream.Context().Done()
+		close(s.canceled)
+		return stream.Context().Err()
+	}
+	return s.err
+}
+
+func TestGetTreeProxyPreservesWireResponses(t *testing.T) {
+	dir := &repb.Directory{}
+	for i := range 20_000 {
+		dir.Files = append(dir.Files, &repb.FileNode{
+			Name: fmt.Sprintf("file-%05d", i), Digest: &repb.Digest{Hash: hash.String("contents"), SizeBytes: 8},
+		})
+	}
+	directoryBytes, err := proto.Marshal(&repb.GetTreeResponse{Directories: []*repb.Directory{dir}})
+	require.NoError(t, err)
+	var responses [][]byte
+	for i := range 3 {
+		tokenBytes, err := proto.Marshal(&repb.GetTreeResponse{NextPageToken: fmt.Sprintf("page-%d", i)})
+		require.NoError(t, err)
+		// Valid protobuf, but decoding/re-encoding would reorder these fields.
+		responses = append(responses, append(tokenBytes, directoryBytes...))
+	}
+	for _, code := range []codes.Code{codes.OK, codes.Unavailable, codes.Canceled} {
+		t.Run(code.String(), func(t *testing.T) {
+			ctx := t.Context()
+			var canceled chan struct{}
+			if code == codes.Canceled {
+				canceled = make(chan struct{})
+			}
+			upstream := grpc.NewServer(grpc.ForceServerCodec(rawTestCodec{}))
+			repb.RegisterContentAddressableStorageServer(upstream, &rawTreeServer{
+				responses: responses, err: gstatus.Error(code, "upstream error"), canceled: canceled,
+			})
+			upstreamListener := bufconn.Listen(1024 * 1024)
+			t.Cleanup(upstream.Stop)
+			go upstream.Serve(upstreamListener)
+			conn, err := testenv.LocalGRPCConn(t, ctx, upstreamListener)
+			require.NoError(t, err)
+			t.Cleanup(func() { conn.Close() })
+			env := testenv.GetTestEnv(t)
+			server, err := vfs_server.New(env, t.TempDir())
+			require.NoError(t, err)
+			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+			server.PrepareContentProxy(metadata.NewOutgoingContext(ctx, metadata.Pairs("task-context", "executor")))
+			proxyListener := bufconn.Listen(1024 * 1024)
+			require.NoError(t, server.Start(proxyListener))
+			t.Cleanup(server.Stop)
+			proxyConn, err := testenv.LocalGRPCConn(t, ctx, proxyListener)
+			require.NoError(t, err)
+			t.Cleanup(func() { proxyConn.Close() })
+			client := repb.NewContentAddressableStorageClient(proxyConn)
+			requestCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			stream, err := client.GetTree(requestCtx, &repb.GetTreeRequest{}, grpc.ForceCodec(rawTestCodec{}))
+			require.NoError(t, err)
+			for _, expected := range responses {
+				var actual []byte
+				require.NoError(t, stream.RecvMsg(&actual))
+				require.True(t, bytes.Equal(expected, actual), "proxy must preserve serialized response bytes")
+			}
+			if code == codes.Canceled {
+				cancel()
+				select {
+				case <-canceled:
+				case <-time.After(5 * time.Second):
+					t.Fatal("upstream RPC was not canceled")
+				}
+				return
+			}
+			var extra []byte
+			err = stream.RecvMsg(&extra)
+			if code == codes.OK {
+				require.ErrorIs(t, err, io.EOF)
+			} else {
+				require.Equal(t, code, gstatus.Code(err))
+			}
+			// Ordinary clients still decode the unchanged wire format.
+			typedStream, err := client.GetTree(ctx, &repb.GetTreeRequest{})
+			require.NoError(t, err)
+			for i := range responses {
+				rsp, err := typedStream.Recv()
+				require.NoError(t, err)
+				require.Equal(t, fmt.Sprintf("page-%d", i), rsp.GetNextPageToken())
+				require.Len(t, rsp.GetDirectories()[0].GetFiles(), len(dir.Files))
+			}
+			_, err = typedStream.Recv()
+			if code == codes.OK {
+				require.ErrorIs(t, err, io.EOF)
+			} else {
+				require.Equal(t, code, gstatus.Code(err))
+			}
+		})
+	}
+}
+
+func BenchmarkPrepare(b *testing.B) {
+	for _, dirs := range []int{1, 100} {
+		b.Run(fmt.Sprintf("100KFiles/%dDirs", dirs), func(b *testing.B) {
+			tree := &repb.Tree{Root: &repb.Directory{}}
+			for i := range dirs {
+				dir := &repb.Directory{}
+				for j := range 100_000 / dirs {
+					dir.Files = append(dir.Files, &repb.FileNode{
+						Name:   fmt.Sprintf("file-%06d", j),
+						Digest: &repb.Digest{Hash: hash.String(fmt.Sprintf("%d/%d", i, j)), SizeBytes: 4096},
+					})
+				}
+				d, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
+				require.NoError(b, err)
+				tree.Root.Directories = append(tree.Root.Directories, &repb.DirectoryNode{Name: fmt.Sprintf("dir-%d", i), Digest: d})
+				tree.Children = append(tree.Children, dir)
+			}
+			env := testenv.GetTestEnv(b)
+			workspace := b.TempDir()
+			layout := &container.FileSystemLayout{Inputs: tree, DigestFunction: repb.DigestFunction_SHA256}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				server, err := vfs_server.New(env, workspace)
+				require.NoError(b, err)
+				_, err = server.Prepare(b.Context(), layout, nil)
+				require.NoError(b, err)
+			}
+		})
+	}
+}
+
+func TestPrepareSharedDirectories(t *testing.T) {
+	server, env := newServer(t)
+	dir := &repb.Directory{Files: []*repb.FileNode{
+		{Name: "file", Digest: &repb.Digest{Hash: digest.EmptySha256}},
+		{Name: "executable", Digest: &repb.Digest{Hash: digest.EmptySha256}, IsExecutable: true},
+	}}
+	d, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	tree := &repb.Tree{
+		Root: &repb.Directory{Directories: []*repb.DirectoryNode{
+			{Name: "a", Digest: d}, {Name: "b", Digest: d},
+		}},
+		Children: []*repb.Directory{dir},
+	}
+	prepare(t, env, server, tree)
+	ctx := t.Context()
+	lookup := func(parentID uint64, name string) *vfspb.LookupResponse {
+		rsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: parentID, Name: name})
+		require.NoError(t, err)
+		return rsp
+	}
+	a := lookup(vfscommon.RootInodeId, "a")
+	b := lookup(vfscommon.RootInodeId, "b")
+	fileA := lookup(a.GetId(), "file")
+	fileB := lookup(b.GetId(), "file")
+	require.NotEqual(t, fileA.GetId(), fileB.GetId())
+	require.EqualValues(t, 0644, fileA.GetAttrs().GetPerm())
+	require.EqualValues(t, 0755, lookup(a.GetId(), "executable").GetAttrs().GetPerm())
+	_, err = server.SetAttr(ctx, &vfspb.SetAttrRequest{
+		Id: fileA.GetId(), SetPerms: &vfspb.SetAttrRequest_SetPerms{Perms: 0600},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 0600, lookup(a.GetId(), "file").GetAttrs().GetPerm())
+	require.EqualValues(t, 0644, lookup(b.GetId(), "file").GetAttrs().GetPerm())
+	require.EqualValues(t, 0644, fileA.GetAttrs().GetPerm(), "previously returned attrs must remain immutable")
+	require.NotZero(t, fileA.GetAttrs().GetMtimeNanos())
+	require.Equal(t, fileA.GetAttrs().GetMtimeNanos(), lookup(a.GetId(), "file").GetAttrs().GetMtimeNanos())
+	require.EqualValues(t, 4, server.ComputeStats().GetCasFilesCount())
+
+	// Mutations must also work before an input's attributes have been accessed.
+	_, err = server.Unlink(ctx, &vfspb.UnlinkRequest{ParentId: b.GetId(), Name: "executable"})
+	require.NoError(t, err)
+	_, err = server.Lookup(ctx, &vfspb.LookupRequest{ParentId: b.GetId(), Name: "executable"})
+	requireSyscallError(t, err, syscall.ENOENT)
+	require.EqualValues(t, 1, lookup(a.GetId(), "executable").GetAttrs().GetNlink())
 }
 
 type evictingFileCache struct {
@@ -370,6 +589,127 @@ func TestCASFileDownloadCanceled(t *testing.T) {
 	require.Equal(t, codes.Canceled, gstatus.Code(err))
 	require.Equal(t, err, server.TaskError())
 	require.Less(t, time.Since(start), time.Second)
+}
+
+type sparseInputFetcher struct {
+	path     string
+	contents []byte
+}
+
+func TestLocalNamespaceMetadataDoesNotFetchInputs(t *testing.T) {
+	ctx := t.Context()
+	root := testfs.MakeTempDir(t)
+	fetcher := &sparseInputFetcher{path: filepath.Join(root, "unfetched"), contents: []byte("input contents")}
+	server, err := vfs_server.NewLocal(root, fetcher.Open)
+	require.NoError(t, err)
+	defer server.Stop()
+	_, err = server.Prepare(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{Root: &repb.Directory{
+			Files:    []*repb.FileNode{{Name: "input", Digest: &repb.Digest{Hash: hash.String(string(fetcher.contents)), SizeBytes: int64(len(fetcher.contents))}, IsExecutable: true}},
+			Symlinks: []*repb.SymlinkNode{{Name: "link", Target: "input"}},
+		}},
+	}, fetcher)
+	require.NoError(t, err)
+	client := vfs_server.NewDirectClient(server)
+	listing, err := client.GetDirectoryContents(ctx, &vfspb.GetDirectoryContentsRequest{Id: vfscommon.RootInodeId})
+	require.NoError(t, err)
+	require.Len(t, listing.GetNodes(), 2)
+	file, err := client.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "input"})
+	require.NoError(t, err)
+	attrs, err := client.GetAttr(ctx, &vfspb.GetAttrRequest{Id: file.GetId()})
+	require.NoError(t, err)
+	require.EqualValues(t, len(fetcher.contents), attrs.GetAttrs().GetSize())
+	require.EqualValues(t, 0755, attrs.GetAttrs().GetPerm())
+	link, err := client.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "link"})
+	require.NoError(t, err)
+	require.Equal(t, "input", link.GetSymlinkTarget())
+	_, err = os.Stat(fetcher.path)
+	require.True(t, os.IsNotExist(err), "metadata operations must not fetch file contents")
+}
+
+func (f *sparseInputFetcher) Fetch(ctx context.Context, node *repb.FileNode) error {
+	file, err := os.Create(f.path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return file.Truncate(int64(len(f.contents)))
+}
+
+func (f *sparseInputFetcher) Open(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+	return os.Open(f.path)
+}
+
+func (f *sparseInputFetcher) FetchRange(ctx context.Context, node *repb.FileNode, offset, length int64) error {
+	if offset >= int64(len(f.contents)) {
+		return nil
+	}
+	file, err := os.OpenFile(f.path, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = file.WriteAt(f.contents[offset:min(offset+length, int64(len(f.contents)))], offset)
+	return err
+}
+
+func TestRangedCASFileDataPaths(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	fetcher := &sparseInputFetcher{path: filepath.Join(root, "cas"), contents: []byte("0123456789abcdefghijklmnopqrstuvwxyz")}
+	server, err := vfs_server.NewLocal(root, fetcher.Open)
+	require.NoError(t, err)
+	defer server.Stop()
+	layout := &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{
+			Name: "input", Digest: &repb.Digest{Hash: hash.String(string(fetcher.contents)), SizeBytes: int64(len(fetcher.contents))},
+		}}}},
+	}
+	_, err = server.Prepare(ctx, layout, fetcher)
+	require.NoError(t, err)
+	node, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "input"})
+	require.NoError(t, err)
+	h, err := server.Open(ctx, &vfspb.OpenRequest{Id: node.GetId()})
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		offset int64
+		length int32
+		want   string
+	}{
+		{5, 4, "5678"}, {34, 10, "yz"}, {36, 4, ""}, {0, 0, ""},
+	} {
+		rsp, err := server.Read(ctx, &vfspb.ReadRequest{HandleId: h.GetHandleId(), Offset: tc.offset, NumBytes: tc.length})
+		require.NoError(t, err)
+		require.Equal(t, tc.want, string(rsp.GetData()))
+	}
+	for _, tc := range []struct {
+		whence uint32
+		want   uint64
+	}{
+		{unix.SEEK_DATA, 10}, {unix.SEEK_HOLE, uint64(len(fetcher.contents))},
+	} {
+		rsp, err := server.Lseek(ctx, &vfspb.LseekRequest{HandleId: h.GetHandleId(), Offset: 10, Whence: tc.whence})
+		require.NoError(t, err)
+		require.Equal(t, tc.want, rsp.GetOffset())
+	}
+	out, err := server.Create(ctx, &vfspb.CreateRequest{ParentId: vfscommon.RootInodeId, Name: "output", Flags: syscall.O_CREAT | syscall.O_RDWR, Mode: 0644})
+	require.NoError(t, err)
+	_, err = server.CopyFileRange(ctx, &vfspb.CopyFileRangeRequest{ReadHandleId: h.GetHandleId(), ReadHandleOffset: 10, WriteHandleId: out.GetHandleId(), NumBytes: 10})
+	require.NoError(t, err)
+	rsp, err := server.Read(ctx, &vfspb.ReadRequest{HandleId: out.GetHandleId(), NumBytes: 10})
+	require.NoError(t, err)
+	require.Equal(t, "abcdefghij", string(rsp.GetData()))
+	layout.OutputFiles = []string{"input"}
+	destination := t.TempDir()
+	require.NoError(t, server.MaterializeOutputs(ctx, layout, destination))
+	file, err := os.Open(filepath.Join(destination, "input"))
+	require.NoError(t, err)
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	require.NoError(t, err)
+	require.Equal(t, fetcher.contents, data)
 }
 
 func TestCASFileRefetchedIfEvictedBeforeOpen(t *testing.T) {

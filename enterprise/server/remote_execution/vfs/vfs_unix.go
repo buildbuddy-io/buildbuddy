@@ -146,8 +146,12 @@ func (ic *inodeCache) removeCachedAttrs(inode uint64) {
 	e.attrs = nil
 }
 
+type vfsClientHolder struct {
+	client vfspb.FileSystemClient
+}
+
 type VFS struct {
-	vfsClient           vfspb.FileSystemClient
+	vfsClient           atomic.Pointer[vfsClientHolder]
 	mountDir            string
 	enablePassthrough   bool
 	verbose             bool
@@ -197,7 +201,6 @@ func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *V
 	cancel()
 
 	vfs := &VFS{
-		vfsClient:           vfsClient,
 		mountDir:            mountDir,
 		enablePassthrough:   options.EnablePassthrough,
 		verbose:             options.Verbose,
@@ -210,6 +213,7 @@ func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *V
 		opStats:             make(map[string]*opStats),
 		perFileStats:        make(map[string]perOpStats),
 	}
+	vfs.SetClient(vfsClient)
 	root := &Node{vfs: vfs}
 	vfs.root = root
 	vfs.nodesByInodeID[vfscommon.RootInodeId] = &vfs.root.Inode
@@ -250,6 +254,14 @@ func (vfs *VFS) attrsGenerationsForSnapshot(generation uint64, nodes []*vfspb.No
 
 func (vfs *VFS) GetMountDir() string {
 	return vfs.mountDir
+}
+
+func (vfs *VFS) SetClient(client vfspb.FileSystemClient) {
+	vfs.vfsClient.Store(&vfsClientHolder{client: client})
+}
+
+func (vfs *VFS) client() vfspb.FileSystemClient {
+	return vfs.vfsClient.Load().client
 }
 
 type latencyRecorder struct {
@@ -504,7 +516,7 @@ func (vfs *VFS) getattr(inode uint64) (*vfspb.Attrs, error) {
 	attrs, ok := vfs.inodeCache.getCachedAttrs(inode)
 
 	if !ok {
-		rsp, err := vfs.vfsClient.GetAttr(vfs.getRPCContext(), &vfspb.GetAttrRequest{Id: inode})
+		rsp, err := vfs.client().GetAttr(vfs.getRPCContext(), &vfspb.GetAttrRequest{Id: inode})
 		if err != nil {
 			return nil, err
 		}
@@ -702,7 +714,7 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (nod
 			Name:     name,
 		}
 		var err error
-		rsp, err = n.vfs.vfsClient.Lookup(n.vfs.getRPCContext(), req)
+		rsp, err = n.vfs.client().Lookup(n.vfs.getRPCContext(), req)
 		if err != nil {
 			return nil, rpcErrToSyscallErrno(err)
 		}
@@ -777,7 +789,7 @@ func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, er
 	if d.pos == -1 {
 		directoryGeneration, directoryCacheable := d.node.directorySnapshotGeneration()
 		attrsGeneration, attrsCacheable := d.vfs.attrsSnapshotGeneration()
-		rsp, err := d.vfs.vfsClient.GetDirectoryContents(d.vfs.rpcCtx, &vfspb.GetDirectoryContentsRequest{
+		rsp, err := d.vfs.client().GetDirectoryContents(d.vfs.rpcCtx, &vfspb.GetDirectoryContentsRequest{
 			Id: d.node.StableAttr().Ino,
 		})
 		if err != nil {
@@ -1048,7 +1060,8 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 	n.vfs.beginAttrsMutation()
 	defer n.vfs.endAttrsMutation()
-	rsp, err := n.vfs.vfsClient.Open(ctx, req)
+	client := n.vfs.client()
+	rsp, err := client.Open(ctx, req)
 	if err != nil {
 		if n.vfs.verbose {
 			log.CtxInfof(n.vfs.getRPCContext(), "Open %q failed: %s", n.relativePath(), err)
@@ -1057,7 +1070,7 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 	n.vfs.inodeCache.opened(n.StableAttr().Ino)
 	return &remoteFile{
-		vfsClient: n.vfs.vfsClient,
+		vfsClient: client,
 		path:      n.relativePath(),
 		id:        rsp.GetHandleId(),
 		node:      n,
@@ -1091,7 +1104,8 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	}
 	n.beginDirectoryMutation()
 	defer n.endDirectoryMutation()
-	rsp, err := n.vfs.vfsClient.Create(ctx, req)
+	client := n.vfs.client()
+	rsp, err := client.Create(ctx, req)
 	if err != nil {
 		return nil, nil, 0, rpcErrToSyscallErrno(err)
 	}
@@ -1100,7 +1114,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG, Ino: rsp.GetId()})
 
 	rf := &remoteFile{
-		vfsClient: n.vfs.vfsClient,
+		vfsClient: client,
 		path:      filepath.Join(n.relativePath(), name),
 		id:        rsp.GetHandleId(),
 		node:      child,
@@ -1129,7 +1143,7 @@ func (n *Node) Mknod(ctx context.Context, name string, mode uint32, dev uint32, 
 
 	n.beginDirectoryMutation()
 	defer n.endDirectoryMutation()
-	rsp, err := n.vfs.vfsClient.Mknod(n.vfs.getRPCContext(), &vfspb.MknodRequest{
+	rsp, err := n.vfs.client().Mknod(n.vfs.getRPCContext(), &vfspb.MknodRequest{
 		ParentId: n.StableAttr().Ino,
 		Name:     name,
 		Mode:     mode,
@@ -1167,7 +1181,7 @@ func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint
 		log.CtxDebugf(n.vfs.rpcCtx, "CopyFileRange %q => %q", rf.path, wf.path)
 	}
 
-	rsp, err := n.vfs.vfsClient.CopyFileRange(n.vfs.getRPCContext(), &vfspb.CopyFileRangeRequest{
+	rsp, err := n.vfs.client().CopyFileRange(n.vfs.getRPCContext(), &vfspb.CopyFileRangeRequest{
 		ReadHandleId:      rf.id,
 		ReadHandleOffset:  int64(offIn),
 		WriteHandleId:     wf.id,
@@ -1209,7 +1223,7 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	n.vfs.beginAttrsMutation()
 	defer n.vfs.endAttrsMutation()
 
-	rsp, err := n.vfs.vfsClient.Rename(n.vfs.getRPCContext(), &vfspb.RenameRequest{
+	rsp, err := n.vfs.client().Rename(n.vfs.getRPCContext(), &vfspb.RenameRequest{
 		OldParentId: n.StableAttr().Ino,
 		OldName:     name,
 		NewParentId: newParent.EmbeddedInode().StableAttr().Ino,
@@ -1292,7 +1306,7 @@ func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) 
 func (n *Node) setattr(req *vfspb.SetAttrRequest) (*vfspb.Attrs, error) {
 	n.vfs.beginAttrsMutation()
 	defer n.vfs.endAttrsMutation()
-	rsp, err := n.vfs.vfsClient.SetAttr(n.vfs.getRPCContext(), req)
+	rsp, err := n.vfs.client().SetAttr(n.vfs.getRPCContext(), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1456,7 +1470,7 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 
 	n.beginDirectoryMutation()
 	defer n.endDirectoryMutation()
-	rsp, err := n.vfs.vfsClient.Mkdir(n.vfs.getRPCContext(), &vfspb.MkdirRequest{ParentId: n.StableAttr().Ino, Name: name, Perms: mode, Owner: callerOwner(ctx)})
+	rsp, err := n.vfs.client().Mkdir(n.vfs.getRPCContext(), &vfspb.MkdirRequest{ParentId: n.StableAttr().Ino, Name: name, Perms: mode, Owner: callerOwner(ctx)})
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
@@ -1473,7 +1487,7 @@ func (n *Node) Rmdir(ctx context.Context, name string) syscall.Errno {
 	}
 	n.beginDirectoryMutation()
 	defer n.endDirectoryMutation()
-	_, err := n.vfs.vfsClient.Rmdir(n.vfs.getRPCContext(), &vfspb.RmdirRequest{ParentId: n.StableAttr().Ino, Name: name})
+	_, err := n.vfs.client().Rmdir(n.vfs.getRPCContext(), &vfspb.RmdirRequest{ParentId: n.StableAttr().Ino, Name: name})
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
@@ -1535,7 +1549,7 @@ func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, o
 	defer n.endDirectoryMutation()
 	n.vfs.beginAttrsMutation()
 	defer n.vfs.endAttrsMutation()
-	res, err := n.vfs.vfsClient.Link(n.vfs.getRPCContext(), req)
+	res, err := n.vfs.client().Link(n.vfs.getRPCContext(), req)
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
@@ -1560,7 +1574,7 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 	n.beginDirectoryMutation()
 	defer n.endDirectoryMutation()
 
-	rsp, err := n.vfs.vfsClient.Symlink(n.vfs.getRPCContext(), &vfspb.SymlinkRequest{ParentId: n.StableAttr().Ino, Name: name, Target: target, Owner: callerOwner(ctx)})
+	rsp, err := n.vfs.client().Symlink(n.vfs.getRPCContext(), &vfspb.SymlinkRequest{ParentId: n.StableAttr().Ino, Name: name, Target: target, Owner: callerOwner(ctx)})
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
@@ -1617,7 +1631,7 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 	defer n.endDirectoryMutation()
 	n.vfs.beginAttrsMutation()
 	defer n.vfs.endAttrsMutation()
-	_, err := n.vfs.vfsClient.Unlink(n.vfs.getRPCContext(), &vfspb.UnlinkRequest{ParentId: n.StableAttr().Ino, Name: name})
+	_, err := n.vfs.client().Unlink(n.vfs.getRPCContext(), &vfspb.UnlinkRequest{ParentId: n.StableAttr().Ino, Name: name})
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
@@ -1648,7 +1662,7 @@ func (n *Node) Getlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fus
 		FileLock: fileLockToProto(lk),
 		Flags:    flags,
 	}
-	res, err := n.vfs.vfsClient.GetLk(n.vfs.getRPCContext(), req)
+	res, err := n.vfs.client().GetLk(n.vfs.getRPCContext(), req)
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
@@ -1676,7 +1690,7 @@ func (n *Node) Setlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fus
 		FileLock: fileLockToProto(lk),
 		Flags:    flags,
 	}
-	_, err := n.vfs.vfsClient.SetLk(n.vfs.getRPCContext(), req)
+	_, err := n.vfs.client().SetLk(n.vfs.getRPCContext(), req)
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
@@ -1699,7 +1713,7 @@ func (n *Node) Setlkw(ctx context.Context, f fs.FileHandle, owner uint64, lk *fu
 		FileLock: fileLockToProto(lk),
 		Flags:    flags,
 	}
-	_, err := n.vfs.vfsClient.SetLkw(n.vfs.getRPCContext(), req)
+	_, err := n.vfs.client().SetLkw(n.vfs.getRPCContext(), req)
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
@@ -1716,7 +1730,7 @@ func fileLockToProto(lk *fuse.FileLock) *vfspb.FileLock {
 }
 
 func (n *Node) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
-	rsp, err := n.vfs.vfsClient.Statfs(n.vfs.getRPCContext(), &vfspb.StatfsRequest{})
+	rsp, err := n.vfs.client().Statfs(n.vfs.getRPCContext(), &vfspb.StatfsRequest{})
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}

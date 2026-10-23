@@ -1425,17 +1425,65 @@ func ValidateTreeNames(tree *repb.Tree, caseInsensitive bool) error {
 	return nil
 }
 
+// ValidateWorkingDirectoryInTree checks that workingDir exists in the input tree.
+func ValidateWorkingDirectoryInTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value, workingDir string) error {
+	_, dirMap, err := DirMapFromTree(tree, digestFunction)
+	if err != nil {
+		return status.WrapError(err, "failed to build directory map from input tree")
+	}
+
+	// Walk the tree path segment by segment starting from root.
+	current := tree.GetRoot()
+	segments := strings.SplitSeq(workingDir, "/")
+	for seg := range segments {
+		found := false
+		for _, dirNode := range current.GetDirectories() {
+			if dirNode.GetName() == seg {
+				next, ok := dirMap[digest.NewKey(dirNode.GetDigest())]
+				if !ok {
+					if !digest.IsEmptyHash(dirNode.GetDigest(), digestFunction) {
+						return status.FailedPreconditionErrorf("working_directory %q not found in input tree", workingDir)
+					}
+					next = &repb.Directory{}
+				}
+				current = next
+				found = true
+				break
+			}
+		}
+		if !found {
+			return status.FailedPreconditionErrorf("working_directory %q does not exist in the input tree", workingDir)
+		}
+	}
+	return nil
+}
+
 func DirMapFromTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
 	dirMap = make(map[digest.Key]*repb.Directory, 1+len(tree.Children))
 
-	rootDigest, err = digest.ComputeForMessage(tree.Root, digestFunction)
+	// Reuse the encoding buffer instead of allocating the whole tree again.
+	var buf []byte
+	computeDigest := func(dir *repb.Directory) (*repb.Digest, error) {
+		size := dir.SizeVT()
+		if cap(buf) < size {
+			buf = make([]byte, size)
+		}
+		buf = buf[:size]
+		if size > 0 {
+			if _, err := dir.MarshalToSizedBufferVT(buf); err != nil {
+				return nil, err
+			}
+		}
+		return digest.Compute(bytes.NewReader(buf), digestFunction)
+	}
+	rootDigest, err = computeDigest(tree.Root)
 	if err != nil {
 		return nil, nil, err
 	}
 	dirMap[digest.NewKey(rootDigest)] = tree.Root
 
 	for _, child := range tree.Children {
-		d, err := digest.ComputeForMessage(child, digestFunction)
+		d, err := computeDigest(child)
 		if err != nil {
 			return nil, nil, err
 		}
