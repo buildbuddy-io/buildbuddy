@@ -118,7 +118,7 @@ Measure the resulting hit rate and disk reads. Account for this allocation toget
 
 ### Open SST files
 
-Pebble stores its tables in sorted string table (SST) files. `cache.pebble.max_open_files` limits how many SST files it keeps open, with a default of `4000`. If the database has close to or more than that many files, increasing the limit can reduce repeated file opens.
+Pebble stores its tables in sorted string table (SST) files. `cache.pebble.max_open_files` limits how many SST files it keeps open, with a default of `32768`. If the database has close to or more than that many files, increasing the limit can reduce repeated file opens.
 
 Sum the file counts across all levels for each app and cache:
 
@@ -128,12 +128,12 @@ sum by (pod_name, cache_name) (
 )
 ```
 
-Use your scrape configuration's pod or instance label if it differs from `pod_name`. Choose a limit above the observed file count with room for growth, and keep it below the process's open-file limit, leaving room for sockets and other files. For example, a database with around 10,000 SST files could use:
+Use your scrape configuration's pod or instance label if it differs from `pod_name`. Choose a limit above the observed file count with room for growth, and keep it below the process's open-file limit, leaving room for sockets and other files. For example, a database with around 40,000 SST files could use:
 
 ```yaml title="config.yaml"
 cache:
   pebble:
-    max_open_files: 32768
+    max_open_files: 65536
 ```
 
 ## Enable detailed cache stats
