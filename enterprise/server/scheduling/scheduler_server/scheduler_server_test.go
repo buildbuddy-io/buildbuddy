@@ -869,6 +869,7 @@ func newScheduleRequest(ctx context.Context, t *testing.T, env environment.Env, 
 			Arch:                   defaultArch,
 			TaskSize:               size,
 			RequestedIsolationType: opts.props[platform.WorkloadIsolationPropertyName],
+			RequiresVfs:            platform.IsTrue(opts.props["enable-vfs"]),
 		},
 		SerializedTask: taskBytes,
 	}
@@ -2819,6 +2820,104 @@ func TestScheduleTask_NoExecutorSupportsRequestedIsolationType(t *testing.T) {
 	require.True(t, status.IsUnavailableError(err), "expected Unavailable error, got: %v", err)
 	require.Contains(t, err.Error(), `support workload isolation type "firecracker"`)
 	ociExecutor.EnsureTaskNotReceived(req.GetTaskId())
+}
+
+func TestScheduleTask_RequiresVFS(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	// A missing capability includes older executors, even if VFS may have
+	// been enabled there. Only an advertised capability establishes support.
+	unknown := newFakeExecutorWithId(ctx, t, "unknown", env.GetSchedulerClient())
+	unknown.Register()
+	vfs := newFakeExecutorWithId(ctx, t, "vfs", env.GetSchedulerClient())
+	vfs.node.SupportsVfs = true
+	vfs.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{"enable-vfs": "true"})
+	nextReservation(t, vfs, taskID)
+	unknown.EnsureTaskNotReceived(taskID)
+
+	// The same requirement applies to work stealing, even though the task
+	// is already queued and fits both executors' resource limits.
+	unknown.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	response := unknown.NextSchedulerMessage()
+	require.Nil(t, response.GetEnqueueTaskReservationRequest())
+	require.Greater(t, response.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
+	vfs.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	nextReservation(t, vfs, taskID)
+
+	// New registrations also sample the unclaimed queue.
+	unknown2 := newFakeExecutorWithId(ctx, t, "unknown2", env.GetSchedulerClient())
+	unknown2.Register()
+	unknown2.EnsureTaskNotReceived(taskID)
+	vfs2 := newFakeExecutorWithId(ctx, t, "vfs2", env.GetSchedulerClient())
+	vfs2.node.SupportsVfs = true
+	vfs2.Register()
+	nextReservation(t, vfs2, taskID)
+}
+
+func TestScheduleTask_VFSNotRequired(t *testing.T) {
+	for _, value := range []string{"", "false"} {
+		t.Run(fmt.Sprintf("enable-vfs=%q", value), func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			unknown := newFakeExecutorWithId(ctx, t, "unknown", env.GetSchedulerClient())
+			unknown.Register()
+			vfs := newFakeExecutorWithId(ctx, t, "vfs", env.GetSchedulerClient())
+			vfs.node.SupportsVfs = true
+			vfs.Register()
+
+			props := map[string]string{}
+			if value != "" {
+				props["enable-vfs"] = value
+			}
+			taskID := scheduleTask(ctx, t, env, props)
+			unknown.WaitForTask(taskID)
+			vfs.WaitForTask(taskID)
+		})
+	}
+}
+
+func TestScheduleTask_NoExecutorSupportsVFS(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	unknown := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	unknown.Register()
+
+	request := newScheduleRequest(ctx, t, env, scheduleOpts{props: map[string]string{
+		"enable-vfs": "true",
+	}})
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, request)
+	require.True(t, status.IsUnavailableError(err), "expected Unavailable, got: %v", err)
+	require.Contains(t, err.Error(), "support enable-vfs=true")
+	unknown.EnsureTaskNotReceived(request.GetTaskId())
+}
+
+func TestEnqueueTaskReservation_PreferredExecutorRequiresVFS(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	unknown := newFakeExecutorWithId(ctx, t, "unknown", env.GetSchedulerClient())
+	unknown.Register()
+	vfs := newFakeExecutorWithId(ctx, t, "vfs", env.GetSchedulerClient())
+	vfs.node.SupportsVfs = true
+	vfs.Register()
+
+	// A scheduler forwarding a reservation can name a preferred connected
+	// executor. That preference must not bypass the VFS requirement.
+	request := newScheduleRequest(ctx, t, env, scheduleOpts{props: map[string]string{
+		"enable-vfs": "true",
+	}})
+	_, err := env.GetSchedulerService().EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             request.GetTaskId(),
+		TaskSize:           request.GetMetadata().GetTaskSize(),
+		SchedulingMetadata: request.GetMetadata(),
+		ExecutorId:         unknown.id,
+	})
+	require.NoError(t, err)
+	nextReservation(t, vfs, request.GetTaskId())
+	unknown.EnsureTaskNotReceived(request.GetTaskId())
 }
 
 func TestGetExecutionNodes(t *testing.T) {

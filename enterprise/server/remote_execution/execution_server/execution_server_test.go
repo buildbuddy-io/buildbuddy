@@ -576,6 +576,61 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 	}, task.GetPlatformOverrides(), protocmp.Transform()))
 }
 
+func TestDispatch_VFSRequirement(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		properties []string
+		override   string
+		experiment string
+		required   bool
+	}{
+		{name: "absent"},
+		{name: "false", properties: []string{"false"}},
+		{name: "true", properties: []string{" TrUe "}, required: true},
+		{name: "duplicate", properties: []string{"false", "true"}, required: true},
+		{name: "header_enables", properties: []string{"false"}, override: "true", required: true},
+		{name: "header_disables", properties: []string{"true"}, override: "false"},
+		{name: "experiment_enables", override: "false", experiment: "true", required: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+			if test.experiment != "" {
+				provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+					"remote_execution.task_size_overrides": {
+						State: memprovider.Enabled, DefaultVariant: "test",
+						Variants: map[string]any{"test": map[string]any{"enable-vfs": test.experiment}},
+					},
+				})
+				require.NoError(t, openfeature.SetProviderAndWait(provider))
+				fp, err := experiments.NewFlagProvider("test")
+				require.NoError(t, err)
+				env.SetExperimentFlagProvider(fp)
+			}
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(t.Context(), "US1")
+			require.NoError(t, err)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			if test.override != "" {
+				ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(platform.OverrideHeaderPrefix+"enable-vfs", test.override))
+			}
+			action := &repb.Action{Platform: &repb.Platform{}}
+			for _, value := range test.properties {
+				action.Platform.Properties = append(action.Platform.Properties, &repb.Platform_Property{
+					Name: "enable-vfs", Value: value,
+				})
+			}
+			arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, action)
+			err = env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{
+				ActionDigest: arn.GetDigest(), DigestFunction: arn.GetDigestFunction(),
+			}, action, arn.NewUploadString())
+			require.NoError(t, err)
+			scheduler := env.GetSchedulerService().(*schedulerServerMock)
+			require.Len(t, scheduler.scheduleReqs, 1)
+			require.Equal(t, test.required, scheduler.scheduleReqs[0].GetMetadata().GetRequiresVfs())
+		})
+	}
+}
+
 func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
 	for _, tc := range []struct {
 		name                  string
