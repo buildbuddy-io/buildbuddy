@@ -440,14 +440,15 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
-		EventName:          "pull_request",
-		TargetRepoURL:      "https://github.com/acme-inc/acme",
-		TargetBranch:       "main",
-		PushedRepoURL:      "https://github.com/untrusteduser/acme",
-		PushedBranch:       "feature",
-		SHA:                "c04d68571cb519e095772c865847007ed3e7fea9",
-		IsTargetRepoPublic: true,
-		PullRequestAuthor:  "external-user-1",
+		EventName:               "pull_request",
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetRepoDefaultBranch: "main",
+		TargetBranch:            "release",
+		PushedRepoURL:           "https://github.com/untrusteduser/acme",
+		PushedBranch:            "feature",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic:      true,
+		PullRequestAuthor:       "external-user-1",
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
@@ -455,6 +456,9 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
+	configReq := <-provider.GetFileContentsRequests
+	assert.Equal(t, repoURL, configReq.RepoURL)
+	assert.Equal(t, "main", configReq.Ref)
 	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
@@ -503,14 +507,15 @@ func testTrustedWorkflowBuildUser(t *testing.T, configuredUser, wantUser string)
 	repo := createWorkflow(t, te, repoURL, gid, false)
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
-		EventName:          "pull_request",
-		TargetRepoURL:      "https://github.com/acme-inc/acme",
-		TargetBranch:       "main",
-		PushedRepoURL:      "https://github.com/untrusteduser/acme",
-		PushedBranch:       "feature",
-		SHA:                "c04d68571cb519e095772c865847007ed3e7fea9",
-		IsTargetRepoPublic: true,
-		PullRequestAuthor:  "acme-inc-user-1",
+		EventName:               "pull_request",
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetRepoDefaultBranch: "main",
+		TargetBranch:            "release",
+		PushedRepoURL:           "https://github.com/untrusteduser/acme",
+		PushedBranch:            "feature",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic:      true,
+		PullRequestAuthor:       "acme-inc-user-1",
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow + configuredUser}
 
@@ -518,6 +523,9 @@ func testTrustedWorkflowBuildUser(t *testing.T, configuredUser, wantUser string)
 	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
+	configReq := <-provider.GetFileContentsRequests
+	assert.Equal(t, provider.WebhookData.PushedRepoURL, configReq.RepoURL)
+	assert.Equal(t, provider.WebhookData.SHA, configReq.Ref)
 	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
