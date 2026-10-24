@@ -93,6 +93,7 @@ const (
 	persistentWorkerProtocolPropertyName     = "persistentWorkerProtocol"
 	WorkflowIDPropertyName                   = "workflow-id"
 	WorkloadIsolationPropertyName            = "workload-isolation-type"
+	GuestKernelVersionPropertyName           = "guest-kernel-version"
 	VFSPrefetchModePropertyName              = "vfs-prefetch-mode"
 	initDockerdPropertyName                  = "init-dockerd"
 	enableDockerdTCPPropertyName             = "enable-dockerd-tcp"
@@ -267,6 +268,7 @@ type Properties struct {
 	ContainerRegistryUsername string
 	ContainerRegistryPassword string
 	WorkloadIsolationType     string
+	GuestKernelVersion        string
 	DockerForceRoot           bool
 	DockerInit                bool
 	DockerUser                string
@@ -578,6 +580,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
 		WorkloadIsolationType:     isolationType,
+		GuestKernelVersion:        stringProp(m, GuestKernelVersionPropertyName, ""),
 		InitDockerd:               boolProp(m, initDockerdPropertyName, false),
 		EnableDockerdTCP:          boolProp(m, enableDockerdTCPPropertyName, false),
 		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),

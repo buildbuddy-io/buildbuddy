@@ -12,6 +12,9 @@ load(
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+# Keep VM-free kernel tests separate from the bare Firecracker suite.
+# gazelle:go_test file
+
 go_library(
     name = "firecracker",
     srcs = [
@@ -138,6 +141,29 @@ _TEST_IMAGE_X_DEFS = {
     "ubuntu20_04Ext4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_20_04.ext4)",
     "ubuntu24_04Ext4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_24_04.ext4)",
 }
+
+go_test(
+    name = "guest_kernel_test",
+    size = "small",
+    srcs = ["guest_kernel_test.go"],
+    embed = [":firecracker"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "//enterprise/server/remote_execution/copy_on_write",
+        "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/remote_execution/snaploader",
+        "//enterprise/server/remote_execution/snaputil",
+        "//proto:firecracker_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//server/remote_cache/digest",
+        "//server/resources",
+        "//server/testutil/testcache",
+        "//server/testutil/testenv",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
+    ],
+)
 
 # NOTE: to run this test locally, use `test.sh` or `bench.sh`
 #
