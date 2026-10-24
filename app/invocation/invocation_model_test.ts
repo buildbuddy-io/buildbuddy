@@ -1,4 +1,5 @@
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { command_line } from "../../proto/command_line_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
 import InvocationModel from "./invocation_model";
 
@@ -30,6 +31,32 @@ function newInvocationModelWithConfigurations(configurations: { cpu?: string; is
             }),
           })
       ),
+    })
+  );
+}
+
+function newInvocationModelWithClientEnv(repoUrl: string, env: Record<string, string>) {
+  return new InvocationModel(
+    new invocation.Invocation({
+      repoUrl,
+      structuredCommandLine: [
+        new command_line.CommandLine({
+          commandLineLabel: "canonical",
+          sections: [
+            new command_line.CommandLineSection({
+              optionList: new command_line.OptionList({
+                option: Object.entries(env).map(
+                  ([key, value]) =>
+                    new command_line.Option({
+                      optionName: "client_env",
+                      optionValue: `${key}=${value}`,
+                    })
+                ),
+              }),
+            }),
+          ],
+        }),
+      ],
     })
   );
 }
@@ -83,5 +110,26 @@ describe("InvocationModel.getMode", () => {
     model.optionsMap.set("compilation_mode", "opt");
 
     expect(model.getMode()).toBe("opt");
+  });
+});
+
+describe("InvocationModel.getGithubActionsUrl", () => {
+  it("uses GITHUB_REPOSITORY for the actions run URL", () => {
+    const model = newInvocationModelWithClientEnv("https://github.com/workspace/repo", {
+      GITHUB_REPOSITORY: "actions/repo",
+      GITHUB_RUN_ID: "12345",
+    });
+
+    expect(model.getGithubActionsUrl()).toBe("https://github.com/actions/repo/actions/runs/12345");
+  });
+
+  it("uses GITHUB_SERVER_URL for enterprise actions run URLs", () => {
+    const model = newInvocationModelWithClientEnv("https://ghe.example.com/workspace/repo", {
+      GITHUB_REPOSITORY: "actions/repo",
+      GITHUB_RUN_ID: "12345",
+      GITHUB_SERVER_URL: "https://ghe.example.com",
+    });
+
+    expect(model.getGithubActionsUrl()).toBe("https://ghe.example.com/actions/repo/actions/runs/12345");
   });
 });
