@@ -240,8 +240,12 @@ type provider struct {
 	// This is initialized once at startup when CDI devices are configured.
 	cdiRegistry *cdi.Cache
 
-	// Seccomp profile attached to all OCI containers created by this provider.
+	// Seccomp profile attached to OCI containers created by this provider.
 	seccompProfile *specs.LinuxSeccomp
+	// Seccomp profile attached instead when the
+	// executor.oci.seccomp_disable_new_userns experiment is enabled for the
+	// task.
+	noNewUserNSSeccompProfile *specs.LinuxSeccomp
 }
 
 func startLxcfs(ctx context.Context, lxcfsMountDir string) (*exec.Cmd, error) {
@@ -267,9 +271,14 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if !slices.Contains([]string{"", "bridge", "off"}, *defaultNetworkMode) {
 		return nil, fmt.Errorf("unsupported 'executor.oci.default_network_mode' setting %q", *defaultNetworkMode)
 	}
-	seccompProfile, err := seccomp.New(*seccompAdditionalSyscalls)
+	caps := slices.Concat(capabilities, *capAdd)
+	seccompProfile, err := seccomp.New(*seccompAdditionalSyscalls, caps, false)
 	if err != nil {
 		return nil, fmt.Errorf("configure OCI seccomp profile: %w", err)
+	}
+	noNewUserNSSeccompProfile, err := seccomp.New(*seccompAdditionalSyscalls, caps, true)
+	if err != nil {
+		return nil, fmt.Errorf("configure OCI seccomp profile without user namespaces: %w", err)
 	}
 	profileJSON, err := json.Marshal(seccompProfile)
 	if err != nil {
@@ -459,6 +468,8 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		lxcfsMount:     lxcfsMount,
 		cdiRegistry:    cdiRegistry,
 		seccompProfile: seccompProfile,
+
+		noNewUserNSSeccompProfile: noNewUserNSSeccompProfile,
 	}, nil
 }
 
@@ -485,6 +496,10 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 			return nil, status.InvalidArgumentErrorf("shm-size platform property must be >= 0, got %d", shmSizeBytes)
 		}
 	}
+	seccompProfile := p.seccompProfile
+	if execution_experiments.SeccompDisableNewUserNS.Get(ctx) {
+		seccompProfile = p.noNewUserNSSeccompProfile
+	}
 
 	container := &ociContainer{
 		env:            p.env,
@@ -497,7 +512,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		networkPool:    p.networkPool,
 		lxcfsMount:     p.lxcfsMount,
 		cdiRegistry:    p.cdiRegistry,
-		seccompProfile: p.seccompProfile,
+		seccompProfile: seccompProfile,
 
 		blockDevice:        args.BlockDevice,
 		cgroupParent:       args.CgroupParent,

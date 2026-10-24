@@ -49,6 +49,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -63,6 +64,7 @@ var (
 	busyboxImageRlocationpath  string
 	netToolsImageRlocationpath string
 	testworkerRlocationpath    string
+	testsyscallRlocationpath   string
 )
 
 func init() {
@@ -272,6 +274,82 @@ func TestRunNofileLimit(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, "65536\n65536\n", string(res.Stdout))
+}
+
+func TestSeccompSyscalls(t *testing.T) {
+	setupNetworking(t)
+	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	image := busyboxImage(t)
+	testsyscallPath, err := runfiles.Rlocation(testsyscallRlocationpath)
+	require.NoError(t, err)
+
+	for _, testCase := range []struct {
+		name    string
+		syscall string
+		// Container user. Non-root users are the ones that would gain
+		// capabilities from a new user namespace, so the filter must apply to
+		// them as well as to root.
+		user               string
+		disableNewUserNS   bool
+		additionalSyscalls []string
+		capAdd             []string
+		createExec         bool
+		wantErrno          unix.Errno
+	}{
+		{name: "run_unshare_default", syscall: "unshare", wantErrno: unix.EINVAL},
+		{name: "run_unshare_default_nonroot", syscall: "unshare", user: "1000:1000", wantErrno: unix.EINVAL},
+		{name: "run_unshare_denied", syscall: "unshare", disableNewUserNS: true, wantErrno: unix.EPERM},
+		{name: "run_unshare_denied_nonroot", syscall: "unshare", user: "1000:1000", disableNewUserNS: true, wantErrno: unix.EPERM},
+		{name: "run_unshare_additional", syscall: "unshare", disableNewUserNS: true, additionalSyscalls: []string{"unshare"}, wantErrno: unix.EINVAL},
+		{name: "run_unshare_sys_admin", syscall: "unshare", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
+		{name: "exec_unshare_denied", syscall: "unshare", disableNewUserNS: true, createExec: true, wantErrno: unix.EPERM},
+		{name: "exec_unshare_additional", syscall: "unshare", disableNewUserNS: true, additionalSyscalls: []string{"unshare"}, createExec: true, wantErrno: unix.EINVAL},
+		{name: "run_clone_default", syscall: "clone", wantErrno: unix.EINVAL},
+		{name: "run_clone_denied", syscall: "clone", disableNewUserNS: true, wantErrno: unix.EPERM},
+		{name: "run_clone_additional", syscall: "clone", disableNewUserNS: true, additionalSyscalls: []string{"clone"}, wantErrno: unix.EINVAL},
+		{name: "run_clone_sys_admin", syscall: "clone", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
+		{name: "run_clone3_default", syscall: "clone3", wantErrno: unix.EINVAL},
+		{name: "run_clone3_denied", syscall: "clone3", disableNewUserNS: true, wantErrno: unix.ENOSYS},
+		{name: "run_clone3_additional", syscall: "clone3", disableNewUserNS: true, additionalSyscalls: []string{"clone3"}, wantErrno: unix.EINVAL},
+		{name: "run_clone3_sys_admin", syscall: "clone3", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
+		{name: "exec_clone3_denied", syscall: "clone3", disableNewUserNS: true, createExec: true, wantErrno: unix.ENOSYS},
+		{name: "exec_clone3_sys_admin", syscall: "clone3", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, createExec: true, wantErrno: unix.EINVAL},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "executor.oci.seccomp_disable_new_userns", testCase.disableNewUserNS)
+			flags.Set(t, "executor.oci.seccomp_additional_syscalls", testCase.additionalSyscalls)
+			flags.Set(t, "executor.oci.cap_add", testCase.capAdd)
+			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+			require.NoError(t, err)
+			ctx := t.Context()
+			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+				ContainerImage: image,
+				DockerUser:     testCase.user,
+			}})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, c.Remove(env.GetServerContext())) })
+			wd := testfs.MakeDirAll(t, buildRoot, testCase.name)
+			testfs.CopyFile(t, testsyscallPath, wd, "testsyscall")
+			cmd := &repb.Command{Arguments: []string{"./testsyscall", testCase.syscall}}
+			var res *interfaces.CommandResult
+			if testCase.createExec {
+				require.NoError(t, c.PullImage(ctx, oci.Credentials{}))
+				require.NoError(t, c.Create(ctx, wd))
+				res = c.Exec(ctx, cmd, &interfaces.Stdio{})
+			} else {
+				res = c.Run(ctx, cmd, wd, oci.Credentials{})
+			}
+			require.NoError(t, res.Error)
+			assert.Equal(t, int(testCase.wantErrno), res.ExitCode, "stderr: %s", res.Stderr)
+			assert.Empty(t, string(res.Stdout))
+			assert.Empty(t, string(res.Stderr))
+		})
+	}
 }
 
 func TestCgroupSettings(t *testing.T) {
