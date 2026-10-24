@@ -497,7 +497,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 	var actions []*config.Action
-	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
+	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd, false /*=useDefaultBranch*/)
 	if err != nil {
 		return nil, status.WrapError(err, "fetch workflow config")
 	} else if cfg != nil {
@@ -1401,7 +1401,8 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 // It returns nil (the "do nothing" signal) when there are no actions to run:
 // the repo has no buildbuddy.yaml, isn't using the default config, and
 // no additional settings (like codesearch) contribute actions.
-func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider interfaces.GitProvider, workflow *tables.Workflow, webhookData *interfaces.WebhookData) (*config.BuildBuddyConfig, error) {
+func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider interfaces.GitProvider, workflow *tables.Workflow, webhookData *interfaces.WebhookData, useDefaultBranch bool) (*config.BuildBuddyConfig, error) {
+	repoURL := webhookData.PushedRepoURL
 	workflowRef := webhookData.SHA
 	if workflowRef == "" {
 		if webhookData.PushedBranch != "" {
@@ -1410,9 +1411,13 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 			workflowRef = webhookData.PushedTag
 		}
 	}
+	if useDefaultBranch {
+		repoURL = workflow.RepoURL
+		workflowRef = webhookData.TargetRepoDefaultBranch
+	}
 
 	var c *config.BuildBuddyConfig
-	b, err := gitProvider.GetFileContents(ctx, workflow.AccessToken, webhookData.PushedRepoURL, config.FilePath, workflowRef)
+	b, err := gitProvider.GetFileContents(ctx, workflow.AccessToken, repoURL, config.FilePath, workflowRef)
 	if err == nil {
 		c, err = config.NewConfig(bytes.NewReader(b))
 		if err != nil {
@@ -1571,7 +1576,7 @@ func (ws *workflowService) getWorkflowActions(ctx context.Context, gitProvider i
 		isTrusted = true
 	}
 
-	cfg, fetchErr := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
+	cfg, fetchErr := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd, !isTrusted /*=useDefaultBranch*/)
 	if fetchErr != nil {
 		if err := ws.createWorkflowConfigErrorStatus(ctx, wf, wd, fetchErr); err != nil {
 			log.CtxWarningf(ctx, "Failed to create workflow config error status: %s", err)
@@ -2229,7 +2234,7 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if err != nil {
 		return err
 	}
-	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
+	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd, false /*=useDefaultBranch*/)
 	if err != nil {
 		return status.WrapError(err, "fetch workflow config")
 	} else if cfg == nil {
