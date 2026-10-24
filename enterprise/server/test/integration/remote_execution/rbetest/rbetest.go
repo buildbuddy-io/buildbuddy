@@ -1084,10 +1084,10 @@ func (r *Env) WaitForExecutorCount(n int) {
 	req := &scpb.GetExecutionNodesRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: r.GroupID1},
 	}
-	require.Eventually(r.t, func() bool {
+	require.EventuallyWithT(r.t, func(t *assert.CollectT) {
 		rsp, err := r.GetBuildBuddyServiceClient().GetExecutionNodes(ctx, req)
-		require.NoError(r.t, err)
-		return len(rsp.GetExecutor()) == n
+		require.NoError(t, err)
+		require.Equal(t, n, len(rsp.GetExecutor()))
 	}, defaultWaitTimeout, 100*time.Millisecond, "scheduler should list %d executors", n)
 }
 
