@@ -910,9 +910,18 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(clientConn))
 
+	// Like the real executor, present a client identity to the cache when
+	// one is configured (app.client_identity.key), so that the app trusts
+	// the internal headers the executor sends.
+	require.NoError(t, clientidentity.Register(env))
 	cacheConn := grpc.ClientConnInterface(clientConn)
 	if options.CacheConn != nil {
 		cacheConn = options.CacheConn
+	} else if env.GetClientIdentityService() != nil {
+		identityConn, err := grpc_client.DialInternalWithoutPooling(env, r.AppProxy.GRPCTarget())
+		require.NoError(t, err)
+		t.Cleanup(func() { identityConn.Close() })
+		cacheConn = identityConn
 	}
 	env.SetActionCacheClient(repb.NewActionCacheClient(cacheConn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(cacheConn))
@@ -1067,6 +1076,21 @@ func (r *Env) waitForExecutorRegistration() {
 	require.Equal(r.t, expectedNodesByID, nodesByID, "set of registered executors should converge")
 }
 
+// WaitForExecutorCount waits until the scheduler lists exactly n executors for
+// the test group. Use it for executors started outside of this harness, such
+// as a real executor binary; AddExecutor waits for its own executor.
+func (r *Env) WaitForExecutorCount(n int) {
+	ctx := r.WithUserID(context.Background(), r.UserID1)
+	req := &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: r.GroupID1},
+	}
+	require.EventuallyWithT(r.t, func(t *assert.CollectT) {
+		rsp, err := r.GetBuildBuddyServiceClient().GetExecutionNodes(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, n, len(rsp.GetExecutor()))
+	}, defaultWaitTimeout, 100*time.Millisecond, "scheduler should list %d executors", n)
+}
+
 type CacheProxyOptions struct {
 	// EnvModifier modifies the proxy environment before registering services.
 	// Use this to replace the default cache (e.g., with a pebble cache).
@@ -1173,9 +1197,13 @@ func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
 	env.SetByteStreamClient(r.GetByteStreamClient())
 	env.SetContentAddressableStorageClient(r.GetContentAddressableStorageClient())
 	env.SetCapabilitiesClient(r.testEnv.GetCapabilitiesClient())
-	// TODO: Does the context need the user ID if the CommandResult was produced
-	// by an authenticated user?
-	if err := r.rbeClient.DownloadActionOutputs(context.Background(), env, res.CommandResult, tmpDir); err != nil {
+	// Read the outputs as the group that produced them: chunked blobs, for
+	// one, are only readable within that group.
+	ctx := context.Background()
+	if res.apiKey != "" {
+		ctx = r.WithAPIKey(ctx, res.apiKey)
+	}
+	if err := r.rbeClient.DownloadActionOutputs(ctx, env, res.CommandResult, tmpDir); err != nil {
 		assert.FailNow(r.t, "failed to download action outputs", err.Error())
 	}
 	return tmpDir
@@ -1218,6 +1246,8 @@ type CommandResult struct {
 	*rbeclient.CommandResult
 	Stdout string
 	Stderr string
+	// apiKey is the API key the command was executed with, if any.
+	apiKey string
 }
 
 // getResult blocks until the command either finishes executing or encounters
@@ -1251,6 +1281,7 @@ func (c *Command) getResult() *CommandResult {
 				CommandResult: result,
 				Stdout:        stdout,
 				Stderr:        stderr,
+				apiKey:        c.apiKey,
 			}
 		case <-timeout.C:
 			assert.FailNow(c.env.t, fmt.Sprintf("command %q did not finish within timeout", c.Name))

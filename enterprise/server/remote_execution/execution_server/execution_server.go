@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -45,7 +46,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -969,9 +969,12 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if uploadOutputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
 		executionTask.FastCdc_2020Params = chunking.FastCDCWriteParams(ctx, efp)
-		if efp != nil && efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false) {
-			executionTask.Experiments = append(executionTask.Experiments, cdc.SpliceWithoutValidationExperiment)
+		// TODO (go/bug/8651): remove this once we go through a single release
+		// if the executors using execution_experiments.SpliceWithoutValidation.
+		if execution_experiments.SpliceWithoutValidation.Get(ctx) {
+			executionTask.Experiments = append(executionTask.Experiments, "splice-without-validation")
 		}
+
 	}
 	if downloadInputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.download_inputs_chunked")

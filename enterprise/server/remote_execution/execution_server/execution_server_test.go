@@ -359,13 +359,6 @@ func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
       },
       "defaultVariant": "on"
     },
-    "splice-without-validation": {
-      "state": "ENABLED",
-      "variants": {
-        "on": true
-      },
-      "defaultVariant": "on"
-    },
     "cache.chunking_max_write_size_bytes": {
       "state": "ENABLED",
       "variants": {
@@ -408,7 +401,6 @@ func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, task.GetExperiments(), "executor.upload_outputs_chunked")
 	require.Contains(t, task.GetExperiments(), "executor.download_inputs_chunked")
-	require.Contains(t, task.GetExperiments(), "splice-without-validation")
 	require.Equal(t, int64(123456789), task.GetFastCdc_2020Params().GetBuildbuddyMaxChunkedWriteSizeBytes())
 }
 
