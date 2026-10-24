@@ -3,16 +3,16 @@ import React from "react";
 import capabilities from "../capabilities/capabilities";
 
 const RELEASE_VERSION_REGEX = /^v\d+\.\d+\.\d+$/;
-// Hosted builds report a label ending in the public buildbuddy commit.
-const HOSTED_VERSION_REGEX = /^hosted-\d{8}-([0-9a-f]{7,40})$/;
+// Non-release builds report a label ending in the public buildbuddy commit.
+const BUILD_VERSION_REGEX = /^build-\d{8}-([0-9a-f]{7,40})$/;
 
 function versionLink(version: string): string | undefined {
   if (RELEASE_VERSION_REGEX.test(version)) {
     return `https://github.com/buildbuddy-io/buildbuddy/releases/tag/${version}`;
   }
-  const hosted = version.match(HOSTED_VERSION_REGEX);
-  if (hosted) {
-    return `https://github.com/buildbuddy-io/buildbuddy/commit/${hosted[1]}`;
+  const build = version.match(BUILD_VERSION_REGEX);
+  if (build) {
+    return `https://github.com/buildbuddy-io/buildbuddy/commit/${build[1]}`;
   }
   return undefined;
 }

@@ -12,10 +12,10 @@ import (
 )
 
 // Set by x_defs in BUILD.
-var hostedLabelRlocationpath string
+var buildLabelRlocationpath string
 
-func TestHostedLabel(t *testing.T) {
-	script := testfs.RunfilePath(t, hostedLabelRlocationpath)
+func TestBuildLabel(t *testing.T) {
+	script := testfs.RunfilePath(t, buildLabelRlocationpath)
 
 	// Isolate git from the host's git config, and use a non-UTC local
 	// timezone so local-time dates would be caught.
@@ -47,17 +47,17 @@ func TestHostedLabel(t *testing.T) {
 	}
 
 	commit("2026-03-04T12:00:00 +0000", "2026-03-04T12:00:00 +0000")
-	require.Equal(t, "hosted-20260304-"+headSHA()[:7], label(), "date and first 7 chars of the SHA")
-	require.Regexp(t, `^hosted-\d{8}-[0-9a-f]{7}$`, label())
+	require.Equal(t, "build-20260304-"+headSHA()[:7], label(), "date and first 7 chars of the SHA")
+	require.Regexp(t, `^build-\d{8}-[0-9a-f]{7}$`, label())
 
 	// 2026-10-21 20:00 -0800 is 2026-10-22 04:00 in UTC, but still 2026-10-21
 	// both at the commit's own offset and in America/Los_Angeles (PDT).
 	commit("2026-10-21T20:00:00 -0800", "2026-10-21T20:00:00 -0800")
-	require.Equal(t, "hosted-20261022-"+headSHA()[:7], label(), "date is UTC")
+	require.Equal(t, "build-20261022-"+headSHA()[:7], label(), "date is UTC")
 
 	commit("2020-01-02T12:00:00 +0000", "2026-03-04T12:00:00 +0000")
-	require.Equal(t, "hosted-20260304-"+headSHA()[:7], label(), "committer date, not author date")
+	require.Equal(t, "build-20260304-"+headSHA()[:7], label(), "committer date, not author date")
 
 	testshell.Run(t, repo, "git tag v2.10.0")
-	require.Equal(t, "hosted-20260304-"+headSHA()[:7], label(), "tags are ignored")
+	require.Equal(t, "build-20260304-"+headSHA()[:7], label(), "tags are ignored")
 }
