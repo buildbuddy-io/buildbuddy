@@ -131,10 +131,8 @@ func ShouldReadChunked(digestSizeBytes, offset, limit int64) bool {
 	return digestSizeBytes > MinChunkedReadFallbackSizeBytes() && limit == 0
 }
 
-func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
-	return digestSizeBytes > MaxChunkSizeBytes() &&
-		limit == 0 &&
-		(efp == nil || efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", true))
+func ShouldReadChunkedOnProxy(digestSizeBytes, offset, limit int64) bool {
+	return digestSizeBytes > MaxChunkSizeBytes() && limit == 0
 }
 
 type WriteFunc func([]byte) error
