@@ -446,3 +446,65 @@ func TestEventLogWriterSuffixWrites(t *testing.T) {
 	require.True(t, rsp.GetLive())
 	require.Equal(t, "1\n3\n4\n", string(rsp.GetBuffer()))
 }
+
+// TestGetEventLogChunk_EmptySplitLog covers a split log with no chunks, the
+// ordinary case for a `bazel build`, which writes nothing to stdout. The
+// invocation table's last chunk id describes the build log only, so using it
+// here would turn an empty stdout into an error and fail the run.
+func TestGetEventLogChunk_EmptySplitLog(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	invocationDB := &mockinvocationdb.MockInvocationDB{DB: make(map[string]*tables.Invocation)}
+	env.SetInvocationDB(invocationDB)
+	env.SetBlobstore(mockstore.New())
+	env.SetKeyValStore(newTestKeyValStore(t))
+
+	testID := "test_id"
+	inv := newInProgressInvocation(testID)
+	// The build log has flushed a chunk, so its recorded last chunk id is no
+	// longer the "nothing written yet" sentinel.
+	inv.LastChunkId = chunkstore.ChunkIndexAsStringId(0)
+	invocationDB.DB[testID] = inv
+
+	for _, logType := range []elpb.LogType{elpb.LogType_STDOUT_LOG, elpb.LogType_STDERR_LOG, elpb.LogType_NARRATION_LOG} {
+		t.Run(logType.String(), func(t *testing.T) {
+			rsp, err := eventlog.GetEventLogChunk(env.GetServerContext(), env, &elpb.GetEventLogChunkRequest{
+				InvocationId: testID,
+				MinLines:     5,
+				Type:         logType,
+			})
+
+			require.NoError(t, err)
+			require.Empty(t, rsp.GetBuffer())
+			// The response says which log it came from, so a client can tell an
+			// empty log of the type it asked for from a server that does not
+			// know the type and served the build log instead.
+			require.Equal(t, logType, rsp.GetServedType())
+		})
+	}
+}
+
+// TestGetEventLogChunk_ServedTypeIdentifiesTheLog checks every response names
+// the log it was served from, which is how a client detects an older server.
+func TestGetEventLogChunk_ServedTypeIdentifiesTheLog(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	invocationDB := &mockinvocationdb.MockInvocationDB{DB: make(map[string]*tables.Invocation)}
+	env.SetInvocationDB(invocationDB)
+	blobstore := mockstore.New()
+	env.SetBlobstore(blobstore)
+	env.SetKeyValStore(newTestKeyValStore(t))
+
+	testID := "test_id"
+	inv := newInProgressInvocation(testID)
+	inv.LastChunkId = chunkstore.ChunkIndexAsStringId(0)
+	invocationDB.DB[testID] = inv
+	blobPath := eventlog.GetEventLogPathFromInvocationIdAndAttempt(testID, 1)
+	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(0))] = []byte("merged\n")
+
+	rsp, err := eventlog.GetEventLogChunk(env.GetServerContext(), env, &elpb.GetEventLogChunkRequest{
+		InvocationId: testID,
+		MinLines:     5,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, elpb.LogType_BUILD_LOG, rsp.GetServedType())
+}

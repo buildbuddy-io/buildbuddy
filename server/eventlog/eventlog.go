@@ -71,6 +71,39 @@ func GetEventLogPubSubChannel(invocationID string) string {
 	return fmt.Sprintf("eventlog/%s/updates", invocationID)
 }
 
+func GetStdoutLogPathFromInvocationIdAndAttempt(invocationId string, attempt uint64) string {
+	if attempt == 0 {
+		return invocationId + "/chunks/log/stdout"
+	}
+	return invocationId + "/" + strconv.FormatUint(attempt, 10) + "/chunks/log/stdout"
+}
+
+func GetStdoutLogPubSubChannel(invocationID string) string {
+	return fmt.Sprintf("stdoutlog/%s/updates", invocationID)
+}
+
+func GetStderrLogPathFromInvocationIdAndAttempt(invocationId string, attempt uint64) string {
+	if attempt == 0 {
+		return invocationId + "/chunks/log/stderr"
+	}
+	return invocationId + "/" + strconv.FormatUint(attempt, 10) + "/chunks/log/stderr"
+}
+
+func GetStderrLogPubSubChannel(invocationID string) string {
+	return fmt.Sprintf("stderrlog/%s/updates", invocationID)
+}
+
+func GetNarrationLogPathFromInvocationIdAndAttempt(invocationId string, attempt uint64) string {
+	if attempt == 0 {
+		return invocationId + "/chunks/log/narration"
+	}
+	return invocationId + "/" + strconv.FormatUint(attempt, 10) + "/chunks/log/narration"
+}
+
+func GetNarrationLogPubSubChannel(invocationID string) string {
+	return fmt.Sprintf("narrationlog/%s/updates", invocationID)
+}
+
 func GetRunLogPathFromInvocationId(invocationId string) string {
 	return invocationId + "/chunks/log/runlog"
 }
@@ -79,8 +112,55 @@ func GetRunLogPubSubChannel(invocationId string) string {
 	return fmt.Sprintf("runlog/%s/updates", invocationId)
 }
 
-// Gets the chunk of the event log specified by the request from the blobstore and returns a response containing it
+// LogPubSubChannel returns the channel a reader of the given log subscribes to
+// for live updates.
+func LogPubSubChannel(t elpb.LogType, invocationID string) string {
+	switch t {
+	case elpb.LogType_RUN_LOG:
+		return GetRunLogPubSubChannel(invocationID)
+	case elpb.LogType_STDOUT_LOG:
+		return GetStdoutLogPubSubChannel(invocationID)
+	case elpb.LogType_STDERR_LOG:
+		return GetStderrLogPubSubChannel(invocationID)
+	case elpb.LogType_NARRATION_LOG:
+		return GetNarrationLogPubSubChannel(invocationID)
+	default:
+		return GetEventLogPubSubChannel(invocationID)
+	}
+}
+
+// SplitLogPath returns the blobstore path for one of the split output logs.
+func SplitLogPath(t elpb.LogType, invocationID string, attempt uint64) string {
+	switch t {
+	case elpb.LogType_STDOUT_LOG:
+		return GetStdoutLogPathFromInvocationIdAndAttempt(invocationID, attempt)
+	case elpb.LogType_STDERR_LOG:
+		return GetStderrLogPathFromInvocationIdAndAttempt(invocationID, attempt)
+	default:
+		return GetNarrationLogPathFromInvocationIdAndAttempt(invocationID, attempt)
+	}
+}
+
+// GetEventLogChunk gets the chunk of the event log specified by the request
+// from the blobstore and returns a response containing it. Every response
+// records which log it was served from, so a client asking for a type this
+// server does not know can tell it was given the build log instead.
 func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEventLogChunkRequest) (*elpb.GetEventLogChunkResponse, error) {
+	// servedType is set by the branch that selects the log, so a type this
+	// server does not recognize is reported as the build log it fell back to
+	// rather than as the type that was asked for.
+	servedType := elpb.LogType_BUILD_LOG
+	rsp, err := getEventLogChunk(ctx, env, req, &servedType)
+	if err != nil {
+		return nil, err
+	}
+	rsp.ServedType = servedType
+	return rsp, nil
+}
+
+// getEventLogChunk returns the chunk, setting servedType to the log it was
+// actually served from.
+func getEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEventLogChunkRequest, servedType *elpb.LogType) (*elpb.GetEventLogChunkResponse, error) {
 	// TODO(zoey): this function is way too long; split it up.
 	inv, err := env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId())
 	if err != nil {
@@ -93,8 +173,26 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	var eventLogPath string
 	var inProgress bool
 	var scanFromChunkId string
+	// Whether inv.LastChunkId describes the log being read. It does not for the
+	// split logs.
+	var noRecordedLastChunkId bool
 	switch req.GetType() {
+	case elpb.LogType_STDOUT_LOG, elpb.LogType_STDERR_LOG, elpb.LogType_NARRATION_LOG:
+		*servedType = req.GetType()
+		if inv.LastChunkId == "" {
+			// This invocation does not have chunked event logs; return an empty
+			// response to indicate that to the client.
+			return &elpb.GetEventLogChunkResponse{}, nil
+		}
+		eventLogPath = SplitLogPath(req.GetType(), req.InvocationId, inv.Attempt)
+		inProgress = inv.InvocationStatus == int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS)
+		scanFromChunkId = "0"
+		// The invocation table records a last chunk id for the build log only,
+		// so it says nothing about this one. A split stream is routinely empty
+		// - a build writes nothing to stdout - and must read as empty.
+		noRecordedLastChunkId = true
 	case elpb.LogType_RUN_LOG:
+		*servedType = elpb.LogType_RUN_LOG
 		if inv.RunStatus == int64(inspb.OverallStatus_UNKNOWN_OVERALL_STATUS) {
 			// This invocation does not have run logs; return an empty
 			// response to indicate that to the client.
@@ -125,7 +223,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	// If expected logs aren't in chunkstore, check whether they just haven't been written yet, for
 	// in progress builds, vs. they will never exist and we should exit early.
 	if err != nil {
-		if inv.LastChunkId != chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
+		if !noRecordedLastChunkId && inv.LastChunkId != chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
 			// The last chunk id recorded in the invocation table is wrong; the only
 			// valid reason for GetLastChunkId to fail with the starting index
 			// recorded in the invocation table is if no chunks have yet been written,
@@ -409,6 +507,40 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	eventLogWriter.chunkstoreWriter = cw
 
 	return eventLogWriter, nil
+}
+
+// NewRawEventLogWriter returns a writer that stores bytes exactly as written.
+// The rendering NewEventLogWriter applies is lossy - it trims trailing
+// whitespace and resolves cursor control - and makes the log's tail volatile,
+// so it cannot carry output a caller intends to pipe.
+func NewRawEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, pubsub interfaces.PubSub, pubsubChannel string, eventLogPath string) (*EventLogWriter, error) {
+	eventLogWriter := &EventLogWriter{
+		keyValueStore: c,
+		pubsub:        pubsub,
+		pubsubChannel: pubsubChannel,
+		eventLogPath:  eventLogPath,
+	}
+	var writeHook func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte)
+	if c != nil {
+		writeHook = eventLogWriter.writeChunkToKeyValStore
+	}
+	cw := chunkstore.New(b, &chunkstore.ChunkstoreOptions{WriteBlockSize: defaultLogChunkSize}).Writer(ctx, eventLogPath, &chunkstore.ChunkstoreWriterOptions{
+		WriteTimeoutDuration: defaultChunkTimeout,
+		NoSplitWrite:         true,
+		WriteHook:            writeHook,
+	})
+	eventLogWriter.WriteCloserWithContext = rawWriter{cw}
+	eventLogWriter.chunkstoreWriter = cw
+	return eventLogWriter, nil
+}
+
+// rawWriter stores bytes verbatim, with no volatile tail.
+type rawWriter struct {
+	WriteWithTailCloser
+}
+
+func (w rawWriter) Write(ctx context.Context, p []byte) (int, error) {
+	return w.WriteWithTailCloser.WriteWithTail(ctx, p, nil)
 }
 
 type WriteCloserWithContext interface {

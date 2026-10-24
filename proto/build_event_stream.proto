@@ -362,6 +362,17 @@ message Progress {
   // can assume that stderr has been emitted before stdout if both are present,
   // on a best-effort basis.
   string stderr = 2;
+
+  // BUILDBUDDY-SPECIFIC FIELDS BELOW
+
+  // The next chunk of a remote runner's own narration: repo sync, the command
+  // lines it runs, artifact uploads. Kept apart from the command's own output
+  // so a client can show or hide it independently.
+  string narration = 1000;
+
+  // Whether the producer tells its output streams apart, and so populates the
+  // fields above independently. Bazel does not and leaves this unset.
+  bool split_streams = 1001;
 }
 
 // Payload of an event indicating that an expected event will not come, as

@@ -42,6 +42,7 @@ go_library(
         "//server/util/status",
         "//server/util/usageutil",
         "@com_github_creack_pty//:pty",
+        "@org_golang_x_sys//unix",
         "@com_github_docker_go_units//:go-units",
         "@com_github_google_shlex//:shlex",
         "@com_github_google_uuid//:uuid",

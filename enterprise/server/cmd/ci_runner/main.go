@@ -51,6 +51,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -198,6 +199,12 @@ var (
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
 	timeout            = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
 	timeoutReason      = flag.String("timeout_reason", "", "Reason for the configured timeout.")
+	// Off by default: a caller that does not ask for the split gets the single
+	// shared pty it has always had.
+	splitStreams = flag.Bool("split_output_streams", false, "If set, run the requested command with its stdout and stderr on separate fds and report them separately, so the client can write each to the stream it belongs on.")
+	stdoutIsTTY  = flag.Bool("stdout_is_tty", false, "Whether the client's stdout is a terminal. Only meaningful with --split_output_streams, which gives the command a pty on stdout when it is and a pipe when it is not.")
+	stderrIsTTY  = flag.Bool("stderr_is_tty", true, "Whether the client's stderr is a terminal. Only meaningful with --split_output_streams, which gives the command a pty on stderr when it is and a pipe when it is not.")
+	quiet        = flag.Bool("quiet", false, "If set, write the runner's own narration to stderr only, so the invocation log holds just what the requested commands printed.")
 
 	// Flags to configure setting up git repo
 	skipAutomaticCheckout = flag.Bool("skip_auto_checkout", false, "Whether to skip the automatic GitHub setup steps on the remote runner.")
@@ -350,7 +357,7 @@ type buildEventReporter struct {
 	// Child invocations detected by scanning the build logs
 	childInvocations []string
 
-	mu            sync.Mutex // protects(progressCount)
+	mu            sync.Mutex // protects(progressCount, childInvocations)
 	progressCount int32
 }
 
@@ -502,7 +509,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 	r.log.writeListener = func(s string) {
 		r.emitBuildEventsForBazelCommands(s)
 		// Flush whenever the log buffer fills past a certain threshold.
-		if size := r.log.Len(); size >= progressFlushThresholdBytes {
+		if size := r.log.Len() + r.log.stdoutBuf.Len() + r.log.narrationBuf.Len(); size >= progressFlushThresholdBytes {
 			r.FlushProgress() // ignore error; it will surface in `bep.Finish()`
 		}
 	}
@@ -585,23 +592,23 @@ func (r *buildEventReporter) nextProgressEvent() (*bespb.BuildEvent, error) {
 	if err != nil {
 		return nil, status.WrapError(err, "failed to read action logs")
 	}
-	if len(buf) == 0 {
+	prog, err := r.progress(string(buf))
+	if err != nil {
+		return nil, status.WrapError(err, "failed to read action logs")
+	}
+	// The output is split across three fields, so judge emptiness on all of them.
+	if prog.GetStderr() == "" && prog.GetStdout() == "" && prog.GetNarration() == "" {
 		return nil, nil
 	}
 	count := r.progressCount
 	r.progressCount++
-
-	output := string(buf)
 
 	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: count}}},
 		Children: []*bespb.BuildEventId{
 			{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: count + 1}}},
 		},
-		Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{
-			// Only outputting to stderr for now, like Bazel does.
-			Stderr: output,
-		}},
+		Payload: &bespb.BuildEvent_Progress{Progress: prog},
 	}, nil
 }
 
@@ -625,6 +632,18 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 // emitBuildEventsForBazelCommands scans command output logs for bazel invocations
 // in order to emit bazel build events.
 //
+// childInvocationStarted reports whether iid has been seen before, recording it
+// if not. Splitting the command's streams means two goroutines can reach this.
+func (r *buildEventReporter) childInvocationStarted(iid string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if slices.Contains(r.childInvocations, iid) {
+		return true
+	}
+	r.childInvocations = append(r.childInvocations, iid)
+	return false
+}
+
 // Event publishing errors will be surfaced in the caller func when calling
 // `buildEventPublisher.Finish()`
 func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
@@ -632,7 +651,7 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
 	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
 	for _, m := range iidMatches {
 		iid := m[1]
-		childStarted := slices.Contains(r.childInvocations, iid)
+		childStarted := r.childInvocationStarted(iid)
 
 		var buildEvent *bespb.BuildEvent
 		if childStarted {
@@ -648,8 +667,6 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
 				Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{}},
 			}
 		} else {
-			r.childInvocations = append(r.childInvocations, iid)
-
 			cic := &bespb.ChildInvocationsConfigured{
 				Invocation: []*bespb.ChildInvocationsConfigured_InvocationMetadata{
 					{
@@ -983,7 +1000,9 @@ func (ws *workspace) RunAction(ctx context.Context, buildEventReporter *buildEve
 	exitCodeName := "OK"
 
 	if err := ar.Run(ctx, ws); err != nil {
-		ar.reporter.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), status.Message(err)))
+		// To stderr, not narration: quiet mode drops narration, and a run that
+		// fails silently tells a caller nothing.
+		fmt.Fprint(ar.reporter.commandStream(streamStderr), aurora.Sprintf(aurora.Red("\nAction failed: %s\n"), status.Message(err)))
 		exitCode = getExitCode(err)
 		// TODO: More descriptive exit code names, so people have a better
 		// sense of what happened without even needing to open the invocation.
@@ -997,6 +1016,10 @@ func (r *buildEventReporter) Write(b []byte) (int, error) {
 	return r.log.Write(b)
 }
 
+func (r *buildEventReporter) commandStream(stream outputStream) io.Writer {
+	return r.log.commandStream(stream)
+}
+
 func (r *buildEventReporter) Println(vals ...any) {
 	r.log.Println(vals...)
 }
@@ -1005,19 +1028,51 @@ func (r *buildEventReporter) Printf(format string, vals ...any) {
 }
 
 type invocationLog struct {
+	// The console: the command's stderr with the runner's narration interleaved
+	// in the order written, so a client has one ordered stream to show. Quiet
+	// mode leaves the narration out of it.
 	lockingbuffer.LockingBuffer
-	writer          io.Writer
+	// The command's stdout, kept apart so a client can write it to its own.
+	stdoutBuf lockingbuffer.LockingBuffer
+	// The narration alone, so it can be stored as a log of its own.
+	narrationBuf lockingbuffer.LockingBuffer
+	// The runner's own stderr, recorded by the executor as the action's stderr.
+	// Every stream is written here too, so it stays a complete record.
+	stderrWriter    io.Writer
 	writeListener   func(s string)
 	redactionValues []string
 }
 
 func newInvocationLog(redactionValues []string) *invocationLog {
-	invLog := &invocationLog{writeListener: func(s string) {}, redactionValues: redactionValues}
-	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
-	return invLog
+	return &invocationLog{writeListener: func(s string) {}, redactionValues: redactionValues, stderrWriter: os.Stderr}
 }
 
+// outputStream identifies which of the three sinks a write belongs to. Each is
+// reported on its own field of the progress event.
+type outputStream int
+
+const (
+	// streamNarration is the runner's own commentary: repo sync, the command
+	// lines it runs, artifact uploads.
+	streamNarration outputStream = iota
+	// streamStdout is the requested command's stdout.
+	streamStdout
+	// streamStderr is the requested command's stderr.
+	streamStderr
+)
+
+// Write records the runner's own narration. A requested command's output goes
+// through commandStdout/commandStderr instead.
 func (invLog *invocationLog) Write(b []byte) (int, error) {
+	return invLog.write(b, streamNarration)
+}
+
+// commandStream returns the writer for one of a requested command's streams.
+func (invLog *invocationLog) commandStream(stream outputStream) io.Writer {
+	return streamWriter{log: invLog, stream: stream}
+}
+
+func (invLog *invocationLog) write(b []byte, stream outputStream) (int, error) {
 	output := string(b)
 
 	// Use value-aware redaction so user-defined secret values injected into the
@@ -1025,8 +1080,28 @@ func (invLog *invocationLog) Write(b []byte) (int, error) {
 	// values handled safely by longest-first replacement in redact package).
 	redacted := redact.RedactTextWithValues(output, invLog.redactionValues)
 
+	// The runner's own stderr keeps every stream, so it stays a complete record.
+	if _, err := invLog.stderrWriter.Write([]byte(redacted)); err != nil {
+		return len(b), err
+	}
+
+	// Quiet mode drops the narration entirely, so the invocation log holds only
+	// what the requested commands printed.
+	if stream == streamNarration && *quiet {
+		return len(b), nil
+	}
 	invLog.writeListener(redacted)
-	_, err := invLog.writer.Write([]byte(redacted))
+	if stream == streamStdout {
+		_, err := invLog.stdoutBuf.Write([]byte(redacted))
+		return len(b), err
+	}
+	if stream == streamNarration {
+		if _, err := invLog.narrationBuf.Write([]byte(redacted)); err != nil {
+			return len(b), err
+		}
+	}
+	// Narration and the command's stderr share the console, in write order.
+	_, err := invLog.LockingBuffer.Write([]byte(redacted))
 
 	// Return the size of the original buffer even if a redacted size was written,
 	// or clients will return a short write error
@@ -1038,6 +1113,30 @@ func (invLog *invocationLog) Println(vals ...any) {
 }
 func (invLog *invocationLog) Printf(format string, vals ...any) {
 	invLog.Write([]byte(fmt.Sprintf(format+"\n", vals...)))
+}
+
+type streamWriter struct {
+	log    *invocationLog
+	stream outputStream
+}
+
+func (w streamWriter) Write(b []byte) (int, error) {
+	return w.log.write(b, w.stream)
+}
+
+// commandOutputSink is a sink that tells a requested command's streams apart
+// from the runner's narration.
+type commandOutputSink interface {
+	commandStream(outputStream) io.Writer
+}
+
+// commandStream returns sink's writer for one of a requested command's streams,
+// or sink itself if it draws no such distinction.
+func commandStream(sink io.Writer, stream outputStream) io.Writer {
+	if s, ok := sink.(commandOutputSink); ok {
+		return s.commandStream(stream)
+	}
+	return sink
 }
 
 // actionRunner runs a single action in the BuildBuddy config.
@@ -2839,7 +2938,15 @@ func runBashCommand(ctx context.Context, cmd string, env map[string]string, dir 
 		return err
 	}
 
-	return runCommand(ctx, "bash", []string{"-eo", "pipefail", "-c", cmd}, env, dir, outputSink)
+	// Without the split the command keeps the single shared pty it has always
+	// had, which splitting the streams cannot preserve.
+	if !*splitStreams {
+		// One pty carries everything the command printed, so it goes to the
+		// console, which is what the progress event's stderr field reports -
+		// the same shape a merged runner has always produced.
+		return runCommand(ctx, "bash", []string{"-eo", "pipefail", "-c", cmd}, env, dir, commandStream(outputSink, streamStderr))
+	}
+	return runCommandStreams(ctx, "bash", []string{"-eo", "pipefail", "-c", cmd}, env, dir, outputSink)
 }
 
 func runCommandWithOutput(ctx context.Context, executable string, args []string, env map[string]string, dir string, outputSink io.Writer) (string, *commandError) {
@@ -2898,6 +3005,159 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	}
 
 	return err
+}
+
+// How long to wait for a command's output to drain after it exits, before
+// giving up on processes it left running in the background.
+const outputDrainTimeout = 1 * time.Second
+
+// runCommandStreams runs a command with stdout and stderr kept apart. Each
+// needs its own fd: a single pty is one device, so the kernel merges them
+// before anything can observe the split.
+func runCommandStreams(ctx context.Context, executable string, args []string, env map[string]string, dir string, outputSink io.Writer) error {
+	stdoutSink := commandStream(outputSink, streamStdout)
+	stderrSink := commandStream(outputSink, streamStderr)
+	// The runner's remarks are narration, which quiet mode drops; its errors go
+	// to stderr below, so a caller always learns why a run stopped.
+	narrationSink := commandStream(outputSink, streamNarration)
+	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd.Env = os.Environ()
+	for k, v := range env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+	if dir != "" {
+		cmd.Dir = dir
+	}
+
+	size := &pty.Winsize{Rows: uint16(*ptyRows), Cols: uint16(*ptyCols)}
+	// Each stream gets a pty only when the client's matching stream is a
+	// terminal, so the command makes the choices it would locally: bazel routes
+	// `query` results through its terminal UI on a tty and to stdout on a pipe.
+	outReader, outWriter, err := openOutputPair(*stdoutIsTTY)
+	if err != nil {
+		return err
+	}
+	defer outReader.Close()
+	defer outWriter.Close()
+	errPTY, errTTY, err := openOutputPair(*stderrIsTTY)
+	if err != nil {
+		return err
+	}
+	defer errPTY.Close()
+	defer errTTY.Close()
+
+	if *stdoutIsTTY {
+		if err := pty.Setsize(outWriter, size); err != nil {
+			return err
+		}
+	}
+	if *stderrIsTTY {
+		if err := pty.Setsize(errTTY, size); err != nil {
+			return err
+		}
+	}
+	cmd.Stdout = outWriter
+	cmd.Stderr = errTTY
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	// Close our copies of the child's ends, or reads never see EOF once the
+	// command exits.
+	outWriter.Close()
+	errTTY.Close()
+
+	var copyDone sync.WaitGroup
+	copyDone.Add(2)
+	go func() {
+		defer copyDone.Done()
+		io.Copy(stdoutSink, outReader)
+	}()
+	go func() {
+		defer copyDone.Done()
+		io.Copy(stderrSink, errPTY)
+	}()
+
+	err = cmd.Wait()
+
+	// A step can leave a background process holding these streams open, as
+	// `bazel test ... &` does, so drain briefly and then close rather than wait
+	// on a process that may never exit.
+	drained := make(chan struct{})
+	go func() {
+		copyDone.Wait()
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-time.After(outputDrainTimeout):
+		// Say so: dropped bytes are otherwise indistinguishable from none.
+		fmt.Fprintf(narrationSink, "Command left its output streams open %s after exiting (a process still running in the background?); any further output is dropped.\n", outputDrainTimeout)
+		outReader.Close()
+		errPTY.Close()
+		<-drained
+	}
+
+	if ctx.Err() == context.DeadlineExceeded {
+		// Go to the next line so we don't clobber partial output from the
+		// cancelled command.
+		// An error, not narration, so it reaches the caller in quiet mode too.
+		_, _ = stderrSink.Write([]byte("\r\n" + timeoutExceededMessage()))
+	}
+	if err != nil {
+		_, _ = stderrSink.Write([]byte(aurora.Sprintf(aurora.Red("Command failed: %s\n"), err)))
+	}
+	return err
+}
+
+// progress reports each stream on its own field, marking the event as coming
+// from a producer that tells them apart.
+func (r *buildEventReporter) progress(stderr string) (*bespb.Progress, error) {
+	p := &bespb.Progress{Stderr: stderr, SplitStreams: *splitStreams}
+	stdout, err := r.log.stdoutBuf.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	narration, err := r.log.narrationBuf.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	p.Stdout = string(stdout)
+	p.Narration = string(narration)
+	return p, nil
+}
+
+// openOutputPair returns a pty pair when the client's matching stream is a
+// terminal, so the command makes the terminal-vs-pipe choices it would locally,
+// and an os.Pipe otherwise.
+func openOutputPair(isTTY bool) (parentReader, childWriter *os.File, err error) {
+	if !isTTY {
+		return os.Pipe()
+	}
+	ptmx, tty, err := pty.Open()
+	if err != nil {
+		return nil, nil, err
+	}
+	// Stop the pty translating the command's newlines into CRLF. The client
+	// replays these bytes onto its own terminal, which does that translation
+	// itself, so leaving it on here would double every carriage return.
+	if err := disableONLCR(tty); err != nil {
+		ptmx.Close()
+		tty.Close()
+		return nil, nil, err
+	}
+	return ptmx, tty, nil
+}
+
+// disableONLCR turns off newline translation on a pty, so what is read from it
+// is what the command wrote.
+func disableONLCR(f *os.File) error {
+	t, err := unix.IoctlGetTermios(int(f.Fd()), unix.TCGETS)
+	if err != nil {
+		return err
+	}
+	t.Oflag &^= unix.ONLCR
+	return unix.IoctlSetTermios(int(f.Fd()), unix.TCSETS, t)
 }
 
 func timeoutExceededMessage() string {
