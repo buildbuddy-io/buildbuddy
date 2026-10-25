@@ -17,13 +17,14 @@ import (
 )
 
 var (
-	boolExperiment    = expflag.Bool("expflag_test.bool", true, "A boolean value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-bool"), flag.Secret)
-	stringExperiment  = expflag.String("expflag_test.string", "default", "A string value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-string"), flag.Secret)
-	int64Experiment   = expflag.Int64("expflag_test.int64", 1, "An integer value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-int64"), flag.Secret)
-	float64Experiment = expflag.Float64("expflag_test.float64", 1, "A floating point value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-float64"), flag.Secret)
-	objectExperiment  = expflag.Object("expflag_test.object", map[string]any{"enabled": true}, "An object value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-object"), flag.Secret)
-	structExperiment  = expflag.Struct("expflag_test.struct", widgetSettings{Color: "blue", Columns: 3}, "struct experiment")
-	sliceExperiment   = expflag.Slice("expflag_test.slice", []string{"a"}, "slice experiment")
+	boolExperiment        = expflag.Bool("expflag_test.bool", true, "A boolean value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-bool"), flag.Secret)
+	stringExperiment      = expflag.String("expflag_test.string", "default", "A string value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-string"), flag.Secret)
+	int64Experiment       = expflag.Int64("expflag_test.int64", 1, "An integer value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-int64"), flag.Secret)
+	float64Experiment     = expflag.Float64("expflag_test.float64", 1, "A floating point value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-float64"), flag.Secret)
+	objectExperiment      = expflag.Object("expflag_test.object", map[string]any{"enabled": true}, "An object value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-object"), flag.Secret)
+	structExperiment      = expflag.Struct("expflag_test.struct", widgetSettings{Color: "blue", Columns: 3}, "struct experiment")
+	sliceExperiment       = expflag.Slice("expflag_test.slice", []string{"a"}, "slice experiment")
+	structSliceExperiment = expflag.Slice("expflag_test.struct_slice", []widgetSettings{{Color: "blue", Columns: 3}, {Color: "red", Columns: 4}}, "Slice of structs")
 )
 
 type fakeProvider struct {
@@ -90,7 +91,7 @@ func TestConstructorOptions(t *testing.T) {
 type widgetSettings struct {
 	Color   string `json:"color"`
 	Columns int64  `json:"columns"`
-	Animate bool   `json:"animate"`
+	Animate bool   `json:"animate,omitempty"`
 }
 
 func TestStruct(t *testing.T) {
@@ -167,6 +168,51 @@ func TestSlice(t *testing.T) {
 			require.Equal(t, []string{"a"}, value)
 		})
 	}
+}
+
+func TestSliceOfStructs(t *testing.T) {
+	expflag.SetFlagProvider(nil)
+	value := structSliceExperiment.Get(t.Context())
+	require.Equal(t, []widgetSettings{{Color: "blue", Columns: 3}, {Color: "red", Columns: 4}}, value)
+	allocs := testing.AllocsPerRun(100, func() { structSliceExperiment.Get(t.Context()) })
+	require.Zero(t, allocs)
+
+	provider := &fakeProvider{variant: "default"}
+	expflag.SetFlagProvider(provider)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	value = structSliceExperiment.Get(t.Context())
+	require.Equal(t, []widgetSettings{
+		{Color: "blue", Columns: 3},
+		{Color: "red", Columns: 4},
+	}, value)
+	require.Equal(t, structSliceExperiment.Name(), provider.name)
+
+	provider.object = map[string]any{
+		"values": []any{
+			map[string]any{"color": "yellow", "columns": 5},
+		},
+	}
+	provider.variant = "treatment"
+	value, details := structSliceExperiment.GetWithDetails(t.Context())
+	require.Equal(t, []widgetSettings{
+		{Color: "blue", Columns: 3},
+		{Color: "red", Columns: 4},
+		{Color: "yellow", Columns: 5},
+	}, value)
+	wantObject, err := structpb.NewStruct(map[string]any{
+		"values": []any{
+			map[string]any{"color": "blue", "columns": 3},
+			map[string]any{"color": "red", "columns": 4},
+			map[string]any{"color": "yellow", "columns": 5},
+		},
+	})
+	require.NoError(t, err)
+	diff := cmp.Diff(&expb.EvaluatedFlag{
+		Name:    structSliceExperiment.Name(),
+		Variant: "treatment",
+		Value:   &expb.EvaluatedFlag_ObjectValue{ObjectValue: wantObject},
+	}, details, protocmp.Transform())
+	require.Empty(t, diff)
 }
 
 func TestSlice_ContextProvider(t *testing.T) {
