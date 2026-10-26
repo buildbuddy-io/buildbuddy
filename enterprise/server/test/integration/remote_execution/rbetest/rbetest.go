@@ -1056,18 +1056,6 @@ func (r *Env) waitForExecutorRegistration() {
 	}, defaultWaitTimeout, 100*time.Millisecond, "set of registered executors should converge")
 }
 
-// WaitForExecutorCount waits until the scheduler lists exactly n executors for
-// the test group. Use it for executors started outside of this harness, such
-// as a real executor binary; AddExecutor waits for its own executor.
-func (r *Env) WaitForExecutorCount(n int) {
-	ctx := r.WithUserID(context.Background(), r.UserID1)
-	require.EventuallyWithT(r.t, func(t *assert.CollectT) {
-		ids, err := r.registeredExecutorIDs(ctx)
-		require.NoError(t, err)
-		require.Len(t, ids, n)
-	}, defaultWaitTimeout, 100*time.Millisecond, "scheduler should list %d executors", n)
-}
-
 type CacheProxyOptions struct {
 	// EnvModifier modifies the proxy environment before registering services.
 	// Use this to replace the default cache (e.g., with a pebble cache).

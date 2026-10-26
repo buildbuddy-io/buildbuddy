@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/exptest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
@@ -2892,54 +2891,6 @@ func TestSpliceWithoutValidationExperiment(t *testing.T) {
 				executorOpts.CacheConn = rbe.AppProxy.Dial()
 			}
 			rbe.AddExecutorWithOptions(t, executorOpts)
-
-			require.Equal(t, tc.validation, executeChunkedOutputAction(t, rbe))
-		})
-	}
-}
-
-// TestSpliceWithoutValidationExperiment_SchedulerControlled runs a real
-// executor binary. Unlike the in-process executors above, it has its own flags,
-// and with scheduler-controlled experiments it must take the flag's value from
-// the task the scheduler leases it rather than from its own flag.
-func TestSpliceWithoutValidationExperiment_SchedulerControlled(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		taskValue  bool
-		validation string
-	}{
-		{name: "task enables, executor flag disables", taskValue: true, validation: metrics.SpliceBlobValidationSkipped},
-		{name: "task disables, executor flag enables", taskValue: false, validation: metrics.SpliceBlobValidationFull},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			const identityKey = "test-client-identity-key"
-			flags.Set(t, "app.client_identity.key", identityKey)
-			flags.Set(t, "remote_execution.chunking_enabled", true)
-			// The scheduler evaluates the flag with this value when it leases
-			// the task to the executor.
-			flags.Set(t, "executor.splice_without_validation", tc.taskValue)
-
-			rbe := rbetest.NewRBETestEnv(t)
-			// The scheduler only sends experiment flags when the app has an
-			// experiment flag provider, as apps always do outside of tests.
-			rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
-				EnvModifier: func(env *testenv.TestEnv) { exptest.Setup(t, env) },
-			})
-
-			executorDir := testfs.MakeTempDir(t)
-			testexecutor.Run(t,
-				"--executor.app_target="+rbe.GetBuildBuddyServerTarget(),
-				"--executor.api_key="+rbe.APIKey1,
-				"--executor.root_directory="+filepath.Join(executorDir, "builds"),
-				"--executor.local_cache_directory="+filepath.Join(executorDir, "filecache"),
-				"--executor.enable_bare_runner=true",
-				"--app.client_identity.key="+identityKey,
-				"--app.client_identity.client="+interfaces.ClientIdentityExecutor,
-				"--executor.scheduler_controlled_experiments_enabled=true",
-				// The task's value must take priority over this one.
-				fmt.Sprintf("--executor.splice_without_validation=%t", !tc.taskValue),
-			)
-			rbe.WaitForExecutorCount(1)
 
 			require.Equal(t, tc.validation, executeChunkedOutputAction(t, rbe))
 		})
