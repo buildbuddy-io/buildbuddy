@@ -56,5 +56,6 @@ go_test(
         "@dev_gvisor_gvisor//pkg/tcpip",
         "@dev_gvisor_gvisor//pkg/tcpip/header",
         "@org_golang_x_net//icmp",
+        "@org_golang_x_sys//unix",
     ],
 )

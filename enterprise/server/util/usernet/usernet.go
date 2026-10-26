@@ -88,6 +88,10 @@ const (
 	// maxPingsInFlight caps the ping sockets open for a guest; echo requests
 	// over the limit are dropped.
 	maxPingsInFlight = 128
+
+	// maxQuotedBytes keeps ICMP errors within IPv4's minimum datagram size
+	// (576 bytes), which also fits IPv6's minimum MTU.
+	maxQuotedBytes = 576 - header.IPv4MinimumSize - header.ICMPv4MinimumSize
 )
 
 // udpIdleTimeout is how long a UDP flow may go without traffic in either
@@ -127,8 +131,6 @@ type Network struct {
 	gateway         tcpip.Address
 	externalNetwork bool
 	allowedPrefixes []netip.Prefix
-	// blockedPrefixes includes the host's own addresses.
-	blockedPrefixes []netip.Prefix
 	pings           chan struct{}
 	udpIdleTimeout  time.Duration
 }
@@ -203,24 +205,11 @@ func newNetwork(ctx context.Context, gatewayCIDR string, enableExternalNetworkin
 	if err != nil {
 		return nil, err
 	}
-	hostAddrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return nil, status.UnavailableErrorf("list host addresses: %s", err)
-	}
-	blocked := slices.Clone(blockedPrefixes)
-	for _, a := range hostAddrs {
-		if ipNet, ok := a.(*net.IPNet); ok {
-			if ip, ok := netip.AddrFromSlice(ipNet.IP); ok {
-				blocked = append(blocked, netip.PrefixFrom(ip.Unmap(), ip.Unmap().BitLen()))
-			}
-		}
-	}
 	n := &Network{
 		fd:              -1,
 		gateway:         tcpip.AddrFrom4(gateway.Addr().As4()),
 		externalNetwork: enableExternalNetworking,
 		allowedPrefixes: allowed,
-		blockedPrefixes: blocked,
 		pings:           make(chan struct{}, maxPingsInFlight),
 		udpIdleTimeout:  udpIdleTimeout,
 	}
@@ -285,16 +274,10 @@ func (n *Network) startStack(prefixLen int) error {
 		n.forwardTCP(ctx, r)
 	})
 	n.stack.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := udp.NewForwarder(n.stack, func(r *udp.ForwarderRequest) bool {
-		n.forwardUDP(ctx, r)
-		return true
-	})
+	// The UDP handler only sees packets that don't belong to an existing flow.
 	n.stack.SetTransportProtocolHandler(udp.ProtocolNumber, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-		if !n.isAllowed(id.LocalAddress) {
-			n.reject(pkt)
-			return true
-		}
-		return udpForwarder.HandlePacket(id, pkt)
+		n.forwardUDP(ctx, id, pkt)
+		return true
 	})
 	n.stack.SetTransportProtocolHandler(gicmp.ProtocolNumber4, n.forwardEcho)
 	n.stack.SetTransportProtocolHandler(gicmp.ProtocolNumber6, n.forwardEcho)
@@ -344,7 +327,7 @@ func (n *Network) isAllowed(addr tcpip.Address) bool {
 			return true
 		}
 	}
-	for _, p := range n.blockedPrefixes {
+	for _, p := range blockedPrefixes {
 		if p.Contains(ip) {
 			return false
 		}
@@ -386,26 +369,32 @@ func (n *Network) forwardTCP(ctx context.Context, r *tcp.ForwarderRequest) {
 	wg.Wait()
 }
 
-func (n *Network) forwardUDP(ctx context.Context, r *udp.ForwarderRequest) {
-	id := r.ID()
-	// Creating the endpoint registers the flow, so that its later packets are
-	// delivered to it rather than to the forwarder.
-	var wq waiter.Queue
-	ep, tcpErr := r.CreateEndpoint(&wq)
-	if tcpErr != nil {
+func (n *Network) forwardUDP(ctx context.Context, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+	if !n.isAllowed(id.LocalAddress) {
+		n.reject(pkt)
 		return
 	}
+	// Connecting a UDP socket doesn't send anything, so it's fine to do on the
+	// stack's packet processing goroutine.
 	dst := net.JoinHostPort(id.LocalAddress.String(), strconv.Itoa(int(id.LocalPort)))
-	// The forwarder runs on the stack's packet processing goroutine.
-	go relayUDP(ctx, gonet.NewUDPConn(&wq, ep), dst, n.udpIdleTimeout)
-}
-
-func relayUDP(ctx context.Context, guest *gonet.UDPConn, dst string, idleTimeout time.Duration) {
 	remote, err := (&net.Dialer{}).DialContext(ctx, "udp", dst)
 	if err != nil {
-		guest.Close()
+		// e.g. the host has no IPv6 route.
+		n.reject(pkt)
 		return
 	}
+	// Creating the endpoint registers the flow, so that its later packets are
+	// delivered to it rather than to this handler.
+	var wq waiter.Queue
+	ep, tcpErr := udp.NewForwarderRequest(n.stack, id, pkt).CreateEndpoint(&wq)
+	if tcpErr != nil {
+		remote.Close()
+		return
+	}
+	go relayUDP(ctx, gonet.NewUDPConn(&wq, ep), remote, n.udpIdleTimeout)
+}
+
+func relayUDP(ctx context.Context, guest *gonet.UDPConn, remote net.Conn, idleTimeout time.Duration) {
 	closeBoth := sync.OnceFunc(func() {
 		guest.Close()
 		remote.Close()
@@ -468,18 +457,23 @@ func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuf
 	default:
 		return true
 	}
-	ident, seq, data := h.Ident(), h.Sequence(), pkt.Data().AsRange().ToSlice()
+	ident, seq := h.Ident(), h.Sequence()
+	// The kernel replaces the ident, and delivers only this socket's replies.
+	conn, err := icmp.ListenPacket(network, listenAddr)
+	if err == nil {
+		if _, err = conn.WriteTo(icmpEcho(echo, 0, seq, pkt.Data().AsRange().ToSlice()), &net.UDPAddr{IP: id.LocalAddress.AsSlice()}); err != nil {
+			conn.Close()
+		}
+	}
+	if err != nil {
+		<-n.pings
+		// e.g. the host has no IPv6 route.
+		n.reject(pkt)
+		return true
+	}
 	go func() {
 		defer func() { <-n.pings }()
-		conn, err := icmp.ListenPacket(network, listenAddr)
-		if err != nil {
-			return
-		}
 		defer conn.Close()
-		// The kernel replaces the ident, and delivers only this socket's replies.
-		if _, err := conn.WriteTo(icmpEcho(echo, 0, seq, data), &net.UDPAddr{IP: id.LocalAddress.AsSlice()}); err != nil {
-			return
-		}
 		conn.SetReadDeadline(time.Now().Add(pingTimeout))
 		buf := make([]byte, 65535)
 		for {
@@ -497,14 +491,14 @@ func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuf
 	return true
 }
 
-// reject answers a packet to a blocked destination with ICMP port
-// unreachable, like an iptables REJECT rule.
+// reject answers a packet with ICMP port unreachable, like an iptables REJECT
+// rule. Unlike network unreachable, guests report it to connected UDP sockets.
 func (n *Network) reject(pkt *stack.PacketBuffer) {
-	ip := pkt.NetworkHeader().Slice()
-	original := append(slices.Clone(ip), pkt.TransportHeader().Slice()...)
-	original = original[:min(len(original), len(ip)+8)]
+	// Quote from the network header on, so IPv6 extension headers are kept.
+	original := stack.PayloadSince(pkt.NetworkHeader())
+	defer original.Release()
 	// ICMPv4 and ICMPv6 destination unreachable messages share a layout.
-	msg := make([]byte, header.ICMPv4MinimumSize+len(original))
+	msg := make([]byte, header.ICMPv4MinimumSize+min(original.Size(), maxQuotedBytes))
 	h := header.ICMPv4(msg)
 	h.SetType(header.ICMPv4DstUnreachable)
 	h.SetCode(header.ICMPv4PortUnreachable)
@@ -514,7 +508,7 @@ func (n *Network) reject(pkt *stack.PacketBuffer) {
 		h.SetCode(header.ICMPv4Code(header.ICMPv6PortUnreachable))
 		gateway = gateway6Address
 	}
-	copy(h.Payload(), original)
+	copy(h.Payload(), original.AsSlice())
 	n.writeICMP(gateway, pkt.Network().SourceAddress(), msg)
 }
 
