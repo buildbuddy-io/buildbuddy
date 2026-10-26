@@ -31,6 +31,7 @@ findings as PR review comments.
 
 With --fix, fetches existing PR feedback, addresses actionable comments, then commits and pushes them to the PR branch.
 Requires a clean checkout at the PR head.
+Set AGENT_REVIEW_FIX=1 to enable --fix by default.
 Pass --verify=false to skip verification.
 With --fix --dry_run, applies changes in the local working tree without committing, pushing, or replying to comments.
 Fixing PRs from forks is not supported.
@@ -59,7 +60,7 @@ var (
 	Flags = flag.NewFlagSet("review", flag.ContinueOnError)
 
 	dryRun    = Flags.Bool("dry_run", false, "Print the review payload without posting it, or with --fix, apply changes locally without committing or pushing.")
-	fix       = Flags.Bool("fix", false, "Address existing PR feedback, then commit and push the changes. With --dry_run, leave changes uncommitted in the working tree.")
+	fix       = Flags.Bool("fix", os.Getenv(agentReviewFixPreset) == "1", "Address existing PR feedback, then commit and push the changes. Set AGENT_REVIEW_FIX=1 to enable by default. With --dry_run, leave changes uncommitted in the working tree.")
 	verify    = Flags.Bool("verify", true, "Verify changes when using --fix. Set --verify=false to skip verification.")
 	force     = Flags.Bool("force", false, "Review the PR even if it is a draft or already has a bot review.")
 	allowFork = Flags.Bool("allow_fork", false, "Review the PR even if it comes from a fork. See the warning that --allow_fork suppresses.")
@@ -131,6 +132,12 @@ REVIEW:
 const reviewLinkMarker = "<!-- bb-agent-review-link -->"
 
 const reviewDocsURL = "https://www.buildbuddy.io/docs/cli-commands#bb-agent-review"
+
+// Keep these in sync with ENV_PRESETS in run_workflow_deep_link.ts.
+const (
+	agentReviewPreset    = "AGENT_REVIEW"
+	agentReviewFixPreset = "AGENT_REVIEW_FIX"
+)
 
 var (
 	hunkRe = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
@@ -337,13 +344,17 @@ func postReviewLink(ctx context.Context, gh *github.Client, owner, repo string, 
 		return nil
 	}
 
-	runURL, err := runReviewURL(pr, actionName)
+	runURL, err := runReviewURL(pr, actionName, agentReviewPreset)
+	if err != nil {
+		return err
+	}
+	fixURL, err := runReviewURL(pr, actionName, agentReviewFixPreset)
 	if err != nil {
 		return err
 	}
 	body := reviewLinkMarker + "\n" +
 		"**Agent code review** · Get feedback on this pull request before a teammate reviews it.\n" +
-		"**[Run review](" + runURL + ")**\n\n" +
+		"**[Run review](" + runURL + ")** · **[Address all feedback](" + fixURL + ")**\n\n" +
 		"<sub>Runs [`bb agent review`](" + reviewDocsURL + ") on BuildBuddy Workflows</sub>"
 
 	if *dryRun {
@@ -364,8 +375,8 @@ func postReviewLink(ctx context.Context, gh *github.Client, owner, repo string, 
 }
 
 // runReviewURL returns a link that runs the given workflow action on the PR's
-// branch with AGENT_REVIEW_FORCE=1.
-func runReviewURL(pr *github.PullRequest, actionName string) (string, error) {
+// branch using an environment preset from run_workflow_deep_link.ts.
+func runReviewURL(pr *github.PullRequest, actionName, envPreset string) (string, error) {
 	runURL, err := url.JoinPath(*agentflags.HTTPTarget, "workflows", "run")
 	if err != nil {
 		return "", fmt.Errorf("build run review URL: %w", err)
@@ -374,7 +385,7 @@ func runReviewURL(pr *github.PullRequest, actionName string) (string, error) {
 		"repo_url":    {pr.GetBase().GetRepo().GetHTMLURL()},
 		"action_name": {actionName},
 		"branch":      {pr.GetHead().GetRef()},
-		"env_preset":  {"AGENT_REVIEW"},
+		"env_preset":  {envPreset},
 	}.Encode(), nil
 }
 
@@ -385,12 +396,17 @@ func reviewFooter(pr *github.PullRequest) string {
 		return "<sub>Reviewed with [`bb agent review`](" + reviewDocsURL + ")</sub>"
 	}
 	footer := "<sub>Reviewed with [`bb agent review`](" + reviewDocsURL + ") on BuildBuddy Workflows</sub>"
-	runURL, err := runReviewURL(pr, actionName)
+	runURL, err := runReviewURL(pr, actionName, agentReviewPreset)
 	if err != nil {
 		log.Warnf("Omitting re-run link from review: %s", err)
 		return footer
 	}
-	return "**[Re-run review](" + runURL + ")**\n\n" + footer
+	fixURL, err := runReviewURL(pr, actionName, agentReviewFixPreset)
+	if err != nil {
+		log.Warnf("Omitting address feedback link from review: %s", err)
+		return "**[Re-run review](" + runURL + ")**\n\n" + footer
+	}
+	return "**[Re-run review](" + runURL + ")** · **[Address all feedback](" + fixURL + ")**\n\n" + footer
 }
 
 // structureReview has the agent convert a free-form review into reviewJSON.
