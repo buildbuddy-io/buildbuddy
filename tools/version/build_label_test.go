@@ -48,32 +48,32 @@ func TestBuildLabel(t *testing.T) {
 	}
 
 	commit("2026-03-04T12:00:00 +0000", "2026-03-04T12:00:00 +0000")
-	require.Equal(t, "ci-20260304-"+headSHA()[:7], label(), "date and first 7 chars of the SHA")
-	require.Regexp(t, `^ci-\d{8}-[0-9a-f]{7}$`, label())
+	require.Equal(t, "ci-20260304T120000-"+headSHA()[:7], label(), "date and first 7 chars of the SHA")
+	require.Regexp(t, `^ci-\d{8}T\d{6}-[0-9a-f]{7}$`, label())
 
 	// 2026-10-21 20:00 -0800 is 2026-10-22 04:00 in UTC, but still 2026-10-21
 	// both at the commit's own offset and in America/Los_Angeles (PDT).
 	commit("2026-10-21T20:00:00 -0800", "2026-10-21T20:00:00 -0800")
-	require.Equal(t, "ci-20261022-"+headSHA()[:7], label(), "date is UTC")
+	require.Equal(t, "ci-20261022T040000-"+headSHA()[:7], label(), "date is UTC")
 
 	commit("2020-01-02T12:00:00 +0000", "2026-03-04T12:00:00 +0000")
-	require.Equal(t, "ci-20260304-"+headSHA()[:7], label(), "committer date, not author date")
+	require.Equal(t, "ci-20260304T120000-"+headSHA()[:7], label(), "committer date, not author date")
 
 	testshell.Run(t, repo, "git tag v2.10.0")
-	require.Equal(t, "ci-20260304-"+headSHA()[:7], label(), "tags are ignored")
+	require.Equal(t, "ci-20260304T120000-"+headSHA()[:7], label(), "tags are ignored")
 
 	sha := headSHA()[:7]
 	t.Setenv("CI", "")
-	require.Equal(t, "local-20260304-"+sha, label(), "CI unset")
+	require.Equal(t, "local-20260304T120000-"+sha, label(), "CI unset")
 	t.Setenv("CI", "true")
 
 	testfs.WriteAllFileContents(t, repo, map[string]string{"untracked": "x"})
-	require.Equal(t, "ci-20260304-"+sha, label(), "untracked files are ignored")
+	require.Equal(t, "ci-20260304T120000-"+sha, label(), "untracked files are ignored")
 
 	// Touching a file changes its mtime but not its content.
 	testshell.Run(t, repo, "touch README")
-	require.Equal(t, "ci-20260304-"+sha, label(), "touched file with same content")
+	require.Equal(t, "ci-20260304T120000-"+sha, label(), "touched file with same content")
 
 	testfs.WriteAllFileContents(t, repo, map[string]string{"README": "modified"})
-	require.Equal(t, "local-20260304-"+sha, label(), "modified tracked file")
+	require.Equal(t, "local-20260304T120000-"+sha, label(), "modified tracked file")
 }

@@ -5,7 +5,7 @@ import capabilities from "../capabilities/capabilities";
 const RELEASE_VERSION_REGEX = /^v\d+\.\d+\.\d+$/;
 // Non-release builds report a ci- or local- label ending in the public
 // buildbuddy commit.
-const BUILD_VERSION_REGEX = /^(?:ci|local)-\d{8}-([0-9a-f]{7,40})$/;
+const BUILD_VERSION_REGEX = /^(?:ci|local)-\d{8}T\d{6}-([0-9a-f]{7,40})$/;
 
 function versionLink(version: string): string | undefined {
   if (RELEASE_VERSION_REGEX.test(version)) {

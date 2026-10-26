@@ -3,9 +3,9 @@ set -euo pipefail
 
 # Usage: build_label.sh
 #
-# Prints the per-commit build label for HEAD: "<prefix>-YYYYMMDD-<sha7>", where
-# the date is HEAD's committer date in UTC. The prefix says where the build came
-# from:
+# Prints the per-commit build label for HEAD: "<prefix>-YYYYMMDDTHHMMSS-<sha7>",
+# where the date and time are HEAD's committer date in UTC. The prefix says where
+# the build came from:
 #   ci:    env CI is "true" and the tracked files match HEAD (an official build).
 #   local: anything else.
 #
@@ -24,7 +24,7 @@ sha=$(git rev-parse --verify -q HEAD) || {
   exit 1
 }
 
-date=$(TZ=UTC git show -s --date=format-local:%Y%m%d --format=%cd HEAD)
+date=$(TZ=UTC git show -s --date=format-local:%Y%m%dT%H%M%S --format=%cd HEAD)
 
 # Refresh the index so files that were only touched don't count as modified.
 git update-index -q --refresh || true
