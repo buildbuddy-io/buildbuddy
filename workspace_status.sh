@@ -45,14 +45,7 @@ echo "GIT_TREE_STATUS $git_tree_status"
 # Note: the "STABLE_" suffix causes these to be part of the "stable" workspace
 # status, which may trigger rebuilds of certain targets if these values change
 # and you're building with the "--stamp" flag.
-# Public release builds run at the tagged commit and must report vX.Y.Z;
-# everything else gets the per-commit ci-/local- build label.
-version_tag=$(git tag --points-at HEAD -l 'v*' --sort=version:refname |
-  perl -nle 'if (/^v\d+\.\d+\.\d+$/) { print $_ }' |
-  tail -n1)
-if [[ -z "$version_tag" ]]; then
-  version_tag=$(./tools/build_label.sh) || version_tag=unknown
-fi
+version_tag=$(./tools/build_label.sh) || version_tag=unknown
 echo "STABLE_VERSION_TAG $version_tag"
 echo "STABLE_COMMIT_SHA $commit_sha"
 
