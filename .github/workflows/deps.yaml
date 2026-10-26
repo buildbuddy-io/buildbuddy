@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - "bb_release_*"
     paths-ignore:
       - "docs/**"
       - "website/**"
@@ -11,7 +12,11 @@ on:
 jobs:
   update:
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'deps skip')"
+    if: "!github.event.created && !contains(github.event.head_commit.message, 'deps skip')"
+    # Run in push order per branch, so an older commit can't overwrite a newer pin.
+    concurrency:
+      group: update-deps-${{ github.ref_name }}
+      cancel-in-progress: false
 
     steps:
       - name: Checkout
@@ -23,7 +28,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           repository: "buildbuddy-io/buildbuddy-internal"
-          ref: "master"
+          ref: ${{ github.ref_name }}
           token: ${{ secrets.BUILDBUDDY_APP_TOKEN }}
           path: buildbuddy-internal
 
@@ -43,7 +48,13 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-internal
           sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" MODULE.bazel
-          bazel mod deps --lockfile_mode=update
+          # Retry flaky downloads (e.g. snapshot.debian.org timeouts).
+          for attempt in 1 2 3; do
+            bazel mod deps --lockfile_mode=update && break
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            echo "bazel mod deps failed; retrying in 30s"
+            sleep 30
+          done
 
       - name: Commit
         env:
@@ -71,9 +82,15 @@ jobs:
           git commit -F message.txt -a
 
       - name: Push changes
-        uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
-        with:
-          directory: buildbuddy-internal
-          repository: buildbuddy-io/buildbuddy-internal
-          github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
-          branch: master
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          cd "$GITHUB_WORKSPACE"/buildbuddy-internal
+          # If another push landed meanwhile, rebase onto it and retry. Only this
+          # job writes the copied files, so a conflict means something unexpected
+          # happened; fail rather than guess.
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:refs/heads/$BRANCH"; then exit 0; fi
+            git pull --rebase origin "$BRANCH" || { git rebase --abort; exit 1; }
+          done
+          exit 1
