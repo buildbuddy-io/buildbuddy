@@ -17,19 +17,6 @@ go_test(
 )
 
 go_test(
-    name = "build_label_test",
-    srcs = ["build_label_test.go"],
-    data = ["//tools:build_label.sh"],
-    x_defs = {"buildLabelRlocationpath": "$(rlocationpath //tools:build_label.sh)"},
-    deps = [
-        "//server/testutil/testfs",
-        "//server/testutil/testgit",
-        "//server/testutil/testshell",
-        "@com_github_stretchr_testify//require",
-    ],
-)
-
-go_test(
     name = "repo_highest_version_test",
     srcs = ["repo_highest_version_test.go"],
     data = ["//tools:repo_highest_version.sh"],
