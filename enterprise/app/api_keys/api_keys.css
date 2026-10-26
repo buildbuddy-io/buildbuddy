@@ -104,6 +104,34 @@
   margin-right: 4px;
 }
 
+.api-keys .api-key-expiration.expires-soon {
+  color: var(--color-yellow-800);
+}
+
+.api-keys .api-key-expiration.expires-very-soon {
+  color: var(--color-status-warning);
+}
+
+.api-keys .api-key-expiration.expires-imminently {
+  color: var(--color-status-error);
+}
+
+.api-keys .api-key-value-expired {
+  justify-content: center;
+  padding-right: 16px;
+  color: var(--color-text-emphasis);
+  font-weight: 600;
+}
+
+.api-keys .api-key-delete-button-wide {
+  grid-column: span 2;
+  justify-content: center;
+}
+
+.api-keys .api-key-value-expired .display-value {
+  margin-right: 0;
+}
+
 .api-keys .api-key-value button {
   width: 32px;
   height: 32px;

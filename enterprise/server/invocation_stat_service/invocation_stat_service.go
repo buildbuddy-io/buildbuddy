@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -26,9 +27,15 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 )
+
+// targetTrendsPageSize is the number of targets returned per page by
+// GetTargetTrends.
+const targetTrendsPageSize = 50
 
 var (
 	readFromOLAPDBEnabled          = flag.Bool("app.enable_read_from_olap_db", true, "If enabled, read from OLAP DB")
@@ -203,7 +210,7 @@ func (i *InvocationStatService) flattenTrendsQuery(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, includeExecutionDimensionFilters bool, reqCtx *ctxpb.RequestContext) error {
+func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, isExecutionQuery bool, reqCtx *ctxpb.RequestContext) error {
 
 	if user := tq.GetUser(); user != "" {
 		q.AddWhereClause("\"user\" = ?", user)
@@ -283,7 +290,7 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		q.AddWhereClause(str, args...)
 	}
 	for _, f := range tq.GetDimensionFilter() {
-		if !includeExecutionDimensionFilters && f.GetDimension().Execution != nil {
+		if !isExecutionQuery && f.GetDimension().Execution != nil {
 			continue
 		}
 		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
@@ -292,8 +299,14 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		}
 		q.AddWhereClause(str, args...)
 	}
+	if isExecutionQuery {
+		// Merged links reuse work rather than adding executions to aggregates.
+		// If the original link is missing or outside the query, these aggregates
+		// intentionally omit the execution; selected examples retain merged links.
+		q.AddWhereClause("invocation_link_type != ?", int(sipb.StoredInvocationLink_MERGED))
+	}
 	queryObjects := sfpb.ObjectTypes_INVOCATION_OBJECTS
-	if includeExecutionDimensionFilters {
+	if isExecutionQuery {
 		queryObjects = sfpb.ObjectTypes_EXECUTION_OBJECTS
 	}
 
@@ -1228,7 +1241,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	}
 	placeholderQuery := query_builder.NewQuery("")
 
-	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC, req.GetRequestContext()); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetDrilldownMetric().Execution != nil, req.GetRequestContext()); err != nil {
 		return "", nil, err
 	}
 
@@ -1323,6 +1336,14 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 		return nil, err
 	}
 
+	page, err := paging.DecodeOffsetLimit(req.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	if page.GetOffset() < 0 {
+		return nil, status.InvalidArgumentErrorf("invalid page token: negative offset %d", page.GetOffset())
+	}
+
 	// Normalize repo URL before we use it in any queries.
 	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
 		repoURL, err := git.NormalizeRepoURL(repoURL)
@@ -1352,6 +1373,12 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 
 	innerQ.AddWhereClause("cached_result = FALSE")
 	innerQ.AddWhereClause("target_label != ''")
+	// Apply the label filter before aggregating so that we only aggregate
+	// executions for matching targets. Using a position function rather than
+	// LIKE means we don't need to escape wildcard characters in the filter.
+	if labelFilter := req.GetTargetLabelFilter(); labelFilter != "" {
+		innerQ.AddWhereClause("positionCaseInsensitiveUTF8(target_label, ?) > 0", labelFilter)
+	}
 	innerQ.SetGroupBy("target_label, execution_uuid")
 
 	innerQStr, innerQArgs := innerQ.Build()
@@ -1360,8 +1387,12 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 		SELECT target_label as target, toInt64(%s(v)) as value
 		FROM ( %s )`, getAggregationFnString(req.GetAgg()), innerQStr), innerQArgs)
 	q.SetGroupBy("target_label")
-	q.SetOrderBy("value", false) // Descending order
-	q.SetLimit(1000)             // Reasonable limit to avoid overwhelming the response
+	// Sort by value descending, breaking ties by label so that the ordering is
+	// stable across pages.
+	q.SetOrderBy("value DESC, target", true /*=ascending*/)
+	// Fetch one extra row so we can tell whether there is another page.
+	q.SetLimit(targetTrendsPageSize + 1)
+	q.SetOffset(page.GetOffset())
 
 	qStr, qArgs := q.Build()
 	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_target_trends").Raw(qStr, qArgs...)
@@ -1371,7 +1402,19 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 		return nil, err
 	}
 
-	return &stpb.GetTargetTrendsResponse{TargetStats: targetStats}, nil
+	rsp := &stpb.GetTargetTrendsResponse{TargetStats: targetStats}
+	if len(targetStats) > targetTrendsPageSize {
+		rsp.TargetStats = targetStats[:targetTrendsPageSize]
+		nextPageToken, err := paging.EncodeOffsetLimit(&pgpb.OffsetLimit{
+			Offset: page.GetOffset() + targetTrendsPageSize,
+			Limit:  targetTrendsPageSize,
+		})
+		if err != nil {
+			return nil, err
+		}
+		rsp.NextPageToken = nextPageToken
+	}
+	return rsp, nil
 }
 
 func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error) {

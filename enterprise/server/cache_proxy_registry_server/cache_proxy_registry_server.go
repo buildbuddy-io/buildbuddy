@@ -80,8 +80,9 @@ const (
 	unusedPeerConnExpiration    = 10 * time.Minute
 	unusedPeerConnCheckInterval = 1 * time.Minute
 
-	// Message attached to upgrade prompts returned by GetCacheProxies.
-	upgradePromptMessage = "One or more of your cache proxies are running an outdated version. The newest available version is %s."
+	// Messages attached to upgrade prompts returned by GetCacheProx(y/ies).
+	pluralUpgradePromptMessage   = "One or more of your cache proxies are running an outdated version. The newest available version is %s."
+	singularUpgradePromptMessage = "This cache proxy is running an outdated version. The newest available version is %s."
 )
 
 var (
@@ -445,7 +446,7 @@ func (s *CacheProxyRegistryServer) getNewestVersion(ctx context.Context) *semver
 // if any of the given proxies meets one of the configured upgrade triggers
 // (see the --cache_proxy.upgrade_prompt_* flags), and nil otherwise. The
 // urgency reflects the most-outdated proxy in the list.
-func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []*cppb.GetCacheProxiesResponse_CacheProxy) *uppb.Prompt {
+func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []*cppb.GetCacheProxiesResponse_CacheProxy, messageTemplate string) *uppb.Prompt {
 	if s.detector == nil || len(proxies) == 0 {
 		return nil
 	}
@@ -458,7 +459,7 @@ func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []
 	for _, p := range proxies {
 		versions = append(versions, p.GetSummary().GetVersion())
 	}
-	return s.detector.Detect(newestVersion, versions, fmt.Sprintf(upgradePromptMessage, newestVersionString))
+	return s.detector.Detect(newestVersion, versions, fmt.Sprintf(messageTemplate, newestVersionString))
 }
 
 func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cppb.GetCacheProxiesRequest) (*cppb.GetCacheProxiesResponse, error) {
@@ -525,7 +526,7 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 
 	return &cppb.GetCacheProxiesResponse{
 		CacheProxy:    proxies,
-		UpgradePrompt: s.upgradePrompt(ctx, proxies),
+		UpgradePrompt: s.upgradePrompt(ctx, proxies, pluralUpgradePromptMessage),
 	}, nil
 }
 
@@ -612,7 +613,7 @@ func (s *CacheProxyRegistryServer) GetCacheProxy(ctx context.Context, req *cppb.
 		Details: details,
 		UpgradePrompt: s.upgradePrompt(ctx, []*cppb.GetCacheProxiesResponse_CacheProxy{
 			{Summary: details.GetSummary()},
-		}),
+		}, singularUpgradePromptMessage),
 	}, nil
 }
 

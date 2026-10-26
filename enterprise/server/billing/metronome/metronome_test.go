@@ -19,6 +19,48 @@ import (
 	testflags "github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 )
 
+func TestHasContract(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		body    map[string]any
+		code    int
+		want    bool
+		wantErr bool
+	}{
+		{name: "existing contract", body: map[string]any{"data": []map[string]any{{"id": "enterprise-contract"}}}, code: http.StatusOK, want: true},
+		{name: "no contract", body: map[string]any{"data": []any{}}, code: http.StatusOK},
+		{name: "lookup failure", body: map[string]any{"message": "unavailable"}, code: http.StatusServiceUnavailable, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			responseBody, err := json.Marshal(tc.body)
+			require.NoError(t, err)
+			usageTime := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodPost, r.Method)
+				assert.Equal(t, "/v1/contracts/list", r.URL.Path)
+				var body map[string]any
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+				assert.Equal(t, map[string]any{"customer_id": "cust-1", "covering_date": "2026-10-01T00:00:00Z", "limit": float64(1)}, body)
+				w.WriteHeader(tc.code)
+				fmt.Fprint(w, string(responseBody))
+			}))
+			defer server.Close()
+			testflags.Set(t, "billing.metronome.api_key", "test-key")
+			testflags.Set(t, "billing.metronome.api_url", server.URL)
+			testflags.Set(t, "http.client.allow_localhost", true)
+			client, err := metronome.NewClient(nil, nil)
+			require.NoError(t, err)
+			got, err := client.HasContract(t.Context(), "cust-1", usageTime)
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestIngestEvents(t *testing.T) {
 	var gotEvents []metronome.MetronomeEvent
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -252,7 +294,7 @@ func TestCreateCustomerAndContract(t *testing.T) {
 	testflags.Set(t, "http.client.allow_localhost", true)
 	testflags.Set(t, "billing.metronome.api_key", "test-key")
 	testflags.Set(t, "billing.metronome.api_url", server.URL)
-	testflags.Set(t, "billing.metronome.package_alias", "self-serve-free")
+	testflags.Set(t, "billing.metronome.default_contract_name", "different-default")
 
 	c, err := metronome.NewClient(nil, nil)
 	require.NoError(t, err)
@@ -261,7 +303,7 @@ func TestCreateCustomerAndContract(t *testing.T) {
 	assert.Equal(t, "cust-1", id)
 
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	require.NoError(t, c.CreateContract(t.Context(), "cust-1", start, "GR1"))
+	require.NoError(t, c.CreateContract(t.Context(), "cust-1", "self-serve-free", start, "GR1"))
 	assert.Equal(t, map[string]any{
 		"customer_id":    "cust-1",
 		"package_alias":  "self-serve-free",
@@ -270,10 +312,9 @@ func TestCreateCustomerAndContract(t *testing.T) {
 	}, contract)
 
 	conflict = true
-	require.NoError(t, c.CreateContract(t.Context(), "cust-1", start, "GR1"))
+	require.NoError(t, c.CreateContract(t.Context(), "cust-1", "self-serve-free", start, "GR1"))
 
-	testflags.Set(t, "billing.metronome.package_alias", "")
-	err = c.CreateContract(t.Context(), "cust-1", start, "GR1")
+	err = c.CreateContract(t.Context(), "cust-1", "", start, "GR1")
 	require.True(t, status.IsFailedPreconditionError(err), "unexpected error: %v", err)
 }
 

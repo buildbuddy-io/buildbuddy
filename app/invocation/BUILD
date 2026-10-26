@@ -262,6 +262,7 @@ ts_library(
         "//app/components/chart:donut_chart",
         "//app/format",
         "//app/invocation:invocation_model",
+        "//app/util:color",
         "//proto:action_cache_ts_proto",
     ],
 )

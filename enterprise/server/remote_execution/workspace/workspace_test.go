@@ -8,12 +8,16 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -21,9 +25,135 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
+
+type failingUploadCASClient struct {
+	repb.ContentAddressableStorageClient
+	onFailure func()
+	err       error
+}
+
+func (c *failingUploadCASClient) BatchUpdateBlobs(context.Context, *repb.BatchUpdateBlobsRequest, ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
+	c.onFailure()
+	return nil, c.err
+}
+
+type interceptingByteStreamClient struct {
+	bspb.ByteStreamClient
+	onSend func(context.Context, *bspb.WriteRequest) error
+}
+
+func (c *interceptingByteStreamClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	stream, err := c.ByteStreamClient.Write(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &interceptingWriteClient{ByteStream_WriteClient: stream, onSend: c.onSend}, nil
+}
+
+type interceptingWriteClient struct {
+	bspb.ByteStream_WriteClient
+	onSend func(context.Context, *bspb.WriteRequest) error
+}
+
+func (c *interceptingWriteClient) Send(req *bspb.WriteRequest) error {
+	if err := c.onSend(c.Context(), req); err != nil {
+		return err
+	}
+	return c.ByteStream_WriteClient.Send(req)
+}
+
+func TestUploadOutputs_PreservesLogsOnFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		failures []string
+	}{
+		{name: "output tree", failures: []string{"output tree"}},
+		{name: "stderr", failures: []string{"stderr"}},
+		{name: "auxiliary", failures: []string{"auxiliary"}},
+		{name: "multiple", failures: []string{"output tree", "stdout", "stderr", "auxiliary", "other auxiliary"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			te := testenv.GetTestEnv(t)
+			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+			testcache.Setup(t, te, lis)
+			go runServer()
+			bsClient := te.GetByteStreamClient()
+			failed := make(chan struct{})
+			signalFailure := sync.OnceFunc(func() { close(failed) })
+			failures := make(map[string]error, len(tc.failures))
+			failedDigests := make(map[string]error, len(tc.failures))
+			for _, name := range tc.failures {
+				failures[name] = status.InvalidArgumentError("injected " + name + " upload failure")
+				d, err := digest.Compute(strings.NewReader(name), repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				failedDigests["/"+d.GetHash()+"/"] = failures[name]
+			}
+			if err := failures["output tree"]; err != nil {
+				te.SetContentAddressableStorageClient(&failingUploadCASClient{ContentAddressableStorageClient: te.GetContentAddressableStorageClient(), onFailure: signalFailure, err: err})
+			}
+			te.SetByteStreamClient(&interceptingByteStreamClient{ByteStreamClient: bsClient, onSend: func(ctx context.Context, req *bspb.WriteRequest) error {
+				for hash, err := range failedDigests {
+					if strings.Contains(req.GetResourceName(), hash) {
+						signalFailure()
+						return err
+					}
+				}
+				// Hold log uploads until another upload reaches the injected failure.
+				select {
+				case <-failed:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}})
+			ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{})
+			require.NoError(t, err)
+			cmd := &repb.Command{OutputPaths: []string{"output"}}
+			ws.SetTask(ctx, &repb.ExecutionTask{
+				Command:        cmd,
+				ExecuteRequest: &repb.ExecuteRequest{DigestFunction: repb.DigestFunction_SHA256},
+			})
+			require.NoError(t, os.WriteFile(filepath.Join(ws.Path(), "output"), []byte("output"), 0600))
+			response := &repb.ExecuteResponse{Result: &repb.ActionResult{}}
+			_, err = ws.UploadOutputs(ctx, cmd, response, &interfaces.CommandResult{
+				Stdout: []byte("stdout"),
+				Stderr: []byte("stderr"),
+				AuxiliaryLogs: map[string][]byte{
+					"auxiliary":       []byte("auxiliary"),
+					"other auxiliary": []byte("other auxiliary"),
+					"successful":      []byte("successful"),
+				},
+			})
+			for name, failure := range failures {
+				require.ErrorIs(t, err, failure, name)
+			}
+			logs := map[string]*repb.Digest{
+				"stdout":          response.GetResult().GetStdoutDigest(),
+				"stderr":          response.GetResult().GetStderrDigest(),
+				"auxiliary":       response.GetServerLogs()["auxiliary"].GetDigest(),
+				"other auxiliary": response.GetServerLogs()["other auxiliary"].GetDigest(),
+				"successful":      response.GetServerLogs()["successful"].GetDigest(),
+			}
+			for want, d := range logs {
+				if failures[want] != nil {
+					require.Nil(t, d, want)
+					continue
+				}
+				require.NotNil(t, d, want)
+				var got strings.Builder
+				require.NoError(t, cachetools.GetBlob(ctx, bsClient, digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256), &got))
+				require.Equal(t, want, got.String())
+			}
+		})
+	}
+}
 
 func newWorkspace(t *testing.T, opts *workspace.Opts) *workspace.Workspace {
 	te := testenv.GetTestEnv(t)
@@ -533,6 +663,54 @@ func TestDownloadInputs_WorkingDirectoryMissing(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 	assert.Contains(t, err.Error(), "nonexistent")
+}
+
+func TestDownloadInputs_RejectsEntryNamesThatAreNotSinglePathComponents(t *testing.T) {
+	emptyFile := &repb.Digest{Hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+	for _, test := range []struct {
+		name string
+		root *repb.Directory
+	}{
+		{
+			name: "ParentDirectory",
+			root: &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "..", Digest: emptyFile}}},
+		},
+		{
+			name: "FileWithSlash",
+			root: &repb.Directory{Files: []*repb.FileNode{{Name: "../escape.txt", Digest: emptyFile}}},
+		},
+		{
+			name: "CurrentDirectory",
+			root: &repb.Directory{Files: []*repb.FileNode{{Name: ".", Digest: emptyFile}}},
+		},
+		{
+			name: "EmptySymlinkName",
+			root: &repb.Directory{Symlinks: []*repb.SymlinkNode{{Name: "", Target: "x"}}},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			te := testenv.GetTestEnv(t)
+			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+			testcache.Setup(t, te, lis)
+			go runServer()
+			root := testfs.MakeTempDir(t)
+			ws, err := workspace.New(te, root, &workspace.Opts{})
+			require.NoError(t, err)
+			ws.SetTask(ctx, &repb.ExecutionTask{Command: &repb.Command{}})
+
+			err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+				DigestFunction: repb.DigestFunction_SHA256,
+				Inputs:         &repb.Tree{Root: test.root, Children: []*repb.Directory{{}}},
+			})
+
+			require.Error(t, err)
+			assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+			entries, err := os.ReadDir(root)
+			require.NoError(t, err)
+			assert.Len(t, entries, 1, "only the workspace directory should be under the build root")
+		})
+	}
 }
 
 func TestDownloadInputs_WorkingDirectoryExists(t *testing.T) {

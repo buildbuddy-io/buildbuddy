@@ -20,12 +20,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -40,6 +40,8 @@ import (
 var (
 	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
 	recordOrigin                   = flag.Bool("cache.record_action_result_origin", true, "If true, the origin of the action result will be added to it's auxiliary metadata.")
+
+	maxChunkedOutputTreeSizeBytes = expflag.Int64("cache.max_chunked_output_tree_size_bytes", 8*1024*1024, "Maximum size of a chunked output directory Tree that ActionResult validation will reassemble in memory. Larger chunked Trees are treated as cache misses.")
 )
 
 // chunkCheckConcurrency bounds how many chunked-manifest fallback lookups
@@ -121,9 +123,12 @@ func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName st
 	if err != nil {
 		isNotFound := status.IsNotFoundError(err) || os.IsNotExist(err)
 		treeSizeBytes := treeDigest.GetSizeBytes()
-		if !isNotFound ||
-			treeSizeBytes <= maxChunkSizeBytes ||
-			treeSizeBytes > rpcutil.GRPCMaxSizeBytes {
+		if !isNotFound || treeSizeBytes <= maxChunkSizeBytes {
+			return nil, err
+		}
+		maxTreeSizeBytes := maxChunkedOutputTreeSizeBytes.Get(ctx)
+		if treeSizeBytes > maxTreeSizeBytes {
+			log.CtxInfof(ctx, "ActionResult validation rejected output Tree: size_bytes=%d exceeds max_chunked_output_tree_size_bytes=%d", treeSizeBytes, maxTreeSizeBytes)
 			return nil, err
 		}
 		// Avoid unbounded fan-out across chunked Tree reconstructions.

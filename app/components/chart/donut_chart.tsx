@@ -11,6 +11,8 @@ export interface NamedValue {
 interface Props {
   title?: string;
   subtitle?: string;
+  /** Centers the title and subtitle horizontally. */
+  centerTitle?: boolean;
   data: NamedValue[] | undefined;
 
   /** Returns a valid css color string (e.g., #ffff00) given a key from data. */
@@ -52,6 +54,10 @@ export default class DonutChart extends React.Component<Props> {
       { name: "Sum", value: 0 }
     );
 
+    if (sum.value === 0) {
+      return this.maybeAddTitle(this.renderEmpty(valueFormatter));
+    }
+
     let other = 0;
     let otherLabels: string[] = [];
     if (data && data?.length > MAX_LEGEND_ENTRIES) {
@@ -70,13 +76,7 @@ export default class DonutChart extends React.Component<Props> {
 
     const donut = (
       <div className="donut-chart">
-        <ResponsiveContainer width={80} height={80}>
-          <PieChart accessibilityLayer={false}>
-            <Pie data={data} dataKey="value" outerRadius={40} innerRadius={20}>
-              {data?.map((entry, index) => <Cell key={`cell-${index}`} fill={colorPicker(entry, index)} />)}
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
+        {this.renderRing(data, colorPicker)}
         <div>
           {data?.map((entry, index) => {
             const label = entry.name === OTHER_LABEL ? "Other" : entry.name;
@@ -102,18 +102,54 @@ export default class DonutChart extends React.Component<Props> {
       </div>
     );
 
-    if (this.props.title) {
-      return (
-        <>
-          <div className="donut-chart-title-block">
-            <div className="donut-chart-title">{this.props.title}</div>
-            {Boolean(this.props.subtitle) && <div className="donut-chart-subtitle">{this.props.subtitle}</div>}
-          </div>
-          {donut}
-        </>
-      );
-    } else {
+    return this.maybeAddTitle(donut);
+  }
+
+  renderEmpty(valueFormatter: (v: number) => string) {
+    return (
+      <div className="donut-chart donut-chart-empty">
+        {this.renderRing([{ name: "", value: 1 }], () => undefined)}
+        <div>
+          {this.props.data?.map((entry) => (
+            <div key={entry.name} className="donut-chart-label donut-chart-label-empty">
+              <span className="donut-chart-swatch"></span>
+              <span>
+                <span className="donut-chart-legend-value">{valueFormatter(0)}</span>{" "}
+                <span className="donut-chart-legend-desc">{entry.name}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  renderRing(data: NamedValue[], fill: (entry: NamedValue, index: number) => string | undefined) {
+    return (
+      <ResponsiveContainer width={80} height={80}>
+        <PieChart accessibilityLayer={false}>
+          <Pie data={data} dataKey="value" outerRadius={40} innerRadius={20}>
+            {data.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={fill(entry, index)} />
+            ))}
+          </Pie>
+        </PieChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  maybeAddTitle(donut: React.ReactNode) {
+    if (!this.props.title) {
       return donut;
     }
+    return (
+      <>
+        <div className={`donut-chart-title-block ${this.props.centerTitle ? "donut-chart-title-block-centered" : ""}`}>
+          <div className="donut-chart-title">{this.props.title}</div>
+          {Boolean(this.props.subtitle) && <div className="donut-chart-subtitle">{this.props.subtitle}</div>}
+        </div>
+        {donut}
+      </>
+    );
   }
 }

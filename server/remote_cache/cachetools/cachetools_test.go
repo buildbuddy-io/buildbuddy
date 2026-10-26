@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,9 +17,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
@@ -535,6 +538,10 @@ func (fc *fakeFilecache) WithSharedDirectory(ctx context.Context, sharedDirector
 }
 
 func (fc *fakeFilecache) Open(ctx context.Context, f *repb.FileNode) (*os.File, error) {
+	panic("unimplemented")
+}
+
+func (fc *fakeFilecache) Stat(ctx context.Context, f *repb.FileNode) (os.FileInfo, error) {
 	panic("unimplemented")
 }
 
@@ -1523,4 +1530,199 @@ func TestBatchCASUploader_SkipsChunkedUploadAboveMaxSize(t *testing.T) {
 		DigestFunction: rn.GetDigestFunction(),
 	})
 	require.True(t, status.IsNotFoundError(err))
+}
+
+// startFakeByteStreamServer serves srv on a local gRPC server and returns a
+// client connected to it.
+func startFakeByteStreamServer(t *testing.T, srv bspb.ByteStreamServer) bspb.ByteStreamClient {
+	te := testenv.GetTestEnv(t)
+	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	bspb.RegisterByteStreamServer(grpcServer, srv)
+	go runServer()
+	conn, err := testenv.LocalGRPCConn(t, context.Background(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	return bspb.NewByteStreamClient(conn)
+}
+
+var shortCircuitModes = []byte_stream.ShortCircuitMode{
+	byte_stream.ShortCircuitWithResponse,
+	byte_stream.ShortCircuitWithStatus,
+}
+
+// Blob sizes for the short-circuit tests. The upload buffer is sized to the
+// blob (up to 256 KB), and a read that fills the buffer does not observe
+// EOF, so an upload always ends with an empty finish_write request after the
+// data. With a blob no larger than the buffer, the first request carries the
+// whole payload and is the first message on the stream, so it cannot
+// observe the server's reply; the reply is first seen by the empty finish
+// request or by CloseAndRecv. For zstd this relies on the test data
+// compressing to no more than the blob size, which digest.RandomGenerator
+// guarantees. The multi-chunk blob may see the reply on a Send that carries
+// data instead, depending on scheduling.
+var shortCircuitBlobSizes = []struct {
+	name        string
+	size        int64
+	singleChunk bool
+}{
+	{name: "single_chunk", size: 1024, singleChunk: true},
+	{name: "multi_chunk", size: 2 * 1024 * 1024},
+}
+
+func newShortCircuitServer(mode byte_stream.ShortCircuitMode) *byte_stream.ShortCircuitFakeWriteServer {
+	return &byte_stream.ShortCircuitFakeWriteServer{
+		Mode:   mode,
+		Status: status.AlreadyExistsError("blob already exists"),
+	}
+}
+
+func TestUploadFromReader_ShortCircuit(t *testing.T) {
+	for _, mode := range shortCircuitModes {
+		for _, useZstd := range []bool{false, true} {
+			for _, blob := range shortCircuitBlobSizes {
+				t.Run(fmt.Sprintf("%s/zstd=%t/%s", mode, useZstd, blob.name), func(t *testing.T) {
+					srv := newShortCircuitServer(mode)
+					client := startFakeByteStreamServer(t, srv)
+					rn, buf := testdigest.RandomCASResourceBuf(t, blob.size)
+					casRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+					if useZstd {
+						casRN.SetCompressor(repb.Compressor_ZSTD)
+					}
+
+					// A bytes.Reader seeks, so this goes through the retrying
+					// wrapper.
+					d, bytesUploaded, err := cachetools.UploadFromReader(context.Background(), client, casRN, bytes.NewReader(buf))
+					require.NoError(t, err)
+					require.Equal(t, rn.Digest.GetHash(), d.GetHash())
+					require.Equal(t, int32(1), srv.Writes.Load(), "a short-circuited upload must not be retried")
+					require.Greater(t, bytesUploaded, int64(0))
+					if blob.singleChunk {
+						// The first request carried the whole payload and
+						// the server consumed exactly that. The trailing
+						// finish request is empty, so it adds nothing to
+						// bytesUploaded whether or not it was sent.
+						require.Equal(t, srv.Received.Load(), bytesUploaded)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestUploadFromReader_OtherStatusIsReturned(t *testing.T) {
+	srv := &byte_stream.ShortCircuitFakeWriteServer{Mode: byte_stream.ShortCircuitWithStatus, Status: status.InvalidArgumentError("rejected")}
+	client := startFakeByteStreamServer(t, srv)
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
+	casRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+
+	_, _, err := cachetools.UploadFromReader(context.Background(), client, casRN, bytes.NewReader(buf))
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+}
+
+func TestUploadWriter_ShortCircuit(t *testing.T) {
+	for _, mode := range shortCircuitModes {
+		for _, useZstd := range []bool{false, true} {
+			for _, blob := range shortCircuitBlobSizes {
+				t.Run(fmt.Sprintf("%s/zstd=%t/%s", mode, useZstd, blob.name), func(t *testing.T) {
+					srv := newShortCircuitServer(mode)
+					client := startFakeByteStreamServer(t, srv)
+					rn, buf := testdigest.RandomCASResourceBuf(t, blob.size)
+					casRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+					if useZstd {
+						casRN.SetCompressor(repb.Compressor_ZSTD)
+					}
+
+					uw, err := cachetools.NewUploadWriter(context.Background(), client, casRN)
+					require.NoError(t, err)
+					_, err = uw.Write(buf)
+					if blob.singleChunk {
+						// Write fills the buffer and sends the whole payload
+						// as the first message on the stream, which cannot
+						// observe a reply yet. The reply is first seen by
+						// Commit's empty finish request or by CloseAndRecv.
+						require.NoError(t, err)
+					} else if err != nil {
+						// The server closed the stream while the client was
+						// still writing, which the writer reports from Write.
+						require.True(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got %v", err)
+					}
+					require.NoError(t, uw.Commit())
+					require.NoError(t, uw.Close())
+					require.Equal(t, int32(1), srv.Writes.Load())
+
+					// A WriteResponse carries the committed size the server
+					// reported; a status carries none.
+					wantCommitted := int64(-1)
+					if mode == byte_stream.ShortCircuitWithResponse && !useZstd {
+						wantCommitted = blob.size
+					}
+					require.Equal(t, wantCommitted, uw.GetCommittedSize())
+				})
+			}
+		}
+	}
+}
+
+func TestUploadWriter_OtherStatusIsReturned(t *testing.T) {
+	srv := &byte_stream.ShortCircuitFakeWriteServer{Mode: byte_stream.ShortCircuitWithStatus, Status: status.InvalidArgumentError("rejected")}
+	client := startFakeByteStreamServer(t, srv)
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
+	casRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+
+	uw, err := cachetools.NewUploadWriter(context.Background(), client, casRN)
+	require.NoError(t, err)
+	_, err = uw.Write(buf)
+	require.NoError(t, err)
+	err = uw.Commit()
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+	// Close must still succeed after a failed Commit.
+	require.NoError(t, uw.Close())
+}
+
+// featureRecordingServer short-circuits like ShortCircuitFakeWriteServer and
+// also records whether the client advertised ALREADY_EXISTS support on the
+// Write stream, as the real server will check before using the status.
+type featureRecordingServer struct {
+	byte_stream.ShortCircuitFakeWriteServer
+	advertisedAlreadyExists atomic.Bool
+}
+
+func (s *featureRecordingServer) Write(stream bspb.ByteStream_WriteServer) error {
+	s.advertisedAlreadyExists.Store(clientfeatures.Supports(stream.Context(), clientfeatures.ByteStreamWriteAlreadyExists))
+	return s.ShortCircuitFakeWriteServer.Write(stream)
+}
+
+func newFeatureRecordingServer() *featureRecordingServer {
+	srv := &featureRecordingServer{}
+	srv.Mode = byte_stream.ShortCircuitWithStatus
+	srv.Status = status.AlreadyExistsError("blob already exists")
+	return srv
+}
+
+func TestUploadFromReader_AdvertisesAlreadyExistsSupport(t *testing.T) {
+	srv := newFeatureRecordingServer()
+	client := startFakeByteStreamServer(t, srv)
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
+	casRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+
+	_, _, err := cachetools.UploadFromReader(context.Background(), client, casRN, bytes.NewReader(buf))
+	require.NoError(t, err)
+	require.Equal(t, int32(1), srv.Writes.Load())
+	require.True(t, srv.advertisedAlreadyExists.Load(), "Write stream must carry %s=%s", clientfeatures.HeaderName, clientfeatures.ByteStreamWriteAlreadyExists)
+}
+
+func TestUploadWriter_AdvertisesAlreadyExistsSupport(t *testing.T) {
+	srv := newFeatureRecordingServer()
+	client := startFakeByteStreamServer(t, srv)
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
+	casRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+
+	uw, err := cachetools.NewUploadWriter(context.Background(), client, casRN)
+	require.NoError(t, err)
+	_, err = uw.Write(buf)
+	require.NoError(t, err)
+	require.NoError(t, uw.Commit())
+	require.NoError(t, uw.Close())
+	require.Equal(t, int32(1), srv.Writes.Load())
+	require.True(t, srv.advertisedAlreadyExists.Load(), "Write stream must carry %s=%s", clientfeatures.HeaderName, clientfeatures.ByteStreamWriteAlreadyExists)
 }

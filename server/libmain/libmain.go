@@ -106,6 +106,7 @@ var (
 		"/workflows/",
 		"/executors/",
 		"/cache-proxies/",
+		"/cache-proxy/",
 		"/code/",
 		"/search/",
 		"/audit-logs/",
@@ -256,6 +257,7 @@ func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Se
 }
 
 func startGRPCServers(env *real_environment.RealEnv, config grpc_server.GRPCServerConfig) error {
+	config.EnableConnectionAging = true
 	b, err := grpc_server.New(env, grpc_server.GRPCPort(), false /*=ssl*/, config)
 	if err != nil {
 		return err

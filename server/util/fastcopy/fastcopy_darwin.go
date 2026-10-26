@@ -27,3 +27,15 @@ func FastCopy(source, destination string) error {
 	}
 	return Clone(source, destination)
 }
+
+// CloneHardLinks returns whether Clone hard-links the source rather than
+// making a copy.
+func CloneHardLinks() bool {
+	return false
+}
+
+// FastCopyHardLinks returns whether FastCopy hard-links the source rather
+// than making a copy.
+func FastCopyHardLinks() bool {
+	return *localCacheUseHardlinks
+}

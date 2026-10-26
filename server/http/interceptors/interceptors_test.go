@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -165,6 +166,51 @@ func TestAuthorizeSelectedGroupRole_AdaptsHTTPRPCPaths(t *testing.T) {
 			}
 			require.False(t, called)
 			require.Equal(t, tc.expectedBody, rsp.Body.String())
+		})
+	}
+}
+
+func TestClientIP(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		hops   int
+		xff    []string
+		wantIP string
+	}{
+		{
+			name:   "no X-Forwarded-For uses peer",
+			hops:   1,
+			wantIP: "10.0.0.1",
+		},
+		{
+			name:   "uses last entry across multiple lines",
+			hops:   1,
+			xff:    []string{"9.9.9.9", "8.8.8.8"},
+			wantIP: "8.8.8.8",
+		},
+		{
+			name:   "counts entries across multiple lines",
+			hops:   2,
+			xff:    []string{"9.9.9.9, 7.7.7.7", "8.8.8.8"},
+			wantIP: "7.7.7.7",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "auth.trust_xforwardedfor_header", true)
+			flags.Set(t, "auth.xforwardedfor_trusted_hops", tc.hops)
+
+			var gotIP string
+			handler := ClientIP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotIP = clientip.Get(r.Context())
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = "10.0.0.1:1234"
+			for _, v := range tc.xff {
+				req.Header.Add("X-Forwarded-For", v)
+			}
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			assert.Equal(t, tc.wantIP, gotIP)
 		})
 	}
 }

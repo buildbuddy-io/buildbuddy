@@ -1,6 +1,6 @@
 // Metronome usage exporter.
 //
-// Reads usage data from ClickHouse for free tier and usage based groups and
+// Reads usage data from ClickHouse for selected groups and
 // ingests per-SKU events into Metronome. Designed to run as a scheduled
 // cronjob: each run exports the usage recorded since the previous run, tracked
 // in the BillingExportState table. A group gets a Metronome customer and
@@ -12,10 +12,17 @@
 // Example:
 //
 //	bazel run //enterprise/tools/metronome_exporter:metronome_exporter \
+//	  --group_ids=GR_CUSTOMER_ID \
 //	  --auto_migrate_db=false \
 //	  --database.data_source='mysql://user:password@tcp(mysql:3306)/buildbuddy' \
 //	  --olap_database.data_source='clickhouse://default:password@clickhouse:9000/buildbuddy' \
 //	  --billing.metronome.api_key=$METRONOME_API_KEY
+//	  --billing.metronome.default_contract_name=<CONTRACT_NAME>
+//
+// To select groups by status instead, use e.g.
+// --group_statuses='[1,5]' (free tier and usage based).
+// When both selectors are set, groups matching either are exported. At least
+// one selector is required.
 package main
 
 import (
@@ -24,8 +31,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/billing/metronome"
@@ -57,7 +66,9 @@ const (
 )
 
 var (
-	dryRun = flag.Bool("dry_run", false, "If true, log what would be sent without calling Metronome or updating the export state.")
+	dryRun        = flag.Bool("dry_run", false, "If true, log what would be sent without calling Metronome or updating the export state.")
+	groupIDs      = flag.Slice("group_ids", []string{}, "Comma-separated group IDs to export, regardless of status. Combined with group_statuses using OR. At least one selector is required.")
+	groupStatuses = flag.Slice("group_statuses", []grpb.Group_GroupStatus{}, "JSON array of integer GroupStatus enum values to export (e.g. [1,5] for free tier and usage based). Combined with group_ids using OR. At least one selector is required.")
 )
 
 func main() {
@@ -80,9 +91,12 @@ func run() error {
 	if err := config.Load(); err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-
 	if err := log.Configure(); err != nil {
 		return fmt.Errorf("configure log: %w", err)
+	}
+
+	if err := validateGroupSelection(); err != nil {
+		return err
 	}
 
 	var client metronomeClient
@@ -116,7 +130,8 @@ type metronomeClient interface {
 	ReportUsage(ctx context.Context, events []metronome.UsageEvent) error
 	FindCustomerID(ctx context.Context, ingestAlias string) (string, error)
 	CreateCustomer(ctx context.Context, name, ingestAlias string) (string, error)
-	CreateContract(ctx context.Context, customerID string, startingAt time.Time, uniquenessKey string) error
+	HasContract(ctx context.Context, customerID string, usageTime time.Time) (bool, error)
+	CreateContract(ctx context.Context, customerID, contractName string, startingAt time.Time, uniquenessKey string) error
 }
 
 // A nil client is a dry run: nothing is sent and the export state is not
@@ -145,7 +160,7 @@ func export(ctx context.Context, env *real_environment.RealEnv, client metronome
 		log.Infof("Usage is exported through %s; nothing to do", latest.Format(time.RFC3339))
 		return nil
 	}
-	groups, err := exportedGroupIDs(ctx, env)
+	groups, err := exportedGroups(ctx, env)
 	if err != nil {
 		return fmt.Errorf("list groups: %w", err)
 	}
@@ -196,28 +211,69 @@ func nextWindow(state *tables.BillingExportState, latest time.Time) (*window, er
 	return &window{from: from, to: latest}, nil
 }
 
-func exportedGroupIDs(ctx context.Context, env *real_environment.RealEnv) ([]string, error) {
-	groups, err := db.ScanAll(env.GetDBHandle().NewQuery(ctx, "metronome_exporter_groups").Raw(`
-		SELECT group_id FROM "Groups" WHERE status IN ?`,
-		[]grpb.Group_GroupStatus{grpb.Group_FREE_TIER_GROUP_STATUS, grpb.Group_USAGE_BASED_GROUP_STATUS},
-	), &tables.Group{})
+func validateGroupSelection() error {
+	if len(*groupIDs) == 0 && len(*groupStatuses) == 0 {
+		return errors.New("at least one of group_ids or group_statuses must be configured")
+	}
+	for i, id := range *groupIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return errors.New("group_ids must not contain empty IDs")
+		}
+		if strings.ContainsFunc(id, unicode.IsSpace) {
+			return fmt.Errorf("group_ids must not contain whitespace within IDs: %q", id)
+		}
+		(*groupIDs)[i] = id
+	}
+	for _, value := range *groupStatuses {
+		if _, ok := grpb.Group_GroupStatus_name[int32(value)]; !ok || value == grpb.Group_UNKNOWN_GROUP_STATUS {
+			return fmt.Errorf("unknown group_statuses value %d; expected a GroupStatus enum value", value)
+		}
+	}
+	return nil
+}
+
+func exportedGroups(ctx context.Context, env *real_environment.RealEnv) ([]*tables.Group, error) {
+	var clauses []string
+	var args []any
+	if len(*groupIDs) > 0 {
+		clauses = append(clauses, "group_id IN ?")
+		args = append(args, *groupIDs)
+	}
+	if len(*groupStatuses) > 0 {
+		clauses = append(clauses, "status IN ?")
+		args = append(args, *groupStatuses)
+	}
+	query := `SELECT group_id, status FROM "Groups" WHERE ` + strings.Join(clauses, " OR ")
+	groups, err := db.ScanAll(env.GetDBHandle().NewQuery(ctx, "metronome_exporter_groups").Raw(query, args...), &tables.Group{})
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]string, 0, len(groups))
+	found := make(map[string]struct{}, len(groups))
 	for _, g := range groups {
-		ids = append(ids, g.GroupID)
+		found[g.GroupID] = struct{}{}
 	}
-	return ids, nil
+	for _, id := range *groupIDs {
+		if _, ok := found[id]; !ok {
+			log.Warningf("requested group ID %q does not exist", id)
+		}
+	}
+	return groups, nil
 }
 
-func exportAll(ctx context.Context, env *real_environment.RealEnv, client metronomeClient, groups []string, w *window, state *tables.BillingExportState) error {
+func exportAll(ctx context.Context, env *real_environment.RealEnv, client metronomeClient, groups []*tables.Group, w *window, state *tables.BillingExportState) error {
+	ids := make([]string, 0, len(groups))
+	groupsByID := make(map[string]*tables.Group, len(groups))
+	for _, group := range groups {
+		ids = append(ids, group.GroupID)
+		groupsByID[group.GroupID] = group
+	}
 	customersChecked := map[string]bool{}
 	totalEventCount := 0
 	// Export in increments of metronome.WindowSize.
 	for start := w.from; start.Before(w.to); start = start.Add(metronome.WindowSize) {
 		end := start.Add(metronome.WindowSize)
-		rows, err := queryUsageRows(ctx, env, groups, &window{from: start, to: end})
+		rows, err := queryUsageRows(ctx, env, ids, &window{from: start, to: end})
 		if err != nil {
 			return fmt.Errorf("query ClickHouse: %w", err)
 		}
@@ -245,7 +301,7 @@ func exportAll(ctx context.Context, env *real_environment.RealEnv, client metron
 					customersChecked[r.GroupID] = true
 					// Not fatal: Metronome matches the usage to the customer
 					// once a later run creates it.
-					if err := ensureCustomer(ctx, client, r.GroupID, start); err != nil {
+					if err := ensureCustomer(ctx, client, groupsByID[r.GroupID], start); err != nil {
 						log.Warningf("Failed to set up Metronome customer for group %s: %s", r.GroupID, err)
 					}
 				}
@@ -263,10 +319,8 @@ func exportAll(ctx context.Context, env *real_environment.RealEnv, client metron
 	return nil
 }
 
-func ensureCustomer(ctx context.Context, client metronomeClient, groupID string, usageTime time.Time) error {
-	if !metronome.PackageConfigured() {
-		return nil
-	}
+func ensureCustomer(ctx context.Context, client metronomeClient, group *tables.Group, usageTime time.Time) error {
+	groupID := group.GroupID
 	customerID, err := client.FindCustomerID(ctx, groupID)
 	if err != nil {
 		return err
@@ -278,10 +332,23 @@ func ensureCustomer(ctx context.Context, client metronomeClient, groupID string,
 		}
 		log.Infof("Created Metronome customer %s for group %s", customerID, groupID)
 	}
-	// Runs for existing customers too, in case an earlier run failed after
-	// creating the customer. The contract covers the whole month of the usage.
+
+	hasContract, err := client.HasContract(ctx, customerID, usageTime)
+	if err != nil {
+		return fmt.Errorf("check existing contract: %w", err)
+	}
+	if hasContract {
+		return nil
+	}
+	if group.Status != grpb.Group_FREE_TIER_GROUP_STATUS && group.Status != grpb.Group_USAGE_BASED_GROUP_STATUS {
+		return fmt.Errorf("automatic contract creation is only supported for free tier and usage based groups, failed on group %s", groupID)
+	}
+
+	if metronome.DefaultContractName() == "" {
+		return fmt.Errorf("--billing.metronome.default_contract_name is required to create contracts by default, failed on group %s", groupID)
+	}
 	monthStart := time.Date(usageTime.Year(), usageTime.Month(), 1, 0, 0, 0, 0, time.UTC)
-	return client.CreateContract(ctx, customerID, monthStart, groupID)
+	return client.CreateContract(ctx, customerID, metronome.DefaultContractName(), monthStart, groupID)
 }
 
 // queryUsageRows returns per-minute usage rows in the window [from, to). The "Usage"

@@ -40,13 +40,21 @@ type Status struct {
 	Payload     any
 }
 
+type GetFileContentsRequest struct {
+	AccessToken string
+	RepoURL     string
+	FilePath    string
+	Ref         string
+}
+
 // FakeProvider implements the git provider interface for tests.
 type FakeProvider struct {
 	// Captured values
 
-	RegisteredWebhookURL  string
-	UnregisteredWebhookID string
-	Statuses              chan *Status
+	RegisteredWebhookURL    string
+	UnregisteredWebhookID   string
+	Statuses                chan *Status
+	GetFileContentsRequests chan *GetFileContentsRequest
 
 	// Faked values
 
@@ -61,7 +69,8 @@ type FakeProvider struct {
 
 func NewFakeProvider() *FakeProvider {
 	return &FakeProvider{
-		Statuses: make(chan *Status, 1024),
+		Statuses:                make(chan *Status, 1024),
+		GetFileContentsRequests: make(chan *GetFileContentsRequest, 1024),
 	}
 }
 
@@ -89,6 +98,12 @@ func (p *FakeProvider) UnregisterWebhook(ctx context.Context, accessToken, repoU
 	return nil
 }
 func (p *FakeProvider) GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error) {
+	p.GetFileContentsRequests <- &GetFileContentsRequest{
+		AccessToken: accessToken,
+		RepoURL:     repoURL,
+		FilePath:    filePath,
+		Ref:         ref,
+	}
 	if p.GetFileContentsError != nil {
 		return nil, p.GetFileContentsError
 	}

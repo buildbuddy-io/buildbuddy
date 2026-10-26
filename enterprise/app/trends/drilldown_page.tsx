@@ -322,10 +322,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   fetchExecutionList(heatmapSelection?: HeatmapSelection) {
-    if (!capabilities.config.executionSearchEnabled) {
-      return;
-    }
-
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new execution_stats.SearchExecutionRequest({
       query: new execution_stats.ExecutionQuery({
@@ -350,7 +346,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     });
     this.roundEndDateAndAddZoomFiltersToQuery(request.query!);
 
-    this.pendingEventsRequest?.cancel();
     const promise = rpcService.service
       .searchExecution(request)
       .then((response) => {
@@ -401,7 +396,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     });
     this.roundEndDateAndAddZoomFiltersToQuery(request.query!);
 
-    this.pendingEventsRequest?.cancel();
     const promise = rpcService.service
       .searchInvocation(request)
       .then((response) => this.setState({ eventData: { invocations: response.invocation } }))
@@ -417,13 +411,19 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   fetchEventList() {
-    if (!this.props.user?.selectedGroup) {
+    this.pendingEventsRequest?.cancel();
+    this.pendingEventsRequest = undefined;
+
+    const groupId = this.props.user?.selectedGroup?.id;
+    const isExecution = isExecutionMetric(this.selectedMetric.metric);
+    if (!groupId || (isExecution && !capabilities.config.executionSearchEnabled)) {
+      this.setState({ loadingEvents: false, eventsFailed: false, eventData: undefined });
       return;
     }
-    if (isExecutionMetric(this.selectedMetric.metric)) {
+    if (isExecution) {
       this.fetchExecutionList(this.currentHeatmapSelection);
     } else {
-      this.fetchInvocationList(this.props.user.selectedGroup.id, this.currentHeatmapSelection);
+      this.fetchInvocationList(groupId, this.currentHeatmapSelection);
     }
   }
 
@@ -795,8 +795,12 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     return this.state.heatmapData?.bucketBracket.indexOf(metric);
   }
 
+  isLoadingSelection(): boolean {
+    return this.state.loadingDrilldowns || this.state.loadingEvents;
+  }
+
   getEventListTitleString(): string {
-    if (this.state.loadingEvents || !this.currentHeatmapSelection) {
+    if (!this.currentHeatmapSelection) {
       return "Examples (no selection)";
     } else if (this.state.eventData?.invocations) {
       const invocationCount = this.state.eventData.invocations.length;
@@ -818,13 +822,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     return "";
   }
 
-  getEventsListTitle(): React.ReactElement {
-    const content = this.state.loadingEvents ? <Spinner></Spinner> : this.getEventListTitleString();
-    return <div className="trend-chart-title">{content}</div>;
-  }
-
   getDrilldownChartsTitle(): string {
-    if (this.state.loadingDrilldowns) {
+    if (this.isLoadingSelection()) {
       return "Loading drilldown dimensions";
     } else if (this.state.drilldownData) {
       return "Drilldown dimensions";
@@ -970,6 +969,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   render() {
+    const loadingSelection = this.isLoadingSelection();
     return (
       <div className="trend-chart">
         <div className="drilldown-chart-title">
@@ -1030,8 +1030,12 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   selectedData={this.currentHeatmapSelection}></HeatmapComponent>
                 <div className="trend-chart">
                   <div className="trend-chart-title">{this.getDrilldownChartsTitle()}</div>
-                  {this.state.loadingDrilldowns && <div className="loading"></div>}
-                  {!this.state.loadingDrilldowns && this.state.drilldownData && (
+                  {loadingSelection && (
+                    <div className="spinner-center">
+                      <Spinner />
+                    </div>
+                  )}
+                  {!loadingSelection && this.state.drilldownData && (
                     <>
                       {this.summarizeSelection()}
                       <div className="container nopadding-dense">
@@ -1089,20 +1093,26 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   )}
                 </div>
                 <div className="trend-chart">
-                  {this.getEventsListTitle()}
-                  {this.state.eventData?.invocations && (
-                    <div className="history">
-                      <div className="container nopadding-dense">
-                        {this.state.eventData.invocations.map((invocation) => (
-                          <InvocationCardComponent invocation={invocation} />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {this.state.eventData?.executions && (
-                    <InvocationExecutionTable
-                      executions={this.state.eventData.executions.map((e) => e.execution as execution_stats.Execution)}
-                      invocationIdProvider={(e) => this.getInvocationIdForExecution(e)}></InvocationExecutionTable>
+                  {!loadingSelection && (
+                    <>
+                      <div className="trend-chart-title">{this.getEventListTitleString()}</div>
+                      {this.state.eventData?.invocations && (
+                        <div className="history">
+                          <div className="container nopadding-dense">
+                            {this.state.eventData.invocations.map((invocation) => (
+                              <InvocationCardComponent invocation={invocation} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {this.state.eventData?.executions && (
+                        <InvocationExecutionTable
+                          executions={this.state.eventData.executions.map(
+                            (e) => e.execution as execution_stats.Execution
+                          )}
+                          invocationIdProvider={(e) => this.getInvocationIdForExecution(e)}></InvocationExecutionTable>
+                      )}
+                    </>
                   )}
                 </div>
               </>

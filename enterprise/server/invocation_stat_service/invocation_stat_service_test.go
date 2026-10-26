@@ -2,6 +2,7 @@ package invocation_stat_service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	statspb "github.com/buildbuddy-io/buildbuddy/proto/stats"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
 
@@ -138,6 +140,141 @@ func TestGetStatDrilldown(t *testing.T) {
 	require.True(t, status.IsInvalidArgumentError(err))
 }
 
+func TestExecutionStatsExcludeMergedExecutions(t *testing.T) {
+	flags.Set(t, "app.trends_heatmap_enabled", true)
+	flags.Set(t, "app.enable_target_trends", true)
+	flags.Set(t, "app.enable_execution_trends", true)
+	te := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, te)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	te.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "US1")
+	require.NoError(t, err)
+	reqCtx := testauth.RequestContext("US1", "GR1")
+	windowStart := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
+	updatedAt := windowStart.Add(time.Hour).UnixMicro()
+	executions := []olaptables.Execution{
+		{ExecutionUUID: "00000000-0000-0000-0000-000000000001", InvocationUUID: "00000000000000000000000000000001", User: "legacy", PeakMemoryBytes: 10},
+		{ExecutionUUID: "00000000-0000-0000-0000-000000000002", InvocationUUID: "00000000000000000000000000000002", User: "new", PeakMemoryBytes: 20, InvocationLinkType: int8(sipb.StoredInvocationLink_NEW)},
+		{ExecutionUUID: "00000000-0000-0000-0000-000000000002", InvocationUUID: "00000000000000000000000000000003", User: "merged", PeakMemoryBytes: 20, InvocationLinkType: int8(sipb.StoredInvocationLink_MERGED)},
+		{ExecutionUUID: "00000000-0000-0000-0000-000000000003", InvocationUUID: "00000000000000000000000000000004", User: "merged", PeakMemoryBytes: 1000, InvocationLinkType: int8(sipb.StoredInvocationLink_MERGED)},
+	}
+	var invocations []olaptables.Invocation
+	for i := range executions {
+		executions[i].GroupID = "GR1"
+		executions[i].TargetLabel = "//:target"
+		executions[i].UpdatedAtUsec = updatedAt
+		executions[i].WorkerStartTimestampUsec = updatedAt
+		executions[i].WorkerCompletedTimestampUsec = updatedAt + executions[i].PeakMemoryBytes
+		invocations = append(invocations, olaptables.Invocation{
+			GroupID: "GR1", InvocationUUID: executions[i].InvocationUUID,
+			User: executions[i].User, UpdatedAtUsec: updatedAt,
+		})
+	}
+	err = te.GetOLAPDBHandle().GORM(ctx, "test_create_executions").Create(executions).Error
+	require.NoError(t, err)
+	err = te.GetOLAPDBHandle().GORM(ctx, "test_create_invocations").Create(invocations).Error
+	require.NoError(t, err)
+	iss := NewInvocationStatService(te, te.GetDBHandle(), te.GetOLAPDBHandle())
+	peakMemory := sfpb.ExecutionMetricType_PEAK_MEMORY_EXECUTION_METRIC
+	metric := &sfpb.Metric{Execution: &peakMemory}
+	selectionMin := int64(20)
+	for _, tc := range []struct {
+		name                string
+		user                string
+		wantInvocationCount int64
+		wantExecutionCount  int
+		wantTargetStats     []*statspb.TargetStats
+		wantCount           int64
+		wantTotal           int64
+		wantBase            int64
+		wantSelection       int64
+		wantUsers           []*statspb.DrilldownEntry
+	}{
+		{
+			name: "all invocation links", wantInvocationCount: 4, wantExecutionCount: 1,
+			wantTargetStats: []*statspb.TargetStats{{Target: "//:target", Value: 30}},
+			wantCount:       2, wantTotal: 30, wantBase: 1, wantSelection: 1,
+			wantUsers: []*statspb.DrilldownEntry{
+				{Label: "new", SelectionValue: 1},
+				{Label: "legacy", BaseValue: 1},
+			},
+		},
+		{
+			name: "only merged invocation links match", user: "merged", wantInvocationCount: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			query := &statspb.TrendQuery{
+				User:          tc.user,
+				UpdatedAfter:  timestamppb.New(windowStart),
+				UpdatedBefore: timestamppb.New(windowStart.Add(2 * time.Hour)),
+			}
+			t.Run("target trends", func(t *testing.T) {
+				rsp, err := iss.GetTargetTrends(ctx, &statspb.GetTargetTrendsRequest{
+					RequestContext: reqCtx, Query: query, Metric: peakMemory,
+					Agg: statspb.TargetAggregation_SUM_TARGET_AGGREGATION,
+				})
+				require.NoError(t, err)
+				require.Empty(t, cmp.Diff(tc.wantTargetStats, rsp.GetTargetStats(), protocmp.Transform()))
+			})
+			t.Run("trends", func(t *testing.T) {
+				rsp, err := iss.GetTrend(ctx, &statspb.GetTrendRequest{
+					RequestContext: reqCtx, Query: query,
+				})
+				require.NoError(t, err)
+				// Invocation stats still include invocations that merged into other work.
+				require.Equal(t, tc.wantInvocationCount, rsp.GetCurrentSummary().GetNumBuilds())
+				require.Len(t, rsp.GetExecutionStat(), tc.wantExecutionCount)
+				var total int64
+				for _, stat := range rsp.GetExecutionStat() {
+					total += stat.GetTotalBuildTimeUsec()
+				}
+				require.Equal(t, tc.wantTotal, total)
+			})
+			t.Run("heatmap", func(t *testing.T) {
+				rsp, err := iss.GetStatHeatmap(ctx, &statspb.GetStatHeatmapRequest{
+					RequestContext: reqCtx, Metric: metric, Query: query,
+				})
+				require.NoError(t, err)
+				var count, total int64
+				for _, col := range rsp.GetColumn() {
+					for _, v := range col.GetValue() {
+						count += v
+					}
+					for _, v := range col.GetTotal() {
+						total += v
+					}
+				}
+				require.Equal(t, tc.wantCount, count)
+				require.Equal(t, tc.wantTotal, total)
+				if tc.wantCount == 0 {
+					return
+				}
+				// Merged rows must not expand the heatmap's metric range either.
+				require.NotEmpty(t, rsp.GetBucketBracket())
+				require.Less(t, rsp.GetBucketBracket()[len(rsp.GetBucketBracket())-1], int64(1000))
+			})
+			t.Run("breakdowns", func(t *testing.T) {
+				rsp, err := iss.GetStatDrilldown(ctx, &statspb.GetStatDrilldownRequest{
+					RequestContext: reqCtx, DrilldownMetric: metric, Query: query,
+					Filter: []*sfpb.StatFilter{{Metric: metric, Min: &selectionMin}},
+				})
+				require.NoError(t, err)
+				require.Equal(t, tc.wantBase, rsp.GetTotalInBase())
+				require.Equal(t, tc.wantSelection, rsp.GetTotalInSelection())
+				var users []*statspb.DrilldownEntry
+				for _, chart := range rsp.GetChart() {
+					if chart.GetDrilldownType() == statspb.DrilldownType_USER_DRILLDOWN_TYPE {
+						users = chart.GetEntry()
+					}
+				}
+				require.Empty(t, cmp.Diff(tc.wantUsers, users, protocmp.Transform()))
+			})
+		})
+	}
+}
+
 func TestGetStatHeatmap_LogScale(t *testing.T) {
 	flags.Set(t, "app.trends_heatmap_enabled", true)
 	ctx := context.Background()
@@ -209,4 +346,170 @@ func TestGetStatHeatmap_LogScale(t *testing.T) {
 	}
 	require.Equal(t, int64(len(durations)), valueCount)
 	require.Equal(t, int64(5555), totalCount)
+}
+
+func newTargetTrendsRequest(labelFilter string, windowStart time.Time, pageToken string) *statspb.GetTargetTrendsRequest {
+	return &statspb.GetTargetTrendsRequest{
+		RequestContext:    testauth.RequestContext("US1", "GR1"),
+		Metric:            sfpb.ExecutionMetricType_EXECUTION_CPU_NANOS_EXECUTION_METRIC,
+		Agg:               statspb.TargetAggregation_SUM_TARGET_AGGREGATION,
+		TargetLabelFilter: labelFilter,
+		PageToken:         pageToken,
+		Query: &statspb.TrendQuery{
+			UpdatedAfter:  timestamppb.New(windowStart),
+			UpdatedBefore: timestamppb.New(windowStart.Add(2 * time.Hour)),
+		},
+	}
+}
+
+// A target with a non-ASCII label, inserted by setupTargetTrendsTest with a
+// lower value than every other target so that it always sorts last.
+const (
+	unicodeTargetLabel    = "//pkg:Ünïcödé_target"
+	unicodeTargetCPUNanos = int64(5)
+)
+
+type expectedStatsFunc func(first, last int) []*statspb.TargetStats
+
+func setupTargetTrendsTest(t *testing.T) (context.Context, *InvocationStatService, int, time.Time, expectedStatsFunc) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, te)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	te.SetAuthenticator(ta)
+
+	windowStart := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	updatedAt := windowStart.Add(time.Hour).UnixMicro()
+	executionUUID := func(n int) string {
+		return fmt.Sprintf("00000000-0000-0000-0000-%012d", n)
+	}
+	targetLabel := func(n int) string {
+		return fmt.Sprintf("//pkg:target%02d", n)
+	}
+	// Target N uses (N+1)*10 CPU nanos, so that higher-numbered targets sort
+	// first and every target has a distinct value.
+	cpuNanos := func(n int) int64 {
+		return int64((n + 1) * 10)
+	}
+
+	// Insert more targets than fit on a single page.
+	numTargets := targetTrendsPageSize + 10
+	executions := make([]olaptables.Execution, 0, numTargets+2)
+	for n := range numTargets {
+		executions = append(executions, olaptables.Execution{
+			GroupID:        "GR1",
+			UpdatedAtUsec:  updatedAt,
+			InvocationUUID: "00000000000000000000000000000001",
+			ExecutionUUID:  executionUUID(n),
+			TargetLabel:    targetLabel(n),
+			CPUNanos:       cpuNanos(n),
+		})
+	}
+	// A merged action shows up as the same execution_uuid under a second
+	// invocation. It must only be counted once.
+	executions = append(executions, olaptables.Execution{
+		GroupID:        "GR1",
+		UpdatedAtUsec:  updatedAt,
+		InvocationUUID: "00000000000000000000000000000002",
+		ExecutionUUID:  executionUUID(0),
+		TargetLabel:    targetLabel(0),
+		CPUNanos:       cpuNanos(0),
+	})
+	// Cached executions are excluded entirely.
+	executions = append(executions, olaptables.Execution{
+		GroupID:        "GR1",
+		UpdatedAtUsec:  updatedAt,
+		InvocationUUID: "00000000000000000000000000000001",
+		ExecutionUUID:  executionUUID(numTargets),
+		TargetLabel:    targetLabel(0),
+		CPUNanos:       1_000_000,
+		CachedResult:   true,
+	})
+	// A target with a non-ASCII label, to check case folding in the filter.
+	executions = append(executions, olaptables.Execution{
+		GroupID:        "GR1",
+		UpdatedAtUsec:  updatedAt,
+		InvocationUUID: "00000000000000000000000000000001",
+		ExecutionUUID:  executionUUID(numTargets + 1),
+		TargetLabel:    unicodeTargetLabel,
+		CPUNanos:       unicodeTargetCPUNanos,
+	})
+	err := te.GetOLAPDBHandle().GORM(ctx, "test_create_executions").Create(executions).Error
+	require.NoError(t, err)
+
+	authCtx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	iss := NewInvocationStatService(te, te.GetDBHandle(), te.GetOLAPDBHandle())
+
+	// expectedStats returns the stats for targets in [first, last], ordered by
+	// value descending.
+	expectedStats := func(first, last int) []*statspb.TargetStats {
+		out := make([]*statspb.TargetStats, 0, last-first+1)
+		for n := last; n >= first; n-- {
+			out = append(out, &statspb.TargetStats{Target: targetLabel(n), Value: cpuNanos(n)})
+		}
+		return out
+	}
+
+	return authCtx, iss, numTargets, windowStart, expectedStats
+}
+
+func TestGetTargetTrends_Basic(t *testing.T) {
+	authCtx, iss, numTargets, windowStart, expectedStats := setupTargetTrendsTest(t)
+
+	// The first page holds the top targets by CPU and links to a second page.
+	rsp, err := iss.GetTargetTrends(authCtx, newTargetTrendsRequest("", windowStart, ""))
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(expectedStats(numTargets-targetTrendsPageSize, numTargets-1), rsp.GetTargetStats(), protocmp.Transform()))
+	require.NotEmpty(t, rsp.GetNextPageToken())
+
+	// The second page holds the remaining targets (with the non-ASCII target
+	// last, since it has the lowest value) and is the last page.
+	rsp, err = iss.GetTargetTrends(authCtx, newTargetTrendsRequest("", windowStart, rsp.GetNextPageToken()))
+	require.NoError(t, err)
+	wantSecondPage := append(
+		expectedStats(0, numTargets-targetTrendsPageSize-1),
+		&statspb.TargetStats{Target: unicodeTargetLabel, Value: unicodeTargetCPUNanos},
+	)
+	require.Empty(t, cmp.Diff(wantSecondPage, rsp.GetTargetStats(), protocmp.Transform()))
+	require.Empty(t, rsp.GetNextPageToken())
+}
+
+func TestGetTargetTrends_Filtering(t *testing.T) {
+	authCtx, iss, _, windowStart, expectedStats := setupTargetTrendsTest(t)
+	// The label filter is a case-insensitive substring match.
+	rsp, err := iss.GetTargetTrends(authCtx, newTargetTrendsRequest("PKG:TARGET0", windowStart, ""))
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(expectedStats(0, 9), rsp.GetTargetStats(), protocmp.Transform()))
+	require.Empty(t, rsp.GetNextPageToken())
+}
+
+func TestGetTargetTrends_FilteringFoldsNonASCIICase(t *testing.T) {
+	authCtx, iss, _, windowStart, _ := setupTargetTrendsTest(t)
+
+	// Case folding applies to non-ASCII letters as well, so a filter whose
+	// accented letters differ in case from the label still matches it.
+	rsp, err := iss.GetTargetTrends(authCtx, newTargetTrendsRequest("üNÏCÖDÉ", windowStart, ""))
+	require.NoError(t, err)
+	want := []*statspb.TargetStats{{Target: unicodeTargetLabel, Value: unicodeTargetCPUNanos}}
+	require.Empty(t, cmp.Diff(want, rsp.GetTargetStats(), protocmp.Transform()))
+	require.Empty(t, rsp.GetNextPageToken())
+}
+
+func TestGetTargetTrends_WildcardFiltersIgnored(t *testing.T) {
+	authCtx, iss, _, windowStart, _ := setupTargetTrendsTest(t)
+
+	// SQL wildcard characters in the filter are matched literally.
+	rsp, err := iss.GetTargetTrends(authCtx, newTargetTrendsRequest("%", windowStart, ""))
+	require.NoError(t, err)
+	require.Empty(t, rsp.GetTargetStats())
+	require.Empty(t, rsp.GetNextPageToken())
+}
+
+func TestGetTargetTrends_BadPaginationToken(t *testing.T) {
+	authCtx, iss, _, windowStart, _ := setupTargetTrendsTest(t)
+
+	// A malformed page token is rejected.
+	_, err := iss.GetTargetTrends(authCtx, newTargetTrendsRequest("", windowStart, "not-a-token"))
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument error, got %v", err)
 }

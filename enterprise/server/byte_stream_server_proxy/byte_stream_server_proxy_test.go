@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -240,25 +241,12 @@ func TestWriteChunkedValidatesBlobForUnvalidatedSplice(t *testing.T) {
 }
 
 func TestWriteChunkingEnabledSkipsBESUpload(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 	ctx := context.Background()
 	ctx = bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{ActionId: "bes-upload"})
 	s := &ByteStreamServerProxy{
 		localCache: testenv.GetTestEnv(t).GetCache(),
 		remoteCAS:  &noOpCASClient{},
-		efp:        fp,
 	}
 	require.False(t, s.writeChunkingEnabled(ctx))
 
@@ -267,84 +255,42 @@ func TestWriteChunkingEnabledSkipsBESUpload(t *testing.T) {
 }
 
 func TestWriteChunkingEnabledSkipsChunkedWrites(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 		cdc.ChunkedHeaderName, "true",
 	))
 	s := &ByteStreamServerProxy{
 		localCache: testenv.GetTestEnv(t).GetCache(),
 		remoteCAS:  &noOpCASClient{},
-		efp:        fp,
 	}
 	require.False(t, s.writeChunkingEnabled(ctx))
 }
 
-func TestWriteChunkingEnabledRequiresExperimentInterceptFlag(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		hasEFP bool
-		efp    bool
-		want   bool
-	}{
-		{
-			name: "default disabled without experiment flag provider",
-			want: false,
-		},
-		{
-			name:   "experiment flag disabled",
-			hasEFP: true,
-			efp:    false,
-			want:   false,
-		},
-		{
-			name:   "experiment flag enabled",
-			hasEFP: true,
-			efp:    true,
-			want:   true,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var fp interfaces.ExperimentFlagProvider
-			if tc.hasEFP {
-				providerName := t.Name()
-				provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-					"cache_proxy.intercept_and_chunk_large_writes": {
-						State:          memprovider.Enabled,
-						DefaultVariant: strconv.FormatBool(tc.efp),
-						Variants: map[string]any{
-							"true":  true,
-							"false": false,
-						},
-					},
-				})
-				require.NoError(t, openfeature.SetNamedProviderAndWait(providerName, provider))
-				var err error
-				fp, err = experiments.NewFlagProvider(providerName)
-				require.NoError(t, err)
-			}
-
-			ctx := context.Background()
-			s := &ByteStreamServerProxy{
-				localCache: testenv.GetTestEnv(t).GetCache(),
-				remoteCAS:  &noOpCASClient{},
-				efp:        fp,
-			}
-			require.Equal(t, tc.want, s.writeChunkingEnabled(ctx))
-		})
+func TestShouldReadChunkedRequiresAttemptFlag(t *testing.T) {
+	ctx := context.Background()
+	s := &ByteStreamServerProxy{
+		localCache: testenv.GetTestEnv(t).GetCache(),
+		remoteCAS:  &noOpCASClient{},
 	}
+	d := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: chunking.MaxChunkSizeBytes() + 1}
+	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+	req := &bspb.ReadRequest{ResourceName: rn.DownloadString()}
+	require.True(t, s.shouldReadChunked(ctx, req, rn), "chunked reads should be attempted by default")
+
+	flags.Set(t, "cache_proxy.attempt_chunked_reads", false)
+	require.False(t, s.shouldReadChunked(ctx, req, rn))
+}
+
+func TestWriteChunkingEnabledRequiresInterceptFlag(t *testing.T) {
+	ctx := context.Background()
+	s := &ByteStreamServerProxy{
+		localCache: testenv.GetTestEnv(t).GetCache(),
+		remoteCAS:  &noOpCASClient{},
+	}
+	require.False(t, s.writeChunkingEnabled(ctx), "intercepting writes should be off by default")
+
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
+	require.True(t, s.writeChunkingEnabled(ctx))
 }
 
 type casRPCRecorder struct {
@@ -1304,26 +1250,9 @@ func BenchmarkWriteUnique(b *testing.B) {
 }
 
 func TestReadChunked(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
@@ -1528,35 +1457,23 @@ func TestReadChecksPreconditions(t *testing.T) {
 }
 
 func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
-	// Setup environment.
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-		"cache_proxy.cdc_read_fast_path": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	testReadChunkedFastPath(t, true)
+}
 
+func TestReadChunkedFastPathDisabledCallsSplitBlob(t *testing.T) {
+	testReadChunkedFastPath(t, false)
+}
+
+// testReadChunkedFastPath reads a chunked blob through the proxy twice. The
+// first read always calls SplitBlob and populates the proxy-local manifest and
+// chunks; whether the second read calls SplitBlob again depends on fastPath.
+func testReadChunkedFastPath(t *testing.T, fastPath bool) {
+	// Setup environment.
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
 
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
+	flags.Set(t, "cache_proxy.cdc_read_fast_path", fastPath)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
@@ -1668,35 +1585,20 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 		require.NoError(t, waitContains(ctx, proxyEnv, chunkRN.ToProto()))
 	}
 
-	// Do a second read and check that it was served through the fast path.
+	// The second read is served from the local manifest and chunks when the
+	// fast path is on, and calls SplitBlob again when it is off.
+	wantSplitBlobCalls, wantFastPathAttempts, wantManifestStores := int32(1), float64(1), float64(1)
+	if !fastPath {
+		wantSplitBlobCalls, wantFastPathAttempts, wantManifestStores = 2, 0, 2
+	}
 	require.Equal(t, originalData, readBlob())
-	require.Equal(t, int32(1), splitBlobCalls.Load(), "second read should use the proxy-local manifest and chunks")
-	require.Equal(t, float64(1), testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathManifestMissLabels))-fastPathManifestMissBefore)
-	require.Equal(t, float64(1), testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathHitLabels))-fastPathHitBefore)
-	require.Equal(t, float64(1), testutil.ToFloat64(metrics.ByteStreamChunkedReadLocalManifestStoreAttempts.With(storeOKLabels))-storeOKBefore)
+	require.Equal(t, wantSplitBlobCalls, splitBlobCalls.Load())
+	require.Equal(t, wantFastPathAttempts, testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathManifestMissLabels))-fastPathManifestMissBefore)
+	require.Equal(t, wantFastPathAttempts, testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(fastPathHitLabels))-fastPathHitBefore)
+	require.Equal(t, wantManifestStores, testutil.ToFloat64(metrics.ByteStreamChunkedReadLocalManifestStoreAttempts.With(storeOKLabels))-storeOKBefore)
 }
 
 func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-		"cache_proxy.cdc_read_fast_path": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
@@ -1707,10 +1609,8 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, users)
 	proxyEnv.SetAuthenticator(ta)
 
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
+	// Encrypted reads must bypass the fast path even when it is enabled.
+	flags.Set(t, "cache_proxy.cdc_read_fast_path", true)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
@@ -1833,18 +1733,6 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 }
 
 func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
@@ -1854,11 +1742,6 @@ func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 	users := map[string]interfaces.UserInfo{"user": userWithEncryption}
 	ta := testauth.NewTestAuthenticator(t, users)
 	proxyEnv.SetAuthenticator(ta)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
@@ -1939,44 +1822,14 @@ func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 }
 
 func TestReadChunkedCompressedWarmLocal(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-		"cache_proxy.cdc_read_fast_path": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	uploadProxyEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
 
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	uploadProxyEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
+	flags.Set(t, "cache_proxy.cdc_read_fast_path", true)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
@@ -2203,26 +2056,9 @@ func (r *faultyReader) Read(p []byte) (int, error) {
 }
 
 func TestReadChunkedWithOffset(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	// Start the backing remote cache services.
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
@@ -2372,26 +2208,9 @@ func TestReadChunkedWithOffset(t *testing.T) {
 }
 
 func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
 	require.NoError(t, err)
@@ -2456,26 +2275,9 @@ func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
 }
 
 func TestReadChunkedPartialLocalFailure(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	// Start the backing remote cache services.
 	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
@@ -2617,28 +2419,13 @@ func TestReadRemoteChunkRetryClassification(t *testing.T) {
 }
 
 func TestWriteChunked(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(t),
@@ -2776,17 +2563,7 @@ func TestWriteChunked(t *testing.T) {
 }
 
 func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
@@ -2799,11 +2576,6 @@ func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
 	users := map[string]interfaces.UserInfo{"user": userWithEncryption}
 	ta := testauth.NewTestAuthenticator(t, users)
 	proxyEnv.SetAuthenticator(ta)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	proxyPC, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(t),
@@ -2928,27 +2700,12 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 	flags.Set(t, "cache.avg_chunk_size_bytes", 64*1024)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	rec := &casRPCRecorder{}
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	proxyPC, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(t),
@@ -3083,28 +2840,13 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 }
 
 func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(t),
@@ -3260,28 +3002,13 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 	*log.LogLevel = "error"
 	log.Configure()
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.intercept_and_chunk_large_writes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(b, openfeature.SetNamedProviderAndWait(b.Name(), testProvider))
+	flags.Set(b, "cache_proxy.intercept_and_chunk_large_writes", true)
 
 	flags.Set(b, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(b)
 	proxyEnv := testenv.GetTestEnv(b)
-
-	fp, err := experiments.NewFlagProvider(b.Name())
-	require.NoError(b, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	// Use pebble cache for the proxy (required for chunking)
 	pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
@@ -3344,28 +3071,11 @@ func setupChunkedReadBenchmarkEnv(b *testing.B) *chunkedReadBenchmarkEnv {
 	*log.LogLevel = "error"
 	log.Configure()
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attempt_chunked_reads": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(b, openfeature.SetNamedProviderAndWait(b.Name(), testProvider))
-
 	flags.Set(b, "cache.zstd_transcoding_enabled", true)
 
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(b)
 	proxyEnv := testenv.GetTestEnv(b)
-
-	fp, err := experiments.NewFlagProvider(b.Name())
-	require.NoError(b, err)
-	remoteEnv.SetExperimentFlagProvider(fp)
-	proxyEnv.SetExperimentFlagProvider(fp)
 
 	pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(b),
@@ -3649,5 +3359,220 @@ func BenchmarkReadChunkedMixedLocalRemote(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+// readWholeBlob reads a CAS blob through client with no read limit, as Bazel
+// does. A limited read cannot be served from a spliced (chunked) blob.
+func readWholeBlob(t *testing.T, ctx context.Context, client bspb.ByteStreamClient, rn *digest.CASResourceName) []byte {
+	stream, err := client.Read(ctx, &bspb.ReadRequest{ResourceName: rn.DownloadString()})
+	require.NoError(t, err)
+	var out []byte
+	for {
+		res, err := stream.Recv()
+		if err == io.EOF {
+			return out
+		}
+		require.NoError(t, err)
+		out = append(out, res.GetData()...)
+	}
+}
+
+// writeBlob uploads data for rn through client in requests of at most 1MB, as
+// Bazel does, and returns how the server ended the stream.
+func writeBlob(ctx context.Context, client bspb.ByteStreamClient, rn *digest.CASResourceName, data []byte) (*bspb.WriteResponse, error) {
+	stream, err := client.Write(ctx)
+	if err != nil {
+		return nil, err
+	}
+	uploadRN := rn.NewUploadString()
+	for sent := 0; sent < len(data); {
+		n := min(1_000_000, len(data)-sent)
+		err := stream.Send(&bspb.WriteRequest{
+			ResourceName: uploadRN,
+			WriteOffset:  int64(sent),
+			Data:         data[sent : sent+n],
+			FinishWrite:  sent+n == len(data),
+		})
+		if err == io.EOF {
+			// The server already ended the stream; CloseAndRecv says how.
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		sent += n
+	}
+	return stream.CloseAndRecv()
+}
+
+// alreadyExistsProxy is a proxy in front of a real remote cache. Both the
+// proxy's local server and the remote report a duplicate write with an
+// ALREADY_EXISTS status to clients that handle it.
+type alreadyExistsProxy struct {
+	// ctx is an anonymous client's context, with the cache prefix needed to
+	// access the caches directly.
+	ctx context.Context
+	// encryptedCtx is for a user whose cache encryption makes the proxy skip
+	// its local cache and write to the remote only.
+	encryptedCtx context.Context
+	proxyEnv     *testenv.TestEnv
+	remoteEnv    *testenv.TestEnv
+	proxy        bspb.ByteStreamClient
+}
+
+func runAlreadyExistsProxy(t *testing.T) *alreadyExistsProxy {
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+	// Set after the test envs are created, since the first one populates
+	// flags from the test config.
+	flags.Set(t, "cache.bytestream_already_exists_status", true)
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+	// Large writes are chunked. Small ones take the dual write path.
+	flags.Set(t, "cache_proxy.intercept_and_chunk_large_writes", true)
+
+	encryptedUser := testauth.User("encrypted", "encrypted-group")
+	encryptedUser.CacheEncryptionEnabled = true
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{"encrypted": encryptedUser})
+	proxyEnv.SetAuthenticator(ta)
+
+	pc, err := pebble_cache.NewPebbleCache(proxyEnv, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		MaxSizeBytes:  1_000_000_000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	t.Cleanup(func() { pc.Stop() })
+	proxyEnv.SetCache(pc)
+
+	remoteBSS, err := byte_stream_server.NewByteStreamServer(remoteEnv)
+	require.NoError(t, err)
+	remoteCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(remoteEnv)
+	require.NoError(t, err)
+	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
+	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	go remoteRun()
+	remoteConn, err := testenv.LocalGRPCConn(t, ctx, remoteLis)
+	require.NoError(t, err)
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(remoteConn))
+	proxy := runBSProxy(ctx, bspb.NewByteStreamClient(remoteConn), proxyEnv, t)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, ta)
+	require.NoError(t, err)
+	encryptedCtx, err := ta.WithAuthenticatedUser(ctx, "encrypted")
+	require.NoError(t, err)
+	return &alreadyExistsProxy{ctx: ctx, encryptedCtx: encryptedCtx, proxyEnv: proxyEnv, remoteEnv: remoteEnv, proxy: proxy}
+}
+
+// blobLocation is where a blob already is before it is written.
+type blobLocation int
+
+const (
+	nowhere blobLocation = iota
+	localOnly
+	remoteOnly
+	// everywhere is wherever an earlier write through the proxy put it.
+	everywhere
+)
+
+// A client that handles ALREADY_EXISTS gets that status for a duplicate write
+// instead of a WriteResponse. The proxy tells the remote that the client
+// handles it only when the client told the proxy so (Bazel is recognized by
+// its version instead), passes the remote's status through to the client, and
+// treats the status from its own local server as a successful local write.
+func TestWriteAlreadyExists(t *testing.T) {
+	env := runAlreadyExistsProxy(t)
+
+	const (
+		header = "header" // advertises the client feature, like cachetools
+		bazel7 = "bazel7" // sends Bazel 7.0.0 request metadata
+		plain  = "plain"  // does neither
+	)
+	for _, tc := range []struct {
+		name   string
+		client string
+		// chunked writes a blob large enough for the proxy to chunk.
+		chunked bool
+		// encrypted writes as a user whose cache encryption makes the proxy
+		// skip its local cache.
+		encrypted bool
+		// skipValidation turns on cache_proxy.skip_write_validation.
+		skipValidation bool
+		exists         blobLocation
+		// wantStatus is whether the write ends with ALREADY_EXISTS rather
+		// than a WriteResponse.
+		wantStatus bool
+	}{
+		{name: "header_new", client: header},
+		{name: "header_exists_remotely", client: header, exists: remoteOnly, wantStatus: true},
+		{name: "header_exists_locally", client: header, exists: localOnly},
+		{name: "header_exists_everywhere", client: header, exists: everywhere, wantStatus: true},
+		{name: "plain_exists_everywhere", client: plain, exists: everywhere},
+		{name: "bazel7_exists_everywhere", client: bazel7, exists: everywhere, wantStatus: true},
+		{name: "header_encrypted_exists", client: header, encrypted: true, exists: everywhere, wantStatus: true},
+		{name: "header_skip_validation_exists_remotely", client: header, skipValidation: true, exists: remoteOnly, wantStatus: true},
+		{name: "plain_skip_validation_exists_remotely", client: plain, skipValidation: true, exists: remoteOnly},
+		{name: "header_chunked_new", client: header, chunked: true},
+		{name: "header_chunked_exists", client: header, chunked: true, exists: everywhere},
+		{name: "bazel7_chunked_exists", client: bazel7, chunked: true, exists: everywhere},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.skipValidation {
+				flags.Set(t, "cache_proxy.skip_write_validation", true)
+			}
+			ctx := env.ctx
+			if tc.encrypted {
+				ctx = env.encryptedCtx
+			}
+			clientCtx := ctx
+			switch tc.client {
+			case header:
+				clientCtx = clientfeatures.Advertise(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
+			case bazel7:
+				clientCtx = byte_stream.WithBazelVersion(t, ctx, "7.0.0")
+			}
+
+			// Servers write blobs up to cache.max_direct_write_size_bytes
+			// without checking whether they exist, and the proxy chunks
+			// blobs larger than 4x the average chunk size.
+			size := int64(64 * 1024)
+			if tc.chunked {
+				size = 10 * 1024 * 1024
+			}
+			_, data := testdigest.RandomCASResourceBuf(t, size)
+			d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+			require.NoError(t, err)
+			rn := digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3)
+			switch tc.exists {
+			case nowhere:
+			case everywhere:
+				_, err := writeBlob(ctx, env.proxy, rn, data)
+				require.NoError(t, err)
+			case localOnly:
+				require.NoError(t, env.proxyEnv.GetCache().Set(ctx, rn.ToProto(), data))
+			case remoteOnly:
+				require.NoError(t, env.remoteEnv.GetCache().Set(ctx, rn.ToProto(), data))
+			}
+
+			resp, err := writeBlob(clientCtx, env.proxy, rn, data)
+			if tc.wantStatus {
+				require.True(t, status.IsAlreadyExistsError(err), "want ALREADY_EXISTS, got %v, %v", resp, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, size, resp.GetCommittedSize())
+			}
+
+			// However the write ended, the proxy keeps its own copy of blobs
+			// it stores whole, and the blob is readable through the proxy.
+			// Check the caches first: a read that misses locally would fill
+			// in the local copy.
+			if !tc.chunked && !tc.encrypted {
+				require.NoError(t, waitContains(ctx, env.proxyEnv, rn.ToProto()))
+				require.NoError(t, waitContains(ctx, env.remoteEnv, rn.ToProto()))
+			}
+			require.Equal(t, data, readWholeBlob(t, ctx, env.proxy, rn))
+		})
 	}
 }

@@ -276,6 +276,15 @@ func routerBgpPrefixesReceivedPanel() *timeseries.PanelBuilder {
 		))
 }
 
+func routerBgpPrefixesAdvertisedPanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("Router BGP prefixes advertised", dash.UnitShort).
+		Description("Fewest IPv4 unicast prefixes a router advertises to any peer in the group. UPSTREAM gets the public supernet. SPINES get the default route plus, on routers doing NAT, the router's NAT pool; a drop means the router is drained or has lost one of those routes.").
+		WithTarget(dash.PromQuery(
+			`min(router_frr_bgp_peer_prefixes_advertised_count_total{region="${region}", afi="ipv4", safi="unicast"}) by (router, peer_group)`,
+			"{{router}} {{peer_group}}",
+		))
+}
+
 func routerBfdSessionsPanel() *timeseries.PanelBuilder {
 	return dash.Timeseries("Router BFD sessions", dash.UnitShort).
 		Description("VPP BFD sessions per router (one per spine link). BFD state lives in VPP rather than FRR on TNSR, so only the session count is exported.").
@@ -344,6 +353,109 @@ func routerMemoryUtilizationPanel() *timeseries.PanelBuilder {
 		WithTarget(dash.PromQuery(
 			`100 * (1 - node_memory_MemAvailable_bytes{job="node_router", region="${region}"}`+
 				` / node_memory_MemTotal_bytes{job="node_router", region="${region}"})`,
+			"{{router}}",
+		))
+}
+
+// --- Edge router NAT (TNSR VPF) ---
+
+// NAT capacity. Each NAT connection holds a port on a pool address, and
+// TNSR's default port-mapping range (1024-49151) gives each address 48128
+// ports. Utilization is measured against a single router's pool, a /30 of
+// 4 addresses, so the total shows whether NAT still fits with the other
+// router drained or down. Every region's routers use the same pool size.
+// Keep in sync with nat_pool in the metal inventory and the router
+// template in the internal repo.
+const (
+	natPortsPerPoolIP   = 49151 - 1024 + 1
+	natPoolIPsPerRouter = 4
+)
+
+// vpfCounter selects a VPF IPv4 error counter on every node that exports
+// it. VPP exports each counter once per node, so this matches the input
+// and output feature nodes and their worker-handoff nodes.
+func vpfCounter(counter string) string {
+	return fmt.Sprintf(
+		`{__name__=~"router_err_vpf4_(input|output)_feature_(handoff_)?%s", region="${region}"}`,
+		counter,
+	)
+}
+
+// vpfCounterRate returns the per-router rate of a VPF IPv4 error counter,
+// summed over every node that exports it.
+func vpfCounterRate(counter string) string {
+	return fmt.Sprintf(`sum(rate(%s[1m])) by (router)`, vpfCounter(counter))
+}
+
+func routerNatPoolUtilizationPanel() *timeseries.PanelBuilder {
+	active := fmt.Sprintf(
+		`sum(%s) by (router) - sum(%s) by (router)`,
+		vpfCounter("nat_entry_create"), vpfCounter("nat_entry_destroy"),
+	)
+	capacity := natPoolIPsPerRouter * natPortsPerPoolIP
+	return dash.Timeseries("NAT pool utilization", dash.UnitPercent).
+		Description(fmt.Sprintf("Active NAT connections as a percentage of one router's pool (%d addresses x %d ports = %d). The total is both routers combined against that same pool, since either router must be able to carry all NAT traffic alone; it should stay well under 100%%. Capacity assumes every router has a pool of this size. Connections include TCP time-wait, which still holds its port. VPF exports no gauge for its connection table, so the count is translations created minus destroyed; both counters reset together when the dataplane restarts. At low volume the count differs from `show vpf connections all` by up to about 10 entries in either direction. A negative value, or a floor that keeps rising, means the counters have drifted. The pool address is picked by hashing source and destination, so one busy source/destination pair can exhaust an address early; watch NAT allocation failures for that.", natPoolIPsPerRouter, natPortsPerPoolIP, capacity)).
+		AxisSoftMin(0).
+		WithTarget(dash.PromQuery(fmt.Sprintf(`100 * (%s) / %d`, active, capacity), "{{router}}")).
+		WithTarget(dash.PromQuery(fmt.Sprintf(`100 * sum(%s) / %d`, active, capacity), "total"))
+}
+
+func routerNatNewConnectionsPanel() *timeseries.PanelBuilder {
+	p := dash.Timeseries("New NAT connections by protocol", dash.UnitEventsPerSec).
+		Description("Connections VPF creates per second. The NAT rule is the only stateful VPF rule, so nearly all of these are NAT translations.")
+	for _, proto := range []string{"tcp", "udp", "icmp", "other"} {
+		p.WithTarget(dash.PromQuery(vpfCounterRate("conn_entry_create_"+proto), proto+" {{router}}"))
+	}
+	return p
+}
+
+func routerNatFailuresPanel() *timeseries.PanelBuilder {
+	p := dash.Timeseries("NAT allocation failures", dash.UnitEventsPerSec).
+		Description("Connections VPF failed to create. Port allocation failures mean a pool address ran out of ports; connection limit means the connection table is full. Should be zero. The utilization panel is a pool-wide estimate; this is the only direct sign that an address ran out.")
+	for _, c := range []struct{ counter, legend string }{
+		{"dynamic_port_alloc_failed", "port alloc failed"},
+		{"connection_limit_reached", "connection limit"},
+		{"state_create_failed", "state create failed"},
+		{"ei_conn_create_failed", "EI conn create failed"},
+	} {
+		p.WithTarget(dash.PromQuery(vpfCounterRate(c.counter), c.legend+" {{router}}"))
+	}
+	return p
+}
+
+func routerVpfDropsPanel() *timeseries.PanelBuilder {
+	p := dash.Timeseries("VPF blocked packets", dash.UnitPacketsPerSec).
+		Description("Packets VPF blocked by a rule, by the default policy, or because they didn't fit the tracked TCP state, plus packets in a protocol NAT can't translate. A trickle of invalid-state packets is normal; a sustained rise means VPF is dropping traffic it should pass.")
+	for _, c := range []struct{ counter, legend string }{
+		{"block_rule", "block rule"},
+		{"block_default", "block default"},
+		{"invalid_state", "invalid state"},
+		{"conn_state_mismatch", "conn state mismatch"},
+		{"nat_unsupported_protocol", "NAT unsupported protocol"},
+	} {
+		p.WithTarget(dash.PromQuery(vpfCounterRate(c.counter), c.legend+" {{router}}"))
+	}
+	return p
+}
+
+func routerVpfHandoffsPanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("VPF worker handoffs", dash.UnitPacketsPerSec).
+		Description("Each VPF connection belongs to one worker thread. Packets that arrive on another worker, mostly NAT replies coming in on WAN, are handed off to the owner. Congestion drops mean a handoff queue was full, the first sign VPF can't keep up with NAT traffic.").
+		// Only the handoff nodes count handed-off packets. The feature
+		// nodes also export a "handoff" counter, so match the name exactly
+		// rather than through vpfCounterRate.
+		WithTarget(dash.PromQuery(
+			`sum(rate({__name__=~"router_err_vpf4_(input|output)_feature_handoff_handoff", region="${region}"}[1m])) by (router)`,
+			"handoffs {{router}}",
+		)).
+		WithTarget(dash.PromQuery(vpfCounterRate("congestion_drop"), "congestion drops {{router}}"))
+}
+
+func routerVpfPacketsPanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("VPF packets inspected", dash.UnitPacketsPerSec).
+		Description("Packets entering VPF. The SPINE-nat ruleset attaches VPF to the spine links as well as WAN, so this covers all traffic through the router, not just NAT. Compare against router CPU and dataplane drops.").
+		WithTarget(dash.PromQuery(
+			`sum(rate(router_err_vpf4_input_feature_seen{region="${region}"}[1m])) by (router)`,
 			"{{router}}",
 		))
 }
@@ -546,12 +658,22 @@ func build() (dashboard.Dashboard, error) {
 		WithPanel(routerTrafficByInterfacePanel()).
 		WithPanel(routerBgpSessionsPanel()).
 		WithPanel(routerBgpPrefixesReceivedPanel()).
+		WithPanel(routerBgpPrefixesAdvertisedPanel()).
 		WithPanel(routerBfdSessionsPanel()).
 		WithPanel(routerErrorsAndDiscardsPanel()).
 		WithPanel(routerDataplaneDropsPanel()).
 		WithPanel(routerInterfacesDownPanel()).
 		WithPanel(routerCpuUtilizationPanel()).
 		WithPanel(routerMemoryUtilizationPanel())
+
+	routerNatRow := dashboard.NewRowBuilder("Edge router NAT").
+		Collapsed(true).
+		WithPanel(routerNatPoolUtilizationPanel()).
+		WithPanel(routerNatNewConnectionsPanel()).
+		WithPanel(routerNatFailuresPanel()).
+		WithPanel(routerVpfDropsPanel()).
+		WithPanel(routerVpfHandoffsPanel()).
+		WithPanel(routerVpfPacketsPanel())
 
 	deviceRow := dashboard.NewRowBuilder("Device ${device}").
 		Collapsed(true).
@@ -588,6 +710,7 @@ func build() (dashboard.Dashboard, error) {
 		WithRow(controlPlaneRow).
 		WithRow(systemHealthRow).
 		WithRow(routersRow).
+		WithRow(routerNatRow).
 		WithRow(deviceRow).
 		Build()
 }

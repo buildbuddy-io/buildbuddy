@@ -310,7 +310,7 @@ func (c *Proxy) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRe
 
 func (c *Proxy) getWithMetadataReference(ctx context.Context, rn *rspb.ResourceName) *refpb.Reference {
 	fp := c.env.GetExperimentFlagProvider()
-	if fp == nil || !fp.Boolean(ctx, "distributed_cache.get_with_metadata_gcs_references", false) {
+	if fp == nil || !fp.Boolean(ctx, "distributed_cache.get_with_metadata_gcs_references", true) {
 		return nil
 	}
 	refCache, ok := c.cache.(interfaces.ReferenceCache)
@@ -401,7 +401,7 @@ func (c *Proxy) getMultiSendsReferences(ctx context.Context) bool {
 	if fp == nil {
 		return false
 	}
-	return fp.Boolean(ctx, "distributed_cache.get_multi_gcs_references", false)
+	return fp.Boolean(ctx, "distributed_cache.get_multi_gcs_references", true)
 }
 
 func (c *Proxy) sendReadReferences(ctx context.Context) bool {
@@ -488,6 +488,10 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			if rn.GetCacheType() == rspb.CacheType_CAS && req.GetCheckAlreadyExists() {
 				missing, err := c.cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_WRITE_DEDUPE), []*rspb.ResourceName{rn})
 				if err == nil && len(missing) == 0 {
+					// The sender may be relying on this node to hand the blob
+					// off to a peer that missed the write, whether or not this
+					// node already had it.
+					c.queueHintedHandoff(ctx, req)
 					return status.AlreadyExistsError("CAS digest already exists")
 				}
 			}
@@ -539,12 +543,18 @@ func (c *Proxy) writeReference(ctx context.Context, stream dcpb.DistributedCache
 	return c.finishWrite(ctx, stream, req, req.GetReference().GetMetadata().GetStoredSizeBytes())
 }
 
-func (c *Proxy) finishWrite(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, committedSize int64) error {
+// queueHintedHandoff passes req's hinted handoff, if it has one, to the
+// hinted handoff callback.
+func (c *Proxy) queueHintedHandoff(ctx context.Context, req *dcpb.WriteRequest) {
 	if req.GetHandoffPeer() != "" && c.hintedHandoffCallback != nil {
 		// Because the hinted handoff callback might hold on to the resource
 		// in a queue, and we're pooling WriteRequest protos, clone it.
 		c.hintedHandoffCallback(ctx, req.GetHandoffPeer(), req.GetResource().CloneVT())
 	}
+}
+
+func (c *Proxy) finishWrite(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, committedSize int64) error {
+	c.queueHintedHandoff(ctx, req)
 	return stream.SendAndClose(&dcpb.WriteResponse{
 		CommittedSize: committedSize,
 	})

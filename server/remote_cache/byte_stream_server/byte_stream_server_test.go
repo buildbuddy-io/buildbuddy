@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -342,6 +343,84 @@ func TestRPCWriteWithDirectWrite(t *testing.T) {
 	_, _, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A duplicate upload is short-circuited either way. A client that advertises
+// support for it, or that is Bazel 6.2.0 or later, receives an ALREADY_EXISTS
+// status when the experiment is enabled; otherwise it receives a WriteResponse
+// with the committed size.
+func TestRPCWriteAlreadyExists(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		experiment   bool
+		advertise    bool
+		bazelVersion string
+		compressed   bool
+		wantStatus   bool
+	}{
+		{name: "experiment_on_advertised", experiment: true, advertise: true, wantStatus: true},
+		{name: "experiment_on_advertised_compressed", experiment: true, advertise: true, compressed: true, wantStatus: true},
+		{name: "experiment_on_not_advertised", experiment: true, advertise: false, wantStatus: false},
+		{name: "experiment_off_advertised", experiment: false, advertise: true, wantStatus: false},
+		{name: "experiment_on_bazel_6.2.0", experiment: true, bazelVersion: "6.2.0", wantStatus: true},
+		{name: "experiment_on_bazel_8.0.0_compressed", experiment: true, bazelVersion: "8.0.0", compressed: true, wantStatus: true},
+		{name: "experiment_on_bazel_6.1.0", experiment: true, bazelVersion: "6.1.0", wantStatus: false},
+		{name: "experiment_on_bazel_6.2.0rc1", experiment: true, bazelVersion: "6.2.0rc1", wantStatus: false},
+		{name: "experiment_off_bazel_6.2.0", experiment: false, bazelVersion: "6.2.0", wantStatus: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "cache.bytestream_already_exists_status", tc.experiment)
+			flags.Set(t, "cache.zstd_transcoding_enabled", true)
+			te := testenv.GetTestEnv(t)
+			te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
+			ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+			require.NoError(t, err)
+			bsClient := bspb.NewByteStreamClient(runByteStreamServer(ctx, t, te))
+
+			// Large enough that the server checks whether the blob exists
+			// instead of writing straight to the cache.
+			rnProto, blob := testdigest.RandomCASResourceBuf(t, 64*1024)
+			rn, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			_, _, err = cachetools.UploadFromReader(ctx, bsClient, rn, bytes.NewReader(blob))
+			require.NoError(t, err)
+
+			// Upload a duplicate in a single request.
+			uploadRN := digest.NewCASResourceName(rn.GetDigest(), "", rn.GetDigestFunction())
+			data := blob
+			if tc.compressed {
+				uploadRN.SetCompressor(repb.Compressor_ZSTD)
+				data = compression.CompressZstd(nil, blob)
+			}
+			writeCtx := ctx
+			if tc.bazelVersion != "" {
+				writeCtx = byte_stream.WithBazelVersion(t, writeCtx, tc.bazelVersion)
+			}
+			if tc.advertise {
+				writeCtx = clientfeatures.Advertise(writeCtx, clientfeatures.ByteStreamWriteAlreadyExists)
+			}
+			stream, err := bsClient.Write(writeCtx)
+			require.NoError(t, err)
+			require.NoError(t, stream.Send(&bspb.WriteRequest{
+				ResourceName: uploadRN.NewUploadString(),
+				Data:         data,
+				FinishWrite:  true,
+			}))
+			resp, err := stream.CloseAndRecv()
+			if tc.wantStatus {
+				require.True(t, status.IsAlreadyExistsError(err), "err = %v", err)
+				require.Nil(t, resp)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, rn.GetDigest().GetSizeBytes(), resp.GetCommittedSize())
+			}
+
+			// cachetools advertises support and handles the status itself, so
+			// a duplicate upload through it succeeds either way.
+			_, _, err = cachetools.UploadFromReader(ctx, bsClient, rn, bytes.NewReader(blob))
+			require.NoError(t, err)
+		})
 	}
 }
 

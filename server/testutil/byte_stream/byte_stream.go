@@ -3,10 +3,12 @@ package byte_stream
 import (
 	"context"
 	"io"
+	"sync/atomic"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -110,4 +112,70 @@ func MustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStre
 
 	require.Equal(t, int64(len(blob)), res.CommittedSize)
 	require.Len(t, remaining, 0, "not all bytes were uploaded")
+}
+
+// ShortCircuitMode selects how ShortCircuitFakeWriteServer ends a Write
+// after the first WriteRequest.
+type ShortCircuitMode int
+
+const (
+	// ShortCircuitWithResponse sends a WriteResponse immediately after the
+	// first WriteRequest.
+	ShortCircuitWithResponse ShortCircuitMode = iota
+	// ShortCircuitWithStatus ends the stream with the configured Status.
+	ShortCircuitWithStatus
+)
+
+func (m ShortCircuitMode) String() string {
+	switch m {
+	case ShortCircuitWithResponse:
+		return "response"
+	case ShortCircuitWithStatus:
+		return "status"
+	}
+	return "unknown"
+}
+
+// ShortCircuitFakeWriteServer is a ByteStream server that ends the Write stream
+// simulating an "already exists" message. The mode decides how that response
+// is communicated to the client.
+type ShortCircuitFakeWriteServer struct {
+	Mode ShortCircuitMode
+	// Status ends the stream in ShortCircuitWithStatus mode. It must be
+	// non-nil in that mode.
+	Status error
+	// Writes counts Write calls, which shows whether a client retried.
+	Writes atomic.Int32
+	// Received counts request bytes the server consumed, which is the first
+	// request of each Write.
+	Received atomic.Int64
+}
+
+func (s *ShortCircuitFakeWriteServer) Write(stream bspb.ByteStream_WriteServer) error {
+	s.Writes.Add(1)
+	req, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	s.Received.Add(int64(len(req.GetData())))
+	if s.Mode == ShortCircuitWithStatus {
+		return s.Status
+	}
+	rn, err := digest.ParseUploadResourceName(req.GetResourceName())
+	if err != nil {
+		return err
+	}
+	committed := rn.GetDigest().GetSizeBytes()
+	if rn.GetCompressor() != repb.Compressor_IDENTITY {
+		committed = -1
+	}
+	return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: committed})
+}
+
+func (s *ShortCircuitFakeWriteServer) Read(*bspb.ReadRequest, bspb.ByteStream_ReadServer) error {
+	return status.UnimplementedError("ShortCircuitFakeWriteServer only implements Write")
+}
+
+func (s *ShortCircuitFakeWriteServer) QueryWriteStatus(context.Context, *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
+	return nil, status.UnimplementedError("ShortCircuitFakeWriteServer only implements Write")
 }

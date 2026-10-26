@@ -65,7 +65,7 @@ var (
 	requireExecutorAuthorization = flag.Bool("remote_execution.require_executor_authorization", false, "If true, executors connecting to this server must provide a valid executor API key.")
 	leaseDuration                = flag.Duration("remote_execution.lease_duration", 10*time.Second, "How long before a task lease must be renewed by the executor client.")
 	leaseGracePeriod             = flag.Duration("remote_execution.lease_grace_period", 10*time.Second, "How long to wait for the executor to renew the lease after the TTL duration has elapsed.")
-	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown).")
+	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown or a broken lease stream).")
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
 	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", true, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
@@ -184,7 +184,8 @@ var (
 		Help:    "WorkQueue wait time [milliseconds]",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 20),
 	})
-	// Claim field is set only if task exists & claim field is not present.
+	// Claim field is set only if task exists & claim field is not present, or
+	// if the current lease holder is reconnecting.
 	// Return values:
 	//  - 0 claim failed for unknown reason (shouldn't happen)
 	//  - 1 claim successful
@@ -199,6 +200,13 @@ var (
 	
 		-- Task already claimed.
 		if redis.call("hexists", KEYS[1], "claimed") == 1 then
+			-- Let the current lease holder reconnect on a new stream before the
+			-- scheduler has released the claim from its old stream. This isn't
+			-- a new attempt.
+			if ARGV[1] == "true" and ARGV[2] ~= "" and redis.call("hget", KEYS[1], "leaseId") == ARGV[2] then
+				redis.call("hset", KEYS[1], "leaseId", ARGV[4])
+				return 1
+			end
 			return 11
 		end
 
@@ -256,14 +264,19 @@ var (
 	//  - 0 if task is not claimed
 	//  - 1 if the claim was released
 	//  - 2 if lease ID was supplied and did not match the current lease ID
+	//  - 3 if the task doesn't exist
 	redisReleaseClaim = redis.NewScript(`
+		if redis.call("exists", KEYS[1]) == 0 then
+			return 3
+		end
+		-- Ignore the request if the task has a lease ID that doesn't match the
+		-- supplied ID. Check this even if the task is unclaimed, since a newer
+		-- lease may have released it already.
+		local leaseId = redis.call("hget", KEYS[1], "leaseId")
+		if leaseId and ARGV[3] ~= "" and leaseId ~= ARGV[3] then
+			return 2
+		end
 		if redis.call("hget", KEYS[1], "claimed") == "1" then
-			local leaseId = redis.call("hget", KEYS[1], "leaseId")
-			-- Ignore the request if the claim has an ID but it doesn't match
-			-- the supplied ID.
-			if leaseId and ARGV[3] ~= "" and leaseId ~= ARGV[3] then
-				return 2
-			end
 			if ARGV[1] ~= "" then
 				redis.call("hset", KEYS[1], "reconnectToken", ARGV[1])
 				redis.call("hset", KEYS[1], "reconnectPeriodEnd", ARGV[2])
@@ -272,6 +285,18 @@ var (
 		else 
 			return 0 
 		end`)
+	// Deletes a task unless its stored lease ID differs from the expected ID.
+	// Return values:
+	//  - 0 if the task doesn't exist
+	//  - 1 if the task was deleted
+	//  - 2 if the task's lease ID did not match the expected ID
+	redisDeleteTaskForLease = redis.NewScript(`
+		local leaseId = redis.call("hget", KEYS[1], "leaseId")
+		if leaseId and leaseId ~= ARGV[1] then
+			return 2
+		end
+		return redis.call("del", KEYS[1])
+		`)
 	// Task deleted if claim field is present.
 	redisDeleteClaimedTask = redis.NewScript(`
 		if redis.call("hget", KEYS[1], "claimed") == "1" then 
@@ -457,10 +482,8 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 						alert.CtxUnexpectedEvent(reEnqueueCtx, "shutdown_reenqueue_grace_period_expired", "Gave up re-enqueueing task reservations for executor %q going down: grace period of %s after stream cancellation expired with %d of %d reservations not re-enqueued", executorID, shutdownReEnqueueGracePeriod, len(taskIDs)-i, len(taskIDs))
 						break
 					}
-					leaseID := ""
-					reconnectToken := ""
 					taskCtx, cancelTask := context.WithTimeout(reEnqueueCtx, shutdownReEnqueuePerTaskTimeout)
-					err := h.scheduler.reEnqueueTask(taskCtx, taskID, leaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down")
+					err := h.scheduler.reEnqueueTaskReservation(taskCtx, taskID)
 					cancelTask()
 					if err != nil {
 						log.CtxWarningf(reEnqueueCtx, "Could not re-enqueue task reservation %q for executor %q going down: %s", taskID, executorID, err)
@@ -2032,6 +2055,43 @@ func (s *SchedulerServer) deleteTask(ctx context.Context, taskID string) (bool, 
 	return n == 1, err
 }
 
+// deleteTaskForLease deletes the task unless expectedLeaseID is nonempty and
+// the task has a different stored lease ID. This protects tasks re-claimed on a
+// new stream from cleanup by an old stream. An empty expectedLeaseID skips the
+// check.
+//
+// It returns NotFound if the task is already gone. Cleanup cannot distinguish
+// a lost task from one that finished on a newer stream, so it must not publish
+// a failure based only on the task's absence.
+func (s *SchedulerServer) deleteTaskForLease(ctx context.Context, taskID, expectedLeaseID string) error {
+	key := s.redisKeyForTask(taskID)
+	if expectedLeaseID == "" {
+		n, err := s.rdb.Del(ctx, key).Result()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return status.NotFoundErrorf("task %q no longer exists", taskID)
+		}
+		return nil
+	}
+	r, err := redisDeleteTaskForLease.Run(ctx, s.rdb, []string{key}, expectedLeaseID).Result()
+	if err != nil {
+		return err
+	}
+	c, ok := r.(int64)
+	if !ok {
+		return status.InternalErrorf("unexpected result from delete script: %v", r)
+	}
+	switch c {
+	case 0:
+		return status.NotFoundErrorf("task %q no longer exists", taskID)
+	case 2:
+		return status.PermissionDeniedErrorf("task %q was re-claimed under another lease", taskID)
+	}
+	return nil
+}
+
 func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) error {
 	// The script will return 1 if the task is claimed & has been deleted.
 	r, err := redisDeleteClaimedTask.Run(ctx, s.rdb, []string{s.redisKeyForTask(taskID)}).Result()
@@ -2054,7 +2114,7 @@ func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) 
 	return nil
 }
 
-func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, leaseID, reconnectToken string) error {
+func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, expectedLeaseID, reconnectToken string) error {
 	var reconnectPeriodEnd time.Time
 	if reconnectToken != "" {
 		reconnectPeriodEnd = time.Now().Add(*leaseReconnectGracePeriod)
@@ -2063,16 +2123,25 @@ func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, leaseID, reco
 	r, err := redisReleaseClaim.Run(
 		ctx, s.rdb,
 		[]string{s.redisKeyForTask(taskID)},
-		reconnectToken, reconnectPeriodEnd.UnixNano(), leaseID,
+		reconnectToken, reconnectPeriodEnd.UnixNano(), expectedLeaseID,
 	).Result()
 	if err != nil {
 		return err
 	}
-	if c, ok := r.(int64); !ok || c != 1 {
-		if c == 2 {
-			return status.PermissionDeniedErrorf("task %q already been re-claimed", taskID)
-		}
-		return status.NotFoundErrorf("unable to release task claim for task %s", taskID)
+	c, ok := r.(int64)
+	if !ok {
+		return status.InternalErrorf("unexpected result from release script: %v", r)
+	}
+	switch c {
+	case 0:
+		return status.FailedPreconditionErrorf("task %q is not claimed", taskID)
+	case 2:
+		return status.PermissionDeniedErrorf("task %q already been re-claimed", taskID)
+	case 3:
+		// The task was finalized or cancelled since the caller last saw it,
+		// e.g. by its executor on a new stream while an old stream's cleanup
+		// was still running.
+		return status.NotFoundErrorf("task %q no longer exists", taskID)
 	}
 	log.CtxDebugf(ctx, "Released task claim in Redis (reconnecting=%t)", reconnectToken != "")
 
@@ -2349,6 +2418,9 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	taskID := ""
 	reconnectToken := ""
 	leaseID := ""
+	// Set when the stream breaks, e.g. because the connection to the executor
+	// dropped. The executor may still be running the task.
+	streamBroken := false
 
 	// TODO(vadim): remove after executor ID in lease request is rolled out
 	executorID := peerAddress(ctx)
@@ -2360,20 +2432,42 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			return
 		}
 		schedulerShuttingDown := s.isShuttingDown()
-		log.CtxWarningf(ctx, "LeaseTask stream closed with task still claimed (shutting_down=%t). Re-enqueueing task.", schedulerShuttingDown)
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
 		defer cancel()
 		reEnqueueReason := "stream closed with task still claimed"
-		if !schedulerShuttingDown {
-			// TODO: figure out if we can reliably detect whether the executor
-			// gave up on the lease due to an executor shutdown vs. a transient
-			// issue with the lease stream. Transient disconnects should also
-			// get a reconnect grace period, since the executor should quickly
-			// retry them.
+
+		// Decide whether to hold the task for its current executor to reconnect
+		// (by keeping the reconnect token) or to count this as a failed
+		// attempt.
+		//
+		// If the scheduler is shutting down, the executor is likely still
+		// running the task and will reconnect to another app, so hold the task
+		// even if it can't be retried. This way, rollouts don't fail tasks with
+		// retries disabled.
+		//
+		// If the stream broke, the executor may have died instead, and then
+		// another executor has to retry the task. So hold the task only if it
+		// can still be retried. Otherwise, holding it would either orphan a
+		// task with retries disabled or skip the attempt limit.
+		//
+		// In all other cases, count this as a failed attempt.
+		allowReconnect := schedulerShuttingDown || (streamBroken && reconnectToken != "" && s.taskCanBeRetried(ctx, taskID))
+		if !allowReconnect {
 			reconnectToken = ""
 		}
+		log.CtxWarningf(ctx, "LeaseTask stream closed with task still claimed (shutting_down=%t, stream_broken=%t, allow_reconnect=%t)", schedulerShuttingDown, streamBroken, allowReconnect)
+
 		if err := s.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, probesPerTask, reEnqueueReason); err != nil {
-			log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task but failed with err: %s", taskID, err.Error())
+			switch {
+			case status.IsPermissionDeniedError(err):
+				log.CtxInfo(ctx, "Not re-enqueueing task because it was already re-claimed under another lease")
+			case status.IsNotFoundError(err):
+				// The executor may have reconnected on a new stream and
+				// finished the task before we cleaned up this one.
+				log.CtxInfo(ctx, "Not re-enqueueing task because it no longer exists")
+			default:
+				log.CtxErrorf(ctx, "LeaseTask failed to re-enqueue task: %s", err)
+			}
 		} // Success case will be logged by ReEnqueueTask flow.
 	}()
 
@@ -2406,11 +2500,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			// the stream is done, so check for that here.
 			err = ctx.Err()
 		case <-livenessTicker.Chan():
-			if s.clock.Since(lastCheckin) > (s.leaseDuration + s.leaseGracePeriod) {
-				err = status.DeadlineExceededErrorf("lease was not renewed by executor and expired (last renewal: %s)", lastCheckin)
-			} else {
+			if s.clock.Since(lastCheckin) <= s.leaseDuration+s.leaseGracePeriod {
 				continue
 			}
+			err := status.DeadlineExceededErrorf("lease was not renewed by executor and expired (last renewal: %s)", lastCheckin)
+			log.CtxWarningf(ctx, "LeaseTask %q: %s", taskID, err)
+			return err
 		}
 		if err == io.EOF {
 			log.CtxWarningf(ctx, "LeaseTask %q got EOF: %s", taskID, err)
@@ -2418,6 +2513,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 		if err != nil {
 			log.CtxWarningf(ctx, "LeaseTask %q recv with err: %s", taskID, err)
+			streamBroken = true
 			break
 		}
 		if req.GetTaskId() == "" || taskID != "" && req.GetTaskId() != taskID {
@@ -2473,9 +2569,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			}
 			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), req.GetSupportsExperimentFlags(), key, task.serializedTask, task.metadata.GetTaskGroupId())
 
-			// Prometheus: observe queue wait time.
-			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
-			queueWaitTimeMs.Observe(float64(ageInMillis))
+			// Prometheus: observe queue wait time. Skip reconnects, since the
+			// executor has been running the task since its first claim.
+			if req.GetReconnectToken() == "" {
+				ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
+				queueWaitTimeMs.Observe(float64(ageInMillis))
+			}
 			rsp.SerializedTask = task.serializedTask
 			rsp.LeaseId = leaseID
 			// If both the client and server have lease reconnect enabled,
@@ -2529,7 +2628,13 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 				log.CtxWarningf(ctx, "Could not release lease for task %q: %s", taskID, err)
 			}
 			if req.GetReEnqueue() {
-				if err := s.reEnqueueTask(ctx, taskID, "" /*=leaseID*/, "" /*=reconnectToken*/, probesPerTask, req.GetReEnqueueReason().GetMessage()); err != nil {
+				// This path relies on unclaimTask above to check the lease, so
+				// it passes an empty expectedLeaseID to skip checking again.
+				//
+				// TODO: Keep the lease check here too, since the release above
+				// can fail or another executor can claim the task before we
+				// re-enqueue it.
+				if err := s.reEnqueueTask(ctx, taskID, "" /*=expectedLeaseID*/, "" /*=reconnectToken*/, probesPerTask, req.GetReEnqueueReason().GetMessage()); err != nil {
 					log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task requested by executor but failed with err: %s", taskID, err)
 				}
 			}
@@ -2553,6 +2658,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		rsp.ClosedCleanly = !claimed
 		lastCheckin = s.clock.Now()
 		if err := stream.Send(rsp); err != nil {
+			streamBroken = true
 			return err
 		}
 		if done {
@@ -2686,6 +2792,8 @@ func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostna
 func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, taskProto *repb.ExecutionTask) *repb.ExecutionTask {
 	fp := s.env.GetExperimentFlagProvider()
 	if fp == nil {
+		// TODO: remove this check so expflags work even when the experiment
+		// flag provider is not set.
 		return taskProto
 	}
 
@@ -2737,6 +2845,8 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 			execution_experiments.PersistentVolumes.GetProto(ctx, expOptions...),
 			execution_experiments.UserspaceNetworking.GetProto(ctx, expOptions...),
 			execution_experiments.RecordInputFetchMetadata.GetProto(ctx, expOptions...),
+			execution_experiments.WorkspacePoolEnabled.GetProto(ctx, expOptions...),
+			execution_experiments.SpliceWithoutValidation.GetProto(ctx, expOptions...),
 		}
 	}
 
@@ -3184,7 +3294,71 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 	return &scpb.EnqueueTaskReservationResponse{}, nil
 }
 
-func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, reconnectToken string, numReplicas int, reason string) error {
+// taskCanBeRetried returns whether the task has retries enabled and hasn't
+// used up its attempts. It returns false if the task can't be read.
+func (s *SchedulerServer) taskCanBeRetried(ctx context.Context, taskID string) bool {
+	scheduledTask, err := s.readTask(ctx, taskID)
+	if err != nil {
+		return false
+	}
+	if scheduledTask.attemptCount >= maxTaskAttemptCount {
+		return false
+	}
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(scheduledTask.serializedTask, task); err != nil {
+		return false
+	}
+	return platform.Retryable(task)
+}
+
+// reEnqueueTaskReservation sends a replacement reservation without releasing
+// the task's claim or applying execution retry limits.
+func (s *SchedulerServer) reEnqueueTaskReservation(ctx context.Context, taskID string) error {
+	scheduledTask, err := s.readTask(ctx, taskID)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return nil
+		}
+		return err
+	}
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(scheduledTask.serializedTask, task); err != nil {
+		return status.InternalErrorf("deserialize task: %s", err)
+	}
+	req := &scpb.EnqueueTaskReservationRequest{
+		TaskId:             taskID,
+		TaskSize:           scheduledTask.metadata.GetTaskSize(),
+		SchedulingMetadata: scheduledTask.metadata,
+		Jwt:                scheduledTask.jwt,
+		Delay:              durationpb.New(max(time.Until(scheduledTask.reconnectPeriodEnd), 0)),
+	}
+	err = s.enqueueTaskReservations(ctx, req, task, enqueueTaskReservationOpts{
+		numReplicas: 1,
+	})
+	if status.IsUnavailableError(err) {
+		if markErr := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, err); markErr != nil {
+			log.CtxWarningf(ctx, "Could not mark execution failed for task %q: %s", taskID, markErr)
+		}
+	}
+	return err
+}
+
+// reEnqueueTask releases a task's claim and schedules reservations for another
+// attempt. If retries are disabled or the attempt limit is reached, it deletes
+// the task and marks the execution failed instead.
+//
+// expectedLeaseID guards against cleanup from an old lease affecting a task
+// re-claimed under a new lease. When nonempty, releasing a claim or deleting
+// the task requires its stored lease ID, if present, to match expectedLeaseID.
+// The stored ID remains after a claim is released.
+// An empty expectedLeaseID skips this check; it does not assert that the task
+// is unclaimed. LeaseTask currently passes an empty ID after attempting to
+// release a claim for an executor's retry request.
+//
+// A nonempty reconnectToken reserves the task for its previous executor during
+// the reconnect grace period. Reconnection continues the same execution attempt,
+// so it is allowed even if retries are disabled or the attempt limit is reached.
+func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, expectedLeaseID, reconnectToken string, numReplicas int, reason string) error {
 	if taskID == "" {
 		return status.FailedPreconditionError("A task_id is required")
 	}
@@ -3199,7 +3373,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	// reconnect. A successful reconnect does not increment the attempt count.
 	isLeaseReconnect := reconnectToken != ""
 	if !isLeaseReconnect && scheduledTask.attemptCount >= maxTaskAttemptCount {
-		if _, err := s.deleteTask(ctx, taskID); err != nil {
+		if err := s.deleteTaskForLease(ctx, taskID, expectedLeaseID); err != nil {
 			return err
 		}
 		msg := fmt.Sprintf("Task %q already attempted %d times.", taskID, scheduledTask.attemptCount)
@@ -3218,7 +3392,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	}
 	retryable := platform.Retryable(task)
 	if !isLeaseReconnect && !retryable {
-		if _, err := s.deleteTask(ctx, taskID); err != nil {
+		if err := s.deleteTaskForLease(ctx, taskID, expectedLeaseID); err != nil {
 			return err
 		}
 		log.CtxInfof(ctx, "Task %q does not have retries enabled. Not re-enqueuing.", taskID)
@@ -3228,10 +3402,13 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		return nil
 	}
 
-	if err := s.unclaimTask(ctx, taskID, leaseID, reconnectToken); err != nil {
+	if err := s.unclaimTask(ctx, taskID, expectedLeaseID, reconnectToken); err != nil {
 		// A "permission denied" error means the task is already claimed
-		// by a different leaseholder so we shouldn't touch it.
-		if status.IsPermissionDeniedError(err) {
+		// by a different leaseholder so we shouldn't touch it. A "not found"
+		// error means the task was finalized or cancelled since we read it,
+		// so there is nothing left to re-enqueue, and enqueueing anyway could
+		// fail an execution that already finished.
+		if status.IsPermissionDeniedError(err) || status.IsNotFoundError(err) {
 			return err
 		}
 		log.CtxDebugf(ctx, "Failed to unclaim task: %s", err)

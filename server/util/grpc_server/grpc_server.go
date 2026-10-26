@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"runtime"
@@ -45,6 +46,9 @@ var (
 	gRPCPort  = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 
+	maxConnectionAge      = flag.Duration("grpc_max_connection_age", 0, "Age after which native gRPC server connections begin draining, with +/-10% jitter. Existing RPCs may continue during the grace period. 0 (the default) disables connection aging. Does not apply to gRPC served over the HTTP port.")
+	maxConnectionAgeGrace = flag.Duration("grpc_max_connection_age_grace", 0, "Additional time after connection aging begins before forcibly closing active RPCs. 0 allows existing RPCs to finish without a time limit. Requires grpc_max_connection_age to be positive when nonzero.")
+
 	internalGRPCPort  = flag.Int("internal_grpc_port", 1987, "The port to listen for internal gRPC traffic on")
 	internalGRPCSPort = flag.Int("internal_grpcs_port", 1988, "The port to listen for internal gRPCS traffic on")
 
@@ -82,6 +86,9 @@ type GRPCServerConfig struct {
 	PostAuthUnaryInterceptors      []grpc.UnaryServerInterceptor
 	PostAuthStreamInterceptors     []grpc.StreamServerInterceptor
 	ExtraStatsHandlers             []stats.Handler
+	// EnableConnectionAging applies the connection age flags to this listener.
+	// Only enable it on listeners accepting load-balanced client traffic.
+	EnableConnectionAging bool
 }
 
 type GRPCServer struct {
@@ -114,6 +121,15 @@ func New(env environment.Env, port int, ssl bool, config GRPCServerConfig) (*GRP
 	}
 
 	grpcOptions := CommonGRPCServerOptionsWithConfig(env, config)
+	if config.EnableConnectionAging {
+		opt, err := connectionAgeOption()
+		if err != nil {
+			return nil, err
+		}
+		if opt != nil {
+			grpcOptions = append(grpcOptions, opt)
+		}
+	}
 	if credentialOption != nil {
 		grpcOptions = append(grpcOptions, credentialOption)
 		log.Infof("gRPCS listening on %s", b.hostPort)
@@ -247,6 +263,35 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		opts = append(opts, grpc.StatsHandler(h))
 	}
 	return opts
+}
+
+func connectionAgeOption() (grpc.ServerOption, error) {
+	if *maxConnectionAge < 0 || *maxConnectionAgeGrace < 0 {
+		return nil, status.InvalidArgumentError("grpc_max_connection_age and grpc_max_connection_age_grace must be nonnegative")
+	}
+	if *maxConnectionAge == 0 {
+		if *maxConnectionAgeGrace > 0 {
+			return nil, status.InvalidArgumentError("grpc_max_connection_age_grace requires a positive grpc_max_connection_age")
+		}
+		return nil, nil
+	}
+	// grpc-go divides the age by 10 to compute its jitter bound.
+	// Positive ages below 10ns truncate that bound to zero and panic in rand.Int64N.
+	if *maxConnectionAge < 10*time.Nanosecond {
+		return nil, status.InvalidArgumentError("positive grpc_max_connection_age must be at least 10ns")
+	}
+	// Its largest positive jitter is age/10 - 1ns. Ensure adding it cannot
+	// overflow time.Duration and turn a very large age into immediate draining.
+	maxJitter := *maxConnectionAge/10 - time.Nanosecond
+	if *maxConnectionAge > time.Duration(math.MaxInt64)-maxJitter {
+		return nil, status.InvalidArgumentError("grpc_max_connection_age is too large to add jitter; use 0s to disable aging")
+	}
+	// grpc-go interprets a zero grace period as unlimited, allowing long-lived
+	// streams to finish while new RPCs use replacement connections.
+	return grpc.KeepaliveParams(keepalive.ServerParameters{
+		MaxConnectionAge:      *maxConnectionAge,
+		MaxConnectionAgeGrace: *maxConnectionAgeGrace,
+	}), nil
 }
 
 func KeepaliveEnforcementPolicy() grpc.ServerOption {

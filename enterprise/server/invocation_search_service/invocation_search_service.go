@@ -678,7 +678,7 @@ func (s *InvocationSearchService) GetInvocationFilterSuggestions(ctx context.Con
 		}
 		for _, c := range s.TopCommands {
 			suggestions = append(suggestions, &sfpb.GenericFilter{
-				Type:    sfpb.FilterType_BRANCH_FILTER_TYPE,
+				Type:    sfpb.FilterType_COMMAND_FILTER_TYPE,
 				Operand: sfpb.FilterOperand_IN_OPERAND,
 				Value:   &sfpb.FilterValue{StringValue: []string{c}},
 			})

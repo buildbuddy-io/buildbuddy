@@ -1378,6 +1378,53 @@ func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) erro
 	}
 }
 
+// ValidateTreeNames checks that every entry name in the tree is a single path
+// component, and that each directory's names are unique, as the REAPI spec
+// requires. The tree fetcher builds paths from these names, so a name like ".."
+// or two entries with the same name could otherwise make it write outside its
+// root directory. If caseInsensitive is true, names that differ only in case
+// count as the same name.
+func ValidateTreeNames(tree *repb.Tree, caseInsensitive bool) error {
+	// Reuse the buffer across directories to avoid allocating it for each one.
+	// Growing the buffer and converting names to lowercase can still allocate.
+	var names []string
+	checkDir := func(dir *repb.Directory) error {
+		names = names[:0]
+		for _, f := range dir.GetFiles() {
+			names = append(names, f.GetName())
+		}
+		for _, d := range dir.GetDirectories() {
+			names = append(names, d.GetName())
+		}
+		for _, s := range dir.GetSymlinks() {
+			names = append(names, s.GetName())
+		}
+		for i, name := range names {
+			if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') || (filepath.Separator != '/' && strings.ContainsRune(name, filepath.Separator)) {
+				return status.InvalidArgumentErrorf("input tree entry name %q isn't a single path component", name)
+			}
+			names[i] = fspath.NewKey(name, caseInsensitive).NormalizedString()
+		}
+		// Sorting puts duplicate names next to each other.
+		slices.Sort(names)
+		for i := 1; i < len(names); i++ {
+			if names[i] == names[i-1] {
+				return status.InvalidArgumentErrorf("input tree has more than one entry named %q in a directory", names[i])
+			}
+		}
+		return nil
+	}
+	if err := checkDir(tree.GetRoot()); err != nil {
+		return err
+	}
+	for _, dir := range tree.GetChildren() {
+		if err := checkDir(dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func DirMapFromTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
 	dirMap = make(map[digest.Key]*repb.Directory, 1+len(tree.Children))
 
@@ -1672,6 +1719,9 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 
 	f.fetchStartTime = time.Now()
 
+	if err := ValidateTreeNames(f.tree, f.opts.CaseInsensitive); err != nil {
+		return nil, err
+	}
 	rootDirectoryDigest, dirMap, err := DirMapFromTree(f.tree, f.digestFunction)
 	if err != nil {
 		return nil, err

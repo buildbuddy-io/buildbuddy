@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
@@ -530,6 +531,15 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 	return computeDigest(f, instanceName, digestFunction)
 }
 
+// openWriteStream starts a new Write stream, setting a feature header that
+// tells the server that this client can handle short-circuit "AlreadyExists"
+// errors. If the target blob already exists, CloseAndRecv will return an
+// AlreadyExists error which callers are expected to handle.
+func openWriteStream(ctx context.Context, bsClient bspb.ByteStreamClient) (bspb.ByteStream_WriteClient, error) {
+	ctx = clientfeatures.Advertise(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
+	return bsClient.Write(ctx)
+}
+
 // uploadFromReader uploads data to the CAS. The readerCompression parameter
 // specifies the compression format of the data in the reader. If readerCompression
 // is IDENTITY and target is ZSTD, the data will be compressed. If readerCompression
@@ -549,7 +559,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	defer release()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream, err := bsClient.Write(ctx)
+	stream, err := openWriteStream(ctx, bsClient)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -591,8 +601,9 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 
 		err = sender.SendWithTimeout(req, *casRPCTimeout)
 		if err != nil {
-			// If the blob already exists in the CAS, the server will respond EOF.
-			// It is safe to stop sending writes.
+			// If the blob already exists in the CAS, the server will close its
+			// end of the stream which will be surfaced as io.EOF here.
+			// The Recv below will return the final server response or error.
 			if err == io.EOF {
 				break
 			}
@@ -606,6 +617,9 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	}
 	rsp, err := sender.CloseAndRecvWithTimeout(*casRPCTimeout)
 	if err != nil {
+		if status.IsAlreadyExistsError(err) {
+			return r.GetDigest(), bytesUploaded, nil
+		}
 		// If there is a hash mismatch and the reader supports seeking, re-hash
 		// to check whether a concurrent mutation has occurred.
 		if rs, ok := in.(io.ReadSeeker); ok && status.IsInvalidArgumentError(err) {
@@ -1689,6 +1703,9 @@ func (uw *UploadWriter) flush(finish bool) error {
 			// The server closed the stream, so we need to call CloseAndRecv
 			// to find the error.
 			rsp, err := uw.stream.CloseAndRecv()
+			if err != nil && status.IsAlreadyExistsError(err) {
+				uw.committedSize = -1
+			}
 			if err == nil {
 				uw.committedSize = rsp.GetCommittedSize()
 				// byte_stream_server.go doesn't return an error when the
@@ -1717,6 +1734,7 @@ func (uw *UploadWriter) Commit() error {
 	}
 	if uw.sendErr != nil {
 		if status.IsAlreadyExistsError(uw.sendErr) {
+			uw.committed = true
 			return nil
 		}
 		return status.WrapError(uw.sendErr, "UploadWriter already encountered send error, cannot commit")
@@ -1739,6 +1757,10 @@ func (uw *UploadWriter) Commit() error {
 	}
 	rsp, err := uw.stream.CloseAndRecv()
 	if err != nil {
+		if status.IsAlreadyExistsError(err) {
+			uw.committedSize = -1
+			return nil
+		}
 		return err
 	}
 	uw.committedSize = rsp.GetCommittedSize()
@@ -1774,6 +1796,7 @@ var _ interfaces.CommittedWriteCloser = (*UploadWriter)(nil)
 // NewUploadWriter returns an UploadWriter that writes to the CAS for the specific resource name.
 // The blob is guaranteed to be written to the CAS only if all Write(...) calls and the Commit() calls succeed.
 // The caller is responsible for checking data integrity using GetCommittedSize() and GetBytesUploaded().
+// GetCommittedSize() can return -1 if the server terminated the write because the blob already exists.
 //
 // You must call Close() on an UploadWriter.
 // You also must either
@@ -1784,7 +1807,7 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	stream, err := bsClient.Write(ctx)
+	stream, err := openWriteStream(ctx, bsClient)
 	if err != nil {
 		cancel()
 		return nil, err

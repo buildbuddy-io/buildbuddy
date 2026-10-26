@@ -114,6 +114,53 @@ func Timeseries(title, unit string) *timeseries.PanelBuilder {
 		Span(12)
 }
 
+// PlainTimeseries returns a timeseries panel with a list legend and a
+// single-series tooltip. An empty unit keeps Grafana's default.
+func PlainTimeseries(title, unit string) *timeseries.PanelBuilder {
+	p := timeseries.NewPanelBuilder().
+		Title(title).
+		Datasource(Prometheus()).
+		LineWidth(1).
+		FillOpacity(0).
+		GradientMode(common.GraphGradientModeNone).
+		Legend(common.NewVizLegendOptionsBuilder().
+			DisplayMode(common.LegendDisplayModeList).
+			Placement(common.LegendPlacementBottom).
+			ShowLegend(true)).
+		Tooltip(common.NewVizTooltipOptionsBuilder().
+			Mode(common.TooltipDisplayModeSingle).
+			Sort(common.SortOrderNone)).
+		Height(8).
+		Span(12)
+	if unit != "" {
+		p.Unit(unit)
+	}
+	return p
+}
+
+// RightLegend returns a list legend to the right of the graph.
+func RightLegend() *common.VizLegendOptionsBuilder {
+	return common.NewVizLegendOptionsBuilder().
+		DisplayMode(common.LegendDisplayModeList).
+		Placement(common.LegendPlacementRight).
+		ShowLegend(true)
+}
+
+// MultiTooltip returns a tooltip listing every series, sorted by value.
+func MultiTooltip() *common.VizTooltipOptionsBuilder {
+	return common.NewVizTooltipOptionsBuilder().
+		Mode(common.TooltipDisplayModeMulti).
+		Sort(common.SortOrderDescending)
+}
+
+// RightAxisProps moves a series to a right-hand axis with the given unit.
+func RightAxisProps(unit string) []dashboard.DynamicConfigValue {
+	return []dashboard.DynamicConfigValue{
+		{Id: "custom.axisPlacement", Value: "right"},
+		{Id: "unit", Value: unit},
+	}
+}
+
 // StackedTimeseries returns a timeseries panel suitable for stacked rates.
 func StackedTimeseries(title, unit string) *timeseries.PanelBuilder {
 	return Timeseries(title, unit).

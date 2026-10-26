@@ -657,48 +657,123 @@ func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 	}
 }
 
+func TestFileCacheStatDoesNotMarkFileUsed(t *testing.T) {
+	ctx := t.Context()
+	// For now just assume the disk block size is 4096
+	const fsBlockSize = 4096
+	// Create a filecache that can only fit 2 physical blocks
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 2*fsBlockSize, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	tempDir := testfs.MakeTempDir(t)
+
+	nodeA := nodeFromString("A", false)
+	nodeB := nodeFromString("B", false)
+	nodeC := nodeFromString("C", false)
+	writeFileContent(t, tempDir, "a", "A", false)
+	err = fc.AddFile(ctx, nodeA, filepath.Join(tempDir, "a"))
+	require.NoError(t, err)
+	writeFileContent(t, tempDir, "b", "B", false)
+	err = fc.AddFile(ctx, nodeB, filepath.Join(tempDir, "b"))
+	require.NoError(t, err)
+
+	info, err := fc.Stat(ctx, nodeA)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), info.Size())
+
+	// Adding a third file evicts the least recently used one, which is still
+	// A, since Stat didn't mark A as used.
+	writeFileContent(t, tempDir, "c", "C", false)
+	err = fc.AddFile(ctx, nodeC, filepath.Join(tempDir, "c"))
+	require.NoError(t, err)
+	_, err = fc.Stat(ctx, nodeA)
+	assert.True(t, os.IsNotExist(err), "Stat(A) error = %v, want not exist", err)
+	linked := fc.FastLinkFile(ctx, nodeB, filepath.Join(tempDir, "b-link"))
+	assert.True(t, linked)
+}
+
 func TestScanWithConcurrentAdd(t *testing.T) {
-	for trial := range 100 {
-		ctx := context.Background()
-		filecacheRoot := testfs.MakeTempDir(t)
-
-		const n = 100
-		var nodes [n]*repb.FileNode
-		var nodeContents [n]string
-		for i := range n {
-			name := fmt.Sprint(i)
-			executable := i%2 == 0
-			nodes[i] = nodeFromString(name, executable)
-			cachePath := "ANON/" + nodes[i].GetDigest().GetHash()
-			if executable {
-				cachePath += ".executable"
+	for _, tc := range []struct {
+		name         string
+		legacyLayout bool
+		trials       int
+	}{
+		{name: "current_layout", trials: 100},
+		{name: "legacy_layout_migration", legacyLayout: true, trials: 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			filecacheRoot := testfs.MakeTempDir(t)
+			workspace := testfs.MakeTempDir(t)
+			const n = 100
+			var nodes [n]*repb.FileNode
+			var sourcePaths [n]string
+			for i := range n {
+				name := fmt.Sprint(i)
+				executable := i%2 == 0
+				nodes[i] = nodeFromString(name, executable)
+				sourcePaths[i] = writeFileContent(t, workspace, name, name, executable)
 			}
-			writeFileContent(t, filecacheRoot, cachePath, name, executable)
-			nodeContents[i] = name
-		}
 
-		i := rand.Intn(n)
-		nodeToAddConcurrently := nodes[i]
-		nodeToAddConcurrentlyPath := filepath.Join(testfs.MakeTempDir(t), "action.output")
-		writeFileContent(t, filepath.Dir(nodeToAddConcurrentlyPath), filepath.Base(nodeToAddConcurrentlyPath), nodeContents[i], nodeToAddConcurrently.GetIsExecutable())
+			if !tc.legacyLayout {
+				// Populate the cache once through AddFile so most trials scan
+				// the current layout without repeating legacy migration work.
+				func() {
+					fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+					require.NoError(t, err)
+					fc.WaitForDirectoryScanToComplete()
+					defer func() { require.NoError(t, fc.Close()) }()
+					for i := range n {
+						require.NoError(t, fc.AddFile(ctx, nodes[i], sourcePaths[i]))
+					}
+				}()
+			}
 
-		fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
-		require.NoError(t, err)
-		t.Cleanup(func() { fc.Close() })
+			for trial := range tc.trials {
+				if tc.legacyLayout {
+					// Migration moves the flat-layout files, so each migration
+					// trial needs a fresh legacy cache directory.
+					filecacheRoot = testfs.MakeTempDir(t)
+					for i := range n {
+						cachePath := "ANON/" + nodes[i].GetDigest().GetHash()
+						if nodes[i].GetIsExecutable() {
+							cachePath += ".executable"
+						}
+						writeFileContent(t, filecacheRoot, cachePath, fmt.Sprint(i), nodes[i].GetIsExecutable())
+					}
+				}
 
-		// While the directory scan is in progress, re-add a random file
-		// to trigger a race.
-		err = fc.AddFile(ctx, nodeToAddConcurrently, nodeToAddConcurrentlyPath)
-		require.NoError(t, err)
+				readded := rand.Intn(n)
+				// Use a new source file, not the inode already linked into
+				// the cache. Reusing that inode can make AddFile a no-op.
+				sourcePath := writeFileContent(t, workspace, fmt.Sprintf("action.output-%d", trial), fmt.Sprint(readded), nodes[readded].GetIsExecutable())
+				func() {
+					fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+					require.NoError(t, err)
+					defer func() {
+						fc.WaitForDirectoryScanToComplete()
+						require.NoError(t, fc.Close())
+					}()
 
-		fc.WaitForDirectoryScanToComplete()
+					// Race a re-add against the startup scan. The overlap is
+					// probabilistic; these calls do not force a specific order.
+					require.NoError(t, fc.AddFile(ctx, nodes[readded], sourcePath))
+					fc.WaitForDirectoryScanToComplete()
 
-		// The directory scan should be resilient to this race condition -
-		// linking any file should work.
-		for i := range n {
-			ok := fc.FastLinkFile(ctx, nodes[i], filepath.Join(fc.TempDir(), fmt.Sprintf("out-%d", i)))
-			require.True(t, ok, "link node %d (test trial %d)", i, trial)
-		}
+					// Linking any file should work. NewFileCache clears these
+					// output links before the next current-layout trial.
+					for i := range n {
+						outputPath := filepath.Join(fc.TempDir(), fmt.Sprintf("out-%d", i))
+						ok := fc.FastLinkFile(ctx, nodes[i], outputPath)
+						require.True(t, ok, "link node %d (trial %d, re-added node %d)", i, trial, readded)
+						if i == readded {
+							assertFileContents(t, outputPath, fmt.Sprint(readded))
+						}
+					}
+				}()
+			}
+		})
 	}
 }
 
@@ -1310,7 +1385,7 @@ func requireNotOwnerExecutable(t *testing.T, fi os.FileInfo) {
 }
 
 func BenchmarkFilecacheLink(b *testing.B) {
-	// Use a simple Claims to speed up filecache.groupIDStringFromContext()
+	// Use a simple Claims to speed up filecache.GroupIDStringFromContext()
 	ctx := claims.AuthContextWithJWT(context.Background(), &claims.Claims{}, nil)
 	flags.Set(b, "app.log_level", "warn")
 	log.Configure()
@@ -1391,7 +1466,7 @@ func BenchmarkFilecacheLink(b *testing.B) {
 }
 
 func BenchmarkContainsAdd(b *testing.B) {
-	// Use a simple Claims to speed up filecache.groupIDStringFromContext()
+	// Use a simple Claims to speed up filecache.GroupIDStringFromContext()
 	ctx := claims.AuthContextWithJWT(context.Background(), &claims.Claims{}, nil)
 	flags.Set(b, "app.log_level", "warn")
 	log.Configure()

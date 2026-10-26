@@ -19,7 +19,10 @@ export type RunWorkflowParams = {
 // Links may only select from a fixed set of env var presets, rather than
 // setting arbitrary env vars.
 const ENV_PRESETS: Record<string, EnvVar[]> = {
+  // Force an agent review to run, even if an agent-review has already run on the same branch.
   AGENT_REVIEW: [{ name: "AGENT_REVIEW_FORCE", value: "1" }],
+  // Have an agent address and push feedback posted to a PR.
+  AGENT_REVIEW_FIX: [{ name: "AGENT_REVIEW_FIX", value: "1" }],
 };
 
 function requiredParameter(search: URLSearchParams, name: string): string {

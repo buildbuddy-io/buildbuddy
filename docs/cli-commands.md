@@ -117,6 +117,12 @@ The review reads the source from the local checkout, so to review another PR, ch
 Draft PRs and PRs that already have a bot review are skipped. Pass `--force` (or set `AGENT_REVIEW_FORCE=1`) to review them anyway.
 PRs from forks are refused by default, because reviewing one runs the agent over untrusted code. Pass `--allow_fork` to review one anyway.
 
+#### Addressing review feedback with an agent
+
+Pass `--fix` to `bb agent review` to fetch existing PR feedback and have the agent address actionable requests.
+
+By default, `--fix` pushes changes to the PR branch. Pass `--dry_run` to leave edits uncommitted in the working tree without pushing to GitHub.
+
 #### Usage
 
 ```bash
@@ -125,6 +131,12 @@ bb agent review
 
 # Print the review without posting it.
 bb agent review --dry_run
+
+# Address existing PR feedback, verify, commit, and push changes.
+bb agent review --fix
+
+# Apply fixes locally without committing or pushing.
+bb agent review --fix --dry_run
 ```
 
 #### Prerequisites

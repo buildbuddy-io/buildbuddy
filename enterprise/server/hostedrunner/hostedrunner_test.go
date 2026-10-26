@@ -29,6 +29,7 @@ import (
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -253,6 +254,68 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	}
 }
 
+func TestRun_BuildUser(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		subID    string
+		fullName string
+		groupKey bool
+		env      map[string]string
+		want     string
+	}{
+		{name: "GitHub user", subID: "https://github.com/alice", fullName: "Alice Example", want: "alice"},
+		{name: "user name", subID: "sso/alice", fullName: "Alice Example", want: "Alice Example"},
+		{name: "unnamed user", subID: "sso/alice", want: "US1"},
+		{name: "organization key", subID: "sso/alice", groupKey: true, want: "Acme, Inc."},
+		{name: "explicit user", subID: "sso/alice", env: map[string]string{"BUILD_USER": "custom-user"}, want: "custom-user"},
+		{name: "explicit empty user", subID: "sso/alice", env: map[string]string{"BUILD_USER": ""}, want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "app.user_owned_keys_enabled", true)
+			te, ctx := getEnv(t)
+			u, err := te.GetUserDB().GetUser(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, u.Groups)
+			groupID := u.Groups[0].Group.GroupID
+			err = te.GetDBHandle().NewQuery(ctx, "set_attribution_profile").Raw(
+				`UPDATE "Users" SET sub_id = ?, first_name = ? WHERE user_id = ?`,
+				tc.subID, tc.fullName, u.UserID).Exec().Error
+			require.NoError(t, err)
+			enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx, te, groupID, true)
+			err = te.GetDBHandle().NewQuery(ctx, "set_attribution_organization").Raw(
+				`UPDATE "Groups" SET name = ? WHERE group_id = ?`, "Acme, Inc.", groupID).Exec().Error
+			require.NoError(t, err)
+			var key *tables.APIKey
+			caps := []cappb.Capability{cappb.Capability_CACHE_WRITE}
+			if tc.groupKey {
+				key, err = te.GetAuthDB().CreateAPIKey(ctx, groupID, "test", caps, 0, false)
+			} else {
+				key, err = te.GetAuthDB().CreateUserAPIKey(ctx, groupID, u.UserID, "test", caps, 0)
+			}
+			require.NoError(t, err)
+			ctx = te.GetAuthenticator().AuthContextFromAPIKey(t.Context(), key.Value)
+			ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, key.Value)
+			r, err := New(te)
+			require.NoError(t, err)
+			_, err = r.Run(ctx, &rnpb.RunRequest{
+				Steps: []*rnpb.Step{{Run: "echo hello"}},
+				Env:   tc.env,
+			})
+			require.NoError(t, err)
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			require.Len(t, execClient.executeRequests, 1)
+			exec := getExecution(t, ctx, te, execClient.executeRequests[0].Payload)
+			var users []string
+			for _, env := range exec.Command.GetEnvironmentVariables() {
+				if env.GetName() == "BUILD_USER" {
+					users = append(users, env.GetValue())
+				}
+			}
+			require.Equal(t, []string{tc.want}, users)
+		})
+	}
+}
+
 func TestNormalizeWorkingDirectory(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -406,4 +469,28 @@ func TestCredentialEnvOverrides_PrivateRepo(t *testing.T) {
 
 	// Assert that REPO_TOKEN is set to the fake token.
 	require.Contains(t, envOverrides, "REPO_TOKEN="+fakeToken)
+}
+
+func TestRun_GitCredentialsFromEnv(t *testing.T) {
+	te, ctx := getEnv(t)
+	r, err := New(te)
+	require.NoError(t, err)
+
+	_, err = r.Run(ctx, &rnpb.RunRequest{
+		GitRepo:   &gitpb.GitRepo{RepoUrl: "https://bitbucket.org/org/repo"},
+		RepoState: &gitpb.RepoState{Branch: "main"},
+		Env:       map[string]string{"REPO_USER": "user", "REPO_TOKEN": "token"},
+		Steps:     []*rnpb.Step{{Run: "echo hello"}},
+	})
+	require.NoError(t, err)
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	require.Equal(t, 1, len(execClient.executeRequests))
+	execReq := execClient.executeRequests[0]
+	overrides := execReq.Metadata.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
+	require.Greater(t, len(overrides), 0)
+	require.Contains(t, overrides[len(overrides)-1], "REPO_USER=user,REPO_TOKEN=token")
+	for _, ev := range getExecution(t, ctx, te, execReq.Payload).Command.GetEnvironmentVariables() {
+		require.NotContains(t, []string{"REPO_USER", "REPO_TOKEN"}, ev.GetName())
+	}
 }

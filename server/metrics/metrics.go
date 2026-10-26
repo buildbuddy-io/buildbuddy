@@ -328,7 +328,8 @@ const (
 	DistributedCacheWriteRequestType = "request_type"
 
 	// Where a distributed cache read was served from: "local" (this node is a
-	// replica), "read_through" (local read-through cache), "lookaside" or "peer".
+	// replica), "read_through" (local read-through cache), "lookaside",
+	// "same_zone_peer" or "cross_zone_peer".
 	DistributedCacheReadSource = "source"
 
 	// ContentAddressableStorage Server operation: "FindMissingBlobs",
@@ -345,6 +346,10 @@ const (
 	// Whether a SpliceBlob request hashed the referenced chunks to verify
 	// the blob digest (`full`) or skipped that check (`skipped`).
 	SpliceBlobValidation = "splice_validation"
+
+	// Values for the SpliceBlobValidation label.
+	SpliceBlobValidationFull    = "full"
+	SpliceBlobValidationSkipped = "skipped"
 
 	// TreeCache directory depth: 0 for the root dir, 1 for a direct child of
 	// the root dir, and so on.
@@ -414,8 +419,12 @@ const (
 	// for data we receive).
 	GRPCFlowControlDirectionLabel = "direction"
 
-	// Destination cloud provider inferred from the remote IP range: `aws`,
-	// `gcp`, or `other`.
+	// Destination provider inferred from the remote IP range: a cloud or
+	// hosting provider (`aws`, `gcp`, `azure`, `github`, `digitalocean`,
+	// `oracle`, `macstadium`, `phoenixnap`, `hetzner`, `ovh`, `latitude.sh`,
+	// `namespace`), one of our own networks (`metal`, `psc`, `privatelink`,
+	// `internal`, `loopback`), or `other` for any public IP outside every known
+	// range. See enterprise/server/util/trafficstats.
 	DestinationProviderLabel = "provider"
 
 	// Destination region inferred from the remote IP range, or `unknown` if no
@@ -4814,6 +4823,18 @@ var (
 		Subsystem: "grpc",
 		Name:      "server_ingress_bytes",
 		Help:      "The number of gRPC server request bytes received over the wire, broken down by group, peer type, and source provider/region inferred from the peer IP. Bytes relayed by another BuildBuddy server were counted there too; filter peer_type=`external` to count each byte once. Note: this metric tracks gRPC payload bytes, which may be compressed, and does not include HTTP/2 framing or request headers.",
+	}, []string{
+		GroupID,
+		PeerTypeLabel,
+		DestinationProviderLabel,
+		DestinationRegionLabel,
+	})
+
+	GRPCServerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "server_requests",
+		Help:      "The number of finished gRPC server requests, broken down by group, peer type, and source provider/region inferred from the peer IP. Requests forwarded by another BuildBuddy server were counted there too; filter peer_type=`external` to count each request once.",
 	}, []string{
 		GroupID,
 		PeerTypeLabel,
