@@ -105,15 +105,6 @@ RUN apt-get update && \
 # Note, after Ubuntu 20.04, we should probably install `python-is-python3` instead.
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python2.7 1
 
-# Distrust all eMudhra (emSign) roots and Sectigo's AAA Certificate Services,
-# matching Bazel 9.3.1's bundled JDK, after eMudhra intermediate private keys
-# were found to be recoverable (https://emudhra.we-have-a-problem.com/).
-# Deselected entries in /etc/ca-certificates.conf survive ca-certificates
-# upgrades. Verify with enterprise/tools/build_images/check_distrusted_certs.sh
-RUN sed -i -E 's#^(mozilla/(emSign_.*|Comodo_AAA_Services_root)\.crt)$#!\1#' /etc/ca-certificates.conf && \
-    ! grep -qE '^mozilla/(emSign_.*|Comodo_AAA_Services_root)\.crt$' /etc/ca-certificates.conf && \
-    update-ca-certificates
-
 # Set up env
 
 ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
