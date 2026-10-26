@@ -165,8 +165,6 @@ func upgradeTriggersFromFlags() (map[uppb.Prompt_Urgency]upgrade.Trigger, error)
 	return upgrade.ParseTriggers(*upgradePromptMaxLags, *upgradePromptMinVersions)
 }
 
-// newestVersionFromFlags returns the version set by
-// --cache_proxy.upgrade_prompt_newest_version, or nil if it is unset.
 func newestVersionFromFlags() (*semver.Version, error) {
 	if *upgradePromptNewest == "" {
 		return nil, nil
