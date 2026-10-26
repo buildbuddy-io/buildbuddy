@@ -2792,6 +2792,8 @@ func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostna
 func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, taskProto *repb.ExecutionTask) *repb.ExecutionTask {
 	fp := s.env.GetExperimentFlagProvider()
 	if fp == nil {
+		// TODO: remove this check so expflags work even when the experiment
+		// flag provider is not set.
 		return taskProto
 	}
 
@@ -2844,6 +2846,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 			execution_experiments.UserspaceNetworking.GetProto(ctx, expOptions...),
 			execution_experiments.RecordInputFetchMetadata.GetProto(ctx, expOptions...),
 			execution_experiments.WorkspacePoolEnabled.GetProto(ctx, expOptions...),
+			execution_experiments.SpliceWithoutValidation.GetProto(ctx, expOptions...),
 		}
 	}
 

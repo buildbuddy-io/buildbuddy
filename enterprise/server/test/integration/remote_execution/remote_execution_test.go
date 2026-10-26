@@ -2803,3 +2803,96 @@ func getExecutionAuxiliaryMetadata(t testing.TB, execRes *repb.ExecuteResponse) 
 	require.True(t, ok)
 	return auxMeta
 }
+
+// spliceBlobCounts returns the number of SpliceBlob requests the cache has
+// served per metrics.SpliceBlobValidation label value, summed across groups.
+func spliceBlobCounts(t *testing.T) map[string]float64 {
+	counts := map[string]float64{}
+	for _, v := range testmetrics.CounterValues(t, metrics.SpliceBlobCount) {
+		counts[v.Labels[metrics.SpliceBlobValidation]] += v.Value
+	}
+	return counts
+}
+
+// executeChunkedOutputAction runs an action whose output is large enough for
+// the executor to upload it as chunks and splice them together, checks that
+// the output reads back whole, and returns the metrics.SpliceBlobValidation
+// label value under which the cache served the SpliceBlob requests meanwhile.
+func executeChunkedOutputAction(t *testing.T, rbe *rbetest.Env) string {
+	// Outputs larger than four times the average chunk size are chunked, as
+	// long as they are also too large for a batch upload.
+	const avgChunkSize = 1024 * 1024
+	flags.Set(t, "cache.avg_chunk_size_bytes", int64(avgChunkSize))
+	const outputSize = 5 * avgChunkSize
+
+	before := spliceBlobCounts(t)
+	cmd := rbe.Execute(&repb.Command{
+		Arguments:   []string{"sh", "-ec", fmt.Sprintf("head -c %d /dev/urandom > out", outputSize)},
+		OutputPaths: []string{"out"},
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "container-image", Value: "none"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		}},
+	}, &rbetest.ExecuteOpts{APIKey: rbe.APIKey1})
+	res := cmd.Wait()
+	require.Equal(t, 0, res.ExitCode, "stderr: %q", res.Stderr)
+
+	// The spliced output must read back whole either way.
+	outDir := rbe.DownloadOutputsToNewTempDir(res)
+	info, err := os.Stat(filepath.Join(outDir, "out"))
+	require.NoError(t, err)
+	require.EqualValues(t, outputSize, info.Size())
+
+	// Retries may make the cache serve more than one SpliceBlob request, but
+	// it must validate all of them the same way.
+	after := spliceBlobCounts(t)
+	var served []string
+	for validation, count := range after {
+		if count > before[validation] {
+			served = append(served, validation)
+		}
+	}
+	require.Len(t, served, 1, "SpliceBlob requests served per validation label: before %v, after %v", before, after)
+	return served[0]
+}
+
+func TestSpliceWithoutValidationExperiment(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+		// noIdentityService leaves client identity unconfigured, as on a
+		// self-hosted deployment that has not set it up.
+		noIdentityService bool
+		// anonymousExecutor makes the executor talk to the cache without
+		// presenting its client identity.
+		anonymousExecutor bool
+		validation        string
+	}{
+		{name: "trusted executor", enabled: true, validation: metrics.SpliceBlobValidationSkipped},
+		{name: "experiment disabled", enabled: false, validation: metrics.SpliceBlobValidationFull},
+		{name: "no client identity service", enabled: true, noIdentityService: true, validation: metrics.SpliceBlobValidationFull},
+		{name: "executor without client identity", enabled: true, anonymousExecutor: true, validation: metrics.SpliceBlobValidationFull},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The cache only skips validation for callers that present an
+			// executor (or cache proxy) client identity.
+			if !tc.noIdentityService {
+				flags.Set(t, "app.client_identity.key", "test-client-identity-key")
+				flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityExecutor)
+			}
+			flags.Set(t, "remote_execution.chunking_enabled", true)
+			flags.Set(t, "executor.splice_without_validation", tc.enabled)
+
+			rbe := rbetest.NewRBETestEnv(t)
+			rbe.AddBuildBuddyServer()
+			executorOpts := &rbetest.ExecutorOptions{}
+			if tc.anonymousExecutor {
+				executorOpts.CacheConn = rbe.AppProxy.Dial()
+			}
+			rbe.AddExecutorWithOptions(t, executorOpts)
+
+			require.Equal(t, tc.validation, executeChunkedOutputAction(t, rbe))
+		})
+	}
+}
