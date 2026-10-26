@@ -5129,6 +5129,20 @@ func assertCommandResult(t testing.TB, expected *interfaces.CommandResult, actua
 }
 
 func TestFirecrackerGenericSnapshot(t *testing.T) {
+	for _, kernel := range []struct {
+		name        string
+		experiments []string
+	}{
+		{name: "default kernel"},
+		{name: "6.18 kernel", experiments: []string{"upgrade-fc-guest-kernel"}},
+	} {
+		t.Run(kernel.name, func(t *testing.T) {
+			testFirecrackerGenericSnapshot(t, kernel.experiments)
+		})
+	}
+}
+
+func testFirecrackerGenericSnapshot(t *testing.T, experiments []string) {
 	ctx := context.Background()
 	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
 	env := getTestEnv(ctx, t, envOpts{})
@@ -5147,7 +5161,7 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 		}
 	}
 	for _, cpus := range []int64{1, 2} {
-		err := firecracker.BuildGenericSnapshot(ctx, env, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig(cpus, fcpb.NetworkMode_NETWORK_MODE_LOCAL)})
+		err := firecracker.BuildGenericSnapshot(ctx, env, experiments, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig(cpus, fcpb.NetworkMode_NETWORK_MODE_LOCAL)})
 		require.NoError(t, err)
 	}
 	task := &repb.ExecutionTask{
@@ -5155,6 +5169,7 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 		ExecutionId:    "generic-execution",
 		ExecuteRequest: &repb.ExecuteRequest{InstanceName: "generic-instance", ActionDigest: &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}},
 		Command:        &repb.Command{OutputFiles: []string{"output"}},
+		Experiments:    experiments,
 	}
 	newContainer := func(t *testing.T, ctx context.Context, image, user string, cpus int64, mode fcpb.NetworkMode) *firecracker.FirecrackerContainer {
 		opts := firecracker.ContainerOpts{ContainerImage: image, User: user, ExecutorConfig: cfg, VMConfiguration: vmConfig(cpus, mode), GenericSnapshot: true}
@@ -5278,7 +5293,7 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 	require.NoError(b, err)
 	cfg := getExecutorConfig(b)
 	vmConfig := &fcpb.VMConfiguration{NumCpus: 1, MemSizeMb: 2385, ScratchDiskSizeMb: 100, NetworkMode: fcpb.NetworkMode_NETWORK_MODE_LOCAL}
-	require.NoError(b, firecracker.BuildGenericSnapshot(ctx, env, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig}))
+	require.NoError(b, firecracker.BuildGenericSnapshot(ctx, env, nil /*=experiments*/, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig}))
 	for _, generic := range []bool{false, true} {
 		b.Run(fmt.Sprintf("generic=%t", generic), func(b *testing.B) {
 			b.StopTimer()
@@ -5344,4 +5359,79 @@ func TestGenericSnapshotShape(t *testing.T) {
 			assert.Empty(t, cmp.Diff(original, input, protocmp.Transform()))
 		})
 	}
+}
+
+func TestFirecrackerGenericSnapshotRebuild(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	flags.Set(t, "executor.firecracker_generic_snapshot_cpus", []int64{1})
+	env := getTestEnv(ctx, t, envOpts{})
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(auth)
+	ctx, err := auth.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	root := executorRootDir(t)
+	p, err := firecracker.NewProvider(env, filepath.Join(root, "build"), filepath.Join(root, "cache"))
+	require.NoError(t, err)
+	require.NoError(t, p.BuildGenericSnapshots(ctx, ""))
+
+	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: platform.UseGenericSnapshotPropertyName, Value: "true"},
+	}}}}
+	props, err := platform.ParseProperties(task)
+	require.NoError(t, err)
+	props.ContainerImage = busyboxImage
+	newContainer := func(t *testing.T) (*firecracker.FirecrackerContainer, error) {
+		c, err := p.New(ctx, &container.Init{
+			WorkDir: testfs.MakeTempDir(t),
+			Task: &repb.ScheduledTask{ExecutionTask: task, SchedulingMetadata: &scpb.SchedulingMetadata{
+				TaskSize: &scpb.TaskSize{EstimatedMilliCpu: 1000, EstimatedMemoryBytes: 1e9, EstimatedFreeDiskBytes: 1e8},
+			}},
+			Props: props,
+		})
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { assert.NoError(t, c.Remove(context.Background())) })
+		return c.(*firecracker.FirecrackerContainer), nil
+	}
+	snapshotHash := func(t *testing.T) string {
+		c, err := newContainer(t)
+		require.NoError(t, err)
+		return c.SnapshotKeySet().GetWriteKey().GetConfigurationHash()
+	}
+
+	c, err := newContainer(t)
+	require.NoError(t, err)
+	genericHash := c.SnapshotKeySet().GetWriteKey().GetConfigurationHash()
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	genericSnapshotCtx := snaploader.WithSharedNamespace(context.Background(), env, firecracker.GenericSnapshotNamespace)
+	snap, err := loader.GetSnapshot(genericSnapshotCtx, c.SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
+	require.NoError(t, err)
+	chunks := snap.GetChunkedFiles()[0].GetChunks()
+	require.True(t, env.GetFileCache().DeleteFile(genericSnapshotCtx, &repb.FileNode{Digest: chunks[0].GetDigest()}))
+
+	// The first task finds the snapshot evicted and boots from scratch.
+	result := c.Run(ctx, &repb.Command{Arguments: []string{"true"}}, testfs.MakeTempDir(t), oci.Credentials{})
+	require.NoError(t, result.Error, "%s", result.AuxiliaryLogs)
+	require.Equal(t, 0, result.ExitCode, "%s", result.Stderr)
+
+	// Later tasks boot normally until the snapshot is rebuilt.
+	assert.NotEqual(t, genericHash, snapshotHash(t))
+	assert.Eventually(t, func() bool {
+		c, err := newContainer(t)
+		return err == nil && c.SnapshotKeySet().GetWriteKey().GetConfigurationHash() == genericHash
+	}, time.Minute, 100*time.Millisecond)
+
+	// Tasks on another kernel get their own snapshot.
+	task.Experiments = []string{"upgrade-fc-guest-kernel"}
+	assert.Eventually(t, func() bool {
+		c, err := newContainer(t)
+		if err != nil || c.SnapshotKeySet().GetWriteKey().GetConfigurationHash() == genericHash {
+			return false
+		}
+		_, err = loader.GetSnapshot(genericSnapshotCtx, c.SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
+		return err == nil
+	}, time.Minute, 100*time.Millisecond)
 }

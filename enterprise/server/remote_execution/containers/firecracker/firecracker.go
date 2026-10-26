@@ -65,6 +65,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/klauspost/cpuid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -550,6 +551,9 @@ type Provider struct {
 	localNetworkPool       *networking.VMNetworkPool
 	marshalledDNSOverrides string
 	hostResolvConf         string
+
+	// genericRebuilds rebuilds generic snapshots, keyed by configuration hash.
+	genericRebuilds singleflight.Group[string, struct{}]
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, error) {
@@ -602,7 +606,8 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 	}, nil
 }
 
-// vcpuCount returns the number of vCPUs for a VM reserving milliCPU.
+// vcpuCount returns the minimum whole number of vCPUs for a VM reserving
+// milliCPU.
 func vcpuCount(milliCPU int64) int64 {
 	numCPUs := int64(max(1.0, float64(milliCPU)/1000))
 	if *overprovisionCPUs == -1 {
@@ -654,9 +659,6 @@ func (p *Provider) BuildGenericSnapshots(ctx context.Context, cgroupParent strin
 	if len(*genericSnapshotCPUs) == 0 {
 		return nil
 	}
-	if p.executorConfig.GuestKernelImagePath6_18 == "" {
-		return status.FailedPreconditionError("generic snapshots require the 6.18 guest kernel")
-	}
 	if !*snaputil.EnableLocalSnapshotSharing {
 		return status.FailedPreconditionError("generic snapshots require local snapshot sharing")
 	}
@@ -668,23 +670,40 @@ func (p *Provider) BuildGenericSnapshots(ctx context.Context, cgroupParent strin
 			shape := GenericSnapshotShape(&scpb.TaskSize{EstimatedMilliCpu: cpus * 1000})
 			vmConfig := genericVMConfig(shape, fcpb.NetworkMode_NETWORK_MODE_OFF)
 			vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
-			start := time.Now()
-			err := BuildGenericSnapshot(ctx, p.env, ContainerOpts{
-				VMConfiguration:        vmConfig,
-				CgroupParent:           cgroupParent,
-				ExecutorConfig:         p.executorConfig,
-				MarshalledDNSOverrides: p.marshalledDNSOverrides,
-				HostResolvConf:         p.hostResolvConf,
-			})
-			if err != nil {
-				log.CtxErrorf(ctx, "Failed to build %d CPU generic snapshot: %s", cpus, err)
-				return nil
-			}
-			log.CtxInfof(ctx, "Built %d CPU generic snapshot in %s", cpus, time.Since(start))
+			p.buildGenericSnapshot(ctx, cgroupParent, nil /*=experiments*/, vmConfig)
 			return nil
 		})
 	}
 	return eg.Wait()
+}
+
+// buildGenericSnapshot builds the generic snapshot for vmConfig and the
+// task experiments.
+func (p *Provider) buildGenericSnapshot(ctx context.Context, cgroupParent string, experiments []string, vmConfig *fcpb.VMConfiguration) {
+	start := time.Now()
+	err := BuildGenericSnapshot(ctx, p.env, experiments, ContainerOpts{
+		VMConfiguration:        vmConfig,
+		CgroupParent:           cgroupParent,
+		ExecutorConfig:         p.executorConfig,
+		MarshalledDNSOverrides: p.marshalledDNSOverrides,
+		HostResolvConf:         p.hostResolvConf,
+	})
+	if err != nil {
+		log.CtxErrorf(ctx, "Failed to build %d vCPU generic snapshot: %s", vmConfig.GetNumCpus(), err)
+		return
+	}
+	log.CtxInfof(ctx, "Built %d vCPU generic snapshot in %s", vmConfig.GetNumCpus(), time.Since(start))
+}
+
+// rebuildGenericSnapshot builds c's generic snapshot in the background.
+func (p *Provider) rebuildGenericSnapshot(c *FirecrackerContainer, cgroupParent string) {
+	hash := c.snapshotKeySet.GetWriteKey().GetConfigurationHash()
+	experiments := c.task.GetExperiments()
+	vmConfig := c.vmConfig.CloneVT()
+	go p.genericRebuilds.Do(p.env.GetServerContext(), hash, func(ctx context.Context) (struct{}, error) {
+		p.buildGenericSnapshot(ctx, cgroupParent, experiments, vmConfig)
+		return struct{}{}, nil
+	})
 }
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
@@ -737,9 +756,11 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 // executor's generic snapshot, or an error if the task can't use one.
 func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.Init) (*FirecrackerContainer, error) {
 	props := args.Props
+	enableLogging := platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs"))
 	// Generic VMs use userspace networking, which doesn't support IPv6.
+	// Snapshots are built without logging, so VMs with logging never match one.
 	if !props.UseGenericSnapshot || props.RecycleRunner || props.InitDockerd || props.EnableVFS ||
-		props.NetworkEnableIPv6 || props.OverrideSnapshotKey != nil || *debugTerminal {
+		props.NetworkEnableIPv6 || props.OverrideSnapshotKey != nil || enableLogging || *debugTerminal {
 		return nil, status.FailedPreconditionError("task can't use a generic snapshot")
 	}
 	sizeEstimate := args.Task.GetSchedulingMetadata().GetTaskSize()
@@ -755,7 +776,6 @@ func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.I
 	}
 	vmConfig := genericVMConfig(shape, networkMode)
 	vmConfig.ScratchDiskSizeMb = int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6)
-	vmConfig.EnableLogging = platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs"))
 	vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), ContainerOpts{
 		VMConfiguration:        vmConfig,
@@ -777,6 +797,7 @@ func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.I
 		return nil, err
 	}
 	if !c.hasGenericSnapshot() {
+		p.rebuildGenericSnapshot(c, args.CgroupParent)
 		return nil, status.NotFoundError("no generic snapshot for the task's shape")
 	}
 	return c, nil
@@ -2531,11 +2552,11 @@ var genericSnapshots sync.Map
 // BuildGenericSnapshot boots a VM with opts' generic configuration and no
 // container root, and saves it as the snapshot that VMs with that
 // configuration start from.
-func BuildGenericSnapshot(ctx context.Context, env environment.Env, opts ContainerOpts) error {
+func BuildGenericSnapshot(ctx context.Context, env environment.Env, experiments []string, opts ContainerOpts) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	opts.GenericSnapshot = true
-	c, err := NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	c, err := NewContainer(ctx, env, &repb.ExecutionTask{Experiments: experiments}, opts)
 	if err != nil {
 		return err
 	}
@@ -2581,7 +2602,7 @@ func (c *FirecrackerContainer) createFromGenericSnapshot(ctx context.Context) (r
 			if ctx.Err() != nil {
 				return err
 			}
-			// Evicted snapshots are never rebuilt, so later tasks boot normally.
+			// Later tasks boot normally while the snapshot is rebuilt.
 			if status.IsNotFoundError(err) {
 				genericSnapshots.Delete(c.snapshotKeySet.GetWriteKey().GetConfigurationHash())
 			}
@@ -4508,7 +4529,7 @@ func workspacePathsToExtract(task *repb.ExecutionTask) []string {
 }
 
 func (c *FirecrackerContainer) shouldUpgradeGuestKernel() bool {
-	return c.executorConfig.GuestKernelImagePath6_18 != "" && (c.genericSnapshot || slices.Contains(c.task.Experiments, "upgrade-fc-guest-kernel"))
+	return c.executorConfig.GuestKernelImagePath6_18 != "" && slices.Contains(c.task.Experiments, "upgrade-fc-guest-kernel")
 }
 
 func snapshotReadPolicy(task *repb.ExecutionTask) (string, error) {
