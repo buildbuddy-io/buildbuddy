@@ -33,16 +33,40 @@
 package execution_experiments
 
 import (
+	"context"
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
+
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 )
 
 var (
-	// IMPORTANT: when adding a new experiment to this list, also update
-	// modifyTaskForExperiments in scheduler_server.go to evaluate it.
-
 	PersistentVolumes        = expflag.String("executor.persistent_volumes", "", "Persistent volumes to mount into each task's container, in the same format as the persistent-volumes platform property. When set, this takes precedence over the platform property.")
 	UserspaceNetworking      = expflag.Bool("executor.userspace_networking", false, "Enable userspace networking for OCI and Firecracker containers.")
 	RecordInputFetchMetadata = expflag.Bool("executor.record_input_fetch_metadata", true, "If true, record and report metadata describing which action inputs were fetched from remote CAS.", expflag.DeprecatedExperimentName("remote_execution.record_input_fetch_metadata"))
 	WorkspacePoolEnabled     = expflag.Bool("executor.workspace_pool.enabled", false, "If true, keep finished task workspaces in a pool, and set up later tasks with similar input trees from them instead of from an empty directory. See the executor.workspace_pool.* flags.")
 	SpliceWithoutValidation  = expflag.Bool("executor.splice_without_validation", true, "If true, ask the cache to splice chunked action outputs without re-verifying each chunk's contents. The cache only honors this from executors with a trusted client identity.", expflag.DeprecatedExperimentName("splice-without-validation"))
 )
+
+type protoGetter interface {
+	Name() string
+	GetProto(ctx context.Context, opts ...any) *expb.EvaluatedFlag
+}
+
+// all lists every expflag declared in this package, so that All sends every
+// experiment to executors. TestAllListsEveryFlag enforces this.
+var all = []protoGetter{
+	PersistentVolumes,
+	UserspaceNetworking,
+	RecordInputFetchMetadata,
+	WorkspacePoolEnabled,
+	SpliceWithoutValidation,
+}
+
+func All(ctx context.Context, opts ...any) []*expb.EvaluatedFlag {
+	flags := make([]*expb.EvaluatedFlag, 0, len(all))
+	for _, f := range all {
+		flags = append(flags, f.GetProto(ctx, opts...))
+	}
+	return flags
+}
