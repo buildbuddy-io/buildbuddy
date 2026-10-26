@@ -33,12 +33,11 @@ func TestBuildLabel(t *testing.T) {
 	require.Empty(t, stdout, "no commits")
 
 	repo, _ := testgit.MakeTempRepo(t, map[string]string{"README": ""})
-	labelWithArgs := func(args string) string {
-		stdout, stderr, err := testshell.Try(t, repo, script+args)
+	label := func() string {
+		stdout, stderr, err := testshell.Try(t, repo, script)
 		require.NoError(t, err, "stderr: %s", stderr)
 		return strings.TrimSpace(stdout)
 	}
-	label := func() string { return labelWithArgs(" --ignore-tags") }
 	headSHA := func() string {
 		return strings.TrimSpace(testshell.Run(t, repo, "git rev-parse HEAD"))
 	}
@@ -61,7 +60,7 @@ func TestBuildLabel(t *testing.T) {
 	require.Equal(t, "ci-20260304-"+headSHA()[:7], label(), "committer date, not author date")
 
 	testshell.Run(t, repo, "git tag v2.10.0")
-	require.Equal(t, "ci-20260304-"+headSHA()[:7], label(), "tags are ignored with --ignore-tags")
+	require.Equal(t, "ci-20260304-"+headSHA()[:7], label(), "tags are ignored")
 
 	sha := headSHA()[:7]
 	t.Setenv("CI", "")
@@ -77,30 +76,4 @@ func TestBuildLabel(t *testing.T) {
 
 	testfs.WriteAllFileContents(t, repo, map[string]string{"README": "modified"})
 	require.Equal(t, "local-20260304-"+sha, label(), "modified tracked file")
-
-	// Default mode: tags at HEAD win.
-	testshell.Run(t, repo, "git checkout -q README")
-	require.Equal(t, "v2.10.0", labelWithArgs(""), "HEAD tagged")
-	require.Equal(t, "ci-20260304-"+sha, label(), "--ignore-tags still ignores the tag")
-
-	t.Setenv("CI", "")
-	testfs.WriteAllFileContents(t, repo, map[string]string{"README": "modified"})
-	require.Equal(t, "v2.10.0", labelWithArgs(""), "tags win over CI unset and a modified tree")
-	testshell.Run(t, repo, "git checkout -q README")
-	t.Setenv("CI", "true")
-
-	testshell.Run(t, repo, "git tag v2.9.0")
-	require.Equal(t, "v2.10.0", labelWithArgs(""), "highest by version, not lexically")
-
-	commit("2026-03-05T12:00:00 +0000", "2026-03-05T12:00:00 +0000")
-	require.Equal(t, "ci-20260305-"+headSHA()[:7], labelWithArgs(""), "older commit tagged, HEAD untagged")
-
-	testshell.Run(t, repo, "git tag v2.10.0-rc1 && git tag not-a-version && git tag cli-v5.0.0")
-	require.Equal(t, "ci-20260305-"+headSHA()[:7], labelWithArgs(""), "non-vX.Y.Z tags are ignored")
-
-	for _, args := range []string{" --bogus", " --ignore-tags extra"} {
-		stdout, _, err := testshell.Try(t, repo, script+args)
-		require.Error(t, err, args)
-		require.Empty(t, stdout, args)
-	}
 }
