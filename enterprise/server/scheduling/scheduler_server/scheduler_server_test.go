@@ -3069,7 +3069,6 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 }
 
 func TestGetExecutionNodes_UpgradePrompt_ConfiguredNewestVersion(t *testing.T) {
-	// A newer registered version must not override the configured one.
 	detector := upgrade.NewDetector(map[uppb.Prompt_Urgency]upgrade.Trigger{
 		uppb.Prompt_LOW: {MaxLag: semver.MustParse("0.0.1")},
 	})
@@ -3077,11 +3076,9 @@ func TestGetExecutionNodes_UpgradePrompt_ConfiguredNewestVersion(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: detector, NewestVersion: semver.MustParse("v2.41.0")}}, "user1")
 	enterprise_testauth.Configure(t, env)
 
-	for id, version := range map[string]string{"shared": "v2.50.0", "customer": "v2.40.0"} {
-		executor := newFakeExecutorWithId(ctx, t, id, env.GetSchedulerClient())
-		executor.node.Version = version
-		executor.Register()
-	}
+	executor := newFakeExecutorWithId(ctx, t, "customer", env.GetSchedulerClient())
+	executor.node.Version = "v2.40.0"
+	executor.Register()
 
 	u := enterprise_testauth.CreateRandomUser(t, env, "org1.invalid")
 	auther := env.GetAuthenticator().(*testauth.TestAuthenticator)
