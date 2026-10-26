@@ -140,8 +140,8 @@ func TestShouldReadChunkedUsesReadFallbackThreshold(t *testing.T) {
 		SizeBytes: 3 * 1024 * 1024,
 	}))
 	assert.True(t, chunking.ShouldReadChunked(3*1024*1024, 0, 0))
-	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 3*1024*1024, 0, 0))
-	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 5*1024*1024, 0, 0))
+	assert.False(t, chunking.ShouldReadChunkedOnProxy(3*1024*1024, 0, 0))
+	assert.True(t, chunking.ShouldReadChunkedOnProxy(5*1024*1024, 0, 0))
 	assert.False(t, chunking.ShouldReadChunked(2*1024*1024, 0, 0))
 	assert.False(t, chunking.ShouldReadChunked(3*1024*1024, 0, 1024))
 }
@@ -645,28 +645,6 @@ type findMissingTrackingCache struct {
 func (c *findMissingTrackingCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	c.findMissingCalls++
 	return c.Cache.FindMissing(ctx, resources)
-}
-
-type booleanFlagProvider struct {
-	interfaces.ExperimentFlagProvider
-	values map[string]bool
-}
-
-func (p booleanFlagProvider) Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool {
-	v, ok := p.values[flagName]
-	if !ok {
-		return defaultValue
-	}
-	return v
-}
-
-func TestShouldReadChunkedOnProxy_UsesExperimentFlag(t *testing.T) {
-	ctx := context.Background()
-	size := chunking.MaxChunkSizeBytes() + 1
-	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, size, 0, 0))
-	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, booleanFlagProvider{
-		values: map[string]bool{"cache_proxy.attempt_chunked_reads": false},
-	}, size, 0, 0))
 }
 
 func BenchmarkStore(b *testing.B) {
