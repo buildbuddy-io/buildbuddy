@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/url"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -1015,65 +1014,46 @@ func (r *Env) DisconnectExecutor(executor *Executor) {
 	delete(r.executors, executor.id)
 }
 
+// registeredExecutorIDs returns the IDs of the executors that the scheduler
+// currently lists for the test group.
+func (r *Env) registeredExecutorIDs(ctx context.Context) (map[string]bool, error) {
+	req := &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: r.GroupID1},
+	}
+	rsp, err := r.GetBuildBuddyServiceClient().GetExecutionNodes(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]bool, len(rsp.GetExecutor()))
+	for _, e := range rsp.GetExecutor() {
+		ids[e.GetNode().GetExecutorId()] = true
+	}
+	return ids, nil
+}
+
 // waitForExecutorUnregistered waits until the scheduler no longer lists the
 // executor with the given ID.
 func (r *Env) waitForExecutorUnregistered(executorID string) {
 	ctx := r.WithUserID(context.Background(), r.UserID1)
-	client := r.GetBuildBuddyServiceClient()
-	req := &scpb.GetExecutionNodesRequest{
-		RequestContext: &ctxpb.RequestContext{
-			GroupId: r.GroupID1,
-		},
-	}
-	require.Eventually(r.t, func() bool {
-		rsp, err := client.GetExecutionNodes(ctx, req)
-		if err != nil {
-			return false
-		}
-		for _, e := range rsp.GetExecutor() {
-			if e.GetNode().GetExecutorId() == executorID {
-				return false
-			}
-		}
-		return true
+	require.EventuallyWithT(r.t, func(t *assert.CollectT) {
+		ids, err := r.registeredExecutorIDs(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, ids, executorID)
 	}, defaultWaitTimeout, 100*time.Millisecond, "executor %q should be unregistered from the scheduler", executorID)
 }
 
 // waitForExecutorRegistration waits until the set of all registered executors matches expected internal set.
 func (r *Env) waitForExecutorRegistration() {
-	expectedNodesByID := make(map[string]bool)
+	expected := make(map[string]bool)
 	for _, e := range r.executors {
-		expectedNodesByID[e.id] = true
+		expected[e.id] = true
 	}
-
-	nodesByID := make(map[string]bool)
-	deadline := time.Now().Add(defaultWaitTimeout)
-
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
-	defer cancel()
-	ctx = r.WithUserID(ctx, r.UserID1)
-
-	for time.Now().Before(deadline) {
-		nodesByID = make(map[string]bool)
-
-		client := r.GetBuildBuddyServiceClient()
-		req := &scpb.GetExecutionNodesRequest{
-			RequestContext: &ctxpb.RequestContext{
-				GroupId: r.GroupID1,
-			},
-		}
-		rsp, err := client.GetExecutionNodes(ctx, req)
-		require.NoError(r.t, err)
-		for _, e := range rsp.GetExecutor() {
-			nodesByID[e.GetNode().GetExecutorId()] = true
-		}
-		if reflect.DeepEqual(expectedNodesByID, nodesByID) {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	require.Equal(r.t, expectedNodesByID, nodesByID, "set of registered executors should converge")
+	ctx := r.WithUserID(context.Background(), r.UserID1)
+	require.EventuallyWithT(r.t, func(t *assert.CollectT) {
+		ids, err := r.registeredExecutorIDs(ctx)
+		require.NoError(t, err)
+		require.Equal(t, expected, ids)
+	}, defaultWaitTimeout, 100*time.Millisecond, "set of registered executors should converge")
 }
 
 // WaitForExecutorCount waits until the scheduler lists exactly n executors for
@@ -1081,13 +1061,10 @@ func (r *Env) waitForExecutorRegistration() {
 // as a real executor binary; AddExecutor waits for its own executor.
 func (r *Env) WaitForExecutorCount(n int) {
 	ctx := r.WithUserID(context.Background(), r.UserID1)
-	req := &scpb.GetExecutionNodesRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: r.GroupID1},
-	}
 	require.EventuallyWithT(r.t, func(t *assert.CollectT) {
-		rsp, err := r.GetBuildBuddyServiceClient().GetExecutionNodes(ctx, req)
+		ids, err := r.registeredExecutorIDs(ctx)
 		require.NoError(t, err)
-		require.Equal(t, n, len(rsp.GetExecutor()))
+		require.Len(t, ids, n)
 	}, defaultWaitTimeout, 100*time.Millisecond, "scheduler should list %d executors", n)
 }
 
