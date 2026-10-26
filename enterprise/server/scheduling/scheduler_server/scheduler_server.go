@@ -1561,8 +1561,6 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-// newestVersionFromFlags returns the version set by
-// --remote_execution.upgrade_prompt_newest_version, or nil if it is unset.
 func newestVersionFromFlags() (*semver.Version, error) {
 	if *upgradePromptNewest == "" {
 		return nil, nil
