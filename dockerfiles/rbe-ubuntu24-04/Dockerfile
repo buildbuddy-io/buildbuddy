@@ -93,6 +93,15 @@ RUN apt-get update && \
 RUN update-alternatives --set iptables /usr/sbin/iptables-legacy && \
     update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
 
+# Distrust all eMudhra (emSign) roots and Sectigo's AAA Certificate Services,
+# matching Bazel 9.3.1's bundled JDK, after eMudhra intermediate private keys
+# were found to be recoverable (https://emudhra.we-have-a-problem.com/).
+# Deselected entries in /etc/ca-certificates.conf survive ca-certificates
+# upgrades. Verify with enterprise/tools/build_images/check_distrusted_certs.sh
+RUN sed -i -E 's#^(mozilla/(emSign_.*|Comodo_AAA_Services_root)\.crt)$#!\1#' /etc/ca-certificates.conf && \
+    ! grep -qE '^mozilla/(emSign_.*|Comodo_AAA_Services_root)\.crt$' /etc/ca-certificates.conf && \
+    update-ca-certificates
+
 # Provision a non-root user named "buildbuddy" and set up passwordless sudo.
 # Non-root users are needed for some bazel toolchains, such as hermetic python.
 # Also add them to the docker group so they can use docker.
