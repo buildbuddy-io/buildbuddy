@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"hash"
 	"io"
@@ -55,8 +54,6 @@ const (
 )
 
 var (
-	disableCDC = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
-
 	skipWriteValidation          = expflag.Bool("cache_proxy.skip_write_validation", false, "If true, skip local cache write validation and rely on remote validation for cache proxy dual writes.")
 	interceptAndChunkLargeWrites = expflag.Bool("cache_proxy.intercept_and_chunk_large_writes", false, "If true, store large client uploads as content-defined chunks in the local and remote caches instead of forwarding them whole.")
 	attemptChunkedReads          = expflag.Bool("cache_proxy.attempt_chunked_reads", true, "If true, serve large blob reads as content-defined chunks fetched from the remote cache and cached locally, instead of forwarding the whole blob.")
@@ -288,9 +285,6 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 }
 
 func (s *ByteStreamServerProxy) shouldReadChunked(ctx context.Context, req *bspb.ReadRequest, rn *digest.CASResourceName) bool {
-	if *disableCDC {
-		return false
-	}
 	return s.localCache != nil && s.remoteCAS != nil &&
 		chunking.ShouldReadChunkedOnProxy(rn.GetDigest().GetSizeBytes(), req.GetReadOffset(), req.GetReadLimit()) &&
 		attemptChunkedReads.Get(ctx)
@@ -1241,7 +1235,7 @@ func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
 }
 
 func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
-	if *disableCDC || s.localCache == nil || s.remoteCAS == nil {
+	if s.localCache == nil || s.remoteCAS == nil {
 		return false
 	}
 	if bazel_request.GetRequestMetadata(ctx).GetActionId() == bazel_request.BESUploadActionID {
