@@ -777,6 +777,12 @@ func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.I
 	vmConfig := genericVMConfig(shape, networkMode)
 	vmConfig.ScratchDiskSizeMb = int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6)
 	vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
+	// The guest's memory size limits the VM, so ignore the host memory limit,
+	// which is computed from the smaller scheduled size.
+	cgroupSettings := args.Task.GetSchedulingMetadata().GetCgroupSettings().CloneVT()
+	if cgroupSettings != nil {
+		cgroupSettings.MemoryLimitBytes = nil
+	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), ContainerOpts{
 		VMConfiguration:        vmConfig,
 		GenericSnapshot:        true,
@@ -784,7 +790,7 @@ func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.I
 		User:                   props.DockerUser,
 		ActionWorkingDirectory: args.WorkDir,
 		CgroupParent:           args.CgroupParent,
-		CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
+		CgroupSettings:         cgroupSettings,
 		BlockDevice:            args.BlockDevice,
 		ExecutorConfig:         p.executorConfig,
 		ExternalNetworkPool:    p.externalNetworkPool,
