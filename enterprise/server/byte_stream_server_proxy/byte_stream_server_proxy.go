@@ -55,9 +55,9 @@ const (
 )
 
 var (
-	disableCDC          = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
-	skipWriteValidation = flag.Bool("cache_proxy.skip_write_validation", false, "If true, skip local cache write validation and rely on remote validation for cache proxy dual writes.")
+	disableCDC = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
 
+	skipWriteValidation          = expflag.Bool("cache_proxy.skip_write_validation", true, "If true, skip local cache write validation and rely on remote validation for cache proxy dual writes.")
 	interceptAndChunkLargeWrites = expflag.Bool("cache_proxy.intercept_and_chunk_large_writes", false, "If true, store large client uploads as content-defined chunks in the local and remote caches instead of forwarding them whole.")
 	attemptChunkedReads          = expflag.Bool("cache_proxy.attempt_chunked_reads", true, "If true, serve large blob reads as content-defined chunks fetched from the remote cache and cached locally, instead of forwarding the whole blob.")
 	cdcReadFastPath              = expflag.Bool("cache_proxy.cdc_read_fast_path", true, "If true, serve a chunked read from the proxy's local cache when it holds the blob's chunk manifest and every chunk, instead of first asking the remote cache to split the blob.")
@@ -1021,7 +1021,7 @@ func (s *ByteStreamServerProxy) writeLocalOnly(stream bspb.ByteStream_WriteServe
 }
 
 func (s *ByteStreamServerProxy) skipWriteValidation(ctx context.Context) bool {
-	return !proxy_util.SkipRemote(ctx) && (*skipWriteValidation || s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.skip_write_validation", false))
+	return !proxy_util.SkipRemote(ctx) && skipWriteValidation.Get(ctx)
 }
 
 type forwardingWriteStream struct {
