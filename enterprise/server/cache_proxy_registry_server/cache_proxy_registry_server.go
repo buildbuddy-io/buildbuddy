@@ -148,9 +148,9 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.InvalidArgumentErrorf("Invalid cache proxy upgrade prompt configuration: %s", err)
 	}
-	newest, err := newestVersionFromFlags()
+	newest, err := upgrade.ParseNewestVersion(*upgradePromptNewest)
 	if err != nil {
-		return err
+		return status.InvalidArgumentErrorf("Invalid cache proxy upgrade prompt configuration: %s", err)
 	}
 	s, err := NewCacheProxyRegistryServer(env, upgrade.NewDetector(triggers))
 	if err != nil {
@@ -163,17 +163,6 @@ func Register(env *real_environment.RealEnv) error {
 
 func upgradeTriggersFromFlags() (map[uppb.Prompt_Urgency]upgrade.Trigger, error) {
 	return upgrade.ParseTriggers(*upgradePromptMaxLags, *upgradePromptMinVersions)
-}
-
-func newestVersionFromFlags() (*semver.Version, error) {
-	if *upgradePromptNewest == "" {
-		return nil, nil
-	}
-	v, err := semver.NewVersion(*upgradePromptNewest)
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("Invalid cache_proxy.upgrade_prompt_newest_version %q: %s", *upgradePromptNewest, err)
-	}
-	return v, nil
 }
 
 func NewCacheProxyRegistryServer(env environment.Env, detector *upgrade.Detector) (*CacheProxyRegistryServer, error) {

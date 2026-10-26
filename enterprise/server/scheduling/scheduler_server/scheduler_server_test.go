@@ -3068,21 +3068,6 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 	require.Empty(t, s.livenessWatches)
 }
 
-func TestNewestVersionFromFlags(t *testing.T) {
-	v, err := newestVersionFromFlags()
-	require.NoError(t, err)
-	require.Nil(t, v)
-
-	flags.Set(t, "remote_execution.upgrade_prompt_newest_version", "v2.41.0")
-	v, err = newestVersionFromFlags()
-	require.NoError(t, err)
-	require.Equal(t, "2.41.0", v.String())
-
-	flags.Set(t, "remote_execution.upgrade_prompt_newest_version", "hosted-x")
-	_, err = newestVersionFromFlags()
-	require.Error(t, err)
-}
-
 func TestGetExecutionNodes_UpgradePrompt_ConfiguredNewestVersion(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -3106,9 +3091,7 @@ func TestGetExecutionNodes_UpgradePrompt_ConfiguredNewestVersion(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			flags.Set(t, "remote_execution.upgrade_prompt_newest_version", "v2.41.0")
-			newest, err := newestVersionFromFlags()
-			require.NoError(t, err)
+			newest := semver.MustParse("v2.41.0")
 			detector := upgrade.NewDetector(map[uppb.Prompt_Urgency]upgrade.Trigger{
 				uppb.Prompt_LOW: {MaxLag: semver.MustParse(tc.maxLagLow)},
 			})

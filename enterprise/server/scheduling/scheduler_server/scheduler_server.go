@@ -1549,9 +1549,9 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.InvalidArgumentErrorf("Invalid executor upgrade prompt configuration: %s", err)
 	}
-	newest, err := newestVersionFromFlags()
+	newest, err := upgrade.ParseNewestVersion(*upgradePromptNewest)
 	if err != nil {
-		return err
+		return status.InvalidArgumentErrorf("Invalid executor upgrade prompt configuration: %s", err)
 	}
 	schedulerServer, err := NewSchedulerServerWithOptions(env, &Options{UpgradeDetector: upgrade.NewDetector(triggers), NewestVersion: newest})
 	if err != nil {
@@ -1559,17 +1559,6 @@ func Register(env *real_environment.RealEnv) error {
 	}
 	env.SetSchedulerService(schedulerServer)
 	return nil
-}
-
-func newestVersionFromFlags() (*semver.Version, error) {
-	if *upgradePromptNewest == "" {
-		return nil, nil
-	}
-	v, err := semver.NewVersion(*upgradePromptNewest)
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("Invalid remote_execution.upgrade_prompt_newest_version %q: %s", *upgradePromptNewest, err)
-	}
-	return v, nil
 }
 
 func NewSchedulerServer(env environment.Env) (*SchedulerServer, error) {

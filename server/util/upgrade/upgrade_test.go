@@ -129,3 +129,16 @@ func TestDetect(t *testing.T) {
 	// No newest version known: no prompt.
 	assert.Nil(t, d.Detect(nil, []string{"v2.100.0"}, message))
 }
+
+func TestParseNewestVersion(t *testing.T) {
+	v, err := ParseNewestVersion("")
+	require.NoError(t, err)
+	assert.Nil(t, v)
+
+	v, err = ParseNewestVersion("v2.41.0")
+	require.NoError(t, err)
+	assert.Equal(t, "2.41.0", v.String())
+
+	_, err = ParseNewestVersion("ci-20261026T163202Z-abc1234")
+	require.Error(t, err)
+}

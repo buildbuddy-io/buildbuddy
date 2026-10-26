@@ -964,21 +964,6 @@ func writeRegistration(t *testing.T, s *CacheProxyRegistryServer, reg *cppb.Regi
 	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies(reg.GetGroupId()), reg.GetSummary().GetProxyId(), b).Err())
 }
 
-func TestNewestVersionFromFlags(t *testing.T) {
-	v, err := newestVersionFromFlags()
-	require.NoError(t, err)
-	assert.Nil(t, v)
-
-	flags.Set(t, "cache_proxy.upgrade_prompt_newest_version", "v2.41.0")
-	v, err = newestVersionFromFlags()
-	require.NoError(t, err)
-	assert.Equal(t, "2.41.0", v.String())
-
-	flags.Set(t, "cache_proxy.upgrade_prompt_newest_version", "hosted-x")
-	_, err = newestVersionFromFlags()
-	require.Error(t, err)
-}
-
 func TestListCacheProxies_UpgradePrompt_ConfiguredNewestVersion(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

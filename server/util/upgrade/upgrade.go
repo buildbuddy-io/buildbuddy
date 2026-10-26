@@ -62,6 +62,20 @@ func ParseTriggers(maxLags, minVersions map[string]string) (map[uppb.Prompt_Urge
 	return triggers, nil
 }
 
+// ParseNewestVersion parses a configured newest version to pass to
+// Detector.Detect, as typically supplied via a flag. An empty value means
+// unset, and returns nil.
+func ParseNewestVersion(v string) (*semver.Version, error) {
+	if v == "" {
+		return nil, nil
+	}
+	newest, err := semver.NewVersion(v)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid newest version %q: %s", v, err)
+	}
+	return newest, nil
+}
+
 func parseUrgency(name string) (uppb.Prompt_Urgency, error) {
 	u, ok := uppb.Prompt_Urgency_value[strings.ToUpper(name)]
 	if !ok || uppb.Prompt_Urgency(u) == uppb.Prompt_UNKNOWN_URGENCY {
