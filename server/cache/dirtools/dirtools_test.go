@@ -877,6 +877,11 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 	child := &repb.Directory{Files: []*repb.FileNode{{Name: "file.txt", Digest: blob}}}
 	childDigest, err := digest.ComputeForMessage(child, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
+	dirDigest := func(dir *repb.Directory) *repb.Digest {
+		d, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		return d
+	}
 
 	for _, test := range []struct {
 		name string
@@ -954,6 +959,43 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 			},
 			caseInsensitive: true,
 		},
+		{
+			name: "FileAndSymlinkNamesDifferingOnlyInCase",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{Root: &repb.Directory{
+					Files:    []*repb.FileNode{{Name: "a", Digest: blob}},
+					Symlinks: []*repb.SymlinkNode{{Name: "A", Target: filepath.Join(outside, "file.txt")}},
+				}}
+			},
+			caseInsensitive: true,
+		},
+		{
+			name: "FileAndSymlinkWithSameNameOnCaseInsensitiveFilesystem",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{Root: &repb.Directory{
+					Files:    []*repb.FileNode{{Name: "A", Digest: blob}, {Name: "a", Digest: blob}},
+					Symlinks: []*repb.SymlinkNode{{Name: "a", Target: filepath.Join(outside, "file.txt")}},
+				}}
+			},
+			caseInsensitive: true,
+		},
+		{
+			// "D" and "d" are one directory on disk, so "d/x/file.txt" would
+			// be written through the symlink "D/x".
+			name: "SymlinkAndDirectoryInMergedDirectories",
+			tree: func(outside string) *repb.Tree {
+				withSymlink := &repb.Directory{Symlinks: []*repb.SymlinkNode{{Name: "x", Target: outside}}}
+				withDir := &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "x", Digest: childDigest}}}
+				return &repb.Tree{
+					Root: &repb.Directory{Directories: []*repb.DirectoryNode{
+						{Name: "D", Digest: dirDigest(withSymlink)},
+						{Name: "d", Digest: dirDigest(withDir)},
+					}},
+					Children: []*repb.Directory{withSymlink, withDir, child},
+				}
+			},
+			caseInsensitive: true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			outside := testfs.MakeTempDir(t)
@@ -971,6 +1013,80 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 			rootEntries, err := os.ReadDir(root)
 			require.NoError(t, err)
 			assert.Empty(t, rootEntries)
+		})
+	}
+}
+
+func TestDownloadTreeNamesDifferingOnlyInCase(t *testing.T) {
+	env, ctx := testEnv(t)
+	blobA := setFile(t, env, ctx, "", "a")
+	blobB := setFile(t, env, ctx, "", "b")
+	dirDigest := func(dir *repb.Directory) *repb.Digest {
+		d, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		return d
+	}
+	// "D/Sub" is empty, and "d/sub" isn't.
+	upper := &repb.Directory{
+		Files:       []*repb.FileNode{{Name: "Foo.h", Digest: blobA}, {Name: "bar.h", Digest: blobA}},
+		Directories: []*repb.DirectoryNode{{Name: "Sub", Digest: dirDigest(&repb.Directory{})}},
+	}
+	sub := &repb.Directory{Files: []*repb.FileNode{{Name: "baz.h", Digest: blobB}}}
+	lower := &repb.Directory{
+		Files:       []*repb.FileNode{{Name: "bar.h", Digest: blobA}, {Name: "foo.h", Digest: blobB}},
+		Directories: []*repb.DirectoryNode{{Name: "sub", Digest: dirDigest(sub)}},
+	}
+
+	for _, test := range []struct {
+		name  string
+		tree  *repb.Tree
+		files []string
+	}{
+		{
+			// Builds on case-insensitive filesystems can refer to one file
+			// by names that differ only in case.
+			name: "Files",
+			tree: &repb.Tree{Root: &repb.Directory{
+				Files: []*repb.FileNode{{Name: "Foo.h", Digest: blobA}, {Name: "foo.h", Digest: blobA}},
+			}},
+			files: []string{"Foo.h", "foo.h"},
+		},
+		{
+			name: "FilesWithDifferentContents",
+			tree: &repb.Tree{Root: &repb.Directory{
+				Files: []*repb.FileNode{{Name: "Foo.h", Digest: blobA}, {Name: "foo.h", Digest: blobB}},
+			}},
+			files: []string{"Foo.h", "foo.h"},
+		},
+		{
+			name: "Symlinks",
+			tree: &repb.Tree{Root: &repb.Directory{
+				Files:    []*repb.FileNode{{Name: "a.h", Digest: blobA}},
+				Symlinks: []*repb.SymlinkNode{{Name: "L", Target: "a.h"}, {Name: "l", Target: "a.h"}},
+			}},
+			files: []string{"L", "l"},
+		},
+		{
+			name: "Directories",
+			tree: &repb.Tree{
+				Root: &repb.Directory{Directories: []*repb.DirectoryNode{
+					{Name: "D", Digest: dirDigest(upper)},
+					{Name: "d", Digest: dirDigest(lower)},
+				}},
+				Children: []*repb.Directory{upper, lower, sub},
+			},
+			files: []string{"D/Foo.h", "D/bar.h", "d/bar.h", "d/foo.h", "d/sub/baz.h"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := testfs.MakeTempDir(t)
+
+			_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, test.tree, &dirtools.DownloadTreeOpts{RootDir: root, CaseInsensitive: true})
+
+			require.NoError(t, err)
+			for _, f := range test.files {
+				assert.FileExists(t, filepath.Join(root, f))
+			}
 		})
 	}
 }
