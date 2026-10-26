@@ -169,7 +169,8 @@ const (
 	networkPropertyName = "network"
 
 	// NetworkEnableIPv6PropertyName specifies whether Firecracker guests should
-	// boot with IPv6 enabled.
+	// boot with IPv6 enabled, and whether OCI containers using userspace
+	// networking get an IPv6 address.
 	NetworkEnableIPv6PropertyName = "network-enable-ipv6"
 
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.

@@ -153,8 +153,9 @@ func NewVMNetwork(ctx context.Context, tapDeviceName, gatewayCIDR string, enable
 }
 
 // NewContainerNetwork creates a net namespace for a container to join, with an
-// eth0 at ContainerIP and a default route through the stack.
-func NewContainerNetwork(ctx context.Context) (*Network, error) {
+// eth0 at ContainerIP and a default route through the stack. If enableIPv6 is
+// set, eth0 also gets ContainerIP6 and an IPv6 default route.
+func NewContainerNetwork(ctx context.Context, enableIPv6 bool) (*Network, error) {
 	gateway := netip.MustParsePrefix(containerGatewayCIDR)
 	return newNetwork(ctx, containerGatewayCIDR, true /*=enableExternalNetworking*/, stackDevice, func() error {
 		veth := &netlink.Veth{Name: containerDevice, PeerName: stackDevice}
@@ -180,6 +181,9 @@ func NewContainerNetwork(ctx context.Context) (*Network, error) {
 		}
 		if err := netlink.RouteAdd(&netlink.Route{LinkIndex: eth0.Attrs().Index, Gw: gateway.Addr().AsSlice()}); err != nil {
 			return err
+		}
+		if !enableIPv6 {
+			return nil
 		}
 		// Skip IPv6 if the host was booted with ipv6.disable=1 or the namespace
 		// disables it.

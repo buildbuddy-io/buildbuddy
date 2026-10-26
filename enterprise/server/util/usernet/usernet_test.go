@@ -67,7 +67,7 @@ func TestContainerNetwork(t *testing.T) {
 		t.Cleanup(func() { netlink.RouteDel(route) })
 	}
 
-	n, err := NewContainerNetwork(ctx)
+	n, err := NewContainerNetwork(ctx, true /*=enableIPv6*/)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, n.Cleanup(ctx)) })
 
@@ -216,6 +216,29 @@ func TestContainerNetwork(t *testing.T) {
 	require.Greater(t, stats.GetBytesReceived(), int64(1<<20))
 }
 
+func TestContainerNetworkIPv6Disabled(t *testing.T) {
+	testnetworking.Setup(t)
+	ctx := context.Background()
+	n, err := NewContainerNetwork(ctx, false /*=enableIPv6*/)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, n.Cleanup(ctx)) })
+	require.NoError(t, inNamespace(n.netns, func() error {
+		eth0, err := netlink.LinkByName(containerDevice)
+		require.NoError(t, err)
+		addrs, err := netlink.AddrList(eth0, netlink.FAMILY_V6)
+		require.NoError(t, err)
+		for _, a := range addrs {
+			require.False(t, a.IP.IsGlobalUnicast(), "unexpected IPv6 address %s", a.IP)
+		}
+		routes, err := netlink.RouteList(eth0, netlink.FAMILY_V6)
+		require.NoError(t, err)
+		for _, r := range routes {
+			require.Nil(t, r.Gw, "unexpected IPv6 route via %s", r.Gw)
+		}
+		return nil
+	}))
+}
+
 func TestIsAllowed(t *testing.T) {
 	flags.Set(t, "executor.task_allowed_private_ips", []string{"10.1.2.3"})
 	allowed, err := networking.TaskAllowedPrivateIPs(context.Background())
@@ -263,7 +286,7 @@ func TestCleanupClosesForwardedConnections(t *testing.T) {
 	require.NoError(t, err)
 	defer lis.Close()
 
-	n, err := NewContainerNetwork(ctx)
+	n, err := NewContainerNetwork(ctx, false /*=enableIPv6*/)
 	require.NoError(t, err)
 	var guest net.Conn
 	require.NoError(t, inNamespace(n.netns, func() error {
@@ -301,7 +324,7 @@ func TestCleanupStopsGoroutines(t *testing.T) {
 	}
 	before := goroutines()
 	for range 3 {
-		n, err := NewContainerNetwork(ctx)
+		n, err := NewContainerNetwork(ctx, false /*=enableIPv6*/)
 		require.NoError(t, err)
 		require.NoError(t, n.Cleanup(ctx))
 	}
@@ -323,7 +346,7 @@ func TestOneWayUDPFlowStaysOpen(t *testing.T) {
 	require.NoError(t, err)
 	defer pc.Close()
 
-	n, err := NewContainerNetwork(ctx)
+	n, err := NewContainerNetwork(ctx, false /*=enableIPv6*/)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, n.Cleanup(ctx)) })
 	var conn net.Conn
