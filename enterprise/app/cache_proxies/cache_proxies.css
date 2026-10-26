@@ -43,6 +43,35 @@
   margin-top: 24px;
 }
 
+.cache-proxies-page .cache-proxy-list-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+/* Match the height of the expando next to it, and shrink on narrow screens. */
+.cache-proxies-page .cache-proxy-filter {
+  flex: 0 1 280px;
+  min-width: 0;
+  height: 36px;
+}
+
+.cache-proxies-page .cache-proxy-list-controls .view-mode-toggle {
+  flex-shrink: 0;
+}
+
+.cache-proxies-page .cache-proxy-filter .filter-input {
+  padding-right: 54px;
+}
+
+.cache-proxies-page .cache-proxy-no-matches {
+  margin-top: 24px;
+  color: var(--color-text-secondary);
+}
+
 .cache-proxies-page .cache-proxy-detail {
   display: flex;
   align-items: center;
@@ -329,8 +358,12 @@
 }
 
 .cache-proxy-page .cache-proxy-detail-page {
-  padding-top: 24px;
+  padding-top: 16px;
   padding-bottom: 32px;
+}
+
+.cache-proxy-page .upgrade-prompt-banner {
+  margin: 0;
 }
 
 .cache-proxy-page .cache-proxy-panels {

@@ -218,6 +218,13 @@
   margin-bottom: 4px;
 }
 
+.trends .spinner-center {
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .selection-summary-indicator {
   display: inline-block;
   width: 16px;

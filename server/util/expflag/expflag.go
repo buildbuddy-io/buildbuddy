@@ -1,6 +1,33 @@
 // Package expflag allows declaring configuration options that can be controlled
 // via flagd as well as normal server flags.
 //
+// This package exists to simplify on-prem configuration. Each experiment can be
+// controlled by flagd or by a normal server flag. This lets us roll out
+// features gradually on BuildBuddy cloud using flagd, while on-prem users can
+// enable the same features with a flag, without having to run flagd.
+//
+// # Status
+//
+// expflag is fully supported for apps and cache proxies. Prefer using expflag
+// for new experiments instead of manually invoking
+// `env.GetExperimentFlagProvider()`.
+//
+// expflag is supported for executors as well, with some caveats:
+//   - Executors must set executor.scheduler_controlled_experiments_enabled.
+//     Otherwise, the scheduler does not send experiment values, and the
+//     executor uses its own flag values. When the flag is set, the values that
+//     the scheduler sends with each task, including its defaults, take priority
+//     over the executor's own flag values.
+//     This flag is internal and experimental, and only executors that
+//     BuildBuddy manages should set it.
+//   - Experiments are only available per-task. Global/executor-level
+//     experiments are not supported.
+//   - All expflags must be defined in the execution_experiments package, and
+//     must be added to the list in modifyTaskForExperiments in the
+//     scheduler_server package.
+//
+// See the comment in the execution_experiments package for more details.
+//
 // # Declarations
 //
 // Declare experiments at the package level using Bool, String, Int64, Float64,
@@ -54,12 +81,6 @@
 // to short-circuit on values that disable the feature before doing expensive
 // work such as database queries or RPCs.
 //
-// # Executors
-//
-// This package is not yet ready for use with executors.
-// For now, only use expflag on the apps and cache proxies.
-// TODO: update documentation here once executors support expflag.
-//
 // # Options and renamed flags
 //
 // Constructors accept expflag-specific options and normal flag tags in any
@@ -68,14 +89,15 @@
 //
 //	var widgetColor = expflag.String("app.widget_color", "blue", "Widget color.", flag.Internal, expflag.DeprecatedExperimentName("widget-color"))
 //
-// When renaming an experiment flag, use DeprecatedExperimentName to keep existing
-// flagd configurations working. The new name is evaluated first. The old name
-// is read only if the provider reports that the new name is missing. A value of
-// false, zero, an empty string, or the configured default under the new name
-// still takes precedence. Other evaluation errors do not trigger fallback. The
-// command-line flag, YAML key, and evaluated proto all use the new name; this
-// option does not declare an alias for the old command-line flag or YAML key.
-// Fallback adds a second provider evaluation while the new name is missing.
+// When renaming an experiment flag, use DeprecatedExperimentName to keep
+// existing flagd configurations working. The new name is evaluated first. The
+// old name is read only if the provider reports that the new name is missing. A
+// value of false, zero, an empty string, or the configured default under the
+// new name still takes precedence. Other evaluation errors do not trigger
+// fallback. The command-line flag, YAML key, and evaluated proto all use the
+// new name; this option does not declare an alias for the old command-line flag
+// or YAML key. Fallback adds a second provider evaluation while the new name is
+// missing.
 //
 // # Testing
 //

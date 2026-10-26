@@ -359,13 +359,6 @@ func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
       },
       "defaultVariant": "on"
     },
-    "splice-without-validation": {
-      "state": "ENABLED",
-      "variants": {
-        "on": true
-      },
-      "defaultVariant": "on"
-    },
     "cache.chunking_max_write_size_bytes": {
       "state": "ENABLED",
       "variants": {

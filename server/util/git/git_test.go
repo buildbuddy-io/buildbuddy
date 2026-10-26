@@ -19,6 +19,9 @@ func TestAuthRepoURL(t *testing.T) {
 		{"https://gitlab.com/org/repo", "", "TOKEN", "https://buildbuddy:TOKEN@gitlab.com/org/repo"},
 		{"https://bitbucket.org/org/repo", "USER", "TOKEN", "https://USER:TOKEN@bitbucket.org/org/repo"},
 		{"https://github.com/org-public/repo", "", "", "https://github.com/org-public/repo"},
+		{"https://github.com/org-public/repo", "alice", "", "https://github.com/org-public/repo"},
+		{"https://gitlab.com/org-public/repo", "alice", "", "https://gitlab.com/org-public/repo"},
+		{"https://bitbucket.org/org-public/repo", "alice", "", "https://bitbucket.org/org-public/repo"},
 	} {
 		authURL, err := gitutil.AuthRepoURL(test.url, test.user, test.token)
 

@@ -24,18 +24,24 @@ import (
 )
 
 const Usage = `
-usage: bb agent review [ --dry_run ] [ --force ] [ --allow_fork ]
+usage: bb agent review [ --fix ] [ --dry_run ] [ --verify=false ] [ --force ] [ --allow_fork ]
 
 Reviews the open GitHub pull request for the checked-out branch, then posts the
 findings as PR review comments.
+
+With --fix, fetches existing PR feedback, addresses actionable comments, then commits and pushes them to the PR branch.
+Requires a clean checkout at the PR head.
+Pass --verify=false to skip verification.
+With --fix --dry_run, applies changes in the local working tree without committing, pushing, or replying to comments.
+Fixing PRs from forks is not supported.
 
 The review reads the source from the local checkout, so to review another PR,
 check it out first with ` + "`gh pr checkout <pr>`" + `.
 
 Requires gh and a GitHub token in REPO_TOKEN, GH_TOKEN, or GITHUB_TOKEN.
 
-Drafts and PRs that already have a bot review are skipped; pass --force (or
-set AGENT_REVIEW_FORCE=1) to review them anyway.
+When generating reviews, drafts and PRs that already have a bot review are
+skipped; pass --force (or set AGENT_REVIEW_FORCE=1) to review them anyway.
 
 By default, PRs from forks are refused, because reviewing one runs the agent over
 untrusted code; pass --allow_fork to review one anyway.
@@ -43,6 +49,8 @@ untrusted code; pass --allow_fork to review one anyway.
 Examples:
   bb agent review
   bb agent review --dry_run
+  bb agent review --fix
+  bb agent review --fix --dry_run
 `
 
 // Flags holds the flags unique to this subcommand. The flags shared by all
@@ -50,7 +58,9 @@ Examples:
 var (
 	Flags = flag.NewFlagSet("review", flag.ContinueOnError)
 
-	dryRun    = Flags.Bool("dry_run", false, "Print the review payload without posting it.")
+	dryRun    = Flags.Bool("dry_run", false, "Print the review payload without posting it, or with --fix, apply changes locally without committing or pushing.")
+	fix       = Flags.Bool("fix", false, "Address existing PR feedback, then commit and push the changes. With --dry_run, leave changes uncommitted in the working tree.")
+	verify    = Flags.Bool("verify", true, "Verify changes when using --fix. Set --verify=false to skip verification.")
 	force     = Flags.Bool("force", false, "Review the PR even if it is a draft or already has a bot review.")
 	allowFork = Flags.Bool("allow_fork", false, "Review the PR even if it comes from a fork. See the warning that --allow_fork suppresses.")
 )
@@ -69,32 +79,48 @@ var reviewAllowedTools = []string{
 	"Bash(gh pr view *)",
 }
 
-const reviewPrompt = "Review PR #%d. /review\n\nFor every finding, include the exact file path and line number in the format `path/to/file.go:42` so findings can be posted as inline GitHub comments.\n\nReview by reading the diff and the surrounding source. Do not build, run, or test the code — that can be slow and is not the goal of this review. Do not edit any files, and do not commit, push, or post anything to GitHub. Only report the findings."
+const reviewPrompt = `Review PR #%d. Load your code review skill but the following rules should take precedence:
+
+Rules
+- For every finding, include the exact file path and line number in the format "path/to/file.go:42" so findings can be posted as inline GitHub comments.
+- Review by reading the diff and the surrounding source. Do not build, run, or test the code — that can be slow and is not the goal of this review.
+- Do not edit any files, and do not commit, push, or post anything to GitHub. Only report the findings.
+- Only report actionable and high-impact findings (wrong results, security issues, performance regressions). Only report edge cases that are likely to occur given the current codebase and usage patterns.
+- Report rare edge cases, especially timing and concurrency bugs, when the impact is severe and silent, such as security vulnerabilities, wrong results, or data loss, and you
+  can describe the sequence of events that triggers them.
+- Do not flag speculative concerns, pre-existing problems, intentional behavior changes, issues from code not caused by this PR, or style nits.
+- Flag intentional behavior changes only if they break existing callers, deployments, or configs, or cause significant side effects the author may not expect.
+`
 
 const parsePrompt = `Parse the code review below and output ONLY a valid JSON object — no markdown fences, no explanation.
 
 Schema:
 {
-  "summary": "<concise summary of the diff as markdown, max ~3 sentences but aim for fewer>",
+  "summary": "<1-2 plain-language sentences on what the change does and its impact>",
   "comments": [
     {
       "file": "<file path relative to repo root, e.g. server/foo.go>",
       "line": <integer — the line number in the NEW version of the file>,
-      "body": "<full comment text as markdown>"
+      "body": "<the condensed comment as markdown>"
     }
   ]
 }
 
 Rules:
 - Include a comment entry for every unique finding that mentions a file path, even if the line number is approximate — use the nearest relevant line you can infer from context.
-  Avoid including redundant comments; instead of making the same comment on every line where a particular issue occurs,
-  you can say things like "(same comment applies to ...)" or "... (here and below)."
-- Findings with no file reference at all go into "summary".
 - File paths must be relative (no leading slash, no absolute paths).
+- Rewrite each comment body as at most two short sentences: first what goes wrong, then its impact. End the comment there. The reader will decide how to fix it, so leave out what to change, even when the review suggested it. Drop step-by-step mechanisms, code walkthroughs, and background. Keep the finding's claim unchanged.
+- The exception is a finding that is itself a recommendation, such as a simpler approach to the change or a missing helper. For those, state the recommendation.
+- Use simple language and one idea per sentence, with no asides in parentheses.
+- Write each comment directly, without introductory labels or categories. For example, write "strings.Split allocates. Use strings.SplitSeq instead." rather than "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead."
+- Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
+- If a comment raises more than one unrelated issue, split it into separate comments on the same line, one issue each.
+- Merge duplicate findings into one comment. Instead of repeating a comment on every line where an issue occurs, say "(same issue at ...)" or "(here and below)".
 - Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
-- Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern or suggesting an improvement (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
-- Avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
-- The summary section should not summarize any of the individual comments. It should only explain the purpose of the diff and findings with no file reference.
+- Write the summary for a reviewer who may not know this code. Use at most two sentences. Say what the change does and what it means for users or the system when it works as intended. Don't name files, functions, or fields, and don't list implementation steps.
+- Leave out supporting details such as validation, error handling, logging, tests, and refactors, unless the change is mainly about them.
+- The summary describes only the change, never the review. Don't mention risks, bugs, or anything the comments raise. Don't include verdicts like "no issues found", a list of what was checked, or caveats about what the reviewer couldn't verify.
+- If an actionable finding has no file reference, add it after the summary as one short sentence.
 - Output ONLY the JSON object. No other text before or after it.
 
 REVIEW:
@@ -168,6 +194,10 @@ func HandleReview(args []string) (int, error) {
 		headShort = headShort[:8]
 	}
 	log.Printf("PR #%d on %s/%s  (head: %s, base: %s)", pr.GetNumber(), owner, repo, headShort, pr.GetBase().GetRef())
+
+	if *fix {
+		return fixReview(ctx, gh, owner, repo, pr)
+	}
 
 	if !*allowFork && isFork(pr, owner, repo) {
 		log.Warnf("Reviewing this code runs an agent over untrusted code, which the agent reads as input. Proceed with caution. Read the diff yourself first, and pass --allow_fork to review it anyway.")

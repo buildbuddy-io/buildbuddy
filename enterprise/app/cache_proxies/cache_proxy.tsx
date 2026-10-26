@@ -6,11 +6,13 @@ import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import DonutChart from "../../../app/components/chart/donut_chart";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import { Link } from "../../../app/components/link/link";
+import UpgradePrompt from "../../../app/components/upgrade/upgrade";
 import format from "../../../app/format/format";
 import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { cache_proxy } from "../../../proto/cache_proxy_ts_proto";
+import { upgrade } from "../../../proto/upgrade_ts_proto";
 import { CACHE_COLORS } from "../../../app/util/color";
 import { readWriteRatio, toNumber } from "./cache_proxy_card";
 
@@ -33,6 +35,7 @@ interface Props {
 
 interface State {
   details: cache_proxy.ICacheProxyDetails | null;
+  upgradePrompt: upgrade.IPrompt | null;
   loading: boolean;
   error: BuildBuddyError | null;
   flagFilter: string;
@@ -41,6 +44,7 @@ interface State {
 export default class CacheProxyComponent extends React.Component<Props, State> {
   state: State = {
     details: null,
+    upgradePrompt: null,
     loading: true,
     error: null,
     flagFilter: "",
@@ -94,7 +98,7 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
       if (host) {
         document.title = `${host} | Cache Proxy | BuildBuddy`;
       }
-      this.setState({ details: response.details ?? null });
+      this.setState({ details: response.details ?? null, upgradePrompt: response.upgradePrompt ?? null });
     } catch (e) {
       this.setState({ error: BuildBuddyError.parse(e) });
     } finally {
@@ -140,6 +144,7 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
     const hasACReads = toNumber(stats?.acReadHits) > 0;
     return (
       <div className="container cache-proxy-detail-page">
+        <UpgradePrompt prompt={this.state.upgradePrompt} />
         <div className="cache-proxy-panels">
           <Panel Icon={Server} title="Identity">
             <KeyValue label="Hostname">{summary.host}</KeyValue>
