@@ -706,7 +706,9 @@ var (
 		Name:      "status_request_duration_usec",
 		Buckets:   githubStatusDurationUsecBuckets,
 		Help:      "Time spent in each GitHub commit-status SDK request, in **microseconds**, including failed requests. Code 0 means no HTTP response was received.",
-	}, []string{HTTPResponseCodeLabel})
+	}, []string{
+		HTTPResponseCodeLabel,
+	})
 
 	GitHubStatusDeliveryDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -714,7 +716,9 @@ var (
 		Name:      "status_delivery_duration_usec",
 		Buckets:   githubStatusDurationUsecBuckets,
 		Help:      "Total time for an enabled GitHub commit-status delivery, in **microseconds**, including eligibility checks, token acquisition, SDK setup, requests, and any retry waits. Disabled reporting does not record an observation.",
-	}, []string{StatusHumanReadableLabel})
+	}, []string{
+		StatusHumanReadableLabel,
+	})
 
 	GitHubStatusFlushDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,

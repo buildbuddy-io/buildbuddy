@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -23,6 +24,8 @@ import (
 var (
 	statusPerTestTarget = flag.Bool("github.status_per_test_target", false, "If true, report status per test target. ** Enterprise only **")
 )
+
+const terminalStatusTimeout = 10 * time.Second
 
 type BuildStatusReporter struct {
 	baseBBURL                  string
@@ -85,6 +88,14 @@ func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, grou
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
 	githubPayload := r.getStatusPayloadForEvent(event)
 	if githubPayload != nil {
+		if github.State(githubPayload.GetState()) != github.PendingState {
+			// Once Finished is observed, finalization marks the invocation COMPLETE
+			// and will not report a disconnect. Give terminal statuses a bounded
+			// chance to finish even if Bazel cancels the stream during delivery.
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), terminalStatusTimeout)
+			defer cancel()
+		}
 		r.payloads = append(r.payloads, githubPayload)
 		r.flushPayloadsIfMetadataLoaded(ctx)
 	}

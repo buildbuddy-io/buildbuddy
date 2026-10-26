@@ -567,7 +567,7 @@ func (c *GithubClient) CreateStatus(ctx context.Context, groupID string, ownerRe
 	client := github.NewClient(c.client)
 	if IsEnterpriseConfigured() {
 		host := fmt.Sprintf("https://%s/", *enterpriseHost)
-		client, err = client.WithEnterpriseURLs(host, host)
+		client, err = client.WithEnterpriseURLs(host+"api/v3/", host)
 		if err != nil {
 			return status.InvalidArgumentErrorf("invalid GitHub enterprise URL: %s", err)
 		}
@@ -581,8 +581,20 @@ func (c *GithubClient) CreateStatus(ctx context.Context, groupID string, ownerRe
 		code = res.StatusCode
 	}
 	metrics.GitHubStatusRequestDurationUsec.WithLabelValues(strconv.Itoa(code)).Observe(float64(clock.Since(requestStart).Microseconds()))
+	if err != nil && res != nil && res.StatusCode >= 200 && res.StatusCode < 300 {
+		// A successful HTTP response means the status was delivered. We do not
+		// use the response body, so a decoding failure must not undo delivery.
+		log.CtxWarningf(ctx, "Failed to decode GitHub status response (HTTP %d): %s", res.StatusCode, err)
+		err = nil
+	}
 	if err != nil {
 		if res == nil {
+			if errors.Is(err, context.Canceled) {
+				return status.CanceledErrorf("failed to send request: %s", err)
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				return status.DeadlineExceededErrorf("failed to send request: %s", err)
+			}
 			return status.UnavailableErrorf("failed to send request: %s", err)
 		}
 		if isStatusRateLimit(res.Response, err) {

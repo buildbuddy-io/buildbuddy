@@ -124,6 +124,7 @@ type FakeGitHubStatusClient struct {
 	AccessToken            string
 	Statuses               []*FakeGitHubStatus
 	StatusReportingEnabled bool
+	BeforeCreateStatus     func(context.Context, *github.GithubStatusPayload) error
 }
 
 type FakeGitHubStatus struct {
@@ -133,6 +134,11 @@ type FakeGitHubStatus struct {
 }
 
 func (c *FakeGitHubStatusClient) CreateStatus(ctx context.Context, groupID, ownerRepo, commitSHA string, p *github.GithubStatusPayload) error {
+	if c.BeforeCreateStatus != nil {
+		if err := c.BeforeCreateStatus(ctx, p); err != nil {
+			return err
+		}
+	}
 	s := &FakeGitHubStatus{
 		OwnerRepo:  ownerRepo,
 		CommitSHA:  commitSHA,
@@ -987,9 +993,12 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 
 func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	fakeGH := &FakeGitHubStatusService{StatusReportingEnabled: true}
+	te.SetGitHubStatusService(fakeGH)
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
 	testInvocationID := testUUID.String()
@@ -998,31 +1007,74 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	channel, err := handler.OpenChannel(ctx, testInvocationID)
 	require.NoError(t, err)
 	defer channel.Close()
+	client := fakeGH.GetCreatedClient(t)
+	var pendingCtx context.Context
+	client.BeforeCreateStatus = func(deliveryCtx context.Context, payload *github.GithubStatusPayload) error {
+		if payload.GetState() == string(github.PendingState) {
+			pendingCtx = deliveryCtx
+			return deliveryCtx.Err()
+		}
+		// Reproduce cancellation while the terminal delivery is in progress.
+		cancel()
+		// Pending reporting stays tied to the stream, unlike terminal delivery.
+		require.ErrorIs(t, pendingCtx.Err(), context.Canceled)
+		require.NoError(t, deliveryCtx.Err())
+		deadline, ok := deliveryCtx.Deadline()
+		require.True(t, ok, "terminal delivery must have a hard timeout")
+		require.Positive(t, time.Until(deadline))
+		require.LessOrEqual(t, time.Until(deadline), 10*time.Second)
+		user, err := auth.AuthenticatedUser(deliveryCtx)
+		require.NoError(t, err)
+		require.Equal(t, "GROUP1", user.GetGroupID())
+		return deliveryCtx.Err()
+	}
 
 	// Send started event with api key
-	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}, &bspb.BuildEventId_BuildMetadata{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
-	// Send workspace status event with commit sha (which causes a flush)
-	request = streamRequest(workspaceStatusEvent("COMMIT_SHA", "abc123"), testInvocationID, 2)
+	// Send repository metadata before the final build metadata event.
+	workspaceStatus := &anypb.Any{}
+	require.NoError(t, workspaceStatus.MarshalFrom(&bspb.BuildEvent{
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_WorkspaceStatus{}},
+		Payload: &bspb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bspb.WorkspaceStatus{
+			Item: []*bspb.WorkspaceStatus_Item{
+				{Key: "COMMIT_SHA", Value: "abc123"},
+				{Key: "REPO_URL", Value: "https://github.com/example/project"},
+			},
+		}},
+	}))
+	request = streamRequest(workspaceStatus, testInvocationID, 2)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
+	seq := &besSequence{t: t, n: 2, InvocationID: testInvocationID}
+	err = channel.HandleEvent(seq.NextRequest(&bspb.BuildEvent{
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildMetadata{}},
+		Payload: &bspb.BuildEvent_BuildMetadata{BuildMetadata: &bspb.BuildMetadata{
+			Metadata: map[string]string{"ROLE": "CI"},
+		}},
+	}))
+	require.NoError(t, err)
+	require.Len(t, client.Statuses, 1)
+	require.Equal(t, "pending", client.Statuses[0].RepoStatus.GetState())
 
 	// Send finished event
-	request = streamRequest(finishedEvent(), testInvocationID, 3)
+	request = streamRequest(finishedEvent(), testInvocationID, 4)
 	err = channel.HandleEvent(request)
-	assert.NoError(t, err)
+	if err != nil {
+		require.ErrorIs(t, err, context.Canceled)
+	}
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	require.Len(t, client.Statuses, 2)
+	require.Equal(t, "success", client.Statuses[1].RepoStatus.GetState())
 
 	// Make sure invocation is only readable by group and has commit sha
-	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
+	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(context.Background(), "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
-
-	// Cancel the context
-	cancel()
 
 	// Finalize the invocation
 	err = channel.FinalizeInvocation(testInvocationID)
@@ -1033,6 +1085,8 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+	// COMPLETE finalization must not overwrite the delivered status with Disconnected.
+	require.Len(t, client.Statuses, 2)
 }
 
 func TestFinishedFinalize(t *testing.T) {
