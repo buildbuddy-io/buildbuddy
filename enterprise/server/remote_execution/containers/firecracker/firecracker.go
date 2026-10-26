@@ -330,6 +330,23 @@ func getCgroupVersion() (string, error) {
 	}
 }
 
+// vmConfigurationHash computes a hash of the VM configuration.
+// This hash is used in the snapshot key, as it contains details about VM properties
+// that cannot be changed across snapshot/resume cycles.
+func vmConfigurationHash(config *fcpb.VMConfiguration) string {
+	configClone := config.CloneVT()
+	// Exclude the guest kernel version from the snapshot key so workloads can
+	// continue to resume existing snapshots after the default guest kernel changes.
+	// Restoring a snapshot resumes the kernel captured in its memory, so a series of snapshots
+	// will always resume from the same guest kernel the VM was originally created with.
+	configClone.GuestKernelVersion = ""
+	cd, err := digest.ComputeForMessage(configClone, repb.DigestFunction_SHA256)
+	if err != nil {
+		return ""
+	}
+	return cd.GetHash()
+}
+
 // putFileIntoDir finds "fileName" on the local filesystem, in runfiles, or
 // in the bundle. It then puts that file into destdir (via hardlink or copying)
 // and returns a path to the file in the new location. Files are written in
@@ -415,10 +432,13 @@ type ExecutorConfig struct {
 	FirecrackerBinaryPath string
 	JailerBinaryPath      string
 
-	GuestKernelVersion string
-	HostKernelVersion  string
-	FirecrackerVersion string
-	GuestAPIVersion    string
+	// DefaultGuestKernelVersion is the guest kernel version from deps.bzl that we use
+	// to create new VMs.
+	// Workloads can still resume from snapshots built with a different guest kernel version.
+	DefaultGuestKernelVersion string
+	HostKernelVersion         string
+	FirecrackerVersion        string
+	GuestAPIVersion           string
 
 	GuestKernelImagePath6_18 string
 	GuestKernelVersion6_18   string
@@ -508,18 +528,18 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	return &ExecutorConfig{
 		// For now just use the build root dir as the jailer root dir, since
 		// these are guaranteed to be on the same FS.
-		JailerRoot:               buildRootDir,
-		CacheRoot:                cacheRootDir,
-		InitrdImagePath:          initrdPath,
-		GuestKernelImagePath:     guestKernelImagePath,
-		FirecrackerBinaryPath:    firecrackerPath,
-		JailerBinaryPath:         jailerPath,
-		GuestKernelVersion:       guestKernelVersion,
-		HostKernelVersion:        hostKernelVersion,
-		FirecrackerVersion:       firecrackerDigest.GetHash(),
-		GuestAPIVersion:          GuestAPIVersion,
-		GuestKernelImagePath6_18: guestKernelPath6_18,
-		GuestKernelVersion6_18:   guestKernelDigest6_18.GetHash(),
+		JailerRoot:                buildRootDir,
+		CacheRoot:                 cacheRootDir,
+		InitrdImagePath:           initrdPath,
+		GuestKernelImagePath:      guestKernelImagePath,
+		FirecrackerBinaryPath:     firecrackerPath,
+		JailerBinaryPath:          jailerPath,
+		DefaultGuestKernelVersion: guestKernelVersion,
+		HostKernelVersion:         hostKernelVersion,
+		FirecrackerVersion:        firecrackerDigest.GetHash(),
+		GuestAPIVersion:           GuestAPIVersion,
+		GuestKernelImagePath6_18:  guestKernelPath6_18,
+		GuestKernelVersion6_18:    guestKernelDigest6_18.GetHash(),
 	}, nil
 }
 
@@ -848,10 +868,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.cgroupSettings = opts.CgroupSettings
 	}
 
-	c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion
-	if c.shouldUpgradeGuestKernel() {
-		c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion6_18
-	}
 	c.vmConfig.HostKernelVersion = c.executorConfig.HostKernelVersion
 	c.vmConfig.FirecrackerVersion = c.executorConfig.FirecrackerVersion
 	c.vmConfig.GuestApiVersion = c.executorConfig.GuestAPIVersion
@@ -874,16 +890,13 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		if err := c.newID(ctx); err != nil {
 			return nil, err
 		}
-		cd, err := digest.ComputeForMessage(c.vmConfig, repb.DigestFunction_SHA256)
-		if err != nil {
-			return nil, err
-		}
 
 		runnerID := c.id
 		if snaputil.IsChunkedSnapshotSharingEnabled() {
 			runnerID = ""
 		}
-		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, cd.GetHash(), runnerID)
+		vmConfigHash := vmConfigurationHash(c.vmConfig)
+		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, vmConfigHash, runnerID)
 		if err != nil {
 			return nil, err
 		}
@@ -1351,6 +1364,8 @@ func (c *FirecrackerContainer) loadSnapshot(ctx context.Context, snap *snaploade
 	if err := c.newID(ctx); err != nil {
 		return err
 	}
+
+	c.vmConfig.GuestKernelVersion = snap.GetVMConfiguration().GetGuestKernelVersion()
 
 	if err := c.setupCgroup(ctx); err != nil {
 		return status.UnavailableErrorf("setup cgroup: %s", err)
@@ -2331,6 +2346,11 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	c.currentTaskInitTime = time.Now()
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
+
+	c.vmConfig.GuestKernelVersion = c.executorConfig.DefaultGuestKernelVersion
+	if c.shouldUpgradeGuestKernel() {
+		c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion6_18
+	}
 
 	vmCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	c.vmCtx = vmCtx
