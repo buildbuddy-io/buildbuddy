@@ -149,8 +149,8 @@
     "https://bcr.bazel.build/modules/libpfm/4.11.0/MODULE.bazel": "45061ff025b301940f1e30d2c16bea596c25b176c8b6b3087e92615adbd52902",
     "https://bcr.bazel.build/modules/libxml2/2.15.3/MODULE.bazel": "a6bffafd8aa8b0c13eaa4bf25d55be188ec8548549395f03e98c39bab264adaa",
     "https://bcr.bazel.build/modules/libxml2/2.15.3/source.json": "fd7c420cb14981416c9fadd0db555bd1e249355e0e5b63b2ce15b92996b5fbfb",
-    "https://bcr.bazel.build/modules/llvm/0.8.23/MODULE.bazel": "315c8a46a968844d9bd70b06056110dcad9832882e5c9358eff66cebd4fb78d1",
-    "https://bcr.bazel.build/modules/llvm/0.8.23/source.json": "0dca662d1d8a9fe12f44c68bbf27210f62898361226a2e2c95084815729af488",
+    "https://bcr.bazel.build/modules/llvm/0.8.24/MODULE.bazel": "e03e030b1d0b44bb05c52665c2f43de9260af9152f666262e11e25f6c072aae3",
+    "https://bcr.bazel.build/modules/llvm/0.8.24/source.json": "924ed48858c1c081698f1992c7b489434375de901c47b7046e203459840cb544",
     "https://bcr.bazel.build/modules/nlohmann_json/3.6.1/MODULE.bazel": "6f7b417dcc794d9add9e556673ad25cb3ba835224290f4f848f8e2db1e1fca74",
     "https://bcr.bazel.build/modules/package_metadata/0.0.10/MODULE.bazel": "cb66e0ce830e01bc00cd9edc984963704f2759ca893a649996e2b1c5c1ea7271",
     "https://bcr.bazel.build/modules/package_metadata/0.0.10/source.json": "8fc6bece244828a69b3cc608f381118d67fa3cc2aa1a2851dfe8d99a8076d7d0",
@@ -1751,7 +1751,7 @@
     "@@toolchains_buildbuddy+//:extensions.bzl%buildbuddy": {
       "general": {
         "bzlTransitiveDigest": "lWa6Z0bfkK+GLxGpbRuJ/rFqT50PcvllkL8aIGUpSc4=",
-        "usagesDigest": "8/KE2qqH9tCyyG1SrEetb86YjMxaTzx7ysvgHvTfSTo=",
+        "usagesDigest": "cmRTwv7AtTFOJTGcI0o8aq/ZablTgpsJBqgFtIdhYU4=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "buildbuddy_toolchain": {
@@ -1761,11 +1761,11 @@
               "llvm": false,
               "java_version": "",
               "gcc_version": "",
-              "msvc_edition": "Enterprise",
+              "msvc_edition": "Community",
               "msvc_release": "2022",
-              "msvc_version": "14.44.35207",
+              "msvc_version": "14.39.33519",
               "windows_kits_release": "10",
-              "windows_kits_version": "10.0.26100.0",
+              "windows_kits_version": "10.0.22621.0",
               "extra_cxx_builtin_include_directories": []
             }
           }
@@ -1775,7 +1775,7 @@
     "@@windows_support+//windows:extensions.bzl%msvc_runtime": {
       "general": {
         "bzlTransitiveDigest": "DofaoTFHgkGvwPAZd7TsLKASW0kww/k5webrAMDectI=",
-        "usagesDigest": "m67sI6g3ruyNAyu/1PGe93zIaYYu657llz9tL/yw7DM=",
+        "usagesDigest": "fe0w49qOZpnzoEX7GmAfDXDCO0BbgNb1z0LOhMxLrgo=",
         "recordedInputs": [
           "REPO_MAPPING:windows_support+,bazel_tools bazel_tools"
         ],
@@ -1806,7 +1806,7 @@
     "@@windows_support+//windows:extensions.bzl%windows_sdk": {
       "general": {
         "bzlTransitiveDigest": "DofaoTFHgkGvwPAZd7TsLKASW0kww/k5webrAMDectI=",
-        "usagesDigest": "GjUMkGyQ3YMFaT/hnZciiR6YOXM+c2OgsWHa4rUWZXs=",
+        "usagesDigest": "dSf/ZB7rdHRJw0y/SOPpQL1YYGpndOvmCQnHWzuEhvY=",
         "recordedInputs": [
           "REPO_MAPPING:windows_support+,bazel_tools bazel_tools"
         ],
