@@ -84,7 +84,15 @@ for f in "$bundle" /etc/ssl/certs/*; do
   done
   n=$((n + 1))
 done
-rm -rf "$tmp"
+# Java's trust store, generated from the system store by ca-certificates-java.
+java_store=/etc/ssl/certs/java/cacerts
+if [[ -f "$java_store" ]] && command -v keytool >/dev/null; then
+  keytool -list -v -keystore "$java_store" -storepass changeit 2>/dev/null |
+    awk -v f="$java_store" '
+      /^Owner: / { subj = substr($0, 8) }
+      /^[ \t]*SHA256: / { fp = $2; gsub(":", "", fp); print fp, f, subj }
+    '
+fi
 EOF
 
 status=0
@@ -98,6 +106,8 @@ for platform in "${PLATFORMS[@]}"; do
     continue
   fi
   echo "ca-certificates.crt contains $bundle_count certificates"
+  java_count=$(grep -c " /etc/ssl/certs/java/cacerts " <<<"$certs" || true)
+  [[ "$java_count" -eq 0 ]] || echo "java cacerts contains $java_count certificates"
   found=0
   for fp in "${DISTRUSTED[@]}"; do
     if matches=$(grep "^$fp " <<<"$certs"); then
