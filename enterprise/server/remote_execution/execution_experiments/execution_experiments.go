@@ -41,11 +41,11 @@ import (
 )
 
 var (
-	PersistentVolumes        = expflag.String("executor.persistent_volumes", "", "Persistent volumes to mount into each task's container, in the same format as the persistent-volumes platform property. When set, this takes precedence over the platform property.")
-	UserspaceNetworking      = expflag.Bool("executor.userspace_networking", false, "Enable userspace networking for OCI and Firecracker containers.")
-	RecordInputFetchMetadata = expflag.Bool("executor.record_input_fetch_metadata", true, "If true, record and report metadata describing which action inputs were fetched from remote CAS.", expflag.DeprecatedExperimentName("remote_execution.record_input_fetch_metadata"))
-	WorkspacePoolEnabled     = expflag.Bool("executor.workspace_pool.enabled", false, "If true, keep finished task workspaces in a pool, and set up later tasks with similar input trees from them instead of from an empty directory. See the executor.workspace_pool.* flags.")
-	SpliceWithoutValidation  = expflag.Bool("executor.splice_without_validation", true, "If true, ask the cache to splice chunked action outputs without re-verifying each chunk's contents. The cache only honors this from executors with a trusted client identity.", expflag.DeprecatedExperimentName("splice-without-validation"))
+	PersistentVolumes        = register(expflag.String("executor.persistent_volumes", "", "Persistent volumes to mount into each task's container, in the same format as the persistent-volumes platform property. When set, this takes precedence over the platform property."))
+	UserspaceNetworking      = register(expflag.Bool("executor.userspace_networking", false, "Enable userspace networking for OCI and Firecracker containers."))
+	RecordInputFetchMetadata = register(expflag.Bool("executor.record_input_fetch_metadata", true, "If true, record and report metadata describing which action inputs were fetched from remote CAS.", expflag.DeprecatedExperimentName("remote_execution.record_input_fetch_metadata")))
+	WorkspacePoolEnabled     = register(expflag.Bool("executor.workspace_pool.enabled", false, "If true, keep finished task workspaces in a pool, and set up later tasks with similar input trees from them instead of from an empty directory. See the executor.workspace_pool.* flags."))
+	SpliceWithoutValidation  = register(expflag.Bool("executor.splice_without_validation", true, "If true, ask the cache to splice chunked action outputs without re-verifying each chunk's contents. The cache only honors this from executors with a trusted client identity.", expflag.DeprecatedExperimentName("splice-without-validation")))
 )
 
 type protoGetter interface {
@@ -54,13 +54,13 @@ type protoGetter interface {
 }
 
 // all lists every expflag declared in this package, so that All sends every
-// experiment to executors. TestAllListsEveryFlag enforces this.
-var all = []protoGetter{
-	PersistentVolumes,
-	UserspaceNetworking,
-	RecordInputFetchMetadata,
-	WorkspacePoolEnabled,
-	SpliceWithoutValidation,
+// experiment to executors. Declarations add themselves with register, and
+// TestAllListsEveryFlag checks that none is declared without it.
+var all []protoGetter
+
+func register[F protoGetter](f F) F {
+	all = append(all, f)
+	return f
 }
 
 func All(ctx context.Context, opts ...any) []*expb.EvaluatedFlag {
