@@ -688,57 +688,98 @@ func (p *Provider) BuildGenericSnapshots(ctx context.Context, cgroupParent strin
 }
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	if c, err := p.newFromGenericSnapshot(ctx, args); err == nil {
+		return c, nil
+	}
 	sizeEstimate := args.Task.GetSchedulingMetadata().GetTaskSize()
 	networkMode, err := networkMode(args.Props.Network, args.Props.InitDockerd)
 	if err != nil {
 		return nil, err
 	}
-	newContainer := func(vmConfig *fcpb.VMConfiguration, generic bool) (*FirecrackerContainer, error) {
-		vmConfig.ScratchDiskSizeMb = int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6)
-		vmConfig.EnableLogging = platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs"))
-		vmConfig.BootArgs = getBootArgs(vmConfig, generic /*=deferRootfsMount*/)
-		return NewContainer(ctx, p.env, args.Task.GetExecutionTask(), ContainerOpts{
-			VMConfiguration:        vmConfig,
-			GenericSnapshot:        generic,
-			ContainerImage:         args.Props.ContainerImage,
-			User:                   args.Props.DockerUser,
-			ActionWorkingDirectory: args.WorkDir,
-			CgroupParent:           args.CgroupParent,
-			CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
-			BlockDevice:            args.BlockDevice,
-			OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
-			ExecutorConfig:         p.executorConfig,
-			ExternalNetworkPool:    p.externalNetworkPool,
-			LocalNetworkPool:       p.localNetworkPool,
-			MarshalledDNSOverrides: p.marshalledDNSOverrides,
-			HostResolvConf:         p.hostResolvConf,
-			UseOCIFetcher:          args.Props.UseOCIFetcher,
-		})
+	vmConfig := &fcpb.VMConfiguration{
+		NumCpus:           vcpuCount(sizeEstimate.GetEstimatedMilliCpu()),
+		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+		ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+		EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
+		NetworkMode:       networkMode,
+		InitDockerd:       args.Props.InitDockerd,
+		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
+		HostCpuid:         getCPUID(),
+		EnableVfs:         args.Props.EnableVFS,
+		Ipv6Enabled:       args.Props.NetworkEnableIPv6,
+		EnablePci:         *enablePCI,
 	}
-	// Generic snapshot VMs get the rounded shape, but the scheduler only
-	// reserves the scheduled size. This is fine enough because CPU and
-	// memory are lazily allocated. Debug terminal VMs, and tasks whose
-	// shape has no snapshot on this executor, boot normally.
-	if shape := GenericSnapshotShape(sizeEstimate); args.Props.UseGenericSnapshot && shape != nil && !*debugTerminal {
-		c, err := newContainer(genericVMConfig(shape, networkMode), true /*=generic*/)
-		if err != nil {
-			return nil, err
-		}
-		if c.hasGenericSnapshot() {
-			return c, nil
-		}
+	vmConfig.BootArgs = getBootArgs(vmConfig, false /*=deferRootfsMount*/)
+	opts := ContainerOpts{
+		VMConfiguration:        vmConfig,
+		ContainerImage:         args.Props.ContainerImage,
+		User:                   args.Props.DockerUser,
+		ActionWorkingDirectory: args.WorkDir,
+		CgroupParent:           args.CgroupParent,
+		CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
+		BlockDevice:            args.BlockDevice,
+		OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
+		ExecutorConfig:         p.executorConfig,
+		ExternalNetworkPool:    p.externalNetworkPool,
+		LocalNetworkPool:       p.localNetworkPool,
+		MarshalledDNSOverrides: p.marshalledDNSOverrides,
+		HostResolvConf:         p.hostResolvConf,
+		UseOCIFetcher:          args.Props.UseOCIFetcher,
 	}
-	return newContainer(&fcpb.VMConfiguration{
-		NumCpus:          vcpuCount(sizeEstimate.GetEstimatedMilliCpu()),
-		MemSizeMb:        int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-		NetworkMode:      networkMode,
-		InitDockerd:      args.Props.InitDockerd,
-		EnableDockerdTcp: args.Props.EnableDockerdTCP,
-		HostCpuid:        getCPUID(),
-		EnableVfs:        args.Props.EnableVFS,
-		Ipv6Enabled:      args.Props.NetworkEnableIPv6,
-		EnablePci:        *enablePCI,
-	}, false /*=generic*/)
+	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// newFromGenericSnapshot returns a container that starts from this
+// executor's generic snapshot, or an error if the task can't use one.
+func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.Init) (*FirecrackerContainer, error) {
+	props := args.Props
+	// Generic VMs use userspace networking, which doesn't support IPv6.
+	if !props.UseGenericSnapshot || props.RecycleRunner || props.InitDockerd || props.EnableVFS ||
+		props.NetworkEnableIPv6 || props.OverrideSnapshotKey != nil || *debugTerminal {
+		return nil, status.FailedPreconditionError("task can't use a generic snapshot")
+	}
+	sizeEstimate := args.Task.GetSchedulingMetadata().GetTaskSize()
+	// The VM gets the rounded shape, but the scheduler only reserves the
+	// scheduled size. This is fine because CPU and memory are lazily allocated.
+	shape := GenericSnapshotShape(sizeEstimate)
+	if shape == nil {
+		return nil, status.FailedPreconditionError("no generic snapshot shape fits the task")
+	}
+	networkMode, err := networkMode(props.Network, props.InitDockerd)
+	if err != nil {
+		return nil, err
+	}
+	vmConfig := genericVMConfig(shape, networkMode)
+	vmConfig.ScratchDiskSizeMb = int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6)
+	vmConfig.EnableLogging = platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs"))
+	vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
+	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), ContainerOpts{
+		VMConfiguration:        vmConfig,
+		GenericSnapshot:        true,
+		ContainerImage:         props.ContainerImage,
+		User:                   props.DockerUser,
+		ActionWorkingDirectory: args.WorkDir,
+		CgroupParent:           args.CgroupParent,
+		CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
+		BlockDevice:            args.BlockDevice,
+		ExecutorConfig:         p.executorConfig,
+		ExternalNetworkPool:    p.externalNetworkPool,
+		LocalNetworkPool:       p.localNetworkPool,
+		MarshalledDNSOverrides: p.marshalledDNSOverrides,
+		HostResolvConf:         p.hostResolvConf,
+		UseOCIFetcher:          props.UseOCIFetcher,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !c.hasGenericSnapshot() {
+		return nil, status.NotFoundError("no generic snapshot for the task's shape")
+	}
+	return c, nil
 }
 
 // parseDNSOverrides validates the `dnsOverrides` flag and marshalls it to a string.
