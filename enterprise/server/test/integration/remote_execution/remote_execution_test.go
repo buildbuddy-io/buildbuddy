@@ -2817,9 +2817,9 @@ func spliceBlobCounts(t *testing.T) map[string]float64 {
 
 // executeChunkedOutputAction runs an action whose output is large enough for
 // the executor to upload it as chunks and splice them together, checks that
-// the output reads back whole, and returns the number of SpliceBlob requests
-// the cache served meanwhile per metrics.SpliceBlobValidation label value.
-func executeChunkedOutputAction(t *testing.T, rbe *rbetest.Env) map[string]float64 {
+// the output reads back whole, and returns the metrics.SpliceBlobValidation
+// label value under which the cache served the SpliceBlob requests meanwhile.
+func executeChunkedOutputAction(t *testing.T, rbe *rbetest.Env) string {
 	// Outputs larger than four times the average chunk size are chunked, as
 	// long as they are also too large for a batch upload.
 	const avgChunkSize = 1024 * 1024
@@ -2845,13 +2845,17 @@ func executeChunkedOutputAction(t *testing.T, rbe *rbetest.Env) map[string]float
 	require.NoError(t, err)
 	require.EqualValues(t, outputSize, info.Size())
 
-	delta := map[string]float64{}
-	for validation, count := range spliceBlobCounts(t) {
-		if d := count - before[validation]; d != 0 {
-			delta[validation] = d
+	// Retries may make the cache serve more than one SpliceBlob request, but
+	// it must validate all of them the same way.
+	after := spliceBlobCounts(t)
+	var served []string
+	for validation, count := range after {
+		if count > before[validation] {
+			served = append(served, validation)
 		}
 	}
-	return delta
+	require.Len(t, served, 1, "SpliceBlob requests served per validation label: before %v, after %v", before, after)
+	return served[0]
 }
 
 func TestSpliceWithoutValidationExperiment(t *testing.T) {
@@ -2889,7 +2893,7 @@ func TestSpliceWithoutValidationExperiment(t *testing.T) {
 			}
 			rbe.AddExecutorWithOptions(t, executorOpts)
 
-			require.Equal(t, map[string]float64{tc.validation: 1}, executeChunkedOutputAction(t, rbe))
+			require.Equal(t, tc.validation, executeChunkedOutputAction(t, rbe))
 		})
 	}
 }
@@ -2937,7 +2941,7 @@ func TestSpliceWithoutValidationExperiment_SchedulerControlled(t *testing.T) {
 			)
 			rbe.WaitForExecutorCount(1)
 
-			require.Equal(t, map[string]float64{tc.validation: 1}, executeChunkedOutputAction(t, rbe))
+			require.Equal(t, tc.validation, executeChunkedOutputAction(t, rbe))
 		})
 	}
 }
