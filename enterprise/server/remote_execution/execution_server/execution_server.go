@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -970,8 +969,10 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
 		executionTask.FastCdc_2020Params = chunking.FastCDCWriteParams(ctx, efp)
 		// TODO (go/bug/8651): remove this once we go through a single release
-		// if the executors using execution_experiments.SpliceWithoutValidation.
-		if execution_experiments.SpliceWithoutValidation.Get(ctx) {
+		// of the executors using execution_experiments.SpliceWithoutValidation.
+		if efp != nil {
+			// Always set because it's always enabled in flagd, and it only
+			// affects executors during a short rollout period.
 			executionTask.Experiments = append(executionTask.Experiments, "splice-without-validation")
 		}
 

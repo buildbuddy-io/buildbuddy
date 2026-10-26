@@ -602,6 +602,7 @@ func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *rep
 func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) error {
 	if r.task.GetFastCdc_2020Params() != nil && execution_experiments.SpliceWithoutValidation.Get(ctx) {
 		// SpliceWithoutValidation only makes sense for tasks instructed to use
+		// chunking.
 		ctx = cdc.ContextWithSpliceWithoutValidation(ctx)
 	}
 	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, executeResponse, cmdResult)
