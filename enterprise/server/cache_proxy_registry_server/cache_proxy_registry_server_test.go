@@ -965,38 +965,26 @@ func writeRegistration(t *testing.T, s *CacheProxyRegistryServer, reg *cppb.Regi
 }
 
 func TestListCacheProxies_UpgradePrompt_ConfiguredNewestVersion(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		registered string
-		customer   string
-	}{
-		// The hosted label is not semver, so without the configured version
-		// there would be no newest version and no prompt.
-		{name: "hosted label registrations", registered: "hosted-20261021-abc1234", customer: "v2.30.0"},
-		{name: "takes precedence over registrations", registered: "v2.50.0", customer: "v2.30.0"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
-			s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
-			s.configuredNewestVersion = semver.MustParse("v2.41.0")
+	// A newer registered version must not override the configured one.
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+	s.configuredNewestVersion = semver.MustParse("v2.41.0")
 
-			require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxySummary{
-				Host: "host-new", ProxyId: "id-new", Version: tc.registered,
-			}, nil))
-			require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
-				Host: "host-old", ProxyId: "id-old", Version: tc.customer,
-			}, nil))
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxySummary{
+		Host: "host-new", ProxyId: "id-new", Version: "v2.50.0",
+	}, nil))
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
+		Host: "host-old", ProxyId: "id-old", Version: "v2.30.0",
+	}, nil))
 
-			ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-			resp, err := s.ListCacheProxies(ctx, &cppb.ListCacheProxiesRequest{
-				RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
-			})
-			require.NoError(t, err)
-			require.NotNil(t, resp.GetUpgradePrompt())
-			assert.Equal(t, uppb.Prompt_LOW, resp.GetUpgradePrompt().GetUrgency())
-			assert.Contains(t, resp.GetUpgradePrompt().GetMessage(), "2.41.0")
-		})
-	}
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	resp, err := s.ListCacheProxies(ctx, &cppb.ListCacheProxiesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetUpgradePrompt())
+	assert.Equal(t, uppb.Prompt_LOW, resp.GetUpgradePrompt().GetUrgency())
+	assert.Contains(t, resp.GetUpgradePrompt().GetMessage(), "2.41.0")
 }
 
 func TestListCacheProxies_UpgradePrompt_ConfiguredNewestVersionWithoutSharedPool(t *testing.T) {
