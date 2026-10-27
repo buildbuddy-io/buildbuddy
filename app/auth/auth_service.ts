@@ -282,7 +282,7 @@ export class AuthService {
         popup
           .open(url)
           .then(() => this.refreshUser())
-          .catch(errorService.handleError);
+          .catch((e) => errorService.handleError(e));
         return;
       }
       window.location.href = url;
@@ -298,7 +298,7 @@ export class AuthService {
       popup
         .open(url)
         .then(() => this.refreshUser())
-        .catch(errorService.handleError);
+        .catch((e) => errorService.handleError(e));
       return;
     }
     window.location.href = url;
