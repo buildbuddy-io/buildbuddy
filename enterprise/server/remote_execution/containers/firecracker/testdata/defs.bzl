@@ -12,7 +12,7 @@ DOCKER_ENABLED_IMAGE = "gcr.io/flame-public/executor-docker-default@sha256:c346c
 
 DOCKER_DIND_IMAGE = "gcr.io/flame-public/test-docker-dind@sha256:68f6d9ab84623d1116c5432a3b924a07ee09960e6129ca1cb03ef14010588cb4"
 
-UBUNTU_24_04_IMAGE = "gcr.io/flame-public/rbe-ubuntu24-04@sha256:f7db0d4791247f032fdb4451b7c3ba90e567923a341cc6dc43abfc283436791a"
+UBUNTU_24_04_IMAGE = "gcr.io/flame-public/rbe-ubuntu24-04@sha256:be9853fc45092d2cf2bda3abed30d22182881659a50bf35c7125161d7cfc8a75"
 
 WORKFLOWS_IMAGE = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:ba28945426fcdf4310f18e8a8e3c47af670bdcf9ba76bd76b269898c0579089e"
 
