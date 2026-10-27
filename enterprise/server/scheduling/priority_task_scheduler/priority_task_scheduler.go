@@ -1,6 +1,7 @@
 package priority_task_scheduler
 
 import (
+	"cmp"
 	"container/list"
 	"context"
 	"fmt"
@@ -730,20 +731,12 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 	log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
 }
 
-// taskGroupID returns the group whose resource usage the task counts toward.
-// Tasks without a group are attributed to the anonymous group.
 func taskGroupID(res *scpb.EnqueueTaskReservationRequest) string {
-	if groupID := res.GetSchedulingMetadata().GetTaskGroupId(); groupID != "" {
-		return groupID
-	}
-	return interfaces.AuthAnonymousUser
+	return cmp.Or(res.GetSchedulingMetadata().GetTaskGroupId(), interfaces.AuthAnonymousUser)
 }
 
 // updateAssignedResourceMetrics publishes the resources reserved by running
-// tasks, both in total and for the given group. The group's series are
-// removed once it has no running tasks, so the number of per-group series is
-// bounded by the number of groups with running tasks rather than by the
-// number of groups ever seen. Must be called with q.mu held.
+// tasks, both in total and for the given group. Must be called with q.mu held.
 func (q *PriorityTaskScheduler) updateAssignedResourceMetrics(groupID string) {
 	metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
 	metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
