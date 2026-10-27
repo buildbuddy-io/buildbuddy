@@ -2605,6 +2605,7 @@ actions:
 
 func TestDefaultImageOverride(t *testing.T) {
 	const overrideImage = "docker://gcr.io/example/override-image:latest"
+	defaultImage := platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage
 	for _, tc := range []struct {
 		name          string
 		override      string
@@ -2612,43 +2613,27 @@ func TestDefaultImageOverride(t *testing.T) {
 		expectedImage string
 	}{
 		{
-			name:          "no override",
-			expectedImage: platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage,
-		},
-		{
-			name:          "override",
+			name:          "override applies",
 			override:      overrideImage,
 			expectedImage: overrideImage,
 		},
 		{
-			name:          "explicit image wins over override",
+			name:          "explicit image wins",
 			override:      overrideImage,
-			actionConfig:  `container_image: "docker://gcr.io/example/explicit:latest"`,
-			expectedImage: "docker://gcr.io/example/explicit:latest",
+			actionConfig:  `container_image: "` + defaultImage + `"`,
+			expectedImage: defaultImage,
 		},
 		{
-			name:          "self-hosted ignores override",
+			name:          "explicit platform property image wins",
+			override:      overrideImage,
+			actionConfig:  `platform_properties: { container-image: "` + defaultImage + `" }`,
+			expectedImage: defaultImage,
+		},
+		{
+			name:          "self-hosted skips override",
 			override:      overrideImage,
 			actionConfig:  `self_hosted: true`,
-			expectedImage: platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage,
-		},
-		{
-			name:          "self-hosted platform property ignores override",
-			override:      overrideImage,
-			actionConfig:  `platform_properties: { use-self-hosted-executors: "true" }`,
-			expectedImage: platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage,
-		},
-		{
-			name:          "windows OS platform property ignores override",
-			override:      overrideImage,
-			actionConfig:  `platform_properties: { OSFamily: "windows" }`,
-			expectedImage: platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage,
-		},
-		{
-			name:          "custom pool platform property ignores override",
-			override:      overrideImage,
-			actionConfig:  `platform_properties: { Pool: "my-pool" }`,
-			expectedImage: platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage,
+			expectedImage: defaultImage,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

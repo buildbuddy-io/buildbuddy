@@ -497,128 +497,39 @@ func TestRun_GitCredentialsFromEnv(t *testing.T) {
 
 func TestDefaultImageOverride(t *testing.T) {
 	const overrideImage = "docker://gcr.io/example/override-image:latest"
-	const explicitImage = "docker://gcr.io/example/explicit:latest"
 	for _, tc := range []struct {
-		name                   string
-		override               string
-		useGroupOwnedExecutors bool
-		req                    *rnpb.RunRequest
-		expectedImage          string
+		name          string
+		req           *rnpb.RunRequest
+		expectedImage string
 	}{
 		{
-			name:          "no override",
-			req:           &rnpb.RunRequest{},
-			expectedImage: DefaultRunnerContainerImage,
-		},
-		{
-			name:          "override",
-			override:      overrideImage,
+			name:          "override applies",
 			req:           &rnpb.RunRequest{},
 			expectedImage: overrideImage,
 		},
 		{
-			name:          "explicit request image wins over override",
-			override:      overrideImage,
-			req:           &rnpb.RunRequest{ContainerImage: explicitImage},
-			expectedImage: explicitImage,
+			name:          "explicit request image wins",
+			req:           &rnpb.RunRequest{ContainerImage: DefaultRunnerContainerImage},
+			expectedImage: DefaultRunnerContainerImage,
 		},
 		{
-			name:     "explicit exec property image wins over override",
-			override: overrideImage,
+			name: "explicit exec property image wins",
 			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
-				{Name: "container-image", Value: explicitImage},
-			}},
-			expectedImage: explicitImage,
-		},
-		{
-			name:     "default pool applies override",
-			override: overrideImage,
-			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
-				{Name: "Pool", Value: "default"},
-			}},
-			expectedImage: overrideImage,
-		},
-		{
-			name:     "custom pool ignores override",
-			override: overrideImage,
-			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
-				{Name: "Pool", Value: "my-pool"},
+				{Name: "container-image", Value: DefaultRunnerContainerImage},
 			}},
 			expectedImage: DefaultRunnerContainerImage,
 		},
 		{
-			name:     "self-hosted ignores override",
-			override: overrideImage,
-			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
-				{Name: platform.UseSelfHostedExecutorsPropertyName, Value: "true"},
-			}},
-			expectedImage: DefaultRunnerContainerImage,
-		},
-		{
-			name:     "self-hosted remote header ignores override",
-			override: overrideImage,
+			name: "self-hosted remote header skips override",
 			req: &rnpb.RunRequest{RemoteHeaders: []string{
 				platform.OverrideHeaderPrefix + platform.UseSelfHostedExecutorsPropertyName + "=true",
 			}},
 			expectedImage: DefaultRunnerContainerImage,
 		},
-		{
-			name:     "last duplicate self-hosted property wins",
-			override: overrideImage,
-			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
-				{Name: platform.UseSelfHostedExecutorsPropertyName, Value: "false"},
-				{Name: platform.UseSelfHostedExecutorsPropertyName, Value: "true"},
-			}},
-			expectedImage: DefaultRunnerContainerImage,
-		},
-		{
-			name:     "lowercase windows OS ignores override",
-			override: overrideImage,
-			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
-				{Name: "osfamily", Value: "windows"},
-			}},
-			expectedImage: DefaultRunnerContainerImage,
-		},
-		{
-			name:                   "group-owned executors ignore override",
-			override:               overrideImage,
-			useGroupOwnedExecutors: true,
-			req:                    &rnpb.RunRequest{},
-			expectedImage:          DefaultRunnerContainerImage,
-		},
-		{
-			name:                   "group-owned executors with explicit shared pool apply override",
-			override:               overrideImage,
-			useGroupOwnedExecutors: true,
-			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
-				{Name: platform.UseSelfHostedExecutorsPropertyName, Value: "false"},
-			}},
-			expectedImage: overrideImage,
-		},
-		{
-			name:          "darwin ignores override",
-			override:      overrideImage,
-			req:           &rnpb.RunRequest{Os: "darwin"},
-			expectedImage: "",
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			flags.Set(t, "remote_execution.ci_runner_default_image", tc.override)
+			flags.Set(t, "remote_execution.ci_runner_default_image", overrideImage)
 			te, ctx := getEnv(t)
-			if tc.useGroupOwnedExecutors {
-				// Only API key claims carry the group-owned executors setting.
-				u, err := te.GetUserDB().GetUser(ctx)
-				require.NoError(t, err)
-				require.NotEmpty(t, u.Groups)
-				groupID := u.Groups[0].Group.GroupID
-				err = te.GetDBHandle().NewQuery(ctx, "set_use_group_owned_executors").Raw(
-					`UPDATE "Groups" SET use_group_owned_executors = ? WHERE group_id = ?`, true, groupID).Exec().Error
-				require.NoError(t, err)
-				key, err := te.GetAuthDB().CreateAPIKey(ctx, groupID, "test", []cappb.Capability{cappb.Capability_CACHE_WRITE}, 0, false)
-				require.NoError(t, err)
-				ctx = te.GetAuthenticator().AuthContextFromAPIKey(t.Context(), key.Value)
-				ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, key.Value)
-			}
 
 			r, err := New(te)
 			require.NoError(t, err)

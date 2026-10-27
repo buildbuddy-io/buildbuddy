@@ -1288,7 +1288,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	cmd.Platform.Properties = append(cmd.Platform.Properties, customPlatformProps...)
 	rexec.NormalizeCommand(cmd)
 	if workflowAction.ContainerImage == "" {
-		ci_runner_util.ApplyDefaultImageOverride(ctx, ws.env, &repb.ExecutionTask{Command: cmd}, *workflowsDefaultImage, pool, workflowAction.Name)
+		ci_runner_util.ApplyDefaultImageOverride(ctx, ws.env, &repb.ExecutionTask{Command: cmd}, customPlatformProps, *workflowsDefaultImage, pool, workflowAction.Name)
 	}
 
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, cmd)

@@ -314,14 +314,22 @@ func applyEnvOverrides(task *repb.ExecutionTask, envOverrides map[string]string)
 
 // ApplyDefaultImageOverride replaces the container-image of the task's
 // (normalized) command with DefaultImageOverride, if the override is set, the
-// task's image is still defaultImage, and the platform parser says the task
-// runs on the shared Linux pool. sharedPool is the Pool value the caller set.
-// Self-hosted executors may not have the override image, so they are skipped.
-func ApplyDefaultImageOverride(ctx context.Context, env environment.Env, task *repb.ExecutionTask, defaultImage, sharedPool, workflowName string) {
+// image is still defaultImage and wasn't set in userProps, and the platform
+// parser says the task runs on the shared Linux pool. sharedPool is the Pool
+// value the caller set. Self-hosted executors may not have the override image,
+// so they are skipped. The remote_execution.pool_override experiment can still
+// reroute the task afterwards.
+func ApplyDefaultImageOverride(ctx context.Context, env environment.Env, task *repb.ExecutionTask, userProps []*repb.Platform_Property, defaultImage, sharedPool, workflowName string) {
+	for _, p := range userProps {
+		if strings.EqualFold(p.GetName(), "container-image") {
+			return
+		}
+	}
 	props, err := platform.ParseProperties(task)
 	if err != nil || props.OS != platform.LinuxOperatingSystemName || props.ContainerImage != defaultImage {
 		return
 	}
+	// ParseProperties lowercases the pool and maps "default" to "".
 	if props.Pool != "" && props.Pool != strings.ToLower(sharedPool) {
 		return
 	}
@@ -338,6 +346,9 @@ func ApplyDefaultImageOverride(ctx context.Context, env environment.Env, task *r
 	image := DefaultImageOverride.Get(ctx, experiments.WithContext("workflow-name", workflowName))
 	if image == "" {
 		return
+	}
+	if !strings.HasPrefix(image, platform.DockerPrefix) {
+		image = platform.DockerPrefix + image
 	}
 	for _, p := range task.GetCommand().GetPlatform().GetProperties() {
 		if strings.EqualFold(p.GetName(), "container-image") {

@@ -243,3 +243,59 @@ func TestGitFetchLowSpeedRetryFlags(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyDefaultImageOverride(t *testing.T) {
+	const (
+		defaultImage  = "docker://gcr.io/example/default:latest"
+		overrideImage = "docker://gcr.io/example/override:latest"
+		sharedPool    = "Shared-Pool"
+	)
+	prop := func(name, value string) *repb.Platform_Property {
+		return &repb.Platform_Property{Name: name, Value: value}
+	}
+	for _, tc := range []struct {
+		name       string
+		override   string
+		props      []*repb.Platform_Property
+		headers    []*repb.Platform_Property
+		userProps  []*repb.Platform_Property
+		groupOwned bool
+		want       string
+	}{
+		{name: "no override", want: defaultImage},
+		{name: "override applies with mixed-case shared pool", override: overrideImage, want: overrideImage},
+		{name: "docker prefix is added", override: "gcr.io/example/override:latest", want: overrideImage},
+		{name: "default pool", override: overrideImage, props: []*repb.Platform_Property{prop("Pool", "default")}, want: overrideImage},
+		{name: "custom pool", override: overrideImage, props: []*repb.Platform_Property{prop("Pool", "custom")}, want: defaultImage},
+		{name: "non-linux OS", override: overrideImage, props: []*repb.Platform_Property{prop("osfamily", "windows")}, want: defaultImage},
+		{name: "image is not the default", override: overrideImage, props: []*repb.Platform_Property{prop("container-image", "docker://other")}, want: "docker://other"},
+		{name: "user props set the image", override: overrideImage, userProps: []*repb.Platform_Property{prop("Container-Image", defaultImage)}, want: defaultImage},
+		{name: "self-hosted", override: overrideImage, props: []*repb.Platform_Property{prop("use-self-hosted-executors", "true")}, want: defaultImage},
+		{name: "self-hosted header", override: overrideImage, headers: []*repb.Platform_Property{prop("use-self-hosted-executors", "true")}, want: defaultImage},
+		{name: "custom pool header", override: overrideImage, headers: []*repb.Platform_Property{prop("pool", "custom")}, want: defaultImage},
+		{name: "group-owned executors", override: overrideImage, groupOwned: true, want: defaultImage},
+		{name: "group-owned executors with explicit shared pool", override: overrideImage, groupOwned: true, props: []*repb.Platform_Property{prop("use-self-hosted-executors", "false")}, want: overrideImage},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.ci_runner_default_image", tc.override)
+			env := enterprise_testenv.New(t)
+			ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+				"user1": &testauth.TestUser{UserID: "user1", GroupID: "group1", UseGroupOwnedExecutors: tc.groupOwned},
+			})
+			env.SetAuthenticator(ta)
+			ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+			require.NoError(t, err)
+
+			cmd := &repb.Command{Platform: &repb.Platform{Properties: append([]*repb.Platform_Property{
+				prop("Pool", sharedPool),
+				prop("container-image", defaultImage),
+			}, tc.props...)}}
+			task := &repb.ExecutionTask{Command: cmd, PlatformOverrides: &repb.Platform{Properties: tc.headers}}
+			ApplyDefaultImageOverride(ctx, env, task, tc.userProps, defaultImage, sharedPool, "test")
+
+			props, err := platform.ParseProperties(task)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, props.ContainerImage)
+		})
+	}
+}
