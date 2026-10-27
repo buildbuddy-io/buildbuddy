@@ -3560,9 +3560,10 @@ func (s *SchedulerServer) getRegisteredExecutionNodesFromRedis(ctx context.Conte
 	return registeredNodes, nil
 }
 
-// upgradePrompt returns a Prompt carrying the latest public release if any of the given executors meets one of the configured upgrade
-// triggers (see the --remote_execution.upgrade_prompt_* flags), and nil
-// otherwise. The urgency reflects the most-outdated executor in the list.
+// upgradePrompt returns a Prompt carrying the latest public release if any of
+// the given executors meets one of the configured upgrade triggers (see the
+// --remote_execution.upgrade_prompt_* flags), and nil otherwise. The urgency
+// reflects the most-outdated executor in the list.
 func (s *SchedulerServer) upgradePrompt(ctx context.Context, executors []*scpb.GetExecutionNodesResponse_Executor) *uppb.Prompt {
 	if s.detector == nil || len(executors) == 0 {
 		return nil

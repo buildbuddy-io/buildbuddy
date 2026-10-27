@@ -398,9 +398,10 @@ func (s *CacheProxyRegistryServer) removeProxy(ctx context.Context, groupID, pro
 	return s.rdb.HDel(ctx, redisKeyForCacheProxies(groupID), proxyID).Err()
 }
 
-// upgradePrompt returns a Prompt carrying the latest public release if any of the given proxies meets one of the configured upgrade triggers
-// (see the --cache_proxy.upgrade_prompt_* flags), and nil otherwise. The
-// urgency reflects the most-outdated proxy in the list.
+// upgradePrompt returns a Prompt carrying the latest public release if any of
+// the given proxies meets one of the configured upgrade triggers (see the
+// --cache_proxy.upgrade_prompt_* flags), and nil otherwise. The urgency
+// reflects the most-outdated proxy in the list.
 func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []*cppb.GetCacheProxiesResponse_CacheProxy, messageTemplate string) *uppb.Prompt {
 	if s.detector == nil || len(proxies) == 0 {
 		return nil
