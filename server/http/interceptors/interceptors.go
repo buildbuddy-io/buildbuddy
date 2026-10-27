@@ -23,8 +23,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/features"
 	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -34,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/useragent"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -342,8 +345,43 @@ func AuthorizeIP(env environment.Env, next http.Handler) http.Handler {
 	})
 }
 
-func ClientIP(next http.Handler) http.Handler {
+// attestedClientIP returns the client IP asserted by a forwarding proxy in the
+// x-buildbuddy-internal-client-ip header. The header is only honored if the
+// request carries a valid grpc-proxy client identity.
+func attestedClientIP(env environment.Env, r *http.Request) (string, bool) {
+	ips := r.Header.Values(clientip.HeaderName)
+	if len(ips) == 0 {
+		return "", false
+	}
+	cis := env.GetClientIdentityService()
+	identities := r.Header.Values(authutil.ClientIdentityHeaderName)
+	if cis == nil || len(identities) == 0 {
+		return "", false
+	}
+	// ValidateIncomingIdentity reads the identity from gRPC metadata.
+	ctx := metadata.NewIncomingContext(r.Context(), metadata.MD{authutil.ClientIdentityHeaderName: identities})
+	ctx, err := cis.ValidateIncomingIdentity(ctx)
+	if err != nil {
+		return "", false
+	}
+	si, err := cis.IdentityFromContext(ctx)
+	if err != nil || si.Client != interfaces.ClientIdentityGRPCProxy {
+		return "", false
+	}
+	// Require exactly one value: a trusted proxy sets a single header.
+	if len(ips) > 1 {
+		log.CtxWarningf(r.Context(), "Multiple %q headers present in request from trusted proxy; ignoring", clientip.HeaderName)
+		return "", false
+	}
+	return ips[0], true
+}
+
+func ClientIP(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ip, ok := attestedClientIP(env, r); ok {
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), clientip.ContextKey, ip)))
+			return
+		}
 		peerIP := r.RemoteAddr
 		if ip, _, err := net.SplitHostPort(peerIP); err == nil {
 			peerIP = ip
@@ -568,7 +606,7 @@ func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix st
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
-		ClientIP,
+		func(h http.Handler) http.Handler { return ClientIP(env, h) },
 		ClientUserAgent,
 		Subdomain,
 		region.CORS,
@@ -585,7 +623,7 @@ func WrapExternalHandler(env environment.Env, next http.Handler) http.Handler {
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
-		ClientIP,
+		func(h http.Handler) http.Handler { return ClientIP(env, h) },
 		Subdomain,
 		RecoverAndAlert,
 	})
@@ -603,7 +641,7 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
-		ClientIP,
+		func(h http.Handler) http.Handler { return ClientIP(env, h) },
 		Subdomain,
 		RecoverAndAlert,
 	})
