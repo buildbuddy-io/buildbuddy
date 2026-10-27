@@ -279,7 +279,11 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 		// OCI container references lose the "docker://" prefix. If no
 		// container was set then we set our default.
 		if strings.EqualFold(platformProps.ContainerImage, "none") || platformProps.ContainerImage == "" {
-			platformProps.ContainerImage = containerImageName(*defaultImage)
+			image := *defaultImage
+			if override := execution_experiments.DefaultImageOverride.Get(ctx); override != "" {
+				image = override
+			}
+			platformProps.ContainerImage = containerImageName(image)
 		} else if !strings.HasPrefix(platformProps.ContainerImage, platform.DockerPrefix) {
 			// Return an error if a client specified an unparseable
 			// container reference.

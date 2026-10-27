@@ -311,6 +311,66 @@ func TestApplyOverrides_PersistentVolumesExperiment(t *testing.T) {
 	require.Equal(t, want, platformProps.PersistentVolumes)
 }
 
+func TestApplyOverrides_DefaultImageOverrideExperiment(t *testing.T) {
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	flags.Set(t, "executor.default_image", "gcr.io/default/image:latest")
+	flags.Set(t, "executor.container_image_name_rewrites", []ImageRewrite{
+		{Prefix: "gcr.io/", Replacement: "mirror.example.com/"},
+	})
+	flags.Set(t, "executor.container_registry_region", "us-test1")
+
+	for _, tc := range []struct {
+		name      string
+		imageProp string
+		override  string
+		expected  string
+	}{
+		{
+			name:     "NoOverride",
+			expected: "mirror.example.com/default/image:latest",
+		},
+		{
+			name:     "Override",
+			override: "gcr.io/{{region}}/override:v2",
+			expected: "mirror.example.com/us-test1/override:v2",
+		},
+		{
+			name:      "OverrideWithNoneImage",
+			imageProp: "none",
+			override:  "gcr.io/override:v2",
+			expected:  "mirror.example.com/override:v2",
+		},
+		{
+			name:      "OverrideDoesNotAffectExplicitImage",
+			imageProp: "docker://alpine:3",
+			override:  "gcr.io/override:v2",
+			expected:  "alpine:3",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plat := &repb.Platform{}
+			if tc.imageProp != "" {
+				plat.Properties = []*repb.Platform_Property{
+					{Name: "container-image", Value: tc.imageProp},
+				}
+			}
+			platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+			require.NoError(t, err)
+			ctx := t.Context()
+			if tc.override != "" {
+				ctx = expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{
+					{Name: execution_experiments.DefaultImageOverride.Name(), Variant: "treatment", Value: &expb.EvaluatedFlag_StringValue{StringValue: tc.override}},
+				})
+			}
+
+			err = ApplyOverrides(ctx, testenv.GetTestEnv(t), docker, platformProps, &repb.Command{})
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, platformProps.ContainerImage)
+		})
+	}
+}
+
 func TestEnvAndArgOverrides(t *testing.T) {
 	plat := &repb.Platform{Properties: []*repb.Platform_Property{
 		{Name: "env-overrides", Value: "A=1,B=2,A=3"},
