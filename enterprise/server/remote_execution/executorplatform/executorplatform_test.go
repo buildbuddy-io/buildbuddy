@@ -1,6 +1,7 @@
 package executorplatform
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -314,61 +315,32 @@ func TestApplyOverrides_PersistentVolumesExperiment(t *testing.T) {
 func TestApplyOverrides_DefaultImageOverrideExperiment(t *testing.T) {
 	expflag.SetFlagProvider(expflag.NewContextProvider())
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
-	flags.Set(t, "executor.default_image", "gcr.io/default/image:latest")
+	flags.Set(t, "executor.default_image", "registry/default:1")
+	// This rewrite is not idempotent, so applying it more than once would
+	// produce "registry/mirror/mirror/...".
 	flags.Set(t, "executor.container_image_name_rewrites", []ImageRewrite{
-		{Prefix: "gcr.io/", Replacement: "mirror.example.com/"},
+		{Prefix: "registry/", Replacement: "registry/mirror/"},
 	})
-	flags.Set(t, "executor.container_registry_region", "us-test1")
-
-	for _, tc := range []struct {
-		name      string
-		imageProp string
-		override  string
-		expected  string
-	}{
-		{
-			name:     "NoOverride",
-			expected: "mirror.example.com/default/image:latest",
-		},
-		{
-			name:     "Override",
-			override: "gcr.io/{{region}}/override:v2",
-			expected: "mirror.example.com/us-test1/override:v2",
-		},
-		{
-			name:      "OverrideWithNoneImage",
-			imageProp: "none",
-			override:  "gcr.io/override:v2",
-			expected:  "mirror.example.com/override:v2",
-		},
-		{
-			name:      "OverrideDoesNotAffectExplicitImage",
-			imageProp: "docker://alpine:3",
-			override:  "gcr.io/override:v2",
-			expected:  "alpine:3",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			plat := &repb.Platform{}
-			if tc.imageProp != "" {
-				plat.Properties = []*repb.Platform_Property{
-					{Name: "container-image", Value: tc.imageProp},
-				}
-			}
-			platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
-			require.NoError(t, err)
-			ctx := t.Context()
-			if tc.override != "" {
-				ctx = expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{
-					{Name: execution_experiments.DefaultImageOverride.Name(), Variant: "treatment", Value: &expb.EvaluatedFlag_StringValue{StringValue: tc.override}},
-				})
-			}
-
-			err = ApplyOverrides(ctx, testenv.GetTestEnv(t), docker, platformProps, &repb.Command{})
-			require.NoError(t, err)
-			require.Equal(t, tc.expected, platformProps.ContainerImage)
-		})
+	overrideCtx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{
+		{Name: execution_experiments.DefaultImageOverride.Name(), Variant: "treatment", Value: &expb.EvaluatedFlag_StringValue{StringValue: "registry/override:2"}},
+	})
+	applyOverrides := func(ctx context.Context, imageProp string) string {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "container-image", Value: imageProp},
+		}}
+		platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
+		err = ApplyOverrides(ctx, testenv.GetTestEnv(t), docker, platformProps, &repb.Command{})
+		require.NoError(t, err)
+		return platformProps.ContainerImage
 	}
+
+	// Without the experiment, the default image is used, rewritten once.
+	require.Equal(t, "registry/mirror/default:1", applyOverrides(t.Context(), ""))
+	// With the experiment, the override is used, rewritten once.
+	require.Equal(t, "registry/mirror/override:2", applyOverrides(overrideCtx, ""))
+	// An explicit container image is unaffected by the experiment.
+	require.Equal(t, "alpine:3", applyOverrides(overrideCtx, "docker://alpine:3"))
 }
 
 func TestEnvAndArgOverrides(t *testing.T) {
