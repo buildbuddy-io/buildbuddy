@@ -907,7 +907,7 @@ func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interface
 		}
 	}()
 
-	_, err = EndWriteAlreadyExists(ctx, stream, r, clientUploadedBytes, firstRequest.FinishWrite)
+	clientUploadedBytes, err = EndWriteAlreadyExists(ctx, stream, r, clientUploadedBytes, firstRequest.FinishWrite)
 	return err
 }
 
