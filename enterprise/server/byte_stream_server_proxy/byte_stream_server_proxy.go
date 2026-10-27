@@ -978,7 +978,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	} else if proxy_util.SkipRemote(ctx) {
 		err = s.writeLocalOnly(stream)
 	} else {
-		err = s.dualWrite(ctx, stream, s.skipWriteValidation(ctx))
+		err = s.dualWrite(ctx, stream)
 	}
 	bsm := byteStreamMetrics{
 		requestType: requestTypeLabel,
@@ -1014,8 +1014,40 @@ func (s *ByteStreamServerProxy) writeLocalOnly(stream bspb.ByteStream_WriteServe
 	return s.local.Write(stream)
 }
 
-func (s *ByteStreamServerProxy) skipWriteValidation(ctx context.Context) bool {
-	return !proxy_util.SkipRemote(ctx) && skipWriteValidation.Get(ctx)
+// skipWriteValidation reports whether the local server can leave validating
+// the upload the remote server.
+func (s *ByteStreamServerProxy) skipWriteValidation(ctx context.Context, req *bspb.WriteRequest) bool {
+	if proxy_util.SkipRemote(ctx) || !skipWriteValidation.Get(ctx) {
+		return false
+	}
+
+	rn, err := digest.ParseUploadResourceName(req.GetResourceName())
+	if err != nil || rn.GetCompressor() == repb.Compressor_IDENTITY {
+		// For IDENTITY, uploads, remote can return the digest size when the
+		// object already exists, so we can't tell if remote validation was done.
+		return false
+	}
+	// pre-5.1 Bazel doesn't support short-circuiting the write, so remote
+	// always drains the stream and returns the number of sent bytes, which is
+	// indistinguishable from a remote that validated the upload.
+	if v := bazel_request.GetVersion(ctx); v != nil && !v.IsAtLeast(byte_stream_server.Bazel5_1_0) {
+		return false
+	}
+	return true
+}
+
+// firstRequest peeks at the first request of stream and returns a stream
+// that replays it.
+func firstRequest(stream bspb.ByteStream_WriteServer) (*bspb.WriteRequest, bspb.ByteStream_WriteServer, error) {
+	// writeChunked may have peeked already.
+	if rs, ok := stream.(*replayableWriteStream); ok && !rs.replayedFirst {
+		return rs.firstReq, rs, nil
+	}
+	req, err := stream.Recv()
+	if err != nil {
+		return nil, nil, err
+	}
+	return req, &replayableWriteStream{ByteStream_WriteServer: stream, firstReq: req}, nil
 }
 
 type forwardingWriteStream struct {
@@ -1030,6 +1062,8 @@ type forwardingWriteStream struct {
 	finishWriteSent bool
 	localFinished   bool
 	skipValidation  bool
+	resourceName    string
+	receivedBytes   int64
 }
 
 func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
@@ -1038,6 +1072,10 @@ func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
 		s.recvErr = err
 		return nil, err
 	}
+	if s.resourceName == "" {
+		s.resourceName = req.GetResourceName()
+	}
+	s.receivedBytes += int64(len(req.GetData()))
 	s.remoteSendErr = s.remote.Send(req)
 	if s.remoteSendErr != nil {
 		// Tell the local server to abandon the request since the remote request
@@ -1050,14 +1088,16 @@ func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
 	if req.GetFinishWrite() {
 		s.finishWriteSent = true
 		if s.skipValidation {
-			// Wait for the remote to validate and commit before returning the
-			// final request to the local server; the local server commits after
-			// processing this request. A remote that already has the blob
-			// reports that as ALREADY_EXISTS once the client advertises the
-			// feature. That is a successful remote write, so hand the final
-			// request to the local server just as for an early WriteResponse.
-			if err := s.closeRemote(); err != nil && !status.IsAlreadyExistsError(err) {
+			// The local server commits on this request, so first let the
+			// remote validate the upload.
+			if err := s.closeRemote(); err != nil {
 				return nil, err
+			}
+			// A remote that already had the blob did not read the upload
+			// and says so with a negative committed size (or ALREADY_EXISTS
+			// above): do not commit it locally either.
+			if s.remoteResp.GetCommittedSize() < 0 {
+				return nil, io.EOF
 			}
 		}
 	}
@@ -1083,10 +1123,28 @@ func (s *forwardingWriteStream) Context() context.Context {
 	return s.ctx
 }
 
-func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteStream_WriteServer, skipValidation bool) error {
+func (s *forwardingWriteStream) endAlreadyExists(ctx context.Context) error {
+	rn, err := digest.ParseUploadResourceName(s.resourceName)
+	if err != nil {
+		return err
+	}
+	_, err = byte_stream_server.EndWriteAlreadyExists(ctx, s.ByteStream_WriteServer, rn, s.receivedBytes, s.finishWriteSent)
+	return err
+}
+
+func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteStream_WriteServer) error {
+	firstReq, stream, err := firstRequest(stream)
+	if err != nil {
+		return err
+	}
+	skipValidation := s.skipWriteValidation(ctx, firstReq)
+
 	// If our client supports "already exists" errors then propagate that to
-	// the remote server.
-	if clientfeatures.Supports(ctx, clientfeatures.ByteStreamWriteAlreadyExists) {
+	// the remote server. Also ask for them when skipping validation: they
+	// tell a remote that already had the blob, and so did not read the
+	// upload, from one that validated it (see forwardingWriteStream.Recv).
+	clientAdvertised := clientfeatures.Supports(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
+	if clientAdvertised || skipValidation {
 		ctx = clientfeatures.Advertise(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
 	}
 	remoteStream, err := s.remote.Write(ctx)
@@ -1118,9 +1176,6 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 		// Remote failed, so fail the whole request
 		return forwarding.remoteSendErr
 	}
-	if forwarding.remoteCloseErr != nil {
-		return forwarding.remoteCloseErr
-	}
 	if !forwarding.finishWriteSent && forwarding.remoteSendErr == nil {
 		// If the remote write is still open, flush any remaining requests to
 		// the remote.
@@ -1129,6 +1184,10 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 		}
 	}
 	if err := forwarding.closeRemote(); err != nil {
+		// The proxy asked for the status; the client may not handle it.
+		if skipValidation && !clientAdvertised && status.IsAlreadyExistsError(err) {
+			return forwarding.endAlreadyExists(ctx)
+		}
 		return err
 	}
 	return stream.SendAndClose(forwarding.remoteResp)
