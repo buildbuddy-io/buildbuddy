@@ -81,17 +81,22 @@ const attestHTTPForwardingFlag = "cache_proxy.attest_http_forwarding"
 //
 // Behavior depends on the cache_proxy.attest_http_forwarding experiment:
 //
-//   - Off (the default, and today's behavior): requests are forwarded
-//     unchanged by httputil.NewSingleHostReverseProxy, which passes all client
-//     headers through and appends the peer to X-Forwarded-For. Nothing is
-//     attested. Requests the "on" path would treat differently are counted in
-//     metrics.CacheProxyHTTPForwardingDiffs.
+//   - Off (default): requests are forwarded by
+//     httputil.NewSingleHostReverseProxy, which appends the peer to
+//     X-Forwarded-For, and forwards any client-supplied internal and Forwarded
+//     headers.
 //   - On: the proxy builds each outgoing request itself, like the gRPC
 //     forwarder. It rejects a request with an invalid client identity (403),
 //     drops client-supplied internal and Forwarded headers, sets
 //     X-Forwarded-For/-Proto/-Host itself, and attests the resolved client IP
 //     with a grpc-proxy identity, unless the caller has a valid identity of
 //     its own.
+//
+// The X-Forwarded-For header this proxy sends isn't used by the app (as of
+// this writing). The app takes the client IP from the attested header when
+// present, or else from the entry its own load balancer appends (this proxy's
+// egress IP). X-Forwarded-For is kept for consistency with the gRPC
+// forwarder, and could be dropped if needed.
 func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
 	efp := env.GetExperimentFlagProvider()
 	cis := env.GetClientIdentityService()
