@@ -877,16 +877,10 @@ func TestWriteRemoteValidationFailureDoesNotPoisonLocalCache(t *testing.T) {
 func TestSkipWriteValidationFlag(t *testing.T) {
 	flags.Set(t, "cache_proxy.skip_write_validation", true)
 	proxy := &ByteStreamServerProxy{}
-	// incoming makes a client context's metadata visible to a server.
-	incoming := func(ctx context.Context) context.Context {
-		md, _ := metadata.FromOutgoingContext(ctx)
-		return metadata.NewIncomingContext(ctx, md)
-	}
 	ctx := context.Background()
 	skipRemote := metadata.NewIncomingContext(ctx, metadata.Pairs(proxy_util.SkipRemoteKey, "true"))
 
 	require.True(t, proxy.skipWriteValidation(ctx))
-	require.False(t, proxy.skipWriteValidation(incoming(byte_stream.WithBazelVersion(t, ctx, "5.0.0"))))
 	require.False(t, proxy.skipWriteValidation(skipRemote))
 }
 

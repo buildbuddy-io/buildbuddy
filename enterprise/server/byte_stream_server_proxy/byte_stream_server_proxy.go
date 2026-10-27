@@ -1014,21 +1014,8 @@ func (s *ByteStreamServerProxy) writeLocalOnly(stream bspb.ByteStream_WriteServe
 	return s.local.Write(stream)
 }
 
-// skipWriteValidation reports whether the local server can leave validating
-// the upload to the remote server. That relies on the remote ending a write it
-// did not read with ALREADY_EXISTS when asked (see dualWrite), which it does
-// with cache.bytestream_already_exists_status.
 func (s *ByteStreamServerProxy) skipWriteValidation(ctx context.Context) bool {
-	if proxy_util.SkipRemote(ctx) || !skipWriteValidation.Get(ctx) {
-		return false
-	}
-	// pre-5.1 Bazel doesn't support short-circuiting the write, so remote
-	// always drains the stream and returns the number of sent bytes, which is
-	// indistinguishable from a remote that validated the upload.
-	if v := bazel_request.GetVersion(ctx); v != nil && !v.IsAtLeast(byte_stream_server.Bazel5_1_0) {
-		return false
-	}
-	return true
+	return !proxy_util.SkipRemote(ctx) && skipWriteValidation.Get(ctx)
 }
 
 type forwardingWriteStream struct {
