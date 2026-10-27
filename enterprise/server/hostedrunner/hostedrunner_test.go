@@ -494,3 +494,93 @@ func TestRun_GitCredentialsFromEnv(t *testing.T) {
 		require.NotContains(t, []string{"REPO_USER", "REPO_TOKEN"}, ev.GetName())
 	}
 }
+
+func TestDefaultImageOverride(t *testing.T) {
+	const overrideImage = "docker://gcr.io/example/override-image:latest"
+	const explicitImage = "docker://gcr.io/example/explicit:latest"
+	for _, tc := range []struct {
+		name          string
+		override      string
+		req           *rnpb.RunRequest
+		expectedImage string
+	}{
+		{
+			name:          "no override",
+			req:           &rnpb.RunRequest{},
+			expectedImage: DefaultRunnerContainerImage,
+		},
+		{
+			name:          "override",
+			override:      overrideImage,
+			req:           &rnpb.RunRequest{},
+			expectedImage: overrideImage,
+		},
+		{
+			name:          "explicit request image wins over override",
+			override:      overrideImage,
+			req:           &rnpb.RunRequest{ContainerImage: explicitImage},
+			expectedImage: explicitImage,
+		},
+		{
+			name:     "explicit exec property image wins over override",
+			override: overrideImage,
+			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
+				{Name: "container-image", Value: explicitImage},
+			}},
+			expectedImage: explicitImage,
+		},
+		{
+			name:     "custom pool ignores override",
+			override: overrideImage,
+			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
+				{Name: "Pool", Value: "my-pool"},
+			}},
+			expectedImage: DefaultRunnerContainerImage,
+		},
+		{
+			name:     "self-hosted ignores override",
+			override: overrideImage,
+			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
+				{Name: platform.UseSelfHostedExecutorsPropertyName, Value: "true"},
+			}},
+			expectedImage: DefaultRunnerContainerImage,
+		},
+		{
+			name:          "darwin ignores override",
+			override:      overrideImage,
+			req:           &rnpb.RunRequest{Os: "darwin"},
+			expectedImage: "",
+		},
+		{
+			name:     "isolation none ignores override",
+			override: overrideImage,
+			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
+				{Name: "workload-isolation-type", Value: "none"},
+			}},
+			expectedImage: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.ci_runner_default_image", tc.override)
+			te, ctx := getEnv(t)
+
+			r, err := New(te)
+			require.NoError(t, err)
+
+			tc.req.Steps = []*rnpb.Step{{Run: "echo hello"}}
+			_, err = r.Run(ctx, tc.req)
+			require.NoError(t, err)
+
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			require.Equal(t, 1, len(execClient.executeRequests))
+			exec := getExecution(t, ctx, te, execClient.executeRequests[0].Payload)
+			image := ""
+			for _, p := range exec.Command.GetPlatform().GetProperties() {
+				if p.GetName() == "container-image" {
+					image = p.GetValue()
+				}
+			}
+			require.Equal(t, tc.expectedImage, image)
+		})
+	}
+}

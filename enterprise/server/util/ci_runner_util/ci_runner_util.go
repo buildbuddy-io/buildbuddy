@@ -47,6 +47,7 @@ var (
 
 	BazelCommandOverride = expflag.String("remote_execution.ci_runner_bazel_command", "", "Override the Bazel command used by workflows and hosted runners.", expflag.DeprecatedExperimentName("ci-runner-bazel-command"))
 	PoolOverride         = expflag.String("remote_execution.remote_runner_pool", "", "Override the executor pool used by workflows and hosted runners.", expflag.DeprecatedExperimentName("remote-runner-pool"))
+	DefaultImageOverride = expflag.String("remote_execution.ci_runner_default_image", "", "Override the default container image used by workflows and hosted runners when no image is requested. Must be a full image ref including the docker:// prefix.")
 
 	defaultTimeout      = expflag.String("remote_execution.remote_runner_default_timeout", "", "Override the default CI runner timeout with a duration, such as 24h.")
 	lowSpeedRetryConfig = expflag.Object(LowSpeedRetryConfigExperimentName, nil, "Git fetch retry settings for CI runners, with retries, duration, and rate fields.")

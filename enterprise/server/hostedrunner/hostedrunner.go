@@ -274,6 +274,10 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		wd = ""
 		image = ""
 		isolationType = "none"
+	} else if !usesCustomPool(req.GetExecProperties()) {
+		if imageOverride := ci_runner_util.DefaultImageOverride.Get(ctx, experiments.WithContext("workflow-name", "remote-bazel")); imageOverride != "" {
+			image = imageOverride
+		}
 	}
 	if req.GetContainerImage() != "" {
 		image = req.GetContainerImage()
@@ -383,6 +387,20 @@ func (r *runnerService) buildUser(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return cmp.Or(group.Name, u.GetGroupID()), nil
+}
+
+// usesCustomPool returns whether the exec properties route the runner away
+// from the shared pool, possibly to self-hosted executors.
+func usesCustomPool(execProps []*repb.Platform_Property) bool {
+	for _, p := range execProps {
+		if strings.EqualFold(p.Name, "Pool") && p.Value != "" {
+			return true
+		}
+		if strings.EqualFold(p.Name, platform.UseSelfHostedExecutorsPropertyName) && strings.EqualFold(p.Value, "true") {
+			return true
+		}
+	}
+	return false
 }
 
 func getExecProperty(execProps []*repb.Platform_Property, key string) string {

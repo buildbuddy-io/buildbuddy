@@ -97,6 +97,7 @@ go_test(
         "//server/util/authutil",
         "//server/util/db",
         "//server/util/perms",
+        "//server/util/platform",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",

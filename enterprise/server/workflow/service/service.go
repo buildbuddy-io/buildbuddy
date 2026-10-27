@@ -1122,7 +1122,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	isSharedFirecrackerWorkflow := *enableFirecracker && !workflowAction.SelfHosted
 	if os == "" || os == platform.LinuxOperatingSystemName {
 		computeUnits = *workflowsLinuxComputeUnits
-		containerImage = ws.containerImage(workflowAction)
+		containerImage = ws.containerImage(ctx, workflowAction)
 		if isSharedFirecrackerWorkflow {
 			isolationType = string(platform.FirecrackerContainerType)
 			// When using Firecracker, write all outputs to the scratch disk, which
@@ -1324,9 +1324,14 @@ func (ws *workflowService) WorkflowsPoolName() string {
 	return platform.DefaultPoolValue
 }
 
-func (ws *workflowService) containerImage(action *config.Action) string {
+func (ws *workflowService) containerImage(ctx context.Context, action *config.Action) string {
 	if action.ContainerImage != "" {
 		return ws.resolveImageAliases(action.ContainerImage)
+	}
+	if !action.SelfHosted {
+		if imageOverride := ci_runner_util.DefaultImageOverride.Get(ctx, experiments.WithContext("workflow-name", action.Name)); imageOverride != "" {
+			return imageOverride
+		}
 	}
 	return *workflowsDefaultImage
 }
