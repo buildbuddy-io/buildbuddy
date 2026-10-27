@@ -20,6 +20,7 @@ go_library(
     deps = [
         "//enterprise/server/auth",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/digest",
@@ -57,6 +58,7 @@ go_test(
     deps = [
         ":filecache",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/digest",
