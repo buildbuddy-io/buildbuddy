@@ -833,58 +833,69 @@ func TestWrite(t *testing.T) {
 	}
 }
 
+// A corrupt upload of a new blob fails with the remote's INVALID_ARGUMENT and
+// is not kept locally, whether the proxy validated it itself or, with
+// cache_proxy.skip_write_validation, left that to the remote.
 func TestWriteRemoteValidationFailureDoesNotPoisonLocalCache(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.skip_write_validation": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
+	env := runAlreadyExistsProxy(t)
+	flags.Set(t, "cache_proxy.skip_write_validation", true)
+	ctx := env.ctx
 
-	ctx := testContext()
-	remoteEnv := testenv.GetTestEnv(t)
-	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetExperimentFlagProvider(fp)
-	remote, _, _, _ := runRemoteServices(ctx, remoteEnv, t)
-	proxy := runBSProxy(ctx, remote, proxyEnv, t)
+	for _, tc := range []struct {
+		name       string
+		compressed bool
+	}{
+		// The proxy validates uncompressed uploads itself.
+		{name: "identity"},
+		// The proxy skips validating compressed uploads.
+		{name: "compressed", compressed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rnProto, data := testdigest.RandomCASResourceBuf(t, 32*1024)
+			rn, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			upload := bytes.Clone(data)
+			upload[0] = ^upload[0]
+			uploadRN, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			if tc.compressed {
+				upload = compression.CompressZstd(nil, upload)
+				uploadRN.SetCompressor(repb.Compressor_ZSTD)
+			}
 
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
-	require.NoError(t, err)
+			_, err = writeBlob(ctx, env.proxy, uploadRN, upload)
+			require.True(t, status.IsInvalidArgumentError(err), "err = %v", err)
 
-	rnProto, correctBlob := testdigest.RandomCASResourceBuf(t, 32*1024)
-	corruptBlob := bytes.Clone(correctBlob)
-	corruptBlob[0] = ^corruptBlob[0]
-	rn, err := digest.CASResourceNameFromProto(rnProto)
-	require.NoError(t, err)
+			found, err := env.proxyEnv.GetCache().Contains(ctx, rnProto)
+			require.NoError(t, err)
+			require.False(t, found, "proxy kept a corrupt upload")
 
-	_, _, err = cachetools.UploadFromReader(ctx, proxy, rn, bytes.NewReader(corruptBlob))
-	require.True(t, status.IsInvalidArgumentError(err), "err = %v", err)
-
-	found, err := proxyEnv.GetCache().Contains(ctx, rn.ToProto())
-	require.NoError(t, err)
-	require.False(t, found)
-
-	_, _, err = cachetools.UploadFromReader(ctx, proxy, rn, bytes.NewReader(correctBlob))
-	require.NoError(t, err)
-
-	var readBuf bytes.Buffer
-	require.NoError(t, byte_stream.ReadBlob(ctx, proxy, rn, &readBuf, 0))
-	require.Equal(t, correctBlob, readBuf.Bytes())
+			_, err = writeBlob(ctx, env.proxy, rn, data)
+			require.NoError(t, err)
+			require.Equal(t, data, readWholeBlob(t, ctx, env.proxy, rn))
+		})
+	}
 }
 
 func TestSkipWriteValidationFlag(t *testing.T) {
 	flags.Set(t, "cache_proxy.skip_write_validation", true)
-	require.True(t, (&ByteStreamServerProxy{}).skipWriteValidation(context.Background()))
+	proxy := &ByteStreamServerProxy{}
+	d := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}
+	identity := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+	compressed := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+	compressed.SetCompressor(repb.Compressor_ZSTD)
+	// incoming makes a client context's metadata visible to a server.
+	incoming := func(ctx context.Context) context.Context {
+		md, _ := metadata.FromOutgoingContext(ctx)
+		return metadata.NewIncomingContext(ctx, md)
+	}
+	ctx := context.Background()
+	skipRemote := metadata.NewIncomingContext(ctx, metadata.Pairs(proxy_util.SkipRemoteKey, "true"))
 
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(proxy_util.SkipRemoteKey, "true"))
-	require.False(t, (&ByteStreamServerProxy{}).skipWriteValidation(ctx))
+	require.True(t, proxy.skipWriteValidation(ctx, &bspb.WriteRequest{ResourceName: compressed.NewUploadString()}))
+	require.False(t, proxy.skipWriteValidation(incoming(byte_stream.WithBazelVersion(t, ctx, "5.0.0")), &bspb.WriteRequest{ResourceName: compressed.NewUploadString()}))
+	require.False(t, proxy.skipWriteValidation(ctx, &bspb.WriteRequest{ResourceName: identity.NewUploadString()}))
+	require.False(t, proxy.skipWriteValidation(skipRemote, &bspb.WriteRequest{ResourceName: compressed.NewUploadString()}))
 }
 
 func TestSkipRemote(t *testing.T) {
@@ -921,29 +932,16 @@ func TestSkipRemote(t *testing.T) {
 }
 
 func TestSkipRemoteDoesNotSkipWriteValidation(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.skip_write_validation": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true": true,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := testContext()
 	ctx = metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
 
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetExperimentFlagProvider(fp)
+	flags.Set(t, "cache_proxy.skip_write_validation", true)
 	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
 	proxy := runBSProxy(ctx, bs, proxyEnv, t)
 
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	require.NoError(t, err)
 
 	rn, data := testdigest.NewRandomResourceAndBuf(t, 32*1024, rspb.CacheType_CAS, "")
@@ -3381,13 +3379,18 @@ func readWholeBlob(t *testing.T, ctx context.Context, client bspb.ByteStreamClie
 // writeBlob uploads data for rn through client in requests of at most 1MB, as
 // Bazel does, and returns how the server ended the stream.
 func writeBlob(ctx context.Context, client bspb.ByteStreamClient, rn *digest.CASResourceName, data []byte) (*bspb.WriteResponse, error) {
+	return writeBlobInRequests(ctx, client, rn, data, 1_000_000)
+}
+
+// writeBlobInRequests is writeBlob with requests of at most requestSize bytes.
+func writeBlobInRequests(ctx context.Context, client bspb.ByteStreamClient, rn *digest.CASResourceName, data []byte, requestSize int) (*bspb.WriteResponse, error) {
 	stream, err := client.Write(ctx)
 	if err != nil {
 		return nil, err
 	}
 	uploadRN := rn.NewUploadString()
 	for sent := 0; sent < len(data); {
-		n := min(1_000_000, len(data)-sent)
+		n := min(requestSize, len(data)-sent)
 		err := stream.Send(&bspb.WriteRequest{
 			ResourceName: uploadRN,
 			WriteOffset:  int64(sent),
@@ -3498,7 +3501,8 @@ func TestWriteAlreadyExists(t *testing.T) {
 		// encrypted writes as a user whose cache encryption makes the proxy
 		// skip its local cache.
 		encrypted bool
-		// skipValidation turns on cache_proxy.skip_write_validation.
+		// skipValidation turns on cache_proxy.skip_write_validation, which
+		// leaves these uncompressed uploads validated and kept locally.
 		skipValidation bool
 		exists         blobLocation
 		// wantStatus is whether the write ends with ALREADY_EXISTS rather
@@ -3572,6 +3576,126 @@ func TestWriteAlreadyExists(t *testing.T) {
 				require.NoError(t, waitContains(ctx, env.proxyEnv, rn.ToProto()))
 				require.NoError(t, waitContains(ctx, env.remoteEnv, rn.ToProto()))
 			}
+			require.Equal(t, data, readWholeBlob(t, ctx, env.proxy, rn))
+		})
+	}
+}
+
+// A remote that already has a blob does not read the upload, so a proxy that
+// skipped validating the upload must not keep it. The proxy asks the remote to
+// say so with ALREADY_EXISTS; with cache.bytestream_already_exists_status off,
+// the remote says so with a negative committed size instead, which only
+// compressed uploads from non-Bazel or 5.1+ Bazel clients get, so the proxy
+// validates all other uploads itself.
+func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
+	env := runAlreadyExistsProxy(t)
+	flags.Set(t, "cache_proxy.skip_write_validation", true)
+
+	// Big enough for the remote to check for the blob first, small enough
+	// not to be chunked.
+	const size = 64 * 1024
+	for _, tc := range []struct {
+		name string
+		// header advertises the client feature, like cachetools.
+		header bool
+		// noStatus turns off the ALREADY_EXISTS status at the remote.
+		noStatus bool
+		// compressed uploads the blob zstd-compressed.
+		compressed bool
+		// requestSize splits the upload into requests of this size.
+		requestSize int
+		// wantStatus is whether the write ends with ALREADY_EXISTS;
+		// otherwise wantCommitted is the WriteResponse's committed size.
+		wantStatus    bool
+		wantCommitted int64
+	}{
+		{name: "header_corrupt", header: true, wantStatus: true},
+		{name: "plain_corrupt", wantCommitted: size},
+		{name: "header_corrupt_compressed", header: true, compressed: true, wantStatus: true},
+		{name: "header_corrupt_compressed_in_requests", header: true, compressed: true, requestSize: 16 * 1024, wantStatus: true},
+		{name: "plain_corrupt_compressed", compressed: true, wantCommitted: -1},
+		{name: "header_corrupt_compressed_no_status", header: true, noStatus: true, compressed: true, wantCommitted: -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.noStatus {
+				flags.Set(t, "cache.bytestream_already_exists_status", false)
+			}
+			ctx := env.ctx
+			clientCtx := ctx
+			if tc.header {
+				clientCtx = clientfeatures.Advertise(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
+			}
+
+			rnProto, data := testdigest.RandomCASResourceBuf(t, size)
+			rn, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			require.NoError(t, env.remoteEnv.GetCache().Set(ctx, rnProto, data))
+
+			upload := bytes.Clone(data)
+			upload[0] = ^upload[0]
+			uploadRN, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			if tc.compressed {
+				upload = compression.CompressZstd(nil, upload)
+				uploadRN.SetCompressor(repb.Compressor_ZSTD)
+			}
+			requestSize := len(upload)
+			if tc.requestSize > 0 {
+				requestSize = tc.requestSize
+			}
+
+			resp, err := writeBlobInRequests(clientCtx, env.proxy, uploadRN, upload, requestSize)
+			if tc.wantStatus {
+				require.True(t, status.IsAlreadyExistsError(err), "want ALREADY_EXISTS, got %v, %v", resp, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.wantCommitted, resp.GetCommittedSize())
+			}
+
+			// Check before reading through the proxy, which fills in a copy.
+			found, err := env.proxyEnv.GetCache().Contains(ctx, rnProto)
+			require.NoError(t, err)
+			require.False(t, found, "proxy kept an upload nobody validated")
+			require.Equal(t, data, readWholeBlob(t, ctx, env.proxy, rn))
+		})
+	}
+}
+
+// With validation skipped, the proxy keeps a compressed upload of a new blob
+// that the remote read and accepted.
+func TestWriteSkipValidationKeepsValidatedUpload(t *testing.T) {
+	env := runAlreadyExistsProxy(t)
+	flags.Set(t, "cache_proxy.skip_write_validation", true)
+	ctx := env.ctx
+
+	for _, tc := range []struct {
+		name string
+		// bazelVersion, if set, is sent as Bazel request metadata.
+		bazelVersion string
+	}{
+		{name: "plain"},
+		{name: "bazel7", bazelVersion: "7.0.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clientCtx := ctx
+			if tc.bazelVersion != "" {
+				clientCtx = byte_stream.WithBazelVersion(t, ctx, tc.bazelVersion)
+			}
+
+			rnProto, data := testdigest.RandomCASResourceBuf(t, 64*1024)
+			rn, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			uploadRN, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			uploadRN.SetCompressor(repb.Compressor_ZSTD)
+			upload := compression.CompressZstd(nil, data)
+
+			resp, err := writeBlob(clientCtx, env.proxy, uploadRN, upload)
+			require.NoError(t, err)
+			require.Equal(t, int64(len(upload)), resp.GetCommittedSize())
+
+			require.NoError(t, waitContains(ctx, env.proxyEnv, rnProto))
+			require.NoError(t, waitContains(ctx, env.remoteEnv, rnProto))
 			require.Equal(t, data, readWholeBlob(t, ctx, env.proxy, rn))
 		})
 	}

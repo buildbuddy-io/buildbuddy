@@ -51,7 +51,7 @@ const defaultChunkedReadMaxInFlight = 32
 var compressBufSize = int(4e6) // 4MB
 
 var (
-	bazel5_1_0              = bazel_request.MustParseVersion("5.1.0")
+	Bazel5_1_0              = bazel_request.MustParseVersion("5.1.0")
 	bazel6_2_0              = bazel_request.MustParseVersion("6.2.0")
 	maxDirectWriteSizeBytes = flag.Int64("cache.max_direct_write_size_bytes", 16384, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
 
@@ -907,18 +907,28 @@ func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interface
 		}
 	}()
 
+	clientUploadedBytes, err = EndWriteAlreadyExists(ctx, stream, r, clientUploadedBytes, firstRequest.FinishWrite)
+	return err
+}
+
+// EndWriteAlreadyExists ends a Write for a blob the server already has: with
+// ALREADY_EXISTS for a client that handles it, otherwise with the
+// WriteResponse the client expects. uploadedBytes is the number of data bytes
+// received so far and finished whether finish_write was among them. It
+// returns uploadedBytes plus whatever it drains from the stream.
+func EndWriteAlreadyExists(ctx context.Context, stream bspb.ByteStream_WriteServer, r *digest.CASResourceName, uploadedBytes int64, finished bool) (int64, error) {
 	// If the client supports it and the experiment is on, send the "already
 	// exists" indication via a status instead of a special WriteResponse.
 	// Sending the response as a status in the trailer has better compatibility
 	// with Envoy load balancers.
 	if clientHandlesAlreadyExists(ctx) && alreadyExistsStatus.Get(ctx) {
-		return status.AlreadyExistsError("blob already exists")
+		return uploadedBytes, status.AlreadyExistsError("blob already exists")
 	}
 
 	// Uncompressed uploads can always short-circuit, returning
 	// the digest size as the committed size.
 	if r.GetCompressor() == repb.Compressor_IDENTITY {
-		return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: r.GetDigest().GetSizeBytes()})
+		return uploadedBytes, stream.SendAndClose(&bspb.WriteResponse{CommittedSize: r.GetDigest().GetSizeBytes()})
 	}
 
 	// Bazel pre-5.1.0 doesn't support short-circuiting compressed uploads.
@@ -926,23 +936,23 @@ func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interface
 	// compressed stream. Since there is no unique compressed representation,
 	// the only way to get the compressed stream size is to read the full
 	// stream.
-	if v := bazel_request.GetVersion(ctx); v != nil && !v.IsAtLeast(bazel5_1_0) {
-		if !firstRequest.FinishWrite {
-			n, err := s.recvAll(stream)
-			clientUploadedBytes += n
+	if v := bazel_request.GetVersion(ctx); v != nil && !v.IsAtLeast(Bazel5_1_0) {
+		if !finished {
+			n, err := recvAll(stream)
+			uploadedBytes += n
 			if err != nil {
-				return err
+				return uploadedBytes, err
 			}
 		}
-		return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: clientUploadedBytes})
+		return uploadedBytes, stream.SendAndClose(&bspb.WriteResponse{CommittedSize: uploadedBytes})
 	}
 
-	return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: -1})
+	return uploadedBytes, stream.SendAndClose(&bspb.WriteResponse{CommittedSize: -1})
 }
 
 // recvAll receives the remaining write requests from the client, and returns
 // the total (compressed) size of the uploaded bytes.
-func (s *ByteStreamServer) recvAll(stream bspb.ByteStream_WriteServer) (int64, error) {
+func recvAll(stream bspb.ByteStream_WriteServer) (int64, error) {
 	size := int64(0)
 	for {
 		req, err := stream.Recv()
