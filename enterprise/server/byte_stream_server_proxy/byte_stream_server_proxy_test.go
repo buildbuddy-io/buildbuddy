@@ -833,50 +833,48 @@ func TestWrite(t *testing.T) {
 	}
 }
 
+// A corrupt upload of a new blob fails with the remote's INVALID_ARGUMENT and
+// is not kept locally, whether the proxy validated it itself or, with
+// cache_proxy.skip_write_validation, left that to the remote.
 func TestWriteRemoteValidationFailureDoesNotPoisonLocalCache(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.skip_write_validation": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
+	env := runAlreadyExistsProxy(t)
+	flags.Set(t, "cache_proxy.skip_write_validation", true)
+	ctx := env.ctx
 
-	ctx := testContext()
-	remoteEnv := testenv.GetTestEnv(t)
-	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetExperimentFlagProvider(fp)
-	remote, _, _, _ := runRemoteServices(ctx, remoteEnv, t)
-	proxy := runBSProxy(ctx, remote, proxyEnv, t)
+	for _, tc := range []struct {
+		name       string
+		compressed bool
+	}{
+		// The proxy validates uncompressed uploads itself.
+		{name: "identity"},
+		// The proxy skips validating compressed uploads.
+		{name: "compressed", compressed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rnProto, data := testdigest.RandomCASResourceBuf(t, 32*1024)
+			rn, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			upload := bytes.Clone(data)
+			upload[0] = ^upload[0]
+			uploadRN, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			if tc.compressed {
+				upload = compression.CompressZstd(nil, upload)
+				uploadRN.SetCompressor(repb.Compressor_ZSTD)
+			}
 
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
-	require.NoError(t, err)
+			_, err = writeBlob(ctx, env.proxy, uploadRN, upload)
+			require.True(t, status.IsInvalidArgumentError(err), "err = %v", err)
 
-	rnProto, correctBlob := testdigest.RandomCASResourceBuf(t, 32*1024)
-	corruptBlob := bytes.Clone(correctBlob)
-	corruptBlob[0] = ^corruptBlob[0]
-	rn, err := digest.CASResourceNameFromProto(rnProto)
-	require.NoError(t, err)
+			found, err := env.proxyEnv.GetCache().Contains(ctx, rnProto)
+			require.NoError(t, err)
+			require.False(t, found, "proxy kept a corrupt upload")
 
-	_, _, err = cachetools.UploadFromReader(ctx, proxy, rn, bytes.NewReader(corruptBlob))
-	require.True(t, status.IsInvalidArgumentError(err), "err = %v", err)
-
-	found, err := proxyEnv.GetCache().Contains(ctx, rn.ToProto())
-	require.NoError(t, err)
-	require.False(t, found)
-
-	_, _, err = cachetools.UploadFromReader(ctx, proxy, rn, bytes.NewReader(correctBlob))
-	require.NoError(t, err)
-
-	var readBuf bytes.Buffer
-	require.NoError(t, byte_stream.ReadBlob(ctx, proxy, rn, &readBuf, 0))
-	require.Equal(t, correctBlob, readBuf.Bytes())
+			_, err = writeBlob(ctx, env.proxy, rn, data)
+			require.NoError(t, err)
+			require.Equal(t, data, readWholeBlob(t, ctx, env.proxy, rn))
+		})
+	}
 }
 
 func TestSkipWriteValidationFlag(t *testing.T) {
@@ -934,29 +932,16 @@ func TestSkipRemote(t *testing.T) {
 }
 
 func TestSkipRemoteDoesNotSkipWriteValidation(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.skip_write_validation": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true": true,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := testContext()
 	ctx = metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
 
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetExperimentFlagProvider(fp)
+	flags.Set(t, "cache_proxy.skip_write_validation", true)
 	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
 	proxy := runBSProxy(ctx, bs, proxyEnv, t)
 
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	require.NoError(t, err)
 
 	rn, data := testdigest.NewRandomResourceAndBuf(t, 32*1024, rspb.CacheType_CAS, "")
@@ -3671,6 +3656,46 @@ func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
 			found, err := env.proxyEnv.GetCache().Contains(ctx, rnProto)
 			require.NoError(t, err)
 			require.False(t, found, "proxy kept an upload nobody validated")
+			require.Equal(t, data, readWholeBlob(t, ctx, env.proxy, rn))
+		})
+	}
+}
+
+// With validation skipped, the proxy keeps a compressed upload of a new blob
+// that the remote read and accepted.
+func TestWriteSkipValidationKeepsValidatedUpload(t *testing.T) {
+	env := runAlreadyExistsProxy(t)
+	flags.Set(t, "cache_proxy.skip_write_validation", true)
+	ctx := env.ctx
+
+	for _, tc := range []struct {
+		name string
+		// bazelVersion, if set, is sent as Bazel request metadata.
+		bazelVersion string
+	}{
+		{name: "plain"},
+		{name: "bazel7", bazelVersion: "7.0.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clientCtx := ctx
+			if tc.bazelVersion != "" {
+				clientCtx = byte_stream.WithBazelVersion(t, ctx, tc.bazelVersion)
+			}
+
+			rnProto, data := testdigest.RandomCASResourceBuf(t, 64*1024)
+			rn, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			uploadRN, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			uploadRN.SetCompressor(repb.Compressor_ZSTD)
+			upload := compression.CompressZstd(nil, data)
+
+			resp, err := writeBlob(clientCtx, env.proxy, uploadRN, upload)
+			require.NoError(t, err)
+			require.Equal(t, int64(len(upload)), resp.GetCommittedSize())
+
+			require.NoError(t, waitContains(ctx, env.proxyEnv, rnProto))
+			require.NoError(t, waitContains(ctx, env.remoteEnv, rnProto))
 			require.Equal(t, data, readWholeBlob(t, ctx, env.proxy, rn))
 		})
 	}
