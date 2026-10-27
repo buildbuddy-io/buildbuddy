@@ -3575,6 +3575,9 @@ func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
 		name string
 		// header advertises the client feature, like cachetools.
 		header bool
+		// bazelVersion, if set, is sent as Bazel request metadata. A pre-5.1
+		// Bazel expects the size of what it uploaded in return.
+		bazelVersion string
 		// noStatus turns off the ALREADY_EXISTS status at the remote.
 		noStatus bool
 		// compressed uploads the blob zstd-compressed.
@@ -3582,15 +3585,19 @@ func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
 		// requestSize splits the upload into requests of this size.
 		requestSize int
 		// wantStatus is whether the write ends with ALREADY_EXISTS;
-		// otherwise wantCommitted is the WriteResponse's committed size.
+		// otherwise wantCommitted is the WriteResponse's committed size, or
+		// wantUploaded that it is the size of the upload.
 		wantStatus    bool
 		wantCommitted int64
+		wantUploaded  bool
 	}{
 		{name: "header_corrupt", header: true, wantStatus: true},
 		{name: "plain_corrupt", wantCommitted: size},
 		{name: "header_corrupt_compressed", header: true, compressed: true, wantStatus: true},
 		{name: "header_corrupt_compressed_in_requests", header: true, compressed: true, requestSize: 16 * 1024, wantStatus: true},
 		{name: "plain_corrupt_compressed", compressed: true, wantCommitted: -1},
+		{name: "bazel5_corrupt_compressed", bazelVersion: "5.0.0", compressed: true, wantUploaded: true},
+		{name: "bazel5_corrupt_compressed_in_requests", bazelVersion: "5.0.0", compressed: true, requestSize: 16 * 1024, wantUploaded: true},
 		{name: "header_corrupt_compressed_no_status", header: true, noStatus: true, compressed: true, wantCommitted: -1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -3601,6 +3608,9 @@ func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
 			clientCtx := ctx
 			if tc.header {
 				clientCtx = clientfeatures.Advertise(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
+			}
+			if tc.bazelVersion != "" {
+				clientCtx = byte_stream.WithBazelVersion(t, clientCtx, tc.bazelVersion)
 			}
 
 			rnProto, data := testdigest.RandomCASResourceBuf(t, size)
@@ -3626,7 +3636,11 @@ func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
 				require.True(t, status.IsAlreadyExistsError(err), "want ALREADY_EXISTS, got %v, %v", resp, err)
 			} else {
 				require.NoError(t, err)
-				require.Equal(t, tc.wantCommitted, resp.GetCommittedSize())
+				wantCommitted := tc.wantCommitted
+				if tc.wantUploaded {
+					wantCommitted = int64(len(upload))
+				}
+				require.Equal(t, wantCommitted, resp.GetCommittedSize())
 			}
 
 			// Check before reading through the proxy, which fills in a copy.
