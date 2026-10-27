@@ -36,6 +36,7 @@ module.exports = {
       "enterprise-rbe",
       "enterprise-mac-rbe",
       "enterprise-proxy",
+      "enterprise-multi-region",
       "enterprise-api",
       "enterprise-mcp",
     ],
