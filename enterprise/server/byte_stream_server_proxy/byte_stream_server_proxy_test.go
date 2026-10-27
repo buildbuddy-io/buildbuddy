@@ -833,9 +833,8 @@ func TestWrite(t *testing.T) {
 	}
 }
 
-// A corrupt upload of a new blob fails with the remote's INVALID_ARGUMENT and
-// is not kept locally, whether the proxy validated it itself or, with
-// cache_proxy.skip_write_validation, left that to the remote.
+// With cache_proxy.skip_write_validation, a corrupt upload of a new blob fails
+// with the remote's INVALID_ARGUMENT and is not kept locally.
 func TestWriteRemoteValidationFailureDoesNotPoisonLocalCache(t *testing.T) {
 	env := runAlreadyExistsProxy(t)
 	flags.Set(t, "cache_proxy.skip_write_validation", true)
@@ -845,9 +844,7 @@ func TestWriteRemoteValidationFailureDoesNotPoisonLocalCache(t *testing.T) {
 		name       string
 		compressed bool
 	}{
-		// The proxy validates uncompressed uploads itself.
 		{name: "identity"},
-		// The proxy skips validating compressed uploads.
 		{name: "compressed", compressed: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -880,10 +877,6 @@ func TestWriteRemoteValidationFailureDoesNotPoisonLocalCache(t *testing.T) {
 func TestSkipWriteValidationFlag(t *testing.T) {
 	flags.Set(t, "cache_proxy.skip_write_validation", true)
 	proxy := &ByteStreamServerProxy{}
-	d := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}
-	identity := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
-	compressed := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
-	compressed.SetCompressor(repb.Compressor_ZSTD)
 	// incoming makes a client context's metadata visible to a server.
 	incoming := func(ctx context.Context) context.Context {
 		md, _ := metadata.FromOutgoingContext(ctx)
@@ -892,10 +885,9 @@ func TestSkipWriteValidationFlag(t *testing.T) {
 	ctx := context.Background()
 	skipRemote := metadata.NewIncomingContext(ctx, metadata.Pairs(proxy_util.SkipRemoteKey, "true"))
 
-	require.True(t, proxy.skipWriteValidation(ctx, &bspb.WriteRequest{ResourceName: compressed.NewUploadString()}))
-	require.False(t, proxy.skipWriteValidation(incoming(byte_stream.WithBazelVersion(t, ctx, "5.0.0")), &bspb.WriteRequest{ResourceName: compressed.NewUploadString()}))
-	require.False(t, proxy.skipWriteValidation(ctx, &bspb.WriteRequest{ResourceName: identity.NewUploadString()}))
-	require.False(t, proxy.skipWriteValidation(skipRemote, &bspb.WriteRequest{ResourceName: compressed.NewUploadString()}))
+	require.True(t, proxy.skipWriteValidation(ctx))
+	require.False(t, proxy.skipWriteValidation(incoming(byte_stream.WithBazelVersion(t, ctx, "5.0.0"))))
+	require.False(t, proxy.skipWriteValidation(skipRemote))
 }
 
 func TestSkipRemote(t *testing.T) {
@@ -3501,10 +3493,7 @@ func TestWriteAlreadyExists(t *testing.T) {
 		// encrypted writes as a user whose cache encryption makes the proxy
 		// skip its local cache.
 		encrypted bool
-		// skipValidation turns on cache_proxy.skip_write_validation, which
-		// leaves these uncompressed uploads validated and kept locally.
-		skipValidation bool
-		exists         blobLocation
+		exists    blobLocation
 		// wantStatus is whether the write ends with ALREADY_EXISTS rather
 		// than a WriteResponse.
 		wantStatus bool
@@ -3516,16 +3505,11 @@ func TestWriteAlreadyExists(t *testing.T) {
 		{name: "plain_exists_everywhere", client: plain, exists: everywhere},
 		{name: "bazel7_exists_everywhere", client: bazel7, exists: everywhere, wantStatus: true},
 		{name: "header_encrypted_exists", client: header, encrypted: true, exists: everywhere, wantStatus: true},
-		{name: "header_skip_validation_exists_remotely", client: header, skipValidation: true, exists: remoteOnly, wantStatus: true},
-		{name: "plain_skip_validation_exists_remotely", client: plain, skipValidation: true, exists: remoteOnly},
 		{name: "header_chunked_new", client: header, chunked: true},
 		{name: "header_chunked_exists", client: header, chunked: true, exists: everywhere},
 		{name: "bazel7_chunked_exists", client: bazel7, chunked: true, exists: everywhere},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.skipValidation {
-				flags.Set(t, "cache_proxy.skip_write_validation", true)
-			}
 			ctx := env.ctx
 			if tc.encrypted {
 				ctx = env.encryptedCtx
@@ -3583,10 +3567,9 @@ func TestWriteAlreadyExists(t *testing.T) {
 
 // A remote that already has a blob does not read the upload, so a proxy that
 // skipped validating the upload must not keep it. The proxy asks the remote to
-// say so with ALREADY_EXISTS; with cache.bytestream_already_exists_status off,
-// the remote says so with a negative committed size instead, which only
-// compressed uploads from non-Bazel or 5.1+ Bazel clients get, so the proxy
-// validates all other uploads itself.
+// say so with ALREADY_EXISTS. A remote with cache.bytestream_already_exists_status
+// off says so with a negative committed size instead, but only for compressed
+// uploads, so the proxy relies on the status for uncompressed ones.
 func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
 	env := runAlreadyExistsProxy(t)
 	flags.Set(t, "cache_proxy.skip_write_validation", true)

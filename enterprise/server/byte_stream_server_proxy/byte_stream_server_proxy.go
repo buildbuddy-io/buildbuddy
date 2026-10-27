@@ -1015,16 +1015,11 @@ func (s *ByteStreamServerProxy) writeLocalOnly(stream bspb.ByteStream_WriteServe
 }
 
 // skipWriteValidation reports whether the local server can leave validating
-// the upload the remote server.
-func (s *ByteStreamServerProxy) skipWriteValidation(ctx context.Context, req *bspb.WriteRequest) bool {
+// the upload to the remote server. That relies on the remote ending a write it
+// did not read with ALREADY_EXISTS when asked (see dualWrite), which it does
+// with cache.bytestream_already_exists_status.
+func (s *ByteStreamServerProxy) skipWriteValidation(ctx context.Context) bool {
 	if proxy_util.SkipRemote(ctx) || !skipWriteValidation.Get(ctx) {
-		return false
-	}
-
-	rn, err := digest.ParseUploadResourceName(req.GetResourceName())
-	if err != nil || rn.GetCompressor() == repb.Compressor_IDENTITY {
-		// For IDENTITY, uploads, remote can return the digest size when the
-		// object already exists, so we can't tell if remote validation was done.
 		return false
 	}
 	// pre-5.1 Bazel doesn't support short-circuiting the write, so remote
@@ -1034,20 +1029,6 @@ func (s *ByteStreamServerProxy) skipWriteValidation(ctx context.Context, req *bs
 		return false
 	}
 	return true
-}
-
-// firstRequest peeks at the first request of stream and returns a stream
-// that replays it.
-func firstRequest(stream bspb.ByteStream_WriteServer) (*bspb.WriteRequest, bspb.ByteStream_WriteServer, error) {
-	// writeChunked may have peeked already.
-	if rs, ok := stream.(*replayableWriteStream); ok && !rs.replayedFirst {
-		return rs.firstReq, rs, nil
-	}
-	req, err := stream.Recv()
-	if err != nil {
-		return nil, nil, err
-	}
-	return req, &replayableWriteStream{ByteStream_WriteServer: stream, firstReq: req}, nil
 }
 
 type forwardingWriteStream struct {
@@ -1133,11 +1114,7 @@ func (s *forwardingWriteStream) endAlreadyExists(ctx context.Context) error {
 }
 
 func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteStream_WriteServer) error {
-	firstReq, stream, err := firstRequest(stream)
-	if err != nil {
-		return err
-	}
-	skipValidation := s.skipWriteValidation(ctx, firstReq)
+	skipValidation := s.skipWriteValidation(ctx)
 
 	// If our client supports "already exists" errors then propagate that to
 	// the remote server. Also ask for them when skipping validation: they
