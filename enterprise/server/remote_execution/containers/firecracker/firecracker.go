@@ -883,7 +883,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		if snaputil.IsChunkedSnapshotSharingEnabled() {
 			runnerID = ""
 		}
-		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, cd.GetHash(), runnerID)
+		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, c.containerImage, cd.GetHash(), runnerID)
 		if err != nil {
 			return nil, err
 		}

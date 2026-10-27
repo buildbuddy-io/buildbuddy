@@ -840,6 +840,39 @@ func GetProto(action *repb.Action, cmd *repb.Command) *repb.Platform {
 	return cmd.GetPlatform()
 }
 
+// GetKeyProto returns the platform proto to use in runner and snapshot keys for
+// the given task. containerImage is the task's resolved container image (after
+// executorplatform.ApplyOverrides).
+//
+// If the image did not come from the action's own platform (it was filled in
+// from the executor's default image, or set via a platform override), the
+// resolved image is added to a copy of the platform, so that runners and
+// snapshots are not shared across images. Otherwise the platform proto is
+// returned as-is, so that keys for tasks with an explicit image are unchanged.
+func GetKeyProto(task *repb.ExecutionTask, containerImage string) *repb.Platform {
+	plat := GetProto(task.GetAction(), task.GetCommand())
+	if containerImage == "" {
+		return plat
+	}
+	_, overridden := findValue(task.GetPlatformOverrides(), containerImagePropertyName)
+	image := FindValue(plat, containerImagePropertyName)
+	if !overridden && image != "" && !strings.EqualFold(image, "none") {
+		return plat
+	}
+	plat = plat.CloneVT()
+	if plat == nil {
+		plat = &repb.Platform{}
+	}
+	for _, prop := range plat.GetProperties() {
+		if strings.EqualFold(prop.GetName(), containerImagePropertyName) {
+			prop.Value = containerImage
+			return plat
+		}
+	}
+	plat.Properties = append(plat.Properties, &repb.Platform_Property{Name: containerImagePropertyName, Value: containerImage})
+	return plat
+}
+
 // FindValue scans the platform properties for the given property name (ignoring
 // case) and returns the value of that property if it exists, otherwise "".
 func FindValue(platform *repb.Platform, name string) string {

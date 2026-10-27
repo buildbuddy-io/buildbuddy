@@ -1265,7 +1265,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	key := &rnpb.RunnerKey{
 		GroupId:             groupID,
 		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
-		Platform:            platform.GetProto(task.GetAction(), task.GetCommand()),
+		Platform:            platform.GetKeyProto(task, props.ContainerImage),
 		PersistentWorkerKey: persistentWorkerKey,
 	}
 

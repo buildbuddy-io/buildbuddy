@@ -67,9 +67,10 @@ const (
 )
 
 // SnapshotKeySet returns the cache keys for potential snapshot matches,
-// as well as the key that should be written to.
-func (l *FileCacheLoader) SnapshotKeySet(ctx context.Context, task *repb.ExecutionTask, configurationHash, runnerID string) (*fcpb.SnapshotKeySet, error) {
-	pd, err := digest.ComputeForMessage(platform.GetProto(task.GetAction(), task.GetCommand()), repb.DigestFunction_SHA256)
+// as well as the key that should be written to. containerImage is the task's
+// resolved container image.
+func (l *FileCacheLoader) SnapshotKeySet(ctx context.Context, task *repb.ExecutionTask, containerImage, configurationHash, runnerID string) (*fcpb.SnapshotKeySet, error) {
+	pd, err := digest.ComputeForMessage(platform.GetKeyProto(task, containerImage), repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, status.WrapErrorf(err, "failed to compute platform hash")
 	}
