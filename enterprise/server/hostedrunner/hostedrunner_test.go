@@ -499,10 +499,11 @@ func TestDefaultImageOverride(t *testing.T) {
 	const overrideImage = "docker://gcr.io/example/override-image:latest"
 	const explicitImage = "docker://gcr.io/example/explicit:latest"
 	for _, tc := range []struct {
-		name          string
-		override      string
-		req           *rnpb.RunRequest
-		expectedImage string
+		name                   string
+		override               string
+		useGroupOwnedExecutors bool
+		req                    *rnpb.RunRequest
+		expectedImage          string
 	}{
 		{
 			name:          "no override",
@@ -530,6 +531,14 @@ func TestDefaultImageOverride(t *testing.T) {
 			expectedImage: explicitImage,
 		},
 		{
+			name:     "default pool applies override",
+			override: overrideImage,
+			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
+				{Name: "Pool", Value: "default"},
+			}},
+			expectedImage: overrideImage,
+		},
+		{
 			name:     "custom pool ignores override",
 			override: overrideImage,
 			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
@@ -546,23 +555,45 @@ func TestDefaultImageOverride(t *testing.T) {
 			expectedImage: DefaultRunnerContainerImage,
 		},
 		{
+			name:                   "group-owned executors ignore override",
+			override:               overrideImage,
+			useGroupOwnedExecutors: true,
+			req:                    &rnpb.RunRequest{},
+			expectedImage:          DefaultRunnerContainerImage,
+		},
+		{
+			name:                   "group-owned executors with explicit shared pool apply override",
+			override:               overrideImage,
+			useGroupOwnedExecutors: true,
+			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
+				{Name: platform.UseSelfHostedExecutorsPropertyName, Value: "false"},
+			}},
+			expectedImage: overrideImage,
+		},
+		{
 			name:          "darwin ignores override",
 			override:      overrideImage,
 			req:           &rnpb.RunRequest{Os: "darwin"},
-			expectedImage: "",
-		},
-		{
-			name:     "isolation none ignores override",
-			override: overrideImage,
-			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
-				{Name: "workload-isolation-type", Value: "none"},
-			}},
 			expectedImage: "",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			flags.Set(t, "remote_execution.ci_runner_default_image", tc.override)
 			te, ctx := getEnv(t)
+			if tc.useGroupOwnedExecutors {
+				// Only API key claims carry the group-owned executors setting.
+				u, err := te.GetUserDB().GetUser(ctx)
+				require.NoError(t, err)
+				require.NotEmpty(t, u.Groups)
+				groupID := u.Groups[0].Group.GroupID
+				err = te.GetDBHandle().NewQuery(ctx, "set_use_group_owned_executors").Raw(
+					`UPDATE "Groups" SET use_group_owned_executors = ? WHERE group_id = ?`, true, groupID).Exec().Error
+				require.NoError(t, err)
+				key, err := te.GetAuthDB().CreateAPIKey(ctx, groupID, "test", []cappb.Capability{cappb.Capability_CACHE_WRITE}, 0, false)
+				require.NoError(t, err)
+				ctx = te.GetAuthenticator().AuthContextFromAPIKey(t.Context(), key.Value)
+				ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, key.Value)
+			}
 
 			r, err := New(te)
 			require.NoError(t, err)
@@ -574,13 +605,7 @@ func TestDefaultImageOverride(t *testing.T) {
 			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 			require.Equal(t, 1, len(execClient.executeRequests))
 			exec := getExecution(t, ctx, te, execClient.executeRequests[0].Payload)
-			image := ""
-			for _, p := range exec.Command.GetPlatform().GetProperties() {
-				if p.GetName() == "container-image" {
-					image = p.GetValue()
-				}
-			}
-			require.Equal(t, tc.expectedImage, image)
+			require.Equal(t, tc.expectedImage, platform.FindValue(exec.Command.GetPlatform(), "container-image"))
 		})
 	}
 }

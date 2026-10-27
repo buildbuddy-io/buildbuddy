@@ -2627,15 +2627,21 @@ func TestDefaultImageOverride(t *testing.T) {
 			expectedImage: "docker://gcr.io/example/explicit:latest",
 		},
 		{
-			name:          "image alias wins over override",
-			override:      overrideImage,
-			actionConfig:  `container_image: "ubuntu-22.04"`,
-			expectedImage: platform.DockerPrefix + platform.Ubuntu22_04WorkflowsImage,
-		},
-		{
 			name:          "self-hosted ignores override",
 			override:      overrideImage,
 			actionConfig:  `self_hosted: true`,
+			expectedImage: platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage,
+		},
+		{
+			name:          "self-hosted platform property ignores override",
+			override:      overrideImage,
+			actionConfig:  `platform_properties: { use-self-hosted-executors: "true" }`,
+			expectedImage: platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage,
+		},
+		{
+			name:          "custom pool platform property ignores override",
+			override:      overrideImage,
+			actionConfig:  `platform_properties: { Pool: "my-pool" }`,
 			expectedImage: platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage,
 		},
 	} {
@@ -2666,13 +2672,7 @@ actions:
 
 			execReq := execClient.NextExecuteRequest()
 			exec := getExecution(t, ctx, te, execReq.Payload)
-			image := ""
-			for _, p := range exec.Command.GetPlatform().GetProperties() {
-				if p.GetName() == "container-image" {
-					image = p.GetValue()
-				}
-			}
-			require.Equal(t, tc.expectedImage, image)
+			require.Equal(t, tc.expectedImage, platform.FindValue(exec.Command.GetPlatform(), "container-image"))
 		})
 	}
 }

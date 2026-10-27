@@ -1328,12 +1328,31 @@ func (ws *workflowService) containerImage(ctx context.Context, action *config.Ac
 	if action.ContainerImage != "" {
 		return ws.resolveImageAliases(action.ContainerImage)
 	}
-	if !action.SelfHosted {
+	if !usesSelfHostedOrCustomPool(action) {
 		if imageOverride := ci_runner_util.DefaultImageOverride.Get(ctx, experiments.WithContext("workflow-name", action.Name)); imageOverride != "" {
 			return imageOverride
 		}
 	}
 	return *workflowsDefaultImage
+}
+
+// usesSelfHostedOrCustomPool returns whether the action may run on executors
+// outside the shared pool, which may not have the override image.
+func usesSelfHostedOrCustomPool(action *config.Action) bool {
+	if action.SelfHosted {
+		return true
+	}
+	// platform_properties are appended last, so they take precedence.
+	for k, v := range action.PlatformProperties {
+		v = strings.TrimSpace(v)
+		if strings.EqualFold(k, platform.UseSelfHostedExecutorsPropertyName) && platform.IsTrue(v) {
+			return true
+		}
+		if strings.EqualFold(k, "Pool") && v != "" && v != platform.DefaultPoolValue {
+			return true
+		}
+	}
+	return false
 }
 
 func (ws *workflowService) resolveImageAliases(value string) string {

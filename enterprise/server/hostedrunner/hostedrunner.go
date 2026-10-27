@@ -274,7 +274,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		wd = ""
 		image = ""
 		isolationType = "none"
-	} else if !usesCustomPool(req.GetExecProperties()) {
+	} else if (os == "" || os == platform.LinuxOperatingSystemName) && r.usesSharedPool(ctx, req.GetExecProperties()) {
 		if imageOverride := ci_runner_util.DefaultImageOverride.Get(ctx, experiments.WithContext("workflow-name", "remote-bazel")); imageOverride != "" {
 			image = imageOverride
 		}
@@ -389,18 +389,21 @@ func (r *runnerService) buildUser(ctx context.Context) (string, error) {
 	return cmp.Or(group.Name, u.GetGroupID()), nil
 }
 
-// usesCustomPool returns whether the exec properties route the runner away
-// from the shared pool, possibly to self-hosted executors.
-func usesCustomPool(execProps []*repb.Platform_Property) bool {
-	for _, p := range execProps {
-		if strings.EqualFold(p.Name, "Pool") && p.Value != "" {
-			return true
-		}
-		if strings.EqualFold(p.Name, platform.UseSelfHostedExecutorsPropertyName) && strings.EqualFold(p.Value, "true") {
-			return true
-		}
+// usesSharedPool returns whether the runner is known to be scheduled on the
+// shared executor pool. Self-hosted executors may not have the override image,
+// so it should only be applied to the shared pool.
+func (r *runnerService) usesSharedPool(ctx context.Context, execProps []*repb.Platform_Property) bool {
+	p := &repb.Platform{Properties: execProps}
+	if pool := strings.TrimSpace(platform.FindValue(p, "Pool")); pool != "" && pool != platform.DefaultPoolValue {
+		return false
 	}
-	return false
+	// Like the scheduler, any explicit non-true value selects the shared pool,
+	// even for groups that use group-owned executors.
+	if selfHosted := strings.TrimSpace(platform.FindValue(p, platform.UseSelfHostedExecutorsPropertyName)); selfHosted != "" {
+		return !platform.IsTrue(selfHosted)
+	}
+	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	return err != nil || !u.GetUseGroupOwnedExecutors()
 }
 
 func getExecProperty(execProps []*repb.Platform_Property, key string) string {
