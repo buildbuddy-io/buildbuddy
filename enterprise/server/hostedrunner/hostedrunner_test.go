@@ -555,6 +555,31 @@ func TestDefaultImageOverride(t *testing.T) {
 			expectedImage: DefaultRunnerContainerImage,
 		},
 		{
+			name:     "self-hosted remote header ignores override",
+			override: overrideImage,
+			req: &rnpb.RunRequest{RemoteHeaders: []string{
+				platform.OverrideHeaderPrefix + platform.UseSelfHostedExecutorsPropertyName + "=true",
+			}},
+			expectedImage: DefaultRunnerContainerImage,
+		},
+		{
+			name:     "last duplicate self-hosted property wins",
+			override: overrideImage,
+			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
+				{Name: platform.UseSelfHostedExecutorsPropertyName, Value: "false"},
+				{Name: platform.UseSelfHostedExecutorsPropertyName, Value: "true"},
+			}},
+			expectedImage: DefaultRunnerContainerImage,
+		},
+		{
+			name:     "lowercase windows OS ignores override",
+			override: overrideImage,
+			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
+				{Name: "osfamily", Value: "windows"},
+			}},
+			expectedImage: DefaultRunnerContainerImage,
+		},
+		{
 			name:                   "group-owned executors ignore override",
 			override:               overrideImage,
 			useGroupOwnedExecutors: true,

@@ -311,3 +311,37 @@ func applyEnvOverrides(task *repb.ExecutionTask, envOverrides map[string]string)
 		}
 	}
 }
+
+// ApplyDefaultImageOverride replaces the container-image of the task's
+// (normalized) command with DefaultImageOverride, if the override is set, the
+// task's image is still defaultImage, and the platform parser says the task
+// runs on the shared Linux pool. sharedPool is the Pool value the caller set.
+// Self-hosted executors may not have the override image, so they are skipped.
+func ApplyDefaultImageOverride(ctx context.Context, env environment.Env, task *repb.ExecutionTask, defaultImage, sharedPool, workflowName string) {
+	props, err := platform.ParseProperties(task)
+	if err != nil || props.OS != platform.LinuxOperatingSystemName || props.ContainerImage != defaultImage {
+		return
+	}
+	if props.Pool != "" && props.Pool != strings.ToLower(sharedPool) {
+		return
+	}
+	if props.PoolType == platform.PoolTypeSelfHosted {
+		return
+	}
+	// Without an explicit choice, the scheduler routes groups that use
+	// group-owned executors to their own executors.
+	if props.PoolType == platform.PoolTypeDefault {
+		if u, err := env.GetAuthenticator().AuthenticatedUser(ctx); err == nil && u.GetUseGroupOwnedExecutors() {
+			return
+		}
+	}
+	image := DefaultImageOverride.Get(ctx, experiments.WithContext("workflow-name", workflowName))
+	if image == "" {
+		return
+	}
+	for _, p := range task.GetCommand().GetPlatform().GetProperties() {
+		if strings.EqualFold(p.GetName(), "container-image") {
+			p.Value = image
+		}
+	}
+}

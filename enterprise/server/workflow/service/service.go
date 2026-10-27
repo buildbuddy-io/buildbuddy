@@ -1122,7 +1122,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	isSharedFirecrackerWorkflow := *enableFirecracker && !workflowAction.SelfHosted
 	if os == "" || os == platform.LinuxOperatingSystemName {
 		computeUnits = *workflowsLinuxComputeUnits
-		containerImage = ws.containerImage(ctx, workflowAction)
+		containerImage = ws.containerImage(workflowAction)
 		if isSharedFirecrackerWorkflow {
 			isolationType = string(platform.FirecrackerContainerType)
 			// When using Firecracker, write all outputs to the scratch disk, which
@@ -1223,12 +1223,13 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	args = append(args, extraArgs...)
 
+	pool := ws.poolForAction(ctx, workflowAction)
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments:            args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: ws.poolForAction(ctx, workflowAction)},
+				{Name: "Pool", Value: pool},
 				{Name: "OSFamily", Value: os},
 				{Name: "Arch", Value: workflowAction.Arch},
 				{Name: platform.DockerUserPropertyName, Value: workflowUser},
@@ -1286,6 +1287,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	cmd.Platform.Properties = append(cmd.Platform.Properties, customPlatformProps...)
 	rexec.NormalizeCommand(cmd)
+	if workflowAction.ContainerImage == "" {
+		ci_runner_util.ApplyDefaultImageOverride(ctx, ws.env, &repb.ExecutionTask{Command: cmd}, *workflowsDefaultImage, pool, workflowAction.Name)
+	}
 
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, cmd)
 	if err != nil {
@@ -1324,35 +1328,11 @@ func (ws *workflowService) WorkflowsPoolName() string {
 	return platform.DefaultPoolValue
 }
 
-func (ws *workflowService) containerImage(ctx context.Context, action *config.Action) string {
+func (ws *workflowService) containerImage(action *config.Action) string {
 	if action.ContainerImage != "" {
 		return ws.resolveImageAliases(action.ContainerImage)
 	}
-	if !usesSelfHostedOrCustomPool(action) {
-		if imageOverride := ci_runner_util.DefaultImageOverride.Get(ctx, experiments.WithContext("workflow-name", action.Name)); imageOverride != "" {
-			return imageOverride
-		}
-	}
 	return *workflowsDefaultImage
-}
-
-// usesSelfHostedOrCustomPool returns whether the action may run on executors
-// outside the shared pool, which may not have the override image.
-func usesSelfHostedOrCustomPool(action *config.Action) bool {
-	if action.SelfHosted {
-		return true
-	}
-	// platform_properties are appended last, so they take precedence.
-	for k, v := range action.PlatformProperties {
-		v = strings.TrimSpace(v)
-		if strings.EqualFold(k, platform.UseSelfHostedExecutorsPropertyName) && platform.IsTrue(v) {
-			return true
-		}
-		if strings.EqualFold(k, "Pool") && v != "" && v != platform.DefaultPoolValue {
-			return true
-		}
-	}
-	return false
 }
 
 func (ws *workflowService) resolveImageAliases(value string) string {

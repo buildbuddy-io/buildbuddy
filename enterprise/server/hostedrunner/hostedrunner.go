@@ -274,10 +274,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		wd = ""
 		image = ""
 		isolationType = "none"
-	} else if (os == "" || os == platform.LinuxOperatingSystemName) && r.usesSharedPool(ctx, req.GetExecProperties()) {
-		if imageOverride := ci_runner_util.DefaultImageOverride.Get(ctx, experiments.WithContext("workflow-name", "remote-bazel")); imageOverride != "" {
-			image = imageOverride
-		}
 	}
 	if req.GetContainerImage() != "" {
 		image = req.GetContainerImage()
@@ -344,6 +340,10 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	// Normalize to adhere to the REAPI spec.
 	rexec.NormalizeCommand(cmd)
+	if req.GetContainerImage() == "" {
+		task := &repb.ExecutionTask{Command: cmd, PlatformOverrides: &repb.Platform{Properties: remoteHeaderOverrides(req)}}
+		ci_runner_util.ApplyDefaultImageOverride(ctx, r.env, task, DefaultRunnerContainerImage, pool, "remote-bazel")
+	}
 
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, in, repb.DigestFunction_BLAKE3, cmd)
 	if err != nil {
@@ -389,21 +389,16 @@ func (r *runnerService) buildUser(ctx context.Context) (string, error) {
 	return cmp.Or(group.Name, u.GetGroupID()), nil
 }
 
-// usesSharedPool returns whether the runner is known to be scheduled on the
-// shared executor pool. Self-hosted executors may not have the override image,
-// so it should only be applied to the shared pool.
-func (r *runnerService) usesSharedPool(ctx context.Context, execProps []*repb.Platform_Property) bool {
-	p := &repb.Platform{Properties: execProps}
-	if pool := strings.TrimSpace(platform.FindValue(p, "Pool")); pool != "" && pool != platform.DefaultPoolValue {
-		return false
+// remoteHeaderOverrides returns the platform overrides that the execution
+// server will derive from the request's remote headers.
+func remoteHeaderOverrides(req *rnpb.RunRequest) []*repb.Platform_Property {
+	md := metadata.MD{}
+	for _, h := range req.GetRemoteHeaders() {
+		if k, v, ok := strings.Cut(h, "="); ok {
+			md.Append(k, v)
+		}
 	}
-	// Like the scheduler, any explicit non-true value selects the shared pool,
-	// even for groups that use group-owned executors.
-	if selfHosted := strings.TrimSpace(platform.FindValue(p, platform.UseSelfHostedExecutorsPropertyName)); selfHosted != "" {
-		return !platform.IsTrue(selfHosted)
-	}
-	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
-	return err != nil || !u.GetUseGroupOwnedExecutors()
+	return platform.RemoteHeaderOverrides(metadata.NewIncomingContext(context.Background(), md))
 }
 
 func getExecProperty(execProps []*repb.Platform_Property, key string) string {

@@ -2639,6 +2639,12 @@ func TestDefaultImageOverride(t *testing.T) {
 			expectedImage: platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage,
 		},
 		{
+			name:          "windows OS platform property ignores override",
+			override:      overrideImage,
+			actionConfig:  `platform_properties: { OSFamily: "windows" }`,
+			expectedImage: platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage,
+		},
+		{
 			name:          "custom pool platform property ignores override",
 			override:      overrideImage,
 			actionConfig:  `platform_properties: { Pool: "my-pool" }`,
