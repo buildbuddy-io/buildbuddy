@@ -3067,3 +3067,29 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 	defer s.livenessMu.Unlock()
 	require.Empty(t, s.livenessWatches)
 }
+
+func TestGetExecutionNodes_UpgradePrompt_ConfiguredNewestVersion(t *testing.T) {
+	detector := upgrade.NewDetector(map[uppb.Prompt_Urgency]upgrade.Trigger{
+		uppb.Prompt_LOW: {MaxLag: semver.MustParse("0.0.1")},
+	})
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: detector, NewestVersion: semver.MustParse("v2.41.0")}}, "user1")
+	enterprise_testauth.Configure(t, env)
+
+	executor := newFakeExecutorWithId(ctx, t, "customer", env.GetSchedulerClient())
+	executor.node.Version = "v2.40.0"
+	executor.Register()
+
+	u := enterprise_testauth.CreateRandomUser(t, env, "org1.invalid")
+	auther := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auther.WithAuthenticatedUser(ctx, u.UserID)
+	require.NoError(t, err)
+
+	rsp, err := env.GetSchedulerService().GetExecutionNodes(authCtx, &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: u.Groups[0].Group.GroupID},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, rsp.GetUpgradePrompt())
+	require.Equal(t, uppb.Prompt_LOW, rsp.GetUpgradePrompt().GetUrgency())
+	require.Contains(t, rsp.GetUpgradePrompt().GetMessage(), "2.41.0")
+}

@@ -76,6 +76,7 @@ var (
 	taskLivenessCheckInterval    = flag.Duration("remote_execution.task_liveness_check_interval", 0, "How often the scheduler checks that the tasks clients are waiting on still exist. Once a task has been missing for remote_execution.lease_duration plus remote_execution.lease_grace_period, the app ends the clients' waits with a NOT_FOUND error so that they retry the execution. 0 (the default) disables the check.")
 
 	upgradePromptMaxLags     = flag.Map("remote_execution.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) an executor may fall behind the newest registered version before GetExecutionNodes prompts an upgrade at that urgency.")
+	upgradePromptNewest      = flag.String("remote_execution.upgrade_prompt_newest_version", "", "If set, upgrade prompts compare against this version (semver) instead of the newest version registered by hosted executors.")
 	upgradePromptMinVersions = flag.Map("remote_execution.upgrade_prompt_min_versions", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the minimum version (semver) below which GetExecutionNodes prompts an upgrade at that urgency.")
 )
 
@@ -1472,6 +1473,9 @@ type Options struct {
 	// Decides when GetExecutionNodes prompts the user to upgrade outdated
 	// executors. If nil, no upgrade prompts are generated.
 	UpgradeDetector *upgrade.Detector
+	// If set, upgrade prompts compare against this version instead of the
+	// newest registered executor version.
+	NewestVersion *semver.Version
 }
 
 type SchedulerServer struct {
@@ -1516,6 +1520,9 @@ type SchedulerServer struct {
 	// Decides when GetExecutionNodes prompts the user to upgrade outdated
 	// executors.
 	detector *upgrade.Detector
+	// If set, upgrade prompts compare against this version instead of the
+	// newest registered executor version.
+	configuredNewestVersion *semver.Version
 
 	// Limits checkTaskAccess logging to one line per task owner group per
 	// interval.
@@ -1542,7 +1549,11 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.InvalidArgumentErrorf("Invalid executor upgrade prompt configuration: %s", err)
 	}
-	schedulerServer, err := NewSchedulerServerWithOptions(env, &Options{UpgradeDetector: upgrade.NewDetector(triggers)})
+	newest, err := upgrade.ParseNewestVersion(*upgradePromptNewest)
+	if err != nil {
+		return status.InvalidArgumentErrorf("Invalid executor upgrade prompt configuration: %s", err)
+	}
+	schedulerServer, err := NewSchedulerServerWithOptions(env, &Options{UpgradeDetector: upgrade.NewDetector(triggers), NewestVersion: newest})
 	if err != nil {
 		return status.InternalErrorf("Error configuring scheduler server: %v", err)
 	}
@@ -1614,6 +1625,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		leaseDuration:                     options.LeaseDuration,
 		leaseGracePeriod:                  options.LeaseGracePeriod,
 		detector:                          options.UpgradeDetector,
+		configuredNewestVersion:           options.NewestVersion,
 		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
 		unclaimedTasksJanitor:             newUnclaimedTasksJanitor(env.GetRemoteExecutionRedisClient(), clock),
 		livenessWatches:                   make(map[string]*taskLivenessWatch),
@@ -3560,8 +3572,12 @@ func (s *SchedulerServer) getRegisteredExecutionNodesFromRedis(ctx context.Conte
 }
 
 // getNewestVersion returns the maximum semantic version among live
-// registrations in the shared executor pool group's pools.
+// registrations in the shared executor pool group's pools, or the configured
+// newest version if set.
 func (s *SchedulerServer) getNewestVersion(ctx context.Context) *semver.Version {
+	if s.configuredNewestVersion != nil {
+		return s.configuredNewestVersion
+	}
 	s.versionMu.Lock()
 	defer s.versionMu.Unlock()
 	if s.clock.Now().Before(s.newestVersionExpiry) {
