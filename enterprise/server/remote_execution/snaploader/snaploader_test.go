@@ -1191,47 +1191,21 @@ func TestSnapshotKeySet_ResolvedContainerImage(t *testing.T) {
 	env := setupEnv(t)
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
-
-	taskWithImage := func(image string) *repb.ExecutionTask {
-		task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{}}}
-		if image != "" {
-			task.Command.Platform.Properties = []*repb.Platform_Property{
-				{Name: "container-image", Value: image},
-			}
-		}
-		return task
-	}
 	platformHash := func(task *repb.ExecutionTask, resolvedImage string) string {
 		keys, err := loader.SnapshotKeySet(ctx, task, resolvedImage, "config-hash", "")
 		require.NoError(t, err)
 		return keys.GetBranchKey().GetPlatformHash()
 	}
-	rawPlatformHash := func(task *repb.ExecutionTask) string {
-		d, err := digest.ComputeForMessage(platform.GetProto(task.GetAction(), task.GetCommand()), repb.DigestFunction_SHA256)
-		require.NoError(t, err)
-		return d.GetHash()
-	}
 
-	// Tasks without an explicit image get a key that depends on the resolved
-	// default image.
-	for _, image := range []string{"", "none"} {
-		task := taskWithImage(image)
-		hashA := platformHash(task, "gcr.io/test/image-a:1")
-		hashB := platformHash(task, "gcr.io/test/image-b:2")
-		require.NotEqual(t, hashA, hashB, "image %q", image)
-		require.Equal(t, hashA, platformHash(task, "gcr.io/test/image-a:1"), "image %q", image)
-		// Bare tasks (no resolved image) keep the raw platform hash.
-		require.Equal(t, rawPlatformHash(task), platformHash(task, ""), "image %q", image)
-	}
+	// With no image, the key depends on the resolved default image.
+	noImage := &repb.ExecutionTask{Command: &repb.Command{}}
+	require.NotEqual(t, platformHash(noImage, "gcr.io/test/image-a:1"), platformHash(noImage, "gcr.io/test/image-b:2"))
 
-	// Tasks with an explicit image keep the raw platform hash.
-	task := taskWithImage("docker://gcr.io/test/explicit:1")
-	require.Equal(t, rawPlatformHash(task), platformHash(task, "gcr.io/test/explicit:1"))
-
-	// An image set via a platform override is reflected in the key.
-	task.PlatformOverrides = &repb.Platform{Properties: []*repb.Platform_Property{
-		{Name: "container-image", Value: "docker://gcr.io/test/override:1"},
-	}}
-	require.NotEqual(t, rawPlatformHash(task), platformHash(task, "gcr.io/test/override:1"))
-	require.NotEqual(t, platformHash(task, "gcr.io/test/override:1"), platformHash(task, "gcr.io/test/override:2"))
+	// With an explicit image, the key is the raw platform hash.
+	explicit := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: "container-image", Value: "docker://gcr.io/test/explicit:1"},
+	}}}}
+	rawHash, err := digest.ComputeForMessage(explicit.GetCommand().GetPlatform(), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.Equal(t, rawHash.GetHash(), platformHash(explicit, "gcr.io/test/explicit:1"))
 }

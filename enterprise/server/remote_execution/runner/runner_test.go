@@ -1325,17 +1325,12 @@ func TestRunnerPool_DefaultImageChanged_DoesNotReuseRunnerForOldImage(t *testing
 	flags.Set(t, "executor.default_image", "docker://gcr.io/test/image-a:1")
 
 	env := newTestEnv(t)
-	// Record the image each container was created for.
-	createdImage := map[container.CommandContainer]string{}
 	cfg := noLimitsCfg()
-	cfg.PoolOptions = &PoolOptions{
-		ContainerProvider: providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-			c := NewFakeContainer()
-			c.Isolation = string(platform.OCIContainerType)
-			createdImage[c] = args.Props.ContainerImage
-			return c, nil
-		}),
-	}
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		c := NewFakeContainer()
+		c.Isolation = string(platform.OCIContainerType)
+		return c, nil
+	})
 	pool := newRunnerPool(t, env, cfg)
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
@@ -1351,7 +1346,6 @@ func TestRunnerPool_DefaultImageChanged_DoesNotReuseRunnerForOldImage(t *testing
 	require.NoError(t, err)
 	require.Equal(t, "gcr.io/test/image-b:2", r2.PlatformProperties.ContainerImage)
 
-	imageOfR2Container := createdImage[r2.Container.Delegate]
-	assert.NotSame(t, r1, r2, "runner created for image-a was reused for a task that resolves to image-b (container was created for %q)", imageOfR2Container)
+	assert.NotSame(t, r1, r2, "runner created for image-a was reused for a task that resolves to image-b")
 	assert.Equal(t, 1, pool.PausedRunnerCount(), "paused runner for image-a should still be in the pool")
 }

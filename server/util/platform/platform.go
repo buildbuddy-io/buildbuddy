@@ -844,33 +844,37 @@ func GetProto(action *repb.Action, cmd *repb.Command) *repb.Platform {
 // the given task. containerImage is the task's resolved container image (after
 // executorplatform.ApplyOverrides).
 //
-// If the image did not come from the action's own platform (it was filled in
-// from the executor's default image, or set via a platform override), the
-// resolved image is added to a copy of the platform, so that runners and
-// snapshots are not shared across images. Otherwise the platform proto is
-// returned as-is, so that keys for tasks with an explicit image are unchanged.
+// If the task sets an explicit container-image in the action's platform, the
+// raw platform proto is returned as-is. This is intentional: those keys don't
+// pick up image rewrites, region substitution or digest moves, so the existing
+// fleet keeps its runner and snapshot keys. If the image was instead filled in
+// from the executor's default image, or set via a platform override, the raw
+// platform doesn't reflect it, so the fully resolved image is set in a copy of
+// the platform to keep runners and snapshots from being shared across images.
 func GetKeyProto(task *repb.ExecutionTask, containerImage string) *repb.Platform {
 	plat := GetProto(task.GetAction(), task.GetCommand())
 	if containerImage == "" {
 		return plat
 	}
 	_, overridden := findValue(task.GetPlatformOverrides(), containerImagePropertyName)
-	image := FindValue(plat, containerImagePropertyName)
+	// Like ParseProperties, use the last matching property.
+	image := ""
+	for _, prop := range plat.GetProperties() {
+		if strings.EqualFold(prop.GetName(), containerImagePropertyName) {
+			image = strings.TrimSpace(prop.GetValue())
+		}
+	}
 	if !overridden && image != "" && !strings.EqualFold(image, "none") {
 		return plat
 	}
-	plat = plat.CloneVT()
-	if plat == nil {
-		plat = &repb.Platform{}
-	}
+	keyPlat := &repb.Platform{}
 	for _, prop := range plat.GetProperties() {
-		if strings.EqualFold(prop.GetName(), containerImagePropertyName) {
-			prop.Value = containerImage
-			return plat
+		if !strings.EqualFold(prop.GetName(), containerImagePropertyName) {
+			keyPlat.Properties = append(keyPlat.Properties, prop.CloneVT())
 		}
 	}
-	plat.Properties = append(plat.Properties, &repb.Platform_Property{Name: containerImagePropertyName, Value: containerImage})
-	return plat
+	keyPlat.Properties = append(keyPlat.Properties, &repb.Platform_Property{Name: containerImagePropertyName, Value: containerImage})
+	return keyPlat
 }
 
 // FindValue scans the platform properties for the given property name (ignoring
