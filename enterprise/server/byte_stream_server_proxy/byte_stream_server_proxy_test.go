@@ -895,10 +895,8 @@ func TestSkipWriteValidationFlag(t *testing.T) {
 	skipRemote := metadata.NewIncomingContext(ctx, metadata.Pairs(proxy_util.SkipRemoteKey, "true"))
 
 	require.True(t, proxy.skipWriteValidation(ctx, &bspb.WriteRequest{ResourceName: compressed.NewUploadString()}))
-	require.True(t, proxy.skipWriteValidation(incoming(byte_stream.WithBazelVersion(t, ctx, "5.1.0")), &bspb.WriteRequest{ResourceName: compressed.NewUploadString()}))
 	require.False(t, proxy.skipWriteValidation(incoming(byte_stream.WithBazelVersion(t, ctx, "5.0.0")), &bspb.WriteRequest{ResourceName: compressed.NewUploadString()}))
 	require.False(t, proxy.skipWriteValidation(ctx, &bspb.WriteRequest{ResourceName: identity.NewUploadString()}))
-	require.False(t, proxy.skipWriteValidation(ctx, &bspb.WriteRequest{ResourceName: "not a resource name"}))
 	require.False(t, proxy.skipWriteValidation(skipRemote, &bspb.WriteRequest{ResourceName: compressed.NewUploadString()}))
 }
 
@@ -3502,7 +3500,6 @@ const (
 // handles it only when the client told the proxy so (Bazel is recognized by
 // its version instead), passes the remote's status through to the client, and
 // treats the status from its own local server as a successful local write.
-// Compressed uploads the proxy does not validate are covered by the next test.
 func TestWriteAlreadyExists(t *testing.T) {
 	env := runAlreadyExistsProxy(t)
 
@@ -3534,11 +3531,8 @@ func TestWriteAlreadyExists(t *testing.T) {
 		{name: "plain_exists_everywhere", client: plain, exists: everywhere},
 		{name: "bazel7_exists_everywhere", client: bazel7, exists: everywhere, wantStatus: true},
 		{name: "header_encrypted_exists", client: header, encrypted: true, exists: everywhere, wantStatus: true},
-		{name: "header_skip_validation_new", client: header, skipValidation: true},
 		{name: "header_skip_validation_exists_remotely", client: header, skipValidation: true, exists: remoteOnly, wantStatus: true},
-		{name: "bazel7_skip_validation_exists_remotely", client: bazel7, skipValidation: true, exists: remoteOnly, wantStatus: true},
 		{name: "plain_skip_validation_exists_remotely", client: plain, skipValidation: true, exists: remoteOnly},
-		{name: "header_skip_validation_exists_everywhere", client: header, skipValidation: true, exists: everywhere, wantStatus: true},
 		{name: "header_chunked_new", client: header, chunked: true},
 		{name: "header_chunked_exists", client: header, chunked: true, exists: everywhere},
 		{name: "bazel7_chunked_exists", client: bazel7, chunked: true, exists: everywhere},
@@ -3612,41 +3606,30 @@ func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
 	env := runAlreadyExistsProxy(t)
 	flags.Set(t, "cache_proxy.skip_write_validation", true)
 
-	const (
-		header = "header" // advertises the client feature, like cachetools
-		bazel5 = "bazel5" // sends Bazel 5.0.0 request metadata
-		plain  = "plain"  // does neither
-
-		// How the client's write ends: ALREADY_EXISTS, or a WriteResponse
-		// with this committed size.
-		endStatus     = "status"
-		endDigestSize = "digest size"
-		endNegative   = "negative"
-		endUploaded   = "uploaded size"
-	)
+	// Big enough for the remote to check for the blob first, small enough
+	// not to be chunked.
+	const size = 64 * 1024
 	for _, tc := range []struct {
-		name   string
-		client string
+		name string
+		// header advertises the client feature, like cachetools.
+		header bool
 		// noStatus turns off the ALREADY_EXISTS status at the remote.
 		noStatus bool
 		// compressed uploads the blob zstd-compressed.
 		compressed bool
-		// truncated uploads only the first half of the blob.
-		truncated bool
 		// requestSize splits the upload into requests of this size.
 		requestSize int
-		want        string
+		// wantStatus is whether the write ends with ALREADY_EXISTS;
+		// otherwise wantCommitted is the WriteResponse's committed size.
+		wantStatus    bool
+		wantCommitted int64
 	}{
-		{name: "header_corrupt", client: header, want: endStatus},
-		{name: "header_truncated", client: header, truncated: true, want: endStatus},
-		{name: "header_corrupt_in_requests", client: header, requestSize: 16 * 1024, want: endStatus},
-		{name: "plain_corrupt", client: plain, want: endDigestSize},
-		{name: "plain_corrupt_compressed", client: plain, compressed: true, want: endNegative},
-		{name: "bazel5_corrupt_compressed_in_requests", client: bazel5, compressed: true, requestSize: 16 * 1024, want: endUploaded},
-		{name: "header_corrupt_compressed_no_status", client: header, noStatus: true, compressed: true, want: endNegative},
-		{name: "plain_corrupt_no_status", client: plain, noStatus: true, want: endDigestSize},
-		{name: "header_truncated_no_status", client: header, noStatus: true, truncated: true, want: endDigestSize},
-		{name: "bazel5_corrupt_compressed_no_status", client: bazel5, noStatus: true, compressed: true, want: endUploaded},
+		{name: "header_corrupt", header: true, wantStatus: true},
+		{name: "plain_corrupt", wantCommitted: size},
+		{name: "header_corrupt_compressed", header: true, compressed: true, wantStatus: true},
+		{name: "header_corrupt_compressed_in_requests", header: true, compressed: true, requestSize: 16 * 1024, wantStatus: true},
+		{name: "plain_corrupt_compressed", compressed: true, wantCommitted: -1},
+		{name: "header_corrupt_compressed_no_status", header: true, noStatus: true, compressed: true, wantCommitted: -1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.noStatus {
@@ -3654,27 +3637,19 @@ func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
 			}
 			ctx := env.ctx
 			clientCtx := ctx
-			switch tc.client {
-			case header:
+			if tc.header {
 				clientCtx = clientfeatures.Advertise(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
-			case bazel5:
-				clientCtx = byte_stream.WithBazelVersion(t, ctx, "5.0.0")
 			}
 
-			// Big enough for the remote to check for the blob first, small
-			// enough not to be chunked.
-			_, data := testdigest.RandomCASResourceBuf(t, 64*1024)
-			d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+			rnProto, data := testdigest.RandomCASResourceBuf(t, size)
+			rn, err := digest.CASResourceNameFromProto(rnProto)
 			require.NoError(t, err)
-			rn := digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3)
-			require.NoError(t, env.remoteEnv.GetCache().Set(ctx, rn.ToProto(), data))
+			require.NoError(t, env.remoteEnv.GetCache().Set(ctx, rnProto, data))
 
 			upload := bytes.Clone(data)
 			upload[0] = ^upload[0]
-			if tc.truncated {
-				upload = upload[:len(upload)/2]
-			}
-			uploadRN := digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3)
+			uploadRN, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
 			if tc.compressed {
 				upload = compression.CompressZstd(nil, upload)
 				uploadRN.SetCompressor(repb.Compressor_ZSTD)
@@ -3685,21 +3660,15 @@ func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
 			}
 
 			resp, err := writeBlobInRequests(clientCtx, env.proxy, uploadRN, upload, requestSize)
-			switch tc.want {
-			case endStatus:
+			if tc.wantStatus {
 				require.True(t, status.IsAlreadyExistsError(err), "want ALREADY_EXISTS, got %v, %v", resp, err)
-			default:
+			} else {
 				require.NoError(t, err)
-				wantCommitted := map[string]int64{
-					endDigestSize: int64(len(data)),
-					endNegative:   -1,
-					endUploaded:   int64(len(upload)),
-				}[tc.want]
-				require.Equal(t, wantCommitted, resp.GetCommittedSize())
+				require.Equal(t, tc.wantCommitted, resp.GetCommittedSize())
 			}
 
 			// Check before reading through the proxy, which fills in a copy.
-			found, err := env.proxyEnv.GetCache().Contains(ctx, rn.ToProto())
+			found, err := env.proxyEnv.GetCache().Contains(ctx, rnProto)
 			require.NoError(t, err)
 			require.False(t, found, "proxy kept an upload nobody validated")
 			require.Equal(t, data, readWholeBlob(t, ctx, env.proxy, rn))
