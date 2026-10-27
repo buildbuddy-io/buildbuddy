@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package api.v1;
 
+option go_package = "github.com/buildbuddy-io/buildbuddy/proto/api/v1";
+
 // Request object for GetFile
 message GetFileRequest {
   // File URI corresponding to the `uri` field in a File message from a build
