@@ -78,8 +78,8 @@ const (
 	unusedPeerConnCheckInterval = 1 * time.Minute
 
 	// Messages attached to upgrade prompts returned by GetCacheProx(y/ies).
-	pluralUpgradePromptMessage   = "One or more of your cache proxies are running an outdated version. The latest public release is %s."
-	singularUpgradePromptMessage = "This cache proxy is running an outdated version. The latest public release is %s."
+	pluralUpgradePromptMessage   = "One or more of your cache proxies are running an outdated version. The newest available version is %s."
+	singularUpgradePromptMessage = "This cache proxy is running an outdated version. The newest available version is %s."
 )
 
 var (
