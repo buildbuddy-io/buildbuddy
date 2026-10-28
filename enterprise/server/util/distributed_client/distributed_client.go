@@ -466,8 +466,8 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	up, _ := prefix.UserPrefixFromContext(ctx)
 
 	var bytesWritten int64
-	var req *dcpb.WriteRequest
 	var writeCloser interfaces.CommittedWriteCloser
+	var req *dcpb.WriteRequest
 	// Keep the defer out of the loop so it doesn't allocate on the stack
 	defer func() {
 		if writeCloser != nil {
