@@ -25,6 +25,7 @@ apt.sources_list(
     ],
     components = [
         "main",
+        "contrib",
     ],
     suites = [
         "trixie",
@@ -38,24 +39,28 @@ apt.sources_list(
         "amd64",
         "arm64",
     ],
-    components = ["main"],
+    components = [
+        "main",
+        "contrib",
+    ],
     suites = ["trixie-security"],
     types = ["deb"],
     uris = ["https://snapshot.debian.org/archive/debian-security/{}".format(snapshot)],
 )
-
 apt.sources_list(
-    architectures = [
-        "amd64",
-        "arm64",
-    ],
-    components = ["deb"],
-    suites = ["stable"],
+    architectures = ["amd64"],
+    suites = ["trixie"],
     types = ["deb"],
-    uris = ["https://nvidia.github.io/libnvidia-container"],
+    uris = ["https://nvidia.github.io/libnvidia-container/stable/deb/amd64"],
     # gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
 )
-
+apt.sources_list(
+    architectures = ["arm64"],
+    suites = ["trixie"],
+    types = ["deb"],
+    uris = ["https://nvidia.github.io/libnvidia-container/stable/deb/arm64"],
+    # gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
+)
 apt.sources_list(
     architectures = [
         "amd64",
@@ -71,7 +76,7 @@ apt.sources_list(
 # Configure Debian debian13 packages
 apt.install(
     dependency_set = "debian13",
-    include_transitive = True,
+    include_transitive = False,
     mergedusr = True,
     package_template = "apt/package.BUILD.tmpl",
     packages = [
@@ -87,34 +92,78 @@ apt.install(
 
         # base-nossl packages
         "libc6",
-
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+apt.install(
+    dependency_set = "debian13",
+    include_transitive = True,
+    mergedusr = True,
+    package_template = "apt/package.BUILD.tmpl",
+    packages = [
         # executor packages
         "tini",
         "e2fsprogs",
-        "fuse",
+        "fuse3",
         "iproute2",
         "conntrack",
         "amazon-ecr-credential-helper",
         "lxcfs",
         "rootlesskit",
-        "runc",
-
-        # nvidia packages
-        # "nvidia_container_toolkit_base",
-        
-        # docker packages
-        # "docker-ce",
-        # "docker-ce-cli",
-        # "docker-ce-rootless-extras",
-        # "containerd.io",
-        # "docker-buildx-plugin",
-        # "docker-compose-plugin",
     ],
     suites = [
-        "",
         "trixie",
         "trixie-updates",
         "trixie-security",
+    ],
+)
+
+DOCKER_VERSION = "5:29.0.1-1~debian.13~trixie"
+
+CONTAINERD_DEB_VERSION = "2.1.5-1~debian.13~trixie"
+
+DOCKER_BUILDX_VERSION = "0.30.0-1~debian.13~trixie"
+
+DOCKER_COMPOSE_VERSION = "2.40.3-1~debian.13~trixie"
+
+# Configure Debian debian13 docker packages
+apt.install(
+    dependency_set = "debian13",
+    include_transitive = True,
+    mergedusr = True,
+    package_template = "apt/package.BUILD.tmpl",
+    packages = [
+        # docker packages
+        "docker-ce (= {})".format(DOCKER_VERSION),
+        "docker-ce-cli (= {})".format(DOCKER_VERSION),
+        "docker-ce-rootless-extras (= {})".format(DOCKER_VERSION),
+        "containerd.io (= {})".format(CONTAINERD_DEB_VERSION),
+        "docker-buildx-plugin (= {})".format(DOCKER_BUILDX_VERSION),
+        "docker-compose-plugin (= {})".format(DOCKER_COMPOSE_VERSION),
+    ],
+    suites = [
+        "trixie",
+    ],
+)
+
+NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION = "1.19.0-1"
+
+# Configure Debian debian13 nvidia_container_toolkit packages
+apt.install(
+    dependency_set = "debian13",
+    include_transitive = True,
+    mergedusr = True,
+    package_template = "apt/package.BUILD.tmpl",
+    packages = [
+        # nvidia packages
+        "nvidia-container-toolkit-base (= {})".format(NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION),
+    ],
+    suites = [
+        "trixie",
     ],
 )
 use_repo(apt, "debian13")
