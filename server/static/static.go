@@ -216,14 +216,15 @@ type FrontendTemplateData struct {
 	ServerID string
 }
 
-func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, version, jsPath, stylePath, appBundleHash string, w http.ResponseWriter) {
+func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, versionTag, jsPath, stylePath, appBundleHash string, w http.ResponseWriter) {
 	nonce, _ := ctx.Value(csp.Nonce{}).(string)
 	apiKeyValueReadbackEnabled := true
 	if authDB := env.GetAuthDB(); authDB != nil {
 		apiKeyValueReadbackEnabled = authDB.GetAPIKeyValueReadbackEnabled()
 	}
 	config := cfgpb.FrontendConfig{
-		Version:                                version,
+		Version:                                versionTag,
+		Commit:                                 version.PublicCommit(),
 		AppBundleHash:                          appBundleHash,
 		ConfiguredIssuers:                      env.GetAuthenticator().PublicIssuers(),
 		DefaultToDenseMode:                     *defaultToDenseMode,

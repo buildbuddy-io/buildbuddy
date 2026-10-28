@@ -224,6 +224,9 @@ message FrontendConfig {
 
   // Whether per-target execution stats are enabled.
   bool single_target_stats_enabled = 74;
+
+  // The commit to link the footer version to. Empty if unknown.
+  string commit = 75;
 }
 
 message Region {
