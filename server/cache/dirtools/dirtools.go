@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -1378,51 +1379,74 @@ func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) erro
 	}
 }
 
-// ValidateTreeNames checks that every entry name in the tree is a single path
-// component, and that each directory's names are unique, as the REAPI spec
-// requires. The tree fetcher builds paths from these names, so a name like ".."
-// or two entries with the same name could otherwise make it write outside its
-// root directory. If caseInsensitive is true, names that differ only in case
-// count as the same name.
-func ValidateTreeNames(tree *repb.Tree, caseInsensitive bool) error {
-	// Reuse the buffer across directories to avoid allocating it for each one.
-	// Growing the buffer and converting names to lowercase can still allocate.
-	var names []string
-	checkDir := func(dir *repb.Directory) error {
-		names = names[:0]
-		for _, f := range dir.GetFiles() {
-			names = append(names, f.GetName())
+// ValidateTreeNames checks that every entry name in the tree under root is a
+// single path component, and that each directory's names are unique, as the
+// REAPI spec requires. The tree fetcher builds paths from these names, so a
+// name like ".." or two entries with the same name could otherwise make it
+// write outside its root directory. dirMap holds the tree's directories, as
+// returned by DirMapFromTree.
+//
+// If caseInsensitive is true, paths that differ only in case are the same path
+// on disk. Directories at such paths are allowed, since creating them just
+// merges their contents into one directory. But a file or symlink can't share
+// its path with any other entry.
+func ValidateTreeNames(root *repb.Directory, dirMap map[digest.Key]*repb.Directory, digestFunction repb.DigestFunction_Value, caseInsensitive bool) error {
+	type treePath struct {
+		// path is the entry's path as the tree spells it.
+		path  string
+		isDir bool
+	}
+	// Entries by path, as the filesystem compares paths.
+	paths := map[string]treePath{}
+	// add records the entry with the given name in the directory at
+	// parentPath, and returns the entry's path and key in paths.
+	add := func(parentPath, parentKey, name string, isDir bool) (string, string, error) {
+		if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') || (filepath.Separator != '/' && strings.ContainsRune(name, filepath.Separator)) {
+			return "", "", status.InvalidArgumentErrorf("input tree directory %q has entry name %q, which isn't a single path component", parentPath, name)
 		}
-		for _, d := range dir.GetDirectories() {
-			names = append(names, d.GetName())
+		p := path.Join(parentPath, name)
+		key := parentKey + "/" + fspath.NewKey(name, caseInsensitive).NormalizedString()
+		prev, ok := paths[key]
+		if !ok {
+			paths[key] = treePath{path: p, isDir: isDir}
+		} else if prev.path == p {
+			return "", "", status.InvalidArgumentErrorf("input tree has more than one entry at path %q", p)
+		} else if !prev.isDir || !isDir {
+			return "", "", status.InvalidArgumentErrorf("input tree paths %q and %q refer to the same file, because the filesystem is case-insensitive", prev.path, p)
+		}
+		return p, key, nil
+	}
+	var walk func(dir *repb.Directory, dirPath, dirKey string) error
+	walk = func(dir *repb.Directory, dirPath, dirKey string) error {
+		for _, f := range dir.GetFiles() {
+			if _, _, err := add(dirPath, dirKey, f.GetName(), false); err != nil {
+				return err
+			}
 		}
 		for _, s := range dir.GetSymlinks() {
-			names = append(names, s.GetName())
-		}
-		for i, name := range names {
-			if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') || (filepath.Separator != '/' && strings.ContainsRune(name, filepath.Separator)) {
-				return status.InvalidArgumentErrorf("input tree entry name %q isn't a single path component", name)
+			if _, _, err := add(dirPath, dirKey, s.GetName(), false); err != nil {
+				return err
 			}
-			names[i] = fspath.NewKey(name, caseInsensitive).NormalizedString()
 		}
-		// Sorting puts duplicate names next to each other.
-		slices.Sort(names)
-		for i := 1; i < len(names); i++ {
-			if names[i] == names[i-1] {
-				return status.InvalidArgumentErrorf("input tree has more than one entry named %q in a directory", names[i])
+		for _, d := range dir.GetDirectories() {
+			childPath, childKey, err := add(dirPath, dirKey, d.GetName(), true)
+			if err != nil {
+				return err
+			}
+			if digest.IsEmptyHash(d.GetDigest(), digestFunction) && d.GetDigest().GetSizeBytes() == 0 {
+				continue
+			}
+			child, ok := dirMap[digest.NewKey(d.GetDigest())]
+			if !ok {
+				return digest.MissingDigestError(d.GetDigest())
+			}
+			if err := walk(child, childPath, childKey); err != nil {
+				return err
 			}
 		}
 		return nil
 	}
-	if err := checkDir(tree.GetRoot()); err != nil {
-		return err
-	}
-	for _, dir := range tree.GetChildren() {
-		if err := checkDir(dir); err != nil {
-			return err
-		}
-	}
-	return nil
+	return walk(root, ".", "")
 }
 
 func DirMapFromTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
@@ -1719,11 +1743,11 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 
 	f.fetchStartTime = time.Now()
 
-	if err := ValidateTreeNames(f.tree, f.opts.CaseInsensitive); err != nil {
-		return nil, err
-	}
 	rootDirectoryDigest, dirMap, err := DirMapFromTree(f.tree, f.digestFunction)
 	if err != nil {
+		return nil, err
+	}
+	if err := ValidateTreeNames(f.tree.GetRoot(), dirMap, f.digestFunction, f.opts.CaseInsensitive); err != nil {
 		return nil, err
 	}
 
