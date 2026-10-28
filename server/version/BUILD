@@ -50,7 +50,7 @@ genrule(
     cmd_bash = select({
         "//:fastbuild": "touch $@",
         "//conditions:default": """
-            release=$$(grep ^STABLE_LATEST_PUBLIC_RELEASE bazel-out/stable-status.txt 2>/dev/null | cut -d' ' -f2); \
+            release=$$(grep ^STABLE_LATEST_PUBLIC_RELEASE bazel-out/stable-status.txt 2>/dev/null | cut -d' ' -f2 || true); \
             printf '%s' $$release > $@;
         """,
     }),
