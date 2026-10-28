@@ -5,12 +5,14 @@ import capabilities from "../capabilities/capabilities";
 const RELEASE_VERSION_REGEX = /^v\d+\.\d+\.\d+$/;
 // Non-release builds report a label like ci-20261026T163202Z-<sha7>.
 const BUILD_VERSION_REGEX = /^(?:ci|local)-\d{8}T\d{6}Z-[0-9a-f]{7,40}$/;
+// The commit can be a placeholder like "unknown" or "dev", which has no page.
+const COMMIT_REGEX = /^[0-9a-f]{7,40}$/;
 
 function versionLink(version: string, commit: string): string | undefined {
   if (RELEASE_VERSION_REGEX.test(version)) {
     return `https://github.com/buildbuddy-io/buildbuddy/releases/tag/${version}`;
   }
-  if (BUILD_VERSION_REGEX.test(version) && commit) {
+  if (BUILD_VERSION_REGEX.test(version) && COMMIT_REGEX.test(commit)) {
     return `https://github.com/buildbuddy-io/buildbuddy/commit/${commit}`;
   }
   return undefined;

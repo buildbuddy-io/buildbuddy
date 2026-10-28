@@ -225,7 +225,8 @@ message FrontendConfig {
   // Whether per-target execution stats are enabled.
   bool single_target_stats_enabled = 74;
 
-  // The commit to link the footer version to. Empty if unknown.
+  // The buildbuddy commit to link the footer version to. May be empty or a
+  // placeholder like "unknown" if the build wasn't stamped with one.
   string commit = 75;
 }
 
