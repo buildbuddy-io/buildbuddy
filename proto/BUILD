@@ -4,7 +4,33 @@ load(":defs.bzl", "go_proto_library", "ts_proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
+# Keep one proto_library per file. By default, Go bindings remain manual
+# because they use custom import paths and vtprotobuf modes. Subpackages can
+# opt into Go generation. TypeScript bindings use our protobufjs wrapper and
+# remain explicitly maintained.
+# gazelle:proto file
+# gazelle:go_generate_proto false
 # gazelle:ts disable
+#
+# External proto imports are not indexed from this workspace.
+# gazelle:resolve proto google/api/annotations.proto @googleapis//google/api:annotations_proto
+# gazelle:resolve proto google/api/client.proto @googleapis//google/api:client_proto
+# gazelle:resolve proto google/api/field_behavior.proto @googleapis//google/api:field_behavior_proto
+# gazelle:resolve proto google/bytestream/bytestream.proto @googleapis//google/bytestream:bytestream_proto
+# gazelle:resolve proto google/longrunning/operations.proto @googleapis//google/longrunning:operations_proto
+# gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto
+# gazelle:resolve proto kythe/proto/analysis.proto @io_kythe//kythe/proto:analysis_proto
+# gazelle:resolve proto kythe/proto/common.proto @io_kythe//kythe/proto:common_proto
+# gazelle:resolve proto kythe/proto/explore.proto @io_kythe//kythe/proto:explore_proto
+# gazelle:resolve proto kythe/proto/filetree.proto @io_kythe//kythe/proto:filetree_proto
+# gazelle:resolve proto kythe/proto/graph.proto @io_kythe//kythe/proto:graph_proto
+# gazelle:resolve proto kythe/proto/identifier.proto @io_kythe//kythe/proto:identifier_proto
+# gazelle:resolve proto kythe/proto/link.proto @io_kythe//kythe/proto:link_proto
+# gazelle:resolve proto kythe/proto/status_service.proto @io_kythe//kythe/proto:status_service_proto
+# gazelle:resolve proto kythe/proto/storage.proto @io_kythe//kythe/proto:storage_proto
+# gazelle:resolve proto kythe/proto/xref.proto @io_kythe//kythe/proto:xref_proto
+# gazelle:resolve proto github.com/planetscale/vtprotobuf/vtproto/ext.proto @com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto
+# gazelle:resolve proto io/prometheus/client/metrics.proto @com_github_prometheus_client_model//io/prometheus/client:io_prometheus_client_proto
 
 go_proto_compiler(
     name = "vtprotobuf_view_compiler",
@@ -524,7 +550,6 @@ proto_library(
         ":context_proto",
         ":firecracker_proto",
         ":invocation_status_proto",
-        ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
         "@googleapis//google/rpc:status_proto",
     ],
@@ -733,7 +758,6 @@ proto_library(
         ":notification_proto",
         ":quota_proto",
         ":repo_proto",
-        ":resource_proto",
         ":runner_proto",
         ":scheduler_proto",
         ":search_proto",
@@ -791,11 +815,9 @@ proto_library(
     srcs = ["remote_asset.proto"],
     deps = [
         ":remote_execution_proto",
-        ":semver_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/api:annotations_proto",
-        "@googleapis//google/longrunning:operations_proto",
         "@googleapis//google/rpc:status_proto",
     ],
 )
@@ -805,9 +827,7 @@ proto_library(
     srcs = ["remote_execution_log.proto"],
     deps = [
         ":remote_execution_proto",
-        "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
-        "@googleapis//google/api:annotations_proto",
         "@googleapis//google/bytestream:bytestream_proto",
         "@googleapis//google/longrunning:operations_proto",
         "@googleapis//google/rpc:status_proto",
@@ -921,7 +941,6 @@ proto_library(
     deps = [
         ":context_proto",
         ":git_proto",
-        ":resource_proto",
     ],
 )
 

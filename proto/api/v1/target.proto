@@ -4,6 +4,8 @@ package api.v1;
 
 import "proto/api/v1/common.proto";
 
+option go_package = "github.com/buildbuddy-io/buildbuddy/proto/api/v1";
+
 // Request passed into GetTarget
 message GetTargetRequest {
   // The selector defining which target(s) to retrieve.
