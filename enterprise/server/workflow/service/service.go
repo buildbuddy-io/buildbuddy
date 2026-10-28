@@ -60,6 +60,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/robfig/cron/v3"
 	"golang.org/x/oauth2"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
@@ -544,7 +545,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			// the BuildBuddy org that owns the workflow.
 			isTrusted := true
 			shouldRetry := !req.GetDisableRetry()
-			executionID, err := ws.executeWorkflowAction(executionCtx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, req.GetEnv(), shouldRetry)
+			executionID, err := ws.executeWorkflowAction(executionCtx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, req.GetEnv(), req.GetRemoteHeaders(), shouldRetry)
 			if err != nil {
 				statusErr = status.WrapErrorf(err, "failed to execute workflow action %q", action.Name)
 				log.CtxWarning(executionCtx, statusErr.Error())
@@ -1645,7 +1646,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 			// Webhook triggered workflows should always be retried, because they
 			// don't have a client to retry for them
 			shouldRetry := true
-			if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, shouldRetry); err != nil {
+			if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, nil /*remoteHeaders*/, shouldRetry); err != nil {
 				log.CtxErrorf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
 			}
 		})
@@ -1749,7 +1750,7 @@ func (ws *workflowService) checkWorkflowGroupAllowed(ctx context.Context) error 
 }
 
 // Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
-func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, shouldRetry bool) (string, error) {
+func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, remoteHeaders []string, shouldRetry bool) (string, error) {
 	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	if err := ws.checkWorkflowGroupAllowed(ctx); err != nil {
 		errorMessage := fmt.Sprintf("Failed to start workflow action %q: %s", action.Name, status.Message(err))
@@ -1764,7 +1765,7 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 	r := retry.New(ctx, opts)
 	var lastErr error
 	for r.Next() {
-		executionID, err := ws.attemptExecuteWorkflowAction(ctx, key, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, shouldRetry)
+		executionID, err := ws.attemptExecuteWorkflowAction(ctx, key, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, remoteHeaders, shouldRetry)
 		if err == ApprovalRequired {
 			log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
 			if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
@@ -1803,7 +1804,7 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 	return "", lastErr
 }
 
-func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, retry bool) (string, error) {
+func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, remoteHeaders []string, retry bool) (string, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env.GetAuthenticator())
 	if err != nil {
 		return "", err
@@ -1822,14 +1823,29 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 		return "", err
 	}
 
+	var envOverrides []string
 	if isTrusted {
 		// TODO(Maggie): Remove REPO_TOKEN once the leaser fetches the token.
-		headerEnv := []*repb.Command_EnvironmentVariable{
-			{Name: ci_runner_env.BuildBuddyAPIKeyEnvVarName, Value: key.Value},
-			{Name: "REPO_USER", Value: wf.Username},
-			{Name: "REPO_TOKEN", Value: wf.AccessToken},
+		envOverrides = append(envOverrides,
+			ci_runner_env.BuildBuddyAPIKeyEnvVarName+"="+key.Value,
+			"REPO_USER="+wf.Username,
+			"REPO_TOKEN="+wf.AccessToken,
+		)
+	}
+	for _, h := range remoteHeaders {
+		headerKey, headerVal, ok := strings.Cut(h, "=")
+		if !ok {
+			return "", status.InvalidArgumentError("malformed remote header: key-value pairs should be separated by '='")
 		}
-		execCtx = withEnvOverrides(execCtx, headerEnv)
+		// Merge env overrides with credentials so neither replaces the other.
+		if headerKey == platform.OverrideHeaderPrefix+platform.EnvOverridesPropertyName {
+			envOverrides = append(envOverrides, headerVal)
+			continue
+		}
+		execCtx = metadata.AppendToOutgoingContext(execCtx, headerKey, headerVal)
+	}
+	if len(envOverrides) > 0 {
+		execCtx = platform.WithRemoteHeaderOverride(execCtx, platform.EnvOverridesPropertyName, strings.Join(envOverrides, ","))
 	}
 	execCtx, cancelRPC := context.WithCancel(execCtx)
 	// Note that we use this to cancel the operation update stream from the Execute RPC, not the execution itself.
@@ -2014,15 +2030,6 @@ func parseRepositoryWorkflowID(id string) (groupID string, repoURL *gitutil.Repo
 		return "", nil, status.InvalidArgumentErrorf("invalid repository ID: failed to parse repo URL: %s", err)
 	}
 	return groupID, repoURL, nil
-}
-
-func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariable) context.Context {
-	assignments := make([]string, 0, len(env))
-	for _, e := range env {
-		assignments = append(assignments, e.Name+"="+e.Value)
-	}
-	return platform.WithRemoteHeaderOverride(
-		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
 }
 
 func (ws *workflowService) startScheduleScanner() {
@@ -2281,7 +2288,7 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if err != nil {
 		return err
 	}
-	if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, true /*isTrusted*/, action, invocationUUID.String(), nil /*extraCIRunnerArgs*/, nil /*env*/, true /*shouldRetry*/); err != nil {
+	if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, true /*isTrusted*/, action, invocationUUID.String(), nil /*extraCIRunnerArgs*/, nil /*env*/, nil /*remoteHeaders*/, true /*shouldRetry*/); err != nil {
 		return status.WrapErrorf(err, "failed to start scheduled workflow action %q", scheduled.ActionName)
 	}
 	return ws.advanceScheduledWorkflow(ctx, scheduled)
