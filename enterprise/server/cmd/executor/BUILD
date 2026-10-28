@@ -1,7 +1,6 @@
-load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("@rules_distroless//distroless:defs.bzl", "flatten")
+load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_distroless//distroless:defs.bzl", "flatten")
 load("@rules_img//img:image.bzl", "image_manifest")
 load("@rules_img//img:layer.bzl", "image_layer", "layer_from_tar")
 load("@rules_img//img:load.bzl", "image_load")
@@ -233,27 +232,26 @@ image_layer(
             }[arch],
         ],
         tars = [
-        # debian packages
-        "@debian13//tini/%s" % arch,
-        "@debian13//e2fsprogs/%s" % arch,
-        "@debian13//fuse/%s" % arch,
-        "@debian13//iproute2/%s" % arch,
-        "@debian13//conntrack/%s" % arch,
-        "@debian13//amazon-ecr-credential-helper/%s" % arch,
-        "@debian13//lxcfs/%s" % arch,
-        "@debian13//rootlesskit/%s" % arch,
-        "@debian13//runc/%s" % arch,
+            # debian packages
+            "@debian13//tini/%s" % arch,
+            "@debian13//e2fsprogs/%s" % arch,
+            "@debian13//fuse3/%s" % arch,
+            "@debian13//iproute2/%s" % arch,
+            "@debian13//conntrack/%s" % arch,
+            "@debian13//amazon-ecr-credential-helper/%s" % arch,
+            "@debian13//lxcfs/%s" % arch,
+            "@debian13//rootlesskit/%s" % arch,
 
-        # nvidia packages
-        "@debian13//nvidia_container_toolkit_base/%s" % arch,
-        
-        # docker packages
-        "@debian13//docker-ce/%s" % arch,
-        "@debian13//docker-ce-cli/%s" % arch,
-        "@debian13//docker-ce-rootless-extras/%s" % arch,
-        "@debian13//containerd.io/%s" % arch,
-        "@debian13//docker-buildx-plugin/%s" % arch,
-        "@debian13//docker-compose-plugin/%s" % arch,
+            # nvidia packages
+            "@debian13//nvidia-container-toolkit-base/%s" % arch,
+
+            # docker packages
+            "@debian13//docker-ce/%s" % arch,
+            "@debian13//docker-ce-cli/%s" % arch,
+            "@debian13//docker-ce-rootless-extras/%s" % arch,
+            "@debian13//containerd.io/%s" % arch,
+            "@debian13//docker-buildx-plugin/%s" % arch,
+            "@debian13//docker-compose-plugin/%s" % arch,
         ],
     )
     for arch in [
@@ -301,6 +299,13 @@ image_layer(
             "/root/.docker/config.json": "//enterprise/server/cmd/executor/docker_credential_gcr_config:config.json",
         },
     }),
+    annotations = {
+        "org.opencontainers.image.title": "docker-credential-gcr",
+        "org.opencontainers.image.description": (
+            "docker-credential-gcr binary and associated configuration."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
     tags = ["manual"],
 )
 
@@ -319,6 +324,13 @@ image_layer(
         },
         "//conditions:default": {},
     }),
+    annotations = {
+        "org.opencontainers.image.title": "Patch for containerd",
+        "org.opencontainers.image.description": (
+            "Files to patch debian's standard containerd to remove known vulnerabilities in the go binaries."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
     tags = ["manual"],
 )
 
@@ -335,6 +347,13 @@ image_layer(
         },
         "//conditions:default": {},
     }),
+    annotations = {
+        "org.opencontainers.image.title": "Patch for rootlesskit",
+        "org.opencontainers.image.description": (
+            "Files to patch debian's standard rootlesskit to remove known vulnerabilities in the go binaries."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
     tags = ["manual"],
 )
 
@@ -349,6 +368,13 @@ image_layer(
         },
         "//conditions:default": {},
     }),
+    annotations = {
+        "org.opencontainers.image.title": "Patch for runc",
+        "org.opencontainers.image.description": (
+            "Files to patch debian's standard runc to remove known vulnerabilities in the go binaries."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
     tags = ["manual"],
 )
 
@@ -367,12 +393,26 @@ image_layer(
         },
         "//conditions:default": {},
     }),
+    annotations = {
+        "org.opencontainers.image.title": "Firecracker",
+        "org.opencontainers.image.description": (
+            "Firecracker binaries."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
     tags = ["manual"],
 )
 
 layer_from_tar(
     name = "podman_static_layer",
     src = "//enterprise/server/remote_execution/containers/podman:podman-static.tar.gz",
+    annotations = {
+        "org.opencontainers.image.title": "Podman",
+        "org.opencontainers.image.description": (
+            "Statically-built podman."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
     optimize = True,
     tags = ["manual"],
 )
@@ -390,7 +430,7 @@ image_manifest(
     },
     base = "//images/distroless/base-nossl:manifest",
     entrypoint = [
-        "/tini",
+        "/usr/bin/tini",
         "--",
         "/%s/%s" % (
             EXECUTOR_PACKAGE_ROOT,
@@ -398,7 +438,7 @@ image_manifest(
         ),
     ],
     layers = [
-        # ":apt_layer_amd64",
+        ":apt_layer_amd64",
         ":docker_credential_gcr_layer",
         ":containerd_patch_layer",
         ":runc_patch_layer",
@@ -411,7 +451,6 @@ image_manifest(
     ],
     tags = ["manual"],
 )
-
 
 pkg_tar(
     name = "config_files_tar",
@@ -485,7 +524,7 @@ container_image(
     }),
     base = ":executor_go_image",
     entrypoint = [
-        "/tini",
+        "/usr/bin/tini",
         "--",
         "/app/enterprise/server/cmd/executor/executor",
     ],
