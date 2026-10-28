@@ -477,10 +477,16 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	var bytesWritten int64
 	var writeCloser interfaces.CommittedWriteCloser
 	var req *dcpb.WriteRequest
+	// Keep the defer out of the loop so it doesn't allocate on the stack
+	defer func() {
+		if writeCloser != nil {
+			writeCloser.Close()
+		}
+		req.ReturnToVTPool() // safe when req is nil
+	}()
 	for {
 		if req == nil {
 			req = dcpb.WriteRequestFromVTPool()
-			defer req.ReturnToVTPool()
 		} else {
 			// VT unmarshal doesn't reset, so we need to reset manually.
 			req.ResetVT()
@@ -516,7 +522,6 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
 				return err
 			}
-			defer wc.Close()
 			writeCloser = wc
 		}
 		n, err := writeCloser.Write(req.GetData())
