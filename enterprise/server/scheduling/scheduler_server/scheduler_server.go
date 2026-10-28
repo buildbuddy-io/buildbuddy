@@ -2845,6 +2845,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 			execution_experiments.RecordInputFetchMetadata.GetProto(ctx, expOptions...),
 			execution_experiments.WorkspacePoolEnabled.GetProto(ctx, expOptions...),
 			execution_experiments.SpliceWithoutValidation.GetProto(ctx, expOptions...),
+			execution_experiments.DefaultImageOverride.GetProto(ctx, expOptions...),
 		}
 	}
 
