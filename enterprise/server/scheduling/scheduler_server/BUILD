@@ -43,6 +43,7 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/upgrade",
+        "//server/version",
         "//third_party/singleflight",
         "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_go_redis_redis_v8//:redis",
@@ -103,6 +104,5 @@ go_test(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/durationpb",
-        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

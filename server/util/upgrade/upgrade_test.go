@@ -15,7 +15,7 @@ func testDetector() *Detector {
 		uppb.Prompt_LOW:    {MaxLag: semver.MustParse("0.10.0")},
 		uppb.Prompt_MEDIUM: {MaxLag: semver.MustParse("0.20.0")},
 		uppb.Prompt_HIGH:   {MaxLag: semver.MustParse("0.40.0")},
-	})
+	}, semver.MustParse("v2.153.0"))
 }
 
 func TestUrgency_MaxLag(t *testing.T) {
@@ -54,7 +54,7 @@ func TestUrgency_MajorVersionAllowances(t *testing.T) {
 		uppb.Prompt_MEDIUM:   {MaxLag: semver.MustParse("0.6.0")},
 		uppb.Prompt_HIGH:     {MaxLag: semver.MustParse("1.0.0")},
 		uppb.Prompt_CRITICAL: {MaxLag: semver.MustParse("2.0.0")},
-	})
+	}, nil)
 
 	newest := semver.MustParse("v3.10.0")
 	for _, tc := range []struct {
@@ -81,7 +81,7 @@ func TestUrgency_MinVersion(t *testing.T) {
 		uppb.Prompt_MEDIUM:   {MaxLag: semver.MustParse("0.20.0")},
 		uppb.Prompt_HIGH:     {MaxLag: semver.MustParse("0.40.0")},
 		uppb.Prompt_CRITICAL: {MinVersion: semver.MustParse("2.150.0")},
-	})
+	}, nil)
 
 	newest := semver.MustParse("v2.153.0")
 	// Below the critical minimum: CRITICAL even though the lag alone
@@ -97,11 +97,11 @@ func TestUrgency_NoTriggers(t *testing.T) {
 	// A detector with no triggers (or triggers with no criteria) never
 	// prompts.
 	for _, d := range []*Detector{
-		NewDetector(nil),
+		NewDetector(nil, nil),
 		NewDetector(map[uppb.Prompt_Urgency]Trigger{
 			uppb.Prompt_LOW:      {},
 			uppb.Prompt_CRITICAL: {},
-		}),
+		}, nil),
 	} {
 		newest := semver.MustParse("v3.0.0")
 		assert.Equal(t, uppb.Prompt_UNKNOWN_URGENCY, d.urgency(newest, semver.MustParse("v1.0.0")))
@@ -110,35 +110,33 @@ func TestUrgency_NoTriggers(t *testing.T) {
 
 func TestDetect(t *testing.T) {
 	d := testDetector()
-	message := "please upgrade"
-	newest := semver.MustParse("v2.153.0")
+	message := "please upgrade to %s"
 
 	// The most-outdated version sets the urgency; unparseable versions are
-	// skipped.
-	prompt := d.Detect(newest, []string{"v2.153.0", "unknown", "v2.132.0"}, message)
+	// skipped. The message is formatted with the newest version.
+	prompt := d.Detect([]string{"v2.153.0", "unknown", "v2.132.0"}, message)
 	require.NotNil(t, prompt)
 	assert.Equal(t, uppb.Prompt_MEDIUM, prompt.GetUrgency())
-	assert.Equal(t, message, prompt.GetMessage())
+	assert.Equal(t, "please upgrade to 2.153.0", prompt.GetMessage())
 
 	// Everything within the allowances: no prompt.
-	assert.Nil(t, d.Detect(newest, []string{"v2.153.0", "v2.152.0"}, message))
+	assert.Nil(t, d.Detect([]string{"v2.153.0", "v2.152.0"}, message))
 
 	// Only unparseable versions: no prompt.
-	assert.Nil(t, d.Detect(newest, []string{"unknown"}, message))
+	assert.Nil(t, d.Detect([]string{"unknown"}, message))
 
-	// No newest version known: no prompt.
-	assert.Nil(t, d.Detect(nil, []string{"v2.100.0"}, message))
+	// No versions: no prompt.
+	assert.Nil(t, d.Detect(nil, message))
 }
 
-func TestParseNewestVersion(t *testing.T) {
-	v, err := ParseNewestVersion("")
-	require.NoError(t, err)
-	assert.Nil(t, v)
+func TestDetect_NilNewest(t *testing.T) {
+	d := NewDetector(map[uppb.Prompt_Urgency]Trigger{
+		uppb.Prompt_LOW: {MinVersion: semver.MustParse("2.0.0")},
+	}, nil)
+	assert.Nil(t, d.Detect([]string{"v1.0.0"}, "upgrade to %s"))
+}
 
-	v, err = ParseNewestVersion("v2.41.0")
-	require.NoError(t, err)
-	assert.Equal(t, "2.41.0", v.String())
-
-	_, err = ParseNewestVersion("ci-20261026T163202Z-abc1234")
-	require.Error(t, err)
+func TestDetect_NilDetector(t *testing.T) {
+	var d *Detector
+	assert.Nil(t, d.Detect([]string{"v1.0.0"}, "upgrade to %s"))
 }
