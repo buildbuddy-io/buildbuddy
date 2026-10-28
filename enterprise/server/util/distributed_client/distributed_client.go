@@ -70,7 +70,7 @@ type Proxy struct {
 	log            log.Logger
 	writeRefLogger log.Logger
 	bufPool        *bytebufferpool.VariableSizePool
-	mu             *sync.Mutex
+	mu             *sync.RWMutex
 	server         *grpc.Server
 	// listener is the server's listener. Shutdown closes it, because the
 	// server only closes it if Serve has started.
@@ -92,7 +92,7 @@ func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
 		writeRefLogger: logger.EveryN(100),
 		bufPool:        bytebufferpool.VariableSize(*config.ReadBufSizeBytes),
 		listenAddr:     listenAddr,
-		mu:             &sync.Mutex{},
+		mu:             &sync.RWMutex{},
 		// server goes here
 		clients: make(map[string]*grpc_client.ClientConnPool),
 	}
@@ -196,9 +196,10 @@ func (c *Proxy) CloseInactiveClients(stillActive set.View[string]) {
 }
 
 func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCacheClient, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if client, ok := c.clients[peer]; ok {
+	c.mu.RLock()
+	client, ok := c.clients[peer]
+	c.mu.Unlock()
+	if ok {
 		if err := client.Check(ctx); err != nil {
 			return nil, status.UnavailableErrorf("no connections to peer %q are ready: %v", peer, err)
 		}
@@ -211,6 +212,14 @@ func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCac
 		resolverPrefix = "kube:///"
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if conn, ok := c.clients[peer]; ok {
+		if err := conn.Check(ctx); err != nil {
+			return nil, status.UnavailableErrorf("no connections to peer %q are ready: %v", peer, err)
+		}
+		return dcpb.NewDistributedCacheClient(conn), nil
+	}
 	// Disable dynamic windows. Bursty traffic can undersize the window and
 	// cause flow control to kick in prematurely.
 	conn, err := grpc_client.DialInternalWithPoolSize(c.env, resolverPrefix+peer,
