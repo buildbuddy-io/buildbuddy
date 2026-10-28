@@ -47,9 +47,9 @@ func Tag() string {
 	return unknownValue
 }
 
-// LatestPublicRelease returns the latest public release (vX.Y.Z) that this
-// binary's code contains. Builds that don't stamp it separately are public
-// builds, whose version tag is that release.
+// LatestPublicRelease returns the latest public release (vX.Y.Z) as of this
+// build. If the build didn't stamp it, it falls back to the version tag, which
+// was the release for every build before STABLE_LATEST_PUBLIC_RELEASE existed.
 func LatestPublicRelease() string {
 	return selectLatestPublicRelease(latestPublicReleaseTag, Tag())
 }
