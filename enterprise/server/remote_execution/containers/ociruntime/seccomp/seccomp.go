@@ -68,9 +68,6 @@ func New(additionalSyscalls, capabilities []string, disableNewUserNS bool) (*spe
 		// this grants new capabilities within the user namespace.
 		for _, name := range []string{"clone", "unshare"} {
 			argIndex := uint(0)
-			if name == "clone" && runtime.GOARCH == "s390x" {
-				argIndex = 1
-			}
 			profile.Syscalls = append(profile.Syscalls, specs.LinuxSyscall{
 				Names:  []string{name},
 				Action: specs.ActAllow,
