@@ -20,39 +20,58 @@ Raspberry Pi (they are cheap).
 We install podman from https://github.com/buildbuddy-io/podman-static
 which is a fork of https://github.com/mgoltzsche/podman-static.
 
-The only reason for this fork is to ensure the integrity of the built
-binaries. The fork includes a single patch that we maintain, which just
-disables some steps in the release workflow that we don't need.
+The main reason for this fork is to ensure the integrity of the built
+binaries. Our main change is to the release workflow
+(`.github/workflows/workflow.yml`), adapting it for our releases (e.g.
+disabling steps that we don't need). The fork may also carry a small number of other commits, such as fixes that aren't
+upstream yet.
+
+We update the fork by merging upstream release tags into master, and never
+force-push master. To see our fork-specific changes relative to an upstream
+release, run `git diff vX.Y.Z origin/master` or
+`git log --no-merges vX.Y.Z..origin/master`. To see how far behind upstream
+we are, run `git rev-list --count origin/master..upstream/master` or check
+the fork banner on GitHub.
 
 To build a new version of podman from the fork:
 
 ```shell
-# Clone the fork and ensure you have the master branch checked out
+# Clone the fork and fetch upstream
 git clone git@github.com:buildbuddy-io/podman-static.git
 cd podman-static
-git checkout master
-# Add upstream as a remote and fetch
 git remote add upstream https://github.com/mgoltzsche/podman-static
 git fetch upstream --tags
-# Get the commit SHA of our custom patch
-PATCH_COMMIT=$(git rev-parse HEAD)
-# Temporarily undo the patch
-git reset --hard HEAD~1
-# Update the master branch to point to the podman version you want
+# Merge the upstream release tag into a branch off master
 VERSION=vX.Y.Z
-git reset --hard "$VERSION"
-# Reapply our patch, resolving conflicts if needed
-git cherry-pick "$PATCH_COMMIT"
-# You should also look at the release workflow and check whether
-# are any new steps that need to be disabled, and modify the patch if
-# needed. If you do this, then run:
-git add . && git commit --amend
-# Push the tag, which should trigger a release
-git tag "buildbuddy-$VERSION"
+git checkout -b "merge-$VERSION" origin/master
+git merge "$VERSION"
+# Resolve conflicts if needed. These are usually only in
+# .github/workflows/workflow.yml, where our release changes live. Also
+# check whether the workflow has any new steps that need to be disabled.
+git push origin "merge-$VERSION"
+```
+
+Then open a PR against master and merge it with **"Create a merge commit"**.
+Don't squash or rebase: that drops upstream's history and breaks the
+ahead/behind comparison with upstream.
+
+After the PR is merged, tag master to trigger a release. The workflow builds
+the signed tarballs and creates the GitHub release.
+
+```shell
+git fetch origin
+git tag "buildbuddy-$VERSION" origin/master
 git push origin "buildbuddy-$VERSION"
 # Monitor the release at https://github.com/buildbuddy-io/podman-static/actions
-# If successful, update the master branch
-git push origin master --force
+```
+
+Finally, update `PODMAN_VERSION`, `PODMAN_STATIC_SHA256_AMD64` and
+`PODMAN_STATIC_SHA256_ARM64` in `deps.bzl`. To get the checksums:
+
+```shell
+for ARCH in amd64 arm64; do
+  curl -fsSL "https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-$VERSION/podman-linux-$ARCH.tar.gz" | sha256sum
+done
 ```
 
 ## Overwriting binaries
