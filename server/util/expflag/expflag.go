@@ -22,9 +22,7 @@
 //     BuildBuddy manages should set it.
 //   - Experiments are only available per-task. Global/executor-level
 //     experiments are not supported.
-//   - All expflags must be defined in the execution_experiments package, and
-//     must be added to the list in modifyTaskForExperiments in the
-//     scheduler_server package.
+//   - All expflags must be defined in the execution_experiments package.
 //
 // See the comment in the execution_experiments package for more details.
 //
