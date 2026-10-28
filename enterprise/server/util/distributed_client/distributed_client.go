@@ -466,15 +466,22 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	up, _ := prefix.UserPrefixFromContext(ctx)
 
 	var bytesWritten int64
-	req := dcpb.WriteRequestFromVTPool()
+	var req *dcpb.WriteRequest
 	var writeCloser interfaces.CommittedWriteCloser
+	// Keep the defer out of the loop so it doesn't allocate on the stack
 	defer func() {
 		if writeCloser != nil {
 			writeCloser.Close()
 		}
-		req.ReturnToVTPool()
+		req.ReturnToVTPool() // safe when req is nil
 	}()
 	for {
+		if req == nil {
+			req = dcpb.WriteRequestFromVTPool()
+		} else {
+			// VT unmarshal doesn't reset, so we need to reset manually.
+			req.ResetVT()
+		}
 		err := stream.RecvMsg(req)
 		if err == io.EOF {
 			break
@@ -520,8 +527,6 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
 			return c.finishWrite(ctx, stream, req, bytesWritten)
 		}
-		// VT unmarshal doesn't reset, so we need to reset manually.
-		req.ResetVT()
 	}
 	return nil
 }
