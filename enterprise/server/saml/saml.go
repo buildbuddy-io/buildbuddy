@@ -188,7 +188,9 @@ func (t CookieRequestTracker) GetTrackedRequest(r *http.Request, index string) (
 // of cookies to a different domain value, and that selects the session codec
 // per request based on the auth.saml.per_org_session_audience flag.
 type cookieSessionProvider struct {
-	oldDomain   string
+	oldDomain string
+	// call provider() to retrieve the appropriate provider instead of
+	// accessing d directly.
 	d           samlsp.CookieSessionProvider
 	globalCodec samlsp.SessionCodec
 	perOrgCodec samlsp.SessionCodec
