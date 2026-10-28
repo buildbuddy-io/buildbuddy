@@ -1,8 +1,6 @@
 package redis_client
 
 import (
-	"context"
-
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -134,9 +132,5 @@ func RegisterDefault(env *real_environment.RealEnv) error {
 		return status.InvalidArgumentErrorf("Invalid redis config: %s", err)
 	}
 	env.SetDefaultRedisClient(rdb)
-
-	rbuf := redisutil.NewCommandBuffer(rdb)
-	rbuf.StartPeriodicFlush(context.Background())
-	env.GetHealthChecker().RegisterShutdownFunction(rbuf.StopPeriodicFlush)
 	return nil
 }
