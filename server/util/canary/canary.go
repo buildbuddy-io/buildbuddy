@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -17,38 +18,44 @@ type CancelFunc func()
 type CanaryFunc func(timeTaken time.Duration)
 
 // StartWithLateFn starts a canary that will call lateFn every expectedDuration
-// period (if not canceled) and once when canceled.
+// period (if not canceled) and doneFn once when canceled, if more than
+// expectedDuration has elapsed by then.
+//
+// lateFn and doneFn two may overlap if the canary is canceled while lateFn is
+// running. Only the first call to the CancelFunc has any effect.
 func StartWithLateFn(expectedDuration time.Duration, lateFn CanaryFunc, doneFn CanaryFunc) CancelFunc {
 	if !*enableCanaries {
 		return func() {}
 	}
 
-	done := make(chan struct{})
-	canceled := false
-	cancel := func() {
-		if !canceled {
-			close(done)
-			canceled = true
+	start := time.Now()
+	// The current timer, or nil once canceled.
+	var timer atomic.Pointer[time.Timer]
+	var fire func()
+	fire = func() {
+		t := timer.Load()
+		if t == nil {
+			return
+		}
+		lateFn(time.Since(start))
+		// Setup the next timer, unless cancel was already called
+		next := time.AfterFunc(expectedDuration, fire)
+		if !timer.CompareAndSwap(t, next) {
+			next.Stop()
 		}
 	}
+	timer.Store(time.AfterFunc(expectedDuration, fire))
 
-	start := time.Now()
-	go func() {
-		t := time.NewTicker(expectedDuration)
-		defer t.Stop()
-		for {
-			select {
-			case <-done:
-				if time.Since(start) > expectedDuration {
-					doneFn(time.Since(start))
-				}
-				return
-			case <-t.C:
-				lateFn(time.Since(start))
-			}
+	return func() {
+		t := timer.Swap(nil) // lets fire know we cancelled.
+		if t == nil {
+			return // already canceled
 		}
-	}()
-	return cancel
+		t.Stop()
+		if elapsed := time.Since(start); elapsed > expectedDuration {
+			doneFn(elapsed)
+		}
+	}
 }
 
 // Start starts a canary that will warn about the blocked function after
