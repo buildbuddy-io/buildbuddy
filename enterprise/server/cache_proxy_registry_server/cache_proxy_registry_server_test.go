@@ -49,7 +49,7 @@ func newServerWithRedis(t *testing.T, redisTarget string, users map[string]inter
 	})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
 
-	s, err := NewCacheProxyRegistryServer(env, testDetector())
+	s, err := NewCacheProxyRegistryServer(env, testDetector(nil))
 	require.NoError(t, err)
 	env.SetCacheProxyRegistryService(s)
 	return s, env
@@ -57,12 +57,12 @@ func newServerWithRedis(t *testing.T, redisTarget string, users map[string]inter
 
 // testDetector prompts an upgrade when a proxy is more than 10 minor
 // versions behind the newest version, escalating at 20 and 40.
-func testDetector() *upgrade.Detector {
+func testDetector(newest *semver.Version) *upgrade.Detector {
 	return upgrade.NewDetector(map[uppb.Prompt_Urgency]upgrade.Trigger{
 		uppb.Prompt_LOW:    {MaxLag: semver.MustParse("0.10.0")},
 		uppb.Prompt_MEDIUM: {MaxLag: semver.MustParse("0.20.0")},
 		uppb.Prompt_HIGH:   {MaxLag: semver.MustParse("0.40.0")},
-	})
+	}, newest)
 }
 
 func userWithCapabilities(userID, groupID string, caps ...cappb.Capability) interfaces.UserInfo {
@@ -186,7 +186,7 @@ func TestUpgradeTriggersFromFlags_Invalid(t *testing.T) {
 func listUpgradePrompt(t *testing.T, newest *semver.Version, proxyVersion string) *uppb.Prompt {
 	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
-	s.newestVersion = newest
+	s.detector = testDetector(newest)
 
 	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "host", ProxyId: "id", Version: proxyVersion,
@@ -465,7 +465,7 @@ func TestStreamHeartbeat_AccessRevoked(t *testing.T) {
 	}
 	env.SetAuthenticator(auth)
 
-	s, err := NewCacheProxyRegistryServer(env, upgrade.NewDetector(nil))
+	s, err := NewCacheProxyRegistryServer(env, upgrade.NewDetector(nil, nil))
 	require.NoError(t, err)
 	env.SetCacheProxyRegistryService(s)
 

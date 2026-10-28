@@ -62,7 +62,7 @@ func startTestRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*cac
 	})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
 
-	registry, err := cache_proxy_registry_server.NewCacheProxyRegistryServer(env, upgrade.NewDetector(nil))
+	registry, err := cache_proxy_registry_server.NewCacheProxyRegistryServer(env, upgrade.NewDetector(nil, nil))
 	require.NoError(t, err)
 	env.SetCacheProxyRegistryService(registry)
 

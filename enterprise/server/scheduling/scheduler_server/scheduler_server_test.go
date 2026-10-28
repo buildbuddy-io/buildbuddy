@@ -2857,16 +2857,16 @@ func TestGetExecutionNodes(t *testing.T) {
 
 // testUpgradeDetector prompts an upgrade when an executor is more than 10
 // minor versions behind the newest version, escalating at 20.
-func testUpgradeDetector() *upgrade.Detector {
+func testUpgradeDetector(newest *semver.Version) *upgrade.Detector {
 	return upgrade.NewDetector(map[uppb.Prompt_Urgency]upgrade.Trigger{
 		uppb.Prompt_LOW:    {MaxLag: semver.MustParse("0.10.0")},
 		uppb.Prompt_MEDIUM: {MaxLag: semver.MustParse("0.20.0")},
-	})
+	}, newest)
 }
 
 func TestGetExecutionNodes_UpgradePrompt(t *testing.T) {
 	clock := clockwork.NewFakeClock()
-	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector(), NewestVersion: semver.MustParse("v2.153.0")}}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector(semver.MustParse("v2.153.0"))}}, "user1")
 	enterprise_testauth.Configure(t, env)
 
 	for id, version := range map[string]string{"a": "v2.153.0", "b": "v2.140.0"} {
@@ -2893,7 +2893,7 @@ func TestGetExecutionNodes_UpgradePrompt(t *testing.T) {
 
 func TestGetExecutionNodes_UpgradePrompt_WithinAllowance(t *testing.T) {
 	clock := clockwork.NewFakeClock()
-	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector(), NewestVersion: semver.MustParse("v2.153.0")}}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector(semver.MustParse("v2.153.0"))}}, "user1")
 	enterprise_testauth.Configure(t, env)
 
 	for id, version := range map[string]string{"a": "v2.153.0", "b": "v2.152.0"} {
@@ -3041,9 +3041,9 @@ func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
 func TestGetExecutionNodes_UpgradePrompt_MessageNamesNewestVersion(t *testing.T) {
 	detector := upgrade.NewDetector(map[uppb.Prompt_Urgency]upgrade.Trigger{
 		uppb.Prompt_LOW: {MaxLag: semver.MustParse("0.0.1")},
-	})
+	}, semver.MustParse("v2.41.0"))
 	clock := clockwork.NewFakeClock()
-	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: detector, NewestVersion: semver.MustParse("v2.41.0")}}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: detector}}, "user1")
 	enterprise_testauth.Configure(t, env)
 
 	executor := newFakeExecutorWithId(ctx, t, "customer", env.GetSchedulerClient())
@@ -3066,7 +3066,7 @@ func TestGetExecutionNodes_UpgradePrompt_MessageNamesNewestVersion(t *testing.T)
 
 func TestGetExecutionNodes_UpgradePrompt_NoNewestVersion(t *testing.T) {
 	clock := clockwork.NewFakeClock()
-	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector()}}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector(nil)}}, "user1")
 	enterprise_testauth.Configure(t, env)
 
 	executor := newFakeExecutorWithId(ctx, t, "old", env.GetSchedulerClient())

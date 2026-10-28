@@ -28,7 +28,6 @@ package cache_proxy_registry_server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"slices"
@@ -94,9 +93,6 @@ type CacheProxyRegistryServer struct {
 	rdb           redis.UniversalClient
 	quit          chan struct{}
 	detector      *upgrade.Detector
-	// The version upgrade prompts compare against. If nil, no upgrade prompts
-	// are generated.
-	newestVersion *semver.Version
 	// host:port at which this app instance can be reached. Stored with each
 	// registration so other app instances can route requests for a proxy to
 	// the instance holding its registration stream.
@@ -141,13 +137,14 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.InvalidArgumentErrorf("Invalid cache proxy upgrade prompt configuration: %s", err)
 	}
-	s, err := NewCacheProxyRegistryServer(env, upgrade.NewDetector(triggers))
+	// An unparseable release (e.g. "unknown" in dev builds) disables prompts.
+	var newest *semver.Version
+	if v, err := semver.NewVersion(version.LatestPublicRelease()); err == nil {
+		newest = v
+	}
+	s, err := NewCacheProxyRegistryServer(env, upgrade.NewDetector(triggers, newest))
 	if err != nil {
 		return status.InternalErrorf("Error configuring cache proxy registry server: %v", err)
-	}
-	// An unparseable release (e.g. "unknown" in dev builds) disables prompts.
-	if newest, err := semver.NewVersion(version.LatestPublicRelease()); err == nil {
-		s.newestVersion = newest
 	}
 	env.SetCacheProxyRegistryService(s)
 	return nil
@@ -405,17 +402,11 @@ func (s *CacheProxyRegistryServer) removeProxy(ctx context.Context, groupID, pro
 // --cache_proxy.upgrade_prompt_* flags), and nil otherwise. The urgency
 // reflects the most-outdated proxy in the list.
 func (s *CacheProxyRegistryServer) upgradePrompt(proxies []*cppb.GetCacheProxiesResponse_CacheProxy, messageTemplate string) *uppb.Prompt {
-	if s.detector == nil || len(proxies) == 0 {
-		return nil
-	}
-	if s.newestVersion == nil {
-		return nil
-	}
 	versions := make([]string, 0, len(proxies))
 	for _, p := range proxies {
 		versions = append(versions, p.GetSummary().GetVersion())
 	}
-	return s.detector.Detect(s.newestVersion, versions, fmt.Sprintf(messageTemplate, s.newestVersion))
+	return s.detector.Detect(versions, messageTemplate)
 }
 
 func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cppb.GetCacheProxiesRequest) (*cppb.GetCacheProxiesResponse, error) {

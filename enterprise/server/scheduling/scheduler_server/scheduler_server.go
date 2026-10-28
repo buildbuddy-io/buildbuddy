@@ -1469,9 +1469,6 @@ type Options struct {
 	// Decides when GetExecutionNodes prompts the user to upgrade outdated
 	// executors. If nil, no upgrade prompts are generated.
 	UpgradeDetector *upgrade.Detector
-	// The version upgrade prompts compare against. If nil, no upgrade prompts
-	// are generated.
-	NewestVersion *semver.Version
 }
 
 type SchedulerServer struct {
@@ -1516,8 +1513,6 @@ type SchedulerServer struct {
 	// Decides when GetExecutionNodes prompts the user to upgrade outdated
 	// executors.
 	detector *upgrade.Detector
-	// The version upgrade prompts compare against.
-	newestVersion *semver.Version
 
 	// Limits checkTaskAccess logging to one line per task owner group per
 	// interval.
@@ -1545,7 +1540,7 @@ func Register(env *real_environment.RealEnv) error {
 	if v, err := semver.NewVersion(version.LatestPublicRelease()); err == nil {
 		newest = v
 	}
-	schedulerServer, err := NewSchedulerServerWithOptions(env, &Options{UpgradeDetector: upgrade.NewDetector(triggers), NewestVersion: newest})
+	schedulerServer, err := NewSchedulerServerWithOptions(env, &Options{UpgradeDetector: upgrade.NewDetector(triggers, newest)})
 	if err != nil {
 		return status.InternalErrorf("Error configuring scheduler server: %v", err)
 	}
@@ -1617,7 +1612,6 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		leaseDuration:                     options.LeaseDuration,
 		leaseGracePeriod:                  options.LeaseGracePeriod,
 		detector:                          options.UpgradeDetector,
-		newestVersion:                     options.NewestVersion,
 		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
 		unclaimedTasksJanitor:             newUnclaimedTasksJanitor(env.GetRemoteExecutionRedisClient(), clock),
 		livenessWatches:                   make(map[string]*taskLivenessWatch),
@@ -3568,17 +3562,11 @@ func (s *SchedulerServer) getRegisteredExecutionNodesFromRedis(ctx context.Conte
 // --remote_execution.upgrade_prompt_* flags), and nil otherwise. The urgency
 // reflects the most-outdated executor in the list.
 func (s *SchedulerServer) upgradePrompt(executors []*scpb.GetExecutionNodesResponse_Executor) *uppb.Prompt {
-	if s.detector == nil || len(executors) == 0 {
-		return nil
-	}
-	if s.newestVersion == nil {
-		return nil
-	}
 	versions := make([]string, 0, len(executors))
 	for _, e := range executors {
 		versions = append(versions, e.GetNode().GetVersion())
 	}
-	return s.detector.Detect(s.newestVersion, versions, fmt.Sprintf(upgradePromptMessage, s.newestVersion))
+	return s.detector.Detect(versions, upgradePromptMessage)
 }
 
 func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
