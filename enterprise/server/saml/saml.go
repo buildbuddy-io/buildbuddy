@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -44,6 +45,8 @@ var (
 	key      = flag.String("auth.saml.key", "", "PEM encoded certificate key used for SAML auth.", flag.Secret)
 
 	trustedIDPCertFiles = flag.Slice("auth.saml.trusted_idp_cert_files", []string{}, "List of PEM-encoded trusted IDP certificates. Intended for testing and development only.")
+
+	perOrgSessionAudience = expflag.Bool("auth.saml.per_org_session_audience", false, "If true, the SAML audience includes the organization slug.")
 )
 
 const (
@@ -181,11 +184,28 @@ func (t CookieRequestTracker) GetTrackedRequest(r *http.Request, index string) (
 	return trackedRequest, nil
 }
 
-// wrapper around samlsp.CookieSesionProvider that allows a seamless migration
-// of cookies to a different domain value.
+// wrapper around samlsp.CookieSessionProvider that allows a seamless migration
+// of cookies to a different domain value, and that selects the session codec
+// per request based on the auth.saml.per_org_session_audience flag.
 type cookieSessionProvider struct {
 	oldDomain string
-	d         samlsp.CookieSessionProvider
+	// call provider() to retrieve the appropriate provider instead of
+	// accessing d directly.
+	d           samlsp.CookieSessionProvider
+	globalCodec samlsp.SessionCodec
+	perOrgCodec samlsp.SessionCodec
+}
+
+// provider returns the underlying provider configured with the codec selected
+// for this request.
+func (p cookieSessionProvider) provider(r *http.Request) samlsp.CookieSessionProvider {
+	d := p.d
+	if perOrgSessionAudience.Get(r.Context()) {
+		d.Codec = p.perOrgCodec
+	} else {
+		d.Codec = p.globalCodec
+	}
+	return d
 }
 
 func (p cookieSessionProvider) CreateSession(w http.ResponseWriter, r *http.Request, assertion *saml.Assertion) error {
@@ -196,7 +216,7 @@ func (p cookieSessionProvider) CreateSession(w http.ResponseWriter, r *http.Requ
 			return err
 		}
 	}
-	return p.d.CreateSession(w, r, assertion)
+	return p.provider(r).CreateSession(w, r, assertion)
 }
 
 func (p cookieSessionProvider) DeleteSession(w http.ResponseWriter, r *http.Request) error {
@@ -211,7 +231,7 @@ func (p cookieSessionProvider) DeleteSession(w http.ResponseWriter, r *http.Requ
 }
 
 func (p cookieSessionProvider) GetSession(r *http.Request) (samlsp.Session, error) {
-	return p.d.GetSession(r)
+	return p.provider(r).GetSession(r)
 }
 
 type SAMLAuthenticator struct {
@@ -477,26 +497,31 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 		RelayStateFunc:  opts.RelayStateFunc,
 		SameSite:        opts.CookieSameSite,
 	}
-	sessionCodec := &samlsp.JWTSessionCodec{
-		SigningMethod: jwt.SigningMethodRS256,
-		Audience:      opts.URL.String(),
-		Issuer:        opts.URL.String(),
-		MaxAge:        sessionDuration,
-		Key:           opts.Key,
+	newSessionCodec := func(audience string) samlsp.SessionCodec {
+		return samlsp.JWTSessionCodec{
+			SigningMethod: jwt.SigningMethodRS256,
+			Audience:      audience,
+			Issuer:        opts.URL.String(),
+			MaxAge:        sessionDuration,
+			Key:           opts.Key,
+		}
 	}
 	sessionDomain := opts.URL.Host
 	if cookie.Domain() != "" {
 		sessionDomain = cookie.Domain()
 	}
-	csp := &cookieSessionProvider{d: samlsp.CookieSessionProvider{
-		Name:     sessionCookieName,
-		Domain:   sessionDomain,
-		MaxAge:   sessionDuration,
-		HTTPOnly: true,
-		Secure:   opts.URL.Scheme == "https",
-		SameSite: opts.CookieSameSite,
-		Codec:    sessionCodec,
-	}}
+	csp := &cookieSessionProvider{
+		d: samlsp.CookieSessionProvider{
+			Name:     sessionCookieName,
+			Domain:   sessionDomain,
+			MaxAge:   sessionDuration,
+			HTTPOnly: true,
+			Secure:   opts.URL.Scheme == "https",
+			SameSite: opts.CookieSameSite,
+		},
+		globalCodec: newSessionCodec(opts.URL.String()),
+		perOrgCodec: newSessionCodec(entityURL.String()),
+	}
 	if cookie.Domain() != "" {
 		csp.oldDomain = opts.URL.Host
 	}
