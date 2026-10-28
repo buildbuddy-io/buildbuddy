@@ -6,6 +6,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSelectPublicCommit(t *testing.T) {
+	for _, tc := range []struct {
+		name, stamped, commit, want string
+	}{
+		{"stamped value wins", "abc1234", "def5678", "abc1234"},
+		{"empty falls back to commit", "", "def5678", "def5678"},
+		{"placeholder falls back to commit", "{STABLE_BUILDBUDDY_COMMIT_SHA}", "def5678", "def5678"},
+		{"unknown commit passes through", "", "unknown", "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, selectPublicCommit(tc.stamped, tc.commit))
+		})
+	}
+}
+
 func TestSelectLatestPublicRelease(t *testing.T) {
 	for _, tc := range []struct {
 		name, stamped, tag, want string

@@ -3,17 +3,15 @@ import React from "react";
 import capabilities from "../capabilities/capabilities";
 
 const RELEASE_VERSION_REGEX = /^v\d+\.\d+\.\d+$/;
-// Hosted builds report a label like ci-20261026T163202Z-<sha7>, ending in the
-// public buildbuddy commit.
-const BUILD_VERSION_REGEX = /^(?:ci|local)-\d{8}T\d{6}Z-([0-9a-f]{7,40})$/;
+// The commit can be a placeholder like "unknown" or "dev", which has no page.
+const COMMIT_REGEX = /^[0-9a-f]{7,40}$/;
 
-function versionLink(version: string): string | undefined {
+function versionLink(version: string, commit: string): string | undefined {
   if (RELEASE_VERSION_REGEX.test(version)) {
     return `https://github.com/buildbuddy-io/buildbuddy/releases/tag/${version}`;
   }
-  const build = version.match(BUILD_VERSION_REGEX);
-  if (build) {
-    return `https://github.com/buildbuddy-io/buildbuddy/commit/${build[1]}`;
+  if (COMMIT_REGEX.test(commit)) {
+    return `https://github.com/buildbuddy-io/buildbuddy/commit/${commit}`;
   }
   return undefined;
 }
@@ -21,7 +19,7 @@ function versionLink(version: string): string | undefined {
 export default class FooterComponent extends React.Component {
   render() {
     const version = capabilities.version;
-    const link = versionLink(version);
+    const link = versionLink(version, capabilities.config.commit);
     return (
       <div className="footer">
         <span>&copy; {new Date().getFullYear()} Iteration, Inc.</span>

@@ -63,12 +63,32 @@ linux_x86_64_alias(
     actual = ":populate_latest_public_release_impl",
 )
 
+genrule(
+    name = "populate_public_commit_impl",
+    outs = ["public_commit.txt"],
+    cmd_bash = select({
+        "//:fastbuild": "touch $@",
+        "//conditions:default": """
+            commit=$$(grep ^STABLE_BUILDBUDDY_COMMIT_SHA bazel-out/stable-status.txt 2>/dev/null | cut -d' ' -f2 || true); \
+            printf '%s' $$commit > $@;
+        """,
+    }),
+    stamp = 1,
+    tags = ["manual"],
+)
+
+linux_x86_64_alias(
+    name = "populate_public_commit",
+    actual = ":populate_public_commit_impl",
+)
+
 go_library(
     name = "version",
     srcs = ["version.go"],
     embedsrcs = [
         ":populate_commit",
         ":populate_latest_public_release",
+        ":populate_public_commit",
         ":populate_version",
     ],  # keep
     importpath = "github.com/buildbuddy-io/buildbuddy/server/version",
