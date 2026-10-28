@@ -1813,6 +1813,24 @@ var (
 		Help:      "Maximum total CPU time on the executor that can be allocated for task execution, in **milliCPU** (CPU-milliseconds per second).",
 	})
 
+	RemoteExecutionAssignedRAMBytesByGroup = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assigned_ram_bytes_by_group",
+		Help:      "Estimated RAM on the executor that is currently allocated for task execution, in **bytes**, broken down by the group that owns the executing tasks.",
+	}, []string{
+		GroupID,
+	})
+
+	RemoteExecutionAssignedMilliCPUByGroup = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assigned_milli_cpu_by_group",
+		Help:      "Estimated CPU time on the executor that is currently allocated for task execution, in **milliCPU** (CPU-milliseconds per second), broken down by the group that owns the executing tasks.",
+	}, []string{
+		GroupID,
+	})
+
 	RemoteExecutionAssignedCustomResources = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

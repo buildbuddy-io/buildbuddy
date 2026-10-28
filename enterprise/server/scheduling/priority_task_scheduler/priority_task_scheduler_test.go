@@ -3,19 +3,25 @@ package priority_task_scheduler
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math/rand"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -1132,6 +1138,92 @@ func TestTotalRunningTaskExecutionDuration(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return scheduler.TotalRunningTaskExecutionDuration() == 0
 	}, 5*time.Second, 10*time.Millisecond)
+}
+
+func TestPriorityTaskScheduler_GroupResourceMetrics(t *testing.T) {
+	metrics.RemoteExecutionAssignedMilliCPUByGroup.Reset()
+	metrics.RemoteExecutionAssignedRAMBytesByGroup.Reset()
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{
+		RAMBytesCapacityOverride:  10_000,
+		CPUMillisCapacityOverride: 10_000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, scheduler.Start())
+	t.Cleanup(func() {
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	enqueue := func(taskID, groupID string, milliCPU, ramBytes int64) *FakeExecution {
+		size := &scpb.TaskSize{EstimatedMilliCpu: milliCPU, EstimatedMemoryBytes: ramBytes}
+		_, err := scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+			TaskId:   fakeTaskID(taskID),
+			TaskSize: size,
+			SchedulingMetadata: &scpb.SchedulingMetadata{
+				TaskGroupId: groupID,
+				TaskSize:    size,
+			},
+		})
+		require.NoError(t, err)
+		return <-executor.StartedExecutions
+	}
+	// seriesCount returns the number of groups with a reserved CPU series.
+	seriesCount := func() int {
+		return promtestutil.CollectAndCount(metrics.RemoteExecutionAssignedMilliCPUByGroup)
+	}
+	gaugeValues := func(groupID string) (float64, float64) {
+		labels := prometheus.Labels{metrics.GroupID: groupID}
+		return testmetrics.GaugeValueForLabels(t, metrics.RemoteExecutionAssignedMilliCPUByGroup, labels),
+			testmetrics.GaugeValueForLabels(t, metrics.RemoteExecutionAssignedRAMBytesByGroup, labels)
+	}
+
+	// Resources are attributed to each task's group as soon as it starts.
+	// Tasks without a group count toward the anonymous group.
+	group1Task1 := enqueue("group1-task1", testGroupID1, 1000, 1000)
+	group1Task2 := enqueue("group1-task2", testGroupID1, 2000, 3000)
+	group2Task1 := enqueue("group2-task1", testGroupID2, 500, 700)
+	anonTask := enqueue("anon-task", "", 300, 200)
+	cpu, ram := gaugeValues(testGroupID1)
+	require.Equal(t, float64(3000), cpu)
+	require.Equal(t, float64(4000), ram)
+	cpu, ram = gaugeValues(testGroupID2)
+	require.Equal(t, float64(500), cpu)
+	require.Equal(t, float64(700), ram)
+	cpu, ram = gaugeValues(interfaces.AuthAnonymousUser)
+	require.Equal(t, float64(300), cpu)
+	require.Equal(t, float64(200), ram)
+	require.Equal(t, 3, seriesCount())
+
+	// Finishing one of group 1's tasks releases only that task's resources.
+	// Task completion is asynchronous, so poll for the expected values.
+	group1Task1.Complete()
+	require.Eventually(t, func() bool {
+		cpu, ram := gaugeValues(testGroupID1)
+		return cpu == 2000 && ram == 3000
+	}, 5*time.Second, 10*time.Millisecond)
+
+	// Once a group's last task finishes, its series are removed entirely
+	// rather than left at zero.
+	group1Task2.Complete()
+	anonTask.Complete()
+	require.Eventually(t, func() bool {
+		return seriesCount() == 1
+	}, 5*time.Second, 10*time.Millisecond)
+	cpu, ram = gaugeValues(testGroupID2)
+	require.Equal(t, float64(500), cpu)
+	require.Equal(t, float64(700), ram)
+	scheduler.mu.Lock()
+	require.Equal(t, []string{testGroupID2}, slices.Collect(maps.Keys(scheduler.resourcesUsedByGroup)))
+	scheduler.mu.Unlock()
+
+	group2Task1.Complete()
 }
 
 func TestRemoveTaskFromQueue(t *testing.T) {
