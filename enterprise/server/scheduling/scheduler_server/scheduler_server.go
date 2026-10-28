@@ -1541,7 +1541,10 @@ func Register(env *real_environment.RealEnv) error {
 		return status.InvalidArgumentErrorf("Invalid executor upgrade prompt configuration: %s", err)
 	}
 	// An unparseable release (e.g. "unknown" in dev builds) disables prompts.
-	newest, _ := semver.NewVersion(version.LatestPublicRelease())
+	var newest *semver.Version
+	if v, err := semver.NewVersion(version.LatestPublicRelease()); err == nil {
+		newest = v
+	}
 	schedulerServer, err := NewSchedulerServerWithOptions(env, &Options{UpgradeDetector: upgrade.NewDetector(triggers), NewestVersion: newest})
 	if err != nil {
 		return status.InternalErrorf("Error configuring scheduler server: %v", err)

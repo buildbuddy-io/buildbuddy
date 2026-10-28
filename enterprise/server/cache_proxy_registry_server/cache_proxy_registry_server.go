@@ -146,7 +146,9 @@ func Register(env *real_environment.RealEnv) error {
 		return status.InternalErrorf("Error configuring cache proxy registry server: %v", err)
 	}
 	// An unparseable release (e.g. "unknown" in dev builds) disables prompts.
-	s.newestVersion, _ = semver.NewVersion(version.LatestPublicRelease())
+	if newest, err := semver.NewVersion(version.LatestPublicRelease()); err == nil {
+		s.newestVersion = newest
+	}
 	env.SetCacheProxyRegistryService(s)
 	return nil
 }
