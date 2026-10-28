@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -2598,6 +2599,71 @@ actions:
 				require.NotContains(t, exec.Command.GetArguments(), "--timeout_reason="+ci_runner_util.FreeTierTimeoutReason)
 			}
 			require.Equal(t, tc.expectedTimeout+workflow.TimeoutGracePeriod, exec.Action.GetTimeout().AsDuration())
+		})
+	}
+}
+
+func TestDefaultImageOverride(t *testing.T) {
+	const overrideImage = "docker://gcr.io/example/override-image:latest"
+	defaultImage := platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage
+	for _, tc := range []struct {
+		name          string
+		override      string
+		actionConfig  string
+		expectedImage string
+	}{
+		{
+			name:          "override applies",
+			override:      overrideImage,
+			expectedImage: overrideImage,
+		},
+		{
+			name:          "explicit image wins",
+			override:      overrideImage,
+			actionConfig:  `container_image: "` + defaultImage + `"`,
+			expectedImage: defaultImage,
+		},
+		{
+			name:          "explicit platform property image wins",
+			override:      overrideImage,
+			actionConfig:  `platform_properties: { container-image: "` + defaultImage + `" }`,
+			expectedImage: defaultImage,
+		},
+		{
+			name:          "self-hosted skips override",
+			override:      overrideImage,
+			actionConfig:  `self_hosted: true`,
+			expectedImage: defaultImage,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			u, lis := testhttp.NewServer(t)
+			flags.Set(t, "app.build_buddy_url", *u)
+			flags.Set(t, "remote_execution.enable_remote_exec", true)
+			flags.Set(t, "remote_execution.ci_runner_default_image", tc.override)
+			te := newTestEnv(t)
+			ctx, _, gid := authenticate(t, ctx, te)
+
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			go http.Serve(lis, te.GetWorkflowService())
+			provider := setupFakeGitProvider(t, te)
+			repoURL := makeTempRepo(t)
+			runBBServer(ctx, t, te)
+			repo := createWorkflow(t, te, repoURL, gid, false)
+
+			config := `
+actions:
+  - name: "Test"
+    triggers: { push: { branches: [ "*" ] } }
+    bazel_commands: [ "test //..." ]
+    ` + tc.actionConfig + `
+`
+			pushToDefaultBranch(t, te, repo, provider, config)
+
+			execReq := execClient.NextExecuteRequest()
+			exec := getExecution(t, ctx, te, execReq.Payload)
+			require.Equal(t, tc.expectedImage, platform.FindValue(exec.Command.GetPlatform(), "container-image"))
 		})
 	}
 }

@@ -1223,12 +1223,13 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	args = append(args, extraArgs...)
 
+	pool := ws.poolForAction(ctx, workflowAction)
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments:            args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: ws.poolForAction(ctx, workflowAction)},
+				{Name: "Pool", Value: pool},
 				{Name: "OSFamily", Value: os},
 				{Name: "Arch", Value: workflowAction.Arch},
 				{Name: platform.DockerUserPropertyName, Value: workflowUser},
@@ -1286,6 +1287,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	cmd.Platform.Properties = append(cmd.Platform.Properties, customPlatformProps...)
 	rexec.NormalizeCommand(cmd)
+	if workflowAction.ContainerImage == "" {
+		ci_runner_util.ApplyDefaultImageOverride(ctx, ws.env, &repb.ExecutionTask{Command: cmd}, customPlatformProps, *workflowsDefaultImage, pool, workflowAction.Name)
+	}
 
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, cmd)
 	if err != nil {
