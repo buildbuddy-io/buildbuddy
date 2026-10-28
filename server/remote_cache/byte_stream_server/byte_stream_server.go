@@ -808,6 +808,14 @@ func (w *writeHandler) Close() error {
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
 	var streamState *writeHandler
+	defer func() {
+		if streamState == nil {
+			return
+		}
+		if err := streamState.Close(); err != nil {
+			log.Error(err.Error())
+		}
+	}()
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -830,11 +838,6 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err != nil {
 				return err
 			}
-			defer func() {
-				if err := streamState.Close(); err != nil {
-					log.Error(err.Error())
-				}
-			}()
 		}
 
 		resp, err := streamState.Write(req)
