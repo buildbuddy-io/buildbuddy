@@ -23,15 +23,17 @@ which is a fork of https://github.com/mgoltzsche/podman-static.
 The main reason for this fork is to ensure the integrity of the built
 binaries. Our main change is to the release workflow
 (`.github/workflows/workflow.yml`), adapting it for our releases (e.g.
-disabling steps that we don't need). The fork may also carry a small number of other commits, such as fixes that aren't
-upstream yet.
+disabling steps that we don't need). The fork may also carry a small number
+of other commits, such as fixes that aren't upstream yet.
 
 We update the fork by merging upstream release tags into master, and never
-force-push master. To see our fork-specific changes relative to an upstream
-release, run `git diff vX.Y.Z origin/master` or
-`git log --no-merges vX.Y.Z..origin/master`. To see how far behind upstream
-we are, run `git rev-list --count origin/master..upstream/master` or check
-the fork banner on GitHub.
+force-push master. To see our fork-specific changes, run
+`git diff vX.Y.Z origin/master` or
+`git log --no-merges vX.Y.Z..origin/master`, where `vX.Y.Z` is the upstream
+release most recently merged into our master (an older tag would also show
+upstream changes). To see how far behind upstream we are, run
+`git rev-list --count origin/master..upstream/master` or check the fork banner
+on GitHub.
 
 To build a new version of podman from the fork:
 
@@ -70,7 +72,8 @@ Finally, update `PODMAN_VERSION`, `PODMAN_STATIC_SHA256_AMD64` and
 
 ```shell
 for ARCH in amd64 arm64; do
-  curl -fsSL "https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-$VERSION/podman-linux-$ARCH.tar.gz" | sha256sum
+  curl -fsSLo "/tmp/podman-linux-$ARCH.tar.gz" "https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-$VERSION/podman-linux-$ARCH.tar.gz" &&
+    sha256sum "/tmp/podman-linux-$ARCH.tar.gz"
 done
 ```
 
