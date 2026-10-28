@@ -198,7 +198,7 @@ func (c *Proxy) CloseInactiveClients(stillActive set.View[string]) {
 func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCacheClient, error) {
 	c.mu.RLock()
 	client, ok := c.clients[peer]
-	c.mu.Unlock()
+	c.mu.RUnlock()
 	if ok {
 		if err := client.Check(ctx); err != nil {
 			return nil, status.UnavailableErrorf("no connections to peer %q are ready: %v", peer, err)
