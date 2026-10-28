@@ -28,6 +28,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -59,6 +61,10 @@ const (
 	ContainerIP          = "10.0.2.100"
 	containerGatewayCIDR = "10.0.2.2/24"
 	containerDevice      = "eth0"
+
+	// ContainerIP6 and gateway6CIDR also match slirp4netns.
+	ContainerIP6 = "fd00::100"
+	gateway6CIDR = "fd00::2/64"
 
 	// stackDevice is the end of a container's veth pair that the gvisor netstack uses.
 	stackDevice = "usernet0"
@@ -82,6 +88,10 @@ const (
 	// maxPingsInFlight caps the ping sockets open for a guest; echo requests
 	// over the limit are dropped.
 	maxPingsInFlight = 128
+
+	// maxQuotedBytes keeps ICMP errors within IPv4's minimum datagram size
+	// (576 bytes), which also fits IPv6's minimum MTU.
+	maxQuotedBytes = 576 - header.IPv4MinimumSize - header.ICMPv4MinimumSize
 )
 
 // udpIdleTimeout is how long a UDP flow may go without traffic in either
@@ -96,11 +106,19 @@ var gatewayLinkAddress = tcpip.LinkAddress("\x02\x00\x00\x00\x00\x01")
 // --executor.task_allowed_private_ips.
 var blockedPrefixes = func() []netip.Prefix {
 	var prefixes []netip.Prefix
-	for _, r := range append(slices.Clone(networking.PrivateIPRanges), "0.0.0.0/8", "127.0.0.0/8", "224.0.0.0/4", "255.255.255.255/32") {
+	for _, r := range append(slices.Clone(networking.PrivateIPRanges), "0.0.0.0/8", "127.0.0.0/8", "224.0.0.0/4", "255.255.255.255/32",
+		// IPv6 ranges that embed IPv4 addresses: IPv4-compatible, NAT64, Teredo and 6to4.
+		"::/96", "64:ff9b::/96", "64:ff9b:1::/48", "2001::/32", "2002::/16",
+		"fc00::/7", "fe80::/10", "ff00::/8") {
 		prefixes = append(prefixes, netip.MustParsePrefix(r))
 	}
 	return prefixes
 }()
+
+var (
+	gateway6        = netip.MustParsePrefix(gateway6CIDR)
+	gateway6Address = tcpip.AddrFrom16(gateway6.Addr().As16())
+)
 
 // Network is a net namespace whose traffic is served by a userspace stack.
 type Network struct {
@@ -135,8 +153,9 @@ func NewVMNetwork(ctx context.Context, tapDeviceName, gatewayCIDR string, enable
 }
 
 // NewContainerNetwork creates a net namespace for a container to join, with an
-// eth0 at ContainerIP and a default route through the stack.
-func NewContainerNetwork(ctx context.Context) (*Network, error) {
+// eth0 at ContainerIP and a default route through the stack. If enableIPv6 is
+// set, eth0 also gets ContainerIP6 and an IPv6 default route.
+func NewContainerNetwork(ctx context.Context, enableIPv6 bool) (*Network, error) {
 	gateway := netip.MustParsePrefix(containerGatewayCIDR)
 	return newNetwork(ctx, containerGatewayCIDR, true /*=enableExternalNetworking*/, stackDevice, func() error {
 		veth := &netlink.Veth{Name: containerDevice, PeerName: stackDevice}
@@ -160,7 +179,22 @@ func NewContainerNetwork(ctx context.Context) (*Network, error) {
 		if err := netlink.AddrAdd(eth0, addr); err != nil {
 			return err
 		}
-		return netlink.RouteAdd(&netlink.Route{LinkIndex: eth0.Attrs().Index, Gw: gateway.Addr().AsSlice()})
+		if err := netlink.RouteAdd(&netlink.Route{LinkIndex: eth0.Attrs().Index, Gw: gateway.Addr().AsSlice()}); err != nil {
+			return err
+		}
+		if !enableIPv6 {
+			return nil
+		}
+		// Skip IPv6 if the host was booted with ipv6.disable=1 or the namespace
+		// disables it.
+		if b, err := os.ReadFile("/proc/sys/net/ipv6/conf/" + containerDevice + "/disable_ipv6"); err != nil || strings.TrimSpace(string(b)) != "0" {
+			return nil
+		}
+		addr6 := &netlink.Addr{IPNet: &net.IPNet{IP: net.ParseIP(ContainerIP6), Mask: net.CIDRMask(gateway6.Bits(), 128)}, Flags: unix.IFA_F_NODAD}
+		if err := netlink.AddrAdd(eth0, addr6); err != nil {
+			return err
+		}
+		return netlink.RouteAdd(&netlink.Route{LinkIndex: eth0.Attrs().Index, Gw: gateway6.Addr().AsSlice()})
 	})
 }
 
@@ -217,8 +251,8 @@ func newNetwork(ctx context.Context, gatewayCIDR string, enableExternalNetworkin
 // https://github.com/containers/gvisor-tap-vsock/blob/ad36eb20acfae43f5df9f0807201f5059073b881/pkg/virtualnetwork/virtualnetwork.go#L122
 func (n *Network) startStack(prefixLen int) error {
 	n.stack = stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, gicmp.NewProtocol4},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol, arp.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, gicmp.NewProtocol4, gicmp.NewProtocol6},
 	})
 	sack := tcpip.TCPSACKEnabled(true)
 	moderateReceiveBuffer := tcpip.TCPModerateReceiveBufferOption(true)
@@ -244,20 +278,13 @@ func (n *Network) startStack(prefixLen int) error {
 		n.forwardTCP(ctx, r)
 	})
 	n.stack.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
-	udpForwarder := udp.NewForwarder(n.stack, func(r *udp.ForwarderRequest) bool {
-		n.forwardUDP(ctx, r)
+	// The UDP handler only sees packets that don't belong to an existing flow.
+	n.stack.SetTransportProtocolHandler(udp.ProtocolNumber, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
+		n.forwardUDP(ctx, id, pkt)
 		return true
 	})
-	n.stack.SetTransportProtocolHandler(udp.ProtocolNumber, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-		if !n.isAllowed(id.LocalAddress) {
-			n.reject(pkt)
-			return true
-		}
-		return udpForwarder.HandlePacket(id, pkt)
-	})
-	n.stack.SetTransportProtocolHandler(gicmp.ProtocolNumber4, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-		return n.forwardEcho(id, pkt)
-	})
+	n.stack.SetTransportProtocolHandler(gicmp.ProtocolNumber4, n.forwardEcho)
+	n.stack.SetTransportProtocolHandler(gicmp.ProtocolNumber6, n.forwardEcho)
 
 	ep, err := fdbased.New(&fdbased.Options{
 		FDs:                []int{n.fd},
@@ -277,17 +304,18 @@ func (n *Network) startStack(prefixLen int) error {
 	if err := n.stack.CreateNIC(nicID, ep); err != nil {
 		return status.InternalErrorf("create NIC: %s", err)
 	}
-	addr := tcpip.ProtocolAddress{
-		Protocol:          ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{Address: n.gateway, PrefixLen: prefixLen},
-	}
-	if err := n.stack.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
-		return status.InternalErrorf("add gateway address: %s", err)
+	for _, addr := range []tcpip.ProtocolAddress{
+		{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: tcpip.AddressWithPrefix{Address: n.gateway, PrefixLen: prefixLen}},
+		{Protocol: ipv6.ProtocolNumber, AddressWithPrefix: tcpip.AddressWithPrefix{Address: gateway6Address, PrefixLen: gateway6.Bits()}},
+	} {
+		if err := n.stack.AddProtocolAddress(nicID, addr, stack.AddressProperties{}); err != nil {
+			return status.InternalErrorf("add gateway address: %s", err)
+		}
 	}
 	// Accept packets for any destination, and reply as that destination.
 	n.stack.SetPromiscuousMode(nicID, true)
 	n.stack.SetSpoofing(nicID, true)
-	n.stack.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicID}})
+	n.stack.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicID}, {Destination: header.IPv6EmptySubnet, NIC: nicID}})
 	return nil
 }
 
@@ -295,7 +323,9 @@ func (n *Network) isAllowed(addr tcpip.Address) bool {
 	if !n.externalNetwork {
 		return false
 	}
-	ip := netip.AddrFrom4(addr.As4())
+	ip, _ := netip.AddrFromSlice(addr.AsSlice())
+	// IPv4-mapped addresses are checked as IPv4.
+	ip = ip.Unmap()
 	for _, p := range n.allowedPrefixes {
 		if p.Contains(ip) {
 			return true
@@ -343,26 +373,32 @@ func (n *Network) forwardTCP(ctx context.Context, r *tcp.ForwarderRequest) {
 	wg.Wait()
 }
 
-func (n *Network) forwardUDP(ctx context.Context, r *udp.ForwarderRequest) {
-	id := r.ID()
-	// Creating the endpoint registers the flow, so that its later packets are
-	// delivered to it rather than to the forwarder.
-	var wq waiter.Queue
-	ep, tcpErr := r.CreateEndpoint(&wq)
-	if tcpErr != nil {
+func (n *Network) forwardUDP(ctx context.Context, id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+	if !n.isAllowed(id.LocalAddress) {
+		n.reject(pkt)
 		return
 	}
+	// Connecting a UDP socket doesn't send anything, so it's fine to do on the
+	// stack's packet processing goroutine.
 	dst := net.JoinHostPort(id.LocalAddress.String(), strconv.Itoa(int(id.LocalPort)))
-	// The forwarder runs on the stack's packet processing goroutine.
-	go relayUDP(ctx, gonet.NewUDPConn(&wq, ep), dst, n.udpIdleTimeout)
-}
-
-func relayUDP(ctx context.Context, guest *gonet.UDPConn, dst string, idleTimeout time.Duration) {
 	remote, err := (&net.Dialer{}).DialContext(ctx, "udp", dst)
 	if err != nil {
-		guest.Close()
+		// e.g. the host has no IPv6 route.
+		n.reject(pkt)
 		return
 	}
+	// Creating the endpoint registers the flow, so that its later packets are
+	// delivered to it rather than to this handler.
+	var wq waiter.Queue
+	ep, tcpErr := udp.NewForwarderRequest(n.stack, id, pkt).CreateEndpoint(&wq)
+	if tcpErr != nil {
+		remote.Close()
+		return
+	}
+	go relayUDP(ctx, gonet.NewUDPConn(&wq, ep), remote, n.udpIdleTimeout)
+}
+
+func relayUDP(ctx context.Context, guest *gonet.UDPConn, remote net.Conn, idleTimeout time.Duration) {
 	closeBoth := sync.OnceFunc(func() {
 		guest.Close()
 		remote.Close()
@@ -399,13 +435,21 @@ func relayUDP(ctx context.Context, guest *gonet.UDPConn, dst string, idleTimeout
 
 // forwardEcho sends echo requests from the host with ping sockets and relays
 // the replies.
+//
+// ICMPv4 and ICMPv6 echo messages share a layout, so both are accessed with
+// header.ICMPv4.
 func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
+	v6 := id.LocalAddress.Len() == header.IPv6AddressSize
+	echo, echoReply, network, listenAddr, gateway := uint8(header.ICMPv4Echo), uint8(header.ICMPv4EchoReply), "udp4", "0.0.0.0", n.gateway
+	if v6 {
+		echo, echoReply, network, listenAddr, gateway = uint8(header.ICMPv6EchoRequest), uint8(header.ICMPv6EchoReply), "udp6", "::", gateway6Address
+	}
 	h := header.ICMPv4(pkt.TransportHeader().Slice())
-	if len(h) < header.ICMPv4MinimumSize || h.Type() != header.ICMPv4Echo {
+	if len(h) < header.ICMPv4MinimumSize || uint8(h.Type()) != echo {
 		return false
 	}
 	// Leave echo requests to the gateway unhandled so the stack answers them.
-	if id.LocalAddress == n.gateway {
+	if id.LocalAddress == gateway {
 		return false
 	}
 	if !n.isAllowed(id.LocalAddress) {
@@ -417,18 +461,23 @@ func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuf
 	default:
 		return true
 	}
-	ident, seq, data := h.Ident(), h.Sequence(), pkt.Data().AsRange().ToSlice()
+	ident, seq := h.Ident(), h.Sequence()
+	// The kernel replaces the ident, and delivers only this socket's replies.
+	conn, err := icmp.ListenPacket(network, listenAddr)
+	if err == nil {
+		if _, err = conn.WriteTo(icmpEcho(echo, 0, seq, pkt.Data().AsRange().ToSlice()), &net.UDPAddr{IP: id.LocalAddress.AsSlice()}); err != nil {
+			conn.Close()
+		}
+	}
+	if err != nil {
+		<-n.pings
+		// e.g. the host has no IPv6 route.
+		n.reject(pkt)
+		return true
+	}
 	go func() {
 		defer func() { <-n.pings }()
-		conn, err := icmp.ListenPacket("udp4", "0.0.0.0")
-		if err != nil {
-			return
-		}
 		defer conn.Close()
-		// The kernel replaces the ident, and delivers only this socket's replies.
-		if _, err := conn.WriteTo(icmpEcho(header.ICMPv4Echo, 0, seq, data), &net.UDPAddr{IP: id.LocalAddress.AsSlice()}); err != nil {
-			return
-		}
 		conn.SetReadDeadline(time.Now().Add(pingTimeout))
 		buf := make([]byte, 65535)
 		for {
@@ -437,8 +486,8 @@ func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuf
 				return
 			}
 			reply := header.ICMPv4(buf[:size])
-			if size >= header.ICMPv4MinimumSize && reply.Type() == header.ICMPv4EchoReply && reply.Sequence() == seq {
-				n.writeICMP(id.LocalAddress, id.RemoteAddress, icmpEcho(header.ICMPv4EchoReply, ident, seq, reply.Payload()))
+			if size >= header.ICMPv4MinimumSize && uint8(reply.Type()) == echoReply && reply.Sequence() == seq {
+				n.writeICMP(id.LocalAddress, id.RemoteAddress, icmpEcho(echoReply, ident, seq, reply.Payload()))
 				return
 			}
 		}
@@ -446,23 +495,38 @@ func (n *Network) forwardEcho(id stack.TransportEndpointID, pkt *stack.PacketBuf
 	return true
 }
 
-// reject answers a packet to a blocked destination with ICMP port
-// unreachable, like an iptables REJECT rule.
+// reject answers a packet with ICMP port unreachable, like an iptables REJECT
+// rule. Unlike network unreachable, guests report it to connected UDP sockets.
 func (n *Network) reject(pkt *stack.PacketBuffer) {
-	ip := header.IPv4(pkt.NetworkHeader().Slice())
-	original := append(slices.Clone(pkt.NetworkHeader().Slice()), pkt.TransportHeader().Slice()...)
-	original = original[:min(len(original), int(ip.HeaderLength())+8)]
-	msg := make([]byte, header.ICMPv4MinimumSize+len(original))
+	// Quote from the network header on, so IPv6 extension headers are kept.
+	original := stack.PayloadSince(pkt.NetworkHeader())
+	defer original.Release()
+	// ICMPv4 and ICMPv6 destination unreachable messages share a layout.
+	msg := make([]byte, header.ICMPv4MinimumSize+min(original.Size(), maxQuotedBytes))
 	h := header.ICMPv4(msg)
 	h.SetType(header.ICMPv4DstUnreachable)
 	h.SetCode(header.ICMPv4PortUnreachable)
-	copy(h.Payload(), original)
-	h.SetChecksum(^checksum.Checksum(msg, 0))
-	n.writeICMP(n.gateway, ip.SourceAddress(), msg)
+	gateway := n.gateway
+	if pkt.NetworkProtocolNumber == ipv6.ProtocolNumber {
+		h.SetType(header.ICMPv4Type(header.ICMPv6DstUnreachable))
+		h.SetCode(header.ICMPv4Code(header.ICMPv6PortUnreachable))
+		gateway = gateway6Address
+	}
+	copy(h.Payload(), original.AsSlice())
+	n.writeICMP(gateway, pkt.Network().SourceAddress(), msg)
 }
 
+// writeICMP sets msg's checksum and sends it to the guest.
 func (n *Network) writeICMP(from, to tcpip.Address, msg []byte) {
-	r, err := n.stack.FindRoute(nicID, from, to, ipv4.ProtocolNumber, false /*=multicastLoop*/)
+	netProto, proto, xsum := ipv4.ProtocolNumber, header.ICMPv4ProtocolNumber, uint16(0)
+	if to.Len() == header.IPv6AddressSize {
+		netProto, proto = ipv6.ProtocolNumber, header.ICMPv6ProtocolNumber
+		xsum = header.PseudoHeaderChecksum(proto, from, to, uint16(len(msg)))
+	}
+	h := header.ICMPv4(msg)
+	h.SetChecksum(0)
+	h.SetChecksum(^checksum.Checksum(msg, xsum))
+	r, err := n.stack.FindRoute(nicID, from, to, netProto, false /*=multicastLoop*/)
 	if err != nil {
 		return
 	}
@@ -472,8 +536,8 @@ func (n *Network) writeICMP(from, to tcpip.Address, msg []byte) {
 		Payload:            buffer.MakeWithData(msg),
 	})
 	defer pkt.DecRef()
-	pkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
-	r.WritePacket(stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: 64}, pkt)
+	pkt.TransportProtocolNumber = proto
+	r.WritePacket(stack.NetworkHeaderParams{Protocol: proto, TTL: 64}, pkt)
 }
 
 // NamespacePath returns the path of the net namespace to run in.
@@ -578,10 +642,10 @@ func copyBuffered(dst io.Writer, src io.Reader) {
 	io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{src}, *buf)
 }
 
-func icmpEcho(typ header.ICMPv4Type, ident, seq uint16, data []byte) []byte {
+func icmpEcho[T ~uint8](typ T, ident, seq uint16, data []byte) []byte {
 	msg := make([]byte, header.ICMPv4MinimumSize+len(data))
 	h := header.ICMPv4(msg)
-	h.SetType(typ)
+	h.SetType(header.ICMPv4Type(typ))
 	h.SetIdent(ident)
 	h.SetSequence(seq)
 	copy(h.Payload(), data)

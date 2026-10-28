@@ -505,6 +505,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		imageRef:           args.Props.ContainerImage,
 		networkEnabled:     networkMode != "off",
 		userspaceNetwork:   execution_experiments.UserspaceNetworking.Get(ctx),
+		enableIPv6:         args.Props.NetworkEnableIPv6,
 		isPersistentWorker: args.Props.PersistentWorkerKey != "",
 		tiniEnabled:        args.Props.DockerInit || *enableTini,
 		user:               args.Props.DockerUser,
@@ -555,6 +556,7 @@ type ociContainer struct {
 	imageRef         string
 	networkEnabled   bool
 	userspaceNetwork bool
+	enableIPv6       bool
 	user             string
 	forceRoot        bool
 	execrootPath     string
@@ -947,7 +949,7 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 
 func (c *ociContainer) createNetwork(ctx context.Context) error {
 	if c.networkEnabled && c.userspaceNetwork {
-		network, err := usernet.NewContainerNetwork(ctx)
+		network, err := usernet.NewContainerNetwork(ctx, c.enableIPv6)
 		if err != nil {
 			return status.WrapError(err, "create userspace network")
 		}

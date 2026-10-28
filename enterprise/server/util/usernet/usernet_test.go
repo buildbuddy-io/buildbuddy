@@ -19,7 +19,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vishvananda/netlink"
 	"golang.org/x/net/icmp"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -29,10 +31,43 @@ func TestContainerNetwork(t *testing.T) {
 	// The test servers listen on the host's default IP, which may be private.
 	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
 	ctx := context.Background()
-	hostIP, err := networking.DefaultIP(ctx)
+	hostIP4, err := networking.DefaultIP(ctx)
 	require.NoError(t, err)
 
-	n, err := NewContainerNetwork(ctx)
+	type family struct {
+		// unreachable has no route on the host.
+		host, gateway, blocked, unreachable        net.IP
+		echoReply, dstUnreachable, portUnreachable uint8
+	}
+	families := []family{{
+		hostIP4, netip.MustParsePrefix(containerGatewayCIDR).Addr().AsSlice(), net.ParseIP("10.0.0.1"), net.ParseIP("203.0.113.1"),
+		uint8(header.ICMPv4EchoReply), uint8(header.ICMPv4DstUnreachable), uint8(header.ICMPv4PortUnreachable),
+	}}
+	if _, err := os.Stat("/proc/sys/net/ipv6"); err == nil {
+		families = append(families, family{
+			// The host may have no IPv6 address, so the test adds one.
+			net.ParseIP("2001:db8::1"), gateway6.Addr().AsSlice(), net.ParseIP("fc00::1"), net.ParseIP("2001:db8:ffff::1"),
+			uint8(header.ICMPv6EchoReply), uint8(header.ICMPv6DstUnreachable), uint8(header.ICMPv6PortUnreachable),
+		})
+	} else {
+		t.Log("IPv6 is disabled on the host; skipping IPv6 cases.")
+	}
+	// Replacing tolerates leftovers from an interrupted run.
+	lo, err := netlink.LinkByName("lo")
+	require.NoError(t, err)
+	for _, f := range families {
+		bits := len(f.host) * 8
+		if f.host.To4() == nil {
+			addr := &netlink.Addr{IPNet: &net.IPNet{IP: f.host, Mask: net.CIDRMask(bits, bits)}}
+			require.NoError(t, netlink.AddrReplace(lo, addr))
+			t.Cleanup(func() { netlink.AddrDel(lo, addr) })
+		}
+		route := &netlink.Route{Dst: &net.IPNet{IP: f.unreachable, Mask: net.CIDRMask(bits, bits)}, Type: unix.RTN_UNREACHABLE}
+		require.NoError(t, netlink.RouteReplace(route))
+		t.Cleanup(func() { netlink.RouteDel(route) })
+	}
+
+	n, err := NewContainerNetwork(ctx, true /*=enableIPv6*/)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, n.Cleanup(ctx)) })
 
@@ -46,136 +81,162 @@ func TestContainerNetwork(t *testing.T) {
 		})
 		return conn, err
 	}
-
-	t.Run("tcp", func(t *testing.T) {
-		lis, err := net.Listen("tcp", net.JoinHostPort(hostIP.String(), "0"))
-		require.NoError(t, err)
-		defer lis.Close()
-		go func() {
-			conn, err := lis.Accept()
-			if err != nil {
-				return
-			}
-			defer conn.Close()
-			io.Copy(conn, conn)
-		}()
-
-		conn, err := dial("tcp", lis.Addr().String())
-		require.NoError(t, err)
+	// ping sends an echo request from the container and returns the ICMP
+	// messages that arrive within half a second, other than neighbor
+	// discovery.
+	ping := func(t *testing.T, dst net.IP) [][]byte {
+		network, listenAddr, echo := "ip4:icmp", "0.0.0.0", uint8(header.ICMPv4Echo)
+		if dst.To4() == nil {
+			network, listenAddr, echo = "ip6:ipv6-icmp", "::", uint8(header.ICMPv6EchoRequest)
+		}
+		var conn *icmp.PacketConn
+		require.NoError(t, inNamespace(n.netns, func() error {
+			var err error
+			conn, err = icmp.ListenPacket(network, listenAddr)
+			return err
+		}))
 		defer conn.Close()
-		msg := make([]byte, 1<<20)
-		go conn.Write(msg)
-		_, err = io.ReadFull(conn, make([]byte, len(msg)))
+		_, err := conn.WriteTo(icmpEcho(echo, 1, 1, []byte("ping")), &net.IPAddr{IP: dst})
 		require.NoError(t, err)
-	})
-
-	t.Run("udp", func(t *testing.T) {
-		pc, err := net.ListenPacket("udp", net.JoinHostPort(hostIP.String(), "0"))
-		require.NoError(t, err)
-		defer pc.Close()
-		go func() {
+		conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		var msgs [][]byte
+		for {
 			buf := make([]byte, 1500)
-			for {
-				size, addr, err := pc.ReadFrom(buf)
+			size, _, err := conn.ReadFrom(buf)
+			if err != nil {
+				require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+				return msgs
+			}
+			if dst.To4() == nil && buf[0] >= uint8(header.ICMPv6RouterSolicit) {
+				continue
+			}
+			msgs = append(msgs, buf[:size])
+		}
+	}
+	// typeCodes returns the type and code of each ICMP message.
+	typeCodes := func(msgs [][]byte) [][2]uint8 {
+		var tc [][2]uint8
+		for _, m := range msgs {
+			tc = append(tc, [2]uint8{m[0], m[1]})
+		}
+		return tc
+	}
+
+	for _, f := range families {
+		t.Run(f.host.String()+"/tcp", func(t *testing.T) {
+			lis, err := net.Listen("tcp", net.JoinHostPort(f.host.String(), "0"))
+			require.NoError(t, err)
+			defer lis.Close()
+			go func() {
+				conn, err := lis.Accept()
 				if err != nil {
 					return
 				}
-				pc.WriteTo(buf[:size], addr)
+				defer conn.Close()
+				io.Copy(conn, conn)
+			}()
+
+			conn, err := dial("tcp", lis.Addr().String())
+			require.NoError(t, err)
+			defer conn.Close()
+			msg := make([]byte, 1<<20)
+			go conn.Write(msg)
+			_, err = io.ReadFull(conn, make([]byte, len(msg)))
+			require.NoError(t, err)
+		})
+
+		t.Run(f.host.String()+"/udp", func(t *testing.T) {
+			pc, err := net.ListenPacket("udp", net.JoinHostPort(f.host.String(), "0"))
+			require.NoError(t, err)
+			defer pc.Close()
+			go func() {
+				buf := make([]byte, 1500)
+				for {
+					size, addr, err := pc.ReadFrom(buf)
+					if err != nil {
+						return
+					}
+					pc.WriteTo(buf[:size], addr)
+				}
+			}()
+
+			conn, err := dial("udp", pc.LocalAddr().String())
+			require.NoError(t, err)
+			defer conn.Close()
+			_, err = conn.Write([]byte("hello"))
+			require.NoError(t, err)
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			buf := make([]byte, 1500)
+			size, err := conn.Read(buf)
+			require.NoError(t, err)
+			require.Equal(t, "hello", string(buf[:size]))
+		})
+
+		t.Run(f.host.String()+"/icmp", func(t *testing.T) {
+			msgs := ping(t, f.host)
+			require.Equal(t, [][2]uint8{{f.echoReply, 0}}, typeCodes(msgs))
+			require.Equal(t, "ping", string(msgs[0][header.ICMPv4MinimumSize:]))
+		})
+
+		t.Run(f.host.String()+"/icmp over limit", func(t *testing.T) {
+			for range maxPingsInFlight {
+				n.pings <- struct{}{}
 			}
-		}()
-
-		conn, err := dial("udp", pc.LocalAddr().String())
-		require.NoError(t, err)
-		defer conn.Close()
-		_, err = conn.Write([]byte("hello"))
-		require.NoError(t, err)
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		buf := make([]byte, 1500)
-		size, err := conn.Read(buf)
-		require.NoError(t, err)
-		require.Equal(t, "hello", string(buf[:size]))
-	})
-
-	t.Run("icmp", func(t *testing.T) {
-		var conn *icmp.PacketConn
-		require.NoError(t, inNamespace(n.netns, func() error {
-			var err error
-			conn, err = icmp.ListenPacket("ip4:icmp", "0.0.0.0")
-			return err
-		}))
-		defer conn.Close()
-		_, err := conn.WriteTo(icmpEcho(header.ICMPv4Echo, 1, 1, []byte("ping")), &net.IPAddr{IP: hostIP})
-		require.NoError(t, err)
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		buf := make([]byte, 1500)
-		size, _, err := conn.ReadFrom(buf)
-		require.NoError(t, err)
-		reply := header.ICMPv4(buf[:size])
-		require.Equal(t, header.ICMPv4EchoReply, reply.Type())
-		require.Equal(t, "ping", string(reply.Payload()))
-	})
-
-	t.Run("icmp over limit", func(t *testing.T) {
-		var conn *icmp.PacketConn
-		require.NoError(t, inNamespace(n.netns, func() error {
-			var err error
-			conn, err = icmp.ListenPacket("ip4:icmp", "0.0.0.0")
-			return err
-		}))
-		defer conn.Close()
-		ping := func(seq uint16) error {
-			if _, err := conn.WriteTo(icmpEcho(header.ICMPv4Echo, 1, seq, []byte("ping")), &net.IPAddr{IP: hostIP}); err != nil {
-				return err
+			require.Empty(t, ping(t, f.host))
+			for range maxPingsInFlight {
+				<-n.pings
 			}
-			conn.SetReadDeadline(time.Now().Add(time.Second))
-			_, _, err := conn.ReadFrom(make([]byte, 1500))
-			return err
-		}
-		for range maxPingsInFlight {
-			n.pings <- struct{}{}
-		}
-		require.ErrorIs(t, ping(1), os.ErrDeadlineExceeded)
-		for range maxPingsInFlight {
-			<-n.pings
-		}
-		require.NoError(t, ping(2))
-	})
+			require.Equal(t, [][2]uint8{{f.echoReply, 0}}, typeCodes(ping(t, f.host)))
+		})
 
-	t.Run("icmp to gateway", func(t *testing.T) {
-		var conn *icmp.PacketConn
-		require.NoError(t, inNamespace(n.netns, func() error {
-			var err error
-			conn, err = icmp.ListenPacket("ip4:icmp", "0.0.0.0")
-			return err
-		}))
-		defer conn.Close()
-		gateway := netip.MustParsePrefix(containerGatewayCIDR).Addr().AsSlice()
-		_, err := conn.WriteTo(icmpEcho(header.ICMPv4Echo, 1, 1, []byte("ping")), &net.IPAddr{IP: gateway})
-		require.NoError(t, err)
-		// Read everything that arrives, to catch an unreachable sent alongside
-		// the reply.
-		var types []header.ICMPv4Type
-		conn.SetReadDeadline(time.Now().Add(time.Second))
-		buf := make([]byte, 1500)
-		for {
-			size, _, err := conn.ReadFrom(buf)
-			if err != nil {
-				break
-			}
-			types = append(types, header.ICMPv4(buf[:size]).Type())
-		}
-		require.Equal(t, []header.ICMPv4Type{header.ICMPv4EchoReply}, types)
-	})
+		t.Run(f.gateway.String()+"/icmp to gateway", func(t *testing.T) {
+			require.Equal(t, [][2]uint8{{f.echoReply, 0}}, typeCodes(ping(t, f.gateway)))
+		})
 
-	t.Run("blocked private IP", func(t *testing.T) {
-		_, err := dial("tcp", "10.0.0.1:80")
-		require.ErrorIs(t, err, syscall.ECONNREFUSED)
-	})
+		for _, dst := range []net.IP{f.blocked, f.unreachable} {
+			t.Run(dst.String()+"/rejected", func(t *testing.T) {
+				_, err := dial("tcp", net.JoinHostPort(dst.String(), "80"))
+				require.ErrorIs(t, err, syscall.ECONNREFUSED)
+				conn, err := dial("udp", net.JoinHostPort(dst.String(), "80"))
+				require.NoError(t, err)
+				defer conn.Close()
+				_, err = conn.Write([]byte("hello"))
+				require.NoError(t, err)
+				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+				_, err = conn.Read(make([]byte, 1500))
+				require.ErrorIs(t, err, syscall.ECONNREFUSED)
+				require.Equal(t, [][2]uint8{{f.dstUnreachable, f.portUnreachable}}, typeCodes(ping(t, dst)))
+			})
+		}
+	}
 
 	stats, err := n.Stats(ctx)
 	require.NoError(t, err)
 	require.Greater(t, stats.GetBytesSent(), int64(1<<20))
 	require.Greater(t, stats.GetBytesReceived(), int64(1<<20))
+}
+
+func TestContainerNetworkIPv6Disabled(t *testing.T) {
+	testnetworking.Setup(t)
+	ctx := context.Background()
+	n, err := NewContainerNetwork(ctx, false /*=enableIPv6*/)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, n.Cleanup(ctx)) })
+	require.NoError(t, inNamespace(n.netns, func() error {
+		eth0, err := netlink.LinkByName(containerDevice)
+		require.NoError(t, err)
+		addrs, err := netlink.AddrList(eth0, netlink.FAMILY_V6)
+		require.NoError(t, err)
+		for _, a := range addrs {
+			require.False(t, a.IP.IsGlobalUnicast(), "unexpected IPv6 address %s", a.IP)
+		}
+		routes, err := netlink.RouteList(eth0, netlink.FAMILY_V6)
+		require.NoError(t, err)
+		for _, r := range routes {
+			require.Nil(t, r.Gw, "unexpected IPv6 route via %s", r.Gw)
+		}
+		return nil
+	}))
 }
 
 func TestIsAllowed(t *testing.T) {
@@ -196,8 +257,20 @@ func TestIsAllowed(t *testing.T) {
 		{"127.0.0.1", false},
 		{"224.0.0.1", false},
 		{"255.255.255.255", false},
+		{"2001:4860:4860::8888", true},
+		{"::ffff:10.1.2.3", true},
+		{"::ffff:10.1.2.4", false},
+		{"::1", false},
+		{"fd20:ce::254", false},
+		{"fe80::1", false},
+		{"ff02::1", false},
+		{"::a00:1", false},
+		{"64:ff9b::a9fe:a9fe", false},
+		{"64:ff9b:1::1", false},
+		{"2001:0:4136:e378::1", false},
+		{"2002:a00:1::1", false},
 	} {
-		addr := tcpip.AddrFrom4(netip.MustParseAddr(tc.addr).As4())
+		addr := tcpip.AddrFromSlice(netip.MustParseAddr(tc.addr).AsSlice())
 		require.Equal(t, tc.allowed, n.isAllowed(addr), tc.addr)
 		require.False(t, local.isAllowed(addr), tc.addr)
 	}
@@ -213,7 +286,7 @@ func TestCleanupClosesForwardedConnections(t *testing.T) {
 	require.NoError(t, err)
 	defer lis.Close()
 
-	n, err := NewContainerNetwork(ctx)
+	n, err := NewContainerNetwork(ctx, false /*=enableIPv6*/)
 	require.NoError(t, err)
 	var guest net.Conn
 	require.NoError(t, inNamespace(n.netns, func() error {
@@ -251,7 +324,7 @@ func TestCleanupStopsGoroutines(t *testing.T) {
 	}
 	before := goroutines()
 	for range 3 {
-		n, err := NewContainerNetwork(ctx)
+		n, err := NewContainerNetwork(ctx, false /*=enableIPv6*/)
 		require.NoError(t, err)
 		require.NoError(t, n.Cleanup(ctx))
 	}
@@ -273,7 +346,7 @@ func TestOneWayUDPFlowStaysOpen(t *testing.T) {
 	require.NoError(t, err)
 	defer pc.Close()
 
-	n, err := NewContainerNetwork(ctx)
+	n, err := NewContainerNetwork(ctx, false /*=enableIPv6*/)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, n.Cleanup(ctx)) })
 	var conn net.Conn
