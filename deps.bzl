@@ -475,15 +475,15 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
 
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-amd64",
-        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.3/runc.amd64"],
-        sha256 = "8781ab9f71c12f314d21c8e85f13ca1a82d90cf475aa5131a7b543fcc5487543",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.6/runc.amd64"],
+        sha256 = "3f3921dbbee7723e9868f97e88e51ffc910206e3ba55646e74d93d24ea76023c",
         downloaded_file_path = "runc",
         executable = True,
     )
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-arm64",
-        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.3/runc.arm64"],
-        sha256 = "3c9a8e9e6dafd00db61f4611692447ebab4a56388bae4f82192aed67b66df712",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.6/runc.arm64"],
+        sha256 = "6be27a061ef89bb14c6cb495405bba80f46cea213b8f79378a6086b1bac6b747",
         downloaded_file_path = "runc",
         executable = True,
     )
