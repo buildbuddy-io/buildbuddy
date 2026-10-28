@@ -1031,8 +1031,27 @@ message ExecuteWorkflowRequest {
   // By default, the scheduler will automatically retry transient errors.
   // For non-idempotent workloads, set to true to disable this behavior.
   bool disable_retry = 10;
+
+  // Remote headers to be applied to the execution request for each workflow
+  // action. Can be used to set platform properties containing secrets.
+  // Ex. ["x-buildbuddy-platform.secret-env-overrides=SECRET_NAME=SECRET_VALUE"]
+  repeated string remote_headers = 11;
 }
 ```
+
+For short-lived secrets, set `remote_headers` instead of `env`, using one
+`secret-env-overrides` header with comma-separated `NAME=VALUE` pairs:
+
+```json
+{
+  "remote_headers": ["x-buildbuddy-platform.secret-env-overrides=TOKEN=value,OTHER_TOKEN=other_value"]
+}
+```
+
+For values containing commas, use one `x-buildbuddy-platform.secret-env-overrides-base64`
+header with comma-separated encodings of complete `NAME=VALUE` pairs, as shown in
+[Short-lived secrets](secrets#short-lived-secrets). Repeating a secret header name
+does not merge the secrets; only the last value for that header is used.
 
 ### ExecuteWorkflowResponse
 
