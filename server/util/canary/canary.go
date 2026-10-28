@@ -21,7 +21,7 @@ type CanaryFunc func(timeTaken time.Duration)
 // period (if not canceled) and doneFn once when canceled, if more than
 // expectedDuration has elapsed by then.
 //
-// lateFn and doneFn two may overlap if the canary is canceled while lateFn is
+// lateFn and doneFn may overlap if the canary is canceled while lateFn is
 // running. Only the first call to the CancelFunc has any effect.
 func StartWithLateFn(expectedDuration time.Duration, lateFn CanaryFunc, doneFn CanaryFunc) CancelFunc {
 	if !*enableCanaries {
