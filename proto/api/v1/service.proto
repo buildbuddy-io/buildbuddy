@@ -12,6 +12,8 @@ import "proto/api/v1/remote_runner.proto";
 import "proto/api/v1/target.proto";
 import "proto/api/v1/workflow.proto";
 
+option go_package = "github.com/buildbuddy-io/buildbuddy/proto/api/v1";
+
 // This is the public interface used to programatically retrieve information
 // from BuildBuddy.
 //

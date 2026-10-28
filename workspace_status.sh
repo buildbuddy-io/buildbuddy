@@ -20,6 +20,7 @@ if ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "GIT_BRANCH unknown"
   echo "GIT_TREE_STATUS Unknown"
   echo "STABLE_VERSION_TAG dev"
+  echo "STABLE_LATEST_PUBLIC_RELEASE dev"
   echo "STABLE_COMMIT_SHA dev"
   echo "STABLE_CLI_VERSION_TAG unknown"
   exit 0
@@ -50,6 +51,9 @@ echo "GIT_TREE_STATUS $git_tree_status"
 # determined (shallow clone, or no version tag reachable from HEAD).
 version_tag=$(./tools/branch_highest_version.sh) || version_tag=unknown
 echo "STABLE_VERSION_TAG $version_tag"
+# Builds from this repo are versioned by release, so the latest public release
+# they contain is their version tag.
+echo "STABLE_LATEST_PUBLIC_RELEASE $version_tag"
 echo "STABLE_COMMIT_SHA $commit_sha"
 
 latest_cli_version_tag=$(./tools/latest_cli_version_tag.sh)

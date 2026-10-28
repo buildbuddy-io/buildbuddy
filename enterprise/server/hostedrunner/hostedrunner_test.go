@@ -470,3 +470,27 @@ func TestCredentialEnvOverrides_PrivateRepo(t *testing.T) {
 	// Assert that REPO_TOKEN is set to the fake token.
 	require.Contains(t, envOverrides, "REPO_TOKEN="+fakeToken)
 }
+
+func TestRun_GitCredentialsFromEnv(t *testing.T) {
+	te, ctx := getEnv(t)
+	r, err := New(te)
+	require.NoError(t, err)
+
+	_, err = r.Run(ctx, &rnpb.RunRequest{
+		GitRepo:   &gitpb.GitRepo{RepoUrl: "https://bitbucket.org/org/repo"},
+		RepoState: &gitpb.RepoState{Branch: "main"},
+		Env:       map[string]string{"REPO_USER": "user", "REPO_TOKEN": "token"},
+		Steps:     []*rnpb.Step{{Run: "echo hello"}},
+	})
+	require.NoError(t, err)
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	require.Equal(t, 1, len(execClient.executeRequests))
+	execReq := execClient.executeRequests[0]
+	overrides := execReq.Metadata.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
+	require.Greater(t, len(overrides), 0)
+	require.Contains(t, overrides[len(overrides)-1], "REPO_USER=user,REPO_TOKEN=token")
+	for _, ev := range getExecution(t, ctx, te, execReq.Payload).Command.GetEnvironmentVariables() {
+		require.NotContains(t, []string{"REPO_USER", "REPO_TOKEN"}, ev.GetName())
+	}
+}

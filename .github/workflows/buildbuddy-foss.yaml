@@ -14,10 +14,22 @@ jobs:
       - name: Sync repositories 1 to 1
         uses: ungless/git-sync@ac74f5df608e6d48d804ad9deb236a63f05e0c80 # master
         with:
-          source_repo: "https://${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}@github.com/buildbuddy-io/buildbuddy.git"
+          source_repo: "https://github.com/buildbuddy-io/buildbuddy.git"
           source_branch: "master"
-          destination_repo: "https://${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}@github.com/buildbuddy-io/buildbuddy-foss.git"
+          destination_repo: "https://github.com/buildbuddy-io/buildbuddy-foss.git"
           destination_branch: "master"
+        env:
+          # Keep credentials out of URLs: libcurl 8.23 strips them from the
+          # effective URL, which older Git mistakes for a redirect.
+          FOSS_SYNC_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          GIT_TERMINAL_PROMPT: "0"
+          GIT_CONFIG_COUNT: "2"
+          GIT_CONFIG_KEY_0: credential.useHttpPath
+          GIT_CONFIG_VALUE_0: "true"
+          GIT_CONFIG_KEY_1: credential.https://github.com/buildbuddy-io/buildbuddy-foss.git.helper
+          GIT_CONFIG_VALUE_1: >-
+            !f() { if [ "$1" = get ] && [ -n "$FOSS_SYNC_TOKEN" ]; then
+            printf 'username=x-access-token\npassword=%s\n' "$FOSS_SYNC_TOKEN"; fi; }; f
       - name: Checkout buildbuddy-foss
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:

@@ -25,6 +25,7 @@ go_library(
         "//server/util/proto",
         "//server/util/status",
         "//server/util/upgrade",
+        "//server/version",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_masterminds_semver_v3//:semver",

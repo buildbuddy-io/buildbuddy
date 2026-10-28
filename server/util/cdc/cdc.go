@@ -12,10 +12,6 @@ import (
 )
 
 const (
-	// SpliceWithoutValidationExperiment is the group-scoped experiment flag
-	// gating SpliceBlob without content verification.
-	SpliceWithoutValidationExperiment = "splice-without-validation"
-
 	// ChunkedHeaderName is the gRPC header attached to RPCs whose digests
 	// or payloads are individual content-defined chunks, not whole blobs.
 	ChunkedHeaderName = "build.bazel.remote.execution.v2.chunked"

@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/url"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -910,9 +909,18 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(clientConn))
 
+	// Like the real executor, present a client identity to the cache when
+	// one is configured (app.client_identity.key), so that the app trusts
+	// the internal headers the executor sends.
+	require.NoError(t, clientidentity.Register(env))
 	cacheConn := grpc.ClientConnInterface(clientConn)
 	if options.CacheConn != nil {
 		cacheConn = options.CacheConn
+	} else if env.GetClientIdentityService() != nil {
+		identityConn, err := grpc_client.DialInternalWithoutPooling(env, r.AppProxy.GRPCTarget())
+		require.NoError(t, err)
+		t.Cleanup(func() { identityConn.Close() })
+		cacheConn = identityConn
 	}
 	env.SetActionCacheClient(repb.NewActionCacheClient(cacheConn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(cacheConn))
@@ -1006,65 +1014,46 @@ func (r *Env) DisconnectExecutor(executor *Executor) {
 	delete(r.executors, executor.id)
 }
 
+// registeredExecutorIDs returns the IDs of the executors that the scheduler
+// currently lists for the test group.
+func (r *Env) registeredExecutorIDs(ctx context.Context) (map[string]bool, error) {
+	req := &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: r.GroupID1},
+	}
+	rsp, err := r.GetBuildBuddyServiceClient().GetExecutionNodes(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]bool, len(rsp.GetExecutor()))
+	for _, e := range rsp.GetExecutor() {
+		ids[e.GetNode().GetExecutorId()] = true
+	}
+	return ids, nil
+}
+
 // waitForExecutorUnregistered waits until the scheduler no longer lists the
 // executor with the given ID.
 func (r *Env) waitForExecutorUnregistered(executorID string) {
 	ctx := r.WithUserID(context.Background(), r.UserID1)
-	client := r.GetBuildBuddyServiceClient()
-	req := &scpb.GetExecutionNodesRequest{
-		RequestContext: &ctxpb.RequestContext{
-			GroupId: r.GroupID1,
-		},
-	}
-	require.Eventually(r.t, func() bool {
-		rsp, err := client.GetExecutionNodes(ctx, req)
-		if err != nil {
-			return false
-		}
-		for _, e := range rsp.GetExecutor() {
-			if e.GetNode().GetExecutorId() == executorID {
-				return false
-			}
-		}
-		return true
+	require.EventuallyWithT(r.t, func(t *assert.CollectT) {
+		ids, err := r.registeredExecutorIDs(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, ids, executorID)
 	}, defaultWaitTimeout, 100*time.Millisecond, "executor %q should be unregistered from the scheduler", executorID)
 }
 
 // waitForExecutorRegistration waits until the set of all registered executors matches expected internal set.
 func (r *Env) waitForExecutorRegistration() {
-	expectedNodesByID := make(map[string]bool)
+	expected := make(map[string]bool)
 	for _, e := range r.executors {
-		expectedNodesByID[e.id] = true
+		expected[e.id] = true
 	}
-
-	nodesByID := make(map[string]bool)
-	deadline := time.Now().Add(defaultWaitTimeout)
-
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
-	defer cancel()
-	ctx = r.WithUserID(ctx, r.UserID1)
-
-	for time.Now().Before(deadline) {
-		nodesByID = make(map[string]bool)
-
-		client := r.GetBuildBuddyServiceClient()
-		req := &scpb.GetExecutionNodesRequest{
-			RequestContext: &ctxpb.RequestContext{
-				GroupId: r.GroupID1,
-			},
-		}
-		rsp, err := client.GetExecutionNodes(ctx, req)
-		require.NoError(r.t, err)
-		for _, e := range rsp.GetExecutor() {
-			nodesByID[e.GetNode().GetExecutorId()] = true
-		}
-		if reflect.DeepEqual(expectedNodesByID, nodesByID) {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	require.Equal(r.t, expectedNodesByID, nodesByID, "set of registered executors should converge")
+	ctx := r.WithUserID(context.Background(), r.UserID1)
+	require.EventuallyWithT(r.t, func(t *assert.CollectT) {
+		ids, err := r.registeredExecutorIDs(ctx)
+		require.NoError(t, err)
+		require.Equal(t, expected, ids)
+	}, defaultWaitTimeout, 100*time.Millisecond, "set of registered executors should converge")
 }
 
 type CacheProxyOptions struct {
@@ -1173,9 +1162,13 @@ func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
 	env.SetByteStreamClient(r.GetByteStreamClient())
 	env.SetContentAddressableStorageClient(r.GetContentAddressableStorageClient())
 	env.SetCapabilitiesClient(r.testEnv.GetCapabilitiesClient())
-	// TODO: Does the context need the user ID if the CommandResult was produced
-	// by an authenticated user?
-	if err := r.rbeClient.DownloadActionOutputs(context.Background(), env, res.CommandResult, tmpDir); err != nil {
+	// Read the outputs as the group that produced them: chunked blobs, for
+	// one, are only readable within that group.
+	ctx := context.Background()
+	if res.apiKey != "" {
+		ctx = r.WithAPIKey(ctx, res.apiKey)
+	}
+	if err := r.rbeClient.DownloadActionOutputs(ctx, env, res.CommandResult, tmpDir); err != nil {
 		assert.FailNow(r.t, "failed to download action outputs", err.Error())
 	}
 	return tmpDir
@@ -1218,6 +1211,8 @@ type CommandResult struct {
 	*rbeclient.CommandResult
 	Stdout string
 	Stderr string
+	// apiKey is the API key the command was executed with, if any.
+	apiKey string
 }
 
 // getResult blocks until the command either finishes executing or encounters
@@ -1251,6 +1246,7 @@ func (c *Command) getResult() *CommandResult {
 				CommandResult: result,
 				Stdout:        stdout,
 				Stderr:        stderr,
+				apiKey:        c.apiKey,
 			}
 		case <-timeout.C:
 			assert.FailNow(c.env.t, fmt.Sprintf("command %q did not finish within timeout", c.Name))

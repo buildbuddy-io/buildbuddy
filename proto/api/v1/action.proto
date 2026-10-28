@@ -4,6 +4,8 @@ package api.v1;
 
 import "proto/api/v1/file.proto";
 
+option go_package = "github.com/buildbuddy-io/buildbuddy/proto/api/v1";
+
 // Request passed into GetAction
 message GetActionRequest {
   // The selector defining which action(s) to retrieve.

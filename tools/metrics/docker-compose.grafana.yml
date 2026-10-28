@@ -15,6 +15,9 @@ services:
       - CLICKHOUSE_USERNAME=${CLICKHOUSE_USERNAME}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       - GF_DATE_FORMATS_DEFAULT_TIMEZONE=America/Los_Angeles
+      # Enabling the SQLite WAL makes the migration write transactions that Grafana
+      # does on startup much faster.
+      - GF_DATABASE_WAL=true
     volumes:
       - ./grafana/provisioning/local:/etc/grafana/provisioning
       - ${DASHBOARDS_DIR}:/var/lib/grafana/dashboards

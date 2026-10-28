@@ -3,6 +3,7 @@
 package upgrade
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -76,10 +77,14 @@ type Detector struct {
 	// Levels ordered most-urgent first; the first trigger a version matches
 	// determines its urgency.
 	levels []level
+	// The newest available version, which versions are compared against.
+	newest *semver.Version
 }
 
-func NewDetector(triggers map[uppb.Prompt_Urgency]Trigger) *Detector {
-	d := &Detector{}
+// NewDetector returns a Detector that compares versions against newest. If
+// newest is nil, the Detector never prompts.
+func NewDetector(triggers map[uppb.Prompt_Urgency]Trigger, newest *semver.Version) *Detector {
+	d := &Detector{newest: newest}
 	for urgency, trigger := range triggers {
 		d.levels = append(d.levels, level{urgency: urgency, trigger: trigger})
 	}
@@ -89,13 +94,14 @@ func NewDetector(triggers map[uppb.Prompt_Urgency]Trigger) *Detector {
 	return d
 }
 
-// Detect returns a Prompt carrying newest's version and the given message if
-// any of the provided versions meet one of the detector's triggers, and nil
-// otherwise. If multiple versions match, the prompt reflects the highest
-// urgency among them. Versions that don't parse as semver (e.g. "unknown"
-// from dev builds) are skipped.
-func (d *Detector) Detect(newest *semver.Version, versions []string, message string) *uppb.Prompt {
-	if newest == nil {
+// Detect returns a Prompt if any of the provided versions meet one of the
+// detector's triggers, and nil otherwise. The prompt's message is
+// messageTemplate formatted with the newest version. If multiple versions
+// match, the prompt reflects the highest urgency among them. Versions that
+// don't parse as semver (e.g. "unknown" from dev builds) are skipped. It is
+// safe to call on a nil Detector, which never prompts.
+func (d *Detector) Detect(versions []string, messageTemplate string) *uppb.Prompt {
+	if d == nil || d.newest == nil {
 		return nil
 	}
 	urgency := uppb.Prompt_UNKNOWN_URGENCY
@@ -104,7 +110,7 @@ func (d *Detector) Detect(newest *semver.Version, versions []string, message str
 		if err != nil {
 			continue
 		}
-		if u := d.urgency(newest, version); u > urgency {
+		if u := d.urgency(d.newest, version); u > urgency {
 			urgency = u
 		}
 	}
@@ -113,7 +119,7 @@ func (d *Detector) Detect(newest *semver.Version, versions []string, message str
 	}
 	return &uppb.Prompt{
 		Urgency: urgency,
-		Message: message,
+		Message: fmt.Sprintf(messageTemplate, d.newest),
 	}
 }
 

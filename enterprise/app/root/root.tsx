@@ -451,7 +451,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   )}
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                   {cacheProxies && this.state.user && (
-                    <CacheProxiesComponent path={this.state.path} user={this.state.user} />
+                    <CacheProxiesComponent path={this.state.path} search={this.state.search} user={this.state.user} />
                   )}
                   {cacheProxy && this.state.user && (
                     <CacheProxyComponent

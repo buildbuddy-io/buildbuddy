@@ -449,8 +449,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.2.0/containerd-2.2.0-linux-amd64.tar.gz"],
-        sha256 = "b9626a94ab93b00bcbcbf13d98deef972c6fb064690e57940632df54ad39ee71",
+        urls = ["https://github.com/containerd/containerd/releases/download/v2.2.9/containerd-2.2.9-linux-amd64.tar.gz"],
+        sha256 = "a0f8e44adcb8f6cb969938b7f81182577b3c4e1872fc9905b311aae0d944c377",
     )
     http_archive(
         name = "com_github_containerd_containerd-linux-arm64",
@@ -461,8 +461,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.2.0/containerd-2.2.0-linux-arm64.tar.gz"],
-        sha256 = "8805c2123d3b7c7ee2030e9f8fc07a1167d8a3f871d6a7d7ec5d1deb0b51a4a7",
+        urls = ["https://github.com/containerd/containerd/releases/download/v2.2.9/containerd-2.2.9-linux-arm64.tar.gz"],
+        sha256 = "a4ace72f4f80260f39a5ec1c30c8a1c96b0b08b6636efc6ad1a3e0bfa24889d3",
     )
 
     http_archive(
@@ -475,15 +475,15 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
 
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-amd64",
-        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.3/runc.amd64"],
-        sha256 = "8781ab9f71c12f314d21c8e85f13ca1a82d90cf475aa5131a7b543fcc5487543",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.6/runc.amd64"],
+        sha256 = "3f3921dbbee7723e9868f97e88e51ffc910206e3ba55646e74d93d24ea76023c",
         downloaded_file_path = "runc",
         executable = True,
     )
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-arm64",
-        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.3/runc.arm64"],
-        sha256 = "3c9a8e9e6dafd00db61f4611692447ebab4a56388bae4f82192aed67b66df712",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.6/runc.arm64"],
+        sha256 = "6be27a061ef89bb14c6cb495405bba80f46cea213b8f79378a6086b1bac6b747",
         downloaded_file_path = "runc",
         executable = True,
     )

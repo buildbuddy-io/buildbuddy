@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -32,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -46,6 +49,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -440,14 +444,15 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
-		EventName:          "pull_request",
-		TargetRepoURL:      "https://github.com/acme-inc/acme",
-		TargetBranch:       "main",
-		PushedRepoURL:      "https://github.com/untrusteduser/acme",
-		PushedBranch:       "feature",
-		SHA:                "c04d68571cb519e095772c865847007ed3e7fea9",
-		IsTargetRepoPublic: true,
-		PullRequestAuthor:  "external-user-1",
+		EventName:               "pull_request",
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetRepoDefaultBranch: "main",
+		TargetBranch:            "release",
+		PushedRepoURL:           "https://github.com/untrusteduser/acme",
+		PushedBranch:            "feature",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic:      true,
+		PullRequestAuthor:       "external-user-1",
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
@@ -455,6 +460,9 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
+	configReq := <-provider.GetFileContentsRequests
+	assert.Equal(t, repoURL, configReq.RepoURL)
+	assert.Equal(t, "main", configReq.Ref)
 	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
@@ -503,14 +511,15 @@ func testTrustedWorkflowBuildUser(t *testing.T, configuredUser, wantUser string)
 	repo := createWorkflow(t, te, repoURL, gid, false)
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
-		EventName:          "pull_request",
-		TargetRepoURL:      "https://github.com/acme-inc/acme",
-		TargetBranch:       "main",
-		PushedRepoURL:      "https://github.com/untrusteduser/acme",
-		PushedBranch:       "feature",
-		SHA:                "c04d68571cb519e095772c865847007ed3e7fea9",
-		IsTargetRepoPublic: true,
-		PullRequestAuthor:  "acme-inc-user-1",
+		EventName:               "pull_request",
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetRepoDefaultBranch: "main",
+		TargetBranch:            "release",
+		PushedRepoURL:           "https://github.com/untrusteduser/acme",
+		PushedBranch:            "feature",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic:      true,
+		PullRequestAuthor:       "acme-inc-user-1",
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow + configuredUser}
 
@@ -518,6 +527,9 @@ func testTrustedWorkflowBuildUser(t *testing.T, configuredUser, wantUser string)
 	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
+	configReq := <-provider.GetFileContentsRequests
+	assert.Equal(t, provider.WebhookData.PushedRepoURL, configReq.RepoURL)
+	assert.Equal(t, provider.WebhookData.SHA, configReq.Ref)
 	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
@@ -1269,6 +1281,98 @@ func TestExecuteWorkflow_BlockedGroupDoesNotStartWorkflow(t *testing.T) {
 	require.Len(t, rsp.GetActionStatuses(), 1)
 	require.Equal(t, int32(codes.PermissionDenied), rsp.GetActionStatuses()[0].GetStatus().GetCode())
 	require.Zero(t, len(execClient.executeRequests))
+}
+
+func TestExecuteWorkflow_RemoteHeaders(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	flags.Set(t, "remote_execution.workflows_max_execute_retries", 0)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	_ = setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	createWorkflow(t, te, repoURL, gid, true /*useDefaultWorkflowConfig*/)
+	_ = runBBServer(ctx, t, te)
+	s := api.NewAPIServer(te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+
+	// Run with two secrets to simulate a short-lived token that changes.
+	// The changing token should not be in the platform, which would invalidate snapshot keys.
+	var firstPlatform *repb.Platform
+	encodedSecrets := base64.StdEncoding.EncodeToString([]byte(`JSON={"key":"value"}`)) + "," +
+		base64.StdEncoding.EncodeToString([]byte("COMPLEX=value,with=commas=="))
+	for _, secret := range []string{"first-token", "second-token"} {
+		rsp, err := s.ExecuteWorkflow(ctx, &apipb.ExecuteWorkflowRequest{
+			RepoUrl: repoURL,
+			Branch:  "main",
+			Async:   true,
+			RemoteHeaders: []string{
+				// Send multiple secrets in a single comma-separated header.
+				"x-buildbuddy-platform.secret-env-overrides=TOKEN=" + secret + ",TOKEN_WITH_EXTRA_EQUAL_SIGN=" + secret + "=suffix",
+				"x-buildbuddy-platform.secret-env-overrides-base64=" + encodedSecrets,
+				// Make sure we correctly handle env overrides. These should be appended to the existing env overrides
+				// the workflow service applies.
+				"x-buildbuddy-platform.env-overrides=EXTRA=value",
+				// Make sure we correctly handle custom headers.
+				"x-custom-header=custom-value",
+			},
+		})
+		require.NoError(t, err)
+		require.Len(t, rsp.GetActionStatuses(), 1)
+		require.Equal(t, int32(codes.OK), rsp.GetActionStatuses()[0].GetStatus().GetCode())
+
+		execReq := execClient.NextExecuteRequest()
+		assert.Equal(t, []string{"custom-value"}, execReq.Metadata.Get("x-custom-header"))
+		envOverrides := execReq.Metadata.Get("x-buildbuddy-platform.env-overrides")
+		require.Len(t, envOverrides, 1)
+		for _, assignment := range []string{"EXTRA=value", "BUILDBUDDY_API_KEY=", "REPO_USER=", "REPO_TOKEN="} {
+			assert.Contains(t, envOverrides[0], assignment)
+		}
+
+		exec := getExecution(t, ctx, te, execReq.Payload)
+
+		// Parse the forwarded headers the same way the execution server does.
+		// This catches secrets being dropped when the same platform header is repeated.
+		props, err := platform.ParseProperties(&repb.ExecutionTask{
+			Action:  exec.Action,
+			Command: exec.Command,
+			PlatformOverrides: &repb.Platform{
+				Properties: platform.RemoteHeaderOverrides(metadata.NewIncomingContext(ctx, execReq.Metadata)),
+			},
+		})
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{
+			"TOKEN=" + secret,
+			"TOKEN_WITH_EXTRA_EQUAL_SIGN=" + secret + "=suffix",
+			`JSON={"key":"value"}`,
+			"COMPLEX=value,with=commas==",
+		}, props.SecretEnvOverrides)
+
+		// Headers must stay out of the cached command and snapshot platform hash.
+		assert.NotContains(t, exec.Command.String(), secret)
+		assert.NotContains(t, envVars(exec.Command), "TOKEN")
+		assert.NotContains(t, exec.Action.String(), secret)
+
+		// Save the first platform, to make sure it doesn't change between runs, even when the short-lived token
+		// in the header changes.
+		if firstPlatform == nil {
+			firstPlatform = exec.Action.GetPlatform()
+		} else {
+			assert.Empty(t, cmp.Diff(firstPlatform, exec.Action.GetPlatform(), protocmp.Transform()))
+		}
+	}
+
+	rsp, err := s.ExecuteWorkflow(ctx, &apipb.ExecuteWorkflowRequest{
+		RepoUrl:       repoURL,
+		Branch:        "main",
+		Async:         true,
+		RemoteHeaders: []string{"malformed-secret-header"},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetActionStatuses(), 1)
+	assert.Equal(t, int32(codes.InvalidArgument), rsp.GetActionStatuses()[0].GetStatus().GetCode())
+	assert.NotContains(t, rsp.GetActionStatuses()[0].GetStatus().GetMessage(), "malformed-secret-header")
+	assert.Empty(t, execClient.executeRequests)
 }
 
 func TestAPIDispatch_ActionFiltering(t *testing.T) {

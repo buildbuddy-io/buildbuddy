@@ -24,18 +24,25 @@ import (
 )
 
 const Usage = `
-usage: bb agent review [ --dry_run ] [ --force ] [ --allow_fork ]
+usage: bb agent review [ --fix ] [ --dry_run ] [ --verify=false ] [ --force ] [ --allow_fork ]
 
 Reviews the open GitHub pull request for the checked-out branch, then posts the
 findings as PR review comments.
+
+With --fix, fetches existing PR feedback, addresses actionable comments, then commits and pushes them to the PR branch.
+Requires a clean checkout at the PR head.
+Set AGENT_REVIEW_FIX=1 to enable --fix by default.
+Pass --verify=false to skip verification.
+With --fix --dry_run, applies changes in the local working tree without committing, pushing, or replying to comments.
+Fixing PRs from forks is not supported.
 
 The review reads the source from the local checkout, so to review another PR,
 check it out first with ` + "`gh pr checkout <pr>`" + `.
 
 Requires gh and a GitHub token in REPO_TOKEN, GH_TOKEN, or GITHUB_TOKEN.
 
-Drafts and PRs that already have a bot review are skipped; pass --force (or
-set AGENT_REVIEW_FORCE=1) to review them anyway.
+When generating reviews, drafts and PRs that already have a bot review are
+skipped; pass --force (or set AGENT_REVIEW_FORCE=1) to review them anyway.
 
 By default, PRs from forks are refused, because reviewing one runs the agent over
 untrusted code; pass --allow_fork to review one anyway.
@@ -43,6 +50,8 @@ untrusted code; pass --allow_fork to review one anyway.
 Examples:
   bb agent review
   bb agent review --dry_run
+  bb agent review --fix
+  bb agent review --fix --dry_run
 `
 
 // Flags holds the flags unique to this subcommand. The flags shared by all
@@ -50,7 +59,9 @@ Examples:
 var (
 	Flags = flag.NewFlagSet("review", flag.ContinueOnError)
 
-	dryRun    = Flags.Bool("dry_run", false, "Print the review payload without posting it.")
+	dryRun    = Flags.Bool("dry_run", false, "Print the review payload without posting it, or with --fix, apply changes locally without committing or pushing.")
+	fix       = Flags.Bool("fix", os.Getenv(agentReviewFixPreset) == "1", "Address existing PR feedback, then commit and push the changes. Set AGENT_REVIEW_FIX=1 to enable by default. With --dry_run, leave changes uncommitted in the working tree.")
+	verify    = Flags.Bool("verify", true, "Verify changes when using --fix. Set --verify=false to skip verification.")
 	force     = Flags.Bool("force", false, "Review the PR even if it is a draft or already has a bot review.")
 	allowFork = Flags.Bool("allow_fork", false, "Review the PR even if it comes from a fork. See the warning that --allow_fork suppresses.")
 )
@@ -122,6 +133,12 @@ const reviewLinkMarker = "<!-- bb-agent-review-link -->"
 
 const reviewDocsURL = "https://www.buildbuddy.io/docs/cli-commands#bb-agent-review"
 
+// Keep these in sync with ENV_PRESETS in run_workflow_deep_link.ts.
+const (
+	agentReviewPreset    = "AGENT_REVIEW"
+	agentReviewFixPreset = "AGENT_REVIEW_FIX"
+)
+
 var (
 	hunkRe = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 	fileRe = regexp.MustCompile(`^\+\+\+ b/(.+)$`)
@@ -184,6 +201,10 @@ func HandleReview(args []string) (int, error) {
 		headShort = headShort[:8]
 	}
 	log.Printf("PR #%d on %s/%s  (head: %s, base: %s)", pr.GetNumber(), owner, repo, headShort, pr.GetBase().GetRef())
+
+	if *fix {
+		return fixReview(ctx, gh, owner, repo, pr)
+	}
 
 	if !*allowFork && isFork(pr, owner, repo) {
 		log.Warnf("Reviewing this code runs an agent over untrusted code, which the agent reads as input. Proceed with caution. Read the diff yourself first, and pass --allow_fork to review it anyway.")
@@ -323,13 +344,17 @@ func postReviewLink(ctx context.Context, gh *github.Client, owner, repo string, 
 		return nil
 	}
 
-	runURL, err := runReviewURL(pr, actionName)
+	runURL, err := runReviewURL(pr, actionName, agentReviewPreset)
+	if err != nil {
+		return err
+	}
+	fixURL, err := runReviewURL(pr, actionName, agentReviewFixPreset)
 	if err != nil {
 		return err
 	}
 	body := reviewLinkMarker + "\n" +
 		"**Agent code review** · Get feedback on this pull request before a teammate reviews it.\n" +
-		"**[Run review](" + runURL + ")**\n\n" +
+		"**[Run review](" + runURL + ")** · **[Address all feedback](" + fixURL + ")**\n\n" +
 		"<sub>Runs [`bb agent review`](" + reviewDocsURL + ") on BuildBuddy Workflows</sub>"
 
 	if *dryRun {
@@ -350,8 +375,8 @@ func postReviewLink(ctx context.Context, gh *github.Client, owner, repo string, 
 }
 
 // runReviewURL returns a link that runs the given workflow action on the PR's
-// branch with AGENT_REVIEW_FORCE=1.
-func runReviewURL(pr *github.PullRequest, actionName string) (string, error) {
+// branch using an environment preset from run_workflow_deep_link.ts.
+func runReviewURL(pr *github.PullRequest, actionName, envPreset string) (string, error) {
 	runURL, err := url.JoinPath(*agentflags.HTTPTarget, "workflows", "run")
 	if err != nil {
 		return "", fmt.Errorf("build run review URL: %w", err)
@@ -360,7 +385,7 @@ func runReviewURL(pr *github.PullRequest, actionName string) (string, error) {
 		"repo_url":    {pr.GetBase().GetRepo().GetHTMLURL()},
 		"action_name": {actionName},
 		"branch":      {pr.GetHead().GetRef()},
-		"env_preset":  {"AGENT_REVIEW"},
+		"env_preset":  {envPreset},
 	}.Encode(), nil
 }
 
@@ -371,12 +396,17 @@ func reviewFooter(pr *github.PullRequest) string {
 		return "<sub>Reviewed with [`bb agent review`](" + reviewDocsURL + ")</sub>"
 	}
 	footer := "<sub>Reviewed with [`bb agent review`](" + reviewDocsURL + ") on BuildBuddy Workflows</sub>"
-	runURL, err := runReviewURL(pr, actionName)
+	runURL, err := runReviewURL(pr, actionName, agentReviewPreset)
 	if err != nil {
 		log.Warnf("Omitting re-run link from review: %s", err)
 		return footer
 	}
-	return "**[Re-run review](" + runURL + ")**\n\n" + footer
+	fixURL, err := runReviewURL(pr, actionName, agentReviewFixPreset)
+	if err != nil {
+		log.Warnf("Omitting address feedback link from review: %s", err)
+		return "**[Re-run review](" + runURL + ")**\n\n" + footer
+	}
+	return "**[Re-run review](" + runURL + ")** · **[Address all feedback](" + fixURL + ")**\n\n" + footer
 }
 
 // structureReview has the agent convert a free-form review into reviewJSON.

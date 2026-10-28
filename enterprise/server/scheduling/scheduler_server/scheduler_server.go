@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
+	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
@@ -49,7 +50,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
-	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
@@ -75,7 +75,7 @@ var (
 	unclaimedTasksShardCount     = flag.Int("remote_execution.unclaimed_tasks_shard_count", 1, "Number of Redis sets that each executor pool's unclaimed tasks are split across. With a sharded Redis client, this spreads the load of large pools across Redis shards. If the unclaimedTasks/* keys become a source of contention, try setting this value to twice the number of Redis shards. Since remote_execution.unclaimed_tasks_set_max_size applies to each set, consider lowering it when raising this. Changing this value is relatively safe, but it may temporarily increase Redis memory usage, failed task lease attempts, and execution latency in some cases.")
 	taskLivenessCheckInterval    = flag.Duration("remote_execution.task_liveness_check_interval", 0, "How often the scheduler checks that the tasks clients are waiting on still exist. Once a task has been missing for remote_execution.lease_duration plus remote_execution.lease_grace_period, the app ends the clients' waits with a NOT_FOUND error so that they retry the execution. 0 (the default) disables the check.")
 
-	upgradePromptMaxLags     = flag.Map("remote_execution.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) an executor may fall behind the newest registered version before GetExecutionNodes prompts an upgrade at that urgency.")
+	upgradePromptMaxLags     = flag.Map("remote_execution.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) an executor may fall behind the latest public release before GetExecutionNodes prompts an upgrade at that urgency.")
 	upgradePromptMinVersions = flag.Map("remote_execution.upgrade_prompt_min_versions", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the minimum version (semver) below which GetExecutionNodes prompts an upgrade at that urgency.")
 )
 
@@ -96,10 +96,6 @@ const (
 	// An executor is removed if it does not refresh its registration within
 	// this amount of time.
 	executorMaxRegistrationStaleness = 10 * time.Minute
-
-	// How long a computed newest-registered-executor-version value is served
-	// from the in-process cache before the Redis registry is scanned again.
-	executorNewestVersionCacheTTL = 5 * time.Minute
 
 	// Message attached to upgrade prompts returned by GetExecutionNodes.
 	upgradePromptMessage = "One or more of your executors are running an outdated version. The newest available version is %s."
@@ -1521,10 +1517,6 @@ type SchedulerServer struct {
 	// interval.
 	checkTaskAccessLogLimiter *perKeyLogLimiter
 
-	versionMu           sync.Mutex
-	newestVersion       *semver.Version
-	newestVersionExpiry time.Time
-
 	// Maintains the unclaimed task sets of all pools.
 	unclaimedTasksJanitor *unclaimedTasksJanitor
 
@@ -1542,7 +1534,12 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.InvalidArgumentErrorf("Invalid executor upgrade prompt configuration: %s", err)
 	}
-	schedulerServer, err := NewSchedulerServerWithOptions(env, &Options{UpgradeDetector: upgrade.NewDetector(triggers)})
+	// An unparseable release (e.g. "unknown" in dev builds) disables prompts.
+	var newest *semver.Version
+	if v, err := semver.NewVersion(version.LatestPublicRelease()); err == nil {
+		newest = v
+	}
+	schedulerServer, err := NewSchedulerServerWithOptions(env, &Options{UpgradeDetector: upgrade.NewDetector(triggers, newest)})
 	if err != nil {
 		return status.InternalErrorf("Error configuring scheduler server: %v", err)
 	}
@@ -2792,6 +2789,8 @@ func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostna
 func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, taskProto *repb.ExecutionTask) *repb.ExecutionTask {
 	fp := s.env.GetExperimentFlagProvider()
 	if fp == nil {
+		// TODO: remove this check so expflags work even when the experiment
+		// flag provider is not set.
 		return taskProto
 	}
 
@@ -2837,15 +2836,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	}
 
 	if supportsExperimentFlags {
-		// When adding a new flag to execution_experiments, update this list to
-		// ensure the experiment propagates to executors at lease time.
-		taskProto.ExperimentFlags = []*expb.EvaluatedFlag{
-			execution_experiments.PersistentVolumes.GetProto(ctx, expOptions...),
-			execution_experiments.UserspaceNetworking.GetProto(ctx, expOptions...),
-			execution_experiments.RecordInputFetchMetadata.GetProto(ctx, expOptions...),
-			execution_experiments.WorkspacePoolEnabled.GetProto(ctx, expOptions...),
-			execution_experiments.SeccompDisableNewUserNS.GetProto(ctx, expOptions...),
-		}
+		taskProto.ExperimentFlags = execution_experiments.All(ctx, expOptions...)
 	}
 
 	return taskProto
@@ -3557,70 +3548,16 @@ func (s *SchedulerServer) getRegisteredExecutionNodesFromRedis(ctx context.Conte
 	return registeredNodes, nil
 }
 
-// getNewestVersion returns the maximum semantic version among live
-// registrations in the shared executor pool group's pools.
-func (s *SchedulerServer) getNewestVersion(ctx context.Context) *semver.Version {
-	s.versionMu.Lock()
-	defer s.versionMu.Unlock()
-	if s.clock.Now().Before(s.newestVersionExpiry) {
-		return s.newestVersion
-	}
-
-	poolKeys, err := s.rdb.SMembers(ctx, s.redisKeyForExecutorPools(*sharedExecutorPoolGroupID)).Result()
-	if err != nil {
-		log.CtxWarningf(ctx, "could not list shared executor pools for newest version: %s", err)
-		// Don't cache the result of a failed read.
-		return nil
-	}
-	var newest *semver.Version
-	for _, key := range poolKeys {
-		executors, err := s.rdb.HGetAll(ctx, key).Result()
-		if err != nil {
-			log.CtxWarningf(ctx, "could not read executor registrations at %q: %s", key, err)
-			return nil
-		}
-		for _, data := range executors {
-			node := &scpb.RegisteredExecutionNode{}
-			if err := proto.Unmarshal([]byte(data), node); err != nil {
-				continue
-			}
-			if time.Since(node.GetLastPingTime().AsTime()) > executorMaxRegistrationStaleness {
-				continue
-			}
-			// Skip "unknown" and other unparseable versions.
-			v, err := semver.NewVersion(node.GetRegistration().GetVersion())
-			if err != nil {
-				continue
-			}
-			if newest == nil || v.GreaterThan(newest) {
-				newest = v
-			}
-		}
-	}
-
-	s.newestVersion = newest
-	s.newestVersionExpiry = s.clock.Now().Add(executorNewestVersionCacheTTL)
-	return newest
-}
-
-// upgradePrompt returns a Prompt carrying the newest registered executor
-// version if any of the given executors meets one of the configured upgrade
-// triggers (see the --remote_execution.upgrade_prompt_* flags), and nil
-// otherwise. The urgency reflects the most-outdated executor in the list.
-func (s *SchedulerServer) upgradePrompt(ctx context.Context, executors []*scpb.GetExecutionNodesResponse_Executor) *uppb.Prompt {
-	if s.detector == nil || len(executors) == 0 {
-		return nil
-	}
-	newestVersion := s.getNewestVersion(ctx)
-	newestVersionString := "unknown"
-	if newestVersion != nil {
-		newestVersionString = newestVersion.String()
-	}
+// upgradePrompt returns a Prompt carrying the latest public release if any of
+// the given executors meets one of the configured upgrade triggers (see the
+// --remote_execution.upgrade_prompt_* flags), and nil otherwise. The urgency
+// reflects the most-outdated executor in the list.
+func (s *SchedulerServer) upgradePrompt(executors []*scpb.GetExecutionNodesResponse_Executor) *uppb.Prompt {
 	versions := make([]string, 0, len(executors))
 	for _, e := range executors {
 		versions = append(versions, e.GetNode().GetVersion())
 	}
-	return s.detector.Detect(newestVersion, versions, fmt.Sprintf(upgradePromptMessage, newestVersionString))
+	return s.detector.Detect(versions, upgradePromptMessage)
 }
 
 func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
@@ -3680,7 +3617,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 	return &scpb.GetExecutionNodesResponse{
 		Executor:                    executors,
 		UserOwnedExecutorsSupported: userOwnedExecutorsEnabled,
-		UpgradePrompt:               s.upgradePrompt(ctx, executors),
+		UpgradePrompt:               s.upgradePrompt(executors),
 	}, nil
 }
 

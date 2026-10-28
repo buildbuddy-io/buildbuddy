@@ -16,7 +16,6 @@ go_library(
         "//enterprise/server/tasksize",
         "//enterprise/server/util/ci_runner_util",
         "//proto:capability_go_proto",
-        "//proto:experiments_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:trace_go_proto",
@@ -43,6 +42,7 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/upgrade",
+        "//server/version",
         "//third_party/singleflight",
         "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_go_redis_redis_v8//:redis",
@@ -103,6 +103,5 @@ go_test(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/durationpb",
-        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

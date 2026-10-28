@@ -2,8 +2,24 @@ import React from "react";
 
 import capabilities from "../capabilities/capabilities";
 
+const RELEASE_VERSION_REGEX = /^v\d+\.\d+\.\d+$/;
+// The commit can be a placeholder like "unknown" or "dev", which has no page.
+const COMMIT_REGEX = /^[0-9a-f]{7,40}$/;
+
+function versionLink(version: string, commit: string): string | undefined {
+  if (RELEASE_VERSION_REGEX.test(version)) {
+    return `https://github.com/buildbuddy-io/buildbuddy/releases/tag/${version}`;
+  }
+  if (COMMIT_REGEX.test(commit)) {
+    return `https://github.com/buildbuddy-io/buildbuddy/commit/${commit}`;
+  }
+  return undefined;
+}
+
 export default class FooterComponent extends React.Component {
   render() {
+    const version = capabilities.version;
+    const link = versionLink(version, capabilities.config.commit);
     return (
       <div className="footer">
         <span>&copy; {new Date().getFullYear()} Iteration, Inc.</span>
@@ -16,11 +32,14 @@ export default class FooterComponent extends React.Component {
         <a href="https://buildbuddy.io" target="_blank">
           BuildBuddy
         </a>
-        {capabilities.version != "unknown" && (
-          <a href={`https://github.com/buildbuddy-io/buildbuddy/releases/tag/${capabilities.version}`} target="_blank">
-            {capabilities.version}
-          </a>
-        )}
+        {version != "unknown" &&
+          (link ? (
+            <a href={link} target="_blank">
+              {version}
+            </a>
+          ) : (
+            <span>{version}</span>
+          ))}
         <a href="mailto:hello@buildbuddy.io" target="_blank">
           Contact us
         </a>

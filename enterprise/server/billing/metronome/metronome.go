@@ -24,10 +24,10 @@ import (
 )
 
 var (
-	apiKey         = flag.String("billing.metronome.api_key", "", "Metronome API bearer token.", flag.Secret)
-	readOnlyAPIKey = flag.String("billing.metronome.read_only_api_key", "", "Metronome API bearer token with read-only access, used by the app to read bills.", flag.Secret)
-	apiURL         = flag.String("billing.metronome.api_url", "https://api.metronome.com", "Metronome API base URL.", flag.Internal)
-	packageAlias   = flag.String("billing.metronome.package_alias", "", "Alias of the Metronome package new contracts are created from. The package holds the rate card and any credits.")
+	apiKey              = flag.String("billing.metronome.api_key", "", "Metronome API bearer token.", flag.Secret)
+	readOnlyAPIKey      = flag.String("billing.metronome.read_only_api_key", "", "Metronome API bearer token with read-only access, used by the app to read bills.", flag.Secret)
+	apiURL              = flag.String("billing.metronome.api_url", "https://api.metronome.com", "Metronome API base URL.", flag.Internal)
+	defaultContractName = flag.String("billing.metronome.default_contract_name", "", "Default contract name (Metronome package alias) used when provisioning free tier or usage based customers without an existing contract.")
 )
 
 const (
@@ -314,20 +314,40 @@ type contractRequest struct {
 	UniquenessKey string `json:"uniqueness_key"`
 }
 
-func PackageConfigured() bool {
-	return *packageAlias != ""
+// DefaultContractName returns the package alias used for fallback contract provisioning.
+func DefaultContractName() string {
+	return *defaultContractName
 }
 
-// CreateContract creates a contract from the configured package, which holds
+// HasContract reports whether the customer has an active contract effective
+// at usageTime.
+func (c *Client) HasContract(ctx context.Context, customerID string, usageTime time.Time) (bool, error) {
+	body := struct {
+		CustomerID   string `json:"customer_id"`
+		CoveringDate string `json:"covering_date"`
+		Limit        int    `json:"limit"`
+	}{CustomerID: customerID, CoveringDate: usageTime.UTC().Format(time.RFC3339Nano), Limit: 1}
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v1/contracts/list", nil, body, &resp); err != nil {
+		return false, err
+	}
+	return len(resp.Data) > 0, nil
+}
+
+// CreateContract creates a contract from the specified package alias, which holds
 // the rate card and any credits. It is a no-op if a contract with the
 // uniqueness key already exists.
-func (c *Client) CreateContract(ctx context.Context, customerID string, startingAt time.Time, uniquenessKey string) error {
-	if *packageAlias == "" {
-		return status.FailedPreconditionError("billing.metronome.package_alias is required")
+func (c *Client) CreateContract(ctx context.Context, customerID, contractName string, startingAt time.Time, uniquenessKey string) error {
+	if contractName == "" {
+		return status.FailedPreconditionError("contract name is required")
 	}
 	body := contractRequest{
 		CustomerID:    customerID,
-		PackageAlias:  *packageAlias,
+		PackageAlias:  contractName,
 		StartingAt:    startingAt.UTC().Format(time.RFC3339),
 		UniquenessKey: uniquenessKey,
 	}

@@ -1,6 +1,7 @@
 package priority_task_scheduler
 
 import (
+	"cmp"
 	"container/list"
 	"context"
 	"fmt"
@@ -388,6 +389,10 @@ type PriorityTaskScheduler struct {
 	resourcesUsed          *resourceCounts
 	customResourceParents  map[string]resources.CustomResourceParent
 
+	// resourcesUsedByGroup tracks the resources reserved by running tasks,
+	// keyed by task group ID. Groups with no running tasks are not present.
+	resourcesUsedByGroup map[string]*resourceCounts
+
 	// activeTaskStartTimes contains, for each currently running task, the
 	// time at which the task started executing.
 	activeTaskStartTimes map[string]time.Time
@@ -455,6 +460,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 			Custom:      customResourcesUsed,
 		},
 		customResourceParents: customResourceParents,
+		resourcesUsedByGroup:  make(map[string]*resourceCounts),
 		activeTaskStartTimes:  make(map[string]time.Time),
 	}
 	qes.rootContext = qes.enrichContext(qes.rootContext)
@@ -696,49 +702,58 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeCancelFuncsCount.Add(1)
 	q.activeTaskStartTimes[res.GetTaskId()] = q.clock.Now()
-	q.resourcesUsed.Concurrency++
-	if size := res.GetTaskSize(); size != nil {
-		q.resourcesUsed.RAMBytes += size.GetEstimatedMemoryBytes()
-		q.resourcesUsed.CPUMillis += size.GetEstimatedMilliCpu()
-		q.resourcesUsed.GPUMemoryBytes += size.GetEstimatedGpuMemoryBytes()
-		for _, r := range size.GetCustomResources() {
-			if _, ok := q.resourcesUsed.Custom[r.GetName()]; ok {
-				q.resourcesUsed.Custom[r.GetName()] += customResource(r.GetValue())
-			}
-		}
-		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
-		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
-		for name := range q.resourcesUsed.Custom {
-			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
-				metrics.CustomResourceNameLabel: name,
-			}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / float64(customResourceUnit))
-		}
-		log.CtxDebugf(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
+	counts := q.taskResourceCounts(res.GetTaskSize())
+	q.resourcesUsed.Add(counts)
+	groupID := taskGroupID(res)
+	groupResourcesUsed, ok := q.resourcesUsedByGroup[groupID]
+	if !ok {
+		groupResourcesUsed = &resourceCounts{Custom: make(map[string]customResourceCount)}
+		q.resourcesUsedByGroup[groupID] = groupResourcesUsed
 	}
+	groupResourcesUsed.Add(counts)
+	q.updateAssignedResourceMetrics(groupID)
+	log.CtxDebugf(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
 }
 
 func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeCancelFuncsCount.Add(-1)
 	delete(q.activeTaskStartTimes, res.GetTaskId())
-	q.resourcesUsed.Concurrency--
-	if size := res.GetTaskSize(); size != nil {
-		q.resourcesUsed.RAMBytes -= size.GetEstimatedMemoryBytes()
-		q.resourcesUsed.CPUMillis -= size.GetEstimatedMilliCpu()
-		q.resourcesUsed.GPUMemoryBytes -= size.GetEstimatedGpuMemoryBytes()
-		for _, r := range size.GetCustomResources() {
-			if _, ok := q.resourcesUsed.Custom[r.GetName()]; ok {
-				q.resourcesUsed.Custom[r.GetName()] -= customResource(r.GetValue())
-			}
+	counts := q.taskResourceCounts(res.GetTaskSize())
+	q.resourcesUsed.Sub(counts)
+	groupID := taskGroupID(res)
+	if groupResourcesUsed, ok := q.resourcesUsedByGroup[groupID]; ok {
+		groupResourcesUsed.Sub(counts)
+		if groupResourcesUsed.Concurrency == 0 {
+			delete(q.resourcesUsedByGroup, groupID)
 		}
-		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
-		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
-		for name := range q.resourcesUsed.Custom {
-			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
-				metrics.CustomResourceNameLabel: name,
-			}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / float64(customResourceUnit))
-		}
-		log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
 	}
+	q.updateAssignedResourceMetrics(groupID)
+	log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
+}
+
+func taskGroupID(res *scpb.EnqueueTaskReservationRequest) string {
+	return cmp.Or(res.GetSchedulingMetadata().GetTaskGroupId(), interfaces.AuthAnonymousUser)
+}
+
+// updateAssignedResourceMetrics publishes the resources reserved by running
+// tasks, both in total and for the given group. Must be called with q.mu held.
+func (q *PriorityTaskScheduler) updateAssignedResourceMetrics(groupID string) {
+	metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
+	metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
+	for name := range q.resourcesUsed.Custom {
+		metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
+			metrics.CustomResourceNameLabel: name,
+		}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / float64(customResourceUnit))
+	}
+	labels := prometheus.Labels{metrics.GroupID: groupID}
+	groupResourcesUsed, ok := q.resourcesUsedByGroup[groupID]
+	if !ok {
+		metrics.RemoteExecutionAssignedRAMBytesByGroup.Delete(labels)
+		metrics.RemoteExecutionAssignedMilliCPUByGroup.Delete(labels)
+		return
+	}
+	metrics.RemoteExecutionAssignedRAMBytesByGroup.With(labels).Set(float64(groupResourcesUsed.RAMBytes))
+	metrics.RemoteExecutionAssignedMilliCPUByGroup.With(labels).Set(float64(groupResourcesUsed.CPUMillis))
 }
 
 // TotalRunningTaskExecutionDuration returns the total time that currently
@@ -1256,6 +1271,16 @@ func (r *resourceCounts) Add(other *resourceCounts) {
 	r.Concurrency += other.Concurrency
 	for k, v := range other.Custom {
 		r.Custom[k] += v
+	}
+}
+
+func (r *resourceCounts) Sub(other *resourceCounts) {
+	r.RAMBytes -= other.RAMBytes
+	r.CPUMillis -= other.CPUMillis
+	r.GPUMemoryBytes -= other.GPUMemoryBytes
+	r.Concurrency -= other.Concurrency
+	for k, v := range other.Custom {
+		r.Custom[k] -= v
 	}
 }
 

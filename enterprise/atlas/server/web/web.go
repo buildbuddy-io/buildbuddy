@@ -93,7 +93,7 @@ func Handler(env environment.Env, opts Options) (http.Handler, error) {
 		interceptors.SetSecurityHeaders,
 		interceptors.LogRequest,
 		interceptors.RequestID,
-		interceptors.ClientIP,
+		func(h http.Handler) http.Handler { return interceptors.ClientIP(env, h) },
 		interceptors.RecoverAndAlert,
 	))
 	mux.Handle("/app/", interceptors.WrapExternalHandler(env,

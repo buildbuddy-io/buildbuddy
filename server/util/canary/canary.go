@@ -3,7 +3,9 @@ package canary
 import (
 	"flag"
 	"fmt"
+	"math"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -17,38 +19,47 @@ type CancelFunc func()
 type CanaryFunc func(timeTaken time.Duration)
 
 // StartWithLateFn starts a canary that will call lateFn every expectedDuration
-// period (if not canceled) and once when canceled.
+// period (if not canceled) and doneFn once when canceled, if more than
+// expectedDuration has elapsed by then.
+//
+// lateFn and doneFn may overlap if the canary is canceled while lateFn is
+// running. Only the first call to the CancelFunc has any effect.
 func StartWithLateFn(expectedDuration time.Duration, lateFn CanaryFunc, doneFn CanaryFunc) CancelFunc {
 	if !*enableCanaries {
 		return func() {}
 	}
 
-	done := make(chan struct{})
-	canceled := false
-	cancel := func() {
-		if !canceled {
-			close(done)
-			canceled = true
+	start := time.Now()
+	// The timer, or nil once canceled.
+	var timer atomic.Pointer[time.Timer]
+	fire := func() {
+		t := timer.Load()
+		if t == nil {
+			return // canceled
+		}
+		lateFn(time.Since(start))
+		t.Reset(expectedDuration)
+		// cancel may have run during lateFn, while the timer was not armed.
+		if timer.Load() == nil {
+			t.Stop()
 		}
 	}
+	// Publish the timer before arming it: if it fired first, fire would see
+	// nil and the canary would silently stop.
+	t := time.AfterFunc(time.Duration(math.MaxInt64), fire)
+	timer.Store(t)
+	t.Reset(expectedDuration)
 
-	start := time.Now()
-	go func() {
-		t := time.NewTicker(expectedDuration)
-		defer t.Stop()
-		for {
-			select {
-			case <-done:
-				if time.Since(start) > expectedDuration {
-					doneFn(time.Since(start))
-				}
-				return
-			case <-t.C:
-				lateFn(time.Since(start))
-			}
+	return func() {
+		t := timer.Swap(nil) // lets fire know we cancelled.
+		if t == nil {
+			return // already canceled
 		}
-	}()
-	return cancel
+		t.Stop()
+		if elapsed := time.Since(start); elapsed > expectedDuration {
+			doneFn(elapsed)
+		}
+	}
 }
 
 // Start starts a canary that will warn about the blocked function after

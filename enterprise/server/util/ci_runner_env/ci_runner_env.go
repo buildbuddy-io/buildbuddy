@@ -11,4 +11,8 @@ const (
 	BBGrpcClientIdentityEnvVarName = "BB_GRPC_CLIENT_IDENTITY"
 
 	BuildBuddySecretEnvVarNamesForRedaction = "BUILDBUDDY_SECRET_ENV_VAR_NAMES"
+
+	// NOTE: These env vars migiht not be populated for non-private repos.
+	RepoUserEnvVarName  = "REPO_USER"
+	RepoTokenEnvVarName = "REPO_TOKEN"
 )

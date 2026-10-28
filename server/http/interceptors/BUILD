@@ -14,8 +14,10 @@ go_library(
         "//server/features",
         "//server/http/csp",
         "//server/http/protolet",
+        "//server/interfaces",
         "//server/metrics",
         "//server/util/alert",
+        "//server/util/authutil",
         "//server/util/clientip",
         "//server/util/compression",
         "//server/util/log",
@@ -26,6 +28,7 @@ go_library(
         "//server/util/useragent",
         "//server/util/uuid",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
@@ -34,6 +37,7 @@ go_test(
     srcs = ["interceptors_test.go"],
     embed = [":interceptors"],
     deps = [
+        "//server/interfaces",
         "//server/real_environment",
         "//server/testutil/testauth",
         "//server/util/authutil",
@@ -42,5 +46,6 @@ go_test(
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//metadata",
     ],
 )

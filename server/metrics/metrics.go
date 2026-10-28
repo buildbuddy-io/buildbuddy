@@ -347,6 +347,10 @@ const (
 	// the blob digest (`full`) or skipped that check (`skipped`).
 	SpliceBlobValidation = "splice_validation"
 
+	// Values for the SpliceBlobValidation label.
+	SpliceBlobValidationFull    = "full"
+	SpliceBlobValidationSkipped = "skipped"
+
 	// TreeCache directory depth: 0 for the root dir, 1 for a direct child of
 	// the root dir, and so on.
 	TreeCacheLookupLevel = "level"
@@ -390,6 +394,12 @@ const (
 
 	// Source used by a cache proxy request to produce a response.
 	CacheProxyResultSource = "result_source"
+
+	// Why the cache proxy's attested HTTP forwarder would treat a request
+	// differently from the legacy one: a forwarding header it would drop or
+	// change ("forwarded", "x_forwarded_host", "x_forwarded_proto"), or an
+	// invalid caller client identity ("invalid_client_identity").
+	CacheProxyHTTPForwardingDiffReason = "reason"
 
 	OCIResourceTypeLabel = "oci_resource_type"
 
@@ -1801,6 +1811,24 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "assignable_milli_cpu",
 		Help:      "Maximum total CPU time on the executor that can be allocated for task execution, in **milliCPU** (CPU-milliseconds per second).",
+	})
+
+	RemoteExecutionAssignedRAMBytesByGroup = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assigned_ram_bytes_by_group",
+		Help:      "Estimated RAM on the executor that is currently allocated for task execution, in **bytes**, broken down by the group that owns the executing tasks.",
+	}, []string{
+		GroupID,
+	})
+
+	RemoteExecutionAssignedMilliCPUByGroup = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assigned_milli_cpu_by_group",
+		Help:      "Estimated CPU time on the executor that is currently allocated for task execution, in **milliCPU** (CPU-milliseconds per second), broken down by the group that owns the executing tasks.",
+	}, []string{
+		GroupID,
 	})
 
 	RemoteExecutionAssignedCustomResources = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -4119,6 +4147,14 @@ var (
 	})
 
 	// ## Cache Proxy metrics
+	CacheProxyHTTPForwardingDiffs = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "http_forwarding_diffs",
+		Help:      "The number of HTTP requests forwarded by the legacy cache proxy HTTP forwarder that the attested forwarder would treat differently, by reason.",
+	}, []string{
+		CacheProxyHTTPForwardingDiffReason,
+	})
 	ActionCacheProxiedReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
