@@ -402,7 +402,7 @@ func (s *CacheProxyRegistryServer) removeProxy(ctx context.Context, groupID, pro
 // the given proxies meets one of the configured upgrade triggers (see the
 // --cache_proxy.upgrade_prompt_* flags), and nil otherwise. The urgency
 // reflects the most-outdated proxy in the list.
-func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []*cppb.GetCacheProxiesResponse_CacheProxy, messageTemplate string) *uppb.Prompt {
+func (s *CacheProxyRegistryServer) upgradePrompt(proxies []*cppb.GetCacheProxiesResponse_CacheProxy, messageTemplate string) *uppb.Prompt {
 	if s.detector == nil || len(proxies) == 0 {
 		return nil
 	}
@@ -480,7 +480,7 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 
 	return &cppb.GetCacheProxiesResponse{
 		CacheProxy:    proxies,
-		UpgradePrompt: s.upgradePrompt(ctx, proxies, pluralUpgradePromptMessage),
+		UpgradePrompt: s.upgradePrompt(proxies, pluralUpgradePromptMessage),
 	}, nil
 }
 
@@ -565,7 +565,7 @@ func (s *CacheProxyRegistryServer) GetCacheProxy(ctx context.Context, req *cppb.
 	}
 	return &cppb.GetCacheProxyResponse{
 		Details: details,
-		UpgradePrompt: s.upgradePrompt(ctx, []*cppb.GetCacheProxiesResponse_CacheProxy{
+		UpgradePrompt: s.upgradePrompt([]*cppb.GetCacheProxiesResponse_CacheProxy{
 			{Summary: details.GetSummary()},
 		}, singularUpgradePromptMessage),
 	}, nil
