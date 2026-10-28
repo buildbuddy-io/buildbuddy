@@ -54,8 +54,9 @@ func TestLateFnFiresEveryPeriodThenDoneFnOnCancel(t *testing.T) {
 
 	// A firing that had already started before cancel may still complete,
 	// but nothing re-arms the timer after that.
+	before := len(c.late)
 	time.Sleep(10 * period)
-	require.LessOrEqual(t, len(c.late), 1)
+	require.LessOrEqual(t, len(c.late), before+1)
 }
 
 func TestCancelWithinPeriodSkipsDoneFn(t *testing.T) {

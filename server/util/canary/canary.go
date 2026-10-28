@@ -3,6 +3,7 @@ package canary
 import (
 	"flag"
 	"fmt"
+	"math"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -29,22 +30,25 @@ func StartWithLateFn(expectedDuration time.Duration, lateFn CanaryFunc, doneFn C
 	}
 
 	start := time.Now()
-	// The current timer, or nil once canceled.
+	// The timer, or nil once canceled.
 	var timer atomic.Pointer[time.Timer]
-	var fire func()
-	fire = func() {
+	fire := func() {
 		t := timer.Load()
 		if t == nil {
-			return
+			return // canceled
 		}
 		lateFn(time.Since(start))
-		// Setup the next timer, unless cancel was already called
-		next := time.AfterFunc(expectedDuration, fire)
-		if !timer.CompareAndSwap(t, next) {
-			next.Stop()
+		t.Reset(expectedDuration)
+		// cancel may have run during lateFn, while the timer was not armed.
+		if timer.Load() == nil {
+			t.Stop()
 		}
 	}
-	timer.Store(time.AfterFunc(expectedDuration, fire))
+	// Publish the timer before arming it: if it fired first, fire would see
+	// nil and the canary would silently stop.
+	t := time.AfterFunc(time.Duration(math.MaxInt64), fire)
+	timer.Store(t)
+	t.Reset(expectedDuration)
 
 	return func() {
 		t := timer.Swap(nil) // lets fire know we cancelled.
