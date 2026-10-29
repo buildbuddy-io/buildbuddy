@@ -883,6 +883,8 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 		// tree builds the input tree, given a directory outside the root.
 		tree            func(outside string) *repb.Tree
 		caseInsensitive bool
+		// wantErr is a substring of the expected error message.
+		wantErr string
 	}{
 		{
 			name: "ParentDirectory",
@@ -892,12 +894,14 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 					Children: []*repb.Directory{child},
 				}
 			},
+			wantErr: `input tree directory "." has entry name "..", which isn't a single path component`,
 		},
 		{
 			name: "FileNameWithSlash",
 			tree: func(outside string) *repb.Tree {
 				return &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "../file.txt", Digest: blob}}}}
 			},
+			wantErr: `input tree directory "." has entry name "../file.txt", which isn't a single path component`,
 		},
 		{
 			name: "BadNameInChildDirectory",
@@ -910,6 +914,7 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 					Children: []*repb.Directory{badChild},
 				}
 			},
+			wantErr: `input tree directory "sub" has entry name "../../file.txt", which isn't a single path component`,
 		},
 		{
 			name: "FileAndSymlinkWithSameName",
@@ -919,6 +924,7 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 					Symlinks: []*repb.SymlinkNode{{Name: "a", Target: filepath.Join(outside, "file.txt")}},
 				}}
 			},
+			wantErr: `input tree has more than one entry at path "a"`,
 		},
 		{
 			name: "FileAndSymlinkWithSameNameNotAdjacent",
@@ -928,6 +934,7 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 					Symlinks: []*repb.SymlinkNode{{Name: "a", Target: filepath.Join(outside, "file.txt")}},
 				}}
 			},
+			wantErr: `input tree has more than one entry at path "a"`,
 		},
 		{
 			name: "DirectoryAndSymlinkWithSameName",
@@ -940,6 +947,7 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 					Children: []*repb.Directory{child},
 				}
 			},
+			wantErr: `input tree has more than one entry at path "d"`,
 		},
 		{
 			name: "NamesDifferingOnlyInCase",
@@ -953,6 +961,95 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 				}
 			},
 			caseInsensitive: true,
+			wantErr:         `input tree paths "d" and "D" refer to the same file, because the filesystem is case-insensitive`,
+		},
+		{
+			name: "MergedDirectoriesWithFilesDifferingOnlyInCase",
+			tree: func(outside string) *repb.Tree {
+				upper := &repb.Directory{Files: []*repb.FileNode{{Name: "A.txt", Digest: blob}}}
+				lower := &repb.Directory{Files: []*repb.FileNode{{Name: "a.txt", Digest: blob}}}
+				return &repb.Tree{
+					Root: &repb.Directory{Directories: []*repb.DirectoryNode{
+						{Name: "Foo", Digest: getDigestForMsg(t, upper)},
+						{Name: "foo", Digest: getDigestForMsg(t, lower)},
+					}},
+					Children: []*repb.Directory{upper, lower},
+				}
+			},
+			caseInsensitive: true,
+			wantErr:         `input tree paths "Foo/A.txt" and "foo/a.txt" refer to the same file, because the filesystem is case-insensitive`,
+		},
+		{
+			name: "MergedDirectoriesWithFileAndDirectoryWithSameName",
+			tree: func(outside string) *repb.Tree {
+				withFile := &repb.Directory{Files: []*repb.FileNode{{Name: "x", Digest: blob}}}
+				withDir := &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "x", Digest: childDigest}}}
+				return &repb.Tree{
+					Root: &repb.Directory{Directories: []*repb.DirectoryNode{
+						{Name: "Foo", Digest: getDigestForMsg(t, withFile)},
+						{Name: "foo", Digest: getDigestForMsg(t, withDir)},
+					}},
+					Children: []*repb.Directory{withFile, withDir, child},
+				}
+			},
+			caseInsensitive: true,
+			wantErr:         `input tree paths "Foo/x" and "foo/x" refer to the same file, because the filesystem is case-insensitive`,
+		},
+		{
+			name: "MergedDirectoriesWithSymlinkAndFileWithSameName",
+			tree: func(outside string) *repb.Tree {
+				// a/B/link is a symlink pointing outside the root, and
+				// a/b/link is a file that would be written through it.
+				withSymlink := &repb.Directory{Symlinks: []*repb.SymlinkNode{{Name: "link", Target: filepath.Join(outside, "file.txt")}}}
+				withFile := &repb.Directory{Files: []*repb.FileNode{{Name: "link", Digest: blob}}}
+				a := &repb.Directory{Directories: []*repb.DirectoryNode{
+					{Name: "B", Digest: getDigestForMsg(t, withSymlink)},
+					{Name: "b", Digest: getDigestForMsg(t, withFile)},
+				}}
+				return &repb.Tree{
+					Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "a", Digest: getDigestForMsg(t, a)}}},
+					Children: []*repb.Directory{a, withSymlink, withFile},
+				}
+			},
+			caseInsensitive: true,
+			wantErr:         `input tree paths "a/B/link" and "a/b/link" refer to the same file, because the filesystem is case-insensitive`,
+		},
+		{
+			name: "DeeplyMergedDirectoriesWithSymlinkAndFileWithSameName",
+			tree: func(outside string) *repb.Tree {
+				// a/B/c/link and a/b/C/link are the same path.
+				withSymlink := &repb.Directory{Symlinks: []*repb.SymlinkNode{{Name: "link", Target: filepath.Join(outside, "file.txt")}}}
+				withFile := &repb.Directory{Files: []*repb.FileNode{{Name: "link", Digest: blob}}}
+				upper := &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "c", Digest: getDigestForMsg(t, withSymlink)}}}
+				lower := &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "C", Digest: getDigestForMsg(t, withFile)}}}
+				a := &repb.Directory{Directories: []*repb.DirectoryNode{
+					{Name: "B", Digest: getDigestForMsg(t, upper)},
+					{Name: "b", Digest: getDigestForMsg(t, lower)},
+				}}
+				return &repb.Tree{
+					Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "a", Digest: getDigestForMsg(t, a)}}},
+					Children: []*repb.Directory{a, upper, lower, withSymlink, withFile},
+				}
+			},
+			caseInsensitive: true,
+			wantErr:         `input tree paths "a/B/c/link" and "a/b/C/link" refer to the same file, because the filesystem is case-insensitive`,
+		},
+		{
+			name: "NestedMergedDirectoriesWithSameFile",
+			tree: func(outside string) *repb.Tree {
+				// Foo/Bar/file.txt and foo/bar/file.txt are the same path.
+				upper := &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "Bar", Digest: childDigest}}}
+				lower := &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "bar", Digest: childDigest}}}
+				return &repb.Tree{
+					Root: &repb.Directory{Directories: []*repb.DirectoryNode{
+						{Name: "Foo", Digest: getDigestForMsg(t, upper)},
+						{Name: "foo", Digest: getDigestForMsg(t, lower)},
+					}},
+					Children: []*repb.Directory{upper, lower, child},
+				}
+			},
+			caseInsensitive: true,
+			wantErr:         `input tree paths "Foo/Bar/file.txt" and "foo/bar/file.txt" refer to the same file, because the filesystem is case-insensitive`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -964,6 +1061,7 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 
 			require.Error(t, err)
 			assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+			assert.Contains(t, err.Error(), test.wantErr)
 			outsideEntries, err := os.ReadDir(outside)
 			require.NoError(t, err)
 			require.Len(t, outsideEntries, 1)
@@ -971,6 +1069,93 @@ func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
 			rootEntries, err := os.ReadDir(root)
 			require.NoError(t, err)
 			assert.Empty(t, rootEntries)
+		})
+	}
+}
+
+func TestDownloadTree_DirsDifferingOnlyInCase(t *testing.T) {
+	env, ctx := testEnv(t)
+	blobA := setFile(t, env, ctx, "", "contentsA")
+	blobB := setFile(t, env, ctx, "", "contentsB")
+	// Foo/Bar and foo/bar differ only in case too.
+	upperBar := &repb.Directory{Files: []*repb.FileNode{{Name: "a.txt", Digest: blobA}}}
+	lowerBar := &repb.Directory{Files: []*repb.FileNode{{Name: "b.txt", Digest: blobB}}}
+	upper := &repb.Directory{
+		Files:       []*repb.FileNode{{Name: "a.txt", Digest: blobA}},
+		Directories: []*repb.DirectoryNode{{Name: "Bar", Digest: getDigestForMsg(t, upperBar)}},
+	}
+	lower := &repb.Directory{
+		Files:       []*repb.FileNode{{Name: "b.txt", Digest: blobB}},
+		Directories: []*repb.DirectoryNode{{Name: "bar", Digest: getDigestForMsg(t, lowerBar)}},
+	}
+	tree := &repb.Tree{
+		Root: &repb.Directory{Directories: []*repb.DirectoryNode{
+			{Name: "Foo", Digest: getDigestForMsg(t, upper)},
+			{Name: "foo", Digest: getDigestForMsg(t, lower)},
+		}},
+		Children: []*repb.Directory{upper, lower, upperBar, lowerBar},
+	}
+
+	for _, test := range []struct {
+		name            string
+		caseInsensitive bool
+		// wantEntries maps directories under the root to the names of the
+		// entries we expect them to have.
+		wantEntries map[string][]string
+	}{
+		{
+			name:            "CaseInsensitiveFS_MergesDirs",
+			caseInsensitive: true,
+			wantEntries: map[string][]string{
+				".":       {"Foo"},
+				"Foo":     {"Bar", "a.txt", "b.txt"},
+				"Foo/Bar": {"a.txt", "b.txt"},
+			},
+		},
+		{
+			name:            "CaseSensitiveFS_DoesNotMergeDirs",
+			caseInsensitive: false,
+			wantEntries: map[string][]string{
+				".":       {"Foo", "foo"},
+				"Foo":     {"Bar", "a.txt"},
+				"foo":     {"b.txt", "bar"},
+				"Foo/Bar": {"a.txt"},
+				"foo/bar": {"b.txt"},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := testfs.MakeTempDir(t)
+
+			_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: root, CaseInsensitive: test.caseInsensitive})
+
+			require.NoError(t, err)
+			// These paths work whether or not the filesystem is case
+			// insensitive.
+			for path, contents := range map[string]string{
+				"Foo/a.txt":     "contentsA",
+				"foo/b.txt":     "contentsB",
+				"Foo/Bar/a.txt": "contentsA",
+				"foo/bar/b.txt": "contentsB",
+			} {
+				assert.Equal(t, contents, testfs.ReadFileAsString(t, root, path), "contents of %s", path)
+			}
+			// Whether the directories get merged depends on the filesystem
+			// the test runs on, not on the option we pass.
+			fsCaseInsensitive, err := fspath.IsCaseInsensitiveFS(root)
+			require.NoError(t, err)
+			if fsCaseInsensitive != test.caseInsensitive {
+				t.Skipf("Checking the directory layout requires a filesystem where case insensitivity is %t", test.caseInsensitive)
+			}
+			for dir, want := range test.wantEntries {
+				entries, err := os.ReadDir(filepath.Join(root, dir))
+				require.NoError(t, err)
+				var names []string
+				for _, e := range entries {
+					names = append(names, e.Name())
+				}
+				assert.Equal(t, want, names, "entries of %s", dir)
+			}
 		})
 	}
 }
