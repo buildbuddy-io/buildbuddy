@@ -62,10 +62,8 @@ message VMConfiguration {
   bool enable_vfs = 16;
   bool enable_pci = 20;
 
-  // The effective container image for the task, including the executor's
-  // default image. This is only set while the
-  // executor.firecracker.snapshot_key_includes_container_image experiment is
-  // on, so that leaving it empty does not change ConfigurationHash.
+  // Effective container image, including the executor default. Only set when
+  // executor.firecracker.snapshot_key_includes_container_image experiment is on.
   string container_image = 21;
 }
 

@@ -2623,7 +2623,7 @@ func TestFirecrackerSnapshotKeyIncludesContainerImage(t *testing.T) {
 			Value: &expb.EvaluatedFlag_BoolValue{BoolValue: enabled},
 		}})
 	}
-	snapshotKeySet := func(ctx context.Context, image string) *fcpb.SnapshotKeySet {
+	configHash := func(ctx context.Context, image string) string {
 		c, err := firecracker.NewContainer(ctx, env, task, firecracker.ContainerOpts{
 			ContainerImage:         image,
 			ExecutorConfig:         getExecutorConfig(t),
@@ -2631,18 +2631,17 @@ func TestFirecrackerSnapshotKeyIncludesContainerImage(t *testing.T) {
 			VMConfiguration:        &fcpb.VMConfiguration{},
 		})
 		require.NoError(t, err)
-		return c.SnapshotKeySet()
+		return c.SnapshotKeySet().GetBranchKey().GetConfigurationHash()
 	}
 
-	baseline := snapshotKeySet(ctx, "image-a")
-	off := snapshotKeySet(withFlag(false), "image-a")
-	require.Empty(t, cmp.Diff(baseline, off, protocmp.Transform()))
+	offA := configHash(withFlag(false), "image-a")
+	offB := configHash(withFlag(false), "image-b")
+	require.Equal(t, offA, offB)
 
-	onA := snapshotKeySet(withFlag(true), "image-a")
-	onB := snapshotKeySet(withFlag(true), "image-b")
-	require.NotEmpty(t, cmp.Diff(onA, onB, protocmp.Transform()))
-	require.NotEmpty(t, cmp.Diff(off, onA, protocmp.Transform()))
-	require.NotEmpty(t, cmp.Diff(off, onB, protocmp.Transform()))
+	onA := configHash(withFlag(true), "image-a")
+	onB := configHash(withFlag(true), "image-b")
+	require.NotEqual(t, onA, onB)
+	require.NotEqual(t, offA, onA)
 }
 
 func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
