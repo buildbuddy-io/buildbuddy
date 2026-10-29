@@ -208,9 +208,66 @@ jobs:
             "${{ steps.build.outputs.BINARY }}" \
             "${{ steps.build.outputs.BINARY }}.sha256"
 
+  sign-artifacts:
+    runs-on: ubuntu-22.04
+    needs: [push-tag, build-artifacts]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          path: buildbuddy
+
+      - name: Sign checksums
+        env:
+          GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          SIGNING_KEY: ${{ secrets.CLI_RELEASE_SIGNING_KEY }}
+          VERSION: ${{ needs.push-tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SIGNING_KEY" ]]; then
+            echo "::error::The CLI_RELEASE_SIGNING_KEY secret is not set."
+            exit 1
+          fi
+          # The key is an ed25519 private key in PEM form, as written by
+          # `openssl genpkey -algorithm ed25519`.
+          umask 077
+          KEY_FILE="${RUNNER_TEMP}/cli_release_signing_key.pem"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s\n' "$SIGNING_KEY" > "$KEY_FILE"
+
+          # bb verifies signatures with the public key built in from this
+          # file, so make sure the secret matches it.
+          if ! openssl pkey -in "$KEY_FILE" -pubout | diff -q - "${GITHUB_WORKSPACE}/buildbuddy/cli/signedrelease/release_signing_public_key.pem"; then
+            echo "::error::CLI_RELEASE_SIGNING_KEY does not match cli/signedrelease/release_signing_public_key.pem."
+            exit 1
+          fi
+
+          mkdir "${RUNNER_TEMP}/sign" && cd "${RUNNER_TEMP}/sign"
+          SUMS=()
+          for PLATFORM in linux-x86_64 linux-arm64 darwin-x86_64 darwin-arm64; do
+            SUMS+=("bazel-${VERSION}-${PLATFORM}.sha256")
+          done
+          for SUM in "${SUMS[@]}"; do
+            gh release download "$VERSION" --repo buildbuddy-io/bazel --pattern "$SUM"
+          done
+          # Each .sig is the raw 64-byte ed25519 signature of the .sha256
+          # file's bytes.
+          for SUM in "${SUMS[@]}"; do
+            openssl pkeyutl -sign -rawin -inkey "$KEY_FILE" -in "$SUM" -out "${SUM}.sig"
+            if [[ "$(wc -c < "${SUM}.sig")" -ne 64 ]]; then
+              echo "::error::Unexpected signature size for $SUM"
+              exit 1
+            fi
+          done
+          gh release upload \
+            --repo buildbuddy-io/bazel \
+            --clobber \
+            "$VERSION" \
+            "${SUMS[@]/%/.sig}"
+
   publish-release:
     runs-on: ubuntu-22.04
-    needs: [push-tag, sync-plugins, build-artifacts]
+    needs: [push-tag, sync-plugins, build-artifacts, sign-artifacts]
     steps:
       - name: Publish release
         env:
