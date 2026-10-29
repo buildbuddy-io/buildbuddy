@@ -1224,6 +1224,9 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 	if err := executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
 		return nil, err
 	}
+	if execution_experiments.DefaultImageInPlatform.Get(ctx) {
+		platform.SetDefaultContainerImage(task, platform.ContainerType(props.WorkloadIsolationType), executorplatform.DefaultImage())
+	}
 	if *resolveImageDigests {
 		if err := p.resolveImageDigest(ctx, props); err != nil {
 			return nil, err

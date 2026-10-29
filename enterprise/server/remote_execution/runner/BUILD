@@ -90,6 +90,7 @@ go_test(
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/bare",
         "//enterprise/server/remote_execution/executor/oomkiller",
+        "//enterprise/server/remote_execution/executorplatform",
         "//enterprise/server/remote_execution/oom",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",

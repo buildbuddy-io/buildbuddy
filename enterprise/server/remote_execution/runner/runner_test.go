@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -487,6 +488,53 @@ func TestRunnerPool_OCISeccompDisableNewUserNS(t *testing.T) {
 
 	reused = mustGetPausedRunner(t, deniedCtx, pool, newTask())
 	assert.Same(t, denied, reused)
+}
+
+func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
+	flags.Set(t, "executor.enable_oci", true)
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return NewFakeContainer(), nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
+	withExperiment := func(enabled bool) context.Context {
+		return expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
+			Name:  "executor.default_image_in_platform",
+			Value: &expb.EvaluatedFlag_BoolValue{BoolValue: enabled},
+		}})
+	}
+	newExplicitDefaultImageTask := func() *repb.ScheduledTask {
+		task := newTask()
+		plat := task.ExecutionTask.Command.Platform
+		plat.Properties = append([]*repb.Platform_Property{{
+			Name:  "container-image",
+			Value: "docker://" + executorplatform.DefaultImage(),
+		}}, plat.Properties...)
+		return task
+	}
+
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
+			ctx := withExperiment(enabled)
+			r := mustGetNewRunner(t, ctx, pool, newTask())
+			mustAddWithoutEviction(t, ctx, pool, r)
+			if enabled {
+				// The runner for a task without an image is reused for a
+				// task that explicitly requests the default image.
+				reused := mustGetPausedRunner(t, ctx, pool, newExplicitDefaultImageTask())
+				assert.Same(t, r, reused)
+			} else {
+				other := mustGetNewRunner(t, ctx, pool, newExplicitDefaultImageTask())
+				assert.NotSame(t, r, other)
+				reused := mustGetPausedRunner(t, ctx, pool, newTask())
+				assert.Same(t, r, reused)
+			}
+		})
+	}
 }
 
 func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {

@@ -59,7 +59,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -75,7 +74,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/testing/protocmp"
 
-	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -2603,45 +2601,6 @@ func TestFirecrackerSnapshotVersioning(t *testing.T) {
 	c3, err := firecracker.NewContainer(ctx, env, task, opts)
 	require.NoError(t, err)
 	require.NotEmpty(t, cmp.Diff(c1.SnapshotKeySet(), c3.SnapshotKeySet(), protocmp.Transform()))
-}
-
-func TestFirecrackerSnapshotKeyIncludesContainerImage(t *testing.T) {
-	expflag.SetFlagProvider(expflag.NewContextProvider())
-	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	task := &repb.ExecutionTask{
-		Command: &repb.Command{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
-			{Name: "recycle-runner", Value: "true"},
-		}}},
-	}
-	withFlag := func(enabled bool) context.Context {
-		return expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
-			Name:  "executor.firecracker.snapshot_key_includes_container_image",
-			Value: &expb.EvaluatedFlag_BoolValue{BoolValue: enabled},
-		}})
-	}
-	configHash := func(ctx context.Context, image string) string {
-		c, err := firecracker.NewContainer(ctx, env, task, firecracker.ContainerOpts{
-			ContainerImage:         image,
-			ExecutorConfig:         getExecutorConfig(t),
-			ActionWorkingDirectory: workDir,
-			VMConfiguration:        &fcpb.VMConfiguration{},
-		})
-		require.NoError(t, err)
-		return c.SnapshotKeySet().GetBranchKey().GetConfigurationHash()
-	}
-
-	offA := configHash(withFlag(false), "image-a")
-	offB := configHash(withFlag(false), "image-b")
-	require.Equal(t, offA, offB)
-
-	onA := configHash(withFlag(true), "image-a")
-	onB := configHash(withFlag(true), "image-b")
-	require.NotEqual(t, onA, onB)
-	require.NotEqual(t, offA, onA)
 }
 
 func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {

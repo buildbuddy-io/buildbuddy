@@ -860,6 +860,53 @@ func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 	return FindValue(GetProto(task.GetAction(), task.GetCommand()), name)
 }
 
+// SetDefaultContainerImage makes a task that doesn't request a container image
+// look as though it explicitly requested defaultImage, by writing
+// container-image=docker://<defaultImage> into the platform that GetProto
+// returns for the task. It does nothing if the task requests an image
+// (including via a header override), if isolationType is bare, or if
+// defaultImage is empty. An existing empty or "none" container-image property
+// is replaced in place; otherwise the property is inserted before the first
+// property whose name sorts after it, matching how Bazel sorts properties.
+func SetDefaultContainerImage(task *repb.ExecutionTask, isolationType ContainerType, defaultImage string) {
+	if isolationType == BareContainerType || defaultImage == "" {
+		return
+	}
+	requested := FindEffectiveValue(task, containerImagePropertyName)
+	if requested != "" && !strings.EqualFold(requested, unsetContainerImageVal) {
+		return
+	}
+	value := defaultImage
+	if !strings.HasPrefix(value, DockerPrefix) {
+		value = DockerPrefix + value
+	}
+
+	plat := GetProto(task.GetAction(), task.GetCommand())
+	if plat == nil {
+		if task.Command == nil {
+			task.Command = &repb.Command{}
+		}
+		task.Command.Platform = &repb.Platform{}
+		plat = task.Command.Platform
+	}
+	for _, prop := range plat.Properties {
+		if strings.EqualFold(prop.GetName(), containerImagePropertyName) {
+			prop.Value = value
+			return
+		}
+	}
+	i := slices.IndexFunc(plat.Properties, func(p *repb.Platform_Property) bool {
+		return p.GetName() > containerImagePropertyName
+	})
+	if i < 0 {
+		i = len(plat.Properties)
+	}
+	plat.Properties = slices.Insert(plat.Properties, i, &repb.Platform_Property{
+		Name:  containerImagePropertyName,
+		Value: value,
+	})
+}
+
 // IsTrue returns whether the given platform property value is truthy.
 func IsTrue(value string) bool {
 	return strings.EqualFold(value, "true")
