@@ -431,7 +431,7 @@ func (p *Plugin) RepoURL() string {
 	repo, _ := p.splitRepoRef()
 	segments := strings.Split(repo, "/")
 	// Auto-convert owner/repo to https://github.com/owner/repo
-	if len(segments) == 2 {
+	if len(segments) == 2 && !strings.ContainsAny(repo, ":@") {
 		repo = "https://github.com/" + repo
 	}
 	u, err := git.NormalizeRepoURL(repo)
@@ -441,15 +441,32 @@ func (p *Plugin) RepoURL() string {
 	return u.String()
 }
 
+// splitRepoRef splits the "repo" spec into the repo part and the ref part
+// (after "@"). An "@" that separates user info from the host, like in
+// "git@github.com:owner/repo" or "ssh://git@host/owner/repo", is treated as
+// part of the repo.
 func (p *Plugin) splitRepoRef() (string, string) {
-	refParts := strings.Split(p.config.Repo, "@")
-	if len(refParts) == 2 {
-		return refParts[0], refParts[1]
+	repo := p.config.Repo
+	start := 0
+	if i := strings.Index(repo, "://"); i >= 0 {
+		// URL: user info is an "@" before the first "/" after the scheme.
+		start = i + len("://")
+		rest := repo[start:]
+		if at := strings.Index(rest, "@"); at >= 0 && !strings.Contains(rest[:at], "/") {
+			start += at + 1
+		}
+	} else if at := strings.Index(repo, "@"); at >= 0 && !strings.ContainsAny(repo[:at], "/:") {
+		// scp-like "user@host:path": user info only if the "@" is followed
+		// by a host and ":" (before any "/").
+		host, _, _ := strings.Cut(repo[at+1:], "/")
+		if strings.Contains(host, ":") {
+			start = at + 1
+		}
 	}
-	if len(refParts) > 0 {
-		return refParts[0], ""
+	if at := strings.Index(repo[start:], "@"); at >= 0 {
+		return repo[:start+at], repo[start+at+1:]
 	}
-	return "", ""
+	return repo, ""
 }
 
 // VersionedID returns a human-readable, unique representation of the plugin
@@ -508,11 +525,20 @@ func (p *Plugin) repoClonePath() (string, error) {
 		return "", err
 	}
 	_, ref := p.splitRepoRef()
+	// Don't let the spec point outside of (or at another plugin's dir in)
+	// the plugins cache dir, since load() may delete this path.
+	if slices.Contains(strings.Split(u.Path+"/"+ref, "/"), "..") {
+		return "", status.InvalidArgumentErrorf("plugin repo %q must not contain \"..\" path segments", p.config.Repo)
+	}
 	refSubdir := "latest"
 	if ref != "" {
 		refSubdir = filepath.Join("ref", ref)
 	}
-	fullPath := filepath.Join(storagePath, pluginsStorageDirName, u.Host, u.Path, refSubdir)
+	pluginsDir := filepath.Join(storagePath, pluginsStorageDirName)
+	fullPath := filepath.Join(pluginsDir, u.Host, u.Path, refSubdir)
+	if rel, err := filepath.Rel(pluginsDir, fullPath); err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", status.InvalidArgumentErrorf("plugin repo %q resolves outside of the plugins cache dir", p.config.Repo)
+	}
 	return fullPath, nil
 }
 
@@ -525,6 +551,9 @@ func (p *Plugin) load() error {
 	if p.RepoURL() == "" {
 		return status.InvalidArgumentErrorf(`could not parse plugin repo URL %q: expecting "[HOST/]OWNER/REPO[@REVISION]"`, p.config.Repo)
 	}
+	repo, ref := p.splitRepoRef()
+	pinned := commitSHARegexp.MatchString(ref)
+	sha := strings.ToLower(ref)
 	path, err := p.repoClonePath()
 	if err != nil {
 		return err
@@ -534,9 +563,24 @@ func (p *Plugin) load() error {
 		return err
 	}
 	if exists {
-		return nil
+		if !pinned {
+			return nil
+		}
+		err := checkHead(path, sha)
+		if err == nil {
+			return nil
+		}
+		// Don't trust a cached clone that isn't at the pinned commit;
+		// delete it and download it again.
+		log.Warnf("Cached plugin clone at %q is not at the pinned commit (%s); downloading it again.", path, err)
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("failed to remove cached plugin clone: %s", err)
+		}
 	}
 
+	if !pinned {
+		log.Warnf("Plugin repo %q is not pinned to a commit. Pin it as \"%s@<40-hex commit sha>\" in buildbuddy.yaml so that the downloaded code is verified.", p.config.Repo, repo)
+	}
 	log.Printf("Downloading %q", p.RepoURL())
 	// Clone into a temp dir next to where the repo will be cloned so that if
 	// the ref does not exist, we don't actually create the plugin directory.
@@ -550,23 +594,28 @@ func (p *Plugin) load() error {
 	defer os.RemoveAll(tempPath) // intentionally ignoring error
 
 	stderr := &bytes.Buffer{}
-	clone := exec.Command("git", "clone", p.RepoURL(), tempPath)
+	clone := gitCommand("", "clone", p.RepoURL(), tempPath)
 	clone.Stderr = stderr
 	clone.Stdout = io.Discard
 	if err := clone.Run(); err != nil {
 		log.Printf("%s", stderr.String())
 		return err
 	}
-	_, ref := p.splitRepoRef()
 	if ref != "" {
 		stderr := &bytes.Buffer{}
-		checkout := exec.Command("git", "checkout", ref)
+		checkout := gitCommand(tempPath, "checkout", ref)
 		checkout.Stderr = stderr
 		checkout.Stdout = io.Discard
-		checkout.Dir = tempPath
 		if err := checkout.Run(); err != nil {
 			log.Printf("%s", stderr.String())
 			return err
+		}
+	}
+	if pinned {
+		// The temp clone is deleted on return, so a clone that doesn't
+		// match the pin is never used.
+		if err := checkHead(tempPath, sha); err != nil {
+			return status.FailedPreconditionErrorf("plugin repo %q: %s", p.config.Repo, err)
 		}
 	}
 
@@ -580,6 +629,35 @@ func (p *Plugin) load() error {
 		return err
 	}
 
+	return nil
+}
+
+// commitSHARegexp matches a full 40-hex commit SHA.
+var commitSHARegexp = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
+
+// gitCommand returns a git command that runs in dir, without the env vars
+// that would point git at a different repo than the one in dir.
+func gitCommand(dir string, args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = slices.DeleteFunc(os.Environ(), func(kv string) bool {
+		name, _, _ := strings.Cut(kv, "=")
+		return slices.Contains([]string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY"}, name)
+	})
+	return cmd
+}
+
+// checkHead returns an error unless HEAD of the git repo at dir is the
+// given lowercase commit SHA.
+func checkHead(dir, sha string) error {
+	out, err := gitCommand(dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return fmt.Errorf("git rev-parse HEAD in %q: %s", dir, err)
+	}
+	head := strings.TrimSpace(string(out))
+	if head != sha {
+		return fmt.Errorf("HEAD is %s, want pinned commit %s", head, sha)
+	}
 	return nil
 }
 

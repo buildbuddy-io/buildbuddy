@@ -14,6 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -503,4 +505,106 @@ func setTestHomeDir(t *testing.T, path string) {
 		err := os.Setenv("HOME", original)
 		require.NoError(t, err)
 	})
+}
+
+func TestSplitRepoRef(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	for _, tc := range []struct {
+		spec, repo, ref string
+	}{
+		{"foo/bar", "foo/bar", ""},
+		{"foo/bar@v1.0", "foo/bar", "v1.0"},
+		{"foo/bar@" + sha, "foo/bar", sha},
+		{"example.com/foo/bar@feature/x", "example.com/foo/bar", "feature/x"},
+		{"myrepo@feature/x", "myrepo", "feature/x"},
+		{"/local/repo@feature/x", "/local/repo", "feature/x"},
+		{"https://example.com/foo/bar@v1", "https://example.com/foo/bar", "v1"},
+		{"git@github.com:foo/bar", "git@github.com:foo/bar", ""},
+		{"git@github.com:foo/bar@" + sha, "git@github.com:foo/bar", sha},
+		{"ssh://git@github.com/foo/bar", "ssh://git@github.com/foo/bar", ""},
+		{"ssh://git@github.com/foo/bar@" + sha, "ssh://git@github.com/foo/bar", sha},
+		{"/local/repo@" + sha, "/local/repo", sha},
+	} {
+		p := &Plugin{config: &config.PluginConfig{Repo: tc.spec}}
+		repo, ref := p.splitRepoRef()
+		assert.Equal(t, tc.repo, repo, "repo for %q", tc.spec)
+		assert.Equal(t, tc.ref, ref, "ref for %q", tc.spec)
+	}
+
+	p := &Plugin{config: &config.PluginConfig{Repo: "git@github.com:foo/bar@" + sha}}
+	assert.Equal(t, "https://github.com/foo/bar", p.RepoURL())
+	id, err := p.VersionedID()
+	require.NoError(t, err)
+	assert.Equal(t, "https://github.com/foo/bar@"+sha, id)
+}
+
+func TestLoad_PinnedCommit(t *testing.T) {
+	t.Setenv("BUILDBUDDY_CACHE_DIR", testfs.MakeTempDir(t))
+	repoPath, firstSHA := testgit.MakeTempRepo(t, map[string]string{"pre_bazel.sh": "echo v1"})
+	secondSHA := testgit.CommitFiles(t, repoPath, map[string]string{"pre_bazel.sh": "echo v2"})
+
+	p := &Plugin{config: &config.PluginConfig{Repo: repoPath + "@" + firstSHA}}
+	require.NoError(t, p.load())
+	clonePath, err := p.repoClonePath()
+	require.NoError(t, err)
+	assert.Equal(t, firstSHA, testgit.CurrentCommitSHA(t, clonePath))
+
+	// A cached clone that isn't at the pinned commit gets replaced.
+	testshell.Run(t, clonePath, "git checkout --quiet "+secondSHA)
+	require.NoError(t, p.load())
+	assert.Equal(t, firstSHA, testgit.CurrentCommitSHA(t, clonePath))
+	b, err := os.ReadFile(filepath.Join(clonePath, "pre_bazel.sh"))
+	require.NoError(t, err)
+	assert.Equal(t, "echo v1", string(b))
+}
+
+func TestLoad_UnpinnedRefStillWorks(t *testing.T) {
+	t.Setenv("BUILDBUDDY_CACHE_DIR", testfs.MakeTempDir(t))
+	repoPath, _ := testgit.MakeTempRepo(t, map[string]string{"pre_bazel.sh": "echo v1"})
+	testshell.Run(t, repoPath, "git tag v1")
+	testgit.CommitFiles(t, repoPath, map[string]string{"pre_bazel.sh": "echo v2"})
+
+	for _, repo := range []string{repoPath, repoPath + "@v1"} {
+		p := &Plugin{config: &config.PluginConfig{Repo: repo}}
+		require.NoError(t, p.load(), repo)
+		path, err := p.Path()
+		require.NoError(t, err)
+		_, err = os.Stat(filepath.Join(path, "pre_bazel.sh"))
+		require.NoError(t, err, repo)
+	}
+}
+
+func TestCheckHead(t *testing.T) {
+	repoPath, firstSHA := testgit.MakeTempRepo(t, map[string]string{"a.txt": "a"})
+	secondSHA := testgit.CommitFiles(t, repoPath, map[string]string{"a.txt": "b"})
+
+	require.NoError(t, checkHead(repoPath, secondSHA))
+	err := checkHead(repoPath, firstSHA)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "want pinned commit")
+}
+
+func TestCheckHead_IgnoresInheritedGitDir(t *testing.T) {
+	repoPath, sha := testgit.MakeTempRepo(t, map[string]string{"a.txt": "a"})
+	otherPath, otherSHA := testgit.MakeTempRepo(t, map[string]string{"b.txt": "b"})
+	t.Setenv("GIT_DIR", filepath.Join(otherPath, ".git"))
+	t.Setenv("GIT_WORK_TREE", otherPath)
+
+	require.NoError(t, checkHead(repoPath, sha))
+	require.Error(t, checkHead(repoPath, otherSHA))
+}
+
+func TestRepoClonePath_RejectsDotDot(t *testing.T) {
+	t.Setenv("BUILDBUDDY_CACHE_DIR", testfs.MakeTempDir(t))
+	for _, repo := range []string{
+		"/a/../../../etc",
+		"example.com/evil/../foo/bar",
+		"foo/bar@../../../x",
+		"foo/bar@feature/../../../../x",
+	} {
+		p := &Plugin{config: &config.PluginConfig{Repo: repo}}
+		_, err := p.repoClonePath()
+		require.Error(t, err, repo)
+		require.Error(t, p.load(), repo)
+	}
 }
