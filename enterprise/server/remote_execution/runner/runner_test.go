@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -41,6 +42,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -450,6 +452,41 @@ func TestRunnerPool_CanAddAndGetBackSameRunner_DockerReuseAlias(t *testing.T) {
 
 	assert.Same(t, r1, r2)
 	assert.Equal(t, 0, pool.PausedRunnerCount())
+}
+
+func TestRunnerPool_OCISeccompDisableNewUserNS(t *testing.T) {
+	flags.Set(t, "executor.enable_oci", true)
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return NewFakeContainer(), nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
+	deniedCtx := expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
+		Name:  "executor.oci.seccomp_disable_new_userns",
+		Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true},
+	}})
+	allowedCtx := expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
+		Name:  "executor.oci.seccomp_disable_new_userns",
+		Value: &expb.EvaluatedFlag_BoolValue{BoolValue: false},
+	}})
+
+	denied := mustGetNewRunner(t, deniedCtx, pool, newTask())
+	mustAddWithoutEviction(t, deniedCtx, pool, denied)
+
+	allowed := mustGetNewRunner(t, allowedCtx, pool, newTask())
+	assert.NotSame(t, denied, allowed)
+	mustAddWithoutEviction(t, allowedCtx, pool, allowed)
+
+	reused := mustGetPausedRunner(t, allowedCtx, pool, newTask())
+	assert.Same(t, allowed, reused)
+	mustAddWithoutEviction(t, allowedCtx, pool, reused)
+
+	reused = mustGetPausedRunner(t, deniedCtx, pool, newTask())
+	assert.Same(t, denied, reused)
 }
 
 func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {
