@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -25,6 +26,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
 )
 
@@ -35,6 +37,16 @@ type pingServer struct {
 	lastOutgoingMD metadata.MD
 }
 
+type apiServer struct {
+	apipb.UnimplementedApiServiceServer
+	runCalls int
+}
+
+func (s *apiServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunResponse, error) {
+	s.runCalls++
+	return &apipb.RunResponse{}, nil
+}
+
 func (p *pingServer) Ping(ctx context.Context, req *pspb.PingRequest) (*pspb.PingResponse, error) {
 	p.lastClientIP = clientip.Get(ctx)
 	p.lastSubdomain = subdomain.Get(ctx)
@@ -43,6 +55,37 @@ func (p *pingServer) Ping(ctx context.Context, req *pspb.PingRequest) (*pspb.Pin
 	return &pspb.PingResponse{
 		Tag: req.GetTag(),
 	}, nil
+}
+
+func TestRoleAuthInterceptor_AppliesToAPIService(t *testing.T) {
+	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+
+	member := testauth.User("member", "GR1")
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		"member": member,
+	}))
+
+	grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
+	server := &apiServer{}
+	apipb.RegisterApiServiceServer(grpcServer, server)
+	lis, err := net.Listen("tcp", listenAddr)
+	require.NoError(t, err)
+	go func() { grpcServer.Serve(lis) }()
+	t.Cleanup(grpcServer.Stop)
+
+	conn, err := grpc.Dial(listenAddr, grpc.WithInsecure())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := apipb.NewApiServiceClient(conn)
+
+	_, err = client.Run(context.Background(), &apipb.RunRequest{})
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got %v", err)
+
+	ctx := metadata.AppendToOutgoingContext(context.Background(), authutil.APIKeyHeader, "member")
+	_, err = client.Run(ctx, &apipb.RunRequest{})
+	require.NoError(t, err)
+	require.Equal(t, 1, server.runCalls)
 }
 
 func TestClientIPInterceptor_FallsBackToPeerAddress(t *testing.T) {
