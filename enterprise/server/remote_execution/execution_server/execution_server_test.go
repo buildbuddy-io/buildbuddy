@@ -2575,6 +2575,11 @@ func TestExecute_APIKeyCapabilities(t *testing.T) {
 			capabilities:   []capability.Capability{capability.Capability_CACHE_WRITE},
 			wantPermission: true,
 		},
+		{
+			name:           "org-admin key is allowed",
+			capabilities:   []capability.Capability{capability.Capability_ORG_ADMIN},
+			wantPermission: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env, conn, _ := setupEnv(t)

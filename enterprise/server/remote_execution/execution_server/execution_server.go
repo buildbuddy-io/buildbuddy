@@ -1177,7 +1177,9 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	if err != nil && !authutil.IsAnonymousUserError(err) {
 		return err
 	}
-	if err == nil && u.GetAPIKeyInfo().ID != "" && !u.HasCapability(capability.Capability_CACHE_WRITE|capability.Capability_CAS_WRITE) {
+	if err == nil &&
+		u.GetAPIKeyInfo().ID != "" &&
+		!u.HasCapability(capability.Capability_CACHE_WRITE|capability.Capability_CAS_WRITE|capability.Capability_ORG_ADMIN) {
 		return status.PermissionDeniedError("remote execution requires an API key with write capability")
 	}
 
