@@ -16,7 +16,7 @@ archive_override(
 # Configure apt for Debian packages
 apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 
-snapshot = "20260318T142916Z"
+snapshot = "20261028T204034Z"
 
 apt.sources_list(
     architectures = [
