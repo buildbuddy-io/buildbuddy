@@ -7,6 +7,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -27,6 +28,11 @@ import (
 	flagdsync "github.com/open-feature/flagd/core/pkg/sync"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
+
+// inProcessInitDeadline bounds provider initialization for the in-process
+// provider. The first sync reads from GCS, which on a cold pod can take much
+// longer than the flagd provider's 500ms default.
+const inProcessInitDeadline = 10 * time.Second
 
 var (
 	appName      = flag.String("experiments.app_name", "buildbuddy-app", "Client name to use for experiments")
@@ -69,7 +75,7 @@ func Register(env *real_environment.RealEnv) error {
 // binaries that pull flags directly from a source rather than talking to a
 // separate flagd process. It will not return until the provider is ready.
 func RegisterInProcessSync(env *real_environment.RealEnv, syncProvider flagdsync.ISync) error {
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithCustomSyncProvider(syncProvider))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithCustomSyncProvider(syncProvider), flagd.WithDeadline(int(inProcessInitDeadline.Milliseconds())))
 	if err != nil {
 		return err
 	}

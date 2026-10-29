@@ -5,9 +5,11 @@ package experiments_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +26,8 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
+
+	flagdsync "github.com/open-feature/flagd/core/pkg/sync"
 
 	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -754,4 +758,80 @@ func TestGroupStatusTargeting(t *testing.T) {
 		require.False(t, fp.Boolean(ctx, "enterprise_feature", false))
 		require.False(t, fp.Boolean(ctx, "free_tier_feature", false))
 	})
+}
+
+// fakeSync is a flagdsync.ISync whose Sync runs the provided function.
+type fakeSync struct {
+	sync func(ctx context.Context, dataSync chan<- flagdsync.DataSync) error
+
+	mu    sync.Mutex
+	ready bool
+}
+
+func (f *fakeSync) Init(ctx context.Context) error { return nil }
+
+func (f *fakeSync) IsReady() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ready
+}
+
+func (f *fakeSync) ReSync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
+	return nil
+}
+
+func (f *fakeSync) Sync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
+	return f.sync(ctx, dataSync)
+}
+
+func (f *fakeSync) setReady() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ready = true
+}
+
+func resetProviderOnCleanup(t *testing.T) {
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
+}
+
+func TestRegisterInProcessSync_SlowInitialSync(t *testing.T) {
+	resetProviderOnCleanup(t)
+	fake := &fakeSync{}
+	fake.sync = func(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
+		// Longer than the flagd provider's default 500ms init deadline.
+		select {
+		case <-time.After(2 * time.Second):
+		case <-ctx.Done():
+			return nil
+		}
+		config := `{"flags": {"test-flag": {"state": "ENABLED", "defaultVariant": "on", "variants": {"on": true, "off": false}}}}`
+		select {
+		case dataSync <- flagdsync.DataSync{FlagData: config, Source: "test"}:
+		case <-ctx.Done():
+			return nil
+		}
+		fake.setReady()
+		<-ctx.Done()
+		return nil
+	}
+
+	env := testenv.GetTestEnv(t)
+	require.NoError(t, experiments.RegisterInProcessSync(env, fake))
+
+	got := env.GetExperimentFlagProvider().Boolean(t.Context(), "test-flag", false)
+	require.True(t, got)
+}
+
+func TestRegisterInProcessSync_InitialSyncErrorIsFatal(t *testing.T) {
+	resetProviderOnCleanup(t)
+	fake := &fakeSync{}
+	fake.sync = func(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
+		return errors.New("initial GCS flag sync failed")
+	}
+
+	err := experiments.RegisterInProcessSync(testenv.GetTestEnv(t), fake)
+	require.Error(t, err)
 }
