@@ -796,6 +796,11 @@ func nodeSupportsIsolationType(en *scpb.ExecutionNode, isolationType string) boo
 	return slices.Contains(en.GetSupportedIsolationTypes(), isolationType)
 }
 
+func nodeSupportsTask(en *scpb.ExecutionNode, metadata *scpb.SchedulingMetadata) bool {
+	return nodeSupportsIsolationType(en, metadata.GetRequestedIsolationType()) &&
+		(!metadata.GetRequiresVfs() || en.GetSupportsVfs())
+}
+
 func (en *executionNode) String() string {
 	if en.handle != nil {
 		return fmt.Sprintf("connected executor(%s)", en.GetExecutorId())
@@ -813,10 +818,10 @@ func nodesThatFit(nodes []*executionNode, taskSize *scpb.TaskSize) []*executionN
 	return out
 }
 
-func filterToIsolationType(nodes []*executionNode, isolationType string) []*executionNode {
+func filterToTaskRequirements(nodes []*executionNode, metadata *scpb.SchedulingMetadata) []*executionNode {
 	var out []*executionNode
 	for _, node := range nodes {
-		if nodeSupportsIsolationType(node.ExecutionNode, isolationType) {
+		if nodeSupportsTask(node.ExecutionNode, metadata) {
 			out = append(out, node)
 		}
 	}
@@ -1175,8 +1180,8 @@ func (np *nodePool) RefreshNodes(ctx context.Context) error {
 }
 
 // NodeCount returns the number of nodes in the pool that can run a task with
-// the given size and requested isolation type, or an error if there are none.
-func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize, isolationType string) (int, error) {
+// the given size and platform requirements, or an error if there are none.
+func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize, metadata *scpb.SchedulingMetadata) (int, error) {
 	if err := np.RefreshNodes(ctx); err != nil {
 		return 0, err
 	}
@@ -1187,7 +1192,7 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize, isol
 		return 0, status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", np.key.pool, np.key.os, np.key.arch)
 	}
 
-	// Track resource constraints separately from isolation type constraints so
+	// Track resource constraints separately from platform requirements so
 	// that we can report a more informative error.
 	fitCount := 0
 	compatibleCount := 0
@@ -1196,7 +1201,7 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize, isol
 			continue
 		}
 		fitCount++
-		if nodeSupportsIsolationType(node.ExecutionNode, isolationType) {
+		if nodeSupportsTask(node.ExecutionNode, metadata) {
 			compatibleCount++
 		}
 	}
@@ -1205,7 +1210,7 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize, isol
 		return 0, errTaskSizeTooLarge(np.key.pool, np.key.os, np.key.arch, taskSize)
 	}
 	if compatibleCount == 0 {
-		return 0, errIsolationTypeUnsupported(np.key.pool, np.key.os, np.key.arch, isolationType)
+		return 0, errTaskRequirementsUnsupported(np.key.pool, np.key.os, np.key.arch, metadata)
 	}
 
 	return compatibleCount, nil
@@ -2262,8 +2267,8 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 		if !nodeCanFitTask(node, task.metadata.GetTaskSize()) {
 			continue
 		}
-		// Filter to tasks whose requested isolation type the node supports.
-		if !nodeSupportsIsolationType(node, task.metadata.GetRequestedIsolationType()) {
+		// Filter to tasks whose platform requirements the node supports.
+		if !nodeSupportsTask(node, task.metadata) {
 			continue
 		}
 		// Filter to tasks with a compatible hostname pattern.
@@ -2877,14 +2882,14 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	pool := enqueueRequest.GetSchedulingMetadata().GetPool()
 	hostnamePattern := enqueueRequest.GetSchedulingMetadata().GetHostnamePattern()
 	routingConfig := enqueueRequest.GetSchedulingMetadata().GetRoutingConfig()
-	isolationType := enqueueRequest.GetSchedulingMetadata().GetRequestedIsolationType()
+	metadata := enqueueRequest.GetSchedulingMetadata()
 
 	key := nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID}
 
 	log.CtxDebugf(ctx, "Enqueueing task reservations, pool_key=%+v", key)
 
 	nodeBalancer := s.getOrCreatePool(key)
-	nodeCount, err := nodeBalancer.NodeCount(ctx, enqueueRequest.GetTaskSize(), isolationType)
+	nodeCount, err := nodeBalancer.NodeCount(ctx, enqueueRequest.GetTaskSize(), metadata)
 	if err != nil {
 		return err
 	}
@@ -2914,7 +2919,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	// Note: preferredNode may be nil if the executor ID isn't specified or if
 	// the executor is no longer connected.
 	preferredNode := nodeBalancer.FindConnectedExecutorByID(enqueueRequest.GetExecutorId())
-	if preferredNode != nil {
+	if preferredNode != nil && nodeSupportsTask(preferredNode.ExecutionNode, metadata) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -2950,9 +2955,9 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			// NOTE: if adding more filtering here, also update the filtering in
 			// sampleUnclaimedTasks, to ensure that executors not matching the
 			// filters cannot steal this task.
-			candidateNodes = filterToIsolationType(candidateNodes, isolationType)
+			candidateNodes = filterToTaskRequirements(candidateNodes, metadata)
 			if len(candidateNodes) == 0 {
-				return errIsolationTypeUnsupported(pool, os, arch, isolationType)
+				return errTaskRequirementsUnsupported(pool, os, arch, metadata)
 			}
 			var debugExecutorID string
 			debugExecutorID, candidateNodes = filterToDebugExecutorID(candidateNodes, task)
@@ -3627,8 +3632,13 @@ func errTaskSizeTooLarge(pool, os, arch string, size *scpb.TaskSize) error {
 		pool, os, arch, tasksize.String(size))
 }
 
-func errIsolationTypeUnsupported(pool, os, arch, isolationType string) error {
+func errTaskRequirementsUnsupported(pool, os, arch string, metadata *scpb.SchedulingMetadata) error {
+	if metadata.GetRequiresVfs() {
+		return status.UnavailableErrorf(
+			"no registered executors in pool %q with os %q with arch %q support enable-vfs=true and workload isolation type %q",
+			pool, os, arch, metadata.GetRequestedIsolationType())
+	}
 	return status.UnavailableErrorf(
 		"no registered executors in pool %q with os %q with arch %q support workload isolation type %q",
-		pool, os, arch, isolationType)
+		pool, os, arch, metadata.GetRequestedIsolationType())
 }
