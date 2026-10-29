@@ -36,6 +36,8 @@ go_test(
         "//cli/parser/test_data",
         "//cli/workspace",
         "//server/testutil/testfs",
+        "//server/testutil/testgit",
+        "//server/testutil/testshell",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

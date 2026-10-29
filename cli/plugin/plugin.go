@@ -431,7 +431,7 @@ func (p *Plugin) RepoURL() string {
 	repo, _ := p.splitRepoRef()
 	segments := strings.Split(repo, "/")
 	// Auto-convert owner/repo to https://github.com/owner/repo
-	if len(segments) == 2 {
+	if len(segments) == 2 && !strings.ContainsAny(repo, ":@") {
 		repo = "https://github.com/" + repo
 	}
 	u, err := git.NormalizeRepoURL(repo)
@@ -441,15 +441,27 @@ func (p *Plugin) RepoURL() string {
 	return u.String()
 }
 
+// splitRepoRef splits the "repo" spec into the repo part and the ref part
+// (after "@"). An "@" that separates user info from the host, like in
+// "git@github.com:owner/repo" or "ssh://git@host/owner/repo", is treated as
+// part of the repo.
 func (p *Plugin) splitRepoRef() (string, string) {
-	refParts := strings.Split(p.config.Repo, "@")
-	if len(refParts) == 2 {
-		return refParts[0], refParts[1]
+	repo := p.config.Repo
+	// Skip past the scheme, if any.
+	start := 0
+	if i := strings.Index(repo, "://"); i >= 0 {
+		start = i + len("://")
 	}
-	if len(refParts) > 0 {
-		return refParts[0], ""
+	// Skip past the user info, if any: an "@" that comes before any "/" or
+	// ":" in the rest of the spec, and is followed by a host and path.
+	rest := repo[start:]
+	if at := strings.Index(rest, "@"); at >= 0 && !strings.ContainsAny(rest[:at], "/:") && strings.ContainsAny(rest[at+1:], "/:") {
+		start += at + 1
 	}
-	return "", ""
+	if at := strings.Index(repo[start:], "@"); at >= 0 {
+		return repo[:start+at], repo[start+at+1:]
+	}
+	return repo, ""
 }
 
 // VersionedID returns a human-readable, unique representation of the plugin
@@ -522,8 +534,17 @@ func (p *Plugin) load() error {
 		return nil
 	}
 
+	repo, ref := p.splitRepoRef()
+	if lower := strings.ToLower(repo); strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "git://") {
+		return status.InvalidArgumentErrorf("plugin repo %q uses an insecure scheme; use https, ssh, or a local path instead", p.config.Repo)
+	}
+
 	if p.RepoURL() == "" {
 		return status.InvalidArgumentErrorf(`could not parse plugin repo URL %q: expecting "[HOST/]OWNER/REPO[@REVISION]"`, p.config.Repo)
+	}
+	pinned := isCommitSHA(ref)
+	if !pinned {
+		log.Warnf("Plugin repo %q is not pinned to a commit. Pin it as \"%s@<40-hex commit sha>\" in buildbuddy.yaml so that the downloaded code is verified.", p.config.Repo, repo)
 	}
 	path, err := p.repoClonePath()
 	if err != nil {
@@ -534,7 +555,19 @@ func (p *Plugin) load() error {
 		return err
 	}
 	if exists {
-		return nil
+		if !pinned {
+			return nil
+		}
+		err := checkHead(path, ref)
+		if err == nil {
+			return nil
+		}
+		// Don't trust a cached clone that isn't at the pinned commit;
+		// delete it and download it again.
+		log.Warnf("Cached plugin clone at %q is not at the pinned commit (%s); downloading it again.", path, err)
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("failed to remove cached plugin clone: %s", err)
+		}
 	}
 
 	log.Printf("Downloading %q", p.RepoURL())
@@ -557,7 +590,6 @@ func (p *Plugin) load() error {
 		log.Printf("%s", stderr.String())
 		return err
 	}
-	_, ref := p.splitRepoRef()
 	if ref != "" {
 		stderr := &bytes.Buffer{}
 		checkout := exec.Command("git", "checkout", ref)
@@ -567,6 +599,13 @@ func (p *Plugin) load() error {
 		if err := checkout.Run(); err != nil {
 			log.Printf("%s", stderr.String())
 			return err
+		}
+	}
+	if pinned {
+		// The temp clone is deleted on return, so a clone that doesn't
+		// match the pin is never used.
+		if err := checkHead(tempPath, ref); err != nil {
+			return status.FailedPreconditionErrorf("plugin repo %q: %s", p.config.Repo, err)
 		}
 	}
 
@@ -580,6 +619,29 @@ func (p *Plugin) load() error {
 		return err
 	}
 
+	return nil
+}
+
+var commitSHARegexp = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
+
+// isCommitSHA returns whether ref is a full 40-hex commit SHA.
+func isCommitSHA(ref string) bool {
+	return commitSHARegexp.MatchString(ref)
+}
+
+// checkHead returns an error unless HEAD of the git repo at dir is the
+// given commit SHA.
+func checkHead(dir, sha string) error {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("git rev-parse HEAD in %q: %s", dir, err)
+	}
+	head := strings.TrimSpace(string(out))
+	if !strings.EqualFold(head, sha) {
+		return fmt.Errorf("HEAD is %s, want pinned commit %s", head, sha)
+	}
 	return nil
 }
 
