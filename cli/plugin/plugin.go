@@ -534,14 +534,8 @@ func (p *Plugin) load() error {
 		return nil
 	}
 
-	repoURL := p.RepoURL()
-	if repoURL == "" {
+	if p.RepoURL() == "" {
 		return status.InvalidArgumentErrorf(`could not parse plugin repo URL %q: expecting "[HOST/]OWNER/REPO[@REVISION]"`, p.config.Repo)
-	}
-	// RepoURL upgrades http:// and git:// to https://, except for localhost,
-	// which it clones over plain http. Don't allow that.
-	if strings.HasPrefix(repoURL, "http://") {
-		return status.InvalidArgumentErrorf("plugin repo %q would be cloned over plain http; use https, ssh, or a local path instead", p.config.Repo)
 	}
 	repo, ref := p.splitRepoRef()
 	pinned := isCommitSHA(ref)

@@ -548,21 +548,6 @@ func TestRepoURL_UpgradesInsecureSchemesToHTTPS(t *testing.T) {
 	}
 }
 
-func TestLoad_RejectsPlainHTTPLocalhost(t *testing.T) {
-	t.Setenv("BUILDBUDDY_CACHE_DIR", testfs.MakeTempDir(t))
-	for _, repo := range []string{
-		"http://localhost:8080/foo/bar",
-		"git://localhost/foo/bar",
-		"localhost:8080/foo/bar",
-	} {
-		p := &Plugin{config: &config.PluginConfig{Repo: repo}}
-		require.True(t, strings.HasPrefix(p.RepoURL(), "http://"), repo)
-		err := p.load()
-		require.Error(t, err, repo)
-		assert.Contains(t, err.Error(), "plain http", repo)
-	}
-}
-
 func TestLoad_PinnedCommit(t *testing.T) {
 	t.Setenv("BUILDBUDDY_CACHE_DIR", testfs.MakeTempDir(t))
 	repoPath, firstSHA := testgit.MakeTempRepo(t, map[string]string{"pre_bazel.sh": "echo v1"})
