@@ -87,7 +87,7 @@ func Setup(ctx context.Context) (*Installation, error) {
 	}
 
 	log.Printf("%sDownloading ztracing at commit %s for %s...%s", terminal.Esc(90), ztracingCommitSHA, platform, terminal.Esc())
-	if err := downloadAndExtract(ctx, downloadURL, expectedSHA256, rootDir, stagingDir); err != nil {
+	if err := downloadAndExtract(ctx, downloadURL, expectedSHA256, filepath.Dir(installationDir), stagingDir); err != nil {
 		return nil, err
 	}
 	if !isValidInstallation(installationAt(stagingDir)) {
