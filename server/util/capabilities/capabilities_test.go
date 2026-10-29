@@ -41,6 +41,33 @@ func TestToInt_MultipleCapabilities(t *testing.T) {
 	t.Skip()
 }
 
+func TestToEffectiveMask(t *testing.T) {
+	tests := []struct {
+		name string
+		caps []cappb.Capability
+		want int32
+	}{
+		{
+			name: "no capabilities",
+		},
+		{
+			name: "CAS write",
+			caps: []cappb.Capability{cappb.Capability_CAS_WRITE},
+			want: int32(cappb.Capability_CAS_WRITE),
+		},
+		{
+			name: "cache write implies CAS write",
+			caps: []cappb.Capability{cappb.Capability_CACHE_WRITE},
+			want: int32(cappb.Capability_CACHE_WRITE | cappb.Capability_CAS_WRITE),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, capabilities.ToEffectiveMask(test.caps))
+		})
+	}
+}
+
 func TestFromInt_NoCapabilities(t *testing.T) {
 	caps := capabilities.FromInt(0)
 

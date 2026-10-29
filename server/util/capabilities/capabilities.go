@@ -50,6 +50,17 @@ func ToInt(caps []cappb.Capability) int32 {
 	return m
 }
 
+// ToEffectiveMask returns a mask containing the supplied capabilities and any
+// capabilities they imply.
+func ToEffectiveMask(caps []cappb.Capability) int32 {
+	mask := ToInt(caps)
+	// CACHE_WRITE implies CAS_WRITE.
+	if mask&int32(cappb.Capability_CACHE_WRITE) != 0 {
+		mask |= int32(cappb.Capability_CAS_WRITE)
+	}
+	return mask
+}
+
 func ApplyMask(caps []cappb.Capability, mask int32) []cappb.Capability {
 	return FromInt(ToInt(caps) & mask)
 }

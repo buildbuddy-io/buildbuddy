@@ -910,12 +910,16 @@ func TestImpersonationAPIKeys(t *testing.T) {
 		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
 		require.NoError(t, err)
 
-		// Verify correct key attributes.
+		// Only target group admins can retrieve hidden impersonation keys.
 		key, err := adb.GetAPIKey(targetGroupAdminCtx, rsp.GetApiKey().GetId())
-		require.NoError(t, err)
-		require.True(t, key.Impersonation)
-		require.NotEqualValues(t, 0, key.ExpiryUsec)
-		require.Equal(t, []cappb.Capability{cappb.Capability_CAS_WRITE}, capabilities.FromInt(key.Capabilities))
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			require.NoError(t, err)
+			require.True(t, key.Impersonation)
+			require.NotEqualValues(t, 0, key.ExpiryUsec)
+			require.Equal(t, []cappb.Capability{cappb.Capability_CAS_WRITE}, capabilities.FromInt(key.Capabilities))
+		} else {
+			require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+		}
 
 		// Verify "list" operation does not include the impersonation key.
 		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {

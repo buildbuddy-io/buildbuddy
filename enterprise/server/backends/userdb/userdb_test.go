@@ -1424,12 +1424,33 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 		0, /*=expiresIn*/
 		true /*=visibleToDevelopers*/)
 	require.NoError(t, err)
+	writerKey, err := adb.CreateAPIKey(
+		ctx1, groupID1, "Writer key",
+		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
+		0, /*=expiresIn*/
+		true /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	visibleReadOnlyKey, err := adb.CreateAPIKey(
+		ctx1, groupID1, "Visible read-only key",
+		[]cappb.Capability{},
+		0, /*=expiresIn*/
+		true /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	hiddenReadOnlyKey, err := adb.CreateAPIKey(
+		ctx1, groupID1, "Hidden read-only key",
+		[]cappb.Capability{},
+		0, /*=expiresIn*/
+		false /*=visibleToDevelopers*/)
+	require.NoError(t, err)
 
 	// US1 should be able to see the keys they just created.
 	keys, err := adb.GetAPIKeys(ctx1, groupID1, false /*=includeExpired*/)
 	require.NoError(t, err)
 	require.Contains(t, apiKeyValues(keys), adminOnlyKey.Value)
 	require.Contains(t, apiKeyValues(keys), developerKey.Value)
+	require.Contains(t, apiKeyValues(keys), writerKey.Value)
+	require.Contains(t, apiKeyValues(keys), visibleReadOnlyKey.Value)
+	require.Contains(t, apiKeyValues(keys), hiddenReadOnlyKey.Value)
 
 	// Add US1 to US2's group, and sanity check that they have developer
 	// role.
@@ -1454,6 +1475,54 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, apiKeyValues(keys), adminOnlyKey.Value)
 	require.Contains(t, apiKeyValues(keys), developerKey.Value)
+	require.NotContains(t, apiKeyValues(keys), writerKey.Value)
+	require.Contains(t, apiKeyValues(keys), visibleReadOnlyKey.Value)
+	require.NotContains(t, apiKeyValues(keys), hiddenReadOnlyKey.Value)
+	key, err := adb.GetAPIKey(ctx2, developerKey.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, developerKey.Value, key.Value)
+	_, err = adb.GetAPIKey(ctx2, adminOnlyKey.APIKeyID)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+	_, err = adb.GetAPIKey(ctx2, writerKey.APIKeyID)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+
+	// Cache writers can access both cache-write and CAS-write keys.
+	createUser(t, ctx, env, "US5", "org5.io")
+	err = udb.UpdateGroupUsers(ctx1, groupID1, []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US5"}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD, Role: grpb.Group_WRITER_ROLE},
+	})
+	require.NoError(t, err)
+	ctx5 := authUserCtx(ctx, env, t, "US5")
+	keys, err = adb.GetAPIKeys(ctx5, groupID1, false /*=includeExpired*/)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{developerKey.Value, writerKey.Value, visibleReadOnlyKey.Value}, apiKeyValues(keys))
+
+	// Readers can access visible read-only keys, but not keys carrying write
+	// capabilities.
+	createUser(t, ctx, env, "US4", "org4.io")
+	err = udb.UpdateGroupUsers(ctx1, groupID1, []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US4"}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD, Role: grpb.Group_READER_ROLE},
+	})
+	require.NoError(t, err)
+	ctx4 := authUserCtx(ctx, env, t, "US4")
+	keys, err = adb.GetAPIKeys(ctx4, groupID1, false /*=includeExpired*/)
+	require.NoError(t, err)
+	require.Equal(t, []string{visibleReadOnlyKey.Value}, apiKeyValues(keys))
+	key, err = adb.GetAPIKey(ctx4, visibleReadOnlyKey.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, visibleReadOnlyKey.Value, key.Value)
+	_, err = adb.GetAPIKey(ctx4, developerKey.APIKeyID)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+
+	// An API key cannot retrieve a stronger key, but can retrieve itself even
+	// when it is not visible to non-admins.
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	readOnlyCtx := auth.AuthContextFromAPIKey(ctx, hiddenReadOnlyKey.Value)
+	_, err = adb.GetAPIKey(readOnlyCtx, developerKey.APIKeyID)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+	key, err = adb.GetAPIKey(readOnlyCtx, hiddenReadOnlyKey.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, hiddenReadOnlyKey.Value, key.Value)
 
 	// US3 should not be able to see any keys in group1.
 	ctx3 := authUserCtx(ctx, env, t, "US3")
