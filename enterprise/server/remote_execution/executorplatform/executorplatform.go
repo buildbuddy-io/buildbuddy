@@ -67,11 +67,17 @@ func DefaultImage() string {
 
 // DefaultContainerImageRef returns the container-image platform property value
 // that, when requested explicitly, runs the same image as a task that requests
-// no image. It returns "" if there is no default image.
+// no image. When the raw default image runs that same image (the image rewrite
+// is idempotent, as when there are no rewrite rules), it returns the raw default
+// so that it matches what clients and warmup send; otherwise it returns the
+// rewritten name. It returns "" if there is no default image.
 func DefaultContainerImageRef() string {
 	name := containerImageName(*defaultImage)
 	if name == "" {
 		return ""
+	}
+	if containerImageName(name) == name {
+		return platform.DockerPrefix + strings.TrimPrefix(*defaultImage, platform.DockerPrefix)
 	}
 	return platform.DockerPrefix + name
 }

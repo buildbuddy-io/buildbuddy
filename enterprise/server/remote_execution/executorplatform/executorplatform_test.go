@@ -513,21 +513,59 @@ func TestContainerImageNameRewrite(t *testing.T) {
 }
 
 func TestDefaultContainerImageRef(t *testing.T) {
-	// Non-idempotent rewrite: applying it twice gives a different image.
-	flags.Set(t, "executor.container_image_name_rewrites", []ImageRewrite{
-		{Prefix: "gcr.io/", Replacement: "gcr.io/mirror/"},
-	})
-	flags.Set(t, "executor.default_image", "gcr.io/default:v1")
-	ref := DefaultContainerImageRef()
-	require.Equal(t, "docker://gcr.io/mirror/default:v1", ref)
+	for _, tc := range []struct {
+		name         string
+		rewrites     []ImageRewrite
+		region       string
+		defaultImage string
+		expected     string
+	}{
+		{
+			name:         "no rules returns raw default",
+			defaultImage: "gcr.io/default:v1",
+			expected:     "docker://gcr.io/default:v1",
+		},
+		{
+			name:         "docker prefix is not doubled",
+			defaultImage: "docker://gcr.io/default:v1",
+			expected:     "docker://gcr.io/default:v1",
+		},
+		{
+			name:         "idempotent rule returns raw default",
+			rewrites:     []ImageRewrite{{Prefix: "gcr.io/", Replacement: "mirror.example.com/"}},
+			defaultImage: "gcr.io/default:v1",
+			expected:     "docker://gcr.io/default:v1",
+		},
+		{
+			name:         "region placeholder returns raw default",
+			region:       "us-west1",
+			defaultImage: "{{region}}.gcr.io/default:v1",
+			expected:     "docker://{{region}}.gcr.io/default:v1",
+		},
+		{
+			// Applying this rewrite twice gives a different image.
+			name:         "non-idempotent rule returns single-pass rewrite",
+			rewrites:     []ImageRewrite{{Prefix: "gcr.io/", Replacement: "gcr.io/mirror/"}},
+			defaultImage: "gcr.io/default:v1",
+			expected:     "docker://gcr.io/mirror/default:v1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.container_image_name_rewrites", tc.rewrites)
+			flags.Set(t, "executor.container_registry_region", tc.region)
+			flags.Set(t, "executor.default_image", tc.defaultImage)
+			ref := DefaultContainerImageRef()
+			require.Equal(t, tc.expected, ref)
 
-	// A task that explicitly requests ref runs the same image as one that
-	// requests no image.
-	implicit := &platform.Properties{}
-	require.NoError(t, ApplyOverrides(t.Context(), testenv.GetTestEnv(t), docker, implicit, &repb.Command{}))
-	explicit := &platform.Properties{ContainerImage: ref}
-	require.NoError(t, ApplyOverrides(t.Context(), testenv.GetTestEnv(t), docker, explicit, &repb.Command{}))
-	require.Equal(t, implicit.ContainerImage, explicit.ContainerImage)
+			// A task that explicitly requests ref runs the same image as one
+			// that requests no image.
+			implicit := &platform.Properties{}
+			require.NoError(t, ApplyOverrides(t.Context(), testenv.GetTestEnv(t), docker, implicit, &repb.Command{}))
+			explicit := &platform.Properties{ContainerImage: ref}
+			require.NoError(t, ApplyOverrides(t.Context(), testenv.GetTestEnv(t), docker, explicit, &repb.Command{}))
+			require.Equal(t, implicit.ContainerImage, explicit.ContainerImage)
+		})
+	}
 
 	flags.Set(t, "executor.default_image", "")
 	require.Equal(t, "", DefaultContainerImageRef())
