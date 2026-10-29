@@ -123,6 +123,26 @@ var (
 		buildBuddyServicePrefix + "GetWorkflowHistory",
 		// Github configuration (read-only).
 		buildBuddyServicePrefix + "GetLinkedGitHubRepos",
+		// User-level API keys
+		buildBuddyServicePrefix + "GetUserApiKeys",
+		buildBuddyServicePrefix + "GetUserApiKey",
+		buildBuddyServicePrefix + "CreateUserApiKey",
+		apiServicePrefix + "CreateUserApiKey",
+		buildBuddyServicePrefix + "UpdateUserApiKey",
+		buildBuddyServicePrefix + "DeleteUserApiKey",
+		// Codesearch and Kythe
+		buildBuddyServicePrefix + "Search",
+		buildBuddyServicePrefix + "KytheProxy",
+		buildBuddyServicePrefix + "RepoStatus",
+		// Workspace management
+		buildBuddyServicePrefix + "GetWorkspace",
+		buildBuddyServicePrefix + "GetWorkspaceDirectory",
+		buildBuddyServicePrefix + "GetWorkspaceFile",
+	}
+
+	// groupWriteRPCs require membership in the selected group with write
+	// capability.
+	groupWriteRPCs = []string{
 		// Per-invocation actions
 		buildBuddyServicePrefix + "UpdateInvocation",
 		buildBuddyServicePrefix + "DeleteInvocation",
@@ -132,30 +152,16 @@ var (
 		buildBuddyServicePrefix + "InvalidateSnapshot",
 		buildBuddyServicePrefix + "WriteEventLog",
 		buildBuddyServicePrefix + "UpdateRunStatus",
-		// Org API keys (implementation only returns developer-visible keys
-		// for developers; admins can see all keys).
+		// Org API keys
 		buildBuddyServicePrefix + "GetApiKeys",
 		buildBuddyServicePrefix + "GetApiKey",
-		// User-level API keys
-		buildBuddyServicePrefix + "GetUserApiKeys",
-		buildBuddyServicePrefix + "GetUserApiKey",
-		buildBuddyServicePrefix + "CreateUserApiKey",
-		apiServicePrefix + "CreateUserApiKey",
-		buildBuddyServicePrefix + "UpdateUserApiKey",
-		buildBuddyServicePrefix + "DeleteUserApiKey",
 		// Remote Bazel
 		buildBuddyServicePrefix + "Run",
 		apiServicePrefix + "Run",
-		// Codesearch and Kythe
-		buildBuddyServicePrefix + "Search",
-		buildBuddyServicePrefix + "KytheProxy",
+		// Codesearch
 		buildBuddyServicePrefix + "Index",
-		buildBuddyServicePrefix + "RepoStatus",
 		// Workspace management
-		buildBuddyServicePrefix + "GetWorkspace",
 		buildBuddyServicePrefix + "SaveWorkspace",
-		buildBuddyServicePrefix + "GetWorkspaceDirectory",
-		buildBuddyServicePrefix + "GetWorkspaceFile",
 	}
 
 	// AdminOnlyRPCs can only be called by admins of the selected group.
@@ -265,6 +271,9 @@ func AllowedRPCs(ctx context.Context, env environment.Env, groupID string) []str
 			if slices.Contains(userGroupCapabilities, cappb.Capability_ORG_ADMIN) {
 				out = append(out, getGroupAdminOnlyRPCs()...)
 			}
+			if slices.Contains(userGroupCapabilities, cappb.Capability_CACHE_WRITE) || slices.Contains(userGroupCapabilities, cappb.Capability_CAS_WRITE) {
+				out = append(out, groupWriteRPCs...)
+			}
 			out = append(out, groupMemberRPCs...)
 		}
 	}
@@ -278,6 +287,7 @@ func AllRPCsForTestOnly() []string {
 	var out []string
 	out = append(out, getUnfilteredRPCs()...)
 	out = append(out, groupMemberRPCs...)
+	out = append(out, groupWriteRPCs...)
 	out = append(out, getGroupAdminOnlyRPCs()...)
 	out = append(out, serverAdminOnlyRPCs...)
 	return out
