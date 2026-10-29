@@ -12,16 +12,17 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 )
 
-const (
-	ztracingCommitSHA = "2652640077baa8852d10f0e33a592a5085206ebe"
-	ztracingURLFormat = "https://storage.googleapis.com/buildbuddy-tools/binaries/ztracing/%s/ztracing-%s.tar.gz"
-)
+const ztracingCommitSHA = "2652640077baa8852d10f0e33a592a5085206ebe"
+
+// ztracingURLFormat is a variable so that tests can point it at a local server.
+var ztracingURLFormat = "https://storage.googleapis.com/buildbuddy-tools/binaries/ztracing/%s/ztracing-%s.tar.gz"
 
 // ztracingSHA256 holds the expected sha256 of each platform's archive at
 // ztracingCommitSHA. Update these together with ztracingCommitSHA.
@@ -53,14 +54,12 @@ func Setup(ctx context.Context) (*Installation, error) {
 	if err := os.MkdirAll(rootDir, 0755); err != nil {
 		return nil, fmt.Errorf("create ztracing cache directory: %w", err)
 	}
-	// The archive digest is part of the key so that installations extracted
-	// before the digest was verified are never reused.
-	installationKey := ztracingCommitSHA + "-" + expectedSHA256[:16]
-	if err := removeOldInstallations(rootDir, installationKey); err != nil {
+	key := installationKey()
+	if err := removeOldInstallations(rootDir, key); err != nil {
 		return nil, err
 	}
 
-	installationDir := filepath.Join(rootDir, installationKey, platform)
+	installationDir := filepath.Join(rootDir, key, platform)
 	installation := installationAt(installationDir)
 	if isValidInstallation(installation) {
 		if err := addToPath(installation.BinaryPath); err != nil {
@@ -73,24 +72,51 @@ func Setup(ctx context.Context) (*Installation, error) {
 	if err := os.RemoveAll(installationDir); err != nil {
 		return nil, fmt.Errorf("remove incomplete ztracing installation: %w", err)
 	}
-	if err := os.MkdirAll(installationDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(installationDir), 0755); err != nil {
 		return nil, fmt.Errorf("create ztracing installation directory: %w", err)
+	}
+	// Extract into a staging directory and rename it into place, so that an
+	// interrupted extraction never leaves a directory that looks installed.
+	stagingDir, err := os.MkdirTemp(filepath.Dir(installationDir), platform+".tmp-*")
+	if err != nil {
+		return nil, fmt.Errorf("create ztracing staging directory: %w", err)
+	}
+	defer os.RemoveAll(stagingDir)
+	if err := os.Chmod(stagingDir, 0755); err != nil {
+		return nil, fmt.Errorf("chmod ztracing staging directory: %w", err)
 	}
 
 	log.Printf("%sDownloading ztracing at commit %s for %s...%s", terminal.Esc(90), ztracingCommitSHA, platform, terminal.Esc())
-	if err := downloadAndExtract(ctx, downloadURL, expectedSHA256, rootDir, installationDir); err != nil {
-		os.RemoveAll(installationDir)
+	if err := downloadAndExtract(ctx, downloadURL, expectedSHA256, rootDir, stagingDir); err != nil {
 		return nil, err
 	}
-	if !isValidInstallation(installation) {
-		os.RemoveAll(installationDir)
+	if !isValidInstallation(installationAt(stagingDir)) {
 		return nil, fmt.Errorf("downloaded ztracing archive did not contain the expected binary, skill, and license")
+	}
+	if err := os.Rename(stagingDir, installationDir); err != nil && !isValidInstallation(installation) {
+		return nil, fmt.Errorf("move ztracing installation into place: %w", err)
 	}
 	if err := addToPath(installation.BinaryPath); err != nil {
 		return nil, err
 	}
 	log.Printf("%sUsing ztracing installation at %s%s", terminal.Esc(90), installationDir, terminal.Esc())
 	return installation, nil
+}
+
+// installationKey names the cache directory for the pinned ztracing build. It
+// covers every platform's archive digest, so installations extracted before
+// digests were verified (keyed by commit only) are never reused.
+func installationKey() string {
+	platforms := make([]string, 0, len(ztracingSHA256))
+	for platform := range ztracingSHA256 {
+		platforms = append(platforms, platform)
+	}
+	sort.Strings(platforms)
+	hash := sha256.New()
+	for _, platform := range platforms {
+		fmt.Fprintf(hash, "%s %s\n", platform, ztracingSHA256[platform])
+	}
+	return ztracingCommitSHA + "-" + hex.EncodeToString(hash.Sum(nil))[:16]
 }
 
 // downloadAndExtract downloads the archive at downloadURL, verifies that its
