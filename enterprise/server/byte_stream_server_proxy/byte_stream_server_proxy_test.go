@@ -3561,9 +3561,11 @@ func TestWriteAlreadyExists(t *testing.T) {
 
 // A remote that already has a blob does not read the upload, so a proxy that
 // skipped validating the upload must not keep it. The proxy asks the remote to
-// say so with ALREADY_EXISTS. A remote with cache.bytestream_already_exists_status
-// off says so with a negative committed size instead, but only for compressed
-// uploads, so the proxy relies on the status for uncompressed ones.
+// say so with ALREADY_EXISTS, passes that on to clients that handle it, and
+// ends the write itself for others. A remote with
+// cache.bytestream_already_exists_status off says so with a negative committed
+// size instead, but only for compressed uploads, so the proxy relies on the
+// status for uncompressed ones.
 func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
 	env := runAlreadyExistsProxy(t)
 	flags.Set(t, "cache_proxy.skip_write_validation", true)
@@ -3576,7 +3578,8 @@ func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
 		// header advertises the client feature, like cachetools.
 		header bool
 		// bazelVersion, if set, is sent as Bazel request metadata. A pre-5.1
-		// Bazel expects the size of what it uploaded in return.
+		// Bazel expects the size of what it uploaded in return; Bazel 6.2+
+		// handles ALREADY_EXISTS.
 		bazelVersion string
 		// noStatus turns off the ALREADY_EXISTS status at the remote.
 		noStatus bool
@@ -3598,6 +3601,8 @@ func TestWriteSkipValidationDropsUnvalidatedUpload(t *testing.T) {
 		{name: "plain_corrupt_compressed", compressed: true, wantCommitted: -1},
 		{name: "bazel5_corrupt_compressed", bazelVersion: "5.0.0", compressed: true, wantUploaded: true},
 		{name: "bazel5_corrupt_compressed_in_requests", bazelVersion: "5.0.0", compressed: true, requestSize: 16 * 1024, wantUploaded: true},
+		{name: "bazel7_corrupt", bazelVersion: "7.0.0", wantStatus: true},
+		{name: "bazel7_corrupt_compressed", bazelVersion: "7.0.0", compressed: true, wantStatus: true},
 		{name: "header_corrupt_compressed_no_status", header: true, noStatus: true, compressed: true, wantCommitted: -1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

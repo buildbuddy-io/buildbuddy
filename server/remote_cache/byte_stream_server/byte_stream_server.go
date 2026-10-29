@@ -632,7 +632,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 	if r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
 		// The protocol says it is *optional* to allow overwriting, but does
 		// not specify what errors should be returned in that case. Clients
-		// known to handle it (see clientHandlesAlreadyExists) are sent an
+		// known to handle it (see ClientHandlesAlreadyExists) are sent an
 		// ALREADY_EXISTS status when the experiment is enabled. Other
 		// clients fail on that status, so they get a WriteResponse instead.
 		exists, err := s.cache.Contains(ctx, casRN.ToProto())
@@ -881,11 +881,11 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 	return nil, status.UnimplementedError("not implemented")
 }
 
-// clientHandlesAlreadyExists reports whether the client treats an
+// ClientHandlesAlreadyExists reports whether the client treats an
 // ALREADY_EXISTS status on a Write as a successful upload. Our clients
 // advertise that in the client features header. Bazel has supported these
 // errors since 6.2.0.
-func clientHandlesAlreadyExists(ctx context.Context) bool {
+func ClientHandlesAlreadyExists(ctx context.Context) bool {
 	if clientfeatures.Supports(ctx, clientfeatures.ByteStreamWriteAlreadyExists) {
 		return true
 	}
@@ -921,7 +921,7 @@ func EndWriteAlreadyExists(ctx context.Context, stream bspb.ByteStream_WriteServ
 	// exists" indication via a status instead of a special WriteResponse.
 	// Sending the response as a status in the trailer has better compatibility
 	// with Envoy load balancers.
-	if clientHandlesAlreadyExists(ctx) && alreadyExistsStatus.Get(ctx) {
+	if ClientHandlesAlreadyExists(ctx) && alreadyExistsStatus.Get(ctx) {
 		return uploadedBytes, status.AlreadyExistsError("blob already exists")
 	}
 
