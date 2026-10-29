@@ -1354,3 +1354,35 @@ func TestTransientErrorExitCodes(t *testing.T) {
 		})
 	}
 }
+
+func TestRunnerPool_DefaultImageChanged_DoesNotReuseRunnerForOldImage(t *testing.T) {
+	// Use a non-bare isolation type so that ApplyOverrides fills in
+	// executor.default_image for tasks with no container-image.
+	flags.Set(t, "executor.enable_oci", true)
+	flags.Set(t, "executor.default_image", "docker://gcr.io/test/image-a:1")
+
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		c := NewFakeContainer()
+		c.Isolation = string(platform.OCIContainerType)
+		return c, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+
+	r1 := mustGetNewRunner(t, ctx, pool, newTask())
+	require.Equal(t, "gcr.io/test/image-a:1", r1.PlatformProperties.ContainerImage)
+	mustAddWithoutEviction(t, ctx, pool, r1)
+
+	// The executor's default image changes; an otherwise identical task with
+	// no container-image now resolves to a different image.
+	flags.Set(t, "executor.default_image", "docker://gcr.io/test/image-b:2")
+
+	r2, err := get(ctx, pool, newTask())
+	require.NoError(t, err)
+	require.Equal(t, "gcr.io/test/image-b:2", r2.PlatformProperties.ContainerImage)
+
+	assert.NotSame(t, r1, r2, "runner created for image-a was reused for a task that resolves to image-b")
+	assert.Equal(t, 1, pool.PausedRunnerCount(), "paused runner for image-a should still be in the pool")
+}

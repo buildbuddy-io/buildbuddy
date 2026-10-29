@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -503,4 +504,84 @@ func TestParse_ExecrootPath(t *testing.T) {
 	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 	require.NoError(t, err)
 	assert.Equal(t, "", platformProps.ExecrootPath)
+}
+
+func TestGetKeyProto(t *testing.T) {
+	const resolved = "gcr.io/default/image:1"
+	props := func(kv ...string) []*repb.Platform_Property {
+		var out []*repb.Platform_Property
+		for i := 0; i < len(kv); i += 2 {
+			out = append(out, &repb.Platform_Property{Name: kv[i], Value: kv[i+1]})
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name      string
+		platform  []*repb.Platform_Property
+		overrides []*repb.Platform_Property
+		// wantImage is the expected container-image in the key, or "" if the
+		// key should be the raw platform proto.
+		wantImage string
+	}{
+		{
+			name:     "explicit image keeps raw platform",
+			platform: props("OSFamily", "linux", "Container-Image", "docker://gcr.io/foo/bar:1"),
+		},
+		{
+			name:      "no image gets resolved image",
+			platform:  props("OSFamily", "linux"),
+			wantImage: resolved,
+		},
+		{
+			name:      "none gets resolved image",
+			platform:  props("OSFamily", "linux", "container-image", "none"),
+			wantImage: resolved,
+		},
+		{
+			name:      "NONE gets resolved image",
+			platform:  props("container-image", "NONE"),
+			wantImage: resolved,
+		},
+		{
+			name:      "override gets resolved image",
+			platform:  props("container-image", "docker://gcr.io/foo/bar:1"),
+			overrides: props("container-image", "docker://gcr.io/foo/override:1"),
+			wantImage: resolved,
+		},
+		{
+			name:      "last duplicate property wins",
+			platform:  props("Container-Image", "docker://gcr.io/foo/old:1", "container-image", "none"),
+			wantImage: resolved,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := &repb.ExecutionTask{
+				Command:           &repb.Command{Platform: &repb.Platform{Properties: tc.platform}},
+				PlatformOverrides: &repb.Platform{Properties: tc.overrides},
+			}
+			raw := GetProto(task.GetAction(), task.GetCommand())
+			rawBefore, err := raw.MarshalVT()
+			require.NoError(t, err)
+
+			key := GetKeyProto(task, resolved)
+
+			keyBytes, err := key.MarshalVT()
+			require.NoError(t, err)
+			if tc.wantImage == "" {
+				assert.Equal(t, rawBefore, keyBytes)
+			} else {
+				assert.NotEqual(t, rawBefore, keyBytes)
+				var images []string
+				for _, p := range key.GetProperties() {
+					if strings.EqualFold(p.GetName(), "container-image") {
+						images = append(images, p.GetValue())
+					}
+				}
+				assert.Equal(t, []string{tc.wantImage}, images)
+			}
+			rawAfter, err := raw.MarshalVT()
+			require.NoError(t, err)
+			assert.Equal(t, rawBefore, rawAfter, "raw platform should not be mutated")
+		})
+	}
 }
