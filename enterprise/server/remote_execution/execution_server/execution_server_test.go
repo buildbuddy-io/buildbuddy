@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/proto/capability"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -31,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -183,6 +185,15 @@ func setupEnvWithClock(t *testing.T, clock clockwork.Clock) (*testenv.TestEnv, *
 
 func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	return setupEnvWithClock(t, clockwork.NewRealClock())
+}
+
+func apiKeyUser(apiKeyID string, caps ...capability.Capability) *testauth.TestUser {
+	u := testauth.User("", "GR1")
+	u.APIKeyID = apiKeyID
+	u.APIKeyOwnerGroupID = "GR1"
+	u.Capabilities = caps
+	u.GroupMemberships[0].Capabilities = caps
+	return u
 }
 
 func createExecution(ctx context.Context, t *testing.T, db interfaces.DB, execution *tables.Execution) {
@@ -2542,6 +2553,56 @@ func TestExecute_LostTaskEndsWait(t *testing.T) {
 	require.True(t, op.GetDone())
 	rsp := operation.ExtractExecuteResponse(op)
 	require.Equal(t, int32(codes.NotFound), rsp.GetStatus().GetCode(), "status: %v", rsp.GetStatus())
+}
+
+func TestExecute_APIKeyCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		capabilities   []capability.Capability
+		wantPermission bool
+	}{
+		{
+			name:           "read-only key is rejected",
+			wantPermission: false,
+		},
+		{
+			name:           "CAS-only key is allowed",
+			capabilities:   []capability.Capability{capability.Capability_CAS_WRITE},
+			wantPermission: true,
+		},
+		{
+			name:           "cache-write key is allowed",
+			capabilities:   []capability.Capability{capability.Capability_CACHE_WRITE},
+			wantPermission: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, conn, _ := setupEnv(t)
+			authenticator := env.GetAuthenticator().(*testauth.TestAuthenticator)
+			authenticator.APIKeyProvider = func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) {
+				return apiKeyUser(apiKey, tc.capabilities...), nil
+			}
+
+			// Use a missing action to verify that authorized requests proceed to
+			// the normal execution path without actually scheduling anything.
+			actionDigest, err := digest.Compute(strings.NewReader("missing action"), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			ctx := metadata.AppendToOutgoingContext(t.Context(), authutil.APIKeyHeader, "test-api-key")
+			stream, err := repb.NewExecutionClient(conn).Execute(ctx, &repb.ExecuteRequest{
+				ActionDigest:   actionDigest,
+				DigestFunction: repb.DigestFunction_SHA256,
+			})
+			require.NoError(t, err)
+
+			_, err = stream.Recv()
+			require.Error(t, err)
+			if tc.wantPermission {
+				require.True(t, status.IsFailedPreconditionError(err), "expected missing-action error, got %s", err)
+			} else {
+				require.True(t, status.IsPermissionDeniedError(err), "expected permission denied, got %s", err)
+			}
+		})
+	}
 }
 
 func TestExecute_RejectAnonymousExecutionsExperiment(t *testing.T) {

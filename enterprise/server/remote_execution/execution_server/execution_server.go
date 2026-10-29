@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
+	"github.com/buildbuddy-io/buildbuddy/proto/capability"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -1171,6 +1172,13 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.authenticator)
 	if err != nil {
 		return err
+	}
+	u, err := s.authenticator.AuthenticatedUser(ctx)
+	if err != nil && !authutil.IsAnonymousUserError(err) {
+		return err
+	}
+	if err == nil && u.GetAPIKeyInfo().ID != "" && !u.HasCapability(capability.Capability_CACHE_WRITE|capability.Capability_CAS_WRITE) {
+		return status.PermissionDeniedError("remote execution requires an API key with write capability")
 	}
 
 	if err := s.checkAnonymousExecutionExperiment(ctx); err != nil {
