@@ -27,17 +27,21 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Masterminds/semver/v3"
 )
 
 const (
 	ReleaseDownloadBaseURL = "https://github.com/buildbuddy-io/bazel/releases/download"
 
 	// FirstSignedVersion is the first bb release published with a .sig file.
-	// It was set to the release after the latest one (cli-v5.0.498) at the
-	// time signing was added.
+	// It is set to the release after the latest one (cli-v5.0.498) at the
+	// time signing was added. It MUST be the first release built and signed
+	// with the real key (i.e. after release_signing_public_key.pem and the
+	// CLI_RELEASE_SIGNING_KEY secret are set), so bump it if releases ship
+	// before then.
 	FirstSignedVersion = "5.0.499"
 )
 
@@ -252,40 +256,19 @@ func Get(client *http.Client, url string) (*http.Response, error) {
 	return res, nil
 }
 
-// CompareVersions compares two "X.Y.Z" release versions, returning -1, 0 or
-// 1 as a is older than, equal to, or newer than b.
-func CompareVersions(a, b string) (int, error) {
-	pa, err := parseVersion(a)
+// ParseVersion parses a release version, which must be strict semver
+// without a "v" prefix (e.g. "5.0.499").
+func ParseVersion(v string) (*semver.Version, error) {
+	sv, err := semver.StrictNewVersion(v)
 	if err != nil {
-		return 0, err
+		return nil, fmt.Errorf("invalid release version %q: %w", v, err)
 	}
-	pb, err := parseVersion(b)
-	if err != nil {
-		return 0, err
-	}
-	for i := range pa {
-		if pa[i] != pb[i] {
-			if pa[i] < pb[i] {
-				return -1, nil
-			}
-			return 1, nil
-		}
-	}
-	return 0, nil
+	return sv, nil
 }
 
-func parseVersion(v string) ([3]int, error) {
-	var out [3]int
-	parts := strings.Split(v, ".")
-	if len(parts) != 3 {
-		return out, fmt.Errorf("invalid release version %q", v)
-	}
-	for i, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 || strconv.Itoa(n) != p {
-			return out, fmt.Errorf("invalid release version %q", v)
-		}
-		out[i] = n
-	}
-	return out, nil
+// IsSigned reports whether v is a valid release version at or after
+// FirstSignedVersion.
+func IsSigned(v string) bool {
+	sv, err := ParseVersion(v)
+	return err == nil && !sv.LessThan(semver.MustParse(FirstSignedVersion))
 }

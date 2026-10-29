@@ -110,22 +110,21 @@ func fetchLatestVersion() (string, error) {
 	return v, nil
 }
 
-// checkNotDowngrade returns an error if latest is older than running, or is
-// not a valid release version. The "latest" API response isn't signed, so
-// without this an attacker could serve an old (but validly signed) release.
-func checkNotDowngrade(latest, running string) error {
-	if running == "unknown" {
-		// Dev builds have no release version to compare against, but the
-		// latest version must still be well-formed.
-		_, err := signedrelease.CompareVersions(latest, signedrelease.FirstSignedVersion)
-		return err
-	}
-	cmp, err := signedrelease.CompareVersions(latest, running)
+// checkNotDowngrade returns an error if latest isn't a signed release version
+// or is older than current. A current that isn't a release version (e.g.
+// "unknown" for dev builds, or "" if nothing is installed) is ignored. The
+// "latest" API response isn't signed, so without this an attacker could
+// serve an old (but validly signed, or unsigned) release.
+func checkNotDowngrade(latest, current string) error {
+	lv, err := signedrelease.ParseVersion(latest)
 	if err != nil {
 		return err
 	}
-	if cmp < 0 {
-		return fmt.Errorf("refusing to update: the latest release (%s) is older than this bb (%s)", latest, running)
+	if !signedrelease.IsSigned(latest) {
+		return fmt.Errorf("refusing to update to %s: releases before %s are unsigned", latest, signedrelease.FirstSignedVersion)
+	}
+	if cv, err := signedrelease.ParseVersion(current); err == nil && lv.LessThan(cv) {
+		return fmt.Errorf("refusing to update: the latest release (%s) is older than %s", latest, current)
 	}
 	return nil
 }
@@ -191,6 +190,9 @@ func updateSystemInstall(version string) error {
 	if installedVersion == version {
 		log.Printf("Version %s is already installed at %s", version, installPath)
 		return nil
+	}
+	if err := checkNotDowngrade(version, installedVersion); err != nil {
+		return fmt.Errorf("%s (installed at %s)", err, installPath)
 	}
 	url, err := signedrelease.AssetURL(version, runtime.GOOS, runtime.GOARCH)
 	if err != nil {

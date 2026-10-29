@@ -83,10 +83,15 @@ func TestSignedForkRepoLatest(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		fork      string
+		running   string
 		listed    []string
 		want      string
 		wantError string
 	}{
+		// A signed release older than this bb can't be replayed as "latest".
+		{name: "OlderThanRunningDropped", fork: "buildbuddy-io", running: "5.0.501", listed: []string{"5.0.499", "5.0.500"}, wantError: "not older than this bb"},
+		{name: "RunningVersionAllowed", fork: "buildbuddy-io", running: "5.0.500", listed: []string{"5.0.499", "5.0.500"}, want: "5.0.500"},
+		{name: "DevBuildUsesFirstSigned", fork: "buildbuddy-io", running: "unknown", listed: []string{"5.0.498", "5.0.499"}, want: "5.0.499"},
 		{name: "LatestIsSigned", fork: "buildbuddy-io", listed: []string{"5.0.498", "5.0.499", "5.0.500"}, want: "5.0.500"},
 		// An attacker serving the unsigned listing can't steer "latest" to
 		// an old, unsigned release.
@@ -97,7 +102,8 @@ func TestSignedForkRepoLatest(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var verified []string
 			r := &signedForkRepo{
-				ForkRepo: fakeForkRepo{versions: tc.listed},
+				ForkRepo:       fakeForkRepo{versions: tc.listed},
+				runningVersion: tc.running,
 				verify: func(assetURL, path string) error {
 					verified = append(verified, assetURL)
 					return nil

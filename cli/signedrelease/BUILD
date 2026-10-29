@@ -7,6 +7,7 @@ go_library(
     srcs = ["signedrelease.go"],
     embedsrcs = ["release_signing_public_key.pem"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/signedrelease",
+    deps = ["@com_github_masterminds_semver_v3//:semver"],
 )
 
 go_test(

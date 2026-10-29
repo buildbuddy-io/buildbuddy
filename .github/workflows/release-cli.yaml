@@ -9,7 +9,33 @@ on:
       - "cli/**"
 
 jobs:
+  # Fails before any tag or draft release is created if the signing key is
+  # missing or doesn't match the public key built into bb.
+  check-signing-key:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, 'release skip')
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Check signing key
+        env:
+          SIGNING_KEY: ${{ secrets.CLI_RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SIGNING_KEY" ]]; then
+            echo "::error::The CLI_RELEASE_SIGNING_KEY secret is not set."
+            exit 1
+          fi
+          # The key is an ed25519 private key in PEM form, as written by
+          # `openssl genpkey -algorithm ed25519`.
+          if ! printf '%s\n' "$SIGNING_KEY" | openssl pkey -pubout | diff -q - cli/signedrelease/release_signing_public_key.pem; then
+            echo "::error::CLI_RELEASE_SIGNING_KEY does not match cli/signedrelease/release_signing_public_key.pem."
+            exit 1
+          fi
+
   push-tag:
+    needs: check-signing-key
     if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, 'release skip')
     runs-on: ubuntu-22.04
     outputs:
@@ -208,14 +234,25 @@ jobs:
             "${{ steps.build.outputs.BINARY }}" \
             "${{ steps.build.outputs.BINARY }}.sha256"
 
+      # sign-artifacts signs this copy rather than the release asset, so that
+      # it only signs checksums of binaries built by this workflow.
+      - name: Save checksum for signing
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sha256-${{ steps.build.outputs.BINARY }}
+          path: buildbuddy/${{ steps.build.outputs.BINARY }}.sha256
+          if-no-files-found: error
+
   sign-artifacts:
     runs-on: ubuntu-22.04
     needs: [push-tag, build-artifacts]
     steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - name: Download checksums
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: buildbuddy
+          pattern: sha256-*
+          merge-multiple: true
+          path: sums
 
       - name: Sign checksums
         env:
@@ -224,40 +261,17 @@ jobs:
           VERSION: ${{ needs.push-tag.outputs.version }}
         run: |
           set -euo pipefail
-          if [[ -z "$SIGNING_KEY" ]]; then
-            echo "::error::The CLI_RELEASE_SIGNING_KEY secret is not set."
-            exit 1
-          fi
-          # The key is an ed25519 private key in PEM form, as written by
-          # `openssl genpkey -algorithm ed25519`.
           umask 077
           KEY_FILE="${RUNNER_TEMP}/cli_release_signing_key.pem"
           trap 'rm -f "$KEY_FILE"' EXIT
           printf '%s\n' "$SIGNING_KEY" > "$KEY_FILE"
 
-          # bb verifies signatures with the public key built in from this
-          # file, so make sure the secret matches it.
-          if ! openssl pkey -in "$KEY_FILE" -pubout | diff -q - "${GITHUB_WORKSPACE}/buildbuddy/cli/signedrelease/release_signing_public_key.pem"; then
-            echo "::error::CLI_RELEASE_SIGNING_KEY does not match cli/signedrelease/release_signing_public_key.pem."
-            exit 1
-          fi
-
-          mkdir "${RUNNER_TEMP}/sign" && cd "${RUNNER_TEMP}/sign"
-          SUMS=()
-          for PLATFORM in linux-x86_64 linux-arm64 darwin-x86_64 darwin-arm64; do
-            SUMS+=("bazel-${VERSION}-${PLATFORM}.sha256")
-          done
-          for SUM in "${SUMS[@]}"; do
-            gh release download "$VERSION" --repo buildbuddy-io/bazel --pattern "$SUM"
-          done
+          cd sums
+          SUMS=(bazel-${VERSION}-{linux,darwin}-{x86_64,arm64}.sha256)
           # Each .sig is the raw 64-byte ed25519 signature of the .sha256
-          # file's bytes.
+          # file's bytes; bb checks it with cli/signedrelease.
           for SUM in "${SUMS[@]}"; do
             openssl pkeyutl -sign -rawin -inkey "$KEY_FILE" -in "$SUM" -out "${SUM}.sig"
-            if [[ "$(wc -c < "${SUM}.sig")" -ne 64 ]]; then
-              echo "::error::Unexpected signature size for $SUM"
-              exit 1
-            fi
           done
           gh release upload \
             --repo buildbuddy-io/bazel \

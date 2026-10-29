@@ -256,23 +256,19 @@ func TestAssetURL(t *testing.T) {
 	}
 }
 
-func TestCompareVersions(t *testing.T) {
-	for _, tc := range []struct {
-		a, b string
-		want int
-	}{
-		{"5.0.499", "5.0.499", 0},
-		{"5.0.498", "5.0.499", -1},
-		{"5.0.1000", "5.0.999", 1},
-		{"6.0.0", "5.9.9", 1},
-		{"4.10.0", "5.0.0", -1},
+func TestIsSigned(t *testing.T) {
+	for v, want := range map[string]bool{
+		"5.0.499":  true,
+		"5.0.1000": true,
+		"6.0.0":    true,
+		"5.0.498":  false,
+		"4.10.0":   false,
+		"":         false,
+		"5.0":      false,
+		"v5.0.500": false,
+		"5.0.x":    false,
+		"../5.0.1": false,
 	} {
-		got, err := CompareVersions(tc.a, tc.b)
-		require.NoError(t, err)
-		require.Equal(t, tc.want, got, "CompareVersions(%q, %q)", tc.a, tc.b)
-	}
-	for _, bad := range []string{"", "5.0", "5.0.1.2", "v5.0.1", "5.0.x", "5.0.+1", "../5.0.1"} {
-		_, err := CompareVersions(bad, "5.0.0")
-		require.Error(t, err, "CompareVersions(%q, ...)", bad)
+		require.Equal(t, want, IsSigned(v), "IsSigned(%q)", v)
 	}
 }
