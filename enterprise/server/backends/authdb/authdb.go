@@ -58,7 +58,7 @@ const (
 
 var (
 	userOwnedKeysEnabled      = flag.Bool("app.user_owned_keys_enabled", false, "If true, enable user-owned API keys.")
-	apiKeyValueReadbackConfig = flag.Bool("app.api_key_value_readback_enabled", true, "If true, API key values can be retrieved after creation via API key read methods.")
+	apiKeyValueReadbackConfig = flag.Bool("app.api_key_value_readback_enabled", false, "If true, API key values can be retrieved after creation via API key read methods.")
 	apiKeyGroupCacheTTL       = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "TTL for API Key to Group caching. Set to '0' to disable cache.")
 	apiKeyEncryptionKey       = flag.String("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.", flag.Secret)
 	encryptNewKeys            = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")

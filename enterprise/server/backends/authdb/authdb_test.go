@@ -325,10 +325,9 @@ func TestUserKeyExpiration(t *testing.T) {
 }
 
 func TestAPIKeyValueReadbackDisabled(t *testing.T) {
-	flags.Set(t, "app.api_key_value_readback_enabled", false)
-
 	ctx := context.Background()
 	env := setupEnv(t)
+	flags.Set(t, "app.api_key_value_readback_enabled", false)
 
 	users := enterprise_testauth.CreateRandomGroups(t, env)
 	// Get a random admin user.
@@ -1065,6 +1064,7 @@ func TestAPIKeyVisibility(t *testing.T) {
 
 func setupEnv(t *testing.T) *testenv.TestEnv {
 	flags.Set(t, "app.user_owned_keys_enabled", true)
+	flags.Set(t, "app.api_key_value_readback_enabled", true)
 	env := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, env) // provisions AuthDB and UserDB
 	return env
