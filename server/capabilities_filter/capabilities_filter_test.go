@@ -247,15 +247,15 @@ func TestAllowedRPCs(t *testing.T) {
 			Allowed:      true,
 		},
 		{
-			Name:         "GroupWriteRPC_GetApiKeys_ReadOnlyMember_NotAllowed",
-			RPC:          buildBuddyServicePrefix + "GetApiKeys",
-			Capabilities: []cappb.Capability{},
-			Allowed:      false,
+			Name:         "GroupWriteRPC_OrgAdmin_Allowed",
+			RPC:          buildBuddyServicePrefix + "DeleteInvocation",
+			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
+			Allowed:      true,
 		},
 		{
-			Name:         "GroupWriteRPC_GetApiKeys_CASWriter_Allowed",
+			Name:         "GroupMemberRPC_GetApiKeys_ReadOnlyMember_Allowed",
 			RPC:          buildBuddyServicePrefix + "GetApiKeys",
-			Capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE},
+			Capabilities: []cappb.Capability{},
 			Allowed:      true,
 		},
 		{

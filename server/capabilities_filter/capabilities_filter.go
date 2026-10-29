@@ -130,6 +130,9 @@ var (
 		apiServicePrefix + "CreateUserApiKey",
 		buildBuddyServicePrefix + "UpdateUserApiKey",
 		buildBuddyServicePrefix + "DeleteUserApiKey",
+		// Org API keys
+		buildBuddyServicePrefix + "GetApiKeys",
+		buildBuddyServicePrefix + "GetApiKey",
 		// Codesearch and Kythe
 		buildBuddyServicePrefix + "Search",
 		buildBuddyServicePrefix + "KytheProxy",
@@ -152,9 +155,6 @@ var (
 		buildBuddyServicePrefix + "InvalidateSnapshot",
 		buildBuddyServicePrefix + "WriteEventLog",
 		buildBuddyServicePrefix + "UpdateRunStatus",
-		// Org API keys
-		buildBuddyServicePrefix + "GetApiKeys",
-		buildBuddyServicePrefix + "GetApiKey",
 		// Remote Bazel
 		buildBuddyServicePrefix + "Run",
 		apiServicePrefix + "Run",
@@ -268,10 +268,13 @@ func AllowedRPCs(ctx context.Context, env environment.Env, groupID string) []str
 	if groupID != "" {
 		userGroupCapabilities, err := capabilities.ForAuthenticatedUserGroup(ctx, env.GetAuthenticator(), groupID)
 		if err == nil {
-			if slices.Contains(userGroupCapabilities, cappb.Capability_ORG_ADMIN) {
+			isGroupAdmin := slices.Contains(userGroupCapabilities, cappb.Capability_ORG_ADMIN)
+			if isGroupAdmin {
 				out = append(out, getGroupAdminOnlyRPCs()...)
 			}
-			if slices.Contains(userGroupCapabilities, cappb.Capability_CACHE_WRITE) || slices.Contains(userGroupCapabilities, cappb.Capability_CAS_WRITE) {
+			if isGroupAdmin ||
+				slices.Contains(userGroupCapabilities, cappb.Capability_CACHE_WRITE) ||
+				slices.Contains(userGroupCapabilities, cappb.Capability_CAS_WRITE) {
 				out = append(out, groupWriteRPCs...)
 			}
 			out = append(out, groupMemberRPCs...)
