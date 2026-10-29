@@ -537,17 +537,29 @@ func TestSplitRepoRef(t *testing.T) {
 	assert.Equal(t, "https://github.com/foo/bar@"+sha, id)
 }
 
-func TestLoad_RejectsInsecureSchemes(t *testing.T) {
-	t.Setenv("BUILDBUDDY_CACHE_DIR", testfs.MakeTempDir(t))
+func TestRepoURL_UpgradesInsecureSchemesToHTTPS(t *testing.T) {
 	for _, repo := range []string{
 		"http://example.com/foo/bar",
-		"HTTP://example.com/foo/bar@v1",
+		"http://example.com/foo/bar@v1",
 		"git://example.com/foo/bar",
 	} {
 		p := &Plugin{config: &config.PluginConfig{Repo: repo}}
+		assert.Equal(t, "https://example.com/foo/bar", p.RepoURL(), repo)
+	}
+}
+
+func TestLoad_RejectsPlainHTTPLocalhost(t *testing.T) {
+	t.Setenv("BUILDBUDDY_CACHE_DIR", testfs.MakeTempDir(t))
+	for _, repo := range []string{
+		"http://localhost:8080/foo/bar",
+		"git://localhost/foo/bar",
+		"localhost:8080/foo/bar",
+	} {
+		p := &Plugin{config: &config.PluginConfig{Repo: repo}}
+		require.True(t, strings.HasPrefix(p.RepoURL(), "http://"), repo)
 		err := p.load()
 		require.Error(t, err, repo)
-		assert.Contains(t, err.Error(), "insecure scheme", repo)
+		assert.Contains(t, err.Error(), "plain http", repo)
 	}
 }
 

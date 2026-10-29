@@ -534,18 +534,17 @@ func (p *Plugin) load() error {
 		return nil
 	}
 
-	repo, ref := p.splitRepoRef()
-	if lower := strings.ToLower(repo); strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "git://") {
-		return status.InvalidArgumentErrorf("plugin repo %q uses an insecure scheme; use https, ssh, or a local path instead", p.config.Repo)
-	}
-
-	if p.RepoURL() == "" {
+	repoURL := p.RepoURL()
+	if repoURL == "" {
 		return status.InvalidArgumentErrorf(`could not parse plugin repo URL %q: expecting "[HOST/]OWNER/REPO[@REVISION]"`, p.config.Repo)
 	}
-	pinned := isCommitSHA(ref)
-	if !pinned {
-		log.Warnf("Plugin repo %q is not pinned to a commit. Pin it as \"%s@<40-hex commit sha>\" in buildbuddy.yaml so that the downloaded code is verified.", p.config.Repo, repo)
+	// RepoURL upgrades http:// and git:// to https://, except for localhost,
+	// which it clones over plain http. Don't allow that.
+	if strings.HasPrefix(repoURL, "http://") {
+		return status.InvalidArgumentErrorf("plugin repo %q would be cloned over plain http; use https, ssh, or a local path instead", p.config.Repo)
 	}
+	repo, ref := p.splitRepoRef()
+	pinned := isCommitSHA(ref)
 	path, err := p.repoClonePath()
 	if err != nil {
 		return err
@@ -570,6 +569,9 @@ func (p *Plugin) load() error {
 		}
 	}
 
+	if !pinned {
+		log.Warnf("Plugin repo %q is not pinned to a commit. Pin it as \"%s@<40-hex commit sha>\" in buildbuddy.yaml so that the downloaded code is verified.", p.config.Repo, repo)
+	}
 	log.Printf("Downloading %q", p.RepoURL())
 	// Clone into a temp dir next to where the repo will be cloned so that if
 	// the ref does not exist, we don't actually create the plugin directory.
