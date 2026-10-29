@@ -488,8 +488,8 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 
 	akg, _, err := d.apiKeyFetchGroup.Do(ctx, cacheKey, func(ctx context.Context) (*apiKeyGroup, error) {
 		akg, err := d.lookupAPIKeyGroupByValue(ctx, sd, apiKey, db.Opts().WithStaleReads())
-		cacheInvalid := d.apiKeyGroupCache != nil && cacheInvalidAPIKeys.Get(ctx)
-		if cacheInvalid && db.IsRecordNotFound(err) {
+		cacheInvalid := db.IsRecordNotFound(err) && d.apiKeyGroupCache != nil && cacheInvalidAPIKeys.Get(ctx)
+		if cacheInvalid {
 			// A lagging read replica may not have a just-created key yet. Confirm
 			// on the primary before remembering the key as invalid.
 			akg, err = d.lookupAPIKeyGroupByValue(ctx, sd, apiKey, db.Opts())
