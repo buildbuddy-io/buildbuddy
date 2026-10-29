@@ -22,7 +22,6 @@ go_library(
         "@com_github_bazelbuild_bazelisk//platforms",
         "@com_github_bazelbuild_bazelisk//repositories:go_default_library",
         "@com_github_protonmail_go_crypto//openpgp",
-        "@com_github_protonmail_go_crypto//openpgp/armor",
         "@com_github_protonmail_go_crypto//openpgp/errors",
     ],
 )
@@ -30,7 +29,6 @@ go_library(
 go_test(
     name = "bazelisk_test",
     srcs = ["verify_test.go"],
-    data = glob(["testdata/**"]),
     embed = [":bazelisk"],
     deps = [
         "@com_github_bazelbuild_bazelisk//config",

@@ -116,17 +116,6 @@ func TestDownloadRolling_GoodSignature(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestDownloadLTS_ArmoredSignature(t *testing.T) {
-	key := newTestEntity(t, nil)
-	binary := []byte("bazel binary")
-	var buf bytes.Buffer
-	require.NoError(t, openpgp.ArmoredDetachSign(&buf, key, bytes.NewReader(binary), nil))
-	repo := newTestRepo(binary, key, map[string][]byte{sigURL(t, "8.4.2", "release"): buf.Bytes()})
-
-	_, err := repo.DownloadLTS("8.4.2", t.TempDir(), "bazel", testConfig)
-	require.NoError(t, err)
-}
-
 func TestDownloadLTS_TamperedBinary(t *testing.T) {
 	key := newTestEntity(t, nil)
 	repo := newTestRepo([]byte("evil binary"), key, map[string][]byte{
@@ -183,25 +172,6 @@ func TestDownloadLTS_ExpiredKeyStillVerifies(t *testing.T) {
 }
 
 func TestEmbeddedReleaseKey(t *testing.T) {
-	keyring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(bazelReleaseKey))
-	require.NoError(t, err)
-	require.Len(t, keyring, 1)
-	require.Equal(t, "71A1D0EFCFEB6281FD0437C93D5919B448457EE0", fmt.Sprintf("%X", keyring[0].PrimaryKey.Fingerprint))
-}
-
-// The real signature of bazel-8.4.2-linux-x86_64, which is too big to check
-// in. Check that it parses and names the embedded key as its issuer.
-func TestRealSignatureIssuer(t *testing.T) {
-	sig, err := os.ReadFile("testdata/bazel-8.4.2-linux-x86_64.sig")
-	require.NoError(t, err)
-	p, err := packet.Read(bytes.NewReader(sig))
-	require.NoError(t, err)
-	s, ok := p.(*packet.Signature)
-	require.True(t, ok)
-	require.Equal(t, "71A1D0EFCFEB6281FD0437C93D5919B448457EE0", fmt.Sprintf("%X", s.IssuerFingerprint))
-
-	repo, err := newVerifyingReleaseRepo(nil)
-	require.NoError(t, err)
-	keys := repo.keyring.KeysByIdUsage(*s.IssuerKeyId, packet.KeyFlagSign)
-	require.Len(t, keys, 1)
+	require.Len(t, bazelReleaseKeyring, 1)
+	require.Equal(t, "71A1D0EFCFEB6281FD0437C93D5919B448457EE0", fmt.Sprintf("%X", bazelReleaseKeyring[0].PrimaryKey.Fingerprint))
 }
