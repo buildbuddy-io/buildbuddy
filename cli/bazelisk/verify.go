@@ -98,7 +98,10 @@ func (r *verifyingReleaseRepo) DownloadLTS(version, destDir, destFile string, co
 	if err != nil {
 		return "", err
 	}
-	return path, r.verifyOrDelete(path, url)
+	if err := r.verifyOrDelete(path, url); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 func (r *verifyingReleaseRepo) DownloadRolling(version, destDir, destFile string, config config.Config) (string, error) {
@@ -110,7 +113,10 @@ func (r *verifyingReleaseRepo) DownloadRolling(version, destDir, destFile string
 	if err != nil {
 		return "", err
 	}
-	return path, r.verifyOrDelete(path, url)
+	if err := r.verifyOrDelete(path, url); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // verifyOrDelete verifies the binary at path, which was downloaded from url,
