@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/exptest"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -27,6 +28,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -458,6 +461,86 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 				"expected Unauthenticated error; got: %v", err)
 		})
 	}
+}
+
+func TestInvalidAPIKeyCache(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+	}{
+		{name: "enabled", enabled: true},
+		{name: "disabled", enabled: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := setupEnv(t)
+			fakeClock := clockwork.NewFakeClock()
+			env.SetClock(fakeClock)
+			exptest.Setup(t, env)
+			require.NoError(t, openfeature.SetProviderAndWait(memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+				"auth.cache_invalid_api_keys": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "v",
+					Variants:       map[string]any{"v": tc.enabled},
+				},
+			})))
+			adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+			require.NoError(t, err)
+
+			existing := createRandomAPIKeys(t, ctx, env)[0]
+			// Same length as a real key, but not in the database yet.
+			const newValue = "ABCDEFGHIJKLMNOPQRST"
+			requireInvalid := func() {
+				akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, newValue)
+				require.Nil(t, akg)
+				require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated error; got: %v", err)
+			}
+			requireInvalid()
+
+			// Give the key the looked-up value.
+			err = env.GetDBHandle().NewQuery(ctx, "test_set_api_key_value").Raw(
+				`UPDATE "APIKeys" SET value = ? WHERE api_key_id = ?`, newValue, existing.APIKeyID).Exec().Error
+			require.NoError(t, err)
+
+			if tc.enabled {
+				// Still rejected within the TTL.
+				fakeClock.Advance(29 * time.Second)
+				requireInvalid()
+				// Accepted once the negative entry expires.
+				fakeClock.Advance(2 * time.Second)
+			}
+			akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, newValue)
+			require.NoError(t, err)
+			require.Equal(t, existing.GroupID, akg.GetGroupID())
+		})
+	}
+}
+
+func TestInvalidAPIKeyCache_DoesNotCacheErrors(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	exptest.Setup(t, env)
+	require.NoError(t, openfeature.SetProviderAndWait(memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"auth.cache_invalid_api_keys": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "v",
+			Variants:       map[string]any{"v": true},
+		},
+	})))
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+	existing := createRandomAPIKeys(t, ctx, env)[0]
+
+	// A lookup that fails with a non-"not found" error must not be remembered.
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = adb.GetAPIKeyGroupFromAPIKey(canceledCtx, existing.Value)
+	require.Error(t, err)
+	require.False(t, status.IsUnauthenticatedError(err), "got: %v", err)
+
+	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, existing.Value)
+	require.NoError(t, err)
+	require.Equal(t, existing.GroupID, akg.GetGroupID())
 }
 
 func TestBackfillUnencryptedKeys(t *testing.T) {
