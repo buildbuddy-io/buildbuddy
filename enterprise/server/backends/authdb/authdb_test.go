@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/exptest"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -28,8 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -476,14 +473,7 @@ func TestInvalidAPIKeyCache(t *testing.T) {
 			env := setupEnv(t)
 			fakeClock := clockwork.NewFakeClock()
 			env.SetClock(fakeClock)
-			exptest.Setup(t, env)
-			require.NoError(t, openfeature.SetProviderAndWait(memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-				"auth.cache_invalid_api_keys": {
-					State:          memprovider.Enabled,
-					DefaultVariant: "v",
-					Variants:       map[string]any{"v": tc.enabled},
-				},
-			})))
+			flags.Set(t, "auth.cache_invalid_api_keys", tc.enabled)
 			adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
 			require.NoError(t, err)
 
@@ -519,25 +509,22 @@ func TestInvalidAPIKeyCache(t *testing.T) {
 func TestInvalidAPIKeyCache_DoesNotCacheErrors(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t)
-	exptest.Setup(t, env)
-	require.NoError(t, openfeature.SetProviderAndWait(memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"auth.cache_invalid_api_keys": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "v",
-			Variants:       map[string]any{"v": true},
-		},
-	})))
+	flags.Set(t, "auth.cache_invalid_api_keys", true)
 	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
 	require.NoError(t, err)
 	existing := createRandomAPIKeys(t, ctx, env)[0]
 
-	// A lookup that fails with a non-"not found" error must not be remembered.
-	canceledCtx, cancel := context.WithCancel(ctx)
-	cancel()
-	_, err = adb.GetAPIKeyGroupFromAPIKey(canceledCtx, existing.Value)
+	// Make the lookup fail with a non-"not found" error. The key is not in the
+	// positive cache, so the lookup reaches the database.
+	dbh := env.GetDBHandle()
+	require.NoError(t, dbh.NewQuery(ctx, "test_rename_api_keys").Raw(
+		`ALTER TABLE "APIKeys" RENAME TO "APIKeysTmp"`).Exec().Error)
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, existing.Value)
 	require.Error(t, err)
 	require.False(t, status.IsUnauthenticatedError(err), "got: %v", err)
 
+	require.NoError(t, dbh.NewQuery(ctx, "test_restore_api_keys").Raw(
+		`ALTER TABLE "APIKeysTmp" RENAME TO "APIKeys"`).Exec().Error)
 	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, existing.Value)
 	require.NoError(t, err)
 	require.Equal(t, existing.GroupID, akg.GetGroupID())

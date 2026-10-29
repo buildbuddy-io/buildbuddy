@@ -70,8 +70,9 @@ var (
 	apiKeyGroupCacheTTL       = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "TTL for API Key to Group caching. Set to '0' to disable cache.")
 	apiKeyEncryptionKey       = flag.String("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.", flag.Secret)
 	encryptNewKeys            = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
-	cacheInvalidAPIKeys       = expflag.Bool("auth.cache_invalid_api_keys", false, "If true, briefly cache API keys that were not found so that repeated requests with an invalid key don't query the database.")
 	encryptOldKeys            = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
+
+	cacheInvalidAPIKeys = expflag.Bool("auth.cache_invalid_api_keys", false, "If true, briefly cache API keys that were not found so that repeated requests with an invalid key don't query the database.")
 )
 
 // newAPIKeyGroupCache creates a cache for API Key -> Group lookups. A single
@@ -486,12 +487,18 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	}
 
 	akg, _, err := d.apiKeyFetchGroup.Do(ctx, cacheKey, func(ctx context.Context) (*apiKeyGroup, error) {
-		akg, err := d.lookupAPIKeyGroupByValue(ctx, sd, apiKey)
+		akg, err := d.lookupAPIKeyGroupByValue(ctx, sd, apiKey, db.Opts().WithStaleReads())
+		cacheInvalid := d.apiKeyGroupCache != nil && cacheInvalidAPIKeys.Get(ctx)
+		if cacheInvalid && db.IsRecordNotFound(err) {
+			// A lagging read replica may not have a just-created key yet. Confirm
+			// on the primary before remembering the key as invalid.
+			akg, err = d.lookupAPIKeyGroupByValue(ctx, sd, apiKey, db.Opts())
+		}
 		if err != nil {
 			if db.IsRecordNotFound(err) {
 				if d.apiKeyGroupCache != nil {
 					metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
-					if cacheInvalidAPIKeys.Get(ctx) {
+					if cacheInvalid {
 						d.invalidAPIKeyCache.Add(cacheKey, struct{}{})
 					}
 				}
@@ -533,8 +540,8 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 	return akg, nil
 }
 
-func (d *AuthDB) lookupAPIKeyGroup(ctx context.Context, queryName, subDomain string, addConds func(*query_builder.Query) error) (*apiKeyGroup, error) {
-	row, err := d.fetchAPIKey(ctx, queryName, subDomain, db.Opts().WithStaleReads(), false /*=includeExpired*/, addConds)
+func (d *AuthDB) lookupAPIKeyGroup(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, addConds func(*query_builder.Query) error) (*apiKeyGroup, error) {
+	row, err := d.fetchAPIKey(ctx, queryName, subDomain, dbOpts, false /*=includeExpired*/, addConds)
 	if err != nil {
 		return nil, err
 	}
@@ -545,8 +552,8 @@ func (d *AuthDB) lookupAPIKeyGroup(ctx context.Context, queryName, subDomain str
 	return akg, nil
 }
 
-func (d *AuthDB) lookupAPIKeyGroupByValue(ctx context.Context, subDomain string, apiKey string) (*apiKeyGroup, error) {
-	return d.lookupAPIKeyGroup(ctx, "authdb_get_api_key_group_by_key", subDomain, func(qb *query_builder.Query) error {
+func (d *AuthDB) lookupAPIKeyGroupByValue(ctx context.Context, subDomain string, apiKey string, dbOpts interfaces.DBOptions) (*apiKeyGroup, error) {
+	return d.lookupAPIKeyGroup(ctx, "authdb_get_api_key_group_by_key", subDomain, dbOpts, func(qb *query_builder.Query) error {
 		keyClauses := query_builder.OrClauses{}
 		if !*encryptOldKeys {
 			keyClauses.AddOr("ak.value = ?", apiKey)
@@ -565,7 +572,7 @@ func (d *AuthDB) lookupAPIKeyGroupByValue(ctx context.Context, subDomain string,
 }
 
 func (d *AuthDB) lookupAPIKeyGroupByID(ctx context.Context, subDomain string, apiKeyID string) (*apiKeyGroup, error) {
-	return d.lookupAPIKeyGroup(ctx, "authdb_get_api_key_group_by_id", subDomain, func(qb *query_builder.Query) error {
+	return d.lookupAPIKeyGroup(ctx, "authdb_get_api_key_group_by_id", subDomain, db.Opts().WithStaleReads(), func(qb *query_builder.Query) error {
 		qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
 		return nil
 	})
