@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -763,18 +762,11 @@ func TestGroupStatusTargeting(t *testing.T) {
 // fakeSync is a flagdsync.ISync whose Sync runs the provided function.
 type fakeSync struct {
 	sync func(ctx context.Context, dataSync chan<- flagdsync.DataSync) error
-
-	mu    sync.Mutex
-	ready bool
 }
 
 func (f *fakeSync) Init(ctx context.Context) error { return nil }
 
-func (f *fakeSync) IsReady() bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.ready
-}
+func (f *fakeSync) IsReady() bool { return false }
 
 func (f *fakeSync) ReSync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
 	return nil
@@ -782,12 +774,6 @@ func (f *fakeSync) ReSync(ctx context.Context, dataSync chan<- flagdsync.DataSyn
 
 func (f *fakeSync) Sync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
 	return f.sync(ctx, dataSync)
-}
-
-func (f *fakeSync) setReady() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.ready = true
 }
 
 func resetProviderOnCleanup(t *testing.T) {
@@ -813,7 +799,6 @@ func TestRegisterInProcessSync_SlowInitialSync(t *testing.T) {
 		case <-ctx.Done():
 			return nil
 		}
-		fake.setReady()
 		<-ctx.Done()
 		return nil
 	}

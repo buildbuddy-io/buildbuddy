@@ -31,7 +31,8 @@ import (
 
 // inProcessInitDeadline bounds provider initialization for the in-process
 // provider. The first sync reads from GCS, which on a cold pod can take much
-// longer than the flagd provider's 500ms default.
+// longer than the flagd provider's 500ms default. flagd also uses it as the
+// per-evaluation timeout, which doesn't matter for in-memory evaluation.
 const inProcessInitDeadline = 10 * time.Second
 
 var (
