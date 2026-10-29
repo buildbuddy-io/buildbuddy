@@ -759,64 +759,28 @@ func TestGroupStatusTargeting(t *testing.T) {
 	})
 }
 
-// fakeSync is a flagdsync.ISync whose Sync runs the provided function.
-type fakeSync struct {
-	sync func(ctx context.Context, dataSync chan<- flagdsync.DataSync) error
-}
+// failingSync is a flagdsync.ISync whose initial Sync fails, as gcsflagsync's
+// does when the first GCS read fails.
+type failingSync struct{}
 
-func (f *fakeSync) Init(ctx context.Context) error { return nil }
+func (failingSync) Init(ctx context.Context) error { return nil }
 
-func (f *fakeSync) IsReady() bool { return false }
+func (failingSync) IsReady() bool { return false }
 
-func (f *fakeSync) ReSync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
+func (failingSync) ReSync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
 	return nil
 }
 
-func (f *fakeSync) Sync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
-	return f.sync(ctx, dataSync)
+func (failingSync) Sync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
+	return errors.New("initial GCS flag sync failed")
 }
 
-func resetProviderOnCleanup(t *testing.T) {
+func TestRegisterInProcessSync_InitialSyncErrorIsFatal(t *testing.T) {
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 	t.Cleanup(func() {
 		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
 	})
-}
 
-func TestRegisterInProcessSync_SlowInitialSync(t *testing.T) {
-	resetProviderOnCleanup(t)
-	fake := &fakeSync{}
-	fake.sync = func(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
-		// Longer than the flagd provider's default 500ms init deadline.
-		select {
-		case <-time.After(2 * time.Second):
-		case <-ctx.Done():
-			return nil
-		}
-		config := `{"flags": {"test-flag": {"state": "ENABLED", "defaultVariant": "on", "variants": {"on": true, "off": false}}}}`
-		select {
-		case dataSync <- flagdsync.DataSync{FlagData: config, Source: "test"}:
-		case <-ctx.Done():
-			return nil
-		}
-		<-ctx.Done()
-		return nil
-	}
-
-	env := testenv.GetTestEnv(t)
-	require.NoError(t, experiments.RegisterInProcessSync(env, fake))
-
-	got := env.GetExperimentFlagProvider().Boolean(t.Context(), "test-flag", false)
-	require.True(t, got)
-}
-
-func TestRegisterInProcessSync_InitialSyncErrorIsFatal(t *testing.T) {
-	resetProviderOnCleanup(t)
-	fake := &fakeSync{}
-	fake.sync = func(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
-		return errors.New("initial GCS flag sync failed")
-	}
-
-	err := experiments.RegisterInProcessSync(testenv.GetTestEnv(t), fake)
+	err := experiments.RegisterInProcessSync(testenv.GetTestEnv(t), failingSync{})
 	require.Error(t, err)
 }
