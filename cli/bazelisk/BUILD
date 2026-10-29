@@ -16,7 +16,6 @@ go_library(
     deps = [
         "//cli/log",
         "//cli/signedrelease",
-        "//cli/version",
         "//cli/workspace",
         "@com_github_bazelbuild_bazelisk//config",
         "@com_github_bazelbuild_bazelisk//core:go_default_library",

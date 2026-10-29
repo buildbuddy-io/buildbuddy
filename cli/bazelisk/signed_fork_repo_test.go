@@ -83,27 +83,21 @@ func TestSignedForkRepoLatest(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		fork      string
-		running   string
 		listed    []string
 		want      string
 		wantError string
 	}{
-		// A signed release older than this bb can't be replayed as "latest".
-		{name: "OlderThanRunningDropped", fork: "buildbuddy-io", running: "5.0.501", listed: []string{"5.0.499", "5.0.500"}, wantError: "not older than this bb"},
-		{name: "RunningVersionAllowed", fork: "buildbuddy-io", running: "5.0.500", listed: []string{"5.0.499", "5.0.500"}, want: "5.0.500"},
-		{name: "DevBuildUsesFirstSigned", fork: "buildbuddy-io", running: "unknown", listed: []string{"5.0.498", "5.0.499"}, want: "5.0.499"},
 		{name: "LatestIsSigned", fork: "buildbuddy-io", listed: []string{"5.0.498", "5.0.499", "5.0.500"}, want: "5.0.500"},
 		// An attacker serving the unsigned listing can't steer "latest" to
 		// an old, unsigned release.
-		{name: "OnlyUnsignedListed", fork: "buildbuddy-io", listed: []string{"5.0.497", "5.0.498"}, wantError: "no signed buildbuddy-io releases"},
+		{name: "OnlyUnsignedListed", fork: "buildbuddy-io", listed: []string{"5.0.497", "5.0.498"}, wantError: "older than 5.0.499, the first signed release"},
 		{name: "UnsignedDroppedFromListing", fork: "buildbuddy-io", listed: []string{"5.0.499", "4.0.0", "garbage"}, want: "5.0.499"},
 		{name: "OtherForkUnfiltered", fork: "someone-else", listed: []string{"1.0.0", "2.0.0"}, want: "2.0.0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var verified []string
 			r := &signedForkRepo{
-				ForkRepo:       fakeForkRepo{versions: tc.listed},
-				runningVersion: tc.running,
+				ForkRepo: fakeForkRepo{versions: tc.listed},
 				verify: func(assetURL, path string) error {
 					verified = append(verified, assetURL)
 					return nil

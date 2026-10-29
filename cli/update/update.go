@@ -65,7 +65,7 @@ func HandleUpdate(args []string) (exitCode int, err error) {
 		log.Printf("Failed to fetch latest version: %s", err)
 		return 1, nil
 	}
-	if err := checkNotDowngrade(latestVersion, version.String()); err != nil {
+	if err := checkNotDowngrade(latestVersion, version.String(), "this bb"); err != nil {
 		log.Printf("%s", err)
 		return 1, nil
 	}
@@ -115,7 +115,8 @@ func fetchLatestVersion() (string, error) {
 // "unknown" for dev builds, or "" if nothing is installed) is ignored. The
 // "latest" API response isn't signed, so without this an attacker could
 // serve an old (but validly signed, or unsigned) release.
-func checkNotDowngrade(latest, current string) error {
+// currentDesc says where current came from, for the error message.
+func checkNotDowngrade(latest, current, currentDesc string) error {
 	lv, err := signedrelease.ParseVersion(latest)
 	if err != nil {
 		return err
@@ -124,7 +125,7 @@ func checkNotDowngrade(latest, current string) error {
 		return fmt.Errorf("refusing to update to %s: releases before %s are unsigned", latest, signedrelease.FirstSignedVersion)
 	}
 	if cv, err := signedrelease.ParseVersion(current); err == nil && lv.LessThan(cv) {
-		return fmt.Errorf("refusing to update: the latest release (%s) is older than %s", latest, current)
+		return fmt.Errorf("refusing to update to %s: older than %s %s", latest, currentDesc, current)
 	}
 	return nil
 }
@@ -143,6 +144,10 @@ func updateWorkspaceVersion(version string) error {
 
 	versionLine := "buildbuddy-io/" + version
 	if len(versions) > 0 && strings.HasPrefix(versions[0], "buildbuddy-io/") {
+		pinned := strings.TrimPrefix(versions[0], "buildbuddy-io/")
+		if err := checkNotDowngrade(version, pinned, "the bb pinned in .bazelversion"); err != nil {
+			return err
+		}
 		if versions[0] == versionLine {
 			log.Printf(".bazelversion already includes %s", versionLine)
 			return nil
@@ -191,8 +196,8 @@ func updateSystemInstall(version string) error {
 		log.Printf("Version %s is already installed at %s", version, installPath)
 		return nil
 	}
-	if err := checkNotDowngrade(version, installedVersion); err != nil {
-		return fmt.Errorf("%s (installed at %s)", err, installPath)
+	if err := checkNotDowngrade(version, installedVersion, "the bb installed at "+installPath); err != nil {
+		return err
 	}
 	url, err := signedrelease.AssetURL(version, runtime.GOOS, runtime.GOARCH)
 	if err != nil {

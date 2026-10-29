@@ -9,7 +9,6 @@ import (
 	"github.com/bazelbuild/bazelisk/platforms"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/signedrelease"
-	"github.com/buildbuddy-io/buildbuddy/cli/version"
 )
 
 const bbFork = "buildbuddy-io"
@@ -25,10 +24,6 @@ const bbFork = "buildbuddy-io"
 type signedForkRepo struct {
 	core.ForkRepo
 
-	// runningVersion is the version of this bb. Relative versions such as
-	// "latest" never resolve to an older bb release.
-	runningVersion string
-
 	// verify checks the file at path against the signed checksum published
 	// for the release asset at assetURL.
 	verify func(assetURL, path string) error
@@ -36,8 +31,7 @@ type signedForkRepo struct {
 
 func newSignedForkRepo(inner core.ForkRepo) *signedForkRepo {
 	return &signedForkRepo{
-		ForkRepo:       inner,
-		runningVersion: version.String(),
+		ForkRepo: inner,
 		verify: func(assetURL, path string) error {
 			return signedrelease.VerifyFile(signedrelease.NewDownloadClient(), assetURL, path)
 		},
@@ -47,26 +41,22 @@ func newSignedForkRepo(inner core.ForkRepo) *signedForkRepo {
 // GetVersions lists the fork's versions. Bazelisk only calls it to resolve
 // relative versions such as "buildbuddy-io/latest" from the (unsigned)
 // GitHub API, so for bb releases it drops versions older than
-// FirstSignedVersion or this bb: otherwise an attacker could steer "latest"
-// to an old unsigned release, or replay an old signed one. Explicitly pinned
-// versions don't go through here.
+// FirstSignedVersion: otherwise an attacker could steer "latest" to an old,
+// unsigned release. It can still steer it to an older signed release, which
+// is accepted. Explicitly pinned versions don't go through here.
 func (r *signedForkRepo) GetVersions(bazeliskHome, fork string) ([]string, error) {
 	all, err := r.ForkRepo.GetVersions(bazeliskHome, fork)
 	if err != nil || fork != bbFork {
 		return all, err
 	}
-	// A dev build's version doesn't parse, and then only FirstSignedVersion
-	// applies.
-	running, _ := signedrelease.ParseVersion(r.runningVersion)
 	var allowed []string
 	for _, v := range all {
-		sv, err := signedrelease.ParseVersion(v)
-		if err == nil && signedrelease.IsSigned(v) && (running == nil || !sv.LessThan(running)) {
+		if signedrelease.IsSigned(v) {
 			allowed = append(allowed, v)
 		}
 	}
 	if len(allowed) == 0 {
-		return nil, fmt.Errorf("no signed %s releases (%s or later, and not older than this bb) found", bbFork, signedrelease.FirstSignedVersion)
+		return nil, fmt.Errorf("refusing all %d listed %s releases: older than %s, the first signed release", len(all), bbFork, signedrelease.FirstSignedVersion)
 	}
 	return allowed, nil
 }
