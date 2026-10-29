@@ -59,8 +59,9 @@ const (
 	// Maximum number of entries in the invalid API key cache.
 	invalidAPIKeyCacheSize = 10_000
 	// How long an API key that was not found is remembered as invalid. This
-	// bounds how long a newly created key can be rejected if it was looked up
-	// before it existed.
+	// bounds how long a newly created key can be rejected if its first lookup
+	// hit a read replica that didn't have it yet. Misses aren't re-checked on
+	// the primary, so that invalid keys never add load there.
 	invalidAPIKeyCacheTTL = 30 * time.Second
 )
 
@@ -487,18 +488,12 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	}
 
 	akg, _, err := d.apiKeyFetchGroup.Do(ctx, cacheKey, func(ctx context.Context) (*apiKeyGroup, error) {
-		akg, err := d.lookupAPIKeyGroupByValue(ctx, sd, apiKey, db.Opts().WithStaleReads())
-		cacheInvalid := db.IsRecordNotFound(err) && d.apiKeyGroupCache != nil && cacheInvalidAPIKeys.Get(ctx)
-		if cacheInvalid {
-			// A lagging read replica may not have a just-created key yet. Confirm
-			// on the primary before remembering the key as invalid.
-			akg, err = d.lookupAPIKeyGroupByValue(ctx, sd, apiKey, db.Opts())
-		}
+		akg, err := d.lookupAPIKeyGroupByValue(ctx, sd, apiKey)
 		if err != nil {
 			if db.IsRecordNotFound(err) {
 				if d.apiKeyGroupCache != nil {
 					metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
-					if cacheInvalid {
+					if cacheInvalidAPIKeys.Get(ctx) {
 						d.invalidAPIKeyCache.Add(cacheKey, struct{}{})
 					}
 				}
@@ -540,8 +535,8 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 	return akg, nil
 }
 
-func (d *AuthDB) lookupAPIKeyGroup(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, addConds func(*query_builder.Query) error) (*apiKeyGroup, error) {
-	row, err := d.fetchAPIKey(ctx, queryName, subDomain, dbOpts, false /*=includeExpired*/, addConds)
+func (d *AuthDB) lookupAPIKeyGroup(ctx context.Context, queryName, subDomain string, addConds func(*query_builder.Query) error) (*apiKeyGroup, error) {
+	row, err := d.fetchAPIKey(ctx, queryName, subDomain, db.Opts().WithStaleReads(), false /*=includeExpired*/, addConds)
 	if err != nil {
 		return nil, err
 	}
@@ -552,8 +547,8 @@ func (d *AuthDB) lookupAPIKeyGroup(ctx context.Context, queryName, subDomain str
 	return akg, nil
 }
 
-func (d *AuthDB) lookupAPIKeyGroupByValue(ctx context.Context, subDomain string, apiKey string, dbOpts interfaces.DBOptions) (*apiKeyGroup, error) {
-	return d.lookupAPIKeyGroup(ctx, "authdb_get_api_key_group_by_key", subDomain, dbOpts, func(qb *query_builder.Query) error {
+func (d *AuthDB) lookupAPIKeyGroupByValue(ctx context.Context, subDomain string, apiKey string) (*apiKeyGroup, error) {
+	return d.lookupAPIKeyGroup(ctx, "authdb_get_api_key_group_by_key", subDomain, func(qb *query_builder.Query) error {
 		keyClauses := query_builder.OrClauses{}
 		if !*encryptOldKeys {
 			keyClauses.AddOr("ak.value = ?", apiKey)
@@ -572,7 +567,7 @@ func (d *AuthDB) lookupAPIKeyGroupByValue(ctx context.Context, subDomain string,
 }
 
 func (d *AuthDB) lookupAPIKeyGroupByID(ctx context.Context, subDomain string, apiKeyID string) (*apiKeyGroup, error) {
-	return d.lookupAPIKeyGroup(ctx, "authdb_get_api_key_group_by_id", subDomain, db.Opts().WithStaleReads(), func(qb *query_builder.Query) error {
+	return d.lookupAPIKeyGroup(ctx, "authdb_get_api_key_group_by_id", subDomain, func(qb *query_builder.Query) error {
 		qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
 		return nil
 	})
