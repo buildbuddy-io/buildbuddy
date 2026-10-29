@@ -38,7 +38,11 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 	if err := setBazelVersion(); err != nil {
 		return -1, fmt.Errorf("failed to set bazel version: %s", err)
 	}
-	repos := createRepositories(core.MakeDefaultConfig())
+	bazeliskConf := core.MakeDefaultConfig()
+	if v := getEnvVersion(); strings.HasPrefix(v, bbFork+"/") && (bazeliskConf.Get(core.BaseURLEnv) != "" || bazeliskConf.Get(core.FormatURLEnv) != "") {
+		log.Warnf("%s or %s is set, so the signature of %s won't be checked if it is downloaded.", core.BaseURLEnv, core.FormatURLEnv, v)
+	}
+	repos := createRepositories(bazeliskConf)
 
 	if opts.Stdout != nil || opts.Stderr != nil {
 		var errRedirect **os.File
