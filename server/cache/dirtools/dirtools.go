@@ -1399,8 +1399,15 @@ func ValidateTreeNames(root *repb.Directory, dirMap map[digest.Key]*repb.Directo
 	// Entries by path, as the filesystem compares paths.
 	paths := map[string]treePath{}
 	// add records the entry with the given name in the directory at
-	// parentPath, and returns the entry's path and key in paths.
+	// parentPath, and returns the entry's path and key in paths. parentKey is
+	// the directory's own key in paths, or "" for the root directory. We build
+	// each key by appending "/" and the entry's name to its parent's key,
+	// lowercasing the name if the filesystem is case-insensitive.
 	add := func(parentPath, parentKey, name string, isDir bool) (string, string, error) {
+		// Disallow empty names, and names that refer to directories ("." and
+		// ".."). Disallow '/' chars which is a valid path separator on all
+		// platforms we support, as well as filepath.Separator (if different -
+		// which in particular is the case on Windows)
 		if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') || (filepath.Separator != '/' && strings.ContainsRune(name, filepath.Separator)) {
 			return "", "", status.InvalidArgumentErrorf("input tree directory %q has entry name %q, which isn't a single path component", parentPath, name)
 		}
