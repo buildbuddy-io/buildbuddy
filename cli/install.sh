@@ -11,10 +11,8 @@ install_buildbuddy_cli() (
   os=$(uname -s | tr '[:upper:]' '[:lower:]')
 
   tempfile=$(mktemp buildbuddy.XXXXX)
-  checksumfile=""
-  cleanup() { rm -f "$tempfile" "$checksumfile"; }
+  cleanup() { rm -f "$tempfile"; }
   trap cleanup EXIT
-  checksumfile=$(mktemp buildbuddy.XXXXX)
 
   # Look for the line matching
   #   "browser_download_url": "https://github.com/buildbuddy-io/bazel/releases/.../bazel-...-${os}-${arch}"
@@ -33,8 +31,9 @@ install_buildbuddy_cli() (
   echo >&2 "Downloading $latest_binary_url"
   curl --proto '=https' --tlsv1.2 -fSL "$latest_binary_url" -o "$tempfile"
   # A same-host .sha256 detects corruption, not a malicious host.
-  curl --proto '=https' --tlsv1.2 -fSL "$latest_binary_url.sha256" -o "$checksumfile"
-  if ! read -r expected_hash checksum_filename checksum_extra < "$checksumfile" ||
+  checksum=$(curl --proto '=https' --tlsv1.2 -fsSL "$latest_binary_url.sha256")
+  checksum=${checksum%$'\r'}
+  if ! read -r expected_hash checksum_filename checksum_extra <<< "$checksum" ||
     [[ ! "$expected_hash" =~ ^[[:xdigit:]]{64}$ || "$checksum_filename" != "${latest_binary_url##*/}" || -n "$checksum_extra" ]]; then
     echo >&2 "Invalid SHA-256 checksum or filename for ${latest_binary_url##*/}"
     exit 1
