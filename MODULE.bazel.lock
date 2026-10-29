@@ -698,7 +698,7 @@
     "@@rules_distroless+//apt:extensions.bzl%apt": {
       "general": {
         "bzlTransitiveDigest": "2dKYEZ7n+qZQ0FYo0JwaY52UZ8/l85u/tie45gDcBPg=",
-        "usagesDigest": "vW6Z6sZhPqYTBsS1i1alxQQdqe32pRz9kuX7XiN3Mbs=",
+        "usagesDigest": "Iz5nmseowKqFKUl1maxl+Lde3nvMLvzY/mc74QrpYAo=",
         "recordedInputs": [
           "REPO_MAPPING:rules_distroless+,bazel_lib bazel_lib+",
           "REPO_MAPPING:rules_distroless+,bazel_tools bazel_tools"
@@ -708,141 +708,141 @@
             "repoRuleId": "@@rules_distroless+//apt/private:translate_dependency_set.bzl%translate_dependency_set",
             "attributes": {
               "depset_name": "debian13",
-              "lock_content": "{\n\t\"dependency_sets\": {\n\t\t\"debian13\": {\n\t\t\t\"sets\": {\n\t\t\t\t\"amd64\": {\n\t\t\t\t\t\"/trixie/base-files:amd64\": \"13.8+deb13u4\",\n\t\t\t\t\t\"/trixie/ca-certificates:amd64\": \"20250419\",\n\t\t\t\t\t\"/trixie/libc6:amd64\": \"2.41-12+deb13u2\",\n\t\t\t\t\t\"/trixie/media-types:amd64\": \"13.0.0\",\n\t\t\t\t\t\"/trixie/netbase:amd64\": \"6.5\",\n\t\t\t\t\t\"/trixie/tzdata-legacy:amd64\": \"2026a-0+deb13u1\",\n\t\t\t\t\t\"/trixie/tzdata:amd64\": \"2026a-0+deb13u1\"\n\t\t\t\t},\n\t\t\t\t\"arm64\": {\n\t\t\t\t\t\"/trixie/base-files:arm64\": \"13.8+deb13u4\",\n\t\t\t\t\t\"/trixie/ca-certificates:arm64\": \"20250419\",\n\t\t\t\t\t\"/trixie/libc6:arm64\": \"2.41-12+deb13u2\",\n\t\t\t\t\t\"/trixie/media-types:arm64\": \"13.0.0\",\n\t\t\t\t\t\"/trixie/netbase:arm64\": \"6.5\",\n\t\t\t\t\t\"/trixie/tzdata-legacy:arm64\": \"2026a-0+deb13u1\",\n\t\t\t\t\t\"/trixie/tzdata:arm64\": \"2026a-0+deb13u1\"\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t},\n\t\"facts\": {\n\t\t\"trixie-security/main/amd64/Contents/https://snapshot.debian.org/archive/debian-security/20260318T142916Z\": \"sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=\",\n\t\t\"trixie-security/main/amd64/Packages/https://snapshot.debian.org/archive/debian-security/20260318T142916Z\": \"sha256-mXEc9biqeEc9Oteg+iAqX55hPMQ1RdC2X0lXEbul1Lo=\",\n\t\t\"trixie-security/main/arm64/Contents/https://snapshot.debian.org/archive/debian-security/20260318T142916Z\": \"sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=\",\n\t\t\"trixie-security/main/arm64/Packages/https://snapshot.debian.org/archive/debian-security/20260318T142916Z\": \"sha256-2ym4FRJBtiOTCC5PQbeuqdg7qG3I01sISUwO6kqSN3Y=\",\n\t\t\"trixie-updates/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-1jmA+tFv6YSYfEdijI1Y/mqiLE/CbwkzexLGNBfS8N0=\",\n\t\t\"trixie-updates/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-qQxhV5al34PTyNtPzhezVaS9Qal6yOEmScqW+sy+bKs=\",\n\t\t\"trixie-updates/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-yY6kbHuy46+Kt/2yh4NTrgbEvfE+jCvkAVgyyKB8rOQ=\",\n\t\t\"trixie-updates/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-wZkX9Iy2Os0uM0Nn4rSxi818XACw6wL242nlMV9D5j4=\",\n\t\t\"trixie/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-JHACxNTCxHpJtZzr4ccx23J+ITpPkTq5JXePYTnB8YM=\",\n\t\t\"trixie/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-tB5Lm9ecoAmv5/symxa8MF8cesq56mzk9XFSbt6SZUc=\",\n\t\t\"trixie/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-ntCie/YQHWp0jJ5bQj0sct9pE82lc9I+jDfv8KY2STs=\",\n\t\t\"trixie/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-JlON5xRL7lJy0WGuzZZtO9Or9vOhetLYIV36a5e3BCA=\"\n\t},\n\t\"packages\": {\n\t\t\"/trixie/base-files:amd64=13.8+deb13u4\": {\n\t\t\t\"architecture\": \"amd64\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/b/base-files/base-files_13.8+deb13u4_amd64.deb\",\n\t\t\t\"name\": \"base-files\",\n\t\t\t\"section\": \"admin\",\n\t\t\t\"sha256\": \"819e70a077c6b94d72c1385cc18a512446ded629499f7bb7d84d727977b67ad4\",\n\t\t\t\"size\": 73288,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"13.8+deb13u4\"\n\t\t},\n\t\t\"/trixie/base-files:arm64=13.8+deb13u4\": {\n\t\t\t\"architecture\": \"arm64\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/b/base-files/base-files_13.8+deb13u4_arm64.deb\",\n\t\t\t\"name\": \"base-files\",\n\t\t\t\"section\": \"admin\",\n\t\t\t\"sha256\": \"d4493ac8b04311c4e393ccf87b8413155912aabe551f67877f9487c1f16cee69\",\n\t\t\t\"size\": 73240,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"13.8+deb13u4\"\n\t\t},\n\t\t\"/trixie/ca-certificates:amd64=20250419\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/c/ca-certificates/ca-certificates_20250419_all.deb\",\n\t\t\t\"name\": \"ca-certificates\",\n\t\t\t\"section\": \"misc\",\n\t\t\t\"sha256\": \"ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184\",\n\t\t\t\"size\": 161704,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"20250419\"\n\t\t},\n\t\t\"/trixie/ca-certificates:arm64=20250419\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/c/ca-certificates/ca-certificates_20250419_all.deb\",\n\t\t\t\"name\": \"ca-certificates\",\n\t\t\t\"section\": \"misc\",\n\t\t\t\"sha256\": \"ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184\",\n\t\t\t\"size\": 161704,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"20250419\"\n\t\t},\n\t\t\"/trixie/libc6:amd64=2.41-12+deb13u2\": {\n\t\t\t\"architecture\": \"amd64\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/g/glibc/libc6_2.41-12+deb13u2_amd64.deb\",\n\t\t\t\"name\": \"libc6\",\n\t\t\t\"section\": \"libs\",\n\t\t\t\"sha256\": \"8f9ddeb958cec3a05c4c303d4c85fddf30cb994747b16b1eb715ac49049f6d4a\",\n\t\t\t\"size\": 2847424,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"2.41-12+deb13u2\"\n\t\t},\n\t\t\"/trixie/libc6:arm64=2.41-12+deb13u2\": {\n\t\t\t\"architecture\": \"arm64\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/g/glibc/libc6_2.41-12+deb13u2_arm64.deb\",\n\t\t\t\"name\": \"libc6\",\n\t\t\t\"section\": \"libs\",\n\t\t\t\"sha256\": \"f4679f22ee71be9f79bb36c62bb0b6fed97c19f245d2afaf8a9c1d000a1d312a\",\n\t\t\t\"size\": 2483700,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"2.41-12+deb13u2\"\n\t\t},\n\t\t\"/trixie/media-types:amd64=13.0.0\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/m/media-types/media-types_13.0.0_all.deb\",\n\t\t\t\"name\": \"media-types\",\n\t\t\t\"section\": \"net\",\n\t\t\t\"sha256\": \"0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e\",\n\t\t\t\"size\": 29336,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"13.0.0\"\n\t\t},\n\t\t\"/trixie/media-types:arm64=13.0.0\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/m/media-types/media-types_13.0.0_all.deb\",\n\t\t\t\"name\": \"media-types\",\n\t\t\t\"section\": \"net\",\n\t\t\t\"sha256\": \"0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e\",\n\t\t\t\"size\": 29336,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"13.0.0\"\n\t\t},\n\t\t\"/trixie/netbase:amd64=6.5\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/n/netbase/netbase_6.5_all.deb\",\n\t\t\t\"name\": \"netbase\",\n\t\t\t\"section\": \"admin\",\n\t\t\t\"sha256\": \"76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e\",\n\t\t\t\"size\": 12436,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"6.5\"\n\t\t},\n\t\t\"/trixie/netbase:arm64=6.5\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/n/netbase/netbase_6.5_all.deb\",\n\t\t\t\"name\": \"netbase\",\n\t\t\t\"section\": \"admin\",\n\t\t\t\"sha256\": \"76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e\",\n\t\t\t\"size\": 12436,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"6.5\"\n\t\t},\n\t\t\"/trixie/tzdata-legacy:amd64=2026a-0+deb13u1\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/t/tzdata/tzdata-legacy_2026a-0+deb13u1_all.deb\",\n\t\t\t\"name\": \"tzdata-legacy\",\n\t\t\t\"section\": \"localization\",\n\t\t\t\"sha256\": \"f402289df6fd7f698e0f073da0e260e3365be368243a66bf2a2b940f37554b1c\",\n\t\t\t\"size\": 182776,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"2026a-0+deb13u1\"\n\t\t},\n\t\t\"/trixie/tzdata-legacy:arm64=2026a-0+deb13u1\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/t/tzdata/tzdata-legacy_2026a-0+deb13u1_all.deb\",\n\t\t\t\"name\": \"tzdata-legacy\",\n\t\t\t\"section\": \"localization\",\n\t\t\t\"sha256\": \"f402289df6fd7f698e0f073da0e260e3365be368243a66bf2a2b940f37554b1c\",\n\t\t\t\"size\": 182776,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"2026a-0+deb13u1\"\n\t\t},\n\t\t\"/trixie/tzdata:amd64=2026a-0+deb13u1\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/t/tzdata/tzdata_2026a-0+deb13u1_all.deb\",\n\t\t\t\"name\": \"tzdata\",\n\t\t\t\"section\": \"localization\",\n\t\t\t\"sha256\": \"9fb91a8d4f4f852918d14b1379f788c1c4971cf640c4bda7f568e7601620a874\",\n\t\t\t\"size\": 263724,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"2026a-0+deb13u1\"\n\t\t},\n\t\t\"/trixie/tzdata:arm64=2026a-0+deb13u1\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/t/tzdata/tzdata_2026a-0+deb13u1_all.deb\",\n\t\t\t\"name\": \"tzdata\",\n\t\t\t\"section\": \"localization\",\n\t\t\t\"sha256\": \"9fb91a8d4f4f852918d14b1379f788c1c4971cf640c4bda7f568e7601620a874\",\n\t\t\t\"size\": 263724,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"2026a-0+deb13u1\"\n\t\t}\n\t},\n\t\"sources\": {\n\t\t\"trixie\": {\n\t\t\t\"architectures\": [\n\t\t\t\t\"amd64\",\n\t\t\t\t\"arm64\"\n\t\t\t],\n\t\t\t\"components\": [\n\t\t\t\t\"main\"\n\t\t\t],\n\t\t\t\"types\": [\n\t\t\t\t\"deb\"\n\t\t\t],\n\t\t\t\"uris\": [\n\t\t\t\t\"https://snapshot.debian.org/archive/debian/20260318T142916Z\"\n\t\t\t]\n\t\t},\n\t\t\"trixie-security\": {\n\t\t\t\"architectures\": [\n\t\t\t\t\"amd64\",\n\t\t\t\t\"arm64\"\n\t\t\t],\n\t\t\t\"components\": [\n\t\t\t\t\"main\"\n\t\t\t],\n\t\t\t\"types\": [\n\t\t\t\t\"deb\"\n\t\t\t],\n\t\t\t\"uris\": [\n\t\t\t\t\"https://snapshot.debian.org/archive/debian-security/20260318T142916Z\"\n\t\t\t]\n\t\t},\n\t\t\"trixie-updates\": {\n\t\t\t\"architectures\": [\n\t\t\t\t\"amd64\",\n\t\t\t\t\"arm64\"\n\t\t\t],\n\t\t\t\"components\": [\n\t\t\t\t\"main\"\n\t\t\t],\n\t\t\t\"types\": [\n\t\t\t\t\"deb\"\n\t\t\t],\n\t\t\t\"uris\": [\n\t\t\t\t\"https://snapshot.debian.org/archive/debian/20260318T142916Z\"\n\t\t\t]\n\t\t}\n\t},\n\t\"version\": 2\n}",
+              "lock_content": "{\n\t\"dependency_sets\": {\n\t\t\"debian13\": {\n\t\t\t\"sets\": {\n\t\t\t\t\"amd64\": {\n\t\t\t\t\t\"/trixie-security/ca-certificates:amd64\": \"20250419+deb13u1\",\n\t\t\t\t\t\"/trixie-updates/tzdata-legacy:amd64\": \"2026e-0+deb13u1\",\n\t\t\t\t\t\"/trixie-updates/tzdata:amd64\": \"2026e-0+deb13u1\",\n\t\t\t\t\t\"/trixie/base-files:amd64\": \"13.8+deb13u7\",\n\t\t\t\t\t\"/trixie/libc6:amd64\": \"2.41-12+deb13u4\",\n\t\t\t\t\t\"/trixie/media-types:amd64\": \"13.0.0\",\n\t\t\t\t\t\"/trixie/netbase:amd64\": \"6.5\"\n\t\t\t\t},\n\t\t\t\t\"arm64\": {\n\t\t\t\t\t\"/trixie-security/ca-certificates:arm64\": \"20250419+deb13u1\",\n\t\t\t\t\t\"/trixie-updates/tzdata-legacy:arm64\": \"2026e-0+deb13u1\",\n\t\t\t\t\t\"/trixie-updates/tzdata:arm64\": \"2026e-0+deb13u1\",\n\t\t\t\t\t\"/trixie/base-files:arm64\": \"13.8+deb13u7\",\n\t\t\t\t\t\"/trixie/libc6:arm64\": \"2.41-12+deb13u4\",\n\t\t\t\t\t\"/trixie/media-types:arm64\": \"13.0.0\",\n\t\t\t\t\t\"/trixie/netbase:arm64\": \"6.5\"\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t},\n\t\"facts\": {\n\t\t\"trixie-security/main/amd64/Contents/https://snapshot.debian.org/archive/debian-security/20260318T142916Z\": \"sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=\",\n\t\t\"trixie-security/main/amd64/Contents/https://snapshot.debian.org/archive/debian-security/20261028T204034Z\": \"sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=\",\n\t\t\"trixie-security/main/amd64/Packages/https://snapshot.debian.org/archive/debian-security/20260318T142916Z\": \"sha256-mXEc9biqeEc9Oteg+iAqX55hPMQ1RdC2X0lXEbul1Lo=\",\n\t\t\"trixie-security/main/amd64/Packages/https://snapshot.debian.org/archive/debian-security/20261028T204034Z\": \"sha256-LBpalvTCh8IOC1dLgtR+TS0Sfo3fQnIyPhwlMPULCT8=\",\n\t\t\"trixie-security/main/arm64/Contents/https://snapshot.debian.org/archive/debian-security/20260318T142916Z\": \"sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=\",\n\t\t\"trixie-security/main/arm64/Contents/https://snapshot.debian.org/archive/debian-security/20261028T204034Z\": \"sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=\",\n\t\t\"trixie-security/main/arm64/Packages/https://snapshot.debian.org/archive/debian-security/20260318T142916Z\": \"sha256-2ym4FRJBtiOTCC5PQbeuqdg7qG3I01sISUwO6kqSN3Y=\",\n\t\t\"trixie-security/main/arm64/Packages/https://snapshot.debian.org/archive/debian-security/20261028T204034Z\": \"sha256-IcsvKQEftPlGWdp5mTmNULzAWDlTo+Ahmn+/6hlIFfg=\",\n\t\t\"trixie-updates/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-1jmA+tFv6YSYfEdijI1Y/mqiLE/CbwkzexLGNBfS8N0=\",\n\t\t\"trixie-updates/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20261028T204034Z\": \"sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=\",\n\t\t\"trixie-updates/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-qQxhV5al34PTyNtPzhezVaS9Qal6yOEmScqW+sy+bKs=\",\n\t\t\"trixie-updates/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20261028T204034Z\": \"sha256-I1+4WUkNRcFJC8aYNr0mB8moVXtinrwzurEAjttunm0=\",\n\t\t\"trixie-updates/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-yY6kbHuy46+Kt/2yh4NTrgbEvfE+jCvkAVgyyKB8rOQ=\",\n\t\t\"trixie-updates/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20261028T204034Z\": \"sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=\",\n\t\t\"trixie-updates/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-wZkX9Iy2Os0uM0Nn4rSxi818XACw6wL242nlMV9D5j4=\",\n\t\t\"trixie-updates/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20261028T204034Z\": \"sha256-I1+4WUkNRcFJC8aYNr0mB8moVXtinrwzurEAjttunm0=\",\n\t\t\"trixie/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-JHACxNTCxHpJtZzr4ccx23J+ITpPkTq5JXePYTnB8YM=\",\n\t\t\"trixie/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20261028T204034Z\": \"sha256-PT5pMJCNsLU/eA3XOXuVieJ9uItZIFwzGnbXbWcm5Bk=\",\n\t\t\"trixie/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-tB5Lm9ecoAmv5/symxa8MF8cesq56mzk9XFSbt6SZUc=\",\n\t\t\"trixie/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20261028T204034Z\": \"sha256-d3jT4/MDt924zg/nyNV0c6B2xr8ujyQfdUIdI5Y1JJg=\",\n\t\t\"trixie/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-ntCie/YQHWp0jJ5bQj0sct9pE82lc9I+jDfv8KY2STs=\",\n\t\t\"trixie/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20261028T204034Z\": \"sha256-J22+1pFmTv/UvpFDX34NFVLwq2RcCqA5fem6WQDhO3Q=\",\n\t\t\"trixie/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z\": \"sha256-JlON5xRL7lJy0WGuzZZtO9Or9vOhetLYIV36a5e3BCA=\",\n\t\t\"trixie/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20261028T204034Z\": \"sha256-vhazey90DwZuqT011W8E+U1jaT5aPrQhsFK/hvrnW80=\"\n\t},\n\t\"packages\": {\n\t\t\"/trixie-security/ca-certificates:amd64=20250419+deb13u1\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/updates/main/c/ca-certificates/ca-certificates_20250419+deb13u1_all.deb\",\n\t\t\t\"name\": \"ca-certificates\",\n\t\t\t\"section\": \"misc\",\n\t\t\t\"sha256\": \"c10585ac22c7f617a73d394eea29ba71d0356f350ae973b19043d1b017f80f54\",\n\t\t\t\"size\": 160720,\n\t\t\t\"suite\": \"trixie-security\",\n\t\t\t\"version\": \"20250419+deb13u1\"\n\t\t},\n\t\t\"/trixie-security/ca-certificates:arm64=20250419+deb13u1\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/updates/main/c/ca-certificates/ca-certificates_20250419+deb13u1_all.deb\",\n\t\t\t\"name\": \"ca-certificates\",\n\t\t\t\"section\": \"misc\",\n\t\t\t\"sha256\": \"c10585ac22c7f617a73d394eea29ba71d0356f350ae973b19043d1b017f80f54\",\n\t\t\t\"size\": 160720,\n\t\t\t\"suite\": \"trixie-security\",\n\t\t\t\"version\": \"20250419+deb13u1\"\n\t\t},\n\t\t\"/trixie-updates/tzdata-legacy:amd64=2026e-0+deb13u1\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/t/tzdata/tzdata-legacy_2026e-0+deb13u1_all.deb\",\n\t\t\t\"name\": \"tzdata-legacy\",\n\t\t\t\"section\": \"localization\",\n\t\t\t\"sha256\": \"bc1912d3e805b6071bcc3fbe55c171e0d9c8cf44eeebafcaa825a724577cf8de\",\n\t\t\t\"size\": 185772,\n\t\t\t\"suite\": \"trixie-updates\",\n\t\t\t\"version\": \"2026e-0+deb13u1\"\n\t\t},\n\t\t\"/trixie-updates/tzdata-legacy:arm64=2026e-0+deb13u1\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/t/tzdata/tzdata-legacy_2026e-0+deb13u1_all.deb\",\n\t\t\t\"name\": \"tzdata-legacy\",\n\t\t\t\"section\": \"localization\",\n\t\t\t\"sha256\": \"bc1912d3e805b6071bcc3fbe55c171e0d9c8cf44eeebafcaa825a724577cf8de\",\n\t\t\t\"size\": 185772,\n\t\t\t\"suite\": \"trixie-updates\",\n\t\t\t\"version\": \"2026e-0+deb13u1\"\n\t\t},\n\t\t\"/trixie-updates/tzdata:amd64=2026e-0+deb13u1\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/t/tzdata/tzdata_2026e-0+deb13u1_all.deb\",\n\t\t\t\"name\": \"tzdata\",\n\t\t\t\"section\": \"localization\",\n\t\t\t\"sha256\": \"165fbf909c02150f62091c64f751ae84c66ff86da124a46a58614d8e174a6acd\",\n\t\t\t\"size\": 266488,\n\t\t\t\"suite\": \"trixie-updates\",\n\t\t\t\"version\": \"2026e-0+deb13u1\"\n\t\t},\n\t\t\"/trixie-updates/tzdata:arm64=2026e-0+deb13u1\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/t/tzdata/tzdata_2026e-0+deb13u1_all.deb\",\n\t\t\t\"name\": \"tzdata\",\n\t\t\t\"section\": \"localization\",\n\t\t\t\"sha256\": \"165fbf909c02150f62091c64f751ae84c66ff86da124a46a58614d8e174a6acd\",\n\t\t\t\"size\": 266488,\n\t\t\t\"suite\": \"trixie-updates\",\n\t\t\t\"version\": \"2026e-0+deb13u1\"\n\t\t},\n\t\t\"/trixie/base-files:amd64=13.8+deb13u7\": {\n\t\t\t\"architecture\": \"amd64\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/b/base-files/base-files_13.8+deb13u7_amd64.deb\",\n\t\t\t\"name\": \"base-files\",\n\t\t\t\"section\": \"admin\",\n\t\t\t\"sha256\": \"fcd42bb5cb63f7bfc4326a92541247872206d60a192fdff65ca14eb83ed408b9\",\n\t\t\t\"size\": 88296,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"13.8+deb13u7\"\n\t\t},\n\t\t\"/trixie/base-files:arm64=13.8+deb13u7\": {\n\t\t\t\"architecture\": \"arm64\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/b/base-files/base-files_13.8+deb13u7_arm64.deb\",\n\t\t\t\"name\": \"base-files\",\n\t\t\t\"section\": \"admin\",\n\t\t\t\"sha256\": \"5330362213dc8b9327a56383104235c269797d5db2fd8688f535298d4c44e4d2\",\n\t\t\t\"size\": 88244,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"13.8+deb13u7\"\n\t\t},\n\t\t\"/trixie/libc6:amd64=2.41-12+deb13u4\": {\n\t\t\t\"architecture\": \"amd64\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb\",\n\t\t\t\"name\": \"libc6\",\n\t\t\t\"section\": \"libs\",\n\t\t\t\"sha256\": \"967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9\",\n\t\t\t\"size\": 2846580,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"2.41-12+deb13u4\"\n\t\t},\n\t\t\"/trixie/libc6:arm64=2.41-12+deb13u4\": {\n\t\t\t\"architecture\": \"arm64\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/g/glibc/libc6_2.41-12+deb13u4_arm64.deb\",\n\t\t\t\"name\": \"libc6\",\n\t\t\t\"section\": \"libs\",\n\t\t\t\"sha256\": \"8784eda966b189c777a384dac5ce009e8fc9b52d006926c5a013e7fa8aa688cc\",\n\t\t\t\"size\": 2483572,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"2.41-12+deb13u4\"\n\t\t},\n\t\t\"/trixie/media-types:amd64=13.0.0\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/m/media-types/media-types_13.0.0_all.deb\",\n\t\t\t\"name\": \"media-types\",\n\t\t\t\"section\": \"net\",\n\t\t\t\"sha256\": \"0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e\",\n\t\t\t\"size\": 29336,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"13.0.0\"\n\t\t},\n\t\t\"/trixie/media-types:arm64=13.0.0\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/m/media-types/media-types_13.0.0_all.deb\",\n\t\t\t\"name\": \"media-types\",\n\t\t\t\"section\": \"net\",\n\t\t\t\"sha256\": \"0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e\",\n\t\t\t\"size\": 29336,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"13.0.0\"\n\t\t},\n\t\t\"/trixie/netbase:amd64=6.5\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/n/netbase/netbase_6.5_all.deb\",\n\t\t\t\"name\": \"netbase\",\n\t\t\t\"section\": \"admin\",\n\t\t\t\"sha256\": \"76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e\",\n\t\t\t\"size\": 12436,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"6.5\"\n\t\t},\n\t\t\"/trixie/netbase:arm64=6.5\": {\n\t\t\t\"architecture\": \"all\",\n\t\t\t\"depends_on\": [],\n\t\t\t\"filename\": \"pool/main/n/netbase/netbase_6.5_all.deb\",\n\t\t\t\"name\": \"netbase\",\n\t\t\t\"section\": \"admin\",\n\t\t\t\"sha256\": \"76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e\",\n\t\t\t\"size\": 12436,\n\t\t\t\"suite\": \"trixie\",\n\t\t\t\"version\": \"6.5\"\n\t\t}\n\t},\n\t\"sources\": {\n\t\t\"trixie\": {\n\t\t\t\"architectures\": [\n\t\t\t\t\"amd64\",\n\t\t\t\t\"arm64\"\n\t\t\t],\n\t\t\t\"components\": [\n\t\t\t\t\"main\"\n\t\t\t],\n\t\t\t\"types\": [\n\t\t\t\t\"deb\"\n\t\t\t],\n\t\t\t\"uris\": [\n\t\t\t\t\"https://snapshot.debian.org/archive/debian/20261028T204034Z\"\n\t\t\t]\n\t\t},\n\t\t\"trixie-security\": {\n\t\t\t\"architectures\": [\n\t\t\t\t\"amd64\",\n\t\t\t\t\"arm64\"\n\t\t\t],\n\t\t\t\"components\": [\n\t\t\t\t\"main\"\n\t\t\t],\n\t\t\t\"types\": [\n\t\t\t\t\"deb\"\n\t\t\t],\n\t\t\t\"uris\": [\n\t\t\t\t\"https://snapshot.debian.org/archive/debian-security/20261028T204034Z\"\n\t\t\t]\n\t\t},\n\t\t\"trixie-updates\": {\n\t\t\t\"architectures\": [\n\t\t\t\t\"amd64\",\n\t\t\t\t\"arm64\"\n\t\t\t],\n\t\t\t\"components\": [\n\t\t\t\t\"main\"\n\t\t\t],\n\t\t\t\"types\": [\n\t\t\t\t\"deb\"\n\t\t\t],\n\t\t\t\"uris\": [\n\t\t\t\t\"https://snapshot.debian.org/archive/debian/20261028T204034Z\"\n\t\t\t]\n\t\t}\n\t},\n\t\"version\": 2\n}",
               "mergedusr": true,
               "package_template": "@@//:apt/package.BUILD.tmpl"
             }
           },
-          "trixie_libc6-arm64_2.41-12-deb13u2_filemap": {
+          "trixie_libc6-arm64_2.41-12-deb13u4_filemap": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
             "attributes": {
               "files": "[\"etc/ld.so.conf.d/aarch64-linux-gnu.conf\",\"usr/lib/aarch64-linux-gnu/gconv/ANSI_X3.110.so\",\"usr/lib/aarch64-linux-gnu/gconv/ARMSCII-8.so\",\"usr/lib/aarch64-linux-gnu/gconv/ASMO_449.so\",\"usr/lib/aarch64-linux-gnu/gconv/BIG5.so\",\"usr/lib/aarch64-linux-gnu/gconv/BIG5HKSCS.so\",\"usr/lib/aarch64-linux-gnu/gconv/BRF.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP10007.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP1125.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP1250.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP1251.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP1252.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP1253.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP1254.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP1255.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP1256.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP1257.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP1258.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP737.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP770.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP771.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP772.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP773.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP774.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP775.so\",\"usr/lib/aarch64-linux-gnu/gconv/CP932.so\",\"usr/lib/aarch64-linux-gnu/gconv/CSN_369103.so\",\"usr/lib/aarch64-linux-gnu/gconv/CWI.so\",\"usr/lib/aarch64-linux-gnu/gconv/DEC-MCS.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-AT-DE-A.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-AT-DE.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-CA-FR.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-DK-NO-A.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-DK-NO.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-ES-A.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-ES-S.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-ES.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-FI-SE-A.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-FI-SE.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-FR.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-IS-FRISS.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-IT.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-PT.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-UK.so\",\"usr/lib/aarch64-linux-gnu/gconv/EBCDIC-US.so\",\"usr/lib/aarch64-linux-gnu/gconv/ECMA-CYRILLIC.so\",\"usr/lib/aarch64-linux-gnu/gconv/EUC-CN.so\",\"usr/lib/aarch64-linux-gnu/gconv/EUC-JISX0213.so\",\"usr/lib/aarch64-linux-gnu/gconv/EUC-JP-MS.so\",\"usr/lib/aarch64-linux-gnu/gconv/EUC-JP.so\",\"usr/lib/aarch64-linux-gnu/gconv/EUC-KR.so\",\"usr/lib/aarch64-linux-gnu/gconv/EUC-TW.so\",\"usr/lib/aarch64-linux-gnu/gconv/GB18030.so\",\"usr/lib/aarch64-linux-gnu/gconv/GBBIG5.so\",\"usr/lib/aarch64-linux-gnu/gconv/GBGBK.so\",\"usr/lib/aarch64-linux-gnu/gconv/GBK.so\",\"usr/lib/aarch64-linux-gnu/gconv/GEORGIAN-ACADEMY.so\",\"usr/lib/aarch64-linux-gnu/gconv/GEORGIAN-PS.so\",\"usr/lib/aarch64-linux-gnu/gconv/GOST_19768-74.so\",\"usr/lib/aarch64-linux-gnu/gconv/GREEK-CCITT.so\",\"usr/lib/aarch64-linux-gnu/gconv/GREEK7-OLD.so\",\"usr/lib/aarch64-linux-gnu/gconv/GREEK7.so\",\"usr/lib/aarch64-linux-gnu/gconv/HP-GREEK8.so\",\"usr/lib/aarch64-linux-gnu/gconv/HP-ROMAN8.so\",\"usr/lib/aarch64-linux-gnu/gconv/HP-ROMAN9.so\",\"usr/lib/aarch64-linux-gnu/gconv/HP-THAI8.so\",\"usr/lib/aarch64-linux-gnu/gconv/HP-TURKISH8.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM037.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM038.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1004.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1008.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1008_420.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1025.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1026.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1046.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1047.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1097.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1112.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1122.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1123.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1124.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1129.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1130.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1132.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1133.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1137.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1140.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1141.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1142.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1143.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1144.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1145.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1146.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1147.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1148.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1149.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1153.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1154.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1155.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1156.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1157.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1158.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1160.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1161.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1162.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1163.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1164.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1166.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1167.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM12712.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1364.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1371.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1388.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1390.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM1399.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM16804.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM256.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM273.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM274.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM275.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM277.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM278.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM280.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM281.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM284.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM285.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM290.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM297.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM420.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM423.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM424.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM437.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM4517.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM4899.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM4909.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM4971.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM500.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM5347.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM803.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM850.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM851.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM852.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM855.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM856.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM857.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM858.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM860.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM861.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM862.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM863.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM864.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM865.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM866.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM866NAV.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM868.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM869.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM870.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM871.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM874.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM875.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM880.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM891.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM901.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM902.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM903.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM9030.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM904.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM905.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM9066.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM918.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM921.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM922.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM930.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM932.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM933.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM935.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM937.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM939.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM943.so\",\"usr/lib/aarch64-linux-gnu/gconv/IBM9448.so\",\"usr/lib/aarch64-linux-gnu/gconv/IEC_P27-1.so\",\"usr/lib/aarch64-linux-gnu/gconv/INIS-8.so\",\"usr/lib/aarch64-linux-gnu/gconv/INIS-CYRILLIC.so\",\"usr/lib/aarch64-linux-gnu/gconv/INIS.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISIRI-3342.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO-2022-CN-EXT.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO-2022-CN.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO-2022-JP-3.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO-2022-JP.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO-2022-KR.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO-IR-197.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO-IR-209.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO646.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-1.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-10.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-11.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-13.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-14.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-15.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-16.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-2.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-3.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-4.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-5.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-6.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-7.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-8.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-9.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO8859-9E.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO_10367-BOX.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO_11548-1.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO_2033.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO_5427-EXT.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO_5427.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO_5428.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO_6937-2.so\",\"usr/lib/aarch64-linux-gnu/gconv/ISO_6937.so\",\"usr/lib/aarch64-linux-gnu/gconv/JOHAB.so\",\"usr/lib/aarch64-linux-gnu/gconv/KOI-8.so\",\"usr/lib/aarch64-linux-gnu/gconv/KOI8-R.so\",\"usr/lib/aarch64-linux-gnu/gconv/KOI8-RU.so\",\"usr/lib/aarch64-linux-gnu/gconv/KOI8-T.so\",\"usr/lib/aarch64-linux-gnu/gconv/KOI8-U.so\",\"usr/lib/aarch64-linux-gnu/gconv/LATIN-GREEK-1.so\",\"usr/lib/aarch64-linux-gnu/gconv/LATIN-GREEK.so\",\"usr/lib/aarch64-linux-gnu/gconv/MAC-CENTRALEUROPE.so\",\"usr/lib/aarch64-linux-gnu/gconv/MAC-IS.so\",\"usr/lib/aarch64-linux-gnu/gconv/MAC-SAMI.so\",\"usr/lib/aarch64-linux-gnu/gconv/MAC-UK.so\",\"usr/lib/aarch64-linux-gnu/gconv/MACINTOSH.so\",\"usr/lib/aarch64-linux-gnu/gconv/MIK.so\",\"usr/lib/aarch64-linux-gnu/gconv/NATS-DANO.so\",\"usr/lib/aarch64-linux-gnu/gconv/NATS-SEFI.so\",\"usr/lib/aarch64-linux-gnu/gconv/PT154.so\",\"usr/lib/aarch64-linux-gnu/gconv/RK1048.so\",\"usr/lib/aarch64-linux-gnu/gconv/SAMI-WS2.so\",\"usr/lib/aarch64-linux-gnu/gconv/SHIFT_JISX0213.so\",\"usr/lib/aarch64-linux-gnu/gconv/SJIS.so\",\"usr/lib/aarch64-linux-gnu/gconv/T.61.so\",\"usr/lib/aarch64-linux-gnu/gconv/TCVN5712-1.so\",\"usr/lib/aarch64-linux-gnu/gconv/TIS-620.so\",\"usr/lib/aarch64-linux-gnu/gconv/TSCII.so\",\"usr/lib/aarch64-linux-gnu/gconv/UHC.so\",\"usr/lib/aarch64-linux-gnu/gconv/UNICODE.so\",\"usr/lib/aarch64-linux-gnu/gconv/UTF-16.so\",\"usr/lib/aarch64-linux-gnu/gconv/UTF-32.so\",\"usr/lib/aarch64-linux-gnu/gconv/UTF-7.so\",\"usr/lib/aarch64-linux-gnu/gconv/VISCII.so\",\"usr/lib/aarch64-linux-gnu/gconv/gconv-modules\",\"usr/lib/aarch64-linux-gnu/gconv/gconv-modules.cache\",\"usr/lib/aarch64-linux-gnu/gconv/gconv-modules.d/gconv-modules-extra.conf\",\"usr/lib/aarch64-linux-gnu/gconv/libCNS.so\",\"usr/lib/aarch64-linux-gnu/gconv/libGB.so\",\"usr/lib/aarch64-linux-gnu/gconv/libISOIR165.so\",\"usr/lib/aarch64-linux-gnu/gconv/libJIS.so\",\"usr/lib/aarch64-linux-gnu/gconv/libJISX0213.so\",\"usr/lib/aarch64-linux-gnu/gconv/libKSC.so\",\"usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1\",\"usr/lib/aarch64-linux-gnu/libBrokenLocale.so.1\",\"usr/lib/aarch64-linux-gnu/libanl.so.1\",\"usr/lib/aarch64-linux-gnu/libc.so.6\",\"usr/lib/aarch64-linux-gnu/libc_malloc_debug.so.0\",\"usr/lib/aarch64-linux-gnu/libdl.so.2\",\"usr/lib/aarch64-linux-gnu/libm.so.6\",\"usr/lib/aarch64-linux-gnu/libmemusage.so\",\"usr/lib/aarch64-linux-gnu/libmvec.so.1\",\"usr/lib/aarch64-linux-gnu/libnsl.so.1\",\"usr/lib/aarch64-linux-gnu/libnss_compat.so.2\",\"usr/lib/aarch64-linux-gnu/libnss_dns.so.2\",\"usr/lib/aarch64-linux-gnu/libnss_files.so.2\",\"usr/lib/aarch64-linux-gnu/libnss_hesiod.so.2\",\"usr/lib/aarch64-linux-gnu/libpcprofile.so\",\"usr/lib/aarch64-linux-gnu/libpthread.so.0\",\"usr/lib/aarch64-linux-gnu/libresolv.so.2\",\"usr/lib/aarch64-linux-gnu/librt.so.1\",\"usr/lib/aarch64-linux-gnu/libthread_db.so.1\",\"usr/lib/aarch64-linux-gnu/libutil.so.1\",\"usr/lib/ld-linux-aarch64.so.1\",\"usr/share/doc/libc6/NEWS.Debian.gz\",\"usr/share/doc/libc6/NEWS.gz\",\"usr/share/doc/libc6/README.Debian.gz\",\"usr/share/doc/libc6/README.hesiod.gz\",\"usr/share/doc/libc6/changelog.Debian.gz\",\"usr/share/doc/libc6/changelog.gz\",\"usr/share/doc/libc6/copyright\",\"usr/share/lintian/overrides/libc6\"]"
             }
           },
-          "trixie_libc6-arm64_2.41-12-deb13u2": {
+          "trixie_libc6-arm64_2.41-12-deb13u4": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_libc6-arm64_2.41-12-deb13u2",
+              "target_name": "trixie_libc6-arm64_2.41-12-deb13u4",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/g/glibc/libc6_2.41-12+deb13u2_arm64.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/g/glibc/libc6_2.41-12+deb13u4_arm64.deb"
               ],
-              "sha256": "f4679f22ee71be9f79bb36c62bb0b6fed97c19f245d2afaf8a9c1d000a1d312a",
+              "sha256": "8784eda966b189c777a384dac5ce009e8fc9b52d006926c5a013e7fa8aa688cc",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "libc6"
             }
           },
-          "trixie_libc6-arm64_2.41-12-deb13u2_mergedusr": {
+          "trixie_libc6-arm64_2.41-12-deb13u4_mergedusr": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_libc6-arm64_2.41-12-deb13u2_mergedusr",
+              "target_name": "trixie_libc6-arm64_2.41-12-deb13u4_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/g/glibc/libc6_2.41-12+deb13u2_arm64.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/g/glibc/libc6_2.41-12+deb13u4_arm64.deb"
               ],
-              "sha256": "f4679f22ee71be9f79bb36c62bb0b6fed97c19f245d2afaf8a9c1d000a1d312a",
+              "sha256": "8784eda966b189c777a384dac5ce009e8fc9b52d006926c5a013e7fa8aa688cc",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "libc6"
             }
           },
-          "trixie_libc6-amd64_2.41-12-deb13u2_filemap": {
+          "trixie_libc6-amd64_2.41-12-deb13u4_filemap": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
             "attributes": {
               "files": "[\"etc/ld.so.conf.d/x86_64-linux-gnu.conf\",\"usr/lib/x86_64-linux-gnu/gconv/ANSI_X3.110.so\",\"usr/lib/x86_64-linux-gnu/gconv/ARMSCII-8.so\",\"usr/lib/x86_64-linux-gnu/gconv/ASMO_449.so\",\"usr/lib/x86_64-linux-gnu/gconv/BIG5.so\",\"usr/lib/x86_64-linux-gnu/gconv/BIG5HKSCS.so\",\"usr/lib/x86_64-linux-gnu/gconv/BRF.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP10007.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP1125.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP1250.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP1251.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP1252.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP1253.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP1254.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP1255.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP1256.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP1257.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP1258.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP737.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP770.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP771.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP772.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP773.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP774.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP775.so\",\"usr/lib/x86_64-linux-gnu/gconv/CP932.so\",\"usr/lib/x86_64-linux-gnu/gconv/CSN_369103.so\",\"usr/lib/x86_64-linux-gnu/gconv/CWI.so\",\"usr/lib/x86_64-linux-gnu/gconv/DEC-MCS.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-AT-DE-A.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-AT-DE.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-CA-FR.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-DK-NO-A.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-DK-NO.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-ES-A.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-ES-S.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-ES.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-FI-SE-A.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-FI-SE.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-FR.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-IS-FRISS.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-IT.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-PT.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-UK.so\",\"usr/lib/x86_64-linux-gnu/gconv/EBCDIC-US.so\",\"usr/lib/x86_64-linux-gnu/gconv/ECMA-CYRILLIC.so\",\"usr/lib/x86_64-linux-gnu/gconv/EUC-CN.so\",\"usr/lib/x86_64-linux-gnu/gconv/EUC-JISX0213.so\",\"usr/lib/x86_64-linux-gnu/gconv/EUC-JP-MS.so\",\"usr/lib/x86_64-linux-gnu/gconv/EUC-JP.so\",\"usr/lib/x86_64-linux-gnu/gconv/EUC-KR.so\",\"usr/lib/x86_64-linux-gnu/gconv/EUC-TW.so\",\"usr/lib/x86_64-linux-gnu/gconv/GB18030.so\",\"usr/lib/x86_64-linux-gnu/gconv/GBBIG5.so\",\"usr/lib/x86_64-linux-gnu/gconv/GBGBK.so\",\"usr/lib/x86_64-linux-gnu/gconv/GBK.so\",\"usr/lib/x86_64-linux-gnu/gconv/GEORGIAN-ACADEMY.so\",\"usr/lib/x86_64-linux-gnu/gconv/GEORGIAN-PS.so\",\"usr/lib/x86_64-linux-gnu/gconv/GOST_19768-74.so\",\"usr/lib/x86_64-linux-gnu/gconv/GREEK-CCITT.so\",\"usr/lib/x86_64-linux-gnu/gconv/GREEK7-OLD.so\",\"usr/lib/x86_64-linux-gnu/gconv/GREEK7.so\",\"usr/lib/x86_64-linux-gnu/gconv/HP-GREEK8.so\",\"usr/lib/x86_64-linux-gnu/gconv/HP-ROMAN8.so\",\"usr/lib/x86_64-linux-gnu/gconv/HP-ROMAN9.so\",\"usr/lib/x86_64-linux-gnu/gconv/HP-THAI8.so\",\"usr/lib/x86_64-linux-gnu/gconv/HP-TURKISH8.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM037.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM038.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1004.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1008.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1008_420.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1025.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1026.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1046.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1047.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1097.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1112.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1122.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1123.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1124.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1129.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1130.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1132.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1133.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1137.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1140.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1141.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1142.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1143.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1144.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1145.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1146.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1147.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1148.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1149.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1153.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1154.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1155.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1156.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1157.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1158.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1160.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1161.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1162.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1163.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1164.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1166.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1167.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM12712.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1364.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1371.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1388.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1390.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM1399.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM16804.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM256.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM273.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM274.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM275.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM277.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM278.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM280.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM281.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM284.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM285.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM290.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM297.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM420.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM423.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM424.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM437.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM4517.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM4899.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM4909.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM4971.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM500.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM5347.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM803.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM850.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM851.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM852.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM855.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM856.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM857.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM858.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM860.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM861.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM862.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM863.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM864.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM865.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM866.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM866NAV.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM868.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM869.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM870.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM871.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM874.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM875.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM880.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM891.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM901.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM902.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM903.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM9030.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM904.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM905.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM9066.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM918.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM921.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM922.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM930.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM932.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM933.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM935.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM937.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM939.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM943.so\",\"usr/lib/x86_64-linux-gnu/gconv/IBM9448.so\",\"usr/lib/x86_64-linux-gnu/gconv/IEC_P27-1.so\",\"usr/lib/x86_64-linux-gnu/gconv/INIS-8.so\",\"usr/lib/x86_64-linux-gnu/gconv/INIS-CYRILLIC.so\",\"usr/lib/x86_64-linux-gnu/gconv/INIS.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISIRI-3342.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO-2022-CN-EXT.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO-2022-CN.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO-2022-JP-3.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO-2022-JP.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO-2022-KR.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO-IR-197.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO-IR-209.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO646.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-1.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-10.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-11.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-13.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-14.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-15.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-16.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-2.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-3.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-4.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-5.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-6.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-7.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-8.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-9.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO8859-9E.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO_10367-BOX.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO_11548-1.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO_2033.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO_5427-EXT.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO_5427.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO_5428.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO_6937-2.so\",\"usr/lib/x86_64-linux-gnu/gconv/ISO_6937.so\",\"usr/lib/x86_64-linux-gnu/gconv/JOHAB.so\",\"usr/lib/x86_64-linux-gnu/gconv/KOI-8.so\",\"usr/lib/x86_64-linux-gnu/gconv/KOI8-R.so\",\"usr/lib/x86_64-linux-gnu/gconv/KOI8-RU.so\",\"usr/lib/x86_64-linux-gnu/gconv/KOI8-T.so\",\"usr/lib/x86_64-linux-gnu/gconv/KOI8-U.so\",\"usr/lib/x86_64-linux-gnu/gconv/LATIN-GREEK-1.so\",\"usr/lib/x86_64-linux-gnu/gconv/LATIN-GREEK.so\",\"usr/lib/x86_64-linux-gnu/gconv/MAC-CENTRALEUROPE.so\",\"usr/lib/x86_64-linux-gnu/gconv/MAC-IS.so\",\"usr/lib/x86_64-linux-gnu/gconv/MAC-SAMI.so\",\"usr/lib/x86_64-linux-gnu/gconv/MAC-UK.so\",\"usr/lib/x86_64-linux-gnu/gconv/MACINTOSH.so\",\"usr/lib/x86_64-linux-gnu/gconv/MIK.so\",\"usr/lib/x86_64-linux-gnu/gconv/NATS-DANO.so\",\"usr/lib/x86_64-linux-gnu/gconv/NATS-SEFI.so\",\"usr/lib/x86_64-linux-gnu/gconv/PT154.so\",\"usr/lib/x86_64-linux-gnu/gconv/RK1048.so\",\"usr/lib/x86_64-linux-gnu/gconv/SAMI-WS2.so\",\"usr/lib/x86_64-linux-gnu/gconv/SHIFT_JISX0213.so\",\"usr/lib/x86_64-linux-gnu/gconv/SJIS.so\",\"usr/lib/x86_64-linux-gnu/gconv/T.61.so\",\"usr/lib/x86_64-linux-gnu/gconv/TCVN5712-1.so\",\"usr/lib/x86_64-linux-gnu/gconv/TIS-620.so\",\"usr/lib/x86_64-linux-gnu/gconv/TSCII.so\",\"usr/lib/x86_64-linux-gnu/gconv/UHC.so\",\"usr/lib/x86_64-linux-gnu/gconv/UNICODE.so\",\"usr/lib/x86_64-linux-gnu/gconv/UTF-16.so\",\"usr/lib/x86_64-linux-gnu/gconv/UTF-32.so\",\"usr/lib/x86_64-linux-gnu/gconv/UTF-7.so\",\"usr/lib/x86_64-linux-gnu/gconv/VISCII.so\",\"usr/lib/x86_64-linux-gnu/gconv/gconv-modules\",\"usr/lib/x86_64-linux-gnu/gconv/gconv-modules.cache\",\"usr/lib/x86_64-linux-gnu/gconv/gconv-modules.d/gconv-modules-extra.conf\",\"usr/lib/x86_64-linux-gnu/gconv/libCNS.so\",\"usr/lib/x86_64-linux-gnu/gconv/libGB.so\",\"usr/lib/x86_64-linux-gnu/gconv/libISOIR165.so\",\"usr/lib/x86_64-linux-gnu/gconv/libJIS.so\",\"usr/lib/x86_64-linux-gnu/gconv/libJISX0213.so\",\"usr/lib/x86_64-linux-gnu/gconv/libKSC.so\",\"usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\",\"usr/lib/x86_64-linux-gnu/libBrokenLocale.so.1\",\"usr/lib/x86_64-linux-gnu/libanl.so.1\",\"usr/lib/x86_64-linux-gnu/libc.so.6\",\"usr/lib/x86_64-linux-gnu/libc_malloc_debug.so.0\",\"usr/lib/x86_64-linux-gnu/libdl.so.2\",\"usr/lib/x86_64-linux-gnu/libm.so.6\",\"usr/lib/x86_64-linux-gnu/libmemusage.so\",\"usr/lib/x86_64-linux-gnu/libmvec.so.1\",\"usr/lib/x86_64-linux-gnu/libnsl.so.1\",\"usr/lib/x86_64-linux-gnu/libnss_compat.so.2\",\"usr/lib/x86_64-linux-gnu/libnss_dns.so.2\",\"usr/lib/x86_64-linux-gnu/libnss_files.so.2\",\"usr/lib/x86_64-linux-gnu/libnss_hesiod.so.2\",\"usr/lib/x86_64-linux-gnu/libpcprofile.so\",\"usr/lib/x86_64-linux-gnu/libpthread.so.0\",\"usr/lib/x86_64-linux-gnu/libresolv.so.2\",\"usr/lib/x86_64-linux-gnu/librt.so.1\",\"usr/lib/x86_64-linux-gnu/libthread_db.so.1\",\"usr/lib/x86_64-linux-gnu/libutil.so.1\",\"usr/lib64/ld-linux-x86-64.so.2\",\"usr/share/doc/libc6/NEWS.Debian.gz\",\"usr/share/doc/libc6/NEWS.gz\",\"usr/share/doc/libc6/README.Debian.gz\",\"usr/share/doc/libc6/README.hesiod.gz\",\"usr/share/doc/libc6/changelog.Debian.gz\",\"usr/share/doc/libc6/changelog.gz\",\"usr/share/doc/libc6/copyright\",\"usr/share/lintian/overrides/libc6\"]"
             }
           },
-          "trixie_libc6-amd64_2.41-12-deb13u2": {
+          "trixie_libc6-amd64_2.41-12-deb13u4": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_libc6-amd64_2.41-12-deb13u2",
+              "target_name": "trixie_libc6-amd64_2.41-12-deb13u4",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/g/glibc/libc6_2.41-12+deb13u2_amd64.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb"
               ],
-              "sha256": "8f9ddeb958cec3a05c4c303d4c85fddf30cb994747b16b1eb715ac49049f6d4a",
+              "sha256": "967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "libc6"
             }
           },
-          "trixie_libc6-amd64_2.41-12-deb13u2_mergedusr": {
+          "trixie_libc6-amd64_2.41-12-deb13u4_mergedusr": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_libc6-amd64_2.41-12-deb13u2_mergedusr",
+              "target_name": "trixie_libc6-amd64_2.41-12-deb13u4_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/g/glibc/libc6_2.41-12+deb13u2_amd64.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb"
               ],
-              "sha256": "8f9ddeb958cec3a05c4c303d4c85fddf30cb994747b16b1eb715ac49049f6d4a",
+              "sha256": "967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "libc6"
             }
           },
-          "trixie_ca-certificates-arm64_20250419_filemap": {
+          "trixie-security_ca-certificates-arm64_20250419-deb13u1_filemap": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
             "attributes": {
               "files": "[]"
             }
           },
-          "trixie_ca-certificates-arm64_20250419": {
+          "trixie-security_ca-certificates-arm64_20250419-deb13u1": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_ca-certificates-arm64_20250419",
+              "target_name": "trixie-security_ca-certificates-arm64_20250419-deb13u1",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/c/ca-certificates/ca-certificates_20250419_all.deb"
+                "https://snapshot.debian.org/archive/debian-security/20261028T204034Z/pool/updates/main/c/ca-certificates/ca-certificates_20250419+deb13u1_all.deb"
               ],
-              "sha256": "ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184",
+              "sha256": "c10585ac22c7f617a73d394eea29ba71d0356f350ae973b19043d1b017f80f54",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "ca-certificates"
             }
           },
-          "trixie_ca-certificates-arm64_20250419_mergedusr": {
+          "trixie-security_ca-certificates-arm64_20250419-deb13u1_mergedusr": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_ca-certificates-arm64_20250419_mergedusr",
+              "target_name": "trixie-security_ca-certificates-arm64_20250419-deb13u1_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/c/ca-certificates/ca-certificates_20250419_all.deb"
+                "https://snapshot.debian.org/archive/debian-security/20261028T204034Z/pool/updates/main/c/ca-certificates/ca-certificates_20250419+deb13u1_all.deb"
               ],
-              "sha256": "ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184",
+              "sha256": "c10585ac22c7f617a73d394eea29ba71d0356f350ae973b19043d1b017f80f54",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "ca-certificates"
             }
           },
-          "trixie_ca-certificates-amd64_20250419_filemap": {
+          "trixie-security_ca-certificates-amd64_20250419-deb13u1_filemap": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
             "attributes": {
               "files": "[]"
             }
           },
-          "trixie_ca-certificates-amd64_20250419": {
+          "trixie-security_ca-certificates-amd64_20250419-deb13u1": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_ca-certificates-amd64_20250419",
+              "target_name": "trixie-security_ca-certificates-amd64_20250419-deb13u1",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/c/ca-certificates/ca-certificates_20250419_all.deb"
+                "https://snapshot.debian.org/archive/debian-security/20261028T204034Z/pool/updates/main/c/ca-certificates/ca-certificates_20250419+deb13u1_all.deb"
               ],
-              "sha256": "ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184",
+              "sha256": "c10585ac22c7f617a73d394eea29ba71d0356f350ae973b19043d1b017f80f54",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "ca-certificates"
             }
           },
-          "trixie_ca-certificates-amd64_20250419_mergedusr": {
+          "trixie-security_ca-certificates-amd64_20250419-deb13u1_mergedusr": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_ca-certificates-amd64_20250419_mergedusr",
+              "target_name": "trixie-security_ca-certificates-amd64_20250419-deb13u1_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/c/ca-certificates/ca-certificates_20250419_all.deb"
+                "https://snapshot.debian.org/archive/debian-security/20261028T204034Z/pool/updates/main/c/ca-certificates/ca-certificates_20250419+deb13u1_all.deb"
               ],
-              "sha256": "ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184",
+              "sha256": "c10585ac22c7f617a73d394eea29ba71d0356f350ae973b19043d1b017f80f54",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
@@ -860,7 +860,7 @@
             "attributes": {
               "target_name": "trixie_media-types-arm64_13.0.0",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/m/media-types/media-types_13.0.0_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/m/media-types/media-types_13.0.0_all.deb"
               ],
               "sha256": "0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e",
               "mergedusr": true,
@@ -874,7 +874,7 @@
             "attributes": {
               "target_name": "trixie_media-types-arm64_13.0.0_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/m/media-types/media-types_13.0.0_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/m/media-types/media-types_13.0.0_all.deb"
               ],
               "sha256": "0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e",
               "mergedusr": true,
@@ -894,7 +894,7 @@
             "attributes": {
               "target_name": "trixie_media-types-amd64_13.0.0",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/m/media-types/media-types_13.0.0_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/m/media-types/media-types_13.0.0_all.deb"
               ],
               "sha256": "0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e",
               "mergedusr": true,
@@ -908,7 +908,7 @@
             "attributes": {
               "target_name": "trixie_media-types-amd64_13.0.0_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/m/media-types/media-types_13.0.0_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/m/media-types/media-types_13.0.0_all.deb"
               ],
               "sha256": "0788e4b0b72db1bcf74a19cb24c3511e7770ad0b341f0f30e361701c3072f53e",
               "mergedusr": true,
@@ -917,136 +917,136 @@
               "package_name": "media-types"
             }
           },
-          "trixie_tzdata-legacy-arm64_2026a-0-deb13u1_filemap": {
+          "trixie-updates_tzdata-legacy-arm64_2026e-0-deb13u1_filemap": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
             "attributes": {
               "files": "[]"
             }
           },
-          "trixie_tzdata-legacy-arm64_2026a-0-deb13u1": {
+          "trixie-updates_tzdata-legacy-arm64_2026e-0-deb13u1": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_tzdata-legacy-arm64_2026a-0-deb13u1",
+              "target_name": "trixie-updates_tzdata-legacy-arm64_2026e-0-deb13u1",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/t/tzdata/tzdata-legacy_2026a-0+deb13u1_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/t/tzdata/tzdata-legacy_2026e-0+deb13u1_all.deb"
               ],
-              "sha256": "f402289df6fd7f698e0f073da0e260e3365be368243a66bf2a2b940f37554b1c",
+              "sha256": "bc1912d3e805b6071bcc3fbe55c171e0d9c8cf44eeebafcaa825a724577cf8de",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "tzdata-legacy"
             }
           },
-          "trixie_tzdata-legacy-arm64_2026a-0-deb13u1_mergedusr": {
+          "trixie-updates_tzdata-legacy-arm64_2026e-0-deb13u1_mergedusr": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_tzdata-legacy-arm64_2026a-0-deb13u1_mergedusr",
+              "target_name": "trixie-updates_tzdata-legacy-arm64_2026e-0-deb13u1_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/t/tzdata/tzdata-legacy_2026a-0+deb13u1_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/t/tzdata/tzdata-legacy_2026e-0+deb13u1_all.deb"
               ],
-              "sha256": "f402289df6fd7f698e0f073da0e260e3365be368243a66bf2a2b940f37554b1c",
+              "sha256": "bc1912d3e805b6071bcc3fbe55c171e0d9c8cf44eeebafcaa825a724577cf8de",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "tzdata-legacy"
             }
           },
-          "trixie_tzdata-legacy-amd64_2026a-0-deb13u1_filemap": {
+          "trixie-updates_tzdata-legacy-amd64_2026e-0-deb13u1_filemap": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
             "attributes": {
               "files": "[]"
             }
           },
-          "trixie_tzdata-legacy-amd64_2026a-0-deb13u1": {
+          "trixie-updates_tzdata-legacy-amd64_2026e-0-deb13u1": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_tzdata-legacy-amd64_2026a-0-deb13u1",
+              "target_name": "trixie-updates_tzdata-legacy-amd64_2026e-0-deb13u1",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/t/tzdata/tzdata-legacy_2026a-0+deb13u1_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/t/tzdata/tzdata-legacy_2026e-0+deb13u1_all.deb"
               ],
-              "sha256": "f402289df6fd7f698e0f073da0e260e3365be368243a66bf2a2b940f37554b1c",
+              "sha256": "bc1912d3e805b6071bcc3fbe55c171e0d9c8cf44eeebafcaa825a724577cf8de",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "tzdata-legacy"
             }
           },
-          "trixie_tzdata-legacy-amd64_2026a-0-deb13u1_mergedusr": {
+          "trixie-updates_tzdata-legacy-amd64_2026e-0-deb13u1_mergedusr": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_tzdata-legacy-amd64_2026a-0-deb13u1_mergedusr",
+              "target_name": "trixie-updates_tzdata-legacy-amd64_2026e-0-deb13u1_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/t/tzdata/tzdata-legacy_2026a-0+deb13u1_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/t/tzdata/tzdata-legacy_2026e-0+deb13u1_all.deb"
               ],
-              "sha256": "f402289df6fd7f698e0f073da0e260e3365be368243a66bf2a2b940f37554b1c",
+              "sha256": "bc1912d3e805b6071bcc3fbe55c171e0d9c8cf44eeebafcaa825a724577cf8de",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "tzdata-legacy"
             }
           },
-          "trixie_tzdata-arm64_2026a-0-deb13u1_filemap": {
+          "trixie-updates_tzdata-arm64_2026e-0-deb13u1_filemap": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
             "attributes": {
               "files": "[]"
             }
           },
-          "trixie_tzdata-arm64_2026a-0-deb13u1": {
+          "trixie-updates_tzdata-arm64_2026e-0-deb13u1": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_tzdata-arm64_2026a-0-deb13u1",
+              "target_name": "trixie-updates_tzdata-arm64_2026e-0-deb13u1",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/t/tzdata/tzdata_2026a-0+deb13u1_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/t/tzdata/tzdata_2026e-0+deb13u1_all.deb"
               ],
-              "sha256": "9fb91a8d4f4f852918d14b1379f788c1c4971cf640c4bda7f568e7601620a874",
+              "sha256": "165fbf909c02150f62091c64f751ae84c66ff86da124a46a58614d8e174a6acd",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "tzdata"
             }
           },
-          "trixie_tzdata-arm64_2026a-0-deb13u1_mergedusr": {
+          "trixie-updates_tzdata-arm64_2026e-0-deb13u1_mergedusr": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_tzdata-arm64_2026a-0-deb13u1_mergedusr",
+              "target_name": "trixie-updates_tzdata-arm64_2026e-0-deb13u1_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/t/tzdata/tzdata_2026a-0+deb13u1_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/t/tzdata/tzdata_2026e-0+deb13u1_all.deb"
               ],
-              "sha256": "9fb91a8d4f4f852918d14b1379f788c1c4971cf640c4bda7f568e7601620a874",
+              "sha256": "165fbf909c02150f62091c64f751ae84c66ff86da124a46a58614d8e174a6acd",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "tzdata"
             }
           },
-          "trixie_tzdata-amd64_2026a-0-deb13u1_filemap": {
+          "trixie-updates_tzdata-amd64_2026e-0-deb13u1_filemap": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
             "attributes": {
               "files": "[]"
             }
           },
-          "trixie_tzdata-amd64_2026a-0-deb13u1": {
+          "trixie-updates_tzdata-amd64_2026e-0-deb13u1": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_tzdata-amd64_2026a-0-deb13u1",
+              "target_name": "trixie-updates_tzdata-amd64_2026e-0-deb13u1",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/t/tzdata/tzdata_2026a-0+deb13u1_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/t/tzdata/tzdata_2026e-0+deb13u1_all.deb"
               ],
-              "sha256": "9fb91a8d4f4f852918d14b1379f788c1c4971cf640c4bda7f568e7601620a874",
+              "sha256": "165fbf909c02150f62091c64f751ae84c66ff86da124a46a58614d8e174a6acd",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "tzdata"
             }
           },
-          "trixie_tzdata-amd64_2026a-0-deb13u1_mergedusr": {
+          "trixie-updates_tzdata-amd64_2026e-0-deb13u1_mergedusr": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_tzdata-amd64_2026a-0-deb13u1_mergedusr",
+              "target_name": "trixie-updates_tzdata-amd64_2026e-0-deb13u1_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/t/tzdata/tzdata_2026a-0+deb13u1_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/t/tzdata/tzdata_2026e-0+deb13u1_all.deb"
               ],
-              "sha256": "9fb91a8d4f4f852918d14b1379f788c1c4971cf640c4bda7f568e7601620a874",
+              "sha256": "165fbf909c02150f62091c64f751ae84c66ff86da124a46a58614d8e174a6acd",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
@@ -1064,7 +1064,7 @@
             "attributes": {
               "target_name": "trixie_netbase-arm64_6.5",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/n/netbase/netbase_6.5_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/n/netbase/netbase_6.5_all.deb"
               ],
               "sha256": "76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e",
               "mergedusr": true,
@@ -1078,7 +1078,7 @@
             "attributes": {
               "target_name": "trixie_netbase-arm64_6.5_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/n/netbase/netbase_6.5_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/n/netbase/netbase_6.5_all.deb"
               ],
               "sha256": "76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e",
               "mergedusr": true,
@@ -1098,7 +1098,7 @@
             "attributes": {
               "target_name": "trixie_netbase-amd64_6.5",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/n/netbase/netbase_6.5_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/n/netbase/netbase_6.5_all.deb"
               ],
               "sha256": "76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e",
               "mergedusr": true,
@@ -1112,7 +1112,7 @@
             "attributes": {
               "target_name": "trixie_netbase-amd64_6.5_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/n/netbase/netbase_6.5_all.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/n/netbase/netbase_6.5_all.deb"
               ],
               "sha256": "76bafa92947ebd37b0a6f9ec6570412041f56edebc1c66d323731216d318471e",
               "mergedusr": true,
@@ -1121,68 +1121,68 @@
               "package_name": "netbase"
             }
           },
-          "trixie_base-files-arm64_13.8-deb13u4_filemap": {
+          "trixie_base-files-arm64_13.8-deb13u7_filemap": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
             "attributes": {
-              "files": "[\"bin\",\"etc/debian_version\",\"etc/dpkg/origins/debian\",\"etc/host.conf\",\"etc/issue\",\"etc/issue.net\",\"etc/os-release\",\"etc/update-motd.d/10-uname\",\"lib\",\"sbin\",\"usr/lib/os-release\",\"usr/share/base-files/dot.bashrc\",\"usr/share/base-files/dot.profile\",\"usr/share/base-files/dot.profile.md5sums\",\"usr/share/base-files/info.dir\",\"usr/share/base-files/motd\",\"usr/share/base-files/profile\",\"usr/share/base-files/profile.md5sums\",\"usr/share/base-files/staff-group-for-usr-local\",\"usr/share/common-licenses/Apache-2.0\",\"usr/share/common-licenses/Artistic\",\"usr/share/common-licenses/BSD\",\"usr/share/common-licenses/CC0-1.0\",\"usr/share/common-licenses/GFDL\",\"usr/share/common-licenses/GFDL-1.2\",\"usr/share/common-licenses/GFDL-1.3\",\"usr/share/common-licenses/GPL\",\"usr/share/common-licenses/GPL-1\",\"usr/share/common-licenses/GPL-2\",\"usr/share/common-licenses/GPL-3\",\"usr/share/common-licenses/LGPL\",\"usr/share/common-licenses/LGPL-2\",\"usr/share/common-licenses/LGPL-2.1\",\"usr/share/common-licenses/LGPL-3\",\"usr/share/common-licenses/MPL-1.1\",\"usr/share/common-licenses/MPL-2.0\",\"usr/share/doc/base-files/FAQ\",\"usr/share/doc/base-files/NEWS.Debian.gz\",\"usr/share/doc/base-files/README\",\"usr/share/doc/base-files/README.FHS\",\"usr/share/doc/base-files/changelog.gz\",\"usr/share/doc/base-files/copyright\",\"usr/share/lintian/overrides/base-files\"]"
+              "files": "[\"bin\",\"etc/debian_version\",\"etc/dpkg/origins/debian\",\"etc/host.conf\",\"etc/issue\",\"etc/issue.net\",\"etc/os-release\",\"etc/update-motd.d/10-uname\",\"lib\",\"sbin\",\"usr/lib/os-release\",\"usr/share/base-files/dot.bashrc\",\"usr/share/base-files/dot.profile\",\"usr/share/base-files/dot.profile.md5sums\",\"usr/share/base-files/info.dir\",\"usr/share/base-files/motd\",\"usr/share/base-files/profile\",\"usr/share/base-files/profile.md5sums\",\"usr/share/base-files/staff-group-for-usr-local\",\"usr/share/common-licenses/AGPL-3.0\",\"usr/share/common-licenses/Apache-2.0\",\"usr/share/common-licenses/Artistic\",\"usr/share/common-licenses/Artistic-2.0\",\"usr/share/common-licenses/BSD\",\"usr/share/common-licenses/BSL-1.0\",\"usr/share/common-licenses/CC-BY-3.0\",\"usr/share/common-licenses/CC-BY-4.0\",\"usr/share/common-licenses/CC-BY-SA-3.0\",\"usr/share/common-licenses/CC-BY-SA-4.0\",\"usr/share/common-licenses/CC0-1.0\",\"usr/share/common-licenses/GFDL\",\"usr/share/common-licenses/GFDL-1.1\",\"usr/share/common-licenses/GFDL-1.2\",\"usr/share/common-licenses/GFDL-1.3\",\"usr/share/common-licenses/GPL\",\"usr/share/common-licenses/GPL-1\",\"usr/share/common-licenses/GPL-2\",\"usr/share/common-licenses/GPL-3\",\"usr/share/common-licenses/LGPL\",\"usr/share/common-licenses/LGPL-2\",\"usr/share/common-licenses/LGPL-2.1\",\"usr/share/common-licenses/LGPL-3\",\"usr/share/common-licenses/MPL-1.1\",\"usr/share/common-licenses/MPL-2.0\",\"usr/share/common-licenses/OFL-1.1\",\"usr/share/doc/base-files/FAQ\",\"usr/share/doc/base-files/NEWS.Debian.gz\",\"usr/share/doc/base-files/README\",\"usr/share/doc/base-files/README.FHS\",\"usr/share/doc/base-files/changelog.gz\",\"usr/share/doc/base-files/copyright\",\"usr/share/lintian/overrides/base-files\"]"
             }
           },
-          "trixie_base-files-arm64_13.8-deb13u4": {
+          "trixie_base-files-arm64_13.8-deb13u7": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_base-files-arm64_13.8-deb13u4",
+              "target_name": "trixie_base-files-arm64_13.8-deb13u7",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/b/base-files/base-files_13.8+deb13u4_arm64.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/b/base-files/base-files_13.8+deb13u7_arm64.deb"
               ],
-              "sha256": "d4493ac8b04311c4e393ccf87b8413155912aabe551f67877f9487c1f16cee69",
+              "sha256": "5330362213dc8b9327a56383104235c269797d5db2fd8688f535298d4c44e4d2",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "base-files"
             }
           },
-          "trixie_base-files-arm64_13.8-deb13u4_mergedusr": {
+          "trixie_base-files-arm64_13.8-deb13u7_mergedusr": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_base-files-arm64_13.8-deb13u4_mergedusr",
+              "target_name": "trixie_base-files-arm64_13.8-deb13u7_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/b/base-files/base-files_13.8+deb13u4_arm64.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/b/base-files/base-files_13.8+deb13u7_arm64.deb"
               ],
-              "sha256": "d4493ac8b04311c4e393ccf87b8413155912aabe551f67877f9487c1f16cee69",
+              "sha256": "5330362213dc8b9327a56383104235c269797d5db2fd8688f535298d4c44e4d2",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "base-files"
             }
           },
-          "trixie_base-files-amd64_13.8-deb13u4_filemap": {
+          "trixie_base-files-amd64_13.8-deb13u7_filemap": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
             "attributes": {
-              "files": "[\"bin\",\"etc/debian_version\",\"etc/dpkg/origins/debian\",\"etc/host.conf\",\"etc/issue\",\"etc/issue.net\",\"etc/os-release\",\"etc/update-motd.d/10-uname\",\"lib\",\"lib64\",\"sbin\",\"usr/lib/os-release\",\"usr/share/base-files/dot.bashrc\",\"usr/share/base-files/dot.profile\",\"usr/share/base-files/dot.profile.md5sums\",\"usr/share/base-files/info.dir\",\"usr/share/base-files/motd\",\"usr/share/base-files/profile\",\"usr/share/base-files/profile.md5sums\",\"usr/share/base-files/staff-group-for-usr-local\",\"usr/share/common-licenses/Apache-2.0\",\"usr/share/common-licenses/Artistic\",\"usr/share/common-licenses/BSD\",\"usr/share/common-licenses/CC0-1.0\",\"usr/share/common-licenses/GFDL\",\"usr/share/common-licenses/GFDL-1.2\",\"usr/share/common-licenses/GFDL-1.3\",\"usr/share/common-licenses/GPL\",\"usr/share/common-licenses/GPL-1\",\"usr/share/common-licenses/GPL-2\",\"usr/share/common-licenses/GPL-3\",\"usr/share/common-licenses/LGPL\",\"usr/share/common-licenses/LGPL-2\",\"usr/share/common-licenses/LGPL-2.1\",\"usr/share/common-licenses/LGPL-3\",\"usr/share/common-licenses/MPL-1.1\",\"usr/share/common-licenses/MPL-2.0\",\"usr/share/doc/base-files/FAQ\",\"usr/share/doc/base-files/NEWS.Debian.gz\",\"usr/share/doc/base-files/README\",\"usr/share/doc/base-files/README.FHS\",\"usr/share/doc/base-files/changelog.gz\",\"usr/share/doc/base-files/copyright\",\"usr/share/lintian/overrides/base-files\"]"
+              "files": "[\"bin\",\"etc/debian_version\",\"etc/dpkg/origins/debian\",\"etc/host.conf\",\"etc/issue\",\"etc/issue.net\",\"etc/os-release\",\"etc/update-motd.d/10-uname\",\"lib\",\"lib64\",\"sbin\",\"usr/lib/os-release\",\"usr/share/base-files/dot.bashrc\",\"usr/share/base-files/dot.profile\",\"usr/share/base-files/dot.profile.md5sums\",\"usr/share/base-files/info.dir\",\"usr/share/base-files/motd\",\"usr/share/base-files/profile\",\"usr/share/base-files/profile.md5sums\",\"usr/share/base-files/staff-group-for-usr-local\",\"usr/share/common-licenses/AGPL-3.0\",\"usr/share/common-licenses/Apache-2.0\",\"usr/share/common-licenses/Artistic\",\"usr/share/common-licenses/Artistic-2.0\",\"usr/share/common-licenses/BSD\",\"usr/share/common-licenses/BSL-1.0\",\"usr/share/common-licenses/CC-BY-3.0\",\"usr/share/common-licenses/CC-BY-4.0\",\"usr/share/common-licenses/CC-BY-SA-3.0\",\"usr/share/common-licenses/CC-BY-SA-4.0\",\"usr/share/common-licenses/CC0-1.0\",\"usr/share/common-licenses/GFDL\",\"usr/share/common-licenses/GFDL-1.1\",\"usr/share/common-licenses/GFDL-1.2\",\"usr/share/common-licenses/GFDL-1.3\",\"usr/share/common-licenses/GPL\",\"usr/share/common-licenses/GPL-1\",\"usr/share/common-licenses/GPL-2\",\"usr/share/common-licenses/GPL-3\",\"usr/share/common-licenses/LGPL\",\"usr/share/common-licenses/LGPL-2\",\"usr/share/common-licenses/LGPL-2.1\",\"usr/share/common-licenses/LGPL-3\",\"usr/share/common-licenses/MPL-1.1\",\"usr/share/common-licenses/MPL-2.0\",\"usr/share/common-licenses/OFL-1.1\",\"usr/share/doc/base-files/FAQ\",\"usr/share/doc/base-files/NEWS.Debian.gz\",\"usr/share/doc/base-files/README\",\"usr/share/doc/base-files/README.FHS\",\"usr/share/doc/base-files/changelog.gz\",\"usr/share/doc/base-files/copyright\",\"usr/share/lintian/overrides/base-files\"]"
             }
           },
-          "trixie_base-files-amd64_13.8-deb13u4": {
+          "trixie_base-files-amd64_13.8-deb13u7": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_base-files-amd64_13.8-deb13u4",
+              "target_name": "trixie_base-files-amd64_13.8-deb13u7",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/b/base-files/base-files_13.8+deb13u4_amd64.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/b/base-files/base-files_13.8+deb13u7_amd64.deb"
               ],
-              "sha256": "819e70a077c6b94d72c1385cc18a512446ded629499f7bb7d84d727977b67ad4",
+              "sha256": "fcd42bb5cb63f7bfc4326a92541247872206d60a192fdff65ca14eb83ed408b9",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
               "package_name": "base-files"
             }
           },
-          "trixie_base-files-amd64_13.8-deb13u4_mergedusr": {
+          "trixie_base-files-amd64_13.8-deb13u7_mergedusr": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
             "attributes": {
-              "target_name": "trixie_base-files-amd64_13.8-deb13u4_mergedusr",
+              "target_name": "trixie_base-files-amd64_13.8-deb13u7_mergedusr",
               "urls": [
-                "https://snapshot.debian.org/archive/debian/20260318T142916Z/pool/main/b/base-files/base-files_13.8+deb13u4_amd64.deb"
+                "https://snapshot.debian.org/archive/debian/20261028T204034Z/pool/main/b/base-files/base-files_13.8+deb13u7_amd64.deb"
               ],
-              "sha256": "819e70a077c6b94d72c1385cc18a512446ded629499f7bb7d84d727977b67ad4",
+              "sha256": "fcd42bb5cb63f7bfc4326a92541247872206d60a192fdff65ca14eb83ed408b9",
               "mergedusr": true,
               "depends_on": [],
               "dep_filemaps": [],
@@ -1931,32 +1931,32 @@
     },
     "@@rules_distroless+//apt:extensions.bzl%apt": {
       "formats": {
-        "trixie-security/main/amd64/Contents/https://snapshot.debian.org/archive/debian-security/20260318T142916Z": ".gz",
-        "trixie-security/main/amd64/Packages/https://snapshot.debian.org/archive/debian-security/20260318T142916Z": ".xz",
-        "trixie-security/main/arm64/Contents/https://snapshot.debian.org/archive/debian-security/20260318T142916Z": ".gz",
-        "trixie-security/main/arm64/Packages/https://snapshot.debian.org/archive/debian-security/20260318T142916Z": ".xz",
-        "trixie-updates/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z": ".gz",
-        "trixie-updates/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z": ".xz",
-        "trixie-updates/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z": ".gz",
-        "trixie-updates/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z": ".xz",
-        "trixie/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z": ".gz",
-        "trixie/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z": ".xz",
-        "trixie/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z": ".gz",
-        "trixie/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z": ".xz"
+        "trixie-security/main/amd64/Contents/https://snapshot.debian.org/archive/debian-security/20261028T204034Z": ".gz",
+        "trixie-security/main/amd64/Packages/https://snapshot.debian.org/archive/debian-security/20261028T204034Z": ".xz",
+        "trixie-security/main/arm64/Contents/https://snapshot.debian.org/archive/debian-security/20261028T204034Z": ".gz",
+        "trixie-security/main/arm64/Packages/https://snapshot.debian.org/archive/debian-security/20261028T204034Z": ".xz",
+        "trixie-updates/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20261028T204034Z": ".gz",
+        "trixie-updates/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20261028T204034Z": ".xz",
+        "trixie-updates/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20261028T204034Z": ".gz",
+        "trixie-updates/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20261028T204034Z": ".xz",
+        "trixie/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20261028T204034Z": ".gz",
+        "trixie/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20261028T204034Z": ".xz",
+        "trixie/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20261028T204034Z": ".gz",
+        "trixie/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20261028T204034Z": ".xz"
       },
       "indices": {
-        "trixie-security/main/amd64/Contents/https://snapshot.debian.org/archive/debian-security/20260318T142916Z": "sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=",
-        "trixie-security/main/amd64/Packages/https://snapshot.debian.org/archive/debian-security/20260318T142916Z": "sha256-mXEc9biqeEc9Oteg+iAqX55hPMQ1RdC2X0lXEbul1Lo=",
-        "trixie-security/main/arm64/Contents/https://snapshot.debian.org/archive/debian-security/20260318T142916Z": "sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=",
-        "trixie-security/main/arm64/Packages/https://snapshot.debian.org/archive/debian-security/20260318T142916Z": "sha256-2ym4FRJBtiOTCC5PQbeuqdg7qG3I01sISUwO6kqSN3Y=",
-        "trixie-updates/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z": "sha256-1jmA+tFv6YSYfEdijI1Y/mqiLE/CbwkzexLGNBfS8N0=",
-        "trixie-updates/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z": "sha256-qQxhV5al34PTyNtPzhezVaS9Qal6yOEmScqW+sy+bKs=",
-        "trixie-updates/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z": "sha256-yY6kbHuy46+Kt/2yh4NTrgbEvfE+jCvkAVgyyKB8rOQ=",
-        "trixie-updates/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z": "sha256-wZkX9Iy2Os0uM0Nn4rSxi818XACw6wL242nlMV9D5j4=",
-        "trixie/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z": "sha256-JHACxNTCxHpJtZzr4ccx23J+ITpPkTq5JXePYTnB8YM=",
-        "trixie/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z": "sha256-tB5Lm9ecoAmv5/symxa8MF8cesq56mzk9XFSbt6SZUc=",
-        "trixie/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20260318T142916Z": "sha256-ntCie/YQHWp0jJ5bQj0sct9pE82lc9I+jDfv8KY2STs=",
-        "trixie/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20260318T142916Z": "sha256-JlON5xRL7lJy0WGuzZZtO9Or9vOhetLYIV36a5e3BCA="
+        "trixie-security/main/amd64/Contents/https://snapshot.debian.org/archive/debian-security/20261028T204034Z": "sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=",
+        "trixie-security/main/amd64/Packages/https://snapshot.debian.org/archive/debian-security/20261028T204034Z": "sha256-LBpalvTCh8IOC1dLgtR+TS0Sfo3fQnIyPhwlMPULCT8=",
+        "trixie-security/main/arm64/Contents/https://snapshot.debian.org/archive/debian-security/20261028T204034Z": "sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=",
+        "trixie-security/main/arm64/Packages/https://snapshot.debian.org/archive/debian-security/20261028T204034Z": "sha256-IcsvKQEftPlGWdp5mTmNULzAWDlTo+Ahmn+/6hlIFfg=",
+        "trixie-updates/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20261028T204034Z": "sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=",
+        "trixie-updates/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20261028T204034Z": "sha256-I1+4WUkNRcFJC8aYNr0mB8moVXtinrwzurEAjttunm0=",
+        "trixie-updates/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20261028T204034Z": "sha256-9h8nvRfeVGJkqlj0DzqvqscCHg72nBf2sbTNdmSgN+w=",
+        "trixie-updates/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20261028T204034Z": "sha256-I1+4WUkNRcFJC8aYNr0mB8moVXtinrwzurEAjttunm0=",
+        "trixie/main/amd64/Contents/https://snapshot.debian.org/archive/debian/20261028T204034Z": "sha256-PT5pMJCNsLU/eA3XOXuVieJ9uItZIFwzGnbXbWcm5Bk=",
+        "trixie/main/amd64/Packages/https://snapshot.debian.org/archive/debian/20261028T204034Z": "sha256-d3jT4/MDt924zg/nyNV0c6B2xr8ujyQfdUIdI5Y1JJg=",
+        "trixie/main/arm64/Contents/https://snapshot.debian.org/archive/debian/20261028T204034Z": "sha256-J22+1pFmTv/UvpFDX34NFVLwq2RcCqA5fem6WQDhO3Q=",
+        "trixie/main/arm64/Packages/https://snapshot.debian.org/archive/debian/20261028T204034Z": "sha256-vhazey90DwZuqT011W8E+U1jaT5aPrQhsFK/hvrnW80="
       }
     },
     "@@rules_go+//go:extensions.bzl%go_sdk": {
