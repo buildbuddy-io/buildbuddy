@@ -8,15 +8,19 @@ import (
 	"testing"
 
 	"github.com/bazelbuild/bazelisk/config"
+	"github.com/bazelbuild/bazelisk/core"
 	"github.com/buildbuddy-io/buildbuddy/cli/signedrelease"
 	"github.com/stretchr/testify/require"
 )
 
-// fakeForkRepo "downloads" by writing a file to destDir/destFile.
-type fakeForkRepo struct{}
+// fakeForkRepo lists versions and "downloads" by writing a file to
+// destDir/destFile.
+type fakeForkRepo struct {
+	versions []string
+}
 
-func (fakeForkRepo) GetVersions(bazeliskHome, fork string) ([]string, error) {
-	return nil, nil
+func (f fakeForkRepo) GetVersions(bazeliskHome, fork string) ([]string, error) {
+	return f.versions, nil
 }
 
 func (fakeForkRepo) DownloadVersion(fork, version, destDir, destFile string, config config.Config) (string, error) {
@@ -71,6 +75,51 @@ func TestSignedForkRepo(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, dest, p)
 			require.FileExists(t, dest)
+		})
+	}
+}
+
+func TestSignedForkRepoLatest(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		fork      string
+		listed    []string
+		want      string
+		wantError string
+	}{
+		{name: "LatestIsSigned", fork: "buildbuddy-io", listed: []string{"5.0.498", "5.0.499", "5.0.500"}, want: "5.0.500"},
+		// An attacker serving the unsigned listing can't steer "latest" to
+		// an old, unsigned release.
+		{name: "OnlyUnsignedListed", fork: "buildbuddy-io", listed: []string{"5.0.497", "5.0.498"}, wantError: "no signed buildbuddy-io releases"},
+		{name: "UnsignedDroppedFromListing", fork: "buildbuddy-io", listed: []string{"5.0.499", "4.0.0", "garbage"}, want: "5.0.499"},
+		{name: "OtherForkUnfiltered", fork: "someone-else", listed: []string{"1.0.0", "2.0.0"}, want: "2.0.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var verified []string
+			r := &signedForkRepo{
+				ForkRepo: fakeForkRepo{versions: tc.listed},
+				verify: func(assetURL, path string) error {
+					verified = append(verified, assetURL)
+					return nil
+				},
+			}
+			repos := core.CreateRepositories(nil, r, nil, nil, false)
+
+			v, download, err := repos.ResolveVersion(t.TempDir(), tc.fork, "latest", config.Null())
+
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, v)
+			_, err = download(t.TempDir(), "bazel")
+			require.NoError(t, err)
+			if tc.fork == "buildbuddy-io" {
+				require.Len(t, verified, 1)
+			} else {
+				require.Empty(t, verified)
+			}
 		})
 	}
 }

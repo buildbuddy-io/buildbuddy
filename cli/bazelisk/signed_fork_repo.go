@@ -33,6 +33,28 @@ func newSignedForkRepo(inner core.ForkRepo) *signedForkRepo {
 	}
 }
 
+// GetVersions lists the fork's versions. Bazelisk only calls it to resolve
+// relative versions such as "buildbuddy-io/latest" from the (unsigned)
+// GitHub API, so for bb releases it drops versions older than
+// FirstSignedVersion: otherwise an attacker could steer "latest" to an old,
+// unsigned release. Explicitly pinned versions don't go through here.
+func (r *signedForkRepo) GetVersions(bazeliskHome, fork string) ([]string, error) {
+	all, err := r.ForkRepo.GetVersions(bazeliskHome, fork)
+	if err != nil || fork != bbFork {
+		return all, err
+	}
+	var signed []string
+	for _, v := range all {
+		if cmp, err := signedrelease.CompareVersions(v, signedrelease.FirstSignedVersion); err == nil && cmp >= 0 {
+			signed = append(signed, v)
+		}
+	}
+	if len(signed) == 0 {
+		return nil, fmt.Errorf("no signed %s releases (%s or later) found", bbFork, signedrelease.FirstSignedVersion)
+	}
+	return signed, nil
+}
+
 func (r *signedForkRepo) DownloadVersion(fork, version, destDir, destFile string, config config.Config) (string, error) {
 	p, err := r.ForkRepo.DownloadVersion(fork, version, destDir, destFile, config)
 	if err != nil {

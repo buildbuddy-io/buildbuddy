@@ -31,6 +31,7 @@ go_test(
     deps = [
         "//cli/signedrelease",
         "@com_github_bazelbuild_bazelisk//config",
+        "@com_github_bazelbuild_bazelisk//core:go_default_library",
         "@com_github_stretchr_testify//require",
     ],
 )
@@ -42,6 +43,7 @@ go_test(
     deps = [
         "//cli/signedrelease",
         "@com_github_bazelbuild_bazelisk//config",
+        "@com_github_bazelbuild_bazelisk//core:go_default_library",
         "@com_github_stretchr_testify//require",
     ],
 )
