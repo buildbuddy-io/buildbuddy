@@ -7,8 +7,8 @@ oci.pull(
 )
 oci.pull(
     name = "bazel_oci_image_base",
-    digest = "sha256:8bb82ccf73085b71159ce05d2cc6030cbaa927b403c04774f0b22f37ab4fd78a",
-    image = "gcr.io/distroless/java17-debian12",
+    digest = "sha256:38766681ac83ede3839728205ce4634dcc0e9ec037bfd04e39617cdd707fd258",
+    image = "gcr.io/distroless/java17-debian13",
     platforms = ["linux/amd64"],
 )
 oci.pull(
