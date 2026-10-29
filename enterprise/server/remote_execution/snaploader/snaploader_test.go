@@ -755,7 +755,7 @@ func TestGetSnapshot_CacheIsolation(t *testing.T) {
 	}
 }
 
-func TestGetSnapshot_SharedNamespace(t *testing.T) {
+func TestGetSnapshot_GenericSnapshotNamespace(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 	env := setupEnv(t)
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
@@ -766,8 +766,8 @@ func TestGetSnapshot_SharedNamespace(t *testing.T) {
 	require.NoError(t, err)
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
-	shared1 := snaploader.WithSharedNamespace(ctx1, env, "test-namespace")
-	shared2 := snaploader.WithSharedNamespace(ctx2, env, "test-namespace")
+	shared1 := snaploader.WithGenericSnapshotNamespace(ctx1, env)
+	shared2 := snaploader.WithGenericSnapshotNamespace(ctx2, env)
 	localOnly := &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly}
 	remote := &snaploader.GetSnapshotOptions{
 		SupportsRemoteChunks:   true,
@@ -800,16 +800,6 @@ func TestGetSnapshot_SharedNamespace(t *testing.T) {
 	_, err = loader.GetSnapshot(shared1, remoteKeys, remote)
 	require.True(t, status.IsNotFoundError(err), "want NotFound, got %v", err)
 	_, err = loader.GetSnapshot(shared2, remoteKeys, localOnly)
-	require.Error(t, err)
-
-	// An invalid namespace falls back to the group's own namespace.
-	invalid1 := snaploader.WithSharedNamespace(ctx1, env, "")
-	invalid2 := snaploader.WithSharedNamespace(ctx2, env, "")
-	invalidKeys := keysWithInstanceName(t, ctx1, loader, "invalid")
-	require.NoError(t, loader.CacheSnapshot(invalid1, invalidKeys.GetBranchKey(), makeFakeSnapshot(t, testfs.MakeTempDir(t), false /*=remoteEnabled*/, nil, "")))
-	_, err = loader.GetSnapshot(ctx1, invalidKeys, localOnly)
-	require.NoError(t, err)
-	_, err = loader.GetSnapshot(invalid2, invalidKeys, localOnly)
 	require.Error(t, err)
 }
 

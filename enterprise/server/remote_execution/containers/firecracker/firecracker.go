@@ -53,6 +53,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
@@ -102,7 +103,7 @@ var (
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
 	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
 	enableLinux6_18                       = flag.Bool("executor.firecracker_enable_linux_6_18", false, "Enable the 6.18 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
-	genericSnapshotCPUs                   = flag.Slice("executor.firecracker_generic_snapshot_cpus", []int64{}, "CPU counts of the generic snapshot shapes, each with 2.5GB of memory per CPU, to build on startup. Actions with use-generic-snapshot are rounded up to the smallest shape that fits.")
+	enableGenericSnapshots                = flag.Bool("executor.firecracker_enable_generic_snapshots", false, "Build generic snapshots on startup for each shape that fits on the executor. Actions with use-generic-snapshot are rounded up to the smallest shape that fits them.")
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
@@ -556,7 +557,9 @@ type Provider struct {
 	genericRebuilds singleflight.Group[string, struct{}]
 }
 
-func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, error) {
+// NewProvider returns a Firecracker provider. It builds any generic snapshots
+// before returning, so the executor doesn't accept tasks until they're ready.
+func NewProvider(ctx context.Context, env environment.Env, buildRoot, cacheRoot, cgroupParent string) (*Provider, error) {
 	executorConfig, err := GetExecutorConfig(env.GetServerContext(), buildRoot, cacheRoot)
 	if err != nil {
 		return nil, err
@@ -596,14 +599,18 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 		}
 		hostResolvConf = string(b)
 	}
-	return &Provider{
+	p := &Provider{
 		env:                    env,
 		executorConfig:         executorConfig,
 		externalNetworkPool:    externalNetworkPool,
 		localNetworkPool:       localNetworkPool,
 		marshalledDNSOverrides: dns,
 		hostResolvConf:         hostResolvConf,
-	}, nil
+	}
+	if err := p.buildGenericSnapshots(ctx, cgroupParent); err != nil {
+		return nil, status.WrapError(err, "build generic snapshots")
+	}
+	return p, nil
 }
 
 // vcpuCount returns the minimum whole number of vCPUs for a VM reserving
@@ -618,14 +625,21 @@ func vcpuCount(milliCPU int64) int64 {
 	return min(numCPUs, firecrackerMaxCPU)
 }
 
-// GenericSnapshotShape rounds size up to the smallest configured generic
-// snapshot shape, or returns nil if none fits.
+// genericSnapshotCPUs are the CPU counts of the generic snapshot shapes, each
+// with 2.5GB of memory per CPU.
+var genericSnapshotCPUs = []int64{1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16}
+
+// GenericSnapshotShape rounds size up to the smallest generic snapshot shape
+// that fits on the executor, or returns nil if none fits.
 func GenericSnapshotShape(size *scpb.TaskSize) *scpb.TaskSize {
 	if size == nil {
 		return nil
 	}
-	for _, cpus := range slices.Sorted(slices.Values(*genericSnapshotCPUs)) {
+	for _, cpus := range genericSnapshotCPUs {
 		memory := ((cpus*int64(tasksize.ComputeUnitsToRAMBytes) + mib - 1) / mib) * mib
+		if cpus*1000 > resources.GetAllocatedCPUMillis() || memory > resources.GetAllocatedRAMBytes() {
+			return nil
+		}
 		if cpus*1000 < size.GetEstimatedMilliCpu() || memory < size.GetEstimatedMemoryBytes() {
 			continue
 		}
@@ -653,10 +667,11 @@ func genericVMConfig(shape *scpb.TaskSize, networkMode fcpb.NetworkMode) *fcpb.V
 	}
 }
 
-// BuildGenericSnapshots builds a generic snapshot for each configured shape.
-// Shapes that fail to build are skipped, so their tasks boot normally.
-func (p *Provider) BuildGenericSnapshots(ctx context.Context, cgroupParent string) error {
-	if len(*genericSnapshotCPUs) == 0 {
+// buildGenericSnapshots builds a generic snapshot for each shape that fits on
+// the executor. Shapes that fail to build are skipped, so their tasks boot
+// normally.
+func (p *Provider) buildGenericSnapshots(ctx context.Context, cgroupParent string) error {
+	if !*enableGenericSnapshots {
 		return nil
 	}
 	if !*snaputil.EnableLocalSnapshotSharing {
@@ -664,10 +679,12 @@ func (p *Provider) BuildGenericSnapshots(ctx context.Context, cgroupParent strin
 	}
 	var eg errgroup.Group
 	eg.SetLimit(4)
-	// Deduplicate so that no two builds write the same snapshot.
-	for _, cpus := range slices.Compact(slices.Sorted(slices.Values(*genericSnapshotCPUs))) {
+	for _, cpus := range genericSnapshotCPUs {
+		shape := GenericSnapshotShape(&scpb.TaskSize{EstimatedMilliCpu: cpus * 1000})
+		if shape == nil {
+			break
+		}
 		eg.Go(func() error {
-			shape := GenericSnapshotShape(&scpb.TaskSize{EstimatedMilliCpu: cpus * 1000})
 			vmConfig := genericVMConfig(shape, fcpb.NetworkMode_NETWORK_MODE_OFF)
 			vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
 			p.buildGenericSnapshot(ctx, cgroupParent, nil /*=experiments*/, vmConfig)
@@ -752,8 +769,8 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	return c, nil
 }
 
-// newFromGenericSnapshot returns a container that starts from this
-// executor's generic snapshot, or an error if the task can't use one.
+// newFromGenericSnapshot returns a container that starts from one of this
+// executor's generic snapshots, or an error if the task can't use one.
 func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.Init) (*FirecrackerContainer, error) {
 	props := args.Props
 	enableLogging := platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs"))
@@ -777,8 +794,8 @@ func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.I
 	vmConfig := genericVMConfig(shape, networkMode)
 	vmConfig.ScratchDiskSizeMb = int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6)
 	vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
-	// The guest's memory size limits the VM, so ignore the host memory limit,
-	// which is computed from the smaller scheduled size.
+	// The host memory limit is computed from the scheduled size, which the
+	// guest's memory exceeds, so the guest enforces that size instead.
 	cgroupSettings := args.Task.GetSchedulingMetadata().GetCgroupSettings().CloneVT()
 	if cgroupSettings != nil {
 		cgroupSettings.MemoryLimitBytes = nil
@@ -786,6 +803,7 @@ func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.I
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), ContainerOpts{
 		VMConfiguration:        vmConfig,
 		GenericSnapshot:        true,
+		GuestMemoryLimitBytes:  sizeEstimate.GetEstimatedMemoryBytes(),
 		ContainerImage:         props.ContainerImage,
 		User:                   props.DockerUser,
 		ActionWorkingDirectory: args.WorkDir,
@@ -865,7 +883,8 @@ type FirecrackerContainer struct {
 	// genericSnapshot is set if the VM boots without a container root, which
 	// attachContainerRoot adds later. This lets one snapshot of the booted VM
 	// serve any container image.
-	genericSnapshot bool
+	genericSnapshot       bool
+	guestMemoryLimitBytes int64
 
 	// TODO: Cleanup after remote container image reads/writes are fully rolled out.
 	// remoteContainerImageAccess is resolved once per container so the remote
@@ -996,6 +1015,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	c := &FirecrackerContainer{
 		vmConfig:               opts.VMConfiguration.CloneVT(),
 		genericSnapshot:        opts.GenericSnapshot,
+		guestMemoryLimitBytes:  opts.GuestMemoryLimitBytes,
 		executorConfig:         opts.ExecutorConfig,
 		marshalledDNSOverrides: opts.MarshalledDNSOverrides,
 		hostResolvConf:         opts.HostResolvConf,
@@ -2547,9 +2567,6 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	return err
 }
 
-// GenericSnapshotNamespace is the executor-wide snapshot namespace for generic snapshots.
-const GenericSnapshotNamespace = "firecracker-generic-snapshots"
-
 // genericSnapshots is the set of generic snapshots built by this executor,
 // keyed by snapshot key configuration hash (string) with struct{} values.
 // Generic VMs with other configurations boot from scratch.
@@ -2673,7 +2690,7 @@ func (c *FirecrackerContainer) genericSnapshotCtx(ctx context.Context) context.C
 	if !c.genericSnapshot {
 		return ctx
 	}
-	return snaploader.WithSharedNamespace(ctx, c.env, GenericSnapshotNamespace)
+	return snaploader.WithGenericSnapshotNamespace(ctx, c.env)
 }
 
 func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
@@ -2714,6 +2731,7 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 		Entropy:                  entropy,
 		MountContainerRoot:       true,
 		ContainerRootSizeBytes:   rootSizeBytes,
+		MemoryLimitBytes:         c.guestMemoryLimitBytes,
 		ClearArpCache:            true,
 		UnixTimestampNanoseconds: time.Now().UnixNano(),
 	})

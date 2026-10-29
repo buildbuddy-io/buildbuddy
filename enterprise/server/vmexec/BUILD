@@ -12,9 +12,11 @@ go_library(
         "@platforms//os:linux",
     ],
     deps = [
+        "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/util/vsock",
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//proto:vmexec_go_proto",
         "//server/remote_cache/digest",
         "//server/util/healthcheck",

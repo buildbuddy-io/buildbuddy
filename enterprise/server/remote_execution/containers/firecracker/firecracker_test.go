@@ -173,7 +173,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// which will negatively affect customer experience. Be careful!
 	// Compatible change: existing snapshots never set the new InitializeRequest fields.
 	const (
-		expectedHash    = "6dfddcfafca04678d1c533dc82d9f1577f0137394a9d0598ab374d0fe0153543"
+		expectedHash    = "60eb684442d85a4b4791ce76c68650000efff66ed6770b0d5c606986f0157aa2"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -5153,7 +5153,7 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string) {
 	cfg := getExecutorConfig(t)
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
-	genericSnapshotCtx := snaploader.WithSharedNamespace(context.Background(), env, firecracker.GenericSnapshotNamespace)
+	genericSnapshotCtx := snaploader.WithGenericSnapshotNamespace(context.Background(), env)
 	vmConfig := func(cpus int64, mode fcpb.NetworkMode) *fcpb.VMConfiguration {
 		return &fcpb.VMConfiguration{
 			NumCpus: cpus, MemSizeMb: (cpus*2_500_000_000 + mib - 1) / mib,
@@ -5172,7 +5172,7 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string) {
 		Experiments:    experiments,
 	}
 	newContainer := func(t *testing.T, ctx context.Context, image, user string, cpus int64, mode fcpb.NetworkMode) *firecracker.FirecrackerContainer {
-		opts := firecracker.ContainerOpts{ContainerImage: image, User: user, ExecutorConfig: cfg, VMConfiguration: vmConfig(cpus, mode), GenericSnapshot: true}
+		opts := firecracker.ContainerOpts{ContainerImage: image, User: user, ExecutorConfig: cfg, VMConfiguration: vmConfig(cpus, mode), GenericSnapshot: true, GuestMemoryLimitBytes: 1 << 30}
 		c, err := firecracker.NewContainer(ctx, env, task, opts)
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, c.Remove(context.Background())) })
@@ -5186,7 +5186,8 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string) {
 		c := newContainer(t, ctx, image, user, cpus, mode)
 		command := `test ! -e /tmp/root-marker; touch /tmp/root-marker; test ! -e stale; cp input output; touch stale; test -d /proc/self; test -c /dev/null; test -s /etc/hosts; cat /proc/sys/kernel/random/boot_id; /bin/true`
 		if image == ubuntuImage {
-			// Creating a user namespace fails if the root is merely chrooted.
+			// If `unshare` is available in the image, then test creating a user namespace.
+			// This could fail if we don't properly mount the rootfs.
 			command += "; test -e /etc/lsb-release; unshare -Ur true"
 		} else {
 			command += "; test ! -e /etc/lsb-release"
@@ -5194,6 +5195,7 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string) {
 		command += fmt.Sprintf("; test \"$(grep -c '^processor' /proc/cpuinfo)\" -eq %d", cpus)
 		// Generic VMs always have a network interface.
 		command += `; test -n "$(awk '$2 == "00000000"' /proc/net/route)"`
+		command += `; test "$(cat /sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/memory.max)" = 1073741824`
 		if user != "" {
 			command = "id -u; touch /tmp/user-marker; /bin/true"
 		}
@@ -5264,6 +5266,19 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string) {
 		require.NoError(t, err)
 		assert.Equal(t, genericSnapshotID, run(t, otherCtx, busyboxImage, "", 1, off).GetVMMetadata().GetSnapshotId())
 	})
+	t.Run("memory limit", func(t *testing.T) {
+		// The guest has about 2.3GB, but commands are limited to 1GiB.
+		c := newContainer(t, ctx, busyboxImage, "", 1, off)
+		require.NoError(t, c.Create(ctx, testfs.MakeTempDir(t)))
+		command := "dd if=/dev/zero of=/dev/null bs=512M count=1 2>/dev/null; echo $?; dd if=/dev/zero of=/dev/null bs=1536M count=1 2>/dev/null; echo $?"
+		result := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "-c", command}}, nil)
+		require.NoError(t, result.Error, "%s", result.AuxiliaryLogs)
+		assert.Equal(t, "0\n137\n", string(result.Stdout), "%s", result.Stderr)
+		// The OOM kill happens inside the guest, so the VM keeps working.
+		result = c.Exec(ctx, &repb.Command{Arguments: []string{"true"}}, nil)
+		require.NoError(t, result.Error)
+		require.Equal(t, 0, result.ExitCode)
+	})
 	// Without a usable snapshot, generic VMs boot from scratch.
 	runFromScratch := func(t *testing.T, cpus int64) {
 		c := newContainer(t, ctx, busyboxImage, "", cpus, off)
@@ -5296,9 +5311,9 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 	require.NoError(b, firecracker.BuildGenericSnapshot(ctx, env, nil /*=experiments*/, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig}))
 	for _, generic := range []bool{false, true} {
 		b.Run(fmt.Sprintf("generic=%t", generic), func(b *testing.B) {
-			b.StopTimer()
 			var createTime, execTime time.Duration
-			for i := -1; i < b.N; i++ {
+			run := func() {
+				b.StopTimer()
 				workDir := testfs.MakeTempDir(b)
 				c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, firecracker.ContainerOpts{
 					ContainerImage: busyboxImage, ExecutorConfig: cfg,
@@ -5306,9 +5321,7 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 				})
 				require.NoError(b, err)
 				require.NoError(b, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false))
-				if i >= 0 {
-					b.StartTimer()
-				}
+				b.StartTimer()
 				start := time.Now()
 				err = c.Create(ctx, workDir)
 				created := time.Now()
@@ -5318,14 +5331,18 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 				}
 				result := c.Exec(ctx, &repb.Command{Arguments: []string{"/bin/true"}}, nil)
 				done := time.Now()
-				if i >= 0 {
-					b.StopTimer()
-					createTime += created.Sub(start)
-					execTime += done.Sub(created)
-				}
+				b.StopTimer()
+				createTime += created.Sub(start)
+				execTime += done.Sub(created)
 				require.NoError(b, c.Remove(ctx))
 				require.NoError(b, result.Error)
 				require.Equal(b, 0, result.ExitCode)
+				b.StartTimer()
+			}
+			run() // warmup
+			createTime, execTime = 0, 0
+			for b.Loop() {
+				run()
 			}
 			b.ReportMetric(float64(createTime.Microseconds())/float64(b.N), "create-us/op")
 			b.ReportMetric(float64(execTime.Microseconds())/float64(b.N), "exec-us/op")
@@ -5333,18 +5350,31 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 	}
 }
 
+// setExecutorSize sets the CPU and memory that the executor can allocate.
+func setExecutorSize(t *testing.T, milliCPU, memoryBytes int64) {
+	// Registered first so that it runs after the flags are restored.
+	t.Cleanup(func() { require.NoError(t, resources.Configure(true /*=snapshotSharingEnabled*/)) })
+	flags.Set(t, "executor.millicpu", milliCPU)
+	flags.Set(t, "executor.memory_bytes", memoryBytes)
+	require.NoError(t, resources.Configure(false /*=snapshotSharingEnabled*/))
+}
+
 func TestGenericSnapshotShape(t *testing.T) {
-	flags.Set(t, "executor.firecracker_generic_snapshot_cpus", []int64{16, 1, 2, 8})
 	require.Nil(t, firecracker.GenericSnapshotShape(nil))
-	for _, tc := range []struct{ cpu, memory, wantCPU int64 }{
-		{250, 200_000_000, 1}, {1000, 2_500_000_000, 1},
-		{1001, 200_000_000, 2}, {1000, 2385*mib + 1, 2},
-		{2001, 200_000_000, 8}, {7000, 20_000_000_000, 8},
-		{8001, 200_000_000, 16}, {1000, 19074*mib + 1, 16},
-		{16000, 40_000_000_000, 16},
-		{16001, 200_000_000, 0}, {1000, 38147*mib + 1, 0},
+	// The shape's memory is 2.5GB per CPU, rounded up to a whole MiB.
+	wantMemoryMiB := map[int64]int64{1: 2385, 2: 4769, 3: 7153, 8: 19074, 10: 23842, 16: 38147}
+	for _, tc := range []struct{ executorCPU, executorMemory, cpu, memory, wantCPU int64 }{
+		{64000, 64e9, 250, 200_000_000, 1}, {64000, 64e9, 1000, 2_500_000_000, 1},
+		{64000, 64e9, 1001, 200_000_000, 2}, {64000, 64e9, 1000, 2385*mib + 1, 2},
+		{64000, 64e9, 8001, 200_000_000, 10}, {64000, 64e9, 1000, 19074*mib + 1, 10},
+		{64000, 64e9, 14001, 200_000_000, 16}, {64000, 64e9, 16000, 40_000_000_000, 16},
+		{64000, 64e9, 16001, 200_000_000, 0}, {64000, 64e9, 1000, 38147*mib + 1, 0},
+		// Shapes larger than the executor aren't used.
+		{8000, 64e9, 7001, 200_000_000, 8}, {8000, 64e9, 8001, 200_000_000, 0},
+		{64000, 10e9, 2001, 200_000_000, 3}, {64000, 10e9, 3001, 200_000_000, 0},
 	} {
-		t.Run(fmt.Sprintf("cpu=%d/memory=%d", tc.cpu, tc.memory), func(t *testing.T) {
+		t.Run(fmt.Sprintf("executor=%d,%d/cpu=%d/memory=%d", tc.executorCPU, tc.executorMemory, tc.cpu, tc.memory), func(t *testing.T) {
+			setExecutorSize(t, tc.executorCPU, tc.executorMemory)
 			input := &scpb.TaskSize{EstimatedMilliCpu: tc.cpu, EstimatedMemoryBytes: tc.memory, EstimatedFreeDiskBytes: 1234}
 			original := input.CloneVT()
 			got := firecracker.GenericSnapshotShape(input)
@@ -5353,8 +5383,7 @@ func TestGenericSnapshotShape(t *testing.T) {
 				return
 			}
 			assert.Equal(t, tc.wantCPU*1000, got.GetEstimatedMilliCpu())
-			assert.GreaterOrEqual(t, got.GetEstimatedMemoryBytes(), tc.memory)
-			assert.Less(t, got.GetEstimatedMemoryBytes()-tc.wantCPU*2_500_000_000, int64(mib))
+			assert.Equal(t, wantMemoryMiB[tc.wantCPU]*mib, got.GetEstimatedMemoryBytes())
 			assert.Equal(t, int64(1234), got.GetEstimatedFreeDiskBytes())
 			assert.Empty(t, cmp.Diff(original, input, protocmp.Transform()))
 		})
@@ -5364,16 +5393,17 @@ func TestGenericSnapshotShape(t *testing.T) {
 func TestFirecrackerGenericSnapshotRebuild(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
-	flags.Set(t, "executor.firecracker_generic_snapshot_cpus", []int64{1})
+	flags.Set(t, "executor.firecracker_enable_generic_snapshots", true)
+	// Only build the 1 CPU shape.
+	setExecutorSize(t, 1000, 64e9)
 	env := getTestEnv(ctx, t, envOpts{})
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(auth)
 	ctx, err := auth.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
 	root := executorRootDir(t)
-	p, err := firecracker.NewProvider(env, filepath.Join(root, "build"), filepath.Join(root, "cache"))
+	p, err := firecracker.NewProvider(ctx, env, filepath.Join(root, "build"), filepath.Join(root, "cache"), "")
 	require.NoError(t, err)
-	require.NoError(t, p.BuildGenericSnapshots(ctx, ""))
 
 	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 		{Name: platform.UseGenericSnapshotPropertyName, Value: "true"},
@@ -5406,7 +5436,7 @@ func TestFirecrackerGenericSnapshotRebuild(t *testing.T) {
 	genericHash := c.SnapshotKeySet().GetWriteKey().GetConfigurationHash()
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
-	genericSnapshotCtx := snaploader.WithSharedNamespace(context.Background(), env, firecracker.GenericSnapshotNamespace)
+	genericSnapshotCtx := snaploader.WithGenericSnapshotNamespace(context.Background(), env)
 	snap, err := loader.GetSnapshot(genericSnapshotCtx, c.SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
 	require.NoError(t, err)
 	chunks := snap.GetChunkedFiles()[0].GetChunks()

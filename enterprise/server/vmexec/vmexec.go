@@ -20,6 +20,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -36,6 +37,7 @@ import (
 	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 	gstatus "google.golang.org/grpc/status"
@@ -348,6 +350,11 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 			return nil, status.WrapError(err, "mount container root")
 		}
 	}
+	if req.GetMemoryLimitBytes() > 0 {
+		if err := limitTaskMemory(ctx, req.GetMemoryLimitBytes()); err != nil {
+			return nil, status.WrapError(err, "limit task memory")
+		}
+	}
 	if req.GetClearArpCache() {
 		if err := clearARPCache(); err != nil {
 			return nil, err
@@ -355,6 +362,23 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 		log.Debugf("Cleared ARP cache")
 	}
 	return &vmxpb.InitializeResponse{ContainerRootMounted: req.GetMountContainerRoot()}, nil
+}
+
+// limitTaskMemory moves this process into a cgroup limited to limitBytes, so
+// that commands started afterwards inherit the limit. The kernel never
+// OOM-kills init, so a command is killed instead.
+func limitTaskMemory(ctx context.Context, limitBytes int64) error {
+	dir := filepath.Join(cgroup.RootPath, "task")
+	if err := os.Mkdir(dir, 0755); err != nil && !os.IsExist(err) {
+		return err
+	}
+	if err := cgroup.EnableController(dir, "memory"); err != nil {
+		return err
+	}
+	if err := cgroup.Setup(ctx, dir, &scpb.CgroupSettings{MemoryLimitBytes: &limitBytes}, nil /*=blockDevice*/); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "cgroup.procs"), []byte(strconv.Itoa(os.Getpid())), 0)
 }
 
 func (x *execServer) Sync(ctx context.Context, req *vmxpb.SyncRequest) (*vmxpb.SyncResponse, error) {

@@ -45,14 +45,9 @@ func (p *pool) registerContainerProviders(ctx context.Context, providers map[pla
 	}
 
 	if executor.SupportsIsolation(platform.FirecrackerContainerType) {
-		firecrackerProvider, err := firecracker.NewProvider(p.env, *rootDirectory, p.cacheRoot)
+		firecrackerProvider, err := firecracker.NewProvider(ctx, p.env, *rootDirectory, p.cacheRoot, p.cgroupParent)
 		if err != nil {
 			return status.FailedPreconditionErrorf("Failed to initialize firecracker container provider: %s", err)
-		}
-		// Build these before the executor registers, so it doesn't accept
-		// tasks until they're ready.
-		if err := firecrackerProvider.BuildGenericSnapshots(ctx, p.cgroupParent); err != nil {
-			return status.WrapError(err, "build generic snapshots")
 		}
 		providers[platform.FirecrackerContainerType] = firecrackerProvider
 	}

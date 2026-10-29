@@ -76,6 +76,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/digest",
+        "//server/resources",
         "//server/util/background",
         "//server/util/disk",
         "//server/util/error_util",

@@ -24,6 +24,10 @@ type ContainerOpts struct {
 	// so it isn't saved in snapshots.
 	GenericSnapshot bool
 
+	// GuestMemoryLimitBytes limits the memory of commands run inside the VM.
+	// This value is used to configure the cgroup memory.max value if set.
+	GuestMemoryLimitBytes int64
+
 	// OverrideSnapshotKey is an optional snapshot key to resume from, which
 	// overrides the snapshot key that is normally computed from task platform
 	// properties. If it is not found in cache, then an error will be returned

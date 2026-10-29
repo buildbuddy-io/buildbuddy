@@ -289,7 +289,7 @@ func SnapshotVersionKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
 }
 
 func snapshotDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey, remote bool, snapshotID string) string {
-	gid, err := groupID(ctx, env)
+	gid, err := getCacheNamespace(ctx, env)
 	if err != nil {
 		gid = fmt.Sprintf("<error: %s>", err)
 	}
@@ -538,7 +538,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	}
 	// Remote manifests belong to the caller's group, so they must not be
 	// written into a shared namespace.
-	if isSharedNamespace(ctx) {
+	if isGenericSnapshotNamespace(ctx) {
 		return nil, snaputil.ChunkSourceUnmapped, status.NotFoundErrorf("local manifest not found in shared namespace")
 	}
 
@@ -639,7 +639,7 @@ func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifest
 func (l *FileCacheLoader) GetLocalManifest(ctx context.Context, key *fcpb.SnapshotKey, supportsRemoteFallback bool) (*fcpb.SnapshotManifest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	gid, err := groupID(ctx, l.env)
+	gid, err := getCacheNamespace(ctx, l.env)
 	if err != nil {
 		return nil, err
 	}
@@ -815,7 +815,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	if key == nil {
 		return status.InvalidArgumentErrorf("key required to cache snapshot")
 	}
-	if isSharedNamespace(ctx) && opts.CacheSnapshotRemotely {
+	if isGenericSnapshotNamespace(ctx) && opts.CacheSnapshotRemotely {
 		return status.InvalidArgumentError("snapshots in a shared namespace can't be cached remotely")
 	}
 
@@ -865,7 +865,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				// file because it is costly. Because the runner ID is in the key
 				// when snapshot sharing is disabled,  we don't need to worry about
 				// multiple runners trying to access the same key simultaneously
-				gid, err := groupID(ctx, l.env)
+				gid, err := getCacheNamespace(ctx, l.env)
 				if err != nil {
 					return err
 				}
@@ -961,7 +961,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 }
 
 func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.SnapshotKey, manifestACResult *repb.ActionResult, snapshotID string, writeUniversal bool) error {
-	gid, err := groupID(ctx, l.env)
+	gid, err := getCacheNamespace(ctx, l.env)
 	if err != nil {
 		return err
 	}
@@ -1516,28 +1516,26 @@ func hashStrings(strs ...string) string {
 	return hash.String(out.String())
 }
 
-type sharedNamespaceKey struct{}
+const genericSnapshotNamespace = "firecracker-generic-snapshots"
 
-// WithSharedNamespace stores and reads snapshots in an executor-wide namespace
-// instead of the authenticated group's. Snapshots in it are local-only. Only
-// use it for snapshots that contain no group data.
-func WithSharedNamespace(ctx context.Context, env environment.Env, namespace string) context.Context {
-	sharedCtx := env.GetFileCache().WithSharedDirectory(ctx, namespace)
-	if sharedCtx == ctx {
-		// The filecache rejected the name, so don't share the keys either.
-		return ctx
-	}
-	return context.WithValue(sharedCtx, sharedNamespaceKey{}, namespace)
+type genericSnapshotNamespaceKey struct{}
+
+// WithGenericSnapshotNamespace stores and reads snapshots in an executor-wide
+// namespace for generic snapshots instead of the authenticated group's.
+// Snapshots in it are local-only and must contain no group data.
+func WithGenericSnapshotNamespace(ctx context.Context, env environment.Env) context.Context {
+	ctx = env.GetFileCache().WithSharedDirectory(ctx, genericSnapshotNamespace)
+	return context.WithValue(ctx, genericSnapshotNamespaceKey{}, true)
 }
 
-func isSharedNamespace(ctx context.Context) bool {
-	_, ok := ctx.Value(sharedNamespaceKey{}).(string)
-	return ok
+func isGenericSnapshotNamespace(ctx context.Context) bool {
+	return ctx.Value(genericSnapshotNamespaceKey{}) != nil
 }
 
-func groupID(ctx context.Context, env environment.Env) (string, error) {
-	if namespace, ok := ctx.Value(sharedNamespaceKey{}).(string); ok {
-		return "_SHARED_" + namespace, nil
+// getCacheNamespace returns the namespace that snapshot keys are stored in.
+func getCacheNamespace(ctx context.Context, env environment.Env) (string, error) {
+	if isGenericSnapshotNamespace(ctx) {
+		return "_SHARED_" + genericSnapshotNamespace, nil
 	}
 	var gid string
 	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
