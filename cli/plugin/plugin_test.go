@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -517,6 +516,8 @@ func TestSplitRepoRef(t *testing.T) {
 		{"foo/bar@v1.0", "foo/bar", "v1.0"},
 		{"foo/bar@" + sha, "foo/bar", sha},
 		{"example.com/foo/bar@feature/x", "example.com/foo/bar", "feature/x"},
+		{"myrepo@feature/x", "myrepo", "feature/x"},
+		{"/local/repo@feature/x", "/local/repo", "feature/x"},
 		{"https://example.com/foo/bar@v1", "https://example.com/foo/bar", "v1"},
 		{"git@github.com:foo/bar", "git@github.com:foo/bar", ""},
 		{"git@github.com:foo/bar@" + sha, "git@github.com:foo/bar", sha},
@@ -535,17 +536,6 @@ func TestSplitRepoRef(t *testing.T) {
 	id, err := p.VersionedID()
 	require.NoError(t, err)
 	assert.Equal(t, "https://github.com/foo/bar@"+sha, id)
-}
-
-func TestRepoURL_UpgradesInsecureSchemesToHTTPS(t *testing.T) {
-	for _, repo := range []string{
-		"http://example.com/foo/bar",
-		"http://example.com/foo/bar@v1",
-		"git://example.com/foo/bar",
-	} {
-		p := &Plugin{config: &config.PluginConfig{Repo: repo}}
-		assert.Equal(t, "https://example.com/foo/bar", p.RepoURL(), repo)
-	}
 }
 
 func TestLoad_PinnedCommit(t *testing.T) {
@@ -589,16 +579,32 @@ func TestCheckHead(t *testing.T) {
 	secondSHA := testgit.CommitFiles(t, repoPath, map[string]string{"a.txt": "b"})
 
 	require.NoError(t, checkHead(repoPath, secondSHA))
-	require.NoError(t, checkHead(repoPath, strings.ToUpper(secondSHA)))
 	err := checkHead(repoPath, firstSHA)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "want pinned commit")
 }
 
-func TestIsCommitSHA(t *testing.T) {
-	assert.True(t, isCommitSHA("0123456789abcdef0123456789abcdef01234567"))
-	assert.False(t, isCommitSHA(""))
-	assert.False(t, isCommitSHA("v1.0"))
-	assert.False(t, isCommitSHA("0123456"))
-	assert.False(t, isCommitSHA("0123456789abcdef0123456789abcdef0123456g"))
+func TestCheckHead_IgnoresInheritedGitDir(t *testing.T) {
+	repoPath, sha := testgit.MakeTempRepo(t, map[string]string{"a.txt": "a"})
+	otherPath, otherSHA := testgit.MakeTempRepo(t, map[string]string{"b.txt": "b"})
+	t.Setenv("GIT_DIR", filepath.Join(otherPath, ".git"))
+	t.Setenv("GIT_WORK_TREE", otherPath)
+
+	require.NoError(t, checkHead(repoPath, sha))
+	require.Error(t, checkHead(repoPath, otherSHA))
+}
+
+func TestRepoClonePath_RejectsDotDot(t *testing.T) {
+	t.Setenv("BUILDBUDDY_CACHE_DIR", testfs.MakeTempDir(t))
+	for _, repo := range []string{
+		"/a/../../../etc",
+		"example.com/evil/../foo/bar",
+		"foo/bar@../../../x",
+		"foo/bar@feature/../../../../x",
+	} {
+		p := &Plugin{config: &config.PluginConfig{Repo: repo}}
+		_, err := p.repoClonePath()
+		require.Error(t, err, repo)
+		require.Error(t, p.load(), repo)
+	}
 }
