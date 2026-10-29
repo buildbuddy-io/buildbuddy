@@ -139,7 +139,13 @@ func createRepositories(bazeliskConf config.Config) *core.Repositories {
 	config := core.MakeDefaultConfig()
 	gitHub := repositories.CreateGitHubRepo(config.Get("BAZELISK_GITHUB_TOKEN"))
 	// Fetch LTS releases & candidates, rolling releases and Bazel-at-commits from GCS, forks from GitHub.
-	return core.CreateRepositories(gcs, gitHub, gcs, gcs, true)
+	// Releases are checked against Bazel's release signing key.
+	releases, err := newVerifyingReleaseRepo(gcs)
+	if err != nil {
+		// The key is embedded, so this can only fail on a programming error.
+		panic(err)
+	}
+	return core.CreateRepositories(releases, gitHub, gcs, releases, true)
 }
 
 func getBazeliskHome(bazeliskConf config.Config) (string, error) {
