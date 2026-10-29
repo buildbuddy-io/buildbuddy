@@ -855,6 +855,9 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	c.vmConfig.HostKernelVersion = c.executorConfig.HostKernelVersion
 	c.vmConfig.FirecrackerVersion = c.executorConfig.FirecrackerVersion
 	c.vmConfig.GuestApiVersion = c.executorConfig.GuestAPIVersion
+	if execution_experiments.FirecrackerSnapshotKeyIncludesContainerImage.Get(ctx) {
+		c.vmConfig.ContainerImage = opts.ContainerImage
+	}
 
 	if opts.ForceVMIdx != 0 {
 		c.vmIdx = opts.ForceVMIdx
