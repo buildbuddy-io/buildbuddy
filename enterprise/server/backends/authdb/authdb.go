@@ -62,7 +62,7 @@ const (
 	// bounds how long a newly created key can be rejected if its first lookup
 	// hit a read replica that didn't have it yet. Misses aren't re-checked on
 	// the primary, so that invalid keys never add load there.
-	invalidAPIKeyCacheTTL = 30 * time.Second
+	invalidAPIKeyCacheTTL = 10 * time.Second
 )
 
 var (

@@ -494,7 +494,7 @@ func TestInvalidAPIKeyCache(t *testing.T) {
 
 			if tc.enabled {
 				// Still rejected within the TTL.
-				fakeClock.Advance(29 * time.Second)
+				fakeClock.Advance(9 * time.Second)
 				requireInvalid()
 				// Accepted once the negative entry expires.
 				fakeClock.Advance(2 * time.Second)
