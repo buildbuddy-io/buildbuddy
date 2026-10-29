@@ -30,7 +30,6 @@ install_buildbuddy_cli() (
 
   echo >&2 "Downloading $latest_binary_url"
   curl --proto '=https' --tlsv1.2 -fSL "$latest_binary_url" -o "$tempfile"
-  # A same-host .sha256 detects corruption, not a malicious host.
   checksum=$(curl --proto '=https' --tlsv1.2 -fsSL "$latest_binary_url.sha256")
   checksum=${checksum%$'\r'}
   if ! read -r expected_hash checksum_filename checksum_extra <<< "$checksum" ||
