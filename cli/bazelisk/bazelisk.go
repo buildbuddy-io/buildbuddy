@@ -139,7 +139,8 @@ func createRepositories(bazeliskConf config.Config) *core.Repositories {
 	config := core.MakeDefaultConfig()
 	gitHub := repositories.CreateGitHubRepo(config.Get("BAZELISK_GITHUB_TOKEN"))
 	// Fetch LTS releases & candidates, rolling releases and Bazel-at-commits from GCS, forks from GitHub.
-	return core.CreateRepositories(gcs, gitHub, gcs, gcs, true)
+	// bb releases from the buildbuddy-io fork are checked against their signature.
+	return core.CreateRepositories(gcs, newSignedForkRepo(gitHub), gcs, gcs, true)
 }
 
 func getBazeliskHome(bazeliskConf config.Config) (string, error) {
