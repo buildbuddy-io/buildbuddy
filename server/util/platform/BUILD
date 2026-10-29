@@ -42,9 +42,9 @@ go_test(
 )
 
 go_test(
-    name = "set_default_container_image_test",
+    name = "set_container_image_test",
     size = "small",
-    srcs = ["set_default_container_image_test.go"],
+    srcs = ["set_container_image_test.go"],
     deps = [
         ":platform",
         "//proto:remote_execution_go_proto",

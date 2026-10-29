@@ -1220,12 +1220,17 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 	if err != nil {
 		return nil, err
 	}
+	imageUnset := props.ContainerImage == "" || strings.EqualFold(props.ContainerImage, "none")
 	// TODO: This mutates the task; find a cleaner way to do this.
 	if err := executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
 		return nil, err
 	}
-	if execution_experiments.DefaultImageInPlatform.Get(ctx) {
-		platform.SetDefaultContainerImage(task, platform.ContainerType(props.WorkloadIsolationType), executorplatform.DefaultImage())
+	if imageUnset && props.WorkloadIsolationType != string(platform.BareContainerType) && execution_experiments.DefaultImageInPlatform.Get(ctx) {
+		// Make the task hash like one that explicitly requested the
+		// default image.
+		if ref := executorplatform.DefaultContainerImageRef(); ref != "" {
+			platform.SetContainerImage(task, ref)
+		}
 	}
 	if *resolveImageDigests {
 		if err := p.resolveImageDigest(ctx, props); err != nil {

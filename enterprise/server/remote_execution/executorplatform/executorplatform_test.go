@@ -512,6 +512,27 @@ func TestContainerImageNameRewrite(t *testing.T) {
 	}
 }
 
+func TestDefaultContainerImageRef(t *testing.T) {
+	// Non-idempotent rewrite: applying it twice gives a different image.
+	flags.Set(t, "executor.container_image_name_rewrites", []ImageRewrite{
+		{Prefix: "gcr.io/", Replacement: "gcr.io/mirror/"},
+	})
+	flags.Set(t, "executor.default_image", "gcr.io/default:v1")
+	ref := DefaultContainerImageRef()
+	require.Equal(t, "docker://gcr.io/mirror/default:v1", ref)
+
+	// A task that explicitly requests ref runs the same image as one that
+	// requests no image.
+	implicit := &platform.Properties{}
+	require.NoError(t, ApplyOverrides(t.Context(), testenv.GetTestEnv(t), docker, implicit, &repb.Command{}))
+	explicit := &platform.Properties{ContainerImage: ref}
+	require.NoError(t, ApplyOverrides(t.Context(), testenv.GetTestEnv(t), docker, explicit, &repb.Command{}))
+	require.Equal(t, implicit.ContainerImage, explicit.ContainerImage)
+
+	flags.Set(t, "executor.default_image", "")
+	require.Equal(t, "", DefaultContainerImageRef())
+}
+
 func TestForceNetworkIsolationType(t *testing.T) {
 	for _, testCase := range []struct {
 		dockerNetworkValue         string

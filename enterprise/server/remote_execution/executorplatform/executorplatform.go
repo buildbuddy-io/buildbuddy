@@ -65,6 +65,17 @@ func DefaultImage() string {
 	return *defaultImage
 }
 
+// DefaultContainerImageRef returns the container-image platform property value
+// that, when requested explicitly, runs the same image as a task that requests
+// no image. It returns "" if there is no default image.
+func DefaultContainerImageRef() string {
+	name := containerImageName(*defaultImage)
+	if name == "" {
+		return ""
+	}
+	return platform.DockerPrefix + name
+}
+
 // ExecutorProperties provides the bits of executor configuration that are
 // needed to properly interpret the platform properties.
 type ExecutorProperties struct {

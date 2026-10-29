@@ -860,27 +860,11 @@ func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 	return FindValue(GetProto(task.GetAction(), task.GetCommand()), name)
 }
 
-// SetDefaultContainerImage makes a task that doesn't request a container image
-// look as though it explicitly requested defaultImage, by writing
-// container-image=docker://<defaultImage> into the platform that GetProto
-// returns for the task. It does nothing if the task requests an image
-// (including via a header override), if isolationType is bare, or if
-// defaultImage is empty. An existing empty or "none" container-image property
-// is replaced in place; otherwise the property is inserted before the first
-// property whose name sorts after it, matching how Bazel sorts properties.
-func SetDefaultContainerImage(task *repb.ExecutionTask, isolationType ContainerType, defaultImage string) {
-	if isolationType == BareContainerType || defaultImage == "" {
-		return
-	}
-	requested := FindEffectiveValue(task, containerImagePropertyName)
-	if requested != "" && !strings.EqualFold(requested, unsetContainerImageVal) {
-		return
-	}
-	value := defaultImage
-	if !strings.HasPrefix(value, DockerPrefix) {
-		value = DockerPrefix + value
-	}
-
+// SetContainerImage sets the container-image property to value in the
+// platform that GetProto returns for the task, replacing any existing values
+// or else inserting it in name-sorted position so that the task hashes like
+// one that explicitly requested the image.
+func SetContainerImage(task *repb.ExecutionTask, value string) {
 	plat := GetProto(task.GetAction(), task.GetCommand())
 	if plat == nil {
 		if task.Command == nil {
@@ -889,11 +873,15 @@ func SetDefaultContainerImage(task *repb.ExecutionTask, isolationType ContainerT
 		task.Command.Platform = &repb.Platform{}
 		plat = task.Command.Platform
 	}
+	found := false
 	for _, prop := range plat.Properties {
 		if strings.EqualFold(prop.GetName(), containerImagePropertyName) {
 			prop.Value = value
-			return
+			found = true
 		}
+	}
+	if found {
+		return
 	}
 	i := slices.IndexFunc(plat.Properties, func(p *repb.Platform_Property) bool {
 		return p.GetName() > containerImagePropertyName

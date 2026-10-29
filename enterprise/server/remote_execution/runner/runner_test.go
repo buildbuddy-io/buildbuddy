@@ -495,11 +495,13 @@ func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 	expflag.SetFlagProvider(expflag.NewContextProvider())
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 	env := newTestEnv(t)
-	cfg := noLimitsCfg()
-	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-		return NewFakeContainer(), nil
-	})
-	pool := newRunnerPool(t, env, cfg)
+	newPool := func(t *testing.T) *pool {
+		cfg := noLimitsCfg()
+		cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+			return NewFakeContainer(), nil
+		})
+		return newRunnerPool(t, env, cfg)
+	}
 	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
 	withExperiment := func(enabled bool) context.Context {
 		return expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
@@ -517,22 +519,48 @@ func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 		return task
 	}
 
-	for _, enabled := range []bool{false, true} {
-		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
-			ctx := withExperiment(enabled)
-			r := mustGetNewRunner(t, ctx, pool, newTask())
+	t.Run("disabled", func(t *testing.T) {
+		ctx := withExperiment(false)
+		pool := newPool(t)
+		r := mustGetNewRunner(t, ctx, pool, newTask())
+		mustAddWithoutEviction(t, ctx, pool, r)
+		other := mustGetNewRunner(t, ctx, pool, newExplicitDefaultImageTask())
+		assert.NotSame(t, r, other)
+	})
+
+	for _, tc := range []struct {
+		name    string
+		newTask func() *repb.ScheduledTask
+	}{
+		{
+			name:    "no image",
+			newTask: newTask,
+		},
+		{
+			name: "header override none",
+			newTask: func() *repb.ScheduledTask {
+				task := newTask()
+				task.ExecutionTask.PlatformOverrides = &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: "container-image", Value: "none"},
+				}}
+				return task
+			},
+		},
+	} {
+		t.Run("enabled/"+tc.name, func(t *testing.T) {
+			offCtx := withExperiment(false)
+			offRunner := mustGetNewRunner(t, offCtx, newPool(t), tc.newTask())
+
+			ctx := withExperiment(true)
+			pool := newPool(t)
+			r := mustGetNewRunner(t, ctx, pool, tc.newTask())
+			// The image that runs is the same as with the experiment off.
+			assert.Equal(t, offRunner.PlatformProperties.ContainerImage, r.PlatformProperties.ContainerImage)
 			mustAddWithoutEviction(t, ctx, pool, r)
-			if enabled {
-				// The runner for a task without an image is reused for a
-				// task that explicitly requests the default image.
-				reused := mustGetPausedRunner(t, ctx, pool, newExplicitDefaultImageTask())
-				assert.Same(t, r, reused)
-			} else {
-				other := mustGetNewRunner(t, ctx, pool, newExplicitDefaultImageTask())
-				assert.NotSame(t, r, other)
-				reused := mustGetPausedRunner(t, ctx, pool, newTask())
-				assert.Same(t, r, reused)
-			}
+			// The runner is reused for a task that explicitly requests the
+			// default image.
+			reused := mustGetPausedRunner(t, ctx, pool, newExplicitDefaultImageTask())
+			assert.Same(t, r, reused)
 		})
 	}
 }
