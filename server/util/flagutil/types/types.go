@@ -26,7 +26,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var UnwrapFlagValue = common.UnwrapFlagValue
 var ConvertFlagValue = common.ConvertFlagValue
 
 // NewPrimitiveFlagVar returns a flag.Value derived from the given primitive pointer.
