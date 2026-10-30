@@ -20,22 +20,19 @@ Raspberry Pi (they are cheap).
 We install podman from https://github.com/buildbuddy-io/podman-static
 which is a fork of https://github.com/mgoltzsche/podman-static.
 
-The main reason for this fork is to ensure the integrity of the built
-binaries. Our main change is to the release workflow
-(`.github/workflows/workflow.yml`), adapting it for our releases (e.g.
-disabling steps that we don't need). The fork may also carry a small number
-of other commits, such as fixes that aren't upstream yet.
+The fork exists to ensure the integrity of the built binaries. Its main
+change is to the release workflow (`.github/workflows/workflow.yml`), e.g.
+disabling steps we don't need; it may also carry a few fixes not yet
+upstream.
 
 The fork's `master` tracks upstream `master` and carries none of our changes.
-Instead, each podman version has a branch `buildbuddy/vX.Y.Z`, created at
-the upstream tag `vX.Y.Z`, with our changes on top. Workflow changes are
-marked with a `# buildbuddy:` comment. Changes land on these branches via PRs
-(merge commits are fine); never force-push them. The workflow builds and
-tests on pushes to `buildbuddy/**` and on PRs, and only publishes releases
-for `buildbuddy-v*` tags.
-
-To see our changes for a version, run
-`git diff vX.Y.Z origin/buildbuddy/vX.Y.Z`.
+Each podman version has a branch `buildbuddy/vX.Y.Z`, created at the upstream
+tag `vX.Y.Z`, with our changes on top (workflow changes are marked with a
+`# buildbuddy:` comment); `git diff vX.Y.Z origin/buildbuddy/vX.Y.Z` shows
+them. Changes land on these branches via PRs; never force-push them. CI
+builds and tests on pushes to `buildbuddy/**` and on PRs. To sync `master`,
+use GitHub's "Sync fork" button or `git push origin upstream/master:master`
+(fast-forward only).
 
 To build a new version of podman from the fork:
 
@@ -49,36 +46,36 @@ PREV=vA.B.C     # version of the latest buildbuddy/ branch
 VERSION=vX.Y.Z  # new upstream version
 # Create the release branch at the upstream tag
 git push origin "$VERSION^{commit}:refs/heads/buildbuddy/$VERSION"
-git fetch origin
 # Re-apply our changes on a work branch
-git checkout -b "update-$VERSION" "origin/buildbuddy/$VERSION"
-git cherry-pick $(git rev-list --reverse --no-merges "$PREV..origin/buildbuddy/$PREV")
+git checkout -b "update-$VERSION" "$VERSION"
+# This skips merge commits, so compare `git diff "$PREV" "origin/buildbuddy/$PREV"`
+# with `git diff "$VERSION" HEAD` to confirm nothing was lost.
+git cherry-pick $(git rev-list --reverse --topo-order --no-merges "$PREV..origin/buildbuddy/$PREV")
 # Resolve conflicts if needed, and check whether the upstream workflow has
 # any new steps that need to be disabled.
 git push origin "update-$VERSION"
+gh pr create --repo buildbuddy-io/podman-static --base "buildbuddy/$VERSION"
 ```
 
-Then open a PR against `buildbuddy/$VERSION` and merge it. After that, tag
-the branch to trigger a release. The workflow builds the signed tarballs and
-creates the GitHub release.
+Merge the PR, then tag the branch to release; the workflow builds the signed
+tarballs and creates the GitHub release.
 
 ```shell
 git fetch origin
-git tag "buildbuddy-$VERSION" "origin/buildbuddy/$VERSION"
-git push origin "buildbuddy-$VERSION"
+# For a fix after a release, add a suffix (e.g. buildbuddy-v5.1.1-1)
+TAG="buildbuddy-$VERSION"
+git tag "$TAG" "origin/buildbuddy/$VERSION"
+git push origin "$TAG"
 # Monitor the release at https://github.com/buildbuddy-io/podman-static/actions
 ```
 
-If a fix lands on the branch after a release, cut a new tag with a suffix
-(e.g. `buildbuddy-v5.1.1-1`) and use that in place of `buildbuddy-$VERSION`
-below.
-
 Finally, update `PODMAN_VERSION`, `PODMAN_STATIC_SHA256_AMD64` and
-`PODMAN_STATIC_SHA256_ARM64` in `deps.bzl`. To get the checksums:
+`PODMAN_STATIC_SHA256_ARM64` in `deps.bzl`. `PODMAN_VERSION` is the tag
+minus `buildbuddy-` (e.g. `v5.1.1-1`). To get the checksums:
 
 ```shell
 for ARCH in amd64 arm64; do
-  curl -fsSLo "/tmp/podman-linux-$ARCH.tar.gz" "https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-$VERSION/podman-linux-$ARCH.tar.gz" &&
+  curl -fsSLo "/tmp/podman-linux-$ARCH.tar.gz" "https://github.com/buildbuddy-io/podman-static/releases/download/$TAG/podman-linux-$ARCH.tar.gz" &&
     sha256sum "/tmp/podman-linux-$ARCH.tar.gz"
 done
 ```
