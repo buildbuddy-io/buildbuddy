@@ -511,14 +511,21 @@ func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 			pool := newRunnerPool(t, env, cfg)
 			r := mustGetNewRunner(t, ctx, pool, newTask())
 			mustAddWithoutEviction(t, ctx, pool, r)
-			// A header override to another image never reuses it.
-			headerTask := explicitDefaultImageTask.CloneVT()
-			headerTask.ExecutionTask.PlatformOverrides = &repb.Platform{Properties: []*repb.Platform_Property{{Name: "container-image", Value: "docker://gcr.io/other:v1"}}}
-			assert.NotSame(t, r, mustGet(t, ctx, pool, headerTask))
 			// Only with the experiment is the runner reused for a task that
 			// explicitly requests the default image.
 			other := mustGet(t, ctx, pool, explicitDefaultImageTask.CloneVT())
 			assert.Equal(t, enabled, r == other)
+			if !enabled {
+				return
+			}
+			// A header override to another image doesn't reuse a runner for
+			// the same platform without the override.
+			pool = newRunnerPool(t, env, cfg)
+			r = mustGetNewRunner(t, ctx, pool, explicitDefaultImageTask.CloneVT())
+			mustAddWithoutEviction(t, ctx, pool, r)
+			headerTask := explicitDefaultImageTask.CloneVT()
+			headerTask.ExecutionTask.PlatformOverrides = &repb.Platform{Properties: []*repb.Platform_Property{{Name: "container-image", Value: "docker://gcr.io/other:v1"}}}
+			assert.NotSame(t, r, mustGet(t, ctx, pool, headerTask))
 		})
 	}
 }
