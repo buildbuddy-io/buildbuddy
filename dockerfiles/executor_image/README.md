@@ -20,39 +20,64 @@ Raspberry Pi (they are cheap).
 We install podman from https://github.com/buildbuddy-io/podman-static
 which is a fork of https://github.com/mgoltzsche/podman-static.
 
-The only reason for this fork is to ensure the integrity of the built
-binaries. The fork includes a single patch that we maintain, which just
-disables some steps in the release workflow that we don't need.
+The fork exists to ensure the integrity of the built binaries. Its main
+change is to the release workflow (`.github/workflows/workflow.yml`), e.g.
+disabling steps we don't need; it may also carry a few fixes not yet
+upstream.
+
+The fork's `master` tracks upstream `master` and carries none of our changes.
+Each podman version has a branch `buildbuddy/vX.Y.Z`, created at the upstream
+tag `vX.Y.Z`, with our changes on top (workflow changes are marked with a
+`# buildbuddy:` comment); `git diff vX.Y.Z origin/buildbuddy/vX.Y.Z` shows
+them. Changes land on these branches via PRs; never force-push them. CI
+builds and tests on pushes to `buildbuddy/**` and on PRs. To sync `master`,
+use GitHub's "Sync fork" button or `git push origin upstream/master:master`
+(fast-forward only).
 
 To build a new version of podman from the fork:
 
 ```shell
-# Clone the fork and ensure you have the master branch checked out
+# Clone the fork and fetch upstream tags
 git clone git@github.com:buildbuddy-io/podman-static.git
 cd podman-static
-git checkout master
-# Add upstream as a remote and fetch
 git remote add upstream https://github.com/mgoltzsche/podman-static
 git fetch upstream --tags
-# Get the commit SHA of our custom patch
-PATCH_COMMIT=$(git rev-parse HEAD)
-# Temporarily undo the patch
-git reset --hard HEAD~1
-# Update the master branch to point to the podman version you want
-VERSION=vX.Y.Z
-git reset --hard "$VERSION"
-# Reapply our patch, resolving conflicts if needed
-git cherry-pick "$PATCH_COMMIT"
-# You should also look at the release workflow and check whether
-# are any new steps that need to be disabled, and modify the patch if
-# needed. If you do this, then run:
-git add . && git commit --amend
-# Push the tag, which should trigger a release
-git tag "buildbuddy-$VERSION"
-git push origin "buildbuddy-$VERSION"
+PREV=vA.B.C     # version of the latest buildbuddy/ branch
+VERSION=vX.Y.Z  # new upstream version
+# Create the release branch at the upstream tag
+git push origin "$VERSION^{commit}:refs/heads/buildbuddy/$VERSION"
+# Re-apply our changes on a work branch
+git checkout -b "update-$VERSION" "$VERSION"
+# This skips merge commits, so compare `git diff "$PREV" "origin/buildbuddy/$PREV"`
+# with `git diff "$VERSION" HEAD` to confirm nothing was lost.
+git cherry-pick $(git rev-list --reverse --topo-order --no-merges "$PREV..origin/buildbuddy/$PREV")
+# Resolve conflicts if needed, and check whether the upstream workflow has
+# any new steps that need to be disabled.
+git push origin "update-$VERSION"
+gh pr create --repo buildbuddy-io/podman-static --base "buildbuddy/$VERSION"
+```
+
+Merge the PR, then tag the branch to release; the workflow builds the signed
+tarballs and creates the GitHub release.
+
+```shell
+git fetch origin
+# For a fix after a release, add a suffix (e.g. buildbuddy-v5.1.1-1)
+TAG="buildbuddy-$VERSION"
+git tag "$TAG" "origin/buildbuddy/$VERSION"
+git push origin "$TAG"
 # Monitor the release at https://github.com/buildbuddy-io/podman-static/actions
-# If successful, update the master branch
-git push origin master --force
+```
+
+Finally, update `PODMAN_VERSION`, `PODMAN_STATIC_SHA256_AMD64` and
+`PODMAN_STATIC_SHA256_ARM64` in `deps.bzl`. `PODMAN_VERSION` is the tag
+minus `buildbuddy-` (e.g. `v5.1.1-1`). To get the checksums:
+
+```shell
+for ARCH in amd64 arm64; do
+  curl -fsSLo "/tmp/podman-linux-$ARCH.tar.gz" "https://github.com/buildbuddy-io/podman-static/releases/download/$TAG/podman-linux-$ARCH.tar.gz" &&
+    sha256sum "/tmp/podman-linux-$ARCH.tar.gz"
+done
 ```
 
 ## Overwriting binaries
