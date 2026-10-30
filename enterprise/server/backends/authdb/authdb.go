@@ -402,6 +402,11 @@ func apiKeyValueReadbackEnabled() bool {
 	return *apiKeyValueReadbackConfig
 }
 
+func hasWriteCapability(caps []cappb.Capability) bool {
+	return slices.Contains(caps, cappb.Capability_CACHE_WRITE) ||
+		slices.Contains(caps, cappb.Capability_CAS_WRITE)
+}
+
 func (d *AuthDB) fillChildGroupIDs(ctx context.Context, akg *apiKeyGroup) error {
 	// If the group is not designated as a parent then don't bother doing a
 	// query.
@@ -1044,7 +1049,14 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	if err != nil {
 		return nil, status.WrapError(err, "get capabilities")
 	}
-	if !slices.Contains(caps, cappb.Capability_ORG_ADMIN) {
+	isAdmin := slices.Contains(caps, cappb.Capability_ORG_ADMIN)
+	isGroupOwnedKey := key.UserID == ""
+	isOwnKey := user.GetAPIKeyInfo().ID == key.APIKeyID
+	canUseGroupKey := key.VisibleToDevelopers && hasWriteCapability(caps)
+	if !isAdmin && isGroupOwnedKey && !isOwnKey && !canUseGroupKey {
+		return nil, status.PermissionDeniedError("You do not have permission to access this API key.")
+	}
+	if !isAdmin {
 		acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
 		if err := perms.AuthorizeRead(user, acl); err != nil {
 			return nil, err
@@ -1143,21 +1155,21 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string, includeExpired 
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env.GetAuthenticator(), groupID)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "get capabilities")
 	}
-	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
-		return nil, err
+	isAdmin := slices.Contains(caps, cappb.Capability_ORG_ADMIN)
+	if !isAdmin && !hasWriteCapability(caps) {
+		return nil, nil
 	}
 	rows, err := d.fetchAPIKeys(ctx, "authdb_get_api_keys", "", db.Opts(), includeExpired, func(qb *query_builder.Query) error {
 		// Select group-owned keys only.
 		qb.AddWhereClause(`ak.user_id IS NULL OR ak.user_id = ''`)
 		qb.AddWhereClause(`ak.group_id = ?`, groupID)
-		if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
-			// If we're not an admin, restrict to keys that have only been made
-			// visible to non-admins. Note: the visible_to_developers field means "visible to
-			// non-admins" now that we have reader/writer roles.
+		if !isAdmin {
+			// If we're not an admin, restrict to keys that have been made visible
+			// to non-admin group members with write access.
 			qb.AddWhereClause("ak.visible_to_developers = ?", true)
 		}
 		qb.AddWhereClause(`ak.impersonation = false`)

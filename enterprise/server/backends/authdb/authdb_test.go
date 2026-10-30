@@ -910,15 +910,15 @@ func TestImpersonationAPIKeys(t *testing.T) {
 		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
 		require.NoError(t, err)
 
-		// Verify correct key attributes.
-		key, err := adb.GetAPIKey(targetGroupAdminCtx, rsp.GetApiKey().GetId())
-		require.NoError(t, err)
-		require.True(t, key.Impersonation)
-		require.NotEqualValues(t, 0, key.ExpiryUsec)
-		require.Equal(t, []cappb.Capability{cappb.Capability_CAS_WRITE}, capabilities.FromInt(key.Capabilities))
-
-		// Verify "list" operation does not include the impersonation key.
 		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			// Verify correct key attributes.
+			key, err := adb.GetAPIKey(targetGroupAdminCtx, rsp.GetApiKey().GetId())
+			require.NoError(t, err)
+			require.True(t, key.Impersonation)
+			require.NotEqualValues(t, 0, key.ExpiryUsec)
+			require.Equal(t, []cappb.Capability{cappb.Capability_CAS_WRITE}, capabilities.FromInt(key.Capabilities))
+
+			// Verify "list" operation does not include the impersonation key.
 			keys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID, false /*=includeExpired*/)
 			require.NoError(t, err)
 			require.Equal(t, prevKeys, keys)
