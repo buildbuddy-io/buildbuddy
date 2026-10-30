@@ -518,59 +518,96 @@ func TestDefaultImageInPlatform(t *testing.T) {
 	flags.Set(t, "executor.container_image_name_rewrites", []ImageRewrite{{Prefix: "gcr.io/", Replacement: "gcr.io/mirror/"}})
 	expflag.SetFlagProvider(expflag.NewContextProvider())
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
-	on := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{{
-		Name:  execution_experiments.DefaultImageInPlatform.Name(),
-		Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true},
-	}})
 	apply := func(ctx context.Context, task *repb.ExecutionTask) string {
 		platformProps, err := platform.ParseProperties(task)
 		require.NoError(t, err)
 		require.NoError(t, ApplyOverrides(ctx, testenv.GetTestEnv(t), docker, platformProps, task))
 		return platformProps.ContainerImage
 	}
+	// Each call returns fresh properties, since ApplyOverrides mutates them in
+	// place.
 	plat := func(props ...*repb.Platform_Property) *repb.Platform {
 		return &repb.Platform{Properties: props}
 	}
-	osFamily := &repb.Platform_Property{Name: "OSFamily", Value: "linux"}
-	recycle := &repb.Platform_Property{Name: "recycle-runner", Value: "true"}
-	defaultImage := &repb.Platform_Property{Name: "container-image", Value: "docker://gcr.io/default:v1"}
-	otherImage := &repb.Platform_Property{Name: "container-image", Value: "docker://gcr.io/other:v1"}
-	explicit := apply(t.Context(), &repb.ExecutionTask{Command: &repb.Command{Platform: plat(defaultImage)}})
-	require.Equal(t, "gcr.io/mirror/default:v1", explicit)
-
-	// Off: the platform is unchanged and the default is rewritten twice, as
-	// before.
-	task := &repb.ExecutionTask{Command: &repb.Command{Platform: plat(osFamily, recycle)}}
-	require.Equal(t, "gcr.io/mirror/mirror/default:v1", apply(t.Context(), task))
-	require.Empty(t, cmp.Diff(plat(osFamily, recycle), task.GetCommand().GetPlatform(), protocmp.Transform()))
-
-	// On, no image: the default is inserted in sorted position and handled
-	// like an explicit request for it.
-	task = &repb.ExecutionTask{Command: &repb.Command{Platform: plat(osFamily, recycle)}}
-	require.Equal(t, explicit, apply(on, task))
-	require.Empty(t, cmp.Diff(plat(osFamily, defaultImage, recycle), task.GetCommand().GetPlatform(), protocmp.Transform()))
-
-	// On, "none": replaced by the default.
-	task = &repb.ExecutionTask{Command: &repb.Command{Platform: plat(&repb.Platform_Property{Name: "container-image", Value: "none"})}}
-	require.Equal(t, explicit, apply(on, task))
-	require.Empty(t, cmp.Diff(plat(defaultImage), task.GetCommand().GetPlatform(), protocmp.Transform()))
-
-	// On, Action.Platform present: that is the platform updated.
-	task = &repb.ExecutionTask{
-		Action:  &repb.Action{Platform: plat(recycle)},
-		Command: &repb.Command{Platform: plat(recycle)},
+	osFamily := func() *repb.Platform_Property { return &repb.Platform_Property{Name: "OSFamily", Value: "linux"} }
+	recycle := func() *repb.Platform_Property { return &repb.Platform_Property{Name: "recycle-runner", Value: "true"} }
+	image := func(v string) *repb.Platform_Property {
+		return &repb.Platform_Property{Name: "container-image", Value: v}
 	}
-	require.Equal(t, explicit, apply(on, task))
-	require.Empty(t, cmp.Diff(plat(defaultImage, recycle), task.GetAction().GetPlatform(), protocmp.Transform()))
-	require.Empty(t, cmp.Diff(plat(recycle), task.GetCommand().GetPlatform(), protocmp.Transform()))
 
-	// On, header override: the overriding image is recorded in the platform.
-	task = &repb.ExecutionTask{
-		Command:           &repb.Command{Platform: plat(&repb.Platform_Property{Name: "container-image", Value: "docker://gcr.io/default:v1"})},
-		PlatformOverrides: plat(otherImage),
+	// The image an explicit request for the default resolves to.
+	const explicitImage = "gcr.io/mirror/default:v1"
+	require.Equal(t, explicitImage, apply(t.Context(), &repb.ExecutionTask{Command: &repb.Command{Platform: plat(image("docker://gcr.io/default:v1"))}}))
+
+	for _, tc := range []struct {
+		name      string
+		enabled   bool
+		task      *repb.ExecutionTask
+		wantImage string
+		wantTask  *repb.ExecutionTask
+	}{
+		{
+			// The platform is unchanged and the default is rewritten twice, as
+			// before.
+			name:      "off",
+			task:      &repb.ExecutionTask{Command: &repb.Command{Platform: plat(osFamily(), recycle())}},
+			wantImage: "gcr.io/mirror/mirror/default:v1",
+			wantTask:  &repb.ExecutionTask{Command: &repb.Command{Platform: plat(osFamily(), recycle())}},
+		},
+		{
+			// The default is inserted in sorted position and handled like an
+			// explicit request for it.
+			name:      "on, no image",
+			enabled:   true,
+			task:      &repb.ExecutionTask{Command: &repb.Command{Platform: plat(osFamily(), recycle())}},
+			wantImage: explicitImage,
+			wantTask:  &repb.ExecutionTask{Command: &repb.Command{Platform: plat(osFamily(), image("docker://gcr.io/default:v1"), recycle())}},
+		},
+		{
+			name:      "on, none replaced",
+			enabled:   true,
+			task:      &repb.ExecutionTask{Command: &repb.Command{Platform: plat(image("none"))}},
+			wantImage: explicitImage,
+			wantTask:  &repb.ExecutionTask{Command: &repb.Command{Platform: plat(image("docker://gcr.io/default:v1"))}},
+		},
+		{
+			// Only the Action platform is updated.
+			name:    "on, Action.Platform present",
+			enabled: true,
+			task: &repb.ExecutionTask{
+				Action:  &repb.Action{Platform: plat(recycle())},
+				Command: &repb.Command{Platform: plat(recycle())},
+			},
+			wantImage: explicitImage,
+			wantTask: &repb.ExecutionTask{
+				Action:  &repb.Action{Platform: plat(image("docker://gcr.io/default:v1"), recycle())},
+				Command: &repb.Command{Platform: plat(recycle())},
+			},
+		},
+		{
+			// The overriding image is recorded in the platform.
+			name:    "on, header override",
+			enabled: true,
+			task: &repb.ExecutionTask{
+				Command:           &repb.Command{Platform: plat(image("docker://gcr.io/default:v1"))},
+				PlatformOverrides: plat(image("docker://gcr.io/other:v1")),
+			},
+			wantImage: "gcr.io/mirror/other:v1",
+			wantTask: &repb.ExecutionTask{
+				Command:           &repb.Command{Platform: plat(image("docker://gcr.io/other:v1"))},
+				PlatformOverrides: plat(image("docker://gcr.io/other:v1")),
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{{
+				Name:  execution_experiments.DefaultImageInPlatform.Name(),
+				Value: &expb.EvaluatedFlag_BoolValue{BoolValue: tc.enabled},
+			}})
+			require.Equal(t, tc.wantImage, apply(ctx, tc.task))
+			require.Empty(t, cmp.Diff(tc.wantTask, tc.task, protocmp.Transform()))
+		})
 	}
-	require.Equal(t, "gcr.io/mirror/other:v1", apply(on, task))
-	require.Empty(t, cmp.Diff(plat(otherImage), task.GetCommand().GetPlatform(), protocmp.Transform()))
 }
 
 func TestForceNetworkIsolationType(t *testing.T) {
