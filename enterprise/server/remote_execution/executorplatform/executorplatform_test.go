@@ -1,6 +1,7 @@
 package executorplatform
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -62,7 +63,7 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(t.Context(), env, testCase.execProps, platformProps, &repb.Command{})
+		err = ApplyOverrides(t.Context(), env, testCase.execProps, platformProps, &repb.ExecutionTask{Command: &repb.Command{}})
 		require.NoError(t, err)
 		assert.Equal(t, testCase.expected, platformProps.ContainerImage, testCase)
 	}
@@ -87,7 +88,7 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(t.Context(), env, testCase.execProps, platformProps, &repb.Command{})
+		err = ApplyOverrides(t.Context(), env, testCase.execProps, platformProps, &repb.ExecutionTask{Command: &repb.Command{}})
 		assert.Error(t, err)
 	}
 }
@@ -276,7 +277,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 				"MacOSX11.3": "Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.3.sdk",
 			},
 		})
-		err = ApplyOverrides(t.Context(), env, execProps, platformProps, command)
+		err = ApplyOverrides(t.Context(), env, execProps, platformProps, &repb.ExecutionTask{Command: command})
 		if testCase.errorExpected {
 			require.Error(t, err)
 		} else {
@@ -304,7 +305,7 @@ func TestApplyOverrides_PersistentVolumesExperiment(t *testing.T) {
 
 	// The experiment's volumes should take precedence over the platform
 	// property.
-	err = ApplyOverrides(ctx, testenv.GetTestEnv(t), bare, platformProps, &repb.Command{})
+	err = ApplyOverrides(ctx, testenv.GetTestEnv(t), bare, platformProps, &repb.ExecutionTask{Command: &repb.Command{}})
 	require.NoError(t, err)
 	want, err := platform.ParsePersistentVolumes("cache:/tmp/.cache", "other:/other")
 	require.NoError(t, err)
@@ -329,7 +330,7 @@ func TestEnvAndArgOverrides(t *testing.T) {
 		},
 	}
 	env := testenv.GetTestEnv(t)
-	err = ApplyOverrides(t.Context(), env, execProps, platformProps, command)
+	err = ApplyOverrides(t.Context(), env, execProps, platformProps, &repb.ExecutionTask{Command: command})
 	require.NoError(t, err)
 
 	expectedCmd := &repb.Command{
@@ -397,7 +398,7 @@ func TestRunUnder(t *testing.T) {
 			require.NoError(t, err)
 			command := &repb.Command{Arguments: tc.initialArgs}
 			env := testenv.GetTestEnv(t)
-			err = ApplyOverrides(t.Context(), env, bare, platformProps, command)
+			err = ApplyOverrides(t.Context(), env, bare, platformProps, &repb.ExecutionTask{Command: command})
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedArgs, command.Arguments)
 		})
@@ -439,7 +440,7 @@ func TestExtraEnvVars(t *testing.T) {
 			env := testenv.GetTestEnv(t)
 			cmd := &repb.Command{}
 			platformProps := &platform.Properties{}
-			ApplyOverrides(t.Context(), env, podmanAndFirecracker, platformProps, cmd)
+			ApplyOverrides(t.Context(), env, podmanAndFirecracker, platformProps, &repb.ExecutionTask{Command: cmd})
 			require.Empty(t, cmp.Diff(
 				tc.expectedEnvVars,
 				cmd.EnvironmentVariables,
@@ -512,6 +513,106 @@ func TestContainerImageNameRewrite(t *testing.T) {
 	}
 }
 
+func TestDefaultImageInPlatform(t *testing.T) {
+	flags.Set(t, "executor.default_image", "gcr.io/default:v1")
+	flags.Set(t, "executor.container_image_name_rewrites", []ImageRewrite{{Prefix: "gcr.io/", Replacement: "gcr.io/mirror/"}})
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	apply := func(t *testing.T, ctx context.Context, task *repb.ExecutionTask) string {
+		platformProps, err := platform.ParseProperties(task)
+		require.NoError(t, err)
+		require.NoError(t, ApplyOverrides(ctx, testenv.GetTestEnv(t), docker, platformProps, task))
+		return platformProps.ContainerImage
+	}
+	// Each call returns fresh properties, since ApplyOverrides mutates them in
+	// place.
+	plat := func(props ...*repb.Platform_Property) *repb.Platform {
+		return &repb.Platform{Properties: props}
+	}
+	osFamily := func() *repb.Platform_Property { return &repb.Platform_Property{Name: "OSFamily", Value: "linux"} }
+	recycle := func() *repb.Platform_Property { return &repb.Platform_Property{Name: "recycle-runner", Value: "true"} }
+	image := func(v string) *repb.Platform_Property {
+		return &repb.Platform_Property{Name: "container-image", Value: v}
+	}
+
+	// The image an explicit request for the default resolves to.
+	const explicitImage = "gcr.io/mirror/default:v1"
+	require.Equal(t, explicitImage, apply(t, t.Context(), &repb.ExecutionTask{Command: &repb.Command{Platform: plat(image("docker://gcr.io/default:v1"))}}))
+
+	for _, tc := range []struct {
+		name      string
+		enabled   bool
+		task      *repb.ExecutionTask
+		wantImage string
+		wantTask  *repb.ExecutionTask
+	}{
+		{
+			// The platform is unchanged and the default is rewritten twice, as
+			// before.
+			name:      "off",
+			task:      &repb.ExecutionTask{Command: &repb.Command{Platform: plat(osFamily(), recycle())}},
+			wantImage: "gcr.io/mirror/mirror/default:v1",
+			wantTask:  &repb.ExecutionTask{Command: &repb.Command{Platform: plat(osFamily(), recycle())}},
+		},
+		{
+			// The default is inserted in sorted position and handled like an
+			// explicit request for it.
+			name:      "on, no image",
+			enabled:   true,
+			task:      &repb.ExecutionTask{Command: &repb.Command{Platform: plat(osFamily(), recycle())}},
+			wantImage: explicitImage,
+			wantTask:  &repb.ExecutionTask{Command: &repb.Command{Platform: plat(osFamily(), image("docker://gcr.io/default:v1"), recycle())}},
+		},
+		{
+			name:      "on, none replaced",
+			enabled:   true,
+			task:      &repb.ExecutionTask{Command: &repb.Command{Platform: plat(image("none"))}},
+			wantImage: explicitImage,
+			wantTask:  &repb.ExecutionTask{Command: &repb.Command{Platform: plat(image("docker://gcr.io/default:v1"))}},
+		},
+		{
+			// Both the Action and Command platforms are updated.
+			name:    "on, Action.Platform present",
+			enabled: true,
+			task: &repb.ExecutionTask{
+				Action:  &repb.Action{Platform: plat(recycle())},
+				Command: &repb.Command{Platform: plat(recycle())},
+			},
+			wantImage: explicitImage,
+			wantTask: &repb.ExecutionTask{
+				Action:  &repb.Action{Platform: plat(image("docker://gcr.io/default:v1"), recycle())},
+				Command: &repb.Command{Platform: plat(image("docker://gcr.io/default:v1"), recycle())},
+			},
+		},
+		{
+			// The overriding image is recorded in the platform.
+			name:    "on, header override",
+			enabled: true,
+			task: &repb.ExecutionTask{
+				Command:           &repb.Command{Platform: plat(image("docker://gcr.io/default:v1"))},
+				PlatformOverrides: plat(image("docker://gcr.io/other:v1")),
+			},
+			wantImage: "gcr.io/mirror/other:v1",
+			wantTask: &repb.ExecutionTask{
+				Command:           &repb.Command{Platform: plat(image("docker://gcr.io/other:v1"))},
+				PlatformOverrides: plat(image("docker://gcr.io/other:v1")),
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			if tc.enabled {
+				ctx = expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
+					Name:  execution_experiments.DefaultImageInPlatform.Name(),
+					Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true},
+				}})
+			}
+			require.Equal(t, tc.wantImage, apply(t, ctx, tc.task))
+			require.Empty(t, cmp.Diff(tc.wantTask, tc.task, protocmp.Transform()))
+		})
+	}
+}
+
 func TestForceNetworkIsolationType(t *testing.T) {
 	for _, testCase := range []struct {
 		dockerNetworkValue         string
@@ -542,7 +643,7 @@ func TestForceNetworkIsolationType(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(t.Context(), env, podmanAndFirecracker, platformProps, &repb.Command{})
+		err = ApplyOverrides(t.Context(), env, podmanAndFirecracker, platformProps, &repb.ExecutionTask{Command: &repb.Command{}})
 		assert.NoError(t, err)
 		assert.Equal(t, testCase.expectedIsolationType, platformProps.WorkloadIsolationType, testCase)
 	}

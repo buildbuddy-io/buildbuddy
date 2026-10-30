@@ -504,3 +504,91 @@ func TestParse_ExecrootPath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", platformProps.ExecrootPath)
 }
+
+func TestSetValue(t *testing.T) {
+	prop := func(name, value string) *repb.Platform_Property {
+		return &repb.Platform_Property{Name: name, Value: value}
+	}
+	for _, tc := range []struct {
+		name  string
+		props []*repb.Platform_Property
+		want  []*repb.Platform_Property
+	}{
+		{
+			name:  "empty",
+			props: nil,
+			want:  []*repb.Platform_Property{prop("container-image", "new")},
+		},
+		{
+			name:  "replaces existing values including case variants",
+			props: []*repb.Platform_Property{prop("Container-Image", "a"), prop("container-image", "b"), prop("OSFamily", "linux")},
+			want:  []*repb.Platform_Property{prop("Container-Image", "new"), prop("container-image", "new"), prop("OSFamily", "linux")},
+		},
+		{
+			name:  "inserts in sorted position",
+			props: []*repb.Platform_Property{prop("arch", "amd64"), prop("recycle-runner", "true")},
+			want:  []*repb.Platform_Property{prop("arch", "amd64"), prop("container-image", "new"), prop("recycle-runner", "true")},
+		},
+		{
+			name:  "appends at end",
+			props: []*repb.Platform_Property{prop("OSFamily", "linux"), prop("arch", "amd64")},
+			want:  []*repb.Platform_Property{prop("OSFamily", "linux"), prop("arch", "amd64"), prop("container-image", "new")},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &repb.Platform{Properties: tc.props}
+			SetValue(p, "container-image", "new")
+			require.Empty(t, cmp.Diff(&repb.Platform{Properties: tc.want}, p, protocmp.Transform()))
+		})
+	}
+}
+
+func TestSetValueForTask(t *testing.T) {
+	plat := func(props ...*repb.Platform_Property) *repb.Platform {
+		return &repb.Platform{Properties: props}
+	}
+	recycle := func() *repb.Platform_Property {
+		return &repb.Platform_Property{Name: "recycle-runner", Value: "true"}
+	}
+	image := func() *repb.Platform_Property {
+		return &repb.Platform_Property{Name: ContainerImagePropertyName, Value: "docker://img"}
+	}
+	for _, tc := range []struct {
+		name string
+		task *repb.ExecutionTask
+		want *repb.ExecutionTask
+		// Whether the Action and Command platforms are created by
+		// SetValueForTask and so must be distinct objects.
+		createsPlatforms bool
+	}{
+		{
+			name: "only Command.Platform",
+			task: &repb.ExecutionTask{Action: &repb.Action{}, Command: &repb.Command{Platform: plat(recycle())}},
+			want: &repb.ExecutionTask{Action: &repb.Action{}, Command: &repb.Command{Platform: plat(image(), recycle())}},
+		},
+		{
+			name: "only Action.Platform",
+			task: &repb.ExecutionTask{Action: &repb.Action{Platform: plat(recycle())}, Command: &repb.Command{}},
+			want: &repb.ExecutionTask{Action: &repb.Action{Platform: plat(image(), recycle())}, Command: &repb.Command{}},
+		},
+		{
+			name: "both platforms",
+			task: &repb.ExecutionTask{Action: &repb.Action{Platform: plat(recycle())}, Command: &repb.Command{Platform: plat()}},
+			want: &repb.ExecutionTask{Action: &repb.Action{Platform: plat(image(), recycle())}, Command: &repb.Command{Platform: plat(image())}},
+		},
+		{
+			name:             "neither platform",
+			task:             &repb.ExecutionTask{Command: &repb.Command{}},
+			want:             &repb.ExecutionTask{Action: &repb.Action{Platform: plat(image())}, Command: &repb.Command{Platform: plat(image())}},
+			createsPlatforms: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			SetValueForTask(tc.task, ContainerImagePropertyName, "docker://img")
+			require.Empty(t, cmp.Diff(tc.want, tc.task, protocmp.Transform()))
+			if tc.createsPlatforms {
+				require.NotSame(t, tc.task.GetAction().GetPlatform(), tc.task.GetCommand().GetPlatform())
+			}
+		})
+	}
+}

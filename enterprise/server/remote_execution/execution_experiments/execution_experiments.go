@@ -45,6 +45,7 @@ var (
 	UserspaceNetworking      = register(expflag.Bool("executor.userspace_networking", false, "Enable userspace networking for OCI and Firecracker containers."))
 	RecordInputFetchMetadata = register(expflag.Bool("executor.record_input_fetch_metadata", true, "If true, record and report metadata describing which action inputs were fetched from remote CAS.", expflag.DeprecatedExperimentName("remote_execution.record_input_fetch_metadata")))
 	WorkspacePoolEnabled     = register(expflag.Bool("executor.workspace_pool.enabled", false, "If true, keep finished task workspaces in a pool, and set up later tasks with similar input trees from them instead of from an empty directory. See the executor.workspace_pool.* flags."))
+	DefaultImageInPlatform   = register(expflag.Bool("executor.include_default_image_in_platform", false, "If true, tasks that don't request a container image get the executor's default image written into their platform properties, as if they had requested it explicitly."))
 	SpliceWithoutValidation  = register(expflag.Bool("executor.splice_without_validation", true, "If true, ask the cache to splice chunked action outputs without re-verifying each chunk's contents. The cache only honors this from executors with a trusted client identity.", expflag.DeprecatedExperimentName("splice-without-validation")))
 	// TODO(bduffany): once expflag supports expflag.Slice, remove this and
 	// consolidate with executor.oci.seccomp_additional_syscalls

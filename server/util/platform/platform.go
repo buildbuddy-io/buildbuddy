@@ -59,7 +59,7 @@ const (
 	// the default executor pool for remote execution.
 	DefaultPoolValue = "default"
 
-	containerImagePropertyName = "container-image"
+	ContainerImagePropertyName = "container-image"
 	DockerPrefix               = "docker://"
 
 	containerRegistryUsernamePropertyName = "container-registry-username"
@@ -575,7 +575,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
 		EstimatedFreeDiskBytes:    iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
 		CustomResources:           customResources,
-		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
+		ContainerImage:            stringProp(m, ContainerImagePropertyName, ""),
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
 		WorkloadIsolationType:     isolationType,
@@ -858,6 +858,48 @@ func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 		return override
 	}
 	return FindValue(GetProto(task.GetAction(), task.GetCommand()), name)
+}
+
+// SetValue sets the given property to the given value, replacing any existing
+// values or else inserting it in name-sorted position.
+func SetValue(platform *repb.Platform, name, value string) {
+	found := false
+	for _, p := range platform.Properties {
+		if strings.EqualFold(p.GetName(), name) {
+			p.Value, found = value, true
+		}
+	}
+	if found {
+		return
+	}
+	i := slices.IndexFunc(platform.Properties, func(p *repb.Platform_Property) bool { return p.GetName() > name })
+	if i < 0 {
+		i = len(platform.Properties)
+	}
+	platform.Properties = slices.Insert(platform.Properties, i, &repb.Platform_Property{Name: name, Value: value})
+}
+
+// SetValueForTask sets the given platform property on the execution task,
+// updating the action's platform as well as the deprecated command platform if
+// applicable.
+func SetValueForTask(task *repb.ExecutionTask, name, value string) {
+	// Never create just one: GetProto prefers Action.Platform, hiding Command.Platform.
+	if task.GetAction().GetPlatform() == nil && task.GetCommand().GetPlatform() == nil {
+		if task.Action == nil {
+			task.Action = &repb.Action{}
+		}
+		if task.Command == nil {
+			task.Command = &repb.Command{}
+		}
+		task.Action.Platform = &repb.Platform{}
+		task.Command.Platform = &repb.Platform{}
+	}
+	if p := task.GetAction().GetPlatform(); p != nil {
+		SetValue(p, name, value)
+	}
+	if p := task.GetCommand().GetPlatform(); p != nil {
+		SetValue(p, name, value)
+	}
 }
 
 // IsTrue returns whether the given platform property value is truthy.

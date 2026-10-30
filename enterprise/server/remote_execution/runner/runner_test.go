@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -487,6 +488,47 @@ func TestRunnerPool_OCISeccompDisableNewUserNS(t *testing.T) {
 
 	reused = mustGetPausedRunner(t, deniedCtx, pool, newTask())
 	assert.Same(t, denied, reused)
+}
+
+func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
+	flags.Set(t, "executor.enable_oci", true)
+	flags.Set(t, "executor.default_image", "gcr.io/default:v1")
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	env := newTestEnv(t)
+	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
+	explicitDefaultImageTask := newTask()
+	platform.SetValueForTask(explicitDefaultImageTask.ExecutionTask, platform.ContainerImagePropertyName, "docker://gcr.io/default:v1")
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			ctx := expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
+				Name:  execution_experiments.DefaultImageInPlatform.Name(),
+				Value: &expb.EvaluatedFlag_BoolValue{BoolValue: enabled},
+			}})
+			cfg := noLimitsCfg()
+			cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+				return NewFakeContainer(), nil
+			})
+			pool := newRunnerPool(t, env, cfg)
+			r := mustGetNewRunner(t, ctx, pool, newTask())
+			mustAddWithoutEviction(t, ctx, pool, r)
+			// Only with the experiment is the runner reused for a task that
+			// explicitly requests the default image.
+			other := mustGet(t, ctx, pool, explicitDefaultImageTask.CloneVT())
+			assert.Equal(t, enabled, r == other)
+			if !enabled {
+				return
+			}
+			// A header override to another image doesn't reuse a runner for
+			// the same platform without the override.
+			pool = newRunnerPool(t, env, cfg)
+			r = mustGetNewRunner(t, ctx, pool, explicitDefaultImageTask.CloneVT())
+			mustAddWithoutEviction(t, ctx, pool, r)
+			headerTask := explicitDefaultImageTask.CloneVT()
+			headerTask.ExecutionTask.PlatformOverrides = &repb.Platform{Properties: []*repb.Platform_Property{{Name: "container-image", Value: "docker://gcr.io/other:v1"}}}
+			assert.NotSame(t, r, mustGet(t, ctx, pool, headerTask))
+		})
+	}
 }
 
 func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {
