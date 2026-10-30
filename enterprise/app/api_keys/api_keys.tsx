@@ -345,7 +345,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     request: ApiKeyFields,
     e: React.ChangeEvent<HTMLInputElement>
   ) {
-    // Only toggle the developers bit so that other bits survive an edit.
+    // Only toggle the non-admin visibility bit so that other bits survive an edit.
     const visibility: api_key.Visibility[] = (request.visibility ?? []).filter(
       (v) => v !== api_key.Visibility.VISIBLE_TO_DEVELOPERS
     );
@@ -534,7 +534,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   </div>
                 )}
               </fieldset>
-              {/* "Visible to developers" bit does not apply for user-level keys. */}
+              {/* Non-admin visibility does not apply to user-level keys. */}
               {!this.props.userOwnedOnly && (
                 <fieldset className="form-section">
                   <legend>Visibility</legend>
@@ -546,8 +546,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                         checked={request.visibleToDevelopers}
                       />
                       <span>
-                        Visible to non-admins{" "}
-                        <span className="field-description">(org members with role other than Admin)</span>
+                        Visible to non-admins <span className="field-description">(org members with write access)</span>
                       </span>
                     </label>
                   </div>
@@ -659,7 +658,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
         <div className="api-keys-list">
           {!this.props.userOwnedOnly && getApiKeysResponse.apiKey.length == 0 && !this.canEdit() && (
             <div className="no-api-keys-message">
-              No API keys have been made visible to developers. Only organization admins can create API keys.
+              No API keys are available to your role. Only organization admins can create API keys.
             </div>
           )}
           {getApiKeysResponse.apiKey.map((key) => (
@@ -674,7 +673,11 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
               {renderDetails(key, apiKeyValueReadbackEnabled)}
               <div
                 className="api-key-capabilities"
-                title={key.visibleToDevelopers ? "Visible to non-admin members of this organization" : undefined}>
+                title={
+                  key.visibleToDevelopers
+                    ? "Visible to non-admin members of this organization with write access"
+                    : undefined
+                }>
                 <span>{describeCapabilities(key)}</span>
               </div>
               {isExpired(key) && apiKeyValueReadbackEnabled ? (

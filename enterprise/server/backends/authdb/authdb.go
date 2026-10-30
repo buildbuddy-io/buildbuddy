@@ -1169,7 +1169,7 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string, includeExpired 
 		qb.AddWhereClause(`ak.group_id = ?`, groupID)
 		if !isAdmin {
 			// If we're not an admin, restrict to keys that have been made visible
-			// to developers.
+			// to non-admin group members with write access.
 			qb.AddWhereClause("ak.visible_to_developers = ?", true)
 		}
 		qb.AddWhereClause(`ak.impersonation = false`)
