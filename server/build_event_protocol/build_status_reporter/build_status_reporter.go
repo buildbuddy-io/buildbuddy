@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
@@ -22,6 +24,8 @@ import (
 var (
 	statusPerTestTarget = flag.Bool("github.status_per_test_target", false, "If true, report status per test target. ** Enterprise only **")
 )
+
+const terminalStatusTimeout = 10 * time.Second
 
 type BuildStatusReporter struct {
 	baseBBURL                  string
@@ -84,6 +88,14 @@ func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, grou
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
 	githubPayload := r.getStatusPayloadForEvent(event)
 	if githubPayload != nil {
+		if github.State(githubPayload.GetState()) != github.PendingState {
+			// Once Finished is observed, finalization marks the invocation COMPLETE
+			// and will not report a disconnect. Give terminal statuses a bounded
+			// chance to finish even if Bazel cancels the stream during delivery.
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), terminalStatusTimeout)
+			defer cancel()
+		}
 		r.payloads = append(r.payloads, githubPayload)
 		r.flushPayloadsIfMetadataLoaded(ctx)
 	}
@@ -163,6 +175,12 @@ func (r *BuildStatusReporter) flushPayloadsIfMetadataLoaded(ctx context.Context)
 		return
 	}
 
+	if len(r.payloads) > 0 {
+		start := r.env.GetClock().Now()
+		defer func() {
+			metrics.GitHubStatusFlushDurationUsec.Observe(float64(r.env.GetClock().Since(start).Microseconds()))
+		}()
+	}
 	for _, payload := range r.payloads {
 		if github.State(payload.GetState()) == github.PendingState {
 			r.inFlight[payload.GetContext()] = true
