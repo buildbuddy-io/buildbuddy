@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
@@ -130,8 +131,7 @@ func ApplyToQuery(timestampField string, t *tppb.PaginationToken, q *query_build
 }
 
 func GetTargetHistory(ctx context.Context, env environment.Env, req *trpb.GetTargetHistoryRequest) (*trpb.GetTargetHistoryResponse, error) {
-	_, err := env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, env, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
 	}
 

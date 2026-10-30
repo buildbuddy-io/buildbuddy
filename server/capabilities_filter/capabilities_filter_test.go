@@ -131,8 +131,20 @@ func TestAllowedRPCs(t *testing.T) {
 			Allowed:   false,
 		},
 		{
+			Name:      "OrgMemberRPC_GetTargetHistory_Anonymous_NotAllowed",
+			RPC:       buildBuddyServicePrefix + "GetTargetHistory",
+			Anonymous: true,
+			Allowed:   false,
+		},
+		{
 			Name:         "OrgMemberRPC_OrgMember_Allowed",
 			RPC:          buildBuddyServicePrefix + "SearchInvocation",
+			Capabilities: []cappb.Capability{},
+			Allowed:      true,
+		},
+		{
+			Name:         "OrgMemberRPC_GetTargetHistory_OrgMember_Allowed",
+			RPC:          buildBuddyServicePrefix + "GetTargetHistory",
 			Capabilities: []cappb.Capability{},
 			Allowed:      true,
 		},
