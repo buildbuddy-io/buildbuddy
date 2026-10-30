@@ -59,7 +59,7 @@ const (
 	// the default executor pool for remote execution.
 	DefaultPoolValue = "default"
 
-	containerImagePropertyName = "container-image"
+	ContainerImagePropertyName = "container-image"
 	DockerPrefix               = "docker://"
 
 	containerRegistryUsernamePropertyName = "container-registry-username"
@@ -575,7 +575,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
 		EstimatedFreeDiskBytes:    iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
 		CustomResources:           customResources,
-		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
+		ContainerImage:            stringProp(m, ContainerImagePropertyName, ""),
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
 		WorkloadIsolationType:     isolationType,

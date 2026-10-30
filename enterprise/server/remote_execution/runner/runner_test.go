@@ -498,7 +498,7 @@ func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
 	explicitDefaultImageTask := newTask()
-	platform.SetValueForTask(explicitDefaultImageTask.ExecutionTask, "container-image", "docker://gcr.io/default:v1")
+	platform.SetValueForTask(explicitDefaultImageTask.ExecutionTask, platform.ContainerImagePropertyName, "docker://gcr.io/default:v1")
 	for _, enabled := range []bool{false, true} {
 		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
 			ctx := expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{

@@ -551,22 +551,25 @@ func TestSetValueForTask(t *testing.T) {
 		return &repb.Platform_Property{Name: "recycle-runner", Value: "true"}
 	}
 	image := func() *repb.Platform_Property {
-		return &repb.Platform_Property{Name: "container-image", Value: "docker://img"}
+		return &repb.Platform_Property{Name: ContainerImagePropertyName, Value: "docker://img"}
 	}
 	for _, tc := range []struct {
 		name string
 		task *repb.ExecutionTask
 		want *repb.ExecutionTask
+		// Whether the Action and Command platforms are created by
+		// SetValueForTask and so must be distinct objects.
+		createsPlatforms bool
 	}{
 		{
 			name: "only Command.Platform",
-			task: &repb.ExecutionTask{Command: &repb.Command{Platform: plat(recycle())}},
-			want: &repb.ExecutionTask{Command: &repb.Command{Platform: plat(image(), recycle())}},
-		},
-		{
-			name: "only Command.Platform, Action without platform",
 			task: &repb.ExecutionTask{Action: &repb.Action{}, Command: &repb.Command{Platform: plat(recycle())}},
 			want: &repb.ExecutionTask{Action: &repb.Action{}, Command: &repb.Command{Platform: plat(image(), recycle())}},
+		},
+		{
+			name: "only Action.Platform",
+			task: &repb.ExecutionTask{Action: &repb.Action{Platform: plat(recycle())}, Command: &repb.Command{}},
+			want: &repb.ExecutionTask{Action: &repb.Action{Platform: plat(image(), recycle())}, Command: &repb.Command{}},
 		},
 		{
 			name: "both platforms",
@@ -574,15 +577,16 @@ func TestSetValueForTask(t *testing.T) {
 			want: &repb.ExecutionTask{Action: &repb.Action{Platform: plat(image(), recycle())}, Command: &repb.Command{Platform: plat(image())}},
 		},
 		{
-			name: "neither platform",
-			task: &repb.ExecutionTask{Command: &repb.Command{}},
-			want: &repb.ExecutionTask{Action: &repb.Action{Platform: plat(image())}, Command: &repb.Command{Platform: plat(image())}},
+			name:             "neither platform",
+			task:             &repb.ExecutionTask{Command: &repb.Command{}},
+			want:             &repb.ExecutionTask{Action: &repb.Action{Platform: plat(image())}, Command: &repb.Command{Platform: plat(image())}},
+			createsPlatforms: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			SetValueForTask(tc.task, "container-image", "docker://img")
+			SetValueForTask(tc.task, ContainerImagePropertyName, "docker://img")
 			require.Empty(t, cmp.Diff(tc.want, tc.task, protocmp.Transform()))
-			if tc.task.GetAction().GetPlatform() != nil && tc.task.GetCommand().GetPlatform() != nil {
+			if tc.createsPlatforms {
 				require.NotSame(t, tc.task.GetAction().GetPlatform(), tc.task.GetCommand().GetPlatform())
 			}
 		})

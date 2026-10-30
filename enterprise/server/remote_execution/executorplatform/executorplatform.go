@@ -293,7 +293,7 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 			return status.InvalidArgumentErrorf("malformed container image string - should be prefixed with '%s'", platform.DockerPrefix)
 		}
 		if experiment && platformProps.ContainerImage != "" {
-			platform.SetValueForTask(task, "container-image", platformProps.ContainerImage)
+			platform.SetValueForTask(task, platform.ContainerImagePropertyName, platformProps.ContainerImage)
 		}
 		// Trim the docker prefix from ContainerImage -- we no longer need it.
 		platformProps.ContainerImage = containerImageName(platformProps.ContainerImage)
