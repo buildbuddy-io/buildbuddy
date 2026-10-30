@@ -1,6 +1,7 @@
 package event_parser_test
 
 import (
+	"maps"
 	"testing"
 	"time"
 
@@ -687,6 +688,113 @@ func TestRemoteCacheOptions(t *testing.T) {
 			assert.Equal(t, tc.expectedUploadLocalResultsEnabled, invocation.GetUploadLocalResultsEnabled())
 			assert.Equal(t, tc.expectedRemoteExecutionEnabled, invocation.GetRemoteExecutionEnabled())
 			assert.Equal(t, tc.expectedDownloadOutputOption, invocation.GetDownloadOutputsOption())
+		})
+	}
+}
+
+func TestAgentAttribution(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		env           map[string]string
+		metadata      map[string]string
+		workspace     *string
+		want          string
+		metadataFirst bool
+	}{
+		{
+			name: "unmarked",
+		},
+		{
+			name: "empty marker",
+			env:  map[string]string{"CODEX_SESSION_ID": ""},
+			want: "codex",
+		},
+		{
+			name: "multi-provider hint suppresses inference",
+			env:  map[string]string{"BUILDBUDDY_AGENT": "claude,codex", "CODEX_SESSION_ID": "session"},
+		},
+		{
+			name: "marker value containing equals",
+			env:  map[string]string{"CODEX_SESSION_ID": "session=value"},
+			want: "codex",
+		},
+		{
+			name: "Claude takes precedence when both markers are present",
+			env:  map[string]string{"CLAUDECODE": "1", "CODEX_SESSION_ID": "session"},
+			want: "claude",
+		},
+		{
+			name:     "metadata overrides detection",
+			env:      map[string]string{"CODEX_SESSION_ID": "session"},
+			metadata: map[string]string{"BUILDBUDDY_AGENT": "claude"},
+			want:     "claude",
+		},
+		{
+			name:     "explicit empty suppresses detection",
+			env:      map[string]string{"CODEX_SESSION_ID": "session"},
+			metadata: map[string]string{"BUILDBUDDY_AGENT": ""},
+		},
+		{
+			name:     "explicit none suppresses detection",
+			env:      map[string]string{"CODEX_SESSION_ID": "session"},
+			metadata: map[string]string{"BUILDBUDDY_AGENT": "none"},
+		},
+		{
+			name:     "unsupported provider suppresses detection",
+			env:      map[string]string{"CODEX_SESSION_ID": "session"},
+			metadata: map[string]string{"BUILDBUDDY_AGENT": "future-agent"},
+		},
+		{
+			name:      "workspace overrides detection",
+			env:       map[string]string{"CODEX_SESSION_ID": "session"},
+			workspace: new("claude"),
+			want:      "claude",
+		},
+		{
+			name:          "empty workspace hint suppresses later detection",
+			env:           map[string]string{"CODEX_SESSION_ID": "session"},
+			workspace:     new(""),
+			metadataFirst: true,
+		},
+		{
+			name:          "metadata overrides earlier and later sources",
+			env:           map[string]string{"CODEX_SESSION_ID": "session"},
+			workspace:     new("claude"),
+			metadataFirst: true,
+			metadata:      map[string]string{"BUILDBUDDY_AGENT": "codex"},
+			want:          "codex",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var options []*command_line.Option
+			for k, v := range tc.env {
+				options = append(options, &command_line.Option{OptionName: "client_env", OptionValue: k + "=" + v})
+			}
+			canonical := &build_event_stream.BuildEvent{Payload: &build_event_stream.BuildEvent_StructuredCommandLine{StructuredCommandLine: &command_line.CommandLine{CommandLineLabel: "canonical", Sections: []*command_line.CommandLineSection{{SectionType: &command_line.CommandLineSection_OptionList{OptionList: &command_line.OptionList{Option: options}}}}}}}
+			metadata := map[string]string{"ROLE": "CI"}
+			maps.Copy(metadata, tc.metadata)
+			var workspaceItems []*build_event_stream.WorkspaceStatus_Item
+			if tc.workspace != nil {
+				workspaceItems = append(workspaceItems, &build_event_stream.WorkspaceStatus_Item{
+					Key: "BUILDBUDDY_AGENT", Value: *tc.workspace,
+				})
+			}
+			events := []*build_event_stream.BuildEvent{
+				canonical,
+				{Payload: &build_event_stream.BuildEvent_WorkspaceStatus{WorkspaceStatus: &build_event_stream.WorkspaceStatus{Item: workspaceItems}}},
+				{Payload: &build_event_stream.BuildEvent_BuildMetadata{BuildMetadata: &build_event_stream.BuildMetadata{Metadata: metadata}}},
+			}
+			inv := &inpb.Invocation{}
+			parser := event_parser.NewStreamingEventParser(inv)
+			for i := range events {
+				idx := i
+				if tc.metadataFirst {
+					idx = len(events) - 1 - i
+				}
+				assert.NoError(t, parser.ParseEvent(events[idx]))
+			}
+			assert.Equal(t, tc.want, inv.GetAgent())
+			assert.Equal(t, "CI", inv.GetRole())
 		})
 	}
 }

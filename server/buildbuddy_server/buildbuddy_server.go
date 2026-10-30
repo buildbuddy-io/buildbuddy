@@ -2062,8 +2062,13 @@ func (s *BuildBuddyServer) UpdateRunStatus(ctx context.Context, req *elpb.Update
 		return nil, status.InvalidArgumentErrorf("invalid status")
 	}
 
-	inv.RunStatus = int64(req.GetStatus())
-	if _, err := s.env.GetInvocationDB().UpdateInvocation(ctx, inv); err != nil {
+	// Do not overwrite metadata recorded after the authorization lookup.
+	update := &tables.Invocation{
+		InvocationID: inv.InvocationID,
+		Attempt:      inv.Attempt,
+		RunStatus:    int64(req.GetStatus()),
+	}
+	if _, err := s.env.GetInvocationDB().UpdateInvocation(ctx, update); err != nil {
 		return nil, err
 	}
 
