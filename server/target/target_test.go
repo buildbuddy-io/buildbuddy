@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
@@ -103,9 +104,10 @@ func TestGetTargetHistory(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		name             string
-		request          *trpb.GetTargetHistoryRequest
-		expectedResponse *trpb.GetTargetHistoryResponse
+		name                   string
+		request                *trpb.GetTargetHistoryRequest
+		expectedResponse       *trpb.GetTargetHistoryResponse
+		expectPermissionDenied bool
 	}{
 		{
 			name: "GR1 repo1, no branch filter",
@@ -214,12 +216,27 @@ func TestGetTargetHistory(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "GR2 repo1 denied for GR1 user",
+			request: &trpb.GetTargetHistoryRequest{
+				RequestContext:       &ctxpb.RequestContext{GroupId: "GR2"},
+				ServerSidePagination: true,
+				Query: &trpb.TargetQuery{
+					RepoUrl: "https://github.com/gr2/repo1",
+				},
+			},
+			expectPermissionDenied: true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			gr1Ctx, err := testAuth.WithAuthenticatedUser(ctx, "US1")
 			require.NoError(t, err)
 
 			response, err := target.GetTargetHistory(gr1Ctx, env, test.request)
+			if test.expectPermissionDenied {
+				require.True(t, status.IsPermissionDeniedError(err), "expected permission denied, got response %v and error %v", response, err)
+				return
+			}
 
 			require.NoError(t, err)
 			require.Empty(t, cmp.Diff(
