@@ -28,6 +28,7 @@ import { compactDurationSec } from "../../../app/format/format";
 import { Github } from "../../../app/icons/github_lucide";
 import router from "../../../app/router/router";
 import {
+  AGENT_PARAM_NAME,
   BRANCH_PARAM_NAME,
   COMMAND_PARAM_NAME,
   COMMIT_PARAM_NAME,
@@ -77,6 +78,7 @@ interface State {
   isFilterMenuOpen: boolean;
   isSortMenuOpen: boolean;
 
+  agent?: string;
   user?: string;
   repo?: string;
   branch?: string;
@@ -108,6 +110,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     return {
       isFilterMenuOpen: false,
       isSortMenuOpen: false,
+      agent: (capabilities.config.agentFilterEnabled && search.get(AGENT_PARAM_NAME)) || undefined,
       user: search.get(USER_PARAM_NAME) || undefined,
       repo: search.get(REPO_PARAM_NAME) || undefined,
       branch: search.get(BRANCH_PARAM_NAME) || undefined,
@@ -127,6 +130,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
 
   updateFilterState(search: URLSearchParams) {
     return {
+      agent: (capabilities.config.agentFilterEnabled && search.get(AGENT_PARAM_NAME)) || undefined,
       user: search.get(USER_PARAM_NAME) || undefined,
       repo: search.get(REPO_PARAM_NAME) || undefined,
       branch: search.get(BRANCH_PARAM_NAME) || undefined,
@@ -154,6 +158,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       [ROLE_PARAM_NAME]: "",
+      [AGENT_PARAM_NAME]: "",
       [STATUS_PARAM_NAME]: "",
       [USER_PARAM_NAME]: "",
       [REPO_PARAM_NAME]: "",
@@ -245,6 +250,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   private handleFilterApplyClicked() {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
+      [AGENT_PARAM_NAME]: this.state.agent?.trim() || "",
       [USER_PARAM_NAME]: this.state.user || "",
       [REPO_PARAM_NAME]: this.state.repo || "",
       [BRANCH_PARAM_NAME]: this.state.branch || "",
@@ -322,6 +328,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   render() {
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
     const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
+    const agentValue =
+      (capabilities.config.agentFilterEnabled && this.props.search.get(AGENT_PARAM_NAME)?.trim()) || "";
     const userValue = this.props.search.get(USER_PARAM_NAME) || "";
     const repoValue = this.props.search.get(REPO_PARAM_NAME) || "";
     const branchValue = this.props.search.get(BRANCH_PARAM_NAME) || "";
@@ -369,6 +377,12 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             {selectedRoles.has("CI") && <span className="role-badge CI">CI</span>}
             {selectedRoles.has("CI_RUNNER") && <span className="role-badge CI_RUNNER">Workflow</span>}
             {selectedRoles.has("HOSTED_BAZEL") && <span className="role-badge HOSTED_BAZEL">Remote Bazel</span>}
+            {agentValue && (
+              <span className="advanced-badge">
+                <Sparkles />
+                {agentValue}
+              </span>
+            )}
             {userValue && (
               <span className="advanced-badge">
                 <User /> {userValue}
@@ -485,6 +499,18 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                   />
                 </div>
 
+                {capabilities.config.agentFilterEnabled && (
+                  <>
+                    <div className="option-group-title">Coding Agent</div>
+                    <div className="option-group-input">
+                      <TextInput
+                        placeholder={"e.g. codex"}
+                        value={this.state.agent}
+                        onChange={(e) => this.setState({ agent: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
                 {capabilities.config.patternFilterEnabled && (
                   <>
                     <div className="option-group-title">Pattern</div>

@@ -21,6 +21,7 @@ go_library(
         "//server/backends/invocationdb",
         "//server/build_event_protocol/accumulator",
         "//server/build_event_protocol/build_status_reporter",
+        "//server/build_event_protocol/event_parser",
         "//server/build_event_protocol/invocation_format",
         "//server/build_event_protocol/target_tracker",
         "//server/endpoint_urls/build_buddy_url",

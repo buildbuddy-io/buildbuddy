@@ -61,6 +61,7 @@ go_test(
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:eventlog_go_proto",
+        "//proto:runner_go_proto",
         "//server/testutil/testgit",
         "//server/testutil/testshell",
         "//server/util/lockingbuffer",

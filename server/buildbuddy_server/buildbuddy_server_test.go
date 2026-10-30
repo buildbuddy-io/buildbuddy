@@ -854,6 +854,24 @@ func TestFileDownloadEndpoint(t *testing.T) {
 	}
 }
 
+// Record attribution after reading the snapshot used by the status updater.
+type agentUpdateOnLookupDB struct {
+	interfaces.InvocationDB
+}
+
+func (d *agentUpdateOnLookupDB) LookupInvocation(ctx context.Context, id string) (*tables.Invocation, error) {
+	inv, err := d.InvocationDB.LookupInvocation(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	_, err = d.InvocationDB.UpdateInvocation(ctx, &tables.Invocation{
+		InvocationID: id,
+		Attempt:      inv.Attempt,
+		Agent:        new("codex"),
+	})
+	return inv, err
+}
+
 func TestWriteEventLog(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
@@ -879,11 +897,19 @@ func TestWriteEventLog(t *testing.T) {
 	// Create an invocation that is generating run logs.
 	iid, err := createInvocationForTesting(te, user1)
 	require.NoError(t, err)
+	// Simulate BES metadata arriving between the status lookup and write.
+	db := te.GetInvocationDB()
+	te.SetInvocationDB(&agentUpdateOnLookupDB{InvocationDB: db})
 	_, err = bbServer.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
 		InvocationId: iid,
 		Status:       inspb.OverallStatus_IN_PROGRESS,
 	})
+	te.SetInvocationDB(db)
 	require.NoError(t, err)
+	inv, err := db.LookupInvocation(ctx, iid)
+	require.NoError(t, err)
+	require.Equal(t, "codex", inv.GetAgent())
+	require.Equal(t, int64(inspb.OverallStatus_IN_PROGRESS), inv.RunStatus)
 
 	// Write event logs
 	stream, err := client.WriteEventLog(ctx)

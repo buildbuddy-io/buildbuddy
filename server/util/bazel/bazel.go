@@ -18,6 +18,10 @@ import (
 const (
 	bazelCommand    = "bazel"
 	bazeliskCommand = "bazelisk"
+
+	// CodingAgentEnvVar carries a normalized coding agent ID to Bazel runners.
+	// A present value, including empty, overrides marker detection.
+	CodingAgentEnvVar = "BUILDBUDDY_AGENT"
 )
 
 var (
@@ -113,4 +117,30 @@ func GetStartupOptions(bazelCommandArgs []string) ([]string, error) {
 		startupOptions = startupOptions[1:]
 	}
 	return startupOptions, nil
+}
+
+// NormalizeCodingAgent accepts a single supported coding agent or returns empty.
+func NormalizeCodingAgent(value string) string {
+	value = strings.TrimSpace(value)
+	switch value {
+	case "claude", "codex":
+		return value
+	default:
+		return ""
+	}
+}
+
+// DetectCodingAgent uses an explicit hint when present, otherwise marker presence.
+// Claude takes precedence when both markers are present.
+func DetectCodingAgent(lookup func(string) (string, bool)) string {
+	if hint, ok := lookup(CodingAgentEnvVar); ok {
+		return NormalizeCodingAgent(hint)
+	}
+	if _, ok := lookup("CLAUDECODE"); ok {
+		return "claude"
+	}
+	if _, ok := lookup("CODEX_SESSION_ID"); ok {
+		return "codex"
+	}
+	return ""
 }

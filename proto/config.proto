@@ -228,6 +228,9 @@ message FrontendConfig {
   // The buildbuddy commit to link the footer version to. May be empty or a
   // placeholder like "unknown" if the build wasn't stamped with one.
   string commit = 75;
+
+  // Whether independent agent filtering is supported.
+  bool agent_filter_enabled = 76;
 }
 
 message Region {

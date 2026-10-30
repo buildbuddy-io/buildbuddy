@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -67,5 +67,16 @@ ts_library(
         "//app/router",
         "//app/router:router_params",
         "//enterprise/app/filter:filter_util",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "filter_util_test",
+    srcs = ["filter_util_test.ts"],
+    deps = [
+        ":filter_util",
+        "//app/capabilities",
+        "//app/router:router_params",
+        "//proto:stat_filter_ts_proto",
     ],
 )

@@ -825,6 +825,89 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 	assert.Contains(t, string(txt), "--client_env=FOO_SECRET=<REDACTED>", "Values of non-allowed env vars should be redacted")
 }
 
+func TestHandleEventWithAgentOverride(t *testing.T) {
+	flags.Set(t, "app.tags_enabled", true)
+	for _, tc := range []struct {
+		name        string
+		override    map[string]string
+		want        string
+		replay      bool
+		storedAgent string
+	}{
+		{
+			name:     "provider override replaces saved detection",
+			override: map[string]string{"BUILDBUDDY_AGENT": "claude"},
+			want:     "claude",
+		},
+		{
+			name:     "empty override clears saved detection",
+			override: map[string]string{"BUILDBUDDY_AGENT": ""},
+		},
+		{
+			name:   "historical replay does not invent attribution",
+			replay: true,
+		},
+		{
+			name:        "historical replay preserves attribution",
+			replay:      true,
+			storedAgent: "claude",
+			want:        "claude",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+			te.SetAuthenticator(auth)
+			ctx := auth.AuthContextFromAPIKey(t.Context(), "USER1")
+			iid, err := uuid.NewRandom()
+			require.NoError(t, err)
+			handler := build_event_handler.NewBuildEventHandler(te)
+			channel, err := handler.OpenChannel(ctx, iid.String())
+			require.NoError(t, err)
+			defer channel.Close()
+			canonical := structuredCommandLineEvent(map[string]string{"CODEX_SESSION_ID": "session", "CI": "true"})
+			event := &bspb.BuildEvent{}
+			require.NoError(t, canonical.UnmarshalTo(event))
+			event.GetStructuredCommandLine().CommandLineLabel = "canonical"
+			event.GetId().GetStructuredCommandLine().CommandLineLabel = "canonical"
+			require.NoError(t, canonical.MarshalFrom(event))
+			events := []*anypb.Any{
+				startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bspb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "canonical"}}, &bspb.BuildEventId_BuildMetadata{}, &bspb.BuildEventId_WorkspaceStatus{}),
+				canonical,
+				buildMetadataEvent(map[string]string{"TAGS": "team=build"}),
+				workspaceStatusEvent("COMMIT_SHA", "abc123"),
+			}
+			for i, event := range events {
+				require.NoError(t, channel.HandleEvent(streamRequest(event, iid.String(), int64(i+1))))
+			}
+			stored, err := build_event_handler.LookupInvocation(te, ctx, iid.String())
+			require.NoError(t, err)
+			require.Equal(t, "codex", stored.GetAgent())
+
+			sequence := int64(len(events) + 1)
+			if tc.override != nil {
+				require.NoError(t, channel.HandleEvent(streamRequest(buildMetadataEvent(tc.override), iid.String(), sequence)))
+				sequence++
+			}
+			require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), iid.String(), sequence)))
+			require.NoError(t, channel.FinalizeInvocation(iid.String()))
+			if tc.replay {
+				// Model a legacy stored invocation that still needs redaction.
+				// Its attribution snapshot is authoritative.
+				require.NoError(t, te.GetDBHandle().GORM(ctx, "test_legacy_invocation").Model(&tables.Invocation{}).
+					Where("invocation_id = ?", iid.String()).Updates(map[string]any{
+					"agent": tc.storedAgent, "redaction_flags": 0,
+				}).Error)
+			}
+			stored, err = build_event_handler.LookupInvocation(te, ctx, iid.String())
+			require.NoError(t, err)
+			require.Equal(t, "CI", stored.GetRole())
+			require.Equal(t, tc.want, stored.GetAgent())
+			require.Equal(t, "team=build", stored.GetTags()[0].GetName())
+		})
+	}
+}
+
 func TestHandleEventRedactsMultilineEnvVar(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := context.Background()

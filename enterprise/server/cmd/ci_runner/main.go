@@ -1088,6 +1088,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	} else {
 		buildMetadata.Metadata["ROLE"] = "HOSTED_BAZEL"
 	}
+	provider := bazel.DetectCodingAgent(os.LookupEnv)
+	_, hasAgentHint := os.LookupEnv(bazel.CodingAgentEnvVar)
+	if provider != "" || hasAgentHint {
+		buildMetadata.Metadata[bazel.CodingAgentEnvVar] = provider
+	}
 	if *prNumber != 0 {
 		buildMetadata.Metadata["PULL_REQUEST_NUMBER"] = fmt.Sprintf("%d", *prNumber)
 	}

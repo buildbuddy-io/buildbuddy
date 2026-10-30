@@ -51,6 +51,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
     const ownerGroup = this.props.model.findOwnerGroup(this.props.user?.groups);
     const isBazelInvocation = this.props.model.isBazelInvocation();
     const roleLabel = format.formatRole(this.props.model.getRole());
+    const agentLabel = format.formatCodingAgent(this.props.model.invocation.agent);
     const parentInvocationId = this.props.model.buildMetadataMap.get("PARENT_INVOCATION_ID");
     const parentWorkflowId = this.props.model.buildMetadataMap.get("WORKFLOW_ID");
     const hasCapabilityMetadata = this.props.model.invocation.createdWithCapabilities != null;
@@ -89,6 +90,11 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             <div className="title">{this.props.model.workflowConfigured.actionName}</div>
           )}
           {roleLabel && <div className={`role-badge ${this.props.model.getRole()}`}>{roleLabel}</div>}
+          {agentLabel && (
+            <div className="role-badge coding-agent" title="Coding agent">
+              {agentLabel}
+            </div>
+          )}
           <div className="subtitle">{this.props.model.getFormattedStartedDate()}</div>
         </div>
         <div debug-id="invocation-details" className="details">

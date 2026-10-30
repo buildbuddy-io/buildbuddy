@@ -92,6 +92,7 @@ func getEngine() string {
 
 // Invocation constains a subset of tables.Invocations.
 type Invocation struct {
+	Agent          string
 	GroupID        string `gorm:"primaryKey;"`
 	UpdatedAtUsec  int64  `gorm:"primaryKey;"`
 	CreatedAtUsec  int64
@@ -326,6 +327,7 @@ type Execution struct {
 	CommandSnippet string `gorm:"codec:ZSTD(1)"`
 
 	// Fields from Invocations
+	Agent            string
 	User             string `gorm:"codec:ZSTD(1)"`
 	Host             string `gorm:"codec:ZSTD(1)"`
 	Pattern          string `gorm:"codec:ZSTD(1)"`
@@ -371,6 +373,7 @@ func (e *Execution) AdditionalFields() []string {
 		"Host",
 		"Pattern",
 		"Role",
+		"Agent",
 		"BranchName",
 		"CommitSHA",
 		"RepoURL",
@@ -805,6 +808,7 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		CreatedAtUsec:                     ti.CreatedAtUsec,
 		InvocationUUID:                    hex.EncodeToString(ti.InvocationUUID),
 		Role:                              ti.Role,
+		Agent:                             ti.GetAgent(),
 		User:                              ti.User,
 		UserID:                            ti.UserID,
 		Host:                              ti.Host,
