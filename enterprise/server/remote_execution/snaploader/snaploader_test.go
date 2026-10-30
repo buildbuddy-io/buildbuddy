@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -1232,4 +1233,132 @@ func mustReadStore(t *testing.T, store *copy_on_write.COWStore) []byte {
 	b, err := io.ReadAll(r)
 	require.NoError(t, err)
 	return b
+}
+
+func TestGetSnapshot_RejectsInvalidFileNames(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// tamper modifies the manifest. sentinelPath is a file outside the
+		// unpack dir; d is a blob in the remote CAS.
+		tamper func(ar *repb.ActionResult, sentinelPath string, d *repb.Digest)
+	}{
+		{
+			name: "OutputFileDotDot",
+			tamper: func(ar *repb.ActionResult, sentinelPath string, d *repb.Digest) {
+				ar.OutputFiles = append(ar.OutputFiles, &repb.OutputFile{Path: "../sentinel", Digest: d})
+			},
+		},
+		{
+			name: "ChunkedFileDotDot",
+			tamper: func(ar *repb.ActionResult, sentinelPath string, d *repb.Digest) {
+				ar.OutputDirectories[0].Path = "../sentinel"
+			},
+		},
+		{
+			name: "DuplicateOutputFileName",
+			tamper: func(ar *repb.ActionResult, sentinelPath string, d *repb.Digest) {
+				ar.OutputFiles = append(ar.OutputFiles, &repb.OutputFile{Path: ar.OutputFiles[0].GetPath(), Digest: d})
+			},
+		},
+		{
+			name: "OutputFileRoot",
+			tamper: func(ar *repb.ActionResult, sentinelPath string, d *repb.Digest) {
+				ar.OutputFiles = append(ar.OutputFiles, &repb.OutputFile{Path: "/", Digest: d})
+			},
+		},
+		{
+			name: "OutputFileAbsolute",
+			tamper: func(ar *repb.ActionResult, sentinelPath string, d *repb.Digest) {
+				ar.OutputFiles = append(ar.OutputFiles, &repb.OutputFile{Path: sentinelPath, Digest: d})
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+			ctx := context.Background()
+			env := setupEnv(t)
+			loader, err := snaploader.New(env)
+			require.NoError(t, err)
+			workDir := testfs.MakeTempDir(t)
+
+			// The manifest is only written to the remote AC, so GetSnapshot
+			// reads it from there.
+			srcDir := testfs.MakeDirAll(t, workDir, "src")
+			const chunkSize = 512 * 1024
+			imagePath := makeRandomFile(t, srcDir, "scratchfs.ext4", chunkSize*2)
+			cow, err := copy_on_write.ConvertFileToCOW(ctx, env, imagePath, chunkSize, srcDir, "", true, snaputil.ConvertToCOWConcurrency)
+			require.NoError(t, err)
+			t.Cleanup(func() { cow.Close() })
+			keys, err := loader.SnapshotKeySet(ctx, &repb.ExecutionTask{}, "config-hash", "")
+			require.NoError(t, err)
+			opts := makeFakeSnapshot(t, srcDir, true, map[string]*copy_on_write.COWStore{"scratchfs": cow}, "")
+			require.NoError(t, loader.CacheSnapshot(ctx, keys.GetBranchKey(), opts))
+			instanceName := keys.GetBranchKey().GetInstanceName()
+
+			otherDigest, err := cachetools.UploadBlob(ctx, env.GetByteStreamClient(), instanceName, repb.DigestFunction_BLAKE3, bytes.NewReader([]byte("other-content")))
+			require.NoError(t, err)
+
+			manifestKey, err := snaploader.RemoteManifestKey(keys.GetBranchKey())
+			require.NoError(t, err)
+			ar, err := env.GetActionCacheClient().GetActionResult(ctx, &repb.GetActionResultRequest{
+				InstanceName:   instanceName,
+				ActionDigest:   manifestKey,
+				DigestFunction: repb.DigestFunction_BLAKE3,
+			})
+			require.NoError(t, err)
+			require.NotEmpty(t, ar.GetOutputFiles())
+			require.NotEmpty(t, ar.GetOutputDirectories())
+
+			const sentinel = "sentinel-content"
+			sentinelPath := filepath.Join(workDir, "sentinel")
+			require.NoError(t, os.WriteFile(sentinelPath, []byte(sentinel), 0644))
+			tc.tamper(ar, sentinelPath, otherDigest)
+			_, err = env.GetActionCacheClient().UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+				InstanceName:   instanceName,
+				ActionDigest:   manifestKey,
+				ActionResult:   ar,
+				DigestFunction: repb.DigestFunction_BLAKE3,
+			})
+			require.NoError(t, err)
+
+			_, err = loader.GetSnapshot(ctx, keys, &snaploader.GetSnapshotOptions{
+				SupportsRemoteChunks:   true,
+				SupportsRemoteManifest: true,
+				ReadPolicy:             platform.AlwaysReadNewestSnapshot,
+			})
+			require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+			b, err := os.ReadFile(sentinelPath)
+			require.NoError(t, err)
+			require.Equal(t, sentinel, string(b))
+		})
+	}
+}
+
+// UnpackSnapshot should check all names before writing any files.
+func TestUnpackSnapshot_PreflightsNames(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	workDir := testfs.MakeTempDir(t)
+	srcDir := testfs.MakeDirAll(t, workDir, "src")
+	keys, err := loader.SnapshotKeySet(ctx, &repb.ExecutionTask{}, "config-hash", "")
+	require.NoError(t, err)
+	opts := makeFakeSnapshot(t, srcDir, false, nil, "")
+	require.NoError(t, loader.CacheSnapshot(ctx, keys.GetBranchKey(), opts))
+
+	snap, err := loader.GetSnapshot(ctx, keys, &snaploader.GetSnapshotOptions{ReadPolicy: platform.AlwaysReadNewestSnapshot})
+	require.NoError(t, err)
+	files := snap.GetFiles()
+	require.Greater(t, len(files), 1)
+	files[len(files)-1].Name = "../x"
+
+	outDir := testfs.MakeDirAll(t, workDir, "unpack")
+	_, err = loader.UnpackSnapshot(ctx, snap, outDir)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+	entries, err := os.ReadDir(outDir)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+	_, err = os.Stat(filepath.Join(workDir, "x"))
+	require.True(t, os.IsNotExist(err))
 }
