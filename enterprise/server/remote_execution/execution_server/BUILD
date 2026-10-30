@@ -43,6 +43,7 @@ go_library(
         "//server/util/claims",
         "//server/util/clientip",
         "//server/util/db",
+        "//server/util/expflag",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/perms",
