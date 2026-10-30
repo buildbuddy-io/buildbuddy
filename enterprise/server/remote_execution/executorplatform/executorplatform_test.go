@@ -1,6 +1,7 @@
 package executorplatform
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -62,7 +63,7 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(t.Context(), env, testCase.execProps, platformProps, &repb.Command{})
+		err = ApplyOverrides(t.Context(), env, testCase.execProps, platformProps, &repb.ExecutionTask{Command: &repb.Command{}})
 		require.NoError(t, err)
 		assert.Equal(t, testCase.expected, platformProps.ContainerImage, testCase)
 	}
@@ -87,7 +88,7 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(t.Context(), env, testCase.execProps, platformProps, &repb.Command{})
+		err = ApplyOverrides(t.Context(), env, testCase.execProps, platformProps, &repb.ExecutionTask{Command: &repb.Command{}})
 		assert.Error(t, err)
 	}
 }
@@ -276,7 +277,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 				"MacOSX11.3": "Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.3.sdk",
 			},
 		})
-		err = ApplyOverrides(t.Context(), env, execProps, platformProps, command)
+		err = ApplyOverrides(t.Context(), env, execProps, platformProps, &repb.ExecutionTask{Command: command})
 		if testCase.errorExpected {
 			require.Error(t, err)
 		} else {
@@ -304,7 +305,7 @@ func TestApplyOverrides_PersistentVolumesExperiment(t *testing.T) {
 
 	// The experiment's volumes should take precedence over the platform
 	// property.
-	err = ApplyOverrides(ctx, testenv.GetTestEnv(t), bare, platformProps, &repb.Command{})
+	err = ApplyOverrides(ctx, testenv.GetTestEnv(t), bare, platformProps, &repb.ExecutionTask{Command: &repb.Command{}})
 	require.NoError(t, err)
 	want, err := platform.ParsePersistentVolumes("cache:/tmp/.cache", "other:/other")
 	require.NoError(t, err)
@@ -329,7 +330,7 @@ func TestEnvAndArgOverrides(t *testing.T) {
 		},
 	}
 	env := testenv.GetTestEnv(t)
-	err = ApplyOverrides(t.Context(), env, execProps, platformProps, command)
+	err = ApplyOverrides(t.Context(), env, execProps, platformProps, &repb.ExecutionTask{Command: command})
 	require.NoError(t, err)
 
 	expectedCmd := &repb.Command{
@@ -397,7 +398,7 @@ func TestRunUnder(t *testing.T) {
 			require.NoError(t, err)
 			command := &repb.Command{Arguments: tc.initialArgs}
 			env := testenv.GetTestEnv(t)
-			err = ApplyOverrides(t.Context(), env, bare, platformProps, command)
+			err = ApplyOverrides(t.Context(), env, bare, platformProps, &repb.ExecutionTask{Command: command})
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedArgs, command.Arguments)
 		})
@@ -439,7 +440,7 @@ func TestExtraEnvVars(t *testing.T) {
 			env := testenv.GetTestEnv(t)
 			cmd := &repb.Command{}
 			platformProps := &platform.Properties{}
-			ApplyOverrides(t.Context(), env, podmanAndFirecracker, platformProps, cmd)
+			ApplyOverrides(t.Context(), env, podmanAndFirecracker, platformProps, &repb.ExecutionTask{Command: cmd})
 			require.Empty(t, cmp.Diff(
 				tc.expectedEnvVars,
 				cmd.EnvironmentVariables,
@@ -512,63 +513,106 @@ func TestContainerImageNameRewrite(t *testing.T) {
 	}
 }
 
-func TestDefaultContainerImageRef(t *testing.T) {
+func TestDefaultImageInPlatform(t *testing.T) {
+	flags.Set(t, "executor.default_image", "gcr.io/default:v1")
+	flags.Set(t, "executor.container_image_name_rewrites", []ImageRewrite{{Prefix: "gcr.io/", Replacement: "gcr.io/mirror/"}})
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	withExperiment := func(enabled bool) context.Context {
+		return expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{{
+			Name:  execution_experiments.DefaultImageInPlatform.Name(),
+			Value: &expb.EvaluatedFlag_BoolValue{BoolValue: enabled},
+		}})
+	}
+	props := func(kv ...string) []*repb.Platform_Property {
+		var out []*repb.Platform_Property
+		for i := 0; i < len(kv); i += 2 {
+			out = append(out, &repb.Platform_Property{Name: kv[i], Value: kv[i+1]})
+		}
+		return out
+	}
+	commandTask := func(kv ...string) *repb.ExecutionTask {
+		return &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: props(kv...)}}}
+	}
+	apply := func(ctx context.Context, execProps *ExecutorProperties, task *repb.ExecutionTask) string {
+		platformProps, err := platform.ParseProperties(task)
+		require.NoError(t, err)
+		require.NoError(t, ApplyOverrides(ctx, testenv.GetTestEnv(t), execProps, platformProps, task))
+		return platformProps.ContainerImage
+	}
+	explicitImage := apply(t.Context(), docker, commandTask("container-image", "docker://gcr.io/default:v1"))
+	// Without the experiment, the default image is rewritten twice.
+	require.Equal(t, "gcr.io/mirror/mirror/default:v1", apply(t.Context(), docker, commandTask()))
+	require.Equal(t, "gcr.io/mirror/default:v1", explicitImage)
+
 	for _, tc := range []struct {
-		name         string
-		rewrites     []ImageRewrite
-		region       string
-		defaultImage string
-		expected     string
+		name      string
+		enabled   bool
+		execProps *ExecutorProperties
+		task      *repb.ExecutionTask
+		wantTask  *repb.ExecutionTask
+		wantImage string
 	}{
 		{
-			name:         "no rules returns raw default",
-			defaultImage: "gcr.io/default:v1",
-			expected:     "docker://gcr.io/default:v1",
+			name:      "off",
+			execProps: docker,
+			task:      commandTask("OSFamily", "linux", "recycle-runner", "true"),
+			wantTask:  commandTask("OSFamily", "linux", "recycle-runner", "true"),
+			wantImage: "gcr.io/mirror/mirror/default:v1",
 		},
 		{
-			name:         "docker prefix is not doubled",
-			defaultImage: "docker://gcr.io/default:v1",
-			expected:     "docker://gcr.io/default:v1",
+			name:      "on inserts sorted",
+			enabled:   true,
+			execProps: docker,
+			task:      commandTask("OSFamily", "linux", "recycle-runner", "true"),
+			wantTask:  commandTask("OSFamily", "linux", "container-image", "docker://gcr.io/default:v1", "recycle-runner", "true"),
+			wantImage: explicitImage,
 		},
 		{
-			name:         "idempotent rule returns raw default",
-			rewrites:     []ImageRewrite{{Prefix: "gcr.io/", Replacement: "mirror.example.com/"}},
-			defaultImage: "gcr.io/default:v1",
-			expected:     "docker://gcr.io/default:v1",
+			name:      "on replaces none",
+			enabled:   true,
+			execProps: docker,
+			task:      commandTask("container-image", "none"),
+			wantTask:  commandTask("container-image", "docker://gcr.io/default:v1"),
+			wantImage: explicitImage,
 		},
 		{
-			name:         "region placeholder returns raw default",
-			region:       "us-west1",
-			defaultImage: "{{region}}.gcr.io/default:v1",
-			expected:     "docker://{{region}}.gcr.io/default:v1",
+			name:      "on sets action platform",
+			enabled:   true,
+			execProps: docker,
+			task: &repb.ExecutionTask{
+				Action:  &repb.Action{Platform: &repb.Platform{Properties: props("recycle-runner", "true")}},
+				Command: &repb.Command{Platform: &repb.Platform{Properties: props("recycle-runner", "true")}},
+			},
+			wantTask: &repb.ExecutionTask{
+				Action:  &repb.Action{Platform: &repb.Platform{Properties: props("container-image", "docker://gcr.io/default:v1", "recycle-runner", "true")}},
+				Command: &repb.Command{Platform: &repb.Platform{Properties: props("recycle-runner", "true")}},
+			},
+			wantImage: explicitImage,
 		},
 		{
-			// Applying this rewrite twice gives a different image.
-			name:         "non-idempotent rule returns single-pass rewrite",
-			rewrites:     []ImageRewrite{{Prefix: "gcr.io/", Replacement: "gcr.io/mirror/"}},
-			defaultImage: "gcr.io/default:v1",
-			expected:     "docker://gcr.io/mirror/default:v1",
+			name:      "on keeps explicit image",
+			enabled:   true,
+			execProps: docker,
+			task:      commandTask("container-image", "docker://alpine"),
+			wantTask:  commandTask("container-image", "docker://alpine"),
+			wantImage: "alpine",
+		},
+		{
+			name:      "on ignores bare",
+			enabled:   true,
+			execProps: bare,
+			task:      commandTask("OSFamily", "linux"),
+			wantTask:  commandTask("OSFamily", "linux"),
+			wantImage: "",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			flags.Set(t, "executor.container_image_name_rewrites", tc.rewrites)
-			flags.Set(t, "executor.container_registry_region", tc.region)
-			flags.Set(t, "executor.default_image", tc.defaultImage)
-			ref := DefaultContainerImageRef()
-			require.Equal(t, tc.expected, ref)
-
-			// A task that explicitly requests ref runs the same image as one
-			// that requests no image.
-			implicit := &platform.Properties{}
-			require.NoError(t, ApplyOverrides(t.Context(), testenv.GetTestEnv(t), docker, implicit, &repb.Command{}))
-			explicit := &platform.Properties{ContainerImage: ref}
-			require.NoError(t, ApplyOverrides(t.Context(), testenv.GetTestEnv(t), docker, explicit, &repb.Command{}))
-			require.Equal(t, implicit.ContainerImage, explicit.ContainerImage)
+			image := apply(withExperiment(tc.enabled), tc.execProps, tc.task)
+			require.Equal(t, tc.wantImage, image)
+			require.Empty(t, cmp.Diff(tc.wantTask, tc.task, protocmp.Transform()))
 		})
 	}
-
-	flags.Set(t, "executor.default_image", "")
-	require.Equal(t, "", DefaultContainerImageRef())
 }
 
 func TestForceNetworkIsolationType(t *testing.T) {
@@ -601,7 +645,7 @@ func TestForceNetworkIsolationType(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(t.Context(), env, podmanAndFirecracker, platformProps, &repb.Command{})
+		err = ApplyOverrides(t.Context(), env, podmanAndFirecracker, platformProps, &repb.ExecutionTask{Command: &repb.Command{}})
 		assert.NoError(t, err)
 		assert.Equal(t, testCase.expectedIsolationType, platformProps.WorkloadIsolationType, testCase)
 	}

@@ -65,23 +65,6 @@ func DefaultImage() string {
 	return *defaultImage
 }
 
-// DefaultContainerImageRef returns the container-image platform property value
-// that, when requested explicitly, runs the same image as a task that requests
-// no image. When the raw default image runs that same image (the image rewrite
-// is idempotent, as when there are no rewrite rules), it returns the raw default
-// so that it matches what clients and warmup send; otherwise it returns the
-// rewritten name. It returns "" if there is no default image.
-func DefaultContainerImageRef() string {
-	name := containerImageName(*defaultImage)
-	if name == "" {
-		return ""
-	}
-	if containerImageName(name) == name {
-		return platform.DockerPrefix + strings.TrimPrefix(*defaultImage, platform.DockerPrefix)
-	}
-	return platform.DockerPrefix + name
-}
-
 // ExecutorProperties provides the bits of executor configuration that are
 // needed to properly interpret the platform properties.
 type ExecutorProperties struct {
@@ -236,7 +219,8 @@ func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) 
 
 // ApplyOverrides modifies the platformProps and command as needed to match the
 // locally configured executor properties.
-func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *ExecutorProperties, platformProps *platform.Properties, command *repb.Command) error {
+func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *ExecutorProperties, platformProps *platform.Properties, task *repb.ExecutionTask) error {
+	command := task.GetCommand()
 	if len(executorProps.SupportedIsolationTypes) == 0 {
 		return status.FailedPreconditionError("No workload isolation types configured.")
 	}
@@ -296,7 +280,14 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 		// OCI container references lose the "docker://" prefix. If no
 		// container was set then we set our default.
 		if strings.EqualFold(platformProps.ContainerImage, "none") || platformProps.ContainerImage == "" {
-			platformProps.ContainerImage = containerImageName(*defaultImage)
+			if execution_experiments.DefaultImageInPlatform.Get(ctx) && *defaultImage != "" {
+				// Handle the default image exactly like an explicit request
+				// for it, and record it so the task hashes like one.
+				platformProps.ContainerImage = platform.DockerPrefix + strings.TrimPrefix(*defaultImage, platform.DockerPrefix)
+				platform.SetContainerImage(task, platformProps.ContainerImage)
+			} else {
+				platformProps.ContainerImage = containerImageName(*defaultImage)
+			}
 		} else if !strings.HasPrefix(platformProps.ContainerImage, platform.DockerPrefix) {
 			// Return an error if a client specified an unparseable
 			// container reference.

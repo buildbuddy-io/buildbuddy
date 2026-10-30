@@ -862,37 +862,30 @@ func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 
 // SetContainerImage sets the container-image property to value in the
 // platform that GetProto returns for the task, replacing any existing values
-// or else inserting it in name-sorted position so that the task hashes like
-// one that explicitly requested the image.
+// or else inserting it in name-sorted position.
 func SetContainerImage(task *repb.ExecutionTask, value string) {
 	plat := GetProto(task.GetAction(), task.GetCommand())
 	if plat == nil {
 		if task.Command == nil {
 			task.Command = &repb.Command{}
 		}
-		task.Command.Platform = &repb.Platform{}
-		plat = task.Command.Platform
+		plat = &repb.Platform{}
+		task.Command.Platform = plat
 	}
 	found := false
-	for _, prop := range plat.Properties {
-		if strings.EqualFold(prop.GetName(), containerImagePropertyName) {
-			prop.Value = value
-			found = true
+	for _, p := range plat.Properties {
+		if strings.EqualFold(p.GetName(), containerImagePropertyName) {
+			p.Value, found = value, true
 		}
 	}
 	if found {
 		return
 	}
-	i := slices.IndexFunc(plat.Properties, func(p *repb.Platform_Property) bool {
-		return p.GetName() > containerImagePropertyName
-	})
+	i := slices.IndexFunc(plat.Properties, func(p *repb.Platform_Property) bool { return p.GetName() > containerImagePropertyName })
 	if i < 0 {
 		i = len(plat.Properties)
 	}
-	plat.Properties = slices.Insert(plat.Properties, i, &repb.Platform_Property{
-		Name:  containerImagePropertyName,
-		Value: value,
-	})
+	plat.Properties = slices.Insert(plat.Properties, i, &repb.Platform_Property{Name: containerImagePropertyName, Value: value})
 }
 
 // IsTrue returns whether the given platform property value is truthy.

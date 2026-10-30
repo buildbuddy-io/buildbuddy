@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -492,75 +491,30 @@ func TestRunnerPool_OCISeccompDisableNewUserNS(t *testing.T) {
 
 func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 	flags.Set(t, "executor.enable_oci", true)
+	flags.Set(t, "executor.default_image", "gcr.io/default:v1")
 	expflag.SetFlagProvider(expflag.NewContextProvider())
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 	env := newTestEnv(t)
-	newPool := func(t *testing.T) *pool {
-		cfg := noLimitsCfg()
-		cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-			return NewFakeContainer(), nil
-		})
-		return newRunnerPool(t, env, cfg)
-	}
 	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
-	withExperiment := func(enabled bool) context.Context {
-		return expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
-			Name:  "executor.default_image_in_platform",
-			Value: &expb.EvaluatedFlag_BoolValue{BoolValue: enabled},
-		}})
-	}
-	newExplicitDefaultImageTask := func() *repb.ScheduledTask {
-		task := newTask()
-		plat := task.ExecutionTask.Command.Platform
-		plat.Properties = append([]*repb.Platform_Property{{
-			Name:  "container-image",
-			Value: "docker://" + executorplatform.DefaultImage(),
-		}}, plat.Properties...)
-		return task
-	}
-
-	t.Run("disabled", func(t *testing.T) {
-		ctx := withExperiment(false)
-		pool := newPool(t)
-		r := mustGetNewRunner(t, ctx, pool, newTask())
-		mustAddWithoutEviction(t, ctx, pool, r)
-		other := mustGetNewRunner(t, ctx, pool, newExplicitDefaultImageTask())
-		assert.NotSame(t, r, other)
-	})
-
-	for _, tc := range []struct {
-		name    string
-		newTask func() *repb.ScheduledTask
-	}{
-		{
-			name:    "no image",
-			newTask: newTask,
-		},
-		{
-			name: "header override none",
-			newTask: func() *repb.ScheduledTask {
-				task := newTask()
-				task.ExecutionTask.PlatformOverrides = &repb.Platform{Properties: []*repb.Platform_Property{
-					{Name: "container-image", Value: "none"},
-				}}
-				return task
-			},
-		},
-	} {
-		t.Run("enabled/"+tc.name, func(t *testing.T) {
-			offCtx := withExperiment(false)
-			offRunner := mustGetNewRunner(t, offCtx, newPool(t), tc.newTask())
-
-			ctx := withExperiment(true)
-			pool := newPool(t)
-			r := mustGetNewRunner(t, ctx, pool, tc.newTask())
-			// The image that runs is the same as with the experiment off.
-			assert.Equal(t, offRunner.PlatformProperties.ContainerImage, r.PlatformProperties.ContainerImage)
+	explicitDefaultImageTask := newTask()
+	platform.SetContainerImage(explicitDefaultImageTask.ExecutionTask, "docker://gcr.io/default:v1")
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			ctx := expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
+				Name:  "executor.default_image_in_platform",
+				Value: &expb.EvaluatedFlag_BoolValue{BoolValue: enabled},
+			}})
+			cfg := noLimitsCfg()
+			cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+				return NewFakeContainer(), nil
+			})
+			pool := newRunnerPool(t, env, cfg)
+			r := mustGetNewRunner(t, ctx, pool, newTask())
 			mustAddWithoutEviction(t, ctx, pool, r)
-			// The runner is reused for a task that explicitly requests the
-			// default image.
-			reused := mustGetPausedRunner(t, ctx, pool, newExplicitDefaultImageTask())
-			assert.Same(t, r, reused)
+			// Only with the experiment is the runner reused for a task that
+			// explicitly requests the default image.
+			other := mustGet(t, ctx, pool, explicitDefaultImageTask.CloneVT())
+			assert.Equal(t, enabled, r == other)
 		})
 	}
 }

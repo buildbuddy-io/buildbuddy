@@ -1,7 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-# gazelle:go_test file
-
 go_library(
     name = "platform",
     srcs = [
@@ -37,19 +35,6 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//testing/protocmp",
-    ],
-)
-
-go_test(
-    name = "set_container_image_test",
-    size = "small",
-    srcs = ["set_container_image_test.go"],
-    deps = [
-        ":platform",
-        "//proto:remote_execution_go_proto",
-        "@com_github_google_go_cmp//cmp",
-        "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

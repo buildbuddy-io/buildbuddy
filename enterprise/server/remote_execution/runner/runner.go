@@ -1067,7 +1067,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	if err != nil {
 		return err
 	}
-	executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), platProps, task.GetCommand())
+	executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), platProps, task)
 	if *resolveImageDigests {
 		if err := p.resolveImageDigest(ctx, platProps); err != nil {
 			return err
@@ -1220,17 +1220,9 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 	if err != nil {
 		return nil, err
 	}
-	imageUnset := props.ContainerImage == "" || strings.EqualFold(props.ContainerImage, "none")
 	// TODO: This mutates the task; find a cleaner way to do this.
-	if err := executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
+	if err := executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task); err != nil {
 		return nil, err
-	}
-	if imageUnset && props.WorkloadIsolationType != string(platform.BareContainerType) && execution_experiments.DefaultImageInPlatform.Get(ctx) {
-		// Make the task hash like one that explicitly requested the
-		// default image.
-		if ref := executorplatform.DefaultContainerImageRef(); ref != "" {
-			platform.SetContainerImage(task, ref)
-		}
 	}
 	if *resolveImageDigests {
 		if err := p.resolveImageDigest(ctx, props); err != nil {
