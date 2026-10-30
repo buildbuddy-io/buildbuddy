@@ -48,7 +48,7 @@ git fetch upstream --tags
 PREV=vA.B.C     # version of the latest buildbuddy/ branch
 VERSION=vX.Y.Z  # new upstream version
 # Create the release branch at the upstream tag
-git push origin "$VERSION:refs/heads/buildbuddy/$VERSION"
+git push origin "$VERSION^{commit}:refs/heads/buildbuddy/$VERSION"
 git fetch origin
 # Re-apply our changes on a work branch
 git checkout -b "update-$VERSION" "origin/buildbuddy/$VERSION"
