@@ -466,6 +466,7 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 		URL:               *build_buddy_url.WithPath("/auth/"),
 		Key:               keyPair.PrivateKey.(*rsa.PrivateKey),
 		Certificate:       keyPair.Leaf,
+		HTTPClient:        a.metadataHTTPClient,
 		IDPMetadata:       idpMetadata,
 		AllowIDPInitiated: true,
 	}
