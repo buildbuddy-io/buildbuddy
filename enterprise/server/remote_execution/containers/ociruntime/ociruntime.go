@@ -119,7 +119,7 @@ const (
 	// are cleaned up automatically on startup.
 	//
 	// Must match the versionDirRegexp below ("v" followed by an integer).
-	imageCacheVersion = "v2"
+	imageCacheVersion = "v3"
 
 	// Maximum length of overlayfs mount options string.
 	maxMntOptsLength = 4095
@@ -1763,7 +1763,7 @@ func (s *ImageStore) populateFileCache() error {
 	ctx := context.Background()
 
 	// The layers directory structure is: {layersDir}/{version}/{algorithm}/{hash}/
-	// e.g., /cache/images/oci/v2/sha256/abc123.../
+	// e.g., /cache/images/oci/v3/sha256/abc123.../
 	// We only scan the current version directory.
 	versionDir := filepath.Join(s.layersDir, imageCacheVersion)
 	entries, err := os.ReadDir(versionDir)
@@ -1984,9 +1984,15 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 			// Images often share layers - dedupe individual layer pulls.
 			// Note that each layer pull is also authorized, so include
 			// the credentials in the key here too.
-			key := hash.Strings(destDir, creds.Username, creds.Password)
+			// Include the compressed digest, since layers with the same DiffID
+			// may come from different blobs.
+			compressedDigest, err := layer.Digest()
+			if err != nil {
+				return status.UnavailableErrorf("get layer compressed digest: %s", err)
+			}
+			key := hash.Strings(destDir, compressedDigest.String(), creds.Username, creds.Password)
 			size, _, err := s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (int64, error) {
-				return downloadLayer(ctx, layer, destDir)
+				return downloadLayer(ctx, layer, d, destDir)
 			})
 			if err != nil {
 				return err
@@ -2013,10 +2019,17 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 // downloadLayer downloads and extracts the given layer to the given destination
 // dir. The extracted layer is suitable for use as an overlayfs lowerdir.
 //
+// It returns an error if the uncompressed content doesn't match expectedDiffID.
+//
 // For reference implementations, see:
 //   - Podman: https://github.com/containers/storage/blob/664fe5d9b95004e1be3eee004d56a1715c8ca790/pkg/archive/archive.go#L707-L729
 //   - Moby (Docker): https://github.com/moby/moby/blob/9633556bef3eb20dfe888903660c3df89a73605b/pkg/archive/archive.go#L726-L735
-func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64, error) {
+func downloadLayer(ctx context.Context, layer ctr.Layer, expectedDiffID ctr.Hash, destDir string) (int64, error) {
+	diffIDHash, err := ctr.Hasher(expectedDiffID.Algorithm)
+	if err != nil {
+		return 0, status.InvalidArgumentErrorf("layer DiffID %s: %s", expectedDiffID, err)
+	}
+
 	rc, err := layer.Uncompressed()
 	if err != nil {
 		return 0, status.UnavailableErrorf("get layer reader: %s", err)
@@ -2038,7 +2051,8 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64,
 	defer root.Close()
 
 	counter := &ioutil.Counter{}
-	tr := tar.NewReader(io.TeeReader(rc, counter))
+	teeReader := io.TeeReader(rc, io.MultiWriter(counter, diffIDHash))
+	tr := tar.NewReader(teeReader)
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -2126,6 +2140,16 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64,
 				return 0, status.UnavailableErrorf("create hard link: %s", err)
 			}
 		}
+	}
+
+	// Read any bytes following the tar end-of-archive marker so that the
+	// DiffID covers the whole uncompressed stream.
+	if _, err := io.Copy(io.Discard, teeReader); err != nil {
+		return 0, status.UnavailableErrorf("read remaining layer bytes: %s", err)
+	}
+	actualDiffID := ctr.Hash{Algorithm: expectedDiffID.Algorithm, Hex: hex.EncodeToString(diffIDHash.Sum(nil))}
+	if expectedDiffID != actualDiffID {
+		return 0, status.InvalidArgumentErrorf("layer DiffID mismatch: image config declares %s, but uncompressed layer content has %s", expectedDiffID, actualDiffID)
 	}
 
 	if err := root.Sync(); err != nil {
