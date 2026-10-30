@@ -554,6 +554,9 @@ func (h *Handler) copyZeroes(uffd uintptr, faultingAddress uintptr, mapping *Gue
 	return nil
 }
 
+// faultCopyWindowBytes is the most memory copied into the guest per page fault.
+const faultCopyWindowBytes = 256 * 1024
+
 // copyDataFromMemorySnapshot handles a page fault by copying data from the memory
 // snapshot into the guest.
 func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_write.COWStore, mapping *GuestRegionUFFDMapping, faultingAddress uintptr) error {
@@ -576,14 +579,19 @@ func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_
 		destAddr = faultingAddress
 		copySize = int64(os.Getpagesize())
 	} else {
-		//To reduce the number of UFFD round trips, try to copy the entire
-		//chunk containing the faulting address.
-		hostAddr, copySize, err = memoryStore.GetChunkStartAddressAndSize(faultStoreOffset, false /*=write*/)
+		// To reduce the number of UFFD round trips, copy the aligned window of
+		// the chunk around the faulting address. Copying whole chunks makes
+		// each first touch slow.
+		var chunkAddr uintptr
+		chunkAddr, copySize, err = memoryStore.GetChunkStartAddressAndSize(faultStoreOffset, false /*=write*/)
 		if err != nil {
 			return status.WrapError(err, "get backing page address")
 		}
 		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
-		destAddr = faultingAddress - relOffset
+		windowOffset := relOffset &^ (faultCopyWindowBytes - 1)
+		hostAddr = chunkAddr + windowOffset
+		destAddr = faultingAddress - relOffset + windowOffset
+		copySize = min(copySize-int64(windowOffset), faultCopyWindowBytes)
 	}
 
 	// Check that the request is within the valid guest memory range.
