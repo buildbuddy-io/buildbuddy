@@ -518,7 +518,7 @@ func TestDefaultImageInPlatform(t *testing.T) {
 	flags.Set(t, "executor.container_image_name_rewrites", []ImageRewrite{{Prefix: "gcr.io/", Replacement: "gcr.io/mirror/"}})
 	expflag.SetFlagProvider(expflag.NewContextProvider())
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
-	apply := func(ctx context.Context, task *repb.ExecutionTask) string {
+	apply := func(t *testing.T, ctx context.Context, task *repb.ExecutionTask) string {
 		platformProps, err := platform.ParseProperties(task)
 		require.NoError(t, err)
 		require.NoError(t, ApplyOverrides(ctx, testenv.GetTestEnv(t), docker, platformProps, task))
@@ -537,7 +537,7 @@ func TestDefaultImageInPlatform(t *testing.T) {
 
 	// The image an explicit request for the default resolves to.
 	const explicitImage = "gcr.io/mirror/default:v1"
-	require.Equal(t, explicitImage, apply(t.Context(), &repb.ExecutionTask{Command: &repb.Command{Platform: plat(image("docker://gcr.io/default:v1"))}}))
+	require.Equal(t, explicitImage, apply(t, t.Context(), &repb.ExecutionTask{Command: &repb.Command{Platform: plat(image("docker://gcr.io/default:v1"))}}))
 
 	for _, tc := range []struct {
 		name      string
@@ -600,11 +600,14 @@ func TestDefaultImageInPlatform(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{{
-				Name:  execution_experiments.DefaultImageInPlatform.Name(),
-				Value: &expb.EvaluatedFlag_BoolValue{BoolValue: tc.enabled},
-			}})
-			require.Equal(t, tc.wantImage, apply(ctx, tc.task))
+			ctx := t.Context()
+			if tc.enabled {
+				ctx = expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
+					Name:  execution_experiments.DefaultImageInPlatform.Name(),
+					Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true},
+				}})
+			}
+			require.Equal(t, tc.wantImage, apply(t, ctx, tc.task))
 			require.Empty(t, cmp.Diff(tc.wantTask, tc.task, protocmp.Transform()))
 		})
 	}
