@@ -35,6 +35,7 @@ func TestInvocationUploadWebhook(t *testing.T) {
 	app := buildbuddy_enterprise.Run(t,
 		"--database.data_source="+dataSource,
 		"--integrations.invocation_upload.enabled=true",
+		"--http.client.allow_localhost=true",
 		"--cache.detailed_stats_enabled=true",
 		"--app.no_default_user_group=false",
 	)
