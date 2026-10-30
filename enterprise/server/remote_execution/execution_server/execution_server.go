@@ -919,30 +919,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
-	// Rewrite container image name via experiment.
-	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
-		const containerImageRewriteExperiment = "remote_execution.container_image_rewrite"
-		rewriteConfig, details := fp.ObjectDetails(ctx, containerImageRewriteExperiment, nil)
-		if rewriteConfig != nil {
-			prefix, _ := rewriteConfig["prefix"].(string)
-			replacement, _ := rewriteConfig["replacement"].(string)
-			imageName := strings.TrimPrefix(props.ContainerImage, platform.DockerPrefix)
-			if prefix != "" && replacement != "" {
-				if after, ok := strings.CutPrefix(imageName, prefix); ok {
-					executionTask.PlatformOverrides.Properties = append(
-						executionTask.PlatformOverrides.Properties,
-						&repb.Platform_Property{
-							Name:  "container-image",
-							Value: "docker://" + replacement + after,
-						})
-				}
-			}
-		}
-		if details.Variant() != "" {
-			executionTask.Experiments = append(executionTask.Experiments, containerImageRewriteExperiment+":"+details.Variant())
-		}
-	}
-
 	// Inject use-oci-fetcher platform property via experiment. The executor
 	// additionally gates this property on its executor.use_oci_fetcher flag.
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
