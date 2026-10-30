@@ -755,6 +755,54 @@ func TestGetSnapshot_CacheIsolation(t *testing.T) {
 	}
 }
 
+func TestGetSnapshot_GenericSnapshotNamespace(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+	env := setupEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	env.SetAuthenticator(auth)
+	ctx1, err := auth.WithAuthenticatedUser(context.Background(), "US1")
+	require.NoError(t, err)
+	ctx2, err := auth.WithAuthenticatedUser(context.Background(), "US2")
+	require.NoError(t, err)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	shared1 := snaploader.WithGenericSnapshotNamespace(ctx1, env)
+	shared2 := snaploader.WithGenericSnapshotNamespace(ctx2, env)
+	localOnly := &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly}
+	remote := &snaploader.GetSnapshotOptions{
+		SupportsRemoteChunks:   true,
+		SupportsRemoteManifest: true,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
+	}
+
+	// A snapshot saved by one group in the shared namespace is visible to
+	// other groups in the namespace, but not outside it.
+	keys := keysWithInstanceName(t, ctx1, loader, "")
+	opts := makeFakeSnapshot(t, testfs.MakeTempDir(t), false /*=remoteEnabled*/, nil, "")
+	require.NoError(t, loader.CacheSnapshot(shared1, keys.GetBranchKey(), opts))
+	snap, err := loader.GetSnapshot(shared2, keys, localOnly)
+	require.NoError(t, err)
+	_, err = loader.UnpackSnapshot(shared2, snap, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	_, err = loader.GetSnapshot(ctx2, keys, localOnly)
+	require.Error(t, err)
+
+	// Snapshots in the shared namespace can't be saved remotely.
+	remoteOpts := makeFakeSnapshot(t, testfs.MakeTempDir(t), true /*=remoteEnabled*/, nil, "")
+	err = loader.CacheSnapshot(shared1, keysWithInstanceName(t, ctx1, loader, "remote").GetBranchKey(), remoteOpts)
+	require.True(t, status.IsInvalidArgumentError(err), "want InvalidArgument, got %v", err)
+
+	// A group's remote snapshot isn't read into the shared namespace.
+	remoteKeys := keysWithInstanceName(t, ctx1, loader, "remote")
+	require.NoError(t, loader.CacheSnapshot(ctx1, remoteKeys.GetBranchKey(), remoteOpts))
+	_, err = loader.GetSnapshot(ctx1, remoteKeys, remote)
+	require.NoError(t, err)
+	_, err = loader.GetSnapshot(shared1, remoteKeys, remote)
+	require.True(t, status.IsNotFoundError(err), "want NotFound, got %v", err)
+	_, err = loader.GetSnapshot(shared2, remoteKeys, localOnly)
+	require.Error(t, err)
+}
+
 func TestGetSnapshot_MixOfLocalAndRemoteChunks(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 	flags.Set(t, "executor.snaploader_max_eager_fetches_per_sec", 0)

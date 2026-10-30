@@ -173,6 +173,8 @@ const (
 	// networking get an IPv6 address.
 	NetworkEnableIPv6PropertyName = "network-enable-ipv6"
 
+	UseGenericSnapshotPropertyName = "use-generic-snapshot"
+
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
 
@@ -278,6 +280,7 @@ type Properties struct {
 
 	// ShmSizeBytes is the requested size of the /dev/shm tmpfs mount.
 	ShmSizeBytes           *int64
+	UseGenericSnapshot     bool
 	RecycleRunner          bool
 	RunnerRecyclingMaxWait time.Duration
 
@@ -565,6 +568,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	}
 
 	return &Properties{
+		UseGenericSnapshot:        boolProp(m, UseGenericSnapshotPropertyName, false),
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
