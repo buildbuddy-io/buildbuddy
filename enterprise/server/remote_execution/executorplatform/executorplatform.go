@@ -279,19 +279,24 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 	} else {
 		// OCI container references lose the "docker://" prefix. If no
 		// container was set then we set our default.
-		if strings.EqualFold(platformProps.ContainerImage, "none") || platformProps.ContainerImage == "" {
-			if execution_experiments.DefaultImageInPlatform.Get(ctx) && *defaultImage != "" {
-				// Handle the default image exactly like an explicit request
-				// for it, and record it so the task hashes like one.
-				platformProps.ContainerImage = platform.DockerPrefix + strings.TrimPrefix(*defaultImage, platform.DockerPrefix)
-				platform.SetContainerImage(task, platformProps.ContainerImage)
-			} else {
-				platformProps.ContainerImage = containerImageName(*defaultImage)
-			}
-		} else if !strings.HasPrefix(platformProps.ContainerImage, platform.DockerPrefix) {
+		unset := strings.EqualFold(platformProps.ContainerImage, "none") || platformProps.ContainerImage == ""
+		if !unset && !strings.HasPrefix(platformProps.ContainerImage, platform.DockerPrefix) {
 			// Return an error if a client specified an unparseable
 			// container reference.
 			return status.InvalidArgumentErrorf("malformed container image string - should be prefixed with '%s'", platform.DockerPrefix)
+		}
+		if execution_experiments.DefaultImageInPlatform.Get(ctx) && (!unset || *defaultImage != "") {
+			if unset {
+				platformProps.ContainerImage = platform.DockerPrefix + strings.TrimPrefix(*defaultImage, platform.DockerPrefix)
+			}
+			// Runner and snapshot keys hash the task's platform proto, which
+			// ignores header overrides and the default image, so record the
+			// image actually requested there.
+			if platformProps.ContainerImage != platform.FindValue(platform.GetProto(task.GetAction(), command), "container-image") {
+				platform.SetContainerImage(task, platformProps.ContainerImage)
+			}
+		} else if unset {
+			platformProps.ContainerImage = containerImageName(*defaultImage)
 		}
 		// Trim the docker prefix from ContainerImage -- we no longer need it.
 		platformProps.ContainerImage = containerImageName(platformProps.ContainerImage)

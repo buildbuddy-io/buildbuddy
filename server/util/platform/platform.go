@@ -866,9 +866,6 @@ func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 func SetContainerImage(task *repb.ExecutionTask, value string) {
 	plat := GetProto(task.GetAction(), task.GetCommand())
 	if plat == nil {
-		if task.Command == nil {
-			task.Command = &repb.Command{}
-		}
 		plat = &repb.Platform{}
 		task.Command.Platform = plat
 	}
