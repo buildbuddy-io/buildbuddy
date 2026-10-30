@@ -77,7 +77,7 @@ func TestIngestEvents(t *testing.T) {
 	testflags.Set(t, "billing.metronome.api_key", "test-key")
 	testflags.Set(t, "billing.metronome.api_url", server.URL)
 
-	periodStart := time.Date(2026, 5, 15, 12, 35, 0, 0, time.UTC)
+	periodStart := time.Date(2026, 5, 15, 12, 30, 0, 0, time.UTC)
 	periodEnd := periodStart.Add(metronome.WindowSize)
 	events := []metronome.UsageEvent{
 		{GroupID: "GR1", PeriodStart: periodStart, PeriodEnd: periodEnd, SKU: sku.BuildEventsBESCount, Count: 1},
@@ -153,7 +153,7 @@ func TestIngestRetriesTransientFailures(t *testing.T) {
 		MaxRetries: 5, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond, Multiplier: 1,
 	})
 	require.NoError(t, err)
-	periodStart := time.Date(2026, 5, 15, 12, 35, 0, 0, time.UTC)
+	periodStart := time.Date(2026, 5, 15, 12, 30, 0, 0, time.UTC)
 	require.NoError(t, c.ReportUsage(t.Context(), []metronome.UsageEvent{{
 		GroupID: "GR1", PeriodStart: periodStart, PeriodEnd: periodStart.Add(metronome.WindowSize), SKU: sku.BuildEventsBESCount, Count: 1,
 	}}))
@@ -176,7 +176,7 @@ func TestIngestDoesNotRetryClientErrors(t *testing.T) {
 		MaxRetries: 5, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond, Multiplier: 1,
 	})
 	require.NoError(t, err)
-	periodStart := time.Date(2026, 5, 15, 12, 35, 0, 0, time.UTC)
+	periodStart := time.Date(2026, 5, 15, 12, 30, 0, 0, time.UTC)
 	err = c.ReportUsage(t.Context(), []metronome.UsageEvent{{
 		GroupID: "GR1", PeriodStart: periodStart, PeriodEnd: periodStart.Add(metronome.WindowSize), SKU: sku.BuildEventsBESCount, Count: 1,
 	}})
@@ -197,7 +197,7 @@ func TestReportUsageRejectsInvalidPeriods(t *testing.T) {
 	testflags.Set(t, "billing.metronome.api_key", "test-key")
 	testflags.Set(t, "billing.metronome.api_url", server.URL)
 
-	periodStart := time.Date(2026, 5, 15, 12, 35, 0, 0, time.UTC)
+	periodStart := time.Date(2026, 5, 15, 12, 30, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		name        string
 		periodStart time.Time
@@ -217,6 +217,11 @@ func TestReportUsageRejectsInvalidPeriods(t *testing.T) {
 			name:        "wrong window length",
 			periodStart: periodStart,
 			periodEnd:   periodStart.Add(2 * metronome.WindowSize),
+		},
+		{
+			name:        "minute-aligned start between quarter-hours",
+			periodStart: periodStart.Add(time.Minute),
+			periodEnd:   periodStart.Add(time.Minute).Add(metronome.WindowSize),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -245,7 +250,7 @@ func TestTransactionIDDeterministic(t *testing.T) {
 	testflags.Set(t, "billing.metronome.api_key", "test-key")
 	testflags.Set(t, "billing.metronome.api_url", server.URL)
 
-	periodStart := time.Date(2026, 5, 15, 12, 35, 0, 0, time.UTC)
+	periodStart := time.Date(2026, 5, 15, 12, 30, 0, 0, time.UTC)
 	periodEnd := periodStart.Add(metronome.WindowSize)
 
 	// Ingest two events with the same period, SKU, and labels, even though the labels are in a different order and the  count is different.
@@ -360,7 +365,7 @@ func TestEventPropertiesCoverAllLabels(t *testing.T) {
 	for _, name := range sku.LabelNames {
 		labels[name] = "test-" + name
 	}
-	periodStart := time.Date(2026, 5, 15, 12, 35, 0, 0, time.UTC)
+	periodStart := time.Date(2026, 5, 15, 12, 30, 0, 0, time.UTC)
 	c, err := metronome.NewClient(nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, c.ReportUsage(t.Context(), []metronome.UsageEvent{{
@@ -381,8 +386,8 @@ func TestEventPropertiesCoverAllLabels(t *testing.T) {
 		"group_id":     "GR1",
 		"sku":          string(sku.RemoteCacheCASHits),
 		"count":        float64(1),
-		"period_start": "2026-05-15T12:35:00Z",
-		"period_end":   "2026-05-15T12:36:00Z",
+		"period_start": "2026-05-15T12:30:00Z",
+		"period_end":   "2026-05-15T12:45:00Z",
 	}, properties, "properties other than labels")
 }
 

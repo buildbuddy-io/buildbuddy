@@ -35,11 +35,11 @@ const (
 	MaxEventsPerIngestRequest = 100
 
 	// Caution: Do not change this value!
-	// Each Metronome event should cover a window of this size, aligned to the nearest interval of this duration.
+	// Each Metronome event covers a fixed 15-minute window aligned to UTC quarter-hours.
 	//
 	// We include the period start and end timestamps in the transaction ID for deduplication.
 	// If this window size is changed, events will not be deduplicated correctly, and users may be over-billed.
-	WindowSize = 1 * time.Minute
+	WindowSize = 15 * time.Minute
 )
 
 func defaultRetryOptions() *retry.Options {

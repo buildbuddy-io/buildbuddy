@@ -144,6 +144,11 @@ func TestNextWindow(t *testing.T) {
 			lastEnd: latest.Add(-90 * time.Second),
 			wantErr: true,
 		},
+		{
+			name:    "minute-aligned state between quarter-hours",
+			lastEnd: latest.Add(-time.Minute),
+			wantErr: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			state := &tables.BillingExportState{LastSuccessfulPeriodEndUsec: tc.lastEnd.UnixMicro()}
@@ -256,6 +261,32 @@ func TestExport_InitializesStateOnFirstRun(t *testing.T) {
 	requireState(t, env, now.Add(-minAge).Truncate(metronome.WindowSize))
 }
 
+func TestExport_WaitsForCompleteWindow(t *testing.T) {
+	env := setupClickHouseEnv(t)
+	ctx := t.Context()
+	from := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	to := from.Add(metronome.WindowSize)
+	seedState(t, env, from)
+	labels := map[sku.LabelName]sku.LabelValue{sku.Client: sku.ClientBazel}
+	require.NoError(t, env.GetOLAPDBHandle().FlushUsages(ctx, []*schema.RawUsage{
+		// Usage starts after the bucket boundary. The event must still start
+		// at the quarter-hour and include the last minute of the window.
+		rawUsage("GR1", from.Add(time.Minute), sku.BuildEventsBESCount, labels, 2),
+		rawUsage("GR1", to.Add(-time.Minute), sku.BuildEventsBESCount, labels, 3),
+	}))
+	client := &fakeMetronomeClient{}
+	require.NoError(t, export(ctx, env, client, to.Add(minAge).Add(-time.Minute)))
+	require.Empty(t, client.reported)
+	requireState(t, env, from)
+
+	require.NoError(t, export(ctx, env, client, to.Add(minAge)))
+	require.Equal(t, [][]metronome.UsageEvent{{{
+		GroupID: "GR1", PeriodStart: from, PeriodEnd: to,
+		SKU: sku.BuildEventsBESCount, Labels: labels, Count: 5,
+	}}}, client.reported)
+	requireState(t, env, to)
+}
+
 func TestExport_ReportsUsageAndAdvancesState(t *testing.T) {
 	env := setupClickHouseEnv(t)
 	ctx := t.Context()
@@ -275,6 +306,8 @@ func TestExport_ReportsUsageAndAdvancesState(t *testing.T) {
 	// Write usage data to clickhouse.
 	rows := []*schema.RawUsage{
 		rawUsage("GR1", from, sku.BuildEventsBESCount, bazelLabels, 2),
+		rawUsage("GR1", from.Add(time.Minute), sku.BuildEventsBESCount, bazelLabels, 3),
+		rawUsage("GR1", from.Add(metronome.WindowSize-time.Minute), sku.BuildEventsBESCount, bazelLabels, 5),
 		rawUsage("GR1", from.Add(metronome.WindowSize), sku.BuildEventsBESCount, bazelLabels, 3),
 		rawUsage("GR2", from.Add(metronome.WindowSize), sku.RemoteCacheCASHits, internalLabels, 7),
 		rawUsage("GR2", from.Add(2*metronome.WindowSize), sku.RemoteCacheCASHits, internalLabels, 11),
@@ -295,7 +328,7 @@ func TestExport_ReportsUsageAndAdvancesState(t *testing.T) {
 				PeriodEnd:   from.Add(metronome.WindowSize),
 				SKU:         sku.BuildEventsBESCount,
 				Labels:      bazelLabels,
-				Count:       2,
+				Count:       10,
 			},
 		},
 		{
@@ -437,11 +470,14 @@ func TestQueryUsageRows(t *testing.T) {
 		sku.Origin: sku.OriginInternal,
 	}
 	rows := []*schema.RawUsage{
-		// Events with the same skus and labels should be aggregated.
-		// These events have different buffer IDs so that clickhouse's finalization does not de-duplicate them.
-		// This should not be possible because clickhouse should de-duplicate rows, but add test coverage just in case.
+		// Distinct buffers in the same minute are summed by the Usage view.
 		rawUsageWithBufferID("test-1:redis", "GR1", from, sku.BuildEventsBESCount, bazelLabels, 2),
 		rawUsageWithBufferID("test-2:redis", "GR1", from, sku.BuildEventsBESCount, bazelLabels, 3),
+		// The exporter also sums different minutes within the same window.
+		rawUsage("GR1", from.Add(time.Minute), sku.BuildEventsBESCount, bazelLabels, 7),
+		rawUsage("GR1", to.Add(-time.Minute), sku.BuildEventsBESCount, bazelLabels, 11),
+		// The minute before the window is excluded.
+		rawUsage("GR1", from.Add(-time.Minute), sku.BuildEventsBESCount, bazelLabels, 100),
 		// The to-timestamp is exclusive, so this event should not be included.
 		rawUsage("GR1", to, sku.BuildEventsBESCount, bazelLabels, 100),
 		// Events with the same sku and different labels should be separate.
@@ -460,7 +496,7 @@ func TestQueryUsageRows(t *testing.T) {
 	allGroups, err := queryUsageRows(ctx, env, []string{"GR1", "GR2"}, &window{from: from, to: to})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []*schema.Usage{
-		{GroupID: "GR1", PeriodStart: from, SKU: sku.BuildEventsBESCount, Labels: bazelLabels, Count: 5},
+		{GroupID: "GR1", PeriodStart: from, SKU: sku.BuildEventsBESCount, Labels: bazelLabels, Count: 23},
 		{GroupID: "GR1", PeriodStart: from, SKU: sku.RemoteCacheCASHits, Labels: bazelLabels, Count: 7},
 		{GroupID: "GR1", PeriodStart: from, SKU: sku.RemoteCacheCASHits, Labels: internalLabels, Count: 13},
 		{GroupID: "GR2", PeriodStart: from, SKU: sku.BuildEventsBESCount, Labels: bazelLabels, Count: 17},
@@ -469,7 +505,7 @@ func TestQueryUsageRows(t *testing.T) {
 	gr1Only, err := queryUsageRows(ctx, env, []string{"GR1"}, &window{from: from, to: to})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []*schema.Usage{
-		{GroupID: "GR1", PeriodStart: from, SKU: sku.BuildEventsBESCount, Labels: bazelLabels, Count: 5},
+		{GroupID: "GR1", PeriodStart: from, SKU: sku.BuildEventsBESCount, Labels: bazelLabels, Count: 23},
 		{GroupID: "GR1", PeriodStart: from, SKU: sku.RemoteCacheCASHits, Labels: bazelLabels, Count: 7},
 		{GroupID: "GR1", PeriodStart: from, SKU: sku.RemoteCacheCASHits, Labels: internalLabels, Count: 13},
 	}, gr1Only)

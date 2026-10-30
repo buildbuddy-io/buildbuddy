@@ -1,8 +1,8 @@
 // Metronome usage exporter.
 //
 // Reads usage data from ClickHouse for selected groups and
-// ingests per-SKU events into Metronome. Designed to run as a scheduled
-// cronjob: each run exports the usage recorded since the previous run, tracked
+// ingests per-SKU events aggregated into 15-minute UTC windows into Metronome.
+// Designed to run as a scheduled cronjob: each run exports the usage recorded since the previous run, tracked
 // in the BillingExportState table. A group gets a Metronome customer and
 // contract the first time it reports usage.
 //
@@ -351,28 +351,27 @@ func ensureCustomer(ctx context.Context, client metronomeClient, group *tables.G
 	return client.CreateContract(ctx, customerID, metronome.DefaultContractName(), monthStart, groupID)
 }
 
-// queryUsageRows returns per-minute usage rows in the window [from, to). The "Usage"
-// table is already aggregated by (group_id, period_start, sku, labels) — where
-// period_start is a one-minute bucket matching metronome.WindowSize — so this reads
-// those rows directly without re-aggregating.
+// queryUsageRows sums the Usage view's one-minute counters by group, SKU, and
+// labels within a single 15-minute export window [from, to). Every returned row
+// uses the export window's start, even when usage begins later in the window.
 func queryUsageRows(ctx context.Context, env *real_environment.RealEnv, groups []string, w *window) ([]*olaptables.Usage, error) {
 	query := `
 		SELECT
-			group_id,
-			sku,
-			labels,
-			period_start,
-			count
-		FROM "Usage"
-		WHERE period_start >= ?
-			AND period_start < ?
-			AND group_id IN ?
-			AND count > 0
+			u.group_id,
+			u.sku,
+			u.labels,
+			CAST(? AS DateTime64(6, 'UTC')) AS period_start,
+			SUM(u.count) AS count
+		FROM "Usage" AS u
+		WHERE u.period_start >= ?
+			AND u.period_start < ?
+			AND u.group_id IN ?
+			AND u.count > 0
+		GROUP BY u.group_id, u.sku, u.labels
 		ORDER BY
-			period_start,
-			group_id,
-			sku`
-	rq := env.GetOLAPDBHandle().NewQuery(ctx, "metronome_exporter_query_usage").Raw(query, w.from, w.to, groups)
+			u.group_id,
+			u.sku`
+	rq := env.GetOLAPDBHandle().NewQuery(ctx, "metronome_exporter_query_usage").Raw(query, w.from, w.from, w.to, groups)
 	return db.ScanAll(rq, &olaptables.Usage{})
 }
 
