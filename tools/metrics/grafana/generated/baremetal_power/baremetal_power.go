@@ -2,6 +2,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana/generated/dash"
 	"github.com/grafana/grafana-foundation-sdk/go/bargauge"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
@@ -22,6 +24,23 @@ const (
 	branchRatingAmps = 20
 	// continuousLoadFactor is the NEC 80% continuous-load derating.
 	continuousLoadFactor = 0.8
+)
+
+// PRO4X PDU ratings.
+//
+// Readings are integers scaled by a per-sensor decimal-digits object the
+// exporter does not walk, so the queries hardcode the divisor by sensor type:
+// rmsCurrent (1) is in mA, rmsVoltage (4) in V, activePower (5) in W.
+// Sensor states arrive as a state set, one 0/1 series per state name.
+// A breaker's trip sensor (15) reads "closed" when healthy and "open" when
+// tripped.
+const (
+	// Input rating; the continuous rating is the usual 80% of it, 24 A.
+	pro4xInletAmps = 30
+	// Datasheet capacity of a unit (24 A at 208 V), with the warning at the
+	// same ~95% point as the Sentry unit thresholds.
+	pro4xUnitWarnWatts = 4750
+	pro4xUnitMaxWatts  = 5000
 )
 
 func metricPanel(title, unit, legendSortBy string) *timeseries.PanelBuilder {
@@ -74,6 +93,19 @@ func currentThresholds(ratingAmps float64) *dashboard.ThresholdsConfigBuilder {
 	return warnCritThresholds(ratingAmps*continuousLoadFactor, ratingAmps)
 }
 
+// pro4xOverride returns field overrides for a panel's PRO4X query so that a
+// rack of PRO4X units is drawn against its own ratings instead of the Sentry
+// ones set on the panel. Grafana draws the threshold lines of the first series
+// on an axis, and a rack's panels only ever hold series of one PDU type, so
+// the override takes effect exactly on PRO4X racks.
+func pro4xOverride(thresholds *dashboard.ThresholdsConfigBuilder, extra ...dashboard.DynamicConfigValue) []dashboard.DynamicConfigValue {
+	t, err := thresholds.Build()
+	if err != nil {
+		panic(err)
+	}
+	return append([]dashboard.DynamicConfigValue{{Id: "thresholds", Value: t}}, extra...)
+}
+
 func totalInputPowerByRackPanel() *timeseries.PanelBuilder {
 	return powerPanel("Total input power by rack", "Max").
 		Id(4).
@@ -89,6 +121,12 @@ func totalInputPowerByRackPanel() *timeseries.PanelBuilder {
 )`,
 				"__auto",
 			).RefId("A"),
+		).
+		WithTarget(
+			dash.PromQuery(
+				`sum by (rack) (pdu_measurementsInletSensorValue{job="snmp_raritan_pdu2", sensorType="5", region="${region}"})`,
+				"Rack {{rack}}",
+			).RefId("B"),
 		)
 }
 
@@ -127,7 +165,7 @@ func busiestUnitLoadSharePanel() *stat.PanelBuilder {
 func abnormalStatusPanel() *stat.PanelBuilder {
 	return dash.Stat("Breakers/phases with abnormal status (10m)", dash.UnitNone).
 		Id(7).
-		Description("Sentry4 status codes: 11 pwrError, 12 breakerTripped, 14 lowAlarm, 17 highAlarm. Healthy racks read 0.").
+		Description("Sentry4 status codes: 11 pwrError, 12 breakerTripped, 14 lowAlarm, 17 highAlarm. PRO4X: inlet sensors past their thresholds or a tripped breaker. Healthy racks read 0.").
 		GridPos(dashboard.GridPos{H: 4, W: 12, X: 12, Y: 5}).
 		ColorMode(common.BigValueColorModeBackground).
 		TextMode(common.BigValueTextModeValueAndName).
@@ -143,6 +181,18 @@ func abnormalStatusPanel() *stat.PanelBuilder {
 0 * count by (pdu) (pdu_st4InputCordActivePower{job="snmp_servertech_sentry4", region="${region}"})`,
 				"{{pdu}}",
 			).RefId("A"),
+		).
+		WithTarget(
+			dash.PromQuery(
+				`count by (pdu) (
+    max_over_time(pdu_measurementsInletSensorState{job="snmp_raritan_pdu2", region="${region}", measurementsInletSensorState=~"belowLower.*|aboveUpper.*"}[10m]) == 1
+        or
+    max_over_time(pdu_measurementsOverCurrentProtectorSensorState{job="snmp_raritan_pdu2", region="${region}", measurementsOverCurrentProtectorSensorState=~"open|aboveUpper.*"}[10m]) == 1
+)
+    or
+0 * count by (pdu) (pdu_measurementsInletSensorValue{job="snmp_raritan_pdu2", region="${region}", sensorType="5"})`,
+				"{{pdu}}",
+			).RefId("B"),
 		)
 }
 
@@ -204,9 +254,14 @@ func lineCurrentZeroPanel() *timeseries.PanelBuilder {
 func totalInputPowerByUnitPanel() *timeseries.PanelBuilder {
 	return powerPanel("${pdu} > Total input power by unit", "Last *").
 		Id(1).
+		Description("Sentry units are rated 8.64 kW, PRO4X units are rated 5 kW; the thresholds follow the unit type.").
 		GridPos(dashboard.GridPos{H: 8, W: 12, X: 0, Y: 18}).
 		AxisSoftMax(10800).
 		Thresholds(warnCritThresholds(8250, 8640)).
+		OverrideByQuery("C", pro4xOverride(
+			warnCritThresholds(pro4xUnitWarnWatts, pro4xUnitMaxWatts),
+			dashboard.DynamicConfigValue{Id: "custom.axisSoftMax", Value: 6250},
+		)).
 		WithTarget(
 			dash.PromQuery(
 				`sum by (pdu, towerIndex) (pdu_infeedPower{job="snmp_servertech_sentry3", region="${region}", pdu="${pdu}"})`,
@@ -218,6 +273,12 @@ func totalInputPowerByUnitPanel() *timeseries.PanelBuilder {
 				`sum by (pdu, st4UnitName) (pdu_st4InputCordActivePower{job="snmp_servertech_sentry4", region="${region}", pdu="${pdu}"})`,
 				"{{pdu}} > Unit {{st4UnitName}}",
 			).RefId("B"),
+		).
+		WithTarget(
+			dash.PromQuery(
+				`sum by (pdu, inletLabel) (pdu_measurementsInletSensorValue{job="snmp_raritan_pdu2", sensorType="5", region="${region}", pdu="${pdu}"})`,
+				"{{pdu}} > Inlet {{inletLabel}}",
+			).RefId("C"),
 		)
 }
 
@@ -242,6 +303,12 @@ func outputPowerPanel() *timeseries.PanelBuilder {
 				`sum by (pdu, towerIndex, outletIndex) (pdu_outletPower{job="snmp_servertech_sentry3", region="${region}", pdu="${pdu}"})`,
 				"{{pdu}} > Unit {{towerIndex}} > Outlet {{outletIndex}}",
 			).RefId("A"),
+		).
+		WithTarget(
+			dash.PromQuery(
+				`pdu_measurementsOutletSensorValue{job="snmp_raritan_pdu2", sensorType="5", region="${region}", pdu="${pdu}"}`,
+				"{{pdu}} > Outlet {{outletLabel}}",
+			).RefId("B"),
 		)
 }
 
@@ -251,7 +318,7 @@ func outputPowerPanel() *timeseries.PanelBuilder {
 func phaseVoltagePanel() *timeseries.PanelBuilder {
 	return metricPanel("${pdu} > Phase-pair voltage", dash.UnitVolts, "Last *").
 		Id(10).
-		Description("Line-to-line voltage per phase pair. All three should sit together near 207 V; two pairs collapsing (and summing to the third) means an open conductor.").
+		Description("Line-to-line voltage per phase pair. All three should sit together near 207 V; two pairs collapsing (and summing to the third) means an open conductor. PRO4X units are single-phase and show their one inlet voltage, nominally 208 V.").
 		GridPos(dashboard.GridPos{H: 8, W: 12, X: 0, Y: 26}).
 		Min(0).
 		Max(240).
@@ -275,6 +342,12 @@ func phaseVoltagePanel() *timeseries.PanelBuilder {
 				`pdu_st4PhaseVoltage{job="snmp_servertech_sentry4", region="${region}", pdu="${pdu}"} / 10`,
 				"{{pdu}} > {{st4PhaseLabel}}",
 			).RefId("B"),
+		).
+		WithTarget(
+			dash.PromQuery(
+				`pdu_measurementsInletSensorValue{job="snmp_raritan_pdu2", sensorType="4", region="${region}", pdu="${pdu}"}`,
+				"{{pdu}} > Inlet {{inletLabel}}",
+			).RefId("C"),
 		)
 }
 
@@ -283,10 +356,11 @@ func phaseVoltagePanel() *timeseries.PanelBuilder {
 func lineCurrentPanel() *timeseries.PanelBuilder {
 	return metricPanel("${pdu} > Input line current", dash.UnitAmps, "Last *").
 		Id(11).
-		Description("Per input line, against the 60 A rating (48 A continuous). A line pinned at 0 A while its siblings carry load is an open conductor.").
+		Description("Per input line, against the 60 A rating (48 A continuous); PRO4X inlets against their 30 A input (24 A continuous). A line pinned at 0 A while its siblings carry load is an open conductor.").
 		GridPos(dashboard.GridPos{H: 8, W: 12, X: 12, Y: 26}).
 		Min(0).
 		Thresholds(currentThresholds(lineRatingAmps)).
+		OverrideByQuery("C", pro4xOverride(currentThresholds(pro4xInletAmps))).
 		WithTarget(
 			dash.PromQuery(
 				`pdu_infeedLoadValue{job="snmp_servertech_sentry3", region="${region}", pdu="${pdu}"} / 100`,
@@ -298,6 +372,12 @@ func lineCurrentPanel() *timeseries.PanelBuilder {
 				`pdu_st4LineCurrent{job="snmp_servertech_sentry4", region="${region}", pdu="${pdu}"} / 100`,
 				"{{pdu}} > {{st4LineLabel}}",
 			).RefId("B"),
+		).
+		WithTarget(
+			dash.PromQuery(
+				`pdu_measurementsInletSensorValue{job="snmp_raritan_pdu2", sensorType="1", region="${region}", pdu="${pdu}"} / 1000`,
+				"{{pdu}} > Inlet {{inletLabel}}",
+			).RefId("C"),
 		)
 }
 
@@ -305,7 +385,7 @@ func lineCurrentPanel() *timeseries.PanelBuilder {
 func branchCurrentPanel() *timeseries.PanelBuilder {
 	return metricPanel("${pdu} > Branch breaker current", dash.UnitAmps, "Last *").
 		Id(12).
-		Description("Per 20 A branch breaker (16 A continuous). BR1/BR4 are on L1-L2, BR2/BR5 on L2-L3, BR3/BR6 on L3-L1.").
+		Description("Per 20 A branch breaker (16 A continuous). BR1/BR4 are on L1-L2, BR2/BR5 on L2-L3, BR3/BR6 on L3-L1. PRO4X units have three 20 A breakers.").
 		GridPos(dashboard.GridPos{H: 8, W: 12, X: 0, Y: 34}).
 		Min(0).
 		Thresholds(currentThresholds(branchRatingAmps)).
@@ -314,6 +394,12 @@ func branchCurrentPanel() *timeseries.PanelBuilder {
 				`pdu_st4BranchCurrent{job="snmp_servertech_sentry4", region="${region}", pdu="${pdu}"} / 100`,
 				"{{pdu}} > {{st4BranchLabel}}",
 			).RefId("A"),
+		).
+		WithTarget(
+			dash.PromQuery(
+				`pdu_measurementsOverCurrentProtectorSensorValue{job="snmp_raritan_pdu2", sensorType="1", region="${region}", pdu="${pdu}"} / 1000`,
+				"{{pdu}} > Breaker {{overCurrentProtectorIndex}}",
+			).RefId("B"),
 		)
 }
 
@@ -346,7 +432,7 @@ func branchStatusPanel() *statetimeline.PanelBuilder {
 	return statetimeline.NewPanelBuilder().
 		Title("${pdu} > Branch breaker status").
 		Id(13).
-		Description("Sentry4 st4BranchStatus per breaker. A real trip is one long red bar. Rapid striping on all breakers of one phase pair means a floating phase, not tripped breakers.").
+		Description("Sentry4 st4BranchStatus per breaker. A real trip is one long red bar. Rapid striping on all breakers of one phase pair means a floating phase, not tripped breakers. PRO4X breakers are mapped onto the same codes: a tripped breaker reads breakerTripped, current past the PDU's own thresholds reads highWarning/highAlarm.").
 		Datasource(dash.Prometheus()).
 		GridPos(dashboard.GridPos{H: 8, W: 12, X: 12, Y: 34}).
 		Mappings(sentry4StatusMappings()).
@@ -379,6 +465,18 @@ func branchStatusPanel() *statetimeline.PanelBuilder {
 				`pdu_st4BranchStatus{job="snmp_servertech_sentry4", region="${region}", pdu="${pdu}"}`,
 				"{{st4BranchLabel}}",
 			).RefId("A"),
+		).
+		WithTarget(
+			dash.PromQuery(
+				`max by (overCurrentProtectorIndex) (
+    12 * pdu_measurementsOverCurrentProtectorSensorState{job="snmp_raritan_pdu2", region="${region}", pdu="${pdu}", sensorType="15", measurementsOverCurrentProtectorSensorState="open"}
+        or
+    16 * pdu_measurementsOverCurrentProtectorSensorState{job="snmp_raritan_pdu2", region="${region}", pdu="${pdu}", sensorType="1", measurementsOverCurrentProtectorSensorState="aboveUpperWarning"}
+        or
+    17 * pdu_measurementsOverCurrentProtectorSensorState{job="snmp_raritan_pdu2", region="${region}", pdu="${pdu}", sensorType="1", measurementsOverCurrentProtectorSensorState="aboveUpperCritical"}
+)`,
+				"Breaker {{overCurrentProtectorIndex}}",
+			).RefId("B"),
 		)
 }
 
@@ -388,7 +486,7 @@ func utilizationPanel() *bargauge.PanelBuilder {
 	return bargauge.NewPanelBuilder().
 		Title("${pdu} > Utilization").
 		Id(14).
-		Description("Percent of rating as reported by the PDU: lines of 60 A, branch breakers of 20 A, cords of their power rating.").
+		Description("Percent of rating as reported by the PDU: lines of 60 A, branch breakers of 20 A, cords of their power rating. PRO4X: inlet against its 30 A input and breakers against 20 A, computed from the measured current.").
 		Datasource(dash.Prometheus()).
 		GridPos(dashboard.GridPos{H: 8, W: 12, X: 0, Y: 42}).
 		Unit(dash.UnitPercent).
@@ -420,6 +518,18 @@ func utilizationPanel() *bargauge.PanelBuilder {
 				`pdu_st4InputCordPowerUtilized{job="snmp_servertech_sentry4", region="${region}", pdu="${pdu}"} / 10`,
 				"Cord {{st4UnitName}}",
 			).RefId("C"),
+		).
+		WithTarget(
+			dash.PromQuery(
+				fmt.Sprintf(`100 * pdu_measurementsInletSensorValue{job="snmp_raritan_pdu2", sensorType="1", region="${region}", pdu="${pdu}"} / 1000 / %d`, pro4xInletAmps),
+				"Inlet {{inletLabel}}",
+			).RefId("D"),
+		).
+		WithTarget(
+			dash.PromQuery(
+				fmt.Sprintf(`100 * pdu_measurementsOverCurrentProtectorSensorValue{job="snmp_raritan_pdu2", sensorType="1", region="${region}", pdu="${pdu}"} / 1000 / %d`, branchRatingAmps),
+				"Breaker {{overCurrentProtectorIndex}}",
+			).RefId("E"),
 		)
 }
 
@@ -453,7 +563,8 @@ func rackRow() *dashboard.RowBuilder {
 	return dashboard.NewRowBuilder("Rack ${pdu}").
 		Id(2).
 		GridPos(dashboard.GridPos{H: 1, W: 24, X: 0, Y: 17}).
-		Repeat("pdu")
+		Repeat("pdu").
+		Collapsed(true)
 }
 
 func regionVariable() *dashboard.QueryVariableBuilder {
@@ -503,15 +614,15 @@ func build() (dashboard.Dashboard, error) {
 		WithPanel(abnormalStatusPanel()).
 		WithPanel(phaseVoltageSpreadPanel()).
 		WithPanel(lineCurrentZeroPanel()).
-		WithRow(rackRow()).
-		WithPanel(totalInputPowerByUnitPanel()).
-		WithPanel(outputPowerPanel()).
-		WithPanel(phaseVoltagePanel()).
-		WithPanel(lineCurrentPanel()).
-		WithPanel(branchCurrentPanel()).
-		WithPanel(branchStatusPanel()).
-		WithPanel(utilizationPanel()).
-		WithPanel(phasePowerPanel()).
+		WithRow(rackRow().
+			WithPanel(totalInputPowerByUnitPanel()).
+			WithPanel(outputPowerPanel()).
+			WithPanel(phaseVoltagePanel()).
+			WithPanel(lineCurrentPanel()).
+			WithPanel(branchCurrentPanel()).
+			WithPanel(branchStatusPanel()).
+			WithPanel(utilizationPanel()).
+			WithPanel(phasePowerPanel())).
 		Build()
 }
 
