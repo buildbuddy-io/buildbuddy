@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -497,11 +498,11 @@ func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
 	explicitDefaultImageTask := newTask()
-	platform.SetContainerImage(explicitDefaultImageTask.ExecutionTask, "docker://gcr.io/default:v1")
+	platform.SetValueForTask(explicitDefaultImageTask.ExecutionTask, "container-image", "docker://gcr.io/default:v1")
 	for _, enabled := range []bool{false, true} {
 		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
 			ctx := expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
-				Name:  "executor.default_image_in_platform",
+				Name:  execution_experiments.DefaultImageInPlatform.Name(),
 				Value: &expb.EvaluatedFlag_BoolValue{BoolValue: enabled},
 			}})
 			cfg := noLimitsCfg()

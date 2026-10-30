@@ -218,7 +218,7 @@ func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) 
 }
 
 // ApplyOverrides modifies the platformProps and task (its command and
-// possibly theplatform's container-image) as needed to match the locally
+// possibly the platform's container-image) as needed to match the locally
 // configured executor properties.
 func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *ExecutorProperties, platformProps *platform.Properties, task *repb.ExecutionTask) error {
 	command := task.GetCommand()
@@ -293,7 +293,7 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 			return status.InvalidArgumentErrorf("malformed container image string - should be prefixed with '%s'", platform.DockerPrefix)
 		}
 		if experiment && platformProps.ContainerImage != "" {
-			platform.SetContainerImage(task, platformProps.ContainerImage)
+			platform.SetValueForTask(task, "container-image", platformProps.ContainerImage)
 		}
 		// Trim the docker prefix from ContainerImage -- we no longer need it.
 		platformProps.ContainerImage = containerImageName(platformProps.ContainerImage)

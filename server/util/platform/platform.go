@@ -860,29 +860,46 @@ func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 	return FindValue(GetProto(task.GetAction(), task.GetCommand()), name)
 }
 
-// SetContainerImage sets the container-image property to value in the
-// platform that GetProto returns for the task, replacing any existing values
-// or else inserting it in name-sorted position.
-func SetContainerImage(task *repb.ExecutionTask, value string) {
-	plat := GetProto(task.GetAction(), task.GetCommand())
-	if plat == nil {
-		plat = &repb.Platform{}
-		task.Command.Platform = plat
-	}
+// SetValue sets the given property to the given value, replacing any existing
+// values or else inserting it in name-sorted position.
+func SetValue(platform *repb.Platform, name, value string) {
 	found := false
-	for _, p := range plat.Properties {
-		if strings.EqualFold(p.GetName(), containerImagePropertyName) {
+	for _, p := range platform.Properties {
+		if strings.EqualFold(p.GetName(), name) {
 			p.Value, found = value, true
 		}
 	}
 	if found {
 		return
 	}
-	i := slices.IndexFunc(plat.Properties, func(p *repb.Platform_Property) bool { return p.GetName() > containerImagePropertyName })
+	i := slices.IndexFunc(platform.Properties, func(p *repb.Platform_Property) bool { return p.GetName() > name })
 	if i < 0 {
-		i = len(plat.Properties)
+		i = len(platform.Properties)
 	}
-	plat.Properties = slices.Insert(plat.Properties, i, &repb.Platform_Property{Name: containerImagePropertyName, Value: value})
+	platform.Properties = slices.Insert(platform.Properties, i, &repb.Platform_Property{Name: name, Value: value})
+}
+
+// SetValueForTask sets the given platform property on the execution task,
+// updating the action's platform as well as the deprecated command platform if
+// applicable.
+func SetValueForTask(task *repb.ExecutionTask, name, value string) {
+	// Never create just one: GetProto prefers Action.Platform, hiding Command.Platform.
+	if task.GetAction().GetPlatform() == nil && task.GetCommand().GetPlatform() == nil {
+		if task.Action == nil {
+			task.Action = &repb.Action{}
+		}
+		if task.Command == nil {
+			task.Command = &repb.Command{}
+		}
+		task.Action.Platform = &repb.Platform{}
+		task.Command.Platform = &repb.Platform{}
+	}
+	if p := task.GetAction().GetPlatform(); p != nil {
+		SetValue(p, name, value)
+	}
+	if p := task.GetCommand().GetPlatform(); p != nil {
+		SetValue(p, name, value)
+	}
 }
 
 // IsTrue returns whether the given platform property value is truthy.

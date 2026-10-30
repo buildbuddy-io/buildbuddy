@@ -571,7 +571,7 @@ func TestDefaultImageInPlatform(t *testing.T) {
 			wantTask:  &repb.ExecutionTask{Command: &repb.Command{Platform: plat(image("docker://gcr.io/default:v1"))}},
 		},
 		{
-			// Only the Action platform is updated.
+			// Both the Action and Command platforms are updated.
 			name:    "on, Action.Platform present",
 			enabled: true,
 			task: &repb.ExecutionTask{
@@ -581,7 +581,7 @@ func TestDefaultImageInPlatform(t *testing.T) {
 			wantImage: explicitImage,
 			wantTask: &repb.ExecutionTask{
 				Action:  &repb.Action{Platform: plat(image("docker://gcr.io/default:v1"), recycle())},
-				Command: &repb.Command{Platform: plat(recycle())},
+				Command: &repb.Command{Platform: plat(image("docker://gcr.io/default:v1"), recycle())},
 			},
 		},
 		{
