@@ -442,6 +442,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		Host:                               inv.GetHost(),
 		Pattern:                            inv.GetPattern(),
 		Role:                               inv.GetRole(),
+		Agent:                              inv.GetAgent(),
 		BranchName:                         inv.GetBranchName(),
 		CommitSHA:                          inv.GetCommitSha(),
 		RepoURL:                            inv.GetRepoUrl(),

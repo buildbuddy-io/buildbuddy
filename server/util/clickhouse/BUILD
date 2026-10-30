@@ -35,6 +35,7 @@ go_test(
     deps = [
         ":clickhouse",
         "//proto:remote_execution_go_proto",
+        "//proto:stat_filter_go_proto",
         "//proto:stored_invocation_go_proto",
         "//server/metrics",
         "//server/remote_cache/digest",
@@ -42,6 +43,8 @@ go_test(
         "//server/testutil/testclickhouse",
         "//server/testutil/testenv",
         "//server/util/clickhouse/schema",
+        "//server/util/filter",
+        "//server/util/query_builder",
         "//server/util/testing/flags",
         "@com_github_prometheus_client_golang//prometheus/testutil",
         "@com_github_stretchr_testify//require",

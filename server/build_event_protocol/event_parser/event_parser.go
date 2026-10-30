@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
@@ -76,6 +77,13 @@ func parseCommandLine(commandLine *command_line.CommandLine) cmdOptions {
 		}
 		for _, option := range p.OptionList.GetOption() {
 			if option.OptionName == envVarOptionName {
+				// Attribution depends on presence, even for malformed values.
+				// Keep legacy parsing unchanged for unrelated environment fields.
+				name, value, ok := strings.Cut(option.OptionValue, envVarSeparator)
+				if ok && (name == bazel.CodingAgentEnvVar || name == "CLAUDECODE" || name == "CODEX_SESSION_ID") {
+					res.envVarMap[name] = value
+					continue
+				}
 				parts := strings.Split(option.OptionValue, envVarSeparator)
 				if len(parts) == 2 {
 					res.envVarMap[parts[0]] = parts[1]
@@ -98,7 +106,8 @@ type StreamingEventParser struct {
 	invocation *inpb.Invocation
 	startTime  *time.Time
 
-	priority fieldPriorities
+	preserveAgent bool
+	priority      fieldPriorities
 }
 
 // fieldPriorities keeps track of all the priorities currently assigned to each
@@ -108,6 +117,7 @@ type fieldPriorities struct {
 	Host,
 	User,
 	Role,
+	Agent,
 	ReadPermission,
 	RepoUrl,
 	BranchName,
@@ -119,10 +129,17 @@ type fieldPriorities struct {
 	RunId int
 }
 
-func NewStreamingEventParser(invocation *inpb.Invocation) *StreamingEventParser {
-	return &StreamingEventParser{
-		invocation: invocation,
+type Options struct {
+	// PreserveAgent keeps historical attribution authoritative during redaction replay.
+	PreserveAgent bool
+}
+
+func NewStreamingEventParser(invocation *inpb.Invocation, opts ...Options) *StreamingEventParser {
+	parser := &StreamingEventParser{invocation: invocation}
+	for _, opt := range opts {
+		parser.preserveAgent = parser.preserveAgent || opt.PreserveAgent
 	}
+	return parser
 }
 
 func (sep *StreamingEventParser) GetInvocation() *inpb.Invocation {
@@ -245,6 +262,10 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 	priority := envPriority
 	commandLineOptions := parseCommandLine(commandLine)
 	envVarMap := commandLineOptions.envVarMap
+	sep.setAgent(bazel.DetectCodingAgent(func(name string) (string, bool) {
+		value, ok := envVarMap[name]
+		return value, ok
+	}), priority)
 	if user, ok := envVarMap["USER"]; ok && user != "" {
 		sep.setUser(user, priority)
 	}
@@ -374,7 +395,7 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus) {
 	priority := workspaceStatusPriority
 	for _, item := range workspaceStatus.GetItem() {
-		if item.GetValue() == "" {
+		if item.GetValue() == "" && item.GetKey() != bazel.CodingAgentEnvVar {
 			continue
 		}
 		switch item.GetKey() {
@@ -388,6 +409,8 @@ func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStat
 			sep.setHost(item.GetValue(), priority)
 		case "PATTERN":
 			sep.setPattern(strings.Split(item.GetValue(), " "), priority)
+		case bazel.CodingAgentEnvVar:
+			sep.setAgent(item.GetValue(), priority)
 		case "ROLE":
 			sep.setRole(item.GetValue(), priority)
 		case "REPO_URL":
@@ -404,6 +427,9 @@ func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStat
 
 func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[string]string) error {
 	priority := buildMetadataPriority
+	if value, ok := metadata[bazel.CodingAgentEnvVar]; ok {
+		sep.setAgent(value, priority)
+	}
 	if sha, ok := metadata["COMMIT_SHA"]; ok && sha != "" {
 		sep.setCommitSha(sha, priority)
 	}
@@ -481,6 +507,14 @@ func (sep *StreamingEventParser) setUser(value string, priority int) {
 		sep.invocation.User = value
 	}
 }
+func (sep *StreamingEventParser) setAgent(value string, priority int) {
+	if sep.preserveAgent || sep.priority.Agent > priority {
+		return
+	}
+	sep.priority.Agent = priority
+	sep.invocation.Agent = bazel.NormalizeCodingAgent(value)
+}
+
 func (sep *StreamingEventParser) setRole(value string, priority int) {
 	if sep.priority.Role <= priority {
 		sep.priority.Role = priority

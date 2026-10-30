@@ -9,6 +9,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//app/auth:auth_service",
+        "//app/format",
         "//app/invocation:invocation_buttons",
         "//app/invocation:invocation_model",
         "//app/router",

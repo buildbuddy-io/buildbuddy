@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -1672,7 +1673,8 @@ func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.E
 		// only redact if we hadn't redacted enough, only parse again if we redact
 		redactor = redact.NewStreamingRedactor()
 	}
-	beValues := accumulator.NewBEValues(inv)
+	// Redaction replay must preserve the stored attribution snapshot.
+	beValues := accumulator.NewBEValues(inv, event_parser.Options{PreserveAgent: true})
 	structuredCommandLines := []*command_line.CommandLine{}
 	streamID := GetStreamIdFromInvocationIdAndAttempt(inv.GetInvocationId(), inv.GetAttempt())
 	err := streamRawInvocationEvents(env, ctx, streamID, func(event *inpb.InvocationEvent) error {
@@ -1757,6 +1759,8 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	i.BranchName = p.GetBranchName()
 	i.CommitSHA = p.GetCommitSha()
 	i.Role = p.GetRole()
+	// The parser provides a full metadata snapshot, including an empty agent.
+	i.Agent = new(p.GetAgent())
 	i.Command = p.GetCommand()
 	if p.Pattern != nil {
 		i.Pattern = invocation_format.ShortFormatPatterns(p.GetPattern())
@@ -1807,6 +1811,7 @@ func toStoredInvocation(inv *tables.Invocation) *sipb.StoredInvocation {
 		Host:             inv.Host,
 		Pattern:          inv.Pattern,
 		Role:             inv.Role,
+		Agent:            inv.GetAgent(),
 		BranchName:       inv.BranchName,
 		CommitSha:        inv.CommitSHA,
 		RepoUrl:          inv.RepoURL,

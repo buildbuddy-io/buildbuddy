@@ -403,6 +403,12 @@ export function formatRole(role: string): string | null {
   return null;
 }
 
+export function formatCodingAgent(agent: string): string | null {
+  if (agent === "codex") return "Codex";
+  if (agent === "claude") return "Claude Code";
+  return null;
+}
+
 export function formatWithCommas(num: number | Long | Number | undefined, options?: Intl.NumberFormatOptions) {
   if (num === undefined || num === null) {
     return "";
@@ -467,6 +473,7 @@ export default {
   formatGitUrl,
   formatCommitHash,
   formatRole,
+  formatCodingAgent,
   formatWithCommas,
   formatCents,
   formatPrice,

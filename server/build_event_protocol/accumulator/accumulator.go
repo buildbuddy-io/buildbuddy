@@ -93,12 +93,12 @@ type BEValues struct {
 	parser *event_parser.StreamingEventParser
 }
 
-func NewBEValues(invocation *inpb.Invocation) *BEValues {
+func NewBEValues(invocation *inpb.Invocation, opts ...event_parser.Options) *BEValues {
 	return &BEValues{
 		valuesMap:                 make(map[string]string, 0),
 		unprocessedMetadataEvents: make(map[string]struct{}, 0),
 		outputFilesMap:            make(map[string]*build_event_stream.File),
-		parser:                    event_parser.NewStreamingEventParser(invocation),
+		parser:                    event_parser.NewStreamingEventParser(invocation, opts...),
 	}
 }
 

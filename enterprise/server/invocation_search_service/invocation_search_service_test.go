@@ -162,6 +162,125 @@ func TestNonOLAPQuery(t *testing.T) {
 	assert.Equal(t, []string{getUUIDString(3)}, getInvocationIDSlice(rsp))
 }
 
+// Agent queries compose with role and user tags across primary and OLAP search.
+func TestAgentQueries(t *testing.T) {
+	for _, backend := range []string{"primary", "OLAP"} {
+		t.Run(backend, func(t *testing.T) {
+			// Configure the backend and authenticated user.
+			flags.Set(t, "app.olap_invocation_search_enabled", true)
+			flags.Set(t, "olap_database.invocation_batch_insert_interval", 0)
+			flags.Set(t, "olap_database.async_insert", true)
+			ctx := context.Background()
+			env := testenv.GetTestEnv(t)
+			if backend == "OLAP" {
+				testclickhouse.Configure(t, env)
+			}
+			ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+			env.SetAuthenticator(ta)
+			ctx, err := ta.WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+			// Seed providers, roles, ordinary tags, and an unfinished invocation.
+			for _, row := range []struct {
+				id     byte
+				role   string
+				tags   string
+				agent  string
+				status int64
+			}{
+				{id: 0, role: "CI", agent: "codex", tags: "team=build", status: 1},
+				{id: 1, role: "CI", agent: "claude", status: 1},
+				{id: 2, role: "HOSTED_BAZEL", agent: "codex", status: 1},
+				{id: 4, role: "CI", status: 1},
+				{id: 6, role: "CI", agent: "codex", status: 2},
+			} {
+				inv := &tables.Invocation{
+					InvocationID:     getUUIDString(row.id),
+					InvocationUUID:   getUUIDBytes(row.id),
+					GroupID:          "GR1",
+					User:             "developer",
+					Perms:            perms.GROUP_READ,
+					Role:             row.role,
+					Tags:             "control," + row.tags,
+					Agent:            new(row.agent),
+					InvocationStatus: row.status,
+				}
+				require.NoError(t, env.GetDBHandle().NewQuery(ctx, "test").Create(inv))
+				if backend == "OLAP" && row.status == 1 {
+					require.NoError(t, env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv))
+				}
+			}
+			// Exercise provider filters together with role and ordinary-tag predicates.
+			service := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
+			for _, tc := range []struct {
+				name               string
+				roles              []string
+				legacyTags         []string
+				values             []string
+				expectedComplete   []byte
+				expectedUnfinished []byte
+			}{
+				{
+					name:               "CI and exact provider",
+					roles:              []string{"CI"},
+					values:             []string{"codex"},
+					expectedComplete:   []byte{0},
+					expectedUnfinished: []byte{6},
+				},
+				{
+					name:               "provider alternatives",
+					roles:              []string{"CI"},
+					values:             []string{"codex", "claude"},
+					expectedComplete:   []byte{0, 1},
+					expectedUnfinished: []byte{6},
+				},
+				{
+					name:             "provider and ordinary tag",
+					legacyTags:       []string{"team=build"},
+					values:           []string{"codex"},
+					expectedComplete: []byte{0},
+				},
+				{
+					name:   "unknown provider matches no invocations",
+					values: []string{"future-agent"},
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					// Build and execute the request for this filter combination.
+					query := &inpb.InvocationQuery{
+						Role: tc.roles,
+						Tags: tc.legacyTags,
+						GenericFilters: []*sfpb.GenericFilter{{
+							Type:    sfpb.FilterType_AGENT_FILTER_TYPE,
+							Operand: sfpb.FilterOperand_IN_OPERAND,
+							Value:   &sfpb.FilterValue{StringValue: tc.values},
+						}},
+					}
+					if backend == "OLAP" {
+						// Use the existing ordinary-tag routing rule to exercise OLAP.
+						query.Tags = append(query.Tags, "control")
+					}
+					rsp, err := service.QueryInvocations(ctx, &inpb.SearchInvocationRequest{
+						RequestContext: &ctxpb.RequestContext{GroupId: "GR1"},
+						Query:          query,
+					})
+					require.NoError(t, err)
+					// Only primary search includes invocations that have not been flushed.
+					var expectedIDs []string
+					for _, id := range tc.expectedComplete {
+						expectedIDs = append(expectedIDs, getUUIDString(id))
+					}
+					if backend == "primary" {
+						for _, id := range tc.expectedUnfinished {
+							expectedIDs = append(expectedIDs, getUUIDString(id))
+						}
+					}
+					assert.ElementsMatch(t, expectedIDs, getInvocationIDSlice(rsp))
+				})
+			}
+		})
+	}
+}
+
 func TestGroupIDDefaultsToAuthenticatedGroupID(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ta := setUpDB(t.Context(), env, t)

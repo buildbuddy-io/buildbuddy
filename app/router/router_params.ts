@@ -3,6 +3,7 @@
 // Query params for the global filter.
 // These should be preserved when navigating between pages in the app.
 export const ROLE_PARAM_NAME = "role";
+export const AGENT_PARAM_NAME = "agent";
 export const STATUS_PARAM_NAME = "status";
 export const START_DATE_PARAM_NAME = "start";
 export const END_DATE_PARAM_NAME = "end";
@@ -30,6 +31,7 @@ export const DEFAULT_SORT_ORDER_VALUE = "desc";
 
 export const GLOBAL_FILTER_PARAM_NAMES = [
   ROLE_PARAM_NAME,
+  AGENT_PARAM_NAME,
   STATUS_PARAM_NAME,
   START_DATE_PARAM_NAME,
   END_DATE_PARAM_NAME,
