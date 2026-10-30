@@ -217,8 +217,9 @@ func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) 
 	return nil
 }
 
-// ApplyOverrides modifies the platformProps and command as needed to match the
-// locally configured executor properties.
+// ApplyOverrides modifies the platformProps and task (its command and, under the
+// executor.default_image_in_platform experiment, its platform's container-image)
+// as needed to match the locally configured executor properties.
 func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *ExecutorProperties, platformProps *platform.Properties, task *repb.ExecutionTask) error {
 	command := task.GetCommand()
 	if len(executorProps.SupportedIsolationTypes) == 0 {
