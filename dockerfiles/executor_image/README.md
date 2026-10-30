@@ -26,46 +26,52 @@ binaries. Our main change is to the release workflow
 disabling steps that we don't need). The fork may also carry a small number
 of other commits, such as fixes that aren't upstream yet.
 
-We update the fork by merging upstream release tags into master, and never
-force-push master. To see our fork-specific changes, run
-`git diff vX.Y.Z origin/master` or
-`git log --no-merges vX.Y.Z..origin/master`, where `vX.Y.Z` is the upstream
-release most recently merged into our master (an older tag would also show
-upstream changes). To see how far behind upstream we are, run
-`git rev-list --count origin/master..upstream/master` or check the fork banner
-on GitHub.
+The fork's `master` tracks upstream `master` and carries none of our changes.
+Instead, each podman version has a branch `buildbuddy/vX.Y.Z`, created at
+the upstream tag `vX.Y.Z`, with our changes on top. Workflow changes are
+marked with a `# buildbuddy:` comment. Changes land on these branches via PRs
+(merge commits are fine); never force-push them. The workflow builds and
+tests on pushes to `buildbuddy/**` and on PRs, and only publishes releases
+for `buildbuddy-v*` tags.
+
+To see our changes for a version, run
+`git diff vX.Y.Z origin/buildbuddy/vX.Y.Z`.
 
 To build a new version of podman from the fork:
 
 ```shell
-# Clone the fork and fetch upstream
+# Clone the fork and fetch upstream tags
 git clone git@github.com:buildbuddy-io/podman-static.git
 cd podman-static
 git remote add upstream https://github.com/mgoltzsche/podman-static
 git fetch upstream --tags
-# Merge the upstream release tag into a branch off master
-VERSION=vX.Y.Z
-git checkout -b "merge-$VERSION" origin/master
-git merge "$VERSION"
-# Resolve conflicts if needed. These are usually only in
-# .github/workflows/workflow.yml, where our release changes live. Also
-# check whether the workflow has any new steps that need to be disabled.
-git push origin "merge-$VERSION"
+PREV=vA.B.C     # version of the latest buildbuddy/ branch
+VERSION=vX.Y.Z  # new upstream version
+# Create the release branch at the upstream tag
+git push origin "$VERSION:refs/heads/buildbuddy/$VERSION"
+git fetch origin
+# Re-apply our changes on a work branch
+git checkout -b "update-$VERSION" "origin/buildbuddy/$VERSION"
+git cherry-pick $(git rev-list --reverse --no-merges "$PREV..origin/buildbuddy/$PREV")
+# Resolve conflicts if needed, and check whether the upstream workflow has
+# any new steps that need to be disabled.
+git push origin "update-$VERSION"
 ```
 
-Then open a PR against master and merge it with **"Create a merge commit"**.
-Don't squash or rebase: that drops upstream's history and breaks the
-ahead/behind comparison with upstream.
-
-After the PR is merged, tag master to trigger a release. The workflow builds
-the signed tarballs and creates the GitHub release.
+Then open a PR against `buildbuddy/$VERSION` and merge it. After that, tag
+the branch to trigger a release. The workflow builds the signed tarballs and
+creates the GitHub release.
 
 ```shell
 git fetch origin
-git tag "buildbuddy-$VERSION" origin/master
+git tag "buildbuddy-$VERSION" "origin/buildbuddy/$VERSION"
 git push origin "buildbuddy-$VERSION"
 # Monitor the release at https://github.com/buildbuddy-io/podman-static/actions
 ```
+
+If a fix lands on the branch after a release, cut a new tag with a suffix
+(e.g. `buildbuddy-v5.1.1-1`) and use that in place of `buildbuddy-$VERSION`
+below.
 
 Finally, update `PODMAN_VERSION`, `PODMAN_STATIC_SHA256_AMD64` and
 `PODMAN_STATIC_SHA256_ARM64` in `deps.bzl`. To get the checksums:
