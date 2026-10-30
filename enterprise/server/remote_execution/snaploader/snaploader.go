@@ -683,6 +683,17 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 		vmMetadata = vmMeta
 	}
 
+	names := make([]string, 0, len(snapshotActionResult.GetOutputFiles())+len(snapshotActionResult.GetOutputDirectories()))
+	for _, f := range snapshotActionResult.GetOutputFiles() {
+		names = append(names, f.GetPath())
+	}
+	for _, d := range snapshotActionResult.GetOutputDirectories() {
+		names = append(names, chunkedFileName(d))
+	}
+	if err := validateManifestFileNames(names); err != nil {
+		return nil, err
+	}
+
 	manifest := &fcpb.SnapshotManifest{
 		VmMetadata:      vmMetadata,
 		VmConfiguration: vmConfig,
@@ -735,6 +746,21 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 	return manifest, nil
 }
 
+// validateManifestFileNames checks that each name is a unique, single path component.
+func validateManifestFileNames(names []string) error {
+	seen := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') {
+			return status.InvalidArgumentErrorf("invalid snapshot file name %q", name)
+		}
+		if _, ok := seen[name]; ok {
+			return status.InvalidArgumentErrorf("duplicate snapshot file name %q", name)
+		}
+		seen[name] = struct{}{}
+	}
+	return nil
+}
+
 func chunkedFileName(chunkedFileMetadata *repb.OutputDirectory) string {
 	return chunkedFileMetadata.Path
 }
@@ -763,6 +789,16 @@ func (l *FileCacheLoader) ChunkedFileTree(ctx context.Context, remoteInstanceNam
 func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot, outputDirectory string) (*UnpackedSnapshot, error) {
 	if snapshot == nil {
 		return nil, status.InvalidArgumentErrorf("no snapshot to unpack")
+	}
+	names := make([]string, 0, len(snapshot.manifest.GetFiles())+len(snapshot.manifest.GetChunkedFiles()))
+	for _, f := range snapshot.manifest.GetFiles() {
+		names = append(names, f.GetName())
+	}
+	for _, cf := range snapshot.manifest.GetChunkedFiles() {
+		names = append(names, cf.GetName())
+	}
+	if err := validateManifestFileNames(names); err != nil {
+		return nil, err
 	}
 
 	for _, fileNode := range snapshot.manifest.Files {

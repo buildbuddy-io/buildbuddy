@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -163,4 +164,35 @@ func TestCacheAndFetchBytes(t *testing.T) {
 	fetchedBytes, err = snaputil.GetBytes(ctx, fc, env.GetByteStreamClient(), true, d, remoteInstanceName, tmpDir)
 	require.NoError(t, err)
 	require.Equal(t, randomStr, string(fetchedBytes))
+}
+
+func TestGetArtifactRejectsInvalidDigest(t *testing.T) {
+	env := setupEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
+	require.NoError(t, err)
+	rootDir := testfs.MakeTempDir(t)
+	d := &repb.Digest{Hash: "../../x", SizeBytes: 10}
+
+	const sentinel = "sentinel-content"
+	outputPath := filepath.Join(rootDir, "out")
+	require.NoError(t, os.WriteFile(outputPath, []byte(sentinel), 0644))
+	_, err = snaputil.GetArtifact(ctx, env.GetFileCache(), env.GetByteStreamClient(), true, d, "", outputPath)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+	b, err := os.ReadFile(outputPath)
+	require.NoError(t, err)
+	require.Equal(t, sentinel, string(b))
+
+	// GetBytes removes its temp file, so point at a missing dir: without
+	// validation this fails with a different error.
+	tmpDir := testfs.MakeDirAll(t, rootDir, "a/b")
+	d = &repb.Digest{Hash: "../../missing/x", SizeBytes: 10}
+	_, err = snaputil.GetBytes(ctx, env.GetFileCache(), env.GetByteStreamClient(), true, d, "", tmpDir)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+	entries, err := os.ReadDir(rootDir)
+	require.NoError(t, err)
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	require.ElementsMatch(t, []string{"a", "out"}, names)
 }
