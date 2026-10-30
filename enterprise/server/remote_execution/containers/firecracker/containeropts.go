@@ -28,6 +28,10 @@ type ContainerOpts struct {
 	// and jailer paths / versioning info. This is required.
 	ExecutorConfig *ExecutorConfig
 
+	// GuestKernelVersion selects a supported kernel release, overriding the
+	// executor default and rollout experiment. Empty keeps automatic selection.
+	GuestKernelVersion string
+
 	// The OCI container image. ex "alpine:latest".
 	ContainerImage string
 

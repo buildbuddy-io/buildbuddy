@@ -74,6 +74,29 @@ each time this action is executed.
 
 Fortunately, we can mitigate both of these issues using runner recyling.
 
+## Selecting a guest kernel
+
+Set `test.guest-kernel-version` alongside `test.workload-isolation-type` to select
+an available kernel release:
+
+```python
+exec_properties = {
+    "test.workload-isolation-type": "firecracker",
+    "test.guest-kernel-version": "6.18",
+},
+```
+
+Supported values are `5.15` (AMD64 and ARM64) and `6.18` (AMD64 only). An explicit
+selection overrides the executor default and kernel rollout experiment. An
+unsupported or unavailable version fails the action rather than falling back.
+Omitting the property retains automatic kernel selection.
+
+These values select a release series, not an immutable kernel build. The
+executor's kernel image may receive updates within that series. The selected
+image's digest is included in the VM configuration and snapshot key, so snapshots
+from different kernel builds are kept separate. When a kernel is explicitly
+selected, a snapshot override must also match the requested kernel image digest.
+
 ## Preserving microVM state across actions
 
 MicroVM state can be preserved across action runs by enabling the

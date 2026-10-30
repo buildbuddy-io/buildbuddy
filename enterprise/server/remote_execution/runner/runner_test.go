@@ -426,6 +426,47 @@ func TestRunnerPool_CanAddAndGetBackSameRunner(t *testing.T) {
 	assert.Equal(t, 0, pool.PausedRunnerCount())
 }
 
+func TestRunnerPool_GuestKernelHeaderOverride(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Firecracker requires Linux")
+	}
+	flags.Set(t, "executor.enable_firecracker", true)
+	flags.Set(t, "executor.enable_local_snapshot_sharing", false)
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", false)
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return newFakeFirecrackerContainer(), nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
+	task := func(override string) *repb.ScheduledTask {
+		st := newTask()
+		st.ExecutionTask.Command.Platform.Properties = append(st.ExecutionTask.Command.Platform.Properties,
+			&repb.Platform_Property{Name: "workload-isolation-type", Value: "firecracker"},
+			&repb.Platform_Property{Name: platform.GuestKernelVersionPropertyName, Value: "5.15"},
+		)
+		st.ExecutionTask.PlatformOverrides = &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: platform.GuestKernelVersionPropertyName, Value: override},
+		}}
+		return st
+	}
+	firstTask := task("5.15")
+	original := firstTask.ExecutionTask.Command.Platform.CloneVT()
+	r515 := mustGetNewRunner(t, ctx, pool, firstTask)
+	require.True(t, proto.Equal(original, firstTask.ExecutionTask.Command.Platform), "pool key must not mutate the task platform")
+	mustAddWithoutEviction(t, ctx, pool, r515)
+	r618 := mustGetNewRunner(t, ctx, pool, task("6.18"))
+	require.NotSame(t, r515, r618)
+	mustAddWithoutEviction(t, ctx, pool, r618)
+	require.Same(t, r515, mustGetPausedRunner(t, ctx, pool, task("5.15")))
+	// An explicitly empty header clears the action's 5.15 request.
+	rDefault := mustGetNewRunner(t, ctx, pool, task(""))
+	mustAddWithoutEviction(t, ctx, pool, rDefault)
+	require.Same(t, r618, mustGetPausedRunner(t, ctx, pool, task("6.18")))
+	require.Same(t, rDefault, mustGetPausedRunner(t, ctx, pool, task("")))
+}
+
 func TestRunnerPool_CanAddAndGetBackSameRunner_DockerReuseAlias(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg())

@@ -1262,10 +1262,27 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	}
 
 	persistentWorkerKey, _ := persistentworker.Key(props, task.GetCommand().GetArguments())
+	// Header overrides are not part of the action platform. Keep the effective
+	// kernel request in the pool key so a recycled VM cannot bypass it.
+	keyPlatform := platform.GetProto(task.GetAction(), task.GetCommand())
+	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
+		keyPlatform = keyPlatform.CloneVT()
+		if keyPlatform == nil {
+			keyPlatform = &repb.Platform{}
+		}
+		keyPlatform.Properties = slices.DeleteFunc(keyPlatform.Properties, func(p *repb.Platform_Property) bool {
+			return strings.EqualFold(p.GetName(), platform.GuestKernelVersionPropertyName)
+		})
+		if props.GuestKernelVersion != "" {
+			keyPlatform.Properties = append(keyPlatform.Properties, &repb.Platform_Property{
+				Name: platform.GuestKernelVersionPropertyName, Value: props.GuestKernelVersion,
+			})
+		}
+	}
 	key := &rnpb.RunnerKey{
 		GroupId:             groupID,
 		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
-		Platform:            platform.GetProto(task.GetAction(), task.GetCommand()),
+		Platform:            keyPlatform,
 		PersistentWorkerKey: persistentWorkerKey,
 	}
 	if platform.ContainerType(props.WorkloadIsolationType) == platform.OCIContainerType {
