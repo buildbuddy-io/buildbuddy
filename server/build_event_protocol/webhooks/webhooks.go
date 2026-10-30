@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -32,6 +33,7 @@ var (
 	enabled            = flag.Bool("integrations.invocation_upload.enabled", false, "Whether to upload webhook data to the webhook URL configured per-Group. ** Enterprise only **")
 	gcsCredentialsJSON = flag.String("integrations.invocation_upload.gcs_credentials", "", "Credentials JSON for the Google service account used to authenticate when GCS is used as the invocation upload target. ** Enterprise only **", flag.Secret)
 	awsCredentials     = flag.String("integrations.invocation_upload.aws_credentials", "", "Credentials CSV file for Amazon s3 invocation upload webhook. ** Enterprise only **", flag.Secret)
+	httpClient         = httpclient.New(nil, "invocation_upload")
 )
 
 const (
@@ -120,17 +122,18 @@ func (h *invocationUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invo
 		return h.s3Upload(ctx, u, gzipPipeReader)
 	} else {
 		// Fall back to generic PUT request.
-		return h.put(ctx, http.DefaultClient, u, gzipPipeReader)
+		return h.put(ctx, httpClient, u, gzipPipeReader)
 	}
 }
 
 func (h *invocationUploadHook) gcsUpload(ctx context.Context, u *url.URL, gzr io.Reader) error {
-	client := http.DefaultClient
+	client := httpClient
 	if *gcsCredentialsJSON != "" {
 		cfg, err := googleoauth.JWTConfigFromJSON([]byte(*gcsCredentialsJSON), gcsReadWriteScope)
 		if err != nil {
 			return err
 		}
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
 		client = oauth2.NewClient(ctx, cfg.TokenSource(ctx))
 	}
 	return h.put(ctx, client, u, gzr)
