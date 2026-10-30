@@ -291,10 +291,6 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 			// container reference.
 			return status.InvalidArgumentErrorf("malformed container image string - should be prefixed with '%s'", platform.DockerPrefix)
 		}
-		// platformProps is a parsed copy of the task's platform, so setting
-		// ContainerImage above doesn't change the task. Runner and snapshot
-		// keys hash the task's platform proto, so also record the requested
-		// image (including the default or a header override) there.
 		if experiment && platformProps.ContainerImage != "" {
 			platform.SetContainerImage(task, platformProps.ContainerImage)
 		}
