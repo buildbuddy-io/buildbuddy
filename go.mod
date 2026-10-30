@@ -49,6 +49,7 @@ require (
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.35.0
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/NVIDIA/go-nvml v0.13.3-1
+	github.com/ProtonMail/go-crypto v1.1.6
 	github.com/RoaringBitmap/roaring v1.9.1
 	github.com/VictoriaMetrics/metrics v1.33.1
 	github.com/anishathalye/porcupine v1.1.0
@@ -239,7 +240,6 @@ require (
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.3 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
