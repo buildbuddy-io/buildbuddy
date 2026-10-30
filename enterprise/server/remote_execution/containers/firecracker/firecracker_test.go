@@ -910,7 +910,7 @@ func TestFirecrackerVMExecReadySignalAfterSnapshotResume(t *testing.T) {
 			MemSizeMb:          minMemSizeMB,
 			NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb:  100,
-			GuestKernelVersion: cfg.GuestKernelVersion,
+			GuestKernelVersion: cfg.DefaultGuestKernelVersion,
 			FirecrackerVersion: cfg.FirecrackerVersion,
 			GuestApiVersion:    cfg.GuestAPIVersion,
 		},
@@ -953,7 +953,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 				MemSizeMb:          memorySize,
 				NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
 				ScratchDiskSizeMb:  100,
-				GuestKernelVersion: cfg.GuestKernelVersion,
+				GuestKernelVersion: cfg.DefaultGuestKernelVersion,
 				FirecrackerVersion: cfg.FirecrackerVersion,
 				GuestApiVersion:    cfg.GuestAPIVersion,
 			},
@@ -1062,6 +1062,74 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		spread := slices.Max(cpuMillisObservations) - slices.Min(cpuMillisObservations)
 		require.True(t, !slices.IsSorted(cpuMillisObservations) || spread < slices.Min(cpuMillisObservations), "unexpected CPU usage measurements %v", cpuMillisObservations)
 	}
+
+}
+
+func TestFirecrackerSnapshotAndResume_GuestKernelVersionChange(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	workDir := testfs.MakeDirAll(t, testfs.MakeTempDir(t), "work")
+	cfg := getExecutorConfig(t)
+	originalGuestKernelVersion := cfg.DefaultGuestKernelVersion
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: cfg,
+	}
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"./buildbuddy_ci_runner"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.AlwaysSaveSnapshot},
+				{Name: platform.MinTimeBetweenSnapshotWritesPropertyName, Value: "0s"},
+			}},
+		},
+	}
+	createVM := func(task *repb.ExecutionTask) *firecracker.FirecrackerContainer {
+		t.Helper()
+		vm, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		t.Cleanup(func() { assert.NoError(t, vm.Remove(ctx)) })
+		require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+		require.NoError(t, vm.Create(ctx, workDir))
+		return vm
+	}
+
+	original := createVM(task)
+	require.Equal(t, cfg.DefaultGuestKernelVersion, original.VMConfig().GetGuestKernelVersion())
+	res := original.Exec(ctx, &repb.Command{Arguments: []string{"sh", "-c", "echo preserved > /root/kernel-version-test"}}, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Zero(t, res.ExitCode)
+	require.NoError(t, original.Pause(ctx))
+
+	// Simulate a change to the default guest kernel version.
+	// We should still be able to resume from the snapshot with the original guest kernel version.
+	updatedCfg := *cfg
+	updatedCfg.DefaultGuestKernelVersion = "updated-guest-kernel"
+	opts.ExecutorConfig = &updatedCfg
+	resumed := createVM(task)
+	require.Empty(t, cmp.Diff(original.SnapshotKeySet(), resumed.SnapshotKeySet(), protocmp.Transform()))
+	require.Equal(t, originalGuestKernelVersion, resumed.VMConfig().GetGuestKernelVersion())
+	res = resumed.Exec(ctx, &repb.Command{Arguments: []string{"cat", "/root/kernel-version-test"}}, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Zero(t, res.ExitCode)
+	// The output from the original run should be present in the snapshot.
+	require.Equal(t, "preserved\n", string(res.Stdout))
+
+	// Changing other fields in the snapshot key should still cause a cold boot.
+	// Cold boots should use the updated default guest kernel version.
+	coldTask := task.CloneVT()
+	coldTask.Command.Platform = nil
+	cold := createVM(coldTask)
+	require.Equal(t, updatedCfg.DefaultGuestKernelVersion, cold.VMConfig().GetGuestKernelVersion())
 }
 
 func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
@@ -2629,7 +2697,7 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 			MemSizeMb:          minMemSizeMB, // small to make snapshotting faster.
 			NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
 			ScratchDiskSizeMb:  100,
-			GuestKernelVersion: cfg.GuestKernelVersion,
+			GuestKernelVersion: cfg.DefaultGuestKernelVersion,
 			FirecrackerVersion: cfg.FirecrackerVersion,
 			GuestApiVersion:    cfg.GuestAPIVersion,
 		},
@@ -2704,7 +2772,7 @@ func TestFirecrackerBalloon(t *testing.T) {
 			MemSizeMb:          2000,
 			NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 			ScratchDiskSizeMb:  500,
-			GuestKernelVersion: cfg.GuestKernelVersion,
+			GuestKernelVersion: cfg.DefaultGuestKernelVersion,
 			FirecrackerVersion: cfg.FirecrackerVersion,
 			GuestApiVersion:    cfg.GuestAPIVersion,
 		},
@@ -2794,7 +2862,7 @@ func TestFirecrackerBalloon_DecreasesMemorySnapshotSize(t *testing.T) {
 				MemSizeMb:          500,
 				NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 				ScratchDiskSizeMb:  500,
-				GuestKernelVersion: cfg.GuestKernelVersion,
+				GuestKernelVersion: cfg.DefaultGuestKernelVersion,
 				FirecrackerVersion: cfg.FirecrackerVersion,
 				GuestApiVersion:    cfg.GuestAPIVersion,
 			},
@@ -4901,7 +4969,7 @@ func Benchmark_FullSnapshotPause(b *testing.B) {
 					MemSizeMb:          memorySizeMb,
 					NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
 					ScratchDiskSizeMb:  500,
-					GuestKernelVersion: cfg.GuestKernelVersion,
+					GuestKernelVersion: cfg.DefaultGuestKernelVersion,
 					FirecrackerVersion: cfg.FirecrackerVersion,
 					GuestApiVersion:    cfg.GuestAPIVersion,
 				},
@@ -4975,7 +5043,7 @@ func Benchmark_DiffSnapshotPause(b *testing.B) {
 					MemSizeMb:          memorySizeMb,
 					NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
 					ScratchDiskSizeMb:  500,
-					GuestKernelVersion: cfg.GuestKernelVersion,
+					GuestKernelVersion: cfg.DefaultGuestKernelVersion,
 					FirecrackerVersion: cfg.FirecrackerVersion,
 					GuestApiVersion:    cfg.GuestAPIVersion,
 				},
