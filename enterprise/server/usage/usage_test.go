@@ -566,8 +566,9 @@ func TestUsageTracker_Flush_RemovesCollectionsWithMissingCounts(t *testing.T) {
 	ctx := t.Context()
 	metrics.UnexpectedEvent.Reset()
 
-	// The collection has no counts key, as happens when a Redis shard
-	// restart loses the counts but not the collections set.
+	// Add a collection without a counts key. This happens when the counts key
+	// and the collections set are on different Redis shards, and only the
+	// shard holding the counts key restarts and comes back empty.
 	collectionsKey := "usage/collections/" + timeStr(period1Start)
 	mc := te.GetMetricsCollector()
 	err = mc.SetAdd(ctx, collectionsKey, "group_id=GR1&origin=internal")
