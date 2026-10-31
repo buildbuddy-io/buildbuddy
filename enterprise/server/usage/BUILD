@@ -57,7 +57,6 @@ go_test(
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_jonboulle_clockwork//:clockwork",
-        "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_gorm_gorm//:gorm",
