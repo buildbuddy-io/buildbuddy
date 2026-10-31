@@ -222,6 +222,7 @@ func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) 
 // configured executor properties.
 func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *ExecutorProperties, platformProps *platform.Properties, task *repb.ExecutionTask) error {
 	command := task.GetCommand()
+	isCIRunnerCommand := platform.IsCIRunnerCommand(task.GetCommand()) // before we modify the command
 	if len(executorProps.SupportedIsolationTypes) == 0 {
 		return status.FailedPreconditionError("No workload isolation types configured.")
 	}
@@ -360,7 +361,7 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 
 	// TODO: find a cleaner way to set the origin header, other than by
 	// forwarding an env var to the runner.
-	if platform.IsCIRunnerCommand(task.GetCommand()) {
+	if isCIRunnerCommand {
 		command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 			Name:  ci_runner_env.BBGrpcClientOriginEnvVarName,
 			Value: usageutil.ClientOrigin(),
