@@ -145,6 +145,10 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   }
 
   componentDidUpdate(prevProps: Readonly<CacheRequestsCardProps>) {
+    if (prevProps.model.getCacheEndpoint() !== this.props.model.getCacheEndpoint()) {
+      // Retry metadata that was missing (or still in flight) in the old region.
+      this.setState({ digestToCacheMetadata: new Map() });
+    }
     if (!areResultsAvailable(prevProps.model) && areResultsAvailable(this.props.model)) {
       this.fetchResults();
       return;
@@ -574,10 +578,11 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
     // Set an empty struct in the map so the FE doesn't fire duplicate requests while the first request is in progress
     // or if there is an invalid result
-    this.state.digestToCacheMetadata.set(digest.hash, null);
+    const metadata = this.state.digestToCacheMetadata;
+    metadata.set(digest.hash, null);
 
     // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/6146): This metadata request should be routed to the cache client for the cache proxy if applicable.
-    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_cache"));
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.getCacheEndpoint());
 
     service
       .getCacheMetadata(
@@ -592,7 +597,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         })
       )
       .then((response) => {
-        this.state.digestToCacheMetadata.set(digest.hash, response);
+        if (metadata !== this.state.digestToCacheMetadata) return;
+        metadata.set(digest.hash, response);
         this.forceUpdate();
       })
       .catch((e) => {
