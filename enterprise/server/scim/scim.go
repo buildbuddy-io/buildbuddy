@@ -447,9 +447,26 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 	}, nil
 }
 
+func (s *SCIMServer) getManagedUser(ctx context.Context, id string, g *tables.Group) (*tables.User, error) {
+	u, err := s.env.GetUserDB().GetUserByID(ctx, id, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
+	if err != nil {
+		return nil, err
+	}
+
+	if !strings.HasPrefix(u.SubID, saml.SubIDPrefixForGroup(g.URLIdentifier)) {
+		return nil, status.NotFoundError("user not found")
+	}
+	for _, ug := range u.Groups {
+		if ug.GroupID == g.GroupID {
+			return u, nil
+		}
+	}
+	return nil, status.NotFoundError("user not found")
+}
+
 func (s *SCIMServer) getUser(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	id := path.Base(r.URL.Path)
-	u, err := s.env.GetUserDB().GetUserByID(ctx, id, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
+	u, err := s.getManagedUser(ctx, id, g)
 	if err != nil {
 		return nil, err
 	}
@@ -612,7 +629,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 	}
 
 	id := path.Base(r.URL.Path)
-	u, err := s.env.GetUserDB().GetUserByID(ctx, id, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
+	u, err := s.getManagedUser(ctx, id, g)
 	if err != nil {
 		return nil, err
 	}
@@ -730,7 +747,7 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 	}
 
 	id := path.Base(r.URL.Path)
-	u, err := s.env.GetUserDB().GetUserByID(ctx, id, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
+	u, err := s.getManagedUser(ctx, id, g)
 	if err != nil {
 		return nil, err
 	}
@@ -771,6 +788,9 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 
 func (s *SCIMServer) deleteUser(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	id := path.Base(r.URL.Path)
+	if _, err := s.getManagedUser(ctx, id, g); err != nil {
+		return nil, err
+	}
 	if err := s.env.GetUserDB().DeleteUser(ctx, id); err != nil {
 		return nil, err
 	}
