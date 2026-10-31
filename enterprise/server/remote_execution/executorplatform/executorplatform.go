@@ -360,7 +360,7 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 
 	// TODO: find a cleaner way to set the origin header, other than by
 	// forwarding an env var to the runner.
-	if platformProps.WorkflowID != "" {
+	if platform.IsCIRunnerCommand(task.GetCommand()) {
 		command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 			Name:  ci_runner_env.BBGrpcClientOriginEnvVarName,
 			Value: usageutil.ClientOrigin(),
