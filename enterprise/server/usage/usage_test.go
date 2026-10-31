@@ -15,10 +15,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -553,6 +555,44 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 
 	err = ut.FlushToDB(ctx)
 	require.NoError(t, err)
+}
+
+func TestUsageTracker_Flush_RemovesCollectionsWithMissingCounts(t *testing.T) {
+	te := setupEnv(t)
+	clock := clockwork.NewFakeClockAt(period1Start)
+	ut, err := usage.NewTracker(te, clock, &nopDistributedLock{})
+	require.NoError(t, err)
+	ctx := t.Context()
+	metrics.UnexpectedEvent.Reset()
+
+	// Add a collection without a counts key. This happens when the counts key
+	// and the collections set are on different Redis shards, and only the
+	// shard holding the counts key restarts and comes back empty.
+	collectionsKey := "usage/collections/" + timeStr(period1Start)
+	mc := te.GetMetricsCollector()
+	err = mc.SetAdd(ctx, collectionsKey, "group_id=GR1&origin=internal")
+	require.NoError(t, err)
+	err = mc.Flush(ctx)
+	require.NoError(t, err)
+
+	clock.Advance(2 * periodDuration)
+	err = ut.FlushToDB(ctx)
+	require.NoError(t, err)
+
+	collections, err := te.GetDefaultRedisClient().SMembers(ctx, collectionsKey).Result()
+	require.NoError(t, err)
+	assert.Empty(t, collections)
+
+	// Flush again once period 1 is the oldest period that can still be in
+	// Redis, which is when a leftover collection would fire the alert.
+	clock.Advance(usage.RedisKeyTTL - 2*periodDuration)
+	err = ut.FlushToDB(ctx)
+	require.NoError(t, err)
+
+	unexpectedEvents := testmetrics.CounterValues(t, metrics.UnexpectedEvent)
+	assert.Empty(t, unexpectedEvents)
+	usages := queryAllUsages(t, te)
+	assert.Empty(t, usages)
 }
 
 func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
