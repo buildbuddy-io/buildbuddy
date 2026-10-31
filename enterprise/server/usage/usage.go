@@ -471,8 +471,9 @@ func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx con
 				// happens too often.
 				log.CtxInfof(ctx, "Usage counts in Redis are empty for key %q", countsKey)
 				metrics.UsageTrackerMissingCollectionCountsCount.Inc()
-				// There is nothing left to flush for this collection, so remove
-				// it from the set.
+				// If redis restarted, then there is nothing left to flush for
+				// this collection, and subsequent retries won't help. For now
+				// just remove it from the set.
 				if err := ut.rdb.SRem(ctx, collectionsKey, encodedCollection).Err(); err != nil {
 					return fmt.Errorf("remove collection with missing counts: %w", err)
 				}
