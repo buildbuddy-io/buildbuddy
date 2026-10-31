@@ -1362,3 +1362,82 @@ func TestUnpackSnapshot_PreflightsNames(t *testing.T) {
 	_, err = os.Stat(filepath.Join(workDir, "x"))
 	require.True(t, os.IsNotExist(err))
 }
+
+func TestGetSnapshot_RejectsInvalidChunkLayout(t *testing.T) {
+	const chunkSize = 512 * 1024
+	for _, tc := range []struct {
+		name      string
+		size      int64
+		chunkSize int64
+		// offsets replaces the names of the two chunks in the tree.
+		offsets []int64
+	}{
+		{name: "NegativeSize", size: -1, chunkSize: chunkSize, offsets: []int64{0, chunkSize}},
+		{name: "ZeroChunkSize", size: 2 * chunkSize, chunkSize: 0, offsets: []int64{0, chunkSize}},
+		{name: "NegativeChunkSize", size: 2 * chunkSize, chunkSize: -1, offsets: []int64{0, chunkSize}},
+		{name: "ChunkSizeTooLarge", size: 2 << 30, chunkSize: 1 << 30, offsets: []int64{0, 1 << 30}},
+		{name: "NegativeOffset", size: 2 * chunkSize, chunkSize: chunkSize, offsets: []int64{-chunkSize, 0}},
+		{name: "DuplicateOffset", size: 2 * chunkSize, chunkSize: chunkSize, offsets: []int64{0, 0}},
+		{name: "DecreasingOffsets", size: 2 * chunkSize, chunkSize: chunkSize, offsets: []int64{chunkSize, 0}},
+		{name: "UnalignedOffset", size: 2 * chunkSize, chunkSize: chunkSize, offsets: []int64{0, chunkSize + 1}},
+		{name: "OffsetPastEnd", size: 2 * chunkSize, chunkSize: chunkSize, offsets: []int64{0, 2 * chunkSize}},
+		{name: "ChunkLargerThanChunkSize", size: 2 * chunkSize, chunkSize: 4096, offsets: []int64{0, 4096}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+			ctx := t.Context()
+			env := setupEnv(t)
+			loader, err := snaploader.New(env)
+			require.NoError(t, err)
+			srcDir := testfs.MakeTempDir(t)
+			imagePath := makeRandomFile(t, srcDir, "scratchfs.ext4", 2*chunkSize)
+			cow, err := copy_on_write.ConvertFileToCOW(ctx, env, imagePath, chunkSize, srcDir, "", true, snaputil.ConvertToCOWConcurrency)
+			require.NoError(t, err)
+			t.Cleanup(func() { cow.Close() })
+			keys, err := loader.SnapshotKeySet(ctx, &repb.ExecutionTask{}, "config-hash", "")
+			require.NoError(t, err)
+			opts := makeFakeSnapshot(t, srcDir, true, map[string]*copy_on_write.COWStore{"scratchfs": cow}, "")
+			require.NoError(t, loader.CacheSnapshot(ctx, keys.GetBranchKey(), opts))
+			instanceName := keys.GetBranchKey().GetInstanceName()
+
+			manifestKey, err := snaploader.RemoteManifestKey(keys.GetBranchKey())
+			require.NoError(t, err)
+			ar, err := env.GetActionCacheClient().GetActionResult(ctx, &repb.GetActionResultRequest{
+				InstanceName:   instanceName,
+				ActionDigest:   manifestKey,
+				DigestFunction: repb.DigestFunction_BLAKE3,
+			})
+			require.NoError(t, err)
+			require.Len(t, ar.GetOutputDirectories(), 1)
+			treeRN := digest.NewCASResourceName(ar.GetOutputDirectories()[0].GetTreeDigest(), instanceName, repb.DigestFunction_BLAKE3)
+			tree := &repb.Tree{}
+			err = cachetools.GetBlobAsProto(ctx, env.GetByteStreamClient(), treeRN, tree)
+			require.NoError(t, err)
+			require.Len(t, tree.GetRoot().GetFiles(), 2)
+
+			tree.Root.NodeProperties.Properties = []*repb.NodeProperty{
+				{Name: "size", Value: fmt.Sprint(tc.size)},
+				{Name: "chunk_size", Value: fmt.Sprint(tc.chunkSize)},
+			}
+			for i, offset := range tc.offsets {
+				tree.Root.Files[i].Name = fmt.Sprint(offset)
+			}
+			ar.OutputDirectories[0].TreeDigest, err = cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, repb.DigestFunction_BLAKE3, tree)
+			require.NoError(t, err)
+			_, err = env.GetActionCacheClient().UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+				InstanceName:   instanceName,
+				ActionDigest:   manifestKey,
+				ActionResult:   ar,
+				DigestFunction: repb.DigestFunction_BLAKE3,
+			})
+			require.NoError(t, err)
+
+			_, err = loader.GetSnapshot(ctx, keys, &snaploader.GetSnapshotOptions{
+				SupportsRemoteChunks:   true,
+				SupportsRemoteManifest: true,
+				ReadPolicy:             platform.AlwaysReadNewestSnapshot,
+			})
+			require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+		})
+	}
+}
