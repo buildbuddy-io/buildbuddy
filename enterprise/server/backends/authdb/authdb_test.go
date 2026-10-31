@@ -460,6 +460,76 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 	}
 }
 
+func TestInvalidAPIKeyCache(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+	}{
+		{name: "enabled", enabled: true},
+		{name: "disabled", enabled: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := setupEnv(t)
+			fakeClock := clockwork.NewFakeClock()
+			env.SetClock(fakeClock)
+			flags.Set(t, "auth.cache_invalid_api_keys", tc.enabled)
+			adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+			require.NoError(t, err)
+
+			existing := createRandomAPIKeys(t, ctx, env)[0]
+			// Same length as a real key, but not in the database yet.
+			const newValue = "ABCDEFGHIJKLMNOPQRST"
+			requireInvalid := func() {
+				akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, newValue)
+				require.Nil(t, akg)
+				require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated error; got: %v", err)
+			}
+			requireInvalid()
+
+			// Give the key the looked-up value.
+			err = env.GetDBHandle().NewQuery(ctx, "test_set_api_key_value").Raw(
+				`UPDATE "APIKeys" SET value = ? WHERE api_key_id = ?`, newValue, existing.APIKeyID).Exec().Error
+			require.NoError(t, err)
+
+			if tc.enabled {
+				// Still rejected within the TTL.
+				fakeClock.Advance(9 * time.Second)
+				requireInvalid()
+				// Accepted once the negative entry expires.
+				fakeClock.Advance(2 * time.Second)
+			}
+			akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, newValue)
+			require.NoError(t, err)
+			require.Equal(t, existing.GroupID, akg.GetGroupID())
+		})
+	}
+}
+
+func TestInvalidAPIKeyCache_DoesNotCacheErrors(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	flags.Set(t, "auth.cache_invalid_api_keys", true)
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+	existing := createRandomAPIKeys(t, ctx, env)[0]
+
+	// Make the lookup fail with a non-"not found" error. The key is not in the
+	// positive cache, so the lookup reaches the database.
+	dbh := env.GetDBHandle()
+	require.NoError(t, dbh.NewQuery(ctx, "test_rename_api_keys").Raw(
+		`ALTER TABLE "APIKeys" RENAME TO "APIKeysTmp"`).Exec().Error)
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, existing.Value)
+	require.Error(t, err)
+	require.False(t, status.IsUnauthenticatedError(err), "got: %v", err)
+
+	require.NoError(t, dbh.NewQuery(ctx, "test_restore_api_keys").Raw(
+		`ALTER TABLE "APIKeysTmp" RENAME TO "APIKeys"`).Exec().Error)
+	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, existing.Value)
+	require.NoError(t, err)
+	require.Equal(t, existing.GroupID, akg.GetGroupID())
+}
+
 func TestBackfillUnencryptedKeys(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t)

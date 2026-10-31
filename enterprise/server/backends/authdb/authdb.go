@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -54,6 +55,14 @@ const (
 const (
 	// Maximum number of entries in API Key -> Group cache.
 	apiKeyGroupCacheSize = 10_000
+
+	// Maximum number of entries in the invalid API key cache.
+	invalidAPIKeyCacheSize = 10_000
+	// How long an API key that was not found is remembered as invalid. This
+	// bounds how long a newly created key can be rejected if its first lookup
+	// hit a read replica that didn't have it yet. Misses aren't re-checked on
+	// the primary, so that invalid keys never add load there.
+	invalidAPIKeyCacheTTL = 10 * time.Second
 )
 
 var (
@@ -63,6 +72,8 @@ var (
 	apiKeyEncryptionKey       = flag.String("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.", flag.Secret)
 	encryptNewKeys            = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
 	encryptOldKeys            = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
+
+	cacheInvalidAPIKeys = expflag.Bool("auth.cache_invalid_api_keys", false, "If true, briefly cache API keys that were not found so that repeated requests with an invalid key don't query the database.")
 )
 
 // newAPIKeyGroupCache creates a cache for API Key -> Group lookups. A single
@@ -83,6 +94,23 @@ func newAPIKeyGroupCache(clock clockwork.Clock) (lru.LRU[interfaces.APIKeyGroup]
 	return cache, nil
 }
 
+// newInvalidAPIKeyCache creates a short-lived cache of API keys that were not
+// found, to protect the database from clients that repeatedly send an invalid
+// key.
+func newInvalidAPIKeyCache(clock clockwork.Clock) (lru.LRU[struct{}], error) {
+	cache, err := lru.New[struct{}](&lru.Config[struct{}]{
+		MaxSize:    invalidAPIKeyCacheSize,
+		SizeFn:     func(struct{}) int64 { return 1 },
+		TTL:        invalidAPIKeyCacheTTL,
+		ThreadSafe: true,
+		Clock:      clock,
+	})
+	if err != nil {
+		return nil, status.InternalErrorf("error initializing invalid API key cache: %v", err)
+	}
+	return cache, nil
+}
+
 type AuthDB struct {
 	env   environment.Env
 	h     interfaces.DBHandle
@@ -90,6 +118,9 @@ type AuthDB struct {
 
 	apiKeyGroupCache lru.LRU[interfaces.APIKeyGroup]
 	apiKeyFetchGroup singleflight.Group[string, *apiKeyGroup]
+	// Keys that were recently not found. Only populated if the
+	// cacheInvalidAPIKeys experiment is enabled.
+	invalidAPIKeyCache lru.LRU[struct{}]
 
 	// Nil if API key encryption is not enabled.
 	apiKeyEncryptionKey []byte
@@ -107,6 +138,11 @@ func NewAuthDB(env environment.Env, h interfaces.DBHandle) (interfaces.AuthDB, e
 			return nil, err
 		}
 		adb.apiKeyGroupCache = akgCache
+		invalidCache, err := newInvalidAPIKeyCache(adb.clock)
+		if err != nil {
+			return nil, err
+		}
+		adb.invalidAPIKeyCache = invalidCache
 	}
 	if *apiKeyEncryptionKey != "" {
 		key, err := base64.StdEncoding.DecodeString(*apiKeyEncryptionKey)
@@ -446,10 +482,13 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	}
 
 	if d.apiKeyGroupCache != nil {
-		d, ok := d.apiKeyGroupCache.Get(cacheKey)
-		if ok {
+		if akg, ok := d.apiKeyGroupCache.Get(cacheKey); ok {
 			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_hit"}).Inc()
-			return d, nil
+			return akg, nil
+		}
+		if d.invalidAPIKeyCache.Contains(cacheKey) {
+			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key_cache_hit"}).Inc()
+			return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 		}
 	}
 
@@ -459,6 +498,9 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 			if db.IsRecordNotFound(err) {
 				if d.apiKeyGroupCache != nil {
 					metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
+					if cacheInvalidAPIKeys.Get(ctx) {
+						d.invalidAPIKeyCache.Add(cacheKey, struct{}{})
+					}
 				}
 				return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 			}

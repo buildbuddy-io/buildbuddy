@@ -267,7 +267,8 @@ const (
 	CommitLabel = "commit"
 
 	// Whether or not the API Key lookup hit the in memory
-	// cache or not: "cache_hit", "cache_miss" or "invalid_key".
+	// cache or not: "cache_hit", "cache_miss", "invalid_key" or
+	// "invalid_key_cache_hit".
 	APIKeyLookupStatus = "status"
 
 	// Pebble DB compaction type.
