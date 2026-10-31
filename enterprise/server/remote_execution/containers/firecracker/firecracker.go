@@ -1446,6 +1446,9 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 	if remoteSavePolicy == platform.AlwaysSaveSnapshot {
 		return true
 	}
+	if remoteSavePolicy == platform.NeverSaveSnapshot {
+		return false
+	}
 
 	// We want to more frequently save the default snapshot, because it is used as a fallback for
 	// runs on other branches, so we want it to stay relatively up-to-date.
