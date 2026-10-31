@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -35,12 +36,13 @@ var (
 	enableGetTreeCaching             = flag.Bool("cache_proxy.enable_get_tree_caching", false, "If true, the Cache Proxy attempts to serve GetTree requests out of the local cache. If false, GetTree requests are always proxied to the remote, authoritative cache.")
 	findMissingBlobsCacheTTL         = flag.Duration("cache_proxy.find_missing_blobs_cache_ttl", 0, "If greater than 0, the proxy caches digests reported by the backing cache as 'present' locally for FindMissingBlobs requests for this long.")
 	findMissingBlobsCacheSizeEntries = flag.Int64("cache_proxy.find_missing_blobs_cache_size_entries", 500*1000, "The number of digests to hold in each in-memory FindMissingBlobs digest cache. Only used if cache_proxy.find_missing_blobs_cache_ttl is greater than 0.")
+
+	bypassFindMissingCache = expflag.Bool("cache_proxy.bypass_find_missing_cache", false, "If true, forward FindMissingBlobs requests to the remote cache without consulting the in-memory digest caches enabled by cache_proxy.find_missing_blobs_cache_ttl.")
 )
 
 type CASServerProxy struct {
 	supportsEncryption bool
 	authenticator      interfaces.Authenticator
-	efp                interfaces.ExperimentFlagProvider
 	local              repb.ContentAddressableStorageServer
 	remote             repb.ContentAddressableStorageClient
 	localCache         interfaces.Cache
@@ -90,14 +92,9 @@ func New(env environment.Env) (*CASServerProxy, error) {
 	if remote == nil {
 		return nil, fmt.Errorf("A remote ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
 	}
-	efp := env.GetExperimentFlagProvider()
-	if efp == nil {
-		log.Warning("No experiment flag provider configured; ContentAddressableStorageServerProxy experiment flags will not take effect")
-	}
 	proxy := CASServerProxy{
 		supportsEncryption: remote_crypter.SupportsEncryption(env),
 		authenticator:      authenticator,
-		efp:                efp,
 		local:              local,
 		remote:             remote,
 		localCache:         env.GetCache(),
@@ -231,7 +228,7 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	defer spn.End()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.BlobDigests)))
 
-	if findmissing.RequiresQuorum(ctx) || s.findMissingBlobsCache == nil || s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.bypass_find_missing_cache", false) {
+	if findmissing.RequiresQuorum(ctx) || s.findMissingBlobsCache == nil || bypassFindMissingCache.Get(ctx) {
 		req.Purpose = repb.FindMissingBlobsRequest_CACHE_PROXY_CAS_PASSTHROUGH
 		return s.remote.FindMissingBlobs(ctx, req)
 	}

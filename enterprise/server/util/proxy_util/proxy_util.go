@@ -1,3 +1,5 @@
+// TODO: split out a client package so that the executor doesn't depend on the
+// HTTP forwarding code and related expflags.
 package proxy_util
 
 import (
@@ -15,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -44,6 +47,8 @@ var (
 		// proxy-to-proxy hops and every proxy in the chain honors it.
 		platform.OverrideHeaderPrefix + platform.CacheProxyActionCacheTTLPropertyName,
 	}
+
+	attestHTTPForwarding = expflag.Bool("cache_proxy.attest_http_forwarding", false, "If true, the proxy builds each forwarded HTTP request itself: it rejects requests with an invalid client identity, drops client-supplied internal and Forwarded headers, and attests the resolved client IP.")
 )
 
 func SkipRemote(ctx context.Context) bool {
@@ -73,9 +78,6 @@ func RequestTypeLabelFromContext(ctx context.Context) string {
 	return metrics.DefaultCacheProxyRequestLabel
 }
 
-// attestHTTPForwardingFlag enables the attested HTTP forwarder.
-const attestHTTPForwardingFlag = "cache_proxy.attest_http_forwarding"
-
 // NewHTTPForwarder returns a handler that reverse-proxies HTTP requests to
 // target, keeping the incoming Host.
 //
@@ -98,13 +100,12 @@ const attestHTTPForwardingFlag = "cache_proxy.attest_http_forwarding"
 // egress IP). X-Forwarded-For is kept for consistency with the gRPC
 // forwarder, and could be dropped if needed.
 func NewHTTPForwarder(env environment.Env, target *url.URL) http.Handler {
-	efp := env.GetExperimentFlagProvider()
 	cis := env.GetClientIdentityService()
 	legacy := httputil.NewSingleHostReverseProxy(target)
 	attested := interceptors.ClientIP(env, &httputil.ReverseProxy{Rewrite: attestingRewrite(cis, target)})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		identityErr := validateCallerIdentity(cis, r)
-		if efp == nil || !efp.Boolean(r.Context(), attestHTTPForwardingFlag, false) {
+		if !attestHTTPForwarding.Get(r.Context()) {
 			countForwardingDiffs(r, identityErr)
 			legacy.ServeHTTP(w, r)
 			return

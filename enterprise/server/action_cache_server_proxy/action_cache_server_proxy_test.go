@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
@@ -23,9 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
-	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -171,24 +167,6 @@ func (w *localWriteCloser) Close() error {
 
 func (w *localWriteCloser) Commit() error {
 	return w.commit()
-}
-
-func setActionCacheTTL(t *testing.T, env *testenv.TestEnv, ttlSeconds int) {
-	testProvider := openfeatureTesting.NewTestProvider()
-	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
-		"cache_proxy.action_cache_ttl_seconds": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "enabled",
-			Variants: map[string]any{
-				"enabled": ttlSeconds,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-	t.Cleanup(testProvider.Cleanup)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
 }
 
 type unexpectedActionCacheClient struct {
@@ -421,7 +399,7 @@ func TestActionCacheProxy_TTLServesFreshLocalResult(t *testing.T) {
 	env.SetAuthenticator(ta)
 	ut := testusage.NewTracker()
 	env.SetUsageTracker(ut)
-	setActionCacheTTL(t, env, 60)
+	flags.Set(t, "cache_proxy.action_cache_ttl_seconds", int64(60))
 
 	digestA := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
@@ -472,7 +450,7 @@ func TestActionCacheProxy_TTLExpiredValidatesWithRemote(t *testing.T) {
 
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(ta)
-	setActionCacheTTL(t, env, 60)
+	flags.Set(t, "cache_proxy.action_cache_ttl_seconds", int64(60))
 
 	digestA := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
@@ -531,7 +509,7 @@ func TestActionCacheProxy_DoesNotCacheHashOnlyRemoteResponse(t *testing.T) {
 
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(ta)
-	setActionCacheTTL(t, env, 60)
+	flags.Set(t, "cache_proxy.action_cache_ttl_seconds", int64(60))
 
 	digestA := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
@@ -584,7 +562,7 @@ func TestActionCacheProxy_UpdateActionResultRefreshesLocalResultWithinTTL(t *tes
 
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(ta)
-	setActionCacheTTL(t, env, 60)
+	flags.Set(t, "cache_proxy.action_cache_ttl_seconds", int64(60))
 
 	digestA := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
@@ -637,7 +615,7 @@ func TestActionCacheProxy_UpdateActionResultDoesNotLeaveFreshRequestVariantStale
 
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(ta)
-	setActionCacheTTL(t, env, 60)
+	flags.Set(t, "cache_proxy.action_cache_ttl_seconds", int64(60))
 
 	digestA := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
