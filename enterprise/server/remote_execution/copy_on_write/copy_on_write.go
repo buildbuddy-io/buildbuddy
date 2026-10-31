@@ -771,25 +771,8 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 	defer s.copyBufPool.Put(b)
 	copyBuf := (*b)[:srcChunkSize]
 
-	// TODO: avoid a full read here in the case where the chunk contains holes.
-	// Can achieve this by having the Mmap keep around the underlying file
-	// descriptor and use fseek (SEEK_DATA) on it.
-	if _, err := readFullAt(src, copyBuf, 0); err != nil {
-		return status.WrapError(err, "read chunk for copy")
-	}
-	// Copy to the mmap but skip holes to avoid materializing them as blocks.
-	for off := int64(0); off < srcChunkSize; off += s.ioBlockSize {
-		blockSize := s.ioBlockSize
-		if remainder := srcChunkSize - off; blockSize > remainder {
-			blockSize = remainder
-		}
-		dataBlock := copyBuf[off : off+blockSize]
-		if IsEmptyOrAllZero(dataBlock) {
-			continue
-		}
-		if _, err := dst.WriteAt(dataBlock, off); err != nil {
-			return status.WrapError(err, "copy data to new chunk")
-		}
+	if err := src.copyTo(dst, copyBuf, s.ioBlockSize); err != nil {
+		return status.WrapError(err, "copy chunk")
 	}
 	return nil
 }
@@ -1287,6 +1270,58 @@ func (m *Mmap) initMap() (err error) {
 
 	if m.lru != nil {
 		m.lru.Add(m)
+	}
+	return nil
+}
+
+// copyTo copies the chunk into dst through buf, which must be the size of the
+// chunk. It skips blocks of blockSize that are all zero, so that they stay
+// holes in dst. It uses pread and pwrite rather than the mmaps, which would
+// page fault on every page of both chunks.
+func (m *Mmap) copyTo(dst *Mmap, buf []byte, blockSize int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.initMap(); err != nil {
+		return err
+	}
+	src, err := os.Open(m.path())
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	if _, err := readFullAt(src, buf, 0); err != nil {
+		return err
+	}
+
+	dst.mu.Lock()
+	defer dst.mu.Unlock()
+	if err := dst.initMap(); err != nil {
+		return err
+	}
+	dst.lazyDigest = nil
+	f, err := os.OpenFile(dst.path(), os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	size := int64(len(buf))
+	for off := int64(0); off < size; {
+		end := off
+		for end < size {
+			next := min(end+blockSize, size)
+			if IsEmptyOrAllZero(buf[end:next]) {
+				break
+			}
+			end = next
+		}
+		if end == off {
+			off = min(off+blockSize, size)
+			continue
+		}
+		if _, err := f.WriteAt(buf[off:end], off); err != nil {
+			return err
+		}
+		off = end
 	}
 	return nil
 }
