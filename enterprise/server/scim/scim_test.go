@@ -506,30 +506,30 @@ func TestDeleteUser(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey, _ := prepareGroup(t, userCtx, env)
+	apiKey, group := prepareGroup(t, userCtx, env)
 
 	// Deletion victims.
 	err = udb.InsertUser(userCtx, &tables.User{
 		UserID: "US101",
-		SubID:  "SubID101",
+		SubID:  saml.SubIDForUserName("user101@org1.io", group),
 		Email:  "user101@org1.io",
 	})
 	require.NoError(t, err)
 	err = udb.InsertUser(userCtx, &tables.User{
 		UserID: "US102",
-		SubID:  "SubID102",
+		SubID:  saml.SubIDForUserName("user102@org1.io", group),
 		Email:  "user102@org1.io",
 	})
 	require.NoError(t, err)
 	err = udb.InsertUser(userCtx, &tables.User{
 		UserID: "US103",
-		SubID:  "SubID103",
+		SubID:  saml.SubIDForUserName("user103@org1.io", group),
 		Email:  "user103@org1.io",
 	})
 	require.NoError(t, err)
 	err = udb.InsertUser(userCtx, &tables.User{
 		UserID: "US104",
-		SubID:  "SubID104",
+		SubID:  saml.SubIDForUserName("user104@org1.io", group),
 		Email:  "user104@org1.io",
 	})
 	require.NoError(t, err)
@@ -657,7 +657,8 @@ func TestUpdateUser(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey, _ := prepareGroup(t, userCtx, env)
+	apiKey, group := prepareGroup(t, userCtx, env)
+	updateUserSubID(t, userCtx, udb, "US100", group)
 
 	ss := scim.NewSCIMServer(env)
 	mux := http.NewServeMux()
@@ -867,6 +868,87 @@ func TestUpdateUser(t *testing.T) {
 	err = json.Unmarshal(body, &updatedUser)
 	require.NoError(t, err)
 	verifyRole(t, updatedUser, role.Admin.String())
+}
+
+func TestUserOperationsRejectNonSCIMManagedGroupMember(t *testing.T) {
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, group := prepareGroup(t, userCtx, env)
+	updateUserSubID(t, userCtx, udb, "US100", group)
+
+	const (
+		foreignUserID    = "US999"
+		foreignUserEmail = "user999@other-org.io"
+	)
+	foreignSubID := saml.SubIDPrefixForGroup("other-org") + foreignUserEmail
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID: foreignUserID,
+		SubID:  foreignSubID,
+		Email:  foreignUserEmail,
+	})
+	require.NoError(t, err)
+
+	// Recreate the exploit precondition: an org admin adds an existing user
+	// from another SAML connection to the SCIM-managed group.
+	err = udb.UpdateGroupUsers(userCtx, group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId:           &uidpb.UserId{Id: foreignUserID},
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		Role:             grpb.Group_ADMIN_ROLE,
+	}})
+	require.NoError(t, err)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+	userURL := baseURL + "/scim/Users/" + foreignUserID
+
+	code, body := tc.Get(userURL)
+	require.Equal(t, http.StatusNotFound, code, "body: %s", string(body))
+
+	patchReq := &scim.PatchResource{
+		Schemas: []string{scim.PatchResourceSchema},
+		Operations: []scim.OperationResource{{
+			Op:    "replace",
+			Path:  scim.UserNameAttribute,
+			Value: "attacker-controlled@invalid.example",
+		}},
+	}
+	patchBody, err := json.Marshal(patchReq)
+	require.NoError(t, err)
+	code, body = tc.Patch(userURL, patchBody)
+	require.Equal(t, http.StatusNotFound, code, "body: %s", string(body))
+
+	putReq := &scim.UserResource{
+		Schemas:  []string{scim.UserResourceSchema},
+		UserName: "attacker-controlled@invalid.example",
+		Active:   true,
+	}
+	putBody, err := json.Marshal(putReq)
+	require.NoError(t, err)
+	code, body = tc.Put(userURL, putBody)
+	require.Equal(t, http.StatusNotFound, code, "body: %s", string(body))
+
+	code, body = tc.Delete(userURL)
+	require.Equal(t, http.StatusNotFound, code, "body: %s", string(body))
+
+	// None of the rejected operations should have mutated or deleted the user.
+	u, err := udb.GetUserByID(userCtx, foreignUserID, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
+	require.NoError(t, err)
+	require.Equal(t, foreignUserEmail, u.Email)
+	require.Equal(t, foreignSubID, u.SubID)
 }
 
 func TestCreateGroup(t *testing.T) {
