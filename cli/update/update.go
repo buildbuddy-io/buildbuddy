@@ -1,24 +1,21 @@
 package update
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/signedrelease"
+	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 )
 
@@ -30,9 +27,8 @@ var (
 )
 
 const (
-	installPath            = "/usr/local/bin/bb"
-	latestVersionURL       = "https://api.github.com/repos/buildbuddy-io/bazel/releases/latest"
-	releaseDownloadBaseURL = "https://github.com/buildbuddy-io/bazel/releases/download"
+	installPath      = "/usr/local/bin/bb"
+	latestVersionURL = "https://api.github.com/repos/buildbuddy-io/bazel/releases/latest"
 
 	usage = `
 usage: bb update
@@ -69,6 +65,10 @@ func HandleUpdate(args []string) (exitCode int, err error) {
 		log.Printf("Failed to fetch latest version: %s", err)
 		return 1, nil
 	}
+	if err := checkNotDowngrade(latestVersion, version.String(), "this bb"); err != nil {
+		log.Printf("%s", err)
+		return 1, nil
+	}
 
 	if *workspaceFlag {
 		if err := updateWorkspaceVersion(latestVersion); err != nil {
@@ -86,7 +86,7 @@ func HandleUpdate(args []string) (exitCode int, err error) {
 }
 
 func fetchLatestVersion() (string, error) {
-	res, err := httpGet(newDownloadClient(), latestVersionURL)
+	res, err := signedrelease.Get(signedrelease.NewDownloadClient(), latestVersionURL)
 	if err != nil {
 		return "", err
 	}
@@ -110,6 +110,26 @@ func fetchLatestVersion() (string, error) {
 	return v, nil
 }
 
+// checkNotDowngrade returns an error if latest isn't a signed release version
+// or is older than current. A current that isn't a release version (e.g.
+// "unknown" for dev builds, or "" if nothing is installed) is ignored. The
+// "latest" API response isn't signed, so without this an attacker could
+// serve an old (but validly signed, or unsigned) release.
+// currentDesc says where current came from, for the error message.
+func checkNotDowngrade(latest, current, currentDesc string) error {
+	lv, err := signedrelease.ParseVersion(latest)
+	if err != nil {
+		return err
+	}
+	if !signedrelease.IsSigned(latest) {
+		return fmt.Errorf("refusing to update to %s: releases before %s are unsigned", latest, signedrelease.FirstSignedVersion)
+	}
+	if cv, err := signedrelease.ParseVersion(current); err == nil && lv.LessThan(cv) {
+		return fmt.Errorf("refusing to update to %s: older than %s %s", latest, currentDesc, current)
+	}
+	return nil
+}
+
 // Attempts to update .bazelversion with the installed CLI version.
 func updateWorkspaceVersion(version string) error {
 	ws, err := workspace.Path()
@@ -124,6 +144,10 @@ func updateWorkspaceVersion(version string) error {
 
 	versionLine := "buildbuddy-io/" + version
 	if len(versions) > 0 && strings.HasPrefix(versions[0], "buildbuddy-io/") {
+		pinned := strings.TrimPrefix(versions[0], "buildbuddy-io/")
+		if err := checkNotDowngrade(version, pinned, "the bb pinned in .bazelversion"); err != nil {
+			return err
+		}
 		if versions[0] == versionLine {
 			log.Printf(".bazelversion already includes %s", versionLine)
 			return nil
@@ -172,7 +196,10 @@ func updateSystemInstall(version string) error {
 		log.Printf("Version %s is already installed at %s", version, installPath)
 		return nil
 	}
-	url, err := releaseAssetURL(version, runtime.GOOS, runtime.GOARCH)
+	if err := checkNotDowngrade(version, installedVersion, "the bb installed at "+installPath); err != nil {
+		return err
+	}
+	url, err := signedrelease.AssetURL(version, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return err
 	}
@@ -183,7 +210,7 @@ func updateSystemInstall(version string) error {
 	defer os.RemoveAll(tmpDir)
 	tmpPath := filepath.Join(tmpDir, "bb")
 	log.Printf("Downloading %s", url)
-	if err := downloadAndVerify(newDownloadClient(), url, tmpPath); err != nil {
+	if err := signedrelease.Download(signedrelease.NewDownloadClient(), url, tmpPath); err != nil {
 		return err
 	}
 	installDir := filepath.Dir(installPath)
@@ -205,114 +232,6 @@ func updateSystemInstall(version string) error {
 		return fmt.Errorf("sudo mv: %s", err)
 	}
 	return nil
-}
-
-// Returns the download URL for the CLI release binary for the given
-// version, OS, and architecture.
-func releaseAssetURL(version, goos, goarch string) (string, error) {
-	arch := goarch
-	if goarch == "amd64" {
-		arch = "x86_64"
-	}
-	if (goos != "linux" && goos != "darwin") || (arch != "x86_64" && arch != "arm64") {
-		return "", fmt.Errorf("Could not find a CLI release for os '%s', arch '%s'", goos, goarch)
-	}
-	return fmt.Sprintf("%s/%s/bazel-%s-%s-%s", releaseDownloadBaseURL, version, version, goos, arch), nil
-}
-
-// Returns an HTTP client with timeouts that refuses to follow redirects to
-// non-https URLs.
-func newDownloadClient() *http.Client {
-	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
-	if t, ok := http.DefaultTransport.(*http.Transport); ok {
-		transport = t.Clone()
-	}
-	transport.TLSHandshakeTimeout = 30 * time.Second
-	transport.ResponseHeaderTimeout = 30 * time.Second
-	return &http.Client{
-		Transport:     transport,
-		CheckRedirect: checkRedirect,
-	}
-}
-
-func checkRedirect(req *http.Request, via []*http.Request) error {
-	if req.URL.Scheme != "https" {
-		return fmt.Errorf("refusing redirect to non-https URL %s", req.URL)
-	}
-	if len(via) >= 10 {
-		return errors.New("stopped after 10 redirects")
-	}
-	return nil
-}
-
-// Downloads url to dest, verifying its contents against the sha256 published
-// at url + ".sha256".
-func downloadAndVerify(client *http.Client, url, dest string) error {
-	if !strings.HasPrefix(url, "https://") {
-		return fmt.Errorf("refusing to download from non-https URL %s", url)
-	}
-	expected, err := fetchChecksum(client, url)
-	if err != nil {
-		return err
-	}
-
-	res, err := httpGet(client, url)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	f, err := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if err != nil {
-		return err
-	}
-	h := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(f, h), res.Body); err != nil {
-		f.Close()
-		return fmt.Errorf("download %s: %s", url, err)
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if actual := hex.EncodeToString(h.Sum(nil)); actual != expected {
-		return fmt.Errorf("checksum mismatch for %s: expected %s, got %s", url, expected, actual)
-	}
-	return nil
-}
-
-// Fetches url + ".sha256" and returns the sha256 it lists for url. Only the
-// leading hex digest of the `shasum -a 256` output is used.
-func fetchChecksum(client *http.Client, url string) (string, error) {
-	shaURL := url + ".sha256"
-	res, err := httpGet(client, shaURL)
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(res.Body, 4096))
-	if err != nil {
-		return "", fmt.Errorf("read %s: %s", shaURL, err)
-	}
-	fields := strings.Fields(string(b))
-	if len(fields) == 0 {
-		return "", fmt.Errorf("empty checksum file at %s", shaURL)
-	}
-	sum := strings.ToLower(fields[0])
-	if _, err := hex.DecodeString(sum); err != nil || len(sum) != 64 {
-		return "", fmt.Errorf("malformed checksum %q at %s", fields[0], shaURL)
-	}
-	return sum, nil
-}
-
-func httpGet(client *http.Client, url string) (*http.Response, error) {
-	res, err := client.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		res.Body.Close()
-		return nil, fmt.Errorf("GET %s: unexpected status %s", url, res.Status)
-	}
-	return res, nil
 }
 
 func sudo(args ...string) error {
