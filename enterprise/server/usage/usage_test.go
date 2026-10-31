@@ -28,7 +28,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jonboulle/clockwork"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -590,8 +589,8 @@ func TestUsageTracker_Flush_RemovesCollectionsWithMissingCounts(t *testing.T) {
 	err = ut.FlushToDB(ctx)
 	require.NoError(t, err)
 
-	notKeepingUp := testmetrics.CounterValueForLabels(t, metrics.UnexpectedEvent, prometheus.Labels{metrics.EventName: "usage_flush_not_keeping_up"})
-	assert.Zero(t, notKeepingUp)
+	unexpectedEvents := testmetrics.CounterValues(t, metrics.UnexpectedEvent)
+	assert.Empty(t, unexpectedEvents)
 	usages := queryAllUsages(t, te)
 	assert.Empty(t, usages)
 }
