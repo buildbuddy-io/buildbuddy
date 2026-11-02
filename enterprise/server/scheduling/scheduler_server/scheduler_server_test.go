@@ -418,10 +418,41 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 }
 
 func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
+	// targetedFlag serves a variant identifying the group that the flag is
+	// evaluated for.
+	targetedFlag := map[string]memprovider.InMemoryFlag{
+		"executor.persistent_volumes": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "default",
+			Variants: map[string]any{
+				"group1":  "cache:/group1",
+				"group2":  "cache:/group2",
+				"anon":    "cache:/anon",
+				"default": "",
+			},
+			ContextEvaluator: targeted(func(ctx openfeature.FlattenedContext) string {
+				switch {
+				case ctx["group_id"] == "group1" && ctx["user_id"] == "user1" && ctx[openfeature.TargetingKey] == "group1":
+					return "group1"
+				case ctx["group_id"] == "group2" || ctx[openfeature.TargetingKey] == "group2":
+					return "group2"
+				case ctx["group_id"] == nil && ctx["user_id"] == nil && ctx[openfeature.TargetingKey] == interfaces.AuthAnonymousUser:
+					return "anon"
+				}
+				return ""
+			}),
+		},
+	}
 	for _, tc := range []struct {
 		name                    string
 		supportsExperimentFlags bool
 		flagdFlags              map[string]memprovider.InMemoryFlag
+		// taskOwner is the user that schedules the task, or "" for an
+		// anonymous task.
+		taskOwner string
+		// executorUser is the user that the executor authenticates as, or ""
+		// for an unauthenticated executor.
+		executorUser string
 		// Note: persistent_volumes is just used as an example here. The
 		// scheduler should handle all experiments the same way.
 		wantPersistentVolumesFlag *expb.EvaluatedFlag
@@ -464,15 +495,52 @@ func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
 			},
 			wantPersistentVolumesFlag: nil,
 		},
+		{
+			// Experiments should be evaluated for the task owner, not the
+			// executor that leases the task.
+			name:                    "TaskOwnerTargeted_ExecutorInOtherGroup",
+			supportsExperimentFlags: true,
+			flagdFlags:              targetedFlag,
+			taskOwner:               "user1",
+			executorUser:            "user2",
+			wantPersistentVolumesFlag: &expb.EvaluatedFlag{
+				Name:    "executor.persistent_volumes",
+				Variant: "group1", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/group1"},
+			},
+		},
+		{
+			name:                    "TaskOwnerTargeted_UnauthenticatedExecutor",
+			supportsExperimentFlags: true,
+			flagdFlags:              targetedFlag,
+			taskOwner:               "user1",
+			wantPersistentVolumesFlag: &expb.EvaluatedFlag{
+				Name:    "executor.persistent_volumes",
+				Variant: "group1", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/group1"},
+			},
+		},
+		{
+			name:                    "AnonymousTaskOwner_AuthenticatedExecutor",
+			supportsExperimentFlags: true,
+			flagdFlags:              targetedFlag,
+			executorUser:            "user2",
+			wantPersistentVolumesFlag: &expb.EvaluatedFlag{
+				Name:    "executor.persistent_volumes",
+				Variant: "anon", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/anon"},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fp := newTestFlagProvider(t, tc.flagdFlags)
 			expflag.SetFlagProvider(fp)
 			t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 
-			env, ctx := getEnv(t, &schedulerOpts{}, "")
+			env, ctx := getEnv(t, &schedulerOpts{}, tc.taskOwner)
 			env.SetExperimentFlagProvider(fp)
-			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			executorCtx := context.Background()
+			if tc.executorUser != "" {
+				executorCtx = authenticatedContext(t, env, tc.executorUser)
+			}
+			fe := newFakeExecutor(executorCtx, t, env.GetSchedulerClient())
 			fe.supportsExperimentFlags = tc.supportsExperimentFlags
 			fe.Register()
 
@@ -489,67 +557,6 @@ func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
 				}
 			}
 			require.Empty(t, cmp.Diff(tc.wantPersistentVolumesFlag, gotFlag, protocmp.Transform()))
-		})
-	}
-}
-
-func TestLeaseTask_ExperimentFlagsTargetTaskOwnerGroup(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		// executorUser is the user that the executor authenticates as, or ""
-		// for an unauthenticated executor.
-		executorUser string
-	}{
-		{name: "ExecutorInOtherGroup", executorUser: "user2"},
-		{name: "UnauthenticatedExecutor", executorUser: ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
-				"executor.persistent_volumes": {
-					State:          memprovider.Enabled,
-					DefaultVariant: "default",
-					Variants: map[string]any{
-						"targeted": "cache:/tmp/.cache",
-						"default":  "",
-					},
-					ContextEvaluator: targeted(func(ctx openfeature.FlattenedContext) string {
-						if ctx["group_id"] == "group1" && ctx["user_id"] == "user1" && ctx[openfeature.TargetingKey] == "group1" {
-							return "targeted"
-						}
-						return ""
-					}),
-				},
-			})
-			expflag.SetFlagProvider(fp)
-			t.Cleanup(func() { expflag.SetFlagProvider(nil) })
-
-			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
-			env.SetExperimentFlagProvider(fp)
-			executorCtx := context.Background()
-			if tc.executorUser != "" {
-				executorCtx = authenticatedContext(t, env, tc.executorUser)
-			}
-			fe := newFakeExecutor(executorCtx, t, env.GetSchedulerClient())
-			fe.supportsExperimentFlags = true
-			fe.Register()
-
-			taskID := scheduleTask(ctx, t, env, map[string]string{})
-
-			fe.WaitForTask(taskID)
-			lease := fe.Claim(taskID)
-			defer lease.Finalize()
-
-			// Experiments should be evaluated for the task owner, not the
-			// executor that leased the task.
-			var gotFlag *expb.EvaluatedFlag
-			for _, f := range lease.task.GetExperimentFlags() {
-				if f.GetName() == "executor.persistent_volumes" {
-					gotFlag = f
-				}
-			}
-			require.Empty(t, cmp.Diff(&expb.EvaluatedFlag{
-				Name: "executor.persistent_volumes", Variant: "targeted", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"},
-			}, gotFlag, protocmp.Transform()))
 		})
 	}
 }

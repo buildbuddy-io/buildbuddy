@@ -2792,6 +2792,9 @@ func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostna
 // with the given JWT, so that experiments are evaluated for the task owner
 // rather than the executor that sent the request. If the JWT is empty or can't
 // be parsed, the returned context is unauthenticated.
+//
+// The JWT is not verified, so it must be the one persisted by ScheduleTask, and
+// not the one in the serialized task, which is supplied by the caller.
 func taskOwnerContext(ctx context.Context, taskID, taskJWT string) context.Context {
 	if taskJWT != "" {
 		c, err := auth.ParseTrustedJWT(taskJWT)
@@ -2800,7 +2803,8 @@ func taskOwnerContext(ctx context.Context, taskID, taskJWT string) context.Conte
 		}
 		log.CtxWarningf(ctx, "Failed to parse JWT for task %q, evaluating experiments without claims: %s", taskID, err)
 	}
-	// Clear the executor's claims.
+	// Clear the executor's claims, which would otherwise take precedence over
+	// the auth error below.
 	ctx = claims.AuthContext(ctx, nil)
 	return authutil.AuthContextWithError(ctx, authutil.AnonymousUserError(authutil.UserNotFoundMsg))
 }
@@ -2839,11 +2843,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		experiments.WithContext("requested_isolation_type", platform.FindEffectiveValue(taskProto, platform.WorkloadIsolationPropertyName)),
 	}
 
-	// Evaluate experiments for the task owner, not the executor. Fall back to
-	// the JWT in the task for tasks persisted by older schedulers.
-	if taskJWT == "" {
-		taskJWT = taskProto.GetJwt()
-	}
+	// Evaluate experiments for the task owner, not the executor.
 	ctx = taskOwnerContext(ctx, taskProto.GetExecutionId(), taskJWT)
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
