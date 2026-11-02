@@ -1219,6 +1219,12 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 		lowerDirs = append(c.mergedMounts, lowerDirs...)
 	}
 
+	if len(lowerDirs) == 0 {
+		// With nothing to overlay, the bundle's empty rootfs directory is
+		// already the complete writable root.
+		return nil
+	}
+
 	// overlayfs "lowerdir" mount args are ordered from uppermost to lowermost,
 	// but manifest layers are ordered from lowermost to uppermost. So we need to
 	// reverse the order before constructing the mount option.
