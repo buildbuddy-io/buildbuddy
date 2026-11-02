@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -86,11 +87,14 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *
 }
 
 // asyncContext returns a context for async publishes that outlives the request
-// ctx. It carries only outgoing metadata (the API key); ctx values such as the
-// user's JWT must not reach proxy hosts.
+// ctx. It forwards only the API key header, which the sidecar propagates; other
+// headers and ctx values (e.g. the user's JWT) must not reach proxy hosts.
 func asyncContext(ctx context.Context) context.Context {
-	md, _ := metadata.FromOutgoingContext(ctx)
-	return metadata.NewOutgoingContext(context.Background(), md)
+	apiKeys := metadata.ValueFromOutgoingContext(ctx, authutil.APIKeyHeader)
+	if len(apiKeys) == 0 {
+		return context.Background()
+	}
+	return metadata.NewOutgoingContext(context.Background(), metadata.MD{authutil.APIKeyHeader: apiKeys})
 }
 
 type asyncStreamProxy struct {

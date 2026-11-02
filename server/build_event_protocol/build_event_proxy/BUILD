@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:publish_build_event_go_proto",
         "//server/real_environment",
+        "//server/util/authutil",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",
