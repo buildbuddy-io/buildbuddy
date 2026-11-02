@@ -67,7 +67,7 @@ require (
 	github.com/bazel-contrib/buildtools/v10 v10.0.1
 	github.com/bazelbuild/bazel-gazelle v0.53.0
 	github.com/bazelbuild/bazelisk v1.25.1-0.20250219134847-cdb99bfb1b7d
-	github.com/bazelbuild/rules_go v0.63.0
+	github.com/bazelbuild/rules_go v0.65.0
 	github.com/bazelbuild/rules_webtesting v0.2.1-0.20250911195827-e09c04b7d4d1
 	github.com/bduffany/godemon v0.0.0-20260922213807-bc4c1f225632
 	github.com/beevik/etree v1.6.0
