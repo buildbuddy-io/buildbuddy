@@ -22,7 +22,6 @@ go_library(
         "//server/util/lru",
         "//server/util/status",
         "//server/util/subdomain",
-        "//third_party/singleflight",
         "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@org_golang_google_grpc//:grpc",

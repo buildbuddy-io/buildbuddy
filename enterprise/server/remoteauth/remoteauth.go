@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
-	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
@@ -57,10 +56,6 @@ var (
 	useES256SignedJWTs  = flag.Bool("auth.remote.use_es256_jwts", true, "Request and use ES-256 signed JWTs from the remote auth service.")
 	keyRefreshInterval  = flag.Duration("auth.remote.key_refresh_interval", time.Minute, "How long to wait between asynchronous refreshes of cached ES256 public keys.")
 	getKeysTimeout      = flag.Duration("auth.remote.get_keys_timeout", 10*time.Second, "Timeout for GetPublicKeys RPCs.")
-
-	// Bounds the Authenticate RPC shared by concurrent requests. A var so
-	// tests can shorten it.
-	authenticateTimeout = 10 * time.Second
 
 	cacheAuthFailures = expflag.Bool("auth.remote.cache_auth_failures", false, "If true, briefly cache Unauthenticated and PermissionDenied results from the remote auth service, so that repeated requests with an invalid API key don't each result in an Authenticate RPC.")
 )
@@ -248,8 +243,6 @@ type RemoteAuthenticator struct {
 	// Recent Unauthenticated and PermissionDenied errors, keyed like cache.
 	// Only used if cacheAuthFailures is enabled.
 	failureCache lru.LRU[error]
-	// Deduplicates concurrent Authenticate calls for the same claims cache key.
-	authenticateGroup singleflight.Group[string, string]
 	// LRU cache mapping HS256-signed JWTs to ES256-signed JWTs, to avoid
 	// having to remotely auth every HS256-signed JWT provided.
 	hs256Cache          lru.LRU[string]
@@ -257,10 +250,6 @@ type RemoteAuthenticator struct {
 	claimsParser        *claims.ClaimsParser
 	clock               clockwork.Clock
 	keyProvider         *keyProvider
-
-	// If set, called just before a caller joins or starts an Authenticate
-	// flight. Lets tests know when callers are about to wait on it.
-	onAuthenticateJoin func()
 }
 
 // Unsupported in the remote authenticator.
@@ -338,16 +327,17 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	}
 
 	// Otherwise, fetch a JWT from the remote auth service.
-	if a.onAuthenticateJoin != nil {
-		a.onAuthenticateJoin()
-	}
-	jwt, _, err = a.authenticateGroup.Do(ctx, key, func(ctx context.Context) (string, error) {
-		return a.authenticateAndCache(ctx, key, cacheFailures)
-	})
+	jwt, err = a.authenticate(ctx)
 	if err != nil {
 		log.Debugf("Error remotely authenticating: %s", err)
+		// Transient errors (Unavailable, DeadlineExceeded, etc.) must not be
+		// cached, or an outage would reject valid keys.
+		if cacheFailures && (status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err)) {
+			a.failureCache.Add(key, err)
+		}
 		return authutil.AuthContextWithError(ctx, err)
 	}
+	a.cache.Add(key, jwt)
 	c, err = a.jwtIsValid(ctx, jwt)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
@@ -390,41 +380,6 @@ func (a *RemoteAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) str
 
 func (a *RemoteAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context {
 	return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
-}
-
-// authenticateAndCache runs inside a singleflight. It populates the caches
-// before returning so that callers arriving after the flight is gone find the
-// result there.
-func (a *RemoteAuthenticator) authenticateAndCache(ctx context.Context, key string, cacheFailures bool) (string, error) {
-	// A caller can miss the caches just before a previous flight for this key
-	// finishes, and then start a new flight after it. Recheck so that it
-	// doesn't send another RPC.
-	if jwt, found := a.cache.Get(key); found {
-		if _, err := a.jwtIsValid(ctx, jwt); err == nil {
-			return jwt, nil
-		}
-	}
-	if cacheFailures {
-		if err, found := a.failureCache.Get(key); found {
-			return "", err
-		}
-	}
-
-	// The singleflight drops the callers' deadlines, so bound the shared call
-	// here.
-	ctx, cancel := context.WithTimeout(ctx, authenticateTimeout)
-	defer cancel()
-	jwt, err := a.authenticate(ctx)
-	if err != nil {
-		// Transient errors (Unavailable, DeadlineExceeded, etc.) must not be
-		// cached, or an outage would reject valid keys.
-		if cacheFailures && (status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err)) {
-			a.failureCache.Add(key, err)
-		}
-		return "", err
-	}
-	a.cache.Add(key, jwt)
-	return jwt, nil
 }
 
 func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) {
