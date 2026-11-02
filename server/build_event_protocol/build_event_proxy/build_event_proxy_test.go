@@ -30,7 +30,6 @@ func TestPublishBuildToolEventStream_SynchronousModeBackpressuresInsteadOfBuffer
 	upstream := newBlockingBuildToolEventStream(t.Context())
 	proxy := &BuildEventProxyClient{
 		client:      &fakePublishBuildEventClient{stream: upstream},
-		rootCtx:     t.Context(),
 		synchronous: true,
 	}
 
@@ -88,8 +87,7 @@ func TestPublishBuildToolEventStream_AsynchronousModeDropsWhenBufferIsFull(t *te
 	// requests flow through the local channel before reaching the upstream Send.
 	upstream := newBlockingBuildToolEventStream(t.Context())
 	proxy := &BuildEventProxyClient{
-		client:  &fakePublishBuildEventClient{stream: upstream},
-		rootCtx: t.Context(),
+		client: &fakePublishBuildEventClient{stream: upstream},
 	}
 
 	stream, err := proxy.PublishBuildToolEventStream(t.Context())
@@ -138,8 +136,7 @@ func TestAsynchronousModeForwardsOutgoingMetadata(t *testing.T) {
 		lifecycleCalls: make(chan recordedCall, 1),
 	}
 	proxy := &BuildEventProxyClient{
-		client:  client,
-		rootCtx: t.Context(),
+		client: client,
 	}
 
 	// Simulate a request ctx with outgoing metadata (as added by the CLI

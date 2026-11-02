@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -20,7 +19,7 @@ import (
 
 const (
 	// asyncLifecycleEventTimeout bounds async lifecycle event publishes, which
-	// no longer end when the originating request does.
+	// are not cancelled when the originating request ends.
 	asyncLifecycleEventTimeout = 30 * time.Second
 )
 
@@ -31,7 +30,6 @@ var (
 
 type BuildEventProxyClient struct {
 	client      pepb.PublishBuildEventClient
-	rootCtx     context.Context
 	target      string
 	clientMux   sync.Mutex // PROTECTS(client)
 	synchronous bool
@@ -67,7 +65,6 @@ func Register(env *real_environment.RealEnv) error {
 func NewBuildEventProxyClient(env environment.Env, target string, synchronous bool) *BuildEventProxyClient {
 	c := &BuildEventProxyClient{
 		target:      target,
-		rootCtx:     env.GetServerContext(),
 		synchronous: synchronous,
 	}
 	c.reconnectIfNecessary()
@@ -81,7 +78,8 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *
 		return c.client.PublishLifecycleEvent(ctx, req)
 	}
 
-	asyncCtx := c.asyncContext(ctx)
+	// Async publishes must outlive the request but keep its metadata (API key).
+	asyncCtx := context.WithoutCancel(ctx)
 	go func() {
 		ctx, cancel := context.WithTimeout(asyncCtx, asyncLifecycleEventTimeout)
 		defer cancel()
@@ -91,16 +89,6 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *
 		}
 	}()
 	return &emptypb.Empty{}, nil
-}
-
-// asyncContext returns a context for async proxying that outlives the request
-// ctx but still carries its outgoing metadata (e.g. the API key header).
-// Incoming metadata is intentionally not copied.
-func (c *BuildEventProxyClient) asyncContext(ctx context.Context) context.Context {
-	if md, ok := metadata.FromOutgoingContext(ctx); ok {
-		return metadata.NewOutgoingContext(c.rootCtx, md)
-	}
-	return c.rootCtx
 }
 
 type asyncStreamProxy struct {
@@ -159,5 +147,6 @@ func (c *BuildEventProxyClient) PublishBuildToolEventStream(ctx context.Context,
 		return c.client.PublishBuildToolEventStream(ctx, opts...)
 	}
 
-	return c.newAsyncStreamProxy(c.asyncContext(ctx), opts...)
+	// Async publishes must outlive the request but keep its metadata (API key).
+	return c.newAsyncStreamProxy(context.WithoutCancel(ctx), opts...)
 }
