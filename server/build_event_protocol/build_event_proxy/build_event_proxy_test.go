@@ -2,6 +2,8 @@ package build_event_proxy
 
 import (
 	"context"
+	"io"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -10,7 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -19,6 +23,7 @@ import (
 const (
 	blockedSendCheckTimeout = 50 * time.Millisecond
 	waitTimeout             = 30 * time.Second
+	apiKeyHeader            = "x-buildbuddy-api-key"
 )
 
 func TestPublishBuildToolEventStream_SynchronousModeBackpressuresInsteadOfBuffering(t *testing.T) {
@@ -128,6 +133,84 @@ func TestPublishBuildToolEventStream_AsynchronousModeDropsWhenBufferIsFull(t *te
 	sent := upstream.sentRequests()
 	require.Len(t, sent, 1)
 	assert.Same(t, firstReq, sent[0])
+}
+
+func TestAsynchronousModeForwardsOutgoingMetadata(t *testing.T) {
+	// Run a real upstream gRPC server so that metadata is transmitted over the
+	// wire and context cancellation behaves as it does in production.
+	upstream := &metadataRecordingServer{
+		streamAPIKeys:    make(chan []string, 1),
+		lifecycleAPIKeys: make(chan []string, 1),
+	}
+	lis := bufconn.Listen(1024 * 1024)
+	grpcServer := grpc.NewServer()
+	pepb.RegisterPublishBuildEventServer(grpcServer, upstream)
+	go grpcServer.Serve(lis)
+	t.Cleanup(grpcServer.Stop)
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	proxy := &BuildEventProxyClient{
+		client:  pepb.NewPublishBuildEventClient(conn),
+		rootCtx: t.Context(),
+	}
+
+	// Simulate a request ctx with outgoing metadata (as added by the CLI
+	// sidecar) that is canceled once the request handler returns.
+	reqCtx, cancel := context.WithCancel(metadata.AppendToOutgoingContext(t.Context(), apiKeyHeader, "test-api-key"))
+
+	stream, err := proxy.PublishBuildToolEventStream(reqCtx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&pepb.PublishBuildToolEventStreamRequest{}))
+	require.NoError(t, stream.CloseSend())
+
+	// The lifecycle event is published asynchronously, so it must still be
+	// delivered after the caller's ctx has been canceled.
+	cancel()
+	_, err = proxy.PublishLifecycleEvent(reqCtx, &pepb.PublishLifecycleEventRequest{})
+	require.NoError(t, err)
+
+	for name, ch := range map[string]chan []string{
+		"stream":    upstream.streamAPIKeys,
+		"lifecycle": upstream.lifecycleAPIKeys,
+	} {
+		select {
+		case keys := <-ch:
+			assert.Equal(t, []string{"test-api-key"}, keys, "%s API key", name)
+		case <-time.After(waitTimeout):
+			require.FailNowf(t, "timed out", "timed out waiting for upstream %s request", name)
+		}
+	}
+}
+
+// metadataRecordingServer is a fake upstream PublishBuildEvent server that
+// records the API key header it receives on each call.
+type metadataRecordingServer struct {
+	streamAPIKeys    chan []string
+	lifecycleAPIKeys chan []string
+}
+
+func (s *metadataRecordingServer) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest) (*emptypb.Empty, error) {
+	s.lifecycleAPIKeys <- metadata.ValueFromIncomingContext(ctx, apiKeyHeader)
+	return &emptypb.Empty{}, nil
+}
+
+func (s *metadataRecordingServer) PublishBuildToolEventStream(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
+	s.streamAPIKeys <- metadata.ValueFromIncomingContext(stream.Context(), apiKeyHeader)
+	for {
+		if _, err := stream.Recv(); err == io.EOF {
+			return nil
+		} else if err != nil {
+			return err
+		}
+	}
 }
 
 // waitForSendStart waits until the fake upstream stream has observed a Send for

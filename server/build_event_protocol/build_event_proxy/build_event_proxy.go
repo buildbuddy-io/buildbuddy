@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -73,13 +74,24 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *
 		return c.client.PublishLifecycleEvent(ctx, req)
 	}
 
+	asyncCtx := c.asyncContext(ctx)
 	go func() {
 		// TODO: retry these, since the client won't retry.
-		if _, err := c.client.PublishLifecycleEvent(ctx, req); err != nil {
+		if _, err := c.client.PublishLifecycleEvent(asyncCtx, req); err != nil {
 			log.Warningf("Error publishing lifecycle event: %s", err.Error())
 		}
 	}()
 	return &emptypb.Empty{}, nil
+}
+
+// asyncContext returns a context for async proxying that outlives the request
+// ctx but still carries its outgoing metadata (e.g. the API key header).
+// Incoming metadata is intentionally not copied.
+func (c *BuildEventProxyClient) asyncContext(ctx context.Context) context.Context {
+	if md, ok := metadata.FromOutgoingContext(ctx); ok {
+		return metadata.NewOutgoingContext(c.rootCtx, md)
+	}
+	return c.rootCtx
 }
 
 type asyncStreamProxy struct {
@@ -138,5 +150,5 @@ func (c *BuildEventProxyClient) PublishBuildToolEventStream(ctx context.Context,
 		return c.client.PublishBuildToolEventStream(ctx, opts...)
 	}
 
-	return c.newAsyncStreamProxy(c.rootCtx, opts...)
+	return c.newAsyncStreamProxy(c.asyncContext(ctx), opts...)
 }
