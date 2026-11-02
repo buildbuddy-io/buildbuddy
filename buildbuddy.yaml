@@ -28,7 +28,8 @@ actions:
         branches:
           - "*"
     steps:
-      # vbd_test needs mount privileges; it runs in the GitHub arm64 workflow.
+      # overlayfs_test and vbd_test need mount privileges and run in the GitHub
+      # arm64 workflow.
       - run: >-
           bazel test --config=linux-arm64-workflows --config=race --config=tests-linux-arm64
           --
@@ -36,6 +37,7 @@ actions:
           //enterprise/server/test/integration/remote_execution/...
           //app/util:shlex_test
           -//enterprise/server/remote_execution/containers/firecracker/...
+          -//enterprise/server/remote_execution/overlayfs:overlayfs_test
           -//enterprise/server/test/integration/remote_execution:remote_execution_test
           -//enterprise/server/remote_execution/vbd:vbd_test
     allow_concurrent_runs: false
