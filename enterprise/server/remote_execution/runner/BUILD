@@ -94,6 +94,7 @@ go_test(
         "//enterprise/server/remote_execution/oom",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",
+        "//enterprise/server/testutil/testregistry",
         "//enterprise/server/util/oci",
         "//proto:experiments_go_proto",
         "//proto:remote_execution_go_proto",

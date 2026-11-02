@@ -288,7 +288,6 @@ type Execution struct {
 	PlatformHash        string `gorm:"codec:ZSTD(1)"`
 	PersistentWorkerKey string `gorm:"codec:ZSTD(1)"`
 
-	// The container image as requested, and the image the runner ran.
 	RequestedContainerImage string `gorm:"codec:ZSTD(1)"`
 	EffectiveContainerImage string `gorm:"codec:ZSTD(1)"`
 

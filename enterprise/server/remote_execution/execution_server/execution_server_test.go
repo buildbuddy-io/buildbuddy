@@ -1052,6 +1052,13 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		require.NoError(t, err)
 	}
 
+	// Like a real executor, echo back the requested image that was
+	// dispatched.
+	requestedImage := "docker://gcr.io/test/requested:v1"
+	if v, ok := test.platformOverrides["container-image"]; ok {
+		requestedImage = v
+	}
+
 	executorGroupID := sharedPoolGroupID
 	if test.expectedSelfHosted {
 		executorGroupID = selfHostedPoolGroupID
@@ -1081,8 +1088,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 				EstimatedMilliCpu:      3002,
 				EstimatedFreeDiskBytes: 3003,
 			},
-			ExecutorGroupId: executorGroupID,
-			Pool:            effectivePool,
+			ExecutorGroupId:         executorGroupID,
+			Pool:                    effectivePool,
+			RequestedContainerImage: requestedImage,
 		}
 		usageStats.Timeline = &repb.UsageTimeline{
 			StartTime: tspb.New(workerStartTime),
@@ -1120,8 +1128,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			effectivePool = "default-pool"
 		}
 		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
-			ExecutorGroupId: executorGroupID,
-			Pool:            effectivePool,
+			ExecutorGroupId:         executorGroupID,
+			Pool:                    effectivePool,
+			RequestedContainerImage: requestedImage,
 		}
 	}
 	auxAny, err := anypb.New(aux)
@@ -1343,15 +1352,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.EstimatedMilliCpu = 1500
 		expectedExecution.EstimatedMemoryBytes = 10 * tasksize.GiB
 	}
-	// The requested image is recorded at dispatch time. The fake executor
-	// here doesn't echo it back in its scheduling metadata (real executors
-	// do), so it's only present if the dispatch-time record survives.
-	if !test.lostInProgressRecord {
-		expectedExecution.RequestedContainerImage = "docker://gcr.io/test/requested:v1"
-		if v, ok := test.platformOverrides["container-image"]; ok {
-			expectedExecution.RequestedContainerImage = v
-		}
-	}
+	expectedExecution.RequestedContainerImage = requestedImage
 	if test.useDefaultPool {
 		expectedExecution.RequestedPool = ""
 		expectedExecution.EffectivePool = "default-pool"
@@ -2356,6 +2357,7 @@ func TestMarkFailed_RecordsSchedulingMetadata(t *testing.T) {
 		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: "pool", Value: "test-pool"},
 			{Name: "use-self-hosted-executors", Value: "true"},
+			{Name: "container-image", Value: "docker://gcr.io/test/requested:v1"},
 		}},
 	}
 	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
@@ -2376,6 +2378,7 @@ func TestMarkFailed_RecordsSchedulingMetadata(t *testing.T) {
 	assert.Equal(t, int64(repb.ExecutionStage_COMPLETED), executions[0].GetStage())
 	assert.True(t, executions[0].GetSelfHosted())
 	assert.Equal(t, "test-pool", executions[0].GetEffectivePool())
+	assert.Equal(t, "docker://gcr.io/test/requested:v1", executions[0].GetRequestedContainerImage())
 }
 
 func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
