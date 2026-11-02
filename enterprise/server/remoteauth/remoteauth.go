@@ -17,11 +17,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
@@ -37,6 +39,13 @@ const (
 	// the jwt cache will result in fewer evictions (if the cache fills up) at
 	// the cost of more memory use.
 	jwtCacheSize = 10_000
+
+	// Authentication failures are cached in an LRU of this size.
+	authFailureCacheSize = 10_000
+	// How long Unauthenticated and PermissionDenied results are cached. This
+	// is short because it stacks with the app's own invalid key cache: a newly
+	// created key can be rejected until both caches expire.
+	authFailureCacheTTL = 10 * time.Second
 )
 
 var (
@@ -48,6 +57,8 @@ var (
 	useES256SignedJWTs  = flag.Bool("auth.remote.use_es256_jwts", true, "Request and use ES-256 signed JWTs from the remote auth service.")
 	keyRefreshInterval  = flag.Duration("auth.remote.key_refresh_interval", time.Minute, "How long to wait between asynchronous refreshes of cached ES256 public keys.")
 	getKeysTimeout      = flag.Duration("auth.remote.get_keys_timeout", 10*time.Second, "Timeout for GetPublicKeys RPCs.")
+
+	cacheAuthFailures = expflag.Bool("auth.remote.cache_auth_failures", false, "If true, briefly cache Unauthenticated and PermissionDenied results from the remote auth service, so that repeated requests with an invalid API key don't each result in an Authenticate RPC.")
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -79,6 +90,16 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 	if err != nil {
 		return nil, err
 	}
+	failureCache, err := lru.New(&lru.Config[error]{
+		MaxSize:    authFailureCacheSize,
+		TTL:        authFailureCacheTTL,
+		SizeFn:     func(v error) int64 { return 1 },
+		ThreadSafe: true,
+		Clock:      env.GetClock(),
+	})
+	if err != nil {
+		return nil, err
+	}
 	client := authpb.NewAuthServiceClient(conn)
 	provider := &keyProvider{
 		ctx:    env.GetServerContext(),
@@ -103,6 +124,7 @@ func NewWithTarget(env environment.Env, conn grpc.ClientConnInterface) (*RemoteA
 	return &RemoteAuthenticator{
 		authClient:          authpb.NewAuthServiceClient(conn),
 		cache:               cache,
+		failureCache:        failureCache,
 		hs256Cache:          hs256Cache,
 		jwtExpirationBuffer: *jwtExpirationBuffer,
 		claimsParser:        claimsParser,
@@ -219,6 +241,11 @@ func claimsCacheKey(ctx context.Context) (string, error) {
 type RemoteAuthenticator struct {
 	authClient authpb.AuthServiceClient
 	cache      lru.LRU[string]
+	// Recent Unauthenticated and PermissionDenied errors, keyed like cache.
+	// Only used if cacheAuthFailures is enabled.
+	failureCache lru.LRU[error]
+	// Deduplicates concurrent Authenticate calls for the same claims cache key.
+	authenticateGroup singleflight.Group[string, string]
 	// LRU cache mapping HS256-signed JWTs to ES256-signed JWTs, to avoid
 	// having to remotely auth every HS256-signed JWT provided.
 	hs256Cache          lru.LRU[string]
@@ -295,10 +322,22 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 		a.cache.Remove(key)
 	}
 
+	cacheFailures := cacheAuthFailures.Get(ctx)
+	if cacheFailures {
+		if err, found := a.failureCache.Get(key); found {
+			return authutil.AuthContextWithError(ctx, err)
+		}
+	}
+
 	// Otherwise, fetch a JWT from the remote auth service.
-	jwt, err = a.authenticate(ctx)
+	jwt, _, err = a.authenticateGroup.Do(ctx, key, a.authenticate)
 	if err != nil {
 		log.Debugf("Error remotely authenticating: %s", err)
+		// Transient errors (Unavailable, DeadlineExceeded, etc.) must not be
+		// cached, or an outage would reject valid keys.
+		if cacheFailures && (status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err)) {
+			a.failureCache.Add(key, err)
+		}
 		return authutil.AuthContextWithError(ctx, err)
 	}
 	a.cache.Add(key, jwt)
