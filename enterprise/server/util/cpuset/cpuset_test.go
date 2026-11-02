@@ -235,6 +235,20 @@ func TestCPUSetOverhead(t *testing.T) {
 	require.Equal(t, 3, len(cpus4))
 }
 
+func TestCPUSetOverheadExceedsCPUCount(t *testing.T) {
+	flags.Set(t, "executor.cpu_leaser.enable", true)
+	flags.Set(t, "executor.cpu_leaser.overhead", .20)
+	flags.Set(t, "executor.cpu_leaser.min_overhead", 2)
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-31")
+
+	cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: getTestCPUs()})
+	require.NoError(t, err)
+
+	_, cpus, cancel := cs.Acquire(32_000, uuid.New())
+	defer cancel()
+	require.Len(t, cpus, 32)
+}
+
 func TestCPUSetDisabled(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", false)
 	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-47")
