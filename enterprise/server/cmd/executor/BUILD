@@ -175,22 +175,6 @@ windows_arm64_alias(
     visibility = ["//visibility:public"],
 )
 
-filegroup(
-    name = "all_binaries",
-    srcs = [
-        ":executor_linux_amd64",
-        ":executor_linux_amd64_static",
-        ":executor_linux_arm64",
-        ":executor_linux_arm64_static",
-        ":executor_macos_arm64",
-        ":executor_macos_x86_64",
-        ":executor_windows_386",
-        ":executor_windows_amd64",
-        ":executor_windows_arm64",
-    ],
-    tags = ["manual"],
-)
-
 alias(
     name = "tini",
     actual = select({
