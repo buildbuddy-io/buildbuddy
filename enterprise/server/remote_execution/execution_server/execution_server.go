@@ -97,8 +97,8 @@ var (
 	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
 	chunkingEnabled                    = flag.Bool("remote_execution.chunking_enabled", false, "If true, executors upload outputs and download inputs using content-defined chunks.")
 
-	maxRunnerCPU         = expflag.Float64("remote_execution.runner_max_cpu", 0, "Maximum CPU that can be requested by a runner, in vCPUs. Zero disables the limit.")
-	maxRunnerMemoryBytes = expflag.Int64("remote_execution.runner_max_memory_bytes", 0, "Maximum memory that can be requested by a runner, in bytes. Zero disables the limit.")
+	maxRunnerCPU         = expflag.Float64("remote_execution.runner.max_cpu", 0, "Maximum CPU that can be requested by a runner, in vCPUs. Must be non-negative. Zero disables the limit.")
+	maxRunnerMemoryBytes = expflag.Int64("remote_execution.runner.max_memory_bytes", 0, "Maximum memory that can be requested by a runner, in bytes. Must be non-negative. Zero disables the limit.")
 
 	teeInstanceNamePrefix = flag.String("remote_execution.tee_instance_name_prefix", "", "Instance name prefix used to identify tee'ed actions", flag.Internal)
 )
@@ -796,6 +796,12 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 func validateRunnerSize(ctx context.Context, size *scpb.TaskSize) error {
 	cpuLimit := maxRunnerCPU.Get(ctx)
 	memoryLimit := maxRunnerMemoryBytes.Get(ctx)
+	if cpuLimit < 0 {
+		return status.InternalError("remote_execution.runner.max_cpu must be non-negative")
+	}
+	if memoryLimit < 0 {
+		return status.InternalError("remote_execution.runner.max_memory_bytes must be non-negative")
+	}
 	cpu := tasksize.CpuComputeUnits(size.GetEstimatedMilliCpu())
 	if cpuLimit > 0 && cpu > cpuLimit {
 		return status.InvalidArgumentErrorf("Runner requests %g vCPUs, exceeding your organization's per-runner CPU limit of %g vCPUs. Reduce the runner size or contact support@buildbuddy.io to discuss your workload and request a higher limit.", cpu, cpuLimit)
