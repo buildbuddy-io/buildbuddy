@@ -1117,7 +1117,10 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	log.CtxDebugf(ctx, "Lease %s granted %+v cpus on node %d", leaseID, leasedCPUs, numaNode)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
-	c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))
+	c.cgroupSettings.NumaNode = nil
+	if numaNode >= 0 {
+		c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))
+	}
 	if *enableCgroupMemoryLimit && c.memoryBytes > 0 {
 		c.cgroupSettings.MemoryLimitBytes = proto.Int64(c.memoryBytes + int64(float64(c.memoryBytes)*(*cgroupMemoryCushion)))
 	}

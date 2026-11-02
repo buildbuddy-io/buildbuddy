@@ -1981,6 +1981,10 @@ type CPULeaser interface {
 	// If more CPUs are requested than the total available on the machine,
 	// the returned set of CPUs will be the set available to the machine.
 	//
+	// If the task's estimate doesn't fit on a single NUMA node, the returned
+	// numa node is -1 and the CPUs may span several nodes. Callers should then
+	// leave the task's memory unpinned.
+	//
 	// Options can be configured via cpuset.
 	Acquire(milliCPU int64, taskID string, opts ...any) (int, []int, func())
 }

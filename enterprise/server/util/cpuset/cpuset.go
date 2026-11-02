@@ -46,6 +46,9 @@ type CPULeaser struct {
 	leases    []lease
 	load      map[int]int
 	numaNodes int
+	// maxNodeCPUs is the number of leaseable CPUs on the NUMA node with the
+	// most leaseable CPUs.
+	maxNodeCPUs int
 }
 
 type CPUInfo struct {
@@ -188,13 +191,16 @@ func NewLeaser(opts LeaserOpts) (*CPULeaser, error) {
 
 	cl.cpus = make([]CPUInfo, len(leaseableCPUs))
 
-	processors := make(map[int]struct{}, 0)
+	nodeCPUs := make(map[int]int, 0)
 	for i, cpu := range leaseableCPUs {
 		cl.cpus[i] = cpu
 		cl.load[cpu.Processor] = 0
-		processors[cpu.NumaNode] = struct{}{}
+		nodeCPUs[cpu.NumaNode]++
 	}
-	cl.numaNodes = len(processors)
+	cl.numaNodes = len(nodeCPUs)
+	for _, n := range nodeCPUs {
+		cl.maxNodeCPUs = max(cl.maxNodeCPUs, n)
+	}
 	log.Debugf("NewLeaser with %d processors and %d cores", cl.numaNodes, len(cl.cpus))
 	return cl, nil
 }
@@ -254,26 +260,31 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 	// Get the set of CPUs, in order of load (incr).
 	leastLoaded := pq.GetAllOrdered()
 
-	// Find the numa node with the largest number of cores in the first
-	// numCPUs CPUs.
-	numaCount := make(map[int]int, l.numaNodes)
-	for i := 0; i < numCPUs; i++ {
-		c := leastLoaded[i]
-		numaCount[c.NumaNode]++
-	}
+	// Pin the task to a NUMA node only if its estimate fits on a single node.
+	// Pinning a larger task would shrink its lease to that node's CPUs and
+	// limit its memory to that node.
 	selectedNode := -1
-	numCores := 0
-	for numaNode, coreCount := range numaCount {
-		if coreCount > numCores {
-			selectedNode = numaNode
-			numCores = coreCount
+	if computeNumCPUs(milliCPU, false) <= l.maxNodeCPUs {
+		// Find the numa node with the largest number of cores in the first
+		// numCPUs CPUs.
+		numaCount := make(map[int]int, l.numaNodes)
+		for _, c := range leastLoaded[:min(numCPUs, len(leastLoaded))] {
+			numaCount[c.NumaNode]++
+		}
+		numCores := 0
+		for numaNode, coreCount := range numaCount {
+			if coreCount > numCores {
+				selectedNode = numaNode
+				numCores = coreCount
+			}
 		}
 	}
 
-	// Now filter the set of CPUs to just the selected numaNode.
+	// If the task is pinned, filter the set of CPUs to just the selected
+	// numaNode.
 	leaseSet := make([]int, 0, numCPUs)
 	for _, c := range leastLoaded {
-		if c.NumaNode != selectedNode {
+		if selectedNode != -1 && c.NumaNode != selectedNode {
 			continue
 		}
 		leaseSet = append(leaseSet, c.Processor)

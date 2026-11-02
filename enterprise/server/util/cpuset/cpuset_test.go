@@ -350,7 +350,84 @@ func TestNumaNodeFairness(t *testing.T) {
 	task3 := uuid.New()
 	_, cpus3, cancel3 := cs.Acquire(8000, task3)
 	defer cancel3()
-	assert.Equal(t, len(cpus3), 4)
+	assert.Len(t, cpus3, 8)
+}
+
+func TestNumaNodePinning(t *testing.T) {
+	nodeCPUs := map[int][]int{
+		0: {0, 1, 2, 3},
+		1: {128, 129, 130, 131},
+	}
+	for _, test := range []struct {
+		name            string
+		leaserEnabled   bool
+		minOverhead     int
+		milliCPU        int64
+		expectPinned    bool
+		expectedNumCPUs int
+	}{
+		{
+			name:            "estimate fits on a node",
+			leaserEnabled:   true,
+			milliCPU:        4000,
+			expectPinned:    true,
+			expectedNumCPUs: 4,
+		},
+		{
+			name:            "estimate larger than a node",
+			leaserEnabled:   true,
+			milliCPU:        5000,
+			expectedNumCPUs: 5,
+		},
+		{
+			name:          "estimate fits on a node but overhead doesn't",
+			leaserEnabled: true,
+			// The task is pinned because its 3 CPU estimate fits on a node,
+			// and the lease is cut to the node's 4 CPUs instead of the 5 CPUs
+			// that include overhead.
+			minOverhead:     2,
+			milliCPU:        3000,
+			expectPinned:    true,
+			expectedNumCPUs: 4,
+		},
+		{
+			name:            "estimate larger than the machine",
+			leaserEnabled:   true,
+			milliCPU:        16000,
+			expectedNumCPUs: 8,
+		},
+		{
+			name:            "leaser disabled, estimate fits on a node",
+			milliCPU:        1000,
+			expectPinned:    true,
+			expectedNumCPUs: 4,
+		},
+		{
+			name:            "leaser disabled, estimate larger than a node",
+			milliCPU:        5000,
+			expectedNumCPUs: 8,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "executor.cpu_leaser.enable", test.leaserEnabled)
+			flags.Set(t, "executor.cpu_leaser.overhead", 0)
+			flags.Set(t, "executor.cpu_leaser.min_overhead", test.minOverhead)
+			flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-3,1:128-131")
+			cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: getTestCPUs()})
+			require.NoError(t, err)
+
+			node, cpus, cancel := cs.Acquire(test.milliCPU, uuid.New())
+			defer cancel()
+
+			require.Len(t, cpus, test.expectedNumCPUs)
+			if test.expectPinned {
+				require.Contains(t, nodeCPUs, node)
+				require.Subset(t, nodeCPUs[node], cpus)
+			} else {
+				require.Equal(t, -1, node)
+			}
+		})
+	}
 }
 
 func TestNumaNodesAreNotSplit(t *testing.T) {

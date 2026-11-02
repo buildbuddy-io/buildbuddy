@@ -2153,9 +2153,20 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		return nil, status.WrapError(err, "get cgroup version")
 	}
 
+	// The SDK always pins the VM's memory to the NUMA node we pass it, so if
+	// the VM isn't pinned to a node, we pass node 0 and then override
+	// cpuset.mems in CgroupArgs to allow memory from all online nodes.
 	numaNode := 0
+	var mems string
 	if c.cgroupSettings.NumaNode != nil {
 		numaNode = int(c.cgroupSettings.GetNumaNode())
+		mems = strconv.Itoa(numaNode)
+	} else {
+		b, err := os.ReadFile("/sys/devices/system/node/online")
+		if err != nil {
+			return nil, status.WrapError(err, "read online NUMA nodes")
+		}
+		mems = strings.TrimSpace(string(b))
 	}
 	return &fcclient.JailerConfig{
 		JailerBinary:   c.executorConfig.JailerBinaryPath,
@@ -2174,7 +2185,7 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		// Override this manually for now.
 		CgroupArgs: []string{
 			fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(c.cgroupSettings.GetCpusetCpus()...)),
-			fmt.Sprintf("cpuset.mems=%d", numaNode),
+			fmt.Sprintf("cpuset.mems=%s", mems),
 		},
 		// The jailer computes the full cgroup path by appending three path
 		// components:
@@ -4162,7 +4173,10 @@ func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
 	log.CtxInfof(ctx, "Lease %s granted %+v cpus on numa node: %d", leaseID, leasedCPUs, numaNode)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
-	c.cgroupSettings.NumaNode = new(int32(numaNode))
+	c.cgroupSettings.NumaNode = nil
+	if numaNode >= 0 {
+		c.cgroupSettings.NumaNode = new(int32(numaNode))
+	}
 
 	if *debugDisableCgroup {
 		return nil
