@@ -288,6 +288,10 @@ type Execution struct {
 	PlatformHash        string `gorm:"codec:ZSTD(1)"`
 	PersistentWorkerKey string `gorm:"codec:ZSTD(1)"`
 
+	// The container image as requested, and the image the runner ran.
+	RequestedContainerImage string `gorm:"codec:ZSTD(1)"`
+	EffectiveContainerImage string `gorm:"codec:ZSTD(1)"`
+
 	RequestedTimeoutUsec int64 `gorm:"codec:T64,ZSTD(1)"`
 	EffectiveTimeoutUsec int64 `gorm:"codec:T64,ZSTD(1)"`
 
@@ -422,6 +426,8 @@ func (e *Execution) AdditionalFields() []string {
 		"RunnerTaskNumber",
 		"PlatformHash",
 		"PersistentWorkerKey",
+		"RequestedContainerImage",
+		"EffectiveContainerImage",
 		"RequestedTimeoutUsec",
 		"EffectiveTimeoutUsec",
 		"Region",

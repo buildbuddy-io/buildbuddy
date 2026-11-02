@@ -511,11 +511,14 @@ func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 			})
 			pool := newRunnerPool(t, env, cfg)
 			r := mustGetNewRunner(t, ctx, pool, newTask())
+			// The runner records the default image, since none was requested.
+			assert.Equal(t, "gcr.io/default:v1", r.Metadata().GetContainerImage())
 			mustAddWithoutEviction(t, ctx, pool, r)
 			// Only with the experiment is the runner reused for a task that
 			// explicitly requests the default image.
 			other := mustGet(t, ctx, pool, explicitDefaultImageTask.CloneVT())
 			assert.Equal(t, enabled, r == other)
+			assert.Equal(t, "gcr.io/default:v1", other.Metadata().GetContainerImage())
 			if !enabled {
 				return
 			}
@@ -526,7 +529,9 @@ func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 			mustAddWithoutEviction(t, ctx, pool, r)
 			headerTask := explicitDefaultImageTask.CloneVT()
 			headerTask.ExecutionTask.PlatformOverrides = &repb.Platform{Properties: []*repb.Platform_Property{{Name: "container-image", Value: "docker://gcr.io/other:v1"}}}
-			assert.NotSame(t, r, mustGet(t, ctx, pool, headerTask))
+			overridden := mustGet(t, ctx, pool, headerTask)
+			assert.NotSame(t, r, overridden)
+			assert.Equal(t, "gcr.io/other:v1", overridden.Metadata().GetContainerImage())
 		})
 	}
 }

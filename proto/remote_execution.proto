@@ -3326,6 +3326,12 @@ message StoredExecution {
   int64 runner_task_number = 74;
   string platform_hash = 75;
   string persistent_worker_key = 76;
+  // The "container-image" platform property value as requested, including
+  // any platform overrides, or empty if no image was requested.
+  string requested_container_image = 98;
+  // The container image that the runner was created with, after executor
+  // defaults and digest resolution were applied.
+  string effective_container_image = 99;
 
   string output_path = 31;
   string status_message = 32;

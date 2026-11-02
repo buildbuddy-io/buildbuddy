@@ -268,6 +268,14 @@ message RunnerMetadata {
   // is part of the runner key and determines whether a persistent worker action
   // can be assigned to a runner in the runner pool.
   string persistent_worker_key = 4;
+
+  // The container image that the runner was created with, after the executor
+  // applied its defaults (e.g. the default image, if none was requested) and
+  // resolved the image digest, if enabled. Recycled runners keep the image
+  // they were created with.
+  //
+  // Ex. "gcr.io/flame-public/rbe-ubuntu24-04@sha256:abc..."
+  string container_image = 5;
 }
 
 message InputFetchMetadata {
