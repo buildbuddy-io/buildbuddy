@@ -2153,22 +2153,12 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		return nil, status.WrapError(err, "get cgroup version")
 	}
 
-	// The SDK always pins the VM's memory to the NUMA node we pass it, so if
-	// the VM isn't pinned to a node, we pass node 0 and then override
-	// cpuset.mems in CgroupArgs to allow memory from all nodes. The kernel
-	// rejects cpuset.mems values that include nodes without memory, so we list
-	// the nodes that have memory rather than all online nodes.
-	numaNode := 0
-	var mems string
-	if c.cgroupSettings.NumaNode != nil {
-		numaNode = int(c.cgroupSettings.GetNumaNode())
-		mems = strconv.Itoa(numaNode)
-	} else {
-		b, err := os.ReadFile("/sys/devices/system/node/has_memory")
-		if err != nil {
-			return nil, status.WrapError(err, "read NUMA nodes with memory")
-		}
-		mems = strings.TrimSpace(string(b))
+	// The SDK only accepts a single NUMA node and pins the VM's memory to it,
+	// so we pass the first node here and then override cpuset.mems in
+	// CgroupArgs with all of the nodes the task is pinned to.
+	numaNodes := c.cgroupSettings.GetNumaNodes()
+	if len(numaNodes) == 0 {
+		numaNodes = []int32{0}
 	}
 	return &fcclient.JailerConfig{
 		JailerBinary:   c.executorConfig.JailerBinaryPath,
@@ -2176,7 +2166,7 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		ID:             c.id,
 		UID:            new(unix.Geteuid()),
 		GID:            new(unix.Getegid()),
-		NumaNode:       new(numaNode),
+		NumaNode:       new(int(numaNodes[0])),
 		ExecFile:       c.executorConfig.FirecrackerBinaryPath,
 		ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
 		Stdout:         c.vmLogWriter(),
@@ -2187,7 +2177,7 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		// Override this manually for now.
 		CgroupArgs: []string{
 			fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(c.cgroupSettings.GetCpusetCpus()...)),
-			fmt.Sprintf("cpuset.mems=%s", mems),
+			fmt.Sprintf("cpuset.mems=%s", cpuset.Format(numaNodes...)),
 		},
 		// The jailer computes the full cgroup path by appending three path
 		// components:
@@ -4171,14 +4161,11 @@ func (c *FirecrackerContainer) cleanupOldSnapshots(ctx context.Context, snapshot
 func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
 	// Lease CPUs for task execution, and set cleanup function.
 	leaseID := uuid.New()
-	numaNode, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.vmConfig.NumCpus*1000, leaseID, cpuset.WithNoOverhead())
-	log.CtxInfof(ctx, "Lease %s granted %+v cpus on numa node: %d", leaseID, leasedCPUs, numaNode)
+	numaNodes, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.vmConfig.NumCpus*1000, leaseID, cpuset.WithNoOverhead())
+	log.CtxInfof(ctx, "Lease %s granted %+v cpus on NUMA nodes %+v", leaseID, leasedCPUs, numaNodes)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
-	c.cgroupSettings.NumaNode = nil
-	if numaNode >= 0 {
-		c.cgroupSettings.NumaNode = new(int32(numaNode))
-	}
+	c.cgroupSettings.NumaNodes = toInt32s(numaNodes)
 
 	if *debugDisableCgroup {
 		return nil

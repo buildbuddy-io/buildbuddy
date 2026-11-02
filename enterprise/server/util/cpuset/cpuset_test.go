@@ -98,10 +98,11 @@ func TestParseCPUs(t *testing.T) {
 			actualCPUs := map[int]int{}
 			for i := 0; i < len(test.expectedCPUs)+1; i++ {
 				task := uuid.New()
-				node, cpus, cancel := cs.Acquire(1000, task, cpuset.WithNoOverhead())
+				nodes, cpus, cancel := cs.Acquire(1000, task, cpuset.WithNoOverhead())
 				defer cancel()
+				require.Len(t, nodes, 1)
 				for _, cpu := range cpus {
-					actualCPUs[cpu] = node
+					actualCPUs[cpu] = nodes[0]
 				}
 			}
 			assert.Equal(t, test.expectedCPUs, actualCPUs)
@@ -271,11 +272,11 @@ func TestCPUSetRequestExceedsLeaseableCPUsMultiNuma(t *testing.T) {
 	cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: getTestCPUs()})
 	require.NoError(t, err)
 
-	// The estimate doesn't fit on either node, so the lease isn't pinned to a
-	// node and spans both of them.
+	// The estimate doesn't fit on either node alone, so the lease is pinned to
+	// both nodes.
 	numa, cpus, cancel := cs.Acquire(10_000, uuid.New())
 	defer cancel()
-	assert.Equal(t, -1, numa)
+	assert.ElementsMatch(t, []int{0, 1}, numa)
 	assert.ElementsMatch(t, []int{0, 1, 2, 3, 128, 129, 130, 131, 132, 133}, cpus)
 }
 
@@ -289,7 +290,7 @@ func TestCPUSetDisabled(t *testing.T) {
 	numa1, cpus1, cancel1 := cs.Acquire(1100, task1)
 	defer cancel1()
 
-	assert.Equal(t, 0, numa1)
+	assert.Equal(t, []int{0}, numa1)
 	assert.Equal(t, 48, len(cpus1))
 }
 
@@ -303,13 +304,11 @@ func TestCPUSetDisabledNumaBalancing(t *testing.T) {
 	for range 1000 {
 		task := uuid.New()
 		numa, _, cancel := cs.Acquire(1100, task)
-		nodeFrequency[numa]++
+		require.Len(t, numa, 1)
+		nodeFrequency[numa[0]]++
 		cancel()
 	}
-	assert.Equal(t, 2, len(nodeFrequency))
-	// TODO: figure out why the node frequencies are sometimes slightly
-	// different, e.g. 498/502 instead of an even 500/500 split.
-	assert.InDelta(t, nodeFrequency[0], nodeFrequency[1], 4)
+	assert.Equal(t, map[int]int{0: 500, 1: 500}, nodeFrequency)
 }
 
 func TestCPUSetDisabledManualCPUSet(t *testing.T) {
@@ -321,7 +320,7 @@ func TestCPUSetDisabledManualCPUSet(t *testing.T) {
 	task1 := uuid.New()
 	numa1, cpus1, cancel1 := cs.Acquire(1100, task1)
 	defer cancel1()
-	assert.Equal(t, 0, numa1)
+	assert.Equal(t, []int{0}, numa1)
 	// Should return all configured CPUs.
 	assert.Equal(t, []int{0, 1, 3}, cpus1)
 }
@@ -360,53 +359,56 @@ func TestNumaNodePinning(t *testing.T) {
 		1: {128, 129, 130, 131},
 	}
 	for _, test := range []struct {
-		name            string
-		leaserEnabled   bool
-		minOverhead     int
-		milliCPU        int64
-		expectPinned    bool
-		expectedNumCPUs int
+		name             string
+		leaserEnabled    bool
+		minOverhead      int
+		milliCPU         int64
+		expectedNumNodes int
+		expectedNumCPUs  int
 	}{
 		{
-			name:            "estimate fits on a node",
-			leaserEnabled:   true,
-			milliCPU:        4000,
-			expectPinned:    true,
-			expectedNumCPUs: 4,
+			name:             "estimate fits on a node",
+			leaserEnabled:    true,
+			milliCPU:         4000,
+			expectedNumNodes: 1,
+			expectedNumCPUs:  4,
 		},
 		{
-			name:            "estimate larger than a node",
-			leaserEnabled:   true,
-			milliCPU:        5000,
-			expectedNumCPUs: 5,
+			name:             "estimate larger than a node",
+			leaserEnabled:    true,
+			milliCPU:         5000,
+			expectedNumNodes: 2,
+			expectedNumCPUs:  5,
 		},
 		{
 			name:          "estimate fits on a node but overhead doesn't",
 			leaserEnabled: true,
-			// The task is pinned because its 3 CPU estimate fits on a node,
-			// and the lease is cut to the node's 4 CPUs instead of the 5 CPUs
-			// that include overhead.
-			minOverhead:     2,
-			milliCPU:        3000,
-			expectPinned:    true,
-			expectedNumCPUs: 4,
+			// The task is pinned to one node because its 3 CPU estimate fits
+			// there, and the lease is cut to the node's 4 CPUs instead of the
+			// 5 CPUs that include overhead.
+			minOverhead:      2,
+			milliCPU:         3000,
+			expectedNumNodes: 1,
+			expectedNumCPUs:  4,
 		},
 		{
-			name:            "estimate larger than the machine",
-			leaserEnabled:   true,
-			milliCPU:        16000,
-			expectedNumCPUs: 8,
+			name:             "estimate larger than the machine",
+			leaserEnabled:    true,
+			milliCPU:         16000,
+			expectedNumNodes: 2,
+			expectedNumCPUs:  8,
 		},
 		{
-			name:            "leaser disabled, estimate fits on a node",
-			milliCPU:        1000,
-			expectPinned:    true,
-			expectedNumCPUs: 4,
+			name:             "leaser disabled, estimate fits on a node",
+			milliCPU:         1000,
+			expectedNumNodes: 1,
+			expectedNumCPUs:  4,
 		},
 		{
-			name:            "leaser disabled, estimate larger than a node",
-			milliCPU:        5000,
-			expectedNumCPUs: 8,
+			name:             "leaser disabled, estimate larger than a node",
+			milliCPU:         5000,
+			expectedNumNodes: 2,
+			expectedNumCPUs:  8,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -417,17 +419,50 @@ func TestNumaNodePinning(t *testing.T) {
 			cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: getTestCPUs()})
 			require.NoError(t, err)
 
-			node, cpus, cancel := cs.Acquire(test.milliCPU, uuid.New())
+			nodes, cpus, cancel := cs.Acquire(test.milliCPU, uuid.New())
 			defer cancel()
 
+			require.Len(t, nodes, test.expectedNumNodes)
 			require.Len(t, cpus, test.expectedNumCPUs)
-			if test.expectPinned {
+			var pinnedCPUs []int
+			for _, node := range nodes {
 				require.Contains(t, nodeCPUs, node)
-				require.Subset(t, nodeCPUs[node], cpus)
-			} else {
-				require.Equal(t, -1, node)
+				pinnedCPUs = append(pinnedCPUs, nodeCPUs[node]...)
 			}
+			require.Subset(t, pinnedCPUs, cpus)
 		})
+	}
+}
+
+func TestPinToFewestLeastLoadedNodes(t *testing.T) {
+	flags.Set(t, "executor.cpu_leaser.enable", true)
+	flags.Set(t, "executor.cpu_leaser.overhead", 0)
+	flags.Set(t, "executor.cpu_leaser.min_overhead", 0)
+
+	// Three nodes with four CPUs each.
+	var systemCPUs []cpuset.CPUInfo
+	for i := range 12 {
+		systemCPUs = append(systemCPUs, cpuset.CPUInfo{Processor: i, NumaNode: i / 4})
+	}
+	cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: systemCPUs})
+	require.NoError(t, err)
+
+	// Hold a lease that fills one node.
+	nodes, cpus, cancel := cs.Acquire(4000, uuid.New())
+	defer cancel()
+	require.Len(t, nodes, 1)
+	require.Len(t, cpus, 4)
+	loadedNode := nodes[0]
+
+	// A 5 CPU task doesn't fit on one node, so it is pinned to the two idle
+	// nodes rather than the loaded one.
+	nodes, cpus, cancel = cs.Acquire(5000, uuid.New())
+	defer cancel()
+	require.Len(t, nodes, 2)
+	require.NotContains(t, nodes, loadedNode)
+	require.Len(t, cpus, 5)
+	for _, cpu := range cpus {
+		require.NotEqual(t, loadedNode, cpu/4)
 	}
 }
 
