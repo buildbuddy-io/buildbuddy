@@ -27,6 +27,7 @@ jobs:
             --config=ci \
             --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true \
             --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+            --bes_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
             //...
 
       - name: Slack
