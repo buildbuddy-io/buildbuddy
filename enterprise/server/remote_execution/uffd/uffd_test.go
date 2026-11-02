@@ -27,6 +27,7 @@ func (f *fakeResolver) zeropage(uffd uintptr, z *uffdIoZeropage) syscall.Errno {
 func newTestHandler(r faultResolver) *Handler {
 	return &Handler{
 		removedAddresses: make(map[int64]struct{}),
+		copyWindowBytes:  defaultCopyWindowBytes,
 		faultResolver:    r,
 	}
 }
@@ -416,4 +417,15 @@ func TestZero_RejectsInvalidProgress(t *testing.T) {
 	err := h.copyZeroes(0 /*=uffd*/, faultingAddress, mapping)
 	require.Error(t, err)
 	require.Contains(t, h.removedAddresses, int64(faultingAddress))
+}
+
+func TestNewHandler_InvalidCopyWindowUsesDefault(t *testing.T) {
+	for _, size := range []int64{0, 1000, 3 * 4096} {
+		h, err := NewHandler(size)
+		require.NoError(t, err)
+		require.Equal(t, int64(defaultCopyWindowBytes), h.copyWindowBytes)
+	}
+	h, err := NewHandler(4 << 20)
+	require.NoError(t, err)
+	require.Equal(t, int64(4<<20), h.copyWindowBytes)
 }

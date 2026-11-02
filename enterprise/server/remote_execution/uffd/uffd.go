@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -153,13 +154,25 @@ type Handler struct {
 	// If these pages page fault again, they should be handled with UFFDIO_ZEROPAGE.
 	removedAddresses map[int64]struct{}
 
+	// Most memory copied into the guest per page fault.
+	copyWindowBytes int64
+
 	// faultResolver performs the userfaultfd ioctls.
 	faultResolver faultResolver
 }
 
-func NewHandler() (*Handler, error) {
+const defaultCopyWindowBytes = 256 * 1024
+
+// NewHandler returns a handler that copies at most copyWindowBytes, a power of
+// two of at least the page size, into the guest per page fault.
+func NewHandler(copyWindowBytes int64) (*Handler, error) {
+	if copyWindowBytes < int64(os.Getpagesize()) || copyWindowBytes&(copyWindowBytes-1) != 0 {
+		alert.UnexpectedEvent("invalid_uffd_copy_window", "UFFD fault copy window %d is not a power of two of at least the page size; using %d", copyWindowBytes, defaultCopyWindowBytes)
+		copyWindowBytes = defaultCopyWindowBytes
+	}
 	return &Handler{
 		removedAddresses: make(map[int64]struct{}),
+		copyWindowBytes:  copyWindowBytes,
 		faultResolver:    uffdFaultResolver{},
 	}, nil
 }
@@ -554,9 +567,6 @@ func (h *Handler) copyZeroes(uffd uintptr, faultingAddress uintptr, mapping *Gue
 	return nil
 }
 
-// faultCopyWindowBytes is the most memory copied into the guest per page fault.
-const faultCopyWindowBytes = 256 * 1024
-
 // copyDataFromMemorySnapshot handles a page fault by copying data from the memory
 // snapshot into the guest.
 func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_write.COWStore, mapping *GuestRegionUFFDMapping, faultingAddress uintptr) error {
@@ -588,10 +598,10 @@ func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_
 			return status.WrapError(err, "get backing page address")
 		}
 		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
-		windowOffset := relOffset &^ (faultCopyWindowBytes - 1)
+		windowOffset := relOffset &^ uintptr(h.copyWindowBytes-1)
 		hostAddr = chunkAddr + windowOffset
 		destAddr = faultingAddress - relOffset + windowOffset
-		copySize = min(copySize-int64(windowOffset), faultCopyWindowBytes)
+		copySize = min(copySize-int64(windowOffset), h.copyWindowBytes)
 	}
 
 	// Check that the request is within the valid guest memory range.

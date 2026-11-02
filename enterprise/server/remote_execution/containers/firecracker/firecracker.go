@@ -2303,7 +2303,7 @@ func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 	if c.uffdHandler != nil {
 		return status.InternalErrorf("uffd handler is already running")
 	}
-	h, err := uffd.NewHandler()
+	h, err := uffd.NewHandler(execution_experiments.FirecrackerFaultCopyWindowBytes.Get(ctx))
 	if err != nil {
 		return status.WrapError(err, "create uffd handler")
 	}
