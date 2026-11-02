@@ -102,15 +102,7 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
             {this.props.proxy.labels && Object.keys(this.props.proxy.labels).length > 0 && (
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Labels:</div>
-                <div>
-                  {Object.entries(this.props.proxy.labels)
-                    .sort(([a], [b]) => a.localeCompare(b))
-                    .map(([k, v]) => (
-                      <div key={k}>
-                        <b>{k}</b>: {v}
-                      </div>
-                    ))}
-                </div>
+                <CacheProxyLabels labels={this.props.proxy.labels} />
               </div>
             )}
             {!this.props.summary && (
@@ -259,6 +251,23 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
       </div>
     );
   }
+}
+
+export function CacheProxyLabels({ labels }: { labels: Record<string, string> }) {
+  const sorted = Object.entries(labels).sort(([a], [b]) => a.localeCompare(b));
+  return (
+    <div className="cache-proxy-labels">
+      {sorted.map(([k, v]) => (
+        <span
+          key={k}
+          className="cache-proxy-label"
+          style={{ "--label-hue": format.colorHashHue(k) } as React.CSSProperties}>
+          <span className="cache-proxy-label-key">{k}</span>
+          <span className="cache-proxy-label-value">{v}</span>
+        </span>
+      ))}
+    </div>
+  );
 }
 
 export function readWriteRatio(reads: number, writes: number): string {
