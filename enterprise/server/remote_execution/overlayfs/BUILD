@@ -30,6 +30,10 @@ go_library(
 go_test(
     name = "overlayfs_test",
     srcs = ["overlayfs_test.go"],
+    exec_properties = {
+        # OCI seccomp blocks the user namespace needed for overlay mounts.
+        "test.workload-isolation-type": "firecracker",
+    },
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":overlayfs",
