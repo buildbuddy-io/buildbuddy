@@ -1113,7 +1113,7 @@ func (c *ociContainer) checkPIDLimitExceeded(ctx context.Context, res *interface
 func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	// Lease CPUs for task execution, and set cleanup function.
 	leaseID := uuid.New()
-	numaNodes, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, leaseID)
+	numaNodes, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, c.memoryBytes, leaseID)
 	log.CtxDebugf(ctx, "Lease %s granted %+v cpus on NUMA nodes %+v", leaseID, leasedCPUs, numaNodes)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)

@@ -296,9 +296,9 @@ message CgroupSettings {
   // ignored.
   repeated int32 cpuset_cpus = 18;
 
-  // CPUSet: the numa nodes that a task may run on. This field is set by the
-  // executor, based on the estimated task size. Any value set by the app is
-  // ignored.
+  // The NUMA nodes whose memory a task may use, as listed in cpuset.mems.
+  // This field is set by the executor, based on the estimated task size. Any
+  // value set by the app is ignored.
   repeated int32 numa_nodes = 20;
 
   reserved 19;

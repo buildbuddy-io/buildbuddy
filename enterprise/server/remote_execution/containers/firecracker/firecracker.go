@@ -4161,7 +4161,7 @@ func (c *FirecrackerContainer) cleanupOldSnapshots(ctx context.Context, snapshot
 func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
 	// Lease CPUs for task execution, and set cleanup function.
 	leaseID := uuid.New()
-	numaNodes, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.vmConfig.NumCpus*1000, leaseID, cpuset.WithNoOverhead())
+	numaNodes, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.vmConfig.NumCpus*1000, c.vmConfig.MemSizeMb*1024*1024, leaseID, cpuset.WithNoOverhead())
 	log.CtxInfof(ctx, "Lease %s granted %+v cpus on NUMA nodes %+v", leaseID, leasedCPUs, numaNodes)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)

@@ -17,7 +17,6 @@ go_library(
         "//server/util/alert",
         "//server/util/flag",
         "//server/util/log",
-        "//server/util/priority_queue",
         "@org_golang_x_exp//constraints",
     ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [
