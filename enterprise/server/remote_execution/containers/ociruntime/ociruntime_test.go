@@ -250,6 +250,47 @@ func TestRun(t *testing.T) {
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
+func TestRunWithEmptyRootfs(t *testing.T) {
+	setupNetworking(t)
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+
+	worker, err := runfiles.Rlocation(testworkerRlocationpath)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	testfs.CopyFile(t, worker, wd, "testworker")
+
+	reg := testregistry.Run(t, testregistry.Opts{})
+	emptyLayer, err := crane.Layer(nil)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name   string
+		layers []ctr.Layer
+	}{
+		{"no-layers", nil},
+		{"empty-layers", []ctr.Layer{emptyLayer, emptyLayer}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			img, err := mutate.AppendLayers(empty.Image, tc.layers...)
+			require.NoError(t, err)
+			ref := reg.Push(t, img, tc.name+":latest", nil)
+			c, err := provider.New(t.Context(), &container.Init{Props: &platform.Properties{ContainerImage: ref}})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, c.Remove(env.GetServerContext())) })
+
+			res := c.Run(t.Context(), &repb.Command{Arguments: []string{"./testworker", "-help"}}, wd, oci.Credentials{})
+			require.NoError(t, res.Error)
+			require.Zero(t, res.ExitCode, "stderr: %s", res.Stderr)
+			assert.Contains(t, string(res.Stderr), "persistent_worker")
+		})
+	}
+}
+
 func TestRunNofileLimit(t *testing.T) {
 	setupNetworking(t)
 	flags.Set(t, "executor.oci.nofile_limit", uint64(65536))
