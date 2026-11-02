@@ -37,6 +37,8 @@ type fakeAuthService struct {
 	// then waits for authenticateRelease to be closed.
 	authenticateStarted chan struct{}
 	authenticateRelease chan struct{}
+	// If set, Authenticate blocks until its context is done.
+	authenticateBlockUntilCtxDone bool
 
 	publicKeys      []string
 	publicKeysErr   error
@@ -91,6 +93,10 @@ func (a *fakeAuthService) getAuthenticateCalls() int {
 }
 
 func (a *fakeAuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {
+	if a.authenticateBlockUntilCtxDone {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if a.authenticateRelease != nil {
 		select {
 		case a.authenticateStarted <- struct{}{}:
@@ -508,6 +514,7 @@ func TestHS256ReauthResultIsCached(t *testing.T) {
 
 func TestConcurrentAuthenticateCallsAreDeduplicated(t *testing.T) {
 	authenticator, fakeAuth := setupES256(t)
+	joins := joinSignal(authenticator)
 	fakeAuth.authenticateStarted = make(chan struct{}, 1)
 	fakeAuth.authenticateRelease = make(chan struct{})
 	fooJwt := validES256Jwt(t, "foo")
@@ -520,9 +527,10 @@ func TestConcurrentAuthenticateCallsAreDeduplicated(t *testing.T) {
 			ctxs <- authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
 		}()
 	}
-	// Requests that arrive after the release use the cached JWT, so the
-	// expected call count is the same either way.
+	// Hold the RPC until every caller is about to wait on the flight, so that
+	// without deduplication each of them would send its own RPC.
 	<-fakeAuth.authenticateStarted
+	waitForJoins(joins, numRequests)
 	close(fakeAuth.authenticateRelease)
 
 	for range numRequests {
@@ -530,6 +538,128 @@ func TestConcurrentAuthenticateCallsAreDeduplicated(t *testing.T) {
 		require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
 	}
 	require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+}
+
+func TestConcurrentInvalidKeyCallsShareOneFailedFlight(t *testing.T) {
+	flags.Set(t, "auth.remote.cache_auth_failures", true)
+	authenticator, fakeAuth := setupES256(t)
+	joins := joinSignal(authenticator)
+	fakeAuth.authenticateStarted = make(chan struct{}, 1)
+	fakeAuth.authenticateRelease = make(chan struct{})
+	fakeAuth.setNextErr(t, "", status.UnauthenticatedError("bad key"))
+
+	const numRequests = 10
+	ctxs := make(chan context.Context, numRequests)
+	for range numRequests {
+		go func() {
+			ctxs <- authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bad"))
+		}()
+	}
+	<-fakeAuth.authenticateStarted
+	waitForJoins(joins, numRequests)
+	close(fakeAuth.authenticateRelease)
+
+	for range numRequests {
+		ctx := <-ctxs
+		require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
+		err, _ := authutil.AuthErrorFromContext(ctx)
+		require.True(t, status.IsUnauthenticatedError(err), "got %v", err)
+	}
+	require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+}
+
+func TestCancelledWaiterReturnsWhileOthersGetJWT(t *testing.T) {
+	authenticator, fakeAuth := setupES256(t)
+	joins := joinSignal(authenticator)
+	fakeAuth.authenticateStarted = make(chan struct{}, 1)
+	fakeAuth.authenticateRelease = make(chan struct{})
+	fooJwt := validES256Jwt(t, "foo")
+	fakeAuth.setNextJwt(t, "", fooJwt)
+
+	cancelCtx, cancel := context.WithCancel(contextWithApiKey(t, "foo"))
+	defer cancel()
+	const numOthers = 3
+	others := make(chan context.Context, numOthers)
+	cancelled := make(chan context.Context, 1)
+	for range numOthers {
+		go func() {
+			others <- authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
+		}()
+	}
+	go func() {
+		cancelled <- authenticator.AuthenticatedGRPCContext(cancelCtx)
+	}()
+	<-fakeAuth.authenticateStarted
+	waitForJoins(joins, numOthers+1)
+
+	// The flight is still blocked, so the waiter can only return because it
+	// was cancelled.
+	cancel()
+	ctx := <-cancelled
+	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
+	err, _ := authutil.AuthErrorFromContext(ctx)
+	require.Error(t, err)
+
+	close(fakeAuth.authenticateRelease)
+	for range numOthers {
+		ctx := <-others
+		require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
+	}
+	require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+}
+
+func TestAuthenticateTimeoutBoundsHungRPC(t *testing.T) {
+	orig := authenticateTimeout
+	authenticateTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { authenticateTimeout = orig })
+	authenticator, fakeAuth := setupES256(t)
+	fakeAuth.authenticateBlockUntilCtxDone = true
+
+	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
+	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
+	err, _ := authutil.AuthErrorFromContext(ctx)
+	require.True(t, status.IsDeadlineExceededError(err), "got %v", err)
+}
+
+func TestAuthFailureCacheIsPerSubdomain(t *testing.T) {
+	flags.Set(t, "auth.remote.cache_auth_failures", true)
+	authenticator, fakeAuth := setupES256(t)
+
+	fakeAuth.setNextErr(t, "foosub", status.UnauthenticatedError("bad key"))
+	ctx := subdomain.Context(contextWithApiKey(t, "foo"), "foosub")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
+	err, _ := authutil.AuthErrorFromContext(ctx)
+	require.True(t, status.IsUnauthenticatedError(err), "got %v", err)
+	require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+
+	// The same key on another subdomain is authenticated separately.
+	fooJwt := validES256Jwt(t, "foo")
+	fakeAuth.setNextJwt(t, "barsub", fooJwt)
+	ctx = subdomain.Context(contextWithApiKey(t, "foo"), "barsub")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
+	require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
+	require.Equal(t, 2, fakeAuth.getAuthenticateCalls())
+
+	// The failure for the first subdomain is still cached.
+	ctx = subdomain.Context(contextWithApiKey(t, "foo"), "foosub")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
+	err, _ = authutil.AuthErrorFromContext(ctx)
+	require.True(t, status.IsUnauthenticatedError(err), "got %v", err)
+	require.Equal(t, 2, fakeAuth.getAuthenticateCalls())
+}
+
+// joinSignal returns a channel that receives a value each time a caller is
+// about to wait on an Authenticate flight.
+func joinSignal(authenticator interfaces.Authenticator) chan struct{} {
+	joins := make(chan struct{}, 100)
+	authenticator.(*RemoteAuthenticator).onAuthenticateJoin = func() { joins <- struct{}{} }
+	return joins
+}
+
+func waitForJoins(joins chan struct{}, n int) {
+	for range n {
+		<-joins
+	}
 }
 
 func TestAuthFailureCache(t *testing.T) {
