@@ -181,7 +181,7 @@ func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
 		if cached, ok := ctx.Value(trustedJWTClaimsKey{}).(*trustedJWTClaims); ok && cached.tokenString == tokenString {
 			return cached.claims, nil
 		}
-		c, err := parseTrustedJWT(tokenString)
+		c, err := ParseTrustedJWT(tokenString)
 		if err != nil {
 			return nil, err
 		}
@@ -206,7 +206,7 @@ type trustedJWTClaimsKey struct{}
 // return them without parsing the JWT again.
 func ContextWithTrustedJWT(ctx context.Context, tokenString string) context.Context {
 	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tokenString)
-	c, err := parseTrustedJWT(tokenString)
+	c, err := ParseTrustedJWT(tokenString)
 	if err != nil {
 		// Leave it to UserFromTrustedJWT to return the error.
 		return ctx
@@ -214,7 +214,9 @@ func ContextWithTrustedJWT(ctx context.Context, tokenString string) context.Cont
 	return context.WithValue(ctx, trustedJWTClaimsKey{}, &trustedJWTClaims{tokenString: tokenString, claims: c})
 }
 
-func parseTrustedJWT(tokenString string) (*claims.Claims, error) {
+// ParseTrustedJWT returns the claims in the given JWT without verifying it. The
+// JWT must come from a trusted source that has already verified it.
+func ParseTrustedJWT(tokenString string) (*claims.Claims, error) {
 	c := &claims.Claims{}
 	parser := jwt.Parser{}
 	if _, _, err := parser.ParseUnverified(tokenString, c); err != nil {

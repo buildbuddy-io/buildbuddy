@@ -493,6 +493,67 @@ func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
 	}
 }
 
+func TestLeaseTask_ExperimentFlagsTargetTaskOwnerGroup(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// executorUser is the user that the executor authenticates as, or ""
+		// for an unauthenticated executor.
+		executorUser string
+	}{
+		{name: "ExecutorInOtherGroup", executorUser: "user2"},
+		{name: "UnauthenticatedExecutor", executorUser: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
+				"executor.persistent_volumes": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "default",
+					Variants: map[string]any{
+						"targeted": "cache:/tmp/.cache",
+						"default":  "",
+					},
+					ContextEvaluator: targeted(func(ctx openfeature.FlattenedContext) string {
+						if ctx["group_id"] == "group1" && ctx["user_id"] == "user1" && ctx[openfeature.TargetingKey] == "group1" {
+							return "targeted"
+						}
+						return ""
+					}),
+				},
+			})
+			expflag.SetFlagProvider(fp)
+			t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			env.SetExperimentFlagProvider(fp)
+			executorCtx := context.Background()
+			if tc.executorUser != "" {
+				executorCtx = authenticatedContext(t, env, tc.executorUser)
+			}
+			fe := newFakeExecutor(executorCtx, t, env.GetSchedulerClient())
+			fe.supportsExperimentFlags = true
+			fe.Register()
+
+			taskID := scheduleTask(ctx, t, env, map[string]string{})
+
+			fe.WaitForTask(taskID)
+			lease := fe.Claim(taskID)
+			defer lease.Finalize()
+
+			// Experiments should be evaluated for the task owner, not the
+			// executor that leased the task.
+			var gotFlag *expb.EvaluatedFlag
+			for _, f := range lease.task.GetExperimentFlags() {
+				if f.GetName() == "executor.persistent_volumes" {
+					gotFlag = f
+				}
+			}
+			require.Empty(t, cmp.Diff(&expb.EvaluatedFlag{
+				Name: "executor.persistent_volumes", Variant: "targeted", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"},
+			}, gotFlag, protocmp.Transform()))
+		})
+	}
+}
+
 type task struct {
 	delay time.Duration
 }

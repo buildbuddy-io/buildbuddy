@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
@@ -28,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -2564,7 +2566,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 					log.CtxWarningf(ctx, "Could not remove task from unclaimed list: %s", err)
 				}
 			}
-			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), req.GetSupportsExperimentFlags(), key, task.serializedTask, task.metadata.GetTaskGroupId())
+			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), req.GetSupportsExperimentFlags(), key, task.serializedTask, task.metadata.GetTaskGroupId(), task.jwt)
 
 			// Prometheus: observe queue wait time. Skip reconnects, since the
 			// executor has been running the task since its first claim.
@@ -2762,14 +2764,14 @@ func (s *SchedulerServer) checkTaskAccess(ctx context.Context, task *persistedTa
 // for things like experiments and token refreshes.
 // This is important for tasks that are queued for a long time or are retried
 // after some time, as values computed at initial enqueue can be stale.
-func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, task []byte, taskGroupID string) []byte {
+func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, task []byte, taskGroupID, taskJWT string) []byte {
 	taskProto := &repb.ExecutionTask{}
 	if err := proto.Unmarshal(task, taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
 		return task
 	}
 
-	taskProto = s.modifyTaskForExperiments(ctx, executorHostname, supportsExperimentFlags, poolKey, taskProto)
+	taskProto = s.modifyTaskForExperiments(ctx, executorHostname, supportsExperimentFlags, poolKey, taskProto, taskJWT)
 	if err := ci_runner_util.SetTaskRepositoryToken(ctx, s.env, taskProto, taskGroupID); err != nil {
 		if status.IsNotFoundError(err) {
 			// This can be expected with Remote Bazel on public repos, where tokens are not needed.
@@ -2786,7 +2788,24 @@ func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostna
 	}
 }
 
-func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, taskProto *repb.ExecutionTask) *repb.ExecutionTask {
+// taskOwnerContext returns a context authenticated as the owner of the task
+// with the given JWT, so that experiments are evaluated for the task owner
+// rather than the executor that sent the request. If the JWT is empty or can't
+// be parsed, the returned context is unauthenticated.
+func taskOwnerContext(ctx context.Context, taskID, taskJWT string) context.Context {
+	if taskJWT != "" {
+		c, err := auth.ParseTrustedJWT(taskJWT)
+		if err == nil {
+			return claims.AuthContext(ctx, c)
+		}
+		log.CtxWarningf(ctx, "Failed to parse JWT for task %q, evaluating experiments without claims: %s", taskID, err)
+	}
+	// Clear the executor's claims.
+	ctx = claims.AuthContext(ctx, nil)
+	return authutil.AuthContextWithError(ctx, authutil.AnonymousUserError(authutil.UserNotFoundMsg))
+}
+
+func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, taskProto *repb.ExecutionTask, taskJWT string) *repb.ExecutionTask {
 	fp := s.env.GetExperimentFlagProvider()
 	if fp == nil {
 		// TODO: remove this check so expflags work even when the experiment
@@ -2819,6 +2838,13 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		// the logic.
 		experiments.WithContext("requested_isolation_type", platform.FindEffectiveValue(taskProto, platform.WorkloadIsolationPropertyName)),
 	}
+
+	// Evaluate experiments for the task owner, not the executor. Fall back to
+	// the JWT in the task for tasks persisted by older schedulers.
+	if taskJWT == "" {
+		taskJWT = taskProto.GetJwt()
+	}
+	ctx = taskOwnerContext(ctx, taskProto.GetExecutionId(), taskJWT)
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
 	// RPC doesn't get this metadata, because the executor doesn't get it until

@@ -10,6 +10,7 @@ go_library(
     srcs = ["scheduler_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server",
     deps = [
+        "//enterprise/server/auth",
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/action_merger",
         "//enterprise/server/remote_execution/execution_experiments",
@@ -31,6 +32,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/background",
         "//server/util/bazel_request",
+        "//server/util/claims",
         "//server/util/error_util",
         "//server/util/flag",
         "//server/util/grpc_client",
