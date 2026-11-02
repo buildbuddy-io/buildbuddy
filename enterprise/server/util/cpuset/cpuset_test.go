@@ -235,6 +235,49 @@ func TestCPUSetOverhead(t *testing.T) {
 	require.Equal(t, 3, len(cpus4))
 }
 
+func TestCPUSetRequestExceedsLeaseableCPUs(t *testing.T) {
+	flags.Set(t, "executor.cpu_leaser.enable", true)
+	flags.Set(t, "executor.cpu_leaser.overhead", .20)
+	flags.Set(t, "executor.cpu_leaser.min_overhead", 2)
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-31")
+
+	cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: getTestCPUs()})
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name     string
+		milliCPU int64
+		opts     []any
+	}{
+		{name: "request plus overhead exceeds CPUs", milliCPU: 30_000},
+		{name: "request equals CPUs", milliCPU: 32_000},
+		{name: "request exceeds CPUs", milliCPU: 40_000},
+		{name: "request equals CPUs without overhead", milliCPU: 32_000, opts: []any{cpuset.WithNoOverhead()}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, cpus, cancel := cs.Acquire(tc.milliCPU, uuid.New(), tc.opts...)
+			defer cancel()
+			assert.Len(t, cpus, 32)
+		})
+	}
+}
+
+func TestCPUSetRequestExceedsLeaseableCPUsMultiNuma(t *testing.T) {
+	flags.Set(t, "executor.cpu_leaser.enable", true)
+	flags.Set(t, "executor.cpu_leaser.overhead", .20)
+	flags.Set(t, "executor.cpu_leaser.min_overhead", 2)
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-3,1:128-133")
+
+	cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: getTestCPUs()})
+	require.NoError(t, err)
+
+	// Leases come from a single node: the one with the most CPUs.
+	numa, cpus, cancel := cs.Acquire(10_000, uuid.New())
+	defer cancel()
+	assert.Equal(t, 1, numa)
+	assert.ElementsMatch(t, []int{128, 129, 130, 131, 132, 133}, cpus)
+}
+
 func TestCPUSetDisabled(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", false)
 	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-47")
