@@ -56,13 +56,14 @@ const (
 	// Maximum number of entries in API Key -> Group cache.
 	apiKeyGroupCacheSize = 10_000
 
-	// Maximum number of entries in the invalid API key cache.
+	// If the auth.cache_invalid_api_keys experiment is enabled, API keys that
+	// were not found are cached as invalid so that clients repeatedly sending
+	// an invalid key don't query the database. The TTL bounds how long a newly
+	// created key can be rejected if its first lookup hit a read replica that
+	// didn't have it yet. Misses aren't re-checked on the primary, so that
+	// invalid keys never add load there.
 	invalidAPIKeyCacheSize = 10_000
-	// How long an API key that was not found is remembered as invalid. This
-	// bounds how long a newly created key can be rejected if its first lookup
-	// hit a read replica that didn't have it yet. Misses aren't re-checked on
-	// the primary, so that invalid keys never add load there.
-	invalidAPIKeyCacheTTL = 10 * time.Second
+	invalidAPIKeyCacheTTL  = 10 * time.Second
 )
 
 var (
@@ -73,7 +74,7 @@ var (
 	encryptNewKeys            = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
 	encryptOldKeys            = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
 
-	cacheInvalidAPIKeys = expflag.Bool("auth.cache_invalid_api_keys", false, "If true, briefly cache API keys that were not found so that repeated requests with an invalid key don't query the database.")
+	cacheInvalidAPIKeys = expflag.Bool("auth.cache_invalid_api_keys", false, "If true, briefly cache API keys that were not found so that repeated requests with an invalid key don't query the database. Only takes effect if auth.api_key_group_cache_ttl > 0.")
 )
 
 // newAPIKeyGroupCache creates a cache for API Key -> Group lookups. A single
@@ -94,9 +95,6 @@ func newAPIKeyGroupCache(clock clockwork.Clock) (lru.LRU[interfaces.APIKeyGroup]
 	return cache, nil
 }
 
-// newInvalidAPIKeyCache creates a short-lived cache of API keys that were not
-// found, to protect the database from clients that repeatedly send an invalid
-// key.
 func newInvalidAPIKeyCache(clock clockwork.Clock) (lru.LRU[struct{}], error) {
 	cache, err := lru.New[struct{}](&lru.Config[struct{}]{
 		MaxSize:    invalidAPIKeyCacheSize,
@@ -116,10 +114,8 @@ type AuthDB struct {
 	h     interfaces.DBHandle
 	clock clockwork.Clock
 
-	apiKeyGroupCache lru.LRU[interfaces.APIKeyGroup]
-	apiKeyFetchGroup singleflight.Group[string, *apiKeyGroup]
-	// Keys that were recently not found. Only populated if the
-	// cacheInvalidAPIKeys experiment is enabled.
+	apiKeyGroupCache   lru.LRU[interfaces.APIKeyGroup]
+	apiKeyFetchGroup   singleflight.Group[string, *apiKeyGroup]
 	invalidAPIKeyCache lru.LRU[struct{}]
 
 	// Nil if API key encryption is not enabled.
