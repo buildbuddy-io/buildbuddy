@@ -66,10 +66,10 @@ bazel_integration_test(
 bazel_integration_test(
     name = "buildbuddy_dev_qa_test",
     bazel_binaries = bazel_binaries,
-    bazel_version = "8.4.2",
+    bazel_version = "9.3.1",
     env = {
-        "QA_TARBALL_URL": "https://github.com/buildbuddy-io/buildbuddy/tarball/eb9115eafcdcd3c356fc470649c58a473910ae3c",
-        "QA_STRIP_PREFIX": "buildbuddy-io-buildbuddy-eb9115e",
+        "QA_TARBALL_URL": "https://github.com/buildbuddy-io/buildbuddy/tarball/e2d8ef9f4e581d9865f6cbbadf6123b3b4e48c0e",
+        "QA_STRIP_PREFIX": "buildbuddy-io-buildbuddy-e2d8ef9",
         "QA_BAZEL_COMMAND": "test //...",
         "INJECT_TOOLCHAIN": "false",
         "UPDATE_LOCKFILE": "false",
