@@ -2155,16 +2155,18 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 
 	// The SDK always pins the VM's memory to the NUMA node we pass it, so if
 	// the VM isn't pinned to a node, we pass node 0 and then override
-	// cpuset.mems in CgroupArgs to allow memory from all online nodes.
+	// cpuset.mems in CgroupArgs to allow memory from all nodes. The kernel
+	// rejects cpuset.mems values that include nodes without memory, so we list
+	// the nodes that have memory rather than all online nodes.
 	numaNode := 0
 	var mems string
 	if c.cgroupSettings.NumaNode != nil {
 		numaNode = int(c.cgroupSettings.GetNumaNode())
 		mems = strconv.Itoa(numaNode)
 	} else {
-		b, err := os.ReadFile("/sys/devices/system/node/online")
+		b, err := os.ReadFile("/sys/devices/system/node/has_memory")
 		if err != nil {
-			return nil, status.WrapError(err, "read online NUMA nodes")
+			return nil, status.WrapError(err, "read NUMA nodes with memory")
 		}
 		mems = strings.TrimSpace(string(b))
 	}

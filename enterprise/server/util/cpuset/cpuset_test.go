@@ -271,11 +271,12 @@ func TestCPUSetRequestExceedsLeaseableCPUsMultiNuma(t *testing.T) {
 	cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: getTestCPUs()})
 	require.NoError(t, err)
 
-	// Leases come from a single node: the one with the most CPUs.
+	// The estimate doesn't fit on either node, so the lease isn't pinned to a
+	// node and spans both of them.
 	numa, cpus, cancel := cs.Acquire(10_000, uuid.New())
 	defer cancel()
-	assert.Equal(t, 1, numa)
-	assert.ElementsMatch(t, []int{128, 129, 130, 131, 132, 133}, cpus)
+	assert.Equal(t, -1, numa)
+	assert.ElementsMatch(t, []int{0, 1, 2, 3, 128, 129, 130, 131, 132, 133}, cpus)
 }
 
 func TestCPUSetDisabled(t *testing.T) {

@@ -268,7 +268,7 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 		// Find the numa node with the largest number of cores in the first
 		// numCPUs CPUs.
 		numaCount := make(map[int]int, l.numaNodes)
-		for _, c := range leastLoaded[:min(numCPUs, len(leastLoaded))] {
+		for _, c := range leastLoaded[:numCPUs] {
 			numaCount[c.NumaNode]++
 		}
 		numCores := 0
