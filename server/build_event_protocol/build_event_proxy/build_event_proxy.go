@@ -5,22 +5,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-)
-
-const (
-	// asyncLifecycleEventTimeout bounds async lifecycle event publishes, which
-	// are not cancelled when the originating request ends.
-	asyncLifecycleEventTimeout = 30 * time.Second
 )
 
 var (
@@ -55,14 +49,14 @@ func Register(env *real_environment.RealEnv) error {
 	for i, target := range *hosts {
 		// NB: This can block for up to a second on connecting. This would be a
 		// great place to have our health checker and mark these as optional.
-		buildEventProxyClients[i] = NewBuildEventProxyClient(env, target, false)
+		buildEventProxyClients[i] = NewBuildEventProxyClient(target, false)
 		log.Printf("Proxy: forwarding build events to: %s", target)
 	}
 	env.SetBuildEventProxyClients(buildEventProxyClients)
 	return nil
 }
 
-func NewBuildEventProxyClient(env environment.Env, target string, synchronous bool) *BuildEventProxyClient {
+func NewBuildEventProxyClient(target string, synchronous bool) *BuildEventProxyClient {
 	c := &BuildEventProxyClient{
 		target:      target,
 		synchronous: synchronous,
@@ -78,10 +72,10 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *
 		return c.client.PublishLifecycleEvent(ctx, req)
 	}
 
-	// Async publishes must outlive the request but keep its metadata (API key).
-	asyncCtx := context.WithoutCancel(ctx)
+	asyncCtx := asyncContext(ctx)
 	go func() {
-		ctx, cancel := context.WithTimeout(asyncCtx, asyncLifecycleEventTimeout)
+		// Bound the publish, since it isn't cancelled when the request ends.
+		ctx, cancel := context.WithTimeout(asyncCtx, 30*time.Second)
 		defer cancel()
 		// TODO: retry these, since the client won't retry.
 		if _, err := c.client.PublishLifecycleEvent(ctx, req); err != nil {
@@ -89,6 +83,14 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *
 		}
 	}()
 	return &emptypb.Empty{}, nil
+}
+
+// asyncContext returns a context for async publishes that outlives the request
+// ctx. It carries only outgoing metadata (the API key); ctx values such as the
+// user's JWT must not reach proxy hosts.
+func asyncContext(ctx context.Context) context.Context {
+	md, _ := metadata.FromOutgoingContext(ctx)
+	return metadata.NewOutgoingContext(context.Background(), md)
 }
 
 type asyncStreamProxy struct {
@@ -147,6 +149,5 @@ func (c *BuildEventProxyClient) PublishBuildToolEventStream(ctx context.Context,
 		return c.client.PublishBuildToolEventStream(ctx, opts...)
 	}
 
-	// Async publishes must outlive the request but keep its metadata (API key).
-	return c.newAsyncStreamProxy(context.WithoutCancel(ctx), opts...)
+	return c.newAsyncStreamProxy(asyncContext(ctx), opts...)
 }

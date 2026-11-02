@@ -157,7 +157,7 @@ func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	for besBE := range strings.SplitSeq(*besBackend, ",") {
 		besTarget := normalizeGrpcTarget(besBE)
 		targets = append(targets, besTarget)
-		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(env, besTarget, *besSynchronous))
+		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(besTarget, *besSynchronous))
 	}
 	env.SetBuildEventProxyClients(buildEventProxyClients)
 

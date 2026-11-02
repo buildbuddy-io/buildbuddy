@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -19,7 +21,6 @@ import (
 const (
 	blockedSendCheckTimeout = 50 * time.Millisecond
 	waitTimeout             = 30 * time.Second
-	apiKeyHeader            = "x-buildbuddy-api-key"
 )
 
 func TestPublishBuildToolEventStream_SynchronousModeBackpressuresInsteadOfBuffering(t *testing.T) {
@@ -129,7 +130,7 @@ func TestPublishBuildToolEventStream_AsynchronousModeDropsWhenBufferIsFull(t *te
 	assert.Same(t, firstReq, sent[0])
 }
 
-func TestAsynchronousModeForwardsOutgoingMetadata(t *testing.T) {
+func TestAsynchronousModeForwardsOnlyOutgoingMetadata(t *testing.T) {
 	client := &fakePublishBuildEventClient{
 		stream:         newBlockingBuildToolEventStream(t.Context()),
 		streamCalls:    make(chan recordedCall, 1),
@@ -140,10 +141,15 @@ func TestAsynchronousModeForwardsOutgoingMetadata(t *testing.T) {
 	}
 
 	// Simulate a request ctx with outgoing metadata (as added by the CLI
-	// sidecar) that has already been canceled because the request handler
-	// returned. Both upstream calls are made after the cancellation, so the
-	// ctx state recorded by the fake shows whether they outlive the request.
-	reqCtx, cancel := context.WithCancel(metadata.AppendToOutgoingContext(t.Context(), apiKeyHeader, "test-api-key"))
+	// sidecar) and ctx values that the gRPC client interceptors would turn
+	// into headers (as on an authenticated app server). The ctx has already
+	// been canceled because the request handler returned. Both upstream calls
+	// are made after the cancellation, so the ctx recorded by the fake shows
+	// whether they outlive the request.
+	reqCtx := metadata.AppendToOutgoingContext(t.Context(), "x-buildbuddy-api-key", "test-api-key")
+	reqCtx = context.WithValue(reqCtx, authutil.ContextTokenStringKey, "test-jwt")
+	reqCtx = context.WithValue(reqCtx, usageutil.OriginHeaderName, "test-origin")
+	reqCtx, cancel := context.WithCancel(reqCtx)
 	cancel()
 
 	stream, err := proxy.PublishBuildToolEventStream(reqCtx)
@@ -152,18 +158,22 @@ func TestAsynchronousModeForwardsOutgoingMetadata(t *testing.T) {
 	_, err = proxy.PublishLifecycleEvent(reqCtx, &pepb.PublishLifecycleEventRequest{})
 	require.NoError(t, err)
 
-	for name, ch := range map[string]chan recordedCall{
-		"stream":    client.streamCalls,
-		"lifecycle": client.lifecycleCalls,
-	} {
-		select {
-		case call := <-ch:
-			assert.Equal(t, []string{"test-api-key"}, call.md.Get(apiKeyHeader), "%s API key", name)
-			assert.NoError(t, call.ctxErr, "%s ctx should outlive the request ctx", name)
-		case <-time.After(waitTimeout):
-			require.FailNowf(t, "timed out", "timed out waiting for upstream %s call", name)
-		}
+	checkAsyncCall(t, "stream", client.streamCalls)
+	checkAsyncCall(t, "lifecycle", client.lifecycleCalls)
+}
+
+func checkAsyncCall(t *testing.T, name string, ch chan recordedCall) {
+	t.Helper()
+	var call recordedCall
+	select {
+	case call = <-ch:
+	case <-time.After(waitTimeout):
+		require.FailNowf(t, "timed out", "timed out waiting for upstream %s call", name)
 	}
+	assert.Equal(t, []string{"test-api-key"}, call.md.Get("x-buildbuddy-api-key"), "%s API key", name)
+	assert.NoError(t, call.ctxErr, "%s ctx should outlive the request ctx", name)
+	assert.Nil(t, call.jwt, "%s ctx should not carry the JWT", name)
+	assert.Nil(t, call.origin, "%s ctx should not carry the origin", name)
 }
 
 // waitForSendStart waits until the fake upstream stream has observed a Send for
@@ -212,11 +222,13 @@ func waitForCloseSend(t *testing.T, stream *blockingBuildToolEventStream) {
 	}
 }
 
-// recordedCall captures the outgoing metadata and ctx state at the time the
-// fake upstream client was called.
+// recordedCall captures the outgoing metadata, ctx state and selected ctx
+// values at the time the fake upstream client was called.
 type recordedCall struct {
 	md     metadata.MD
 	ctxErr error
+	jwt    any
+	origin any
 }
 
 func recordCall(ctx context.Context, ch chan recordedCall) {
@@ -224,7 +236,12 @@ func recordCall(ctx context.Context, ch chan recordedCall) {
 		return
 	}
 	md, _ := metadata.FromOutgoingContext(ctx)
-	ch <- recordedCall{md: md, ctxErr: ctx.Err()}
+	ch <- recordedCall{
+		md:     md,
+		ctxErr: ctx.Err(),
+		jwt:    ctx.Value(authutil.ContextTokenStringKey),
+		origin: ctx.Value(usageutil.OriginHeaderName),
+	}
 }
 
 type fakePublishBuildEventClient struct {
