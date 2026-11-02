@@ -3,6 +3,7 @@ package build_event_proxy
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -15,6 +16,12 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+)
+
+const (
+	// asyncLifecycleEventTimeout bounds async lifecycle event publishes, which
+	// no longer end when the originating request does.
+	asyncLifecycleEventTimeout = 30 * time.Second
 )
 
 var (
@@ -76,8 +83,10 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *
 
 	asyncCtx := c.asyncContext(ctx)
 	go func() {
+		ctx, cancel := context.WithTimeout(asyncCtx, asyncLifecycleEventTimeout)
+		defer cancel()
 		// TODO: retry these, since the client won't retry.
-		if _, err := c.client.PublishLifecycleEvent(asyncCtx, req); err != nil {
+		if _, err := c.client.PublishLifecycleEvent(ctx, req); err != nil {
 			log.Warningf("Error publishing lifecycle event: %s", err.Error())
 		}
 	}()

@@ -2,8 +2,6 @@ package build_event_proxy
 
 import (
 	"context"
-	"io"
-	"net"
 	"sync"
 	"testing"
 	"time"
@@ -12,9 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -136,79 +132,39 @@ func TestPublishBuildToolEventStream_AsynchronousModeDropsWhenBufferIsFull(t *te
 }
 
 func TestAsynchronousModeForwardsOutgoingMetadata(t *testing.T) {
-	// Run a real upstream gRPC server so that metadata is transmitted over the
-	// wire and context cancellation behaves as it does in production.
-	upstream := &metadataRecordingServer{
-		streamAPIKeys:    make(chan []string, 1),
-		lifecycleAPIKeys: make(chan []string, 1),
+	client := &fakePublishBuildEventClient{
+		stream:         newBlockingBuildToolEventStream(t.Context()),
+		streamCalls:    make(chan recordedCall, 1),
+		lifecycleCalls: make(chan recordedCall, 1),
 	}
-	lis := bufconn.Listen(1024 * 1024)
-	grpcServer := grpc.NewServer()
-	pepb.RegisterPublishBuildEventServer(grpcServer, upstream)
-	go grpcServer.Serve(lis)
-	t.Cleanup(grpcServer.Stop)
-	conn, err := grpc.NewClient(
-		"passthrough:///bufnet",
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return lis.DialContext(ctx)
-		}),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { conn.Close() })
-
 	proxy := &BuildEventProxyClient{
-		client:  pepb.NewPublishBuildEventClient(conn),
+		client:  client,
 		rootCtx: t.Context(),
 	}
 
 	// Simulate a request ctx with outgoing metadata (as added by the CLI
-	// sidecar) that is canceled once the request handler returns.
+	// sidecar) that has already been canceled because the request handler
+	// returned. Both upstream calls are made after the cancellation, so the
+	// ctx state recorded by the fake shows whether they outlive the request.
 	reqCtx, cancel := context.WithCancel(metadata.AppendToOutgoingContext(t.Context(), apiKeyHeader, "test-api-key"))
+	cancel()
 
 	stream, err := proxy.PublishBuildToolEventStream(reqCtx)
 	require.NoError(t, err)
-	require.NoError(t, stream.Send(&pepb.PublishBuildToolEventStreamRequest{}))
-	require.NoError(t, stream.CloseSend())
-
-	// The lifecycle event is published asynchronously, so it must still be
-	// delivered after the caller's ctx has been canceled.
-	cancel()
+	t.Cleanup(func() { stream.CloseSend() })
 	_, err = proxy.PublishLifecycleEvent(reqCtx, &pepb.PublishLifecycleEventRequest{})
 	require.NoError(t, err)
 
-	for name, ch := range map[string]chan []string{
-		"stream":    upstream.streamAPIKeys,
-		"lifecycle": upstream.lifecycleAPIKeys,
+	for name, ch := range map[string]chan recordedCall{
+		"stream":    client.streamCalls,
+		"lifecycle": client.lifecycleCalls,
 	} {
 		select {
-		case keys := <-ch:
-			assert.Equal(t, []string{"test-api-key"}, keys, "%s API key", name)
+		case call := <-ch:
+			assert.Equal(t, []string{"test-api-key"}, call.md.Get(apiKeyHeader), "%s API key", name)
+			assert.NoError(t, call.ctxErr, "%s ctx should outlive the request ctx", name)
 		case <-time.After(waitTimeout):
-			require.FailNowf(t, "timed out", "timed out waiting for upstream %s request", name)
-		}
-	}
-}
-
-// metadataRecordingServer is a fake upstream PublishBuildEvent server that
-// records the API key header it receives on each call.
-type metadataRecordingServer struct {
-	streamAPIKeys    chan []string
-	lifecycleAPIKeys chan []string
-}
-
-func (s *metadataRecordingServer) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest) (*emptypb.Empty, error) {
-	s.lifecycleAPIKeys <- metadata.ValueFromIncomingContext(ctx, apiKeyHeader)
-	return &emptypb.Empty{}, nil
-}
-
-func (s *metadataRecordingServer) PublishBuildToolEventStream(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
-	s.streamAPIKeys <- metadata.ValueFromIncomingContext(stream.Context(), apiKeyHeader)
-	for {
-		if _, err := stream.Recv(); err == io.EOF {
-			return nil
-		} else if err != nil {
-			return err
+			require.FailNowf(t, "timed out", "timed out waiting for upstream %s call", name)
 		}
 	}
 }
@@ -259,15 +215,36 @@ func waitForCloseSend(t *testing.T, stream *blockingBuildToolEventStream) {
 	}
 }
 
-type fakePublishBuildEventClient struct {
-	stream pepb.PublishBuildEvent_PublishBuildToolEventStreamClient
+// recordedCall captures the outgoing metadata and ctx state at the time the
+// fake upstream client was called.
+type recordedCall struct {
+	md     metadata.MD
+	ctxErr error
 }
 
-func (c *fakePublishBuildEventClient) PublishLifecycleEvent(context.Context, *pepb.PublishLifecycleEventRequest, ...grpc.CallOption) (*emptypb.Empty, error) {
+func recordCall(ctx context.Context, ch chan recordedCall) {
+	if ch == nil {
+		return
+	}
+	md, _ := metadata.FromOutgoingContext(ctx)
+	ch <- recordedCall{md: md, ctxErr: ctx.Err()}
+}
+
+type fakePublishBuildEventClient struct {
+	stream pepb.PublishBuildEvent_PublishBuildToolEventStreamClient
+
+	// If set, calls are recorded to these channels.
+	streamCalls    chan recordedCall
+	lifecycleCalls chan recordedCall
+}
+
+func (c *fakePublishBuildEventClient) PublishLifecycleEvent(ctx context.Context, _ *pepb.PublishLifecycleEventRequest, _ ...grpc.CallOption) (*emptypb.Empty, error) {
+	recordCall(ctx, c.lifecycleCalls)
 	return &emptypb.Empty{}, nil
 }
 
-func (c *fakePublishBuildEventClient) PublishBuildToolEventStream(context.Context, ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
+func (c *fakePublishBuildEventClient) PublishBuildToolEventStream(ctx context.Context, _ ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
+	recordCall(ctx, c.streamCalls)
 	return c.stream, nil
 }
 
