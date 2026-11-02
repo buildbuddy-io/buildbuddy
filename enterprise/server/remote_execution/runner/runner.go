@@ -403,6 +403,11 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		defer unregister()
 	}
 	defer func() {
+		// res is nil only while a panic is unwinding; let it propagate
+		// unmasked instead of panicking again on a nil dereference.
+		if res == nil {
+			return
+		}
 		// Discard nonsensical PSI full-stall durations which are greater
 		// than the execution duration by a significant amount.
 		// See https://bugzilla.kernel.org/show_bug.cgi?id=219194
@@ -490,9 +495,11 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		}
 		if txInfo != nil {
 			fillStatsFromTransferInfo(ioStats, txInfo)
-			res.InputFetchMetadata = txInfo.InputFetchMetadata
+			if res != nil {
+				res.InputFetchMetadata = txInfo.InputFetchMetadata
+			}
 		}
-		if stats := r.Workspace.ComputeVFSStats(); stats != nil {
+		if stats := r.Workspace.ComputeVFSStats(); stats != nil && res != nil {
 			res.VfsStats = stats
 		}
 	}()
