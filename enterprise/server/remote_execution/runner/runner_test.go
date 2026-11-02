@@ -544,6 +544,7 @@ func TestRunnerPool_ResolveImageDigest(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
 	registry := testregistry.Run(t, testregistry.Opts{})
+	t.Cleanup(func() { require.NoError(t, registry.Shutdown()) })
 	_, img := registry.PushNamedImage(t, "test_image", nil)
 	imgDigest, err := img.Digest()
 	require.NoError(t, err)

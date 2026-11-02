@@ -793,6 +793,7 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			// override applied.
 			name:                   "ContainerImageOverride",
 			platformOverrides:      map[string]string{"container-image": "docker://gcr.io/test/override:v2"},
+			expectedRequestedImage: "docker://gcr.io/test/override:v2",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 		},
 		{
@@ -941,6 +942,9 @@ type publishTest struct {
 	// omitSchedulingMetadata leaves the scheduling metadata out of the
 	// executor's auxiliary metadata, like old executors do.
 	omitSchedulingMetadata bool
+	// expectedRequestedImage is the requested container image the execution
+	// should record. Defaults to the image in the action's platform.
+	expectedRequestedImage string
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -1052,12 +1056,11 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		require.NoError(t, err)
 	}
 
-	// Like a real executor, echo back the requested image that was
-	// dispatched.
-	requestedImage := "docker://gcr.io/test/requested:v1"
-	if v, ok := test.platformOverrides["container-image"]; ok {
-		requestedImage = v
-	}
+	// Like a real executor, echo back the requested image from the
+	// scheduling metadata that was actually dispatched.
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Len(t, sched.scheduleReqs, 1)
+	requestedImage := sched.scheduleReqs[0].GetMetadata().GetRequestedContainerImage()
 
 	executorGroupID := sharedPoolGroupID
 	if test.expectedSelfHosted {
@@ -1352,7 +1355,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.EstimatedMilliCpu = 1500
 		expectedExecution.EstimatedMemoryBytes = 10 * tasksize.GiB
 	}
-	expectedExecution.RequestedContainerImage = requestedImage
+	expectedExecution.RequestedContainerImage = "docker://gcr.io/test/requested:v1"
+	if test.expectedRequestedImage != "" {
+		expectedExecution.RequestedContainerImage = test.expectedRequestedImage
+	}
 	if test.useDefaultPool {
 		expectedExecution.RequestedPool = ""
 		expectedExecution.EffectivePool = "default-pool"
