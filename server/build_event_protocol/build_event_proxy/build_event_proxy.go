@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -138,5 +139,11 @@ func (c *BuildEventProxyClient) PublishBuildToolEventStream(ctx context.Context,
 		return c.client.PublishBuildToolEventStream(ctx, opts...)
 	}
 
-	return c.newAsyncStreamProxy(c.rootCtx, opts...)
+	// Use rootCtx so the stream outlives the caller, but keep the caller's
+	// outgoing metadata (e.g. the API key the sidecar propagates).
+	streamCtx := c.rootCtx
+	if md, ok := metadata.FromOutgoingContext(ctx); ok {
+		streamCtx = metadata.NewOutgoingContext(streamCtx, md.Copy())
+	}
+	return c.newAsyncStreamProxy(streamCtx, opts...)
 }
