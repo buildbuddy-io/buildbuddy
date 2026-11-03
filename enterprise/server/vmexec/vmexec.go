@@ -502,8 +502,7 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 		cmd.Dir = req.GetWorkingDirectory()
 	}
 
-	// TODO(tylerw): use syncfs or something better here.
-	defer unix.Sync()
+	defer syncFS(cmd.Dir)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
@@ -738,8 +737,7 @@ func (c *command) logErrorDiagnostics(err error) {
 }
 
 func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStreamedResponse, error) {
-	// TODO(tylerw): use syncfs or something better here.
-	defer unix.Sync()
+	defer syncFS(c.cmd.Dir)
 
 	log.Infof("Running command in VM: %q", c.cmd.String())
 	stdoutErrCh := make(chan error, 1)
@@ -1095,5 +1093,22 @@ func quietConsole() (restore func()) {
 func setConsoleLogLevel(level string) {
 	if err := os.WriteFile(printkPath, []byte(level), 0); err != nil {
 		log.Warningf("Failed to set console log level: %s", err)
+	}
+}
+
+// syncFS flushes the filesystem containing dir, so the host sees the
+// command's outputs.
+func syncFS(dir string) {
+	if dir == "" {
+		dir = "/"
+	}
+	f, err := os.Open(dir)
+	if err != nil {
+		log.Warningf("Failed to open %s for sync: %s", dir, err)
+		return
+	}
+	defer f.Close()
+	if err := unix.Syncfs(int(f.Fd())); err != nil {
+		log.Warningf("Failed to sync %s: %s", dir, err)
 	}
 }

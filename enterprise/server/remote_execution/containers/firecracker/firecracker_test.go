@@ -5359,6 +5359,44 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 	}
 }
 
+// Runs commands that leave dirty data in and outside the workspace, which the
+// guest flushes after each command.
+func BenchmarkFirecrackerExecSync(b *testing.B) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, b, envOpts{})
+	cfg := getExecutorConfig(b)
+	for _, tc := range []struct {
+		name   string
+		script string
+	}{
+		{"true", "true"},
+		{"write_workspace_64MiB", "dd if=/dev/zero of=out bs=1M count=64 2>/dev/null"},
+		{"write_rootfs_256MiB", "dd if=/dev/zero of=/root/cache bs=1M count=256 2>/dev/null && echo x > out"},
+	} {
+		b.Run("command="+tc.name, func(b *testing.B) {
+			workDir := testfs.MakeTempDir(b)
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, firecracker.ContainerOpts{
+				ContainerImage: busyboxImage, ExecutorConfig: cfg, ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{NumCpus: 2, MemSizeMb: 2048, ScratchDiskSizeMb: 1000, NetworkMode: fcpb.NetworkMode_NETWORK_MODE_OFF},
+			})
+			require.NoError(b, err)
+			require.NoError(b, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false))
+			require.NoError(b, c.Create(ctx, workDir))
+			b.Cleanup(func() { assert.NoError(b, c.Remove(ctx)) })
+			cmd := &repb.Command{Arguments: []string{"sh", "-c", tc.script}}
+			run := func() {
+				res := c.Exec(ctx, cmd, nil)
+				require.NoError(b, res.Error)
+				require.Equal(b, 0, res.ExitCode, string(res.Stderr))
+			}
+			run() // warmup
+			for b.Loop() {
+				run()
+			}
+		})
+	}
+}
+
 // setExecutorSize sets the CPU and memory that the executor can allocate.
 func setExecutorSize(t *testing.T, milliCPU, memoryBytes int64) {
 	// Registered first so that it runs after the flags are restored.
