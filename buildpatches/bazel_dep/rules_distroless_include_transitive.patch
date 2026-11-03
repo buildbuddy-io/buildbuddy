@@ -1,0 +1,58 @@
+From 2931bfbe3670fa013784e5d3f24248814ca399d3 Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Tue, 1 Sep 2026 11:22:00 -0400
+Subject: [PATCH 1/5] don't ignore `include_transitive`
+
+---
+ apt/extensions.bzl | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/apt/extensions.bzl b/apt/extensions.bzl
+index e4ca5ea..29d3e29 100644
+--- a/apt/extensions.bzl
++++ b/apt/extensions.bzl
+@@ -372,6 +372,7 @@ def _distroless_extension(mctx):
+                             constraint["version"],
+                             "amd64",
+                             install.suites,
++                            install.include_transitive,
+                             install.mergedusr,
+                             False,
+                         ))
+@@ -387,6 +388,7 @@ def _distroless_extension(mctx):
+                         constraint["version"],
+                         arch,
+                         install.suites,
++                        install.include_transitive,
+                         install.mergedusr,
+                         False,
+                     ))
+@@ -397,7 +399,7 @@ def _distroless_extension(mctx):
+         if i == ITERATION_MAX:
+             fail("apt.install exhausted, please file a bug")
+ 
+-        (dependency_set_name, name, version, arch, suites, mergedusr, is_transitive_dependency) = resolution_queue.pop()
++        (dependency_set_name, name, version, arch, suites, include_transitive, mergedusr, is_transitive_dependency) = resolution_queue.pop()
+ 
+         mctx.report_progress("Resolving %s:%s" % (name, arch))
+ 
+@@ -406,7 +408,7 @@ def _distroless_extension(mctx):
+             name = name,
+             version = version,
+             arch = arch,
+-            include_transitive = True,
++            include_transitive = include_transitive,
+             suites = suites,
+         )
+ 
+@@ -467,6 +469,7 @@ def _distroless_extension(mctx):
+                     ("=", dep["Version"]),
+                     arch,
+                     suites,
++                    install.include_transitive,
+                     mergedusr,
+                     True,
+                 ))
+-- 
+2.47.3
+
