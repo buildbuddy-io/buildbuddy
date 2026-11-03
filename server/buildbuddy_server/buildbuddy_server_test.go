@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"testing"
 	"time"
 
@@ -54,6 +55,7 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
+	zippb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 )
 
 const (
@@ -69,6 +71,20 @@ type fakeCASServer struct {
 	lastGetTreeRequest *repb.GetTreeRequest
 	getTreeResponses   []*repb.GetTreeResponse
 	getTreeErr         error
+}
+
+type notFoundPooledByteStreamClient struct{}
+
+func (*notFoundPooledByteStreamClient) StreamBytestreamFile(ctx context.Context, u *url.URL, w io.Writer) error {
+	return status.NotFoundError("not found")
+}
+
+func (*notFoundPooledByteStreamClient) FetchBytestreamZipManifest(ctx context.Context, u *url.URL) (*zippb.Manifest, error) {
+	return nil, status.NotFoundError("not found")
+}
+
+func (*notFoundPooledByteStreamClient) StreamSingleFileFromBytestreamZip(ctx context.Context, u *url.URL, entry *zippb.ManifestEntry, w io.Writer) error {
+	return status.NotFoundError("not found")
 }
 
 func (s *fakeCASServer) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
@@ -852,6 +868,68 @@ func TestFileDownloadEndpoint(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestFileDownloadEndpoint_PersistedArtifactAuthorization(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(
+		user1, group1,
+		user2, group2,
+	))
+	te.SetAuthenticator(auth)
+	require.NoError(t, buildbuddy_server.Register(te))
+	te.SetPooledByteStreamClient(&notFoundPooledByteStreamClient{})
+
+	invocation1, err := createInvocationForTesting(te, user1)
+	require.NoError(t, err)
+	invocation2, err := createInvocationForTesting(te, user2)
+	require.NoError(t, err)
+
+	const resourcePath = "blobs/secret/6"
+	const secret = "secret"
+	_, err = te.GetBlobstore().WriteBlob(ctx, path.Join(invocation2, "artifacts/cache", resourcePath), []byte(secret))
+	require.NoError(t, err)
+
+	mux := http.NewServeMux()
+	mux.Handle("/file/download", interceptors.WrapAuthenticatedExternalHandler(te, te.GetBuildBuddyServer()))
+	baseURL := testhttp.StartServer(t, mux)
+
+	fetch := func(t *testing.T, user, invocationID, bytestreamURL string) (int, string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf(
+			"%s/file/download?invocation_id=%s&bytestream_url=%s",
+			baseURL, invocationID, url.QueryEscape(bytestreamURL)), nil)
+		require.NoError(t, err)
+		req.Header.Set(authutil.APIKeyHeader, user)
+		rsp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer rsp.Body.Close()
+		body, err := io.ReadAll(rsp.Body)
+		require.NoError(t, err)
+		return rsp.StatusCode, string(body)
+	}
+
+	t.Run("authorized_object", func(t *testing.T) {
+		code, body := fetch(t, user2, invocation2, "bytestream://cache.example/"+resourcePath)
+		require.Equal(t, http.StatusOK, code)
+		require.Equal(t, secret, body)
+	})
+
+	t.Run("invocation_acl", func(t *testing.T) {
+		code, body := fetch(t, user1, invocation2, "bytestream://cache.example/"+resourcePath)
+		require.Equal(t, http.StatusForbidden, code)
+		require.NotContains(t, body, secret)
+	})
+
+	t.Run("normalized_path_cannot_escape_authorized_invocation", func(t *testing.T) {
+		traversalURL := fmt.Sprintf(
+			"bytestream://cache.example/../../../%s/artifacts/cache/%s",
+			invocation2, resourcePath)
+		code, body := fetch(t, user1, invocation1, traversalURL)
+		require.Equal(t, http.StatusBadRequest, code)
+		require.NotContains(t, body, secret)
+	})
 }
 
 func TestWriteEventLog(t *testing.T) {
