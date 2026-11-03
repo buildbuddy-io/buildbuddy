@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
@@ -22,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -168,19 +166,16 @@ func (s *ActionCacheServerProxy) actionCacheTTL(ctx context.Context) time.Durati
 		}
 	}
 
-	// Clients may opt into this caching via a platform property as well, whose
-	// value is the duration to serve locally cached results for.
-	for _, prop := range platform.RemoteHeaderOverrides(ctx) {
-		if strings.EqualFold(prop.GetName(), platform.CacheProxyActionCacheTTLPropertyName) {
-			ttl, err := time.ParseDuration(prop.GetValue())
-			if err != nil {
-				log.CtxWarningf(ctx, "Ignoring invalid %q platform property value %q: %s", platform.CacheProxyActionCacheTTLPropertyName, prop.GetValue(), err)
-				return 0
-			}
-			if ttl > 0 {
-				return ttl
-			}
+	// Clients may opt into this caching via a header as well, whose value is
+	// the duration to serve locally cached results for.
+	if vals := metadata.ValueFromIncomingContext(ctx, proxy_util.ActionCacheTTLHeaderName); len(vals) > 0 {
+		ttl, err := time.ParseDuration(vals[0])
+		if err != nil {
+			log.CtxWarningf(ctx, "Ignoring invalid %q header value %q: %s", proxy_util.ActionCacheTTLHeaderName, vals[0], err)
 			return 0
+		}
+		if ttl > 0 {
+			return ttl
 		}
 	}
 
