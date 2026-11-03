@@ -5309,44 +5309,53 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 	cfg := getExecutorConfig(b)
 	vmConfig := &fcpb.VMConfiguration{NumCpus: 1, MemSizeMb: 2385, ScratchDiskSizeMb: 100, NetworkMode: fcpb.NetworkMode_NETWORK_MODE_LOCAL}
 	require.NoError(b, firecracker.BuildGenericSnapshot(ctx, env, nil /*=experiments*/, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig}))
-	for _, generic := range []bool{false, true} {
-		b.Run(fmt.Sprintf("generic=%t", generic), func(b *testing.B) {
-			var createTime, execTime time.Duration
-			run := func() {
-				b.StopTimer()
-				workDir := testfs.MakeTempDir(b)
-				c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, firecracker.ContainerOpts{
-					ContainerImage: busyboxImage, ExecutorConfig: cfg,
-					VMConfiguration: vmConfig, GenericSnapshot: generic,
-				})
-				require.NoError(b, err)
-				require.NoError(b, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false))
-				b.StartTimer()
-				start := time.Now()
-				err = c.Create(ctx, workDir)
-				created := time.Now()
-				if err != nil {
-					c.Remove(ctx)
-					b.Fatal(err)
+	for _, tc := range []struct {
+		name    string
+		command []string
+	}{
+		{"true", []string{"/bin/true"}},
+		// Allocates and fills 1GiB, which touches that much guest memory.
+		{"touch_1GiB", []string{"dd", "if=/dev/zero", "of=/dev/null", "bs=1G", "count=1"}},
+	} {
+		for _, generic := range []bool{false, true} {
+			b.Run(fmt.Sprintf("command=%s/generic=%t", tc.name, generic), func(b *testing.B) {
+				var createTime, execTime time.Duration
+				run := func() {
+					b.StopTimer()
+					workDir := testfs.MakeTempDir(b)
+					c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, firecracker.ContainerOpts{
+						ContainerImage: busyboxImage, ExecutorConfig: cfg,
+						VMConfiguration: vmConfig, GenericSnapshot: generic,
+					})
+					require.NoError(b, err)
+					require.NoError(b, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false))
+					b.StartTimer()
+					start := time.Now()
+					err = c.Create(ctx, workDir)
+					created := time.Now()
+					if err != nil {
+						c.Remove(ctx)
+						b.Fatal(err)
+					}
+					result := c.Exec(ctx, &repb.Command{Arguments: tc.command}, nil)
+					done := time.Now()
+					b.StopTimer()
+					createTime += created.Sub(start)
+					execTime += done.Sub(created)
+					require.NoError(b, c.Remove(ctx))
+					require.NoError(b, result.Error)
+					require.Equal(b, 0, result.ExitCode)
+					b.StartTimer()
 				}
-				result := c.Exec(ctx, &repb.Command{Arguments: []string{"/bin/true"}}, nil)
-				done := time.Now()
-				b.StopTimer()
-				createTime += created.Sub(start)
-				execTime += done.Sub(created)
-				require.NoError(b, c.Remove(ctx))
-				require.NoError(b, result.Error)
-				require.Equal(b, 0, result.ExitCode)
-				b.StartTimer()
-			}
-			run() // warmup
-			createTime, execTime = 0, 0
-			for b.Loop() {
-				run()
-			}
-			b.ReportMetric(float64(createTime.Microseconds())/float64(b.N), "create-us/op")
-			b.ReportMetric(float64(execTime.Microseconds())/float64(b.N), "exec-us/op")
-		})
+				run() // warmup
+				createTime, execTime = 0, 0
+				for b.Loop() {
+					run()
+				}
+				b.ReportMetric(float64(createTime.Microseconds())/float64(b.N), "create-us/op")
+				b.ReportMetric(float64(execTime.Microseconds())/float64(b.N), "exec-us/op")
+			})
+		}
 	}
 }
 
