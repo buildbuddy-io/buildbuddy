@@ -1,0 +1,123 @@
+From 58e6aef51d7e796ed6021b3886fbf1b335e5b954 Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Tue, 3 Nov 2026 11:35:34 -0800
+Subject: [PATCH 4/5] support flat repos
+
+---
+ apt/extensions.bzl                 | 14 +++++++++++---
+ apt/private/apt_deb_repository.bzl |  7 ++++---
+ apt/private/pgp.bzl                | 13 ++++++++++---
+ 3 files changed, 25 insertions(+), 9 deletions(-)
+
+diff --git a/apt/extensions.bzl b/apt/extensions.bzl
+index dbd2d73..889bb72 100644
+--- a/apt/extensions.bzl
++++ b/apt/extensions.bzl
+@@ -48,7 +48,10 @@ def _start_downloads(mctx, source, integrity, source_id, cached_format = None, h
+     if hashes != None:
+         available_extensions = []
+         for (ext, cmd) in extensions:
+-            path = "{}/binary-{}/Packages{}".format(source.component, source.architecture, ext)
++            if source.flat:
++                path = "Packages{}".format(ext)
++            else:
++                path = "{}/binary-{}/Packages{}".format(source.component, source.architecture, ext)
+             if path in hashes:
+                 available_extensions.append((ext, cmd))
+         extensions = available_extensions
+@@ -69,8 +72,12 @@ def _start_downloads(mctx, source, integrity, source_id, cached_format = None, h
+             # .xz/.gz/.bz2 would both write to the same final path.
+             ext_name = ext.lstrip(".") if ext else "raw"
+             output = "{}/{}/{}/{}/Packages{}".format(source_id, target_triple, url_idx, ext_name, ext)
+-            path = "{}/binary-{}/Packages{}".format(source.component, source.architecture, ext)
+-            dist_url = "{}/dists/{}/{}".format(url, source.distribution, path)
++            if source.flat:
++                path = "Packages{}".format(ext)
++                dist_url = "{}/{}".format(url, path)
++            else:
++                path = "{}/binary-{}/Packages{}".format(source.component, source.architecture, ext)
++                dist_url = "{}/dists/{}/{}".format(url, source.distribution, path)
+             auth = {}
+             if url in base_auth:
+                 auth = {dist_url: base_auth[url]}
+@@ -722,6 +729,7 @@ sources_list = tag_class(
+         ),
+         "architectures": attr.string_list(),
+         "components": attr.string_list(),
++        "flat": attr.bool(default = False),
+         "gpg_keys": attr.label_list(
+             allow_files = True,
+             doc = "Optional list of GPG/OpenPGP keyring files (.gpg or .asc) for repository signature verification.",
+diff --git a/apt/private/apt_deb_repository.bzl b/apt/private/apt_deb_repository.bzl
+index 1c8c964..11b3fde 100644
+--- a/apt/private/apt_deb_repository.bzl
++++ b/apt/private/apt_deb_repository.bzl
+@@ -103,7 +103,7 @@ def _package(state, name, version, arch, suites = None):
+         return None
+     return package
+ 
+-def _add_source_if_not_present(state, urls, dist, components, architectures, gpg_keys):
++def _add_source_if_not_present(state, urls, dist, components, architectures, gpg_keys, flat):
+     # We assume that `url` does not contain a trailing forward slash. If one is
+     # present, remove it. Some HTTP servers do not handle redirects properly
+     # when a path contains "//"
+@@ -128,7 +128,7 @@ def _add_source_if_not_present(state, urls, dist, components, architectures, gpg
+                 continue
+             for url in urls:
+                 state.keys[(url, dist, comp, arch)] = gpg_keys
+-            state.sources.append(struct(urls=tuple(sorted(urls)), distribution=dist, component=comp, architecture=arch, gpg_keys=gpg_keys))
++            state.sources.append(struct(urls=tuple(sorted(urls)), distribution=dist, component=comp, architecture=arch, gpg_keys=gpg_keys, flat=flat))
+ 
+ def _create():
+     state = struct(
+@@ -139,7 +139,7 @@ def _create():
+     )
+ 
+     return struct(
+-        add_source = lambda urls, dist, components, architectures, gpg_keys, flat: _add_source_if_not_present(state, urls, dist, components, architectures, gpg_keys),
++        add_source = lambda urls, dist, components, architectures, gpg_keys, flat: _add_source_if_not_present(state, urls, dist, components, architectures, gpg_keys, flat),
+         sources = lambda: state.sources,
+         parse_package_index = lambda contents, source: _parse_repository(state, contents, source),
+         package_versions = lambda **kwargs: _package_versions(state, **kwargs),
+@@ -175,6 +175,7 @@ def _create_test_only():
+                components=["component"],
+                architectures=["amd64"],
+                gpg_keys=[],
++               flat=False,
+             ),
+         ),
+         packages = state.packages,
+diff --git a/apt/private/pgp.bzl b/apt/private/pgp.bzl
+index 9e72789..0d56271 100644
+--- a/apt/private/pgp.bzl
++++ b/apt/private/pgp.bzl
+@@ -185,7 +185,10 @@ def _download_and_verify_release(mctx, source):
+     errors = []
+ 
+     for (url_idx, url) in enumerate(source.urls):
+-        in_release_url = "{}/dists/{}/InRelease".format(url, source.distribution)
++        if source.flat:
++            in_release_url = "{}/InRelease".format(url)
++        else:
++            in_release_url = "{}/dists/{}/InRelease".format(url, source.distribution)
+         in_release_path = "inrelease/dists/{}/{}/InRelease".format(source.distribution, url_idx)
+         verified_path = "inrelease/dists/{}/{}/Release.verified".format(source.distribution, url_idx)
+ 
+@@ -205,8 +208,12 @@ def _download_and_verify_release(mctx, source):
+             errors.append("Failed to download InRelease from {}".format(in_release_url))
+ 
+         # Fallback to Release + Release.gpg
+-        release_url = "{}/dists/{}/Release".format(url, source.distribution)
+-        release_gpg_url = "{}/dists/{}/Release.gpg".format(url, source.distribution)
++        if source.flat:
++            release_url = "{}/Release".format(url)
++            release_gpg_url = "{}/Release.gpg".format(url)
++        else:
++            release_url = "{}/dists/{}/Release".format(url, source.distribution)
++            release_gpg_url = "{}/dists/{}/Release.gpg".format(url, source.distribution)
+         release_path = "inrelease/{}/{}/Release".format(source.distribution, url_idx)
+         release_gpg_path = "inrelease/{}/{}/Release.gpg".format(source.distribution, url_idx)
+ 
+-- 
+2.47.3
+
