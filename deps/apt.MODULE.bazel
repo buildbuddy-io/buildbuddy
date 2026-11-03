@@ -18,6 +18,11 @@ apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 
 snapshot = "20261102T202832Z"
 
+apt.package_template(
+    template_file = "//apt:package.BUILD.tmpl",
+    packages = ["*"],
+)
+
 apt.sources_list(
     architectures = [
         "amd64",
@@ -84,7 +89,6 @@ apt.install(
     dependency_set = "debian13",
     include_transitive = False,
     mergedusr = True,
-    package_template = "apt/package.BUILD.tmpl",
     packages = [
         # Base system packages
         "base-files",
@@ -109,7 +113,6 @@ apt.install(
     dependency_set = "debian13",
     include_transitive = True,
     mergedusr = True,
-    package_template = "apt/package.BUILD.tmpl",
     packages = [
         # executor packages
         "tini",
@@ -141,7 +144,6 @@ apt.install(
     dependency_set = "debian13",
     include_transitive = True,
     mergedusr = True,
-    package_template = "apt/package.BUILD.tmpl",
     packages = [
         # docker packages
         "docker-ce (= {})".format(DOCKER_VERSION),
@@ -165,7 +167,6 @@ apt.install(
     dependency_set = "debian13",
     include_transitive = True,
     mergedusr = True,
-    package_template = "apt/package.BUILD.tmpl",
     packages = [
         # nvidia packages
         "nvidia-container-toolkit-base (= {})".format(NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION),
