@@ -128,8 +128,8 @@ go_binary(
         "--max_shutdown_duration=3s",
     ],
     data = [
-        ":licenses",
         ":config_files",
+        ":licenses",
     ],
     embed = [":executor_lib"],
 )
@@ -406,8 +406,6 @@ container_image(
     ],
     tags = ["manual"],
 )
-
-
 
 image_layer(
     name = "binary_image_layer",
