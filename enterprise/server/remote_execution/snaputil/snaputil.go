@@ -112,6 +112,9 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	if !*EnableLocalSnapshotSharing && !*EnableRemoteSnapshotSharing {
 		return 0, status.UnimplementedError("Snapshot sharing not enabled")
 	}
+	if err := digest.Validate(d, repb.DigestFunction_BLAKE3); err != nil {
+		return 0, err
+	}
 
 	if *EnableLocalSnapshotSharing {
 		node := &repb.FileNode{Digest: d}
@@ -161,6 +164,9 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 }
 
 func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
+	if err := digest.Validate(d, repb.DigestFunction_BLAKE3); err != nil {
+		return nil, err
+	}
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return nil, err

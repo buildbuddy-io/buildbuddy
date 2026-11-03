@@ -7,9 +7,12 @@ import (
 	"flag"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -79,7 +82,7 @@ func (attachment *Attachment) AddAction(action Action) *Attachment {
 }
 
 type SlackWebhook struct {
-	client        *http.Client
+	client        *Client
 	callbackURL   string
 	buildBuddyURL string
 }
@@ -97,7 +100,7 @@ func NewSlackWebhook(callbackURL string, bbURL string) *SlackWebhook {
 	return &SlackWebhook{
 		callbackURL:   callbackURL,
 		buildBuddyURL: bbURL,
-		client:        &http.Client{},
+		client:        NewClient(),
 	}
 }
 
@@ -129,10 +132,7 @@ func (w *SlackWebhook) slackPayloadFromInvocation(invocation *inpb.Invocation) *
 
 func (w *SlackWebhook) NotifyComplete(ctx context.Context, invocation *inpb.Invocation) error {
 	payload := w.slackPayloadFromInvocation(invocation)
-	buf := new(bytes.Buffer)
-	json.NewEncoder(buf).Encode(payload)
-	_, err := http.Post(w.callbackURL, "application/json; charset=utf-8", buf)
-	return err
+	return w.client.Post(ctx, w.callbackURL, payload)
 }
 
 // Client posts messages to Slack webhook URLs.
@@ -141,12 +141,28 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	return &Client{httpClient: &http.Client{Timeout: 30 * time.Second}}
+	client := httpclient.New(nil, "slack")
+	client.Timeout = 30 * time.Second
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &Client{httpClient: client}
+}
+
+func validateWebhookURL(rawURL string) error {
+	u, err := url.ParseRequestURI(rawURL)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" || !strings.EqualFold(u.Hostname(), "hooks.slack.com") {
+		return status.InvalidArgumentError("Invalid Slack webhook URL")
+	}
+	return nil
 }
 
 func (c *Client) Post(ctx context.Context, webhookURL string, payload *Payload) error {
 	if webhookURL == "" {
 		return status.InvalidArgumentError("Slack webhook URL is required")
+	}
+	if err := validateWebhookURL(webhookURL); err != nil {
+		return err
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

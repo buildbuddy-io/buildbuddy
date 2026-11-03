@@ -1414,13 +1414,13 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	// US1 be able to create keys in their self-owned group.
 	adminOnlyKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Admin-only key",
-		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
+		[]cappb.Capability{},
 		0, /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	developerKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Developer key",
-		[]cappb.Capability{cappb.Capability_CAS_WRITE},
+		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
 		0, /*=expiresIn*/
 		true /*=visibleToDevelopers*/)
 	require.NoError(t, err)
@@ -1454,6 +1454,23 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, apiKeyValues(keys), adminOnlyKey.Value)
 	require.Contains(t, apiKeyValues(keys), developerKey.Value)
+	key, err := adb.GetAPIKey(ctx2, developerKey.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, developerKey.Value, key.Value)
+	_, err = adb.GetAPIKey(ctx2, adminOnlyKey.APIKeyID)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+
+	// A read-only API key cannot access group keys, but can retrieve itself.
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	readOnlyCtx := auth.AuthContextFromAPIKey(ctx, adminOnlyKey.Value)
+	keys, err = adb.GetAPIKeys(readOnlyCtx, groupID1, false /*=includeExpired*/)
+	require.NoError(t, err)
+	require.Empty(t, keys)
+	_, err = adb.GetAPIKey(readOnlyCtx, developerKey.APIKeyID)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+	key, err = adb.GetAPIKey(readOnlyCtx, adminOnlyKey.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, adminOnlyKey.Value, key.Value)
 
 	// US3 should not be able to see any keys in group1.
 	ctx3 := authUserCtx(ctx, env, t, "US3")

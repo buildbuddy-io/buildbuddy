@@ -979,6 +979,55 @@ func makeEmptyTempFile(t *testing.T, sizeBytes int64) string {
 // writeSparseFile writes only the data blocks from b to the given path, so
 // that the physical size of the file is minimal while still representing the
 // same underlying bytes.
+// BenchmarkCOW_FirstWriteToChunk measures the first write to each chunk of a
+// store, which copies the chunk before writing to it.
+func BenchmarkCOW_FirstWriteToChunk(b *testing.B) {
+	flags.Set(b, "app.log_level", "error")
+	log.Configure()
+
+	const chunkSize = 4000 * 1024 // same as firecracker.cowChunkSizeBytes
+	const numChunks = 64
+	ctx := context.Background()
+	env := testenv.GetTestEnv(b)
+	tmp := testfs.MakeTempDir(b)
+	blockSize := ioBlockSize(b, tmp)
+
+	for _, density := range []float64{0, 0.1, 0.5, 1} {
+		b.Run(fmt.Sprintf("density=%.1f", density), func(b *testing.B) {
+			// Fill the given fraction of the file's blocks with random data.
+			buf := make([]byte, chunkSize*numChunks)
+			for off := int64(0); off < int64(len(buf)); off += blockSize {
+				if rand.Float64() < density {
+					_, err := rand.Read(buf[off : off+blockSize])
+					require.NoError(b, err)
+				}
+			}
+			path := filepath.Join(tmp, "input")
+			writeSparseFile(b, path, buf, blockSize)
+			page := make([]byte, os.Getpagesize())
+
+			var elapsed time.Duration
+			for range b.N {
+				chunkDir, err := os.MkdirTemp(tmp, "")
+				require.NoError(b, err)
+				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSize, chunkDir, "", false, snaputil.ConvertToCOWConcurrency)
+				require.NoError(b, err)
+
+				start := time.Now()
+				for i := range numChunks {
+					_, err := cow.WriteAt(page, int64(i)*chunkSize)
+					require.NoError(b, err)
+				}
+				elapsed += time.Since(start)
+
+				require.NoError(b, cow.Close())
+				require.NoError(b, os.RemoveAll(chunkDir))
+			}
+			b.ReportMetric(float64(elapsed.Microseconds())/float64(b.N*numChunks), "us/chunk")
+		})
+	}
+}
+
 func writeSparseFile(t testing.TB, path string, b []byte, ioBlockSize int64) {
 	f, err := os.Create(path)
 	require.NoError(t, err)

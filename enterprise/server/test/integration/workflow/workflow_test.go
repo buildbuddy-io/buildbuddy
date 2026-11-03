@@ -400,6 +400,7 @@ func TestTriggerViaWebhook(t *testing.T) {
 }
 
 func TestTriggerLegacyWorkflowViaWebhook(t *testing.T) {
+	flags.Set(t, "remote_execution.disable_legacy_workflows", false)
 	fakeGitProvider := testgit.NewFakeProvider()
 	env, workflowService := setup(t, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
