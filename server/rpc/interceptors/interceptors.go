@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/netip"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,11 @@ var (
 	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
 	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
 	headerContextKeys       map[string]string
+
+	// differingHeaderValueLoggers holds a rate-limited *log.Logger for each
+	// header name, so that frequent reports for one header don't hide reports
+	// for the others.
+	differingHeaderValueLoggers sync.Map
 )
 
 func init() {
@@ -199,9 +205,25 @@ func addSubdomainToContext(ctx context.Context, env environment.Env) context.Con
 	return subdomain.SetHost(ctx, hdrs[0])
 }
 
+// logDifferingHeaderValues logs when a request has different values for a
+// header that we only use one value of, so that we can find out whether any
+// clients depend on which value we pick. We don't log the values, since some of
+// these headers carry credentials.
+func logDifferingHeaderValues(ctx context.Context, headerName string, values []string, action string) {
+	if !slices.ContainsFunc(values, func(v string) bool { return v != values[0] }) {
+		return
+	}
+	newLogger := log.NamedSubLogger("differing-header-values").EveryDuration(time.Minute)
+	logger, _ := differingHeaderValueLoggers.LoadOrStore(headerName, &newLogger)
+	method, _ := grpc.Method(ctx)
+	userAgent := metadata.ValueFromIncomingContext(ctx, "user-agent")
+	logger.(*log.Logger).CtxWarningf(ctx, "Request to %s has %d values of the %q header that are not all the same, and %s (user agent %q)", method, len(values), headerName, action, userAgent)
+}
+
 func copyHeadersToContext(ctx context.Context) context.Context {
 	for headerName, contextKey := range headerContextKeys {
 		if hdrs := metadata.ValueFromIncomingContext(ctx, headerName); len(hdrs) > 0 {
+			logDifferingHeaderValues(ctx, headerName, hdrs, "only the first value is used")
 			ctx = context.WithValue(ctx, contextKey, hdrs[0])
 		}
 	}
@@ -605,6 +627,7 @@ func propagateMetadataFromIncomingToOutgoing(keys ...string) func(context.Contex
 	return func(ctx context.Context) context.Context {
 		for _, key := range keys {
 			if values := metadata.ValueFromIncomingContext(ctx, key); len(values) > 0 {
+				logDifferingHeaderValues(ctx, key, values, "only the last value is forwarded")
 				ctx = metadata.AppendToOutgoingContext(ctx, key, values[len(values)-1])
 			}
 		}
