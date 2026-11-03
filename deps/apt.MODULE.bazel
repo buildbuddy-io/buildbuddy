@@ -25,10 +25,9 @@ apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 snapshot = "20261102T202832Z"
 
 apt.package_template(
-    template_file = "//apt:package.BUILD.tmpl",
     packages = ["*"],
+    template_file = "//apt:package.BUILD.tmpl",
 )
-
 apt.sources_list(
     architectures = [
         "amd64",
@@ -38,13 +37,13 @@ apt.sources_list(
         "main",
         "contrib",
     ],
+    gpg_keys = ["//apt/keys:debian-archive-keyring.gpg"],
     suites = [
         "trixie",
         "trixie-updates",
     ],
     types = ["deb"],
     uris = ["https://snapshot.debian.org/archive/debian/{}".format(snapshot)],
-    gpg_keys = ["//apt/keys:debian-archive-keyring.gpg"],
 )
 apt.sources_list(
     architectures = [
@@ -55,28 +54,28 @@ apt.sources_list(
         "main",
         "contrib",
     ],
+    gpg_keys = ["//apt/keys:debian-archive-keyring.gpg"],
     suites = ["trixie-security"],
     types = ["deb"],
     uris = ["https://snapshot.debian.org/archive/debian-security/{}".format(snapshot)],
-    gpg_keys = ["//apt/keys:debian-archive-keyring.gpg"],
 )
 apt.sources_list(
     architectures = ["amd64"],
-    flat = True,
-    suites = ["stable"],
     components = ["main"],
+    flat = True,
+    gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
+    suites = ["stable"],
     types = ["deb"],
     uris = ["https://nvidia.github.io/libnvidia-container/stable/deb/amd64"],
-    gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
 )
 apt.sources_list(
     architectures = ["arm64"],
-    flat = True,
-    suites = ["stable"],
     components = ["main"],
+    flat = True,
+    gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
+    suites = ["stable"],
     types = ["deb"],
     uris = ["https://nvidia.github.io/libnvidia-container/stable/deb/arm64"],
-    gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
 )
 apt.sources_list(
     architectures = [
@@ -84,10 +83,10 @@ apt.sources_list(
         "arm64",
     ],
     components = ["stable"],
+    gpg_keys = ["//apt/keys:docker.asc"],
     suites = ["trixie"],
     types = ["deb"],
     uris = ["https://download.docker.com/linux/debian"],
-    gpg_keys = ["//apt/keys:docker.asc"],
 )
 
 # Configure Debian debian13 packages
