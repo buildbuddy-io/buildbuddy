@@ -173,7 +173,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// which will negatively affect customer experience. Be careful!
 	// Compatible change: existing snapshots never set the new InitializeRequest fields.
 	const (
-		expectedHash    = "7ad81a22cf6ed67a50e3dad0e405f094d40bca433554d43e1bbc6d8a611c6f83"
+		expectedHash    = "9abaf488911621c069234c8a496bd8fd8a6ff3b602c4222b687936352f9ea8d1"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
