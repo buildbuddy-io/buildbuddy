@@ -114,7 +114,15 @@ build:dev_qa_test --build_metadata=TAGS=qa-integration-test
 build:dev_qa_test --test_tag_filters=-performance,-webdriver,-docker,-bare
 test:dev_qa_test --flaky_test_attempts=3
 build:dev_qa_test --nocache_test_results
-build:dev_qa_test --extra_toolchains=@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64
+EOF
+
+# Repos that opt out of injection register their own toolchain, and their
+# remote image may not have the gcc that this toolchain expects.
+if [[ "${INJECT_TOOLCHAIN:-true}" == "true" ]]; then
+  echo "build:dev_qa_test --extra_toolchains=@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64" >> .bazelrc
+fi
+
+cat >> .bazelrc <<EOF
 build:dev_qa_test --platforms=@toolchains_buildbuddy//platforms:host_compatible
 build:dev_qa_test --extra_execution_platforms=@toolchains_buildbuddy//platforms:host_compatible
 EOF
