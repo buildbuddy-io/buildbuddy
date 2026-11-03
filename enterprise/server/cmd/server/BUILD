@@ -1,3 +1,5 @@
+load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_distroless//distroless:defs.bzl", "flatten")
 load("@rules_img//img:image.bzl", "image_manifest")
@@ -144,6 +146,33 @@ go_binary(
     embed = [":server_lib"],
 )
 
+container_image(
+    name = "base_image",
+    base = "@buildbuddy_go_image_base//image",
+    symlinks = {
+        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % runfiles_directory(),
+        "buildbuddy": "tmp",
+    },
+    tags = ["manual"],
+)
+
+# The go_image below can be used to build and run the server image.
+# The container_image target just builds and tags the image without running it.
+
+go_image(
+    name = "buildbuddy_go_image",
+    base = ":base_image",
+    binary = ":buildbuddy",
+    tags = ["manual"],
+)
+
+container_image(
+    name = "buildbuddy_image",
+    base = ":buildbuddy_go_image",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
 image_layer(
     name = "symlink_layer",
     annotations = {
@@ -161,7 +190,7 @@ image_layer(
 
 image_layer(
     name = "binary_layer",
-    srcs = {APP_PACKAGE_ROOT + "/" + BINARY_NAME: ":" + BINARY_NAME},
+    srcs = {APP_PACKAGE_ROOT + "/buildbuddy": ":buildbuddy"},
     annotations = {
         "org.opencontainers.image.title": "Enterprise BuildBuddy Server",
         "org.opencontainers.image.description": (
@@ -279,10 +308,11 @@ layer_from_tar(
 image_manifest(
     name = "image_manifest",
     annotations = {
-        "org.opencontainers.image.title": "Enterprise BuildBuddy Server",
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server (unconfigured)",
         "org.opencontainers.image.description": (
             "Contains the BuildBuddy binary, runfiles, configuration files, " +
-            "and symlinks necessary to run the enterprise BuildBuddy server."
+            "and symlinks necessary to run the enterprise BuildBuddy server. " +
+            "Does not include configuration files."
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
