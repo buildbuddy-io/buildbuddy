@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 	"google.golang.org/grpc/metadata"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -31,7 +32,8 @@ import (
 
 const (
 	apiKeyRepoSetting = "api-key"
-	apiKeyHeader      = "remote_header=x-buildbuddy-api-key"
+	apiKeyHeaderName  = "x-buildbuddy-api-key"
+	apiKeyHeader      = "remote_header=" + apiKeyHeaderName
 	DefaultApiTarget  = "grpcs://remote.buildbuddy.io"
 	DefaultHTTPTarget = "https://app.buildbuddy.io"
 )
@@ -362,6 +364,52 @@ func ConfigureAPIKey(args *arg.BazelArgs) error {
 		return err
 	}
 	return nil
+}
+
+// ConfigureBESAPIKey copies the BuildBuddy API key from remote_header to
+// bes_header, since Bazel 10 redacts remote_header values from the BEP command
+// line. It only does so when the BES backend is BuildBuddy or the same host as
+// the remote cache or executor, so the key isn't sent to other BES services.
+func ConfigureBESAPIKey(args *arg.BazelArgs) error {
+	if !isSupportedCommand(args.GetCommand()) {
+		return nil
+	}
+	bazelArgs := arg.GetBazelArgs(args.Resolved())
+	apiKey := arg.Get(bazelArgs, apiKeyHeader)
+	if apiKey == "" {
+		return nil
+	}
+	for _, h := range arg.GetMulti(bazelArgs, "bes_header") {
+		if name, _, _ := strings.Cut(h, "="); strings.EqualFold(name, apiKeyHeaderName) {
+			return nil
+		}
+	}
+	besHost := hostname(arg.Get(bazelArgs, "bes_backend"))
+	if besHost == "" {
+		return nil
+	}
+	if urlutil.GetDomain(besHost) != "buildbuddy.io" &&
+		besHost != hostname(arg.Get(bazelArgs, "remote_cache")) &&
+		besHost != hostname(arg.Get(bazelArgs, "remote_executor")) {
+		return nil
+	}
+	return args.Append("--bes_header=" + apiKeyHeaderName + "=" + apiKey)
+}
+
+// hostname returns the hostname of a Bazel gRPC target, which may omit the
+// scheme. It returns "" for unix socket targets.
+func hostname(target string) string {
+	if strings.HasPrefix(target, "unix:") {
+		return ""
+	}
+	if target != "" && !strings.Contains(target, "://") {
+		target = "grpcs://" + target
+	}
+	u, err := url.Parse(target)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
 }
 
 // Commands that support the `--remote_header` bazel flag

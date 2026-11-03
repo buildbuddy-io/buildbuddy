@@ -110,6 +110,58 @@ func TestAPIKeyDiscovery(t *testing.T) {
 	}
 }
 
+func TestConfigureBESAPIKey(t *testing.T) {
+	for _, testCase := range []struct {
+		name               string
+		args               []string
+		expectedBESHeaders []string
+	}{
+		{
+			name:               "remote_header only",
+			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io"},
+			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
+		},
+		{
+			name:               "bes_header already set",
+			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_header=X-BuildBuddy-API-Key=", "--bes_backend=grpcs://remote.buildbuddy.io"},
+			expectedBESHeaders: []string{"X-BuildBuddy-API-Key="},
+		},
+		{
+			name:               "non-BuildBuddy bes_backend",
+			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://bes.example.com", "--remote_cache=grpcs://remote.buildbuddy.io"},
+			expectedBESHeaders: nil,
+		},
+		{
+			name:               "self-hosted bes_backend matching remote_cache",
+			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=bb.example.com:1985", "--remote_cache=grpc://bb.example.com"},
+			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
+		},
+		{
+			name:               "unix socket bes_backend",
+			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=unix:/a.sock", "--remote_cache=unix:/b.sock"},
+			expectedBESHeaders: nil,
+		},
+		{
+			name:               "no bes_backend",
+			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--remote_cache=grpcs://remote.buildbuddy.io"},
+			expectedBESHeaders: nil,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			homeDir := t.TempDir()
+			t.Setenv("HOME", homeDir)
+			t.Setenv("USERPROFILE", homeDir)
+
+			args, err := arg.NewBazelArgs(append([]string{"build", "//foo:bar"}, testCase.args...))
+			require.NoError(t, err)
+			err = ConfigureBESAPIKey(args)
+
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedBESHeaders, args.GetAllFlagsWithName("bes_header"))
+		})
+	}
+}
+
 func setNonTTYStdin(t *testing.T) {
 	t.Helper()
 
