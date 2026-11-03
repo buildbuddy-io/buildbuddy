@@ -65,6 +65,9 @@ bazel_integration_test(
 
 bazel_integration_test(
     name = "buildbuddy_dev_qa_test",
+    # The nested `test //...` can outlast the default "long" timeout (900s). The
+    # GitHub job's 30-minute timeout still bounds it.
+    timeout = "eternal",
     bazel_binaries = bazel_binaries,
     bazel_version = "9.3.1",
     env = {
