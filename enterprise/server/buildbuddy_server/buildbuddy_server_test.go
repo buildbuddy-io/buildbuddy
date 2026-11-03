@@ -320,9 +320,12 @@ func TestCreateGroup_Allowed(t *testing.T) {
 					otherGroupIDs = append(otherGroupIDs, groupID)
 				}
 				for _, groupID := range otherGroupIDs {
+					membershipStatus, err := te.GetUserDB().RequestToJoinGroup(userCtx, groupID)
+					require.NoError(t, err)
+					require.Equal(t, grpb.GroupMembershipStatus_REQUESTED, membershipStatus)
 					groupCtx := requestcontext.ContextWithProtoRequestContext(ctx, &ctxpb.RequestContext{GroupId: groupID})
 					groupCtx = authUserCtx(groupCtx, te, t, "US2")
-					err := te.GetUserDB().UpdateGroupUsers(groupCtx, groupID, []*grpb.UpdateGroupUsersRequest_Update{{
+					err = te.GetUserDB().UpdateGroupUsers(groupCtx, groupID, []*grpb.UpdateGroupUsersRequest_Update{{
 						UserId:           &uidpb.UserId{Id: "US1"},
 						MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
 					}})
