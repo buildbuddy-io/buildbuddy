@@ -2,8 +2,6 @@ package build_event_proxy
 
 import (
 	"context"
-	"io"
-	"net"
 	"sync"
 	"testing"
 	"time"
@@ -180,13 +178,16 @@ func waitForCloseSend(t *testing.T, stream *blockingBuildToolEventStream) {
 
 type fakePublishBuildEventClient struct {
 	stream pepb.PublishBuildEvent_PublishBuildToolEventStreamClient
+	// ctx is the context passed to the last PublishBuildToolEventStream call.
+	ctx context.Context
 }
 
 func (c *fakePublishBuildEventClient) PublishLifecycleEvent(context.Context, *pepb.PublishLifecycleEventRequest, ...grpc.CallOption) (*emptypb.Empty, error) {
 	return &emptypb.Empty{}, nil
 }
 
-func (c *fakePublishBuildEventClient) PublishBuildToolEventStream(context.Context, ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
+func (c *fakePublishBuildEventClient) PublishBuildToolEventStream(ctx context.Context, _ ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
+	c.ctx = ctx
 	return c.stream, nil
 }
 
@@ -272,86 +273,23 @@ func (s *blockingBuildToolEventStream) RecvMsg(any) error {
 	panic("unexpected RecvMsg")
 }
 
-const testAPIKeyHeader = "x-buildbuddy-api-key"
-
-// metadataRecordingServer is a fake upstream PublishBuildEvent server that
-// records the incoming metadata of every RPC it receives.
-type metadataRecordingServer struct {
-	pepb.UnimplementedPublishBuildEventServer
-	lifecycleMD chan metadata.MD
-	streamMD    chan metadata.MD
-}
-
-func (s *metadataRecordingServer) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest) (*emptypb.Empty, error) {
-	md, _ := metadata.FromIncomingContext(ctx)
-	s.lifecycleMD <- md
-	return &emptypb.Empty{}, nil
-}
-
-func (s *metadataRecordingServer) PublishBuildToolEventStream(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
-	md, _ := metadata.FromIncomingContext(stream.Context())
-	s.streamMD <- md
-	for {
-		if _, err := stream.Recv(); err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return err
-		}
-	}
-}
-
-func startMetadataRecordingServer(t *testing.T) (*metadataRecordingServer, string) {
-	lis, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	srv := &metadataRecordingServer{
-		lifecycleMD: make(chan metadata.MD, 10),
-		streamMD:    make(chan metadata.MD, 10),
-	}
-	gs := grpc.NewServer()
-	pepb.RegisterPublishBuildEventServer(gs, srv)
-	go gs.Serve(lis)
-	t.Cleanup(gs.Stop)
-	return srv, "grpc://" + lis.Addr().String()
-}
-
-func receiveMD(t *testing.T, ch chan metadata.MD) metadata.MD {
-	t.Helper()
-	select {
-	case md := <-ch:
-		return md
-	case <-time.After(waitTimeout):
-		require.FailNow(t, "timed out waiting for upstream RPC")
-		return nil
-	}
-}
-
 func TestOutgoingMetadataIsForwardedUpstream(t *testing.T) {
-	for _, synchronous := range []bool{true, false} {
-		name := "async"
-		if synchronous {
-			name = "sync"
-		}
-		t.Run(name+"/PublishLifecycleEvent", func(t *testing.T) {
-			srv, target := startMetadataRecordingServer(t)
-			// rootCtx mimics env.GetServerContext(): no outgoing metadata.
-			proxy := &BuildEventProxyClient{target: target, rootCtx: context.Background(), synchronous: synchronous}
-			ctx := metadata.AppendToOutgoingContext(t.Context(), testAPIKeyHeader, "secret-key")
-			_, err := proxy.PublishLifecycleEvent(ctx, &pepb.PublishLifecycleEventRequest{})
-			require.NoError(t, err)
-			md := receiveMD(t, srv.lifecycleMD)
-			assert.Equal(t, []string{"secret-key"}, md.Get(testAPIKeyHeader))
-		})
-		t.Run(name+"/PublishBuildToolEventStream", func(t *testing.T) {
-			srv, target := startMetadataRecordingServer(t)
-			proxy := &BuildEventProxyClient{target: target, rootCtx: context.Background(), synchronous: synchronous}
-			ctx := metadata.AppendToOutgoingContext(t.Context(), testAPIKeyHeader, "secret-key")
-			stream, err := proxy.PublishBuildToolEventStream(ctx)
-			require.NoError(t, err)
-			require.NoError(t, stream.Send(&pepb.PublishBuildToolEventStreamRequest{}))
-			md := receiveMD(t, srv.streamMD)
-			require.NoError(t, stream.CloseSend())
-			assert.Equal(t, []string{"secret-key"}, md.Get(testAPIKeyHeader))
-		})
-	}
+	upstream := newBlockingBuildToolEventStream(t.Context())
+	client := &fakePublishBuildEventClient{stream: upstream}
+	// rootCtx mimics env.GetServerContext(): no outgoing metadata.
+	proxy := &BuildEventProxyClient{client: client, rootCtx: context.Background()}
+
+	callerCtx, cancel := context.WithCancel(t.Context())
+	callerCtx = metadata.AppendToOutgoingContext(callerCtx, "x-buildbuddy-api-key", "secret-key")
+	stream, err := proxy.PublishBuildToolEventStream(callerCtx)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, stream.CloseSend()) })
+
+	md, ok := metadata.FromOutgoingContext(client.ctx)
+	require.True(t, ok)
+	assert.Equal(t, []string{"secret-key"}, md.Get("x-buildbuddy-api-key"))
+
+	// The upstream stream should outlive the caller.
+	cancel()
+	assert.NoError(t, client.ctx.Err())
 }

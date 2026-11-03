@@ -143,7 +143,7 @@ func (c *BuildEventProxyClient) PublishBuildToolEventStream(ctx context.Context,
 	// outgoing metadata (e.g. the API key the sidecar propagates).
 	streamCtx := c.rootCtx
 	if md, ok := metadata.FromOutgoingContext(ctx); ok {
-		streamCtx = metadata.NewOutgoingContext(streamCtx, md.Copy())
+		streamCtx = metadata.NewOutgoingContext(streamCtx, md)
 	}
 	return c.newAsyncStreamProxy(streamCtx, opts...)
 }
