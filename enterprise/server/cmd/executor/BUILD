@@ -1,4 +1,5 @@
-load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
+load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_distroless//distroless:defs.bzl", "flatten")
 load("@rules_img//img:image.bzl", "image_manifest")
@@ -127,9 +128,23 @@ go_binary(
         "--max_shutdown_duration=3s",
     ],
     data = [
+        ":licenses",
         ":config_files",
     ],
     embed = [":executor_lib"],
+)
+
+go_test(
+    name = "executor_test",
+    srcs = ["executor_linux_test.go"],
+    embed = [":executor_lib"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@com_github_stretchr_testify//require",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 linux_x86_64_alias(
@@ -203,8 +218,199 @@ alias(
     }),
 )
 
+container_layer(
+    name = "tini_layer",
+    directory = "/",
+    files = [":tini"],
+    tags = ["manual"],
+)
+
+container_layer(
+    name = "docker_credential_gcr_layer",
+    directory = "/usr/bin",
+    files = ["//enterprise/server/cmd/executor/docker_credential_gcr_config:docker-credential-gcr-optional"] + select({
+        "@platforms//cpu:x86_64": [
+            "@com_github_googlecloudplatform_docker-credential-gcr-linux-amd64//:docker-credential-gcr.bin",
+        ],
+        "@platforms//cpu:arm64": [
+            "@com_github_googlecloudplatform_docker-credential-gcr-linux-arm64//:docker-credential-gcr.bin",
+        ],
+        "//conditions:default": [],
+    }),
+    tags = ["manual"],
+)
+
+container_layer(
+    name = "docker_credential_gcr_docker_config_layer",
+    directory = "/root/.docker",
+    files = [
+        "//enterprise/server/cmd/executor/docker_credential_gcr_config:config.json",
+    ],
+    tags = ["manual"],
+)
+
+container_layer(
+    name = "containerd_layer",
+    directory = "/usr/bin",
+    files = select({
+        "@platforms//cpu:x86_64": [
+            "@com_github_containerd_containerd-linux-amd64//:containerd.bin",
+            "@com_github_containerd_containerd-linux-amd64//:containerd-shim-runc-v2.bin",
+            "@com_github_containerd_containerd-linux-amd64//:ctr.bin",
+        ],
+        "@platforms//cpu:arm64": [
+            "@com_github_containerd_containerd-linux-arm64//:containerd.bin",
+            "@com_github_containerd_containerd-linux-arm64//:containerd-shim-runc-v2.bin",
+            "@com_github_containerd_containerd-linux-arm64//:ctr.bin",
+        ],
+        "//conditions:default": [],
+    }),
+    tags = ["manual"],
+)
+
+container_layer(
+    name = "rootlesskit_layer",
+    directory = "/usr/bin",
+    files = select({
+        "@platforms//cpu:x86_64": [
+            # "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlessctl.bin",
+            "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlesskit.bin",
+        ],
+        "@platforms//cpu:arm64": [
+            # "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlessctl.bin",
+            "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlesskit.bin",
+        ],
+        "//conditions:default": [],
+    }),
+    tags = ["manual"],
+)
+
+container_layer(
+    name = "runc_layer",
+    directory = "/usr/bin",
+    files = select({
+        "@platforms//cpu:x86_64": [
+            "@com_github_opencontainers_runc_runc-linux-amd64//file:runc",
+        ],
+        "@platforms//cpu:arm64": [
+            "@com_github_opencontainers_runc_runc-linux-arm64//file:runc",
+        ],
+        "//conditions:default": [],
+    }),
+    tags = ["manual"],
+)
+
+# Executor expects "firecracker" and "jailer" binaries in $PATH,
+# and they can't be symlinks (otherwise the VM will not start).
+# Rename the firecracker/jailer binaries so that we can place
+# those into /usr/bin as regular files.
+
+genrule(
+    name = "firecracker_rename",
+    srcs = select({
+        "@platforms//cpu:arm64": ["@com_github_firecracker_microvm_firecracker_arm64//:firecracker"],
+        "//conditions:default": ["@com_github_firecracker_microvm_firecracker//:firecracker"],
+    }),
+    outs = ["firecracker"],
+    cmd = "cp $(SRCS) $@",
+)
+
+genrule(
+    name = "jailer_rename",
+    srcs = select({
+        "@platforms//cpu:arm64": ["@com_github_firecracker_microvm_firecracker_arm64//:jailer"],
+        "//conditions:default": ["@com_github_firecracker_microvm_firecracker//:jailer"],
+    }),
+    outs = ["jailer"],
+    cmd = "cp $(SRCS) $@",
+)
+
+container_layer(
+    name = "executor_tools_layer",
+    directory = "/usr/bin",
+    files = select({
+        "@platforms//cpu:x86_64": [
+            ":firecracker",
+            ":jailer",
+            "@com_github_containers_crun_crun-linux-amd64//file:crun",
+        ],
+        "@platforms//cpu:aarch64": [
+            ":firecracker",
+            ":jailer",
+            "@com_github_containers_crun_crun-linux-arm64//file:crun",
+        ],
+        "//conditions:default": [],
+    }),
+    tags = ["manual"],
+)
+
+container_layer(
+    name = "podman_static_layer",
+    directory = "/",
+    tags = ["manual"],
+    tars = ["//enterprise/server/remote_execution/containers/podman:podman-static.tar.gz"],
+)
+
+container_image(
+    name = "base_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
+    base = "@executor_image//image:dockerfile_image.tar",
+    layers = [
+        ":tini_layer",
+        ":docker_credential_gcr_layer",
+        ":docker_credential_gcr_docker_config_layer",
+        ":containerd_layer",
+        ":runc_layer",
+        # Updating these layers does not currently afford us any vulnerability
+        # fixes; leave them out for now.
+        # ":rootlesskit_layer",
+        ":executor_tools_layer",
+        ":podman_static_layer",
+    ],
+    symlinks = {
+        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/%s/enterprise/config/executor.release.yaml" % runfiles_directory(),
+    },
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# Build a docker image similar to the go_binary above, but use the "go_image"
+# rule from @io_bazel_rules_docker instead, which creates a docker image.
+#
+# This target can be run locally with enterprise/tools/run_executor_image.sh
+go_image(
+    name = "executor_go_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
+    base = ":base_image",
+    binary = ":executor",
+    tags = ["manual"],
+)
+
+container_image(
+    name = "executor_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
+    base = ":executor_go_image",
+    entrypoint = [
+        "/tini",
+        "--",
+        "/app/enterprise/server/cmd/executor/executor",
+    ],
+    tags = ["manual"],
+)
+
+
+
 image_layer(
-    name = "binary_layer",
+    name = "binary_image_layer",
     srcs = {EXECUTOR_PACKAGE_ROOT + "/" + BINARY_NAME: ":" + BINARY_NAME},
     annotations = {
         "org.opencontainers.image.title": "Enterprise BuildBuddy Executor",
@@ -262,7 +468,7 @@ image_layer(
 
 [
     layer_from_tar(
-        name = "apt_layer_%s" % arch,
+        name = "apt_image_layer_%s" % arch,
         src = "apt_tar_%s" % arch,
         annotations = {
             "org.opencontainers.image.title": "Distroless executor deps (debian13)",
@@ -288,7 +494,7 @@ image_layer(
 ]
 
 image_layer(
-    name = "docker_credential_gcr_layer",
+    name = "docker_credential_gcr_image_layer",
     srcs = select({
         "@platforms//cpu:x86_64": {
             "/usr/bin/docker-credential-gcr": "@com_github_googlecloudplatform_docker-credential-gcr-linux-amd64//:docker-credential-gcr.bin",
@@ -310,7 +516,7 @@ image_layer(
 )
 
 image_layer(
-    name = "containerd_patch_layer",
+    name = "containerd_patch_image_layer",
     srcs = select({
         "@platforms//cpu:x86_64": {
             "/usr/bin/containerd.bin": "@com_github_containerd_containerd-linux-amd64//:containerd.bin",
@@ -335,7 +541,7 @@ image_layer(
 )
 
 image_layer(
-    name = "rootlesskit_patch_layer",
+    name = "rootlesskit_patch_image_layer",
     srcs = select({
         "@platforms//cpu:x86_64": {
             # "/usr/bin/rootlessctl.bin": "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlessctl.bin",
@@ -358,7 +564,7 @@ image_layer(
 )
 
 image_layer(
-    name = "runc_patch_layer",
+    name = "runc_patch_image_layer",
     srcs = select({
         "@platforms//cpu:x86_64": {
             "/usr/bin/runc": "@com_github_opencontainers_runc_runc-linux-amd64//file:runc",
@@ -379,7 +585,7 @@ image_layer(
 )
 
 image_layer(
-    name = "executor_tools_layer",
+    name = "executor_tools_image_layer",
     srcs = select({
         "@platforms//cpu:x86_64": {
             "/usr/bin/firecracker": "@com_github_firecracker_microvm_firecracker//:firecracker",
@@ -404,12 +610,39 @@ image_layer(
 )
 
 layer_from_tar(
-    name = "podman_static_layer",
+    name = "podman_static_image_layer",
     src = "//enterprise/server/remote_execution/containers/podman:podman-static.tar.gz",
     annotations = {
         "org.opencontainers.image.title": "Podman",
         "org.opencontainers.image.description": (
             "Statically-built podman."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    optimize = True,
+    tags = ["manual"],
+)
+
+pkg_tar(
+    name = "licenses_tar",
+    srcs = [
+        ":licenses",
+    ],
+    include_runfiles = True,
+    package_dir = EXECUTOR_PACKAGE_ROOT,
+    remap_paths = {
+        ".runfiles/": "%s.runfiles/" % BINARY_NAME,
+    },
+    tags = ["manual"],
+)
+
+layer_from_tar(
+    name = "licenses_image_layer",
+    src = "licenses_tar",
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Server Licenses",
+        "org.opencontainers.image.description": (
+            "Contains the licenses for the Buildbuddy executor."
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
@@ -438,16 +671,17 @@ image_manifest(
         ),
     ],
     layers = [
-        ":apt_layer_amd64",
-        ":docker_credential_gcr_layer",
-        ":containerd_patch_layer",
-        ":runc_patch_layer",
+        ":apt_image_layer_amd64",
+        ":docker_credential_gcr_image_layer",
+        ":containerd_patch_image_layer",
+        ":runc_patch_image_layer",
         # Updating these layers does not currently afford us any vulnerability
         # fixes; leave them out for now.
         # ":rootlesskit_patch_layer",
-        ":executor_tools_layer",
-        ":podman_static_layer",
-        ":binary_layer",
+        ":executor_tools_image_layer",
+        ":podman_static_image_layer",
+        ":licenses_image_layer",
+        ":binary_image_layer",
     ],
     tags = ["manual"],
 )
@@ -516,21 +750,6 @@ image_manifest(
     visibility = ["//visibility:public"],
 )
 
-container_image(
-    name = "executor_image",
-    architecture = select({
-        "@platforms//cpu:arm64": "arm64",
-        "//conditions:default": "amd64",
-    }),
-    base = ":executor_go_image",
-    entrypoint = [
-        "/usr/bin/tini",
-        "--",
-        "/app/enterprise/server/cmd/executor/executor",
-    ],
-    tags = ["manual"],
-)
-
 image_load(
     name = "image",
     # Explicitly use containerd for clarity. The container will be accessible
@@ -555,17 +774,4 @@ container_image(
     name = "default_base_image",
     base = "@default_execution_image//image:dockerfile_image.tar",
     tags = ["manual"],
-)
-
-go_test(
-    name = "executor_test",
-    srcs = ["executor_linux_test.go"],
-    embed = [":executor_lib"],
-    target_compatible_with = ["@platforms//os:linux"],
-    deps = select({
-        "@io_bazel_rules_go//go/platform:linux": [
-            "@com_github_stretchr_testify//require",
-        ],
-        "//conditions:default": [],
-    }),
 )
