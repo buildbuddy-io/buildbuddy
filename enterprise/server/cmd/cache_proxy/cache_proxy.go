@@ -80,7 +80,7 @@ var (
 
 	serverType = flag.String("server_type", "cache-proxy", "The server type to match on health checks")
 
-	proxyType = flag.String("cache_proxy.proxy_type", sku.ProxyBuildBuddy, "Whether this is a BuildBuddy-run (\"buildbuddy\") or customer-run (\"customer\") cache proxy. Used for usage tracking/billing.")
+	proxyType = flag.String("cache_proxy.proxy_type", sku.ProxyCustomer, "Whether this is a BuildBuddy-run (\"buildbuddy\") or customer-run (\"customer\") cache proxy. Used for usage tracking/billing.")
 )
 
 func main() {
