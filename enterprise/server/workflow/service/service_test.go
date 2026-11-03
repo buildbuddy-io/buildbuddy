@@ -1339,6 +1339,7 @@ func TestExecuteWorkflow_RemoteHeaders(t *testing.T) {
 				// Make sure we correctly handle env overrides. These should be appended to the existing env overrides
 				// the workflow service applies.
 				"x-buildbuddy-platform.env-overrides=EXTRA=value",
+				"x-buildbuddy-platform=env-overrides=OTHER_EXTRA=value",
 				// Make sure we correctly handle custom headers.
 				"x-custom-header=custom-value",
 			},
@@ -1351,7 +1352,7 @@ func TestExecuteWorkflow_RemoteHeaders(t *testing.T) {
 		assert.Equal(t, []string{"custom-value"}, execReq.Metadata.Get("x-custom-header"))
 		envOverrides := execReq.Metadata.Get("x-buildbuddy-platform.env-overrides")
 		require.Len(t, envOverrides, 1)
-		for _, assignment := range []string{"EXTRA=value", "BUILDBUDDY_API_KEY=", "REPO_USER=", "REPO_TOKEN="} {
+		for _, assignment := range []string{"EXTRA=value", "OTHER_EXTRA=value", "BUILDBUDDY_API_KEY=", "REPO_USER=", "REPO_TOKEN="} {
 			assert.Contains(t, envOverrides[0], assignment)
 		}
 
@@ -1359,12 +1360,12 @@ func TestExecuteWorkflow_RemoteHeaders(t *testing.T) {
 
 		// Parse the forwarded headers the same way the execution server does.
 		// This catches secrets being dropped when the same platform header is repeated.
+		overrides, err := platform.RemoteHeaderOverrides(metadata.NewIncomingContext(ctx, execReq.Metadata))
+		require.NoError(t, err)
 		props, err := platform.ParseProperties(&repb.ExecutionTask{
-			Action:  exec.Action,
-			Command: exec.Command,
-			PlatformOverrides: &repb.Platform{
-				Properties: platform.RemoteHeaderOverrides(metadata.NewIncomingContext(ctx, execReq.Metadata)),
-			},
+			Action:            exec.Action,
+			Command:           exec.Command,
+			PlatformOverrides: &repb.Platform{Properties: overrides},
 		})
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []string{

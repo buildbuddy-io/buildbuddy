@@ -215,6 +215,11 @@ BuildBuddy supports setting execution properties via remote headers.
 This can be done by setting `--remote_header=x-buildbuddy-platform.KEY=VALUE`
 at the Bazel command line.
 
+To set a property whose name contains characters that are not allowed in
+header names, such as `resources:foo`, put the property name in the header
+value instead: `--remote_header=x-buildbuddy-platform=resources:foo=1`.
+This flag can be repeated to set more than one property.
+
 This feature is useful as a more secure option for passing secret property
 values, such as `container-registry-password` or
 `container-registry-username`, since other methods of setting exec

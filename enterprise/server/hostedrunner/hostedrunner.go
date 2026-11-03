@@ -508,6 +508,10 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 			envOverrides = append(envOverrides, headerVal)
 			continue
 		}
+		if propName, propVal, ok := strings.Cut(headerVal, "="); ok && headerKey == platform.OverrideHeader && strings.EqualFold(propName, platform.EnvOverridesPropertyName) {
+			envOverrides = append(envOverrides, propVal)
+			continue
+		}
 
 		execCtx = metadata.AppendToOutgoingContext(execCtx, headerKey, headerVal)
 	}

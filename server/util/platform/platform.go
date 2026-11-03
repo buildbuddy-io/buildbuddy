@@ -51,6 +51,16 @@ const (
 	//     x-buildbuddy-platform.container-registry-username: _json_key
 	OverrideHeaderPrefix = "x-buildbuddy-platform."
 
+	// OverrideHeader is a header used to override platform props via remote
+	// headers, where each header value has the form NAME=VALUE. Unlike
+	// OverrideHeaderPrefix, it supports property names containing characters
+	// that are not allowed in gRPC header keys, such as "resources:foo". Bazel
+	// crashes if a --remote_header key contains these characters.
+	//
+	// Example header:
+	//     x-buildbuddy-platform: resources:foo=1
+	OverrideHeader = "x-buildbuddy-platform"
+
 	poolPropertyName = "Pool"
 
 	originalPoolPropertyName = "OriginalPool"
@@ -624,11 +634,26 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 
 // RemoteHeaderOverrides returns the platform properties that should override
 // the command's platform properties.
-func RemoteHeaderOverrides(ctx context.Context) []*repb.Platform_Property {
+func RemoteHeaderOverrides(ctx context.Context) ([]*repb.Platform_Property, error) {
 	props := []*repb.Platform_Property{}
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return props
+		return props, nil
+	}
+	// We read OverrideHeader values before OverrideHeaderPrefix headers, so
+	// that OverrideHeaderPrefix headers win when ParseProperties applies the
+	// overrides in order. Server code such as execution teeing sets props
+	// using OverrideHeaderPrefix and expects them to replace client values.
+	for _, override := range md.Get(OverrideHeader) {
+		name, value, ok := strings.Cut(override, "=")
+		if !ok {
+			// Don't include the header value, since it may contain a secret.
+			return nil, status.InvalidArgumentErrorf("%s header values must have the form NAME=VALUE", OverrideHeader)
+		}
+		props = append(props, &repb.Platform_Property{
+			Name:  name,
+			Value: value,
+		})
 	}
 	mdMap := map[string][]string(md)
 	for headerName, headerValues := range mdMap {
@@ -644,7 +669,7 @@ func RemoteHeaderOverrides(ctx context.Context) []*repb.Platform_Property {
 		}
 	}
 
-	return props
+	return props, nil
 }
 
 // WithRemoteHeaderOverride sets a remote header for an Execute request that
@@ -847,9 +872,9 @@ func FindValue(platform *repb.Platform, name string) string {
 }
 
 // FindEffectiveValue returns the effective platform property value for the
-// given task. If a remote header override was set via
-// "x-buildbuddy-platform.<name>", then that value will be returned. Otherwise,
-// it returns the original platform property from the action proto.
+// given task. If the property was overridden via a remote header, then that
+// value will be returned. Otherwise, it returns the original platform property
+// from the action proto.
 func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 	override, ok := findValue(task.GetPlatformOverrides(), name)
 	if ok {

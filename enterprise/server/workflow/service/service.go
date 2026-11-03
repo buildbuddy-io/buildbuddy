@@ -1846,6 +1846,10 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 			envOverrides = append(envOverrides, headerVal)
 			continue
 		}
+		if propName, propVal, ok := strings.Cut(headerVal, "="); ok && headerKey == platform.OverrideHeader && strings.EqualFold(propName, platform.EnvOverridesPropertyName) {
+			envOverrides = append(envOverrides, propVal)
+			continue
+		}
 		execCtx = metadata.AppendToOutgoingContext(execCtx, headerKey, headerVal)
 	}
 	if len(envOverrides) > 0 {

@@ -884,8 +884,12 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.Jwt = jwt
 	}
 
+	overrides, err := platform.RemoteHeaderOverrides(ctx)
+	if err != nil {
+		return nil, err
+	}
 	executionTask.PlatformOverrides = &repb.Platform{
-		Properties: platform.RemoteHeaderOverrides(ctx),
+		Properties: overrides,
 	}
 
 	taskGroupID := interfaces.AuthAnonymousUser
