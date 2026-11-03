@@ -89,10 +89,10 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *
 	return &emptypb.Empty{}, nil
 }
 
-// asyncContext returns a context for async publishes that outlives the request
-// ctx but not the server. It forwards only the API key header, which the
-// sidecar propagates; other headers and ctx values (e.g. the user's JWT) must
-// not reach proxy hosts.
+// asyncContext returns a context for async publishes that is detached from the
+// request ctx. It carries only the API key header, which the sidecar
+// propagates; other headers and ctx values (e.g. the user's JWT) must not reach
+// proxy hosts.
 func (c *BuildEventProxyClient) asyncContext(ctx context.Context) context.Context {
 	apiKeys := metadata.ValueFromOutgoingContext(ctx, authutil.APIKeyHeader)
 	if len(apiKeys) == 0 {
