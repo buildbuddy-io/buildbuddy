@@ -69,7 +69,7 @@ import (
 var (
 	cacheTarget  = flag.String("cache_target", "", "Cache grpc target (required)")
 	instanceName = flag.String("instance_name", "", "Remote instance name")
-	apiKey       = flag.String("api_key", "", "API key for authentication")
+	apiKey       = flag.String("api_key", "", "API key for authentication. If empty, the BUILDBUDDY_API_KEY env var is used.")
 	blobSize     = flag.Int64("blob_size", 100_000, "Size of test blobs in bytes")
 	opTimeout    = flag.Duration("op_timeout", 8*time.Second, "Timeout for each individual cache operation")
 
@@ -636,6 +636,9 @@ func shutdownTracing() {
 
 func main() {
 	flag.Parse()
+	if *apiKey == "" {
+		*apiKey = os.Getenv("BUILDBUDDY_API_KEY")
+	}
 	if err := run(); err != nil {
 		log.Errorf("Probe failed: %s", err)
 		os.Exit(1)
