@@ -151,6 +151,9 @@ func runProbe() error {
 		"build",
 		"//"+*proberName+":all",
 	)
+	if apiKey := os.Getenv("BUILDBUDDY_API_KEY"); apiKey != "" {
+		args = append(args, "--remote_header=x-buildbuddy-api-key="+apiKey)
+	}
 	if *bazelArgs != "" {
 		extraArgs, err := shlex.Split(*bazelArgs)
 		if err != nil {
