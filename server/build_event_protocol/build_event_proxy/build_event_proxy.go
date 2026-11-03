@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -25,6 +26,7 @@ var (
 
 type BuildEventProxyClient struct {
 	client      pepb.PublishBuildEventClient
+	rootCtx     context.Context
 	target      string
 	clientMux   sync.Mutex // PROTECTS(client)
 	synchronous bool
@@ -50,16 +52,17 @@ func Register(env *real_environment.RealEnv) error {
 	for i, target := range *hosts {
 		// NB: This can block for up to a second on connecting. This would be a
 		// great place to have our health checker and mark these as optional.
-		buildEventProxyClients[i] = NewBuildEventProxyClient(target, false)
+		buildEventProxyClients[i] = NewBuildEventProxyClient(env, target, false)
 		log.Printf("Proxy: forwarding build events to: %s", target)
 	}
 	env.SetBuildEventProxyClients(buildEventProxyClients)
 	return nil
 }
 
-func NewBuildEventProxyClient(target string, synchronous bool) *BuildEventProxyClient {
+func NewBuildEventProxyClient(env environment.Env, target string, synchronous bool) *BuildEventProxyClient {
 	c := &BuildEventProxyClient{
 		target:      target,
+		rootCtx:     env.GetServerContext(),
 		synchronous: synchronous,
 	}
 	c.reconnectIfNecessary()
@@ -73,7 +76,7 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *
 		return c.client.PublishLifecycleEvent(ctx, req)
 	}
 
-	asyncCtx := asyncContext(ctx)
+	asyncCtx := c.asyncContext(ctx)
 	go func() {
 		// Bound the publish, since it isn't cancelled when the request ends.
 		ctx, cancel := context.WithTimeout(asyncCtx, 30*time.Second)
@@ -87,14 +90,15 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *
 }
 
 // asyncContext returns a context for async publishes that outlives the request
-// ctx. It forwards only the API key header, which the sidecar propagates; other
-// headers and ctx values (e.g. the user's JWT) must not reach proxy hosts.
-func asyncContext(ctx context.Context) context.Context {
+// ctx but not the server. It forwards only the API key header, which the
+// sidecar propagates; other headers and ctx values (e.g. the user's JWT) must
+// not reach proxy hosts.
+func (c *BuildEventProxyClient) asyncContext(ctx context.Context) context.Context {
 	apiKeys := metadata.ValueFromOutgoingContext(ctx, authutil.APIKeyHeader)
 	if len(apiKeys) == 0 {
-		return context.Background()
+		return c.rootCtx
 	}
-	return metadata.NewOutgoingContext(context.Background(), metadata.MD{authutil.APIKeyHeader: apiKeys})
+	return metadata.NewOutgoingContext(c.rootCtx, metadata.MD{authutil.APIKeyHeader: apiKeys})
 }
 
 type asyncStreamProxy struct {
@@ -153,5 +157,5 @@ func (c *BuildEventProxyClient) PublishBuildToolEventStream(ctx context.Context,
 		return c.client.PublishBuildToolEventStream(ctx, opts...)
 	}
 
-	return c.newAsyncStreamProxy(asyncContext(ctx), opts...)
+	return c.newAsyncStreamProxy(c.asyncContext(ctx), opts...)
 }

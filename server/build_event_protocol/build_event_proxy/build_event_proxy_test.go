@@ -31,6 +31,7 @@ func TestPublishBuildToolEventStream_SynchronousModeBackpressuresInsteadOfBuffer
 	upstream := newBlockingBuildToolEventStream(t.Context())
 	proxy := &BuildEventProxyClient{
 		client:      &fakePublishBuildEventClient{stream: upstream},
+		rootCtx:     t.Context(),
 		synchronous: true,
 	}
 
@@ -88,7 +89,8 @@ func TestPublishBuildToolEventStream_AsynchronousModeDropsWhenBufferIsFull(t *te
 	// requests flow through the local channel before reaching the upstream Send.
 	upstream := newBlockingBuildToolEventStream(t.Context())
 	proxy := &BuildEventProxyClient{
-		client: &fakePublishBuildEventClient{stream: upstream},
+		client:  &fakePublishBuildEventClient{stream: upstream},
+		rootCtx: t.Context(),
 	}
 
 	stream, err := proxy.PublishBuildToolEventStream(t.Context())
@@ -137,12 +139,14 @@ func TestAsynchronousModeForwardsOnlyAPIKey(t *testing.T) {
 		lifecycleCalls: make(chan recordedCall, 1),
 	}
 	proxy := &BuildEventProxyClient{
-		client: client,
+		client:  client,
+		rootCtx: t.Context(),
 	}
 
 	// Simulate a request ctx with outgoing metadata (the API key, as added by
-	// the CLI sidecar, plus an unrelated internal header) and ctx values that the gRPC client interceptors would turn
-	// into headers (as on an authenticated app server). The ctx has already
+	// the CLI sidecar, plus an unrelated internal header) and ctx values that
+	// the gRPC client interceptors would turn into headers (as on an
+	// authenticated app server). The ctx has already
 	// been canceled because the request handler returned. Both upstream calls
 	// are made after the cancellation, so the ctx recorded by the fake shows
 	// whether they outlive the request.
