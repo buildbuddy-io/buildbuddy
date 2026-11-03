@@ -267,6 +267,13 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 		return status.InvalidArgumentErrorf("The requested workload isolation type %q is unsupported by this executor. Supported types: %s)", platformProps.WorkloadIsolationType, executorProps.SupportedIsolationTypes)
 	}
 
+	if platformProps.WorkloadIsolationType == string(platform.FirecrackerContainerType) && platformProps.RecycleRunner {
+		if salt := execution_experiments.SnapshotSalt.Get(ctx); salt != "" {
+			// Include the salt in the platform hash used for snapshot and runner keys.
+			platform.SetValueForTask(task, platform.SnapshotSaltPropertyName, salt)
+		}
+	}
+
 	// Normalize the container image string
 	if platformProps.WorkloadIsolationType == string(platform.BareContainerType) {
 		// BareRunner strings become ""
