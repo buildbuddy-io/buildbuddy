@@ -396,6 +396,8 @@ func pendingHitsExpectation(f *HitTrackerFactory, key string, expected int) func
 func TestCASHitTracker_AcceptsHitsWhileSplitOverflowIsPending(t *testing.T) {
 	flags.Set(t, "cache_proxy.remote_hit_tracker.max_hits_per_update", 10)
 	flags.Set(t, "cache_proxy.remote_hit_tracker.max_pending_hits_per_key", 100)
+	// One sender, so that one clock tick sends exactly one batch.
+	flags.Set(t, "cache_proxy.remote_hit_tracker.workers", 1)
 	clock := clockwork.NewFakeClock()
 	authenticator, hitTrackerFactory, hitTrackerService := setupWithClock(t, clock)
 
