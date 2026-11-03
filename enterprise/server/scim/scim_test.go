@@ -898,8 +898,12 @@ func TestUserOperationsRejectNonSCIMManagedGroupMember(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Recreate the exploit precondition: an org admin adds an existing user
-	// from another SAML connection to the SCIM-managed group.
+	// Add a user from another SAML connection to the group after they request
+	// membership.
+	foreignUserCtx := authUserCtx(ctx, env, t, foreignUserID)
+	membershipStatus, err := udb.RequestToJoinGroup(foreignUserCtx, group.GroupID)
+	require.NoError(t, err)
+	require.Equal(t, grpb.GroupMembershipStatus_REQUESTED, membershipStatus)
 	err = udb.UpdateGroupUsers(userCtx, group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
 		UserId:           &uidpb.UserId{Id: foreignUserID},
 		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,

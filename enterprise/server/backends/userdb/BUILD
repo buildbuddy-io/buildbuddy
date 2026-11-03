@@ -7,6 +7,7 @@ go_library(
     srcs = ["userdb.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb",
     deps = [
+        "//enterprise/server/saml",
         "//enterprise/server/util/keystore",
         "//proto:capability_go_proto",
         "//proto:group_go_proto",

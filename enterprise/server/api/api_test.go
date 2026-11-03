@@ -744,7 +744,12 @@ func TestCreateUserApiKey(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err), "want PermissionDenied, got %v", err)
 
-	// Add the non-member to the group.
+	// Have the non-member request membership, then approve the request.
+	nonGroupMemberCtx, err := auth.WithAuthenticatedUser(ctx, nonGroupMember.UserID)
+	require.NoError(t, err)
+	membershipStatus, err := env.GetUserDB().RequestToJoinGroup(nonGroupMemberCtx, adminGroup.GroupID)
+	require.NoError(t, err)
+	require.Equal(t, grpb.GroupMembershipStatus_REQUESTED, membershipStatus)
 	err = env.GetUserDB().UpdateGroupUsers(orgAdminKeyCtx, adminGroup.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
 		{
 			UserId:           &uidpb.UserId{Id: nonGroupMember.UserID},
