@@ -68,8 +68,9 @@ const (
 	// need to regularly revlidate credentials to handle revoked API keys.
 	checkRegistrationCredentialsInterval = 5 * time.Minute
 
-	// How long GetCacheProxy waits for a cache proxy to respond.
-	getDetailsTimeout = 15 * time.Second
+	// How long GetCacheProxy waits for a cache proxy to respond. Long enough
+	// to collect a 30s CPU profile.
+	getDetailsTimeout = 35 * time.Second
 
 	// Connections to peer app instances that haven't been used for this long
 	// are closed. Peers come and go during app rollouts.

@@ -13,6 +13,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -247,6 +248,47 @@ func TestRun(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
+}
+
+func TestRunWithEmptyRootfs(t *testing.T) {
+	setupNetworking(t)
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+
+	worker, err := runfiles.Rlocation(testworkerRlocationpath)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	testfs.CopyFile(t, worker, wd, "testworker")
+
+	reg := testregistry.Run(t, testregistry.Opts{})
+	emptyLayer, err := crane.Layer(nil)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name   string
+		layers []ctr.Layer
+	}{
+		{"no-layers", nil},
+		{"empty-layers", []ctr.Layer{emptyLayer, emptyLayer}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			img, err := mutate.AppendLayers(empty.Image, tc.layers...)
+			require.NoError(t, err)
+			ref := reg.Push(t, img, tc.name+":latest", nil)
+			c, err := provider.New(t.Context(), &container.Init{Props: &platform.Properties{ContainerImage: ref}})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, c.Remove(env.GetServerContext())) })
+
+			res := c.Run(t.Context(), &repb.Command{Arguments: []string{"./testworker", "-help"}}, wd, oci.Credentials{})
+			require.NoError(t, res.Error)
+			require.Zero(t, res.ExitCode, "stderr: %s", res.Stderr)
+			assert.Contains(t, string(res.Stderr), "persistent_worker")
+		})
+	}
 }
 
 func TestRunNofileLimit(t *testing.T) {
@@ -1810,7 +1852,7 @@ func TestImageStoreRejectsLayerSymlinkEscape(t *testing.T) {
 				// Extracted layers are unpacked below v2/<algorithm>/<digest>.tmp.
 				// Compute the relative symlink target from that depth so the test
 				// keeps pointing at the escape dir if the root path changes.
-				unpackDir := filepath.Join(layerDir, "v2", "sha256", "layer.tmp")
+				unpackDir := filepath.Join(layerDir, "v3", "sha256", "layer.tmp")
 				linkname, err := filepath.Rel(unpackDir, escapeFile)
 				require.NoError(t, err)
 				require.Equal(t, escapeFile, filepath.Clean(filepath.Join(unpackDir, linkname)))
@@ -1862,6 +1904,102 @@ func TestImageStoreRejectsLayerSymlinkEscape(t *testing.T) {
 			assert.True(t, os.IsNotExist(err), "file outside layer destination should not be created")
 		})
 	}
+}
+
+// singleFileLayerTar returns a tar archive containing just file.txt with the
+// given content.
+func singleFileLayerTar(t *testing.T, content string) []byte {
+	return testtar.EntryBytes(t, &tar.Header{
+		Name:     "file.txt",
+		Typeflag: tar.TypeReg,
+		Mode:     0644,
+		Size:     int64(len(content)),
+		Uid:      os.Getuid(),
+		Gid:      os.Getgid(),
+	}, []byte(content))
+}
+
+// TestImageStoreRejectsLayerWithMismatchedDiffID checks that a layer whose
+// content doesn't match its DiffID isn't cached.
+func TestImageStoreRejectsLayerWithMismatchedDiffID(t *testing.T) {
+	setupNetworking(t)
+
+	realTar := singleFileLayerTar(t, "real")
+	for _, tc := range []struct {
+		name     string
+		otherTar []byte
+	}{
+		{
+			name:     "different_content",
+			otherTar: singleFileLayerTar(t, "other"),
+		},
+		{
+			// The tar entries match, but bytes after the end-of-archive marker
+			// aren't covered by the claimed DiffID.
+			name:     "unhashed_trailing_bytes",
+			otherTar: append(slices.Clone(realTar), []byte("trailing")...),
+		},
+	} {
+		for _, evictionEnabled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/eviction=%t", tc.name, evictionEnabled), func(t *testing.T) {
+				flags.Set(t, "executor.oci.image_eviction_enabled", evictionEnabled)
+				ctx := context.Background()
+
+				realLayer := testregistry.NewBytesLayer(t, realTar)
+				realDiffID, err := realLayer.DiffID()
+				require.NoError(t, err)
+				realImage := pushSingleLayerImage(t, "test-real:latest", realLayer)
+
+				// Config lists the real layer's DiffID for a different blob.
+				otherImg, err := mutate.AppendLayers(empty.Image, testregistry.NewBytesLayer(t, tc.otherTar))
+				require.NoError(t, err)
+				cfg, err := otherImg.ConfigFile()
+				require.NoError(t, err)
+				cfg = cfg.DeepCopy()
+				cfg.RootFS.DiffIDs = []ctr.Hash{realDiffID}
+				otherImg, err = mutate.ConfigFile(otherImg, cfg)
+				require.NoError(t, err)
+				reg := testregistry.Run(t, testregistry.Opts{})
+				otherImage := reg.Push(t, otherImg, "test-mismatched-diffid:latest", nil)
+
+				layersDir := testfs.MakeTempDir(t)
+				store := newImageStoreForTest(t, layersDir)
+
+				lockedOther, err := store.PullAndLockImage(ctx, otherImage, oci.Credentials{}, false)
+				if lockedOther != nil {
+					defer lockedOther.Unlock()
+				}
+				require.Error(t, err, "pulling an image with a mismatched DiffID should fail")
+				assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+				_, err = os.Stat(filepath.Join(layersDir, "v3", "sha256", realDiffID.Hex))
+				assert.True(t, os.IsNotExist(err), "nothing should be cached at the real layer's DiffID path")
+
+				lockedReal, err := store.PullAndLockImage(ctx, realImage, oci.Credentials{}, false)
+				require.NoError(t, err)
+				defer lockedReal.Unlock()
+				b, err := os.ReadFile(filepath.Join(singleLayerPath(t, lockedReal), "file.txt"))
+				require.NoError(t, err)
+				assert.Equal(t, "real", string(b))
+			})
+		}
+	}
+}
+
+// TestImageStoreAcceptsLayerWithTrailingBytes verifies that the DiffID check
+// covers the whole uncompressed stream, including any bytes after the tar
+// end-of-archive marker.
+func TestImageStoreAcceptsLayerWithTrailingBytes(t *testing.T) {
+	setupNetworking(t)
+
+	// Many tar writers pad archives with extra zero blocks; the DiffID
+	// covers that padding too.
+	layerTar := append(singleFileLayerTar(t, "hello"), make([]byte, 8192)...)
+	image := pushSingleLayerImage(t, "test-trailing-bytes:latest", testregistry.NewBytesLayer(t, layerTar))
+
+	lockedImg := pullSingleLayerImage(t, image)
+	b, err := os.ReadFile(filepath.Join(singleLayerPath(t, lockedImg), "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(b))
 }
 
 // TestImageStorePreservesLayerDirectoryModeBits ensures that the os.Root-backed
@@ -2833,8 +2971,8 @@ func TestImageEvictionAfterContainerRemoval(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory path by scanning the image cache.
-	// The structure is: {cacheRoot}/images/oci/v2/sha256/{hash}/
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	// The structure is: {cacheRoot}/images/oci/v3/sha256/{hash}/
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
@@ -2937,7 +3075,7 @@ func TestImageEvictionWithMultipleContainers(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory path
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
@@ -3041,7 +3179,7 @@ func TestImageRePullAfterEviction(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory path
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
@@ -3146,7 +3284,7 @@ func TestFileCachePopulatedOnStartup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries)
@@ -3236,7 +3374,7 @@ func TestImageResurrection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries)
@@ -3350,7 +3488,7 @@ func TestPopulateFileCacheTracksLayerDirsNotAlgorithmDir(t *testing.T) {
 
 	// Sanity check that the layer directories still exist after "shutting
 	// down" the executor
-	algorithmDir := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	algorithmDir := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(algorithmDir)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries, "expected at least one layer directory")

@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:invocation_go_proto",
         "//server/environment",
+        "//server/http/httpclient",
         "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",

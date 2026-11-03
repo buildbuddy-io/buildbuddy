@@ -58,5 +58,6 @@ jobs:
           fi
 
           bazelisk test --config=race --test_tag_filters= \
+            //enterprise/server/remote_execution/overlayfs:overlayfs_test \
             //enterprise/server/remote_execution/vbd:vbd_test \
             //enterprise/server/test/integration/podman:podman_test

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -1164,6 +1165,7 @@ func TestWebhook_LegacyWorkflow_UseDefaultWorkflowConfig(t *testing.T) {
 	u, lis := testhttp.NewServer(t)
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	flags.Set(t, "remote_execution.disable_legacy_workflows", false)
 	te := newTestEnv(t)
 	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
@@ -1209,6 +1211,30 @@ func TestWebhook_LegacyWorkflow_UseDefaultWorkflowConfig(t *testing.T) {
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+}
+
+func TestLegacyWorkflowWebhook_Disabled(t *testing.T) {
+	te := newTestEnv(t)
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/workflow/12345", nil)
+	rsp := httptest.NewRecorder()
+
+	te.GetWorkflowService().ServeHTTP(rsp, req)
+
+	require.Equal(t, http.StatusNotFound, rsp.Code)
+	require.Contains(t, rsp.Body.String(), "legacy workflows are disabled")
+}
+
+func TestExecuteLegacyWorkflow_Disabled(t *testing.T) {
+	te := newTestEnv(t)
+	ctx, _, _ := authenticate(t, context.Background(), te)
+
+	_, err := te.GetWorkflowService().ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
+		WorkflowId:    "WF1",
+		PushedRepoUrl: "https://github.com/acme/repo",
+		PushedBranch:  "main",
+	})
+
+	require.True(t, status.IsFailedPreconditionError(err), "got %v", err)
 }
 
 func TestExecuteWorkflow_CrossOrgAccessDenied(t *testing.T) {

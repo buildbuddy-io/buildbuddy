@@ -23,7 +23,8 @@ message ApiKey {
   // Capabilities associated with this API key.
   repeated capability.Capability capability = 4;
 
-  // True if this API key is visible to developers.
+  // True if this API key is visible to non-admin group members with write
+  // access.
   // Deprecated: use visibility instead.
   bool visible_to_developers = 5;
 
@@ -57,7 +58,7 @@ message CreationMetadata {
 // visibilities can be stored as a bitmask, like Capability.
 enum Visibility {
   UNKNOWN_VISIBILITY = 0;
-  // Visible to non-admin members of the owning group.
+  // Visible to non-admin members of the owning group with write access.
   VISIBLE_TO_DEVELOPERS = 1;  // 2^0
   // Visible to admins of the owning group. Keys used for internal purposes on
   // behalf of the group omit this, and are visible only to server admins.
@@ -89,7 +90,8 @@ message CreateApiKeyRequest {
   // Optional. Capabilities granted to this API key.
   repeated capability.Capability capability = 4;
 
-  // True if this API key should be visible to developers.
+  // True if this API key should be visible to non-admin group members with
+  // write access.
   // Deprecated: use visibility instead.
   bool visible_to_developers = 5;
 
@@ -97,7 +99,8 @@ message CreateApiKeyRequest {
   google.protobuf.Duration expires_in = 7;
 
   // Optional. Who can see this API key. If empty (during migration), the key is
-  // visible to group admins, and to developers if visible_to_developers is set.
+  // visible to group admins, and to non-admin group members with write access
+  // if visible_to_developers is set.
   repeated Visibility visibility = 8;
 }
 
@@ -167,12 +170,14 @@ message UpdateApiKeyRequest {
   // this update.
   repeated capability.Capability capability = 4;
 
-  // True if this API key should be visible to developers.
+  // True if this API key should be visible to non-admin group members with
+  // write access.
   // Deprecated: use visibility instead.
   bool visible_to_developers = 5;
 
   // Optional. Who can see this API key. If empty (during migration), the key is
-  // visible to group admins, and to developers if visible_to_developers is set.
+  // visible to group admins, and to non-admin group members with write access
+  // if visible_to_developers is set.
   repeated Visibility visibility = 6;
 }
 
