@@ -6,11 +6,17 @@ register_toolchains("@rules_img_tool//toolchain:all")
 bazel_dep(name = "rules_distroless", version = "0.9.4")
 archive_override(
     module_name = "rules_distroless",
-    integrity = "sha256-9dFC6tHiNx2zP1VpG2q0B3RKusVuuSzndDF2yZJ+dwU=",
+    integrity = "sha256-lWO4KnCvnati/A8Ldp6cIbmt0dwlq1tRtUo0+ndYFSc=",
     patch_strip = 1,
-    patches = ["//buildpatches/bazel_dep:rules_distroless.patch"],
-    strip_prefix = "rules_distroless-a9e2012bf5935f7a8fa9c17a768abbbbd135f2a3",
-    urls = ["https://github.com/bazel-contrib/rules_distroless/archive/a9e2012bf5935f7a8fa9c17a768abbbbd135f2a3.tar.gz"],
+    patches = [
+        "//buildpatches/bazel_dep:rules_distroless_include_transitive.patch",
+        "//buildpatches/bazel_dep:rules_distroless_maintainability_refactor.patch",
+        "//buildpatches/bazel_dep:rules_distroless_subresource_integrity.patch",
+        "//buildpatches/bazel_dep:rules_distroless_flat_repos.patch",
+        "//buildpatches/bazel_dep:rules_distroless_infer_architecture.patch",
+    ],
+    strip_prefix = "rules_distroless-15f9fc8d39ba3178c313e61d94feb3f6eb88f95f",
+    urls = ["https://github.com/bazel-contrib/rules_distroless/archive/15f9fc8d39ba3178c313e61d94feb3f6eb88f95f.tar.gz"],
 )
 
 # Configure apt for Debian packages

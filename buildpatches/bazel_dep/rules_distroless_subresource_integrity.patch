@@ -1,0 +1,122 @@
+From 444b9f399327408247142584d15c3893cce035b4 Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Tue, 3 Nov 2026 11:32:27 -0800
+Subject: [PATCH 3/5] support all SHAs
+
+---
+ apt/extensions.bzl   |  9 +++----
+ apt/private/util.bzl | 58 ++++++++++++++++++++++++++++++++++++++------
+ 2 files changed, 54 insertions(+), 13 deletions(-)
+
+diff --git a/apt/extensions.bzl b/apt/extensions.bzl
+index 0621df0..dbd2d73 100644
+--- a/apt/extensions.bzl
++++ b/apt/extensions.bzl
+@@ -75,22 +75,21 @@ def _start_downloads(mctx, source, integrity, source_id, cached_format = None, h
+             if url in base_auth:
+                 auth = {dist_url: base_auth[url]}
+ 
+-            sha256 = ""
++            integrity_hash = None
+             if hashes != None:
+                 if path not in hashes:
+-                    fail("Missing SHA256 checksum in Release file for '{}' (suite '{}', component '{}', arch '{}')".format(
++                    fail("Missing checksum in Release file for '{}' (suite '{}', component '{}', arch '{}')".format(
+                         path,
+                         source.distribution,
+                         source.component,
+                         source.architecture,
+                     ))
+-                sha256 = hashes[path]
++                integrity_hash = hashes[path]
+ 
+             token = mctx.download(
+                 url = dist_url,
+                 output = output,
+-                integrity = integrity if hashes == None else "",
+-                sha256 = sha256,
++                integrity = integrity if hashes == None else integrity_hash,
+                 allow_fail = True,
+                 auth = auth,
+                 block = False,
+diff --git a/apt/private/util.bzl b/apt/private/util.bzl
+index 25a2c07..c531c17 100644
+--- a/apt/private/util.bzl
++++ b/apt/private/util.bzl
+@@ -100,23 +100,65 @@ def _split_whitespace(s):
+         parts.append(current)
+     return parts
+ 
++def _sha_to_subresource_integrity_hash(digest):
++    # Strip any trailing whitespace/newlines and force lowercase to prevent
++    # KeyErrors on uppercase hex or hidden formatting
++    digest = digest.strip().lower()
++    base16 = {
++       "": (0, (0, 0)),
++       "0": (0, (0, 0)),
++       "1": (1, (0, 1)),
++       "2": (2, (0, 2)),
++       "3": (3, (0, 3)),
++       "4": (4, (1, 0)),
++       "5": (5, (1, 1)),
++       "6": (6, (1, 2)),
++       "7": (7, (1, 3)),
++       "8": (8, (2, 0)),
++       "9": (9, (2, 1)),
++       "a": (10, (2, 2)),
++       "b": (11, (2, 3)),
++       "c": (12, (3, 0)),
++       "d": (13, (3, 1)),
++       "e": (14, (3, 2)),
++       "f": (15, (3, 3)),
++    }
++    base64 = [
++        "A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z",
++        "a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z",
++        "0","1","2","3","4","5","6","7","8","9",
++        "+","/",
++    ]
++    acc = ""
++    for i in range(0, len(digest), 3):
++        d0, d1, d2 = digest[i], digest[i+1:i+2], digest[i+2:i+3]
++        acc += base64[
++            (base16[d0][0] << 2) + base16[d1][1][0]
++        ] + (
++            base64[
++                (base16[d1][1][1] << 4) + base16[d2][0]
++            ] if d1 else ""
++        )
++    return "sha" + str(len(digest) * 4) + "-" + acc + "=" * (-len(acc) % 4)
++
+ def _parse_release_file(content):
+     """Parses SHA256 hashes for index files from Release/InRelease contents."""
+     hashes = {}
+     lines = content.splitlines()
+-    in_sha256_section = False
++    algorithm = None
+     for line in lines:
+         is_continuation = line.startswith(" ") or line.startswith("\t")
+-        if line.startswith("SHA256:"):
+-            in_sha256_section = True
++        line = line.rstrip()
++        if line == "SHA512:" or line == "SHA256:":
++            algorithm = line[:-1].lower()
+             continue
+-        elif line.startswith("SHA512:") or line.startswith("SHA1:") or line.startswith("MD5Sum:") or (line and not is_continuation):
+-            in_sha256_section = False
+-        if in_sha256_section and is_continuation:
++        if line and not is_continuation:
++            algorithm = None
++        if algorithm and is_continuation:
+             parts = _split_whitespace(line)
+             if len(parts) == 3:
+-                sha256, _size, path = parts
+-                hashes[path] = sha256
++                digest, _size, path = parts
++                hashes[path] = _sha_to_subresource_integrity_hash(digest)
+     return hashes
+ 
+ def _warning(rctx, message):
+-- 
+2.47.3
+
