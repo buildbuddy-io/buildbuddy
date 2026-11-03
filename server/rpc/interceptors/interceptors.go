@@ -604,8 +604,8 @@ func setClientIdentityStreamClientInterceptor(env environment.Env) grpc.StreamCl
 func propagateMetadataFromIncomingToOutgoing(keys ...string) func(context.Context) context.Context {
 	return func(ctx context.Context) context.Context {
 		for _, key := range keys {
-			for _, value := range metadata.ValueFromIncomingContext(ctx, key) {
-				ctx = metadata.AppendToOutgoingContext(ctx, key, value)
+			if values := metadata.ValueFromIncomingContext(ctx, key); len(values) > 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, key, values[len(values)-1])
 			}
 		}
 		return ctx
@@ -618,6 +618,37 @@ func PropagateMetadataUnaryInterceptor(keys ...string) grpc.UnaryServerIntercept
 
 func PropagateMetadataStreamInterceptor(keys ...string) grpc.StreamServerInterceptor {
 	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(keys...))
+}
+
+// propagateAllMetadataFromIncomingToOutgoing is like
+// propagateMetadataFromIncomingToOutgoing, but forwards every value of each
+// header instead of only the last one. It is meant for headers that clients
+// can repeat to send several values.
+//
+// TODO: assess whether anything would break if we used this func everywhere
+// instead of propagateMetadataFromIncomingToOutgoing. For example, the cache
+// proxy authenticates with the last JWT, while the app uses the first one.
+func propagateAllMetadataFromIncomingToOutgoing(keys ...string) func(context.Context) context.Context {
+	return func(ctx context.Context) context.Context {
+		var kv []string
+		for _, key := range keys {
+			for _, value := range metadata.ValueFromIncomingContext(ctx, key) {
+				kv = append(kv, key, value)
+			}
+		}
+		if len(kv) == 0 {
+			return ctx
+		}
+		return metadata.AppendToOutgoingContext(ctx, kv...)
+	}
+}
+
+func PropagateAllMetadataUnaryInterceptor(keys ...string) grpc.UnaryServerInterceptor {
+	return contextReplacingUnaryServerInterceptor(propagateAllMetadataFromIncomingToOutgoing(keys...))
+}
+
+func PropagateAllMetadataStreamInterceptor(keys ...string) grpc.StreamServerInterceptor {
+	return contextReplacingStreamServerInterceptor(propagateAllMetadataFromIncomingToOutgoing(keys...))
 }
 
 func requestMetadataAttributes(ctx context.Context) []attribute.KeyValue {
