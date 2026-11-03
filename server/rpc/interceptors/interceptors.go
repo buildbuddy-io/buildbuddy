@@ -603,36 +603,18 @@ func setClientIdentityStreamClientInterceptor(env environment.Env) grpc.StreamCl
 
 func propagateMetadataFromIncomingToOutgoing(keys ...string) func(context.Context) context.Context {
 	return func(ctx context.Context) context.Context {
-		for _, key := range keys {
-			if values := metadata.ValueFromIncomingContext(ctx, key); len(values) > 0 {
-				ctx = metadata.AppendToOutgoingContext(ctx, key, values[len(values)-1])
-			}
-		}
-		return ctx
-	}
-}
-
-func PropagateMetadataUnaryInterceptor(keys ...string) grpc.UnaryServerInterceptor {
-	return contextReplacingUnaryServerInterceptor(propagateMetadataFromIncomingToOutgoing(keys...))
-}
-
-func PropagateMetadataStreamInterceptor(keys ...string) grpc.StreamServerInterceptor {
-	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(keys...))
-}
-
-// propagateAllMetadataFromIncomingToOutgoing is like
-// propagateMetadataFromIncomingToOutgoing, but forwards every value of each
-// header instead of only the last one. It is meant for headers that clients
-// can repeat to send several values.
-//
-// TODO: assess whether anything would break if we used this func everywhere
-// instead of propagateMetadataFromIncomingToOutgoing. For example, the cache
-// proxy authenticates with the last JWT, while the app uses the first one.
-func propagateAllMetadataFromIncomingToOutgoing(keys ...string) func(context.Context) context.Context {
-	return func(ctx context.Context) context.Context {
 		var kv []string
 		for _, key := range keys {
-			for _, value := range metadata.ValueFromIncomingContext(ctx, key) {
+			values := metadata.ValueFromIncomingContext(ctx, key)
+			// TODO: forward every value of the headers in headerContextKeys too,
+			// once we know that it doesn't change which value servers use.
+			// Servers read only one value of these headers and don't agree on
+			// which one. For example, the cache proxy authenticates with the
+			// last JWT, while copyHeadersToContext uses the first.
+			if _, ok := headerContextKeys[key]; ok && len(values) > 1 {
+				values = values[len(values)-1:]
+			}
+			for _, value := range values {
 				kv = append(kv, key, value)
 			}
 		}
@@ -643,12 +625,12 @@ func propagateAllMetadataFromIncomingToOutgoing(keys ...string) func(context.Con
 	}
 }
 
-func PropagateAllMetadataUnaryInterceptor(keys ...string) grpc.UnaryServerInterceptor {
-	return contextReplacingUnaryServerInterceptor(propagateAllMetadataFromIncomingToOutgoing(keys...))
+func PropagateMetadataUnaryInterceptor(keys ...string) grpc.UnaryServerInterceptor {
+	return contextReplacingUnaryServerInterceptor(propagateMetadataFromIncomingToOutgoing(keys...))
 }
 
-func PropagateAllMetadataStreamInterceptor(keys ...string) grpc.StreamServerInterceptor {
-	return contextReplacingStreamServerInterceptor(propagateAllMetadataFromIncomingToOutgoing(keys...))
+func PropagateMetadataStreamInterceptor(keys ...string) grpc.StreamServerInterceptor {
+	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(keys...))
 }
 
 func requestMetadataAttributes(ctx context.Context) []attribute.KeyValue {
