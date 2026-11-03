@@ -16,7 +16,7 @@ archive_override(
 # Configure apt for Debian packages
 apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 
-snapshot = "20260318T142916Z"
+snapshot = "20261102T202832Z"
 
 apt.sources_list(
     architectures = [
@@ -33,6 +33,7 @@ apt.sources_list(
     ],
     types = ["deb"],
     uris = ["https://snapshot.debian.org/archive/debian/{}".format(snapshot)],
+    gpg_keys = ["//apt/keys:debian-archive-keyring.gpg"],
 )
 apt.sources_list(
     architectures = [
@@ -46,20 +47,25 @@ apt.sources_list(
     suites = ["trixie-security"],
     types = ["deb"],
     uris = ["https://snapshot.debian.org/archive/debian-security/{}".format(snapshot)],
+    gpg_keys = ["//apt/keys:debian-archive-keyring.gpg"],
 )
 apt.sources_list(
     architectures = ["amd64"],
-    suites = ["trixie"],
+    flat = True,
+    suites = ["stable"],
+    components = ["main"],
     types = ["deb"],
     uris = ["https://nvidia.github.io/libnvidia-container/stable/deb/amd64"],
-    # gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
+    gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
 )
 apt.sources_list(
     architectures = ["arm64"],
-    suites = ["trixie"],
+    flat = True,
+    suites = ["stable"],
+    components = ["main"],
     types = ["deb"],
     uris = ["https://nvidia.github.io/libnvidia-container/stable/deb/arm64"],
-    # gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
+    gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
 )
 apt.sources_list(
     architectures = [
@@ -70,7 +76,7 @@ apt.sources_list(
     suites = ["trixie"],
     types = ["deb"],
     uris = ["https://download.docker.com/linux/debian"],
-    # gpg_keys = ["//apt/keys:docker.asc"],
+    gpg_keys = ["//apt/keys:docker.asc"],
 )
 
 # Configure Debian debian13 packages
@@ -147,10 +153,12 @@ apt.install(
     ],
     suites = [
         "trixie",
+        "trixie-updates",
+        "trixie-security",
     ],
 )
 
-NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION = "1.19.0-1"
+NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION = "1.20.1-1"
 
 # Configure Debian debian13 nvidia_container_toolkit packages
 apt.install(
@@ -163,7 +171,10 @@ apt.install(
         "nvidia-container-toolkit-base (= {})".format(NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION),
     ],
     suites = [
+        "stable",
         "trixie",
+        "trixie-updates",
+        "trixie-security",
     ],
 )
 use_repo(apt, "debian13")
