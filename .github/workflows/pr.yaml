@@ -24,6 +24,7 @@ jobs:
           if [[ "$IS_FORK_PR" != "true" ]]; then
             : "${BUILDBUDDY_API_KEY:?BUILDBUDDY_ORG_API_KEY is required for trusted CI}"
             auth_args+=("--remote_header=x-buildbuddy-api-key=$BUILDBUDDY_API_KEY")
+            auth_args+=("--bes_header=x-buildbuddy-api-key=$BUILDBUDDY_API_KEY")
           fi
           bazelisk test \
             --config=untrusted-ci \

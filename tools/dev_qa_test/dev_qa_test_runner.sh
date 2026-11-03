@@ -121,6 +121,7 @@ EOF
 
 if [[ -n "${api_key}" ]]; then
   echo "build:dev_qa_test --remote_header=x-buildbuddy-api-key=${api_key}" >> .bazelrc
+  echo "build:dev_qa_test --bes_header=x-buildbuddy-api-key=${api_key}" >> .bazelrc
   echo "Added API key to .bazelrc"
 else
   echo "WARNING: No API key provided (BB_API_KEY environment variable is empty)"
