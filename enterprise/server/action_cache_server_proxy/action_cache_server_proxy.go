@@ -169,9 +169,12 @@ func (s *ActionCacheServerProxy) actionCacheTTL(ctx context.Context) time.Durati
 	// Clients may opt into this caching via a header as well, whose value is
 	// the duration to serve locally cached results for.
 	if vals := metadata.ValueFromIncomingContext(ctx, proxy_util.ActionCacheTTLHeaderName); len(vals) > 0 {
-		ttl, err := time.ParseDuration(vals[0])
+		// Use the last value, so that a later --remote_header flag overrides
+		// an earlier one.
+		val := vals[len(vals)-1]
+		ttl, err := time.ParseDuration(val)
 		if err != nil {
-			log.CtxWarningf(ctx, "Ignoring invalid %q header value %q: %s", proxy_util.ActionCacheTTLHeaderName, vals[0], err)
+			log.CtxWarningf(ctx, "Ignoring invalid %q header value %q: %s", proxy_util.ActionCacheTTLHeaderName, val, err)
 			return 0
 		}
 		if ttl > 0 {
