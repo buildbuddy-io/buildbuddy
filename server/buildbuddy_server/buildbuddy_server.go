@@ -2726,7 +2726,12 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		if err != nil {
 			return http.StatusBadRequest, status.FailedPreconditionErrorf("Could not parse bytestream_url '%s' for cache artifact.", params.Get("bytestream_url"))
 		}
-		b, err := s.env.GetBlobstore().ReadBlob(ctx, path.Join(iid, "artifacts", "cache", lookup.URL.Path))
+		prefix := path.Join(iid, "artifacts", "cache") + "/"
+		blobPath := path.Join(prefix, lookup.URL.Path)
+		if !strings.HasPrefix(blobPath, prefix) {
+			return http.StatusBadRequest, status.InvalidArgumentError("invalid cache artifact path")
+		}
+		b, err := s.env.GetBlobstore().ReadBlob(ctx, blobPath)
 		if err != nil {
 			if status.IsNotFoundError(err) {
 				return http.StatusNotFound, status.NotFoundError("File not found.")
