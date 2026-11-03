@@ -596,3 +596,19 @@ func TestInternalHeadersAreStrippedBeforePropagation(t *testing.T) {
 		})
 	}
 }
+
+func TestPropagateMetadataForwardsAllValues(t *testing.T) {
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(
+		"x-propagated", "a",
+		"x-propagated", "b",
+		"x-not-propagated", "c",
+	))
+	var outgoing metadata.MD
+	interceptor := interceptors.PropagateMetadataUnaryInterceptor("x-propagated")
+	_, err := interceptor(ctx, nil, &grpc.UnaryServerInfo{}, func(ctx context.Context, req any) (any, error) {
+		outgoing, _ = metadata.FromOutgoingContext(ctx)
+		return nil, nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, metadata.Pairs("x-propagated", "a", "x-propagated", "b"), outgoing)
+}
