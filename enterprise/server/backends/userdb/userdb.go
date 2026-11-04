@@ -527,7 +527,10 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 		r = role.Admin
 	}
 
-	u, err := d.getUserByUserID(ctx, tx, userID, &interfaces.GetUserOpts{})
+	// DirectMembershipsOnly means u.Groups will not contain any indirect
+	// memberships via user lists. This only affects the parent membership check
+	// in isSAMLManagedUser.
+	u, err := d.getUserByUserID(ctx, tx, userID, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return status.NotFoundErrorf("user %q does not exist", userID)
@@ -556,11 +559,13 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 		return status.AlreadyExistsError("You're already in this organization.")
 	}
 	if !autoAdd {
-		g, err := d.getGroupByID(ctx, tx, groupID)
+		// SAML-managed users are added automatically without going through the
+		// "request to join" flow.
+		isManaged, err := d.isSAMLManagedUser(ctx, tx, u, groupID)
 		if err != nil {
 			return err
 		}
-		if g.SamlIdpMetadataUrl == "" || !strings.HasPrefix(u.SubID, saml.SubIDPrefixForGroup(g.URLIdentifier)) {
+		if !isManaged {
 			return status.FailedPreconditionError("Users must request membership before they can be added to an organization.")
 		}
 	}
@@ -568,6 +573,46 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 		`INSERT INTO "UserGroups" (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)`,
 		userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), r,
 	).Exec().Error
+}
+
+// isSAMLManagedUser reports whether the user's SAML identity is managed
+// by the group, or by a parent group, so that the user can be added to the
+// group without a membership request. u.Groups must hold only the user's
+// direct memberships.
+func (d *UserDB) isSAMLManagedUser(ctx context.Context, tx interfaces.DB, u *tables.User, groupID string) (bool, error) {
+	g, err := d.getGroupByID(ctx, tx, groupID)
+	if err != nil {
+		return false, err
+	}
+	if g.SamlIdpMetadataUrl == "" {
+		return false, nil
+	}
+	// This is the common case: the user matches the SAML SubID prefix for the
+	// group.
+	if strings.HasPrefix(u.SubID, saml.SubIDPrefixForGroup(g.URLIdentifier)) {
+		return true, nil
+	}
+
+	// The less common case:
+	// We allow SAML-managed groups to have child/parent relationships. Groups
+	// are considered related if they have the same SAML IdP metadata URL. A
+	// parent is designated by setting the is_parent bit on the parent group.
+	// An admin (or admin API key) for the parent group is allowed to perform
+	// changes on the children groups.
+	// Below we check if the target user is a member of the parent group and the
+	// caller is an admin of the parent group.
+	caller, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, m := range u.Groups {
+		if m.IsParent && m.SamlIdpMetadataUrl == g.SamlIdpMetadataUrl &&
+			strings.HasPrefix(u.SubID, saml.SubIDPrefixForGroup(m.URLIdentifier)) &&
+			authutil.AuthorizeOrgAdmin(caller, m.GroupID) == nil {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (d *UserDB) addUserListToGroup(ctx context.Context, tx interfaces.DB, userListID, groupID string, listRole role.Role) error {

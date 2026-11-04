@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -2911,6 +2912,102 @@ func TestChildGroupAuth(t *testing.T) {
 	cl, err := claims.ClaimsFromContext(gr2Ctx)
 	require.NoError(t, err)
 	require.Equal(t, us2Group.GroupID, cl.GetGroupID())
+
+	// A SAML identity managed by the parent can be provisioned into a child
+	// without requesting membership in each child separately.
+	member := newFakeUser("US_PARENT_MEMBER", "example.com")
+	member.SubID = saml.SubIDForUserName("member", &us1Group)
+	require.NoError(t, udb.InsertUser(ctx, member))
+	addMember := []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId:           &uidpb.UserId{Id: member.UserID},
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		Role:             grpb.Group_WRITER_ROLE,
+	}}
+
+	// Neither a parent-scoped identity alone nor a pending parent membership
+	// request is enough. The same identity is allowed after approval below.
+	err = udb.UpdateGroupUsers(gr2Ctx, us2Group.GroupID, addMember)
+	require.True(t, status.IsFailedPreconditionError(err), err)
+	memberCtx := authUserCtx(ctx, env, t, member.UserID)
+	membership, err := udb.RequestToJoinGroup(memberCtx, us1Group.GroupID)
+	require.NoError(t, err)
+	require.Equal(t, grpb.GroupMembershipStatus_REQUESTED, membership)
+	err = udb.UpdateGroupUsers(gr2Ctx, us2Group.GroupID, addMember)
+	require.True(t, status.IsFailedPreconditionError(err), err)
+	require.NoError(t, udb.UpdateGroupUsers(adminCtx1, us1Group.GroupID, addMember))
+
+	// Even with cached parent-key claims authorizing both groups, the current
+	// group configuration must establish a parent relationship.
+	us1Group.IsParent = false
+	_, err = udb.UpdateGroup(adminCtx1, &us1Group)
+	require.NoError(t, err)
+	adminCtx2 = env.GetAuthenticator().AuthContextFromAPIKey(ctx, key2.Value)
+	err = udb.UpdateGroupUsers(gr2Ctx, us2Group.GroupID, addMember)
+	require.True(t, status.IsFailedPreconditionError(err), err)
+	us1Group.IsParent = true
+	_, err = udb.UpdateGroup(adminCtx1, &us1Group)
+	require.NoError(t, err)
+
+	// A marked parent cannot provision its identities into a different IdP
+	// or into a group without SAML configured, even with cached admin claims.
+	for _, idpURL := range []string{"https://idp.example.com/other", ""} {
+		us2Group.SamlIdpMetadataUrl = idpURL
+		_, err = udb.UpdateGroup(adminCtx2, &us2Group)
+		require.NoError(t, err)
+		err = udb.UpdateGroupUsers(gr2Ctx, us2Group.GroupID, addMember)
+		require.True(t, status.IsFailedPreconditionError(err), err)
+	}
+	us2Group.SamlIdpMetadataUrl = us1Group.SamlIdpMetadataUrl
+	_, err = udb.UpdateGroup(adminCtx2, &us2Group)
+	require.NoError(t, err)
+
+	// Copying a parent's IdP URL must not let a child's own admin add the
+	// parent's identities without consent.
+	err = udb.UpdateGroupUsers(adminCtx2, us2Group.GroupID, addMember)
+	require.True(t, status.IsFailedPreconditionError(err), err)
+
+	// Parent keys with read-only authority over children cannot add users.
+	auditKey, err := env.GetAuthDB().CreateAPIKey(
+		adminCtx1, us1Group.GroupID, "audit",
+		[]cappb.Capability{cappb.Capability_AUDIT_LOG_READ},
+		0, /*=expiresIn*/
+		false /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	auditCtx := env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), auditKey.Value)
+	err = udb.UpdateGroupUsers(auditCtx, us2Group.GroupID, addMember)
+	require.True(t, status.IsPermissionDeniedError(err), err)
+
+	// Use the real parent-key resolver with the child as the effective group.
+	gr2Ctx = env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), key1.Value)
+	require.NoError(t, udb.UpdateGroupUsers(gr2Ctx, us2Group.GroupID, addMember))
+	groupUsers, err := udb.GetGroupUsers(gr2Ctx, us2Group.GroupID, &interfaces.GetGroupUsersOpts{
+		Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER},
+	})
+	require.NoError(t, err)
+	added := findGroupUser(t, member.UserID, groupUsers)
+	require.Equal(t, grpb.Group_WRITER_ROLE, added.GetRole())
+
+	// Parent membership must not make an unrelated identity eligible.
+	addUnrelated := []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId:           &uidpb.UserId{Id: "US1"},
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+	}}
+	err = udb.UpdateGroupUsers(gr2Ctx, us2Group.GroupID, addUnrelated)
+	require.True(t, status.IsFailedPreconditionError(err), err)
+
+	// Removing parent membership also removes eligibility for new child adds.
+	removeMember := []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId:           &uidpb.UserId{Id: member.UserID},
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+	}}
+	require.NoError(t, udb.UpdateGroupUsers(gr2Ctx, us2Group.GroupID, removeMember))
+	require.NoError(t, udb.UpdateGroupUsers(adminCtx1, us1Group.GroupID, removeMember))
+	err = udb.UpdateGroupUsers(gr2Ctx, us2Group.GroupID, addMember)
+	require.True(t, status.IsFailedPreconditionError(err), err)
 }
 
 func TestUserListOps(t *testing.T) {
