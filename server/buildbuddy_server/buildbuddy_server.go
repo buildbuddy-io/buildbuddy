@@ -795,6 +795,18 @@ func (s *BuildBuddyServer) SetSSOConfig(ctx context.Context, req *grpb.SetSSOCon
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Group status claims apply to the authenticated user's selected group.
+	if u.GetGroupID() != groupID {
+		return nil, status.PermissionDeniedError("SSO configuration must be updated for the authenticated organization.")
+	}
+	isEnterprise := u.GetGroupStatus() == grpb.Group_ENTERPRISE_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS
+	if !isEnterprise && claims.AuthorizeServerAdmin(ctx) != nil {
+		return nil, status.PermissionDeniedError("SSO configuration is available on paid plans. Contact support@buildbuddy.io to get started.")
+	}
 	metadataURL := strings.TrimSpace(req.GetConfig().GetSamlIdpMetadataUrl())
 	if metadataURL != "" {
 		if err := ValidateSamlIdpMetadataURL(ctx, samlMetadataHTTPClient, metadataURL); err != nil {
