@@ -163,10 +163,7 @@ func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
 			log.Warningf("Error reading Xcode SDKs from %s: %s", path, err.Error())
 			continue
 		}
-		sdks := make(map[string]string)
-		for _, sdkPath := range sdkPaths {
-			sdks[strings.TrimSuffix(filepath.Base(sdkPath), ".sdk")] = sdkPath
-		}
+		sdks := xcodeSDKs(developerDirPath, sdkPaths, xcrunSDKPath)
 		log.Infof("Found Xcode version %s (%s) at path %s", xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion, path)
 		versions := expandXcodeVersions(xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion)
 		mostPreciseVersion := versions[len(versions)-1]
@@ -207,6 +204,46 @@ func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
 	}
 
 	return versionMap
+}
+
+// Maps SDK names like "iPhoneSimulator" and "iPhoneSimulator18.2" to SDK paths
+// relative to developerDirPath.
+func xcodeSDKs(developerDirPath string, sdkPaths []string, showSDKPath func(developerDir, sdk string) (string, error)) map[string]string {
+	sdks := make(map[string]string)
+	for _, sdkPath := range sdkPaths {
+		sdks[strings.TrimSuffix(filepath.Base(sdkPath), ".sdk")] = sdkPath
+	}
+	// Bazel sets SDKROOT for local actions to the path xcrun reports. For an
+	// Xcode SDK that is the versioned symlink, e.g. iPhoneSimulator18.2.sdk.
+	// Use the same path so local and remote actions get the same SDKROOT.
+	for sdk, sdkPath := range sdks {
+		if sdkPath != fmt.Sprintf("Platforms/%s.platform/Developer/SDKs/%s.sdk", sdk, sdk) {
+			continue
+		}
+		sdkRoot, err := showSDKPath(developerDirPath, sdk)
+		if err != nil {
+			log.Warningf("Error finding SDK %s in %s with xcrun: %s", sdk, developerDirPath, err)
+			continue
+		}
+		relativePath, ok := strings.CutPrefix(sdkRoot, developerDirPath+"/")
+		if !ok {
+			log.Warningf("xcrun returned SDK path %s outside of %s", sdkRoot, developerDirPath)
+			continue
+		}
+		sdks[sdk] = relativePath
+	}
+	return sdks
+}
+
+// Runs the same command as Bazel's XcodeLocalEnvProvider.
+func xcrunSDKPath(developerDir string, sdk string) (string, error) {
+	cmd := exec.Command("/usr/bin/xcrun", "--sdk", strings.ToLower(sdk), "--show-sdk-path")
+	cmd.Env = []string{"DEVELOPER_DIR=" + developerDir}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func xcodePlistForPath(path string) (*xcodePlist, error) {
