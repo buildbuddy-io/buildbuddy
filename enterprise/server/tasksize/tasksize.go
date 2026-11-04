@@ -727,6 +727,19 @@ func applyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd
 	limitMaxDisk := true
 	if efp != nil {
 		limitMaxDisk = !efp.Boolean(ctx, "disable-task-sizing-disk-limit", false)
+
+		if maxMilliCPU := efp.Int64(ctx, "remote_execution.runner.milli_cpu_cap", 0); maxMilliCPU > 0 && clone.EstimatedMilliCpu > maxMilliCPU {
+			log.CtxInfof(ctx, "Task requested %d milliCPU, capped at %d", clone.EstimatedMilliCpu, maxMilliCPU)
+			clone.EstimatedMilliCpu = maxMilliCPU
+		}
+		if maxMemoryBytes := efp.Int64(ctx, "remote_execution.runner.memory_bytes_cap", 0); maxMemoryBytes > 0 && clone.EstimatedMemoryBytes > maxMemoryBytes {
+			log.CtxInfof(ctx, "Task requested %d memory bytes, capped at %d", clone.EstimatedMemoryBytes, maxMemoryBytes)
+			clone.EstimatedMemoryBytes = maxMemoryBytes
+		}
+		if maxDiskBytes := efp.Int64(ctx, "remote_execution.runner.disk_bytes_cap", 0); maxDiskBytes > 0 && clone.EstimatedFreeDiskBytes > maxDiskBytes {
+			log.CtxInfof(ctx, "Task requested %d free disk, capped at %d", clone.EstimatedFreeDiskBytes, maxDiskBytes)
+			clone.EstimatedFreeDiskBytes = maxDiskBytes
+		}
 	}
 
 	maxDisk := MaxEstimatedFreeDisk

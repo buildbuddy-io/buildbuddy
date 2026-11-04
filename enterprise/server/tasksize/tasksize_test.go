@@ -348,6 +348,52 @@ func TestApplyLimits_MaxDiskLimitDisabled(t *testing.T) {
 	assert.Equal(t, tasksize.MaxEstimatedFreeDisk*10, sz.EstimatedFreeDiskBytes)
 }
 
+func TestApplyLimits_RunnerResourceCapExperiments(t *testing.T) {
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"remote_execution.runner.milli_cpu_cap": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "cap",
+			Variants:       map[string]any{"cap": 4000},
+		},
+		"remote_execution.runner.memory_bytes_cap": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "cap",
+			Variants:       map[string]any{"cap": 8_000_000_000},
+		},
+		"remote_execution.runner.disk_bytes_cap": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "cap",
+			Variants:       map[string]any{"cap": 50_000_000_000},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(t, err)
+
+	// Requests above the cap are clamped.
+	sz := tasksize.ApplyLimits(context.Background(), fp, &repb.Command{}, &platform.Properties{}, &scpb.TaskSize{
+		EstimatedMilliCpu:      16000,
+		EstimatedMemoryBytes:   32e9,
+		EstimatedFreeDiskBytes: 80e9,
+	})
+	assert.Equal(t, int64(4000), sz.EstimatedMilliCpu)
+	assert.Equal(t, int64(8e9), sz.EstimatedMemoryBytes)
+	assert.Equal(t, int64(50e9), sz.EstimatedFreeDiskBytes)
+
+	// Requests below the cap are unchanged.
+	sz = tasksize.ApplyLimits(context.Background(), fp, &repb.Command{}, &platform.Properties{}, &scpb.TaskSize{
+		EstimatedMilliCpu:      2000,
+		EstimatedMemoryBytes:   4e9,
+		EstimatedFreeDiskBytes: 20e9,
+	})
+	assert.Equal(t, int64(2000), sz.EstimatedMilliCpu)
+	assert.Equal(t, int64(4e9), sz.EstimatedMemoryBytes)
+	assert.Equal(t, int64(20e9), sz.EstimatedFreeDiskBytes)
+}
+
 func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
 
