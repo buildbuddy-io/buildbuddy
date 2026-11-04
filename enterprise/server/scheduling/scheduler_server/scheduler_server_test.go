@@ -25,11 +25,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
@@ -326,6 +328,39 @@ func TestSchedulerServerGetPoolInfoSelfHostedByDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "group1", p.GroupID)
 	require.Equal(t, "workflows", p.Name)
+}
+
+func TestSchedulerServerGetPoolInfoWithInvalidPoolOverride(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		override      map[string]any
+		wantEventName string
+	}{
+		{"group_id not a string", map[string]any{"group_id": 1}, "pool_override_invalid_group_id"},
+		{"pool not a string", map[string]any{"pool": 1}, "pool_override_invalid_pool"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			metrics.UnexpectedEvent.Reset()
+			fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
+				"remote_execution.pool_override": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "default",
+					Variants:       map[string]any{"default": tc.override},
+				},
+			})
+			env, ctx := getEnv(t, &schedulerOpts{userOwnedEnabled: true}, "user1")
+			env.SetExperimentFlagProvider(fp)
+			s := env.GetSchedulerService()
+
+			p, err := s.GetPoolInfo(ctx, "linux", "amd64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, platform.PoolTypeDefault)
+			require.NoError(t, err)
+			require.Equal(t, "defaultPoolName", p.Name)
+			require.Equal(t, []testmetrics.CounterVecValue{{
+				Labels: map[string]string{metrics.EventName: tc.wantEventName},
+				Value:  1,
+			}}, testmetrics.CounterValues(t, metrics.UnexpectedEvent))
+		})
+	}
 }
 
 func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
