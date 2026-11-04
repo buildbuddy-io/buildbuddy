@@ -2013,7 +2013,21 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration, deferRootfsMount bool) string {
 		"i8042.nomux",
 		"i8042.nopnp",
 		"i8042.dumbkbd",
-		"tsc=reliable",
+		// Use kvm-clock instead of the TSC as the guest clocksource.
+		//
+		// Firecracker restores the TSC of each vCPU separately when loading a
+		// snapshot. If the restore stalls for more than a second between two
+		// vCPUs (for example on a slow UFFD page fault), KVM gives the remaining
+		// vCPUs a different TSC offset. With the tsc clocksource, CLOCK_MONOTONIC
+		// then runs backwards whenever a thread migrates between vCPUs, which
+		// breaks anything in the guest that measures elapsed time. See
+		// https://github.com/buildbuddy-io/buildbuddy/issues/13988.
+		//
+		// kvm-clock is derived from the host's clock and only uses the vCPU's
+		// TSC for the interval since the host last refreshed it, so per-vCPU
+		// TSC skew cancels out. We previously passed tsc=reliable, which
+		// disabled the guest's own TSC sanity checks and hid the problem.
+		"clocksource=kvm-clock",
 	}
 	if !vmConfig.GetIpv6Enabled() {
 		kernelArgs = append(kernelArgs, "ipv6.disable=1")
