@@ -2315,7 +2315,10 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, true /*isTrusted*/, action, invocationUUID.String(), nil /*extraCIRunnerArgs*/, nil /*env*/, nil /*remoteHeaders*/, true /*shouldRetry*/); err != nil {
 		return status.WrapErrorf(err, "failed to start scheduled workflow action %q", scheduled.ActionName)
 	}
-	return ws.advanceScheduledWorkflow(ctx, scheduled)
+	// The run has started, so advance the schedule even if the dispatch
+	// deadline has passed; failing here would retry the run and duplicate it.
+	// The advance only applies if this server still holds the claim.
+	return ws.advanceScheduledWorkflow(context.WithoutCancel(ctx), scheduled)
 }
 
 func (ws *workflowService) advanceScheduledWorkflow(ctx context.Context, scheduled *tables.ScheduledRun) error {
