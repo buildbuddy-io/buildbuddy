@@ -54,6 +54,7 @@ go_library(
         "//server/util/subdomain",
         "@com_github_google_go_github_v59//github",
         "@com_github_google_uuid//:uuid",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_robfig_cron_v3//:cron",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",

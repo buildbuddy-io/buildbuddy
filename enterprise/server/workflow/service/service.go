@@ -57,6 +57,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/robfig/cron/v3"
 	"golang.org/x/oauth2"
@@ -2245,7 +2246,7 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	// taken over the slot. Execute itself runs on ctx: cancelling it mid-flight
 	// could leave a queued run that the retry would then duplicate.
 	deadline := ws.scheduledDispatchDeadline(scheduled)
-	startCtx, cancel := context.WithTimeout(ctx, deadline.Sub(ws.env.GetClock().Now()))
+	startCtx, cancel := clockwork.WithDeadline(ctx, ws.env.GetClock(), deadline)
 	defer cancel()
 	wf, app, err := ws.getWorkflowForScheduledDispatch(startCtx, scheduled.GroupID, scheduled.RepoURL)
 	if err != nil {
@@ -2312,8 +2313,8 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if err != nil {
 		return err
 	}
-	// startCtx unblocks calls that stall, but its timer runs on real time;
-	// this check enforces the deadline by the env clock.
+	// startCtx only cuts stalled calls short; this check is what keeps a step
+	// that returned after the deadline from starting a duplicate run.
 	if !ws.env.GetClock().Now().Before(deadline) {
 		return status.DeadlineExceededErrorf("claim on scheduled run %s is about to expire or has expired", scheduled.ScheduleID)
 	}
