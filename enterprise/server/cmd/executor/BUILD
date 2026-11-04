@@ -2,7 +2,7 @@ load("@io_bazel_rules_docker//container:container.bzl", "container_image", "cont
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_distroless//distroless:defs.bzl", "flatten")
-load("@rules_img//img:image.bzl", "image_manifest")
+load("@rules_img//img:image.bzl", "image_index", "image_manifest")
 load("@rules_img//img:layer.bzl", "image_layer", "layer_from_tar")
 load("@rules_img//img:load.bzl", "image_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -309,7 +309,7 @@ genrule(
     name = "firecracker_rename",
     srcs = select({
         "@platforms//cpu:arm64": ["@com_github_firecracker_microvm_firecracker_arm64//:firecracker"],
-        "//conditions:default": ["@com_github_firecracker_microvm_firecracker//:firecracker"],
+        "//conditions:default": ["@com_github_firecracker_microvm_firecracker_amd64//:firecracker"],
     }),
     outs = ["firecracker"],
     cmd = "cp $(SRCS) $@",
@@ -319,7 +319,7 @@ genrule(
     name = "jailer_rename",
     srcs = select({
         "@platforms//cpu:arm64": ["@com_github_firecracker_microvm_firecracker_arm64//:jailer"],
-        "//conditions:default": ["@com_github_firecracker_microvm_firecracker//:jailer"],
+        "//conditions:default": ["@com_github_firecracker_microvm_firecracker_amd64//:jailer"],
     }),
     outs = ["jailer"],
     cmd = "cp $(SRCS) $@",
@@ -491,121 +491,151 @@ image_layer(
     ]
 ]
 
-image_layer(
-    name = "docker_credential_gcr_image_layer",
-    srcs = select({
-        "@platforms//cpu:x86_64": {
-            "/usr/bin/docker-credential-gcr": "@com_github_googlecloudplatform_docker-credential-gcr-linux-amd64//:docker-credential-gcr.bin",
+[
+    image_layer(
+        name = "docker_credential_gcr_image_layer_%s" % arch,
+        srcs = {
+            "/usr/bin/docker-credential-gcr": "@com_github_googlecloudplatform_docker-credential-gcr-linux-%s//:docker-credential-gcr.bin" % arch,
             "/root/.docker/config.json": "//enterprise/server/cmd/executor/docker_credential_gcr_config:config.json",
         },
-        "@platforms//cpu:arm64": {
-            "/usr/bin/docker-credential-gcr": "@com_github_googlecloudplatform_docker-credential-gcr-linux-arm64//:docker-credential-gcr.bin",
-            "/root/.docker/config.json": "//enterprise/server/cmd/executor/docker_credential_gcr_config:config.json",
+        annotations = {
+            "org.opencontainers.image.title": "docker-credential-gcr",
+            "org.opencontainers.image.description": (
+                "docker-credential-gcr binary and associated configuration."
+            ),
+            "org.opencontainers.image.vendor": "BuildBuddy",
         },
-    }),
-    annotations = {
-        "org.opencontainers.image.title": "docker-credential-gcr",
-        "org.opencontainers.image.description": (
-            "docker-credential-gcr binary and associated configuration."
-        ),
-        "org.opencontainers.image.vendor": "BuildBuddy",
-    },
-    tags = ["manual"],
-)
+        tags = ["manual"],
+        target_compatible_with = [
+            "@platforms//os:linux",
+            "@platforms//cpu:%s" % {
+                "amd64": "x86_64",
+                "arm64": "aarch64",
+            }[arch],
+        ],
+    )
+    for arch in [
+        "amd64",
+        "arm64",
+    ]
+]
 
-image_layer(
-    name = "containerd_patch_image_layer",
-    srcs = select({
-        "@platforms//cpu:x86_64": {
-            "/usr/bin/containerd.bin": "@com_github_containerd_containerd-linux-amd64//:containerd.bin",
-            "/usr/bin/containerd-shim-runc-v2.bin": "@com_github_containerd_containerd-linux-amd64//:containerd-shim-runc-v2.bin",
-            "/usr/bin/ctr.bin": "@com_github_containerd_containerd-linux-amd64//:ctr.bin",
+[
+    image_layer(
+        name = "containerd_patch_image_layer_%s" % arch,
+        srcs = {
+            "/usr/bin/containerd.bin": "@com_github_containerd_containerd-linux-%s//:containerd.bin" % arch,
+            "/usr/bin/containerd-shim-runc-v2.bin": "@com_github_containerd_containerd-linux-%s//:containerd-shim-runc-v2.bin" % arch,
+            "/usr/bin/ctr.bin": "@com_github_containerd_containerd-linux-%s//:ctr.bin" % arch,
         },
-        "@platforms//cpu:arm64": {
-            "/usr/bin/containerd.bin": "@com_github_containerd_containerd-linux-arm64//:containerd.bin",
-            "/usr/bin/containerd-shim-runc-v2.bin": "@com_github_containerd_containerd-linux-arm64//:containerd-shim-runc-v2.bin",
-            "/usr/bin/ctr.bin": "@com_github_containerd_containerd-linux-arm64//:ctr.bin",
+        annotations = {
+            "org.opencontainers.image.title": "Patch for containerd",
+            "org.opencontainers.image.description": (
+                "Files to patch debian's standard containerd to remove known vulnerabilities in the go binaries."
+            ),
+            "org.opencontainers.image.vendor": "BuildBuddy",
         },
-        "//conditions:default": {},
-    }),
-    annotations = {
-        "org.opencontainers.image.title": "Patch for containerd",
-        "org.opencontainers.image.description": (
-            "Files to patch debian's standard containerd to remove known vulnerabilities in the go binaries."
-        ),
-        "org.opencontainers.image.vendor": "BuildBuddy",
-    },
-    tags = ["manual"],
-)
+        tags = ["manual"],
+        target_compatible_with = [
+            "@platforms//os:linux",
+            "@platforms//cpu:%s" % {
+                "amd64": "x86_64",
+                "arm64": "aarch64",
+            }[arch],
+        ],
+    )
+    for arch in [
+        "amd64",
+        "arm64",
+    ]
+]
 
-image_layer(
-    name = "rootlesskit_patch_image_layer",
-    srcs = select({
-        "@platforms//cpu:x86_64": {
-            # "/usr/bin/rootlessctl.bin": "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlessctl.bin",
-            "/usr/bin/rootlesskit.bin": "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlesskit.bin",
+[
+    image_layer(
+        name = "rootlesskit_patch_image_layer_%s" % arch,
+        srcs = {
+            # "/usr/bin/rootlessctl.bin": "@com_github_rootless_containers_rootlesskit-linux-%s//:rootlessctl.bin" % arch,
+            "/usr/bin/rootlesskit.bin": "@com_github_rootless_containers_rootlesskit-linux-%s//:rootlesskit.bin" % arch,
         },
-        "@platforms//cpu:arm64": {
-            # "/usr/bin/rootlessctl.bin": "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlessctl.bin",
-            "/usr/bin/rootlesskit.bin": "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlesskit.bin",
+        annotations = {
+            "org.opencontainers.image.title": "Patch for rootlesskit",
+            "org.opencontainers.image.description": (
+                "Files to patch debian's standard rootlesskit to remove known vulnerabilities in the go binaries."
+            ),
+            "org.opencontainers.image.vendor": "BuildBuddy",
         },
-        "//conditions:default": {},
-    }),
-    annotations = {
-        "org.opencontainers.image.title": "Patch for rootlesskit",
-        "org.opencontainers.image.description": (
-            "Files to patch debian's standard rootlesskit to remove known vulnerabilities in the go binaries."
-        ),
-        "org.opencontainers.image.vendor": "BuildBuddy",
-    },
-    tags = ["manual"],
-)
+        tags = ["manual"],
+        target_compatible_with = [
+            "@platforms//os:linux",
+            "@platforms//cpu:%s" % {
+                "amd64": "x86_64",
+                "arm64": "aarch64",
+            }[arch],
+        ],
+    )
+    for arch in [
+        "amd64",
+        "arm64",
+    ]
+]
 
-image_layer(
-    name = "runc_patch_image_layer",
-    srcs = select({
-        "@platforms//cpu:x86_64": {
-            "/usr/bin/runc": "@com_github_opencontainers_runc_runc-linux-amd64//file:runc",
+[
+    image_layer(
+        name = "runc_patch_image_layer_%s" % arch,
+        srcs = {
+            "/usr/bin/runc": "@com_github_opencontainers_runc_runc-linux-%s//file:runc" % arch,
         },
-        "@platforms//cpu:arm64": {
-            "/usr/bin/runc": "@com_github_opencontainers_runc_runc-linux-arm64//file:runc",
+        annotations = {
+            "org.opencontainers.image.title": "Patch for runc",
+            "org.opencontainers.image.description": (
+                "Files to patch debian's standard runc to remove known vulnerabilities in the go binaries."
+            ),
+            "org.opencontainers.image.vendor": "BuildBuddy",
         },
-        "//conditions:default": {},
-    }),
-    annotations = {
-        "org.opencontainers.image.title": "Patch for runc",
-        "org.opencontainers.image.description": (
-            "Files to patch debian's standard runc to remove known vulnerabilities in the go binaries."
-        ),
-        "org.opencontainers.image.vendor": "BuildBuddy",
-    },
-    tags = ["manual"],
-)
+        tags = ["manual"],
+        target_compatible_with = [
+            "@platforms//os:linux",
+            "@platforms//cpu:%s" % {
+                "amd64": "x86_64",
+                "arm64": "aarch64",
+            }[arch],
+        ],
+    )
+    for arch in [
+        "amd64",
+        "arm64",
+    ]
+]
 
-image_layer(
-    name = "executor_tools_image_layer",
-    srcs = select({
-        "@platforms//cpu:x86_64": {
-            "/usr/bin/firecracker": "@com_github_firecracker_microvm_firecracker//:firecracker",
-            "/usr/bin/jailer": "@com_github_firecracker_microvm_firecracker//:jailer",
-            "/usr/bin/crun": "@com_github_containers_crun_crun-linux-amd64//file:crun",
+[
+    image_layer(
+        name = "executor_tools_image_layer_%s" % arch,
+        srcs = {
+            "/usr/bin/firecracker": "@com_github_firecracker_microvm_firecracker_%s//:firecracker" % arch,
+            "/usr/bin/jailer": "@com_github_firecracker_microvm_firecracker_%s//:jailer" % arch,
+            "/usr/bin/crun": "@com_github_containers_crun_crun-linux-%s//file:crun" % arch,
         },
-        "@platforms//cpu:aarch64": {
-            "/usr/bin/firecracker": "@com_github_firecracker_microvm_firecracker_arm64//:firecracker",
-            "/usr/bin/jailer": "@com_github_firecracker_microvm_firecracker_arm64//:jailer",
-            "/usr/bin/crun": "@com_github_containers_crun_crun-linux-arm64//file:crun",
+        annotations = {
+            "org.opencontainers.image.title": "Firecracker",
+            "org.opencontainers.image.description": (
+                "Firecracker binaries."
+            ),
+            "org.opencontainers.image.vendor": "BuildBuddy",
         },
-        "//conditions:default": {},
-    }),
-    annotations = {
-        "org.opencontainers.image.title": "Firecracker",
-        "org.opencontainers.image.description": (
-            "Firecracker binaries."
-        ),
-        "org.opencontainers.image.vendor": "BuildBuddy",
-    },
-    tags = ["manual"],
-)
+        tags = ["manual"],
+        target_compatible_with = [
+            "@platforms//os:linux",
+            "@platforms//cpu:%s" % {
+                "amd64": "x86_64",
+                "arm64": "aarch64",
+            }[arch],
+        ],
+    )
+    for arch in [
+        "amd64",
+        "arm64",
+    ]
+]
 
 layer_from_tar(
     name = "podman_static_image_layer",
@@ -668,19 +698,34 @@ image_manifest(
             BINARY_NAME,
         ),
     ],
-    layers = [
-        ":apt_image_layer_amd64",
-        ":docker_credential_gcr_image_layer",
-        ":containerd_patch_image_layer",
-        ":runc_patch_image_layer",
-        # Updating these layers does not currently afford us any vulnerability
-        # fixes; leave them out for now.
-        # ":rootlesskit_patch_layer",
-        ":executor_tools_image_layer",
-        ":podman_static_image_layer",
-        ":licenses_image_layer",
-        ":binary_image_layer",
-    ],
+    layers = select({
+        "@platforms//cpu:x86_64": [
+            ":apt_image_layer_amd64",
+            ":docker_credential_gcr_image_layer_amd64",
+            ":containerd_patch_image_layer_amd64",
+            ":runc_patch_image_layer_amd64",
+            # Updating these layers does not currently afford us any vulnerability
+            # fixes; leave them out for now.
+            # ":rootlesskit_patch_layer_amd64",
+            ":executor_tools_image_layer_amd64",
+            ":podman_static_image_layer",
+            ":licenses_image_layer",
+            ":binary_image_layer",
+        ],
+        "@platforms//cpu:arm64": [
+            ":apt_image_layer_arm64",
+            ":docker_credential_gcr_image_layer_arm64",
+            ":containerd_patch_image_layer_arm64",
+            ":runc_patch_image_layer_arm64",
+            # Updating these layers does not currently afford us any vulnerability
+            # fixes; leave them out for now.
+            # ":rootlesskit_patch_layer_arm64",
+            ":executor_tools_image_layer_arm64",
+            ":podman_static_image_layer",
+            ":licenses_image_layer",
+            ":binary_image_layer",
+        ],
+    }),
     tags = ["manual"],
 )
 
@@ -748,6 +793,16 @@ image_manifest(
     visibility = ["//visibility:public"],
 )
 
+image_index(
+    name = "index",
+    manifests = [":image_manifest"],
+    platforms = [
+        "//platforms:linux_x86_64",
+        "//platforms:linux_arm64",
+    ],
+    tags = ["manual"],
+)
+
 image_load(
     name = "image",
     # Explicitly use containerd for clarity. The container will be accessible
@@ -759,7 +814,7 @@ image_load(
     # Loading into containerd allows us to load the exact OCI image we've built
     # with the expected digest.
     daemon = "containerd",
-    image = ":image_manifest",
+    image = ":index",
     registry = "buildbuddy.io",
     repository = "enterprise/executor",
     tag = "latest",
