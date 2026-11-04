@@ -2305,11 +2305,11 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 func (ws *workflowService) advanceScheduledWorkflow(ctx context.Context, scheduled *tables.ScheduledRun) error {
 	nextRunUsec, err := ws.calculateNextRunTimeUsec(scheduled.CronExpr)
 	if err != nil {
-		alert.CtxUnexpectedEvent(ctx, "Failed to calculate next run time for scheduled workflow %s: %s", scheduled.ScheduleID, err)
+		alert.CtxUnexpectedEvent(ctx, "scheduled_workflow_next_run_time_failed", "schedule %s: %s", scheduled.ScheduleID, err)
 		return err
 	}
 	if err := ws.advanceWorkflowSchedule(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec, nextRunUsec, 0 /*failedAttemptCount*/, 0 /*consecutiveScheduleFailureCount*/); err != nil {
-		alert.CtxUnexpectedEvent(ctx, "Failed to advance scheduled workflow %s to %d: %s", scheduled.ScheduleID, nextRunUsec, err)
+		alert.CtxUnexpectedEvent(ctx, "scheduled_workflow_advance_failed", "schedule %s next_run %d: %s", scheduled.ScheduleID, nextRunUsec, err)
 		return err
 	}
 	return nil
