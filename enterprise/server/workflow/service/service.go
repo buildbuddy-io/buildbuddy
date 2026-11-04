@@ -2097,11 +2097,7 @@ func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
 		if scheduled == nil {
 			break
 		}
-		// context.WithTimeout rather than WithDeadline so the deadline follows the env clock.
-		dispatchCtx, cancel := context.WithTimeout(ctx, ws.scheduledDispatchDeadline(scheduled).Sub(ws.env.GetClock().Now()))
-		dispatchErr := ws.dispatchScheduledWorkflow(dispatchCtx, scheduled)
-		cancel()
-		if dispatchErr != nil {
+		if dispatchErr := ws.dispatchScheduledWorkflow(ctx, scheduled); dispatchErr != nil {
 			if err := ws.handleScheduledWorkflowFailure(ctx, scheduled, dispatchErr); err != nil {
 				log.CtxWarningf(ctx, "Failed to handle scheduled workflow failure %s: %s", scheduled.ScheduleID, err)
 			}
@@ -2244,11 +2240,18 @@ func (ws *workflowService) getWorkflowForScheduledDispatch(ctx context.Context, 
 }
 
 func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, scheduled *tables.ScheduledRun) error {
-	wf, app, err := ws.getWorkflowForScheduledDispatch(ctx, scheduled.GroupID, scheduled.RepoURL)
+	// Stop the steps before Execute when the claim is about to expire, so that a
+	// stalled dispatch fails instead of starting a run after another server has
+	// taken over the slot. Execute itself runs on ctx: cancelling it mid-flight
+	// could leave a queued run that the retry would then duplicate.
+	deadline := ws.scheduledDispatchDeadline(scheduled)
+	startCtx, cancel := context.WithTimeout(ctx, deadline.Sub(ws.env.GetClock().Now()))
+	defer cancel()
+	wf, app, err := ws.getWorkflowForScheduledDispatch(startCtx, scheduled.GroupID, scheduled.RepoURL)
 	if err != nil {
 		return err
 	}
-	defaultBranch, err := app.GetDefaultBranch(ctx, scheduled.RepoURL, wf.AccessToken)
+	defaultBranch, err := app.GetDefaultBranch(startCtx, scheduled.RepoURL, wf.AccessToken)
 	if err != nil {
 		return err
 	}
@@ -2260,7 +2263,7 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 		TargetBranch:            defaultBranch,
 		TargetRepoDefaultBranch: defaultBranch,
 	}
-	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
+	apiKey, err := ws.apiKeyForWorkflow(startCtx, wf)
 	if err != nil {
 		return err
 	}
@@ -2268,7 +2271,7 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if err != nil {
 		return err
 	}
-	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd, false /*=useDefaultBranch*/)
+	cfg, err := ws.fetchWorkflowConfig(startCtx, gitProvider, wf, wd, false /*=useDefaultBranch*/)
 	if err != nil {
 		return status.WrapError(err, "fetch workflow config")
 	} else if cfg == nil {
@@ -2281,7 +2284,7 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 		return nil
 	}
 
-	actions, err := ws.filterActions(ctx, wf, wd, cfg.Actions, []string{scheduled.ActionName})
+	actions, err := ws.filterActions(startCtx, wf, wd, cfg.Actions, []string{scheduled.ActionName})
 	if err != nil {
 		return err
 	}
@@ -2309,16 +2312,15 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if err != nil {
 		return err
 	}
-	if !ws.env.GetClock().Now().Before(ws.scheduledDispatchDeadline(scheduled)) {
+	// startCtx unblocks calls that stall, but its timer runs on real time;
+	// this check enforces the deadline by the env clock.
+	if !ws.env.GetClock().Now().Before(deadline) {
 		return status.DeadlineExceededErrorf("claim on scheduled run %s is about to expire or has expired", scheduled.ScheduleID)
 	}
 	if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, true /*isTrusted*/, action, invocationUUID.String(), nil /*extraCIRunnerArgs*/, nil /*env*/, nil /*remoteHeaders*/, true /*shouldRetry*/); err != nil {
 		return status.WrapErrorf(err, "failed to start scheduled workflow action %q", scheduled.ActionName)
 	}
-	// The run has started, so advance the schedule even if the dispatch
-	// deadline has passed; failing here would retry the run and duplicate it.
-	// The advance only applies if this server still holds the claim.
-	return ws.advanceScheduledWorkflow(context.WithoutCancel(ctx), scheduled)
+	return ws.advanceScheduledWorkflow(ctx, scheduled)
 }
 
 func (ws *workflowService) advanceScheduledWorkflow(ctx context.Context, scheduled *tables.ScheduledRun) error {

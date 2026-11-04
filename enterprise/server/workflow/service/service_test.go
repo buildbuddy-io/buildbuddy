@@ -2787,8 +2787,11 @@ actions:
 
 			scheduled := getScheduledRun(t, te, "Test")
 			if tc.wantExecuted {
+				require.Len(t, execClient.executeRequests, 1)
 				_ = execClient.NextExecuteRequest()
+				require.Equal(t, now.Add(1*time.Hour).UnixMicro(), scheduled.NextRunUsec)
 				require.Zero(t, scheduled.FailedAttemptCount)
+				require.Zero(t, scheduled.LeaseExpiresUsec)
 				return
 			}
 			// The dispatch gave up before calling Execute, and the claim was
