@@ -2725,27 +2725,15 @@ actions:
 }
 
 // clockAdvancingProvider simulates a stalled dispatch by advancing the clock
-// while the config is being fetched. If block is set, the fetch then waits
-// for its context to be cancelled.
+// while the config is being fetched.
 type clockAdvancingProvider struct {
 	*testgit.FakeProvider
-	clock     *clockwork.FakeClock
-	advance   time.Duration
-	block     bool
-	cancelled bool
+	clock   *clockwork.FakeClock
+	advance time.Duration
 }
 
 func (p *clockAdvancingProvider) GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error) {
 	p.clock.Advance(p.advance)
-	if p.block {
-		select {
-		case <-ctx.Done():
-			p.cancelled = true
-			return nil, ctx.Err()
-		case <-time.After(30 * time.Second):
-			return nil, status.DeadlineExceededError("context was not cancelled")
-		}
-	}
 	return p.FakeProvider.GetFileContents(ctx, accessToken, repoURL, filePath, ref)
 }
 
@@ -2755,11 +2743,9 @@ func TestScheduledWorkflow_DispatchOutlivesClaim(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
 		stall        time.Duration
-		block        bool
 		wantExecuted bool
 	}{
 		{name: "stall past claim expiry", stall: 6 * time.Minute, wantExecuted: false},
-		{name: "stalled call cancelled at claim margin", stall: 5*time.Minute - 5*time.Second, block: true, wantExecuted: false},
 		{name: "stall within claim margin", stall: 5*time.Minute - 5*time.Second, wantExecuted: false},
 		{name: "stall before claim margin", stall: 5*time.Minute - 30*time.Second, wantExecuted: true},
 	} {
@@ -2787,8 +2773,7 @@ actions:
 			now := threePM
 			clock := clockwork.NewFakeClockAt(now)
 			te.SetClock(clock)
-			provider := &clockAdvancingProvider{FakeProvider: fakeProvider, clock: clock, advance: tc.stall, block: tc.block}
-			te.SetGitProviders([]interfaces.GitProvider{provider})
+			te.SetGitProviders([]interfaces.GitProvider{&clockAdvancingProvider{FakeProvider: fakeProvider, clock: clock, advance: tc.stall}})
 			insertScheduledRun(t, te, &tables.ScheduledRun{
 				ScheduleID:  "test",
 				GroupID:     gid,
@@ -2811,7 +2796,6 @@ actions:
 			}
 			// The dispatch gave up before calling Execute, and the claim was
 			// released for a retry.
-			require.Equal(t, tc.block, provider.cancelled)
 			require.Zero(t, len(execClient.executeRequests))
 			require.Equal(t, int64(1), scheduled.FailedAttemptCount)
 			require.Zero(t, scheduled.LeaseExpiresUsec)

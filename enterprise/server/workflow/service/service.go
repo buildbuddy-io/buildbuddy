@@ -57,7 +57,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
-	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/robfig/cron/v3"
 	"golang.org/x/oauth2"
@@ -2108,10 +2107,6 @@ func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workflowService) scheduledDispatchDeadline(scheduled *tables.ScheduledRun) time.Time {
-	return time.UnixMicro(scheduled.LeaseExpiresUsec).Add(-scheduledWorkflowClaimMargin)
-}
-
 func (ws *workflowService) claimScheduledWorkflow(ctx context.Context) (*tables.ScheduledRun, error) {
 	dbh := ws.env.GetDBHandle()
 	scheduled := &tables.ScheduledRun{}
@@ -2239,17 +2234,11 @@ func (ws *workflowService) getWorkflowForScheduledDispatch(ctx context.Context, 
 }
 
 func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, scheduled *tables.ScheduledRun) error {
-	// Stop the steps before Execute when the claim is about to expire, so that a
-	// stalled dispatch fails instead of starting a run after another server has
-	// taken over the slot.
-	deadline := ws.scheduledDispatchDeadline(scheduled)
-	startCtx, cancel := clockwork.WithDeadline(ctx, ws.env.GetClock(), deadline)
-	defer cancel()
-	wf, app, err := ws.getWorkflowForScheduledDispatch(startCtx, scheduled.GroupID, scheduled.RepoURL)
+	wf, app, err := ws.getWorkflowForScheduledDispatch(ctx, scheduled.GroupID, scheduled.RepoURL)
 	if err != nil {
 		return err
 	}
-	defaultBranch, err := app.GetDefaultBranch(startCtx, scheduled.RepoURL, wf.AccessToken)
+	defaultBranch, err := app.GetDefaultBranch(ctx, scheduled.RepoURL, wf.AccessToken)
 	if err != nil {
 		return err
 	}
@@ -2261,7 +2250,7 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 		TargetBranch:            defaultBranch,
 		TargetRepoDefaultBranch: defaultBranch,
 	}
-	apiKey, err := ws.apiKeyForWorkflow(startCtx, wf)
+	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {
 		return err
 	}
@@ -2269,7 +2258,7 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if err != nil {
 		return err
 	}
-	cfg, err := ws.fetchWorkflowConfig(startCtx, gitProvider, wf, wd, false /*=useDefaultBranch*/)
+	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd, false /*=useDefaultBranch*/)
 	if err != nil {
 		return status.WrapError(err, "fetch workflow config")
 	} else if cfg == nil {
@@ -2282,7 +2271,7 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 		return nil
 	}
 
-	actions, err := ws.filterActions(startCtx, wf, wd, cfg.Actions, []string{scheduled.ActionName})
+	actions, err := ws.filterActions(ctx, wf, wd, cfg.Actions, []string{scheduled.ActionName})
 	if err != nil {
 		return err
 	}
@@ -2310,13 +2299,12 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if err != nil {
 		return err
 	}
-	// startCtx only cuts stalled calls short; this check is what keeps a step
-	// that returned after the deadline from starting a duplicate run.
+	// If dispatch stalled until the claim is about to expire, another server
+	// may take over the slot, so don't start a run that would duplicate it.
+	deadline := time.UnixMicro(scheduled.LeaseExpiresUsec).Add(-scheduledWorkflowClaimMargin)
 	if !ws.env.GetClock().Now().Before(deadline) {
 		return status.DeadlineExceededErrorf("claim on scheduled run %s is about to expire or has expired", scheduled.ScheduleID)
 	}
-	// Execute runs on ctx, not startCtx: cancelling it mid-flight could leave a
-	// queued run that the retry would then duplicate.
 	if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, true /*isTrusted*/, action, invocationUUID.String(), nil /*extraCIRunnerArgs*/, nil /*env*/, nil /*remoteHeaders*/, true /*shouldRetry*/); err != nil {
 		return status.WrapErrorf(err, "failed to start scheduled workflow action %q", scheduled.ActionName)
 	}
