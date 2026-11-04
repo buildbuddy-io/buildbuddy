@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -513,13 +514,19 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
         "test": {
           "EstimatedMemory": "30GB"
         },
+        "workflow": {
+          "EstimatedCPU": "16"
+        },
         "default": {}
       },
       "defaultVariant": "default",
       "targeting": {
         "if": [
           { "==": [ { "var": "EstimatedComputeUnits" }, 8.0 ] },
-          "test"
+          "test",
+          { "==": [ { "var": "workflow_action_name" }, "Expensive benchmarks" ] },
+          "workflow",
+          "default"
         ]
       }
     }
@@ -578,6 +585,43 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 			},
 		},
 	}, task.GetPlatformOverrides(), protocmp.Transform()))
+
+	for _, tc := range []struct {
+		name       string
+		mnemonic   string
+		actionName string
+		overridden bool
+	}{
+		{"matching_workflow", "BuildBuddyWorkflowRun", "Expensive benchmarks", true},
+		{"other_workflow", "BuildBuddyWorkflowRun", "Other workflow", false},
+		{"missing_name", "BuildBuddyWorkflowRun", "", false},
+		{"ordinary_action", "TestRunner", "Expensive benchmarks", false},
+		{"remote_bazel", "RemoteBazelRun", "Expensive benchmarks", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolInvocationId: iid,
+				ActionMnemonic:   tc.mnemonic,
+			})
+			cmd := &repb.Command{Arguments: []string{"test"}}
+			if tc.actionName != "" {
+				cmd.EnvironmentVariables = []*repb.Command_EnvironmentVariable{{
+					Name:  ci_runner_env.BuildBuddyActionNameEnvVarName,
+					Value: tc.actionName,
+				}}
+			}
+			action := &repb.Action{}
+			arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, action, cmd)
+			require.NoError(t, s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString()))
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[len(sched.scheduleReqs)-1].SerializedTask, task))
+			if tc.overridden {
+				require.Equal(t, []*repb.Platform_Property{{Name: "EstimatedCPU", Value: "16"}}, task.GetPlatformOverrides().GetProperties())
+			} else {
+				require.Empty(t, task.GetPlatformOverrides().GetProperties())
+			}
+		})
+	}
 }
 
 func TestDispatch_DisableOCIFetcherExperiment(t *testing.T) {
