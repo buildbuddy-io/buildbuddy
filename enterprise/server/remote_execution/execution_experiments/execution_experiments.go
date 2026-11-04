@@ -52,6 +52,7 @@ var (
 	SeccompDisableNewUserNS = register(expflag.Bool("executor.oci.seccomp_disable_new_userns", false, "If true, the OCI seccomp profile prevents containers from creating user namespaces, unless executor.oci.cap_add includes CAP_SYS_ADMIN. This does not restrict syscalls listed in executor.oci.seccomp_additional_syscalls."))
 
 	FirecrackerFaultCopyWindowBytes = register(expflag.Int64("executor.firecracker_fault_copy_window_bytes", 256*1024, "Most guest memory copied per page fault when restoring a Firecracker snapshot. Must be a power of two of at least the page size. Values above the snapshot chunk size copy whole chunks."))
+	FirecrackerGuestKvmClock        = register(expflag.Bool("executor.firecracker_guest_kvm_clock", false, "If true, boot Firecracker guests with kvm-clock as the clocksource instead of the TSC, and stop passing tsc=reliable."))
 	SnapshotSalt                    = register(expflag.String("executor.firecracker_snapshot_salt", "", "Can be set to invalidate all existing Firecracker snapshots, forcing new workloads to start from a clean VM."))
 )
 
