@@ -28,7 +28,13 @@ const (
 	// A missing stream is reported by the first pipeline that reads it.
 	// Every subscription on a shard shares the shard's fate, so when the
 	// attempts run out they all fail on the same execution.
-	batchedCheckAttempts = 3
+	//
+	// The count is meant to match the stall tolerance of the unbatched read,
+	// which gives up after about 20s: the remote execution pubsub client's
+	// MaxRetries of 5 means 6 reads with a 3s read timeout, plus backoff. Six
+	// pipelines bounded by batchedCheckTimeout, one default check interval
+	// apart, take 6*3s + 5*1s = 23s. Five would take 19s, giving up sooner.
+	batchedCheckAttempts = 6
 
 	// batchedCheckTimeout bounds one execution of the shared pipeline,
 	// including any retries a standalone client performs. Ring shard clients

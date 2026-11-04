@@ -224,6 +224,45 @@ func TestStreamExistenceChecker(t *testing.T) {
 	require.Contains(t, err.Error(), fmt.Sprintf("after %d attempts", batchedCheckAttempts))
 }
 
+func TestStreamExistenceChecker_StallTolerance(t *testing.T) {
+	// A stalled pipeline takes batchedCheckTimeout and the default interval is
+	// 1s, so this must not fall short of the unbatched read's roughly 20s.
+	tolerance := batchedCheckAttempts*batchedCheckTimeout + (batchedCheckAttempts-1)*time.Second
+	require.GreaterOrEqual(t, tolerance, 20*time.Second)
+
+	flags.Set(t, "remote_execution.pubsub_monitored_stream_check_interval", 50*time.Millisecond)
+	rdb := testredis.Start(t).Client()
+	pubSub := NewStreamPubSub(rdb)
+	ctx := t.Context()
+	require.NoError(t, pubSub.CreateMonitoredChannel(ctx, channel1Name))
+	channel := pubSub.MonitoredChannel(channel1Name)
+
+	// Fail pipelines the way a stall does, without having to wait out one.
+	var pipelines, stalled atomic.Int64
+	rdb.AddHook(testredis.Hook{
+		BeforeProcessPipelineFunc: func(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+			pipelines.Add(1)
+			if stalled.Add(-1) >= 0 {
+				return ctx, context.DeadlineExceeded
+			}
+			return ctx, nil
+		},
+	})
+
+	// A stall that clears in time for the last attempt goes unnoticed.
+	stalled.Store(batchedCheckAttempts - 1)
+	require.NoError(t, pubSub.checker.check(ctx, channel))
+	require.Equal(t, int64(batchedCheckAttempts), pipelines.Load())
+
+	// A stall that outlasts every attempt is reported.
+	pipelines.Store(0)
+	stalled.Store(batchedCheckAttempts)
+	err := pubSub.checker.check(ctx, channel)
+	require.True(t, status.IsUnavailableError(err), "expected UNAVAILABLE error but got %s", err)
+	require.Contains(t, err.Error(), fmt.Sprintf("after %d attempts", batchedCheckAttempts))
+	require.Equal(t, int64(batchedCheckAttempts), pipelines.Load())
+}
+
 func TestStreamExistenceChecker_CanceledContext(t *testing.T) {
 	flags.Set(t, "remote_execution.pubsub_monitored_stream_check_interval", 50*time.Millisecond)
 	rdb := testredis.Start(t).Client()
