@@ -2243,8 +2243,7 @@ func (ws *workflowService) getWorkflowForScheduledDispatch(ctx context.Context, 
 func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, scheduled *tables.ScheduledRun) error {
 	// Stop the steps before Execute when the claim is about to expire, so that a
 	// stalled dispatch fails instead of starting a run after another server has
-	// taken over the slot. Execute itself runs on ctx: cancelling it mid-flight
-	// could leave a queued run that the retry would then duplicate.
+	// taken over the slot.
 	deadline := ws.scheduledDispatchDeadline(scheduled)
 	startCtx, cancel := clockwork.WithDeadline(ctx, ws.env.GetClock(), deadline)
 	defer cancel()
@@ -2318,6 +2317,8 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if !ws.env.GetClock().Now().Before(deadline) {
 		return status.DeadlineExceededErrorf("claim on scheduled run %s is about to expire or has expired", scheduled.ScheduleID)
 	}
+	// Execute runs on ctx, not startCtx: cancelling it mid-flight could leave a
+	// queued run that the retry would then duplicate.
 	if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, true /*isTrusted*/, action, invocationUUID.String(), nil /*extraCIRunnerArgs*/, nil /*env*/, nil /*remoteHeaders*/, true /*shouldRetry*/); err != nil {
 		return status.WrapErrorf(err, "failed to start scheduled workflow action %q", scheduled.ActionName)
 	}
