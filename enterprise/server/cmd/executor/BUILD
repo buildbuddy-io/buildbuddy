@@ -496,6 +496,7 @@ image_layer(
         name = "docker_credential_gcr_image_layer_%s" % arch,
         srcs = {
             "/usr/bin/docker-credential-gcr": "@com_github_googlecloudplatform_docker-credential-gcr-linux-%s//:docker-credential-gcr.bin" % arch,
+            "/usr/bin/docker-credential-gcr-optional": "//enterprise/server/cmd/executor/docker_credential_gcr_config:docker-credential-gcr-optional",
             "/root/.docker/config.json": "//enterprise/server/cmd/executor/docker_credential_gcr_config:config.json",
         },
         annotations = {
@@ -524,9 +525,9 @@ image_layer(
     image_layer(
         name = "containerd_patch_image_layer_%s" % arch,
         srcs = {
-            "/usr/bin/containerd.bin": "@com_github_containerd_containerd-linux-%s//:containerd.bin" % arch,
-            "/usr/bin/containerd-shim-runc-v2.bin": "@com_github_containerd_containerd-linux-%s//:containerd-shim-runc-v2.bin" % arch,
-            "/usr/bin/ctr.bin": "@com_github_containerd_containerd-linux-%s//:ctr.bin" % arch,
+            "/usr/bin/containerd": "@com_github_containerd_containerd-linux-%s//:containerd.bin" % arch,
+            "/usr/bin/containerd-shim-runc-v2": "@com_github_containerd_containerd-linux-%s//:containerd-shim-runc-v2.bin" % arch,
+            "/usr/bin/ctr": "@com_github_containerd_containerd-linux-%s//:ctr.bin" % arch,
         },
         annotations = {
             "org.opencontainers.image.title": "Patch for containerd",
@@ -554,8 +555,8 @@ image_layer(
     image_layer(
         name = "rootlesskit_patch_image_layer_%s" % arch,
         srcs = {
-            # "/usr/bin/rootlessctl.bin": "@com_github_rootless_containers_rootlesskit-linux-%s//:rootlessctl.bin" % arch,
-            "/usr/bin/rootlesskit.bin": "@com_github_rootless_containers_rootlesskit-linux-%s//:rootlesskit.bin" % arch,
+            # "/usr/bin/rootlessctl": "@com_github_rootless_containers_rootlesskit-linux-%s//:rootlessctl.bin" % arch,
+            "/usr/bin/rootlesskit": "@com_github_rootless_containers_rootlesskit-linux-%s//:rootlesskit.bin" % arch,
         },
         annotations = {
             "org.opencontainers.image.title": "Patch for rootlesskit",
@@ -746,7 +747,7 @@ pkg_tar(
     name = "config_symlink_tar",
     mode = "0755",
     symlinks = {
-        "config.yaml": "%s/config/executor.local.yaml" % EXECUTOR_PACKAGE_ROOT,
+        "config.yaml": "%s/config/executor.release.yaml" % EXECUTOR_PACKAGE_ROOT,
     },
     tags = ["manual"],
 )
