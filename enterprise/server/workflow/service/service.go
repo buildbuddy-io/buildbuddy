@@ -2108,8 +2108,6 @@ func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
 	return nil
 }
 
-// scheduledDispatchDeadline returns the time by which a dispatch must have
-// started its run, based on when the claim on the scheduled workflow expires.
 func (ws *workflowService) scheduledDispatchDeadline(scheduled *tables.ScheduledRun) time.Time {
 	return time.UnixMicro(scheduled.LeaseExpiresUsec).Add(-scheduledWorkflowClaimMargin)
 }
