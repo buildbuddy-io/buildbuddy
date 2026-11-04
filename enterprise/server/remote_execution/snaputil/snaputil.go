@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -155,7 +156,7 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 
 	if *EnableLocalSnapshotSharing {
 		// Save to local cache so next time fetching won't require a remote get
-		if err := cacheLocally(ctx, localCache, d, outputPath); err != nil {
+		if _, err := cacheLocally(ctx, localCache, d, outputPath); err != nil {
 			log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
 		}
 	}
@@ -195,7 +196,14 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	}
 
 	if *EnableLocalSnapshotSharing && shouldCacheLocally {
-		localCacheErr := cacheLocally(ctx, localCache, d, path)
+		addedLocally, localCacheErr := cacheLocally(ctx, localCache, d, path)
+		if localCacheErr == nil && addedLocally {
+			metrics.SnapshotCacheBytesWritten.With(prometheus.Labels{
+				metrics.GroupID:            groupIDForMetrics(ctx),
+				metrics.CacheLocationLabel: "filecache",
+				metrics.FileName:           fileTypeLabel,
+			}).Add(float64(d.GetSizeBytes()))
+		}
 		if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !shouldCacheRemotely {
 			return 0, localCacheErr
 		}
@@ -226,8 +234,16 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 
 	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
 	if err == nil && bytesUploaded > 0 {
+		// TODO(maggie): Clean up this metric in favor of SnapshotCacheBytesWritten, which captures both
+		// local and remote cache writes.
 		metrics.SnapshotRemoteCacheUploadSizeBytes.With(prometheus.Labels{
 			metrics.FileName: fileTypeLabel,
+		}).Add(float64(bytesUploaded))
+
+		metrics.SnapshotCacheBytesWritten.With(prometheus.Labels{
+			metrics.GroupID:            groupIDForMetrics(ctx),
+			metrics.CacheLocationLabel: "remote",
+			metrics.FileName:           fileTypeLabel,
 		}).Add(float64(bytesUploaded))
 	}
 	return bytesUploaded, err
@@ -266,14 +282,27 @@ func StripChroot(path string) string {
 
 // cacheLocally copies the data at `path` to the local filecache with
 // the given `key`
-func cacheLocally(ctx context.Context, localCache interfaces.FileCache, d *repb.Digest, path string) error {
+// cacheLocally adds the file to the local filecache. It returns whether the
+// file was added (false if it was already cached).
+func cacheLocally(ctx context.Context, localCache interfaces.FileCache, d *repb.Digest, path string) (bool, error) {
 	fileNode := &repb.FileNode{Digest: d}
 	// If EnableLocalSnapshotSharing=true and we're computing real unloadedChunks,
 	// the files will be immutable. We won't need to re-save them to file cache
 	if !*EnableLocalSnapshotSharing || !localCache.ContainsFile(ctx, fileNode) {
-		return localCache.AddFile(ctx, fileNode, path)
+		if err := localCache.AddFile(ctx, fileNode, path); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
-	return nil
+	return false, nil
+}
+
+func groupIDForMetrics(ctx context.Context) string {
+	c, err := claims.ClaimsFromContext(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
+	}
+	return c.GroupID
 }
 
 func ChunkSourceLabel(c ChunkSource) string {
