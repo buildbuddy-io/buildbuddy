@@ -243,6 +243,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
+      "description": "Legend is sorted by Max: the highest number of remote runner workloads each group started in any 1-hour window during the selected time range; not by the sum or average.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -306,10 +307,14 @@
       "id": 29,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "max"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
         },
         "tooltip": {
           "hideZeros": false,
@@ -428,6 +433,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
+      "description": "Legend is sorted by Max: the most CPU cores each group had assigned at once during the selected time range; not by the sum or average.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -549,10 +555,14 @@
       "id": 31,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "max"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
         },
         "tooltip": {
           "hideZeros": true,
@@ -578,7 +588,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "topk(\n  10,\n  sum by (group_id) (\n    buildbuddy_remote_execution_assigned_milli_cpu_by_group{region=~\"$region\", job=~\"executor-workflows.*\"}\n  ) / 1000\n)",
+          "expr": "sum by (group_id) (\n  buildbuddy_remote_execution_assigned_milli_cpu_by_group{region=~\"$region\", job=~\"executor-workflows.*\"}\n) / 1000",
           "legendFormat": "{{group_id}}",
           "range": true,
           "refId": "A"
@@ -592,6 +602,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
+      "description": "Legend is sorted by Max: the most memory each group had assigned at once during the selected time range; not by the sum or average.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -713,10 +724,14 @@
       "id": 32,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "max"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
         },
         "tooltip": {
           "hideZeros": true,
@@ -742,7 +757,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "topk(\n  10,\n  sum by (group_id) (\n    buildbuddy_remote_execution_assigned_ram_bytes_by_group{region=~\"$region\", job=~\"executor-workflows.*\"}\n  )\n)",
+          "expr": "sum by (group_id) (\n  buildbuddy_remote_execution_assigned_ram_bytes_by_group{region=~\"$region\", job=~\"executor-workflows.*\"}\n)",
           "legendFormat": "{{group_id}}",
           "range": true,
           "refId": "A"
