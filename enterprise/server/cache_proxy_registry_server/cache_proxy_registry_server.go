@@ -56,6 +56,7 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	pfpb "github.com/buildbuddy-io/buildbuddy/proto/profile"
 	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
 )
 
@@ -329,12 +330,14 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 			}
 			lastRequestID++
 			id := strconv.FormatInt(lastRequestID, 10)
+			// Pass through all options except the routing fields.
+			detailsReq := proto.Clone(p.req).(*cppb.GetCacheProxyRequest)
+			detailsReq.RequestContext = nil
+			detailsReq.Selector = nil
+			detailsReq.DoNotForward = false
 			rsp := &cppb.RegisterCacheProxyResponse{
-				DetailsRequest: &cppb.GetCacheProxyRequest{
-					IncludeConfiguredFlags: p.req.GetIncludeConfiguredFlags(),
-					IncludeStatistics:      p.req.GetIncludeStatistics(),
-				},
-				RequestId: id,
+				DetailsRequest: detailsReq,
+				RequestId:      id,
 			}
 			if err := stream.Send(rsp); err != nil {
 				log.CtxWarningf(ctx, "Closing cache proxy registration stream for proxy %q (group %q): send failed: %s", proxyID, groupID, err)
@@ -514,6 +517,13 @@ func (s *CacheProxyRegistryServer) GetCacheProxy(ctx context.Context, req *cppb.
 	acl := perms.ToACLProto(nil /*=userID*/, groupID, perms.GROUP_WRITE|perms.GROUP_READ)
 	if err := perms.AuthorizeRead(user, acl); err != nil {
 		return nil, err
+	}
+
+	if profileReq := req.GetGetProfile(); profileReq != nil {
+		if profileReq.GetType() == pfpb.GetProfileRequest_UNKNOWN_TYPE {
+			return nil, status.InvalidArgumentError("profile type not specified")
+		}
+		log.CtxDebugf(ctx, "User %q requested a %s profile from cache proxy %q (group %q)", user.GetUserID(), profileReq.GetType(), proxyID, groupID)
 	}
 
 	// This deadline covers the whole request. If the request is forwarded,
