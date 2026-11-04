@@ -923,6 +923,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
 		const taskSizeOverridesExperiment = "remote_execution.task_size_overrides"
+		requestedSize := tasksize.Requested(executionTask)
 		experimentOpts := []any{
 			// Set OriginalPool to allow configuring task sizing based on pool
 			// names from another remote execution platform.
@@ -931,6 +932,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 			experiments.WithContext("EstimatedComputeUnits", props.EstimatedComputeUnits),
 			experiments.WithContext("EstimatedMilliCPU", props.EstimatedMilliCPU),
 			experiments.WithContext("EstimatedMemoryBytes", props.EstimatedMemoryBytes),
+			// Set effective requested CPU and RAM in the experiment context.
+			// requestedSize considers both the EstimatedComputeUnits and the EstimatedMilliCPU/ EstimatedMemoryBytes requests and returns
+			// the value that will actually be applied to the task.
+			experiments.WithContext("effective_requested_cpu", tasksize.CpuComputeUnits(requestedSize.GetEstimatedMilliCpu())),
+			experiments.WithContext("effective_requested_ram_gib", float64(requestedSize.GetEstimatedMemoryBytes())/tasksize.GiB),
 		}
 		if rmd.GetActionMnemonic() == "BuildBuddyWorkflowRun" {
 			if actionName, ok := rexec.LookupEnv(command.GetEnvironmentVariables(), ci_runner_env.BuildBuddyActionNameEnvVarName); ok && actionName != "" {
