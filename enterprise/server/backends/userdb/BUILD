@@ -35,6 +35,7 @@ go_test(
     srcs = ["userdb_test.go"],
     deps = [
         ":userdb",
+        "//enterprise/server/saml",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:auditlog_go_proto",
@@ -84,6 +85,7 @@ go_test(
     tags = ["docker"],
     deps = [
         ":userdb",
+        "//enterprise/server/saml",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:api_key_go_proto",
@@ -134,6 +136,7 @@ go_test(
     tags = ["docker"],
     deps = [
         ":userdb",
+        "//enterprise/server/saml",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:api_key_go_proto",

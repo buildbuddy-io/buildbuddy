@@ -527,7 +527,7 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 		r = role.Admin
 	}
 
-	u, err := d.getUserByUserID(ctx, tx, userID, &interfaces.GetUserOpts{})
+	u, err := d.getUserByUserID(ctx, tx, userID, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return status.NotFoundErrorf("user %q does not exist", userID)
@@ -560,7 +560,26 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 		if err != nil {
 			return err
 		}
-		if g.SamlIdpMetadataUrl == "" || !strings.HasPrefix(u.SubID, saml.SubIDPrefixForGroup(g.URLIdentifier)) {
+		managedIdentity := false
+		if g.SamlIdpMetadataUrl != "" {
+			managedIdentity = strings.HasPrefix(u.SubID, saml.SubIDPrefixForGroup(g.URLIdentifier))
+			caller, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+			if err != nil {
+				return err
+			}
+			// A parent's SAML identities can be provisioned into children sharing
+			// its IdP only by a parent admin. A child admin must not be able to
+			// add the parent's users just by configuring the same IdP URL.
+			for _, parent := range u.Groups {
+				if parent.IsParent && parent.SamlIdpMetadataUrl == g.SamlIdpMetadataUrl &&
+					strings.HasPrefix(u.SubID, saml.SubIDPrefixForGroup(parent.URLIdentifier)) &&
+					authutil.AuthorizeOrgAdmin(caller, parent.GroupID) == nil {
+					managedIdentity = true
+					break
+				}
+			}
+		}
+		if !managedIdentity {
 			return status.FailedPreconditionError("Users must request membership before they can be added to an organization.")
 		}
 	}
