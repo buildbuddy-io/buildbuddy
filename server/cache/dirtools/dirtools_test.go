@@ -1422,6 +1422,10 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 					Name:   "fileB.txt",
 					Digest: fileBDigest,
 				},
+				&repb.FileNode{
+					Name:   "fileB-copy.txt",
+					Digest: fileBDigest,
+				},
 			},
 			Directories: []*repb.DirectoryNode{
 				&repb.DirectoryNode{
@@ -1448,10 +1452,11 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 	hitCount := testutil.ToFloat64(hits) - hitsBefore
 	missCount := testutil.ToFloat64(misses) - missesBefore
 	assert.Equal(t, float64(1), hitCount, "file A should count as a filecache hit")
-	assert.Equal(t, float64(1), missCount, "file B should count as a filecache miss")
+	assert.Equal(t, float64(2), missCount, "both paths of file B should count as filecache misses")
 	assert.DirExists(t, filepath.Join(tmpDir, "my-directory"), "my-directory should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "my-directory/fileA.txt"), "fileA.txt should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "fileB.txt"), "fileB.txt should exist")
+	assert.FileExists(t, filepath.Join(tmpDir, "fileB-copy.txt"), "fileB-copy.txt should exist")
 }
 
 func TestDownloadTree_InputFetchMetadataUsesDeterministicLeafOrder(t *testing.T) {

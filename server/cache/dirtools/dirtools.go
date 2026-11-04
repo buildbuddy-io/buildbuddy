@@ -992,8 +992,9 @@ func (ff *BatchFileFetcher) checkAndMaybeLinkFromFileCache(ctx context.Context, 
 		// for a slot once, to download the file.
 		if !fc.ContainsFile(ctx, filePointers[0].FileNode) {
 			// The file cache counts hits and misses in FastLinkFile, which we
-			// skip on a miss, so we count the miss here.
-			metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: "miss"}).Inc()
+			// call once per path and skip entirely on a miss, so we count a
+			// miss for each path here.
+			metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: "miss"}).Add(float64(len(filePointers)))
 			return status.NotFoundError("not in file cache")
 		}
 		release, err := inputDownloadLimit.acquire(ctx, 1)
