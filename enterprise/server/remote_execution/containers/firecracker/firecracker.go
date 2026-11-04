@@ -447,7 +447,7 @@ type ExecutorConfig struct {
 	HostKernelVersion         string
 	FirecrackerVersion        string
 	GuestAPIVersion           string
-	InitrdVersion      string
+	InitrdVersion             string
 
 	GuestKernelImagePath6_18 string
 	GuestKernelVersion6_18   string
@@ -550,7 +550,7 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 		DefaultGuestKernelVersion: guestKernelVersion,
 		HostKernelVersion:         hostKernelVersion,
 		FirecrackerVersion:        firecrackerDigest.GetHash(),
-		InitrdVersion:            initrdDigest.GetHash(),
+		InitrdVersion:             initrdDigest.GetHash(),
 		GuestAPIVersion:           GuestAPIVersion,
 		GuestKernelImagePath6_18:  guestKernelPath6_18,
 		GuestKernelVersion6_18:    guestKernelDigest6_18.GetHash(),
@@ -1306,6 +1306,10 @@ func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
 
 func (c *FirecrackerContainer) genericSnapshotKey() (*fcpb.SnapshotKey, error) {
 	config := c.vmConfig.CloneVT()
+	// When using a generic snapshot, it will already have a running guest kernel.
+	// Include the kernel version in the snapshot key to ensure that workloads
+	// hit snapshots for the intended version.
+	config.GuestKernelVersion = c.defaultGuestKernelVersion()
 	config.ScratchDiskSizeMb = 0
 	// Only the host side of the network depends on the network mode.
 	config.NetworkMode = fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED
@@ -2775,10 +2779,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
-	c.vmConfig.GuestKernelVersion = c.executorConfig.DefaultGuestKernelVersion
-	if c.shouldUpgradeGuestKernel() {
-		c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion6_18
-	}
+	c.vmConfig.GuestKernelVersion = c.defaultGuestKernelVersion()
 
 	vmCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	c.vmCtx = vmCtx
@@ -4570,6 +4571,14 @@ func workspacePathsToExtract(task *repb.ExecutionTask) []string {
 	paths = append(paths, task.GetCommand().GetOutputPaths()...)
 
 	return paths
+}
+
+// defaultGuestKernelVersion returns the guest kernel version used to boot new VMs.
+func (c *FirecrackerContainer) defaultGuestKernelVersion() string {
+	if c.shouldUpgradeGuestKernel() {
+		return c.executorConfig.GuestKernelVersion6_18
+	}
+	return c.executorConfig.DefaultGuestKernelVersion
 }
 
 func (c *FirecrackerContainer) shouldUpgradeGuestKernel() bool {
