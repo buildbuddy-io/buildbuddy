@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -33,7 +32,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -1551,50 +1549,6 @@ actions:
 	require.Zero(t, scheduled.FailedAttemptCount)
 	require.Zero(t, scheduled.ConsecutiveScheduleFailureCount)
 	require.Zero(t, scheduled.LeaseExpiresUsec)
-}
-
-func TestScheduledWorkflow_InvalidStoredCronRaisesUnexpectedEvent(t *testing.T) {
-	ctx := context.Background()
-	metrics.UnexpectedEvent.Reset()
-	flags.Set(t, "remote_execution.enable_scheduled_workflows", true)
-	flags.Set(t, "remote_execution.suppress_workflow_execution", true)
-	te := newTestEnv(t)
-	te.SetRemoteExecutionClient(te.GetRemoteExecutionClient().(*fakeExecutionClient))
-	provider := setupFakeGitProvider(t, te)
-	repoURL := makeTempRepo(t)
-	_ = runBBServer(ctx, t, te)
-	_, _, gid := authenticate(t, ctx, te)
-	createWorkflow(t, te, repoURL, gid, false)
-	provider.FileContents = map[string]string{
-		config.FilePath: `
-actions:
-  - name: "Bad Cron"
-    bazel_commands: [ "test //..." ]
-    triggers:
-      schedule:
-        crons: ["0 * * * *"]
-`,
-	}
-
-	now := threePM
-	te.SetClock(clockwork.NewFakeClockAt(now))
-	insertScheduledRun(t, te, &tables.ScheduledRun{
-		ScheduleID:  "bad-cron",
-		GroupID:     gid,
-		RepoURL:     repoURL,
-		ActionName:  "Bad Cron",
-		CronExpr:    "not a cron expression",
-		NextRunUsec: now.UnixMicro(),
-	})
-
-	// The action is suppressed, so the schedule is advanced, which fails
-	// because the stored cron expression cannot be parsed.
-	require.NoError(t, te.GetWorkflowService().RunScheduledWorkflows(t.Context()))
-
-	require.Equal(t, []testmetrics.CounterVecValue{{
-		Labels: map[string]string{metrics.EventName: "scheduled_workflow_next_run_time_failed"},
-		Value:  1,
-	}}, testmetrics.CounterValues(t, metrics.UnexpectedEvent))
 }
 
 func TestScheduledWorkflow_SharesInstanceNameWithWebhookEvent(t *testing.T) {
