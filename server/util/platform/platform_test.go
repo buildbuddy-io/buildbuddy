@@ -340,13 +340,13 @@ func TestParse_Duration(t *testing.T) {
 
 func TestParse_CustomResources_Valid(t *testing.T) {
 	props := []*repb.Platform_Property{
-		{Name: "resources:foo", Value: "3.14"},
+		{Name: "resources:FooBar", Value: "3.14"},
 	}
 	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: props}}}
 	p, err := ParseProperties(task)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff([]*scpb.CustomResource{{
-		Name: "foo", Value: 3.14,
+		Name: "foobar", Value: 3.14,
 	}}, p.CustomResources, protocmp.Transform()))
 }
 
