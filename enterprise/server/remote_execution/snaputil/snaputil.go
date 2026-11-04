@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -190,7 +189,8 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 // if remote snapshot sharing is enabled.
 //
 // Returns the number of bytes written to the remote cache (including short-circuited or failed uploads).
-func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, shouldCacheRemotely bool, shouldCacheLocally bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string) (int64, error) {
+// groupID is the group that owns the snapshot and is only used for metrics.
+func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, shouldCacheRemotely bool, shouldCacheLocally bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string, groupID string) (int64, error) {
 	if !*EnableLocalSnapshotSharing && !*EnableRemoteSnapshotSharing {
 		return 0, status.UnimplementedError("Snapshot sharing not enabled")
 	}
@@ -199,7 +199,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 		addedLocally, localCacheErr := cacheLocally(ctx, localCache, d, path)
 		if localCacheErr == nil && addedLocally {
 			metrics.SnapshotCacheBytesWritten.With(prometheus.Labels{
-				metrics.GroupID:            groupIDForMetrics(ctx),
+				metrics.GroupID:            groupID,
 				metrics.CacheLocationLabel: "filecache",
 				metrics.FileName:           fileTypeLabel,
 			}).Add(float64(d.GetSizeBytes()))
@@ -241,7 +241,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 		}).Add(float64(bytesUploaded))
 
 		metrics.SnapshotCacheBytesWritten.With(prometheus.Labels{
-			metrics.GroupID:            groupIDForMetrics(ctx),
+			metrics.GroupID:            groupID,
 			metrics.CacheLocationLabel: "remote",
 			metrics.FileName:           fileTypeLabel,
 		}).Add(float64(bytesUploaded))
@@ -251,7 +251,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 
 // CacheBytes saves bytes to the cache.
 // It does this by writing the bytes to a temporary file in tmpDir.
-func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, shouldCacheRemotely bool, shouldCacheLocally bool, d *repb.Digest, remoteInstanceName string, b []byte, fileTypeLabel string) error {
+func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, shouldCacheRemotely bool, shouldCacheLocally bool, d *repb.Digest, remoteInstanceName string, b []byte, fileTypeLabel string, groupID string) error {
 	// Write temp file containing bytes
 	randStr, err := random.RandomString(10)
 	if err != nil {
@@ -267,7 +267,7 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 		}
 	}()
 
-	_, err = Cache(ctx, localCache, bsClient, shouldCacheRemotely, shouldCacheLocally, d, remoteInstanceName, tmpPath, fileTypeLabel)
+	_, err = Cache(ctx, localCache, bsClient, shouldCacheRemotely, shouldCacheLocally, d, remoteInstanceName, tmpPath, fileTypeLabel, groupID)
 	return err
 }
 
@@ -295,14 +295,6 @@ func cacheLocally(ctx context.Context, localCache interfaces.FileCache, d *repb.
 		return true, nil
 	}
 	return false, nil
-}
-
-func groupIDForMetrics(ctx context.Context) string {
-	c, err := claims.ClaimsFromContext(ctx)
-	if err != nil {
-		return interfaces.AuthAnonymousUser
-	}
-	return c.GroupID
 }
 
 func ChunkSourceLabel(c ChunkSource) string {
