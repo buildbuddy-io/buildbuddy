@@ -208,6 +208,7 @@ proto_library(
     deps = [
         ":acl_proto",
         ":context_proto",
+        ":profile_proto",
         ":upgrade_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
@@ -778,6 +779,15 @@ proto_library(
     srcs = ["notification.proto"],
     deps = [
         ":context_proto",
+    ],
+)
+
+proto_library(
+    name = "profile_proto",
+    srcs = ["profile.proto"],
+    deps = [
+        "@com_google_protobuf//:duration_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -1638,6 +1648,13 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "profile_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/profile",
+    proto = ":profile_proto",
+    deps = ["@org_golang_google_genproto_googleapis_rpc//status"],
+)
+
+go_proto_library(
     name = "upgrade_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/upgrade",
     proto = ":upgrade_proto",
@@ -1725,6 +1742,7 @@ go_proto_library(
     deps = [
         ":acl_go_proto",
         ":context_go_proto",
+        ":profile_go_proto",
         ":upgrade_go_proto",
     ],
 )
@@ -2367,6 +2385,15 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "profile_ts_proto",
+    proto = ":profile_proto",
+    deps = [
+        ":duration_ts_proto",
+        ":grpc_status_ts_proto",
+    ],
+)
+
+ts_proto_library(
     name = "upgrade_ts_proto",
     proto = ":upgrade_proto",
 )
@@ -2522,6 +2549,7 @@ ts_proto_library(
     deps = [
         ":acl_ts_proto",
         ":context_ts_proto",
+        ":profile_ts_proto",
         ":timestamp_ts_proto",
         ":upgrade_ts_proto",
     ],
