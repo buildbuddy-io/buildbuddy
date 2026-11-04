@@ -33,8 +33,9 @@ const (
 	// pubsub client's MaxRetries of 5 means 6 reads at a 3s read timeout, plus
 	// backoff, about 21s. Six pipelines take 18s to 24s, depending on how soon a
 	// retry joins the next pipeline. This matters when the ring doesn't eject the
-	// shard, as when several shards hang at once. A single hung shard is ejected
-	// after about 9s, and reads of its streams then report them missing.
+	// shard before attempts run out, as when several shards hang at once and
+	// delay each other's heartbeats. A single hung shard is ejected after about
+	// 9s, and reads of its streams then report them missing.
 	batchedCheckAttempts = 6
 
 	// batchedCheckTimeout bounds one execution of the shared pipeline,
