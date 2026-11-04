@@ -712,7 +712,7 @@
     },
     "@@rules_distroless+//apt:extensions.bzl%apt": {
       "general": {
-        "bzlTransitiveDigest": "slLyBlxW32ETbNlDPr7ivoxnjGUF+XJHuU5U5eHopV4=",
+        "bzlTransitiveDigest": "rLRbp6FFi/KpUYjtiAunuM7MJmPWnbn+TeRDdIcKSu8=",
         "usagesDigest": "qzaU2oYDjtvzUdsSgCq2kF5MxNS/FwHNud51De5r9Ns=",
         "recordedInputs": [
           "REPO_MAPPING:rules_distroless+,bazel_lib bazel_lib+",
