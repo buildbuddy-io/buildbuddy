@@ -138,6 +138,9 @@ const (
 	// Given that dispatching a workflow is expected to be quick, this should be more than enough time,
 	// unless the original server goes down (e.g. if it was restarted in a rollout).
 	scheduledWorkflowLeaseDuration = 5 * time.Minute
+	// A dispatch must stop this long before its claim expires, so that it
+	// doesn't start a run that another server may also pick up.
+	scheduledWorkflowClaimMargin = 10 * time.Second
 
 	// If a scheduled workflow fails, it will be retried up to this many times.
 	// If all retries fail, the current schedule is skipped until the next time the cron fires.
@@ -2094,7 +2097,11 @@ func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
 		if scheduled == nil {
 			break
 		}
-		if dispatchErr := ws.dispatchScheduledWorkflow(ctx, scheduled); dispatchErr != nil {
+		// context.WithTimeout rather than WithDeadline so the deadline follows the env clock.
+		dispatchCtx, cancel := context.WithTimeout(ctx, ws.scheduledDispatchDeadline(scheduled).Sub(ws.env.GetClock().Now()))
+		dispatchErr := ws.dispatchScheduledWorkflow(dispatchCtx, scheduled)
+		cancel()
+		if dispatchErr != nil {
 			if err := ws.handleScheduledWorkflowFailure(ctx, scheduled, dispatchErr); err != nil {
 				log.CtxWarningf(ctx, "Failed to handle scheduled workflow failure %s: %s", scheduled.ScheduleID, err)
 			}
@@ -2102,6 +2109,12 @@ func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// scheduledDispatchDeadline returns the time by which a dispatch must have
+// started its run, based on when the claim on the scheduled workflow expires.
+func (ws *workflowService) scheduledDispatchDeadline(scheduled *tables.ScheduledRun) time.Time {
+	return time.UnixMicro(scheduled.LeaseExpiresUsec).Add(-scheduledWorkflowClaimMargin)
 }
 
 func (ws *workflowService) claimScheduledWorkflow(ctx context.Context) (*tables.ScheduledRun, error) {
@@ -2295,6 +2308,9 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	invocationUUID, err := guuid.NewRandom()
 	if err != nil {
 		return err
+	}
+	if !ws.env.GetClock().Now().Before(ws.scheduledDispatchDeadline(scheduled)) {
+		return status.DeadlineExceededErrorf("claim on scheduled run %s is about to expire or has expired", scheduled.ScheduleID)
 	}
 	if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, true /*isTrusted*/, action, invocationUUID.String(), nil /*extraCIRunnerArgs*/, nil /*env*/, nil /*remoteHeaders*/, true /*shouldRetry*/); err != nil {
 		return status.WrapErrorf(err, "failed to start scheduled workflow action %q", scheduled.ActionName)

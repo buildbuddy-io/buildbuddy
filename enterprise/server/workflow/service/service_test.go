@@ -2723,3 +2723,79 @@ actions:
 		})
 	}
 }
+
+// clockAdvancingProvider simulates a stalled dispatch by advancing the clock
+// while the config is being fetched.
+type clockAdvancingProvider struct {
+	*testgit.FakeProvider
+	clock   *clockwork.FakeClock
+	advance time.Duration
+}
+
+func (p *clockAdvancingProvider) GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error) {
+	p.clock.Advance(p.advance)
+	return p.FakeProvider.GetFileContents(ctx, accessToken, repoURL, filePath, ref)
+}
+
+// The claim on a scheduled run lasts 5 minutes, and dispatch stops 10 seconds
+// before it expires.
+func TestScheduledWorkflow_DispatchOutlivesClaim(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		stall        time.Duration
+		wantExecuted bool
+	}{
+		{name: "stall past claim expiry", stall: 6 * time.Minute, wantExecuted: false},
+		{name: "stall within claim margin", stall: 5*time.Minute - 5*time.Second, wantExecuted: false},
+		{name: "stall before claim margin", stall: 5*time.Minute - 30*time.Second, wantExecuted: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			flags.Set(t, "remote_execution.enable_scheduled_workflows", true)
+			te := newTestEnv(t)
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			fakeProvider := testgit.NewFakeProvider()
+			repoURL := makeTempRepo(t)
+			_ = runBBServer(ctx, t, te)
+			_, _, gid := authenticate(t, ctx, te)
+			createWorkflow(t, te, repoURL, gid, false)
+			fakeProvider.FileContents = map[string]string{
+				config.FilePath: `
+actions:
+  - name: "Test"
+    bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
+`,
+			}
+
+			now := threePM
+			clock := clockwork.NewFakeClockAt(now)
+			te.SetClock(clock)
+			te.SetGitProviders([]interfaces.GitProvider{&clockAdvancingProvider{FakeProvider: fakeProvider, clock: clock, advance: tc.stall}})
+			insertScheduledRun(t, te, &tables.ScheduledRun{
+				ScheduleID:  "test",
+				GroupID:     gid,
+				RepoURL:     repoURL,
+				ActionName:  "Test",
+				CronExpr:    "0 * * * *",
+				NextRunUsec: now.UnixMicro(),
+			})
+
+			require.NoError(t, te.GetWorkflowService().RunScheduledWorkflows(t.Context()))
+
+			scheduled := getScheduledRun(t, te, "Test")
+			if tc.wantExecuted {
+				_ = execClient.NextExecuteRequest()
+				require.Zero(t, scheduled.FailedAttemptCount)
+				return
+			}
+			// The dispatch gave up before calling Execute, and the claim was
+			// released for a retry.
+			require.Zero(t, len(execClient.executeRequests))
+			require.Equal(t, int64(1), scheduled.FailedAttemptCount)
+			require.Zero(t, scheduled.LeaseExpiresUsec)
+		})
+	}
+}
