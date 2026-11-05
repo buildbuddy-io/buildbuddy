@@ -34,7 +34,7 @@ var (
 	Flags = flags
 
 	besBackend   = flags.String("bes_backend", login.DefaultApiTarget, "BuildBuddy BES backend target")
-	resultsURL   = flags.String("results_url", "https://app.buildbuddy.io", "BuildBuddy results URL")
+	resultsURL   = flags.String("results_url", login.DefaultHTTPTarget, "BuildBuddy results URL")
 	invocationID = flags.String("invocation_id", "", "Invocation ID to use (auto-generated if not specified)")
 	// Tags are indexed on the invocation, so it can be found later with a
 	// SearchInvocation query.
