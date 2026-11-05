@@ -1,8 +1,10 @@
 package ip_rules_service
 
 import (
+	"cmp"
 	"context"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -64,7 +66,7 @@ func (s *Service) checkAccess(ctx context.Context, groupID string) error {
 
 func (s *Service) loadRulesFromDB(ctx context.Context, groupID string) ([]*tables.IPRule, error) {
 	rq := s.env.GetDBHandle().NewQuery(ctx, "iprules_load_rules").Raw(
-		`SELECT * FROM "IPRules" WHERE group_id = ? ORDER BY created_at_usec`, groupID)
+		`SELECT * FROM "IPRules" WHERE group_id = ?`, groupID)
 	rules, err := db.ScanAll(rq, &tables.IPRule{})
 	if err != nil {
 		return nil, err
@@ -136,6 +138,8 @@ func (s *Service) GetRules(ctx context.Context, req *irpb.GetRulesRequest) (*irp
 		return nil, err
 	}
 
+	slices.SortFunc(rules, compareRulesByCIDR)
+
 	rsp := &irpb.GetRulesResponse{}
 	for _, r := range rules {
 		rsp.IpRules = append(rsp.IpRules, &irpb.IPRule{
@@ -174,6 +178,18 @@ func (s *Service) GetIPRules(ctx context.Context, req *irpb.GetRulesRequest) (*i
 	}
 
 	return nil, status.InvalidArgumentErrorf("Client %s may not access IPRulesService", identity.Client)
+}
+
+// Orders rules by network address (IPv4 before IPv6), then by prefix length.
+// Unparseable CIDRs yield a zero Prefix, whose Addr sorts first.
+func compareRulesByCIDR(a, b *tables.IPRule) int {
+	pa, _ := netip.ParsePrefix(a.CIDR)
+	pb, _ := netip.ParsePrefix(b.CIDR)
+	return cmp.Or(
+		pa.Addr().Compare(pb.Addr()),
+		cmp.Compare(pa.Bits(), pb.Bits()),
+		strings.Compare(a.CIDR, b.CIDR),
+	)
 }
 
 func validateIPRange(value string) (string, error) {
