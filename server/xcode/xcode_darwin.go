@@ -257,7 +257,7 @@ func commandLineToolsVersionString() string {
 			return version
 		}
 	}
-	log.Warning("Error determining Xcode Command Line Tools version: 'version:' field not found in pkkgutil output")
+	log.Warning("Error determining Xcode Command Line Tools version: 'version:' field not found in pkgutil output")
 	return "unknown"
 }
 
