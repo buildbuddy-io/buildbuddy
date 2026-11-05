@@ -87,6 +87,7 @@ var (
 	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
 	workflowsMaxRetries           = flag.Int("remote_execution.workflows_max_execute_retries", 4, "Number of times to retry a workflow action if it fails to start.")
+	disableLegacyWorkflows        = flag.Bool("remote_execution.disable_legacy_workflows", true, "If true, legacy workflows cannot be triggered via webhooks or manual execution. Legacy workflows can still be listed and deleted.")
 	_                             = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.", flag.Deprecated("kythe is deprecated: do not use this flag"))
 	enableCodesearchIndexing      = flag.Bool("remote_execution.enable_codesearch_indexing", false, "If set, and codesearch is enabled, automatically run an incremental indexing action.")
 
@@ -611,6 +612,9 @@ func (ws *workflowService) suppressActions(ctx context.Context, wf *tables.Workf
 func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID string) (*tables.Workflow, error) {
 	isLegacyWorkflow := !isRepositoryWorkflowID(workflowID)
 	if isLegacyWorkflow {
+		if *disableLegacyWorkflows {
+			return nil, status.FailedPreconditionError("legacy workflows are disabled")
+		}
 		wf := &tables.Workflow{}
 		err := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_by_id").Raw(
 			`SELECT * FROM Workflows WHERE workflow_id = ?`,
@@ -1975,6 +1979,10 @@ func workflowHomeDir(user string) string {
 // Modern workflows should use the GitHub app, which should route through
 // `HandleRepositoryEvent` instead.
 func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if *disableLegacyWorkflows {
+		http.Error(w, "legacy workflows are disabled", http.StatusNotFound)
+		return
+	}
 	workflowMatch := workflowURLMatcher.FindStringSubmatch(r.URL.Path)
 	if len(workflowMatch) != 2 {
 		http.Error(w, "workflow URL not recognized", http.StatusNotFound)
@@ -2297,11 +2305,11 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 func (ws *workflowService) advanceScheduledWorkflow(ctx context.Context, scheduled *tables.ScheduledRun) error {
 	nextRunUsec, err := ws.calculateNextRunTimeUsec(scheduled.CronExpr)
 	if err != nil {
-		alert.CtxUnexpectedEvent(ctx, "Failed to calculate next run time for scheduled workflow %s: %s", scheduled.ScheduleID, err)
+		alert.CtxUnexpectedEvent(ctx, "scheduled_workflow_next_run_time_failed", "schedule %s: %s", scheduled.ScheduleID, err)
 		return err
 	}
 	if err := ws.advanceWorkflowSchedule(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec, nextRunUsec, 0 /*failedAttemptCount*/, 0 /*consecutiveScheduleFailureCount*/); err != nil {
-		alert.CtxUnexpectedEvent(ctx, "Failed to advance scheduled workflow %s to %d: %s", scheduled.ScheduleID, nextRunUsec, err)
+		alert.CtxUnexpectedEvent(ctx, "scheduled_workflow_advance_failed", "schedule %s next_run %d: %s", scheduled.ScheduleID, nextRunUsec, err)
 		return err
 	}
 	return nil

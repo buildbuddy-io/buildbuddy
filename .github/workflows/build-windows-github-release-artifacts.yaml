@@ -42,6 +42,7 @@ jobs:
           $commonArgs = @(
             "--config=release-windows"
             "--remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
+            "--bes_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
           )
           $amd64Target = "//enterprise/server/cmd/executor:executor_windows_amd64"
           $windows386Target = "//enterprise/server/cmd/executor:executor_windows_386"

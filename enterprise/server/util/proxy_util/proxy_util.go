@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"google.golang.org/grpc/metadata"
 )
@@ -27,6 +26,17 @@ const (
 	// the source of truth and skip remote reads and writes.
 	// By default, the remote app cache is the source of truth.
 	SkipRemoteKey = "proxy_skip_remote"
+
+	// ActionCacheTTLHeaderName lets clients opt into caching action results in
+	// the cache proxy, rather than always revalidating them with the
+	// authoritative remote cache. The value is the duration to serve locally
+	// cached results for before revalidating, formatted as a Go duration string
+	// (e.g. "15m" or "1h"). A non-positive or unparseable value disables local
+	// caching.
+	//
+	// This header currently does not propagate to executors. Executors will
+	// still cache results using the authoritative cache.
+	ActionCacheTTLHeaderName = "x-buildbuddy-cache-proxy-action-cache-ttl"
 )
 
 var (
@@ -42,7 +52,7 @@ var (
 		cdc.SpliceWithoutValidationHeaderName,
 		// Forward the client's opt-in for local AC caching so it survives
 		// proxy-to-proxy hops and every proxy in the chain honors it.
-		platform.OverrideHeaderPrefix + platform.CacheProxyActionCacheTTLPropertyName,
+		ActionCacheTTLHeaderName,
 	}
 )
 

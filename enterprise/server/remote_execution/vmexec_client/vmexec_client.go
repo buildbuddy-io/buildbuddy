@@ -80,7 +80,7 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	}
 	var res *vmxpb.ExecResponse
 	var stats *repb.UsageStats
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(ctx)
 	if stdio.Stdin != nil {
 		eg.Go(func() error {
 			if _, err := io.Copy(&stdinWriter{stream}, stdio.Stdin); err != nil {
@@ -98,7 +98,7 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	}
 
 	eg.Go(func() error {
-		receiver := rpcutil.NewReceiver[*vmxpb.ExecStreamedResponse](ctx, stream)
+		receiver := rpcutil.NewReceiver[*vmxpb.ExecStreamedResponse](egCtx, stream)
 		for {
 			msg, err := receiver.RecvWithTimeoutCause(streamRecvTimeout, errRecvTimeout)
 			if err == io.EOF {
@@ -109,15 +109,15 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 				// temporarily log the error here for debugging purposes.
 				err := gstatus.ErrorProto(res.GetStatus())
 				if err != nil {
-					log.CtxInfof(ctx, "vmexec stream returned error: %s", err)
+					log.CtxInfof(egCtx, "vmexec stream returned error: %s", err)
 				}
 				return err
 			}
 			if err != nil {
-				if ctx.Err() == context.DeadlineExceeded {
+				if egCtx.Err() == context.DeadlineExceeded {
 					return status.DeadlineExceededError("context deadline exceeded")
 				}
-				if ctx.Err() == context.Canceled {
+				if egCtx.Err() == context.Canceled {
 					return status.CanceledError("context canceled")
 				}
 				return status.UnavailableErrorf("failed to receive from stream: %s", status.Message(err))

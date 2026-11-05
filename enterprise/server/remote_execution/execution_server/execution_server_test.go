@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/proto/capability"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -31,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -183,6 +185,15 @@ func setupEnvWithClock(t *testing.T, clock clockwork.Clock) (*testenv.TestEnv, *
 
 func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	return setupEnvWithClock(t, clockwork.NewRealClock())
+}
+
+func apiKeyUser(apiKeyID string, caps ...capability.Capability) *testauth.TestUser {
+	u := testauth.User("", "GR1")
+	u.APIKeyID = apiKeyID
+	u.APIKeyOwnerGroupID = "GR1"
+	u.Capabilities = caps
+	u.GroupMemberships[0].Capabilities = caps
+	return u
 }
 
 func createExecution(ctx context.Context, t *testing.T, db interfaces.DB, execution *tables.Execution) {
@@ -567,118 +578,6 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 			},
 		},
 	}, task.GetPlatformOverrides(), protocmp.Transform()))
-}
-
-func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
-	for _, tc := range []struct {
-		name                  string
-		containerImage        string
-		wantContainerImage    string
-		wantExperimentVariant string
-	}{
-		{
-			name:                  "matching prefix is rewritten",
-			containerImage:        "docker://gcr.io/flame-public/rbe-ubuntu:latest",
-			wantContainerImage:    "docker://buildbuddy.bbcr.io/public/rbe-ubuntu:latest",
-			wantExperimentVariant: "bbcr",
-		},
-		{
-			name:                  "non-matching prefix is not rewritten",
-			containerImage:        "docker://us-docker.pkg.dev/other/image:latest",
-			wantContainerImage:    "",
-			wantExperimentVariant: "bbcr",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			env, _, _ := setupEnv(t)
-
-			tmp := testfs.MakeTempDir(t)
-			offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
-{
-  "$schema": "https://flagd.dev/schema/v0/flags.json",
-  "flags": {
-    "remote_execution.container_image_rewrite": {
-      "state": "ENABLED",
-      "variants": {
-        "bbcr": {
-          "prefix": "gcr.io/flame-public/",
-          "replacement": "buildbuddy.bbcr.io/public/"
-        },
-        "default": {}
-      },
-      "defaultVariant": "default",
-      "targeting": {
-        "if": [
-          true,
-          "bbcr"
-        ]
-      }
-    }
-  }
-}
-`)
-			provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
-			require.NoError(t, err)
-			openfeature.SetProviderAndWait(provider)
-			fp, err := experiments.NewFlagProvider("test")
-			require.NoError(t, err)
-			env.SetExperimentFlagProvider(fp)
-
-			ctx := context.Background()
-			s := env.GetRemoteExecutionService()
-
-			const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
-			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
-				ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
-				ToolInvocationId: iid,
-			})
-			ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
-			require.NoError(t, err)
-
-			action := &repb.Action{
-				Platform: &repb.Platform{
-					Properties: []*repb.Platform_Property{
-						{
-							Name:  "container-image",
-							Value: tc.containerImage,
-						},
-					},
-				},
-			}
-			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
-			ad := arn.GetDigest()
-
-			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
-			require.NoError(t, err)
-			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, "12345678")
-			require.NoError(t, err)
-
-			sched := env.GetSchedulerService().(*schedulerServerMock)
-			require.Equal(t, 1, len(sched.scheduleReqs))
-			b := sched.scheduleReqs[0].SerializedTask
-			task := &repb.ExecutionTask{}
-			err = proto.Unmarshal(b, task)
-			require.NoError(t, err)
-
-			// Check that the container image override is present (or absent).
-			var imageOverride string
-			for _, p := range task.GetPlatformOverrides().GetProperties() {
-				if p.GetName() == "container-image" {
-					imageOverride = p.GetValue()
-				}
-			}
-			assert.Equal(t, tc.wantContainerImage, imageOverride)
-
-			// Check experiment tracking.
-			if tc.wantExperimentVariant != "" {
-				assert.Contains(t, task.GetExperiments(), "remote_execution.container_image_rewrite:"+tc.wantExperimentVariant)
-			} else {
-				for _, exp := range task.GetExperiments() {
-					assert.False(t, strings.HasPrefix(exp, "remote_execution.container_image_rewrite:"), "unexpected experiment entry: %s", exp)
-				}
-			}
-		})
-	}
 }
 
 func TestDispatch_DisableOCIFetcherExperiment(t *testing.T) {
@@ -2542,6 +2441,61 @@ func TestExecute_LostTaskEndsWait(t *testing.T) {
 	require.True(t, op.GetDone())
 	rsp := operation.ExtractExecuteResponse(op)
 	require.Equal(t, int32(codes.NotFound), rsp.GetStatus().GetCode(), "status: %v", rsp.GetStatus())
+}
+
+func TestExecute_APIKeyCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		capabilities   []capability.Capability
+		wantPermission bool
+	}{
+		{
+			name:           "read-only key is rejected",
+			wantPermission: false,
+		},
+		{
+			name:           "CAS-only key is allowed",
+			capabilities:   []capability.Capability{capability.Capability_CAS_WRITE},
+			wantPermission: true,
+		},
+		{
+			name:           "cache-write key is allowed",
+			capabilities:   []capability.Capability{capability.Capability_CACHE_WRITE},
+			wantPermission: true,
+		},
+		{
+			name:           "org-admin key is allowed",
+			capabilities:   []capability.Capability{capability.Capability_ORG_ADMIN},
+			wantPermission: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, conn, _ := setupEnv(t)
+			authenticator := env.GetAuthenticator().(*testauth.TestAuthenticator)
+			authenticator.APIKeyProvider = func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) {
+				return apiKeyUser(apiKey, tc.capabilities...), nil
+			}
+
+			// Use a missing action to verify that authorized requests proceed to
+			// the normal execution path without actually scheduling anything.
+			actionDigest, err := digest.Compute(strings.NewReader("missing action"), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			ctx := metadata.AppendToOutgoingContext(t.Context(), authutil.APIKeyHeader, "test-api-key")
+			stream, err := repb.NewExecutionClient(conn).Execute(ctx, &repb.ExecuteRequest{
+				ActionDigest:   actionDigest,
+				DigestFunction: repb.DigestFunction_SHA256,
+			})
+			require.NoError(t, err)
+
+			_, err = stream.Recv()
+			require.Error(t, err)
+			if tc.wantPermission {
+				require.True(t, status.IsFailedPreconditionError(err), "expected missing-action error, got %s", err)
+			} else {
+				require.True(t, status.IsPermissionDeniedError(err), "expected permission denied, got %s", err)
+			}
+		})
+	}
 }
 
 func TestExecute_RejectAnonymousExecutionsExperiment(t *testing.T) {

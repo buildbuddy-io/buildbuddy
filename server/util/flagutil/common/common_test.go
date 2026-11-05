@@ -1,7 +1,6 @@
 package common_test
 
 import (
-	"encoding/json"
 	"flag"
 	"net/url"
 	"testing"
@@ -255,48 +254,6 @@ func TestBadDereferencedValueFromFlagName(t *testing.T) {
 	flags := replaceFlagsForTesting(t)
 	_, err := common.GetDereferencedValue[any](flags, "unknown_flag")
 	require.Error(t, err)
-}
-
-func SetWithOverride(t *testing.T) {
-	flags := replaceFlagsForTesting(t)
-
-	defaultBool := false
-	defaultInt := 37
-	defaultEmptyStringSlice := []string{}
-	defaultStringSlice := []string{"ert+", "y76p", "olu8"}
-	defaultEmptyStructSlice := []testStruct{}
-	defaultStructSlice := []testStruct{{Field: 0, Meadow: "ert+"}, {Field: 1, Meadow: "y76p"}, {Field: 2, Meadow: "olu8"}}
-
-	boolFromFlag := autoflags.New(flags, "bool_flag", defaultBool, "")
-	intFromFlag := autoflags.New(flags, "int_flag", defaultInt, "")
-	emptyStringSliceFromFlag := autoflags.New(flags, "empty_string_slice_flag", defaultEmptyStringSlice, "")
-	stringSliceFromFlag := autoflags.New(flags, "string_slice_flag", defaultStringSlice, "")
-	emptyStructSliceFromFlag := autoflags.New(flags, "empty_struct_slice_flag", defaultEmptyStructSlice, "")
-	structSliceFromFlag := autoflags.New(flags, "struct_slice_flag", defaultStructSlice, "")
-
-	common.SetWithOverride(flags, "bool_flag", "true")
-	assert.Equal(t, true, *boolFromFlag)
-
-	common.SetWithOverride(flags, "int_flag", "20")
-	assert.Equal(t, 20, *intFromFlag)
-
-	common.SetWithOverride(flags, "empty_string_slice_flag", "yo,what up,hey")
-	assert.Equal(t, []string{"yo", "what up", "hey"}, *emptyStringSliceFromFlag)
-
-	common.SetWithOverride(flags, "string_slice_flag", "flour,cornmeal,baking powder,sugar")
-	assert.Equal(t, []string{"flour", "corn meal", "baking powder", "sugar"}, *stringSliceFromFlag)
-
-	newEmptyStructSliceFlag := []testStruct{{Field: 5, Meadow: "halibut"}, {Field: 9, Meadow: "sheep's cheese"}, {Field: 11, Meadow: "tamahtoes"}}
-	jsonForEmptyStructSliceFlag, err := json.Marshal(newEmptyStructSliceFlag)
-	require.NoError(t, err)
-	common.SetWithOverride(flags, "empty_struct_slice_flag", string(jsonForEmptyStructSliceFlag))
-	assert.Equal(t, newEmptyStructSliceFlag, *emptyStructSliceFromFlag)
-
-	newStructSliceFlag := []testStruct{{Field: 207, Meadow: "PURPLE PEOPLE"}}
-	jsonForStructSliceFlag, err := json.Marshal(newStructSliceFlag)
-	require.NoError(t, err)
-	common.SetWithOverride(flags, "struct_slice_flag", string(jsonForStructSliceFlag))
-	assert.Equal(t, newStructSliceFlag, *structSliceFromFlag)
 }
 
 func TestResetFlags(t *testing.T) {

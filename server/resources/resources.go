@@ -27,7 +27,7 @@ import (
 )
 
 var (
-	customResources   = flag.Slice("executor.custom_resources", []CustomResource{}, "Optional allocatable custom resources. This works similarly to bazel's local_extra_resources flag. Request these resources in exec_properties using the 'resources:<name>': '<value>' syntax.")
+	customResources   = flag.Slice("executor.custom_resources", []CustomResource{}, "Optional allocatable custom resources. This works similarly to bazel's local_extra_resources flag. Request these resources in exec_properties using the 'resources:<name>': '<value>' syntax. Resource names are case-insensitive.")
 	memoryBytes       = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
 	mmapMemoryBytes   = flag.Int64("executor.mmap_memory_bytes", 10e9, "Maximum memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. This is subtraced from the configured memory_bytes. Has no effect if firecracker is disabled or snapshot sharing is disabled.")
 	milliCPU          = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_CPU env var.")
@@ -335,7 +335,7 @@ func GetAllocatedCustomResources() ([]*scpb.CustomResource, error) {
 			return []*scpb.CustomResource{}, status.InvalidArgumentError("Custom resource names may not contain periods")
 		}
 		out = append(out, &scpb.CustomResource{
-			Name:  r.Name,
+			Name:  strings.ToLower(r.Name),
 			Value: float32(r.Value),
 		})
 	}

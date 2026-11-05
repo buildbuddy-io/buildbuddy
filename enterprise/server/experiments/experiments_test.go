@@ -5,6 +5,7 @@ package experiments_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -24,6 +25,8 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
+
+	flagdsync "github.com/open-feature/flagd/core/pkg/sync"
 
 	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -754,4 +757,30 @@ func TestGroupStatusTargeting(t *testing.T) {
 		require.False(t, fp.Boolean(ctx, "enterprise_feature", false))
 		require.False(t, fp.Boolean(ctx, "free_tier_feature", false))
 	})
+}
+
+// failingSync is a flagdsync.ISync whose initial Sync fails, as gcsflagsync's
+// does when the first GCS read fails.
+type failingSync struct{}
+
+func (failingSync) Init(ctx context.Context) error { return nil }
+
+func (failingSync) IsReady() bool { return false }
+
+func (failingSync) ReSync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
+	return nil
+}
+
+func (failingSync) Sync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
+	return errors.New("initial GCS flag sync failed")
+}
+
+func TestRegisterInProcessSync_InitialSyncErrorIsFatal(t *testing.T) {
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
+
+	err := experiments.RegisterInProcessSync(testenv.GetTestEnv(t), failingSync{})
+	require.Error(t, err)
 }

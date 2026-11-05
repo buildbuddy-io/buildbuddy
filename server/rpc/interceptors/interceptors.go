@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
@@ -41,6 +42,7 @@ const (
 
 var (
 	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
+	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
 	headerContextKeys       map[string]string
 )
 
@@ -236,7 +238,7 @@ func authUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor
 
 func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
+		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) || strings.HasPrefix(info.FullMethod, apiServicePrefix) {
 			if err := capabilities_filter.AuthorizeRPC(stream.Context(), env, info.FullMethod); err != nil {
 				return err
 			}
@@ -247,7 +249,7 @@ func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInter
 
 func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
+		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) || strings.HasPrefix(info.FullMethod, apiServicePrefix) {
 			if err := capabilities_filter.AuthorizeRPC(ctx, env, info.FullMethod); err != nil {
 				return nil, err
 			}

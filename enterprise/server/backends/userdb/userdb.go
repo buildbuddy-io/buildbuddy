@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -335,7 +336,7 @@ func (d *UserDB) createGroup(ctx context.Context, tx interfaces.DB, userID strin
 	}
 	// user ID will be empty if the group is being created using an API key.
 	if userID != "" {
-		if err = d.addUserToGroup(ctx, tx, userID, groupID); err != nil {
+		if err = d.addUserToGroup(ctx, tx, userID, groupID, true /*autoAdd*/); err != nil {
 			return "", err
 		}
 	}
@@ -514,7 +515,7 @@ func (d *UserDB) isGroupEmpty(ctx context.Context, tx interfaces.DB, groupID str
 	return true, nil
 }
 
-func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, groupID string) (retErr error) {
+func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, groupID string, autoAdd bool) error {
 	// If there are no existing members, then user should join with admin role,
 	// otherwise they should join with default role.
 	emptyGroup, err := d.isGroupEmpty(ctx, tx, groupID)
@@ -526,7 +527,10 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 		r = role.Admin
 	}
 
-	_, err = d.getUserByUserID(ctx, tx, userID, &interfaces.GetUserOpts{})
+	// DirectMembershipsOnly means u.Groups will not contain any indirect
+	// memberships via user lists. This only affects the parent membership check
+	// in isSAMLManagedUser.
+	u, err := d.getUserByUserID(ctx, tx, userID, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return status.NotFoundErrorf("user %q does not exist", userID)
@@ -554,17 +558,77 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 		}
 		return status.AlreadyExistsError("You're already in this organization.")
 	}
+	if !autoAdd {
+		// SAML-managed users are added automatically without going through the
+		// "request to join" flow.
+		isManaged, err := d.isSAMLManagedUser(ctx, tx, u, groupID)
+		if err != nil {
+			return err
+		}
+		if !isManaged {
+			return status.FailedPreconditionError("Users must request membership before they can be added to an organization.")
+		}
+	}
 	return tx.NewQuery(ctx, "userdb_add_user_to_group").Raw(
 		`INSERT INTO "UserGroups" (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)`,
 		userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), r,
 	).Exec().Error
 }
 
-func (d *UserDB) addUserListToGroup(ctx context.Context, tx interfaces.DB, userListID, groupID string, listRole role.Role) (retErr error) {
-	return tx.NewQuery(ctx, "userdb_add_user_to_group").Raw(
-		`INSERT INTO "UserListGroups" (user_list_user_list_id, group_group_id, role) VALUES(?, ?, ?)`,
-		userListID, groupID, listRole,
-	).Exec().Error
+// isSAMLManagedUser reports whether the user's SAML identity is managed
+// by the group, or by a parent group, so that the user can be added to the
+// group without a membership request. u.Groups must hold only the user's
+// direct memberships.
+func (d *UserDB) isSAMLManagedUser(ctx context.Context, tx interfaces.DB, u *tables.User, groupID string) (bool, error) {
+	g, err := d.getGroupByID(ctx, tx, groupID)
+	if err != nil {
+		return false, err
+	}
+	if g.SamlIdpMetadataUrl == "" {
+		return false, nil
+	}
+	// This is the common case: the user matches the SAML SubID prefix for the
+	// group.
+	if strings.HasPrefix(u.SubID, saml.SubIDPrefixForGroup(g.URLIdentifier)) {
+		return true, nil
+	}
+
+	// The less common case:
+	// We allow SAML-managed groups to have child/parent relationships. Groups
+	// are considered related if they have the same SAML IdP metadata URL. A
+	// parent is designated by setting the is_parent bit on the parent group.
+	// An admin (or admin API key) for the parent group is allowed to perform
+	// changes on the children groups.
+	// Below we check if the target user is a member of the parent group and the
+	// caller is an admin of the parent group.
+	caller, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, m := range u.Groups {
+		if m.IsParent && m.SamlIdpMetadataUrl == g.SamlIdpMetadataUrl &&
+			strings.HasPrefix(u.SubID, saml.SubIDPrefixForGroup(m.URLIdentifier)) &&
+			authutil.AuthorizeOrgAdmin(caller, m.GroupID) == nil {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (d *UserDB) addUserListToGroup(ctx context.Context, tx interfaces.DB, userListID, groupID string, listRole role.Role) error {
+	result := tx.NewQuery(ctx, "userdb_add_user_list_to_group").Raw(`
+		INSERT INTO "UserListGroups" (user_list_user_list_id, group_group_id, role)
+		SELECT user_list_id, ?, ? FROM "UserLists"
+		WHERE user_list_id = ? AND group_id = ?`,
+		groupID, listRole, userListID, groupID,
+	).Exec()
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return status.PermissionDeniedError("user list does not belong to the organization")
+	}
+	return nil
 }
 
 func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error) {
@@ -597,7 +661,7 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 		membershipStatus = grpb.GroupMembershipStatus_REQUESTED
 		if !u.IsCustomerSSO() && group.OwnedDomain != "" && group.OwnedDomain == getEmailDomain(tu.Email) {
 			membershipStatus = grpb.GroupMembershipStatus_MEMBER
-			return d.addUserToGroup(ctx, tx, userID, groupID)
+			return d.addUserToGroup(ctx, tx, userID, groupID, true /*autoAdd*/)
 		}
 
 		// Check if there's an existing request and return AlreadyExists if so.
@@ -846,7 +910,7 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 				}
 			case grpb.UpdateGroupUsersRequest_Update_ADD:
 				if update.GetUserId().GetId() != "" {
-					if err := d.addUserToGroup(ctx, tx, update.GetUserId().GetId(), groupID); err != nil {
+					if err := d.addUserToGroup(ctx, tx, update.GetUserId().GetId(), groupID, false /*autoAdd*/); err != nil {
 						return err
 					}
 				} else if update.GetUserListId() != "" {
@@ -1498,13 +1562,23 @@ func (d *UserDB) DeleteUserList(ctx context.Context, userListID string) error {
 
 func (d *UserDB) addUserToUserList(ctx context.Context, tx interfaces.DB, userListID string, userID string) error {
 	rq := tx.NewQuery(ctx, "userdb_add_user_to_user_list").Raw(`
-		INSERT INTO "UserUserLists" ("user_list_user_list_id", "user_user_id") VALUES (?, ?)
-	`, userListID, userID)
-	if err := rq.Exec().Error; err != nil {
+		INSERT INTO "UserUserLists" ("user_list_user_list_id", "user_user_id")
+		SELECT ul.user_list_id, ug.user_user_id
+		FROM "UserLists" AS ul
+		JOIN "UserGroups" AS ug ON ug.group_group_id = ul.group_id
+		WHERE ul.user_list_id = ?
+			AND ug.user_user_id = ?
+			AND ug.membership_status = ?
+	`, userListID, userID, grpb.GroupMembershipStatus_MEMBER).Exec()
+	if rq.Error != nil {
+		err := rq.Error
 		if d.h.IsDuplicateKeyError(err) {
 			return status.AlreadyExistsErrorf("User %q is already part of user list %q", userID, userListID)
 		}
 		return err
+	}
+	if rq.RowsAffected == 0 {
+		return status.FailedPreconditionErrorf("User %q must be a member of the organization before they can be added to user list %q", userID, userListID)
 	}
 	return nil
 }

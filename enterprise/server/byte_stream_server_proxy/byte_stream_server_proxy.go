@@ -1014,40 +1014,8 @@ func (s *ByteStreamServerProxy) writeLocalOnly(stream bspb.ByteStream_WriteServe
 	return s.local.Write(stream)
 }
 
-// skipWriteValidation reports whether the local server can leave validating
-// the upload the remote server.
-func (s *ByteStreamServerProxy) skipWriteValidation(ctx context.Context, req *bspb.WriteRequest) bool {
-	if proxy_util.SkipRemote(ctx) || !skipWriteValidation.Get(ctx) {
-		return false
-	}
-
-	rn, err := digest.ParseUploadResourceName(req.GetResourceName())
-	if err != nil || rn.GetCompressor() == repb.Compressor_IDENTITY {
-		// For IDENTITY, uploads, remote can return the digest size when the
-		// object already exists, so we can't tell if remote validation was done.
-		return false
-	}
-	// pre-5.1 Bazel doesn't support short-circuiting the write, so remote
-	// always drains the stream and returns the number of sent bytes, which is
-	// indistinguishable from a remote that validated the upload.
-	if v := bazel_request.GetVersion(ctx); v != nil && !v.IsAtLeast(byte_stream_server.Bazel5_1_0) {
-		return false
-	}
-	return true
-}
-
-// firstRequest peeks at the first request of stream and returns a stream
-// that replays it.
-func firstRequest(stream bspb.ByteStream_WriteServer) (*bspb.WriteRequest, bspb.ByteStream_WriteServer, error) {
-	// writeChunked may have peeked already.
-	if rs, ok := stream.(*replayableWriteStream); ok && !rs.replayedFirst {
-		return rs.firstReq, rs, nil
-	}
-	req, err := stream.Recv()
-	if err != nil {
-		return nil, nil, err
-	}
-	return req, &replayableWriteStream{ByteStream_WriteServer: stream, firstReq: req}, nil
+func (s *ByteStreamServerProxy) skipWriteValidation(ctx context.Context) bool {
+	return !proxy_util.SkipRemote(ctx) && skipWriteValidation.Get(ctx)
 }
 
 type forwardingWriteStream struct {
@@ -1133,18 +1101,14 @@ func (s *forwardingWriteStream) endAlreadyExists(ctx context.Context) error {
 }
 
 func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteStream_WriteServer) error {
-	firstReq, stream, err := firstRequest(stream)
-	if err != nil {
-		return err
-	}
-	skipValidation := s.skipWriteValidation(ctx, firstReq)
+	skipValidation := s.skipWriteValidation(ctx)
 
-	// If our client supports "already exists" errors then propagate that to
-	// the remote server. Also ask for them when skipping validation: they
-	// tell a remote that already had the blob, and so did not read the
-	// upload, from one that validated it (see forwardingWriteStream.Recv).
-	clientAdvertised := clientfeatures.Supports(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
-	if clientAdvertised || skipValidation {
+	// If our client handles "already exists" errors then ask the remote for
+	// them. Also ask when skipping validation: they tell a remote that
+	// already had the blob, and so did not read the upload, from one that
+	// validated it (see forwardingWriteStream.Recv).
+	clientHandlesStatus := byte_stream_server.ClientHandlesAlreadyExists(ctx)
+	if clientHandlesStatus || skipValidation {
 		ctx = clientfeatures.Advertise(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
 	}
 	remoteStream, err := s.remote.Write(ctx)
@@ -1185,7 +1149,7 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 	}
 	if err := forwarding.closeRemote(); err != nil {
 		// The proxy asked for the status; the client may not handle it.
-		if skipValidation && !clientAdvertised && status.IsAlreadyExistsError(err) {
+		if skipValidation && !clientHandlesStatus && status.IsAlreadyExistsError(err) {
 			return forwarding.endAlreadyExists(ctx)
 		}
 		return err

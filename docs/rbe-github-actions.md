@@ -45,12 +45,14 @@ jobs:
           "${GITHUB_WORKSPACE}/bin/bazel" build \
               --config=ci \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+              --bes_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
               //...
       - name: Test
         run: |
           "${GITHUB_WORKSPACE}/bin/bazel" test \
               --config=ci \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+              --bes_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
               //...
 ```
 

@@ -412,12 +412,12 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	if reusable {
 		// The tree fetcher checks names too, but we build paths from them
 		// earlier, when cleaning up a pooled workspace for reuse.
-		if err := dirtools.ValidateTreeNames(layout.Inputs, ws.Opts.CaseInsensitive); err != nil {
-			return err
-		}
 		root, dirMap, err := dirtools.DirMapFromTree(layout.Inputs, execReq.GetDigestFunction())
 		if err != nil {
 			return status.WrapError(err, "build directory map from input tree")
+		}
+		if err := dirtools.ValidateTreeNames(layout.Inputs.GetRoot(), dirMap, execReq.GetDigestFunction(), ws.Opts.CaseInsensitive); err != nil {
+			return err
 		}
 		inputDirs := make(map[string]*repb.Directory, len(dirMap))
 		for k, d := range dirMap {

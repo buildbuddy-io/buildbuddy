@@ -163,8 +163,9 @@ file which passes these default options to each bazel invocation listed in
 
 - `--bes_backend` and `--bes_results_url`, so that the results from each
   Bazel command are viewable with BuildBuddy
-- `--remote_header=x-buildbuddy-api-key=YOUR_API_KEY`, so that invocations
-  are authenticated by default
+- `--remote_header=x-buildbuddy-api-key=YOUR_API_KEY` and
+  `--bes_header=x-buildbuddy-api-key=YOUR_API_KEY`, so that remote cache,
+  execution, and BES requests are authenticated by default
 - `--build_metadata=ROLE=CI`, so that workflow invocations are tagged as
   CI invocations, and so that workflow tests are viewable in the test grid
 

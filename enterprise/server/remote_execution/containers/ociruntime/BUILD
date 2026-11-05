@@ -71,6 +71,7 @@ go_test(
     data = [
         ":crun",
         "//enterprise/server/cmd/executor:tini",
+        "//enterprise/server/remote_execution/containers/ociruntime/testsyscall",
         "//enterprise/server/remote_execution/runner/testworker",
         "@busybox",
         "@net_tools",
@@ -99,6 +100,7 @@ go_test(
         "busyboxImageRlocationpath": "$(rlocationpath @busybox)",
         "netToolsImageRlocationpath": "$(rlocationpath @net_tools)",
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
+        "testsyscallRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/ociruntime/testsyscall)",
     },
     deps = [
         ":ociruntime",
@@ -136,6 +138,7 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles",
+        "@org_golang_x_sys//unix",
     ],
 )
 

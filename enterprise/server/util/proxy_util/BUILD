@@ -18,7 +18,6 @@ go_library(
         "//server/util/clientip",
         "//server/util/findmissing",
         "//server/util/log",
-        "//server/util/platform",
         "//server/util/usageutil",
         "@org_golang_google_grpc//metadata",
     ],

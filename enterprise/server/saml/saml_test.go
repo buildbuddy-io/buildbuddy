@@ -21,6 +21,7 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/crewjam/saml"
@@ -159,7 +160,12 @@ func TestSAMLProviderCacheReusesProvider(t *testing.T) {
 // fetchSPMetadata GETs BuildBuddy's SAML SP metadata via /auth/saml/metadata.
 func fetchSPMetadata(t *testing.T, bb *app.App) *saml.EntityDescriptor {
 	t.Helper()
-	resp, err := http.Get(bb.HTTPURL() + "/auth/saml/metadata?slug=" + testSlug)
+	return fetchSPMetadataForSlug(t, bb, testSlug)
+}
+
+func fetchSPMetadataForSlug(t *testing.T, bb *app.App, slug string) *saml.EntityDescriptor {
+	t.Helper()
+	resp, err := http.Get(bb.HTTPURL() + "/auth/saml/metadata?slug=" + slug)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
@@ -222,11 +228,16 @@ func makeSignedSAMLResponse(t *testing.T, idp *testIDP, spMetadata *saml.EntityD
 // request would carry on subsequent calls.
 func loginViaSAML(t *testing.T, bb *app.App, samlResponse string) []*http.Cookie {
 	t.Helper()
+	return loginViaSAMLForSlug(t, bb, samlResponse, testSlug)
+}
+
+func loginViaSAMLForSlug(t *testing.T, bb *app.App, samlResponse, slug string) []*http.Cookie {
+	t.Helper()
 	form := url.Values{
 		"SAMLResponse": []string{samlResponse},
 		"RelayState":   []string{""},
 	}
-	resp, err := noFollowClient().PostForm(bb.HTTPURL()+"/auth/saml/acs?slug="+testSlug, form)
+	resp, err := noFollowClient().PostForm(bb.HTTPURL()+"/auth/saml/acs?slug="+slug, form)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
@@ -260,7 +271,19 @@ func callCreateUser(t *testing.T, bb *app.App, cookies []*http.Cookie) (int, str
 
 func callGetUser(t *testing.T, bb *app.App, cookies []*http.Cookie) (*uspb.GetUserResponse, error) {
 	t.Helper()
-	req, err := http.NewRequest("POST", bb.HTTPURL()+"/rpc/BuildBuddyService/GetUser", strings.NewReader("{}"))
+	return callGetUserForSlug(t, bb, cookies, "")
+}
+
+// callGetUserForSlug calls GetUser with the given cookies. A non-empty slug is
+// passed as ?slug=, which scopes the request to that org the same way the
+// Slug cookie does (the query param takes precedence over the cookie).
+func callGetUserForSlug(t *testing.T, bb *app.App, cookies []*http.Cookie, slug string) (*uspb.GetUserResponse, error) {
+	t.Helper()
+	rpcURL := bb.HTTPURL() + "/rpc/BuildBuddyService/GetUser"
+	if slug != "" {
+		rpcURL += "?slug=" + slug
+	}
+	req, err := http.NewRequest("POST", rpcURL, strings.NewReader("{}"))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	for _, c := range cookies {
@@ -351,4 +374,71 @@ func TestSAMLLogin_UsernameWithoutEmail(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, got.GetDisplayUser().GetEmail(),
 		"GetUser email should be empty when the IdP did not send one")
+}
+
+// addSAMLGroup creates an additional SAML-enabled org with the given slug,
+// backed by the given IdP.
+func addSAMLGroup(t *testing.T, bb *app.App, slug string, idp *testIDP) {
+	t.Helper()
+	// Reuse the owner of the default test org so the new group has a valid owner.
+	owner := &tables.Group{}
+	require.NoError(t, bb.DB().Where("url_identifier = ?", testSlug).First(owner).Error)
+	require.NoError(t, bb.DB().Create(&tables.Group{
+		// Table ID generation is only wired up inside the server process, so
+		// use a fixed, well-formed ID here.
+		GroupID:            "GR" + slug,
+		URLIdentifier:      slug,
+		Name:               slug,
+		UserID:             owner.UserID,
+		SamlIdpMetadataUrl: idp.MetadataURL(),
+	}).Error)
+}
+
+func emailSession(nameID, email string) *saml.Session {
+	return &saml.Session{
+		NameID: nameID,
+		CustomAttributes: []saml.Attribute{{
+			Name:       "email",
+			NameFormat: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+			Values:     []saml.AttributeValue{{Type: "xs:string", Value: email}},
+		}},
+	}
+}
+
+func TestSAMLOrgSessionAudience(t *testing.T) {
+	org1IDP := startTestIDP(t)
+	org2IDP := startTestIDP(t)
+	bb := startBuildBuddy(t, org1IDP, "--auth.saml.per_org_session_audience=true")
+	const org2Slug = "saml-int-test-org2"
+	addSAMLGroup(t, bb, org2Slug, org2IDP)
+
+	org1SP := fetchSPMetadata(t, bb)
+	org2SP := fetchSPMetadataForSlug(t, bb, org2Slug)
+	const org1Email = "org1user@example.com"
+
+	org1UserCookies := loginViaSAML(t, bb, makeSignedSAMLResponse(t, org1IDP, org1SP, emailSession("org1user", org1Email)))
+	status, body := callCreateUser(t, bb, org1UserCookies)
+	require.Equalf(t, http.StatusOK, status, "org1 CreateUser failed: body=%s", body)
+	got, err := callGetUser(t, bb, org1UserCookies)
+	require.NoError(t, err)
+	require.Equal(t, org1Email, got.GetDisplayUser().GetEmail())
+
+	org2Resp := makeSignedSAMLResponse(t, org2IDP, org2SP, emailSession("org2user", org1Email))
+	org2UserCookies := loginViaSAMLForSlug(t, bb, org2Resp, org2Slug)
+	status, body = callCreateUser(t, bb, org2UserCookies)
+	require.Equalf(t, http.StatusOK, status, "org2 CreateUser failed: body=%s", body)
+	got, err = callGetUser(t, bb, org2UserCookies)
+	require.NoError(t, err)
+	require.Equal(t, org1Email, got.GetDisplayUser().GetEmail())
+
+	var sessionOnly []*http.Cookie
+	for _, c := range org2UserCookies {
+		if c.Name == "token" {
+			sessionOnly = append(sessionOnly, c)
+		}
+	}
+	require.NotEmpty(t, sessionOnly)
+	_, err = callGetUserForSlug(t, bb, sessionOnly, testSlug)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "User session expired")
 }

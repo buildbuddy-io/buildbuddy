@@ -29,10 +29,10 @@
 // # Declarations
 //
 // Declare experiments at the package level using Bool, String, Int64, Float64,
-// Object, or Struct. Follow normal flag naming conventions, with a subsystem
-// namespace and a snake_case feature name, such as app.widget_color. Adding a
-// blank line between normal flags and experiment flags can help delineate them
-// more clearly. Example:
+// Object, Struct, or Slice. Follow normal flag naming conventions, with a
+// subsystem namespace and a snake_case feature name, such as app.widget_color.
+// Adding a blank line between normal flags and experiment flags can help
+// delineate them more clearly. Example:
 //
 //	var (
 //	    widgetSize = flag.Int("app.widget_size", 10, "Widget size.")
@@ -51,6 +51,19 @@
 // flag provider is installed or the provider cannot evaluate the experiment.
 // Defaults can be changed from the command line or YAML config, just like
 // normal flags.
+//
+// flagd does not support array-valued experiments, so to define a Slice
+// experiment in flagd, use a wrapper object containing a "values" field:
+//
+//	"variants": {
+//	    "treatment": {"values": ["a", "b"]},
+//	    "control": {} // equivalently: {"values": []}
+//	}
+//
+// Set the experiment's command-line flag and YAML config the same way as for
+// flag.Slice, which appends those values to the default declared in code. A
+// flagd variant's values are appended in the same way, after the configured
+// value.
 //
 // # Evaluation and defaults
 //
@@ -144,6 +157,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -400,6 +414,129 @@ func (f *StructFlag[T]) get(ctx context.Context, opts ...any) (T, interfaces.Exp
 		return *f.value, details
 	}
 	return value, details
+}
+
+// SliceFlag is an experiment flag whose value is a slice.
+type SliceFlag[T any] struct {
+	name                     string
+	deprecatedExperimentName string
+	// value is the configured value, which command-line flags and YAML config
+	// set exactly as for flag.Slice.
+	value *[]T
+}
+
+// Slice declares an experiment flag whose value is a slice. Set it from the
+// command line or YAML config the same way as flag.Slice, which appends those
+// values to defaultValue. In flagd, define each variant as a wrapper object
+// containing an entry called "values".
+// Example: {"values": ["foo", "bar"]}.
+//
+// A variant's values are appended to the configured value, and an empty object
+// or a null "values" field appends nothing.
+func Slice[T any](name string, defaultValue []T, help string, opts ...any) *SliceFlag[T] {
+	deprecatedName, flagTags := parseOptions(opts)
+	return &SliceFlag[T]{
+		name:                     name,
+		deprecatedExperimentName: deprecatedName,
+		value:                    flag.Slice(name, defaultValue, help, flagTags...),
+	}
+}
+
+// Name returns the flag name.
+func (f *SliceFlag[T]) Name() string {
+	return f.name
+}
+
+// Get evaluates the flag and returns the configured value, followed by the
+// values of the provider's variant if it has one for this evaluation. A variant
+// that cannot be decoded, including one with a field other than "values", is
+// ignored.
+//
+// On executors, the value that the scheduler sends with the task replaces the
+// configured value instead of appending. The returned slice may be shared with
+// other callers, so callers must not modify it.
+func (f *SliceFlag[T]) Get(ctx context.Context, opts ...any) []T {
+	value, _ := f.get(ctx, opts...)
+	return value
+}
+
+// GetWithDetails evaluates the flag and returns its value along with the
+// evaluation details, which include the selected variant. The returned slice
+// may be shared with other callers, so callers must not modify it.
+func (f *SliceFlag[T]) GetWithDetails(ctx context.Context, opts ...any) ([]T, *expb.EvaluatedFlag) {
+	value, details := f.get(ctx, opts...)
+	evaluated := &expb.EvaluatedFlag{Name: f.name}
+	if details != nil {
+		evaluated.Variant = details.Variant()
+	}
+	object, err := sliceToObject(value)
+	if err != nil {
+		log.CtxWarningf(ctx, "Experiment flag %q value could not be converted to a proto: %s", f.name, err)
+	} else {
+		evaluated.Value = &expb.EvaluatedFlag_ObjectValue{ObjectValue: object}
+	}
+	return value, evaluated
+}
+
+// GetProto evaluates the flag and returns the result as a proto, so that
+// another process can use the same value without re-evaluating the targeting
+// rules.
+func (f *SliceFlag[T]) GetProto(ctx context.Context, opts ...any) *expb.EvaluatedFlag {
+	_, evaluated := f.GetWithDetails(ctx, opts...)
+	return evaluated
+}
+
+func (f *SliceFlag[T]) get(ctx context.Context, opts ...any) ([]T, interfaces.ExperimentFlagDetails) {
+	p := provider.Load()
+	if p == nil {
+		return *f.value, nil
+	}
+	// As in StructFlag.get, a nil default lets us tell when the configured
+	// value applies.
+	object, details := (*p).ObjectDetails(ctx, f.name, nil, opts...)
+	if nf, ok := details.(flagNotFoundReporter); ok && nf.FlagNotFound() && f.deprecatedExperimentName != "" {
+		object, details = (*p).ObjectDetails(ctx, f.deprecatedExperimentName, nil, opts...)
+	}
+	if object == nil {
+		return *f.value, details
+	}
+	var decoded sliceObject[T]
+	if err := decodeObject(object, &decoded); err != nil {
+		alert.CtxUnexpectedEvent(ctx, "expflag_slice_invalid_variant", "Ignoring the value of experiment flag %q from the experiment provider because it cannot be decoded as %T: %s", f.name, decoded.Values, err)
+		return *f.value, details
+	}
+	// The context provider holds the value that the scheduler sent with the
+	// task. The scheduler already appended its variant's values to its own
+	// configured value, so its value replaces the executor's configured value,
+	// as it does for the other flag types.
+	if _, ok := details.(evaluatedFlagDetails); ok {
+		return decoded.Values, details
+	}
+	if len(decoded.Values) == 0 {
+		return *f.value, details
+	}
+	return slices.Concat(*f.value, decoded.Values), details
+}
+
+// sliceObject is the wrapper object that holds a Slice flag's values in flagd
+// variants and EvaluatedFlag protos. Decoding variants into it, rather than
+// decoding the "values" field alone, allocates less for longer slices.
+type sliceObject[T any] struct {
+	Values []T `json:"values"`
+}
+
+// sliceToObject converts values to the proto form of a sliceObject. Encoding
+// the slice alone allocates less than encoding a sliceObject.
+func sliceToObject[T any](value []T) (*structpb.Struct, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var values []any
+	if err := json.Unmarshal(encoded, &values); err != nil {
+		return nil, err
+	}
+	return structpb.NewStruct(map[string]any{"values": values})
 }
 
 // decodeObject decodes object into value through a JSON round trip. A key

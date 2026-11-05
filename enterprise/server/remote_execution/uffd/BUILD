@@ -15,6 +15,7 @@ go_library(
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/snaputil",
         "//server/metrics",
+        "//server/util/alert",
         "//server/util/log",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",

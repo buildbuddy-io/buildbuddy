@@ -1297,6 +1297,31 @@ func TestServerRetryAfterCanceledPullerInitialization(t *testing.T) {
 	assertMetadata(t, resp, digest, size, mediaType)
 }
 
+// The transport already retries 429 responses with backoff, so the server
+// should not retry them again with a new Puller.
+func TestServerNoRetryOnRateLimit(t *testing.T) {
+	var rateLimit atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if rateLimit.Load() && strings.Contains(r.URL.Path, "/manifests/") {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return false
+		}
+		return true
+	})
+	imageName, _ := reg.PushNamedImage(t, "test-image", nil)
+	server := newTestServer(t)
+
+	rateLimit.Store(true)
+	counter.Reset()
+	_, err := server.FetchManifestMetadata(t.Context(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.True(t, status.IsResourceExhaustedError(err), "expected ResourceExhausted, got %v", err)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/": 1,
+		// The transport makes three attempts.
+		http.MethodHead + " /v2/test-image/manifests/latest": 3,
+	})
+}
+
 func TestServerNoRetryOnContextErrors(t *testing.T) {
 	var headAttempts, getAttempts, blobAttempts atomic.Int32
 	var blockHead, blockGet, blockBlob atomic.Bool

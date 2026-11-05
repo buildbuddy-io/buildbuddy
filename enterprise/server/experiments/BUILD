@@ -44,6 +44,7 @@ go_test(
         "//server/util/expflag",
         "//server/util/random",
         "//server/util/testing/flags",
+        "@com_github_open_feature_flagd_core//pkg/sync",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_open_feature_go_sdk//openfeature/testing",

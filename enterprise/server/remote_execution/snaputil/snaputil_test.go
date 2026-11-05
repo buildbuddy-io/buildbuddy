@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -55,7 +56,7 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	fileTypeLabel := "test"
 
 	// Test caching and fetching
-	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), true, true, d, remoteInstanceName, b, fileTypeLabel)
+	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), true, true, d, remoteInstanceName, b, fileTypeLabel, "" /*=groupID*/)
 	require.NoError(t, err)
 	outputPath := filepath.Join(tmpDir, "fetch")
 	chunkSrc, err := snaputil.GetArtifact(ctx, fc, env.GetByteStreamClient(), true, d, remoteInstanceName, outputPath)
@@ -67,7 +68,7 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	require.Equal(t, randomStr, fetchedStr)
 
 	// Test rewriting same digest
-	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), true, true, d, remoteInstanceName, b, fileTypeLabel)
+	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), true, true, d, remoteInstanceName, b, fileTypeLabel, "" /*=groupID*/)
 	require.NoError(t, err)
 
 	// Delete from remote cache, make sure we can still read
@@ -82,7 +83,7 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	require.Equal(t, randomStr, fetchedStr)
 
 	// Rewrite artifact and delete from local cache, make sure we can still read
-	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), true, true, d, remoteInstanceName, b, fileTypeLabel)
+	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), true, true, d, remoteInstanceName, b, fileTypeLabel, "" /*=groupID*/)
 	require.NoError(t, err)
 	deleted := fc.DeleteFile(ctx, &repb.FileNode{Digest: d})
 	require.True(t, deleted)
@@ -95,7 +96,7 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 
 	// Test writing bogus digest
 	bogusDigest, _ := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, remoteInstanceName)
-	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), true, true, bogusDigest.Digest, remoteInstanceName, b, fileTypeLabel)
+	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), true, true, bogusDigest.Digest, remoteInstanceName, b, fileTypeLabel, "" /*=groupID*/)
 	require.Error(t, err)
 }
 
@@ -116,7 +117,7 @@ func TestCacheAndFetchArtifact_LocalOnly(t *testing.T) {
 	fileTypeLabel := "test"
 
 	// Read and write bytes from local cache
-	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), false /*remoteEnabled*/, true, d, remoteInstanceName, b, fileTypeLabel)
+	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), false /*remoteEnabled*/, true, d, remoteInstanceName, b, fileTypeLabel, "" /*=groupID*/)
 	require.NoError(t, err)
 	outputPath := filepath.Join(tmpDir, "fetch")
 	chunkSrc, err := snaputil.GetArtifact(ctx, fc, env.GetByteStreamClient(), false /*remoteEnabled*/, d, remoteInstanceName, outputPath)
@@ -151,7 +152,7 @@ func TestCacheAndFetchBytes(t *testing.T) {
 	fileTypeLabel := "test"
 
 	// Test caching and fetching
-	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), true, true, d, remoteInstanceName, b, fileTypeLabel)
+	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), true, true, d, remoteInstanceName, b, fileTypeLabel, "" /*=groupID*/)
 	require.NoError(t, err)
 	fetchedBytes, err := snaputil.GetBytes(ctx, fc, env.GetByteStreamClient(), true, d, remoteInstanceName, tmpDir)
 	require.NoError(t, err)
@@ -163,4 +164,35 @@ func TestCacheAndFetchBytes(t *testing.T) {
 	fetchedBytes, err = snaputil.GetBytes(ctx, fc, env.GetByteStreamClient(), true, d, remoteInstanceName, tmpDir)
 	require.NoError(t, err)
 	require.Equal(t, randomStr, string(fetchedBytes))
+}
+
+func TestGetArtifactRejectsInvalidDigest(t *testing.T) {
+	env := setupEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
+	require.NoError(t, err)
+	rootDir := testfs.MakeTempDir(t)
+	d := &repb.Digest{Hash: "../../x", SizeBytes: 10}
+
+	const sentinel = "sentinel-content"
+	outputPath := filepath.Join(rootDir, "out")
+	require.NoError(t, os.WriteFile(outputPath, []byte(sentinel), 0644))
+	_, err = snaputil.GetArtifact(ctx, env.GetFileCache(), env.GetByteStreamClient(), true, d, "", outputPath)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+	b, err := os.ReadFile(outputPath)
+	require.NoError(t, err)
+	require.Equal(t, sentinel, string(b))
+
+	// GetBytes removes its temp file, so point at a missing dir: without
+	// validation this fails with a different error.
+	tmpDir := testfs.MakeDirAll(t, rootDir, "a/b")
+	d = &repb.Digest{Hash: "../../missing/x", SizeBytes: 10}
+	_, err = snaputil.GetBytes(ctx, env.GetFileCache(), env.GetByteStreamClient(), true, d, "", tmpDir)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+	entries, err := os.ReadDir(rootDir)
+	require.NoError(t, err)
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	require.ElementsMatch(t, []string{"a", "out"}, names)
 }

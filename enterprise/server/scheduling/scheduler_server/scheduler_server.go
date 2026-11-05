@@ -1397,7 +1397,7 @@ type schedulerClient struct {
 
 func (c *schedulerClient) EnqueueTaskReservation(ctx context.Context, request *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	if c.localServer != nil {
-		return c.localServer.EnqueueTaskReservation(ctx, request)
+		return c.localServer.enqueueTaskReservation(ctx, request)
 	}
 	return c.rpcClient.EnqueueTaskReservation(ctx, request)
 }
@@ -1702,7 +1702,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 		if groupID, ok := groupIDValue.(string); ok {
 			override.GroupID = groupID
 		} else {
-			alert.CtxUnexpectedEvent(ctx, "%s: 'group_id' is not a string: %v", experimentName, groupIDValue)
+			alert.CtxUnexpectedEvent(ctx, "pool_override_invalid_group_id", "%s: 'group_id' is not a string: %v", experimentName, groupIDValue)
 			return nil
 		}
 	}
@@ -1710,7 +1710,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 		if pool, ok := poolValue.(string); ok {
 			override.Name = pool
 		} else {
-			alert.CtxUnexpectedEvent(ctx, "%s: 'pool' is not a string: %v", experimentName, poolValue)
+			alert.CtxUnexpectedEvent(ctx, "pool_override_invalid_pool", "%s: 'pool' is not a string: %v", experimentName, poolValue)
 			return nil
 		}
 	}
@@ -3270,8 +3270,16 @@ func (s *SchedulerServer) checkTaskLivenessOnce(ctx context.Context) {
 }
 
 func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
-	// TODO(vadim): verify user is authorized to use executor pool
+	if identityService := s.env.GetClientIdentityService(); identityService != nil {
+		identity, err := identityService.IdentityFromContext(ctx)
+		if err != nil || identity == nil || identity.Client != interfaces.ClientIdentityApp {
+			return nil, status.PermissionDeniedError("app client identity required")
+		}
+	}
+	return s.enqueueTaskReservation(ctx, req)
+}
 
+func (s *SchedulerServer) enqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	opts := enqueueTaskReservationOpts{
 		numReplicas:                  1,
 		maxAttempts:                  10,

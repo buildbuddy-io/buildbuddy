@@ -403,6 +403,11 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		defer unregister()
 	}
 	defer func() {
+		// res is nil only while a panic is unwinding; let it propagate
+		// unmasked instead of panicking again on a nil dereference.
+		if res == nil {
+			return
+		}
 		// Discard nonsensical PSI full-stall durations which are greater
 		// than the execution duration by a significant amount.
 		// See https://bugzilla.kernel.org/show_bug.cgi?id=219194
@@ -490,9 +495,11 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		}
 		if txInfo != nil {
 			fillStatsFromTransferInfo(ioStats, txInfo)
-			res.InputFetchMetadata = txInfo.InputFetchMetadata
+			if res != nil {
+				res.InputFetchMetadata = txInfo.InputFetchMetadata
+			}
 		}
-		if stats := r.Workspace.ComputeVFSStats(); stats != nil {
+		if stats := r.Workspace.ComputeVFSStats(); stats != nil && res != nil {
 			res.VfsStats = stats
 		}
 	}()
@@ -1067,7 +1074,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	if err != nil {
 		return err
 	}
-	executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), platProps, task.GetCommand())
+	executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), platProps, task)
 	if *resolveImageDigests {
 		if err := p.resolveImageDigest(ctx, platProps); err != nil {
 			return err
@@ -1221,7 +1228,7 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 		return nil, err
 	}
 	// TODO: This mutates the task; find a cleaner way to do this.
-	if err := executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
+	if err := executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task); err != nil {
 		return nil, err
 	}
 	if *resolveImageDigests {
@@ -1267,6 +1274,9 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
 		Platform:            platform.GetProto(task.GetAction(), task.GetCommand()),
 		PersistentWorkerKey: persistentWorkerKey,
+	}
+	if platform.ContainerType(props.WorkloadIsolationType) == platform.OCIContainerType {
+		key.OciSeccompDisableNewUserns = execution_experiments.SeccompDisableNewUserNS.Get(ctx)
 	}
 
 	// If snapshot sharing is enabled, a firecracker VM can be cloned from the

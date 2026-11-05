@@ -13,6 +13,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -49,6 +50,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -63,6 +65,7 @@ var (
 	busyboxImageRlocationpath  string
 	netToolsImageRlocationpath string
 	testworkerRlocationpath    string
+	testsyscallRlocationpath   string
 )
 
 func init() {
@@ -247,6 +250,47 @@ func TestRun(t *testing.T) {
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
+func TestRunWithEmptyRootfs(t *testing.T) {
+	setupNetworking(t)
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+
+	worker, err := runfiles.Rlocation(testworkerRlocationpath)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	testfs.CopyFile(t, worker, wd, "testworker")
+
+	reg := testregistry.Run(t, testregistry.Opts{})
+	emptyLayer, err := crane.Layer(nil)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name   string
+		layers []ctr.Layer
+	}{
+		{"no-layers", nil},
+		{"empty-layers", []ctr.Layer{emptyLayer, emptyLayer}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			img, err := mutate.AppendLayers(empty.Image, tc.layers...)
+			require.NoError(t, err)
+			ref := reg.Push(t, img, tc.name+":latest", nil)
+			c, err := provider.New(t.Context(), &container.Init{Props: &platform.Properties{ContainerImage: ref}})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, c.Remove(env.GetServerContext())) })
+
+			res := c.Run(t.Context(), &repb.Command{Arguments: []string{"./testworker", "-help"}}, wd, oci.Credentials{})
+			require.NoError(t, res.Error)
+			require.Zero(t, res.ExitCode, "stderr: %s", res.Stderr)
+			assert.Contains(t, string(res.Stderr), "persistent_worker")
+		})
+	}
+}
+
 func TestRunNofileLimit(t *testing.T) {
 	setupNetworking(t)
 	flags.Set(t, "executor.oci.nofile_limit", uint64(65536))
@@ -272,6 +316,82 @@ func TestRunNofileLimit(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, "65536\n65536\n", string(res.Stdout))
+}
+
+func TestSeccompSyscalls(t *testing.T) {
+	setupNetworking(t)
+	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	image := busyboxImage(t)
+	testsyscallPath, err := runfiles.Rlocation(testsyscallRlocationpath)
+	require.NoError(t, err)
+
+	for _, testCase := range []struct {
+		name    string
+		syscall string
+		// Container user. Non-root users are the ones that would gain
+		// capabilities from a new user namespace, so the filter must apply to
+		// them as well as to root.
+		user               string
+		disableNewUserNS   bool
+		additionalSyscalls []string
+		capAdd             []string
+		createExec         bool
+		wantErrno          unix.Errno
+	}{
+		{name: "run_unshare_default", syscall: "unshare", wantErrno: unix.EINVAL},
+		{name: "run_unshare_default_nonroot", syscall: "unshare", user: "1000:1000", wantErrno: unix.EINVAL},
+		{name: "run_unshare_denied", syscall: "unshare", disableNewUserNS: true, wantErrno: unix.EPERM},
+		{name: "run_unshare_denied_nonroot", syscall: "unshare", user: "1000:1000", disableNewUserNS: true, wantErrno: unix.EPERM},
+		{name: "run_unshare_additional", syscall: "unshare", disableNewUserNS: true, additionalSyscalls: []string{"unshare"}, wantErrno: unix.EINVAL},
+		{name: "run_unshare_sys_admin", syscall: "unshare", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
+		{name: "exec_unshare_denied", syscall: "unshare", disableNewUserNS: true, createExec: true, wantErrno: unix.EPERM},
+		{name: "exec_unshare_additional", syscall: "unshare", disableNewUserNS: true, additionalSyscalls: []string{"unshare"}, createExec: true, wantErrno: unix.EINVAL},
+		{name: "run_clone_default", syscall: "clone", wantErrno: unix.EINVAL},
+		{name: "run_clone_denied", syscall: "clone", disableNewUserNS: true, wantErrno: unix.EPERM},
+		{name: "run_clone_additional", syscall: "clone", disableNewUserNS: true, additionalSyscalls: []string{"clone"}, wantErrno: unix.EINVAL},
+		{name: "run_clone_sys_admin", syscall: "clone", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
+		{name: "run_clone3_default", syscall: "clone3", wantErrno: unix.EINVAL},
+		{name: "run_clone3_denied", syscall: "clone3", disableNewUserNS: true, wantErrno: unix.ENOSYS},
+		{name: "run_clone3_additional", syscall: "clone3", disableNewUserNS: true, additionalSyscalls: []string{"clone3"}, wantErrno: unix.EINVAL},
+		{name: "run_clone3_sys_admin", syscall: "clone3", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, wantErrno: unix.EINVAL},
+		{name: "exec_clone3_denied", syscall: "clone3", disableNewUserNS: true, createExec: true, wantErrno: unix.ENOSYS},
+		{name: "exec_clone3_sys_admin", syscall: "clone3", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, createExec: true, wantErrno: unix.EINVAL},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "executor.oci.seccomp_disable_new_userns", testCase.disableNewUserNS)
+			flags.Set(t, "executor.oci.seccomp_additional_syscalls", testCase.additionalSyscalls)
+			flags.Set(t, "executor.oci.cap_add", testCase.capAdd)
+			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+			require.NoError(t, err)
+			ctx := t.Context()
+			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+				ContainerImage: image,
+				DockerUser:     testCase.user,
+			}})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, c.Remove(env.GetServerContext())) })
+			wd := testfs.MakeDirAll(t, buildRoot, testCase.name)
+			testfs.CopyFile(t, testsyscallPath, wd, "testsyscall")
+			cmd := &repb.Command{Arguments: []string{"./testsyscall", testCase.syscall}}
+			var res *interfaces.CommandResult
+			if testCase.createExec {
+				require.NoError(t, c.PullImage(ctx, oci.Credentials{}))
+				require.NoError(t, c.Create(ctx, wd))
+				res = c.Exec(ctx, cmd, &interfaces.Stdio{})
+			} else {
+				res = c.Run(ctx, cmd, wd, oci.Credentials{})
+			}
+			require.NoError(t, res.Error)
+			assert.Equal(t, int(testCase.wantErrno), res.ExitCode, "stderr: %s", res.Stderr)
+			assert.Empty(t, string(res.Stdout))
+			assert.Empty(t, string(res.Stderr))
+		})
+	}
 }
 
 func TestCgroupSettings(t *testing.T) {
@@ -1732,7 +1852,7 @@ func TestImageStoreRejectsLayerSymlinkEscape(t *testing.T) {
 				// Extracted layers are unpacked below v2/<algorithm>/<digest>.tmp.
 				// Compute the relative symlink target from that depth so the test
 				// keeps pointing at the escape dir if the root path changes.
-				unpackDir := filepath.Join(layerDir, "v2", "sha256", "layer.tmp")
+				unpackDir := filepath.Join(layerDir, "v3", "sha256", "layer.tmp")
 				linkname, err := filepath.Rel(unpackDir, escapeFile)
 				require.NoError(t, err)
 				require.Equal(t, escapeFile, filepath.Clean(filepath.Join(unpackDir, linkname)))
@@ -1784,6 +1904,102 @@ func TestImageStoreRejectsLayerSymlinkEscape(t *testing.T) {
 			assert.True(t, os.IsNotExist(err), "file outside layer destination should not be created")
 		})
 	}
+}
+
+// singleFileLayerTar returns a tar archive containing just file.txt with the
+// given content.
+func singleFileLayerTar(t *testing.T, content string) []byte {
+	return testtar.EntryBytes(t, &tar.Header{
+		Name:     "file.txt",
+		Typeflag: tar.TypeReg,
+		Mode:     0644,
+		Size:     int64(len(content)),
+		Uid:      os.Getuid(),
+		Gid:      os.Getgid(),
+	}, []byte(content))
+}
+
+// TestImageStoreRejectsLayerWithMismatchedDiffID checks that a layer whose
+// content doesn't match its DiffID isn't cached.
+func TestImageStoreRejectsLayerWithMismatchedDiffID(t *testing.T) {
+	setupNetworking(t)
+
+	realTar := singleFileLayerTar(t, "real")
+	for _, tc := range []struct {
+		name     string
+		otherTar []byte
+	}{
+		{
+			name:     "different_content",
+			otherTar: singleFileLayerTar(t, "other"),
+		},
+		{
+			// The tar entries match, but bytes after the end-of-archive marker
+			// aren't covered by the claimed DiffID.
+			name:     "unhashed_trailing_bytes",
+			otherTar: append(slices.Clone(realTar), []byte("trailing")...),
+		},
+	} {
+		for _, evictionEnabled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/eviction=%t", tc.name, evictionEnabled), func(t *testing.T) {
+				flags.Set(t, "executor.oci.image_eviction_enabled", evictionEnabled)
+				ctx := context.Background()
+
+				realLayer := testregistry.NewBytesLayer(t, realTar)
+				realDiffID, err := realLayer.DiffID()
+				require.NoError(t, err)
+				realImage := pushSingleLayerImage(t, "test-real:latest", realLayer)
+
+				// Config lists the real layer's DiffID for a different blob.
+				otherImg, err := mutate.AppendLayers(empty.Image, testregistry.NewBytesLayer(t, tc.otherTar))
+				require.NoError(t, err)
+				cfg, err := otherImg.ConfigFile()
+				require.NoError(t, err)
+				cfg = cfg.DeepCopy()
+				cfg.RootFS.DiffIDs = []ctr.Hash{realDiffID}
+				otherImg, err = mutate.ConfigFile(otherImg, cfg)
+				require.NoError(t, err)
+				reg := testregistry.Run(t, testregistry.Opts{})
+				otherImage := reg.Push(t, otherImg, "test-mismatched-diffid:latest", nil)
+
+				layersDir := testfs.MakeTempDir(t)
+				store := newImageStoreForTest(t, layersDir)
+
+				lockedOther, err := store.PullAndLockImage(ctx, otherImage, oci.Credentials{}, false)
+				if lockedOther != nil {
+					defer lockedOther.Unlock()
+				}
+				require.Error(t, err, "pulling an image with a mismatched DiffID should fail")
+				assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+				_, err = os.Stat(filepath.Join(layersDir, "v3", "sha256", realDiffID.Hex))
+				assert.True(t, os.IsNotExist(err), "nothing should be cached at the real layer's DiffID path")
+
+				lockedReal, err := store.PullAndLockImage(ctx, realImage, oci.Credentials{}, false)
+				require.NoError(t, err)
+				defer lockedReal.Unlock()
+				b, err := os.ReadFile(filepath.Join(singleLayerPath(t, lockedReal), "file.txt"))
+				require.NoError(t, err)
+				assert.Equal(t, "real", string(b))
+			})
+		}
+	}
+}
+
+// TestImageStoreAcceptsLayerWithTrailingBytes verifies that the DiffID check
+// covers the whole uncompressed stream, including any bytes after the tar
+// end-of-archive marker.
+func TestImageStoreAcceptsLayerWithTrailingBytes(t *testing.T) {
+	setupNetworking(t)
+
+	// Many tar writers pad archives with extra zero blocks; the DiffID
+	// covers that padding too.
+	layerTar := append(singleFileLayerTar(t, "hello"), make([]byte, 8192)...)
+	image := pushSingleLayerImage(t, "test-trailing-bytes:latest", testregistry.NewBytesLayer(t, layerTar))
+
+	lockedImg := pullSingleLayerImage(t, image)
+	b, err := os.ReadFile(filepath.Join(singleLayerPath(t, lockedImg), "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(b))
 }
 
 // TestImageStorePreservesLayerDirectoryModeBits ensures that the os.Root-backed
@@ -2755,8 +2971,8 @@ func TestImageEvictionAfterContainerRemoval(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory path by scanning the image cache.
-	// The structure is: {cacheRoot}/images/oci/v2/sha256/{hash}/
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	// The structure is: {cacheRoot}/images/oci/v3/sha256/{hash}/
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
@@ -2859,7 +3075,7 @@ func TestImageEvictionWithMultipleContainers(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory path
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
@@ -2963,7 +3179,7 @@ func TestImageRePullAfterEviction(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory path
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries, "expected at least one layer directory")
@@ -3068,7 +3284,7 @@ func TestFileCachePopulatedOnStartup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries)
@@ -3158,7 +3374,7 @@ func TestImageResurrection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the layer directory
-	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(layersRoot)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries)
@@ -3272,7 +3488,7 @@ func TestPopulateFileCacheTracksLayerDirsNotAlgorithmDir(t *testing.T) {
 
 	// Sanity check that the layer directories still exist after "shutting
 	// down" the executor
-	algorithmDir := filepath.Join(cacheRoot, "images", "oci", "v2", "sha256")
+	algorithmDir := filepath.Join(cacheRoot, "images", "oci", "v3", "sha256")
 	layerEntries, err := os.ReadDir(algorithmDir)
 	require.NoError(t, err)
 	require.NotEmpty(t, layerEntries, "expected at least one layer directory")

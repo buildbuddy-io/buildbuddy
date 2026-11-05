@@ -289,7 +289,7 @@ func SnapshotVersionKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
 }
 
 func snapshotDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey, remote bool, snapshotID string) string {
-	gid, err := groupID(ctx, env)
+	gid, err := getCacheNamespace(ctx, env)
 	if err != nil {
 		gid = fmt.Sprintf("<error: %s>", err)
 	}
@@ -423,6 +423,9 @@ type CacheSnapshotOptions struct {
 	//
 	// The snapshot write policy determines whether the snapshot is actually written.
 	EligibleToWriteUniversalManifest bool
+
+	// GroupID is the group that owns the snapshot.
+	GroupID string
 }
 
 type UnpackedSnapshot struct {
@@ -536,6 +539,11 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	if opts.ReadPolicy == platform.ReadLocalSnapshotOnly {
 		return nil, snaputil.ChunkSourceUnmapped, status.NotFoundErrorf("local manifest not found")
 	}
+	// Remote manifests belong to the caller's group, so they must not be
+	// written into a shared namespace.
+	if isGenericSnapshotNamespace(ctx) {
+		return nil, snaputil.ChunkSourceUnmapped, status.NotFoundErrorf("local manifest not found in shared namespace")
+	}
 
 	// Fall back to fetching remote manifest.
 	log.CtxInfof(ctx, "Fetching remote manifest")
@@ -634,7 +642,7 @@ func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifest
 func (l *FileCacheLoader) GetLocalManifest(ctx context.Context, key *fcpb.SnapshotKey, supportsRemoteFallback bool) (*fcpb.SnapshotManifest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	gid, err := groupID(ctx, l.env)
+	gid, err := getCacheNamespace(ctx, l.env)
 	if err != nil {
 		return nil, err
 	}
@@ -681,6 +689,17 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 		return nil, status.WrapErrorf(err, "unmarshal vm metadata")
 	} else if ok {
 		vmMetadata = vmMeta
+	}
+
+	names := make([]string, 0, len(snapshotActionResult.GetOutputFiles())+len(snapshotActionResult.GetOutputDirectories()))
+	for _, f := range snapshotActionResult.GetOutputFiles() {
+		names = append(names, f.GetPath())
+	}
+	for _, d := range snapshotActionResult.GetOutputDirectories() {
+		names = append(names, chunkedFileName(d))
+	}
+	if err := validateManifestFileNames(names); err != nil {
+		return nil, err
 	}
 
 	manifest := &fcpb.SnapshotManifest{
@@ -735,6 +754,21 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 	return manifest, nil
 }
 
+// validateManifestFileNames checks that each name is a unique, single path component.
+func validateManifestFileNames(names []string) error {
+	seen := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') {
+			return status.InvalidArgumentErrorf("invalid snapshot file name %q", name)
+		}
+		if _, ok := seen[name]; ok {
+			return status.InvalidArgumentErrorf("duplicate snapshot file name %q", name)
+		}
+		seen[name] = struct{}{}
+	}
+	return nil
+}
+
 func chunkedFileName(chunkedFileMetadata *repb.OutputDirectory) string {
 	return chunkedFileMetadata.Path
 }
@@ -763,6 +797,16 @@ func (l *FileCacheLoader) ChunkedFileTree(ctx context.Context, remoteInstanceNam
 func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot, outputDirectory string) (*UnpackedSnapshot, error) {
 	if snapshot == nil {
 		return nil, status.InvalidArgumentErrorf("no snapshot to unpack")
+	}
+	names := make([]string, 0, len(snapshot.manifest.GetFiles())+len(snapshot.manifest.GetChunkedFiles()))
+	for _, f := range snapshot.manifest.GetFiles() {
+		names = append(names, f.GetName())
+	}
+	for _, cf := range snapshot.manifest.GetChunkedFiles() {
+		names = append(names, cf.GetName())
+	}
+	if err := validateManifestFileNames(names); err != nil {
+		return nil, err
 	}
 
 	for _, fileNode := range snapshot.manifest.Files {
@@ -809,6 +853,9 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 
 	if key == nil {
 		return status.InvalidArgumentErrorf("key required to cache snapshot")
+	}
+	if isGenericSnapshotNamespace(ctx) && opts.CacheSnapshotRemotely {
+		return status.InvalidArgumentError("snapshots in a shared namespace can't be cached remotely")
 	}
 
 	if !opts.CacheSnapshotRemotely && !opts.WriteManifestLocally {
@@ -857,7 +904,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				// file because it is costly. Because the runner ID is in the key
 				// when snapshot sharing is disabled,  we don't need to worry about
 				// multiple runners trying to access the same key simultaneously
-				gid, err := groupID(ctx, l.env)
+				gid, err := getCacheNamespace(ctx, l.env)
 				if err != nil {
 					return err
 				}
@@ -871,7 +918,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				}
 			}
 			out.Digest = d
-			if _, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.CacheSnapshotRemotely, opts.CacheSnapshotLocally, d, key.InstanceName, filePath, fileType); err != nil {
+			if _, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.CacheSnapshotRemotely, opts.CacheSnapshotLocally, d, key.InstanceName, filePath, fileType, opts.GroupID); err != nil {
 				return err
 			}
 			return nil
@@ -953,7 +1000,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 }
 
 func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.SnapshotKey, manifestACResult *repb.ActionResult, snapshotID string, writeUniversal bool) error {
-	gid, err := groupID(ctx, l.env)
+	gid, err := getCacheNamespace(ctx, l.env)
 	if err != nil {
 		return err
 	}
@@ -1385,7 +1432,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			}
 
 			path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, dirty))
-			bytesWritten, err := snaputil.Cache(uploadCtx, l.env.GetFileCache(), l.env.GetByteStreamClient(), shouldCacheRemotely, shouldCacheLocally, chunkDigest, remoteInstanceName, path, name)
+			bytesWritten, err := snaputil.Cache(uploadCtx, l.env.GetFileCache(), l.env.GetByteStreamClient(), shouldCacheRemotely, shouldCacheLocally, chunkDigest, remoteInstanceName, path, name, cacheOpts.GroupID)
 			if err != nil {
 				return status.WrapErrorf(err, "write chunk %d/%d to cache", i, len(chunks))
 			}
@@ -1412,7 +1459,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err != nil {
 		return nil, err
 	}
-	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.CacheSnapshotRemotely, cacheOpts.CacheSnapshotLocally, treeDigest, remoteInstanceName, treeBytes, "snapshot_tree"); err != nil {
+	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.CacheSnapshotRemotely, cacheOpts.CacheSnapshotLocally, treeDigest, remoteInstanceName, treeBytes, "snapshot_tree", cacheOpts.GroupID); err != nil {
 		return nil, err
 	}
 
@@ -1508,7 +1555,27 @@ func hashStrings(strs ...string) string {
 	return hash.String(out.String())
 }
 
-func groupID(ctx context.Context, env environment.Env) (string, error) {
+const genericSnapshotNamespace = "firecracker-generic-snapshots"
+
+type genericSnapshotNamespaceKey struct{}
+
+// WithGenericSnapshotNamespace stores and reads snapshots in an executor-wide
+// namespace for generic snapshots instead of the authenticated group's.
+// Snapshots in it are local-only and must contain no group data.
+func WithGenericSnapshotNamespace(ctx context.Context, env environment.Env) context.Context {
+	ctx = env.GetFileCache().WithSharedDirectory(ctx, genericSnapshotNamespace)
+	return context.WithValue(ctx, genericSnapshotNamespaceKey{}, true)
+}
+
+func isGenericSnapshotNamespace(ctx context.Context) bool {
+	return ctx.Value(genericSnapshotNamespaceKey{}) != nil
+}
+
+// getCacheNamespace returns the namespace that snapshot keys are stored in.
+func getCacheNamespace(ctx context.Context, env environment.Env) (string, error) {
+	if isGenericSnapshotNamespace(ctx) {
+		return "_SHARED_" + genericSnapshotNamespace, nil
+	}
 	var gid string
 	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err == nil {
