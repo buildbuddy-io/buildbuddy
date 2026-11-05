@@ -672,7 +672,9 @@ type UserDB interface {
 	// REQUESTED or MEMBER).
 	RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error)
 
-	GetGroupUsers(ctx context.Context, groupID string, opts *GetGroupUsersOpts) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
+	// GetGroupUsers lists the members of the authenticated user's selected
+	// group.
+	GetGroupUsers(ctx context.Context, opts *GetGroupUsersOpts) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
 	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
 	DeleteGroupGitHubToken(ctx context.Context, groupID string) error
 	// DeleteUserGitHubToken deletes the authenticated user's GitHub token.
