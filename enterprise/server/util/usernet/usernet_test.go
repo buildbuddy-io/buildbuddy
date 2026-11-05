@@ -2,7 +2,6 @@ package usernet
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net"
 	"net/netip"
@@ -345,13 +344,11 @@ func TestCleanupWhileReceivingPackets(t *testing.T) {
 			conn, err = net.Dial("udp", "10.1.2.3:9")
 			return err
 		}))
-		t.Cleanup(func() { conn.Close() })
+		// Send a burst of packets into the stack.
 		go func() {
-			// Write packets in a tight loop until the conn is closed.
-			for {
-				if _, err := conn.Write([]byte("hello")); errors.Is(err, net.ErrClosed) {
-					return
-				}
+			defer conn.Close()
+			for range 10_000 {
+				conn.Write([]byte("hello"))
 			}
 		}()
 
@@ -370,7 +367,6 @@ func TestCleanupWhileReceivingPackets(t *testing.T) {
 		case <-time.After(10 * time.Second):
 			t.Fatal("Cleanup did not complete within 10s")
 		}
-		conn.Close()
 	}
 }
 
