@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -405,25 +406,44 @@ func GetOSFamily() string {
 }
 
 func GetOSDisplayName() string {
-	var command []string
 	switch runtime.GOOS {
 	case "darwin":
-		command = []string{"sh", "-c", "echo \"$(sw_vers -productName) $(sw_vers -productVersion)\""}
+		name, err := exec.Command("sw_vers", "-productName").Output()
+		if err != nil {
+			log.Warningf("Error getting operating system display name: %v", err)
+			break
+		}
+		version, err := exec.Command("sw_vers", "-productVersion").Output()
+		if err != nil {
+			log.Warningf("Error getting operating system display name: %v", err)
+			break
+		}
+		return strings.TrimSpace(string(name) + " " + string(version))
 	case "linux":
-		command = []string{"sh", "-c", "grep '^PRETTY_NAME=' /etc/os-release | cut -d= -f2- | tr -d '\"'"}
+		f, err := os.Open("/etc/os/release")
+		if err != nil {
+			log.Warningf("Error getting operating system display name: %v", err)
+			break
+		}
+		s := bufio.NewScanner(f)
+		for s.Scan() {
+			line := s.Text()
+			if name, ok := strings.CutPrefix(line, "PRETTY_NAME="); ok {
+				name = strings.Trim(name, "\"")
+				return strings.TrimSpace(name)
+			}
+		}
+		log.Warning("Error getting operating system display name: PRETTY_NAME not found in /etc/os_release")
 	case "windows":
 		// Calling PowerShell 7 (or newer) which include OS information.
-		command = []string{"pwsh", "-Command", "$PSVersionTable.OS"}
+		name, err := exec.Command("pwsh", "-Command", "$PSVersionTable.OS").Output()
+		if err != nil {
+			log.Warningf("Error getting operating system display name: %v", err)
+			break
+		}
+		return strings.TrimSpace(string(name))
 	}
-	if len(command) == 0 {
-		return runtime.GOOS
-	}
-	b, err := exec.Command(command[0], command[1:]...).Output()
-	if err != nil {
-		log.Warningf("Error getting operating system display name: %v", err)
-		return runtime.GOOS
-	}
-	return strings.TrimSpace(string(b))
+	return runtime.GOOS
 }
 
 func GetMyHostname() (string, error) {

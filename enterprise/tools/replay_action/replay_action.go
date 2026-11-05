@@ -1038,7 +1038,11 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 			Name:  "ORIGINAL_COMMAND",
 			Value: shlex.Quote(cmd.Arguments...),
 		})
-		cmd.Arguments = []string{"sh", "-c", *overrideCommand}
+		var err error
+		cmd.Arguments, err = shlex.Split(*overrideCommand)
+		if err != nil {
+			return fmt.Errorf("shlex command: %s", err)
+		}
 
 		// Upload the new command and action.
 		cd, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), cmd)
