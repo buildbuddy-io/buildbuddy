@@ -66,7 +66,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
 
     http_archive(
-        name = "com_github_firecracker_microvm_firecracker",
+        name = "com_github_firecracker_microvm_firecracker_amd64",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',

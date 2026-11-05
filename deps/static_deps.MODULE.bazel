@@ -18,7 +18,7 @@ use_repo(
     "com_github_containerd_containerd-linux-arm64",
     "com_github_containers_crun_crun-linux-amd64",
     "com_github_containers_crun_crun-linux-arm64",
-    "com_github_firecracker_microvm_firecracker",
+    "com_github_firecracker_microvm_firecracker_amd64",
     "com_github_firecracker_microvm_firecracker_arm64",
     "com_github_googlecloudplatform_docker-credential-gcr-linux-amd64",
     "com_github_googlecloudplatform_docker-credential-gcr-linux-arm64",

@@ -6,18 +6,28 @@ register_toolchains("@rules_img_tool//toolchain:all")
 bazel_dep(name = "rules_distroless", version = "0.9.4")
 archive_override(
     module_name = "rules_distroless",
-    integrity = "sha256-9dFC6tHiNx2zP1VpG2q0B3RKusVuuSzndDF2yZJ+dwU=",
+    integrity = "sha256-lWO4KnCvnati/A8Ldp6cIbmt0dwlq1tRtUo0+ndYFSc=",
     patch_strip = 1,
-    patches = ["//buildpatches/bazel_dep:rules_distroless.patch"],
-    strip_prefix = "rules_distroless-a9e2012bf5935f7a8fa9c17a768abbbbd135f2a3",
-    urls = ["https://github.com/bazel-contrib/rules_distroless/archive/a9e2012bf5935f7a8fa9c17a768abbbbd135f2a3.tar.gz"],
+    patches = [
+        "//buildpatches/bazel_dep:rules_distroless_include_transitive.patch",
+        "//buildpatches/bazel_dep:rules_distroless_maintainability_refactor.patch",
+        "//buildpatches/bazel_dep:rules_distroless_subresource_integrity.patch",
+        "//buildpatches/bazel_dep:rules_distroless_flat_repos.patch",
+        "//buildpatches/bazel_dep:rules_distroless_infer_architecture.patch",
+    ],
+    strip_prefix = "rules_distroless-15f9fc8d39ba3178c313e61d94feb3f6eb88f95f",
+    urls = ["https://github.com/bazel-contrib/rules_distroless/archive/15f9fc8d39ba3178c313e61d94feb3f6eb88f95f.tar.gz"],
 )
 
 # Configure apt for Debian packages
 apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 
-snapshot = "20260318T142916Z"
+snapshot = "20261102T202832Z"
 
+apt.package_template(
+    packages = ["*"],
+    template_file = "//apt:package.BUILD.tmpl",
+)
 apt.sources_list(
     architectures = [
         "amd64",
@@ -25,7 +35,9 @@ apt.sources_list(
     ],
     components = [
         "main",
+        "contrib",
     ],
+    gpg_keys = ["//apt/keys:debian-archive-keyring.gpg"],
     suites = [
         "trixie",
         "trixie-updates",
@@ -38,10 +50,43 @@ apt.sources_list(
         "amd64",
         "arm64",
     ],
-    components = ["main"],
+    components = [
+        "main",
+        "contrib",
+    ],
+    gpg_keys = ["//apt/keys:debian-archive-keyring.gpg"],
     suites = ["trixie-security"],
     types = ["deb"],
     uris = ["https://snapshot.debian.org/archive/debian-security/{}".format(snapshot)],
+)
+apt.sources_list(
+    architectures = ["amd64"],
+    components = ["main"],
+    flat = True,
+    gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
+    suites = ["stable"],
+    types = ["deb"],
+    uris = ["https://nvidia.github.io/libnvidia-container/stable/deb/amd64"],
+)
+apt.sources_list(
+    architectures = ["arm64"],
+    components = ["main"],
+    flat = True,
+    gpg_keys = ["//apt/keys:nvidia-container-toolkit-keyring.gpg"],
+    suites = ["stable"],
+    types = ["deb"],
+    uris = ["https://nvidia.github.io/libnvidia-container/stable/deb/arm64"],
+)
+apt.sources_list(
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
+    components = ["stable"],
+    gpg_keys = ["//apt/keys:docker.asc"],
+    suites = ["trixie"],
+    types = ["deb"],
+    uris = ["https://download.docker.com/linux/debian"],
 )
 
 # Configure Debian debian13 packages
@@ -49,7 +94,6 @@ apt.install(
     dependency_set = "debian13",
     include_transitive = False,
     mergedusr = True,
-    package_template = "apt/package.BUILD.tmpl",
     packages = [
         # Base system packages
         "base-files",
@@ -65,6 +109,75 @@ apt.install(
         "libc6",
     ],
     suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+apt.install(
+    dependency_set = "debian13",
+    include_transitive = True,
+    mergedusr = True,
+    packages = [
+        # executor packages
+        "tini",
+        "e2fsprogs",
+        "fuse3",
+        "iproute2",
+        "conntrack",
+        "amazon-ecr-credential-helper",
+        "lxcfs",
+        "rootlesskit",
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+
+DOCKER_VERSION = "5:29.0.1-1~debian.13~trixie"
+
+CONTAINERD_DEB_VERSION = "2.1.5-1~debian.13~trixie"
+
+DOCKER_BUILDX_VERSION = "0.30.0-1~debian.13~trixie"
+
+DOCKER_COMPOSE_VERSION = "2.40.3-1~debian.13~trixie"
+
+# Configure Debian debian13 docker packages
+apt.install(
+    dependency_set = "debian13",
+    include_transitive = True,
+    mergedusr = True,
+    packages = [
+        # docker packages
+        "docker-ce (= {})".format(DOCKER_VERSION),
+        "docker-ce-cli (= {})".format(DOCKER_VERSION),
+        "docker-ce-rootless-extras (= {})".format(DOCKER_VERSION),
+        "containerd.io (= {})".format(CONTAINERD_DEB_VERSION),
+        "docker-buildx-plugin (= {})".format(DOCKER_BUILDX_VERSION),
+        "docker-compose-plugin (= {})".format(DOCKER_COMPOSE_VERSION),
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+
+NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION = "1.20.1-1"
+
+# Configure Debian debian13 nvidia_container_toolkit packages
+apt.install(
+    dependency_set = "debian13",
+    include_transitive = True,
+    mergedusr = True,
+    packages = [
+        # nvidia packages
+        "nvidia-container-toolkit-base (= {})".format(NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION),
+    ],
+    suites = [
+        "stable",
         "trixie",
         "trixie-updates",
         "trixie-security",

@@ -1,0 +1,211 @@
+From d1af840ea2bde6d962b6b4a17d4bc37b2329ae5a Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Tue, 3 Nov 2026 11:36:55 -0800
+Subject: [PATCH 5/5] Better support for inferring package architectures
+
+---
+ apt/extensions.bzl                 | 38 ++++------------------------
+ apt/private/apt_deb_repository.bzl | 27 ++++++++++++++------
+ apt/private/apt_dep_resolver.bzl   | 40 ++++++++++++++++++++++--------
+ 3 files changed, 54 insertions(+), 51 deletions(-)
+
+diff --git a/apt/extensions.bzl b/apt/extensions.bzl
+index 889bb72..5aad24d 100644
+--- a/apt/extensions.bzl
++++ b/apt/extensions.bzl
+@@ -340,39 +340,11 @@ def _distroless_extension(mctx):
+                 constraint = version_constraint.parse_dep(dep_constraint)
+                 architectures = constraint["arch"]
+                 if not architectures:
+-                    # For cases where architecture for the package is not specified we need
+-                    # to first find out which source contains the package. in order to do
+-                    # that we first need to resolve the package for amd64 architecture.
+-                    # Once the repository is found, then resolve the package for all the
+-                    # architectures the repository supports.
+-                    (package, warning) = resolver.resolve_package(
+-                        name = constraint["name"],
+-                        version = constraint["version"],
+-                        arch = "amd64",
+-                        suites = install.suites,
+-                    )
+-                    if warning:
+-                        util.warning(mctx, warning)
+-
+-                    # If the package is not found then add the package
+-                    # to the resolution_queue to let the resolver handle
+-                    # the error messages.
+-                    if not package:
+-                        resolution_queue.append((
+-                            install.dependency_set,
+-                            constraint["name"],
+-                            constraint["version"],
+-                            "amd64",
+-                            install.suites,
+-                            install.include_transitive,
+-                            install.mergedusr,
+-                            False,
+-                        ))
+-                        continue
+-
+-                    source = sources[package["Dist"]]
+-                    architectures = source["architectures"]
+-
++                    architectures = resolver.package_architectures(constraint["name"], constraint["version"], suites=install.suites)
++                    if not architectures:
++                        # Fall back to "all" if no architecture is specified;
++                        # let resolver handle warnings if package is missing.
++                        architectures = ["all"]
+                 for arch in architectures:
+                     resolution_queue.append((
+                         install.dependency_set,
+diff --git a/apt/private/apt_deb_repository.bzl b/apt/private/apt_deb_repository.bzl
+index 11b3fde..0685de6 100644
+--- a/apt/private/apt_deb_repository.bzl
++++ b/apt/private/apt_deb_repository.bzl
+@@ -40,7 +40,7 @@ def _add_package(state, package):
+     util.set_dict(
+         state.packages,
+         value = package,
+-        keys = (package["Architecture"], package["Package"], package["Version"]),
++        keys = (package["Package"], package["Source"].architecture, package["Version"]),
+     )
+ 
+     # https://www.debian.org/doc/debian-policy/ch-relationships.html#virtual-packages-provides
+@@ -48,7 +48,7 @@ def _add_package(state, package):
+         for virtual in version_constraint.parse_depends(package["Provides"]):
+             providers = util.get_dict(
+                 state.virtual_packages,
+-                (package["Architecture"], virtual["name"]),
++                (virtual["name"], package["Source"].architecture),
+                 [],
+             )
+ 
+@@ -78,17 +78,29 @@ def _add_package(state, package):
+             util.set_dict(
+                 state.virtual_packages,
+                 providers,
+-                (package["Architecture"], virtual["name"]),
++                (virtual["name"], package["Source"].architecture),
+             )
+ 
+-def _virtual_packages(state, name, arch, suites = None):
+-    all_providers = util.get_dict(state.virtual_packages, [arch, name], [])
++def _virtual_packages(state, name, arch = None, suites = None):
++    if arch == None:
++        all_providers = [(pkg, v) for providers in state.virtual_packages.get(name, {}).values() for (pkg, v) in providers]
++    else:
++        all_providers = util.get_dict(state.virtual_packages, [name, arch], [])
++    if not suites:
++        return all_providers
++    return [(pkg, v) for (pkg, v) in all_providers if pkg["Source"].distribution in suites]
++
++def _packages(state, name, arch = None, suites = None):
++    if arch == None:
++        all_providers = [(pkg, v) for providers in state.packages.get(name, {}).values() for (v, pkg) in providers.items()]
++    else:
++        all_providers = util.get_dict(state.packages, [name, arch], {}).items()
+     if not suites:
+         return all_providers
+     return [(pkg, v) for (pkg, v) in all_providers if pkg["Source"].distribution in suites]
+ 
+ def _package_versions(state, name, arch, suites = None):
+-    all_packages = util.get_dict(state.packages, [arch, name], {})
++    all_packages = util.get_dict(state.packages, [name, arch], {})
+     if not suites:
+         return all_packages.keys()
+     return [v for v, pkg in all_packages.items() if pkg["Source"].distribution in suites]
+@@ -96,7 +108,7 @@ def _package_versions(state, name, arch, suites = None):
+ def _package(state, name, version, arch, suites = None):
+     if not version:
+         return None
+-    package = util.get_dict(state.packages, keys = (arch, name, version))
++    package = util.get_dict(state.packages, keys = (name, arch, version))
+     if not package:
+         return None
+     if suites and package["Source"].distribution not in suites:
+@@ -144,6 +156,7 @@ def _create():
+         parse_package_index = lambda contents, source: _parse_repository(state, contents, source),
+         package_versions = lambda **kwargs: _package_versions(state, **kwargs),
+         virtual_packages = lambda **kwargs: _virtual_packages(state, **kwargs),
++        packages = lambda **kwargs: _packages(state, **kwargs),
+         package = lambda **kwargs: _package(state, **kwargs),
+     )
+ 
+diff --git a/apt/private/apt_dep_resolver.bzl b/apt/private/apt_dep_resolver.bzl
+index aaa6d61..c430a6f 100644
+--- a/apt/private/apt_dep_resolver.bzl
++++ b/apt/private/apt_dep_resolver.bzl
+@@ -3,13 +3,33 @@
+ load(":version.bzl", version_lib = "version")
+ load(":version_constraint.bzl", "version_constraint")
+ 
++def _package_architectures(state, name, version, suites = None):
++    virtual_packages = state.repository.virtual_packages(name = name, suites = suites)
++    if virtual_packages:
++        return set([
++            package["Source"].architecture
++            for (package, provided_version) in virtual_packages
++            # If no version constraint, all candidates are acceptable.
++            # else, only candidates matching is_satisfied_by are acceptable.
++            if not version or (
++                provided_version and version_constraint.is_satisfied_by(version, provided_version)
++            )
++        ])
++    packages = state.repository.packages(name = name, suites = suites)
++    if packages:
++        return set([
++            package["Source"].architecture
++            for (package, provided_version) in packages
++            # If no version constraint, all candidates are acceptable.
++            # else, only candidates matching is_satisfied_by are acceptable.
++            if not version or (
++                provided_version and version_constraint.relop(provided_version, version[1], version[0])
++            )
++        ])
++    return None
++
+ def _resolve_package(state, name, version, arch, suites = None):
+-    # First check if the constraint is satisfied by a virtual package.
+-    # Check both the specific arch and "all" since Architecture: all packages
+-    # can provide virtual packages too.
+-    virtual_packages_for_arch = state.repository.virtual_packages(name = name, arch = arch, suites = suites)
+-    virtual_packages_for_all = state.repository.virtual_packages(name = name, arch = "all", suites = suites)
+-    virtual_packages = virtual_packages_for_arch + virtual_packages_for_all
++    virtual_packages = state.repository.virtual_packages(name = name, arch = arch, suites = suites)
+ 
+     candidates = [
+         package
+@@ -56,11 +76,10 @@ def _resolve_package(state, name, version, arch, suites = None):
+         # )
+ 
+     # Get available versions of the package
+-    versions_by_arch = state.repository.package_versions(name = name, arch = arch, suites = suites)
+-    versions_by_any_arch = state.repository.package_versions(name = name, arch = "all", suites = suites)
++    versions = state.repository.package_versions(name = name, arch = arch, suites = suites)
+ 
+     # Order packages by highest to lowest
+-    versions = version_lib.sort(versions_by_arch + versions_by_any_arch, reverse = True)
++    versions = version_lib.sort(versions, reverse = True)
+ 
+     selected_version = None
+ 
+@@ -78,8 +97,6 @@ def _resolve_package(state, name, version, arch, suites = None):
+         selected_version = versions[0]
+ 
+     package = state.repository.package(name = name, version = selected_version, arch = arch, suites = suites)
+-    if not package:
+-        package = state.repository.package(name = name, version = selected_version, arch = "all", suites = suites)
+ 
+     return (package, warning)
+ 
+@@ -185,6 +202,7 @@ def _resolve_all(state, name, version, arch, include_transitive = True, suites =
+ def _create_resolution(repository):
+     state = struct(repository = repository)
+     return struct(
++        package_architectures = lambda name, version, **kwargs: _package_architectures(state, name, version, **kwargs),
+         resolve_all = lambda **kwargs: _resolve_all(state, **kwargs),
+         resolve_package = lambda **kwargs: _resolve_package(state, **kwargs),
+     )
+-- 
+2.47.3
+
