@@ -2,4 +2,6 @@ self-hosted-runner:
   # Larger runners configured in the GitHub org settings.
   labels:
     - ubuntu-22.04-16cpu
+    - ubuntu-22.04-32cpu
+    - ubuntu-22.04-16cpu-arm64
     - ubuntu-22.04-16cpu-arm64-arm-limited
