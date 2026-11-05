@@ -418,9 +418,9 @@ func GetOSDisplayName() string {
 			log.Warningf("Error getting operating system display name: %v", err)
 			break
 		}
-		return strings.TrimSpace(string(name) + " " + string(version))
+		return strings.TrimSpace(string(name)) + " " + strings.TrimSpace(string(version))
 	case "linux":
-		f, err := os.Open("/etc/os/release")
+		f, err := os.Open("/etc/os-release")
 		if err != nil {
 			log.Warningf("Error getting operating system display name: %v", err)
 			break
@@ -433,7 +433,7 @@ func GetOSDisplayName() string {
 				return strings.TrimSpace(name)
 			}
 		}
-		log.Warning("Error getting operating system display name: PRETTY_NAME not found in /etc/os_release")
+		log.Warning("Error getting operating system display name: PRETTY_NAME not found in /etc/os-release")
 	case "windows":
 		// Calling PowerShell 7 (or newer) which include OS information.
 		name, err := exec.Command("pwsh", "-Command", "$PSVersionTable.OS").Output()
