@@ -761,6 +761,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		MarshalledDNSOverrides: p.marshalledDNSOverrides,
 		HostResolvConf:         p.hostResolvConf,
 		UseOCIFetcher:          args.Props.UseOCIFetcher,
+		GroupID:                args.Task.GetSchedulingMetadata().GetTaskGroupId(),
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
@@ -816,6 +817,7 @@ func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.I
 		MarshalledDNSOverrides: p.marshalledDNSOverrides,
 		HostResolvConf:         p.hostResolvConf,
 		UseOCIFetcher:          props.UseOCIFetcher,
+		GroupID:                args.Task.GetSchedulingMetadata().GetTaskGroupId(),
 	})
 	if err != nil {
 		return nil, err
@@ -957,6 +959,9 @@ type FirecrackerContainer struct {
 
 	useOCIFetcher bool
 
+	// groupID is the group of the task that the container was created for.
+	groupID string
+
 	// postCompletionStats accumulates firecracker snapshot save stats
 	// during the latest Pause.
 	postCompletionStats *espb.PostCompletionStats
@@ -1035,6 +1040,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		vmLog:                  vmLog,
 		cancelVmCtx:            func(err error) {},
 		useOCIFetcher:          opts.UseOCIFetcher,
+		groupID:                opts.GroupID,
 	}
 
 	if opts.CgroupSettings != nil {
@@ -1388,6 +1394,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		CacheSnapshotLocally:             snapshotDetails.saveLocalSnapshot,
 		WriteManifestLocally:             writeManifestLocally,
 		EligibleToWriteUniversalManifest: writeUniversalManifest,
+		GroupID:                          c.groupID,
 	}
 	if snapshotSharingEnabled {
 		if c.rootStore != nil {
