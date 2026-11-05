@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain",
     deps = [
         "//cli/arg",
+        "//cli/credentialhelper",
         "//cli/explain/compactgraph",
         "//cli/flaghistory",
         "//cli/log",

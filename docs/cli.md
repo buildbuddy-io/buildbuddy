@@ -77,6 +77,15 @@ For more information on how to write your own plugins, check out the [plugin doc
 
 The BuildBuddy CLI makes authentication to BuildBuddy a breeze. You can simply type `bb login` and follow the instructions. Once you're logged in, all of your requests to BuildBuddy will be authenticated to your organization.
 
+To authenticate with something other than an API key, set
+`BUILDBUDDY_CREDENTIAL_HELPER` to a credential helper that speaks
+[Bazel's credential helper protocol](https://github.com/EngFlow/credential-helper-spec).
+Commands that read invocation data (`bb view`, `bb explain`, `bb execution`,
+`bb download`, `bb search` and `bb ui`) run `<helper> get` for each target and
+add the headers it returns to their requests, alongside your API key if you
+have one. This lets you reach BuildBuddy through a proxy that accepts your own
+identity provider's tokens. The helper's response is reused until it expires.
+
 ### Configuration
 
 You can save BuildBuddy CLI options in a [`.bbrc` file](/docs/cli-config). It

@@ -7,6 +7,7 @@ go_library(
     srcs = ["download.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/util/download",
     deps = [
+        "//cli/credentialhelper",
         "//cli/flaghistory",
         "//cli/log",
         "//cli/login",

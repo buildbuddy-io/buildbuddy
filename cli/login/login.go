@@ -18,6 +18,7 @@ import (
 	_ "embed"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
@@ -429,8 +430,9 @@ func getAPIKey(interactive bool) (string, error) {
 		return apiKey, nil
 	}
 	// If an API key is not set, and we're running in a terminal, start the
-	// login flow.
-	if interactive && terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
+	// login flow. A configured credential helper supplies credentials instead,
+	// so there is nothing to log in to.
+	if interactive && !credentialhelper.Enabled() && terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
 		if _, err = HandleLogin([]string{}); err != nil {
 			return "", status.WrapError(err, "handle login")
 		}
