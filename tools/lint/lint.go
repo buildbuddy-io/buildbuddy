@@ -253,40 +253,22 @@ func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	return nil
 }
 
-// actionlintInputs are files that determine actionlint's version or config. If
-// any of them changed, all workflows are checked, not just changed ones.
-var actionlintInputs = []string{
-	// The actionlint version, as github.com/rhysd/actionlint.
-	"go.mod",
-	".github/actionlint.yaml",
-	".github/actionlint.yml",
-}
-
+// runActionlint checks all workflows whenever a workflow, a local action, the
+// actionlint config or its version (go.mod) changed, since any of those can
+// break workflows that didn't change, like the callers of a reusable workflow.
+// Checking every workflow takes milliseconds.
 func runActionlint(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	if slices.ContainsFunc(files, func(f string) bool { return slices.Contains(actionlintInputs, f) }) {
-		allFiles, err := sh("git ls-files")
-		if err != nil {
-			return fmt.Errorf("list files: %w", err)
-		}
-		files = lines(allFiles)
-	}
-	var workflows []string
-	for _, f := range files {
-		if filepath.Dir(f) == ".github/workflows" && slices.Contains([]string{".yaml", ".yml"}, filepath.Ext(f)) {
-			workflows = append(workflows, f)
-		}
-	}
-	if len(workflows) == 0 {
+	if !slices.ContainsFunc(files, func(f string) bool { return f == "go.mod" || strings.HasPrefix(f, ".github/") }) {
 		return nil
 	}
 	cmd, err := getRunfileToolCommand(ctx, actionlintRlocationpath)
 	if err != nil {
 		return fmt.Errorf("get actionlint command: %w", err)
 	}
+	// With no file arguments, actionlint checks every workflow in the repo.
 	// Don't use shellcheck or pyflakes even if they're on PATH, so results
 	// don't depend on the machine.
 	cmd.Args = append(cmd.Args, "-shellcheck=", "-pyflakes=")
-	cmd.Args = append(cmd.Args, workflows...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
