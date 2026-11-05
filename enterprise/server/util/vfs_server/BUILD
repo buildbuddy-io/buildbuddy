@@ -61,7 +61,7 @@ go_test(
     name = "vfs_server_test",
     size = "small",
     srcs = [
-        "unlink_internal_test.go",
+        "vfs_server_internal_test.go",
         "vfs_server_test.go",
     ],
     embed = [":vfs_server"],
