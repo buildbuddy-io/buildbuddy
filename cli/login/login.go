@@ -374,11 +374,12 @@ func ConfigureAPIKey(args *arg.BazelArgs) error {
 
 // ConfigureBESAPIKey copies the BuildBuddy API key from remote_header to
 // bes_header, since Bazel 10 redacts remote_header values from the BEP command
-// line. It only does so when every comma-separated BES backend is either
-// BuildBuddy over TLS or the same scheme, host and port as the remote cache or
-// executor, so the key isn't sent to other BES services. Targets that
-// parseGRPCTarget doesn't accept never match, and header names are
-// case-insensitive.
+// line. It only does so when every comma-separated BES backend either has the
+// same scheme, host and port as the remote cache or executor, or is BuildBuddy
+// over TLS while any set remote cache and executor are too, so the key isn't
+// sent to other BES services or an on-prem key to BuildBuddy Cloud. Targets that
+// parseGRPCTarget doesn't accept never match or count as BuildBuddy, and header
+// names are case-insensitive.
 func ConfigureBESAPIKey(args *arg.BazelArgs) error {
 	if !isSupportedCommand(args.GetCommand()) {
 		return nil
@@ -398,15 +399,19 @@ func ConfigureBESAPIKey(args *arg.BazelArgs) error {
 			return nil
 		}
 	}
-	remoteCache := parseGRPCTarget(arg.Get(bazelArgs, "remote_cache"))
-	remoteExecutor := parseGRPCTarget(arg.Get(bazelArgs, "remote_executor"))
+	remoteCacheFlag := arg.Get(bazelArgs, "remote_cache")
+	remoteExecutorFlag := arg.Get(bazelArgs, "remote_executor")
+	remoteCache := parseGRPCTarget(remoteCacheFlag)
+	remoteExecutor := parseGRPCTarget(remoteExecutorFlag)
+	// Check the flags for emptiness, since an unparseable target is also zero.
+	allowBuildBuddy := (remoteCacheFlag == "" || remoteCache.isBuildBuddy()) &&
+		(remoteExecutorFlag == "" || remoteExecutor.isBuildBuddy())
 	for besBackend := range strings.SplitSeq(arg.Get(bazelArgs, "bes_backend"), ",") {
 		bes := parseGRPCTarget(besBackend)
 		if bes == (grpcTarget{}) {
 			return nil
 		}
-		isBuildBuddy := bes.scheme == "grpcs" && (bes.host == "buildbuddy.io" || strings.HasSuffix(bes.host, ".buildbuddy.io"))
-		if !isBuildBuddy && bes != remoteCache && bes != remoteExecutor {
+		if !(allowBuildBuddy && bes.isBuildBuddy()) && bes != remoteCache && bes != remoteExecutor {
 			return nil
 		}
 	}
@@ -416,6 +421,11 @@ func ConfigureBESAPIKey(args *arg.BazelArgs) error {
 // grpcTarget is the endpoint that a Bazel gRPC target connects to.
 type grpcTarget struct {
 	scheme, host, port string
+}
+
+// isBuildBuddy returns whether the target is BuildBuddy over TLS.
+func (t grpcTarget) isBuildBuddy() bool {
+	return t.scheme == "grpcs" && (t.host == "buildbuddy.io" || strings.HasSuffix(t.host, ".buildbuddy.io"))
 }
 
 // parseGRPCTarget parses a Bazel gRPC target, which may omit the scheme (meaning

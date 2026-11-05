@@ -111,6 +111,19 @@ func TestAPIKeyDiscovery(t *testing.T) {
 }
 
 func TestConfigureBESAPIKey(t *testing.T) {
+	besHeaders := func(t *testing.T, flags []string) []string {
+		t.Helper()
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+		t.Setenv("USERPROFILE", homeDir)
+
+		args, err := arg.NewBazelArgs(append([]string{"build", "//foo:bar"}, flags...))
+		require.NoError(t, err)
+		require.NoError(t, ConfigureBESAPIKey(args))
+		return args.GetAllFlagsWithName("bes_header")
+	}
+
+	// Cases exercising how the remote_header and bes_header flags are handled.
 	for _, testCase := range []struct {
 		name               string
 		args               []string
@@ -125,281 +138,6 @@ func TestConfigureBESAPIKey(t *testing.T) {
 			name:               "bes_header already set",
 			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_header=X-BuildBuddy-API-Key=", "--bes_backend=grpcs://remote.buildbuddy.io"},
 			expectedBESHeaders: []string{"X-BuildBuddy-API-Key="},
-		},
-		{
-			name:               "non-BuildBuddy bes_backend",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://bes.example.com", "--remote_cache=grpcs://remote.buildbuddy.io"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "self-hosted bes_backend matching remote_cache",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=bb.example.com:1985", "--remote_cache=grpcs://bb.example.com:1985"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
-			name:               "self-hosted bes_backend matching remote_executor",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpc://bb.example.com:1985", "--remote_executor=grpc://bb.example.com:1985"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
-			name:               "comma list with attacker host first",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://attacker.example,remote.buildbuddy.io"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "comma list with attacker host last",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io,grpcs://attacker.example"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "comma list of BuildBuddy hosts",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io,grpcs://other.buildbuddy.io"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
-			name:               "comma list of BuildBuddy and remote_cache hosts",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=remote.buildbuddy.io,grpcs://bb.example.com", "--remote_cache=bb.example.com"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
-			name:               "comma list with leading empty entry",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=,remote.buildbuddy.io"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "comma list with trailing empty entry",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=remote.buildbuddy.io,"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "comma list with unparseable entry",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=remote.buildbuddy.io,grpcs://bad host"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "comma list with unix socket entry",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=remote.buildbuddy.io,unix:/a.sock"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "scheme mismatch",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpc://bb.example.com:443", "--remote_cache=grpcs://bb.example.com:443"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "scheme mismatch with omitted scheme",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=bb.example.com:1985", "--remote_cache=grpc://bb.example.com:1985"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "port mismatch",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://bb.example.com:1985", "--remote_cache=grpcs://bb.example.com:443"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "scheme and port mismatch",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpc://bb.example.com:1985", "--remote_cache=grpcs://bb.example.com:443"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "grpcs default port matches explicit 443",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://bb.example.com", "--remote_cache=bb.example.com:443"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
-			name:               "explicit 443 matches grpcs default port",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=bb.example.com:443", "--remote_executor=grpcs://bb.example.com"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
-			name:               "grpc default port matches explicit 80",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpc://bb.example.com", "--remote_cache=grpc://bb.example.com:80"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
-			name:               "grpc default port does not match 443",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpc://bb.example.com", "--remote_cache=grpc://bb.example.com:443"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "plaintext BuildBuddy bes_backend",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpc://remote.buildbuddy.io"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "plaintext BuildBuddy bes_backend with port",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpc://remote.buildbuddy.io:1985"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "non-gRPC scheme BuildBuddy bes_backend",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=https://remote.buildbuddy.io"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "lookalike domain with prefix",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://notbuildbuddy.io"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "lookalike domain with suffix",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://buildbuddy.io.evil.com"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "unix socket bes_backend matching remote_cache",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=unix:/a.sock", "--remote_cache=unix:/a.sock"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "unix socket bes_backend",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=unix:/a.sock", "--remote_cache=unix:/b.sock"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "no bes_backend",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--remote_cache=grpcs://remote.buildbuddy.io"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "multi-colon host with inner grpc scheme",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://x.buildbuddy.io:grpc://@attacker.example:443"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "multi-colon host with inner grpcs scheme",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://x.buildbuddy.io:grpcs://@attacker.example:443"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "multi-colon host",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://x.buildbuddy.io:attacker.example:443"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "multi-colon host without scheme",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=x.buildbuddy.io:attacker.example:443"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "multi-colon host in comma list",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=remote.buildbuddy.io,grpcs://x.buildbuddy.io:grpc://@attacker.example:443"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "multi-colon host ending in colon",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://x.buildbuddy.io:grpc:"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "multi-colon target identical to remote_cache",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://x.buildbuddy.io:grpc://@attacker.example:443", "--remote_cache=grpcs://x.buildbuddy.io:grpc://@attacker.example:443"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "multi-colon target identical to remote_executor",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://bb.example.com:grpc:", "--remote_executor=grpcs://bb.example.com:grpc:"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "userinfo on BuildBuddy host",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://user:pw@remote.buildbuddy.io"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "BuildBuddy host as userinfo",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io@attacker.example"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "userinfo identical to remote_cache",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://user@bb.example.com", "--remote_cache=grpcs://user@bb.example.com"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "path",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io/foo"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "path identical to remote_cache",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://bb.example.com/foo", "--remote_cache=grpcs://bb.example.com/foo"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "query",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io?x=1"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "empty query",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io?"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "fragment",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io#x"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "empty fragment",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io#"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "port zero",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io:0"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "port out of range",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io:65536"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "huge port",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io:99999999999999999999"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "non-numeric port",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io:foo"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "non-ASCII host",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://bücher.buildbuddy.io"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "IPv6 identical to remote_cache",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpc://[::1]:1985", "--remote_cache=grpc://[::1]:1985"},
-			expectedBESHeaders: nil,
-		},
-		{
-			name:               "trailing slash",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io/"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
-			name:               "highest port",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io:65535"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
-			name:               "apex domain",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://buildbuddy.io"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
-			name:               "IPv4 identical to remote_cache",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpc://10.0.0.1:1985", "--remote_cache=grpc://10.0.0.1:1985"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
-			name:               "IPv4 differs from remote_cache",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpc://10.0.0.1:1985", "--remote_cache=grpc://10.0.0.2:1985"},
-			expectedBESHeaders: nil,
 		},
 		{
 			name:               "mixed-case remote_header key",
@@ -428,16 +166,87 @@ func TestConfigureBESAPIKey(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			homeDir := t.TempDir()
-			t.Setenv("HOME", homeDir)
-			t.Setenv("USERPROFILE", homeDir)
+			require.Equal(t, testCase.expectedBESHeaders, besHeaders(t, testCase.args))
+		})
+	}
 
-			args, err := arg.NewBazelArgs(append([]string{"build", "//foo:bar"}, testCase.args...))
-			require.NoError(t, err)
-			err = ConfigureBESAPIKey(args)
+	// Cases exercising which BES backends may receive the key. An empty string
+	// leaves the corresponding flag unset.
+	for _, testCase := range []struct {
+		name, bes, cache, executor string
+		want                       bool
+	}{
+		{"on-prem cache and Cloud BES", "grpcs://remote.buildbuddy.io", "grpcs://bb.corp", "", false},
+		{"on-prem executor and Cloud BES", "grpcs://remote.buildbuddy.io", "", "grpcs://bb.corp", false},
+		{"Cloud cache and Cloud BES", "grpcs://remote.buildbuddy.io", "grpcs://remote.buildbuddy.io", "", true},
+		{"no cache or executor and Cloud BES", "grpcs://remote.buildbuddy.io", "", "", true},
+		{"on-prem cache and identical on-prem BES", "grpcs://bb.corp", "grpcs://bb.corp", "", true},
+		{"Cloud cache, on-prem executor and other Cloud BES", "grpcs://remote.buildbuddy.io", "grpcs://cache.buildbuddy.io", "grpcs://bb.corp", false},
+		{"Cloud cache, on-prem executor and BES identical to cache", "grpcs://remote.buildbuddy.io", "grpcs://remote.buildbuddy.io", "grpcs://bb.corp", true},
+		{"unparseable cache and Cloud BES", "grpcs://remote.buildbuddy.io", "unix:/a.sock", "", false},
+		{"plaintext Cloud executor and Cloud BES", "grpcs://remote.buildbuddy.io", "", "grpc://remote.buildbuddy.io", false},
 
-			require.NoError(t, err)
-			require.Equal(t, testCase.expectedBESHeaders, args.GetAllFlagsWithName("bes_header"))
+		{"non-BuildBuddy bes_backend", "grpcs://bes.example.com", "grpcs://remote.buildbuddy.io", "", false},
+		{"self-hosted bes_backend matching remote_cache", "bb.example.com:1985", "grpcs://bb.example.com:1985", "", true},
+		{"self-hosted bes_backend matching remote_executor", "grpc://bb.example.com:1985", "", "grpc://bb.example.com:1985", true},
+		{"no bes_backend", "", "grpcs://remote.buildbuddy.io", "", false},
+
+		{"comma list with attacker host first", "grpcs://attacker.example,remote.buildbuddy.io", "", "", false},
+		{"comma list with attacker host last", "grpcs://remote.buildbuddy.io,grpcs://attacker.example", "", "", false},
+		{"comma list of BuildBuddy hosts", "grpcs://remote.buildbuddy.io,grpcs://other.buildbuddy.io", "", "", true},
+		{"comma list of BuildBuddy and on-prem remote_cache hosts", "remote.buildbuddy.io,grpcs://bb.example.com", "bb.example.com", "", false},
+		{"comma list with trailing empty entry", "remote.buildbuddy.io,", "", "", false},
+		{"comma list with unparseable entry", "remote.buildbuddy.io,grpcs://bad host", "", "", false},
+		{"comma list with unix socket entry", "remote.buildbuddy.io,unix:/a.sock", "", "", false},
+
+		{"scheme mismatch", "grpc://bb.example.com:443", "grpcs://bb.example.com:443", "", false},
+		{"scheme mismatch with omitted scheme", "bb.example.com:1985", "grpc://bb.example.com:1985", "", false},
+		{"port mismatch", "grpcs://bb.example.com:1985", "grpcs://bb.example.com:443", "", false},
+		{"grpcs default port matches explicit 443", "grpcs://bb.example.com", "bb.example.com:443", "", true},
+		{"grpc default port matches explicit 80", "grpc://bb.example.com", "grpc://bb.example.com:80", "", true},
+		{"grpc default port does not match 443", "grpc://bb.example.com", "grpc://bb.example.com:443", "", false},
+
+		{"plaintext BuildBuddy bes_backend", "grpc://remote.buildbuddy.io", "", "", false},
+		{"non-gRPC scheme BuildBuddy bes_backend", "https://remote.buildbuddy.io", "", "", false},
+		{"lookalike domain with prefix", "grpcs://notbuildbuddy.io", "", "", false},
+		{"lookalike domain with suffix", "grpcs://buildbuddy.io.evil.com", "", "", false},
+		{"apex domain", "grpcs://buildbuddy.io", "", "", true},
+		{"unix socket bes_backend matching remote_cache", "unix:/a.sock", "unix:/a.sock", "", false},
+
+		{"multi-colon host", "grpcs://x.buildbuddy.io:attacker.example:443", "", "", false},
+		{"multi-colon host without scheme", "x.buildbuddy.io:attacker.example:443", "", "", false},
+		{"multi-colon target identical to remote_cache", "grpcs://x.buildbuddy.io:grpc://@attacker.example:443", "grpcs://x.buildbuddy.io:grpc://@attacker.example:443", "", false},
+		{"userinfo on BuildBuddy host", "grpcs://user:pw@remote.buildbuddy.io", "", "", false},
+		{"BuildBuddy host as userinfo", "grpcs://remote.buildbuddy.io@attacker.example", "", "", false},
+		{"userinfo identical to remote_cache", "grpcs://user@bb.example.com", "grpcs://user@bb.example.com", "", false},
+		{"path", "grpcs://remote.buildbuddy.io/foo", "", "", false},
+		{"path identical to remote_cache", "grpcs://bb.example.com/foo", "grpcs://bb.example.com/foo", "", false},
+		{"query", "grpcs://remote.buildbuddy.io?x=1", "", "", false},
+		{"fragment", "grpcs://remote.buildbuddy.io#x", "", "", false},
+		{"trailing slash", "grpcs://remote.buildbuddy.io/", "", "", true},
+
+		{"port zero", "grpcs://remote.buildbuddy.io:0", "", "", false},
+		{"port out of range", "grpcs://remote.buildbuddy.io:65536", "", "", false},
+		{"huge port", "grpcs://remote.buildbuddy.io:99999999999999999999", "", "", false},
+		{"non-numeric port", "grpcs://remote.buildbuddy.io:foo", "", "", false},
+		{"highest port", "grpcs://remote.buildbuddy.io:65535", "", "", true},
+
+		{"non-ASCII host", "grpcs://bücher.buildbuddy.io", "", "", false},
+		{"IPv6 identical to remote_cache", "grpc://[::1]:1985", "grpc://[::1]:1985", "", false},
+		{"IPv4 identical to remote_cache", "grpc://10.0.0.1:1985", "grpc://10.0.0.1:1985", "", true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags := []string{"--remote_header=x-buildbuddy-api-key=KEY"}
+			for _, flag := range [][2]string{{"bes_backend", testCase.bes}, {"remote_cache", testCase.cache}, {"remote_executor", testCase.executor}} {
+				if flag[1] != "" {
+					flags = append(flags, "--"+flag[0]+"="+flag[1])
+				}
+			}
+			var expected []string
+			if testCase.want {
+				expected = []string{"x-buildbuddy-api-key=KEY"}
+			}
+			require.Equal(t, expected, besHeaders(t, flags))
 		})
 	}
 }
