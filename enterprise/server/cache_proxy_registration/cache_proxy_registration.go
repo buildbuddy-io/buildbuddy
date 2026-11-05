@@ -284,7 +284,13 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 				}
 
 				go func() {
-					profileResp := profile.Collect(stream.Context(), profileReq)
+					profileResp := &pfpb.Profile{Type: profileReq.GetType()}
+					data, err := profile.Collect(stream.Context(), profileReq.GetType(), profileReq.GetDuration().AsDuration())
+					if err != nil {
+						profileResp.Status = gstatus.Convert(err).Proto()
+					} else {
+						profileResp.Data = data
+					}
 					select {
 					case profileCh <- profileResult{rsp: rsp, profile: profileResp}:
 					case <-stream.Context().Done():
