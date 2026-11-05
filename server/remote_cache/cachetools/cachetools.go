@@ -1494,7 +1494,7 @@ func getSubtree(ctx context.Context, subtree *digest.CASResourceName, fc interfa
 		metrics.GetTreeFilecacheBytesRead.Add(float64(bytesRead))
 		metrics.GetTreeFilecacheTreesRead.Add(1)
 		metrics.GetTreeDirectoryLookupCount.With(prometheus.Labels{
-			metrics.GetTreeLookupLocation: "filecache",
+			metrics.CacheLocationLabel: "filecache",
 		}).Add(float64(len(treeCache.GetChildren())))
 	} else if status.IsNotFoundError(err) {
 		// Not in the filecache--fetch from bytestream instead.
@@ -1511,7 +1511,7 @@ func getSubtree(ctx context.Context, subtree *digest.CASResourceName, fc interfa
 		metrics.GetTreeFilecacheBytesWritten.Add(float64(bytesWritten))
 		metrics.GetTreeFilecacheTreesWritten.Add(1)
 		metrics.GetTreeDirectoryLookupCount.With(prometheus.Labels{
-			metrics.GetTreeLookupLocation: "remote",
+			metrics.CacheLocationLabel: "remote",
 		}).Add(float64(len(treeCache.GetChildren())))
 	} else {
 		// Filecache read failed for some more nefarious reason.
@@ -1557,7 +1557,7 @@ func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.
 
 	uncachedDirCount := len(tree.dirs)
 	metrics.GetTreeDirectoryLookupCount.With(prometheus.Labels{
-		metrics.GetTreeLookupLocation: "uncached",
+		metrics.CacheLocationLabel: "uncached",
 	}).Add(float64(uncachedDirCount))
 
 	allStDirs := make([]*repb.Directory, 0)

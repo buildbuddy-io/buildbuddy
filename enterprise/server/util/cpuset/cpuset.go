@@ -234,7 +234,9 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 		}
 	}
 
-	numCPUs := computeNumCPUs(milliCPU, !options.disableOverhead)
+	// Overhead is extra room rather than a requirement, so never ask for more
+	// CPUs than can be leased.
+	numCPUs := min(computeNumCPUs(milliCPU, !options.disableOverhead), len(l.cpus))
 	// If the CPU leaser is disabled; return all CPUs.
 	if !*cpuLeaserEnable {
 		numCPUs = len(l.cpus)

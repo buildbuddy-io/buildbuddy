@@ -320,9 +320,12 @@ func TestCreateGroup_Allowed(t *testing.T) {
 					otherGroupIDs = append(otherGroupIDs, groupID)
 				}
 				for _, groupID := range otherGroupIDs {
+					membershipStatus, err := te.GetUserDB().RequestToJoinGroup(userCtx, groupID)
+					require.NoError(t, err)
+					require.Equal(t, grpb.GroupMembershipStatus_REQUESTED, membershipStatus)
 					groupCtx := requestcontext.ContextWithProtoRequestContext(ctx, &ctxpb.RequestContext{GroupId: groupID})
 					groupCtx = authUserCtx(groupCtx, te, t, "US2")
-					err := te.GetUserDB().UpdateGroupUsers(groupCtx, groupID, []*grpb.UpdateGroupUsersRequest_Update{{
+					err = te.GetUserDB().UpdateGroupUsers(groupCtx, groupID, []*grpb.UpdateGroupUsersRequest_Update{{
 						UserId:           &uidpb.UserId{Id: "US1"},
 						MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
 					}})
@@ -451,6 +454,8 @@ func setUpSSOConfigTest(t *testing.T) (context.Context, *buildbuddy_server.Build
 	})
 	require.NoError(t, err)
 	userCtx = authUserCtx(ctx, te, t, "US1")
+	require.NoError(t, te.GetUserDB().UpdateGroupStatus(userCtx, group.GroupID, grpb.Group_ENTERPRISE_GROUP_STATUS))
+	userCtx = authUserCtx(ctx, te, t, "US1")
 
 	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
 	require.NoError(t, err)
@@ -528,11 +533,14 @@ func TestValidateSamlIdpMetadataURL_BlocksPrivateIP(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestSetSSOConfig_ClearsURL(t *testing.T) {
+func TestSetSSOConfig_AllowsStaleEnterpriseClaims(t *testing.T) {
 	userCtx, server, te, group := setUpSSOConfigTest(t)
 
 	// Seed a value so we can verify it gets cleared.
 	require.NoError(t, te.GetUserDB().UpdateGroupSamlIdpMetadataUrl(userCtx, group.GroupID, "https://idp.example.com/meta"))
+	// A downgrade takes effect once the caller's claims are refreshed.
+	require.NoError(t, te.GetUserDB().UpdateGroupStatus(userCtx, group.GroupID, grpb.Group_FREE_TIER_GROUP_STATUS))
+	flags.Set(t, "auth.admin_group_id", "GR-NONEXISTENT")
 
 	_, err := server.SetSSOConfig(userCtx, &grpb.SetSSOConfigRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
@@ -543,6 +551,138 @@ func TestSetSSOConfig_ClearsURL(t *testing.T) {
 	updated, err := te.GetUserDB().GetGroupByID(context.Background(), group.GroupID)
 	require.NoError(t, err)
 	assert.Equal(t, "", updated.SamlIdpMetadataUrl)
+}
+
+func TestSetSSOConfig_GroupStatus(t *testing.T) {
+	for _, tc := range []struct {
+		status  grpb.Group_GroupStatus
+		allowed bool
+	}{
+		{grpb.Group_UNKNOWN_GROUP_STATUS, false},
+		{grpb.Group_FREE_TIER_GROUP_STATUS, false},
+		{grpb.Group_ENTERPRISE_GROUP_STATUS, true},
+		{grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS, true},
+		{grpb.Group_BLOCKED_GROUP_STATUS, false},
+		{grpb.Group_USAGE_BASED_GROUP_STATUS, false},
+		{grpb.Group_OPEN_SOURCE_GROUP_STATUS, false},
+	} {
+		for _, useAPIKey := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/api_key=%t", tc.status, useAPIKey), func(t *testing.T) {
+				userCtx, server, te, group := setUpSSOConfigTest(t)
+				require.NoError(t, te.GetUserDB().UpdateGroupStatus(userCtx, group.GroupID, tc.status))
+				// Exercise customer access without the instance-admin exemption.
+				flags.Set(t, "auth.admin_group_id", "GR-NONEXISTENT")
+				ctx := authUserCtx(context.Background(), te, t, "US1")
+				if useAPIKey {
+					key, err := te.GetAuthDB().CreateAPIKey(userCtx, group.GroupID, "admin",
+						[]cappb.Capability{cappb.Capability_ORG_ADMIN}, 0, false)
+					require.NoError(t, err)
+					ctx = te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), key.Value)
+				}
+				const originalURL = "https://idp.example.com/meta"
+				require.NoError(t, te.GetUserDB().UpdateGroupSamlIdpMetadataUrl(userCtx, group.GroupID, originalURL))
+				reqCtx := &ctxpb.RequestContext{GroupId: group.GroupID}
+
+				// All plans can still read their existing configuration.
+				rsp, err := server.GetSSOConfig(ctx, &grpb.GetSSOConfigRequest{RequestContext: reqCtx})
+				require.NoError(t, err)
+				require.Equal(t, originalURL, rsp.GetConfig().GetSamlIdpMetadataUrl())
+
+				// An invalid URL reaches validation only for enterprise plans.
+				_, err = server.SetSSOConfig(ctx, &grpb.SetSSOConfigRequest{
+					RequestContext: reqCtx,
+					Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: "http://idp.example.com/meta"},
+				})
+				if tc.allowed {
+					require.Truef(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+				} else {
+					require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+				}
+
+				// Clearing the URL is also a configuration change and requires an
+				// enterprise plan. Rejected requests must leave the URL untouched.
+				_, err = server.SetSSOConfig(ctx, &grpb.SetSSOConfigRequest{
+					RequestContext: reqCtx,
+					Config:         &grpb.SSOConfig{},
+				})
+				wantURL := originalURL
+				if tc.allowed {
+					require.NoError(t, err)
+					wantURL = ""
+				} else {
+					require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+				}
+				updated, err := te.GetUserDB().GetGroupByID(ctx, group.GroupID)
+				require.NoError(t, err)
+				require.Equal(t, wantURL, updated.SamlIdpMetadataUrl)
+			})
+		}
+	}
+}
+
+func TestSetSSOConfig_AllowsServerAdminForFreeTier(t *testing.T) {
+	for _, impersonating := range []bool{false, true} {
+		t.Run(fmt.Sprintf("impersonating=%t", impersonating), func(t *testing.T) {
+			adminCtx, server, te, group := setUpSSOConfigTest(t)
+			ctx := adminCtx
+			groupID := group.GroupID
+			if impersonating {
+				customer := enterprise_testauth.CreateRandomUser(t, te, "sso-customer.io")
+				customerCtx := authUserCtx(context.Background(), te, t, customer.UserID)
+				groupID = getGroup(t, customerCtx, te).Group.GroupID
+				ctx = requestcontext.ContextWithProtoRequestContext(context.Background(), &ctxpb.RequestContext{
+					GroupId:              groupID,
+					ImpersonatingGroupId: groupID,
+				})
+				ctx = authUserCtx(ctx, te, t, "US1")
+			} else {
+				require.NoError(t, te.GetUserDB().UpdateGroupStatus(adminCtx, groupID, grpb.Group_FREE_TIER_GROUP_STATUS))
+				ctx = authUserCtx(context.Background(), te, t, "US1")
+			}
+			u, err := te.GetAuthenticator().AuthenticatedUser(ctx)
+			require.NoError(t, err)
+			require.Equal(t, grpb.Group_FREE_TIER_GROUP_STATUS, u.GetGroupStatus())
+			require.Equal(t, impersonating, u.IsImpersonating())
+
+			// Instance admins still have to provide valid metadata URLs.
+			_, err = server.SetSSOConfig(ctx, &grpb.SetSSOConfigRequest{
+				RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+				Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: "http://idp.example.com/meta"},
+			})
+			require.Truef(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+
+			require.NoError(t, te.GetUserDB().UpdateGroupSamlIdpMetadataUrl(ctx, groupID, "https://idp.example.com/meta"))
+			_, err = server.SetSSOConfig(ctx, &grpb.SetSSOConfigRequest{
+				RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+				Config:         &grpb.SSOConfig{},
+			})
+			require.NoError(t, err)
+			updated, err := te.GetUserDB().GetGroupByID(ctx, groupID)
+			require.NoError(t, err)
+			require.Empty(t, updated.SamlIdpMetadataUrl)
+		})
+	}
+}
+
+func TestSetSSOConfig_RejectsDifferentSelectedGroup(t *testing.T) {
+	userCtx, server, te, group := setUpSSOConfigTest(t)
+	flags.Set(t, "auth.admin_group_id", "GR-NONEXISTENT")
+	u, err := te.GetAuthenticator().AuthenticatedUser(userCtx)
+	require.NoError(t, err)
+	// Even an admin of the target group cannot use another group's enterprise
+	// status to configure its SSO.
+	ctx := testauth.WithAuthenticatedUserInfo(userCtx, &testauth.TestUser{
+		UserID:           u.GetUserID(),
+		GroupID:          "GR-OTHER",
+		GroupStatus:      grpb.Group_ENTERPRISE_GROUP_STATUS,
+		GroupMemberships: u.GetGroupMemberships(),
+	})
+	_, err = server.SetSSOConfig(ctx, &grpb.SetSSOConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+		Config:         &grpb.SSOConfig{},
+	})
+	require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+	require.Contains(t, status.Message(err), "authenticated organization")
 }
 
 func TestSetSSOConfig_RejectsNonHTTPSScheme(t *testing.T) {
@@ -560,28 +700,18 @@ func TestSetSSOConfig_RejectsNonHTTPSScheme(t *testing.T) {
 // TestSetSSOConfig_OrgAdminNotServerAdmin verifies that an org admin who is not
 // a server admin can manage their own group's SSO config (the self-serve case).
 func TestSetSSOConfig_OrgAdminNotServerAdmin(t *testing.T) {
-	te := enterprise_testenv.New(t)
-	enterprise_testauth.Configure(t, te)
-	flags.Set(t, "app.create_group_per_user", true)
-	flags.Set(t, "app.no_default_user_group", true)
+	_, server, te, group := setUpSSOConfigTest(t)
 	// Point admin_group_id at a nonexistent group so the org admin is NOT also a
 	// server admin.
 	flags.Set(t, "auth.admin_group_id", "GR-NONEXISTENT")
-
-	ctx := context.Background()
-	admin := enterprise_testauth.CreateRandomUser(t, te, "sso-selfserve-test.io")
-	adminCtx := authUserCtx(ctx, te, t, admin.UserID)
-	group := getGroup(t, adminCtx, te).Group
-
-	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
-	require.NoError(t, err)
+	adminCtx := authUserCtx(context.Background(), te, t, "US1")
 
 	// Seeding directly exercises the DB-layer authorization: an org admin (not a
 	// server admin) can set the URL.
 	require.NoError(t, te.GetUserDB().UpdateGroupSamlIdpMetadataUrl(adminCtx, group.GroupID, "https://idp.example.com/meta"))
 
 	// Clearing via the RPC exercises the end-to-end self-serve path.
-	_, err = server.SetSSOConfig(adminCtx, &grpb.SetSSOConfigRequest{
+	_, err := server.SetSSOConfig(adminCtx, &grpb.SetSSOConfigRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
 		Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: ""},
 	})

@@ -123,8 +123,14 @@ export default class SSOConfigComponent extends React.Component<SSOConfigProps, 
   render() {
     const { loading, loadError, currentUrl, isEditing, inputUrl, isSaving, isDisableModalOpen, isDisabling } =
       this.state;
+    const groupStatus = this.props.user.selectedGroup.status;
+    const canConfigureSSO =
+      this.props.user.canImpersonate() ||
+      groupStatus === grp.Group.GroupStatus.ENTERPRISE_GROUP_STATUS ||
+      groupStatus === grp.Group.GroupStatus.ENTERPRISE_TRIAL_GROUP_STATUS;
     const enabled = currentUrl.trim() !== "";
-    const saveDisabled = isSaving || inputUrl.trim() === "" || inputUrl.trim() === currentUrl.trim();
+    const saveDisabled =
+      !canConfigureSSO || isSaving || inputUrl.trim() === "" || inputUrl.trim() === currentUrl.trim();
 
     return (
       <>
@@ -134,6 +140,12 @@ export default class SSOConfigComponent extends React.Component<SSOConfigProps, 
           <TextLink href="https://www.buildbuddy.io/docs/config-auth/#saml-20">SAML setup guide</TextLink> for
           instructions on configuring your IdP.
         </div>
+        {!canConfigureSSO && (
+          <div className="settings-option-description">
+            SSO configuration is available on paid plans. Contact{" "}
+            <TextLink href="mailto:support@buildbuddy.io">support@buildbuddy.io</TextLink> to get started.
+          </div>
+        )}
         {loading ? (
           <Spinner />
         ) : loadError ? (
@@ -143,11 +155,13 @@ export default class SSOConfigComponent extends React.Component<SSOConfigProps, 
             <p>Single sign-on is enabled.</p>
             <div className="sso-config-field">
               <label className="sso-config-label">IdP metadata URL</label>
-              <TextInput className="sso-config-input" value={currentUrl} readOnly />
+              <TextInput className="sso-config-input" value={currentUrl} readOnly disabled={!canConfigureSSO} />
             </div>
             <div className="sso-config-actions">
-              <FilledButton onClick={this.onClickChange}>Change</FilledButton>
-              <OutlinedButton className="destructive" onClick={this.onClickDisable}>
+              <FilledButton onClick={this.onClickChange} disabled={!canConfigureSSO}>
+                Change
+              </FilledButton>
+              <OutlinedButton className="destructive" onClick={this.onClickDisable} disabled={!canConfigureSSO}>
                 Disable
               </OutlinedButton>
             </div>
@@ -162,6 +176,7 @@ export default class SSOConfigComponent extends React.Component<SSOConfigProps, 
                 placeholder="https://idp.example.com/metadata"
                 value={inputUrl}
                 onChange={this.handleInputChange}
+                disabled={!canConfigureSSO}
               />
             </div>
             <div className="sso-config-actions">
@@ -191,7 +206,10 @@ export default class SSOConfigComponent extends React.Component<SSOConfigProps, 
                 <OutlinedButton onClick={this.onCloseDisableModal} disabled={isDisabling}>
                   Cancel
                 </OutlinedButton>
-                <FilledButton className="destructive" onClick={this.onConfirmDisable} disabled={isDisabling}>
+                <FilledButton
+                  className="destructive"
+                  onClick={this.onConfirmDisable}
+                  disabled={!canConfigureSSO || isDisabling}>
                   Disable
                 </FilledButton>
               </DialogFooterButtons>

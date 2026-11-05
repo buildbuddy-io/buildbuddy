@@ -20,7 +20,7 @@ import (
 
 var (
 	target = flag.String("target", "grpcs://remote.buildbuddy.io", "Buildbuddy app grpc target")
-	apiKey = flag.String("api_key", "", "The API key used to authenticate the remote run.")
+	apiKey = flag.String("api_key", "", "The API key used to authenticate the remote run. If empty, the BUILDBUDDY_API_KEY env var is used.")
 )
 
 const (
@@ -33,6 +33,9 @@ const (
 
 func main() {
 	flag.Parse()
+	if *apiKey == "" {
+		*apiKey = os.Getenv("BUILDBUDDY_API_KEY")
+	}
 	if *apiKey == "" {
 		log.Fatalf("API key required to authenticate remote run")
 	}

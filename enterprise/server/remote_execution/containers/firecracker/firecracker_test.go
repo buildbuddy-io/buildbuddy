@@ -173,7 +173,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// which will negatively affect customer experience. Be careful!
 	// Compatible change: existing snapshots never set the new InitializeRequest fields.
 	const (
-		expectedHash    = "60eb684442d85a4b4791ce76c68650000efff66ed6770b0d5c606986f0157aa2"
+		expectedHash    = "9abaf488911621c069234c8a496bd8fd8a6ff3b602c4222b687936352f9ea8d1"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -5309,43 +5309,90 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 	cfg := getExecutorConfig(b)
 	vmConfig := &fcpb.VMConfiguration{NumCpus: 1, MemSizeMb: 2385, ScratchDiskSizeMb: 100, NetworkMode: fcpb.NetworkMode_NETWORK_MODE_LOCAL}
 	require.NoError(b, firecracker.BuildGenericSnapshot(ctx, env, nil /*=experiments*/, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig}))
-	for _, generic := range []bool{false, true} {
-		b.Run(fmt.Sprintf("generic=%t", generic), func(b *testing.B) {
-			var createTime, execTime time.Duration
-			run := func() {
-				b.StopTimer()
-				workDir := testfs.MakeTempDir(b)
-				c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, firecracker.ContainerOpts{
-					ContainerImage: busyboxImage, ExecutorConfig: cfg,
-					VMConfiguration: vmConfig, GenericSnapshot: generic,
-				})
-				require.NoError(b, err)
-				require.NoError(b, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false))
-				b.StartTimer()
-				start := time.Now()
-				err = c.Create(ctx, workDir)
-				created := time.Now()
-				if err != nil {
-					c.Remove(ctx)
-					b.Fatal(err)
+	for _, tc := range []struct {
+		name    string
+		command []string
+	}{
+		{"true", []string{"/bin/true"}},
+		// Allocates and fills 1GiB, which touches that much guest memory.
+		{"touch_1GiB", []string{"dd", "if=/dev/zero", "of=/dev/null", "bs=1G", "count=1"}},
+	} {
+		for _, generic := range []bool{false, true} {
+			b.Run(fmt.Sprintf("command=%s/generic=%t", tc.name, generic), func(b *testing.B) {
+				var createTime, execTime time.Duration
+				run := func() {
+					b.StopTimer()
+					workDir := testfs.MakeTempDir(b)
+					c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, firecracker.ContainerOpts{
+						ContainerImage: busyboxImage, ExecutorConfig: cfg,
+						VMConfiguration: vmConfig, GenericSnapshot: generic,
+					})
+					require.NoError(b, err)
+					require.NoError(b, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false))
+					b.StartTimer()
+					start := time.Now()
+					err = c.Create(ctx, workDir)
+					created := time.Now()
+					if err != nil {
+						c.Remove(ctx)
+						b.Fatal(err)
+					}
+					result := c.Exec(ctx, &repb.Command{Arguments: tc.command}, nil)
+					done := time.Now()
+					b.StopTimer()
+					createTime += created.Sub(start)
+					execTime += done.Sub(created)
+					require.NoError(b, c.Remove(ctx))
+					require.NoError(b, result.Error)
+					require.Equal(b, 0, result.ExitCode)
+					b.StartTimer()
 				}
-				result := c.Exec(ctx, &repb.Command{Arguments: []string{"/bin/true"}}, nil)
-				done := time.Now()
-				b.StopTimer()
-				createTime += created.Sub(start)
-				execTime += done.Sub(created)
-				require.NoError(b, c.Remove(ctx))
-				require.NoError(b, result.Error)
-				require.Equal(b, 0, result.ExitCode)
-				b.StartTimer()
+				run() // warmup
+				createTime, execTime = 0, 0
+				for b.Loop() {
+					run()
+				}
+				b.ReportMetric(float64(createTime.Microseconds())/float64(b.N), "create-us/op")
+				b.ReportMetric(float64(execTime.Microseconds())/float64(b.N), "exec-us/op")
+			})
+		}
+	}
+}
+
+// Runs commands that leave dirty data in and outside the workspace, which the
+// guest flushes after each command.
+func BenchmarkFirecrackerExecSync(b *testing.B) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, b, envOpts{})
+	cfg := getExecutorConfig(b)
+	for _, tc := range []struct {
+		name   string
+		script string
+	}{
+		{"true", "true"},
+		{"write_workspace_64MiB", "dd if=/dev/zero of=out bs=1M count=64 2>/dev/null"},
+		{"write_rootfs_256MiB", "dd if=/dev/zero of=/root/cache bs=1M count=256 2>/dev/null && echo x > out"},
+	} {
+		b.Run("command="+tc.name, func(b *testing.B) {
+			workDir := testfs.MakeTempDir(b)
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, firecracker.ContainerOpts{
+				ContainerImage: busyboxImage, ExecutorConfig: cfg, ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{NumCpus: 2, MemSizeMb: 2048, ScratchDiskSizeMb: 1000, NetworkMode: fcpb.NetworkMode_NETWORK_MODE_OFF},
+			})
+			require.NoError(b, err)
+			require.NoError(b, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false))
+			require.NoError(b, c.Create(ctx, workDir))
+			b.Cleanup(func() { assert.NoError(b, c.Remove(ctx)) })
+			cmd := &repb.Command{Arguments: []string{"sh", "-c", tc.script}}
+			run := func() {
+				res := c.Exec(ctx, cmd, nil)
+				require.NoError(b, res.Error)
+				require.Equal(b, 0, res.ExitCode, string(res.Stderr))
 			}
 			run() // warmup
-			createTime, execTime = 0, 0
 			for b.Loop() {
 				run()
 			}
-			b.ReportMetric(float64(createTime.Microseconds())/float64(b.N), "create-us/op")
-			b.ReportMetric(float64(execTime.Microseconds())/float64(b.N), "exec-us/op")
 		})
 	}
 }

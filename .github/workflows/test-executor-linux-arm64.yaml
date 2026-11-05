@@ -55,8 +55,10 @@ jobs:
             echo 'common --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-arm64/rin20260818' >> user.bazelrc
           else
             printf 'common --remote_header=x-buildbuddy-api-key=%s\n' "$BUILDBUDDY_API_KEY" >> user.bazelrc
+            printf 'common --bes_header=x-buildbuddy-api-key=%s\n' "$BUILDBUDDY_API_KEY" >> user.bazelrc
           fi
 
           bazelisk test --config=race --test_tag_filters= \
+            //enterprise/server/remote_execution/overlayfs:overlayfs_test \
             //enterprise/server/remote_execution/vbd:vbd_test \
             //enterprise/server/test/integration/podman:podman_test

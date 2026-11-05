@@ -125,6 +125,7 @@ type Network struct {
 	netns *networking.Namespace
 	fd    int
 	stack *stack.Stack
+	link  stack.LinkEndpoint
 	// cancel closes connections opened on behalf of the guest.
 	cancel context.CancelFunc
 
@@ -301,6 +302,7 @@ func (n *Network) startStack(prefixLen int) error {
 	if err != nil {
 		return status.InternalErrorf("create link endpoint: %s", err)
 	}
+	n.link = ep
 	if err := n.stack.CreateNIC(nicID, ep); err != nil {
 		return status.InternalErrorf("create NIC: %s", err)
 	}
@@ -559,6 +561,13 @@ func (n *Network) Stats(ctx context.Context) (*repb.NetworkStats, error) {
 func (n *Network) Cleanup(ctx context.Context) error {
 	if n.cancel != nil {
 		n.cancel()
+	}
+	// Stop receiving packets before tearing down the stack. Otherwise, this can
+	// deadlock, because Stack.Wait holds the stack lock while waiting for the
+	// dispatchers to exit, and a dispatcher delivering a packet blocks on that
+	// lock.
+	if n.link != nil {
+		n.link.Attach(nil)
 	}
 	if n.stack != nil {
 		n.stack.Close()

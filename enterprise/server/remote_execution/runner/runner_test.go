@@ -1396,3 +1396,25 @@ func TestTransientErrorExitCodes(t *testing.T) {
 		})
 	}
 }
+
+func TestRun_ContainerPanic_PropagatesOriginalPanic(t *testing.T) {
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		ctr := NewFakeContainer()
+		ctr.ExecFunc = func(context.Context) *interfaces.CommandResult { panic("test-container-panic") }
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	r, err := pool.Get(ctx, newTask())
+	require.NoError(t, err)
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		r.Run(ctx, &repb.IOStats{})
+	}()
+
+	require.Equal(t, "test-container-panic", recovered)
+}

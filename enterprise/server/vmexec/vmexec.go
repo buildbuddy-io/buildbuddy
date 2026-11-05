@@ -50,6 +50,10 @@ const (
 	vmDNSInitTimeout                   = 5 * time.Second
 	vmExecReadySignalInitialRetryDelay = 2 * time.Millisecond
 	vmExecReadySignalMaxRetryDelay     = 1 * time.Second
+
+	printkPath = "/proc/sys/kernel/printk"
+	// Only messages more severe than warnings reach a quiet console.
+	quietConsoleLogLevel = "4"
 )
 
 func init() {
@@ -306,6 +310,7 @@ func isWorkspaceMounted() (bool, error) {
 }
 
 func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeRequest) (*vmxpb.InitializeResponse, error) {
+	defer quietConsole()()
 	if req.GetUnixTimestampNanoseconds() > 1 {
 		tv := syscall.NsecToTimeval(req.GetUnixTimestampNanoseconds())
 		if err := syscall.Settimeofday(&tv); err != nil {
@@ -387,6 +392,7 @@ func (x *execServer) Sync(ctx context.Context, req *vmxpb.SyncRequest) (*vmxpb.S
 }
 
 func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWorkspaceRequest) (*vmxpb.UnmountWorkspaceResponse, error) {
+	defer quietConsole()()
 	if err := syscall.Unmount(workspaceMountPath, 0); err != nil {
 		log.Errorf("Failed to unmount workspace: %s", err)
 		return nil, status.InternalErrorf("unmount failed: %s", err)
@@ -412,6 +418,7 @@ func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWor
 }
 
 func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspaceRequest) (*vmxpb.MountWorkspaceResponse, error) {
+	defer quietConsole()()
 	// Make sure the workspace drive is not already mounted.
 	mounted, err := isWorkspaceMounted()
 	if err != nil {
@@ -495,8 +502,7 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 		cmd.Dir = req.GetWorkingDirectory()
 	}
 
-	// TODO(tylerw): use syncfs or something better here.
-	defer unix.Sync()
+	defer syncFS(cmd.Dir)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
@@ -731,8 +737,7 @@ func (c *command) logErrorDiagnostics(err error) {
 }
 
 func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStreamedResponse, error) {
-	// TODO(tylerw): use syncfs or something better here.
-	defer unix.Sync()
+	defer syncFS(c.cmd.Dir)
 
 	log.Infof("Running command in VM: %q", c.cmd.String())
 	stdoutErrCh := make(chan error, 1)
@@ -1060,4 +1065,50 @@ func ResizeExt4FS(devicePath, mountPath string) error {
 		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
 	}
 	return nil
+}
+
+// consoleMu serializes quietConsole callers, so each restores the level it
+// found.
+var consoleMu sync.Mutex
+
+// quietConsole keeps routine kernel messages, such as mount and resize
+// notices, off the serial console until the returned func is called, since
+// each console byte exits to the VMM. Errors still reach the console.
+func quietConsole() (restore func()) {
+	consoleMu.Lock()
+	b, err := os.ReadFile(printkPath)
+	if err != nil {
+		consoleMu.Unlock()
+		log.Warningf("Failed to read console log level: %s", err)
+		return func() {}
+	}
+	level := strings.Fields(string(b))[0]
+	setConsoleLogLevel(quietConsoleLogLevel)
+	return func() {
+		setConsoleLogLevel(level)
+		consoleMu.Unlock()
+	}
+}
+
+func setConsoleLogLevel(level string) {
+	if err := os.WriteFile(printkPath, []byte(level), 0); err != nil {
+		log.Warningf("Failed to set console log level: %s", err)
+	}
+}
+
+// syncFS flushes the filesystem containing dir, so the host sees the
+// command's outputs.
+func syncFS(dir string) {
+	if dir == "" {
+		dir = "/"
+	}
+	f, err := os.Open(dir)
+	if err != nil {
+		log.Warningf("Failed to open %s for sync: %s", dir, err)
+		return
+	}
+	defer f.Close()
+	if err := unix.Syncfs(int(f.Fd())); err != nil {
+		log.Warningf("Failed to sync %s: %s", dir, err)
+	}
 }

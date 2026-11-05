@@ -2755,7 +2755,9 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 	}
 	if apiKey := os.Getenv(ci_runner_env.BuildBuddyAPIKeyEnvVarName); apiKey != "" {
 		lines = append(lines, "common --remote_header=x-buildbuddy-api-key="+apiKey)
+		lines = append(lines, "common --bes_header=x-buildbuddy-api-key="+apiKey)
 		lines = append(lines, "build:buildbuddy_api_key --remote_header=x-buildbuddy-api-key="+apiKey)
+		lines = append(lines, "build:buildbuddy_api_key --bes_header=x-buildbuddy-api-key="+apiKey)
 	}
 	if origin := os.Getenv(ci_runner_env.BBGrpcClientOriginEnvVarName); origin != "" {
 		lines = append(lines, fmt.Sprintf("common --remote_header=%s=%s", usageutil.OriginHeaderName, origin))

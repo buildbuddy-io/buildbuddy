@@ -126,7 +126,7 @@ jobs:
           $authArgs = @()
           $apiKey = '${{ secrets.BUILDBUDDY_ORG_API_KEY }}'
           if ($apiKey) {
-            $authArgs = @("--remote_header=x-buildbuddy-api-key=$apiKey")
+            $authArgs = @("--remote_header=x-buildbuddy-api-key=$apiKey", "--bes_header=x-buildbuddy-api-key=$apiKey")
           }
           bazelisk --output_user_root=C:/0 `
                    --windows_enable_symlinks `
@@ -150,7 +150,7 @@ jobs:
       #     $authArgs = @()
       #     $apiKey = '${{ secrets.BUILDBUDDY_ORG_API_KEY }}'
       #     if ($apiKey) {
-      #       $authArgs = @("--remote_header=x-buildbuddy-api-key=$apiKey")
+      #       $authArgs = @("--remote_header=x-buildbuddy-api-key=$apiKey", "--bes_header=x-buildbuddy-api-key=$apiKey")
       #     }
       #     # Run dedicated benchmark test target that embeds bench args, per repo pattern.
       #     bazelisk --output_user_root=C:/0 `

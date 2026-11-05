@@ -159,6 +159,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
       return (
         <div>
           <div>common --remote_header=x-buildbuddy-api-key={value}</div>
+          <div>common --bes_header=x-buildbuddy-api-key={value}</div>
         </div>
       );
     }

@@ -12,10 +12,16 @@ An API key should be passed along with all gRPCs requests that you'd like to be 
 
 You can find your API key on your [Quickstart page](https://app.buildbuddy.io/docs/setup/) once you've [created an account](https://app.buildbuddy.io/) and logged in. You can also create multiple API keys for use in different contexts.
 
+Set `--remote_header` to authenticate remote cache and execution requests, and
+`--bes_header` to authenticate Build Event Service (BES) requests. Both flags are
+needed when using these services together; `--remote_header` does not send the
+API key with BES requests.
+
 Your API key can be added directly to your `.bazelrc` as long as no one outside of your organization has access to your source code.
 
 ```bash title=".bazelrc"
 build --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
+build --bes_header=x-buildbuddy-api-key=YOUR_API_KEY
 ```
 
 If people outside of your organization have access to your source code (open source projects, etc) - you'll want to pull your credentials into a separate file that is only accessible by members of your organization and/or your CI machines.
@@ -30,6 +36,7 @@ You can then place a second `auth.bazelrc` file in a location that's only access
 
 ```bash title="auth.bazelrc"
 build --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
+build --bes_header=x-buildbuddy-api-key=YOUR_API_KEY
 ```
 
 And add a `try-import` to your main `.bazelrc` file at the root of your `WORKSPACE`:
@@ -45,7 +52,9 @@ The command line method allows you to store your API key in an environment varia
 If using Github secrets - you can create a secret called `BUILDBUDDY_API_KEY` containing your API key, then use that in your actions:
 
 ```bash
-bazel build --config=remote --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
+bazel build --config=remote \
+  --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY} \
+  --bes_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
 ```
 
 ## Managing keys
@@ -99,7 +108,10 @@ repository using that API key. The API key is stored in `.git/config`, and
 you can retrieve its current value using the command `git config --local buildbuddy.api-key`
 and delete it using `git config --local --unset buildbuddy.api-key`.
 
-Otherwise, users within the organization can add their API key to a
+For BES authentication, also configure `--bes_header` with that API key as shown
+below; CLI login does not currently add this flag.
+
+Users within the organization can add their API key to a
 user-specific `.bazelrc` within the workspace:
 
 ```bash title=".bazelrc"
@@ -112,6 +124,7 @@ try-import %workspace%/user.bazelrc
 
 ```bash title="user.bazelrc"
 build --remote_header=x-buildbuddy-api-key=<USER_API_KEY>
+build --bes_header=x-buildbuddy-api-key=<USER_API_KEY>
 ```
 
 ## User roles
