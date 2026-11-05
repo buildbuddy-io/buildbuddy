@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-github/v59/github"
 
@@ -559,9 +560,19 @@ func (c *GithubClient) CreateStatus(ctx context.Context, groupID string, ownerRe
 		return status.UnknownErrorf("failed to encode payload: %s", err)
 	}
 
-	req, err := http.NewRequest("POST", url, body)
+	if _, err := retry.Do(context.WithoutCancel(ctx), retry.DefaultOptions(), func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, c.postStatus(url, token, body.Bytes())
+	}); err != nil {
+		return err
+	}
+	log.CtxInfof(ctx, "Successfully posted GitHub status for %q @ commit %q: %q (%s): %q", ownerRepo, commitSHA, payload.GetContext(), payload.GetState(), payload.GetDescription())
+	return nil
+}
+
+func (c *GithubClient) postStatus(url, token string, body []byte) error {
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
-		return status.InternalErrorf("failed to create request: %s", err)
+		return retry.NonRetryableError(status.InternalErrorf("failed to create request: %s", err))
 	}
 
 	req.Header.Set("Authorization", "token "+token)
@@ -570,15 +581,23 @@ func (c *GithubClient) CreateStatus(ctx context.Context, groupID string, ownerRe
 		return status.UnavailableErrorf("failed to send request: %s", err)
 	}
 	defer res.Body.Close()
-	if res.StatusCode >= 400 {
-		b, err := io.ReadAll(res.Body)
-		if err != nil {
-			return status.UnknownErrorf("HTTP %s: <failed to read response body>", res.Status)
-		}
-		return status.UnknownErrorf("HTTP %s: %q", res.Status, string(b))
+	if res.StatusCode < 400 {
+		return nil
 	}
-	log.CtxInfof(ctx, "Successfully posted GitHub status for %q @ commit %q: %q (%s): %q", ownerRepo, commitSHA, payload.GetContext(), payload.GetState(), payload.GetDescription())
-	return nil
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		err = status.UnknownErrorf("HTTP %s: <failed to read response body>", res.Status)
+	} else {
+		err = status.UnknownErrorf("HTTP %s: %q", res.Status, string(b))
+	}
+	if !isRetryableStatusCode(res.StatusCode) {
+		return retry.NonRetryableError(err)
+	}
+	return err
+}
+
+func isRetryableStatusCode(code int) bool {
+	return code >= 500 || code == http.StatusRequestTimeout || code == http.StatusTooManyRequests
 }
 
 func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo string) (*github.InstallationToken, error) {
