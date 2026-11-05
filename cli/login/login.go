@@ -368,8 +368,9 @@ func ConfigureAPIKey(args *arg.BazelArgs) error {
 
 // ConfigureBESAPIKey copies the BuildBuddy API key from remote_header to
 // bes_header, since Bazel 10 redacts remote_header values from the BEP command
-// line. It only does so when the BES backend is BuildBuddy or the same host as
-// the remote cache or executor, so the key isn't sent to other BES services.
+// line. It only does so when every comma-separated BES backend is either
+// BuildBuddy over TLS or the same scheme, host and port as the remote cache or
+// executor, so the key isn't sent to other BES services.
 func ConfigureBESAPIKey(args *arg.BazelArgs) error {
 	if !isSupportedCommand(args.GetCommand()) {
 		return nil
@@ -384,32 +385,50 @@ func ConfigureBESAPIKey(args *arg.BazelArgs) error {
 			return nil
 		}
 	}
-	besHost := hostname(arg.Get(bazelArgs, "bes_backend"))
-	if besHost == "" {
-		return nil
-	}
-	if urlutil.GetDomain(besHost) != "buildbuddy.io" &&
-		besHost != hostname(arg.Get(bazelArgs, "remote_cache")) &&
-		besHost != hostname(arg.Get(bazelArgs, "remote_executor")) {
-		return nil
+	remoteCache := parseGRPCTarget(arg.Get(bazelArgs, "remote_cache"))
+	remoteExecutor := parseGRPCTarget(arg.Get(bazelArgs, "remote_executor"))
+	for besBackend := range strings.SplitSeq(arg.Get(bazelArgs, "bes_backend"), ",") {
+		bes := parseGRPCTarget(besBackend)
+		if bes == (grpcTarget{}) {
+			return nil
+		}
+		isBuildBuddy := bes.scheme == "grpcs" && urlutil.GetDomain(bes.host) == "buildbuddy.io"
+		if !isBuildBuddy && bes != remoteCache && bes != remoteExecutor {
+			return nil
+		}
 	}
 	return args.Append("--bes_header=" + apiKeyHeaderName + "=" + apiKey)
 }
 
-// hostname returns the hostname of a Bazel gRPC target, which may omit the
-// scheme. It returns "" for unix socket targets.
-func hostname(target string) string {
+// grpcTarget is the endpoint that a Bazel gRPC target connects to.
+type grpcTarget struct {
+	scheme, host, port string
+}
+
+// parseGRPCTarget parses a Bazel gRPC target, which may omit the scheme (meaning
+// grpcs) and port (meaning gRPC's default for the scheme: 443 for grpcs, 80 for
+// grpc). It returns the zero value for empty, unparseable and non-gRPC targets,
+// including unix sockets.
+func parseGRPCTarget(target string) grpcTarget {
 	if strings.HasPrefix(target, "unix:") {
-		return ""
+		return grpcTarget{}
 	}
-	if target != "" && !strings.Contains(target, "://") {
+	if !strings.Contains(target, "://") {
 		target = "grpcs://" + target
 	}
 	u, err := url.Parse(target)
-	if err != nil {
-		return ""
+	if err != nil || u.Hostname() == "" {
+		return grpcTarget{}
 	}
-	return u.Hostname()
+	defaultPort := map[string]string{"grpcs": "443", "grpc": "80"}[u.Scheme]
+	if defaultPort == "" {
+		return grpcTarget{}
+	}
+	port := u.Port()
+	if port == "" {
+		port = defaultPort
+	}
+	return grpcTarget{scheme: u.Scheme, host: u.Hostname(), port: port}
 }
 
 // Commands that support the `--remote_header` bazel flag
