@@ -902,11 +902,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")
 	}
-	if !pool.IsSelfHosted {
-		if err := validateRunnerSize(ctx, tasksize.Requested(executionTask)); err != nil {
-			return nil, err
-		}
-	}
 
 	if err := s.insertExecution(ctx, executionID, invocationID, command, repb.ExecutionStage_UNKNOWN, props.Pool); err != nil {
 		return nil, status.UnavailableErrorf("create execution: %s", err)
@@ -928,8 +923,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
 		const taskSizeOverridesExperiment = "remote_execution.task_size_overrides"
-		expOverrides, details := fp.ObjectDetails(
-			ctx, taskSizeOverridesExperiment, nil,
+		requestedSize := tasksize.Requested(executionTask)
+		experimentOpts := []any{
 			// Set OriginalPool to allow configuring task sizing based on pool
 			// names from another remote execution platform.
 			experiments.WithContext("OriginalPool", props.OriginalPool),
@@ -937,7 +932,18 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 			experiments.WithContext("EstimatedComputeUnits", props.EstimatedComputeUnits),
 			experiments.WithContext("EstimatedMilliCPU", props.EstimatedMilliCPU),
 			experiments.WithContext("EstimatedMemoryBytes", props.EstimatedMemoryBytes),
-		)
+			// Set effective requested CPU and RAM in the experiment context.
+			// requestedSize considers both the EstimatedComputeUnits and the EstimatedMilliCPU/ EstimatedMemoryBytes requests and returns
+			// the value that will actually be applied to the task.
+			experiments.WithContext("effective_requested_cpu", tasksize.CpuComputeUnits(requestedSize.GetEstimatedMilliCpu())),
+			experiments.WithContext("effective_requested_ram_gib", float64(requestedSize.GetEstimatedMemoryBytes())/tasksize.GiB),
+		}
+		if rmd.GetActionMnemonic() == "BuildBuddyWorkflowRun" {
+			if actionName, ok := rexec.LookupEnv(command.GetEnvironmentVariables(), ci_runner_env.BuildBuddyActionNameEnvVarName); ok && actionName != "" {
+				experimentOpts = append(experimentOpts, experiments.WithContext("workflow_action_name", actionName))
+			}
+		}
+		expOverrides, details := fp.ObjectDetails(ctx, taskSizeOverridesExperiment, nil, experimentOpts...)
 		for propertyName, propertyValueAny := range expOverrides {
 			if propertyValue, ok := propertyValueAny.(string); ok {
 				executionTask.PlatformOverrides.Properties = append(executionTask.PlatformOverrides.Properties, &repb.Platform_Property{
@@ -1023,6 +1029,12 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		// sample, so we'll probably want to ignore the first few days of data.
 		if _, experiment := tasksize.EvaluateP90CPUTrial(ctx, s.env.GetExperimentFlagProvider(), command); experiment != "" {
 			executionTask.Experiments = append(executionTask.Experiments, experiment)
+		}
+	}
+
+	if !pool.IsSelfHosted {
+		if err := validateRunnerSize(ctx, requestedTaskSize); err != nil {
+			return nil, err
 		}
 	}
 
