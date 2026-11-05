@@ -28,7 +28,7 @@ var collectMu sync.Mutex
 // Collect collects a profile of the given type. The duration only applies to
 // CPU profiles. Only one profile is collected at a time; concurrent requests
 // fail with ResourceExhausted.
-func Collect(ctx context.Context, profileType pfpb.GetProfileRequest_Type, duration time.Duration) ([]byte, error) {
+func Collect(ctx context.Context, profileType pfpb.ProfileType, duration time.Duration) ([]byte, error) {
 	if !collectMu.TryLock() {
 		return nil, status.ResourceExhaustedError("another profile is already being collected")
 	}
@@ -43,15 +43,15 @@ func Collect(ctx context.Context, profileType pfpb.GetProfileRequest_Type, durat
 	return data, nil
 }
 
-func collect(ctx context.Context, profileType pfpb.GetProfileRequest_Type, duration time.Duration) ([]byte, error) {
+func collect(ctx context.Context, profileType pfpb.ProfileType, duration time.Duration) ([]byte, error) {
 	switch profileType {
-	case pfpb.GetProfileRequest_CPU:
+	case pfpb.ProfileType_CPU:
 		return collectCPUProfile(ctx, duration)
-	case pfpb.GetProfileRequest_HEAP:
+	case pfpb.ProfileType_HEAP:
 		return lookup("heap", 0)
-	case pfpb.GetProfileRequest_GOROUTINE:
+	case pfpb.ProfileType_GOROUTINE:
 		return lookup("goroutine", 0)
-	case pfpb.GetProfileRequest_GOROUTINE_DUMP:
+	case pfpb.ProfileType_GOROUTINE_DUMP:
 		return lookup("goroutine", 2)
 	default:
 		return nil, status.UnimplementedErrorf("unsupported profile type %s", profileType)

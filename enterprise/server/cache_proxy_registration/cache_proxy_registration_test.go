@@ -425,7 +425,7 @@ func TestStreamHeartbeats_ProfileDoesntBlock(t *testing.T) {
 		request: &cppb.RegisterCacheProxyResponse{
 			DetailsRequest: &cppb.GetCacheProxyRequest{
 				GetProfile: &pfpb.GetProfileRequest{
-					Type:     pfpb.GetProfileRequest_CPU,
+					Type:     pfpb.ProfileType_CPU,
 					Duration: durationpb.New(time.Second),
 				},
 			},
@@ -464,7 +464,7 @@ func TestStreamHeartbeats_ProfileDoesntBlock(t *testing.T) {
 			assert.Equal(t, "req-1", msg.GetRequestId())
 			p := msg.GetDetails().GetProfile()
 			require.Zero(t, p.GetStatus().GetCode(), p.GetStatus().GetMessage())
-			assert.Equal(t, pfpb.GetProfileRequest_CPU, p.GetType())
+			assert.Equal(t, pfpb.ProfileType_CPU, p.GetType())
 			assert.NotEmpty(t, p.GetData())
 			assert.Positive(t, heartbeatsDuringProfile, "heartbeats should continue while a profile is collected")
 			return
@@ -479,7 +479,7 @@ func TestStreamHeartbeats_ProfilingDisabled(t *testing.T) {
 	registry := &detailsRequestingRegistry{
 		request: &cppb.RegisterCacheProxyResponse{
 			DetailsRequest: &cppb.GetCacheProxyRequest{
-				GetProfile: &pfpb.GetProfileRequest{Type: pfpb.GetProfileRequest_HEAP},
+				GetProfile: &pfpb.GetProfileRequest{Type: pfpb.ProfileType_HEAP},
 			},
 			RequestId: "req-1",
 		},
