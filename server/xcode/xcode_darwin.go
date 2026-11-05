@@ -243,7 +243,7 @@ func commandLineToolsVersion(developerDir string) *xcodeVersion {
 // Returns the version of the Xcode Command Line Tools, or "unknown" if it
 // can't be determined.
 func commandLineToolsVersionString() string {
-	out, err := exec.Command("pkgutil --pkg-info=com.apple.pkg.CLTools_Executables").Output()
+	out, err := exec.Command("pkgutil", "--pkg-info=com.apple.pkg.CLTools_Executables").Output()
 	if err != nil {
 		log.Warningf("Error determining Xcode Command Line Tools version: %s", err.Error())
 		return "unknown"
