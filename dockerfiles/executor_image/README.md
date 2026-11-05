@@ -20,27 +20,18 @@ Raspberry Pi (they are cheap).
 We install podman from https://github.com/buildbuddy-io/podman-static
 which is a fork of https://github.com/mgoltzsche/podman-static.
 
-The fork exists to ensure the integrity of the built binaries. Its main
-change is to the release workflow (`.github/workflows/workflow.yml`), e.g.
-disabling steps we don't need; it may also carry a few fixes not yet
-upstream.
+The fork exists to ensure the integrity of the built binaries. It changes the
+release workflow and may carry a few fixes.
 
-The fork's `master` is still at the v5.7.0 patch and has diverged from
-upstream. The release steps below don't use it, so don't sync it for now;
-syncing it blindly would land upstream's unpatched workflow on `master`.
-Since v5.7.0, each podman version has a branch `buildbuddy/vX.Y.Z`, created at
-the upstream tag `vX.Y.Z`, with our changes on top (workflow changes are marked
-with a `# buildbuddy:` comment); with upstream tags fetched as below (the fork
-has no `v*` tags), `git diff vX.Y.Z origin/buildbuddy/vX.Y.Z` shows them.
-Changes land on these branches via PRs; never force-push them. CI builds and
-tests on PRs, using the PR's workflow, and on pushes to `buildbuddy/**` once
-our workflow change has merged to the branch. The initial branch push still has
-upstream's workflow triggers, so it runs nothing.
+Don't use or sync the fork's `master`: it's stale and has diverged from
+upstream. Since v5.7.0, each podman version has a branch `buildbuddy/vX.Y.Z`,
+created at the upstream tag `vX.Y.Z`, with our changes on top (workflow changes
+are marked with a `# buildbuddy:` comment). Changes land on these branches via
+PRs; never force-push them. The initial branch push runs no CI; the PR does.
 
 To build a new version of podman from the fork:
 
 ```shell
-# Clone the fork and fetch upstream tags
 git clone git@github.com:buildbuddy-io/podman-static.git
 cd podman-static
 git remote add upstream https://github.com/mgoltzsche/podman-static
@@ -56,18 +47,24 @@ git checkout -b "update-$VERSION" "$VERSION"
 git cherry-pick $(git rev-list --reverse --topo-order --no-merges "$PREV..origin/buildbuddy/$PREV")
 # Finish with `git cherry-pick --continue`, or `--skip` for picks that come out
 # empty. Dockerfile commits (Go version, fuse-overlayfs, seccomp) are
-# version-specific: drop them if upstream has caught up, and never keep older
-# pins. Check that the vendored seccomp path in the Dockerfile still exists,
-# and whether the upstream workflow has any new steps that need to be disabled.
+# version-specific: never keep older pins. Keep the static-link checks regardless
+# of what happens to the Go pin: 7175f87 bundles the `readelf` checks for pasta
+# and crun with it, and upstream has no static check for those as of v6.1.4.
+# Check that the vendored seccomp path in the Dockerfile still exists, and
+# whether the upstream workflow has any new steps that need to be disabled.
+```
+
+Once the cherry-pick is finished, open the PR:
+
+```shell
 git push origin "update-$VERSION"
 gh pr create --repo buildbuddy-io/podman-static --base "buildbuddy/$VERSION"
 ```
 
-Merge the PR, then tag the branch to release; the workflow builds the signed
-tarballs and creates the GitHub release. It signs them with the `GPG_SIGN_KEY`
-secret (fingerprint `AB2B6CC5FC981BF89D35C7869668B909E1D76F80`, Brandon
-Duffany's key). The fork's Makefile `verify-signature` target and its README
-name upstream's key instead, so they won't verify our releases.
+Merge the PR, then tag the branch to release; the workflow builds the tarballs
+and creates the GitHub release. Releases are signed with key
+`AB2B6CC5FC981BF89D35C7869668B909E1D76F80`; the fork's `verify-signature` target
+and README name upstream's key, so they won't verify our releases.
 
 ```shell
 git fetch origin
@@ -78,11 +75,10 @@ git push origin "$TAG"
 # Monitor the release at https://github.com/buildbuddy-io/podman-static/actions
 ```
 
-Finally, update `PODMAN_VERSION`, `PODMAN_STATIC_SHA256_AMD64` and
-`PODMAN_STATIC_SHA256_ARM64` in `deps.bzl`. `PODMAN_VERSION` is the tag
-minus `buildbuddy-` (e.g. `v5.1.1-1`). Only the public `deps.bzl` needs editing;
-`.github/workflows/deps.yaml` copies it to buildbuddy-internal automatically.
-To get the checksums:
+Finally, switch to a buildbuddy checkout and update `PODMAN_VERSION`,
+`PODMAN_STATIC_SHA256_AMD64` and `PODMAN_STATIC_SHA256_ARM64` in `deps.bzl`.
+`PODMAN_VERSION` is the tag minus `buildbuddy-`. Only the public `deps.bzl` needs
+editing; it syncs to buildbuddy-internal automatically. To get the checksums:
 
 ```shell
 TAG=buildbuddy-vX.Y.Z  # the tag you released
@@ -94,16 +90,19 @@ done
 
 When reviewing a new version, extract these tarballs and run `readelf -l -d` on
 each binary to confirm it is static: the output should have no `INTERP` or
-`NEEDED`. The Dockerfile only checks this with `readelf` for pasta and crun. It
-uses `ldd` for podman, quadlet, rootlessport and runc, as does
-`Dockerfile-remote` for podman-remote. `ldd` on newer Alpine accepts static-PIE
-binaries as well as dynamic ones, so runc's plain `ldd` check passes either way.
+`NEEDED`. As of v5.8.8 the Dockerfile only uses `readelf` for pasta and crun, and
+its `ldd` checks don't reliably catch this.
 
 Open a PR and run `//enterprise/server/test/integration/podman/...` and
 `//enterprise/server/oci/ociregistry/...` with `--config=remote` before merging
 (the default config skips their `docker`-tagged tests). The genrule in
 `enterprise/server/remote_execution/containers/podman/BUILD` deletes specific
 files from the tarball, so a layout change breaks the build.
+
+Once merged, the new podman ships in the next executor release: the executor
+image's podman layer (`podman_static_layer` in
+`enterprise/server/cmd/executor/BUILD`) comes from this pin, so nothing updates
+running executors until then.
 
 ## Overwriting binaries
 
