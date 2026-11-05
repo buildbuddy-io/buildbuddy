@@ -82,6 +82,13 @@ The BuildBuddy CLI makes authentication to BuildBuddy a breeze. You can simply t
 You can save BuildBuddy CLI options in a [`.bbrc` file](/docs/cli-config). It
 uses `.bazelrc`-style sections and named configs.
 
+Commands that talk to BuildBuddy, such as `bb view` and `bb explain`, use
+`remote.buildbuddy.io` and `app.buildbuddy.io` unless told otherwise. To point
+them at a different BuildBuddy, such as a self-hosted install or a proxy, set
+`BUILDBUDDY_API_TARGET` (the gRPC target) and `BUILDBUDDY_HTTP_TARGET` (the
+web URL). A `--target` or `--url` flag passed to a command still takes
+precedence.
+
 ## Contributing
 
 We welcome pull requests! You can find the code for the BuildBuddy CLI on Github [here](https://github.com/buildbuddy-io/buildbuddy/tree/master/cli). See our [contributing docs](https://www.buildbuddy.io/docs/contributing) for more info.
