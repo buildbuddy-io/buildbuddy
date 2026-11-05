@@ -98,9 +98,6 @@ func ResolveTarget(target string) (string, error) {
 	if target != "" {
 		return target, nil
 	}
-	if target := os.Getenv(login.APITargetEnvVar); target != "" {
-		return target, nil
-	}
 	backend, err := flaghistory.GetLastBackend()
 	if err != nil {
 		log.Debugf("Failed to get last backend: %v", err)
