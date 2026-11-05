@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"google.golang.org/grpc/metadata"
@@ -337,8 +338,13 @@ func run(ctx context.Context, env environment.Env) error {
 			if !s.Scan() {
 				break
 			}
+			cmd, err := shlex.Split(s.Text())
+			if err != nil {
+				log.Error(err.Error())
+				continue
+			}
 			res := c.Exec(ctx, &repb.Command{
-				Arguments: []string{"sh", "-c", s.Text()},
+				Arguments: cmd,
 			}, &interfaces.Stdio{
 				Stdout: os.Stdout,
 				Stderr: os.Stderr,

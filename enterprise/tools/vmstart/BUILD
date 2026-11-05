@@ -34,6 +34,7 @@ go_library(
         "//server/util/log",
         "//server/util/networking",
         "//server/util/rexec",
+        "//server/util/shlex",
         "//server/util/status",
         "//server/util/tracing",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

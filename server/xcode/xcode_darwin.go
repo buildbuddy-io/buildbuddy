@@ -9,6 +9,8 @@ package xcode
 import "C"
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -241,15 +243,22 @@ func commandLineToolsVersion(developerDir string) *xcodeVersion {
 // Returns the version of the Xcode Command Line Tools, or "unknown" if it
 // can't be determined.
 func commandLineToolsVersionString() string {
-	out, err := exec.Command(
-		"sh", "-c",
-		"pkgutil --pkg-info=com.apple.pkg.CLTools_Executables | awk '/version:/ {print $2}'",
-	).Output()
+	out, err := exec.Command("pkgutil --pkg-info=com.apple.pkg.CLTools_Executables").Output()
 	if err != nil {
 		log.Warningf("Error determining Xcode Command Line Tools version: %s", err.Error())
 		return "unknown"
 	}
-	return strings.TrimSpace(string(out))
+	s := bufio.NewScanner(bytes.NewReader(out))
+	for s.Scan() {
+		line := s.Text()
+		field, value, _ := strings.Cut(line, " ")
+		if strings.Contains(field, "version:") {
+			version, _, _ := strings.Cut(strings.TrimLeft(value, " "), " ")
+			return version
+		}
+	}
+	log.Warning("Error determining Xcode Command Line Tools version: 'version:' field not found in pkkgutil output")
+	return "unknown"
 }
 
 // Returns the active developer directory according to xcode-select, or the
