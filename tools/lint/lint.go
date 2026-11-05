@@ -253,9 +253,17 @@ func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	return nil
 }
 
+// actionlintInputs are files that determine actionlint's version or config. If
+// any of them changed, all workflows are checked, not just changed ones.
+var actionlintInputs = []string{
+	// The actionlint version, as github.com/rhysd/actionlint.
+	"go.mod",
+	".github/actionlint.yaml",
+	".github/actionlint.yml",
+}
+
 func runActionlint(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	// A config change can affect every workflow.
-	if slices.Contains(files, ".github/actionlint.yaml") {
+	if slices.ContainsFunc(files, func(f string) bool { return slices.Contains(actionlintInputs, f) }) {
 		allFiles, err := sh("git ls-files")
 		if err != nil {
 			return fmt.Errorf("list files: %w", err)
@@ -275,6 +283,9 @@ func runActionlint(ctx context.Context, stdout, stderr io.Writer, fix bool, file
 	if err != nil {
 		return fmt.Errorf("get actionlint command: %w", err)
 	}
+	// Don't use shellcheck or pyflakes even if they're on PATH, so results
+	// don't depend on the machine.
+	cmd.Args = append(cmd.Args, "-shellcheck=", "-pyflakes=")
 	cmd.Args = append(cmd.Args, workflows...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
