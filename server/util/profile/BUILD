@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//proto:profile_go_proto",
         "//server/util/status",
-        "@org_golang_google_grpc//status",
     ],
 )
 
@@ -19,9 +18,8 @@ go_test(
     embed = [":profile"],
     deps = [
         "//proto:profile_go_proto",
+        "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )

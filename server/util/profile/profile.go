@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	pfpb "github.com/buildbuddy-io/buildbuddy/proto/profile"
-	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -26,29 +25,28 @@ const (
 // Guards profile collection to prevent concurrent profile requests.
 var collectMu sync.Mutex
 
-// Collect collects the requested profile. Errors are reported in the
-// returned profile's status rather than returned. Only one profile is
-// collected at a time; concurrent requests fail with ResourceExhausted.
-func Collect(ctx context.Context, req *pfpb.GetProfileRequest) *pfpb.Profile {
+// Collect collects a profile of the given type. The duration only applies to
+// CPU profiles. Only one profile is collected at a time; concurrent requests
+// fail with ResourceExhausted.
+func Collect(ctx context.Context, profileType pfpb.GetProfileRequest_Type, duration time.Duration) ([]byte, error) {
 	if !collectMu.TryLock() {
-		err := status.ResourceExhaustedError("another profile is already being collected")
-		return &pfpb.Profile{Type: req.GetType(), Status: gstatus.Convert(err).Proto()}
+		return nil, status.ResourceExhaustedError("another profile is already being collected")
 	}
 	defer collectMu.Unlock()
-	data, err := collect(ctx, req)
-	if err == nil && len(data) > maxProfileSizeBytes {
-		err = status.ResourceExhaustedErrorf("profile is too large: %d bytes (max %d)", len(data), maxProfileSizeBytes)
-	}
+	data, err := collect(ctx, profileType, duration)
 	if err != nil {
-		return &pfpb.Profile{Type: req.GetType(), Status: gstatus.Convert(err).Proto()}
+		return nil, err
 	}
-	return &pfpb.Profile{Type: req.GetType(), Data: data}
+	if len(data) > maxProfileSizeBytes {
+		return nil, status.ResourceExhaustedErrorf("profile is too large: %d bytes (max %d)", len(data), maxProfileSizeBytes)
+	}
+	return data, nil
 }
 
-func collect(ctx context.Context, req *pfpb.GetProfileRequest) ([]byte, error) {
-	switch req.GetType() {
+func collect(ctx context.Context, profileType pfpb.GetProfileRequest_Type, duration time.Duration) ([]byte, error) {
+	switch profileType {
 	case pfpb.GetProfileRequest_CPU:
-		return collectCPUProfile(ctx, req.GetDuration().AsDuration())
+		return collectCPUProfile(ctx, duration)
 	case pfpb.GetProfileRequest_HEAP:
 		return lookup("heap", 0)
 	case pfpb.GetProfileRequest_GOROUTINE:
@@ -56,7 +54,7 @@ func collect(ctx context.Context, req *pfpb.GetProfileRequest) ([]byte, error) {
 	case pfpb.GetProfileRequest_GOROUTINE_DUMP:
 		return lookup("goroutine", 2)
 	default:
-		return nil, status.UnimplementedErrorf("unsupported profile type %s", req.GetType())
+		return nil, status.UnimplementedErrorf("unsupported profile type %s", profileType)
 	}
 }
 
