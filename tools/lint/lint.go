@@ -37,6 +37,7 @@ var (
 var (
 	buildifierRlocationpath  string
 	goimportsRlocationpath   string
+	actionlintRlocationpath  string
 	goRlocationpath          string
 	clangFormatRlocationpath string
 	bbCLIRlocationpath       string
@@ -51,6 +52,8 @@ var (
 	tools = []Tool{
 		// Fixes go files - both imports and formatting.
 		{Name: "GoFormat", Run: runGoimports},
+		// Checks GitHub workflow files. Check-only: it has no fix mode.
+		{Name: "WorkflowLint", Run: runActionlint},
 		// Fixes proto files.
 		{Name: "ProtoFormat", Run: runClangFormat},
 		// Fixes frontend-related files, configs, and docs.
@@ -246,6 +249,37 @@ func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	}
 	if stdoutCounter.Count() > 0 {
 		return fmt.Errorf("goimports found lint errors")
+	}
+	return nil
+}
+
+func runActionlint(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	// A config change can affect every workflow.
+	if slices.Contains(files, ".github/actionlint.yaml") {
+		allFiles, err := sh("git ls-files")
+		if err != nil {
+			return fmt.Errorf("list files: %w", err)
+		}
+		files = lines(allFiles)
+	}
+	var workflows []string
+	for _, f := range files {
+		if filepath.Dir(f) == ".github/workflows" && slices.Contains([]string{".yaml", ".yml"}, filepath.Ext(f)) {
+			workflows = append(workflows, f)
+		}
+	}
+	if len(workflows) == 0 {
+		return nil
+	}
+	cmd, err := getRunfileToolCommand(ctx, actionlintRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get actionlint command: %w", err)
+	}
+	cmd.Args = append(cmd.Args, workflows...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run actionlint: %w", err)
 	}
 	return nil
 }
