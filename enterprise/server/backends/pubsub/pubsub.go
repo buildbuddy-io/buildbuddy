@@ -28,7 +28,7 @@ const (
 	// A missing stream is reported by the first pipeline that reads it.
 	// Every subscription on a shard shares the shard's fate, so when the
 	// attempts run out they all fail on the same execution.
-	batchedCheckAttempts = 3
+	batchedCheckAttempts = 6
 
 	// batchedCheckTimeout bounds one execution of the shared pipeline,
 	// including any retries a standalone client performs. Ring shard clients
