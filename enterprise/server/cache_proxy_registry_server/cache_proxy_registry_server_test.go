@@ -30,6 +30,7 @@ import (
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	pfpb "github.com/buildbuddy-io/buildbuddy/proto/profile"
 	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
 )
 
@@ -888,4 +889,85 @@ func writeRegistration(t *testing.T, s *CacheProxyRegistryServer, reg *cppb.Regi
 	b, err := proto.Marshal(reg)
 	require.NoError(t, err)
 	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies(reg.GetGroupId()), reg.GetSummary().GetProxyId(), b).Err())
+}
+
+func profileRequest(proxyID string, profileType pfpb.GetProfileRequest_Type) *cppb.GetCacheProxyRequest {
+	req := getCacheProxyRequest(proxyID)
+	req.GetProfile = &pfpb.GetProfileRequest{Type: profileType}
+	return req
+}
+
+func answerProfileRequest(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, summary *cppb.CacheProxySummary) <-chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		rsp, err := stream.Recv()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		profileReq := rsp.GetDetailsRequest().GetGetProfile()
+		if profileReq == nil {
+			errCh <- status.InvalidArgumentError("details request did not include a profile request")
+			return
+		}
+		errCh <- stream.Send(&cppb.RegisterCacheProxyRequest{
+			Summary: summary,
+			Details: &cppb.CacheProxyDetails{
+				Summary: summary,
+				Profile: &pfpb.Profile{Type: profileReq.GetType(), Data: []byte("profile-data")},
+			},
+			RequestId: rsp.GetRequestId(),
+		})
+	}()
+	return errCh
+}
+
+func TestGetCacheProxy_Profile(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	adminUser := userWithCapabilities("U2", testGroupID, cappb.Capability_ORG_ADMIN)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+	stream := registerProxy(t, s, client, "id-1")
+	summary := &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"}
+	proxyErr := answerProfileRequest(stream, summary)
+
+	ctx := claims.AuthContextWithJWT(context.Background(), adminUser.(*claims.Claims), nil)
+	rsp, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.GetProfileRequest_HEAP))
+	require.NoError(t, err)
+	require.NoError(t, <-proxyErr)
+	assert.Equal(t, pfpb.GetProfileRequest_HEAP, rsp.GetDetails().GetProfile().GetType())
+	assert.Equal(t, []byte("profile-data"), rsp.GetDetails().GetProfile().GetData())
+}
+
+func TestGetCacheProxy_ProfileForwardsToPeer(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	adminUser := userWithCapabilities("U2", testGroupID, cappb.Capability_ORG_ADMIN)
+	users := map[string]interfaces.UserInfo{"CP_KEY": streamUser}
+	redisTarget := testredis.Start(t).Target
+	peerServer, peerClient, peer := startPeer(t, redisTarget, users)
+	s, _ := newServerWithRedis(t, redisTarget, users)
+	stream := registerProxy(t, peerServer, peerClient, "id-1")
+	summary := &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"}
+	proxyErr := answerProfileRequest(stream, summary)
+
+	ctx := claims.AuthContextWithJWT(context.Background(), adminUser.(*claims.Claims), nil)
+	rsp, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.GetProfileRequest_GOROUTINE))
+	require.NoError(t, err)
+	require.NoError(t, <-proxyErr)
+	assert.Equal(t, pfpb.GetProfileRequest_GOROUTINE, rsp.GetDetails().GetProfile().GetType())
+	assert.Equal(t, []byte("profile-data"), rsp.GetDetails().GetProfile().GetData())
+
+	fwd := <-peer.forwarded
+	assert.Equal(t, pfpb.GetProfileRequest_GOROUTINE, fwd.GetGetProfile().GetType())
+}
+
+func TestGetCacheProxy_ProfileTypeRequired(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	adminUser := userWithCapabilities("U2", testGroupID, cappb.Capability_ORG_ADMIN)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+	registerProxy(t, s, client, "id-1")
+
+	ctx := claims.AuthContextWithJWT(context.Background(), adminUser.(*claims.Claims), nil)
+	_, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.GetProfileRequest_UNKNOWN_TYPE))
+	require.Error(t, err)
+	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument, got: %v", err)
 }
