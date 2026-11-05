@@ -11,7 +11,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 	"google.golang.org/grpc/metadata"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -39,6 +40,11 @@ const (
 )
 
 var (
+	// grpcTargetRegexp matches the only gRPC target forms considered safe to
+	// send the API key to: a scheme, a plain DNS name or IPv4 address, an
+	// optional port, and an optional trailing slash.
+	grpcTargetRegexp = regexp.MustCompile(`^(grpcs?)://([A-Za-z0-9.-]+)(?::([0-9]+))?/?$`)
+
 	flags = flag.NewFlagSet("login", flag.ContinueOnError)
 	Flags = flags
 
@@ -370,13 +376,20 @@ func ConfigureAPIKey(args *arg.BazelArgs) error {
 // bes_header, since Bazel 10 redacts remote_header values from the BEP command
 // line. It only does so when every comma-separated BES backend is either
 // BuildBuddy over TLS or the same scheme, host and port as the remote cache or
-// executor, so the key isn't sent to other BES services.
+// executor, so the key isn't sent to other BES services. Targets that
+// parseGRPCTarget doesn't accept never match, and header names are
+// case-insensitive.
 func ConfigureBESAPIKey(args *arg.BazelArgs) error {
 	if !isSupportedCommand(args.GetCommand()) {
 		return nil
 	}
 	bazelArgs := arg.GetBazelArgs(args.Resolved())
-	apiKey := arg.Get(bazelArgs, apiKeyHeader)
+	apiKey := ""
+	for _, h := range arg.GetMulti(bazelArgs, "remote_header") {
+		if name, value, ok := strings.Cut(h, "="); ok && strings.EqualFold(name, apiKeyHeaderName) {
+			apiKey = value
+		}
+	}
 	if apiKey == "" {
 		return nil
 	}
@@ -392,7 +405,7 @@ func ConfigureBESAPIKey(args *arg.BazelArgs) error {
 		if bes == (grpcTarget{}) {
 			return nil
 		}
-		isBuildBuddy := bes.scheme == "grpcs" && urlutil.GetDomain(bes.host) == "buildbuddy.io"
+		isBuildBuddy := bes.scheme == "grpcs" && (bes.host == "buildbuddy.io" || strings.HasSuffix(bes.host, ".buildbuddy.io"))
 		if !isBuildBuddy && bes != remoteCache && bes != remoteExecutor {
 			return nil
 		}
@@ -407,8 +420,9 @@ type grpcTarget struct {
 
 // parseGRPCTarget parses a Bazel gRPC target, which may omit the scheme (meaning
 // grpcs) and port (meaning gRPC's default for the scheme: 443 for grpcs, 80 for
-// grpc). It returns the zero value for empty, unparseable and non-gRPC targets,
-// including unix sockets.
+// grpc). It returns the zero value for anything but grpcTargetRegexp with a port
+// from 1 to 65535, including empty and non-gRPC targets, unix sockets, IPv6
+// literals, userinfo, paths, queries and fragments.
 func parseGRPCTarget(target string) grpcTarget {
 	if strings.HasPrefix(target, "unix:") {
 		return grpcTarget{}
@@ -416,19 +430,17 @@ func parseGRPCTarget(target string) grpcTarget {
 	if !strings.Contains(target, "://") {
 		target = "grpcs://" + target
 	}
-	u, err := url.Parse(target)
-	if err != nil || u.Hostname() == "" {
+	m := grpcTargetRegexp.FindStringSubmatch(target)
+	if m == nil {
 		return grpcTarget{}
 	}
-	defaultPort := map[string]string{"grpcs": "443", "grpc": "80"}[u.Scheme]
-	if defaultPort == "" {
-		return grpcTarget{}
-	}
-	port := u.Port()
+	scheme, host, port := m[1], m[2], m[3]
 	if port == "" {
-		port = defaultPort
+		port = map[string]string{"grpcs": "443", "grpc": "80"}[scheme]
+	} else if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return grpcTarget{}
 	}
-	return grpcTarget{scheme: u.Scheme, host: u.Hostname(), port: port}
+	return grpcTarget{scheme: scheme, host: host, port: port}
 }
 
 // Commands that support the `--remote_header` bazel flag
