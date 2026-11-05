@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -95,6 +96,9 @@ func GetInvocationFile(ctx context.Context, bbClient bbspb.BuildBuddyServiceClie
 
 func ResolveTarget(target string) (string, error) {
 	if target != "" {
+		return target, nil
+	}
+	if target := os.Getenv(login.APITargetEnvVar); target != "" {
 		return target, nil
 	}
 	backend, err := flaghistory.GetLastBackend()
