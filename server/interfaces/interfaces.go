@@ -1003,6 +1003,19 @@ type WebhookData struct {
 	// Ex: "opened", "synchronize", "ready_for_review"
 	PullRequestAction string
 
+	// PullRequestBaseSHA is the base commit of the pull request at event time.
+	PullRequestBaseSHA string
+
+	// PullRequestBeforeSHA and PullRequestAfterSHA are the head commits before
+	// and after a pull request synchronization, when provided by the webhook.
+	PullRequestBeforeSHA string
+	PullRequestAfterSHA  string
+
+	// PullRequestPreviousBaseRef and PullRequestPreviousBaseSHA describe the
+	// previous base when the webhook reports a pull request base change.
+	PullRequestPreviousBaseRef string
+	PullRequestPreviousBaseSHA string
+
 	// CommentAuthor and CommentBody identify the author and contents
 	// of a pull request comment, if applicable.
 	CommentAuthor string

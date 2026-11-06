@@ -105,6 +105,7 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 		PullRequestAuthor:       "test",
 		PullRequestNumber:       37,
 		PullRequestAction:       "opened",
+		PullRequestBaseSHA:      "258044d28288d5f6f1c5928b0e22580296fec666",
 	}, data)
 }
 

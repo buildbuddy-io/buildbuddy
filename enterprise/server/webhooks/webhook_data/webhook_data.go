@@ -30,10 +30,17 @@ func DebugString(wd *interfaces.WebhookData) string {
 	if wd.PushedTag != "" {
 		pushedRef = fmt.Sprintf("%s@%s", wd.PushedRepoURL, wd.PushedTag)
 	}
-	return fmt.Sprintf(
+	debugString := fmt.Sprintf(
 		"event=%s, pushed=%s, target=%s@%s (public=%t, default_branch=%s), pr #%d (author=%s, approver=%s)",
 		wd.EventName,
 		pushedRef,
 		wd.TargetRepoURL, wd.TargetBranch, wd.IsTargetRepoPublic, wd.TargetRepoDefaultBranch,
 		wd.PullRequestNumber, wd.PullRequestAuthor, wd.PullRequestApprover)
+	if wd.EventName == EventName.PullRequest {
+		debugString += fmt.Sprintf(
+			", action=%q, base_sha=%q, before=%q, after=%q, previous_base_ref=%q, previous_base_sha=%q",
+			wd.PullRequestAction, wd.PullRequestBaseSHA, wd.PullRequestBeforeSHA, wd.PullRequestAfterSHA,
+			wd.PullRequestPreviousBaseRef, wd.PullRequestPreviousBaseSHA)
+	}
+	return debugString
 }

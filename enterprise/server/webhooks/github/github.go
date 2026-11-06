@@ -180,6 +180,11 @@ func ParseWebhookData(event any) (*interfaces.WebhookData, error) {
 		}
 		wd.PullRequestNumber = int64(event.GetPullRequest().GetNumber())
 		wd.PullRequestAction = action
+		wd.PullRequestBaseSHA = event.GetPullRequest().GetBase().GetSHA()
+		wd.PullRequestBeforeSHA = event.GetBefore()
+		wd.PullRequestAfterSHA = event.GetAfter()
+		wd.PullRequestPreviousBaseRef = event.GetChanges().GetBase().GetRef().GetFrom()
+		wd.PullRequestPreviousBaseSHA = event.GetChanges().GetBase().GetSHA().GetFrom()
 		return wd, nil
 
 	case *gh.PullRequestReviewEvent:
