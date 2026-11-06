@@ -58,7 +58,6 @@ func (a *apiClient) fetchInvocations(f filters) tea.Cmd {
 	return func() tea.Msg {
 		sevenDaysAgo := time.Now().AddDate(0, 0, -7)
 		query := &inpb.InvocationQuery{
-			GroupId:      a.groupID,
 			UpdatedAfter: timestamppb.New(sevenDaysAgo),
 		}
 		if f.user != "" {
