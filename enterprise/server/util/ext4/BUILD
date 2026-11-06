@@ -16,6 +16,8 @@ go_library(
             "//server/util/tracing",
             "@com_github_prometheus_client_golang//prometheus",
             "@io_opentelemetry_go_otel//attribute",
+            "@org_golang_x_sync//errgroup",
+            "@org_golang_x_sys//unix",
         ],
         "//conditions:default": [],
     }),
@@ -23,6 +25,7 @@ go_library(
 
 go_test(
     name = "ext4_test",
+    timeout = "long",
     srcs = ["ext4_test.go"],
     exec_properties = {
         # Reproducible images need e2fsprogs 1.47.2 or later, which Ubuntu
