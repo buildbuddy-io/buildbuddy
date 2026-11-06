@@ -64,7 +64,7 @@ Sometimes you may want to install a plugin for yourself (like a theme plugin for
 
 Installing a plugin as user-specific is as simple as just tacking the `--user` argument onto your `bb install` command.
 
-When the `--user` argument is present, the plugin will be added to a `~/buildbuddy.yaml` file located in your user directory. That means those plugins will only be applied to you.
+When the `--user` argument is present, the plugin will be added to `$XDG_CONFIG_HOME/buildbuddy/bb.yaml` (defaulting to `~/.config/buildbuddy/bb.yaml`)
 
 If a plugin is present in both your user-specific and workspace at differnet versions, the one in your workspace will take precedence.
 
