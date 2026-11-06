@@ -47,6 +47,7 @@ var (
 
 	BazelCommandOverride = expflag.String("remote_execution.ci_runner_bazel_command", "", "Override the Bazel command used by workflows and hosted runners.", expflag.DeprecatedExperimentName("ci-runner-bazel-command"))
 	PoolOverride         = expflag.String("remote_execution.remote_runner_pool", "", "Override the executor pool used by workflows and hosted runners.", expflag.DeprecatedExperimentName("remote-runner-pool"))
+	DefaultImageOverride = expflag.String("remote_execution.ci_runner_default_image", "", "Override the default container image used by workflows and hosted runners when no image is requested. Must be a full image ref including the docker:// prefix.")
 
 	defaultTimeout      = expflag.String("remote_execution.remote_runner_default_timeout", "", "Override the default CI runner timeout with a duration, such as 24h.")
 	lowSpeedRetryConfig = expflag.Object(LowSpeedRetryConfigExperimentName, nil, "Git fetch retry settings for CI runners, with retries, duration, and rate fields.")
@@ -307,6 +308,51 @@ func applyEnvOverrides(task *repb.ExecutionTask, envOverrides map[string]string)
 		if strings.EqualFold(prop.GetName(), platform.EnvOverridesPropertyName) {
 			prop.Value = overridesVal
 			return
+		}
+	}
+}
+
+// ApplyDefaultImageOverride replaces the container-image of the task's
+// (normalized) command with DefaultImageOverride, if the override is set, the
+// image is still defaultImage and wasn't set in userProps, and the platform
+// parser says the task runs on the shared Linux pool. sharedPool is the Pool
+// value the caller set. Self-hosted executors may not have the override image,
+// so they are skipped. The remote_execution.pool_override experiment can still
+// reroute the task afterwards.
+func ApplyDefaultImageOverride(ctx context.Context, env environment.Env, task *repb.ExecutionTask, userProps []*repb.Platform_Property, defaultImage, sharedPool, workflowName string) {
+	for _, p := range userProps {
+		if strings.EqualFold(p.GetName(), "container-image") {
+			return
+		}
+	}
+	props, err := platform.ParseProperties(task)
+	if err != nil || props.OS != platform.LinuxOperatingSystemName || props.ContainerImage != defaultImage {
+		return
+	}
+	// ParseProperties lowercases the pool and maps "default" to "".
+	if props.Pool != "" && props.Pool != strings.ToLower(sharedPool) {
+		return
+	}
+	if props.PoolType == platform.PoolTypeSelfHosted {
+		return
+	}
+	// Without an explicit choice, the scheduler routes groups that use
+	// group-owned executors to their own executors.
+	if props.PoolType == platform.PoolTypeDefault {
+		if u, err := env.GetAuthenticator().AuthenticatedUser(ctx); err == nil && u.GetUseGroupOwnedExecutors() {
+			return
+		}
+	}
+	image := DefaultImageOverride.Get(ctx, experiments.WithContext("workflow-name", workflowName))
+	if image == "" {
+		return
+	}
+	if !strings.HasPrefix(image, platform.DockerPrefix) {
+		image = platform.DockerPrefix + image
+	}
+	for _, p := range task.GetCommand().GetPlatform().GetProperties() {
+		if strings.EqualFold(p.GetName(), "container-image") {
+			p.Value = image
 		}
 	}
 }
