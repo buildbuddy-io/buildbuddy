@@ -1673,7 +1673,6 @@ func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Con
 	// By default, this query returns up to 15 invocations.
 	searchResp, err := ws.env.GetInvocationSearchService().QueryInvocations(ctx, &inpb.SearchInvocationRequest{
 		Query: &inpb.InvocationQuery{
-			GroupId:    wf.GroupID,
 			RepoUrl:    wf.RepoURL,
 			BranchName: wd.PushedBranch,
 			Pattern:    action.Name,

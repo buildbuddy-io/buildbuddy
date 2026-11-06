@@ -305,7 +305,7 @@ func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb b
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
 		searchResp, err := bb.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
 			RequestContext: reqCtx,
-			Query:          &inpb.InvocationQuery{GroupId: reqCtx.GetGroupId()},
+			Query:          &inpb.InvocationQuery{},
 		})
 		if err != nil && strings.Contains(err.Error(), "not found") {
 			continue

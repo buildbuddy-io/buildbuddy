@@ -132,7 +132,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
       command: filterParams.command,
       pattern: filterParams.pattern,
       tags: filterParams.tags,
-      groupId: this.props.user?.selectedGroup?.id,
       role: filterParams.role,
       updatedAfter: filterParams.updatedAfter,
       updatedBefore: filterParams.updatedBefore,
