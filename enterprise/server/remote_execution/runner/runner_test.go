@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -511,11 +512,14 @@ func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 			})
 			pool := newRunnerPool(t, env, cfg)
 			r := mustGetNewRunner(t, ctx, pool, newTask())
+			// The runner records the default image, since none was requested.
+			assert.Equal(t, "gcr.io/default:v1", r.Metadata().GetContainerImage())
 			mustAddWithoutEviction(t, ctx, pool, r)
 			// Only with the experiment is the runner reused for a task that
 			// explicitly requests the default image.
 			other := mustGet(t, ctx, pool, explicitDefaultImageTask.CloneVT())
 			assert.Equal(t, enabled, r == other)
+			assert.Equal(t, "gcr.io/default:v1", other.Metadata().GetContainerImage())
 			if !enabled {
 				return
 			}
@@ -526,9 +530,35 @@ func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 			mustAddWithoutEviction(t, ctx, pool, r)
 			headerTask := explicitDefaultImageTask.CloneVT()
 			headerTask.ExecutionTask.PlatformOverrides = &repb.Platform{Properties: []*repb.Platform_Property{{Name: "container-image", Value: "docker://gcr.io/other:v1"}}}
-			assert.NotSame(t, r, mustGet(t, ctx, pool, headerTask))
+			overridden := mustGet(t, ctx, pool, headerTask)
+			assert.NotSame(t, r, overridden)
+			assert.Equal(t, "gcr.io/other:v1", overridden.Metadata().GetContainerImage())
 		})
 	}
+}
+
+func TestRunnerPool_ResolveImageDigest(t *testing.T) {
+	flags.Set(t, "executor.enable_oci", true)
+	flags.Set(t, "executor.resolve_image_digests", true)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	env := newTestEnv(t)
+	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
+	registry := testregistry.Run(t, testregistry.Opts{})
+	t.Cleanup(func() { require.NoError(t, registry.Shutdown()) })
+	_, img := registry.PushNamedImage(t, "test_image", nil)
+	imgDigest, err := img.Digest()
+	require.NoError(t, err)
+	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return NewFakeContainer(), nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	task := newTask()
+	platform.SetValueForTask(task.ExecutionTask, platform.ContainerImagePropertyName, "docker://"+registry.ImageAddress("test_image"))
+
+	r := mustGetNewRunner(t, ctx, pool, task)
+
+	assert.Equal(t, registry.ImageAddress("test_image")+"@"+imgDigest.String(), r.Metadata().GetContainerImage())
 }
 
 func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {

@@ -928,6 +928,14 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 		},
 		{
+			// The requested image comes from the platform with the header
+			// override applied.
+			name:                   "ContainerImageOverride",
+			platformOverrides:      map[string]string{"container-image": "docker://gcr.io/test/override:v2"},
+			expectedRequestedImage: "docker://gcr.io/test/override:v2",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+		},
+		{
 			name:                   "InstanceNameWithColon",
 			instanceName:           "build-14:00",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
@@ -1073,6 +1081,9 @@ type publishTest struct {
 	// omitSchedulingMetadata leaves the scheduling metadata out of the
 	// executor's auxiliary metadata, like old executors do.
 	omitSchedulingMetadata bool
+	// expectedRequestedImage is the requested container image the execution
+	// should record. Defaults to the image in the action's platform.
+	expectedRequestedImage string
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -1115,6 +1126,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		{Name: "EstimatedCPU", Value: "1.5"},
 		{Name: "EstimatedMemory", Value: "2000"},
 		{Name: "workload-isolation-type", Value: "oci"},
+		{Name: "container-image", Value: "docker://gcr.io/test/requested:v1"},
 	}
 	if !test.flexibleCompute {
 		// Set EstimatedComputeUnits so we go through the fixed compute path.
@@ -1183,6 +1195,12 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		require.NoError(t, err)
 	}
 
+	// Like a real executor, echo back the requested image from the
+	// scheduling metadata that was actually dispatched.
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Len(t, sched.scheduleReqs, 1)
+	requestedImage := sched.scheduleReqs[0].GetMetadata().GetRequestedContainerImage()
+
 	executorGroupID := sharedPoolGroupID
 	if test.expectedSelfHosted {
 		executorGroupID = selfHostedPoolGroupID
@@ -1191,6 +1209,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	usageStats := &repb.UsageStats{}
 	if test.publishMoreMetadata {
 		aux.IsolationType = "firecracker"
+		aux.RunnerMetadata = &espb.RunnerMetadata{ContainerImage: "gcr.io/test/requested@sha256:1234"}
 		aux.Timeout = &durationpb.Duration{Seconds: 11}
 		aux.ExecuteRequest = &repb.ExecuteRequest{
 			SkipCacheLookup: true, // This is only used for writing to clickhouse
@@ -1211,8 +1230,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 				EstimatedMilliCpu:      3002,
 				EstimatedFreeDiskBytes: 3003,
 			},
-			ExecutorGroupId: executorGroupID,
-			Pool:            effectivePool,
+			ExecutorGroupId:         executorGroupID,
+			Pool:                    effectivePool,
+			RequestedContainerImage: requestedImage,
 		}
 		usageStats.Timeline = &repb.UsageTimeline{
 			StartTime: tspb.New(workerStartTime),
@@ -1250,8 +1270,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			effectivePool = "default-pool"
 		}
 		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
-			ExecutorGroupId: executorGroupID,
-			Pool:            effectivePool,
+			ExecutorGroupId:         executorGroupID,
+			Pool:                    effectivePool,
+			RequestedContainerImage: requestedImage,
 		}
 	}
 	auxAny, err := anypb.New(aux)
@@ -1473,6 +1494,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.EstimatedMilliCpu = 1500
 		expectedExecution.EstimatedMemoryBytes = 10 * tasksize.GiB
 	}
+	expectedExecution.RequestedContainerImage = "docker://gcr.io/test/requested:v1"
+	if test.expectedRequestedImage != "" {
+		expectedExecution.RequestedContainerImage = test.expectedRequestedImage
+	}
 	if test.useDefaultPool {
 		expectedExecution.RequestedPool = ""
 		expectedExecution.EffectivePool = "default-pool"
@@ -1491,6 +1516,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.PredictedMilliCpu = 3002
 		expectedExecution.PredictedFreeDiskBytes = 3003
 		expectedExecution.EffectiveIsolationType = "firecracker"
+		expectedExecution.EffectiveContainerImage = "gcr.io/test/requested@sha256:1234"
 		expectedExecution.EffectiveTimeoutUsec = 11000000
 		expectedExecution.NetworkBytesSent = 1000
 		expectedExecution.NetworkBytesReceived = 2000
@@ -2476,6 +2502,7 @@ func TestMarkFailed_RecordsSchedulingMetadata(t *testing.T) {
 		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: "pool", Value: "test-pool"},
 			{Name: "use-self-hosted-executors", Value: "true"},
+			{Name: "container-image", Value: "docker://gcr.io/test/requested:v1"},
 		}},
 	}
 	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
@@ -2496,6 +2523,7 @@ func TestMarkFailed_RecordsSchedulingMetadata(t *testing.T) {
 	assert.Equal(t, int64(repb.ExecutionStage_COMPLETED), executions[0].GetStage())
 	assert.True(t, executions[0].GetSelfHosted())
 	assert.Equal(t, "test-pool", executions[0].GetEffectivePool())
+	assert.Equal(t, "docker://gcr.io/test/requested:v1", executions[0].GetRequestedContainerImage())
 }
 
 func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {

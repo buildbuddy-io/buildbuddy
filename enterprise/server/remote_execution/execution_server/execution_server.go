@@ -138,6 +138,7 @@ func (s *ExecutionServer) fillExecutionFromSchedulingMetadata(md *scpb.Schedulin
 	execution.PredictedFreeDiskBytes = md.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
 	execution.SelfHosted = md.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
 	execution.EffectivePool = md.GetPool()
+	execution.RequestedContainerImage = md.GetRequestedContainerImage()
 }
 
 func generateCommandSnippet(command *repb.Command) string {
@@ -500,6 +501,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.RunnerTaskNumber = auxMeta.GetRunnerMetadata().GetTaskNumber()
 			executionProto.PlatformHash = auxMeta.GetRunnerMetadata().GetPlatformHash()
 			executionProto.PersistentWorkerKey = auxMeta.GetRunnerMetadata().GetPersistentWorkerKey()
+			executionProto.EffectiveContainerImage = auxMeta.GetRunnerMetadata().GetContainerImage()
 
 			executionProto.EffectiveTimeoutUsec = auxMeta.GetTimeout().AsDuration().Microseconds()
 			executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
@@ -1116,7 +1118,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		// Pass along the raw value rather than coercing unknown types, so that
 		// an unsupported request fails at scheduling time with a message
 		// naming the type that no executor supports.
-		RequestedIsolationType: platform.FindEffectiveValue(executionTask, platform.WorkloadIsolationPropertyName),
+		RequestedIsolationType:  platform.FindEffectiveValue(executionTask, platform.WorkloadIsolationPropertyName),
+		RequestedContainerImage: platform.FindEffectiveValue(executionTask, platform.ContainerImagePropertyName),
 	}
 	if *writeExecutionProgressStateToRedis {
 		// Record the scheduling metadata now rather than relying on getting it

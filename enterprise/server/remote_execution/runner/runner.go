@@ -1392,6 +1392,7 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 			TaskNumber:          1,
 			PlatformHash:        platformSHA256.GetHash(),
 			PersistentWorkerKey: key.GetPersistentWorkerKey(),
+			ContainerImage:      props.ContainerImage,
 		},
 		task:               st.GetExecutionTask(),
 		schedulingMetadata: st.GetSchedulingMetadata(),

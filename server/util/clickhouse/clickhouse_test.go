@@ -174,6 +174,18 @@ func TestExecutionFromProto(t *testing.T) {
 				ExperimentVariants: map[string]string{"executor.some_experiment": "treatment"},
 			},
 		},
+		{
+			name: "ContainerImages",
+			in: &repb.StoredExecution{
+				ExecutionId:             executionID,
+				RequestedContainerImage: "docker://gcr.io/foo/bar:latest",
+				EffectiveContainerImage: "gcr.io/foo/bar@sha256:abc",
+			},
+			want: &schema.Execution{
+				RequestedContainerImage: "docker://gcr.io/foo/bar:latest",
+				EffectiveContainerImage: "gcr.io/foo/bar@sha256:abc",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			// Convert the stored execution as the ClickHouse flush path does.
@@ -194,6 +206,8 @@ func TestExecutionFromProto(t *testing.T) {
 			require.Equal(t, testCase.want.VMExecInitDurationUsec, execution.VMExecInitDurationUsec)
 			require.Equal(t, testCase.want.VMExecDialDurationUsec, execution.VMExecDialDurationUsec)
 			require.Equal(t, testCase.want.ExperimentVariants, execution.ExperimentVariants)
+			require.Equal(t, testCase.want.RequestedContainerImage, execution.RequestedContainerImage)
+			require.Equal(t, testCase.want.EffectiveContainerImage, execution.EffectiveContainerImage)
 			require.Equal(t, testCase.in.GetExecutionId(), reconstructExecutionID(t, execution))
 		})
 	}
