@@ -54,7 +54,7 @@ type xcodeVersion struct {
 
 	// This map contains all of the Xcode SDKs that are installed and available
 	// for this version of Xcode. The keys are the SDK versions, and the values
-	// are the filesystem path of this SDKs developer directory. Like the
+	// are the absolute paths used as SDKROOT. Like the
 	// xcodeLocator.versions map above, SDKs can appear in this map multiple
 	// times under different levels of version specifity, for example this map
 	// can contain keys: "iPhoneSimulator" and "iPhoneSimulator18.2" pointing
@@ -113,11 +113,10 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 		}
 		return "", "", err
 	}
-	sdkPath, ok := xv.sdks[sdk]
+	sdkRoot, ok := xv.sdks[sdk]
 	if !ok {
 		return "", "", status.FailedPreconditionErrorf("SDK %s not available for Xcode %s. Available SDKs are %s", sdk, xcodeVersion, sdksString(xv.sdks))
 	}
-	sdkRoot := fmt.Sprintf("%s/%s", xv.developerDirPath, sdkPath)
 	return xv.developerDirPath, sdkRoot, nil
 }
 
@@ -163,10 +162,7 @@ func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
 			log.Warningf("Error reading Xcode SDKs from %s: %s", path, err.Error())
 			continue
 		}
-		sdks := make(map[string]string)
-		for _, sdkPath := range sdkPaths {
-			sdks[strings.TrimSuffix(filepath.Base(sdkPath), ".sdk")] = sdkPath
-		}
+		sdks := xcodeSDKs(developerDirPath, sdkPaths, xcrunSDKPath)
 		log.Infof("Found Xcode version %s (%s) at path %s", xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion, path)
 		versions := expandXcodeVersions(xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion)
 		mostPreciseVersion := versions[len(versions)-1]
@@ -209,6 +205,41 @@ func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
 	return versionMap
 }
 
+// Maps SDK names like "iPhoneSimulator" and "iPhoneSimulator18.2" to the
+// absolute paths used as SDKROOT. sdkPaths are relative to developerDirPath.
+func xcodeSDKs(developerDirPath string, sdkPaths []string, showSDKPath func(developerDir, sdk string) (string, error)) map[string]string {
+	sdks := make(map[string]string)
+	for _, sdkPath := range sdkPaths {
+		sdks[strings.TrimSuffix(filepath.Base(sdkPath), ".sdk")] = developerDirPath + "/" + sdkPath
+	}
+	// Bazel sets SDKROOT for local actions to the path xcrun reports. For an
+	// Xcode SDK that is the versioned symlink, e.g. iPhoneSimulator18.2.sdk.
+	// Use the same path so local and remote actions get the same SDKROOT.
+	for sdk, sdkRoot := range sdks {
+		if sdkRoot != fmt.Sprintf("%s/Platforms/%s.platform/Developer/SDKs/%s.sdk", developerDirPath, sdk, sdk) {
+			continue
+		}
+		xcrunSDKRoot, err := showSDKPath(developerDirPath, sdk)
+		if err != nil {
+			log.Warningf("Error finding SDK %s in %s with xcrun: %s", sdk, developerDirPath, err)
+			continue
+		}
+		sdks[sdk] = xcrunSDKRoot
+	}
+	return sdks
+}
+
+// Runs the same command as Bazel's XcodeLocalEnvProvider.
+func xcrunSDKPath(developerDir string, sdk string) (string, error) {
+	cmd := exec.Command("/usr/bin/xcrun", "--sdk", strings.ToLower(sdk), "--show-sdk-path")
+	cmd.Env = []string{"DEVELOPER_DIR=" + developerDir}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func xcodePlistForPath(path string) (*xcodePlist, error) {
 	var xcodePlist xcodePlist
 	versionFileReader, err := os.Open(path)
@@ -227,14 +258,10 @@ func commandLineToolsVersion(developerDir string) *xcodeVersion {
 		log.Warningf("Error reading CommandLineTools SDKs from %s: %s", developerDir, err.Error())
 		return nil
 	}
-	sdks := make(map[string]string)
-	for _, sdkPath := range sdkPaths {
-		sdks[strings.TrimSuffix(filepath.Base(sdkPath), ".sdk")] = sdkPath
-	}
 	return &xcodeVersion{
 		version:          defaultXcodeVersion,
 		developerDirPath: developerDir,
-		sdks:             sdks,
+		sdks:             xcodeSDKs(developerDir, sdkPaths, xcrunSDKPath),
 	}
 }
 
