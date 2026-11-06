@@ -7,9 +7,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 # When changing this version, a new release of podman-static may be needed.
 # See dockerfiles/executor_image/README.md for instructions.
 # The checksums below will also need to be updated.
-PODMAN_VERSION = "v5.7.0"
-PODMAN_STATIC_SHA256_AMD64 = "6a1c06b78d7dad15d8d7155a180874939a04bd39ce2f64726c7f11142ab7aa7d"
-PODMAN_STATIC_SHA256_ARM64 = "703ffad8972aa2db70a173c80804a88185e6c2dc8a88a247a8ebffeac424b0ba"
+PODMAN_VERSION = "v5.8.8"
+PODMAN_STATIC_SHA256_AMD64 = "424d9478fdd08b61aeec4cca2b695709ffb23bca6133d0fd1029a4d0b610434b"
+PODMAN_STATIC_SHA256_ARM64 = "bd46c0acf2db23e1e693b46b46987c45ab6f7a360dd5f917ba2cd316b670ec10"
 
 # The bb CLI version used by //tools/lint for `bb mod deps`.
 BB_CLI_VERSION = "5.0.466"
