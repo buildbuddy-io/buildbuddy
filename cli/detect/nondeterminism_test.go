@@ -125,7 +125,7 @@ func TestRunReturnsNilWhenNoDiffs(t *testing.T) {
 }
 
 func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
-	m, err := newBuildMetadata()
+	m, err := newBuildMetadata("")
 	require.NoError(t, err)
 	defer os.RemoveAll(m.tempDir)
 
@@ -162,6 +162,58 @@ func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
 	require.Equal(t, []string{"build", "shutdown", "clean", "build", "shutdown", "clean"}, bazelCommands(runner.runs))
 	require.NoDirExists(t, filepath.Join(m.tempDir, "output_base_1"))
 	require.NoDirExists(t, filepath.Join(m.tempDir, "output_base_2"))
+}
+
+func TestNewBuildMetadata_DefaultTempDir(t *testing.T) {
+	m, err := newBuildMetadata("")
+	require.NoError(t, err)
+	defer os.RemoveAll(m.tempDir)
+
+	require.DirExists(t, m.tempDir)
+	assert.Contains(t, m.tempDir, "nondeterminism-check-")
+	assert.Equal(t, filepath.Dir(m.tempDir), filepath.Clean(os.TempDir()))
+}
+
+func TestNewBuildMetadata_CustomTempDir(t *testing.T) {
+	customDir := filepath.Join(t.TempDir(), "sub-temp")
+	m, err := newBuildMetadata(customDir)
+	require.NoError(t, err)
+	defer os.RemoveAll(m.tempDir)
+
+	require.DirExists(t, m.tempDir)
+	assert.True(t, strings.HasPrefix(m.tempDir, customDir))
+}
+
+func TestRunUsesCustomTempDir(t *testing.T) {
+	customDir := t.TempDir()
+	explainer := &fakeExplainer{diff: &spawn_diff.DiffResult{}}
+	var outputBases []string
+	runner := &fakeRunner{
+		onRun: func(ctx context.Context, call commandCall) error {
+			for _, a := range call.args {
+				if val, ok := strings.CutPrefix(a, "--output_base="); ok {
+					outputBases = append(outputBases, val)
+				}
+			}
+			return nil
+		},
+	}
+	c := &checker{
+		opts: options{
+			bazelArgs:     bazelArgsForTest(t, "build", "//foo:bar"),
+			besBackend:    defaultBESBackend,
+			besResultsURL: defaultBESResultsURL,
+			tempDir:       customDir,
+		},
+		runner:    runner,
+		explainer: explainer,
+	}
+
+	require.NoError(t, c.Run(context.Background()))
+	require.Len(t, outputBases, 6) // build, shutdown, clean for each of the 2 builds
+	for _, base := range outputBases {
+		assert.True(t, strings.HasPrefix(base, customDir), "output base %s should be within custom temp dir %s", base, customDir)
+	}
 }
 
 func bazelArgsForTest(t *testing.T, args ...string) *arg.BazelArgs {
