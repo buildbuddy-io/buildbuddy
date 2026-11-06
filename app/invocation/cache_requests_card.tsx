@@ -401,6 +401,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                 </OutlinedButton>
                 <Popup
                   className="cache-miss-popup"
+                  anchor="left"
                   isOpen={this.state.showDebugCacheMissDropdown}
                   onRequestClose={() => this.setState({ showDebugCacheMissDropdown: false })}>
                   <label
