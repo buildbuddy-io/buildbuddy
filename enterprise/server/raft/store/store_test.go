@@ -1530,6 +1530,70 @@ func writeNRecordsAndFlush(ctx context.Context, t *testing.T, store *testutil.Te
 	return out
 }
 
+func TestDebugScanAndGet(t *testing.T) {
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 1)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1}
+	sf.StartShard(t, ctx, stores...)
+	testutil.WaitForRangeLease(t, ctx, stores, 1)
+	testutil.WaitForRangeLease(t, ctx, stores, 2)
+
+	// Write records into the data range (range 2).
+	const n = 12
+	frs := writeNRecords(ctx, t, s1, n)
+
+	// DebugScan the data range with a small page size so pagination spans
+	// several pages, and collect every returned key.
+	rd := s1.GetRange(2)
+	got := make(map[string]bool)
+	cur := rd.GetStart()
+	for {
+		rsp, err := s1.DebugScan(ctx, &rfpb.DebugScanRequest{
+			Start: cur,
+			End:   rd.GetEnd(),
+			Limit: 5,
+		})
+		require.NoError(t, err)
+		for _, kv := range rsp.GetKvs() {
+			got[string(kv.GetKey())] = true
+		}
+		next := rsp.GetNextStart()
+		if len(next) == 0 || bytes.Compare(next, rd.GetEnd()) >= 0 {
+			break
+		}
+		cur = next
+	}
+	// Every written record's metadata key should have been returned.
+	for _, fr := range frs {
+		fk := testutil.MetadataKey(t, fr)
+		require.True(t, got[string(fk)], "DebugScan missing key for a written record")
+	}
+
+	// DebugGet one record and confirm the raw value decodes as FileMetadata.
+	fk := testutil.MetadataKey(t, frs[0])
+	getRsp, err := s1.DebugGet(ctx, &rfpb.DebugGetRequest{Key: fk})
+	require.NoError(t, err)
+	require.NotEmpty(t, getRsp.GetKv().GetValue())
+	md := &sgpb.FileMetadata{}
+	require.NoError(t, proto.Unmarshal(getRsp.GetKv().GetValue(), md))
+	require.NotNil(t, md.GetFileRecord())
+
+	// DebugGet on an absent key (routed within range 2) returns NotFound.
+	absent := keys.MakeKey(rd.GetStart(), []byte("does-not-exist"))
+	_, err = s1.DebugGet(ctx, &rfpb.DebugGetRequest{Key: absent})
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+}
+
 func TestSplitMetaRange(t *testing.T) {
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
