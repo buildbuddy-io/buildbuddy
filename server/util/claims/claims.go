@@ -437,11 +437,14 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 }
 
 func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
-	expirationTime := time.Now().Add(*jwtDuration)
-	expiresAt := expirationTime.Unix()
-	// Round expiration times down to the nearest minute to improve stability
-	// of JWTs for caching purposes.
-	expiresAt -= (expiresAt % 60)
+	expiresAt := c.ExpiresAt
+	if expiresAt == 0 {
+		expirationTime := time.Now().Add(*jwtDuration)
+		expiresAt = expirationTime.Unix()
+		// Round expiration times down to the nearest minute to improve stability
+		// of JWTs for caching purposes.
+		expiresAt -= (expiresAt % 60)
+	}
 	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
 	token := jwt.NewWithClaims(method, c)
 	if method == jwt.SigningMethodHS256 {
