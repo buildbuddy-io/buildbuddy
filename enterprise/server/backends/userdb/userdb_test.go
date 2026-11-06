@@ -2311,6 +2311,40 @@ func TestRequestToJoinGroup_NoAutoJoinForSSOUser(t *testing.T) {
 	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
 }
 
+func TestRequestToJoinGroup_NoAutoJoinForSSOUserAPIKey(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	adb := env.GetAuthDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+
+	user := newFakeUser("US2", "org1.io")
+	user.SubID = "https://app.buildbuddy.io/saml/metadata?slug=attacker/subject"
+	require.Equal(t, uidpb.AccountType_SAML, user.ToProto().GetAccountType())
+	require.NoError(t, udb.InsertUser(ctx, user))
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	group2 := getGroup(t, ctx2, env).Group
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx2, env, group2.GroupID, true)
+	key, err := adb.CreateUserAPIKey(ctx2, group2.GroupID, "US2", "", nil, 0 /*=expiresIn*/)
+	require.NoError(t, err)
+
+	// Take ownership of the domain only after US2 is created so they are not
+	// automatically added to GR1 during account creation.
+	takeOwnershipOfDomain(t, ctx1, env, "US1")
+
+	keyCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+	keyUser, err := env.GetAuthenticator().AuthenticatedUser(keyCtx)
+	require.NoError(t, err)
+	require.True(t, keyUser.IsCustomerSSO())
+
+	s, err := udb.RequestToJoinGroup(keyCtx, "GR1")
+	require.NoError(t, err)
+	require.Equal(t, grpb.GroupMembershipStatus_REQUESTED, s)
+	require.Nil(t, getGroupRole(t, keyCtx, env, "GR1"))
+}
+
 func TestRequestToJoinGroup_DomainMember_GetsDeveloperRole(t *testing.T) {
 	ctx := context.Background()
 	env := newTestEnv(t)
