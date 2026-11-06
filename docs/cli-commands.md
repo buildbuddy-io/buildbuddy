@@ -176,6 +176,14 @@ Sending notifications requires an API key with the **notification** capability. 
 BB_NOTIFY_API_KEY=<API_KEY> bb detect nondeterminism --notify_email
 ```
 
+#### Configuring the temp directory
+
+By default, temporary output bases and build logs are created in the OS temp directory (e.g. `/tmp`). If your temp directory is too small to hold the output bases, you can specify a custom directory with `--temp_dir`:
+
+```bash
+bb detect nondeterminism --temp_dir=/path/to/large/disk
+```
+
 #### Running on a schedule
 
 To schedule a nightly nondeterminism check to catch regressions, you can configure a scheduled Workflow in your buildbuddy.yaml:

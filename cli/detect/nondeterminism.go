@@ -149,11 +149,18 @@ func handleNondeterminism(args []string) (int, error) {
 		log.Print(nondeterminismUsage)
 		return -1, err
 	}
+	absTempDir := *tempDir
+	if absTempDir != "" {
+		absTempDir, err = filepath.Abs(absTempDir)
+		if err != nil {
+			return -1, fmt.Errorf("resolve --temp_dir: %w", err)
+		}
+	}
 	opts := options{
 		bazelArgs:     bazelArgs,
 		besBackend:    *besBackend,
 		besResultsURL: *besResultsURL,
-		tempDir:       *tempDir,
+		tempDir:       absTempDir,
 	}
 
 	c := &checker{
