@@ -13,6 +13,7 @@ go_library(
         "//server/util/region",
         "//server/util/retry",
         "//server/util/status",
+        "@org_golang_x_time//rate",
     ],
 )
 
