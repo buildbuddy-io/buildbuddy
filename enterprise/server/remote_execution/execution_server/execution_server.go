@@ -1231,11 +1231,12 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	if op == action_merger.New {
 		log.CtxDebugf(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
 
-		// Check CPU time quota before dispatching execution.
-		// Use a 1ns check to verify quota is available before starting.
+		// Check CPU time quota before dispatching execution. Usage isn't known
+		// until the execution completes, so do a read-only check here and
+		// record the actual usage afterwards.
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
-			if err := qm.Allow(ctx, namespace, 1); err != nil {
+			if err := qm.Allow(ctx, namespace, 0); err != nil {
 				return err
 			}
 		}
@@ -1888,8 +1889,11 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 		// If quota is exceeded, the next execution will be blocked.
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
-			if err := qm.Allow(ctx, namespace, counts.CPUNanos); err != nil {
-				log.CtxWarningf(ctx, "CPU time quota exhausted after execution: %s", err)
+			withinQuota, err := qm.RecordUsage(ctx, namespace, counts.CPUNanos)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to record CPU time quota usage: %s", err)
+			} else if !withinQuota {
+				log.CtxInfof(ctx, "CPU time quota exhausted after execution")
 			}
 		}
 	}
@@ -1963,8 +1967,11 @@ func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, ex
 		// If quota is exceeded, the next execution will be blocked.
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
-			if err := qm.Allow(ctx, namespace, counts.CPUNanos); err != nil {
-				log.CtxWarningf(ctx, "CPU time quota exhausted after execution: %s", err)
+			withinQuota, err := qm.RecordUsage(ctx, namespace, counts.CPUNanos)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to record CPU time quota usage: %s", err)
+			} else if !withinQuota {
+				log.CtxInfof(ctx, "CPU time quota exhausted after execution")
 			}
 		}
 	}
