@@ -712,6 +712,19 @@ var (
 		Help:      "How long it took to post an invocation proto to the webhook, in **microseconds**.",
 	})
 
+	// ## GitHub REST API metrics
+
+	GitHubRESTAPIRequestDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "github",
+		Name:      "rest_api_request_duration_usec",
+		Buckets:   coarseMicrosecondToHour,
+		Help:      "Time spent sending a GitHub REST API request until response headers or a transport error, in **microseconds**. Operations use fixed names, not request URLs. Code 0 means no HTTP response was received.",
+	}, []string{
+		OpLabel,
+		HTTPResponseCodeLabel,
+	})
+
 	// ## Remote cache metrics
 	//
 	// NOTE: Cache metrics are recorded at the end of each invocation,
