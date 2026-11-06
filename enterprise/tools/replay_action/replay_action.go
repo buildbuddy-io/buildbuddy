@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -41,7 +40,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
@@ -1040,33 +1038,7 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 			Name:  "ORIGINAL_COMMAND",
 			Value: shlex.Quote(cmd.Arguments...),
 		})
-		var err error
-		cmd.Arguments, err = shlex.Split(*overrideCommand)
-		if err != nil {
-			return fmt.Errorf("shlex command: %s", err)
-		}
-		evMap := seq.Accumulate(
-			cmd.EnvironmentVariables,
-			make(map[string]string, len(cmd.EnvironmentVariables)),
-			func(m map[string]string, ev *repb.Command_EnvironmentVariable) map[string]string {
-				if ev == nil {
-					return m
-				}
-				m[ev.Name] = ev.Value
-				return m
-			},
-		)
-		cmd.Arguments = slices.Collect(seq.Fmap(
-			cmd.Arguments,
-			func(s string) string {
-				return os.Expand(
-					s,
-					func(s string) string {
-						return evMap[s]
-					},
-				)
-			},
-		))
+		cmd.Arguments = []string{"sh", "-c", *overrideCommand}
 
 		// Upload the new command and action.
 		cd, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), cmd)
