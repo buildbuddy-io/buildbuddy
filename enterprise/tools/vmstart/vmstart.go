@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -18,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -34,9 +34,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/prototext"
-	"mvdan.cc/sh/v3/expand"
-	"mvdan.cc/sh/v3/interp"
-	"mvdan.cc/sh/v3/syntax"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -335,33 +332,19 @@ func run(ctx context.Context, env environment.Env) error {
 	if *repl {
 		log.Infof("Starting Exec() repl (enter shell commands; quit with Ctrl+D)")
 		s := bufio.NewScanner(os.Stdin)
-		p := syntax.NewParser()
 		for {
 			fmt.Fprintf(os.Stderr, "sh> ")
 			if !s.Scan() {
 				break
 			}
-			ast, err := p.Parse(strings.NewReader(s.Text()), "")
-
-			if err != nil {
-				log.Error(err.Error())
-				continue
-			}
-			runner, err := interp.New(
-				interp.StdIO(
-					nil,
-					os.Stdout,
-					os.Stderr,
-				),
-				interp.Env(expand.ListEnviron(os.Environ()...)),
-			)
-			if err != nil {
-				log.Error(err.Error())
-				continue
-			}
-			if err := runner.Run(context.Background(), ast); err != nil {
-				log.Error(err.Error())
-				continue
+			res := c.Exec(ctx, &repb.Command{
+				Arguments: []string{"sh", "-c", s.Text()},
+			}, &interfaces.Stdio{
+				Stdout: os.Stdout,
+				Stderr: os.Stderr,
+			})
+			if res.Error != nil {
+				log.Error(res.Error.Error())
 			}
 		}
 	}
