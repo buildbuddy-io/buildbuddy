@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -50,15 +51,6 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const (
-	// defaultFindMissingChunkFallbackConcurrency is the default value of the
-	// cache.find_missing_chunk_fallback_concurrency experiment, which bounds
-	// how many chunked-manifest fallback lookups FindMissingBlobs performs in
-	// parallel. Each lookup issues independent cache reads, so the work is
-	// I/O-bound.
-	defaultFindMissingChunkFallbackConcurrency = 8
-)
-
 var (
 	enableTreeCaching         = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
 	treeCacheSeed             = flag.String("cache.tree_cache_seed", "treecache-09032024", "If set, hash this with digests before caching / reading from tree cache")
@@ -69,6 +61,8 @@ var (
 	treeCacheSplittingMinSize = flag.Int("cache.tree_cache_splitting_min_size", 10000, "Minimum number of files in a subtree before we'll split it in the treecache.")
 	getTreeSubtreeSupport     = flag.Bool("cache.get_tree_subtree_support", true, "If true, respect the 'send_cache_subtrees' field on GetTree")
 	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 10, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
+
+	findMissingChunkFallbackConcurrency = expflag.Int64("cache.find_missing_chunk_fallback_concurrency", 8, "The maximum number of chunk manifest lookups that FindMissingBlobs performs in parallel, for missing blobs that may be stored as chunks. Values less than 1 are treated as 1.")
 )
 
 type ContentAddressableStorageServer struct {
@@ -149,7 +143,6 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	if len(missing) > 0 && !cdc.IsChunked(ctx) {
 		checker := chunking.NewMissingChunkChecker(s.cache, repb.FindMissingBlobsRequest_FMB_CHUNK_VALIDATION)
 		maxChunkSizeBytes := chunking.MaxChunkSizeBytes()
-		efp := s.env.GetExperimentFlagProvider()
 
 		var mu sync.Mutex
 		stillMissing := make([]*repb.Digest, 0, len(missing))
@@ -158,10 +151,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 			stillMissing = append(stillMissing, d)
 			mu.Unlock()
 		}
-		concurrency := defaultFindMissingChunkFallbackConcurrency
-		if efp != nil {
-			concurrency = int(efp.Int64(ctx, "cache.find_missing_chunk_fallback_concurrency", defaultFindMissingChunkFallbackConcurrency))
-		}
+		concurrency := int(findMissingChunkFallbackConcurrency.Get(ctx))
 		if concurrency <= 0 {
 			concurrency = 1
 		}
