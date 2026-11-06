@@ -3,6 +3,7 @@ package auth_service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
@@ -82,6 +83,34 @@ func TestAuthenticate_ES256SigningMethod(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.True(t, token.Valid)
+}
+
+func TestAuthenticate_JWTExpirationIsNotExtended(t *testing.T) {
+	const jwtKey = "test-jwt-key"
+	flags.Set(t, "auth.jwt_key", jwtKey)
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+
+	testUsers := testauth.TestUsers("foo", "GR1")
+	authenticator := testauth.NewTestAuthenticator(t, testUsers)
+	service := AuthService{authenticator: authenticator}
+	originalClaims := testUsers["foo"].(*claims.Claims)
+	originalExpiration := time.Now().Add(time.Hour).Unix()
+	originalClaims.ExpiresAt = originalExpiration
+	originalJWT, err := jwt.NewWithClaims(jwt.SigningMethodHS256, originalClaims).SignedString([]byte(jwtKey))
+	require.NoError(t, err)
+
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ContextTokenStringKey, originalJWT))
+	resp, err := service.Authenticate(ctx, &authpb.AuthenticateRequest{
+		JwtSigningMethod: authpb.JWTSigningMethod_ES256.Enum(),
+	})
+	require.NoError(t, err)
+
+	refreshedClaims := &claims.Claims{}
+	_, _, err = new(jwt.Parser).ParseUnverified(resp.GetJwt(), refreshedClaims)
+	require.NoError(t, err)
+	require.Equal(t, originalExpiration, refreshedClaims.ExpiresAt)
 }
 
 func TestAuthenticateWrongCreds(t *testing.T) {
