@@ -3,6 +3,7 @@ package claims_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -320,6 +321,48 @@ func TestGroupStatusPropagation(t *testing.T) {
 			require.Equal(t, status, c.GetGroupStatus())
 		})
 	}
+}
+
+func TestAssembleJWT_ZeroExpiration(t *testing.T) {
+	const jwtKey = "test-jwt-key"
+	const jwtDuration = time.Hour
+	flags.Set(t, "auth.jwt_key", jwtKey)
+	flags.Set(t, "auth.jwt_duration", jwtDuration)
+
+	c := &claims.Claims{UserID: "US123"}
+	minExpiration := time.Now().Add(jwtDuration).Truncate(time.Minute).Unix()
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodHS256)
+	maxExpiration := time.Now().Add(jwtDuration).Truncate(time.Minute).Unix()
+	require.NoError(t, err)
+
+	parsedClaims := &claims.Claims{}
+	_, err = jwt.ParseWithClaims(tokenString, parsedClaims, func(token *jwt.Token) (any, error) {
+		return []byte(jwtKey), nil
+	})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, parsedClaims.ExpiresAt, minExpiration)
+	require.LessOrEqual(t, parsedClaims.ExpiresAt, maxExpiration)
+	require.Zero(t, parsedClaims.ExpiresAt%60)
+}
+
+func TestAssembleJWT_ExpiredClaimsRemainExpired(t *testing.T) {
+	const jwtKey = "test-jwt-key"
+	flags.Set(t, "auth.jwt_key", jwtKey)
+
+	expiration := time.Now().Add(-time.Hour).Unix()
+	c := &claims.Claims{
+		ExpiresAt: expiration,
+		UserID:    "US123",
+	}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodHS256)
+	require.NoError(t, err)
+
+	parsedClaims := &claims.Claims{}
+	_, err = jwt.ParseWithClaims(tokenString, parsedClaims, func(token *jwt.Token) (any, error) {
+		return []byte(jwtKey), nil
+	})
+	require.ErrorIs(t, err, jwt.ErrTokenExpired)
+	require.Equal(t, expiration, parsedClaims.ExpiresAt)
 }
 
 func TestAssembleJWT_ES256(t *testing.T) {
