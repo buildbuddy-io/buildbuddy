@@ -308,8 +308,8 @@ func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[stri
 	if len(s.GetCpusetCpus()) > 0 {
 		m["cpuset.cpus"] = cpuset.Format(s.GetCpusetCpus()...)
 	}
-	if s.NumaNode != nil {
-		m["cpuset.mems"] = cpuset.Format(s.GetNumaNode())
+	if len(s.GetNumaNodes()) > 0 {
+		m["cpuset.mems"] = cpuset.Format(s.GetNumaNodes()...)
 	}
 	return m, nil
 }

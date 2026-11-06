@@ -1113,11 +1113,11 @@ func (c *ociContainer) checkPIDLimitExceeded(ctx context.Context, res *interface
 func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	// Lease CPUs for task execution, and set cleanup function.
 	leaseID := uuid.New()
-	numaNode, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, leaseID)
-	log.CtxDebugf(ctx, "Lease %s granted %+v cpus on node %d", leaseID, leasedCPUs, numaNode)
+	numaNodes, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, c.memoryBytes, leaseID)
+	log.CtxDebugf(ctx, "Lease %s granted %+v cpus on NUMA nodes %+v", leaseID, leasedCPUs, numaNodes)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
-	c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))
+	c.cgroupSettings.NumaNodes = toInt32s(numaNodes)
 	if *enableCgroupMemoryLimit && c.memoryBytes > 0 {
 		c.cgroupSettings.MemoryLimitBytes = proto.Int64(c.memoryBytes + int64(float64(c.memoryBytes)*(*cgroupMemoryCushion)))
 	}
