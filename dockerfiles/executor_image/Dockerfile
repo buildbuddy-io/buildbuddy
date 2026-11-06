@@ -1,8 +1,8 @@
 # NOTE: this is a multi-platform image, so each step needs to work on both amd64 and arm64.
 # See README for details.
 
-# debian 12
-FROM mirror.gcr.io/debian@sha256:01a723bf5bfb21b9dda0c9a33e0538106e4d02cce8f557e118dd61259553d598
+# debian 13 (trixie)
+FROM mirror.gcr.io/debian@sha256:2dc419c6d7fe3dad0a2f9fd469c34cc90b0f9ba642d8fde837fe3d7d34a0e7f1
 
 RUN \
     # /etc/apt/debian.sources doesn't pin the debian release by name, but by `stable`.
