@@ -43,7 +43,6 @@ export default class OrgUserListComponent extends React.Component<OrgUserListPro
     const fetchGroupUsers = rpcService.service
       .getGroupUsers(
         new grp.GetGroupUsersRequest({
-          groupId: this.props.user.selectedGroup.id,
           groupMembershipStatus: [grp.GroupMembershipStatus.MEMBER],
         })
       )

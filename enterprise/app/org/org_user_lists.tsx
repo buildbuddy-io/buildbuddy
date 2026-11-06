@@ -82,12 +82,10 @@ class OrgUserListsChildComponent extends React.Component<ChildProps, ChildState>
 
   private fetch() {
     this.setState({ loading: true });
-    const groupId = this.props.user.selectedGroup.id;
     Promise.all([
       rpcService.service.getUserLists(new user_list.GetUserListsRequest({})),
       rpcService.service.getGroupUsers(
         new grp.GetGroupUsersRequest({
-          groupId,
           groupMembershipStatus: [grp.GroupMembershipStatus.MEMBER],
         })
       ),
