@@ -4,7 +4,10 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "driver",
-    srcs = ["driver.go"],
+    srcs = [
+        "driver.go",
+        "driver_simutil.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver",
     visibility = ["//visibility:public"],
     deps = [
