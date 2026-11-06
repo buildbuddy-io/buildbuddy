@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,10 +31,134 @@ import (
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 func init() {
 	parser.SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
+}
+
+type capturingRunServer struct {
+	bbspb.UnimplementedBuildBuddyServiceServer
+	requests chan *rnpb.RunRequest
+}
+
+func (s *capturingRunServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {
+	s.requests <- req
+	return nil, status.InvalidArgumentError("request captured")
+}
+
+func TestRun_AgentProviderEnvironment(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		localEnv      map[string]string
+		envArgs       []string
+		metadata      []string
+		wantHint      string
+		wantHintSet   bool
+		wantCodexSet  bool
+		wantClaudeSet bool
+	}{
+		{
+			name: "unmarked",
+		},
+		{
+			name:        "Claude marker takes precedence",
+			localEnv:    map[string]string{"CLAUDECODE": "1", "CODEX_SESSION_ID": "private-session-id"},
+			wantHint:    "claude",
+			wantHintSet: true,
+		},
+		{
+			name:        "inherited hint overrides both markers",
+			localEnv:    map[string]string{"BUILDBUDDY_AGENT": "codex", "CLAUDECODE": "1", "CODEX_SESSION_ID": "private-session-id"},
+			wantHint:    "codex",
+			wantHintSet: true,
+		},
+		{
+			name:        "inherited empty hint disables markers",
+			localEnv:    map[string]string{"BUILDBUDDY_AGENT": "", "CODEX_SESSION_ID": "private-session-id"},
+			wantHintSet: true,
+		},
+		{
+			name:        "explicit hint",
+			localEnv:    map[string]string{"CODEX_SESSION_ID": "private-session-id"},
+			envArgs:     []string{"BUILDBUDDY_AGENT=claude"},
+			wantHint:    "claude",
+			wantHintSet: true,
+		},
+		{
+			name:         "bare marker forwards local value",
+			localEnv:     map[string]string{"CODEX_SESSION_ID": "private-session-id"},
+			envArgs:      []string{"CODEX_SESSION_ID"},
+			wantHint:     "codex",
+			wantHintSet:  true,
+			wantCodexSet: true,
+		},
+		{
+			name:          "explicit marker transport",
+			envArgs:       []string{"CODEX_SESSION_ID=explicit-session-id", "CLAUDECODE="},
+			wantHint:      "claude",
+			wantHintSet:   true,
+			wantCodexSet:  true,
+			wantClaudeSet: true,
+		},
+		{
+			name:         "explicit marker overrides inherited hint",
+			localEnv:     map[string]string{"BUILDBUDDY_AGENT": "claude", "CLAUDECODE": "1"},
+			envArgs:      []string{"CODEX_SESSION_ID=explicit-session-id"},
+			wantHint:     "codex",
+			wantHintSet:  true,
+			wantCodexSet: true,
+		},
+		{
+			name:        "metadata overrides explicit environment hint",
+			envArgs:     []string{"BUILDBUDDY_AGENT=codex"},
+			metadata:    []string{"BUILDBUDDY_AGENT=claude"},
+			wantHint:    "claude",
+			wantHintSet: true,
+		},
+		{
+			name:        "repeated metadata uses last key value",
+			localEnv:    map[string]string{"CODEX_SESSION_ID": "private-session-id"},
+			metadata:    []string{"BUILDBUDDY_AGENT=codex", "BUILDBUDDY_AGENT=claude"},
+			wantHint:    "claude",
+			wantHintSet: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, key := range []string{"CLAUDECODE", "CODEX_SESSION_ID", "BUILDBUDDY_AGENT"} {
+				t.Setenv(key, "")
+				require.NoError(t, os.Unsetenv(key))
+			}
+			for key, value := range tc.localEnv {
+				t.Setenv(key, value)
+			}
+			previousEnvInput := *envInput
+			*envInput = tc.envArgs
+			t.Cleanup(func() { *envInput = previousEnvInput })
+
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			server := grpc.NewServer()
+			capture := &capturingRunServer{requests: make(chan *rnpb.RunRequest, 1)}
+			bbspb.RegisterBuildBuddyServiceServer(server, capture)
+			go server.Serve(listener)
+			t.Cleanup(server.Stop)
+
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			_, err = Run(ctx, RunOpts{Server: "grpc://" + listener.Addr().String(), Command: "echo hello", BuildMetadata: tc.metadata}, &RepoConfig{})
+			require.ErrorContains(t, err, "request captured")
+			req := <-capture.requests
+			hint, ok := req.GetEnv()["BUILDBUDDY_AGENT"]
+			require.Equal(t, tc.wantHintSet, ok)
+			require.Equal(t, tc.wantHint, hint)
+			_, codexSet := req.GetEnv()["CODEX_SESSION_ID"]
+			require.Equal(t, tc.wantCodexSet, codexSet)
+			_, claudeSet := req.GetEnv()["CLAUDECODE"]
+			require.Equal(t, tc.wantClaudeSet, claudeSet)
+		})
+	}
 }
 
 // Used to mock logs streamed from the BuildBuddy server.

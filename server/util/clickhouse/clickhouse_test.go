@@ -14,11 +14,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 )
 
@@ -220,7 +223,7 @@ func TestFlushExecutionStats_SkipsMalformedExecutionIDs(t *testing.T) {
 
 	invocationID := "6ec99c6d-5504-4934-9f31-a9b65af4ec76"
 	invocationUUID := strings.ReplaceAll(invocationID, "-", "")
-	invocation := &sipb.StoredInvocation{InvocationId: invocationID}
+	invocation := &sipb.StoredInvocation{InvocationId: invocationID, Agent: "codex"}
 	nowUsec := time.Now().UnixMicro()
 
 	validExecutionID := digest.NewCASResourceName(
@@ -278,6 +281,32 @@ func TestFlushExecutionStats_SkipsMalformedExecutionIDs(t *testing.T) {
 		"executor.some_experiment":  "treatment",
 		"executor.other_experiment": "control",
 	}, rows[0].ExperimentVariants)
+	for _, tc := range []struct {
+		provider string
+		count    int64
+	}{
+		{
+			provider: "codex",
+			count:    1,
+		},
+		{
+			provider: "claude",
+		},
+		{
+			provider: "",
+		},
+	} {
+		query := query_builder.NewQuery("SELECT count(*) FROM Executions")
+		query.AddWhereClause("invocation_uuid = ?", invocationUUID)
+		require.NoError(t, filter.AddGenericFiltersToQuery(query, []*sfpb.GenericFilter{{
+			Type: sfpb.FilterType_AGENT_FILTER_TYPE, Operand: sfpb.FilterOperand_IN_OPERAND,
+			Value: &sfpb.FilterValue{StringValue: []string{tc.provider}},
+		}}, sfpb.ObjectTypes_EXECUTION_OBJECTS, "clickhouse"))
+		statement, args := query.Build()
+		var count int64
+		require.NoError(t, env.GetOLAPDBHandle().GORM(ctx, "test_agent_execution_filter").Raw(statement, args...).Scan(&count).Error)
+		require.Equal(t, tc.count, count)
+	}
 }
 
 func TestFlushExecutionStats_AllMalformedExecutionIDs_SkipsInsert(t *testing.T) {

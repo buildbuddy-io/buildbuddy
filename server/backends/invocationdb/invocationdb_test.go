@@ -207,6 +207,78 @@ func TestAttemptLogic(t *testing.T) {
 	require.False(t, created)
 }
 
+func TestAttemptAgent(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		firstAgent *string
+		retryAgent *string
+		want       string
+	}{
+		{name: "unmarked retry", firstAgent: new("codex")},
+		{name: "marked retry", retryAgent: new("claude"), want: "claude"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, authenticator, ctx := getEnvAuthAndCtx(t)
+			ctx, err := authenticator.WithAuthenticatedUser(ctx, "user1")
+			require.NoError(t, err)
+			idb := invocationdb.NewInvocationDB(env, env.GetDBHandle())
+			created, err := idb.CreateInvocation(ctx, &tables.Invocation{
+				InvocationID: "retried-build", Agent: tc.firstAgent,
+				InvocationStatus: int64(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS),
+			})
+			require.NoError(t, err)
+			require.True(t, created)
+
+			retry := &tables.Invocation{
+				InvocationID: "retried-build", Agent: tc.retryAgent,
+				InvocationStatus: int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS),
+			}
+			created, err = idb.CreateInvocation(ctx, retry)
+			require.NoError(t, err)
+			require.True(t, created)
+			require.Equal(t, uint64(2), retry.Attempt)
+
+			// A later update without agent evidence must not erase this attempt's
+			// agent (or restore the previous attempt's agent).
+			updated, err := idb.UpdateInvocation(ctx, &tables.Invocation{
+				InvocationID: retry.InvocationID, Attempt: retry.Attempt, Pattern: "//updated",
+			})
+			require.NoError(t, err)
+			require.True(t, updated)
+			stored, err := idb.LookupInvocation(ctx, retry.InvocationID)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, stored.GetAgent())
+		})
+	}
+}
+
+func TestExplicitAgentClear(t *testing.T) {
+	env, authenticator, ctx := getEnvAuthAndCtx(t)
+	ctx, err := authenticator.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+	idb := invocationdb.NewInvocationDB(env, env.GetDBHandle())
+	created, err := idb.CreateInvocation(ctx, &tables.Invocation{InvocationID: "overridden-build", Agent: new("codex")})
+	require.NoError(t, err)
+	require.True(t, created)
+	updated, err := idb.UpdateInvocation(ctx, &tables.Invocation{InvocationID: "overridden-build", Attempt: 1, Pattern: "//build", Agent: new("")})
+	require.NoError(t, err)
+	require.True(t, updated)
+	stored, err := idb.LookupInvocation(ctx, "overridden-build")
+	require.NoError(t, err)
+	require.Empty(t, stored.GetAgent())
+
+	// A stale full snapshot must not clear attribution belonging to a newer attempt.
+	updated, err = idb.UpdateInvocation(ctx, &tables.Invocation{InvocationID: "overridden-build", Attempt: 1, Agent: new("claude")})
+	require.NoError(t, err)
+	require.True(t, updated)
+	updated, err = idb.UpdateInvocation(ctx, &tables.Invocation{InvocationID: "overridden-build", Attempt: 0, Agent: new("")})
+	require.NoError(t, err)
+	require.False(t, updated)
+	stored, err = idb.LookupInvocation(ctx, "overridden-build")
+	require.NoError(t, err)
+	require.Equal(t, "claude", stored.GetAgent())
+}
+
 func TestAuthenticatedInvocationReplacesMissingAPIKeyPlaceholder(t *testing.T) {
 	env, authenticator, ctx := getEnvAuthAndCtx(t)
 	dbh := env.GetDBHandle()
@@ -240,4 +312,18 @@ func TestAuthenticatedInvocationReplacesMissingAPIKeyPlaceholder(t *testing.T) {
 	require.Equal(t, int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS), stored.InvocationStatus)
 	require.Equal(t, "user1", stored.UserID)
 	require.Equal(t, "group1", stored.GroupID)
+}
+
+func TestAgentColumnMigration(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	gdb := env.GetDBHandle().GORM(ctx, "test_agent_migration")
+	require.NoError(t, gdb.Migrator().DropColumn(&tables.Invocation{}, "agent"))
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_insert_legacy").Table("Invocations").Create(map[string]any{"invocation_id": "legacy-build"}).Error)
+	require.NoError(t, gdb.AutoMigrate(&tables.Invocation{}))
+	var stored tables.Invocation
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_read_migrated").Where("invocation_id = ?", "legacy-build").Take(&stored).Error)
+	require.Empty(t, stored.GetAgent())
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_update_migrated").Model(&stored).UpdateColumn("agent", "codex").Error)
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_read_migrated").Where("invocation_id = ?", "legacy-build").Take(&stored).Error)
+	require.Equal(t, "codex", stored.GetAgent())
 }

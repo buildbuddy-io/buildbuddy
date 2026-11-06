@@ -101,6 +101,7 @@ func TestSchemaInSync(t *testing.T) {
 }
 
 var NonStandardInvocationCopyFields = []string{
+	"Agent",
 	"InvocationUUID",
 	"Tags",
 }
@@ -110,6 +111,7 @@ func TestToInvocationFromPrimaryDB(t *testing.T) {
 	err := faker.FakeData(src)
 	require.NoError(t, err)
 	dest := ToInvocationFromPrimaryDB(src)
+	assert.Equal(t, src.GetAgent(), dest.Agent)
 
 	primaryInvType := reflect.TypeOf(*src)
 	primaryInvFields := reflect.VisibleFields(primaryInvType)

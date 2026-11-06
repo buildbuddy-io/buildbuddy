@@ -235,6 +235,7 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
 
   render() {
     const roleLabel = format.formatRole(this.props.invocation.role);
+    const agentLabel = format.formatCodingAgent(this.props.invocation.agent);
     const tags = (this.props.invocation.tags || []).map((t) => t.name).join(", ");
 
     return (
@@ -258,6 +259,11 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
           <div className="titles">
             <div className="title">{this.getTitle()}</div>
             {roleLabel && <div className={`role-badge ${this.props.invocation.role}`}>{roleLabel}</div>}
+            {agentLabel && (
+              <div className="role-badge coding-agent" title="Coding agent">
+                {agentLabel}
+              </div>
+            )}
             <div className="subtitle">{format.formatTimestampUsec(this.props.invocation.createdAtUsec)}</div>
             {!this.props.hover && (
               <InvocationCompareButton mini={true} invocationId={this.props.invocation.invocationId} />

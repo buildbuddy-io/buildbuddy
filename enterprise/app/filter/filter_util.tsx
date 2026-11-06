@@ -4,6 +4,7 @@ import moment from "moment";
 import capabilities from "../../../app/capabilities/capabilities";
 import { differenceInCalendarDays, durationMillis, formatDateRange } from "../../../app/format/format";
 import {
+  AGENT_PARAM_NAME,
   BRANCH_PARAM_NAME,
   COMMAND_PARAM_NAME,
   COMMIT_PARAM_NAME,
@@ -386,6 +387,18 @@ export function getFiltersFromGenericFilterParam(userQuery: string): stat_filter
   return out;
 }
 
+function getAgentFilters(search: URLSearchParams): stat_filter.GenericFilter[] {
+  const value = search.get(AGENT_PARAM_NAME)?.trim();
+  if (!capabilities.config.agentFilterEnabled || !value) return [];
+  return [
+    new stat_filter.GenericFilter({
+      type: stat_filter.FilterType.AGENT_FILTER_TYPE,
+      operand: stat_filter.FilterOperand.IN_OPERAND,
+      value: new stat_filter.FilterValue({ stringValue: [value] }),
+    }),
+  ];
+}
+
 export function getProtoFilterParams(search: URLSearchParams, now?: moment.Moment): ProtoFilterParams {
   const endDate = getEndDate(search);
   return {
@@ -408,7 +421,10 @@ export function getProtoFilterParams(search: URLSearchParams, now?: moment.Momen
     sortBy: search.get(SORT_BY_PARAM_NAME) as SortBy,
     sortOrder: search.get(SORT_ORDER_PARAM_NAME) as SortOrder,
     dimensionFilters: getFiltersFromDimensionParam(search.get(DIMENSION_PARAM_NAME) ?? ""),
-    genericFilters: getFiltersFromGenericFilterParam(search.get(GENERIC_FILTER_PARAM_NAME) ?? ""),
+    genericFilters: [
+      ...getFiltersFromGenericFilterParam(search.get(GENERIC_FILTER_PARAM_NAME) ?? ""),
+      ...getAgentFilters(search),
+    ],
   };
 }
 
@@ -591,6 +607,7 @@ export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
       search.get(COMMAND_PARAM_NAME) ||
       search.get(PATTERN_PARAM_NAME) ||
       (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
+      (capabilities.config.agentFilterEnabled && search.get(AGENT_PARAM_NAME)?.trim()) ||
       search.get(MINIMUM_DURATION_PARAM_NAME) ||
       search.get(MAXIMUM_DURATION_PARAM_NAME) ||
       isAnyDimensionFilterSet(search.get(DIMENSION_PARAM_NAME) ?? "") ||

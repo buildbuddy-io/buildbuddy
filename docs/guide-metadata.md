@@ -104,6 +104,45 @@ build:ci --build_metadata=ROLE=CI
 
 This role will automatically be populated if the environment variable `CI` is set, which it is in most CI systems like Github Actions, CircleCI, Travis, Gitlab CI, BuildKite, Bitrise, and others.
 
+## Coding Agent attribution
+
+Coding agent attribution is independent of role and user tags. Builds keep their CI,
+Workflow or Remote Bazel role while recording a single provider ID in the
+separate `agent` field. BuildBuddy detects `CLAUDECODE` and `CODEX_SESSION_ID`
+from Bazel's canonical client environment, including empty or redacted marker
+values. The recorded client environment retains the Codex session ID for local
+session correlation; attribution itself uses only marker presence. If both
+markers are present, Claude takes precedence. Use an explicit provider hint to
+select Codex in that environment. Attribution is a marker-based signal, not a
+claim about the immediate actor.
+
+Use `--build_metadata=BUILDBUDDY_AGENT=claude` to override detection. An empty
+`BUILDBUDDY_AGENT=` or `BUILDBUDDY_AGENT=none` disables attribution. Build metadata
+takes precedence over workspace status `BUILDBUDDY_AGENT`, which takes precedence
+over environment detection, regardless of event order. Only `claude` and `codex`
+are supported. Each invocation records at most one provider. Unsupported values,
+including comma-separated lists, suppress inference rather than failing
+ingestion. User tags remain independent of attribution.
+
+`bb remote` automatically forwards the normalized provider using
+`BUILDBUDDY_AGENT`, not session IDs. Explicit `--env` forwarding is unchanged.
+Explicit command-line `BUILDBUDDY_AGENT` metadata overrides attribution for the outer
+runner and Bazel child. Overrides from Bazel configuration, including the
+workspace `.bazelrc`, affect only the child: the local CLI does not expand rc
+files to attribute the outer runner. Explicit `--env` markers override local
+markers or an inherited hint; an explicitly selected `BUILDBUDDY_AGENT`, including empty, takes precedence.
+Workflow children are attributed from their own environment.
+
+Apply the additive primary SQL and ClickHouse `agent` schema migrations before
+rolling out new writers. Enable `app.agent_filter_enabled` only after all query
+backends support the new Coding Agent filter. Enter a provider ID such as `codex`
+in the Coding Agent text field; a blank field clears the filter. It is independent
+of the tags UI and composes with role and other filters using AND. Missing
+attribution does not mean human; historical rows and clients without markers have
+no recorded attribution. Collection is forward-only,
+including during historical redaction replay. Coding agent attribution is a client
+claim, not authentication.
+
 ## Commit statuses
 
 By default, BuildBuddy names the commit status for a CI invocation after the Bazel command and target pattern, such as `bazel test //...`. Set `COMMIT_STATUS_LABEL` to use a name that reflects the logical CI step instead:

@@ -14,6 +14,8 @@
 }
 
 .global-filter .filter-menu-popup {
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
   padding: 24px 16px;
   display: flex;
   flex-direction: column;
