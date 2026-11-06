@@ -30,10 +30,9 @@ static __u64 (*bpf_get_current_ancestor_cgroup_id)(int level) = (void *)123;
 static long (*bpf_ringbuf_output)(void *ringbuf, void *data, __u64 size, __u64 flags) = (void *)130;
 static long (*bpf_d_path)(void *path, char *buf, __u32 sz) = (void *)147;
 
-#define FMODE_WRITE 0x2
+#define FMODE_READ 0x1
 #define S_IFMT 0170000
 #define S_IFREG 0100000
-#define EEXIST 17
 #define PATH_MAX 4096
 #define MAX_CGROUP_DEPTH 32
 
@@ -106,7 +105,7 @@ struct {
 SEC("fentry/security_file_open")
 int file_open(__u64 *ctx) {
   struct file *file = (struct file *)ctx[0];
-  if (file->f_mode & FMODE_WRITE) {
+  if (!(file->f_mode & FMODE_READ)) {
     return 0;
   }
   if ((file->f_inode->i_mode & S_IFMT) != S_IFREG) {
@@ -138,7 +137,9 @@ int file_open(__u64 *ctx) {
   e->key.ino = file->f_inode->i_ino;
 
   __u8 one = 1;
-  if (bpf_map_update_elem(&seen, &e->key, &one, BPF_NOEXIST) == -EEXIST) {
+  // Skip if already reported, or if the map is full (rather than reporting
+  // every open).
+  if (bpf_map_update_elem(&seen, &e->key, &one, BPF_NOEXIST) != 0) {
     return 0;
   }
   long n = bpf_d_path(&file->f_path, e->path, sizeof(e->path));

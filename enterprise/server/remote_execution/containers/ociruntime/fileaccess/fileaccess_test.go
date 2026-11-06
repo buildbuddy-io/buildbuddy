@@ -13,9 +13,9 @@ import (
 )
 
 func TestRecording(t *testing.T) {
-	var caps unix.CapUserData
-	require.NoError(t, unix.Capget(&unix.CapUserHeader{Version: unix.LINUX_CAPABILITY_VERSION_3}, &caps))
-	if caps.Effective&(1<<unix.CAP_SYS_ADMIN) == 0 {
+	var caps [2]unix.CapUserData
+	require.NoError(t, unix.Capget(&unix.CapUserHeader{Version: unix.LINUX_CAPABILITY_VERSION_3}, &caps[0]))
+	if caps[0].Effective&(1<<unix.CAP_SYS_ADMIN) == 0 {
 		t.Skip("requires CAP_SYS_ADMIN")
 	}
 	if _, err := os.Stat("/sys/kernel/btf/vmlinux"); err != nil {
@@ -27,10 +27,11 @@ func TestRecording(t *testing.T) {
 
 	dir := t.TempDir()
 	read := filepath.Join(dir, "read")
+	readWrite := filepath.Join(dir, "read-write")
 	link := filepath.Join(dir, "link")
 	unread := filepath.Join(dir, "unread")
 	written := filepath.Join(dir, "written")
-	for _, p := range []string{read, unread, written} {
+	for _, p := range []string{read, readWrite, unread, written} {
 		require.NoError(t, os.WriteFile(p, []byte("x"), 0644))
 	}
 	require.NoError(t, os.Link(read, link))
@@ -53,9 +54,11 @@ func TestRecording(t *testing.T) {
 		rec, err := tracker.Start(cgroupPath)
 		require.NoError(t, err)
 		run("cat " + read + " " + link + " " + read + " >/dev/null && echo y >> " + written)
+		run("cat 3<>" + readWrite + " <&3 >/dev/null")
 		paths, err := rec.Stop()
 		require.NoError(t, err)
 		require.Contains(t, paths, read)
+		require.Contains(t, paths, readWrite)
 		require.Contains(t, paths, link)
 		require.NotContains(t, paths, unread)
 		require.NotContains(t, paths, written)
