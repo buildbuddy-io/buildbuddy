@@ -29,7 +29,7 @@ replace (
 	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.2
 	github.com/lni/goutils v1.4.0 => github.com/buildbuddy-io/goutils v1.4.1
 	github.com/lni/vfs => github.com/buildbuddy-io/vfs v0.2.3
-	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
+	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.2-0.20261112212402-a2ed2a3f1825
 	kythe.io => github.com/buildbuddy-io/kythe v0.0.72
 )
 
