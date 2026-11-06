@@ -984,10 +984,17 @@ func (ff *BatchFileFetcher) checkAndMaybeLinkFromFileCache(ctx context.Context, 
 			return status.NotFoundErrorf("File %s not found in cache", fp.FileNode.Digest.Hash)
 		}
 	} else {
+		fc := ff.env.GetFileCache()
+		if fc == nil || len(filePointers) == 0 {
+			return status.NotFoundError("not in file cache")
+		}
 		// Check the index before taking a slot, so that a miss only waits
 		// for a slot once, to download the file.
-		fc := ff.env.GetFileCache()
-		if fc == nil || len(filePointers) == 0 || !fc.ContainsFile(ctx, filePointers[0].FileNode) {
+		if !fc.ContainsFile(ctx, filePointers[0].FileNode) {
+			// The file cache counts hits and misses in FastLinkFile, which we
+			// call once per path and skip entirely on a miss, so we count a
+			// miss for each path here.
+			metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: "miss"}).Add(float64(len(filePointers)))
 			return status.NotFoundError("not in file cache")
 		}
 		release, err := inputDownloadLimit.acquire(ctx, 1)
