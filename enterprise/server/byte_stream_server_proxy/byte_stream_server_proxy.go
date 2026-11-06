@@ -780,11 +780,14 @@ func (r *readThroughCacheStream) Context() context.Context { return r.ctx }
 func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
-
 	// Rewrite the resource name so we can write to the local server
 	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
 	if err != nil {
 		return err
+	}
+	// A partial response cannot populate a whole-blob cache entry.
+	if req.GetReadOffset() != 0 || (req.GetReadLimit() > 0 && req.GetReadLimit() < rn.GetDigest().GetSizeBytes()) {
+		return s.readRemoteOnly(ctx, req, stream)
 	}
 	remoteReadStream, err := s.remote.Read(ctx, req)
 	if err != nil {
