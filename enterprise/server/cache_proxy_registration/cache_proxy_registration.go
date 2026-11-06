@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/profile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
@@ -42,7 +43,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
+	pfpb "github.com/buildbuddy-io/buildbuddy/proto/profile"
 	dto "github.com/prometheus/client_model/go"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -50,6 +53,8 @@ var (
 	appTarget         = flag.String("cache_proxy.app_target", "", "Optional BuildBuddy app gRPC target the cache proxy registers itself with for the deployment view (e.g. grpcs://app.buildbuddy.io). Requires --cache_proxy.api_key. If unset, no registration is attempted.")
 	metadataDirectory = flag.String("cache_proxy.metadata_directory", "", "Directory where the cache proxy persists its stable host ID. If unset, it will attempt to persist the ID under the OS user config dir; if persistence fails, a new ID will be generated on each restart.")
 	labels            = flag.Map[string, string]("cache_proxy.labels", map[string]string{}, "Optional key-value labels identifying this cache proxy, similar to Kubernetes labels (e.g. 'region=us-east1,environment=prod'). Reported at registration and surfaced on the cache proxy admin page.")
+
+	allowRemoteProfiling = flag.Bool("cache_proxy.allow_remote_profiling", true, "If true, allow server admins to remotely collect Go runtime profiles (CPU, heap, goroutine) from this cache proxy through the BuildBuddy UI.")
 )
 
 var (
@@ -241,6 +246,8 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 		return err
 	}
 
+	profileCh := make(chan profileResult)
+
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
 	for {
@@ -260,30 +267,44 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 		case err := <-recvErrCh:
 			return err
 		case rsp := <-rspCh:
-			if detailsReq := rsp.GetDetailsRequest(); detailsReq != nil {
-				details := &cppb.CacheProxyDetails{}
-				if detailsReq.GetIncludeConfiguredFlags() {
-					if flags := configuredFlagsCache.Load(); flags != nil {
-						details.ConfiguredFlags = *flags
+			detailsReq := rsp.GetDetailsRequest()
+			if detailsReq == nil {
+				break
+			}
+			// Profiles can take a while to collect, so collect them in a
+			// separate goroutine to not block heartbeats and other requests.
+			if profileReq := detailsReq.GetGetProfile(); profileReq != nil {
+				if !*allowRemoteProfiling {
+					err := status.FailedPreconditionError("remote profiling is disabled on this cache proxy (--cache_proxy.allow_remote_profiling=false)")
+					profileResp := &pfpb.Profile{Type: profileReq.GetType(), Status: gstatus.Convert(err).Proto()}
+					if err := send(detailsResponse(summary, rsp, profileResp)); err != nil {
+						return err
 					}
+					break
 				}
-				// The server stores the top-level statistics from every
-				// message, so they must always be set to avoid clobbering
-				// the stored stats.
-				// TODO(go/b/8433): remove once the server reads details.
-				stats := collectStatistics()
-				if detailsReq.GetIncludeStatistics() {
-					details.Statistics = stats
-				}
-				req := &cppb.RegisterCacheProxyRequest{
-					Summary:    summary,
-					Statistics: stats,
-					Details:    details,
-					RequestId:  rsp.GetRequestId(),
-				}
-				if err := send(req); err != nil {
-					return err
-				}
+
+				go func() {
+					profileResp := &pfpb.Profile{Type: profileReq.GetType()}
+					data, err := profile.Collect(stream.Context(), profileReq.GetType(), profileReq.GetDuration().AsDuration())
+					if err != nil {
+						profileResp.Status = gstatus.Convert(err).Proto()
+					} else {
+						profileResp.Data = data
+					}
+					select {
+					case profileCh <- profileResult{rsp: rsp, profile: profileResp}:
+					case <-stream.Context().Done():
+					}
+				}()
+
+				break
+			}
+			if err := send(detailsResponse(summary, rsp, nil)); err != nil {
+				return err
+			}
+		case r := <-profileCh:
+			if err := send(detailsResponse(summary, r.rsp, r.profile)); err != nil {
+				return err
 			}
 		case <-ticker.C:
 			req := &cppb.RegisterCacheProxyRequest{Summary: summary, Statistics: collectStatistics()}
@@ -291,6 +312,34 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 				return err
 			}
 		}
+	}
+}
+
+type profileResult struct {
+	rsp     *cppb.RegisterCacheProxyResponse
+	profile *pfpb.Profile
+}
+
+func detailsResponse(summary *cppb.CacheProxySummary, rsp *cppb.RegisterCacheProxyResponse, profile *pfpb.Profile) *cppb.RegisterCacheProxyRequest {
+	detailsReq := rsp.GetDetailsRequest()
+	details := &cppb.CacheProxyDetails{Profile: profile}
+	if detailsReq.GetIncludeConfiguredFlags() {
+		if flags := configuredFlagsCache.Load(); flags != nil {
+			details.ConfiguredFlags = *flags
+		}
+	}
+	// The server stores the top-level statistics from every message, so they
+	// must always be set to avoid clobbering the stored stats.
+	// TODO(go/b/8433): remove once the server reads details.
+	stats := collectStatistics()
+	if detailsReq.GetIncludeStatistics() {
+		details.Statistics = stats
+	}
+	return &cppb.RegisterCacheProxyRequest{
+		Summary:    summary,
+		Statistics: stats,
+		Details:    details,
+		RequestId:  rsp.GetRequestId(),
 	}
 }
 

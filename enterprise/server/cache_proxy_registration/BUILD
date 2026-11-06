@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:cache_proxy_go_proto",
+        "//proto:profile_go_proto",
         "//server/config",
         "//server/environment",
         "//server/hostid",
@@ -20,6 +21,7 @@ go_library(
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",
+        "//server/util/profile",
         "//server/util/redact",
         "//server/util/status",
         "//server/version",
@@ -27,6 +29,7 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_model//io/prometheus/client:go",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
@@ -42,6 +45,7 @@ go_test(
         "//proto:cache_proxy_go_proto",
         "//proto:capability_go_proto",
         "//proto:context_go_proto",
+        "//proto:profile_go_proto",
         "//server/interfaces",
         "//server/metrics",
         "//server/testutil/testauth",
@@ -57,6 +61,8 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )

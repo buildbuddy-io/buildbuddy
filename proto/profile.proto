@@ -5,25 +5,27 @@ import "google/rpc/status.proto";
 
 package profile;
 
+enum ProfileType {
+  UNKNOWN_TYPE = 0;
+
+  // A pprof CPU profile, collected over the requested duration.
+  CPU = 1;
+
+  // A pprof heap profile. Includes both in-use and allocation samples.
+  HEAP = 2;
+
+  // A pprof goroutine profile.
+  GOROUTINE = 3;
+
+  // A plain-text dump of every goroutine's full stack trace (the
+  // equivalent of /debug/pprof/goroutine?debug=2).
+  GOROUTINE_DUMP = 4;
+}
+
 // GetProfileRequest requests a Go runtime profile from a running process.
 message GetProfileRequest {
-  enum Type {
-    UNKNOWN_TYPE = 0;
-
-    // A pprof CPU profile, collected over the requested duration.
-    CPU = 1;
-
-    // A pprof heap profile. Includes both in-use and allocation samples.
-    HEAP = 2;
-
-    // A pprof goroutine profile.
-    GOROUTINE = 3;
-
-    // A plain-text dump of every goroutine's full stack trace (the
-    // equivalent of /debug/pprof/goroutine?debug=2).
-    GOROUTINE_DUMP = 4;
-  }
-  Type type = 1;
+  // The type of profile to collect.
+  ProfileType type = 1;
 
   // How long to collect the profile for. Only used for CPU profiles. The
   // backend may cap this.
@@ -31,7 +33,7 @@ message GetProfileRequest {
 }
 
 message Profile {
-  GetProfileRequest.Type type = 1;
+  ProfileType type = 1;
 
   // The profile contents: a gzipped pprof protobuf or plain text for
   // GOROUTINE_DUMP. Empty if status is not OK.

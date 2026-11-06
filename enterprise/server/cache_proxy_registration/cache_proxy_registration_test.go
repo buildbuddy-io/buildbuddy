@@ -25,11 +25,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	pfpb "github.com/buildbuddy-io/buildbuddy/proto/profile"
 )
 
 const (
@@ -410,5 +413,104 @@ func TestStreamHeartbeats_AnswersDetailsRequestWithRequestID(t *testing.T) {
 		assert.NotNil(t, reply.GetDetails().GetStatistics())
 	case <-time.After(10 * time.Second):
 		require.FailNow(t, "proxy did not answer the details request")
+	}
+}
+
+func TestStreamHeartbeats_ProfileDoesntBlock(t *testing.T) {
+	prev := heartbeatInterval
+	heartbeatInterval = 100 * time.Millisecond
+	t.Cleanup(func() { heartbeatInterval = prev })
+
+	registry := &detailsRequestingRegistry{
+		request: &cppb.RegisterCacheProxyResponse{
+			DetailsRequest: &cppb.GetCacheProxyRequest{
+				GetProfile: &pfpb.GetProfileRequest{
+					Type:     pfpb.ProfileType_CPU,
+					Duration: durationpb.New(time.Second),
+				},
+			},
+			RequestId: "req-1",
+		},
+		received: make(chan *cppb.RegisterCacheProxyRequest, 100),
+	}
+	env := testenv.GetTestEnv(t)
+	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	cppb.RegisterCacheProxyRegistryServer(server, registry)
+	go runFunc()
+	conn, err := testenv.LocalGRPCConn(t, context.Background(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- streamHeartbeats(ctx, make(chan struct{}), cppb.NewCacheProxyRegistryClient(conn), &cppb.CacheProxySummary{Host: "h", ProxyId: "id"})
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	<-registry.received // initial heartbeat
+	heartbeatsDuringProfile := 0
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case msg := <-registry.received:
+			if msg.GetRequestId() == "" {
+				heartbeatsDuringProfile++
+				continue
+			}
+			assert.Equal(t, "req-1", msg.GetRequestId())
+			p := msg.GetDetails().GetProfile()
+			require.Zero(t, p.GetStatus().GetCode(), p.GetStatus().GetMessage())
+			assert.Equal(t, pfpb.ProfileType_CPU, p.GetType())
+			assert.NotEmpty(t, p.GetData())
+			assert.Positive(t, heartbeatsDuringProfile, "heartbeats should continue while a profile is collected")
+			return
+		case <-timeout:
+			require.FailNow(t, "proxy did not answer the profile request")
+		}
+	}
+}
+
+func TestStreamHeartbeats_ProfilingDisabled(t *testing.T) {
+	flags.Set(t, "cache_proxy.allow_remote_profiling", false)
+	registry := &detailsRequestingRegistry{
+		request: &cppb.RegisterCacheProxyResponse{
+			DetailsRequest: &cppb.GetCacheProxyRequest{
+				GetProfile: &pfpb.GetProfileRequest{Type: pfpb.ProfileType_HEAP},
+			},
+			RequestId: "req-1",
+		},
+		received: make(chan *cppb.RegisterCacheProxyRequest, 10),
+	}
+	env := testenv.GetTestEnv(t)
+	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	cppb.RegisterCacheProxyRegistryServer(server, registry)
+	go runFunc()
+	conn, err := testenv.LocalGRPCConn(t, context.Background(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- streamHeartbeats(ctx, make(chan struct{}), cppb.NewCacheProxyRegistryClient(conn), &cppb.CacheProxySummary{Host: "h", ProxyId: "id"})
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	<-registry.received // initial heartbeat
+	select {
+	case reply := <-registry.received:
+		assert.Equal(t, "req-1", reply.GetRequestId())
+		p := reply.GetDetails().GetProfile()
+		assert.Equal(t, int32(codes.FailedPrecondition), p.GetStatus().GetCode())
+		assert.Empty(t, p.GetData())
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "proxy did not answer the profile request")
 	}
 }
