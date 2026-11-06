@@ -60,6 +60,25 @@ export function secondsToDuration(seconds: number): google_duration.protobuf.IDu
   return { seconds: Math.floor(seconds) as any, nanos: (seconds - Math.floor(seconds)) * 1e9 };
 }
 
+/** Matches durations like "4s", "10m", "1h", or "7d". */
+export const DURATION_STRING_PATTERN = /^([1-9]\d*)([smhd])$/;
+
+const DURATION_STRING_UNIT_MILLIS: Record<string, number> = {
+  s: 1 * 1e3,
+  m: 60 * 1e3,
+  h: 60 * 60 * 1e3,
+  d: 24 * 60 * 60 * 1e3,
+};
+
+/** Parses a duration like "4s", "10m", "1h", or "7d". */
+export function parseDurationString(value: string): google_duration.protobuf.Duration | null {
+  const match = value.trim().match(DURATION_STRING_PATTERN);
+  if (!match) return null;
+  return google_duration.protobuf.Duration.create(
+    millisToDuration(Number(match[1]) * DURATION_STRING_UNIT_MILLIS[match[2]])
+  );
+}
+
 /**
  * Converts a proto timestamp to a local `Date`, with an optional
  * millis-since-epoch fallback. This is useful for extracting `Date`s from
