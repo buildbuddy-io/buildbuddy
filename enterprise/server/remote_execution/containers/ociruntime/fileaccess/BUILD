@@ -2,6 +2,14 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+genrule(
+    name = "fileaccess_bpf",
+    srcs = ["fileaccess.bpf.c"],
+    outs = ["fileaccess.bpf.o"],
+    cmd = "$(execpath @llvm//tools:clang) -O2 -g -Wall -target bpf -c $< -o $@",
+    tools = ["@llvm//tools:clang"],
+)
+
 go_library(
     name = "fileaccess",
     srcs = ["fileaccess.go"],

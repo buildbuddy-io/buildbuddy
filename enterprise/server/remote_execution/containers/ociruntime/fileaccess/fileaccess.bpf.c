@@ -5,8 +5,6 @@
 // Built without kernel or libbpf headers: the kernel types below are minimal
 // CO-RE definitions whose field offsets are relocated at load time using the
 // running kernel's BTF.
-//
-// Regenerate fileaccess.bpf.o with `go generate` after editing this file.
 
 typedef unsigned char __u8;
 typedef unsigned int __u32;

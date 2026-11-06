@@ -17,8 +17,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-//go:generate clang -O2 -g -Wall -target bpf -c fileaccess.bpf.c -o fileaccess.bpf.o
-
+// fileaccess.bpf.o is compiled from fileaccess.bpf.c by the fileaccess_bpf
+// genrule.
+//
 //go:embed fileaccess.bpf.o
 var bpfObject []byte
 
