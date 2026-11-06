@@ -16,6 +16,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/distributed_client"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -45,6 +47,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // spyCache records the resource compressor passed to Reader/GetMulti so tests
@@ -87,6 +90,18 @@ var (
 	emptyUserMap = testauth.TestUsers()
 )
 
+// newProxy returns a distributed_client.Proxy that is stopped, and whose
+// connections to peers are closed, when the test ends.
+func newProxy(t testing.TB, env environment.Env, c interfaces.Cache, listenAddr string) *distributed_client.Proxy {
+	p := distributed_client.New(env, c, listenAddr)
+	t.Cleanup(func() {
+		// t.Context() is already canceled when cleanups run.
+		p.Shutdown(context.Background())
+		p.CloseInactiveClients(set.From[string]())
+	})
+	return p
+}
+
 func getTestEnv(t testing.TB, users map[string]interfaces.UserInfo) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
@@ -102,7 +117,7 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 	offset := 0
 	for {
 		val := int64(r.src.Int63())
-		for i := 0; i < 8; i++ {
+		for range 8 {
 			p[offset] = byte(val & 0xff)
 			todo--
 			if todo == 0 {
@@ -115,13 +130,14 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 }
 
 func waitUntilServerIsAlive(addr string) {
-	for {
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		conn, err := net.DialTimeout("tcp", addr, 10*time.Millisecond)
 		if err == nil {
 			conn.Close()
 			return
 		}
 	}
+	panic(fmt.Sprintf("server at %s didn't come up within 30s", addr))
 }
 
 func copyAndClose(wc interfaces.CommittedWriteCloser, r io.Reader) error {
@@ -149,7 +165,7 @@ func TestReaderMaxOffset(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -208,6 +224,18 @@ func (s *snitchCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	return wc, nil
 }
 
+func TestShutdownRightAfterStartListening(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := newProxy(t, te, te.GetCache(), peer)
+	// Shutdown can run before StartListening's serving goroutine starts.
+	// Neither the goroutine nor a restart on the same address should fail.
+	for range 200 {
+		require.NoError(t, c.StartListening())
+		require.NoError(t, c.Shutdown(context.Background()))
+	}
+}
+
 func TestWriteAlreadyExistsCAS(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
@@ -221,7 +249,7 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 	sc := snitchCache{te.GetCache(), writeCounts}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, &sc, peer)
+	c := newProxy(t, te, &sc, peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -260,6 +288,41 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 	}
 }
 
+func TestWriteAlreadyExistsCAS_QueuesHintedHandoff(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := newProxy(t, te, te.GetCache(), peer)
+	var mu sync.Mutex
+	var handoffs []string
+	c.SetHintedHandoffCallbackFunc(func(ctx context.Context, handoffPeer string, r *rspb.ResourceName) {
+		mu.Lock()
+		defer mu.Unlock()
+		handoffs = append(handoffs, handoffPeer+"/"+r.GetDigest().GetHash())
+	})
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+	wc, err := c.RemoteWriter(ctx, peer, noHandoff, rn)
+	require.NoError(t, err)
+	require.NoError(t, copyAndClose(wc, bytes.NewReader(buf)))
+
+	// Write the blob again with a hinted handoff. The peer already has the
+	// blob, but still needs to queue the handoff.
+	const handoffPeer = "localhost:1"
+	wc, err = c.RemoteWriter(ctx, peer, handoffPeer, rn)
+	require.NoError(t, err)
+	require.NoError(t, copyAndClose(wc, bytes.NewReader(buf)))
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{handoffPeer + "/" + rn.GetDigest().GetHash()}, handoffs)
+}
+
 func TestWriteAlreadyExistsAC(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
@@ -273,7 +336,7 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 	sc := snitchCache{te.GetCache(), writeCounts}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, &sc, peer)
+	c := newProxy(t, te, &sc, peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -322,7 +385,7 @@ func TestReader(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -379,7 +442,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	require.NoError(t, err)
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -413,7 +476,7 @@ func TestWriter(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -480,7 +543,7 @@ func TestWriteAlreadyExists(t *testing.T) {
 	sc := snitchCache{te.GetCache(), writeCounts}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, &sc, peer)
+	c := newProxy(t, te, &sc, peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -558,7 +621,7 @@ func TestReadWrite_Compressed(t *testing.T) {
 	for _, tc := range testCases {
 		peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 		te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
-		c := distributed_client.New(te, te.GetCache(), peer)
+		c := newProxy(t, te, te.GetCache(), peer)
 		if err := c.StartListening(); err != nil {
 			t.Fatalf("Error setting up distributed_client: %s", err)
 		}
@@ -610,7 +673,7 @@ func TestContains(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -682,7 +745,7 @@ func TestOversizeBlobs(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -757,7 +820,7 @@ func TestFindMissing(t *testing.T) {
 	}
 
 	peer := net.JoinHostPort("localhost", fmt.Sprintf("%d", testport.FindFree(t)))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error starting cache proxy: %s", err)
 	}
@@ -828,7 +891,7 @@ func TestGetMulti(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -843,7 +906,7 @@ func TestGetMulti(t *testing.T) {
 		remoteInstanceName := fmt.Sprintf("prefix/%d", numDigests)
 
 		digests := make([]*rspb.ResourceName, 0, numDigests)
-		for i := 0; i < numDigests; i++ {
+		for range numDigests {
 			// Read some random bytes.
 			buf := new(bytes.Buffer)
 			io.CopyN(buf, randomSrc, 100)
@@ -891,7 +954,7 @@ func TestEmptyRead(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -935,7 +998,7 @@ func TestDelete(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -970,7 +1033,7 @@ func TestMetadata(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
@@ -1009,7 +1072,7 @@ func TestGetWithMetadata(t *testing.T) {
 	require.NoError(t, err)
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
 
@@ -1037,7 +1100,7 @@ func TestRemoteGetWithMetadata(t *testing.T) {
 	require.NoError(t, err)
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
 
@@ -1045,9 +1108,13 @@ func TestRemoteGetWithMetadata(t *testing.T) {
 	require.NoError(t, te.GetCache().Set(ctx, r, buf))
 
 	// Client-side: data and metadata round-trip through the RPC.
+	before := getWithMetadataResponseCount(t, "bytes", "OK")
+	beforeSize := getWithMetadataResponseSize(t, "bytes", "OK")
 	data, md, err := c.RemoteGetWithMetadata(ctx, peer, r)
 	require.NoError(t, err)
 	require.Equal(t, buf, data)
+	require.Equal(t, before+1, getWithMetadataResponseCount(t, "bytes", "OK"))
+	require.Equal(t, beforeSize+100, getWithMetadataResponseSize(t, "bytes", "OK"))
 
 	cacheMD, err := te.GetCache().Metadata(ctx, r)
 	require.NoError(t, err)
@@ -1065,7 +1132,7 @@ func TestRemoteGetWithMetadata_NotFound(t *testing.T) {
 	require.NoError(t, err)
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
 
@@ -1103,7 +1170,7 @@ func BenchmarkWrite(b *testing.B) {
 	require.NoError(b, err)
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(b, te, te.GetCache(), peer)
 	err = c.StartListening()
 	require.NoError(b, err)
 	waitUntilServerIsAlive(peer)
@@ -1165,21 +1232,34 @@ func TestWriteTimeout(t *testing.T) {
 	hangingPeer := startHangingServer(t)
 	waitUntilServerIsAlive(hangingPeer)
 	localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), localPeer)
+	c := newProxy(t, te, te.GetCache(), localPeer)
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(localPeer)
 
-	// Use a size just large enough to flush through the double buffer to
-	// the underlying stream, where writes will block on the hanging server.
+	// A single gRPC send can queue the entire message without waiting for the
+	// server to read it. Send multiple chunks to exhaust the transport buffers
+	// and block on the hanging server's flow-control window.
 	testSize := int64(3 * readBufSizeBytes)
 	rn, buf := testdigest.RandomCASResourceBuf(t, testSize)
+	// Bound the write if the per-send timeout stops working, without allowing
+	// this outer deadline to satisfy the timeout assertion below.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	wc, err := c.RemoteWriter(ctx, hangingPeer, noHandoff, rn)
 	require.NoError(t, err)
 	defer wc.Close()
 
-	_, err = wc.Write(buf)
+	for len(buf) > 0 {
+		chunkSize := min(len(buf), 64*1024)
+		_, err = wc.Write(buf[:chunkSize])
+		if err != nil {
+			break
+		}
+		buf = buf[chunkSize:]
+	}
+	require.NoError(t, ctx.Err(), "write should fail before the outer deadline")
 	require.Error(t, err)
-	require.True(t, isCanceledOrDeadlineExceeded(err), "expected cancelled or deadline exceeded, got %s", err)
+	require.True(t, status.IsDeadlineExceededError(err), "expected deadline exceeded, got %s", err)
 }
 
 func TestCommitTimeout(t *testing.T) {
@@ -1192,7 +1272,7 @@ func TestCommitTimeout(t *testing.T) {
 	hangingPeer := startHangingServer(t)
 	waitUntilServerIsAlive(hangingPeer)
 	localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), localPeer)
+	c := newProxy(t, te, te.GetCache(), localPeer)
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(localPeer)
 
@@ -1225,7 +1305,7 @@ func BenchmarkRead(b *testing.B) {
 			ctx := context.Background()
 			te := getTestEnv(b, emptyUserMap)
 			peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
-			c := distributed_client.New(te, te.GetCache(), peer)
+			c := newProxy(b, te, te.GetCache(), peer)
 
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(b, err)
@@ -1271,7 +1351,7 @@ func setupCompressedReadProxy(t *testing.T, enabled bool) (*testenv.TestEnv, *di
 	spy := &spyCache{Cache: &testcompression.CompressionCache{Cache: te.GetCache()}}
 	te.SetCache(spy)
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, te.GetCache(), peer)
+	c := newProxy(t, te, te.GetCache(), peer)
 	c.SetEnableCompressedReads(enabled)
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
@@ -1337,7 +1417,7 @@ func TestRemoteGetMulti_MultipleCompressedBlobs(t *testing.T) {
 	const n = 4
 	rns := make([]*rspb.ResourceName, n)
 	bufs := make([][]byte, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		rns[i], bufs[i] = testdigest.RandomCASResourceBuf(t, 200+int64(i)*50)
 		require.NoError(t, te.GetCache().Set(ctx, rns[i], bufs[i]))
 	}
@@ -1350,14 +1430,15 @@ func TestRemoteGetMulti_MultipleCompressedBlobs(t *testing.T) {
 }
 
 // referenceReadServer is a DistributedCache server that answers every Read
-// with a ReadResponse carrying the configured reference, followed by one data
-// message per configured chunk (the verification-mode response shape). It
-// records the compressor of the last requested resource so tests can assert
-// on what was seen at the server side of the wire.
+// with a single ReadResponse carrying the configured reference. It records
+// the compressor of the last requested resource so tests can assert on what
+// was seen at the server side of the wire.
 type referenceReadServer struct {
 	dcpb.UnimplementedDistributedCacheServer
-	ref        *refpb.Reference
-	dataChunks [][]byte
+	ref *refpb.Reference
+	// data, if set, is sent inline alongside the reference by GetWithMetadata
+	// only, to exercise the client's handling of a peer that sends both.
+	data []byte
 
 	mu             sync.Mutex
 	lastCompressor repb.Compressor_Value
@@ -1367,15 +1448,26 @@ func (s *referenceReadServer) Read(req *dcpb.ReadRequest, stream dcpb.Distribute
 	s.mu.Lock()
 	s.lastCompressor = req.GetResource().GetCompressor()
 	s.mu.Unlock()
-	if err := stream.Send(&dcpb.ReadResponse{Reference: s.ref}); err != nil {
-		return err
-	}
-	for _, chunk := range s.dataChunks {
-		if err := stream.Send(&dcpb.ReadResponse{Data: chunk}); err != nil {
-			return err
-		}
-	}
-	return nil
+	return stream.Send(&dcpb.ReadResponse{Reference: s.ref})
+}
+
+// GetWithMetadata answers with the configured reference plus any configured
+// inline data; with no data this is the shape a peer sends when serving
+// GetWithMetadata by reference.
+func (s *referenceReadServer) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRequest) (*dcpb.GetWithMetadataResponse, error) {
+	s.mu.Lock()
+	s.lastCompressor = req.GetResource().GetCompressor()
+	s.mu.Unlock()
+	return &dcpb.GetWithMetadataResponse{
+		Data:      s.data,
+		Reference: s.ref,
+		Metadata: &dcpb.MetadataResponse{
+			StoredSizeBytes: s.ref.GetMetadata().GetStoredSizeBytes(),
+			DigestSizeBytes: s.ref.GetMetadata().GetFileRecord().GetDigest().GetSizeBytes(),
+			LastAccessUsec:  s.ref.GetMetadata().GetLastAccessUsec(),
+			LastModifyUsec:  s.ref.GetMetadata().GetLastModifyUsec(),
+		},
+	}, nil
 }
 
 func (s *referenceReadServer) LastCompressor() repb.Compressor_Value {
@@ -1390,17 +1482,17 @@ func startReferenceReadServer(t *testing.T, ref *refpb.Reference) string {
 }
 
 func startReferenceReadServerWithRecorder(t *testing.T, ref *refpb.Reference) (string, *referenceReadServer) {
-	return startVerifyingReadServer(t, ref, nil)
+	return startReferenceReadServerWithData(t, ref, nil)
 }
 
-// startVerifyingReadServer starts a server that responds with ref followed by
-// the given data chunks.
-func startVerifyingReadServer(t *testing.T, ref *refpb.Reference, dataChunks [][]byte) (string, *referenceReadServer) {
+// startReferenceReadServerWithData starts a server whose GetWithMetadata
+// responds with ref and the given inline data.
+func startReferenceReadServerWithData(t *testing.T, ref *refpb.Reference, data []byte) (string, *referenceReadServer) {
 	t.Helper()
 	lis, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	srv := grpc.NewServer()
-	rrs := &referenceReadServer{ref: ref, dataChunks: dataChunks}
+	rrs := &referenceReadServer{ref: ref, data: data}
 	dcpb.RegisterDistributedCacheServer(srv, rrs)
 	t.Cleanup(srv.Stop)
 	go srv.Serve(lis)
@@ -1421,6 +1513,12 @@ type fakeReferenceCache struct {
 	lastResource *rspb.ResourceName
 	lastOffset   int64
 	lastLimit    int64
+}
+
+var _ interfaces.ReferenceCache = (*fakeReferenceCache)(nil)
+
+func (c *fakeReferenceCache) IsReferenceable(ctx context.Context, r *rspb.ResourceName) bool {
+	return false // CreateReference is not implemented.
 }
 
 func (c *fakeReferenceCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
@@ -1490,10 +1588,24 @@ func newReferenceTestProxy(t *testing.T, te *testenv.TestEnv, blobs map[string][
 	t.Helper()
 	localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	cache := &fakeReferenceCache{Cache: te.GetCache(), blobs: blobs}
-	c := distributed_client.New(te, cache, localPeer)
+	c := newProxy(t, te, cache, localPeer)
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(localPeer)
 	return c, cache
+}
+
+func getWithMetadataResponseCount(t *testing.T, responseType, statusCode string) float64 {
+	return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheGetWithMetadataResponseCount, prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusCode,
+	})
+}
+
+func getWithMetadataResponseSize(t *testing.T, responseType, statusCode string) float64 {
+	return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheGetWithMetadataResponseSizeBytes, prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusCode,
+	})
 }
 
 // readResponseCount returns the current value of the distributed cache read
@@ -1502,6 +1614,153 @@ func readResponseCount(t *testing.T, responseType, statusCode string) float64 {
 	return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadResponseCount, prometheus.Labels{
 		metrics.DistributedCacheReadResponseType: responseType,
 		metrics.StatusHumanReadableLabel:         statusCode,
+	})
+}
+
+// getMultiResponseCount returns the current value of the distributed cache
+// GetMulti response counter for the given response type and status code.
+func getMultiResponseCount(t *testing.T, responseType, statusCode string) float64 {
+	return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheGetMultiResponseCount, prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusCode,
+	})
+}
+
+// getMultiServer is a DistributedCache server whose GetMulti RPC returns a
+// canned set of KVs regardless of the request.
+type getMultiServer struct {
+	dcpb.UnimplementedDistributedCacheServer
+	kvs []*dcpb.KV
+}
+
+func (s *getMultiServer) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.GetMultiResponse, error) {
+	return &dcpb.GetMultiResponse{KeyValue: s.kvs}, nil
+}
+
+func startGetMultiServer(t *testing.T, kvs ...*dcpb.KV) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	srv := grpc.NewServer()
+	dcpb.RegisterDistributedCacheServer(srv, &getMultiServer{kvs: kvs})
+	t.Cleanup(srv.Stop)
+	go srv.Serve(lis)
+	waitUntilServerIsAlive(lis.Addr().String())
+	return lis.Addr().String()
+}
+
+func TestRemoteGetMultiReference(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	const blobName = "blobs/test-blob"
+	// Large enough that, with compressed reads enabled, the client requests
+	// compressed bytes over the wire.
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+	inlineRN, inlineBuf := testdigest.RandomCASResourceBuf(t, 50)
+	refKV := func(ref *refpb.Reference) *dcpb.KV {
+		return &dcpb.KV{Key: &dcpb.Key{Key: rn.GetDigest().GetHash(), SizeBytes: rn.GetDigest().GetSizeBytes()}, ValueReference: ref}
+	}
+	inlineKV := &dcpb.KV{Key: &dcpb.Key{Key: inlineRN.GetDigest().GetHash(), SizeBytes: inlineRN.GetDigest().GetSizeBytes()}, Value: inlineBuf}
+
+	t.Run("reference is dereferenced", func(t *testing.T) {
+		peer := startGetMultiServer(t, refKV(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := getMultiResponseCount(t, "reference", "OK")
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn})
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		require.Equal(t, buf, got[rn.GetDigest()])
+		gotRN, gotOffset, gotLimit := fake.LastDereference()
+		require.Equal(t, repb.Compressor_IDENTITY, gotRN.GetCompressor())
+		require.Zero(t, gotOffset)
+		require.Zero(t, gotLimit)
+		require.Equal(t, before+1, getMultiResponseCount(t, "reference", "OK"))
+	})
+
+	t.Run("reference is dereferenced as the requested resource under compressed reads", func(t *testing.T) {
+		peer := startGetMultiServer(t, refKV(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		// The client rewrites the wire request to ZSTD, but must dereference
+		// as the IDENTITY resource the caller asked for.
+		c.SetEnableCompressedReads(true)
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn})
+		require.NoError(t, err)
+		require.Equal(t, buf, got[rn.GetDigest()])
+		gotRN, _, _ := fake.LastDereference()
+		require.Equal(t, repb.Compressor_IDENTITY, gotRN.GetCompressor())
+	})
+
+	t.Run("inline bytes win when both are set", func(t *testing.T) {
+		both := refKV(makeReference(rn, "blobs/missing", repb.Compressor_IDENTITY))
+		both.Value = buf
+		peer := startGetMultiServer(t, both)
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{})
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn})
+		require.NoError(t, err)
+		require.Equal(t, buf, got[rn.GetDigest()])
+		gotRN, _, _ := fake.LastDereference()
+		require.Nil(t, gotRN, "expected no dereference")
+	})
+
+	t.Run("references and inline values are mixed", func(t *testing.T) {
+		peer := startGetMultiServer(t, inlineKV, refKV(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		refBefore, bytesBefore := getMultiResponseCount(t, "reference", "OK"), getMultiResponseCount(t, "bytes", "OK")
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn, inlineRN})
+		require.NoError(t, err)
+		require.Len(t, got, 2)
+		require.Equal(t, buf, got[rn.GetDigest()])
+		require.Equal(t, inlineBuf, got[inlineRN.GetDigest()])
+		require.Equal(t, refBefore+1, getMultiResponseCount(t, "reference", "OK"))
+		require.Equal(t, bytesBefore+1, getMultiResponseCount(t, "bytes", "OK"))
+	})
+
+	t.Run("digest mismatch is treated as a miss", func(t *testing.T) {
+		otherRN, _ := testdigest.RandomCASResourceBuf(t, 1000)
+		peer := startGetMultiServer(t, inlineKV, refKV(makeReference(otherRN, blobName, repb.Compressor_IDENTITY)))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := getMultiResponseCount(t, "reference", "Internal")
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn, inlineRN})
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		require.Equal(t, inlineBuf, got[inlineRN.GetDigest()])
+		require.Equal(t, before+1, getMultiResponseCount(t, "reference", "Internal"))
+	})
+
+	t.Run("missing blob is treated as a miss", func(t *testing.T) {
+		peer := startGetMultiServer(t, inlineKV, refKV(makeReference(rn, "blobs/missing", repb.Compressor_IDENTITY)))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := getMultiResponseCount(t, "reference", "NotFound")
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn, inlineRN})
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		require.Equal(t, inlineBuf, got[inlineRN.GetDigest()])
+		require.Equal(t, before+1, getMultiResponseCount(t, "reference", "NotFound"))
+	})
+
+	t.Run("cache that cannot dereference is rejected", func(t *testing.T) {
+		peer := startGetMultiServer(t, inlineKV, refKV(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
+		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+		c := newProxy(t, te, te.GetCache(), localPeer)
+		require.NoError(t, c.StartListening())
+		waitUntilServerIsAlive(localPeer)
+		before := getMultiResponseCount(t, "reference", "FailedPrecondition")
+		_, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn, inlineRN})
+		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %v", err)
+		require.Equal(t, before+1, getMultiResponseCount(t, "reference", "FailedPrecondition"))
+	})
+
+	t.Run("inline values are returned when nothing is referenced", func(t *testing.T) {
+		peer := startGetMultiServer(t, inlineKV)
+		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+		c := newProxy(t, te, te.GetCache(), localPeer)
+		require.NoError(t, c.StartListening())
+		waitUntilServerIsAlive(localPeer)
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{inlineRN})
+		require.NoError(t, err)
+		require.Equal(t, inlineBuf, got[inlineRN.GetDigest()])
 	})
 }
 
@@ -1613,7 +1872,7 @@ func TestRemoteReadReference(t *testing.T) {
 	t.Run("cache that cannot dereference is rejected", func(t *testing.T) {
 		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY))
 		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-		c := distributed_client.New(te, te.GetCache(), localPeer)
+		c := newProxy(t, te, te.GetCache(), localPeer)
 		require.NoError(t, c.StartListening())
 		waitUntilServerIsAlive(localPeer)
 		_, err := c.RemoteReader(ctx, peer, rn, 0, 0)
@@ -1635,18 +1894,147 @@ func TestRemoteReadReference(t *testing.T) {
 	})
 }
 
+func TestRemoteGetWithMetadataReference(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	const blobName = "blobs/test-blob"
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	withMetadata := func(ref *refpb.Reference) *refpb.Reference {
+		ref.Metadata.StoredSizeBytes = 100
+		ref.Metadata.LastAccessUsec = 1234
+		ref.Metadata.LastModifyUsec = 5678
+		return ref
+	}
+
+	t.Run("identity", func(t *testing.T) {
+		peer := startReferenceReadServer(t, withMetadata(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := getWithMetadataResponseCount(t, "reference", "OK")
+		beforeSize := getWithMetadataResponseSize(t, "reference", "OK")
+		got, md, err := c.RemoteGetWithMetadata(ctx, peer, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+		require.Equal(t, before+1, getWithMetadataResponseCount(t, "reference", "OK"))
+		require.Equal(t, beforeSize+100, getWithMetadataResponseSize(t, "reference", "OK"))
+		require.Equal(t, int64(100), md.StoredSizeBytes)
+		require.Equal(t, rn.GetDigest().GetSizeBytes(), md.DigestSizeBytes)
+		require.Equal(t, int64(1234), md.LastAccessTimeUsec)
+		require.Equal(t, int64(5678), md.LastModifyTimeUsec)
+		gotRN, gotOffset, gotLimit := fake.LastDereference()
+		require.Equal(t, repb.Compressor_IDENTITY, gotRN.GetCompressor())
+		require.Equal(t, int64(0), gotOffset)
+		require.Equal(t, int64(0), gotLimit)
+	})
+
+	t.Run("decompress transport rewrite", func(t *testing.T) {
+		// With compressed reads enabled, the request is rewritten to ZSTD for
+		// transport. On a reference response, Dereference must see the
+		// caller's original IDENTITY resource so no decompression is needed.
+		bigRN, bigBuf := testdigest.RandomCASResourceBuf(t, 200)
+		peer, srv := startReferenceReadServerWithRecorder(t, makeReference(bigRN, blobName, repb.Compressor_ZSTD))
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: bigBuf})
+		c.SetEnableCompressedReads(true)
+		got, _, err := c.RemoteGetWithMetadata(ctx, peer, bigRN)
+		require.NoError(t, err)
+		require.Equal(t, bigBuf, got)
+		require.Equal(t, repb.Compressor_ZSTD, srv.LastCompressor())
+		gotRN, _, _ := fake.LastDereference()
+		require.Equal(t, repb.Compressor_IDENTITY, gotRN.GetCompressor())
+	})
+
+	t.Run("digest mismatch is rejected", func(t *testing.T) {
+		otherRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+		peer := startReferenceReadServer(t, makeReference(otherRN, blobName, repb.Compressor_IDENTITY))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		_, _, err := c.RemoteGetWithMetadata(ctx, peer, rn)
+		require.Error(t, err)
+		require.True(t, status.IsInternalError(err), "expected InternalError, got %s", err)
+		require.Contains(t, err.Error(), "returned a reference for")
+	})
+
+	t.Run("stored instance name may differ", func(t *testing.T) {
+		storedRN := rn.CloneVT()
+		storedRN.InstanceName = "instance-at-first-write"
+		peer := startReferenceReadServer(t, makeReference(storedRN, blobName, repb.Compressor_IDENTITY))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		got, _, err := c.RemoteGetWithMetadata(ctx, peer, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("cache that cannot dereference is rejected", func(t *testing.T) {
+		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY))
+		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+		c := newProxy(t, te, te.GetCache(), localPeer)
+		require.NoError(t, c.StartListening())
+		waitUntilServerIsAlive(localPeer)
+		_, _, err := c.RemoteGetWithMetadata(ctx, peer, rn)
+		require.Error(t, err)
+		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
+	})
+
+	t.Run("missing blob is not found", func(t *testing.T) {
+		peer := startReferenceReadServer(t, makeReference(rn, "blobs/no-such-blob", repb.Compressor_IDENTITY))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := getWithMetadataResponseCount(t, "reference", "NotFound")
+		beforeOK := getWithMetadataResponseCount(t, "reference", "OK")
+		_, _, err := c.RemoteGetWithMetadata(ctx, peer, rn)
+		require.Error(t, err)
+		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+		// The failed dereference is recorded under its status code, not OK.
+		require.Equal(t, before+1, getWithMetadataResponseCount(t, "reference", "NotFound"))
+		require.Equal(t, beforeOK, getWithMetadataResponseCount(t, "reference", "OK"))
+	})
+
+	t.Run("bytes are authoritative when sent with a reference", func(t *testing.T) {
+		// The reference points at a missing blob, so the bytes must be used
+		// without dereferencing.
+		peer, _ := startReferenceReadServerWithData(t, makeReference(rn, "blobs/no-such-blob", repb.Compressor_IDENTITY), buf)
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{})
+		beforeBytes := getWithMetadataResponseCount(t, "bytes", "OK")
+		beforeRef := getWithMetadataResponseCount(t, "reference", "OK")
+		got, _, err := c.RemoteGetWithMetadata(ctx, peer, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+		gotRN, _, _ := fake.LastDereference()
+		require.Nil(t, gotRN)
+		require.Equal(t, beforeBytes+1, getWithMetadataResponseCount(t, "bytes", "OK"))
+		require.Equal(t, beforeRef, getWithMetadataResponseCount(t, "reference", "OK"))
+	})
+
+	t.Run("empty blob is served from bytes even with a reference", func(t *testing.T) {
+		// A 0-byte blob's inline payload is indistinguishable from no
+		// payload, so the reference must be ignored rather than dereferenced.
+		emptyRN, _ := testdigest.RandomCASResourceBuf(t, 0)
+		peer := startReferenceReadServer(t, makeReference(emptyRN, "blobs/no-such-blob", repb.Compressor_IDENTITY))
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{})
+		got, _, err := c.RemoteGetWithMetadata(ctx, peer, emptyRN)
+		require.NoError(t, err)
+		require.Empty(t, got)
+		gotRN, _, _ := fake.LastDereference()
+		require.Nil(t, gotRN)
+	})
+}
+
 // serverReferenceCache implements interfaces.ReferenceCache, returning canned
 // references for configured digests and recording accepted reference writes.
 type serverReferenceCache struct {
 	interfaces.Cache
-	refs  map[string]*refpb.Reference
-	blobs map[string][]byte
+	refs map[string]*refpb.Reference
 
 	mu            sync.Mutex
 	writtenRef    *refpb.Reference
 	writtenRN     *rspb.ResourceName
 	writtenCloned bool
 	writeRefErr   error
+}
+
+var _ interfaces.ReferenceCache = (*serverReferenceCache)(nil)
+
+func (c *serverReferenceCache) IsReferenceable(ctx context.Context, r *rspb.ResourceName) bool {
+	return false // CreateReference is not implemented.
 }
 
 func (c *serverReferenceCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
@@ -1660,28 +2048,8 @@ func (c *serverReferenceCache) CreateReference(ctx context.Context, r *rspb.Reso
 	return nil, status.UnimplementedError("not implemented")
 }
 
-// Dereference serves the configured blob bytes, standing in for shared
-// storage. The read server never dereferences, but the write server does
-// when reference-write verification is enabled. Like the real
-// implementation, it reconciles the reference's stored compressor with the
-// compressor requested by r.
 func (c *serverReferenceCache) Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
-	data, ok := c.blobs[ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName()]
-	if !ok {
-		return nil, status.NotFoundError("blob not found")
-	}
-	stored := ref.GetMetadata().GetFileRecord().GetCompressor()
-	requested := r.GetCompressor()
-	if stored == repb.Compressor_ZSTD && requested == repb.Compressor_IDENTITY {
-		var err error
-		data, err = compression.DecompressZstd(nil, data)
-		if err != nil {
-			return nil, err
-		}
-	} else if stored == repb.Compressor_IDENTITY && requested == repb.Compressor_ZSTD {
-		data = compression.CompressZstd(nil, data)
-	}
-	return io.NopCloser(bytes.NewReader(data)), nil
+	return nil, status.UnimplementedError("not implemented")
 }
 
 func (c *serverReferenceCache) WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error {
@@ -1703,19 +2071,22 @@ func (c *serverReferenceCache) lastWriteReference() (*refpb.Reference, *rspb.Res
 	return c.writtenRef, c.writtenRN, c.writtenCloned
 }
 
-func setReferenceReadExperiments(t *testing.T, te *testenv.TestEnv, readReferences bool, verifyReferences bool) {
-	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"distributed_cache.read_gcs_references": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "on",
-			Variants:       map[string]any{"on": readReferences},
-		},
-		"distributed_cache.verify_read_gcs_references": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "on",
-			Variants:       map[string]any{"on": verifyReferences},
-		},
+func setReferenceReadExperiments(t *testing.T, te *testenv.TestEnv, readReferences bool) {
+	setExperimentFlags(t, te, map[string]bool{
+		"distributed_cache.read_gcs_references": readReferences,
 	})
+}
+
+func setExperimentFlags(t *testing.T, te *testenv.TestEnv, flags map[string]bool) {
+	inMemFlags := make(map[string]memprovider.InMemoryFlag, len(flags))
+	for name, enabled := range flags {
+		inMemFlags[name] = memprovider.InMemoryFlag{
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants:       map[string]any{"on": enabled},
+		}
+	}
+	provider := memprovider.NewInMemoryProvider(inMemFlags)
 	require.NoError(t, openfeature.SetProviderAndWait(provider))
 	fp, err := experiments.NewFlagProvider("")
 	require.NoError(t, err)
@@ -1778,7 +2149,7 @@ func TestReadReferenceExperiments(t *testing.T) {
 		refs:  map[string]*refpb.Reference{rn.GetDigest().GetHash(): expectedRef},
 	}
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, cache, peer)
+	c := newProxy(t, te, cache, peer)
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
 	require.NoError(t, te.GetCache().Set(ctx, rn, buf))
@@ -1790,32 +2161,185 @@ func TestReadReferenceExperiments(t *testing.T) {
 		require.Equal(t, buf, data)
 	})
 
-	t.Run("experiments off", func(t *testing.T) {
-		setReferenceReadExperiments(t, te, false, false)
+	t.Run("experiment off", func(t *testing.T) {
+		setReferenceReadExperiments(t, te, false)
 		ref, data := readRawResponses(t, peer, rn)
 		require.Nil(t, ref)
 		require.Equal(t, buf, data)
 	})
 
-	t.Run("verify flag sends reference and bytes", func(t *testing.T) {
-		setReferenceReadExperiments(t, te, false, true)
-		ref, data := readRawResponses(t, peer, rn)
-		require.Empty(t, cmp.Diff(expectedRef, ref, protocmp.Transform()))
-		require.Equal(t, buf, data)
-	})
-
 	t.Run("read flag sends reference only", func(t *testing.T) {
-		setReferenceReadExperiments(t, te, true, false)
+		setReferenceReadExperiments(t, te, true)
 		ref, data := readRawResponses(t, peer, rn)
 		require.Empty(t, cmp.Diff(expectedRef, ref, protocmp.Transform()))
 		require.Empty(t, data)
 	})
 
 	t.Run("read flag falls back to bytes when no reference can be minted", func(t *testing.T) {
-		setReferenceReadExperiments(t, te, true, false)
+		setReferenceReadExperiments(t, te, true)
 		ref, data := readRawResponses(t, peer, noRefRN)
 		require.Nil(t, ref)
 		require.Equal(t, noRefBuf, data)
+	})
+}
+
+func setGetWithMetadataReferenceExperiment(t *testing.T, te *testenv.TestEnv, enabled bool) {
+	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"distributed_cache.get_with_metadata_gcs_references": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants:       map[string]any{"on": enabled},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(t, err)
+	te.SetExperimentFlagProvider(fp)
+	t.Cleanup(func() {
+		te.SetExperimentFlagProvider(nil)
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
+}
+
+func TestGetWithMetadataReferenceExperiment(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	noRefRN, noRefBuf := testdigest.RandomCASResourceBuf(t, 100)
+	expectedRef := &refpb.Reference{
+		Metadata: &sgpb.FileMetadata{
+			FileRecord:      &sgpb.FileRecord{Digest: rn.GetDigest()},
+			StoredSizeBytes: 100,
+			LastAccessUsec:  1234,
+			LastModifyUsec:  5678,
+			StorageMetadata: &sgpb.StorageMetadata{
+				GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{BlobName: "blobs/test-blob"},
+			},
+		},
+	}
+	cache := &serverReferenceCache{
+		Cache: te.GetCache(),
+		refs:  map[string]*refpb.Reference{rn.GetDigest().GetHash(): expectedRef},
+	}
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := newProxy(t, te, cache, peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+	require.NoError(t, te.GetCache().Set(ctx, rn, buf))
+	require.NoError(t, te.GetCache().Set(ctx, noRefRN, noRefBuf))
+
+	expectBytes := func(t *testing.T, rn *rspb.ResourceName, buf []byte) {
+		rsp, err := c.GetWithMetadata(ctx, &dcpb.GetWithMetadataRequest{Resource: rn})
+		require.NoError(t, err)
+		require.Nil(t, rsp.GetReference())
+		require.Equal(t, buf, rsp.GetData())
+		cacheMD, err := te.GetCache().Metadata(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, cacheMD.StoredSizeBytes, rsp.GetMetadata().GetStoredSizeBytes())
+		require.Equal(t, cacheMD.DigestSizeBytes, rsp.GetMetadata().GetDigestSizeBytes())
+	}
+
+	t.Run("no experiment provider", func(t *testing.T) {
+		expectBytes(t, rn, buf)
+	})
+
+	t.Run("experiment off", func(t *testing.T) {
+		setGetWithMetadataReferenceExperiment(t, te, false)
+		expectBytes(t, rn, buf)
+	})
+
+	t.Run("experiment on sends reference and metadata only", func(t *testing.T) {
+		setGetWithMetadataReferenceExperiment(t, te, true)
+		rsp, err := c.GetWithMetadata(ctx, &dcpb.GetWithMetadataRequest{Resource: rn})
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(expectedRef, rsp.GetReference(), protocmp.Transform()))
+		require.Empty(t, rsp.GetData())
+		require.Equal(t, int64(100), rsp.GetMetadata().GetStoredSizeBytes())
+		require.Equal(t, rn.GetDigest().GetSizeBytes(), rsp.GetMetadata().GetDigestSizeBytes())
+		require.Equal(t, int64(1234), rsp.GetMetadata().GetLastAccessUsec())
+		require.Equal(t, int64(5678), rsp.GetMetadata().GetLastModifyUsec())
+	})
+
+	t.Run("experiment on falls back to bytes when no reference can be minted", func(t *testing.T) {
+		setGetWithMetadataReferenceExperiment(t, te, true)
+		expectBytes(t, noRefRN, noRefBuf)
+	})
+}
+
+// getMultiRaw fetches the given resources from peer with a raw gRPC client,
+// returning the response KVs keyed by digest hash.
+func getMultiRaw(t *testing.T, peer string, rns ...*rspb.ResourceName) map[string]*dcpb.KV {
+	t.Helper()
+	conn, err := grpc.NewClient(peer, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := dcpb.NewDistributedCacheClient(conn)
+	rsp, err := client.GetMulti(context.Background(), &dcpb.GetMultiRequest{Resources: rns})
+	require.NoError(t, err)
+	kvs := make(map[string]*dcpb.KV, len(rsp.GetKeyValue()))
+	for _, kv := range rsp.GetKeyValue() {
+		kvs[kv.GetKey().GetKey()] = kv
+	}
+	return kvs
+}
+
+func TestGetMultiReferenceExperiment(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	noRefRN, noRefBuf := testdigest.RandomCASResourceBuf(t, 100)
+	expectedRef := &refpb.Reference{
+		Metadata: &sgpb.FileMetadata{
+			FileRecord: &sgpb.FileRecord{Digest: rn.GetDigest()},
+			StorageMetadata: &sgpb.StorageMetadata{
+				GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{BlobName: "blobs/test-blob"},
+			},
+		},
+	}
+	cache := &serverReferenceCache{
+		Cache: te.GetCache(),
+		refs:  map[string]*refpb.Reference{rn.GetDigest().GetHash(): expectedRef},
+	}
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := newProxy(t, te, cache, peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+	require.NoError(t, te.GetCache().Set(ctx, rn, buf))
+	require.NoError(t, te.GetCache().Set(ctx, noRefRN, noRefBuf))
+
+	expectAllBytes := func(t *testing.T) {
+		kvs := getMultiRaw(t, peer, rn, noRefRN)
+		require.Len(t, kvs, 2)
+		require.Equal(t, buf, kvs[rn.GetDigest().GetHash()].GetValue())
+		require.Nil(t, kvs[rn.GetDigest().GetHash()].GetValueReference())
+		require.Equal(t, noRefBuf, kvs[noRefRN.GetDigest().GetHash()].GetValue())
+		require.Nil(t, kvs[noRefRN.GetDigest().GetHash()].GetValueReference())
+	}
+
+	t.Run("no experiment provider", func(t *testing.T) {
+		expectAllBytes(t)
+	})
+
+	t.Run("experiment off", func(t *testing.T) {
+		setExperimentFlags(t, te, map[string]bool{"distributed_cache.get_multi_gcs_references": false})
+		expectAllBytes(t)
+	})
+
+	t.Run("experiment sends references where available", func(t *testing.T) {
+		setExperimentFlags(t, te, map[string]bool{"distributed_cache.get_multi_gcs_references": true})
+		kvs := getMultiRaw(t, peer, rn, noRefRN)
+		require.Len(t, kvs, 2)
+		refKV := kvs[rn.GetDigest().GetHash()]
+		require.Empty(t, refKV.GetValue())
+		require.Empty(t, cmp.Diff(expectedRef, refKV.GetValueReference(), protocmp.Transform()))
+		// A value with no reference available is returned as bytes.
+		byteKV := kvs[noRefRN.GetDigest().GetHash()]
+		require.Equal(t, noRefBuf, byteKV.GetValue())
+		require.Nil(t, byteKV.GetValueReference())
 	})
 }
 
@@ -1846,7 +2370,7 @@ func TestWriteReferenceAccept(t *testing.T) {
 
 	cache := &serverReferenceCache{Cache: te.GetCache()}
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := distributed_client.New(te, cache, peer)
+	c := newProxy(t, te, cache, peer)
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(peer)
 
@@ -1921,7 +2445,6 @@ func TestWriteReferenceAccept(t *testing.T) {
 	t.Run("reference before the last message is ignored", func(t *testing.T) {
 		earlyRN, earlyBuf := testdigest.RandomCASResourceBuf(t, 100)
 		earlyRef := makeReference(earlyRN, "blobs/early-blob", repb.Compressor_IDENTITY)
-		before := writeVerificationCounts(t)
 		rsp, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{
 			{Resource: earlyRN, Reference: earlyRef},
 			{Resource: earlyRN, Data: earlyBuf, FinishWrite: true},
@@ -1931,11 +2454,9 @@ func TestWriteReferenceAccept(t *testing.T) {
 		got, err := te.GetCache().Get(ctx, earlyRN)
 		require.NoError(t, err)
 		require.Equal(t, earlyBuf, got)
-		// The early reference is neither installed nor verified.
-		c.WaitForPendingVerificationsForTesting()
+		// The early reference is not installed.
 		_, gotRN, _ := cache.lastWriteReference()
 		require.NotEqual(t, earlyRN.GetDigest().GetHash(), gotRN.GetDigest().GetHash())
-		require.Equal(t, before, writeVerificationCounts(t))
 	})
 
 	t.Run("reference with data bytes writes the bytes", func(t *testing.T) {
@@ -1949,7 +2470,6 @@ func TestWriteReferenceAccept(t *testing.T) {
 		}})
 		require.NoError(t, err)
 		require.Equal(t, int64(len(shadowBuf)), rsp.GetCommittedSize())
-		c.WaitForPendingVerificationsForTesting()
 		// The bytes are the write; the reference is not installed.
 		got, err := te.GetCache().Get(ctx, shadowRN)
 		require.NoError(t, err)
@@ -1958,10 +2478,9 @@ func TestWriteReferenceAccept(t *testing.T) {
 		require.NotEqual(t, shadowRN.GetDigest().GetHash(), gotRN.GetDigest().GetHash())
 	})
 
-	t.Run("reference on the last message is verified, not installed", func(t *testing.T) {
+	t.Run("reference on the last message of a streamed write is not installed", func(t *testing.T) {
 		lateRN, lateBuf := testdigest.RandomCASResourceBuf(t, 100)
 		lateRef := makeReference(lateRN, "blobs/late-blob", repb.Compressor_IDENTITY)
-		before := writeVerificationCounts(t)
 		rsp, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{
 			{Resource: lateRN, Data: lateBuf[:50]},
 			{Resource: lateRN, Reference: lateRef, Data: lateBuf[50:], FinishWrite: true},
@@ -1971,15 +2490,8 @@ func TestWriteReferenceAccept(t *testing.T) {
 		got, err := te.GetCache().Get(ctx, lateRN)
 		require.NoError(t, err)
 		require.Equal(t, lateBuf, got)
-		// The reference is verified (the blob is not in shared storage, so
-		// verification errors), but never installed.
-		c.WaitForPendingVerificationsForTesting()
 		_, gotRN, _ := cache.lastWriteReference()
 		require.NotEqual(t, lateRN.GetDigest().GetHash(), gotRN.GetDigest().GetHash())
-		after := writeVerificationCounts(t)
-		require.Equal(t, before[distributed_client.VerificationError]+1, after[distributed_client.VerificationError])
-		require.Equal(t, before[distributed_client.VerificationSuccess], after[distributed_client.VerificationSuccess])
-		require.Equal(t, before[distributed_client.VerificationFailure], after[distributed_client.VerificationFailure])
 	})
 
 	t.Run("existing CAS digest still dedupes", func(t *testing.T) {
@@ -1997,7 +2509,7 @@ func TestWriteReferenceAccept(t *testing.T) {
 
 	t.Run("cache that cannot accept references is rejected", func(t *testing.T) {
 		plainPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-		plain := distributed_client.New(te, te.GetCache(), plainPeer)
+		plain := newProxy(t, te, te.GetCache(), plainPeer)
 		require.NoError(t, plain.StartListening())
 		waitUntilServerIsAlive(plainPeer)
 		_, err := writeRawRequests(t, plainPeer, []*dcpb.WriteRequest{{
@@ -2007,308 +2519,6 @@ func TestWriteReferenceAccept(t *testing.T) {
 		}})
 		require.Error(t, err)
 		require.True(t, status.IsUnimplementedError(err), "expected UnimplementedError, got %s", err)
-	})
-}
-
-func TestRemoteReadVerification(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
-	require.NoError(t, err)
-
-	const blobName = "blobs/verified-blob"
-	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-	chunks := [][]byte{buf[:40], buf[40:]}
-
-	// deltas returns the nonzero outcome-count changes between two
-	// verificationCounts snapshots.
-	deltas := func(before, after map[string]float64) map[string]float64 {
-		d := map[string]float64{}
-		for s, c := range after {
-			if diff := c - before[s]; diff != 0 {
-				d[s] = diff
-			}
-		}
-		return d
-	}
-
-	t.Run("matching bytes", func(t *testing.T) {
-		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
-		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
-		beforeBytesOK := readResponseCount(t, "bytes", "OK")
-		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		require.Equal(t, beforeBytesOK+1, readResponseCount(t, "bytes", "OK"))
-		require.Equal(t, buf, got)
-	})
-
-	t.Run("ranged", func(t *testing.T) {
-		rangedChunks := [][]byte{buf[5:15]}
-		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), rangedChunks)
-		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
-		r, err := c.RemoteReader(ctx, peer, rn, 5, 10)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		require.Equal(t, buf[5:15], got)
-	})
-
-	t.Run("mismatched reference bytes are non-fatal", func(t *testing.T) {
-		_, otherBuf := testdigest.RandomCASResourceBuf(t, 100)
-		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
-		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: otherBuf})
-		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		// The streamed bytes are authoritative.
-		require.Equal(t, buf, got)
-	})
-
-	t.Run("mismatched reference digest is non-fatal", func(t *testing.T) {
-		otherRN, _ := testdigest.RandomCASResourceBuf(t, 100)
-		peer, _ := startVerifyingReadServer(t, makeReference(otherRN, blobName, repb.Compressor_IDENTITY), chunks)
-		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
-		before := verificationCounts(t)
-		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		// The streamed bytes are authoritative.
-		require.Equal(t, buf, got)
-		// The bad reference was counted as a failure and never dereferenced.
-		require.Equal(t, map[string]float64{distributed_client.VerificationFailure: 1}, deltas(before, verificationCounts(t)))
-		gotRN, _, _ := fake.LastDereference()
-		require.Nil(t, gotRN)
-	})
-
-	t.Run("stored instance name difference does not fail verification", func(t *testing.T) {
-		// CAS entries are deduped across instance names, so the reference can
-		// carry the first writer's instance name without identifying
-		// different content.
-		storedRN := rn.CloneVT()
-		storedRN.InstanceName = "instance-at-first-write"
-		peer, _ := startVerifyingReadServer(t, makeReference(storedRN, blobName, repb.Compressor_IDENTITY), chunks)
-		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
-		before := verificationCounts(t)
-		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		require.Equal(t, buf, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationSuccess: 1}, deltas(before, verificationCounts(t)))
-	})
-
-	t.Run("missing dereferencer is non-fatal", func(t *testing.T) {
-		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
-		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-		c := distributed_client.New(te, te.GetCache(), localPeer)
-		require.NoError(t, c.StartListening())
-		waitUntilServerIsAlive(localPeer)
-		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		require.Equal(t, buf, got)
-	})
-}
-
-// errorReadCloser fails every read with the given error.
-type errorReadCloser struct {
-	err error
-}
-
-func (e *errorReadCloser) Read(p []byte) (int, error) { return 0, e.err }
-func (e *errorReadCloser) Close() error               { return nil }
-
-// verificationCounts returns the current values of the reference verification
-// counter, keyed by outcome, summed across error codes.
-func verificationCounts(t *testing.T) map[string]float64 {
-	counts := map[string]float64{}
-	for _, v := range testmetrics.CounterValues(t, metrics.DistributedCacheReferenceVerificationCount) {
-		counts[v.Labels[metrics.VerificationOutcomeLabel]] += v.Value
-	}
-	return counts
-}
-
-// writeVerificationCounts returns the current values of the reference write
-// verification counter, keyed by outcome.
-func writeVerificationCounts(t *testing.T) map[string]float64 {
-	counts := map[string]float64{}
-	for _, v := range testmetrics.CounterValues(t, metrics.DistributedCacheReferenceWriteVerificationCount) {
-		counts[v.Labels[metrics.VerificationOutcomeLabel]] += v.Value
-	}
-	return counts
-}
-
-func TestWriteReferenceVerification(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
-	require.NoError(t, err)
-
-	const blobName = "blobs/test-blob"
-	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-	ref := makeReference(rn, blobName, repb.Compressor_IDENTITY)
-
-	newProxy := func(t *testing.T, blobs map[string][]byte) (string, *serverReferenceCache, *distributed_client.Proxy) {
-		cache := &serverReferenceCache{Cache: te.GetCache(), blobs: blobs}
-		peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-		c := distributed_client.New(te, cache, peer)
-		require.NoError(t, c.StartListening())
-		waitUntilServerIsAlive(peer)
-		return peer, cache, c
-	}
-	// writeShadow writes rn's bytes with ref riding along on the final (and
-	// only) message for verification.
-	writeShadow := func(t *testing.T, peer string, rn *rspb.ResourceName, ref *refpb.Reference, data []byte) error {
-		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
-			Resource:    rn,
-			Reference:   ref,
-			Data:        data,
-			FinishWrite: true,
-		}})
-		return err
-	}
-	// deltas returns the nonzero outcome-count changes between two
-	// writeVerificationCounts snapshots.
-	deltas := func(before, after map[string]float64) map[string]float64 {
-		d := map[string]float64{}
-		for s, v := range after {
-			if v != before[s] {
-				d[s] = v - before[s]
-			}
-		}
-		return d
-	}
-	// assertBytesWritten asserts the byte write landed and no reference was
-	// installed: the bytes must stay authoritative regardless of the
-	// verification outcome.
-	assertBytesWritten := func(t *testing.T, cache *serverReferenceCache, rn *rspb.ResourceName, data []byte) {
-		got, err := te.GetCache().Get(ctx, rn)
-		require.NoError(t, err)
-		require.Equal(t, data, got)
-		_, gotRN, _ := cache.lastWriteReference()
-		require.Nil(t, gotRN)
-	}
-
-	t.Run("writes without a reference are not verified", func(t *testing.T) {
-		peer, cache, proxy := newProxy(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
-			Resource:    rn,
-			Data:        buf,
-			FinishWrite: true,
-		}})
-		require.NoError(t, err)
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Empty(t, deltas(before, writeVerificationCounts(t)))
-		assertBytesWritten(t, cache, rn, buf)
-	})
-
-	t.Run("matching content", func(t *testing.T) {
-		peer, cache, proxy := newProxy(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		require.NoError(t, writeShadow(t, peer, rn, ref, buf))
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Equal(t, map[string]float64{distributed_client.VerificationSuccess: 1}, deltas(before, writeVerificationCounts(t)))
-		assertBytesWritten(t, cache, rn, buf)
-	})
-
-	t.Run("mismatched content does not affect the write", func(t *testing.T) {
-		_, wrongBuf := testdigest.RandomCASResourceBuf(t, 100)
-		peer, cache, proxy := newProxy(t, map[string][]byte{blobName: wrongBuf})
-		before := writeVerificationCounts(t)
-		require.NoError(t, writeShadow(t, peer, rn, ref, buf))
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Equal(t, map[string]float64{distributed_client.VerificationFailure: 1}, deltas(before, writeVerificationCounts(t)))
-		assertBytesWritten(t, cache, rn, buf)
-	})
-
-	t.Run("unverifiable content does not affect the write", func(t *testing.T) {
-		peer, cache, proxy := newProxy(t, map[string][]byte{})
-		before := writeVerificationCounts(t)
-		require.NoError(t, writeShadow(t, peer, rn, ref, buf))
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Equal(t, map[string]float64{distributed_client.VerificationError: 1}, deltas(before, writeVerificationCounts(t)))
-		assertBytesWritten(t, cache, rn, buf)
-	})
-
-	t.Run("reference on the last message of a streamed write", func(t *testing.T) {
-		peer, cache, proxy := newProxy(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{
-			{Resource: rn, Data: buf[:50]},
-			{Resource: rn, Reference: ref, Data: buf[50:], FinishWrite: true},
-		})
-		require.NoError(t, err)
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Equal(t, map[string]float64{distributed_client.VerificationSuccess: 1}, deltas(before, writeVerificationCounts(t)))
-		assertBytesWritten(t, cache, rn, buf)
-	})
-
-	t.Run("reference on an earlier message is ignored", func(t *testing.T) {
-		peer, cache, proxy := newProxy(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		// A write's reference is not known until all of its bytes have been
-		// seen, so only the final message's reference counts.
-		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{
-			{Resource: rn, Reference: ref, Data: buf[:50]},
-			{Resource: rn, Data: buf[50:], FinishWrite: true},
-		})
-		require.NoError(t, err)
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Empty(t, deltas(before, writeVerificationCounts(t)))
-		assertBytesWritten(t, cache, rn, buf)
-	})
-
-	t.Run("compressed writes are verified against decompressed content", func(t *testing.T) {
-		zstdRN := rn.CloneVT()
-		zstdRN.Compressor = repb.Compressor_ZSTD
-		zstdRef := makeReference(zstdRN, blobName, repb.Compressor_ZSTD)
-		compressed := compression.CompressZstd(nil, buf)
-		// Shared storage holds the zstd blob; verification must hash the
-		// decompressed content.
-		peer, _, proxy := newProxy(t, map[string][]byte{blobName: compressed})
-		before := writeVerificationCounts(t)
-		require.NoError(t, writeShadow(t, peer, zstdRN, zstdRef, compressed))
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Equal(t, map[string]float64{distributed_client.VerificationSuccess: 1}, deltas(before, writeVerificationCounts(t)))
-	})
-
-	t.Run("AC writes are unverifiable", func(t *testing.T) {
-		acRN := rn.CloneVT()
-		acRN.CacheType = rspb.CacheType_AC
-		acRef := makeReference(acRN, blobName, repb.Compressor_IDENTITY)
-		peer, _, proxy := newProxy(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		require.NoError(t, writeShadow(t, peer, acRN, acRef, buf))
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Equal(t, map[string]float64{distributed_client.VerificationError: 1}, deltas(before, writeVerificationCounts(t)))
-		got, err := te.GetCache().Get(ctx, acRN)
-		require.NoError(t, err)
-		require.Equal(t, buf, got)
-	})
-
-	t.Run("reference-only writes are not verified", func(t *testing.T) {
-		peer, cache, proxy := newProxy(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
-			Resource:    rn,
-			Reference:   ref,
-			FinishWrite: true,
-		}})
-		require.NoError(t, err)
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Empty(t, deltas(before, writeVerificationCounts(t)))
-		_, gotRN, _ := cache.lastWriteReference()
-		require.Empty(t, cmp.Diff(rn, gotRN, protocmp.Transform()))
 	})
 }
 
@@ -2334,13 +2544,13 @@ func TestRemoteReferenceWriter(t *testing.T) {
 	newPeer := func(t *testing.T) (string, *serverReferenceCache, *distributed_client.Proxy) {
 		cache := &serverReferenceCache{Cache: te.GetCache()}
 		peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-		c := distributed_client.New(te, cache, peer)
+		c := newProxy(t, te, cache, peer)
 		require.NoError(t, c.StartListening())
 		waitUntilServerIsAlive(peer)
 		return peer, cache, c
 	}
 	clientAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	client := distributed_client.New(te, te.GetCache(), clientAddr)
+	client := newProxy(t, te, te.GetCache(), clientAddr)
 	require.NoError(t, client.StartListening())
 	waitUntilServerIsAlive(clientAddr)
 
@@ -2442,144 +2652,90 @@ func TestRemoteReferenceWriter(t *testing.T) {
 	})
 }
 
-func TestRemoteVerifiedWriter(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
-	require.NoError(t, err)
-
-	const blobName = "blobs/verified-write-blob"
-	clientAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	client := distributed_client.New(te, te.GetCache(), clientAddr)
-	require.NoError(t, client.StartListening())
-	waitUntilServerIsAlive(clientAddr)
-
-	newPeer := func(t *testing.T, blobs map[string][]byte) (string, *serverReferenceCache, *distributed_client.Proxy) {
-		cache := &serverReferenceCache{Cache: te.GetCache(), blobs: blobs}
-		peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-		c := distributed_client.New(te, cache, peer)
-		require.NoError(t, c.StartListening())
-		waitUntilServerIsAlive(peer)
-		return peer, cache, c
-	}
-	writeAll := func(t *testing.T, peer string, rn *rspb.ResourceName, ref *refpb.Reference, data []byte) {
-		t.Helper()
-		wc, err := client.RemoteVerifiedWriter(ctx, peer, "", rn)
-		require.NoError(t, err)
-		_, err = wc.Write(data)
-		require.NoError(t, err)
-		if ref != nil {
-			wc.SetReference(ref)
+// pendingRPCSeriesByPool returns, for each pool id, the number of series in
+// the PendingClientRPCsPerConnection gauge vec that carry the given target
+// label. A series persists at value 0 after its RPC finishes, so this observes
+// which pools ever carried an RPC to the target — and, since ClientConnPool
+// deletes its series on Close, which pools have been closed.
+func pendingRPCSeriesByPool(t *testing.T, target string) map[string]int {
+	ch := make(chan prometheus.Metric)
+	go func() {
+		metrics.PendingClientRPCsPerConnection.Collect(ch)
+		close(ch)
+	}()
+	counts := make(map[string]int)
+	for m := range ch {
+		d := &dto.Metric{}
+		require.NoError(t, m.Write(d))
+		labels := make(map[string]string, len(d.GetLabel()))
+		for _, lp := range d.GetLabel() {
+			labels[lp.GetName()] = lp.GetValue()
 		}
-		require.NoError(t, wc.Commit())
-		require.NoError(t, wc.Close())
+		if labels[metrics.GRPCTargetLabel] == target {
+			counts[labels[metrics.GRPCPoolIDLabel]]++
+		}
 	}
-
-	t.Run("a bound reference rides on the final message", func(t *testing.T) {
-		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-		ref := makeReference(rn, blobName, repb.Compressor_IDENTITY)
-		peer, cache, proxy := newPeer(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		beforeCounts, beforeSizes := writeRequestCounts(t)
-		writeAll(t, peer, rn, ref, buf)
-		proxy.WaitForPendingVerificationsForTesting()
-		// The bytes are the write and the reference was verified.
-		got, err := te.GetCache().Get(ctx, rn)
-		require.NoError(t, err)
-		require.Equal(t, buf, got)
-		_, gotRN, _ := cache.lastWriteReference()
-		require.Nil(t, gotRN)
-		after := writeVerificationCounts(t)
-		require.Equal(t, before[distributed_client.VerificationSuccess]+1, after[distributed_client.VerificationSuccess])
-		// A verified write is a byte write; the reference only rides along.
-		afterCounts, afterSizes := writeRequestCounts(t)
-		require.Equal(t, beforeCounts["bytes"]+1, afterCounts["bytes"])
-		require.Equal(t, beforeSizes["bytes"]+float64(rn.GetDigest().GetSizeBytes()), afterSizes["bytes"])
-		require.Equal(t, beforeCounts["reference"], afterCounts["reference"])
-	})
-
-	t.Run("an unbound reference is a plain byte write", func(t *testing.T) {
-		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-		peer, cache, proxy := newPeer(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		writeAll(t, peer, rn, nil, buf)
-		proxy.WaitForPendingVerificationsForTesting()
-		got, err := te.GetCache().Get(ctx, rn)
-		require.NoError(t, err)
-		require.Equal(t, buf, got)
-		_, gotRN, _ := cache.lastWriteReference()
-		require.Nil(t, gotRN)
-		require.Equal(t, before, writeVerificationCounts(t))
-	})
+	return counts
 }
 
-func TestVerifyingReadCloser(t *testing.T) {
-	newRC := func(data []byte) io.ReadCloser {
-		return io.NopCloser(bytes.NewReader(data))
+func onlyPoolID(t *testing.T, series map[string]int) string {
+	require.Len(t, series, 1)
+	for id := range series {
+		return id
 	}
-	rn, data := testdigest.RandomCASResourceBuf(t, 1000)
+	return ""
+}
 
-	// run reads through a verifying reader and returns the served bytes plus
-	// the change in the verification counter, keyed by outcome.
-	run := func(t *testing.T, secondary io.ReadCloser) (gotData []byte, counted map[string]float64) {
-		before := verificationCounts(t)
-		v := distributed_client.NewVerifyingReadCloser(newRC(data), secondary, log.NamedSubLogger(t.Name()), rn, "test-peer", "GR-test")
-		got, err := io.ReadAll(v)
-		require.NoError(t, err)
-		require.NoError(t, v.Close())
-		counted = map[string]float64{}
-		for s, c := range verificationCounts(t) {
-			if d := c - before[s]; d != 0 {
-				counted[s] = d
-			}
-		}
-		return got, counted
-	}
+func TestCloseInactiveClients(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
 
-	t.Run("matching streams", func(t *testing.T) {
-		got, counted := run(t, newRC(data))
-		require.Equal(t, data, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationSuccess: 1}, counted)
-	})
+	// Two peers, plus a local proxy that holds client pools to them.
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	p1 := newProxy(t, te, te.GetCache(), peer1)
+	require.NoError(t, p1.StartListening())
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	p2 := newProxy(t, te, te.GetCache(), peer2)
+	require.NoError(t, p2.StartListening())
+	waitUntilServerIsAlive(peer1)
+	waitUntilServerIsAlive(peer2)
+	local := newProxy(t, te, te.GetCache(), fmt.Sprintf("localhost:%d", testport.FindFree(t)))
 
-	t.Run("differing bytes", func(t *testing.T) {
-		other := append([]byte{}, data...)
-		other[500] ^= 0xff
-		got, counted := run(t, newRC(other))
-		// Primary bytes are served regardless of the mismatch.
-		require.Equal(t, data, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationFailure: 1}, counted)
-	})
+	// The gauge's target label is the dial target, which prefixes the peer.
+	target1 := "grpc://" + peer1
+	target2 := "grpc://" + peer2
 
-	t.Run("secondary too short", func(t *testing.T) {
-		got, counted := run(t, newRC(data[:900]))
-		require.Equal(t, data, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationFailure: 1}, counted)
-	})
+	rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+	_, err = local.RemoteContains(ctx, peer1, rn)
+	require.NoError(t, err)
+	_, err = local.RemoteContains(ctx, peer2, rn)
+	require.NoError(t, err)
+	pool1 := onlyPoolID(t, pendingRPCSeriesByPool(t, target1))
+	pool2 := onlyPoolID(t, pendingRPCSeriesByPool(t, target2))
 
-	t.Run("secondary too long", func(t *testing.T) {
-		longer := append(append([]byte{}, data...), 0x01)
-		got, counted := run(t, newRC(longer))
-		require.Equal(t, data, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationFailure: 1}, counted)
-	})
+	// Keep only peer1: peer2's pool must be closed (observable through its
+	// metric series being deleted) and peer1's left alone.
+	local.CloseInactiveClients(set.From(peer1))
+	require.Equal(t, pool1, onlyPoolID(t, pendingRPCSeriesByPool(t, target1)))
+	require.Empty(t, pendingRPCSeriesByPool(t, target2))
 
-	t.Run("secondary read error", func(t *testing.T) {
-		got, counted := run(t, &errorReadCloser{err: errors.New("gcs exploded")})
-		require.Equal(t, data, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationError: 1}, counted)
-	})
+	// The surviving pool still works.
+	_, err = local.RemoteContains(ctx, peer1, rn)
+	require.NoError(t, err)
+	require.Equal(t, pool1, onlyPoolID(t, pendingRPCSeriesByPool(t, target1)))
 
-	t.Run("secondary read errors carry their code", func(t *testing.T) {
-		canceledLabels := prometheus.Labels{
-			metrics.GroupID:                  "GR-test",
-			metrics.VerificationOutcomeLabel: distributed_client.VerificationError,
-			metrics.StatusHumanReadableLabel: "Canceled",
-		}
-		before := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReferenceVerificationCount, canceledLabels)
-		got, counted := run(t, &errorReadCloser{err: status.CanceledError("context canceled")})
-		require.Equal(t, data, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationError: 1}, counted)
-		after := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReferenceVerificationCount, canceledLabels)
-		require.Equal(t, before+1, after)
-	})
+	// A removed peer is re-dialed on demand, creating a fresh pool; the closed
+	// pool's series must not come back.
+	_, err = local.RemoteContains(ctx, peer2, rn)
+	require.NoError(t, err)
+	require.NotEqual(t, pool2, onlyPoolID(t, pendingRPCSeriesByPool(t, target2)))
+
+	// An update in which every dialed peer is still active closes nothing.
+	local.CloseInactiveClients(set.From(peer1, peer2))
+	_, err = local.RemoteContains(ctx, peer1, rn)
+	require.NoError(t, err)
+	_, err = local.RemoteContains(ctx, peer2, rn)
+	require.NoError(t, err)
 }

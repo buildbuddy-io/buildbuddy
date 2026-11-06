@@ -3,10 +3,10 @@ package podman_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/testpodman"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -26,8 +27,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vishvananda/netlink"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -35,13 +38,32 @@ import (
 
 // Populated by x_defs in BUILD file.
 var (
-	// rlocationpath for crun.
-	crunRlocationpath string
+	crunRlocationpath         string
+	busyboxImageRlocationpath string
 )
 
-const (
-	busyboxImage = "mirror.gcr.io/library/busybox:1.36.1@sha256:c230832bd3b0be59a6c47ed64294f9ce71e91b327957920b6929a0caa8353140"
-)
+func serveBusyboxImage(t *testing.T, user string) string {
+	registry := testregistry.Run(t, testregistry.Opts{})
+	t.Cleanup(func() {
+		require.NoError(t, registry.Shutdown())
+	})
+
+	// Allow HTTP pulls from the local registry without changing the host config.
+	configDir := t.TempDir()
+	writeFile(t, configDir, "registries.conf", fmt.Sprintf("[[registry]]\nlocation = %q\ninsecure = true\n", registry.Address()))
+	t.Setenv("CONTAINERS_REGISTRIES_CONF", filepath.Join(configDir, "registries.conf"))
+
+	image := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
+	if user != "" {
+		config, err := image.ConfigFile()
+		require.NoError(t, err)
+		config = config.DeepCopy()
+		config.Config.User = user
+		image, err = mutate.ConfigFile(image, config)
+		require.NoError(t, err)
+	}
+	return registry.Push(t, image, "busybox", nil)
+}
 
 func writeFile(t *testing.T, parentDir, fileName, content string) {
 	path := filepath.Join(parentDir, fileName)
@@ -63,6 +85,19 @@ func getTestEnv(t *testing.T) *testenv.TestEnv {
 
 func TestMain(m *testing.M) {
 	testpodman.TestMain(m, func() error {
+		// Firecracker leaves loopback down with network=off, but the local
+		// registry needs it. Bringing up lo does not enable external networking.
+		//
+		// TODO: remove once https://github.com/buildbuddy-io/buildbuddy/pull/13638
+		// is rolled out in prod
+		lo, err := netlink.LinkByName("lo")
+		if err != nil {
+			return fmt.Errorf("find loopback interface: %w", err)
+		}
+		if err := netlink.LinkSetUp(lo); err != nil {
+			return fmt.Errorf("bring up loopback interface: %w", err)
+		}
+
 		// Prevent podman from reading ~/.docker/config.json which causes the gcr
 		// credential helper to be used, which causes authentication to fail when
 		// pulling our custom test images.
@@ -85,7 +120,6 @@ func TestRunHelloWorld(t *testing.T) {
 		},
 		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)!"`},
 	}
-	// Need to give enough time to download the Docker image.
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	t.Cleanup(cancel)
 
@@ -94,7 +128,7 @@ func TestRunHelloWorld(t *testing.T) {
 	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: busyboxImage,
+		ContainerImage: serveBusyboxImage(t, ""),
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -125,7 +159,6 @@ func TestHelloWorldExec(t *testing.T) {
 		},
 		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)!"`},
 	}
-	// Need to give enough time to download the Docker image.
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
@@ -134,7 +167,7 @@ func TestHelloWorldExec(t *testing.T) {
 	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: busyboxImage,
+		ContainerImage: serveBusyboxImage(t, ""),
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -172,7 +205,6 @@ func TestExecStdio(t *testing.T) {
 			echo TestError >&2
 		`},
 	}
-	// Need to give enough time to download the Docker image.
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
@@ -181,7 +213,7 @@ func TestExecStdio(t *testing.T) {
 	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: busyboxImage,
+		ContainerImage: serveBusyboxImage(t, ""),
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -218,7 +250,7 @@ func TestSlowRun(t *testing.T) {
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: busyboxImage,
+		ContainerImage: serveBusyboxImage(t, ""),
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -228,7 +260,7 @@ func TestSlowRun(t *testing.T) {
 	})
 
 	// Ensure the image is cached
-	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage, false)
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage, false)
 	require.NoError(t, err)
 
 	cmd := &repb.Command{Arguments: []string{
@@ -264,7 +296,7 @@ func TestRun_Timeout(t *testing.T) {
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: busyboxImage,
+		ContainerImage: serveBusyboxImage(t, ""),
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -318,7 +350,7 @@ func TestExec_Timeout(t *testing.T) {
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: busyboxImage,
+		ContainerImage: serveBusyboxImage(t, ""),
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -370,7 +402,7 @@ func TestIsImageCached(t *testing.T) {
 	}{
 		{
 			desc:    "image cached",
-			image:   busyboxImage,
+			image:   serveBusyboxImage(t, ""),
 			want:    true,
 			wantErr: false,
 		},
@@ -406,19 +438,13 @@ func TestIsImageCached(t *testing.T) {
 }
 
 func TestForceRoot(t *testing.T) {
-	// The image used in this test doesn't have an arm64 variant yet; skip for
-	// now.
-	if runtime.GOARCH != "amd64" {
-		t.Skipf("test is currently only supported on amd64")
-	}
-
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	env := getTestEnv(t)
-	image := "gcr.io/flame-public/test-nonroot:test-enterprise-v1.5.4"
+	image := serveBusyboxImage(t, "1000")
 
 	cmd := &repb.Command{
 		Arguments: []string{"id", "-u"},
@@ -470,7 +496,7 @@ func TestUser(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	env := getTestEnv(t)
-	image := busyboxImage
+	image := serveBusyboxImage(t, "")
 
 	tests := []struct {
 		name      string
@@ -555,7 +581,7 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: busyboxImage,
+		ContainerImage: serveBusyboxImage(t, ""),
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -584,7 +610,7 @@ func TestPodmanRun_CommandNotExecuted_RecordsStats(t *testing.T) {
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: busyboxImage,
+		ContainerImage: serveBusyboxImage(t, ""),
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -623,14 +649,14 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
-		Arguments: []string{"bash", "-c", "head -c 1000000000 /dev/urandom | sha256sum"},
+		Arguments: []string{"sh", "-c", "head -c 1000000000 /dev/urandom | sha256sum"},
 	}
 	env := getTestEnv(t)
 
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: "docker.io/library/ubuntu:20.04",
+		ContainerImage: serveBusyboxImage(t, ""),
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -659,7 +685,7 @@ func TestSignal(t *testing.T) {
 	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: busyboxImage,
+		ContainerImage: serveBusyboxImage(t, ""),
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})

@@ -405,7 +405,9 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef ctrname.Ref
 		return nil, err
 	}
 
-	if useCache {
+	// When using OCIFetcher, the server writes the manifest to the cache, so
+	// don't write it again here.
+	if useCache && !useOCIFetcher {
 		err := ocicache.WriteManifestToAC(
 			ctx,
 			rawManifest,
@@ -783,7 +785,9 @@ func (l *layerFromDigest) DiffID() (ctr.Hash, error) {
 }
 
 func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
-	if l.image.useCache {
+	// When using OCIFetcher, the server checks the cache before falling back
+	// to the remote registry, so don't check it here.
+	if l.image.useCache && !l.image.useOCIFetcher {
 		rc, err := l.fetchLayerFromCache()
 		if err != nil && !status.IsNotFoundError(err) {
 			log.CtxWarningf(l.image.ctx, "Error fetching layer from cache: %s", err)

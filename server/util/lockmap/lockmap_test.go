@@ -17,7 +17,7 @@ func TestLock(t *testing.T) {
 
 	m := make(map[string]int, 0)
 	eg := errgroup.Group{}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		eg.Go(func() error {
 			ul := l.Lock("TestLock")
 			m["samekey"] += 1
@@ -44,7 +44,7 @@ func TestRLock(t *testing.T) {
 
 	m := make(map[string]int, 0)
 	eg := errgroup.Group{}
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		if i%5 == 0 {
 			eg.Go(func() error {
 				ul := l.Lock("TestRLock")

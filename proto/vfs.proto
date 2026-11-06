@@ -23,6 +23,13 @@ message Attrs {
   int64 blocks = 7;
   int64 block_size = 8;
   repeated ExtendedAttr extended = 9;
+  uint32 uid = 10;
+  uint32 gid = 11;
+}
+
+message Owner {
+  uint32 uid = 1;
+  uint32 gid = 2;
 }
 
 message SymlinkEntry {
@@ -75,6 +82,12 @@ message Node {
   uint32 mode = 2;
   string name = 3;
   Attrs attrs = 4;
+  // Position after this entry in a directory stream. Nonzero and stable across
+  // listings while the entry is unchanged, even if other entries are added or
+  // removed. Distinct names have distinct offsets, including hardlinks.
+  // GetDirectoryContents returns entries in increasing offset order, so a
+  // client resumes a listing at the first entry with a greater offset.
+  uint64 directory_offset = 5;
 }
 
 message GetDirectoryContentsResponse {
@@ -86,6 +99,7 @@ message MknodRequest {
   string name = 2;
   uint32 mode = 3;
   uint32 dev = 4;
+  Owner owner = 5;
 }
 
 message MknodResponse {
@@ -98,11 +112,13 @@ message CreateRequest {
   string name = 2;
   uint32 flags = 3;
   uint32 mode = 4;
+  Owner owner = 5;
 }
 
 message CreateResponse {
   uint64 id = 1;
   uint64 handle_id = 2;
+  Attrs attrs = 3;
 }
 
 message OpenRequest {
@@ -228,6 +244,17 @@ message SetAttrRequest {
     string name = 1;
   }
   RemoveExtendedAttr remove_extended = 7;
+
+  // Set when the size is changed through an open file handle (ftruncate).
+  // Truncation must modify the backing file, which is only reachable through
+  // the handle once the file has been unlinked.
+  optional uint64 handle_id = 8;
+
+  optional uint32 uid = 9;
+  optional uint32 gid = 10;
+
+  // The process changing uid or gid, used to check permissions.
+  Owner caller = 11;
 }
 
 message SetAttrResponse {
@@ -250,6 +277,7 @@ message MkdirRequest {
   uint64 parent_id = 1;
   string name = 2;
   uint32 perms = 3;
+  Owner owner = 4;
 }
 
 message MkdirResponse {
@@ -268,10 +296,12 @@ message SymlinkRequest {
   uint64 parent_id = 1;
   string name = 2;
   string target = 3;
+  Owner owner = 4;
 }
 
 message SymlinkResponse {
   uint64 id = 1;
+  Attrs attrs = 2;
 }
 
 message LinkRequest {

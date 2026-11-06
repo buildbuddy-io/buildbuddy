@@ -1,3 +1,5 @@
+"""Rules for writing build-setting values to files."""
+
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 
 def _write_flag_to_file_impl(ctx):

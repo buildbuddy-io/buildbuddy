@@ -15,6 +15,7 @@ go_library(
         "//enterprise/gateway/server",
         "//enterprise/server/backends/configsecrets",
         "//proto:gateway_service_go_proto",
+        "//server/backends/blobstore",
         "//server/config",
         "//server/http/interceptors",
         "//server/nullauth",

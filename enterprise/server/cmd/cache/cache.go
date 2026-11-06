@@ -93,7 +93,9 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	hit_tracker_client.Register(env)
+	if err := hit_tracker_client.Register(env); err != nil {
+		log.Fatal(err.Error())
+	}
 
 	// Configure a local cache.
 	if err := gcs_cache.Register(env); err != nil {
@@ -179,6 +181,7 @@ func main() {
 func startGRPCServers(env *real_environment.RealEnv) error {
 	// Add the API-Key, JWT, client-identity, etc... propagating interceptor.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
+		EnableConnectionAging: true,
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
 			interceptors.PropagateMetadataUnaryInterceptor(headersToPropagate...),
 		},

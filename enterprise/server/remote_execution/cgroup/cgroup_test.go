@@ -280,3 +280,69 @@ func TestParentPath(t *testing.T) {
 		})
 	}
 }
+
+func TestReadEffectiveCPULimit(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		// Files to write, keyed by path relative to the fake cgroupfs root.
+		files      map[string]string
+		onlineCPUs int
+		// Expected limit for the "pod/container" cgroup, in milliCPU.
+		expected int64
+	}{
+		{
+			name:       "no limits",
+			files:      map[string]string{"cpuset.cpus.effective": "0-63"},
+			onlineCPUs: 64,
+			expected:   64_000,
+		},
+		{
+			name: "quota on an ancestor",
+			files: map[string]string{
+				"cpuset.cpus.effective": "0-63",
+				"pod/cpu.max":           "5600000 100000",
+				"pod/container/cpu.max": "max 100000",
+			},
+			onlineCPUs: 64,
+			expected:   56_000,
+		},
+		{
+			name: "fractional quota",
+			files: map[string]string{
+				"cpuset.cpus.effective": "0-63",
+				"pod/container/cpu.max": "150000 100000",
+			},
+			onlineCPUs: 64,
+			expected:   1_500,
+		},
+		{
+			name: "nearest cpuset",
+			files: map[string]string{
+				"cpuset.cpus.effective":     "0-63",
+				"pod/cpuset.cpus.effective": "0-7,16-23",
+			},
+			onlineCPUs: 64,
+			expected:   16_000,
+		},
+		{
+			name:       "no cpuset controller",
+			files:      map[string]string{},
+			onlineCPUs: 8,
+			expected:   8_000,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			// Build a fake cgroupfs with a pod cgroup containing a container
+			// cgroup, then read the container's limit.
+			root := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "pod", "container"), 0755))
+			for path, content := range testCase.files {
+				require.NoError(t, os.WriteFile(filepath.Join(root, path), []byte(content+"\n"), 0644))
+			}
+
+			limit, err := readEffectiveCPULimit(root, filepath.Join(root, "pod", "container"), testCase.onlineCPUs)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expected, limit)
+		})
+	}
+}

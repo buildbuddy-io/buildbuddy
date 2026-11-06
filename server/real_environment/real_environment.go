@@ -123,7 +123,6 @@ type RealEnv struct {
 	kms                                  interfaces.KMS
 	secretService                        interfaces.SecretService
 	executionCollector                   interfaces.ExecutionCollector
-	suggestionService                    interfaces.SuggestionService
 	crypterService                       interfaces.Crypter
 	singleFlightDeduper                  interfaces.SingleFlightDeduper
 	promQuerier                          interfaces.PromQuerier
@@ -745,13 +744,6 @@ func (r *RealEnv) GetExecutionCollector() interfaces.ExecutionCollector {
 
 func (r *RealEnv) SetExecutionCollector(c interfaces.ExecutionCollector) {
 	r.executionCollector = c
-}
-
-func (r *RealEnv) GetSuggestionService() interfaces.SuggestionService {
-	return r.suggestionService
-}
-func (r *RealEnv) SetSuggestionService(s interfaces.SuggestionService) {
-	r.suggestionService = s
 }
 
 func (r *RealEnv) GetCrypter() interfaces.Crypter {

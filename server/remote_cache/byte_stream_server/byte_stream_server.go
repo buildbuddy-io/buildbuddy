@@ -15,12 +15,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_deprecation"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -28,8 +31,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/useragent"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/peer"
@@ -46,8 +51,11 @@ const defaultChunkedReadMaxInFlight = 32
 var compressBufSize = int(4e6) // 4MB
 
 var (
-	bazel5_1_0              = bazel_request.MustParseVersion("5.1.0")
+	Bazel5_1_0              = bazel_request.MustParseVersion("5.1.0")
+	bazel6_2_0              = bazel_request.MustParseVersion("6.2.0")
 	maxDirectWriteSizeBytes = flag.Int64("cache.max_direct_write_size_bytes", 16384, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
+
+	alreadyExistsStatus = expflag.Bool("cache.bytestream_already_exists_status", false, "If true, a ByteStream Write for a blob that already exists ends with an ALREADY_EXISTS status instead of a WriteResponse, for clients that can handle it.")
 )
 
 type skipWriteValidationKey struct{}
@@ -146,6 +154,9 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	if !s.supportsCompressor(r.GetCompressor()) {
 		return status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
 	}
+	if !r.IsEmpty() && remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		return status.NotFoundError("blob not found")
+	}
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return err
@@ -161,6 +172,8 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 			attribute.String("compressor", r.GetCompressor().String()),
 			attribute.Int64("resource_size", r.GetDigest().GetSizeBytes()),
 			attribute.String("peer", rpcPeerAddr(ctx)),
+			attribute.String("user_agent", useragent.Get(ctx)),
+			attribute.String("subdomain", subdomain.Get(ctx)),
 			attribute.String("invocation_id", bazelMetadata.GetToolInvocationId()),
 			attribute.String("action_id", bazelMetadata.GetActionId()),
 			attribute.String("action_mnemonic", bazelMetadata.GetActionMnemonic()),
@@ -199,7 +212,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	}
 	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
 	if err != nil {
-		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(ctx, s.env.GetExperimentFlagProvider(), cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
+		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
 			reader, err = s.attemptReadChunked(ctx, cacheRN, offset)
 		}
 		if err != nil {
@@ -618,13 +631,10 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 
 	if r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
 		// The protocol says it is *optional* to allow overwriting, but does
-		// not specify what errors should be returned in that case. We would
-		// like to return an "AlreadyExists" error here, but it causes errors
-		// with parallel actions during remote execution.
-		//
-		// Protocol does say that if another parallel write had finished while
-		// this one was ongoing, we can immediately return a response with the
-		// committed size, so we'll just do that.
+		// not specify what errors should be returned in that case. Clients
+		// known to handle it (see ClientHandlesAlreadyExists) are sent an
+		// ALREADY_EXISTS status when the experiment is enabled. Other
+		// clients fail on that status, so they get a WriteResponse instead.
 		exists, err := s.cache.Contains(ctx, casRN.ToProto())
 		if err != nil {
 			return nil, err
@@ -798,6 +808,14 @@ func (w *writeHandler) Close() error {
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
 	var streamState *writeHandler
+	defer func() {
+		if streamState == nil {
+			return
+		}
+		if err := streamState.Close(); err != nil {
+			log.Error(err.Error())
+		}
+	}()
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -808,6 +826,10 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 		}
 
 		if streamState == nil {
+			if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+				return s.handleAlreadyExists(ctx, hitTracker, stream, req)
+			}
 			streamState, err = s.beginWrite(ctx, req)
 			if status.IsAlreadyExistsError(err) {
 				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
@@ -816,11 +838,6 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err != nil {
 				return err
 			}
-			defer func() {
-				if err := streamState.Close(); err != nil {
-					log.Error(err.Error())
-				}
-			}()
 		}
 
 		resp, err := streamState.Write(req)
@@ -857,11 +874,26 @@ func (s *ByteStreamServer) supportsCompressor(compression repb.Compressor_Value)
 // resource name, the sequence of returned `committed_size` values will be
 // non-decreasing.
 func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		return nil, status.NotFoundError("upload not found")
+	}
 	// If the data has not been committed to the cache, then just tell the
 	// client to retry from the beginning in a way that avoids future calls
 	// to this method in the case of Bazel.
 	// https://github.com/bazelbuild/bazel/pull/28235
 	return nil, status.UnimplementedError("not implemented")
+}
+
+// ClientHandlesAlreadyExists reports whether the client treats an
+// ALREADY_EXISTS status on a Write as a successful upload. Our clients
+// advertise that in the client features header. Bazel has supported these
+// errors since 6.2.0.
+func ClientHandlesAlreadyExists(ctx context.Context) bool {
+	if clientfeatures.Supports(ctx, clientfeatures.ByteStreamWriteAlreadyExists) {
+		return true
+	}
+	v := bazel_request.GetVersion(ctx)
+	return v != nil && v.IsAtLeast(bazel6_2_0)
 }
 
 func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interfaces.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
@@ -878,10 +910,28 @@ func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interface
 		}
 	}()
 
+	clientUploadedBytes, err = EndWriteAlreadyExists(ctx, stream, r, clientUploadedBytes, firstRequest.FinishWrite)
+	return err
+}
+
+// EndWriteAlreadyExists ends a Write for a blob the server already has: with
+// ALREADY_EXISTS for a client that handles it, otherwise with the
+// WriteResponse the client expects. uploadedBytes is the number of data bytes
+// received so far and finished whether finish_write was among them. It
+// returns uploadedBytes plus whatever it drains from the stream.
+func EndWriteAlreadyExists(ctx context.Context, stream bspb.ByteStream_WriteServer, r *digest.CASResourceName, uploadedBytes int64, finished bool) (int64, error) {
+	// If the client supports it and the experiment is on, send the "already
+	// exists" indication via a status instead of a special WriteResponse.
+	// Sending the response as a status in the trailer has better compatibility
+	// with Envoy load balancers.
+	if ClientHandlesAlreadyExists(ctx) && alreadyExistsStatus.Get(ctx) {
+		return uploadedBytes, status.AlreadyExistsError("blob already exists")
+	}
+
 	// Uncompressed uploads can always short-circuit, returning
 	// the digest size as the committed size.
 	if r.GetCompressor() == repb.Compressor_IDENTITY {
-		return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: r.GetDigest().GetSizeBytes()})
+		return uploadedBytes, stream.SendAndClose(&bspb.WriteResponse{CommittedSize: r.GetDigest().GetSizeBytes()})
 	}
 
 	// Bazel pre-5.1.0 doesn't support short-circuiting compressed uploads.
@@ -889,23 +939,23 @@ func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interface
 	// compressed stream. Since there is no unique compressed representation,
 	// the only way to get the compressed stream size is to read the full
 	// stream.
-	if v := bazel_request.GetVersion(ctx); v != nil && !v.IsAtLeast(bazel5_1_0) {
-		if !firstRequest.FinishWrite {
-			n, err := s.recvAll(stream)
-			clientUploadedBytes += n
+	if v := bazel_request.GetVersion(ctx); v != nil && !v.IsAtLeast(Bazel5_1_0) {
+		if !finished {
+			n, err := recvAll(stream)
+			uploadedBytes += n
 			if err != nil {
-				return err
+				return uploadedBytes, err
 			}
 		}
-		return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: clientUploadedBytes})
+		return uploadedBytes, stream.SendAndClose(&bspb.WriteResponse{CommittedSize: uploadedBytes})
 	}
 
-	return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: -1})
+	return uploadedBytes, stream.SendAndClose(&bspb.WriteResponse{CommittedSize: -1})
 }
 
 // recvAll receives the remaining write requests from the client, and returns
 // the total (compressed) size of the uploaded bytes.
-func (s *ByteStreamServer) recvAll(stream bspb.ByteStream_WriteServer) (int64, error) {
+func recvAll(stream bspb.ByteStream_WriteServer) (int64, error) {
 	size := int64(0)
 	for {
 		req, err := stream.Recv()

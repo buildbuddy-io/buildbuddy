@@ -5,10 +5,14 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"io"
 	"net"
+	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -392,6 +396,12 @@ func TestCommandBuffer(t *testing.T) {
 	err = buf.RPush(ctx, "list2", "A")
 	require.NoError(t, err)
 
+	// Push 3 values to list3, then truncate it to its first 2 values.
+	err = buf.RPush(ctx, "list3", "1", "2", "3")
+	require.NoError(t, err)
+	err = buf.LTruncate(ctx, "list3", 2)
+	require.NoError(t, err)
+
 	// Create 2 keys that don't expire (initially).
 	_, err = rdb.Set(ctx, "expiring1", "value1", 0).Result()
 	require.NoError(t, err)
@@ -449,6 +459,9 @@ func TestCommandBuffer(t *testing.T) {
 	list2, err := rdb.LRange(ctx, "list2", 0, -1).Result()
 	require.NoError(t, err)
 	assert.Equal(t, []string{"A"}, list2)
+	list3, err := rdb.LRange(ctx, "list3", 0, -1).Result()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2"}, list3)
 
 	_, err = rdb.Get(ctx, "expiring1").Result()
 	assert.Equal(t, redis.Nil, err)
@@ -493,6 +506,11 @@ func TestCommandBuffer_PostShutdown(t *testing.T) {
 	err = buf.SAdd(ctx, "set2", "1")
 	require.NoError(t, err)
 
+	err = buf.RPush(ctx, "list1", "1", "2", "3")
+	require.NoError(t, err)
+	err = buf.LTruncate(ctx, "list1", 2)
+	require.NoError(t, err)
+
 	// Create 2 keys that don't expire (initially).
 	_, err = rdb.Set(ctx, "expiring1", "value1", 0).Result()
 	require.NoError(t, err)
@@ -534,6 +552,10 @@ func TestCommandBuffer_PostShutdown(t *testing.T) {
 	s2, err := rdb.SMembers(ctx, "set2").Result()
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"1"}, s2, "SAdd not working as expected")
+
+	list1, err := rdb.LRange(ctx, "list1", 0, -1).Result()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2"}, list1)
 
 	_, err = rdb.Get(ctx, "expiring1").Result()
 	assert.Equal(t, redis.Nil, err)
@@ -669,7 +691,6 @@ func BenchmarkCommandBuffer_Flush_HIncrBy(b *testing.B) {
 		{10, 10},
 		{100, 100},
 	} {
-		p := p
 		b.Run(fmt.Sprintf("Keys=%d,Fields=%d,", p.nRedisKeys, p.nHashKeys), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 
@@ -682,6 +703,66 @@ func BenchmarkCommandBuffer_Flush_HIncrBy(b *testing.B) {
 				err := buf.Flush(ctx)
 				require.NoError(b, err)
 			}
+		})
+	}
+}
+
+// fakeRedisError stands in for a reply Redis returns as an error, which the
+// client represents with a type internal to it.
+type fakeRedisError string
+
+func (e fakeRedisError) Error() string { return string(e) }
+func (fakeRedisError) RedisError()     {}
+
+// fakeNetTimeout behaves like the net package's timeout error, which is
+// unexported: it is a net.Error that timed out and also reports itself as
+// context.DeadlineExceeded through errors.Is.
+type fakeNetTimeout struct{}
+
+func (fakeNetTimeout) Error() string     { return "i/o timeout" }
+func (fakeNetTimeout) Timeout() bool     { return true }
+func (fakeNetTimeout) Temporary() bool   { return true }
+func (fakeNetTimeout) Is(err error) bool { return err == context.DeadlineExceeded }
+
+func TestIsTransientError(t *testing.T) {
+	// net.Dialer wraps cancellation in its own error type, whose Is method
+	// matches context.Canceled without exposing it through Unwrap.
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, canceledDial := (&net.Dialer{}).DialContext(ctx, "tcp", "127.0.0.1:1")
+	require.ErrorIs(t, canceledDial, context.Canceled)
+
+	for _, tc := range []struct {
+		name      string
+		err       error
+		transient bool
+	}{
+		{name: "nil", err: nil, transient: false},
+		{name: "canceled context", err: context.Canceled, transient: false},
+		{name: "canceled dial", err: canceledDial, transient: false},
+		{name: "joined cancellation", err: errors.Join(io.EOF, context.Canceled), transient: false},
+		{name: "multiply wrapped cancellation", err: fmt.Errorf("read: %w; dial: %w", io.EOF, canceledDial), transient: false},
+		{name: "expired context", err: context.DeadlineExceeded, transient: false},
+		{name: "wrapped expired context", err: fmt.Errorf("read stream: %w", context.DeadlineExceeded), transient: false},
+		{name: "dropped connection", err: io.EOF, transient: true},
+		{name: "truncated reply", err: io.ErrUnexpectedEOF, transient: true},
+		{name: "connection refused", err: &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}, transient: true},
+		{name: "broken pipe", err: &net.OpError{Op: "write", Err: syscall.EPIPE}, transient: true},
+		{name: "closed client", err: redis.ErrClosed, transient: false},
+		{name: "ring unavailable", err: errors.New("redis: all ring shards are down"), transient: false},
+		{name: "malformed reply", err: errors.New("redis: can't parse array reply"), transient: false},
+		{name: "timeout", err: os.ErrDeadlineExceeded, transient: true},
+		{name: "dial timeout", err: &net.OpError{Op: "dial", Err: fakeNetTimeout{}}, transient: true},
+		{name: "missing key", err: redis.Nil, transient: false},
+		{name: "loading", err: fakeRedisError("LOADING Redis is loading the dataset in memory"), transient: true},
+		{name: "read only replica", err: fakeRedisError("READONLY You can't write against a read only replica."), transient: true},
+		{name: "too many clients", err: fakeRedisError("ERR max number of clients reached"), transient: true},
+		{name: "wrapped loading", err: fmt.Errorf("check stream: %w", fakeRedisError("LOADING Redis is loading the dataset in memory")), transient: true},
+		{name: "wrong type", err: fakeRedisError("WRONGTYPE Operation against a key holding the wrong kind of value"), transient: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			transient := redisutil.IsTransientError(tc.err)
+			require.Equal(t, tc.transient, transient)
 		})
 	}
 }

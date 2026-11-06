@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -52,11 +53,14 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
 
+	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -82,7 +86,7 @@ func TestSetOptionDefaults(t *testing.T) {
 	require.Equal(t, pebble_cache.DefaultMaxSizeBytes, opts.MaxSizeBytes)
 	require.Equal(t, pebble_cache.DefaultBlockCacheSizeBytes, opts.BlockCacheSizeBytes)
 	require.Equal(t, pebble_cache.DefaultMaxInlineFileSizeBytes, opts.MaxInlineFileSizeBytes)
-	require.Equal(t, &pebble_cache.DefaultAtimeUpdateThreshold, opts.AtimeUpdateThreshold)
+	require.Equal(t, pebble_cache.DefaultMinEvictionAge/2, *opts.AtimeUpdateThreshold)
 	require.Equal(t, &pebble_cache.DefaultAtimeBufferSize, opts.AtimeBufferSize)
 	require.Equal(t, &pebble_cache.DefaultMinEvictionAge, opts.MinEvictionAge)
 
@@ -132,6 +136,84 @@ func TestSetOptionDefaults(t *testing.T) {
 	require.Equal(t, &atimeUpdateThreshold, opts.AtimeUpdateThreshold)
 	require.Equal(t, &atimeBufferSize, opts.AtimeBufferSize)
 	require.Equal(t, &minEvictionAge, opts.MinEvictionAge)
+}
+
+func TestSetOptionDefaults_AtimeUpdateThreshold(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		threshold      *time.Duration
+		minEvictionAge *time.Duration
+		partitions     []disk.Partition
+		want           time.Duration
+	}{
+		{
+			name:           "derived from the cache-wide min eviction age",
+			minEvictionAge: new(6 * time.Hour),
+			want:           3 * time.Hour,
+		},
+		{
+			name:           "derived from the smallest partition override",
+			minEvictionAge: new(6 * time.Hour),
+			partitions: []disk.Partition{
+				{ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: 1},
+				{ID: "a", MaxSizeBytes: 1, MinEvictionAge: new(time.Hour)},
+				{ID: "b", MaxSizeBytes: 1, MinEvictionAge: new(4 * time.Hour)},
+			},
+			want: 30 * time.Minute,
+		},
+		{
+			name:           "cache-wide min eviction age is ignored when every partition overrides it",
+			minEvictionAge: new(time.Hour),
+			partitions: []disk.Partition{
+				{ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: 1, MinEvictionAge: new(2 * time.Hour)},
+				{ID: "a", MaxSizeBytes: 1, MinEvictionAge: new(4 * time.Hour)},
+			},
+			want: time.Hour,
+		},
+		{
+			name:           "negative threshold is derived like unset",
+			threshold:      new(time.Duration(-1)),
+			minEvictionAge: new(6 * time.Hour),
+			want:           3 * time.Hour,
+		},
+		{
+			name:           "zero min eviction age falls back to the fixed default",
+			minEvictionAge: new(time.Duration(0)),
+			want:           pebble_cache.DefaultAtimeUpdateThreshold,
+		},
+		{
+			name:           "zero-age partition does not mask a positive partition age",
+			minEvictionAge: new(6 * time.Hour),
+			partitions: []disk.Partition{
+				{ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: 1, MinEvictionAge: new(time.Duration(0))},
+				{ID: "a", MaxSizeBytes: 1, MinEvictionAge: new(5 * time.Minute)},
+			},
+			want: 150 * time.Second,
+		},
+		{
+			name:           "explicit zero threshold is kept",
+			threshold:      new(time.Duration(0)),
+			minEvictionAge: new(6 * time.Hour),
+			want:           0,
+		},
+		{
+			name:           "explicit threshold above half the min eviction age is kept",
+			threshold:      new(3 * time.Hour),
+			minEvictionAge: new(4 * time.Hour),
+			want:           3 * time.Hour,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := &pebble_cache.Options{
+				AtimeUpdateThreshold: tc.threshold,
+				MinEvictionAge:       tc.minEvictionAge,
+				Partitions:           tc.partitions,
+			}
+			pebble_cache.SetOptionDefaults(opts)
+			got := *opts.AtimeUpdateThreshold
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestIsolation(t *testing.T) {
@@ -295,14 +377,16 @@ func TestGetSet(t *testing.T) {
 }
 
 func TestPresenceCache(t *testing.T) {
-	flags.Set(t, "cache.pebble.presence_cache.max_entries", int64(1_000_000))
+	// The default configuration enables the presence cache without overrides.
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
 
 	const cacheName = "presence_test"
 	options := &pebble_cache.Options{
 		Name:                   cacheName,
+		Clock:                  clock,
 		RootDirectory:          testfs.MakeTempDir(t),
 		MaxSizeBytes:           int64(1_000_000_000),
 		MaxInlineFileSizeBytes: 100,
@@ -331,6 +415,15 @@ func TestPresenceCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, missing, "digest should be present")
 	require.Greater(t, testutil.ToFloat64(hitCtr), hitsBefore, "repeat FindMissing should hit the presence cache")
+
+	// After the default one-minute TTL, FindMissing must consult Pebble again
+	// so repeated presence checks do not indefinitely skip access-time updates.
+	clock.Advance(time.Minute)
+	hitsBefore = testutil.ToFloat64(hitCtr)
+	missing, err = pc.FindMissing(ctx, []*rspb.ResourceName{r})
+	require.NoError(t, err)
+	require.Empty(t, missing)
+	require.Equal(t, hitsBefore, testutil.ToFloat64(hitCtr), "expired entries must not be presence-cache hits")
 
 	// Deleting the blob must invalidate the presence cache; otherwise FindMissing
 	// would wrongly report it present (data loss).
@@ -952,7 +1045,7 @@ func TestSizeLimit(t *testing.T) {
 			defer pc.Stop()
 
 			resourceKeys := make([]*rspb.ResourceName, 0)
-			for i := 0; i < 150; i++ {
+			for range 150 {
 				r, buf := testdigest.RandomCASResourceBuf(t, 1000)
 				resourceKeys = append(resourceKeys, r)
 				if err := pc.Set(ctx, r, buf); err != nil {
@@ -1140,7 +1233,7 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 			defer pc.Stop()
 
 			// Do multiple reads to reuse buffers in bufferpool
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				decompressedRN, blob := testdigest.RandomCompressibleCASResourceBuf(t, tc.blobSize, "" /*instanceName*/)
 
 				require.NoError(t, err, "i=%d", i)
@@ -1196,7 +1289,7 @@ func TestCompression_ParallelRequests(t *testing.T) {
 			defer pc.Stop()
 
 			eg := errgroup.Group{}
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				eg.Go(func() error {
 					decompressedRN, blob := testdigest.RandomCompressibleCASResourceBuf(t, tc.blobSize, "" /*instanceName*/)
 
@@ -1227,7 +1320,7 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 	numDigests := 10
 	totalSizeCompresedData := 0
 	digestBlobs := make(map[*repb.Digest][]byte, numDigests)
-	for i := 0; i < numDigests; i++ {
+	for range numDigests {
 		rn, blob := testdigest.RandomCompressibleCASResourceBuf(t, 2000, "" /*instanceName*/)
 		compressed := compression.CompressZstd(nil, blob)
 		require.Less(t, len(compressed), len(blob))
@@ -1423,7 +1516,7 @@ func TestNoEarlyEviction(t *testing.T) {
 
 			// Should be able to add 10 things without anything getting evicted
 			resourceKeys := make([]*rspb.ResourceName, numDigests)
-			for i := 0; i < numDigests; i++ {
+			for i := range numDigests {
 				r, buf := testdigest.RandomCASResourceBuf(t, tc.digestSize)
 				resourceKeys[i] = r
 
@@ -1485,7 +1578,7 @@ func TestPartitionMinEvictionAge(t *testing.T) {
 	// Wake the sample generator, which goes to sleep while the cache is
 	// empty. Advance repeatedly in case it wasn't sleeping yet on the first
 	// advance.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		clock.Advance(pebble_cache.SamplerSleepDuration)
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -1520,6 +1613,8 @@ func TestPartitionMinEvictionAge(t *testing.T) {
 }
 
 func TestPartitionJanitorCutoffThreshold(t *testing.T) {
+	// Check Pebble directly so the presence-cache TTL doesn't delay observing eviction.
+	flags.Set(t, "cache.pebble.presence_cache.max_entries", int64(0))
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 
@@ -1549,7 +1644,7 @@ func TestPartitionJanitorCutoffThreshold(t *testing.T) {
 	}
 	write := func(t *testing.T, ctx context.Context, pc *pebble_cache.PebbleCache, n int) []*rspb.ResourceName {
 		resourceKeys := make([]*rspb.ResourceName, 0, n)
-		for i := 0; i < n; i++ {
+		for range n {
 			rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
 			require.NoError(t, pc.Set(ctx, rn, buf))
 			resourceKeys = append(resourceKeys, rn)
@@ -1651,7 +1746,7 @@ func TestLRU(t *testing.T) {
 			quartile := numDigests / 4
 			resourceKeys := make([]*rspb.ResourceName, 0)
 			lastUsed := make(map[*rspb.ResourceName]time.Time, numDigests)
-			for i := 0; i < numDigests; i++ {
+			for i := range numDigests {
 				cacheType := rspb.CacheType_CAS
 				if i%2 == 0 {
 					cacheType = rspb.CacheType_AC
@@ -1684,7 +1779,7 @@ func TestLRU(t *testing.T) {
 			}
 
 			// Write more data.
-			for i := 0; i < quartile; i++ {
+			for i := range quartile {
 				cacheType := rspb.CacheType_CAS
 				if i%2 == 0 {
 					cacheType = rspb.CacheType_AC
@@ -1802,7 +1897,7 @@ func TestStartupScan(t *testing.T) {
 			err = pc.Start()
 			require.NoError(t, err)
 			resources := make([]*rspb.ResourceName, 0)
-			for i := 0; i < 1000; i++ {
+			for i := range 1000 {
 				remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
 				r, buf := testdigest.NewRandomResourceAndBuf(t, tc.digestSize, rspb.CacheType_AC, remoteInstanceName)
 				err = pc.Set(ctx, r, buf)
@@ -1859,13 +1954,13 @@ func TestDeleteOrphans(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	digests := make(map[string]*digestAndType, 0)
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		r, buf := testdigest.NewRandomResourceAndBuf(t, 10000, rspb.CacheType_CAS, "remoteInstanceName")
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		digests[r.GetDigest().GetHash()] = &digestAndType{rspb.CacheType_CAS, r.GetDigest()}
 	}
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		r, buf := testdigest.NewRandomResourceAndBuf(t, 10000, rspb.CacheType_AC, "remoteInstanceName")
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
@@ -1977,7 +2072,7 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	}
 	pc.Start()
 	resources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		r, buf := testdigest.NewRandomResourceAndBuf(t, 10000, rspb.CacheType_CAS, "remoteInstanceName")
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
@@ -2165,7 +2260,7 @@ func TestMigrateVersions(t *testing.T) {
 			t.Fatal(err)
 		}
 		pc.Start()
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
 			r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, remoteInstanceName)
 			err = pc.Set(ctx, r, buf)
@@ -2285,6 +2380,83 @@ func getCrypterEnv(t *testing.T) (*testenv.TestEnv, string) {
 	err = crypter_service.Register(env)
 	require.NoError(t, err)
 	return env, kmsDir
+}
+
+type testCrypter struct {
+	enpb.UnimplementedEncryptionServiceServer
+	activeKeyFunc func(ctx context.Context) (*sgpb.EncryptionMetadata, error)
+}
+
+func (c *testCrypter) SetEncryptionConfig(ctx context.Context, req *enpb.SetEncryptionConfigRequest) (*enpb.SetEncryptionConfigResponse, error) {
+	return &enpb.SetEncryptionConfigResponse{}, nil
+}
+func (c *testCrypter) GetEncryptionConfig(ctx context.Context, req *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error) {
+	return &enpb.GetEncryptionConfigResponse{Enabled: true}, nil
+}
+
+func (c *testCrypter) ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
+	return c.activeKeyFunc(ctx)
+}
+
+func (c *testCrypter) NewEncryptor(ctx context.Context, d *repb.Digest, w interfaces.CommittedWriteCloser, em *sgpb.EncryptionMetadata) (interfaces.Encryptor, error) {
+	return &metadataOnlyEncryptor{
+		CommittedWriteCloser: w,
+		md:                   em,
+	}, nil
+}
+
+func (c *testCrypter) NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata) (interfaces.Decryptor, error) {
+	return r, nil
+}
+
+type metadataOnlyEncryptor struct {
+	interfaces.CommittedWriteCloser
+
+	md *sgpb.EncryptionMetadata
+}
+
+func (e *metadataOnlyEncryptor) Metadata() *sgpb.EncryptionMetadata {
+	return e.md
+}
+
+func TestEncryptionUsesSameKeyForFileRecordAndEncryptor(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+
+	userID := "US123"
+	groupID := "GR123"
+	user := testauth.User(userID, groupID)
+	user.CacheEncryptionEnabled = true
+	auther := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{userID: user})
+	te.SetAuthenticator(auther)
+	ctx, err := auther.WithAuthenticatedUser(t.Context(), userID)
+	require.NoError(t, err)
+
+	var nKeysGenerated atomic.Int64
+	crypter := &testCrypter{
+		activeKeyFunc: func(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
+			// Return a new key every time ActiveKey is called.
+			return &sgpb.EncryptionMetadata{
+				EncryptionKeyId: fmt.Sprintf("EK%d", nKeysGenerated.Add(1)),
+			}, nil
+		},
+	}
+	te.SetCrypter(crypter)
+
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		Partitions: []disk.Partition{{
+			ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: 1_000_000_000,
+		}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(ctx, rn, buf))
+
+	// Make sure the Set operation used only one encryption key.
+	require.Equal(t, int64(1), nKeysGenerated.Load())
 }
 
 func TestEncryption(t *testing.T) {
@@ -2643,7 +2815,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 
 func benchmarkGetMulti(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		r, buf := testdigest.NewRandomResourceAndBuf(b, digestSizeBytes, rspb.CacheType_CAS, "" /*instanceName*/)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
@@ -2654,7 +2826,7 @@ func benchmarkGetMulti(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.C
 	randomDigests := func(n int) []*rspb.ResourceName {
 		r := make([]*rspb.ResourceName, 0, n)
 		offset := randIntN(b, len(digestKeys))
-		for i := 0; i < n; i++ {
+		for i := range n {
 			r = append(r, digestKeys[(i+offset)%len(digestKeys)])
 		}
 		return r
@@ -2707,7 +2879,7 @@ func BenchmarkGetMulti(b *testing.B) {
 
 func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64, present bool) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
 		if present {
@@ -2720,7 +2892,7 @@ func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx contex
 	randomDigests := func(n int) []*rspb.ResourceName {
 		r := make([]*rspb.ResourceName, 0, n)
 		offset := randIntN(b, len(digestKeys))
-		for i := 0; i < n; i++ {
+		for i := range n {
 			r = append(r, digestKeys[(i+offset)%len(digestKeys)])
 		}
 		return r
@@ -2794,7 +2966,7 @@ func BenchmarkFindMissing(b *testing.B) {
 
 func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
@@ -2957,7 +3129,7 @@ func TestSampling(t *testing.T) {
 
 	// Write some random digests as well.
 	var randomResources []*rspb.ResourceName
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		anonCtx := getAnonContext(t, te)
 		err = pc.Set(anonCtx, rn, buf)
@@ -3065,7 +3237,7 @@ func TestGCSBlobStorage(t *testing.T) {
 	defer pc.Stop()
 
 	sampleData := make(map[*rspb.ResourceName][]byte)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		sampleData[rn] = buf
 
@@ -3210,6 +3382,7 @@ func TestCreateReference(t *testing.T) {
 
 	// Blobs at or above minGCSFileSize are staged in GCS and referenceable.
 	gcsRN, gcsBuf := testdigest.RandomCASResourceBuf(t, 100)
+	require.True(t, pc.IsReferenceable(ctx, gcsRN))
 	w, err := pc.CreateReference(ctx, gcsRN)
 	require.NoError(t, err)
 	defer w.Close()
@@ -3244,10 +3417,23 @@ func TestCreateReference(t *testing.T) {
 	// Blobs below minGCSFileSize cannot be referenced, and nothing is
 	// written anywhere for them.
 	diskRN, _ := testdigest.RandomCASResourceBuf(t, 50)
+	require.False(t, pc.IsReferenceable(ctx, diskRN))
 	_, err = pc.CreateReference(ctx, diskRN)
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
 	_, err = pc.Get(ctx, diskRN)
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+
+	// A cache without shared storage can't reference anything.
+	localPC, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		MaxSizeBytes:  int64(1_000_000), // 1MB
+	})
+	require.NoError(t, err)
+	require.NoError(t, localPC.Start())
+	defer localPC.Stop()
+	require.False(t, localPC.IsReferenceable(ctx, gcsRN))
+	_, err = localPC.CreateReference(ctx, gcsRN)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got %v", err)
 }
 
 func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
@@ -3280,7 +3466,7 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	defer pc.Stop()
 
 	sampleData := make(map[*rspb.ResourceName][]byte)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		sampleData[rn] = buf
 
@@ -3312,6 +3498,15 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 		_, err := pc.Get(ctx, rn)
 		assert.NoError(t, err, rn)
 	}
+}
+
+func pebbleGCSOps(t *testing.T, op string) float64 {
+	return testmetrics.CounterValueForLabels(t, metrics.PebbleCacheGCSOperationCount, prometheus.Labels{
+		metrics.OpLabel:                  op,
+		metrics.PartitionID:              pebble_cache.DefaultPartitionID,
+		metrics.CacheNameLabel:           pebble_cache.DefaultName,
+		metrics.StatusHumanReadableLabel: codes.OK.String(),
+	})
 }
 
 func TestGCSAtimeUpdateThreshold(t *testing.T) {
@@ -3347,11 +3542,15 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.NoError(t, pc.Start())
 	defer pc.Stop()
 
+	writesBefore := pebbleGCSOps(t, "write")
+	atimeUpdatesBefore := pebbleGCSOps(t, "update_atime")
 	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	require.NoError(t, pc.Set(ctx, rn, buf))
+	require.Equal(t, writesBefore+1, pebbleGCSOps(t, "write"))
 
 	// Writing the object sets its custom time; it does not call UpdateCustomTime.
 	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
+	require.Equal(t, atimeUpdatesBefore, pebbleGCSOps(t, "update_atime"))
 
 	// waitForAtime blocks until the object's pebble atime reaches the current
 	// (fake) clock time, i.e. until the queued atime update has been processed.
@@ -3370,6 +3569,7 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.NoError(t, err)
 	waitForAtime()
 	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
+	require.Equal(t, atimeUpdatesBefore, pebbleGCSOps(t, "update_atime"))
 
 	// Access the object once its custom time is older than the threshold.
 	// Now the GCS custom time is refreshed.
@@ -3378,6 +3578,9 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.NoError(t, err)
 	waitForAtime()
 	require.Equal(t, 1, mockGCS.UpdateCustomTimeCallCount())
+	require.Equal(t, atimeUpdatesBefore+1, pebbleGCSOps(t, "update_atime"))
+	// Reads don't upload anything.
+	require.Equal(t, writesBefore+1, pebbleGCSOps(t, "write"))
 }
 
 func dirSizeFiles(path string) (int64, error) {
@@ -3555,7 +3758,7 @@ func TestGCSBlobStorageReadAfterTTL(t *testing.T) {
 	defer pc.Stop()
 
 	sampleData := make(map[*rspb.ResourceName][]byte)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		sampleData[rn] = buf
 
@@ -4234,6 +4437,7 @@ func TestWriteReference(t *testing.T) {
 		ref, err := src.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
+		clonesBefore := pebbleGCSOps(t, "clone")
 		require.NoError(t, dst.WriteReference(ctx, ref, rn, false /*=mustClone*/))
 		got, err := dst.Get(ctx, rn)
 		require.NoError(t, err)
@@ -4243,6 +4447,7 @@ func TestWriteReference(t *testing.T) {
 		dstRef, err := dst.ReadReference(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, blobName(ref), blobName(dstRef))
+		require.Equal(t, clonesBefore, pebbleGCSOps(t, "clone"))
 	})
 
 	t.Run("take ownership inherits the blob TTL", func(t *testing.T) {
@@ -4274,6 +4479,53 @@ func TestWriteReference(t *testing.T) {
 		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
 	})
 
+	t.Run("take ownership deletes the blob", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, _ := setup(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.ReadReference(ctx, rn)
+		require.NoError(t, err)
+		require.NoError(t, dst.WriteReference(ctx, ref, rn, false /*=mustClone*/))
+
+		// The accepting cache owns the blob, so deleting its record deletes
+		// the blob out from under the source cache.
+		require.NoError(t, dst.Delete(ctx, rn))
+		_, err = src.Get(ctx, rn)
+		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+	})
+
+	t.Run("shared blob survives delete", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, _ := setup(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.ReadReference(ctx, rn)
+		require.NoError(t, err)
+		ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().Shared = true
+		require.NoError(t, dst.WriteReference(ctx, ref, rn, false /*=mustClone*/))
+
+		// The shared bit is stored with the accepting cache's record.
+		dstRef, err := dst.ReadReference(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, dstRef.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetShared())
+
+		// Deleting a record for a shared blob leaves the blob in place for
+		// the other records that refer to it.
+		require.NoError(t, dst.Delete(ctx, rn))
+		_, err = dst.Get(ctx, rn)
+		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+		got, err := src.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
 	t.Run("clone", func(t *testing.T) {
 		te := testenv.GetTestEnv(t)
 		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
@@ -4285,7 +4537,9 @@ func TestWriteReference(t *testing.T) {
 		ref, err := src.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
+		clonesBefore := pebbleGCSOps(t, "clone")
 		require.NoError(t, dst.WriteReference(ctx, ref, rn, true /*=mustClone*/))
+		require.Equal(t, clonesBefore+1, pebbleGCSOps(t, "clone"))
 		got, err := dst.Get(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, buf, got)

@@ -368,6 +368,8 @@ func writeDashboardsBzl(fileNames []string) error {
 	lines = append(lines, "# List of dashboard JSON files checked into the repo.")
 	lines = append(lines, "# For generated JSON files, see tools/metrics/grafana/generated/BUILD.")
 	lines = append(lines, "# This file is automatically updated by grafana.go - DO NOT EDIT")
+	lines = append(lines, `"""Names of checked-in Grafana dashboard JSON files."""`)
+	lines = append(lines, "")
 	lines = append(lines, "DASHBOARD_NAMES = [")
 	for _, name := range fileNames {
 		lines = append(lines, fmt.Sprintf(`    %q,`, strings.TrimSuffix(name, ".json")))

@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "ssh_server",
     srcs = ["ssh_server.go"],
@@ -25,8 +27,6 @@ go_library(
         "@org_golang_x_crypto//ssh",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])
 
 go_test(
     name = "ssh_server_test",

@@ -4,7 +4,33 @@ load(":defs.bzl", "go_proto_library", "ts_proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
+# Keep one proto_library per file. By default, Go bindings remain manual
+# because they use custom import paths and vtprotobuf modes. Subpackages can
+# opt into Go generation. TypeScript bindings use our protobufjs wrapper and
+# remain explicitly maintained.
+# gazelle:proto file
+# gazelle:go_generate_proto false
 # gazelle:ts disable
+#
+# External proto imports are not indexed from this workspace.
+# gazelle:resolve proto google/api/annotations.proto @googleapis//google/api:annotations_proto
+# gazelle:resolve proto google/api/client.proto @googleapis//google/api:client_proto
+# gazelle:resolve proto google/api/field_behavior.proto @googleapis//google/api:field_behavior_proto
+# gazelle:resolve proto google/bytestream/bytestream.proto @googleapis//google/bytestream:bytestream_proto
+# gazelle:resolve proto google/longrunning/operations.proto @googleapis//google/longrunning:operations_proto
+# gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto
+# gazelle:resolve proto kythe/proto/analysis.proto @io_kythe//kythe/proto:analysis_proto
+# gazelle:resolve proto kythe/proto/common.proto @io_kythe//kythe/proto:common_proto
+# gazelle:resolve proto kythe/proto/explore.proto @io_kythe//kythe/proto:explore_proto
+# gazelle:resolve proto kythe/proto/filetree.proto @io_kythe//kythe/proto:filetree_proto
+# gazelle:resolve proto kythe/proto/graph.proto @io_kythe//kythe/proto:graph_proto
+# gazelle:resolve proto kythe/proto/identifier.proto @io_kythe//kythe/proto:identifier_proto
+# gazelle:resolve proto kythe/proto/link.proto @io_kythe//kythe/proto:link_proto
+# gazelle:resolve proto kythe/proto/status_service.proto @io_kythe//kythe/proto:status_service_proto
+# gazelle:resolve proto kythe/proto/storage.proto @io_kythe//kythe/proto:storage_proto
+# gazelle:resolve proto kythe/proto/xref.proto @io_kythe//kythe/proto:xref_proto
+# gazelle:resolve proto github.com/planetscale/vtprotobuf/vtproto/ext.proto @com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto
+# gazelle:resolve proto io/prometheus/client/metrics.proto @com_github_prometheus_client_model//io/prometheus/client:io_prometheus_client_proto
 
 go_proto_compiler(
     name = "vtprotobuf_view_compiler",
@@ -58,6 +84,12 @@ proto_library(
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
+)
+
+proto_library(
+    name = "atlas_proto",
+    srcs = ["atlas.proto"],
+    deps = ["@com_google_protobuf//:timestamp_proto"],
 )
 
 proto_library(
@@ -150,6 +182,11 @@ proto_library(
 )
 
 proto_library(
+    name = "bytestream_proto",
+    srcs = ["bytestream.proto"],
+)
+
+proto_library(
     name = "cache_proto",
     srcs = [
         "cache.proto",
@@ -171,6 +208,7 @@ proto_library(
     deps = [
         ":acl_proto",
         ":context_proto",
+        ":profile_proto",
         ":upgrade_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
@@ -252,10 +290,12 @@ proto_library(
     deps = [
         ":acl_proto",
         ":context_proto",
+        ":experiments_proto",
         ":invocation_status_proto",
         ":remote_execution_proto",
         ":scheduler_proto",
         ":stat_filter_proto",
+        ":stats_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/longrunning:operations_proto",
@@ -511,7 +551,6 @@ proto_library(
         ":context_proto",
         ":firecracker_proto",
         ":invocation_status_proto",
-        ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
         "@googleapis//google/rpc:status_proto",
     ],
@@ -720,13 +759,11 @@ proto_library(
         ":notification_proto",
         ":quota_proto",
         ":repo_proto",
-        ":resource_proto",
         ":runner_proto",
         ":scheduler_proto",
         ":search_proto",
         ":secrets_proto",
         ":stats_proto",
-        ":suggestion_proto",
         ":target_proto",
         ":usage_proto",
         ":user_list_proto",
@@ -742,6 +779,15 @@ proto_library(
     srcs = ["notification.proto"],
     deps = [
         ":context_proto",
+    ],
+)
+
+proto_library(
+    name = "profile_proto",
+    srcs = ["profile.proto"],
+    deps = [
+        "@com_google_protobuf//:duration_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -779,11 +825,9 @@ proto_library(
     srcs = ["remote_asset.proto"],
     deps = [
         ":remote_execution_proto",
-        ":semver_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/api:annotations_proto",
-        "@googleapis//google/longrunning:operations_proto",
         "@googleapis//google/rpc:status_proto",
     ],
 )
@@ -793,9 +837,7 @@ proto_library(
     srcs = ["remote_execution_log.proto"],
     deps = [
         ":remote_execution_proto",
-        "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
-        "@googleapis//google/api:annotations_proto",
         "@googleapis//google/bytestream:bytestream_proto",
         "@googleapis//google/longrunning:operations_proto",
         "@googleapis//google/rpc:status_proto",
@@ -803,9 +845,16 @@ proto_library(
 )
 
 proto_library(
+    name = "experiments_proto",
+    srcs = ["experiments.proto"],
+    deps = ["@com_google_protobuf//:struct_proto"],
+)
+
+proto_library(
     name = "remote_execution_proto",
     srcs = ["remote_execution.proto"],
     deps = [
+        ":experiments_proto",
         ":scheduler_proto",
         ":semver_proto",
         "@com_google_protobuf//:any_proto",
@@ -857,14 +906,6 @@ proto_library(
 )
 
 proto_library(
-    name = "suggestion_proto",
-    srcs = ["suggestion.proto"],
-    deps = [
-        ":context_proto",
-    ],
-)
-
-proto_library(
     name = "trace_proto",
     srcs = ["trace.proto"],
 )
@@ -910,7 +951,6 @@ proto_library(
     deps = [
         ":context_proto",
         ":git_proto",
-        ":resource_proto",
     ],
 )
 
@@ -1052,6 +1092,14 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "atlas_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/atlas",
+    mode = "messages_and_services",
+    proto = ":atlas_proto",
+    deps = ["@org_golang_google_protobuf//types/known/timestamppb"],
+)
+
+go_proto_library(
     name = "auditlog_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/auditlog",
     proto = ":auditlog_proto",
@@ -1136,6 +1184,13 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "bytestream_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/bytestream",
+    mode = "messages_and_services",
+    proto = ":bytestream_proto",
+)
+
+go_proto_library(
     name = "config_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/config",
     proto = ":config_proto",
@@ -1154,11 +1209,13 @@ go_proto_library(
     deps = [
         ":acl_go_proto",
         ":context_go_proto",
+        ":experiments_go_proto",
         ":invocation_status_go_proto",
         ":remote_execution_go_proto",
         ":resource_go_proto",
         ":scheduler_go_proto",
         ":stat_filter_go_proto",
+        ":stats_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
@@ -1571,7 +1628,6 @@ go_proto_library(
         ":search_go_proto",
         ":secrets_go_proto",
         ":stats_go_proto",
-        ":suggestion_go_proto",
         ":target_go_proto",
         ":usage_go_proto",
         ":user_go_proto",
@@ -1589,6 +1645,13 @@ go_proto_library(
     deps = [
         ":context_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "profile_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/profile",
+    proto = ":profile_proto",
+    deps = ["@org_golang_google_genproto_googleapis_rpc//status"],
 )
 
 go_proto_library(
@@ -1679,6 +1742,7 @@ go_proto_library(
     deps = [
         ":acl_go_proto",
         ":context_go_proto",
+        ":profile_go_proto",
         ":upgrade_go_proto",
     ],
 )
@@ -1767,11 +1831,18 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "experiments_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/experiments",
+    proto = ":experiments_proto",
+)
+
+go_proto_library(
     name = "remote_execution_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_execution",
     mode = "messages_and_services",
     proto = ":remote_execution_proto",
     deps = [
+        ":experiments_go_proto",
         ":scheduler_go_proto",
         ":semver_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
@@ -1810,16 +1881,6 @@ go_proto_library(
         ":trace_go_proto",
         ":upgrade_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
-    ],
-)
-
-go_proto_library(
-    name = "suggestion_go_proto",
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/suggestion",
-    mode = "messages_and_services",
-    proto = ":suggestion_proto",
-    deps = [
-        ":context_go_proto",
     ],
 )
 
@@ -1999,6 +2060,12 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "atlas_ts_proto",
+    proto = ":atlas_proto",
+    deps = [":timestamp_ts_proto"],
+)
+
+ts_proto_library(
     name = "auditlog_ts_proto",
     proto = ":auditlog_proto",
     deps = [
@@ -2043,12 +2110,14 @@ ts_proto_library(
         ":acl_ts_proto",
         ":context_ts_proto",
         ":duration_ts_proto",
+        ":experiments_ts_proto",
         ":google_longrunning_ts_proto",
         ":grpc_status_ts_proto",
         ":invocation_status_ts_proto",
         ":remote_execution_ts_proto",
         ":scheduler_ts_proto",
         ":stat_filter_ts_proto",
+        ":stats_ts_proto",
         ":timestamp_ts_proto",
     ],
 )
@@ -2159,14 +2228,6 @@ ts_proto_library(
 ts_proto_library(
     name = "trace_ts_proto",
     proto = ":trace_proto",
-)
-
-ts_proto_library(
-    name = "suggestion_ts_proto",
-    proto = ":suggestion_proto",
-    deps = [
-        ":context_ts_proto",
-    ],
 )
 
 ts_proto_library(
@@ -2320,6 +2381,15 @@ ts_proto_library(
     proto = ":notification_proto",
     deps = [
         ":context_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "profile_ts_proto",
+    proto = ":profile_proto",
+    deps = [
+        ":duration_ts_proto",
+        ":grpc_status_ts_proto",
     ],
 )
 
@@ -2479,6 +2549,7 @@ ts_proto_library(
     deps = [
         ":acl_ts_proto",
         ":context_ts_proto",
+        ":profile_ts_proto",
         ":timestamp_ts_proto",
         ":upgrade_ts_proto",
     ],
@@ -2545,7 +2616,6 @@ ts_proto_library(
         ":search_ts_proto",
         ":secrets_ts_proto",
         ":stats_ts_proto",
-        ":suggestion_ts_proto",
         ":target_ts_proto",
         ":usage_ts_proto",
         ":user_list_ts_proto",
@@ -2565,11 +2635,23 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "struct_ts_proto",
+    proto = "@com_google_protobuf//:struct_proto",
+)
+
+ts_proto_library(
+    name = "experiments_ts_proto",
+    proto = ":experiments_proto",
+    deps = [":struct_ts_proto"],
+)
+
+ts_proto_library(
     name = "remote_execution_ts_proto",
     proto = ":remote_execution_proto",
     deps = [
         ":any_ts_proto",
         ":duration_ts_proto",
+        ":experiments_ts_proto",
         ":google_api_annotations_ts_proto",
         ":google_longrunning_ts_proto",
         ":grpc_status_ts_proto",

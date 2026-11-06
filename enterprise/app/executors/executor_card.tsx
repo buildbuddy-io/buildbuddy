@@ -1,5 +1,6 @@
-import { BarChart2, Cloud } from "lucide-react";
+import { BarChart2, Cloud, Flag } from "lucide-react";
 import React from "react";
+import { OutlinedButton } from "../../../app/components/button/button";
 import Link from "../../../app/components/link/link";
 import format from "../../../app/format/format";
 import { scheduler } from "../../../proto/scheduler_ts_proto";
@@ -14,7 +15,21 @@ interface Props {
   details?: boolean;
 }
 
-export default class ExecutorCardComponent extends React.Component<Props> {
+interface State {
+  showFlags: boolean;
+}
+
+export default class ExecutorCardComponent extends React.Component<Props, State> {
+  state: State = {
+    showFlags: !!this.props.details,
+  };
+
+  componentDidUpdate(prevProps: Props) {
+    if (prevProps.details !== this.props.details) {
+      this.setState({ showFlags: !!this.props.details });
+    }
+  }
+
   render() {
     return (
       <div className={`card ${this.props.isDefault ? "card-success" : "card-neutral"}`}>
@@ -83,24 +98,22 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                 </div>
               </>
             )}
-            {this.props.details &&
-              this.props.node.assignableCustomResources &&
-              this.props.node.assignableCustomResources.length > 0 && (
-                <div className="executor-section">
-                  <div className="executor-section-title">Assignable Resources:</div>
-                  <div className="executor-custom-resource">
-                    {this.props.node.assignableCustomResources.map((r) => {
-                      return (
-                        <div className="executor-custom-resource-wrapper">
-                          <div className="executor-custom-resource-key">{r.name}: </div>
-                          <div>{r.value}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
+            {this.props.node.assignableCustomResources && this.props.node.assignableCustomResources.length > 0 && (
+              <div className="executor-section">
+                <div className="executor-section-title">Assignable Resources:</div>
+                <div className="executor-custom-resource">
+                  {this.props.node.assignableCustomResources.map((r) => {
+                    return (
+                      <div className="executor-custom-resource-wrapper" key={r.name}>
+                        <div className="executor-custom-resource-key">{r.name}: </div>
+                        <div>{r.value}</div>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            {this.props.details && this.props.node.xcodeVersions && this.props.node.xcodeVersions.length > 0 && (
+              </div>
+            )}
+            {this.props.node.xcodeVersions && this.props.node.xcodeVersions.length > 0 && (
               <div className="executor-section">
                 {this.props.node.xcodeVersions.length == 1 && (
                   <div className="executor-section-title">Xcode Version:</div>
@@ -111,14 +124,12 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                 <div>{this.props.node.xcodeVersions.join(", ")}</div>
               </div>
             )}
-            {this.props.details &&
-              this.props.node.xcodeSimulatorRuntimes &&
-              this.props.node.xcodeSimulatorRuntimes.length > 0 && (
-                <div className="executor-section">
-                  <div className="executor-section-title">Xcode Simulator Runtimes:</div>
-                  <div>{this.props.node.xcodeSimulatorRuntimes.join(", ")}</div>
-                </div>
-              )}
+            {this.props.node.xcodeSimulatorRuntimes && this.props.node.xcodeSimulatorRuntimes.length > 0 && (
+              <div className="executor-section">
+                <div className="executor-section-title">Xcode Simulator Runtimes:</div>
+                <div>{this.props.node.xcodeSimulatorRuntimes.join(", ")}</div>
+              </div>
+            )}
             {this.props.details &&
               this.props.node.supportedIsolationTypes &&
               this.props.node.supportedIsolationTypes.length > 0 && (
@@ -147,17 +158,6 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                 <div>{this.props.isDefault ? "True" : "False"}</div>
               </div>
             )}
-            {this.props.details && this.props.node.configuredFlags.length > 0 && (
-              <div className="executor-section">
-                <div className="executor-section-title">Configuration:</div>
-                <div className="executor-configured-flags">
-                  {this.props.node.configuredFlags.map((f) => (
-                    <div key={f}>{f}</div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {this.props.details && this.props.node.labels && Object.keys(this.props.node.labels).length > 0 && (
               <div className="executor-section">
                 <div className="executor-section-title">Labels:</div>
@@ -173,7 +173,15 @@ export default class ExecutorCardComponent extends React.Component<Props> {
               </div>
             )}
 
-            <div className="executor-section">
+            <div className="executor-card-actions">
+              <OutlinedButton
+                type="button"
+                className="small-button"
+                aria-expanded={this.state.showFlags}
+                onClick={() => this.setState((state) => ({ showFlags: !state.showFlags }))}>
+                <Flag className="icon" aria-hidden="true" />
+                {this.state.showFlags ? "Hide flags" : "View flags"}
+              </OutlinedButton>
               <Link
                 className="executor-history-button history-button"
                 href={`/trends/?d=${encodeURIComponent(
@@ -185,8 +193,17 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                 )}#drilldown`}>
                 <BarChart2 /> View executions
               </Link>
-              <div></div>
             </div>
+            {this.state.showFlags && (
+              <div className="executor-section executor-flags-section">
+                <div className="executor-section-title">Configuration:</div>
+                <div className="executor-configured-flags">
+                  {this.props.node.configuredFlags.length > 0
+                    ? this.props.node.configuredFlags.map((f) => <div key={f}>{f}</div>)
+                    : "No configured flags reported."}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

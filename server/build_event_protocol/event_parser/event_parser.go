@@ -503,6 +503,12 @@ func (sep *StreamingEventParser) setRepoUrl(value string, priority int) {
 	}
 }
 func (sep *StreamingEventParser) setBranchName(value string, priority int) {
+	// `git rev-parse --abbrev-ref HEAD` returns "HEAD" in detached HEAD state,
+	// which is not a branch name. Ignore it so it doesn't override a real
+	// branch name reported by a lower priority source.
+	if value == "HEAD" {
+		return
+	}
 	if sep.priority.BranchName <= priority {
 		sep.priority.BranchName = priority
 		sep.invocation.BranchName = value

@@ -70,14 +70,8 @@ func GetCacheScoreCard(ctx context.Context, env environment.Env, req *capb.GetCa
 		return nil, err
 	}
 
-	start := page.Offset
-	if start > int64(len(results)) {
-		start = int64(len(results))
-	}
-	end := start + page.Limit
-	if end > int64(len(results)) {
-		end = int64(len(results))
-	}
+	start := min(page.Offset, int64(len(results)))
+	end := min(start+page.Limit, int64(len(results)))
 
 	nextPageToken := ""
 	if end < int64(len(results)) {

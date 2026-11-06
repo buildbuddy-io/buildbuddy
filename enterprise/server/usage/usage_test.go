@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/go-redis/redis/v8"
@@ -54,11 +53,8 @@ func setupEnv(t *testing.T, opts ...testenv.TestEnvOption) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t, opts...)
 
 	if *clickhouseEnabled {
-		clickhouseDSN := testclickhouse.Start(t, true /*=reuseServer*/)
-		flags.Set(t, "olap_database.data_source", clickhouseDSN)
 		flags.Set(t, "app.write_usage_to_olap_db", true)
-		err := clickhouse.Register(te)
-		require.NoError(t, err)
+		testclickhouse.Configure(t, te)
 	}
 
 	redisTarget := testredis.Start(t).Target
@@ -284,28 +280,24 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	// should be finalized up to the second period.
 	assert.Equal(t, []*tables.Usage{
 		{
-			PeriodStartUsec: period1Start.UnixMicro(),
-			GroupID:         "GR1",
-			Region:          "us-west1",
-			UsageCounts: tables.UsageCounts{
-				CASCacheHits:               1,
-				LinuxExecutionDurationUsec: 12,
-				TotalCachedActionExecUsec:  123,
-				MemoryGBUsec:               34,
-			},
-			UsageLabels: *labels,
+			PeriodStartUsec:            period1Start.UnixMicro(),
+			GroupID:                    "GR1",
+			Region:                     "us-west1",
+			CASCacheHits:               1,
+			LinuxExecutionDurationUsec: 12,
+			TotalCachedActionExecUsec:  123,
+			MemoryGBUsec:               34,
+			UsageLabels:                *labels,
 		},
 		{
-			PeriodStartUsec: period1Start.UnixMicro(),
-			GroupID:         "GR2",
-			Region:          "us-west1",
-			UsageCounts: tables.UsageCounts{
-				CASCacheHits:               10,
-				LinuxExecutionDurationUsec: 56,
-				TotalCachedActionExecUsec:  456,
-				MemoryGBUsec:               78,
-			},
-			UsageLabels: *labels,
+			PeriodStartUsec:            period1Start.UnixMicro(),
+			GroupID:                    "GR2",
+			Region:                     "us-west1",
+			CASCacheHits:               10,
+			LinuxExecutionDurationUsec: 56,
+			TotalCachedActionExecUsec:  456,
+			MemoryGBUsec:               78,
+			UsageLabels:                *labels,
 		},
 	}, usages, "data flushed to DB should match expected values")
 
@@ -526,10 +518,8 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts: tables.UsageCounts{
-				CASCacheHits: 1,
-			},
-			UsageLabels: *labels,
+			CASCacheHits:    1,
+			UsageLabels:     *labels,
 		},
 	}, usages)
 }
@@ -586,7 +576,7 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	clock.Advance(2 * periodDuration)
 
 	eg, ctx := errgroup.WithContext(ctx)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		eg.Go(func() error {
 			ut, err := usage.NewTracker(
 				te, clock,
@@ -616,14 +606,14 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{CASCacheHits: 1},
+			CASCacheHits:    1,
 			UsageLabels:     *labels,
 		},
 		{
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			PeriodStartUsec: period2Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{CASCacheHits: 1000},
+			CASCacheHits:    1000,
 			UsageLabels:     *labels,
 		},
 	}, usages)
@@ -668,14 +658,14 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 			GroupID:         "GR1",
 			Region:          "europe-north1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{CASCacheHits: 100},
+			CASCacheHits:    100,
 			UsageLabels:     *labels,
 		},
 		{
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{CASCacheHits: 1},
+			CASCacheHits:    1,
 			UsageLabels:     *labels,
 		},
 	}, usages)
@@ -743,22 +733,23 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			Invocations:     1,
 			UsageLabels:     tables.UsageLabels{},
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 2},
-			UsageLabels:     tables.UsageLabels{Client: "bazel"},
+			Invocations:     2,
+			Client:          "bazel",
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Client: "executor", Origin: "internal"},
+			Invocations:     1,
+			Client:          "executor",
+			Origin:          "internal",
 		},
 	}, usages)
 
@@ -785,36 +776,37 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			Invocations:     1,
 			UsageLabels:     tables.UsageLabels{},
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 2},
-			UsageLabels:     tables.UsageLabels{Client: "bazel"},
+			Invocations:     2,
+			Client:          "bazel",
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Client: "executor", Origin: "internal"},
+			Invocations:     1,
+			Client:          "executor",
+			Origin:          "internal",
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period3Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Client: "bazel"},
+			Invocations:     1,
+			Client:          "bazel",
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period3Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Client: "executor"},
+			Invocations:     1,
+			Client:          "executor",
 		},
 	}, usages)
 }
@@ -858,7 +850,7 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 	require.NoError(t, err)
 	clock.Advance(2 * periodDuration)
 	var eg errgroup.Group
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		eg.Go(func() error {
 			err := ut.FlushToDB(ctx)
 			require.NoError(t, err)
@@ -875,64 +867,64 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			Invocations:     1,
 			UsageLabels:     tables.UsageLabels{},
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Proxy: "Proxy-TestValue1"},
+			Invocations:     1,
+			Proxy:           "Proxy-TestValue1",
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Proxy: "Proxy-TestValue2"},
+			Invocations:     1,
+			Proxy:           "Proxy-TestValue2",
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Origin: "Origin-TestValue1"},
+			Invocations:     1,
+			Origin:          "Origin-TestValue1",
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Origin: "Origin-TestValue2"},
+			Invocations:     1,
+			Origin:          "Origin-TestValue2",
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Server: "Server-TestValue1"},
+			Invocations:     1,
+			Server:          "Server-TestValue1",
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Server: "Server-TestValue2"},
+			Invocations:     1,
+			Server:          "Server-TestValue2",
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Client: "Client-TestValue1"},
+			Invocations:     1,
+			Client:          "Client-TestValue1",
 		},
 		{
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Client: "Client-TestValue2"},
+			Invocations:     1,
+			Client:          "Client-TestValue2",
 		},
 	}, usages)
 }
@@ -972,8 +964,8 @@ func TestUsageTracker_UsageLabels_UnrecognizedLabelsAreNotFlushed(t *testing.T) 
 			Region:          "us-west1",
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 1},
-			UsageLabels:     tables.UsageLabels{Origin: "internal"},
+			Invocations:     1,
+			Origin:          "internal",
 		},
 	}, usages)
 }
@@ -981,8 +973,8 @@ func TestUsageTracker_UsageLabels_UnrecognizedLabelsAreNotFlushed(t *testing.T) 
 func increasingCountsStartingAt(value int64) *tables.UsageCounts {
 	counts := &tables.UsageCounts{}
 	countsValue := reflect.ValueOf(counts).Elem()
-	for i := 0; i < countsValue.NumField(); i++ {
-		countsValue.Field(i).Set(reflect.ValueOf(value))
+	for _, field := range countsValue.Fields() {
+		field.Set(reflect.ValueOf(value))
 		value++
 	}
 	return counts

@@ -71,7 +71,7 @@ func (f fakeOidcAuthenticator) checkAccessToken(ctx context.Context, jwt, access
 
 func (f fakeOidcAuthenticator) renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
 	if refreshToken == validRefreshToken {
-		t := (&oauth2.Token{}).WithExtra(map[string]interface{}{"id_token": refreshedJWT})
+		t := (&oauth2.Token{}).WithExtra(map[string]any{"id_token": refreshedJWT})
 		return t, nil
 	}
 	return nil, status.PermissionDeniedError("invalid refresh token")

@@ -279,7 +279,7 @@ func (n *StaticRegistry) AddNode(target, raftAddress, grpcAddress string) {
 // registry.
 func (n *StaticRegistry) ListNodes() []*rfpb.ConnectionInfo {
 	results := make([]*rfpb.ConnectionInfo, 0)
-	n.targetAddresses.Range(func(k, v interface{}) bool {
+	n.targetAddresses.Range(func(k, v any) bool {
 		nhid := k.(string)
 		a := v.(addresses)
 		results = append(results, &rfpb.ConnectionInfo{
@@ -293,7 +293,7 @@ func (n *StaticRegistry) ListNodes() []*rfpb.ConnectionInfo {
 }
 
 func (n *StaticRegistry) Close() error {
-	n.raftWatchCancels.Range(func(key, value interface{}) bool {
+	n.raftWatchCancels.Range(func(key, value any) bool {
 		if cancel, ok := value.(func()); ok && cancel != nil {
 			cancel()
 		}

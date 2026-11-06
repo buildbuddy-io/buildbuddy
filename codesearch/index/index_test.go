@@ -152,7 +152,7 @@ func TestIncrementalIndexing(t *testing.T) {
 
 	// Update the same document 5 times in a row and ensure it's still
 	// only returned once below.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		w, err = NewWriter(db, "testing-namespace")
 		if err != nil {
 			t.Fatal(err)

@@ -1,0 +1,461 @@
+package expflag_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/structpb"
+
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
+)
+
+var (
+	boolExperiment        = expflag.Bool("expflag_test.bool", true, "A boolean value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-bool"), flag.Secret)
+	stringExperiment      = expflag.String("expflag_test.string", "default", "A string value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-string"), flag.Secret)
+	int64Experiment       = expflag.Int64("expflag_test.int64", 1, "An integer value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-int64"), flag.Secret)
+	float64Experiment     = expflag.Float64("expflag_test.float64", 1, "A floating point value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-float64"), flag.Secret)
+	objectExperiment      = expflag.Object("expflag_test.object", map[string]any{"enabled": true}, "An object value.", flag.Internal, expflag.DeprecatedExperimentName("expflag-test-object"), flag.Secret)
+	structExperiment      = expflag.Struct("expflag_test.struct", widgetSettings{Color: "blue", Columns: 3}, "struct experiment")
+	sliceExperiment       = expflag.Slice("expflag_test.slice", []string{"a"}, "slice experiment")
+	structSliceExperiment = expflag.Slice("expflag_test.struct_slice", []widgetSettings{{Color: "blue", Columns: 3}, {Color: "red", Columns: 4}}, "Slice of structs")
+)
+
+type fakeProvider struct {
+	expflag.FlagProvider
+
+	name         string
+	names        []string
+	missingName  string
+	defaultValue bool
+	opts         []any
+
+	value   bool
+	object  map[string]any
+	variant string
+}
+
+func (p *fakeProvider) BooleanDetails(ctx context.Context, name string, defaultValue bool, opts ...any) (bool, interfaces.ExperimentFlagDetails) {
+	p.name, p.defaultValue, p.opts = name, defaultValue, opts
+	p.names = append(p.names, name)
+	if name == p.missingName {
+		return defaultValue, fakeDetails{flagNotFound: true}
+	}
+	return p.value, fakeDetails{variant: p.variant}
+}
+
+func (p *fakeProvider) ObjectDetails(ctx context.Context, name string, defaultValue map[string]any, opts ...any) (map[string]any, interfaces.ExperimentFlagDetails) {
+	p.name, p.opts = name, opts
+	p.names = append(p.names, name)
+	if p.object == nil {
+		return defaultValue, fakeDetails{variant: p.variant}
+	}
+	return p.object, fakeDetails{variant: p.variant}
+}
+
+type fakeDetails struct {
+	variant      string
+	flagNotFound bool
+}
+
+func (d fakeDetails) Variant() string {
+	return d.variant
+}
+
+func (d fakeDetails) FlagNotFound() bool {
+	return d.flagNotFound
+}
+
+func TestConstructorOptions(t *testing.T) {
+	for _, name := range []string{"bool", "string", "int64", "float64", "object"} {
+		t.Run(name, func(t *testing.T) {
+			f := flag.Lookup("expflag_test." + name)
+			require.NotNil(t, f)
+			internal, ok := f.Value.(interface{ Internal() bool })
+			require.True(t, ok)
+			require.True(t, internal.Internal())
+			secret, ok := f.Value.(interface{ IsSecret() bool })
+			require.True(t, ok)
+			require.True(t, secret.IsSecret())
+			require.Nil(t, flag.Lookup("expflag-test-"+name))
+		})
+	}
+}
+
+type widgetSettings struct {
+	Color   string `json:"color"`
+	Columns int64  `json:"columns"`
+	Animate bool   `json:"animate,omitempty"`
+}
+
+func TestStruct(t *testing.T) {
+	expflag.SetFlagProvider(nil)
+	require.Equal(t, widgetSettings{Color: "blue", Columns: 3}, structExperiment.Get(t.Context()))
+	require.Zero(t, testing.AllocsPerRun(100, func() { structExperiment.Get(t.Context()) }))
+
+	flags.Set(t, structExperiment.Name(), widgetSettings{Color: "blue", Columns: 3})
+	f := flag.Lookup(structExperiment.Name())
+	require.NotNil(t, f)
+	require.NoError(t, f.Value.Set(`{"columns":5,"animate":true}`))
+	require.Equal(t, widgetSettings{Columns: 5, Animate: true}, structExperiment.Get(t.Context()))
+
+	provider := &fakeProvider{variant: "default"}
+	expflag.SetFlagProvider(provider)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	require.Equal(t, widgetSettings{Columns: 5, Animate: true}, structExperiment.Get(t.Context()))
+	require.Equal(t, structExperiment.Name(), provider.name)
+
+	provider.object = map[string]any{"color": "red"}
+	provider.variant = "warning"
+	value, details := structExperiment.GetWithDetails(t.Context())
+	require.Equal(t, widgetSettings{Color: "red"}, value)
+	require.Equal(t, "warning", details.GetVariant())
+	require.Equal(t, "red", details.GetObjectValue().GetFields()["color"].GetStringValue())
+
+	provider.object = map[string]any{"columns": "many"}
+	require.Equal(t, widgetSettings{Columns: 5, Animate: true}, structExperiment.Get(t.Context()))
+
+	provider.object = map[string]any{"colour": "red"}
+	require.Equal(t, widgetSettings{Columns: 5, Animate: true}, structExperiment.Get(t.Context()))
+}
+
+func TestSlice(t *testing.T) {
+	expflag.SetFlagProvider(nil)
+	value := sliceExperiment.Get(t.Context())
+	require.Equal(t, []string{"a"}, value)
+	allocs := testing.AllocsPerRun(100, func() { sliceExperiment.Get(t.Context()) })
+	require.Zero(t, allocs)
+
+	provider := &fakeProvider{variant: "default"}
+	expflag.SetFlagProvider(provider)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	value = sliceExperiment.Get(t.Context())
+	require.Equal(t, []string{"a"}, value)
+	require.Equal(t, sliceExperiment.Name(), provider.name)
+
+	provider.object = map[string]any{"values": []any{"b", "c"}}
+	provider.variant = "treatment"
+	value, details := sliceExperiment.GetWithDetails(t.Context())
+	require.Equal(t, []string{"a", "b", "c"}, value)
+	wantObject, err := structpb.NewStruct(map[string]any{"values": []any{"a", "b", "c"}})
+	require.NoError(t, err)
+	diff := cmp.Diff(&expb.EvaluatedFlag{
+		Name:    sliceExperiment.Name(),
+		Variant: "treatment",
+		Value:   &expb.EvaluatedFlag_ObjectValue{ObjectValue: wantObject},
+	}, details, protocmp.Transform())
+	require.Empty(t, diff)
+
+	// Test invalid / empty values.
+	for _, testCase := range []struct {
+		name   string
+		object map[string]any
+	}{
+		{name: "null list", object: map[string]any{"values": nil}},
+		{name: "empty object", object: map[string]any{}},
+		{name: "non-list", object: map[string]any{"values": "b"}},
+		{name: "misnamed key", object: map[string]any{"value": []any{"b"}}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			provider.object = testCase.object
+			value := sliceExperiment.Get(t.Context())
+			require.Equal(t, []string{"a"}, value)
+		})
+	}
+}
+
+func TestSliceOfStructs(t *testing.T) {
+	expflag.SetFlagProvider(nil)
+	value := structSliceExperiment.Get(t.Context())
+	require.Equal(t, []widgetSettings{{Color: "blue", Columns: 3}, {Color: "red", Columns: 4}}, value)
+	allocs := testing.AllocsPerRun(100, func() { structSliceExperiment.Get(t.Context()) })
+	require.Zero(t, allocs)
+
+	provider := &fakeProvider{variant: "default"}
+	expflag.SetFlagProvider(provider)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	value = structSliceExperiment.Get(t.Context())
+	require.Equal(t, []widgetSettings{
+		{Color: "blue", Columns: 3},
+		{Color: "red", Columns: 4},
+	}, value)
+	require.Equal(t, structSliceExperiment.Name(), provider.name)
+
+	provider.object = map[string]any{
+		"values": []any{
+			map[string]any{"color": "yellow", "columns": 5},
+		},
+	}
+	provider.variant = "treatment"
+	value, details := structSliceExperiment.GetWithDetails(t.Context())
+	require.Equal(t, []widgetSettings{
+		{Color: "blue", Columns: 3},
+		{Color: "red", Columns: 4},
+		{Color: "yellow", Columns: 5},
+	}, value)
+	wantObject, err := structpb.NewStruct(map[string]any{
+		"values": []any{
+			map[string]any{"color": "blue", "columns": 3},
+			map[string]any{"color": "red", "columns": 4},
+			map[string]any{"color": "yellow", "columns": 5},
+		},
+	})
+	require.NoError(t, err)
+	diff := cmp.Diff(&expb.EvaluatedFlag{
+		Name:    structSliceExperiment.Name(),
+		Variant: "treatment",
+		Value:   &expb.EvaluatedFlag_ObjectValue{ObjectValue: wantObject},
+	}, details, protocmp.Transform())
+	require.Empty(t, diff)
+}
+
+func TestSlice_ContextProvider(t *testing.T) {
+	provider := &fakeProvider{}
+	expflag.SetFlagProvider(provider)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	withoutVariant := sliceExperiment.GetProto(t.Context())
+	provider.object = map[string]any{"values": []any{"b", "c"}}
+	withVariant := sliceExperiment.GetProto(t.Context())
+
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	flags.Set(t, sliceExperiment.Name(), []string{"executor"})
+	ctx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{withVariant})
+	value := sliceExperiment.Get(ctx)
+	require.Equal(t, []string{"a", "b", "c"}, value)
+	ctx = expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{withoutVariant})
+	value = sliceExperiment.Get(ctx)
+	require.Equal(t, []string{"a"}, value)
+	value = sliceExperiment.Get(t.Context())
+	require.Equal(t, []string{"executor"}, value)
+}
+
+func TestDefaults(t *testing.T) {
+	require.True(t, boolExperiment.Get(t.Context()))
+	require.Equal(t, "default", stringExperiment.Get(t.Context()))
+	require.Equal(t, int64(1), int64Experiment.Get(t.Context()))
+	require.Equal(t, float64(1), float64Experiment.Get(t.Context()))
+	require.Equal(t, map[string]any{"enabled": true}, objectExperiment.Get(t.Context()))
+
+	evaluated := boolExperiment.GetProto(t.Context())
+	diff := cmp.Diff(&expb.EvaluatedFlag{
+		Name:  boolExperiment.Name(),
+		Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true},
+	}, evaluated, protocmp.Transform())
+	require.Empty(t, diff)
+}
+
+func TestConfigOverrides(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		configure func(*testing.T)
+	}{
+		{
+			name: "command_line",
+			configure: func(t *testing.T) {
+				for name, value := range map[string]string{
+					boolExperiment.Name():    "false",
+					stringExperiment.Name():  "",
+					int64Experiment.Name():   "9007199254740993",
+					float64Experiment.Name(): "1.25",
+					objectExperiment.Name():  `{"enabled":false}`,
+					sliceExperiment.Name():   "b,c",
+				} {
+					f := flag.Lookup(name)
+					require.NotNil(t, f, "flag %q should be declared", name)
+					require.NoError(t, f.Value.Set(value))
+				}
+			},
+		},
+		{
+			name: "yaml",
+			configure: func(t *testing.T) {
+				flags.PopulateFlagsFromData(t, `
+expflag_test:
+  bool: false
+  string: ""
+  int64: 9007199254740993
+  float64: 1.25
+  object:
+    enabled: false
+  slice: [b, c]
+`)
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, boolExperiment.Name(), true)
+			flags.Set(t, stringExperiment.Name(), "default")
+			flags.Set(t, int64Experiment.Name(), int64(1))
+			flags.Set(t, float64Experiment.Name(), float64(1))
+			flags.Set(t, objectExperiment.Name(), map[string]any{"enabled": true})
+			flags.Set(t, sliceExperiment.Name(), []string{"a"})
+
+			testCase.configure(t)
+
+			require.False(t, boolExperiment.Get(t.Context()))
+			require.Empty(t, stringExperiment.Get(t.Context()))
+			require.Equal(t, int64(9007199254740993), int64Experiment.Get(t.Context()))
+			require.Equal(t, 1.25, float64Experiment.Get(t.Context()))
+			require.Equal(t, map[string]any{"enabled": false}, objectExperiment.Get(t.Context()))
+			require.Equal(t, []string{"a", "b", "c"}, sliceExperiment.Get(t.Context()))
+		})
+	}
+}
+
+func TestFlagProvider(t *testing.T) {
+	provider := &fakeProvider{value: true, variant: "treatment"}
+	expflag.SetFlagProvider(provider)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	flags.Set(t, boolExperiment.Name(), false)
+
+	value, details := boolExperiment.GetWithDetails(t.Context(), "option")
+	require.Equal(t, boolExperiment.Name(), provider.name)
+	require.False(t, provider.defaultValue)
+	require.Equal(t, []any{"option"}, provider.opts)
+
+	require.True(t, value)
+	require.Equal(t, "treatment", details.GetVariant())
+	evaluated := boolExperiment.GetProto(t.Context())
+	diff := cmp.Diff(&expb.EvaluatedFlag{
+		Name:    boolExperiment.Name(),
+		Variant: "treatment",
+		Value:   &expb.EvaluatedFlag_BoolValue{BoolValue: true},
+	}, evaluated, protocmp.Transform())
+	require.Empty(t, diff)
+}
+
+func TestDeprecatedExperimentName_ForwardsOptions(t *testing.T) {
+	provider := &fakeProvider{missingName: boolExperiment.Name(), value: true, variant: "legacy"}
+	expflag.SetFlagProvider(provider)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	flags.Set(t, boolExperiment.Name(), false)
+
+	value, details := boolExperiment.GetWithDetails(t.Context(), "option")
+	require.Equal(t, []string{boolExperiment.Name(), "expflag-test-bool"}, provider.names)
+	require.Equal(t, []any{"option"}, provider.opts)
+	require.False(t, provider.defaultValue)
+	require.True(t, value)
+	require.Equal(t, boolExperiment.Name(), details.GetName())
+	require.Equal(t, "legacy", details.GetVariant())
+}
+
+func TestDeprecatedExperimentName_ContextProvider(t *testing.T) {
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	flags.Set(t, boolExperiment.Name(), false)
+
+	for _, testCase := range []struct {
+		name    string
+		primary *expb.EvaluatedFlag
+		want    bool
+		variant string
+	}{
+		{name: "missing", want: true, variant: "legacy"},
+		{name: "false", primary: &expb.EvaluatedFlag{Value: &expb.EvaluatedFlag_BoolValue{BoolValue: false}}},
+		{name: "unset", primary: &expb.EvaluatedFlag{}},
+		{name: "wrong_type", primary: &expb.EvaluatedFlag{Value: &expb.EvaluatedFlag_StringValue{StringValue: "true"}}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			evaluated := []*expb.EvaluatedFlag{{Name: "expflag-test-bool", Variant: "legacy", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true}}}
+			if testCase.primary != nil {
+				testCase.primary.Name = boolExperiment.Name()
+				evaluated = append(evaluated, testCase.primary)
+			}
+			ctx := expflag.ContextWithEvaluatedFlags(t.Context(), evaluated)
+			value, details := boolExperiment.GetWithDetails(ctx)
+			require.Equal(t, testCase.want, value)
+			require.Equal(t, testCase.variant, details.GetVariant())
+			require.Equal(t, boolExperiment.Name(), details.GetName())
+		})
+	}
+}
+
+func TestContextProvider(t *testing.T) {
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
+	object, err := structpb.NewStruct(map[string]any{"enabled": false})
+	require.NoError(t, err)
+	ctx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{
+		{Name: boolExperiment.Name(), Variant: "off", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: false}},
+		{Name: stringExperiment.Name(), Value: &expb.EvaluatedFlag_StringValue{StringValue: ""}},
+		{Name: int64Experiment.Name(), Value: &expb.EvaluatedFlag_Int64Value{Int64Value: 9007199254740993}},
+		{Name: float64Experiment.Name(), Value: &expb.EvaluatedFlag_Float64Value{Float64Value: 0}},
+		{Name: objectExperiment.Name(), Value: &expb.EvaluatedFlag_ObjectValue{ObjectValue: object}},
+	})
+
+	value, details := boolExperiment.GetWithDetails(ctx)
+	require.False(t, value)
+	require.Equal(t, "off", details.GetVariant())
+	require.Empty(t, stringExperiment.Get(ctx))
+	require.Equal(t, int64(9007199254740993), int64Experiment.Get(ctx))
+	require.Zero(t, float64Experiment.Get(ctx))
+	require.Equal(t, map[string]any{"enabled": false}, objectExperiment.Get(ctx))
+
+	require.True(t, boolExperiment.Get(t.Context()))
+	require.Equal(t, map[string]any{"enabled": true}, objectExperiment.Get(t.Context()))
+}
+
+func TestContextProvider_UnusableValues(t *testing.T) {
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
+	for _, testCase := range []struct {
+		name  string
+		flags []*expb.EvaluatedFlag
+	}{
+		{
+			name:  "missing",
+			flags: nil,
+		},
+		{
+			name: "unset_values",
+			flags: []*expb.EvaluatedFlag{
+				{Name: boolExperiment.Name(), Variant: "off"},
+				{Name: stringExperiment.Name()},
+				{Name: int64Experiment.Name()},
+				{Name: float64Experiment.Name()},
+				{Name: objectExperiment.Name()},
+			},
+		},
+		{
+			name: "wrong_types",
+			flags: []*expb.EvaluatedFlag{
+				{Name: boolExperiment.Name(), Variant: "off", Value: &expb.EvaluatedFlag_StringValue{StringValue: "false"}},
+				{Name: stringExperiment.Name(), Value: &expb.EvaluatedFlag_BoolValue{}},
+				{Name: int64Experiment.Name(), Value: &expb.EvaluatedFlag_Float64Value{}},
+				{Name: float64Experiment.Name(), Value: &expb.EvaluatedFlag_Int64Value{}},
+				{Name: objectExperiment.Name(), Value: &expb.EvaluatedFlag_StringValue{StringValue: "{}"}},
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := expflag.ContextWithEvaluatedFlags(t.Context(), testCase.flags)
+			value, details := boolExperiment.GetWithDetails(ctx)
+			require.True(t, value)
+			require.Empty(t, details.GetVariant())
+			require.Equal(t, "default", stringExperiment.Get(ctx))
+			require.Equal(t, int64(1), int64Experiment.Get(ctx))
+			require.Equal(t, float64(1), float64Experiment.Get(ctx))
+			require.Equal(t, map[string]any{"enabled": true}, objectExperiment.Get(ctx))
+		})
+	}
+}
+
+func TestContextWithEvaluatedFlags_ReplacesFlags(t *testing.T) {
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
+	ctx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{
+		{Name: int64Experiment.Name(), Value: &expb.EvaluatedFlag_Int64Value{Int64Value: 42}},
+	})
+	require.Equal(t, int64(42), int64Experiment.Get(ctx))
+	ctx = expflag.ContextWithEvaluatedFlags(ctx, nil)
+	require.Equal(t, int64(1), int64Experiment.Get(ctx))
+}

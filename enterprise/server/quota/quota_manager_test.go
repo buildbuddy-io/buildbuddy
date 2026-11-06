@@ -124,7 +124,7 @@ func TestQuotaFlagdBuckets(t *testing.T) {
 	assert.NoError(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
 
 	// The next 4 requests are allowed, but the 5th is blocked.
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		assert.NoError(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
 	}
 	assert.Error(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
@@ -248,14 +248,14 @@ func TestBucketRowFromMap(t *testing.T) {
 	testCases := []struct {
 		name       string
 		namespace  string
-		bucketMap  map[string]interface{}
+		bucketMap  map[string]any
 		wantBucket *bucketConfig
 		wantError  bool
 	}{
 		{
 			name:      "valid bucket",
 			namespace: "rpc:/google.bytestream.ByteStream/Read",
-			bucketMap: map[string]interface{}{
+			bucketMap: map[string]any{
 				"maxRate": map[string]any{
 					"numRequests": float64(10),
 					"periodUsec":  float64(60 * 1000 * 1000),
@@ -274,7 +274,7 @@ func TestBucketRowFromMap(t *testing.T) {
 		{
 			name:      "missing maxRate",
 			namespace: "test",
-			bucketMap: map[string]interface{}{
+			bucketMap: map[string]any{
 				"maxBurst": int64(5),
 			},
 			wantError: true,
@@ -282,8 +282,8 @@ func TestBucketRowFromMap(t *testing.T) {
 		{
 			name:      "invalid numRequests",
 			namespace: "test",
-			bucketMap: map[string]interface{}{
-				"maxRate": map[string]interface{}{
+			bucketMap: map[string]any{
+				"maxRate": map[string]any{
 					"numRequests": int64(-1),
 					"periodUsec":  int64(60 * 1000 * 1000),
 				},
@@ -294,8 +294,8 @@ func TestBucketRowFromMap(t *testing.T) {
 		{
 			name:      "zero periodUsec",
 			namespace: "test",
-			bucketMap: map[string]interface{}{
-				"maxRate": map[string]interface{}{
+			bucketMap: map[string]any{
+				"maxRate": map[string]any{
 					"numRequests": int64(10),
 					"periodUsec":  int64(0),
 				},
@@ -363,19 +363,19 @@ func TestConcurrentBucketAccess(t *testing.T) {
 	const numIterations = 100
 
 	done := make(chan bool)
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		keyID := i
 		go func() {
 			defer func() { done <- true }()
 			key := fmt.Sprintf("key%d", keyID)
-			for j := 0; j < numIterations; j++ {
+			for range numIterations {
 				qm.loadQuotasFromFlagd(ctx, key, "rpc:/test.Service/Method")
 				qm.findBucket("rpc:/test.Service/Method", key)
 			}
 		}()
 	}
 
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		<-done
 	}
 }

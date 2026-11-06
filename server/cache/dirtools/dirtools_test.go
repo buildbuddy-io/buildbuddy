@@ -15,11 +15,11 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -31,9 +31,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -63,7 +62,9 @@ func TestUploadTree(t *testing.T) {
 			symlinkPaths:   map[string]string{},
 			expectedResult: &repb.ActionResult{},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        1,
+				// The empty root Directory proto has the empty digest,
+				// which is never reported missing, so nothing is uploaded.
+				FileCount:        0,
 				BytesTransferred: 0,
 			},
 		},
@@ -545,7 +546,11 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        3,
+				// The file and the "foo/bar/baz" Directory proto. The
+				// ancestor Directory protos are empty and never uploaded.
+				// TODO(jdhollen): This will go down to 1 when we stop
+				// uploading directories that don't exist on an output path.
+				FileCount:        2,
 				BytesTransferred: 84,
 			},
 		},
@@ -576,16 +581,17 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				// This should includes:
+				// This should include:
 				//
-				//   Dir:  a/b
-				//   Dir:  a/b/c
-				//   Dir:  a/b/c/d
-				//   Dir:  a/b/e
-				//   Dir:  a/b/e/g
+				//   Dir:  a (contains b)
+				//   Dir:  a/b (contains c and e)
+				//   Dir:  a/b/c (contains fileA.txt and d)
+				//   Dir:  a/b/e (contains g)
 				//   File: a/b/c/fileA.txt
-				//
-				FileCount:        7,
+				//   And the output tree.
+				// TODO(jdhollen): This will go down to 5 (dropping "a") when
+				// we stop uploading directories that aren't on an output path.
+				FileCount:        6,
 				BytesTransferred: 849,
 			},
 		},
@@ -622,7 +628,9 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        5,
+				// TODO(jdhollen): This will go down to 3 (dropping "a/b") when
+				// we stop uploading directories that aren't on an output path.
+				FileCount:        4,
 				BytesTransferred: 244,
 			},
 		},
@@ -730,6 +738,76 @@ func getDigestForMsg(t *testing.T, in proto.Message) *repb.Digest {
 	return d
 }
 
+func TestCreateOutputDirs(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		// inputs sets up the inputs under rootDir, given a directory outside of
+		// rootDir.
+		inputs func(t *testing.T, rootDir, outsideDir string)
+		cmd    *repb.Command
+		// wantDirs are the paths under rootDir that should be directories.
+		wantDirs []string
+		// wantSymlinks are the paths under rootDir that should still be
+		// symlinks.
+		wantSymlinks []string
+		wantErr      bool
+	}{
+		{
+			name:     "CreatesMissingDirectories",
+			cmd:      &repb.Command{OutputFiles: []string{"a/b/out.txt"}, OutputDirectories: []string{"c/d"}},
+			wantDirs: []string{"a", "a/b", "c", "c/d"},
+		},
+		{
+			name: "FailsOnSymlinkOutOfRoot",
+			inputs: func(t *testing.T, rootDir, outsideDir string) {
+				require.NoError(t, os.Symlink(outsideDir, filepath.Join(rootDir, "out")))
+			},
+			cmd:          &repb.Command{OutputDirectories: []string{"out/a/b"}},
+			wantSymlinks: []string{"out"},
+			wantErr:      true,
+		},
+		{
+			name: "FailsOnDanglingSymlink",
+			inputs: func(t *testing.T, rootDir, outsideDir string) {
+				require.NoError(t, os.Symlink("missing", filepath.Join(rootDir, "gen")))
+			},
+			cmd:          &repb.Command{OutputFiles: []string{"gen/out.txt"}},
+			wantSymlinks: []string{"gen"},
+			wantErr:      true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rootDir := testfs.MakeTempDir(t)
+			outsideDir := testfs.MakeTempDir(t)
+			if test.inputs != nil {
+				test.inputs(t, rootDir, outsideDir)
+			}
+			dirHelper := dirtools.NewDirHelper(rootDir, test.cmd, fs.FileMode(0o755))
+
+			err := dirHelper.CreateOutputDirs()
+
+			if test.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			for _, p := range test.wantDirs {
+				info, err := os.Lstat(filepath.Join(rootDir, p))
+				require.NoError(t, err)
+				assert.True(t, info.IsDir(), p)
+			}
+			for _, p := range test.wantSymlinks {
+				info, err := os.Lstat(filepath.Join(rootDir, p))
+				require.NoError(t, err)
+				assert.Equal(t, fs.ModeSymlink, info.Mode().Type(), p)
+			}
+			outside, err := os.ReadDir(outsideDir)
+			require.NoError(t, err)
+			assert.Empty(t, outside)
+		})
+	}
+}
+
 func TestDownloadTree(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
@@ -791,6 +869,295 @@ func TestDownloadTree(t *testing.T) {
 	targetContents, err := os.ReadFile(filepath.Join(tmpDir, "my-directory/fileA.symlink"))
 	assert.NoError(t, err)
 	assert.Equal(t, "mytestdataA", string(targetContents), "symlinked file contents should match target file")
+}
+
+func TestDownloadTreeRejectsUnsafeNames(t *testing.T) {
+	env, ctx := testEnv(t)
+	blob := setFile(t, env, ctx, "", "contents")
+	child := &repb.Directory{Files: []*repb.FileNode{{Name: "file.txt", Digest: blob}}}
+	childDigest, err := digest.ComputeForMessage(child, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	for _, test := range []struct {
+		name string
+		// tree builds the input tree, given a directory outside the root.
+		tree            func(outside string) *repb.Tree
+		caseInsensitive bool
+		// wantErr is a substring of the expected error message.
+		wantErr string
+	}{
+		{
+			name: "ParentDirectory",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{
+					Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "..", Digest: childDigest}}},
+					Children: []*repb.Directory{child},
+				}
+			},
+			wantErr: `input tree directory "." has entry name "..", which isn't a single path component`,
+		},
+		{
+			name: "FileNameWithSlash",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "../file.txt", Digest: blob}}}}
+			},
+			wantErr: `input tree directory "." has entry name "../file.txt", which isn't a single path component`,
+		},
+		{
+			name: "BadNameInChildDirectory",
+			tree: func(outside string) *repb.Tree {
+				badChild := &repb.Directory{Files: []*repb.FileNode{{Name: "../../file.txt", Digest: blob}}}
+				badChildDigest, err := digest.ComputeForMessage(badChild, repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				return &repb.Tree{
+					Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "sub", Digest: badChildDigest}}},
+					Children: []*repb.Directory{badChild},
+				}
+			},
+			wantErr: `input tree directory "sub" has entry name "../../file.txt", which isn't a single path component`,
+		},
+		{
+			name: "FileAndSymlinkWithSameName",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{Root: &repb.Directory{
+					Files:    []*repb.FileNode{{Name: "a", Digest: blob}},
+					Symlinks: []*repb.SymlinkNode{{Name: "a", Target: filepath.Join(outside, "file.txt")}},
+				}}
+			},
+			wantErr: `input tree has more than one entry at path "a"`,
+		},
+		{
+			name: "FileAndSymlinkWithSameNameNotAdjacent",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{Root: &repb.Directory{
+					Files:    []*repb.FileNode{{Name: "a", Digest: blob}, {Name: "c", Digest: blob}},
+					Symlinks: []*repb.SymlinkNode{{Name: "a", Target: filepath.Join(outside, "file.txt")}},
+				}}
+			},
+			wantErr: `input tree has more than one entry at path "a"`,
+		},
+		{
+			name: "DirectoryAndSymlinkWithSameName",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{
+					Root: &repb.Directory{
+						Directories: []*repb.DirectoryNode{{Name: "d", Digest: childDigest}},
+						Symlinks:    []*repb.SymlinkNode{{Name: "d", Target: outside}},
+					},
+					Children: []*repb.Directory{child},
+				}
+			},
+			wantErr: `input tree has more than one entry at path "d"`,
+		},
+		{
+			name: "NamesDifferingOnlyInCase",
+			tree: func(outside string) *repb.Tree {
+				return &repb.Tree{
+					Root: &repb.Directory{
+						Directories: []*repb.DirectoryNode{{Name: "D", Digest: childDigest}},
+						Symlinks:    []*repb.SymlinkNode{{Name: "d", Target: outside}},
+					},
+					Children: []*repb.Directory{child},
+				}
+			},
+			caseInsensitive: true,
+			wantErr:         `input tree paths "d" and "D" refer to the same file, because the filesystem is case-insensitive`,
+		},
+		{
+			name: "MergedDirectoriesWithFilesDifferingOnlyInCase",
+			tree: func(outside string) *repb.Tree {
+				upper := &repb.Directory{Files: []*repb.FileNode{{Name: "A.txt", Digest: blob}}}
+				lower := &repb.Directory{Files: []*repb.FileNode{{Name: "a.txt", Digest: blob}}}
+				return &repb.Tree{
+					Root: &repb.Directory{Directories: []*repb.DirectoryNode{
+						{Name: "Foo", Digest: getDigestForMsg(t, upper)},
+						{Name: "foo", Digest: getDigestForMsg(t, lower)},
+					}},
+					Children: []*repb.Directory{upper, lower},
+				}
+			},
+			caseInsensitive: true,
+			wantErr:         `input tree paths "Foo/A.txt" and "foo/a.txt" refer to the same file, because the filesystem is case-insensitive`,
+		},
+		{
+			name: "MergedDirectoriesWithFileAndDirectoryWithSameName",
+			tree: func(outside string) *repb.Tree {
+				withFile := &repb.Directory{Files: []*repb.FileNode{{Name: "x", Digest: blob}}}
+				withDir := &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "x", Digest: childDigest}}}
+				return &repb.Tree{
+					Root: &repb.Directory{Directories: []*repb.DirectoryNode{
+						{Name: "Foo", Digest: getDigestForMsg(t, withFile)},
+						{Name: "foo", Digest: getDigestForMsg(t, withDir)},
+					}},
+					Children: []*repb.Directory{withFile, withDir, child},
+				}
+			},
+			caseInsensitive: true,
+			wantErr:         `input tree paths "Foo/x" and "foo/x" refer to the same file, because the filesystem is case-insensitive`,
+		},
+		{
+			name: "MergedDirectoriesWithSymlinkAndFileWithSameName",
+			tree: func(outside string) *repb.Tree {
+				// a/B/link is a symlink pointing outside the root, and
+				// a/b/link is a file that would be written through it.
+				withSymlink := &repb.Directory{Symlinks: []*repb.SymlinkNode{{Name: "link", Target: filepath.Join(outside, "file.txt")}}}
+				withFile := &repb.Directory{Files: []*repb.FileNode{{Name: "link", Digest: blob}}}
+				a := &repb.Directory{Directories: []*repb.DirectoryNode{
+					{Name: "B", Digest: getDigestForMsg(t, withSymlink)},
+					{Name: "b", Digest: getDigestForMsg(t, withFile)},
+				}}
+				return &repb.Tree{
+					Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "a", Digest: getDigestForMsg(t, a)}}},
+					Children: []*repb.Directory{a, withSymlink, withFile},
+				}
+			},
+			caseInsensitive: true,
+			wantErr:         `input tree paths "a/B/link" and "a/b/link" refer to the same file, because the filesystem is case-insensitive`,
+		},
+		{
+			name: "DeeplyMergedDirectoriesWithSymlinkAndFileWithSameName",
+			tree: func(outside string) *repb.Tree {
+				// a/B/c/link and a/b/C/link are the same path.
+				withSymlink := &repb.Directory{Symlinks: []*repb.SymlinkNode{{Name: "link", Target: filepath.Join(outside, "file.txt")}}}
+				withFile := &repb.Directory{Files: []*repb.FileNode{{Name: "link", Digest: blob}}}
+				upper := &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "c", Digest: getDigestForMsg(t, withSymlink)}}}
+				lower := &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "C", Digest: getDigestForMsg(t, withFile)}}}
+				a := &repb.Directory{Directories: []*repb.DirectoryNode{
+					{Name: "B", Digest: getDigestForMsg(t, upper)},
+					{Name: "b", Digest: getDigestForMsg(t, lower)},
+				}}
+				return &repb.Tree{
+					Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "a", Digest: getDigestForMsg(t, a)}}},
+					Children: []*repb.Directory{a, upper, lower, withSymlink, withFile},
+				}
+			},
+			caseInsensitive: true,
+			wantErr:         `input tree paths "a/B/c/link" and "a/b/C/link" refer to the same file, because the filesystem is case-insensitive`,
+		},
+		{
+			name: "NestedMergedDirectoriesWithSameFile",
+			tree: func(outside string) *repb.Tree {
+				// Foo/Bar/file.txt and foo/bar/file.txt are the same path.
+				upper := &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "Bar", Digest: childDigest}}}
+				lower := &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "bar", Digest: childDigest}}}
+				return &repb.Tree{
+					Root: &repb.Directory{Directories: []*repb.DirectoryNode{
+						{Name: "Foo", Digest: getDigestForMsg(t, upper)},
+						{Name: "foo", Digest: getDigestForMsg(t, lower)},
+					}},
+					Children: []*repb.Directory{upper, lower, child},
+				}
+			},
+			caseInsensitive: true,
+			wantErr:         `input tree paths "Foo/Bar/file.txt" and "foo/bar/file.txt" refer to the same file, because the filesystem is case-insensitive`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			outside := testfs.MakeTempDir(t)
+			root := filepath.Join(outside, "root")
+			require.NoError(t, os.Mkdir(root, 0755))
+
+			_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, test.tree(outside), &dirtools.DownloadTreeOpts{RootDir: root, CaseInsensitive: test.caseInsensitive})
+
+			require.Error(t, err)
+			assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+			assert.Contains(t, err.Error(), test.wantErr)
+			outsideEntries, err := os.ReadDir(outside)
+			require.NoError(t, err)
+			require.Len(t, outsideEntries, 1)
+			assert.Equal(t, "root", outsideEntries[0].Name())
+			rootEntries, err := os.ReadDir(root)
+			require.NoError(t, err)
+			assert.Empty(t, rootEntries)
+		})
+	}
+}
+
+func TestDownloadTree_DirsDifferingOnlyInCase(t *testing.T) {
+	env, ctx := testEnv(t)
+	blobA := setFile(t, env, ctx, "", "contentsA")
+	blobB := setFile(t, env, ctx, "", "contentsB")
+	// Foo/Bar and foo/bar differ only in case too.
+	upperBar := &repb.Directory{Files: []*repb.FileNode{{Name: "a.txt", Digest: blobA}}}
+	lowerBar := &repb.Directory{Files: []*repb.FileNode{{Name: "b.txt", Digest: blobB}}}
+	upper := &repb.Directory{
+		Files:       []*repb.FileNode{{Name: "a.txt", Digest: blobA}},
+		Directories: []*repb.DirectoryNode{{Name: "Bar", Digest: getDigestForMsg(t, upperBar)}},
+	}
+	lower := &repb.Directory{
+		Files:       []*repb.FileNode{{Name: "b.txt", Digest: blobB}},
+		Directories: []*repb.DirectoryNode{{Name: "bar", Digest: getDigestForMsg(t, lowerBar)}},
+	}
+	tree := &repb.Tree{
+		Root: &repb.Directory{Directories: []*repb.DirectoryNode{
+			{Name: "Foo", Digest: getDigestForMsg(t, upper)},
+			{Name: "foo", Digest: getDigestForMsg(t, lower)},
+		}},
+		Children: []*repb.Directory{upper, lower, upperBar, lowerBar},
+	}
+
+	for _, test := range []struct {
+		name            string
+		caseInsensitive bool
+		// wantEntries maps directories under the root to the names of the
+		// entries we expect them to have.
+		wantEntries map[string][]string
+	}{
+		{
+			name:            "CaseInsensitiveFS_MergesDirs",
+			caseInsensitive: true,
+			wantEntries: map[string][]string{
+				".":       {"Foo"},
+				"Foo":     {"Bar", "a.txt", "b.txt"},
+				"Foo/Bar": {"a.txt", "b.txt"},
+			},
+		},
+		{
+			name:            "CaseSensitiveFS_DoesNotMergeDirs",
+			caseInsensitive: false,
+			wantEntries: map[string][]string{
+				".":       {"Foo", "foo"},
+				"Foo":     {"Bar", "a.txt"},
+				"foo":     {"b.txt", "bar"},
+				"Foo/Bar": {"a.txt"},
+				"foo/bar": {"b.txt"},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := testfs.MakeTempDir(t)
+
+			_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: root, CaseInsensitive: test.caseInsensitive})
+
+			require.NoError(t, err)
+			// These paths work whether or not the filesystem is case
+			// insensitive.
+			for path, contents := range map[string]string{
+				"Foo/a.txt":     "contentsA",
+				"foo/b.txt":     "contentsB",
+				"Foo/Bar/a.txt": "contentsA",
+				"foo/bar/b.txt": "contentsB",
+			} {
+				assert.Equal(t, contents, testfs.ReadFileAsString(t, root, path), "contents of %s", path)
+			}
+			// Whether the directories get merged depends on the filesystem
+			// the test runs on, not on the option we pass.
+			fsCaseInsensitive, err := fspath.IsCaseInsensitiveFS(root)
+			require.NoError(t, err)
+			if fsCaseInsensitive != test.caseInsensitive {
+				t.Skipf("Checking the directory layout requires a filesystem where case insensitivity is %t", test.caseInsensitive)
+			}
+			for dir, want := range test.wantEntries {
+				entries, err := os.ReadDir(filepath.Join(root, dir))
+				require.NoError(t, err)
+				var names []string
+				for _, e := range entries {
+					names = append(names, e.Name())
+				}
+				assert.Equal(t, want, names, "entries of %s", dir)
+			}
+		})
+	}
 }
 
 func TestDownloadTreeEmptySymlinkTarget(t *testing.T) {
@@ -862,7 +1229,7 @@ func TestDownloadTreeDedupeInflight(t *testing.T) {
 	totalTransferCount := int64(0)
 
 	eg := errgroup.Group{}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		eg.Go(func() error {
 			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 			if err != nil {
@@ -918,7 +1285,6 @@ func TestDownloadTreeBatchDownloadNotDeduped(t *testing.T) {
 
 	eg := errgroup.Group{}
 	for _, rootDir := range []string{tmpDirA, tmpDirB} {
-		rootDir := rootDir
 		eg.Go(func() error {
 			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: rootDir})
 			if err != nil {
@@ -931,7 +1297,7 @@ func TestDownloadTreeBatchDownloadNotDeduped(t *testing.T) {
 		})
 	}
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case <-cc.getMultiCalls:
 		case <-time.After(2 * time.Second):
@@ -980,7 +1346,6 @@ func TestDownloadTreeBytestreamDownloadDeduped(t *testing.T) {
 	start := make(chan struct{})
 	eg := errgroup.Group{}
 	for _, rootDir := range []string{tmpDirA, tmpDirB} {
-		rootDir := rootDir
 		eg.Go(func() error {
 			<-start
 			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: rootDir})
@@ -1274,6 +1639,23 @@ func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) 
 	// 3: downloaded-root.txt
 	// 4: subdir/downloaded-child.txt
 	require.Equal(t, []uint32{3, 4}, bitmap.ToArray())
+}
+
+func TestDownloadTreeReturnsEmptyFileWriteError(t *testing.T) {
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+	emptyDigest, err := digest.Compute(strings.NewReader(""), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	tree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "empty.txt", Digest: emptyDigest}}}}
+
+	// Put a directory where the empty file should go, so creating the file
+	// fails.
+	err = os.Mkdir(filepath.Join(tmpDir, "empty.txt"), 0755)
+	require.NoError(t, err)
+
+	// The download should fail rather than succeed with the file missing.
+	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+	require.Error(t, err)
 }
 
 func TestDownloadTreeEmptyDigest(t *testing.T) {
@@ -1653,24 +2035,7 @@ func TestDownloadTreeDirectlyToFileCache(t *testing.T) {
 func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t *testing.T) {
 	flags.Set(t, "cache.client.enable_download_compression", false)
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	env, ctx := testEnv(t)
-	env.SetExperimentFlagProvider(fp)
-
 	fileCache := &countingFileCache{
 		FileCache: env.GetFileCache(),
 		adds:      make(map[string]int),
@@ -1784,6 +2149,219 @@ func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t 
 	require.GreaterOrEqual(t, fileCache.openCount(fileNode2), 2)
 }
 
+func TestDownloadTree_InputDownloadConcurrency(t *testing.T) {
+	for _, limit := range []int{1, 4} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			flags.Set(t, "cache.client.input_download_concurrency", limit)
+			dirtools.ResetInputDownloadLimiterForTest()
+			env, ctx := testEnv(t)
+			client := &trackingClient{
+				ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+				ByteStreamClient:                env.GetByteStreamClient(),
+			}
+			env.SetContentAddressableStorageClient(client)
+			env.SetByteStreamClient(client)
+
+			// Download several trees at once, each with a mix of small
+			// files, which are batched, and large files, which are streamed.
+			eg := &errgroup.Group{}
+			for range 3 {
+				root := &repb.Directory{}
+				for i := range 10 {
+					size := int64(100)
+					if i%5 == 0 {
+						size = 3 * 1024 * 1024
+					}
+					rn, content := testdigest.RandomCASResourceBuf(t, size)
+					err := env.GetCache().Set(ctx, rn, content)
+					require.NoError(t, err)
+					root.Files = append(root.Files, &repb.FileNode{Name: fmt.Sprintf("file-%d", i), Digest: rn.GetDigest()})
+				}
+				rootDir := testfs.MakeTempDir(t)
+				eg.Go(func() error {
+					_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, &repb.Tree{Root: root}, &dirtools.DownloadTreeOpts{RootDir: rootDir})
+					return err
+				})
+			}
+			err := eg.Wait()
+			require.NoError(t, err)
+
+			// Both kinds of reads should have happened, with no more files
+			// being read at once than the limit.
+			batchReads, streamReads, maxInFlight := client.batchReads, client.streamReads, client.maxInFlight
+			require.Positive(t, batchReads)
+			require.Positive(t, streamReads)
+			require.LessOrEqual(t, maxInFlight, limit)
+		})
+	}
+}
+
+func TestUploadTree_OutputUploadConcurrency(t *testing.T) {
+	for _, limit := range []int{1, 4} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			flags.Set(t, "cache.client.output_upload_concurrency", limit)
+			cachetools.ResetOutputUploadLimiterForTest()
+			env, ctx := testEnv(t)
+			client := &trackingClient{
+				ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+				ByteStreamClient:                env.GetByteStreamClient(),
+			}
+			env.SetContentAddressableStorageClient(client)
+			env.SetByteStreamClient(client)
+
+			// Upload several trees at once, each with a mix of small files,
+			// which are batched, and large files, which are streamed.
+			eg := &errgroup.Group{}
+			for range 3 {
+				rootDir := testfs.MakeTempDir(t)
+				contents := map[string]string{}
+				for i := range 10 {
+					size := int64(100)
+					if i%5 == 0 {
+						size = 3 * 1024 * 1024
+					}
+					_, content := testdigest.RandomCASResourceBuf(t, size)
+					contents[fmt.Sprintf("out/file-%d", i)] = string(content)
+				}
+				testfs.WriteAllFileContents(t, rootDir, contents)
+				cmd := &repb.Command{OutputPaths: []string{"out"}}
+				dirHelper := dirtools.NewDirHelper(rootDir, cmd, fs.FileMode(0o755))
+				eg.Go(func() error {
+					_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, cmd, &repb.ActionResult{}, false /*=addToFileCache*/, nil /*=chunkingParams*/)
+					return err
+				})
+			}
+			err := eg.Wait()
+			require.NoError(t, err)
+
+			// Both kinds of writes should have happened, with no more write
+			// RPCs in flight at once than the limit.
+			batchWrites, streamWrites, maxInFlight := client.batchWrites, client.streamWrites, client.maxInFlight
+			require.Positive(t, batchWrites)
+			require.Positive(t, streamWrites)
+			require.LessOrEqual(t, maxInFlight, limit)
+		})
+	}
+}
+
+// uploadOutTree writes a small output tree with a nested directory to a fresh
+// root and uploads it with "out" as the only output path. Uploading it to an
+// empty cache transfers six blobs: two files, three Directory protos (the
+// root, "out", and "out/sub"), and one Tree.
+func uploadOutTree(t *testing.T, ctx context.Context, env *testenv.TestEnv, addToFileCache bool) (*dirtools.TransferInfo, *repb.ActionResult) {
+	rootDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, rootDir, map[string]string{
+		"out/fileA.txt":     "a",
+		"out/sub/fileB.txt": "b",
+	})
+	cmd := &repb.Command{OutputPaths: []string{"out"}}
+	dirHelper := dirtools.NewDirHelper(rootDir, cmd, fs.FileMode(0o755))
+	actionResult := &repb.ActionResult{}
+	info, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, cmd, actionResult, addToFileCache, nil /*=chunkingParams*/)
+	require.NoError(t, err)
+	require.Len(t, actionResult.OutputDirectories, 1)
+	return info, actionResult
+}
+
+// treeDirectories fetches the Tree uploaded for the "out" output directory
+// and returns its Directory protos, root first, along with their digests.
+func treeDirectories(t *testing.T, ctx context.Context, env *testenv.TestEnv, actionResult *repb.ActionResult) ([]*repb.Directory, []*repb.Digest) {
+	treeDigest := actionResult.OutputDirectories[0].GetTreeDigest()
+	tree := &repb.Tree{}
+	err := cachetools.GetBlobAsProto(ctx, env.GetByteStreamClient(), digest.NewCASResourceName(treeDigest, "", repb.DigestFunction_SHA256), tree)
+	require.NoError(t, err)
+	require.Len(t, tree.GetChildren(), 1)
+	dirs := append([]*repb.Directory{tree.GetRoot()}, tree.GetChildren()...)
+	digests := make([]*repb.Digest, 0, len(dirs))
+	for _, dir := range dirs {
+		require.NotEmpty(t, dir.GetFiles())
+		d, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		digests = append(digests, d)
+	}
+	return dirs, digests
+}
+
+func TestUploadTree_SkipsPresentBlobs(t *testing.T) {
+	env, ctx := testEnv(t)
+	client := &trackingClient{
+		ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+		ByteStreamClient:                env.GetByteStreamClient(),
+	}
+	env.SetContentAddressableStorageClient(client)
+	env.SetByteStreamClient(client)
+
+	// The first upload should transfer everything.
+	info, actionResult := uploadOutTree(t, ctx, env, false /*=addToFileCache*/)
+	require.Equal(t, int64(6), info.FileCount)
+	treeDigest := actionResult.OutputDirectories[0].GetTreeDigest()
+
+	// The Directory protos should have been checked with FindMissingBlobs
+	// along with the files.
+	dirs, dirDigests := treeDirectories(t, ctx, env, actionResult)
+	for i, dir := range dirs {
+		require.True(t, client.checkedForMissing(dirDigests[i]), "Directory proto %s should have been checked with FindMissingBlobs", dirDigests[i].GetHash())
+		for _, file := range dir.GetFiles() {
+			require.True(t, client.checkedForMissing(file.GetDigest()), "file %s should have been checked with FindMissingBlobs", file.GetName())
+		}
+	}
+
+	// Uploading the same outputs again should find the files and Directory
+	// protos already present, so only the Tree should be transferred.
+	info, _ = uploadOutTree(t, ctx, env, false /*=addToFileCache*/)
+	require.Equal(t, int64(1), info.FileCount)
+	require.Equal(t, treeDigest.GetSizeBytes(), info.BytesTransferred)
+}
+
+func TestUploadTree_UploadsEverythingWhenFindMissingBlobsFails(t *testing.T) {
+	env, ctx := testEnv(t)
+	client := &trackingClient{
+		ContentAddressableStorageClient: env.GetContentAddressableStorageClient(),
+		ByteStreamClient:                env.GetByteStreamClient(),
+	}
+	env.SetContentAddressableStorageClient(client)
+	env.SetByteStreamClient(client)
+
+	// Populate the cache with everything first.
+	first, _ := uploadOutTree(t, ctx, env, false /*=addToFileCache*/)
+	require.Equal(t, int64(6), first.FileCount)
+
+	// If FindMissingBlobs fails, the files and Directory protos should all be
+	// uploaded again even though they are already present, rather than being
+	// skipped. If the Directory protos were skipped, only the two files and
+	// the Tree would be transferred.
+	client.setFindMissingErr(status.UnavailableError("find missing blobs unavailable"))
+	second, _ := uploadOutTree(t, ctx, env, false /*=addToFileCache*/)
+	require.Equal(t, first.FileCount, second.FileCount)
+	require.Equal(t, first.BytesTransferred, second.BytesTransferred)
+}
+
+func TestUploadTree_AddsOnlyFilesToFileCache(t *testing.T) {
+	env, ctx := testEnv(t)
+	fileCache := &countingFileCache{
+		FileCache: env.GetFileCache(),
+		adds:      make(map[string]int),
+		opens:     make(map[string]int),
+	}
+	env.SetFileCache(fileCache)
+
+	_, actionResult := uploadOutTree(t, ctx, env, true /*=addToFileCache*/)
+
+	// Each output file should be added to the filecache exactly once, and
+	// nothing else should be: in particular not the Directory protos, which
+	// are uploaded alongside the files.
+	dirs, _ := treeDirectories(t, ctx, env, actionResult)
+	fileCount := 0
+	for _, dir := range dirs {
+		for _, file := range dir.GetFiles() {
+			require.Equal(t, 1, fileCache.addCount(file), "file %s should have been added to the filecache once", file.GetName())
+			fileCount++
+		}
+	}
+	require.Equal(t, 2, fileCount)
+	require.Equal(t, fileCount, fileCache.totalAddCount())
+}
+
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 
@@ -1812,7 +2390,7 @@ func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1894,6 +2472,16 @@ func (c *countingFileCache) addCount(node *repb.FileNode) int {
 	return c.adds[fileNodeKey(node)]
 }
 
+func (c *countingFileCache) totalAddCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	total := 0
+	for _, n := range c.adds {
+		total += n
+	}
+	return total
+}
+
 func (c *countingFileCache) openCount(node *repb.FileNode) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -1922,4 +2510,121 @@ func (c *countingByteStreamClient) readCount(resourceName string) int {
 
 func fileNodeKey(node *repb.FileNode) string {
 	return fmt.Sprintf("%s/%d/%t", node.GetDigest().GetHash(), node.GetDigest().GetSizeBytes(), node.GetIsExecutable())
+}
+
+type trackingClient struct {
+	repb.ContentAddressableStorageClient
+	bspb.ByteStreamClient
+
+	mu           sync.Mutex
+	batchReads   int
+	streamReads  int
+	batchWrites  int
+	streamWrites int
+	inFlight     int
+	maxInFlight  int
+	// Hashes of all digests passed to FindMissingBlobs.
+	findMissingHashes map[string]struct{}
+	// If set, FindMissingBlobs returns this error instead of being forwarded.
+	findMissingErr error
+}
+
+func (c *trackingClient) setFindMissingErr(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.findMissingErr = err
+}
+
+func (c *trackingClient) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest, opts ...grpc.CallOption) (*repb.FindMissingBlobsResponse, error) {
+	c.mu.Lock()
+	if c.findMissingHashes == nil {
+		c.findMissingHashes = make(map[string]struct{})
+	}
+	for _, d := range req.GetBlobDigests() {
+		c.findMissingHashes[d.GetHash()] = struct{}{}
+	}
+	err := c.findMissingErr
+	c.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return c.ContentAddressableStorageClient.FindMissingBlobs(ctx, req, opts...)
+}
+
+func (c *trackingClient) checkedForMissing(d *repb.Digest) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, ok := c.findMissingHashes[d.GetHash()]
+	return ok
+}
+
+func (c *trackingClient) track(n int, calls *int) (done func()) {
+	c.mu.Lock()
+	*calls++
+	c.inFlight += n
+	c.maxInFlight = max(c.maxInFlight, c.inFlight)
+	c.mu.Unlock()
+	time.Sleep(10 * time.Millisecond)
+	return func() {
+		c.mu.Lock()
+		c.inFlight -= n
+		c.mu.Unlock()
+	}
+}
+
+func (c *trackingClient) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest, opts ...grpc.CallOption) (*repb.BatchReadBlobsResponse, error) {
+	defer c.track(len(req.GetDigests()), &c.batchReads)()
+	return c.ContentAddressableStorageClient.BatchReadBlobs(ctx, req, opts...)
+}
+
+func (c *trackingClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	done := c.track(1, &c.streamReads)
+	stream, err := c.ByteStreamClient.Read(ctx, req, opts...)
+	if err != nil {
+		done()
+		return nil, err
+	}
+	return &trackedReadStream{ByteStream_ReadClient: stream, done: sync.OnceFunc(done)}, nil
+}
+
+func (c *trackingClient) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest, opts ...grpc.CallOption) (*repb.BatchUpdateBlobsResponse, error) {
+	defer c.track(1, &c.batchWrites)()
+	return c.ContentAddressableStorageClient.BatchUpdateBlobs(ctx, req, opts...)
+}
+
+func (c *trackingClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	done := c.track(1, &c.streamWrites)
+	stream, err := c.ByteStreamClient.Write(ctx, opts...)
+	if err != nil {
+		done()
+		return nil, err
+	}
+	return &trackedWriteStream{ByteStream_WriteClient: stream, done: sync.OnceFunc(done)}, nil
+}
+
+// trackedReadStream keeps a read in flight until the stream ends, which
+// happens when Recv returns EOF or an error.
+type trackedReadStream struct {
+	bspb.ByteStream_ReadClient
+	done func()
+}
+
+func (s *trackedReadStream) Recv() (*bspb.ReadResponse, error) {
+	rsp, err := s.ByteStream_ReadClient.Recv()
+	if err != nil {
+		s.done()
+	}
+	return rsp, err
+}
+
+// trackedWriteStream keeps a write in flight until the client finishes it
+// with CloseAndRecv.
+type trackedWriteStream struct {
+	bspb.ByteStream_WriteClient
+	done func()
+}
+
+func (s *trackedWriteStream) CloseAndRecv() (*bspb.WriteResponse, error) {
+	defer s.done()
+	return s.ByteStream_WriteClient.CloseAndRecv()
 }

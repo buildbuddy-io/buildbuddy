@@ -173,12 +173,12 @@ func splitMultiFlag(input string) []string {
 	subFlags := multiFlagKeyRegex.FindAllStringIndex(input, -1 /* return all matches */)
 	subFlagStarts := make([]int, len(subFlags)+1)
 	subFlagStarts[0] = 0
-	for i := 0; i < len(subFlags); i++ {
+	for i := range subFlags {
 		subFlagStarts[i+1] = subFlags[i][0]
 	}
 
 	output := make([]string, len(subFlagStarts))
-	for i := 0; i < len(subFlagStarts); i++ {
+	for i := range subFlagStarts {
 		start := subFlagStarts[i]
 		if start > 0 {
 			// Skip the leading comma
@@ -992,8 +992,7 @@ func typeContainsSecrets(t reflect.Type, seen map[reflect.Type]bool) bool {
 	case reflect.Map:
 		return typeContainsSecrets(t.Key(), seen) || typeContainsSecrets(t.Elem(), seen)
 	case reflect.Struct:
-		for i := 0; i < t.NumField(); i++ {
-			field := t.Field(i)
+		for field := range t.Fields() {
 			if slices.Contains(strings.Split(field.Tag.Get("config"), ","), "secret") {
 				return true
 			}

@@ -499,13 +499,15 @@ func TestCIRunner_AppliesCustomBazelrc(t *testing.T) {
 
 	testCases := []struct {
 		name                   string
+		apiKey                 string
 		workspaceContents      map[string]string
 		initSubdir             bool
 		expectedStartupOptions []string
 		expectModifiedIID      bool
 	}{
 		{
-			name: "Has a workspace .bazelrc",
+			name:   "Has a workspace .bazelrc",
+			apiKey: "testAPIKey",
 			workspaceContents: map[string]string{
 				".bazelrc": `
 common --invocation_id=00000000-0000-0000-0000-000000000000
@@ -592,11 +594,25 @@ actions:
 			app := buildbuddy.Run(t)
 			runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
 
-			result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+			result := invokeRunner(t, runnerFlags, []string{"BUILDBUDDY_API_KEY=" + tc.apiKey}, wsPath)
 			checkRunnerResult(t, result)
 
 			runnerInvocation := getRunnerInvocation(t, app, result)
 			innerInvocation := getInnerInvocation(t, app, result)
+
+			// Check that Bazel received both service credentials when an API key is set.
+			commandOptions := make(map[string]string)
+			for _, option := range findStructuredCommandLineOptions(t, innerInvocation, "canonical", "command options") {
+				commandOptions[option.GetOptionName()] = option.GetOptionValue()
+			}
+			require.NotEmpty(t, commandOptions)
+			for _, header := range []string{"remote_header", "bes_header"} {
+				if tc.apiKey != "" {
+					require.Equal(t, "<REDACTED>", commandOptions[header], header)
+				} else {
+					require.NotContains(t, commandOptions, header)
+				}
+			}
 
 			missingStartupFlags := make(map[string]struct{}, 0)
 			for _, sf := range tc.expectedStartupOptions {
@@ -2242,8 +2258,7 @@ actions:
       push: { branches: [ master ] }
     steps:
       - run: |
-          output_base=$(bazel info output_base)
-          bazel run :simulate_oom "$output_base"
+          bazel run :simulate_oom "$PWD/../output-base"
 `,
 	}
 
@@ -2322,8 +2337,7 @@ actions:
       push: { branches: [ master ] }
     steps:
       - run: |
-          output_base=$(bazel info output_base)
-          bazel run :write_java_log "$output_base"
+          bazel run :write_java_log "$PWD/../output-base"
 `,
 	}
 

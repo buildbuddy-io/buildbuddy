@@ -19,6 +19,9 @@ func TestAuthRepoURL(t *testing.T) {
 		{"https://gitlab.com/org/repo", "", "TOKEN", "https://buildbuddy:TOKEN@gitlab.com/org/repo"},
 		{"https://bitbucket.org/org/repo", "USER", "TOKEN", "https://USER:TOKEN@bitbucket.org/org/repo"},
 		{"https://github.com/org-public/repo", "", "", "https://github.com/org-public/repo"},
+		{"https://github.com/org-public/repo", "alice", "", "https://github.com/org-public/repo"},
+		{"https://gitlab.com/org-public/repo", "alice", "", "https://gitlab.com/org-public/repo"},
+		{"https://bitbucket.org/org-public/repo", "alice", "", "https://bitbucket.org/org-public/repo"},
 	} {
 		authURL, err := gitutil.AuthRepoURL(test.url, test.user, test.token)
 
@@ -40,6 +43,8 @@ func TestStripRepoURLCredentials(t *testing.T) {
 		{"http://USER:PASS@github.com/org/repo.git", "http://github.com/org/repo.git"},
 		{"ssh://USER:PASS@github.com/org/repo.git", "ssh://github.com/org/repo.git"},
 		{"git@github.com:org/repo.git", "ssh://github.com/org/repo.git"},
+		{"git@github.com:9999-org/repo.git", "ssh://github.com/9999-org/repo.git"},
+		{"git@github.com:1org/repo.git", "ssh://github.com/1org/repo.git"},
 		{"github.com/org/repo.git", "https://github.com/org/repo.git"},
 		{"bitbucket.org/org/repo", "https://bitbucket.org/org/repo"},
 		{"gitlab.com/org/repo", "https://gitlab.com/org/repo"},
@@ -98,6 +103,10 @@ func TestNormalizeRepoURL(t *testing.T) {
 	url, err := gitutil.NormalizeRepoURL("")
 	assert.NoError(t, err)
 	assert.Equal(t, "", url.String())
+
+	url, err = gitutil.NormalizeRepoURL("git@github.com:9999-org/repo.git")
+	assert.NoError(t, err)
+	assert.Equal(t, "https://github.com/9999-org/repo", url.String())
 
 	url, err = gitutil.NormalizeRepoURL("buildbuddy-io/buildbuddy/submodule")
 

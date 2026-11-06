@@ -17,10 +17,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -62,12 +64,12 @@ var (
 	ipRulesUIEnabled                       = flag.Bool("app.ip_rules_ui_enabled", false, "If set, show the IP rules tab in settings page.")
 	traceViewerEnabled                     = flag.Bool("app.trace_viewer_enabled", false, "Whether the new trace viewer is enabled.")
 	popupAuthEnabled                       = flag.Bool("app.popup_auth_enabled", false, "Whether popup windows should be used for authentication.")
-	streamingHTTPEnabled                   = flag.Bool("app.streaming_http_enabled", false, "Whether to support server-streaming http requests between server and web UI.")
+	streamingHTTPEnabled                   = flag.Bool("app.streaming_http_enabled", true, "Whether to support server-streaming http requests between server and web UI.")
 	codeReviewEnabled                      = flag.Bool("app.code_review_enabled", false, "If set, show the code review UI.")
 	codeSearchEnabled                      = flag.Bool("app.codesearch_enabled", false, "If set, show the code search UI.")
 	orgAdminApiKeyCreationEnabled          = flag.Bool("app.org_admin_api_key_creation_enabled", false, "If set, SCIM API keys will be able to be created in the UI.")
 	readerWriterRolesEnabled               = flag.Bool("app.reader_writer_roles_enabled", true, "If set, Reader/Writer roles will be enabled in the user management UI.")
-	invocationLogStreamingEnabled          = flag.Bool("app.invocation_log_streaming_enabled", false, "If set, the UI will stream invocation logs instead of polling.")
+	invocationLogStreamingEnabled          = flag.Bool("app.invocation_log_streaming_enabled", true, "If set, the UI will stream invocation logs instead of polling.")
 	targetFlakesUIEnabled                  = flag.Bool("app.target_flakes_ui_enabled", false, "If set, show some fancy new features for analyzing flakes.")
 	bazelButtonsEnabled                    = flag.Bool("app.bazel_buttons_enabled", false, "If set, show remote bazel buttons in the UI.")
 	communityLinksEnabled                  = flag.Bool("app.community_links_enabled", true, "If set, show links to BuildBuddy community in the UI.")
@@ -78,6 +80,17 @@ var (
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
+	autoRefresh      = flag.Bool("auto_refresh", false, "If set, the web UI reloads itself when the server restarts. Intended for local development.", flag.Internal)
+
+	flipLogoOnHover   = expflag.Bool("app.flip_logo_on_hover", false, "Whether to flip the logo on hover.", expflag.DeprecatedExperimentName("flip-logo-on-hover"))
+	singleTargetStats = expflag.Bool("app.single_target_stats_enabled", false, "Whether the new target stat page is enabled instead of linking to drilldowns.")
+)
+
+var (
+	// serverID identifies this server process. The auto-refresh script uses it
+	// to tell a server restart apart from a dropped connection to the same
+	// server.
+	serverID = uuid.New()
 )
 
 func FSFromRelPath(relPath string) (fs.FS, error) {
@@ -156,6 +169,35 @@ func setCacheHeaders(h http.Handler, appBundleHash string) http.Handler {
 	})
 }
 
+// RegisterAutoRefreshHandler registers the endpoint that static/auto_refresh.js
+// uses to detect server restarts, if auto-refresh is enabled.
+//
+// The script sends the ID of the server that rendered the page. If the ID
+// matches this server, the handler holds the request open until the server
+// shuts down, and the script reconnects after the request ends. If the ID
+// doesn't match, the page came from an earlier server process, so the handler
+// tells the script to reload the page.
+func RegisterAutoRefreshHandler(env environment.Env, server *http.Server) {
+	if !*autoRefresh {
+		return
+	}
+	// Unblock clients immediately on shutdown to avoid delaying restarts.
+	shutdown := make(chan struct{})
+	server.RegisterOnShutdown(func() { close(shutdown) })
+	env.GetMux().Handle("/_/auto-refresh", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The client's server ID is from an old server process; reload.
+		if r.URL.Query().Get("server_id") != serverID {
+			w.WriteHeader(http.StatusResetContent)
+			return
+		}
+		// Wait indefinitely until shutdown.
+		select {
+		case <-r.Context().Done():
+		case <-shutdown:
+		}
+	}))
+}
+
 type FrontendTemplateData struct {
 	// StylePath is the path to the main styles for the app.
 	StylePath string
@@ -167,16 +209,22 @@ type FrontendTemplateData struct {
 	Config template.JS
 	// Nonce is the Content-Security-Policy nonce value.
 	Nonce string
+	// AutoRefresh decides whether to render the script that reloads the page
+	// when the server restarts.
+	AutoRefresh bool
+	// ServerID identifies the server process that rendered the page.
+	ServerID string
 }
 
-func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, version, jsPath, stylePath, appBundleHash string, w http.ResponseWriter) {
+func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, versionTag, jsPath, stylePath, appBundleHash string, w http.ResponseWriter) {
 	nonce, _ := ctx.Value(csp.Nonce{}).(string)
 	apiKeyValueReadbackEnabled := true
 	if authDB := env.GetAuthDB(); authDB != nil {
 		apiKeyValueReadbackEnabled = authDB.GetAPIKeyValueReadbackEnabled()
 	}
 	config := cfgpb.FrontendConfig{
-		Version:                                version,
+		Version:                                versionTag,
+		Commit:                                 version.PublicCommit(),
 		AppBundleHash:                          appBundleHash,
 		ConfiguredIssuers:                      env.GetAuthenticator().PublicIssuers(),
 		DefaultToDenseMode:                     *defaultToDenseMode,
@@ -204,8 +252,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		UserOwnedKeysEnabled:                   env.GetAuthDB() != nil && env.GetAuthDB().GetUserOwnedKeysEnabled(),
 		TrendsHeatmapEnabled:                   iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
 		PatternFilterEnabled:                   *patternFilterEnabled,
-		BotSuggestionsEnabled:                  env.GetSuggestionService() != nil,
-		MultipleSuggestionProviders:            env.GetSuggestionService() != nil && env.GetSuggestionService().MultipleProvidersConfigured(),
+		BotSuggestionsEnabled:                  env.GetRunnerService() != nil,
 		ExecutionSearchEnabled:                 *executionSearchEnabled,
 		TrendsSummaryEnabled:                   *trendsSummaryEnabled,
 		ActionResultOriginEnabled:              action_cache_server.RecordActionResultOriginEnabled(),
@@ -229,6 +276,8 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		ApiKeyValueReadbackEnabled:             &apiKeyValueReadbackEnabled,
 		GroupMembershipRequestsEnabled:         new(env.GetUserDB() != nil && env.GetUserDB().GetGroupMembershipRequestsEnabled()),
 		UsageAlertsEnabled:                     env.GetUsageService() != nil && env.GetUsageService().GetAlertsEnabled(),
+		UsageBillEnabled:                       env.GetUsageService() != nil && env.GetUsageService().GetBillEnabled(),
+		UsageExportEnabled:                     env.GetUsageService() != nil && env.GetUsageService().GetExportEnabled(),
 		InvocationLogStreamingEnabled:          *invocationLogStreamingEnabled,
 		TargetFlakesUiEnabled:                  *targetFlakesUIEnabled && env.GetOLAPDBHandle() != nil,
 		CodeEditorV2Enabled:                    *features.CodeEditorV2Enabled,
@@ -240,12 +289,10 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		TargetsPageEnabled:                     *targetsPageEnabled && env.GetOLAPDBHandle() != nil,
 		UserListsUiEnabled:                     *userListsUIEnabled,
 		DarkModeEnabled:                        *darkModeEnabled,
-	}
-
-	if efp := env.GetExperimentFlagProvider(); efp != nil {
-		config.FlipLogoOnHover = efp.Boolean(ctx, "flip-logo-on-hover", false /*=default*/)
 		// Global experiments can be handled here, but experiments that are user or group specific
 		// should be included in the experiments field of GetUserResponse instead.
+		FlipLogoOnHover:          flipLogoOnHover.Get(ctx),
+		SingleTargetStatsEnabled: singleTargetStats.Get(ctx) && env.GetOLAPDBHandle() != nil,
 	}
 
 	configJSON, err := protojson.Marshal(&config)
@@ -260,6 +307,8 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		GaEnabled:        !*disableGA,
 		Config:           template.JS(configJSON),
 		Nonce:            nonce,
+		AutoRefresh:      *autoRefresh,
+		ServerID:         serverID,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

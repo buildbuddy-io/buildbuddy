@@ -9,33 +9,49 @@ function Component() {
     <div className={`${common.section} ${common.sectionDark} ${common.sectionRounded}`}>
       <div className={`${common.container} ${common.splitContainer} ${styles.ossContainer}`}>
         <div className={common.text}>
-          <div className={styles.title}>
+          <h2 className={styles.title}>
             BuildBuddy <span className={styles.heart}>&hearts;</span> Open Source
-          </div>
+          </h2>
           <div className={styles.subtitle}>
             BuildBuddy is{" "}
-            <a target="_blank" className={styles.link} href="https://en.wikipedia.org/wiki/Open-core_model">
+            <a
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.link}
+              href="https://en.wikipedia.org/wiki/Open-core_model">
               open-core
             </a>{" "}
             and our features targeted at individual developers are available for free and MIT Licensed on{" "}
-            <a target="_blank" className={styles.link} href="https://github.com/buildbuddy-io/buildbuddy">
+            <a
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.link}
+              href="https://github.com/buildbuddy-io/buildbuddy">
               GitHub
             </a>
             . To show our appreciation to the open source community, we also offer BuildBuddy Cloud for free to small
             teams and open source projects.
           </div>
         </div>
-        <Image
-          className={styles.image}
-          img={require("../../../static/img/oss/buildbuddy-io_buildbuddy.png")}
-          shouldAutoDownload={() => true}
-          threshold={10000}
-        />
+        <a
+          aria-label="View the BuildBuddy repository on GitHub"
+          className={styles.imageLink}
+          href="https://github.com/buildbuddy-io/buildbuddy"
+          rel="noopener noreferrer"
+          target="_blank">
+          <Image
+            alt="BuildBuddy GitHub repository preview"
+            className={styles.image}
+            img={require("../../../static/img/oss/buildbuddy-io_buildbuddy.png")}
+            shouldAutoDownload={() => true}
+            threshold={10000}
+          />
+        </a>
       </div>
       <hr className={styles.hr} />
       <div className={`${common.container} ${common.splitContainer} ${styles.ossContainer}`}>
         <div className={common.text}>
-          <div className={styles.title}>Powered by BuildBuddy</div>
+          <h2 className={styles.title}>Powered by BuildBuddy</h2>
           <div className={styles.subtitle}>
             Here are some of our favorite open source repositories that are powered by BuildBuddy.
           </div>
@@ -46,7 +62,7 @@ function Component() {
       </div>
       <div className={common.container}>
         <a href="/open-source-repos" className={styles.repoButton}>
-          See all repos
+          Explore more projects
         </a>
       </div>
     </div>

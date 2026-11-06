@@ -72,7 +72,7 @@ type sharedDirectoryContextKey struct{}
 
 var (
 	enableAlwaysClone                = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
-	includeSubdirPrefix              = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
+	includeSubdirPrefix              = flag.Bool("executor.include_subdir_prefix", true, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
 	subdirPrefixLength               = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
 	enableDiskFallbackOnStartup      = flag.Bool("executor.local_cache_enable_disk_fallback_during_startup_scan", true, "If true, fallback to disk lookups while initial local cache scan is in progress.", flag.Internal)
 	deleteFilecacheOnUncleanShutdown = flag.Bool("executor.delete_filecache_on_unclean_shutdown", false, "If true, record the current boot ID in a marker file in the filecache directory while running, and remove it on clean shutdown. If the marker is present at startup with a boot ID from a previous boot session, the machine rebooted before the previous process could shut down cleanly (e.g. power loss), so the filecache is wiped to avoid serving potentially corrupted files.")
@@ -601,7 +601,7 @@ func keyPrefixFromContext(ctx context.Context) string {
 	if sharedDirectory, ok := sharedDirectoryFromContext(ctx); ok {
 		return sharedDirectoryPrefix + sharedDirectory
 	}
-	return groupIDStringFromContext(ctx)
+	return GroupIDStringFromContext(ctx)
 }
 
 func isScannableCacheDir(name string) bool {
@@ -665,7 +665,9 @@ func namespacedKey(keyPrefix string, node *repb.FileNode) (string, error) {
 	return keyPrefix + "/" + hash, nil
 }
 
-func groupIDStringFromContext(ctx context.Context) string {
+// GroupIDStringFromContext returns the group ID of the authenticated user, or
+// interfaces.AuthAnonymousUser for anonymous requests.
+func GroupIDStringFromContext(ctx context.Context) string {
 	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
 		groupID := u.GetGroupID()
 		if groupID != "" {
@@ -957,6 +959,14 @@ func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool 
 	return c.containsWithStatFallback(k)
 }
 
+func (c *fileCache) Stat(ctx context.Context, node *repb.FileNode) (os.FileInfo, error) {
+	k, err := key(ctx, node)
+	if err != nil {
+		return nil, err
+	}
+	return os.Stat(filecachePath(c.rootDir, k))
+}
+
 func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
 	if c.checkClosed() {
 		return false
@@ -1138,8 +1148,25 @@ func (c *fileCache) tempPath(name string) (string, error) {
 	return filepath.Join(c.TempDir(), fmt.Sprintf("%s.%s.tmp", name, randStr)), nil
 }
 
+// ClonesInputs returns whether files linked from the file cache for the given
+// context are copies, rather than hard links to the file cache's own copy, so
+// that actions can modify them without affecting the file cache. It uses the
+// same rule as cloneOrLink, from shouldClone.
+func ClonesInputs(ctx context.Context) bool {
+	if shouldClone(keyPrefixFromContext(ctx)) {
+		return !fastcopy.CloneHardLinks()
+	}
+	return !fastcopy.FastCopyHardLinks()
+}
+
+// shouldClone returns whether cloneOrLink clones files for the given key
+// prefix, rather than fast-copying them.
+func shouldClone(keyPrefix string) bool {
+	return keyPrefix == interfaces.AuthAnonymousUser || *enableAlwaysClone
+}
+
 func cloneOrLink(keyPrefix, source, destination string) error {
-	if keyPrefix == interfaces.AuthAnonymousUser || *enableAlwaysClone {
+	if shouldClone(keyPrefix) {
 		if err := fastcopy.Clone(source, destination); err != nil {
 			return wrapOSError(err, "clone")
 		}

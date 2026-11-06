@@ -4,6 +4,7 @@ package tables
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -32,7 +33,7 @@ const (
 )
 
 type tableDescriptor struct {
-	table interface{}
+	table any
 	// 2-letter table prefix
 	prefix string
 	// Table name (must match struct name).
@@ -49,8 +50,8 @@ var (
 	allTables []tableDescriptor
 )
 
-func GetAllTables() []interface{} {
-	tableSlice := make([]interface{}, 0)
+func GetAllTables() []any {
+	tableSlice := make([]any, 0)
 	for _, d := range allTables {
 		tableSlice = append(tableSlice, d.table)
 	}
@@ -485,8 +486,11 @@ type APIKey struct {
 	// capabilities.
 	// All read paths should utilize authdb.fetchAPIKeys to obtain the
 	// effective capabilities.
-	Capabilities        int32 `gorm:"default:1"`
-	VisibleToDevelopers bool  `gorm:"not null;default:0"`
+	Capabilities int32 `gorm:"default:1"`
+	// Deprecated: use the VISIBLE_TO_DEVELOPERS bit of Visibility instead.
+	VisibleToDevelopers bool `gorm:"not null;default:0"`
+	// Bitmask of api_key.Visibility values dictating who can see this key.
+	Visibility int32 `gorm:"not null;default:0"`
 	// Indicates whether this key is used for impersonation.
 	Impersonation bool `gorm:"not null;default:0"`
 	// If set, the API key is not considered to be valid after this time.
@@ -1369,9 +1373,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 	}
 	prefixIndexes, ok := prefixIndicesByDialect[db.Dialector.Name()]
 	if ok {
-		for name, cols := range prefixIndexes {
-			invocationIndices[name] = cols
-		}
+		maps.Copy(invocationIndices, prefixIndexes)
 	}
 
 	executionIndices := map[string]string{

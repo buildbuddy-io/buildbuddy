@@ -23,8 +23,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
@@ -87,6 +89,10 @@ var (
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
 
 	measureWorkspaceDiskUsage = flag.Bool("executor.workspace.measure_disk_usage", false, "If set, measure the disk space used by the task's buildroot (workspace) after each task finishes and report it in the task's usage stats. Note: this requires walking the entire workspace tree, which may add CPU/IO overhead for tasks with large workspaces.")
+
+	// workspacePoolIsolationTypes are the isolation types whose containers stop
+	// all of the task's processes when the runner removes them.
+	workspacePoolIsolationTypes = []platform.ContainerType{platform.DockerContainerType, platform.PodmanContainerType, platform.OCIContainerType, platform.FirecrackerContainerType}
 )
 
 const (
@@ -276,10 +282,6 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := r.Workspace.CreateOutputDirs(); err != nil {
-		return status.UnavailableErrorf("Error creating output directory: %s", err)
-	}
-
 	// Pull the container image before Run() is called, so that we don't
 	// use up the whole exec ctx timeout with a slow container pull.
 	creds, err := r.pullCredentials()
@@ -341,6 +343,9 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := r.Workspace.CreateOutputDirs(); err != nil {
+		return status.UnavailableErrorf("Error creating output directory: %s", err)
+	}
 	if platform.IsCIRunner(r.task.GetCommand(), platform.GetProto(r.task.GetAction(), r.task.GetCommand())) &&
 		!ci_runner_util.CanInitFromCache(r.PlatformProperties.OS, r.PlatformProperties.Arch) {
 		if err := r.Workspace.AddRemoteRunnerBinaries(ctx); err != nil {
@@ -398,6 +403,11 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		defer unregister()
 	}
 	defer func() {
+		// res is nil only while a panic is unwinding; let it propagate
+		// unmasked instead of panicking again on a nil dereference.
+		if res == nil {
+			return
+		}
 		// Discard nonsensical PSI full-stall durations which are greater
 		// than the execution duration by a significant amount.
 		// See https://bugzilla.kernel.org/show_bug.cgi?id=219194
@@ -458,6 +468,14 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 			}
 		}
 
+		// If a VFS (FUSE) download failed, always return that as the command
+		// error so that the task can be retried (even if the task ignored the
+		// FS error and succeeded, it may have produced an incorrect result).
+		if err := r.Workspace.VFSError(); err != nil {
+			res.Error = err
+			res.ExitCode = commandutil.NoExitCode
+		}
+
 		// If the task reported an error, and it was OOM-killed, make sure to
 		// return the OOM error as the effective task error.
 		if oomErr := context.Cause(ctx); res.Error != nil && oom.IsError(oomErr) {
@@ -477,9 +495,11 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		}
 		if txInfo != nil {
 			fillStatsFromTransferInfo(ioStats, txInfo)
-			res.InputFetchMetadata = txInfo.InputFetchMetadata
+			if res != nil {
+				res.InputFetchMetadata = txInfo.InputFetchMetadata
+			}
 		}
-		if stats := r.Workspace.ComputeVFSStats(); stats != nil {
+		if stats := r.Workspace.ComputeVFSStats(); stats != nil && res != nil {
 			res.VfsStats = stats
 		}
 	}()
@@ -587,7 +607,9 @@ func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *rep
 }
 
 func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) error {
-	if slices.Contains(r.task.GetExperiments(), cdc.SpliceWithoutValidationExperiment) {
+	if r.task.GetFastCdc_2020Params() != nil && execution_experiments.SpliceWithoutValidation.Get(ctx) {
+		// SpliceWithoutValidation only makes sense for tasks instructed to use
+		// chunking.
 		ctx = cdc.ContextWithSpliceWithoutValidation(ctx)
 	}
 	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, executeResponse, cmdResult)
@@ -663,6 +685,12 @@ func (r *taskRunner) Remove(ctx context.Context) error {
 	}
 	if err := r.Container.Remove(ctx); err != nil {
 		errs = append(errs, err)
+	} else {
+		// Pool the workspace for later tasks, now that no container uses it.
+		// Note: if we don't move the workspace to the pool dir here (e.g. if
+		// the task is not eligible for pooling or if pooling fails), then
+		// Remove below will remove the workspace at its original path.
+		r.Workspace.ReturnToPool(ctx)
 	}
 	if err := r.Workspace.Remove(ctx); err != nil {
 		errs = append(errs, err)
@@ -734,6 +762,9 @@ type pool struct {
 	overrideProvider   container.Provider
 	oomKiller          oomkiller.Killer
 	containerProviders map[platform.ContainerType]container.Provider
+	// workspacePool holds finished tasks' workspaces for reuse, or is
+	// nil if workspace reuse is disabled.
+	workspacePool *workspace.Pool
 
 	maxRunnerCount                 int
 	maxTotalRunnerMemoryUsageBytes int64
@@ -785,6 +816,10 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 	p.caseInsensitiveFS, err = fspath.IsCaseInsensitiveFS(p.buildRoot)
 	if err != nil {
 		return nil, status.InternalErrorf("test build root case sensitivity at path %q: %s", p.buildRoot, err)
+	}
+	p.workspacePool, err = workspace.NewPool(p.buildRoot)
+	if err != nil {
+		return nil, status.InternalErrorf("create workspace reuse pool: %s", err)
 	}
 	if opts.ContainerProvider != nil {
 		p.overrideProvider = opts.ContainerProvider
@@ -1039,7 +1074,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	if err != nil {
 		return err
 	}
-	executorplatform.ApplyOverrides(p.env, executorplatform.GetExecutorProperties(), platProps, task.GetCommand())
+	executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), platProps, task)
 	if *resolveImageDigests {
 		if err := p.resolveImageDigest(ctx, platProps); err != nil {
 			return err
@@ -1126,7 +1161,6 @@ func (p *pool) Warmup(ctx context.Context) {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, cfg := range WarmupConfigs() {
-		cfg := cfg
 		eg.Go(func() error {
 			return p.warmupImage(ctx, &cfg)
 		})
@@ -1194,7 +1228,7 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 		return nil, err
 	}
 	// TODO: This mutates the task; find a cleaner way to do this.
-	if err := executorplatform.ApplyOverrides(p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
+	if err := executorplatform.ApplyOverrides(ctx, p.env, executorplatform.GetExecutorProperties(), props, task); err != nil {
 		return nil, err
 	}
 	if *resolveImageDigests {
@@ -1240,6 +1274,9 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
 		Platform:            platform.GetProto(task.GetAction(), task.GetCommand()),
 		PersistentWorkerKey: persistentWorkerKey,
+	}
+	if platform.ContainerType(props.WorkloadIsolationType) == platform.OCIContainerType {
+		key.OciSeccompDisableNewUserns = execution_experiments.SeccompDisableNewUserNS.Get(ctx)
 	}
 
 	// If snapshot sharing is enabled, a firecracker VM can be cloned from the
@@ -1309,6 +1346,32 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		UseOverlayfs:    useOverlayfs,
 		UseVFS:          useHostVFS,
 		VFSPrefetchMode: vfsPrefetchMode,
+	}
+	// We only pool workspaces if all of these are true:
+	//  - The executor.workspace_pool.enabled experiment is on for the task.
+	//  - It's a "normal," ephemeral action workspace (non-FUSE, non-overlayfs,
+	//    non-recycled, not preserved).
+	//  - It's a hardlinked workspace, not copy-on-write, with a file cache.
+	//    When the workspace returns to the pool, we only detect inputs that
+	//    the task added, removed or replaced, not inputs that it wrote to in
+	//    place. Tasks can write to cloned inputs, or to inputs written directly
+	//    when there's no file cache, in place, but writing to a hard-linked
+	//    input would also change the file cache's copy, which the file cache
+	//    already relies on tasks not doing.
+	//  - Its isolation type is one of workspacePoolIsolationTypes. Other
+	//    isolation types, such as bare and sandbox, run commands directly on
+	//    the host, and removing their containers doesn't stop background
+	//    processes that the task started, which could keep writing into the
+	//    workspace after it's pooled.
+	//  - The task isn't anonymous, unless the executor isn't shared. This is
+	//    the same rule as for runner recycling, since on a shared executor,
+	//    unrelated users can send anonymous tasks under one group.
+	if p.workspacePool != nil && execution_experiments.WorkspacePoolEnabled.Get(ctx) &&
+		!props.RecycleRunner && !props.PreserveWorkspace && !useOverlayfs && !props.EnableVFS &&
+		!filecache.ClonesInputs(ctx) && p.env.GetFileCache() != nil &&
+		slices.Contains(workspacePoolIsolationTypes, platform.ContainerType(props.WorkloadIsolationType)) &&
+		(key.GetGroupId() != "" || container.AnonymousRecyclingEnabled()) {
+		wsOpts.Pool = p.workspacePool
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {
@@ -1474,8 +1537,7 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
 		return nil
 	}
 
-	for i := len(p.runners) - 1; i >= 0; i-- {
-		r := p.runners[i]
+	for _, r := range slices.Backward(p.runners) {
 		if key.GroupId != r.key.GroupId || r.getState() != paused {
 			continue
 		}

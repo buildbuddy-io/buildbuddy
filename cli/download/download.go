@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -19,12 +21,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/mdutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/docker/go-units"
 	"github.com/mattn/go-isatty"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -41,7 +46,8 @@ var (
 	apiKey          = flags.String("api_key", "", "Optionally override the API key with this value")
 
 	usage = `
-usage: bb ` + flags.Name() + ` {digest}/{size}
+usage: bb ` + flags.Name() + ` <digest>/<size>
+       bb ` + flags.Name() + ` artifacts <invocation-id-or-url> [--output_directory=DIR]
 
 Downloads the blob identified by digest from the CAS and outputs its contents.
 
@@ -57,6 +63,9 @@ Example of displaying an Action with a remote instance name to stdout:
 
 Example of dumping a Command to a file:
   $ bb download 0e83f9edaff969afa4d16de9f8f5c1de2778148a982e1c19c744fc11a4f96811/1321 --type=Command --output_file=cmd.pb.txt
+
+Example of downloading all artifacts attached to an invocation:
+  $ bb download artifacts https://app.buildbuddy.io/invocation/01234567-89ab-cdef-0123-456789abcdef --output_directory=/tmp/artifacts
 `
 )
 
@@ -73,7 +82,7 @@ func (n *newlineStdoutCloser) Close() error {
 
 func getOutput() (io.WriteCloser, error) {
 	if *outputFile != "" {
-		return os.OpenFile(*outputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		return os.OpenFile(*outputFile, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
 	}
 	return &newlineStdoutCloser{os.Stdout}, nil
 }
@@ -117,6 +126,134 @@ func downloadFile(ctx context.Context, ind *digest.CASResourceName, bsClient bsp
 	return cachetools.GetBlob(ctx, bsClient, ind, wc)
 }
 
+func retryOptions(name string) *retry.Options {
+	opts := retry.DefaultOptions()
+	opts.MaxRetries = 3
+	opts.Name = name
+	return opts
+}
+
+func maybeRetryable(err error) error {
+	if err == nil || status.IsUnavailableError(err) {
+		return err
+	}
+	return retry.NonRetryableError(err)
+}
+
+func downloadArtifacts(ctx context.Context, client apipb.ApiServiceClient, invocationID, outputDir string) error {
+	rsp, err := retry.Do(ctx, retryOptions("GetInvocation"), func(ctx context.Context) (*apipb.GetInvocationResponse, error) {
+		rsp, err := client.GetInvocation(ctx, &apipb.GetInvocationRequest{
+			Selector:         &apipb.InvocationSelector{InvocationId: invocationID},
+			IncludeArtifacts: true,
+		})
+		return rsp, maybeRetryable(err)
+	})
+	if err != nil {
+		return fmt.Errorf("get invocation: %w", err)
+	}
+	if len(rsp.GetInvocation()) == 0 {
+		return fmt.Errorf("invocation %s not found", invocationID)
+	}
+	artifacts := rsp.GetInvocation()[0].GetArtifacts()
+	if len(artifacts) == 0 {
+		log.Printf("Invocation %s has no artifacts", invocationID)
+		return nil
+	}
+
+	paths, skipped := artifactOutputPaths(artifacts, outputDir)
+	if skipped > 0 {
+		log.Warnf("Skipped %d artifacts due to invalid paths or duplicates", skipped)
+	}
+
+	downloaded := 0
+	for i, artifact := range artifacts {
+		path := paths[i]
+		if path == "" {
+			continue
+		}
+		if strings.HasPrefix(artifact.GetUri(), "file://") {
+			log.Debugf("Skipping local artifact %q (%s)", artifact.GetName(), artifact.GetUri())
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return fmt.Errorf("create artifact directory: %w", err)
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("create artifact %q: %w", path, err)
+		}
+		var getFileErr error
+		if artifact.GetUri() == "" {
+			_, err = f.Write(artifact.GetContents())
+		} else {
+			getFileErr = retry.DoVoid(ctx, retryOptions("GetFile"), func(ctx context.Context) error {
+				if err = f.Truncate(0); err != nil {
+					return retry.NonRetryableError(err)
+				}
+				if _, err = f.Seek(0, io.SeekStart); err != nil {
+					return retry.NonRetryableError(err)
+				}
+				stream, streamErr := client.GetFile(ctx, &apipb.GetFileRequest{Uri: artifact.GetUri()})
+				if streamErr != nil {
+					return maybeRetryable(streamErr)
+				}
+				for {
+					chunk, recvErr := stream.Recv()
+					if recvErr == io.EOF {
+						return nil
+					}
+					if recvErr != nil {
+						return maybeRetryable(recvErr)
+					}
+					if _, err = f.Write(chunk.GetData()); err != nil {
+						return retry.NonRetryableError(err)
+					}
+				}
+			})
+		}
+		closeErr := f.Close()
+		if err != nil {
+			return fmt.Errorf("download artifact %q: %w", artifact.GetName(), err)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close artifact %q: %w", artifact.GetName(), closeErr)
+		}
+		if getFileErr != nil {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				log.Warnf("Failed to remove partial artifact %q: %s", artifact.GetName(), err)
+			}
+			log.Warnf("Skipping artifact %q after GetFile failed: %s", artifact.GetName(), getFileErr)
+			continue
+		}
+		log.Debugf("Downloaded %s", path)
+		downloaded++
+	}
+	log.Printf("Downloaded %d artifact(s) to %s", downloaded, outputDir)
+	return nil
+}
+
+func artifactOutputPaths(artifacts []*apipb.File, outputDir string) ([]string, int) {
+	paths := make([]string, len(artifacts))
+	seen := make(map[string]struct{}, len(artifacts))
+	skipped := 0
+	for i, artifact := range artifacts {
+		name := filepath.Clean(filepath.FromSlash(artifact.GetName()))
+		if name == "." || !filepath.IsLocal(name) {
+			log.Warnf("Skipping artifact with invalid path %q", name)
+			skipped++
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			log.Warnf("Skipping duplicate artifact path %q (URI %q)", name, artifact.GetUri())
+			skipped++
+			continue
+		}
+		seen[name] = struct{}{}
+		paths[i] = filepath.Join(outputDir, name)
+	}
+	return paths, skipped
+}
+
 func HandleDownload(args []string) (int, error) {
 	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {
@@ -126,13 +263,18 @@ func HandleDownload(args []string) (int, error) {
 		return -1, err
 	}
 
-	if len(flags.Args()) != 1 {
+	artifactMode := len(flags.Args()) > 0 && flags.Args()[0] == "artifacts"
+	if (!artifactMode && len(flags.Args()) != 1) || (artifactMode && len(flags.Args()) != 2) {
 		log.Print(usage)
 		return 1, nil
 	}
 
 	if *target == "" {
 		log.Printf("A non-empty --target must be specified")
+		return 1, nil
+	}
+	if artifactMode && (*blobType != "" || *outputFile != "") {
+		log.Printf("--type and --output_file are not supported with 'download artifacts'")
 		return 1, nil
 	}
 	if *outputDirectory != "" && *blobType == "" {
@@ -158,6 +300,30 @@ func HandleDownload(args []string) (int, error) {
 			ctx = metadata.AppendToOutgoingContext(ctx, key, values[len(values)-1])
 		}
 	}
+	conn, err := grpc_client.DialSimple(*target)
+	if err != nil {
+		return -1, fmt.Errorf("dial %q: %w", *target, err)
+	}
+	if artifactMode {
+		invocationID, ok := uuid.ParseInvocationID(flags.Args()[1])
+		if !ok {
+			return -1, fmt.Errorf("%q is not an invocation ID or invocation URL", flags.Args()[1])
+		}
+		outputDir := *outputDirectory
+		if outputDir == "" {
+			outputDir, err = os.MkdirTemp("", "buildbuddy-artifacts-*")
+			if err != nil {
+				return -1, fmt.Errorf("create temporary artifact directory: %w", err)
+			}
+			log.Printf("%sDownloading artifacts to %s%s", terminal.Esc(90), outputDir, terminal.Esc())
+		}
+		if err := downloadArtifacts(ctx, apipb.NewApiServiceClient(conn), invocationID, outputDir); err != nil {
+			log.Print(err)
+			return 1, nil
+		}
+		return 0, nil
+	}
+
 	uri := flags.Args()[0]
 	if !strings.HasPrefix(uri, "/blobs") {
 		// Interpret HASH/SIZE as a resource name using the default digest
@@ -167,11 +333,6 @@ func HandleDownload(args []string) (int, error) {
 	rn, err := digest.ParseDownloadResourceName(uri)
 	if err != nil {
 		return -1, fmt.Errorf("parse resource name: %w", err)
-	}
-
-	conn, err := grpc_client.DialSimple(*target)
-	if err != nil {
-		return -1, fmt.Errorf("dial %q: %w", *target, err)
 	}
 	bsClient := bspb.NewByteStreamClient(conn)
 	casClient := repb.NewContentAddressableStorageClient(conn)

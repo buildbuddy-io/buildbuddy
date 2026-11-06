@@ -77,10 +77,7 @@ func match(re *dfa.Regexp, buf []byte) []region {
 			break
 		}
 		lineStart := bytes.LastIndex(buf[chunkStart:m1], nl) + 1 + chunkStart
-		lineEnd := m1 + 1
-		if lineEnd > end {
-			lineEnd = end
-		}
+		lineEnd := min(m1+1, end)
 		lineno += countNL(buf[chunkStart:lineStart])
 		results = append(results, region{
 			startOffset: lineStart,
@@ -431,7 +428,6 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 	field := doc.Field(contentField)
 	if h.contentMatcher != nil {
 		for _, region := range match(h.contentMatcher.Clone(), field.Contents()) {
-			region := region
 			results = append(results, types.HighlightedRegion(regionMatch{
 				field:  field,
 				region: region,

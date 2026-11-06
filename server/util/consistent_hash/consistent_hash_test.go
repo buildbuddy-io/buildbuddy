@@ -27,7 +27,7 @@ func TestNodesetOrderIndependence(t *testing.T) {
 	ch := consistent_hash.NewConsistentHash(consistent_hash.CRC32, numVnodes)
 
 	hosts := make([]string, 0)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		r, err := random.RandomString(5)
 		assert.Nil(err)
 		hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
@@ -38,7 +38,7 @@ func TestNodesetOrderIndependence(t *testing.T) {
 	}
 
 	mappings := make(map[string]string, 0)
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		r, err := random.RandomString(64)
 		assert.Nil(err)
 		mappings[r] = ch.Get(r)
@@ -60,11 +60,11 @@ func TestNodesetOrderIndependence(t *testing.T) {
 func TestGetAllReplicas(t *testing.T) {
 	ch := consistent_hash.NewConsistentHash(consistent_hash.CRC32, numVnodes)
 
-	for _, numHosts := range []int{0, 1, 10} {
+	for _, numHosts := range []int{0, 1, 10, 300} {
 		t.Run(fmt.Sprintf("%vhosts", numHosts), func(t *testing.T) {
 			assert := assert.New(t)
 			hosts := make([]string, 0, numHosts)
-			for i := 0; i < numHosts; i++ {
+			for i := range numHosts {
 				r, err := random.RandomString(5)
 				assert.Nil(err)
 				hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
@@ -74,7 +74,7 @@ func TestGetAllReplicas(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				k, err := random.RandomString(64)
 				assert.Nil(err)
 				replicas := ch.GetAllReplicas(k)
@@ -92,7 +92,7 @@ func TestEvenLoadDistribution(t *testing.T) {
 	// higher skew means less evenly balanced load.
 
 	var hosts []string
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		r, err := random.RandomString(5)
 		require.NoError(t, err)
 		hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
@@ -103,7 +103,7 @@ func TestEvenLoadDistribution(t *testing.T) {
 
 	freq := map[string]int{}
 	buf := make([]byte, 16)
-	for i := 0; i < 1_000_000; i++ {
+	for range 1_000_000 {
 		_, err := io.ReadFull(rng, buf)
 		require.NoError(t, err)
 		host := ch.Get(string(buf))
@@ -269,10 +269,29 @@ func choose(n, k int) int {
 		return 1
 	}
 	result := 1
-	for i := 0; i < k; i++ {
+	for i := range k {
 		result = result * (n - i) / (i + 1)
 	}
 	return result
+}
+
+func TestMaxSize(t *testing.T) {
+	ch := consistent_hash.NewConsistentHash(consistent_hash.SHA256, 10)
+
+	hosts := make([]string, 0, 4097)
+	for i := range 4097 {
+		hosts = append(hosts, fmt.Sprintf("host-%d", i))
+	}
+
+	// Exactly maxSize items is allowed and every item is reachable.
+	require.NoError(t, ch.Set(hosts[:4096]...))
+	replicas := ch.GetAllReplicas("some-key")
+	require.Len(t, replicas, 4096)
+	require.ElementsMatch(t, hosts[:4096], replicas)
+
+	// One more is rejected and the ring is left untouched.
+	require.Error(t, ch.Set(hosts...))
+	require.Len(t, ch.GetItems(), 4096)
 }
 
 func TestSetFromMap(t *testing.T) {
@@ -354,7 +373,7 @@ func BenchmarkGetAllReplicas(b *testing.B) {
 			ch := consistent_hash.NewConsistentHash(test.HashFunction, test.NumVnodes)
 
 			hosts := make([]string, 0)
-			for i := 0; i < 50; i++ {
+			for i := range 50 {
 				r, err := random.RandomString(5)
 				assert.Nil(err)
 				hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
@@ -375,6 +394,47 @@ func BenchmarkGetAllReplicas(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				_ = ch.GetAllReplicas(keys[i])
 			}
+		})
+	}
+}
+
+// BenchmarkGetItemsParallel measures GetItems under concurrent access. The
+// "GetItems" variant is a read-only baseline; the "SetAndGetItems" variant
+// has every goroutine call Set before GetItems on each iteration, to show
+// how much writers holding the lock slow down readers.
+func BenchmarkGetItemsParallel(b *testing.B) {
+	hosts := make([]string, 0, 50)
+	for i := range 50 {
+		r, err := random.RandomString(5)
+		require.NoError(b, err)
+		hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
+	}
+
+	for _, test := range []struct {
+		name string
+		set  bool
+	}{
+		{name: "GetItems", set: false},
+		{name: "SetAndGetItems", set: true},
+	} {
+		b.Run(test.name, func(b *testing.B) {
+			ch := consistent_hash.NewConsistentHash(consistent_hash.SHA256, 100)
+			require.NoError(b, ch.Set(hosts...))
+			b.ResetTimer()
+			b.ReportAllocs()
+			b.RunParallel(func(pb *testing.PB) {
+				// Set sorts its input in place, so give each goroutine its
+				// own copy.
+				myHosts := slices.Clone(hosts)
+				for pb.Next() {
+					if test.set {
+						if err := ch.Set(myHosts...); err != nil {
+							b.Fatal(err)
+						}
+					}
+					_ = ch.GetItems()
+				}
+			})
 		})
 	}
 }

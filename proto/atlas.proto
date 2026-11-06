@@ -1,0 +1,258 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package atlas;
+
+// ResourceType identifies a resource type in one cluster.
+message ResourceType {
+  string cluster = 1;
+  string group = 2;
+  string version = 3;
+  // Plural resource name as used in API paths, e.g. "deployments".
+  string resource = 4;
+  string kind = 5;
+  bool namespaced = 6;
+}
+
+message Port {
+  string name = 1;
+  int32 port = 2;
+  // Empty means TCP.
+  string protocol = 3;
+  int32 node_port = 4;
+}
+
+// Entry is the indexed summary of one object.
+message Entry {
+  string cluster = 1;
+  string group = 2;
+  string version = 3;
+  string resource = 4;
+  string kind = 5;
+  string namespace = 6;
+  string name = 7;
+  string uid = 8;
+  google.protobuf.Timestamp created = 9;
+  map<string, string> labels = 10;
+  // The controlling owner as "Kind/name", e.g. "ReplicaSet/web-7d9f".
+  string owner = 11;
+  string phase = 12;
+  // "ready/desired" for workloads and pods.
+  string ready = 13;
+  int64 restarts = 14;
+  string node = 15;
+  // Addresses, including load balancer hostnames and external names.
+  repeated string ips = 16;
+  repeated string images = 17;
+  repeated string containers = 18;
+  repeated Port ports = 19;
+  map<string, string> selector = 20;
+  // Kind-specific display pairs (schedule, kubelet version, ...).
+  map<string, string> extra = 21;
+  // The verdict on phase and ready; UNKNOWN for kinds with nothing to judge.
+  Health health = 22;
+}
+
+enum Health {
+  HEALTH_UNKNOWN = 0;
+  HEALTH_OK = 1;
+  HEALTH_WARN = 2;
+  HEALTH_BAD = 3;
+}
+
+message SearchRequest {
+  // Free text plus kind:/ns:/cluster:/label:/health: filters.
+  string query = 1;
+  // Maximum entries returned per kind. Zero means the server default.
+  int32 group_limit = 2;
+}
+
+message SearchResult {
+  Entry entry = 1;
+  // Tunnel links for the entry's ports.
+  repeated PortLink links = 2;
+}
+
+message SearchGroup {
+  string kind = 1;
+  // Total is the total number of matches whereas results is capped at the
+  // per-group max.
+  int32 total = 2;
+  repeated SearchResult results = 3;
+  // API group, since unrelated kinds can share a name across groups.
+  string group = 4;
+}
+
+message SearchResponse {
+  repeated SearchGroup groups = 1;
+  int32 total = 2;
+  int64 took_usec = 3;
+}
+
+message GetFilterValuesRequest {
+  // The field to retrieve values for (e.g. "kind", "health", etc)
+  string field = 1;
+  // For fields that contain key-value pairs (e.g. "label"), this determines
+  // whether the keys or values are returned. If key is not specified, all
+  // keys are returned, otherwise values for the given key are returned.
+  string key = 2;
+  // Optionally filter matching values by the given prefix.
+  string prefix = 3;
+  // Zero means the server default.
+  int32 limit = 4;
+}
+
+message FilterValue {
+  string value = 1;
+  // Number of resources that match this value.
+  int32 count = 2;
+}
+
+message GetFilterValuesResponse {
+  repeated FilterValue values = 1;
+}
+
+message GetObjectRequest {
+  string cluster = 1;
+  string group = 2;
+  string version = 3;
+  string resource = 4;
+  string namespace = 5;
+  string name = 6;
+}
+
+// PortLink is a connectable port rendered as a tunnel DNS name.
+message PortLink {
+  enum Via {
+    UNKNOWN_VIA = 0;
+    POD = 1;
+    SERVICE = 2;
+  }
+  string name = 1;
+  int32 port = 2;
+  string protocol = 3;
+  // Tunnel DNS name; empty when the cluster has no zone for this path.
+  string host = 4;
+  string host_port = 5;
+  // Set when the port looks like something a browser can open.
+  string url = 6;
+  Via via = 7;
+  // The service's name when via is SERVICE on a pod page.
+  string via_name = 8;
+  // This field is populated if this link represents a specific debug page on
+  // a port.
+  // A single port may have multiple debug pages (e.g. /statusz, /flagz, etc)
+  // and each will be sent as its own PortLink.
+  // A plain port will not have a path set.
+  string path = 9;
+}
+
+message Relations {
+  // Ownership chain, nearest first (Pod -> ReplicaSet -> Deployment).
+  repeated Entry owners = 1;
+  Entry node = 2;
+  repeated Entry pods = 3;
+  // Counts every related pod, while pods is capped.
+  int32 pods_total = 4;
+  repeated Entry jobs = 5;
+  repeated Entry services = 6;
+}
+
+message Event {
+  string type = 1;
+  string reason = 2;
+  string message = 3;
+  int64 count = 4;
+  google.protobuf.Timestamp last_seen = 5;
+}
+
+message GetObjectResponse {
+  string kind = 1;
+  // The indexed summary, when the object is indexed.
+  Entry entry = 2;
+  // The live object as YAML, Secret data redacted.
+  string yaml = 3;
+  repeated PortLink ports = 4;
+  Relations relations = 5;
+  repeated Event events = 6;
+  // Why events are missing, when they are.
+  string events_error = 7;
+}
+
+message GetStatusRequest {}
+
+message ResourceTypeStatus {
+  ResourceType resource = 1;
+  int32 count = 2;
+  bool synced = 3;
+  string error = 4;
+  google.protobuf.Timestamp error_time = 5;
+}
+
+message ClusterStatus {
+  string name = 1;
+  string svc_zone = 2;
+  string pod_zone = 3;
+  string discovery_error = 4;
+  google.protobuf.Timestamp last_discovery = 5;
+  int32 total_objects = 6;
+  repeated ResourceTypeStatus resources = 7;
+}
+
+message GetStatusResponse {
+  repeated ClusterStatus clusters = 1;
+}
+
+message StreamLogsRequest {
+  string cluster = 1;
+  string namespace = 2;
+  string name = 3;
+  string container = 4;
+  // How far back to start; zero means the server default.
+  int64 tail_lines = 5;
+  // Keep the stream open as new lines arrive.
+  bool follow = 6;
+  // Read the previous container run instead of the current one.
+  bool previous = 7;
+}
+
+message StreamLogsResponse {
+  // A chunk of log output. Chunk boundaries need not fall on line breaks.
+  bytes data = 1;
+}
+
+// ClusterLink is one atlas instance, for the UI's cluster picker.
+message ClusterLink {
+  string name = 1;
+  string url = 2;
+}
+
+// FrontendConfig is rendered into the page by the server for the UI to read.
+message FrontendConfig {
+  string app_bundle_hash = 1;
+  string version = 2;
+  // The cluster this instance indexes.
+  string cluster_name = 3;
+  // All available atlas instances, including this one, for the instance picker.
+  repeated ClusterLink cluster_links = 4;
+  // List of fields that search can match on.
+  repeated FilterKey filter_keys = 5;
+}
+
+message FilterKey {
+  // The search key (e.g. "kind", "health", etc)
+  string key = 1;
+  // A description of the key.
+  string hint = 2;
+}
+
+service AtlasService {
+  rpc Search(SearchRequest) returns (SearchResponse);
+  // GetFilterValues powers the search auto-complete input by providing possible
+  // values for a search term.
+  rpc GetFilterValues(GetFilterValuesRequest) returns (GetFilterValuesResponse);
+  rpc GetObject(GetObjectRequest) returns (GetObjectResponse);
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc StreamLogs(StreamLogsRequest) returns (stream StreamLogsResponse);
+}

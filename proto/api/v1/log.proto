@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package api.v1;
 
+option go_package = "github.com/buildbuddy-io/buildbuddy/proto/api/v1";
+
 // Request passed into GetLog
 message GetLogRequest {
   // The selector defining which logs(s) to retrieve.

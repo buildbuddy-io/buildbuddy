@@ -55,7 +55,6 @@ import (
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
-	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
@@ -337,6 +336,10 @@ type ReferenceWriter interface {
 type ReferenceCache interface {
 	Cache
 
+	// IsReferenceable returns whether the cache may be able to create a
+	// reference for r.
+	IsReferenceable(ctx context.Context, r *rspb.ResourceName) bool
+
 	// Returns a writer that stages the written bytes as the resource named by
 	// r in shared storage, without writing r as an entry in this cache (so
 	// that the created reference can be claimed by another cache). The
@@ -392,7 +395,7 @@ type DBRawQuery interface {
 	// Take executes the query and scans the resulting row into the target
 	// struct. An error is returned if no records match. To check for this
 	// error use db.IsRecordNotFound.
-	Take(dest interface{}) error
+	Take(dest any) error
 	// Exec executes the raw modification query and returns the result.
 	Exec() DBResult
 	// IterateRaw executes the select query and iterates over the raw result
@@ -403,13 +406,13 @@ type DBRawQuery interface {
 
 type DBQuery interface {
 	// Create inserts a new row using the passed GORM-annotated struct.
-	Create(val interface{}) error
+	Create(val any) error
 	// Update updates an existing row using the primary key of the given
 	// GORM-annotated struct. Returns gorm.ErrRecordNotFound if a matching
 	// row does not exist.
-	Update(val interface{}) error
+	Update(val any) error
 	// Raw prepares a raw query.
-	Raw(sql string, values ...interface{}) DBRawQuery
+	Raw(sql string, values ...any) DBRawQuery
 }
 
 type DB interface {
@@ -487,7 +490,7 @@ type OLAPDBHandle interface {
 	FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error
 	FlushUsages(ctx context.Context, entries []*schema.RawUsage) error
 	InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error
-	BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []interface{})
+	BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []any)
 }
 
 type InvocationDB interface {
@@ -501,6 +504,9 @@ type InvocationDB interface {
 	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
 	LookupChildInvocations(ctx context.Context, parentRunID string) ([]string, error)
 	DeleteInvocation(ctx context.Context, invocationID string) error
+	// DeleteInvocations deletes the invocations and their execution rows and links
+	// in a single transaction. Missing IDs are ignored.
+	DeleteInvocations(ctx context.Context, invocationIDs []string) error
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
 	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error
 	SetNowFunc(now func() time.Time)
@@ -530,11 +536,15 @@ type AuthDB interface {
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (APIKeyGroup, error)
 
-	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
-	// group. It is only to be used in situations where the user has a
-	// pre-authorized grant to access resources on behalf of the org, such as a
-	// publicly shared invocation. The returned API key must only be used to
-	// access internal resources and must not be returned to the caller.
+	// GetAPIKeyForInternalUseOnly returns the API key that the caller
+	// authenticated with, or PermissionDenied if that key is owned by a
+	// different group. Callers authenticated with a web UI session or an
+	// impersonation key, and unauthenticated callers, instead get the
+	// group-level API key with the greatest cache capabilities, regardless of
+	// the caller's own permissions. It is only to be used in situations where
+	// the user has a pre-authorized grant to access resources on behalf of the
+	// org. The returned API key must only be used to access internal resources
+	// and must not be returned to the caller.
 	GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error)
 
 	// API Keys API.
@@ -547,8 +557,9 @@ type AuthDB interface {
 	// keys are not enabled by the org.
 
 	// GetAPIKeys returns group-level API keys that the user is authorized to
-	// access.
-	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+	// access. If includeExpired is set, expired keys are returned without
+	// their values.
+	GetAPIKeys(ctx context.Context, groupID string, includeExpired bool) ([]*tables.APIKey, error)
 
 	// CreateAPIKey creates a group-level API key.
 	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []cappb.Capability, expiresIn time.Duration, visibleToDevelopers bool) (*tables.APIKey, error)
@@ -569,8 +580,9 @@ type AuthDB interface {
 	// retrieved after creation by API key read methods.
 	GetAPIKeyValueReadbackEnabled() bool
 
-	// GetUserAPIKeys returns all user-owned API keys within a group.
-	GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]*tables.APIKey, error)
+	// GetUserAPIKeys returns all user-owned API keys within a group. If
+	// includeExpired is set, expired keys are returned without their values.
+	GetUserAPIKeys(ctx context.Context, userID, groupID string, includeExpired bool) ([]*tables.APIKey, error)
 
 	// CreateUserAPIKey creates a user-owned API key within the group. The given
 	// user must be a member of the group. If the request is not authenticated
@@ -579,7 +591,7 @@ type AuthDB interface {
 	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []cappb.Capability, expiresIn time.Duration) (*tables.APIKey, error)
 
 	// GetAPIKey returns an API key by ID. The key may be user-owned or
-	// group-owned.
+	// group-owned. Expired keys are returned without their values.
 	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
 
 	// UpdateAPIKey updates an API key by ID. The key may be user-owned or
@@ -706,7 +718,12 @@ type UsageService interface {
 	GetUsageAlertingRules(ctx context.Context, req *usagepb.GetUsageAlertingRulesRequest) (*usagepb.GetUsageAlertingRulesResponse, error)
 	CreateUsageAlertingRule(ctx context.Context, req *usagepb.CreateUsageAlertingRuleRequest) (*usagepb.CreateUsageAlertingRuleResponse, error)
 	DeleteUsageAlertingRule(ctx context.Context, req *usagepb.DeleteUsageAlertingRuleRequest) (*usagepb.DeleteUsageAlertingRuleResponse, error)
+	GetCurrentBill(ctx context.Context, req *usagepb.GetCurrentBillRequest) (*usagepb.GetCurrentBillResponse, error)
 	GetAlertsEnabled() bool
+	GetBillEnabled() bool
+	GetExportEnabled() bool
+	// GetUsageExportHandler serves the usage CSV export.
+	GetUsageExportHandler() http.Handler
 }
 
 type NotificationService interface {
@@ -919,6 +936,8 @@ type GitProvider interface {
 	// commit SHA.
 	CreateStatus(ctx context.Context, accessToken, groupID, repoURL, commitSHA string, payload any) error
 
+	GetPullRequestData(ctx context.Context, accessToken, repoURL string, pullRequestNumber int64) (*WebhookData, error)
+
 	// TODO(bduffany): ListRepos
 }
 
@@ -984,6 +1003,14 @@ type WebhookData struct {
 	// Ex: "opened", "synchronize", "ready_for_review"
 	PullRequestAction string
 
+	// CommentAuthor and CommentBody identify the author and contents
+	// of a pull request comment, if applicable.
+	CommentAuthor string
+	CommentBody   string
+
+	// PullRequestIsDraft is whether the pull request is a draft, if applicable.
+	PullRequestIsDraft bool
+
 	// ChangedFiles is the list of files changed by branch push events. Only
 	// populated for branch push events.
 	ChangedFiles []string
@@ -1020,6 +1047,11 @@ type FileCache interface {
 
 	// Open returns a file handle to a file in the cache, if one exists.
 	Open(ctx context.Context, f *repb.FileNode) (*os.File, error)
+
+	// Stat returns info about a file in the cache, if one exists. Unlike
+	// the other lookups, it doesn't mark the file as recently used, or count
+	// as a cache request in metrics.
+	Stat(ctx context.Context, f *repb.FileNode) (os.FileInfo, error)
 	WaitForDirectoryScanToComplete()
 
 	Read(ctx context.Context, node *repb.FileNode) ([]byte, error)
@@ -1054,6 +1086,8 @@ type FileCache interface {
 type CacheProxyRegistryService interface {
 	RegisterAndStreamHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatServer) error
 	GetCacheProxies(ctx context.Context, req *cppb.GetCacheProxiesRequest) (*cppb.GetCacheProxiesResponse, error)
+	ListCacheProxies(ctx context.Context, req *cppb.ListCacheProxiesRequest) (*cppb.ListCacheProxiesResponse, error)
+	GetCacheProxy(ctx context.Context, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error)
 }
 
 type SchedulerService interface {
@@ -1062,6 +1096,14 @@ type SchedulerService interface {
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
 	CancelTask(ctx context.Context, taskID string) (bool, error)
 	ExistsTask(ctx context.Context, taskID string) (bool, error)
+	// WatchTaskLiveness returns a channel that the scheduler closes if it
+	// loses the task, meaning that the task no longer exists and so no
+	// executor will run it again. The scheduler watches the task until ctx is
+	// done. In rare cases (e.g. stalled lease renewals, or apps with different
+	// views of the Redis ring) it may report a task lost while an executor is
+	// still running it, so callers should treat the signal as a reason to
+	// retry.
+	WatchTaskLiveness(ctx context.Context, taskID string) <-chan struct{}
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error)
@@ -1124,6 +1166,7 @@ type Publisher interface {
 
 type ExecutionSearchService interface {
 	SearchExecutions(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error)
+	GetExecutionTimeline(ctx context.Context, req *espb.GetExecutionTimelineRequest) (*espb.GetExecutionTimelineResponse, error)
 }
 
 // TaskRouter decides which execution nodes should execute a task.
@@ -1224,7 +1267,7 @@ type Runner interface {
 	PrepareForTask(ctx context.Context) error
 
 	// DownloadInputs downloads any input files associated with the task assigned
-	// to the runner.
+	// to the runner, then creates the task's output directories.
 	DownloadInputs(ctx context.Context) error
 
 	// Run runs the task that is currently assigned to the runner.
@@ -1413,6 +1456,10 @@ type MetricsCollector interface {
 	GetAll(ctx context.Context, key ...string) ([]string, error)
 	ListAppend(ctx context.Context, key string, values ...string) error
 	ListRange(ctx context.Context, key string, start, stop int64) ([]string, error)
+	// ListAppendAndTruncate appends values to the list at key, then truncates
+	// the list to its first maxLength values, so that the oldest values are
+	// kept. maxLength must be positive.
+	ListAppendAndTruncate(ctx context.Context, key string, maxLength int64, values ...string) error
 	ReadCounts(ctx context.Context, key string) (map[string]int64, error)
 	Delete(ctx context.Context, key string) error
 	Expire(ctx context.Context, key string, duration time.Duration) error
@@ -1658,17 +1705,14 @@ type ExecutionCollector interface {
 	// available starting from the start index.
 	GetExecutions(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error)
 	ExpireExecutions(ctx context.Context, iid string, ttl time.Duration) error
+	// RefreshExecutions resets the TTL of any executions appended for the given
+	// invocation ID.
+	RefreshExecutions(ctx context.Context, iid string) error
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
 	AddExecutionInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, bidirectional bool) error
 	GetExecutionInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error)
 	DeleteExecutionInvocationLinks(ctx context.Context, executionID string) error
-}
-
-// SuggestionService enables fetching of suggestions.
-type SuggestionService interface {
-	GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error)
-	MultipleProvidersConfigured() bool
 }
 
 type Encryptor interface {
@@ -1686,7 +1730,10 @@ type Crypter interface {
 
 	ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error)
 
-	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser) (Encryptor, error)
+	// NewEncryptor uses the key ID and version in em, which must be non-nil.
+	// Pass the metadata selected for the file record to keep its key consistent
+	// with the key used for encryption.
+	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser, em *sgpb.EncryptionMetadata) (Encryptor, error)
 	NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata) (Decryptor, error)
 
 	enpb.EncryptionServiceServer

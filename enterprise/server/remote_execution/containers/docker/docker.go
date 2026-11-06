@@ -426,13 +426,11 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 		Binds:       binds,
 		CapAdd:      capAdd,
 		Init:        initPtr,
-		Resources: dockercontainer.Resources{
-			Devices: devices,
-			Ulimits: []*units.Ulimit{
-				{Name: "nofile", Soft: defaultDockerUlimit, Hard: defaultDockerUlimit},
-			},
-			DeviceRequests: deviceRequests,
+		Devices:     devices,
+		Ulimits: []*units.Ulimit{
+			{Name: "nofile", Soft: defaultDockerUlimit, Hard: defaultDockerUlimit},
 		},
+		DeviceRequests: deviceRequests,
 	}
 }
 

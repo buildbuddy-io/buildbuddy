@@ -74,6 +74,9 @@ func setupRegistry(t *testing.T, creds *testregistry.BasicAuthCreds, interceptor
 			return true
 		},
 	})
+	t.Cleanup(func() {
+		require.NoError(t, reg.Shutdown())
+	})
 	return reg, counter
 }
 
@@ -1264,6 +1267,61 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 	})
 }
 
+func TestServerRetryAfterCanceledPullerInitialization(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var cancelPing atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/v2/" && cancelPing.Swap(false) {
+			cancel()
+			<-r.Context().Done()
+			return false
+		}
+		return true
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	digest, size, mediaType := imageMetadata(t, img)
+	server := newTestServer(t)
+	req := &ofpb.FetchManifestMetadataRequest{Ref: imageName}
+
+	// Cancel the initial registry handshake, before the Puller is initialized.
+	counter.Reset()
+	cancelPing.Store(true)
+	_, err := server.FetchManifestMetadata(ctx, req)
+	require.ErrorIs(t, err, context.Canceled)
+	assertRequests(t, counter, map[string]int{http.MethodGet + " /v2/": 1})
+
+	// A fresh request must not inherit the first request's cancellation.
+	resp, err := server.FetchManifestMetadata(t.Context(), req)
+	require.NoError(t, err)
+	assertMetadata(t, resp, digest, size, mediaType)
+}
+
+// The transport already retries 429 responses with backoff, so the server
+// should not retry them again with a new Puller.
+func TestServerNoRetryOnRateLimit(t *testing.T) {
+	var rateLimit atomic.Bool
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if rateLimit.Load() && strings.Contains(r.URL.Path, "/manifests/") {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return false
+		}
+		return true
+	})
+	imageName, _ := reg.PushNamedImage(t, "test-image", nil)
+	server := newTestServer(t)
+
+	rateLimit.Store(true)
+	counter.Reset()
+	_, err := server.FetchManifestMetadata(t.Context(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.True(t, status.IsResourceExhaustedError(err), "expected ResourceExhausted, got %v", err)
+	assertRequests(t, counter, map[string]int{
+		http.MethodGet + " /v2/": 1,
+		// The transport makes three attempts.
+		http.MethodHead + " /v2/test-image/manifests/latest": 3,
+	})
+}
+
 func TestServerNoRetryOnContextErrors(t *testing.T) {
 	var headAttempts, getAttempts, blobAttempts atomic.Int32
 	var blockHead, blockGet, blockBlob atomic.Bool
@@ -2057,10 +2115,8 @@ func runConcurrentFetchBlob(
 	results := make([]*fetchResult, numRequests)
 	var wg sync.WaitGroup
 
-	for i := 0; i < numRequests; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for i := range numRequests {
+		wg.Go(func() {
 
 			stream := streamFactory(i)
 			err := server.FetchBlob(req, stream)
@@ -2070,7 +2126,7 @@ func runConcurrentFetchBlob(
 				data: stream.collectData(),
 				err:  err,
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

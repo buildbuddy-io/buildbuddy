@@ -28,7 +28,6 @@ import "proto/github.proto";
 import "proto/quota.proto";
 import "proto/repo.proto";
 import "proto/secrets.proto";
-import "proto/suggestion.proto";
 import "proto/zip.proto";
 
 package buildbuddy.service;
@@ -140,6 +139,8 @@ service BuildBuddyService {
       returns (scheduler.GetExecutionNodesResponse);
   rpc SearchExecution(execution_stats.SearchExecutionRequest)
       returns (execution_stats.SearchExecutionResponse);
+  rpc GetExecutionTimeline(execution_stats.GetExecutionTimelineRequest)
+      returns (execution_stats.GetExecutionTimelineResponse);
 
   // Cache API
   rpc GetCacheScoreCard(cache.GetCacheScoreCardRequest)
@@ -153,8 +154,13 @@ service BuildBuddyService {
       returns (cache.GetTreeDirectorySizesResponse);
 
   // Cache Proxy API
+  // TODO(go/b/8433): remove GetCacheProxies
   rpc GetCacheProxies(cache_proxy.GetCacheProxiesRequest)
       returns (cache_proxy.GetCacheProxiesResponse);
+  rpc ListCacheProxies(cache_proxy.ListCacheProxiesRequest)
+      returns (cache_proxy.ListCacheProxiesResponse);
+  rpc GetCacheProxy(cache_proxy.GetCacheProxyRequest)
+      returns (cache_proxy.GetCacheProxyResponse);
 
   // Targets API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);
@@ -247,6 +253,8 @@ service BuildBuddyService {
       returns (usage.CreateUsageAlertingRuleResponse);
   rpc DeleteUsageAlertingRule(usage.DeleteUsageAlertingRuleRequest)
       returns (usage.DeleteUsageAlertingRuleResponse);
+  rpc GetCurrentBill(usage.GetCurrentBillRequest)
+      returns (usage.GetCurrentBillResponse);
 
   // Notification API
   rpc SendNotification(notification.SendNotificationRequest)
@@ -273,10 +281,6 @@ service BuildBuddyService {
       returns (secrets.UpdateSecretResponse);
   rpc DeleteSecret(secrets.DeleteSecretRequest)
       returns (secrets.DeleteSecretResponse);
-
-  // Suggestion API
-  rpc GetSuggestion(suggestion.GetSuggestionRequest)
-      returns (suggestion.GetSuggestionResponse);
 
   // Codesearch and Kythe API
   rpc Search(search.SearchRequest) returns (search.SearchResponse);

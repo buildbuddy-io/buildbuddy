@@ -1,4 +1,5 @@
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
+import moment from "moment";
 import React from "react";
 import alert_service from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
@@ -17,9 +18,11 @@ import TextInput from "../../../app/components/input/input";
 import Modal from "../../../app/components/modal/modal";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
+import format from "../../../app/format/format";
 import rpcService, { CancelablePromise, UnaryRpcMethod } from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { BuildBuddyError } from "../../../app/util/errors";
+import { timestampToDate } from "../../../app/util/proto";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import { capability } from "../../../proto/capability_ts_proto";
 import { withKey } from "../../../app/util/react";
@@ -73,6 +76,8 @@ const INITIAL_STATE: State = {
 
 type ApiKeyFields = api_key.ICreateApiKeyRequest | api_key.IUpdateApiKeyRequest;
 
+const DEFAULT_VISIBILITY = [api_key.Visibility.VISIBLE_TO_GROUP_ADMINS];
+
 type FormState<T extends ApiKeyFields> = {
   isOpen: boolean;
   isSubmitting: boolean;
@@ -104,6 +109,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       const response = await this.props.get(
         api_key.GetApiKeysRequest.create({
           groupId: this.props.user.selectedGroup.id,
+          includeExpired: true,
         })
       );
       this.setState({ getApiKeysResponse: response });
@@ -148,6 +154,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
         isSubmitting: false,
         request: new api_key.CreateApiKeyRequest({
           capability: this.defaultCapabilities(),
+          visibility: DEFAULT_VISIBILITY,
         }),
       },
     });
@@ -159,12 +166,12 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     this.setState({ createForm: newFormState(api_key.CreateApiKeyRequest.create()) });
   }
   private onChangeCreateForm(name: string, value: any) {
-    this.setState({
+    this.setState((state) => ({
       createForm: {
-        ...this.state.createForm,
-        request: new api_key.CreateApiKeyRequest({ ...this.state.createForm.request, [name]: value }),
+        ...state.createForm,
+        request: new api_key.CreateApiKeyRequest({ ...state.createForm.request, [name]: value }),
       },
-    });
+    }));
   }
   private async onSubmitCreateNewForm(e: React.FormEvent) {
     e.preventDefault();
@@ -205,6 +212,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           label: apiKey.label,
           capability: [...apiKey.capability],
           visibleToDevelopers: apiKey.visibleToDevelopers,
+          visibility: [...apiKey.visibility],
         }),
       },
     });
@@ -216,12 +224,12 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     this.setState({ updateForm: newFormState(api_key.UpdateApiKeyRequest.create()) });
   }
   private onChangeUpdateForm(name: string, value: any) {
-    this.setState({
+    this.setState((state) => ({
       updateForm: {
-        ...this.state.updateForm,
-        request: new api_key.UpdateApiKeyRequest({ ...this.state.updateForm.request, [name]: value }),
+        ...state.updateForm,
+        request: new api_key.UpdateApiKeyRequest({ ...state.updateForm.request, [name]: value }),
       },
-    });
+    }));
   }
   private async onSubmitUpdateForm(e: React.FormEvent) {
     e.preventDefault();
@@ -332,8 +340,18 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange("capability", [capability.Capability.SEND_NOTIFICATION]);
   }
 
-  private onChangeVisibility(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
+  private onChangeVisibility(
+    onChange: (name: string, value: any) => any,
+    request: ApiKeyFields,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    // Only toggle the non-admin visibility bit so that other bits survive an edit.
+    const visibility: api_key.Visibility[] = (request.visibility ?? []).filter(
+      (v) => v !== api_key.Visibility.VISIBLE_TO_DEVELOPERS
+    );
+    if (e.target.checked) visibility.push(api_key.Visibility.VISIBLE_TO_DEVELOPERS);
     onChange("visibleToDevelopers", e.target.checked);
+    onChange("visibility", visibility);
   }
 
   private canSetCapabilities(caps: capability.Capability[]): boolean {
@@ -397,137 +415,142 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   value={request?.label || ""}
                 />
               </div>
-              <div className="field-container">
-                <label className="checkbox-row">
-                  <input
-                    type="radio"
-                    onChange={this.onSelectReadOnly.bind(this, onChange)}
-                    checked={isReadOnly(request)}
-                    disabled={!this.canSetCapabilities([])}
-                  />
-                  <span>
-                    Read-only key <span className="field-description">(disable all remote cache uploads)</span>
-                  </span>
-                </label>
-              </div>
-              <div className="field-container">
-                <label className="checkbox-row">
-                  <input
-                    type="radio"
-                    onChange={this.onSelectCASOnly.bind(this, onChange)}
-                    checked={isCASOnly(request)}
-                    disabled={!this.canSetCapabilities([capability.Capability.CAS_WRITE])}
-                    debug-id="cas-only-radio-button"
-                  />
-                  <span>
-                    CAS-only key <span className="field-description">(disable action cache uploads)</span>
-                  </span>
-                </label>
-              </div>
-              <div className="field-container">
-                <label className="checkbox-row">
-                  <input
-                    type="radio"
-                    onChange={this.onSelectReadWrite.bind(this, onChange)}
-                    checked={isReadWrite(request)}
-                    disabled={!this.canSetCapabilities([capability.Capability.CACHE_WRITE])}
-                  />
-                  <span>
-                    Read+Write key <span className="field-description">(allow all remote cache uploads)</span>
-                  </span>
-                </label>
-              </div>
+              <fieldset className="form-section">
+                <legend>Key type</legend>
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectReadOnly.bind(this, onChange)}
+                      checked={isReadOnly(request)}
+                      disabled={!this.canSetCapabilities([])}
+                    />
+                    <span>
+                      Read-only key <span className="field-description">(disable all remote cache uploads)</span>
+                    </span>
+                  </label>
+                </div>
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectCASOnly.bind(this, onChange)}
+                      checked={isCASOnly(request)}
+                      disabled={!this.canSetCapabilities([capability.Capability.CAS_WRITE])}
+                      debug-id="cas-only-radio-button"
+                    />
+                    <span>
+                      CAS-only key <span className="field-description">(disable action cache uploads)</span>
+                    </span>
+                  </label>
+                </div>
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectReadWrite.bind(this, onChange)}
+                      checked={isReadWrite(request)}
+                      disabled={!this.canSetCapabilities([capability.Capability.CACHE_WRITE])}
+                    />
+                    <span>
+                      Read+Write key <span className="field-description">(allow all remote cache uploads)</span>
+                    </span>
+                  </label>
+                </div>
 
-              {/* User-owned keys cannot be used to register executors. */}
-              {capabilities.executorKeyCreation && !this.props.userOwnedOnly && (
-                <div className="field-container">
-                  <label className="checkbox-row">
-                    <input
-                      type="radio"
-                      onChange={this.onSelectExecutor.bind(this, onChange)}
-                      checked={isExecutorKey(request)}
-                    />
-                    <span>
-                      Executor key <span className="field-description">(for self-hosted executors)</span>
-                    </span>
-                  </label>
-                </div>
-              )}
-              {/* User-owned keys cannot be used to register cache proxies. */}
-              {capabilities.cacheProxyKeyCreation && !this.props.userOwnedOnly && (
-                <div className="field-container">
-                  <label className="checkbox-row">
-                    <input
-                      type="radio"
-                      onChange={this.onSelectCacheProxy.bind(this, onChange)}
-                      checked={isCacheProxyKey(request)}
-                    />
-                    <span>
-                      Cache proxy key <span className="field-description">(for self-hosted cache proxies)</span>
-                    </span>
-                  </label>
-                </div>
-              )}
-              {/* User-owned keys cannot be used for SCIM. */}
-              {capabilities.config.orgAdminApiKeyCreationEnabled && !this.props.userOwnedOnly && (
-                <div className="field-container">
-                  <label className="checkbox-row">
-                    <input
-                      type="radio"
-                      onChange={this.onSelectOrgAdmin.bind(this, onChange)}
-                      checked={isOrgAdminKey(request)}
-                    />
-                    <span>
-                      Org admin key <span className="field-description">(for external user management)</span>
-                    </span>
-                  </label>
-                </div>
-              )}
-              {capabilities.config.auditLogsUiEnabled && !this.props.userOwnedOnly && (
-                <div className="field-container">
-                  <label className="checkbox-row">
-                    <input
-                      type="radio"
-                      onChange={this.onSelectAuditLogReader.bind(this, onChange)}
-                      checked={isAuditLogReader(request)}
-                    />
-                    <span>
-                      Audit log reader key <span className="field-description">(for reading audit logs)</span>
-                    </span>
-                  </label>
-                </div>
-              )}
-              {/* User-owned keys cannot be used to send notifications. */}
+                {/* User-owned keys cannot be used to register executors. */}
+                {capabilities.executorKeyCreation && !this.props.userOwnedOnly && (
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        onChange={this.onSelectExecutor.bind(this, onChange)}
+                        checked={isExecutorKey(request)}
+                      />
+                      <span>
+                        Executor key <span className="field-description">(for self-hosted executors)</span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+                {/* User-owned keys cannot be used to register cache proxies. */}
+                {capabilities.cacheProxyKeyCreation && !this.props.userOwnedOnly && (
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        onChange={this.onSelectCacheProxy.bind(this, onChange)}
+                        checked={isCacheProxyKey(request)}
+                      />
+                      <span>
+                        Cache proxy key <span className="field-description">(for self-hosted cache proxies)</span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+                {/* User-owned keys cannot be used for SCIM. */}
+                {capabilities.config.orgAdminApiKeyCreationEnabled && !this.props.userOwnedOnly && (
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        onChange={this.onSelectOrgAdmin.bind(this, onChange)}
+                        checked={isOrgAdminKey(request)}
+                      />
+                      <span>
+                        Org admin key <span className="field-description">(for external user management)</span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+                {capabilities.config.auditLogsUiEnabled && !this.props.userOwnedOnly && (
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        onChange={this.onSelectAuditLogReader.bind(this, onChange)}
+                        checked={isAuditLogReader(request)}
+                      />
+                      <span>
+                        Audit log reader key <span className="field-description">(for reading audit logs)</span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+                {/* User-owned keys cannot be used to send notifications. */}
+                {!this.props.userOwnedOnly && (
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                        type="radio"
+                        onChange={this.onSelectSendNotification.bind(this, onChange)}
+                        checked={isSendNotificationKey(request)}
+                      />
+                      <span>
+                        Notification key{" "}
+                        <span className="field-description">(for sending notifications via the API)</span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+              </fieldset>
+              {/* Non-admin visibility does not apply to user-level keys. */}
               {!this.props.userOwnedOnly && (
-                <div className="field-container">
-                  <label className="checkbox-row">
-                    <input
-                      type="radio"
-                      onChange={this.onSelectSendNotification.bind(this, onChange)}
-                      checked={isSendNotificationKey(request)}
-                    />
-                    <span>
-                      Notification key{" "}
-                      <span className="field-description">(for sending notifications via the API)</span>
-                    </span>
-                  </label>
-                </div>
-              )}
-              {/* "Visible to developers" bit does not apply for user-level keys. */}
-              {!this.props.userOwnedOnly && (
-                <div className="field-container">
-                  <label className="checkbox-row">
-                    <input
-                      type="checkbox"
-                      onChange={this.onChangeVisibility.bind(this, onChange)}
-                      checked={request.visibleToDevelopers}
-                    />
-                    <span>
-                      Visible to non-admins{" "}
-                      <span className="field-description">(org members with role other than Admin)</span>
-                    </span>
-                  </label>
-                </div>
+                <fieldset className="form-section">
+                  <legend>Visibility</legend>
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        onChange={this.onChangeVisibility.bind(this, onChange, request)}
+                        checked={request.visibleToDevelopers}
+                      />
+                      <span>
+                        Visible to non-admins <span className="field-description">(org members with write access)</span>
+                      </span>
+                    </label>
+                  </div>
+                </fieldset>
               )}
             </DialogBody>
             <DialogFooter>
@@ -561,6 +584,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       initialLoadError,
     } = this.state;
     const apiKeyValueReadbackEnabled = !this.isAPIKeyValueReadbackExplicitlyDisabled();
+    const canUpdate = this.props.user.canCall(this.props.userOwnedOnly ? "updateUserApiKey" : "updateApiKey");
 
     if (!getApiKeysResponse) {
       return (
@@ -634,7 +658,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
         <div className="api-keys-list">
           {!this.props.userOwnedOnly && getApiKeysResponse.apiKey.length == 0 && !this.canEdit() && (
             <div className="no-api-keys-message">
-              No API keys have been made visible to developers. Only organization admins can create API keys.
+              No API keys are available to your role. Only organization admins can create API keys.
             </div>
           )}
           {getApiKeysResponse.apiKey.map((key) => (
@@ -646,19 +670,32 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   <span className="untitled-key">Untitled key</span>
                 )}
               </div>
+              {renderDetails(key, apiKeyValueReadbackEnabled)}
               <div
                 className="api-key-capabilities"
-                title={key.visibleToDevelopers ? "Visible to non-admin members of this organization" : undefined}>
+                title={
+                  key.visibleToDevelopers
+                    ? "Visible to non-admin members of this organization with write access"
+                    : undefined
+                }>
                 <span>{describeCapabilities(key)}</span>
               </div>
-              {apiKeyValueReadbackEnabled && <ApiKeyField apiKey={key} />}
-              {this.props.user.canCall(this.props.userOwnedOnly ? "updateUserApiKey" : "updateApiKey") && (
+              {isExpired(key) && apiKeyValueReadbackEnabled ? (
+                <div className="api-key-value api-key-value-expired">
+                  <span className="display-value">EXPIRED</span>
+                </div>
+              ) : (
+                apiKeyValueReadbackEnabled && <ApiKeyField apiKey={key} />
+              )}
+              {canUpdate && !isExpired(key) && (
                 <OutlinedButton className="api-key-edit-button" onClick={this.onClickUpdate.bind(this, key)}>
                   Edit
                 </OutlinedButton>
               )}
               {this.props.user.canCall(this.props.userOwnedOnly ? "deleteUserApiKey" : "deleteApiKey") && (
-                <OutlinedButton onClick={this.onClickDelete.bind(this, key)} className="destructive">
+                <OutlinedButton
+                  onClick={this.onClickDelete.bind(this, key)}
+                  className={`destructive ${canUpdate && isExpired(key) ? "api-key-delete-button-wide" : ""}`}>
                   Delete
                 </OutlinedButton>
               )}
@@ -769,6 +806,58 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities += " (*)";
   }
   return capabilities;
+}
+
+function isExpired(apiKey: api_key.ApiKey): boolean {
+  return +apiKey.expiryUsec > 0 && +apiKey.expiryUsec <= Date.now() * 1000;
+}
+
+function renderCreation(apiKey: api_key.ApiKey): string | null {
+  const metadata = apiKey.creationMetadata;
+  if (!metadata) return null;
+  const parts = ["Created"];
+  if (metadata.createdBy) parts.push(`by ${metadata.createdBy}`);
+  if (metadata.createdAt) parts.push(`on ${format.formatDate(timestampToDate(metadata.createdAt))}`);
+  if (parts.length == 1) return null;
+  return parts.join(" ");
+}
+
+function expirationUrgencyClass(apiKey: api_key.ApiKey): string {
+  const remainingMs = +apiKey.expiryUsec / 1000 - Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  if (remainingMs <= dayMs) return "expires-imminently";
+  if (remainingMs <= 2 * dayMs) return "expires-very-soon";
+  if (remainingMs <= 5 * dayMs) return "expires-soon";
+  return "";
+}
+
+function renderExpiration(apiKey: api_key.ApiKey, apiKeyValueReadbackEnabled: boolean) {
+  if (!+apiKey.expiryUsec) return null;
+  if (isExpired(apiKey)) {
+    // With readback enabled, the expired state is shown in place of the value.
+    return apiKeyValueReadbackEnabled ? null : <span className="api-key-expiration expires-imminently">Expired</span>;
+  }
+  return (
+    <span
+      className={`api-key-expiration ${expirationUrgencyClass(apiKey)}`}
+      title={format.formatTimestampUsec(apiKey.expiryUsec)}>
+      Expires {moment(+apiKey.expiryUsec / 1000).fromNow()}
+    </span>
+  );
+}
+
+// Renders creation and expiration details as a subtitle under the key label.
+function renderDetails(apiKey: api_key.ApiKey, apiKeyValueReadbackEnabled: boolean) {
+  const creation = renderCreation(apiKey);
+  const expiration = renderExpiration(apiKey, apiKeyValueReadbackEnabled);
+  if (!creation && !expiration) return null;
+  return (
+    <div className="api-key-creation-details">
+      {creation}
+      {creation && expiration && " — "}
+      {expiration}
+    </div>
+  );
 }
 
 function newFormState<T extends ApiKeyFields>(request: T): FormState<T> {

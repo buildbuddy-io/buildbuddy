@@ -48,16 +48,16 @@ func isRPCMethod(m reflect.Method) bool {
 		return false
 	}
 	// Check signature is about right: (rcvr??, context, proto) (proto, error)
-	if !t.In(1).Implements(reflect.TypeOf((*context.Context)(nil)).Elem()) {
+	if !t.In(1).Implements(reflect.TypeFor[context.Context]()) {
 		return false
 	}
-	if !t.In(2).Implements(reflect.TypeOf((*proto.Message)(nil)).Elem()) {
+	if !t.In(2).Implements(reflect.TypeFor[proto.Message]()) {
 		return false
 	}
-	if !t.Out(0).Implements(reflect.TypeOf((*proto.Message)(nil)).Elem()) {
+	if !t.Out(0).Implements(reflect.TypeFor[proto.Message]()) {
 		return false
 	}
-	if !t.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+	if !t.Out(1).Implements(reflect.TypeFor[error]()) {
 		return false
 	}
 	return true
@@ -71,13 +71,13 @@ func isStreamingRPCMethod(m reflect.Method) bool {
 	if t.NumIn() != 3 || t.NumOut() != 1 {
 		return false
 	}
-	if !t.In(1).Implements(reflect.TypeOf((*proto.Message)(nil)).Elem()) {
+	if !t.In(1).Implements(reflect.TypeFor[proto.Message]()) {
 		return false
 	}
-	if !t.In(2).Implements(reflect.TypeOf((*grpc.ServerStream)(nil)).Elem()) {
+	if !t.In(2).Implements(reflect.TypeFor[grpc.ServerStream]()) {
 		return false
 	}
-	if !t.Out(0).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+	if !t.Out(0).Implements(reflect.TypeFor[error]()) {
 		return false
 	}
 	return true
@@ -148,15 +148,14 @@ type HTTPHandlers struct {
 	RequestHandler http.Handler
 }
 
-func GenerateHTTPHandlers(servicePrefix, serviceName string, server interface{}, grpcServer *grpc.Server) (*HTTPHandlers, error) {
+func GenerateHTTPHandlers(servicePrefix, serviceName string, server any, grpcServer *grpc.Server) (*HTTPHandlers, error) {
 	if reflect.ValueOf(server).Type().Kind() != reflect.Ptr {
 		return nil, fmt.Errorf("GenerateHTTPHandlers must be called with a pointer to an RPC service implementation")
 	}
 	handlerFns := make(map[string]reflect.Value)
 
 	serverType := reflect.TypeOf(server)
-	for i := 0; i < serverType.NumMethod(); i++ {
-		method := serverType.Method(i)
+	for method := range serverType.Methods() {
 		if !isRPCMethod(method) && !isStreamingRPCMethod(method) {
 			continue
 		}
@@ -174,7 +173,7 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server interface{},
 			methodType := method.Type()
 			requestIndex := 2
 			// If we're dealing with a streaming method, the request proto is the first input
-			if method.Type().In(1).Implements(reflect.TypeOf((*proto.Message)(nil)).Elem()) {
+			if method.Type().In(1).Implements(reflect.TypeFor[proto.Message]()) {
 				requestIndex = 1
 			}
 
@@ -233,7 +232,7 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server interface{},
 		args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(ctx), reqVal}
 		rspArr := method.Call(args)
 		if rspArr[1].Interface() != nil {
-			err, _ := rspArr[1].Interface().(error)
+			err, _ := reflect.TypeAssert[error](rspArr[1])
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

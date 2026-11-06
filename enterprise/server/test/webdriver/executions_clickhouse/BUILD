@@ -7,13 +7,9 @@ go_web_test_suite(
     srcs = ["executions_clickhouse_test.go"],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
-        "test.init-dockerd": "true",
-        "test.recycle-runner": "true",
-        "test.runner-recycling-key": "clickhouse25.3",
         "test.EstimatedComputeUnits": "8",
     },
     shard_count = 2,
-    tags = ["docker"],
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//enterprise/server/testutil/testexecutor",

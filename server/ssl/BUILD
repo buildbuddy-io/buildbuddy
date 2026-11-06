@@ -11,6 +11,7 @@ go_library(
         "//server/endpoint_urls/events_api_url",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/real_environment",
         "//server/util/flag",
         "//server/util/log",
@@ -27,6 +28,12 @@ go_test(
     srcs = ["ssl_test.go"],
     deps = [
         ":ssl",
+        "//server/interfaces",
+        "//server/metrics",
+        "//server/real_environment",
+        "//server/util/testing/flags",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_prometheus_client_golang//prometheus/testutil",
         "@com_github_stretchr_testify//require",
     ],
 )

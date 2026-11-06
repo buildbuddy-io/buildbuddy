@@ -242,6 +242,8 @@ ts_library(
         "//proto:github_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:runner_ts_proto",
+        "//tools/agents/claude:setup",
+        "//tools/agents/codex:setup",
     ],
 )
 

@@ -73,6 +73,18 @@ func FastCopy(source, destination string) error {
 	return fmt.Errorf("failed CopyFileW Win32 call from '%s' to '%s': %s", source, destination, err)
 }
 
+// CloneHardLinks returns whether Clone hard-links the source rather than
+// making a copy.
+func CloneHardLinks() bool {
+	return false
+}
+
+// FastCopyHardLinks returns whether FastCopy hard-links the source rather
+// than making a copy.
+func FastCopyHardLinks() bool {
+	return false
+}
+
 // Implementation is heavily inspired by Git LFS
 // References:
 //

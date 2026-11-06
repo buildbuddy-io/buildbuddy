@@ -16,8 +16,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/proto/capability"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -31,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -57,6 +60,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -76,6 +80,9 @@ type schedulerServerMock struct {
 	canceledCount int
 	scheduleReqs  []*scpb.ScheduleTaskRequest
 	scheduleErr   error
+	// WatchTaskLiveness returns taskLost for every task. Tests close it to
+	// simulate the scheduler losing a task.
+	taskLost chan struct{}
 }
 
 func (s *schedulerServerMock) GetPoolInfo(_ context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
@@ -109,6 +116,10 @@ func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.Schedu
 func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bool, error) {
 	s.canceledCount++
 	return true, nil
+}
+
+func (s *schedulerServerMock) WatchTaskLiveness(ctx context.Context, taskID string) <-chan struct{} {
+	return s.taskLost
 }
 
 type taskSizerMock struct {
@@ -152,7 +163,7 @@ func setupEnvWithClock(t *testing.T, clock clockwork.Clock) (*testenv.TestEnv, *
 	env.SetRemoteExecutionRedisClient(rdb)
 	env.SetRemoteExecutionRedisPubSubClient(rdb)
 
-	scheduler := &schedulerServerMock{}
+	scheduler := &schedulerServerMock{taskLost: make(chan struct{})}
 	env.SetSchedulerService(scheduler)
 
 	tasksize.Register(env)
@@ -168,13 +179,22 @@ func setupEnvWithClock(t *testing.T, clock clockwork.Clock) (*testenv.TestEnv, *
 	repb.RegisterExecutionServer(env.GetGRPCServer(), env.GetRemoteExecutionService())
 	go run()
 
-	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), lis)
+	conn, err := testenv.LocalGRPCConn(t, env.GetServerContext(), lis)
 	require.NoError(t, err)
 	return env, conn, r
 }
 
 func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	return setupEnvWithClock(t, clockwork.NewRealClock())
+}
+
+func apiKeyUser(apiKeyID string, caps ...capability.Capability) *testauth.TestUser {
+	u := testauth.User("", "GR1")
+	u.APIKeyID = apiKeyID
+	u.APIKeyOwnerGroupID = "GR1"
+	u.Capabilities = caps
+	u.GroupMemberships[0].Capabilities = caps
+	return u
 }
 
 func createExecution(ctx context.Context, t *testing.T, db interfaces.DB, execution *tables.Execution) {
@@ -329,6 +349,101 @@ func TestDispatch_TaskSizingUsesCommandWithoutInjectedSecrets(t *testing.T) {
 	require.Equal(t, "original-value", envVars["ORIGINAL"])
 }
 
+func TestDispatch_ValidateRunnerSize(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		maxCPU         float64
+		maxMemoryBytes int64
+		props          map[string]string
+		wantErr        bool
+	}{
+		{
+			name:  "no limits",
+			props: map[string]string{"EstimatedCPU": "64", "EstimatedMemory": "256GB"},
+		},
+		{
+			name:           "within limits",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "8", "EstimatedMemory": "16GB"},
+		},
+		{
+			name:           "cpu exceeds limit, but not memory",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "8.5", "EstimatedMemory": "10GB"},
+			wantErr:        true,
+		},
+		{
+			name:           "memory exceeds limit, but not cpu",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "4", "EstimatedMemory": "17GB"},
+			wantErr:        true,
+		},
+		{
+			name:           "memory and cpu exceed limits",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "9", "EstimatedMemory": "17GB"},
+			wantErr:        true,
+		},
+		{
+			name:    "compute units exceed cpu limit",
+			maxCPU:  2,
+			props:   map[string]string{"EstimatedComputeUnits": "3"},
+			wantErr: true,
+		},
+		{
+			name:           "self-hosted pool is not limited",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props: map[string]string{
+				"use-self-hosted-executors": "true",
+				"EstimatedCPU":              "64",
+				"EstimatedMemory":           "256GB",
+			},
+		},
+		{
+			name:    "negative cpu limit",
+			maxCPU:  -1,
+			wantErr: true,
+		},
+		{
+			name:           "negative memory limit",
+			maxMemoryBytes: -1,
+			wantErr:        true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.runner.max_cpu", tc.maxCPU)
+			flags.Set(t, "remote_execution.runner.max_memory_bytes", tc.maxMemoryBytes)
+			env, _, _ := setupEnv(t)
+			s := env.GetRemoteExecutionService()
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(t.Context(), "US1")
+			require.NoError(t, err)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+
+			action := &repb.Action{Platform: &repb.Platform{}}
+			for name, value := range tc.props {
+				action.Platform.Properties = append(action.Platform.Properties, &repb.Platform_Property{Name: name, Value: value})
+			}
+			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString())
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			if !tc.wantErr {
+				require.NoError(t, err)
+				require.Len(t, sched.scheduleReqs, 1)
+				return
+			}
+			require.Error(t, err)
+			require.Empty(t, sched.scheduleReqs)
+		})
+	}
+}
+
 func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
 	env, _, _ := setupEnv(t)
 
@@ -337,13 +452,6 @@ func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
 {
   "$schema": "https://flagd.dev/schema/v0/flags.json",
   "flags": {
-    "cache.chunking_enabled": {
-      "state": "ENABLED",
-      "variants": {
-        "on": true
-      },
-      "defaultVariant": "on"
-    },
     "executor.upload_outputs_chunked": {
       "state": "ENABLED",
       "variants": {
@@ -352,13 +460,6 @@ func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
       "defaultVariant": "on"
     },
     "executor.download_inputs_chunked": {
-      "state": "ENABLED",
-      "variants": {
-        "on": true
-      },
-      "defaultVariant": "on"
-    },
-    "splice-without-validation": {
       "state": "ENABLED",
       "variants": {
         "on": true
@@ -508,13 +609,19 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
         "test": {
           "EstimatedMemory": "30GB"
         },
+        "workflow": {
+          "EstimatedCPU": "16"
+        },
         "default": {}
       },
       "defaultVariant": "default",
       "targeting": {
         "if": [
           { "==": [ { "var": "EstimatedComputeUnits" }, 8.0 ] },
-          "test"
+          "test",
+          { "==": [ { "var": "workflow_action_name" }, "Expensive benchmarks" ] },
+          "workflow",
+          "default"
         ]
       }
     }
@@ -573,115 +680,40 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 			},
 		},
 	}, task.GetPlatformOverrides(), protocmp.Transform()))
-}
 
-func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
 	for _, tc := range []struct {
-		name                  string
-		containerImage        string
-		wantContainerImage    string
-		wantExperimentVariant string
+		name       string
+		mnemonic   string
+		actionName string
+		overridden bool
 	}{
-		{
-			name:                  "matching prefix is rewritten",
-			containerImage:        "docker://gcr.io/flame-public/rbe-ubuntu:latest",
-			wantContainerImage:    "docker://buildbuddy.bbcr.io/public/rbe-ubuntu:latest",
-			wantExperimentVariant: "bbcr",
-		},
-		{
-			name:                  "non-matching prefix is not rewritten",
-			containerImage:        "docker://us-docker.pkg.dev/other/image:latest",
-			wantContainerImage:    "",
-			wantExperimentVariant: "bbcr",
-		},
+		{"matching_workflow", "BuildBuddyWorkflowRun", "Expensive benchmarks", true},
+		{"other_workflow", "BuildBuddyWorkflowRun", "Other workflow", false},
+		{"missing_name", "BuildBuddyWorkflowRun", "", false},
+		{"ordinary_action", "TestRunner", "Expensive benchmarks", false},
+		{"remote_bazel", "RemoteBazelRun", "Expensive benchmarks", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			env, _, _ := setupEnv(t)
-
-			tmp := testfs.MakeTempDir(t)
-			offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
-{
-  "$schema": "https://flagd.dev/schema/v0/flags.json",
-  "flags": {
-    "remote_execution.container_image_rewrite": {
-      "state": "ENABLED",
-      "variants": {
-        "bbcr": {
-          "prefix": "gcr.io/flame-public/",
-          "replacement": "buildbuddy.bbcr.io/public/"
-        },
-        "default": {}
-      },
-      "defaultVariant": "default",
-      "targeting": {
-        "if": [
-          true,
-          "bbcr"
-        ]
-      }
-    }
-  }
-}
-`)
-			provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
-			require.NoError(t, err)
-			openfeature.SetProviderAndWait(provider)
-			fp, err := experiments.NewFlagProvider("test")
-			require.NoError(t, err)
-			env.SetExperimentFlagProvider(fp)
-
-			ctx := context.Background()
-			s := env.GetRemoteExecutionService()
-
-			const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
-			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
-				ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+			ctx := withIncomingMetadata(t, ctx, &repb.RequestMetadata{
 				ToolInvocationId: iid,
+				ActionMnemonic:   tc.mnemonic,
 			})
-			ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
-			require.NoError(t, err)
-
-			action := &repb.Action{
-				Platform: &repb.Platform{
-					Properties: []*repb.Platform_Property{
-						{
-							Name:  "container-image",
-							Value: tc.containerImage,
-						},
-					},
-				},
+			cmd := &repb.Command{Arguments: []string{"test"}}
+			if tc.actionName != "" {
+				cmd.EnvironmentVariables = []*repb.Command_EnvironmentVariable{{
+					Name:  ci_runner_env.BuildBuddyActionNameEnvVarName,
+					Value: tc.actionName,
+				}}
 			}
-			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
-			ad := arn.GetDigest()
-
-			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
-			require.NoError(t, err)
-			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, "12345678")
-			require.NoError(t, err)
-
-			sched := env.GetSchedulerService().(*schedulerServerMock)
-			require.Equal(t, 1, len(sched.scheduleReqs))
-			b := sched.scheduleReqs[0].SerializedTask
+			action := &repb.Action{}
+			arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, action, cmd)
+			require.NoError(t, s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString()))
 			task := &repb.ExecutionTask{}
-			err = proto.Unmarshal(b, task)
-			require.NoError(t, err)
-
-			// Check that the container image override is present (or absent).
-			var imageOverride string
-			for _, p := range task.GetPlatformOverrides().GetProperties() {
-				if p.GetName() == "container-image" {
-					imageOverride = p.GetValue()
-				}
-			}
-			assert.Equal(t, tc.wantContainerImage, imageOverride)
-
-			// Check experiment tracking.
-			if tc.wantExperimentVariant != "" {
-				assert.Contains(t, task.GetExperiments(), "remote_execution.container_image_rewrite:"+tc.wantExperimentVariant)
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[len(sched.scheduleReqs)-1].SerializedTask, task))
+			if tc.overridden {
+				require.Equal(t, []*repb.Platform_Property{{Name: "EstimatedCPU", Value: "16"}}, task.GetPlatformOverrides().GetProperties())
 			} else {
-				for _, exp := range task.GetExperiments() {
-					assert.False(t, strings.HasPrefix(exp, "remote_execution.container_image_rewrite:"), "unexpected experiment entry: %s", exp)
-				}
+				require.Empty(t, task.GetPlatformOverrides().GetProperties())
 			}
 		})
 	}
@@ -896,10 +928,25 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 		},
 		{
+			name:                   "InstanceNameWithColon",
+			instanceName:           "build-14:00",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+		},
+		{
 			name:                   "SelfHostedExecutors",
 			platformOverrides:      map[string]string{"use-self-hosted-executors": "true"},
 			expectedSelfHosted:     true,
 			expectedExecutionUsage: tables.UsageCounts{SelfHostedLinuxExecutionDurationUsec: durationUsec},
+		},
+		{
+			// Old self-hosted executors don't send scheduling metadata, so
+			// the self-hosted bit and effective pool have to come from the
+			// scheduling metadata recorded at dispatch time.
+			name:                   "SelfHostedExecutors_NoSchedulingMetadata",
+			platformOverrides:      map[string]string{"use-self-hosted-executors": "true"},
+			expectedSelfHosted:     true,
+			expectedExecutionUsage: tables.UsageCounts{SelfHostedLinuxExecutionDurationUsec: durationUsec},
+			omitSchedulingMetadata: true,
 		},
 		{
 			name:                   "CachedResult",
@@ -957,6 +1004,14 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			redisRestart:           true,
 		},
 		{
+			// The dispatch-time record is lost but the invocation links
+			// survive, so the OLAP row is still written. Recover as much
+			// as possible from the COMPLETED update alone.
+			name:                   "LostInProgressRecord",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			lostInProgressRecord:   true,
+		},
+		{
 			name:                   "DefaultPool",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			useDefaultPool:         true,
@@ -993,6 +1048,7 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 
 type publishTest struct {
 	name                     string
+	instanceName             string
 	platformOverrides        map[string]string
 	flagOverrides            map[string]any
 	expectedSelfHosted       bool
@@ -1002,13 +1058,21 @@ type publishTest struct {
 	exitCode                 int32
 	publishMoreMetadata      bool
 	redisRestart             bool
-	useDefaultPool           bool
-	recycleRunner            bool
-	flushAfterCleanup        bool
-	invalidTestSize          string
+	// lostInProgressRecord deletes the dispatch-time in-progress execution
+	// record from Redis before the executor publishes COMPLETED, leaving the
+	// invocation links intact. This simulates losing the Redis shard that
+	// held the record (shard restart, LRU eviction) without losing the rest.
+	lostInProgressRecord bool
+	useDefaultPool       bool
+	recycleRunner        bool
+	flushAfterCleanup    bool
+	invalidTestSize      string
 	// flexibleCompute routes the execution into the flexible-compute branch
 	// of incrementOLAPExecutionUsage.
 	flexibleCompute bool
+	// omitSchedulingMetadata leaves the scheduling metadata out of the
+	// executor's auxiliary metadata, like old executors do.
+	omitSchedulingMetadata bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -1028,7 +1092,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
 	require.NoError(t, err)
 
-	const instanceName = "test-instance"
+	instanceName := test.instanceName
+	if instanceName == "" {
+		instanceName = "test-instance"
+	}
 	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
 	const digestFunction = repb.DigestFunction_SHA256
 
@@ -1111,6 +1178,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	if test.redisRestart {
 		r.Restart()
 	}
+	if test.lostInProgressRecord {
+		err := env.GetExecutionCollector().DeleteInProgressExecution(ctx, taskID)
+		require.NoError(t, err)
+	}
 
 	executorGroupID := sharedPoolGroupID
 	if test.expectedSelfHosted {
@@ -1170,7 +1241,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			VmExecInitDurationUsec:  4003,
 			VmExecDialDurationUsec:  4004,
 		}
-	} else {
+		aux.ExperimentFlags = []*expb.EvaluatedFlag{
+			{Name: "executor.foo_experiment", Variant: "treatment", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true}},
+		}
+	} else if !test.omitSchedulingMetadata {
 		effectivePool := "test-pool"
 		if test.useDefaultPool {
 			effectivePool = "default-pool"
@@ -1432,6 +1506,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.VmDnsWaitDurationUsec = 4002
 		expectedExecution.VmExecInitDurationUsec = 4003
 		expectedExecution.VmExecDialDurationUsec = 4004
+		expectedExecution.ExperimentVariants = map[string]string{"executor.foo_experiment": "treatment"}
 	}
 	require.Empty(t, cmp.Diff(
 		expectedExecution,
@@ -1442,6 +1517,15 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			"created_at_usec",
 			"updated_at_usec",
 		)))
+	if test.lostInProgressRecord {
+		// Only the dispatch-time record carries CreatedAtUsec; when it's
+		// lost, the flush falls back to the queued timestamp.
+		assert.Equal(t, queuedTime.UnixMicro(), collectedExecutions[0].GetCreatedAtUsec())
+	} else {
+		// The dispatch-time value (wall-clock now) must not be replaced by
+		// the fallback (the fixed queuedTime far in the past).
+		assert.Greater(t, collectedExecutions[0].GetCreatedAtUsec(), queuedTime.UnixMicro())
+	}
 }
 
 // TestPublishOperation_RetriedStream simulates the executor's
@@ -2376,6 +2460,44 @@ func TestMarkFailed(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err), "error should be NotFoundError, but was %s", err)
 }
 
+func TestMarkFailed_RecordsSchedulingMetadata(t *testing.T) {
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	env, _, _ := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{ToolInvocationId: iid})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "pool", Value: "test-pool"},
+			{Name: "use-self-hosted-executors", Value: "true"},
+		}},
+	}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	taskID := arn.NewUploadString()
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, taskID)
+	require.NoError(t, err)
+
+	// Fail the execution without an executor ever having reported on it.
+	err = s.MarkExecutionFailed(ctx, taskID, status.InternalError("It didn't work"))
+	require.NoError(t, err)
+
+	executions, err := env.GetExecutionCollector().GetExecutions(ctx, iid, 0, -1)
+	require.NoError(t, err)
+	require.Len(t, executions, 1)
+	assert.Equal(t, int64(repb.ExecutionStage_COMPLETED), executions[0].GetStage())
+	assert.True(t, executions[0].GetSelfHosted())
+	assert.Equal(t, "test-pool", executions[0].GetEffectivePool())
+}
+
 func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
 	env, conn, _ := setupEnv(t)
 	ctx := context.Background()
@@ -2423,6 +2545,227 @@ func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
 	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), rows[0].ExecutionID)
 	require.NoError(t, err)
 	require.Contains(t, executeResponse.GetStatus().GetMessage(), "Secrets requested but secret service not available")
+}
+
+func TestExecute_LostTaskEndsWait(t *testing.T) {
+	env, conn, _ := setupEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(t.Context(), "US1")
+	require.NoError(t, err)
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, &repb.Action{})
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	// Start an execution and wait for the server's initial update.
+	client := repb.NewExecutionClient(conn)
+	stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	op, err := stream.Recv()
+	require.NoError(t, err)
+	require.False(t, op.GetDone())
+
+	// Have the scheduler report the task lost without anyone publishing a
+	// final update, as happens when the scheduler fails to publish the
+	// failure of the task's last attempt. The server then ends the wait with
+	// a completed operation carrying a NOT_FOUND error, which tells Bazel to
+	// retry the execution instead of waiting forever.
+	close(env.GetSchedulerService().(*schedulerServerMock).taskLost)
+	op, err = stream.Recv()
+	require.NoError(t, err)
+	require.True(t, op.GetDone())
+	rsp := operation.ExtractExecuteResponse(op)
+	require.Equal(t, int32(codes.NotFound), rsp.GetStatus().GetCode(), "status: %v", rsp.GetStatus())
+}
+
+func TestExecute_APIKeyCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		capabilities   []capability.Capability
+		wantPermission bool
+	}{
+		{
+			name:           "read-only key is rejected",
+			wantPermission: false,
+		},
+		{
+			name:           "CAS-only key is allowed",
+			capabilities:   []capability.Capability{capability.Capability_CAS_WRITE},
+			wantPermission: true,
+		},
+		{
+			name:           "cache-write key is allowed",
+			capabilities:   []capability.Capability{capability.Capability_CACHE_WRITE},
+			wantPermission: true,
+		},
+		{
+			name:           "org-admin key is allowed",
+			capabilities:   []capability.Capability{capability.Capability_ORG_ADMIN},
+			wantPermission: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, conn, _ := setupEnv(t)
+			authenticator := env.GetAuthenticator().(*testauth.TestAuthenticator)
+			authenticator.APIKeyProvider = func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) {
+				return apiKeyUser(apiKey, tc.capabilities...), nil
+			}
+
+			// Use a missing action to verify that authorized requests proceed to
+			// the normal execution path without actually scheduling anything.
+			actionDigest, err := digest.Compute(strings.NewReader("missing action"), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			ctx := metadata.AppendToOutgoingContext(t.Context(), authutil.APIKeyHeader, "test-api-key")
+			stream, err := repb.NewExecutionClient(conn).Execute(ctx, &repb.ExecuteRequest{
+				ActionDigest:   actionDigest,
+				DigestFunction: repb.DigestFunction_SHA256,
+			})
+			require.NoError(t, err)
+
+			_, err = stream.Recv()
+			require.Error(t, err)
+			if tc.wantPermission {
+				require.True(t, status.IsFailedPreconditionError(err), "expected missing-action error, got %s", err)
+			} else {
+				require.True(t, status.IsPermissionDeniedError(err), "expected permission denied, got %s", err)
+			}
+		})
+	}
+}
+
+func TestExecute_RejectAnonymousExecutionsExperiment(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		experimentOn  bool
+		authenticated bool
+		wantRejected  bool
+	}{
+		{
+			name:          "anonymous user is rejected when experiment is enabled",
+			experimentOn:  true,
+			authenticated: false,
+			wantRejected:  true,
+		},
+		{
+			name:          "anonymous user is allowed when experiment is disabled",
+			experimentOn:  false,
+			authenticated: false,
+			wantRejected:  false,
+		},
+		{
+			name:          "authenticated user is allowed when experiment is enabled",
+			experimentOn:  true,
+			authenticated: true,
+			wantRejected:  false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, conn, _ := setupEnv(t)
+			configureExperiments(t, env, map[string]bool{
+				"remote_execution.reject_anonymous_executions": tc.experimentOn,
+			})
+
+			ctx := context.Background()
+			if tc.authenticated {
+				var err error
+				ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+				require.NoError(t, err)
+			}
+
+			// Use an action digest that does not exist in the CAS. Requests
+			// that pass the anonymous-user check should fail later with
+			// FAILED_PRECONDITION (missing blob) when fetching the action,
+			// which proves that the check runs before the action is fetched
+			// and only rejects anonymous users.
+			ad, err := digest.Compute(strings.NewReader("nonexistent action"), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+
+			client := repb.NewExecutionClient(conn)
+			stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+				ActionDigest:   ad,
+				DigestFunction: repb.DigestFunction_SHA256,
+			})
+			require.NoError(t, err)
+
+			_, err = stream.Recv()
+			require.Error(t, err)
+			if tc.wantRejected {
+				require.True(t, status.IsPermissionDeniedError(err), "expected PERMISSION_DENIED, got %s", err)
+				require.Contains(t, err.Error(), "Anonymous remote execution is no longer supported. Please create an account at https://buildbuddy.io")
+			} else {
+				require.True(t, status.IsFailedPreconditionError(err), "expected FAILED_PRECONDITION, got %s", err)
+				require.Contains(t, err.Error(), "not found")
+			}
+		})
+	}
+}
+
+func TestExecute_RejectAnonymousExecutionsExperiment_TargetsClientIP(t *testing.T) {
+	// The test gRPC connection has no usable peer address, so supply the
+	// client IP via a trusted X-Forwarded-For header instead.
+	flags.Set(t, "auth.trust_xforwardedfor_header", true)
+
+	const rejectedIP = "203.0.113.7"
+	const allowedIP = "198.51.100.9"
+
+	env, conn, _ := setupEnv(t)
+	tmp := testfs.MakeTempDir(t)
+	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "remote_execution.reject_anonymous_executions": {
+      "state": "ENABLED",
+      "variants": {
+        "true": true,
+        "false": false
+      },
+      "defaultVariant": "false",
+      "targeting": {
+        "if": [
+          {"==": [{"var": "client_ip"}, "`+rejectedIP+`"]},
+          "true",
+          "false"
+        ]
+      }
+    }
+  }
+}
+`)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	ad, err := digest.Compute(strings.NewReader("nonexistent action"), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	client := repb.NewExecutionClient(conn)
+
+	execute := func(clientIP string) error {
+		ctx := metadata.AppendToOutgoingContext(context.Background(), "X-Forwarded-For", clientIP)
+		stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+			ActionDigest:   ad,
+			DigestFunction: repb.DigestFunction_SHA256,
+		})
+		require.NoError(t, err)
+		_, err = stream.Recv()
+		require.Error(t, err)
+		return err
+	}
+
+	err = execute(rejectedIP)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PERMISSION_DENIED for targeted IP, got %s", err)
+
+	// A different anonymous IP is not targeted and proceeds to the action
+	// fetch, which fails because the action does not exist.
+	err = execute(allowedIP)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FAILED_PRECONDITION for non-targeted IP, got %s", err)
 }
 
 func TestDispatch_RedisAvailabilityMonitoring_CleansUpChannelOnScheduleFailure(t *testing.T) {

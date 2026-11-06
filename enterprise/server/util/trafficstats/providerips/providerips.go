@@ -6,16 +6,23 @@
 //   - Azure:      Microsoft Service Tags JSON (URL auto-discovered weekly)
 //   - GCP:        https://www.gstatic.com/ipranges/cloud.json
 //   - GitHub:     https://api.github.com/meta
-//   - MacStadium: RIPE Stat announced-prefixes API for AS395336, AS395337, AS30377
+//   - DigitalOcean: https://www.digitalocean.com/geo/google.csv (official geofeed)
+//   - Oracle:     https://docs.oracle.com/en-us/iaas/tools/public_ip_ranges.json
+//   - MacStadium, PhoenixNAP, Hetzner, OVH, Latitude.sh, Namespace Labs: these
+//     providers do not publish a range list, so we take the prefixes their ASNs
+//     announce in BGP from the RIPE Stat announced-prefixes API.
 package providerips
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // IPRange represents a single IP prefix belonging to a cloud provider.
@@ -29,16 +36,34 @@ func isIPv6(cidr string) bool {
 	return strings.Contains(cidr, ":")
 }
 
-func fetchJSON(url string, v any) error {
-	resp, err := http.Get(url)
+// httpClient has a timeout so that one stalled provider endpoint fails the
+// run instead of hanging it after some CSVs have already been rewritten.
+var httpClient = &http.Client{Timeout: 60 * time.Second}
+
+// fetchBody performs a GET and returns the body on a 200 response. The caller
+// must close it.
+func fetchBody(url string) (io.ReadCloser, error) {
+	resp, err := httpClient.Get(url)
 	if err != nil {
-		return fmt.Errorf("fetch %s: %w", url, err)
+		return nil, fmt.Errorf("fetch %s: %w", url, err)
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("fetch %s: status %s", url, resp.Status)
+		resp.Body.Close()
+		return nil, fmt.Errorf("fetch %s: status %s", url, resp.Status)
 	}
-	return json.NewDecoder(resp.Body).Decode(v)
+	return resp.Body, nil
+}
+
+func fetchJSON(url string, v any) error {
+	body, err := fetchBody(url)
+	if err != nil {
+		return err
+	}
+	defer body.Close()
+	if err := json.NewDecoder(body).Decode(v); err != nil {
+		return fmt.Errorf("decode %s: %w", url, err)
+	}
+	return nil
 }
 
 // FetchAWS returns IPv4 ranges from the AWS ip-ranges.json endpoint.
@@ -117,7 +142,7 @@ func FetchAzure() ([]IPRange, error) {
 }
 
 func discoverAzureURL() (string, error) {
-	resp, err := http.Get("https://www.microsoft.com/en-us/download/confirmation.aspx?id=56519")
+	resp, err := httpClient.Get("https://www.microsoft.com/en-us/download/confirmation.aspx?id=56519")
 	if err != nil {
 		return "", fmt.Errorf("fetch download page: %w", err)
 	}
@@ -161,36 +186,190 @@ func FetchGitHub() ([]IPRange, error) {
 	return out, nil
 }
 
-// MacStadium ASNs and their locations.
-var macStadiumASNs = []struct {
+// asnSite is an autonomous system operated by a provider, and the site it
+// serves when the ASN maps to a single location. Region is left empty for
+// ASNs that span several sites, since we have no per-prefix location data.
+type asnSite struct {
 	asn    string
 	region string
-}{
-	{"AS395336", "atlanta"},
-	{"AS395337", "las-vegas"},
-	{"AS30377", "dublin"},
 }
 
-// FetchMacStadium returns IPv4 ranges for MacStadium ASNs via the RIPE Stat API.
-func FetchMacStadium() ([]IPRange, error) {
+// fetchASNRanges returns the IPv4 prefixes announced in BGP by each of the
+// given ASNs, via the RIPE Stat announced-prefixes API. This is the fallback
+// for providers that do not publish an official range list.
+func fetchASNRanges(provider string, asns []asnSite) ([]IPRange, error) {
 	var out []IPRange
-	for _, a := range macStadiumASNs {
+	seen := map[string]bool{}
+	for _, a := range asns {
 		var result struct {
-			Data struct {
+			Status   string     `json:"status"`
+			Messages [][]string `json:"messages"`
+			Data     struct {
 				Prefixes []struct {
 					Prefix string `json:"prefix"`
 				} `json:"prefixes"`
 			} `json:"data"`
 		}
-		url := fmt.Sprintf("https://stat.ripe.net/data/announced-prefixes/data.json?resource=%s", a.asn)
+		url := fmt.Sprintf("https://stat.ripe.net/data/announced-prefixes/data.json?resource=%s&sourceapp=buildbuddy-trafficstats", a.asn)
 		if err := fetchJSON(url, &result); err != nil {
-			return nil, fmt.Errorf("%s (%s): %w", a.asn, a.region, err)
+			return nil, fmt.Errorf("%s %s: %w", provider, a.asn, err)
 		}
+		if result.Status != "ok" {
+			return nil, fmt.Errorf("%s %s: RIPE Stat status %q: %v", provider, a.asn, result.Status, result.Messages)
+		}
+		n := 0
 		for _, p := range result.Data.Prefixes {
 			if isIPv6(p.Prefix) {
 				continue
 			}
-			out = append(out, IPRange{Provider: "MacStadium", Region: a.region, CIDR: p.Prefix})
+			n++
+			if seen[p.Prefix] {
+				continue
+			}
+			seen[p.Prefix] = true
+			out = append(out, IPRange{Provider: provider, Region: a.region, CIDR: p.Prefix})
+		}
+		// An ASN with no IPv4 announcements is almost certainly a typo or an
+		// incomplete response; without this check the provider's CSV would be
+		// silently emptied.
+		if n == 0 {
+			return nil, fmt.Errorf("%s %s: RIPE Stat returned no IPv4 prefixes", provider, a.asn)
+		}
+	}
+	return out, nil
+}
+
+// MacStadium ASNs and their locations.
+var macStadiumASNs = []asnSite{
+	{"AS395336", "atlanta"},
+	{"AS395337", "las-vegas"},
+	{"AS30377", "dublin"},
+}
+
+// FetchMacStadium returns IPv4 ranges announced by MacStadium's ASNs.
+func FetchMacStadium() ([]IPRange, error) {
+	return fetchASNRanges("MacStadium", macStadiumASNs)
+}
+
+// PhoenixNAP ASNs. Secured Servers LLC is PhoenixNAP's bare-metal business.
+// The Ashburn and Atlanta ASNs are named for their site and are listed first
+// so that their label wins if a prefix is ever announced from several ASNs.
+// The others serve several sites: PhoenixNAP's allocations (e.g.
+// 192.240.192.0/18) are carved into /24s across Phoenix, Ashburn, Amsterdam
+// and Singapore, so no site can be inferred from the address block alone.
+var phoenixNAPASNs = []asnSite{
+	{"AS19437", "ashburn"}, // SS-ASH - Secured Servers LLC
+	{"AS11572", "atlanta"}, // SS-ATL - PhoenixNAP LLC
+	{"AS20454", ""},        // SSASN2 - Secured Servers LLC
+	{"AS60558", ""},        // SECUREDSERVERS-EU - PhoenixNAP
+	{"AS12189", ""},        // PhoenixNAP LLC
+}
+
+// FetchPhoenixNAP returns IPv4 ranges announced by PhoenixNAP's ASNs.
+func FetchPhoenixNAP() ([]IPRange, error) {
+	return fetchASNRanges("PhoenixNAP", phoenixNAPASNs)
+}
+
+// Hetzner ASNs. AS24940 serves both the German and Finnish datacenters; the
+// "Cloud" ASNs serve the newer US and Singapore sites.
+var hetznerASNs = []asnSite{
+	{"AS24940", ""},  // HETZNER-AS
+	{"AS213230", ""}, // HETZNER-CLOUD2-AS
+	{"AS212317", ""}, // HETZNER-CLOUD3-AS
+	{"AS215859", ""}, // HETZNER-CLOUD4-AS
+}
+
+// FetchHetzner returns IPv4 ranges announced by Hetzner's ASNs.
+func FetchHetzner() ([]IPRange, error) {
+	return fetchASNRanges("Hetzner", hetznerASNs)
+}
+
+// OVH ASNs. AS35540 (OVH Telecom) is their consumer ISP and is excluded.
+var ovhASNs = []asnSite{
+	{"AS16276", ""},
+}
+
+// FetchOVH returns IPv4 ranges announced by OVHcloud's ASN.
+func FetchOVH() ([]IPRange, error) {
+	return fetchASNRanges("OVH", ovhASNs)
+}
+
+// Latitude.sh (formerly Maxihost) ASNs.
+var latitudeASNs = []asnSite{
+	{"AS396356", ""},
+	{"AS262287", ""},
+}
+
+// FetchLatitude returns IPv4 ranges announced by Latitude.sh's ASNs.
+func FetchLatitude() ([]IPRange, error) {
+	return fetchASNRanges("Latitude.sh", latitudeASNs)
+}
+
+// Namespace Labs (namespace.so, a CI runner provider) ASN.
+var namespaceASNs = []asnSite{
+	{"AS401483", ""},
+}
+
+// FetchNamespace returns IPv4 ranges announced by Namespace Labs' ASN.
+func FetchNamespace() ([]IPRange, error) {
+	return fetchASNRanges("Namespace", namespaceASNs)
+}
+
+// FetchDigitalOcean returns IPv4 ranges from DigitalOcean's published geofeed
+// (RFC 8805 CSV: prefix, country, subdivision, city, postal code). The region
+// is the city, matching the MacStadium convention.
+func FetchDigitalOcean() ([]IPRange, error) {
+	url := "https://www.digitalocean.com/geo/google.csv"
+	body, err := fetchBody(url)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+	r := csv.NewReader(body)
+	r.Comment = '#'
+	r.FieldsPerRecord = -1
+	records, err := r.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", url, err)
+	}
+	var out []IPRange
+	for i, rec := range records {
+		if len(rec) < 4 {
+			return nil, fmt.Errorf("parse %s: row %d has %d fields, want at least 4", url, i+1, len(rec))
+		}
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(rec[0]))
+		if err != nil {
+			return nil, fmt.Errorf("parse %s: row %d: %w", url, i+1, err)
+		}
+		if prefix.Addr().Is6() {
+			continue
+		}
+		region := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(rec[3]), " ", "-"))
+		out = append(out, IPRange{Provider: "DigitalOcean", Region: region, CIDR: prefix.String()})
+	}
+	return out, nil
+}
+
+// FetchOracle returns IPv4 ranges from Oracle Cloud's published range list.
+func FetchOracle() ([]IPRange, error) {
+	var data struct {
+		Regions []struct {
+			Region string `json:"region"`
+			CIDRs  []struct {
+				CIDR string `json:"cidr"`
+			} `json:"cidrs"`
+		} `json:"regions"`
+	}
+	if err := fetchJSON("https://docs.oracle.com/en-us/iaas/tools/public_ip_ranges.json", &data); err != nil {
+		return nil, err
+	}
+	var out []IPRange
+	for _, r := range data.Regions {
+		for _, c := range r.CIDRs {
+			if isIPv6(c.CIDR) {
+				continue
+			}
+			out = append(out, IPRange{Provider: "Oracle", Region: r.Region, CIDR: c.CIDR})
 		}
 	}
 	return out, nil

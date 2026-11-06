@@ -4,8 +4,14 @@ go_library(
     name = "lint_lib",
     srcs = ["lint.go"],
     data = [
+        # In buildbuddy-internal, this is still this (OSS) repo's gazelle,
+        # which is fine: internal disables its extra Python and TypeScript
+        # plugins with directives.
+        "//:gazelle",
         "//tools/bb",
         "//tools/prettier",
+        "@com_github_bazel_contrib_buildtools_v10//buildifier",
+        "@com_github_rhysd_actionlint//cmd/actionlint",
         "@io_bazel_rules_go//go",
         "@llvm//tools:clang-format",
         "@org_golang_x_tools//cmd/goimports",
@@ -13,11 +19,14 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/lint",
     visibility = ["//visibility:private"],
     x_defs = {
+        "buildifierRlocationpath": "$(rlocationpath @com_github_bazel_contrib_buildtools_v10//buildifier)",
+        "actionlintRlocationpath": "$(rlocationpath @com_github_rhysd_actionlint//cmd/actionlint)",
         "goimportsRlocationpath": "$(rlocationpath @org_golang_x_tools//cmd/goimports)",
         "goRlocationpath": "$(rlocationpath @io_bazel_rules_go//go)",
         "clangFormatRlocationpath": "$(rlocationpath @llvm//tools:clang-format)",
         "prettierRlocationpath": "$(rlocationpath //tools/prettier)",
         "bbCLIRlocationpath": "$(rlocationpath //tools/bb)",
+        "gazelleRlocationpaths": "$(rlocationpaths //:gazelle)",
     },
     deps = [
         "//server/util/flag",

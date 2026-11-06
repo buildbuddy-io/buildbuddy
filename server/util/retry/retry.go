@@ -60,7 +60,7 @@ func New(ctx context.Context, opts *Options) *Retry {
 				)/math.Log(opts.Multiplier),
 			))
 			b := opts.InitialBackoff
-			for i := 0; i < tries; i++ {
+			for range tries {
 				maxTime += b
 				b = time.Duration(math.Min(float64(b)*opts.Multiplier, float64(opts.MaxBackoff)))
 			}
@@ -228,6 +228,11 @@ func Do[T any](ctx context.Context, opts *Options, fn func(ctx context.Context) 
 	for {
 		makeAttempt, err := r.next()
 		if err != nil {
+			if lastError != nil {
+				// Keep the last attempt's error (and its status code)
+				// visible alongside the context error.
+				return *new(T), fmt.Errorf("%w (retries stopped: %w)", lastError, err)
+			}
 			return *new(T), err
 		}
 		if !makeAttempt {

@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//rules:platform_transitions.bzl", "linux_arm64_alias", "linux_x86_64_alias", "macos_arm64_alias", "macos_x86_64_alias", "windows_amd64_alias")
 
 # NOTE: //tools/lint uses a prebuilt bb binary (//tools/bb) instead of this
 # target. If you make CLI changes that affect `bb fix` or `bb mod deps`,
@@ -50,73 +51,37 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-go_binary(
+macos_x86_64_alias(
     name = "bb-darwin-amd64",
-    out = "bb-darwin-amd64",
-    embed = [":bb_lib"],
-    gc_linkopts = [
-        "-s",
-        "-w",
-    ],
-    goarch = "amd64",
-    goos = "darwin",
-    pure = "on",
+    actual = ":bb",
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
-go_binary(
+macos_arm64_alias(
     name = "bb-darwin-arm64",
-    out = "bb-darwin-arm64",
-    embed = [":bb_lib"],
-    gc_linkopts = [
-        "-s",
-        "-w",
-    ],
-    goarch = "arm64",
-    goos = "darwin",
-    pure = "on",
+    actual = ":bb",
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
-go_binary(
+linux_x86_64_alias(
     name = "bb-linux-amd64",
-    out = "bb-linux-amd64",
-    embed = [":bb_lib"],
-    gc_linkopts = [
-        "-s",
-        "-w",
-    ],
-    goarch = "amd64",
-    goos = "linux",
-    pure = "on",
+    actual = ":bb",
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
-go_binary(
+linux_arm64_alias(
     name = "bb-linux-arm64",
-    out = "bb-linux-arm64",
-    embed = [":bb_lib"],
-    gc_linkopts = [
-        "-s",
-        "-w",
-    ],
-    goarch = "arm64",
-    goos = "linux",
-    pure = "on",
+    actual = ":bb",
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
-go_binary(
+windows_amd64_alias(
     name = "bb-windows-amd64",
-    out = "bb-windows-amd64.exe",
-    embed = [":bb_lib"],
-    goarch = "amd64",
-    goos = "windows",
-    pure = "on",
+    actual = ":bb",
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )

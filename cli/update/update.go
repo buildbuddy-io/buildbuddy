@@ -1,8 +1,10 @@
 package update
 
 import (
-	_ "embed"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -10,16 +12,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 )
-
-//go:embed install.sh
-var installScript string
 
 var (
 	flags         = flag.NewFlagSet("update", flag.ContinueOnError)
@@ -29,8 +30,9 @@ var (
 )
 
 const (
-	installPath      = "/usr/local/bin/bb"
-	latestVersionURL = "https://api.github.com/repos/buildbuddy-io/bazel/releases/latest"
+	installPath            = "/usr/local/bin/bb"
+	latestVersionURL       = "https://api.github.com/repos/buildbuddy-io/bazel/releases/latest"
+	releaseDownloadBaseURL = "https://github.com/buildbuddy-io/bazel/releases/download"
 
 	usage = `
 usage: bb update
@@ -84,7 +86,7 @@ func HandleUpdate(args []string) (exitCode int, err error) {
 }
 
 func fetchLatestVersion() (string, error) {
-	res, err := http.Get(latestVersionURL)
+	res, err := httpGet(newDownloadClient(), latestVersionURL)
 	if err != nil {
 		return "", err
 	}
@@ -170,16 +172,152 @@ func updateSystemInstall(version string) error {
 		log.Printf("Version %s is already installed at %s", version, installPath)
 		return nil
 	}
-	log.Printf("Downloading latest version.")
-	if err := bash(installScript, "tags/"+version); err != nil {
-		return fmt.Errorf("failed to run install script: %s", err)
+	url, err := releaseAssetURL(version, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return err
+	}
+	tmpDir, err := os.MkdirTemp("", "bb-update-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+	tmpPath := filepath.Join(tmpDir, "bb")
+	log.Printf("Downloading %s", url)
+	if err := downloadAndVerify(newDownloadClient(), url, tmpPath); err != nil {
+		return err
+	}
+	installDir := filepath.Dir(installPath)
+	log.Printf("Will write the CLI to %s - this may ask for your password.", installDir)
+	if err := sudo("mkdir", "-p", installDir); err != nil {
+		return fmt.Errorf("sudo mkdir: %s", err)
+	}
+	// Install to a temp file in the same dir, then rename, so that the
+	// replacement is atomic. If install fails partway, try to remove the
+	// staging file without prompting; this quietly does nothing if sudo
+	// auth itself failed.
+	stagingPath := filepath.Join(installDir, fmt.Sprintf(".bb.tmp.%d", os.Getpid()))
+	if err := sudo("install", "-m", "0755", tmpPath, stagingPath); err != nil {
+		exec.Command("sudo", "-n", "rm", "-f", stagingPath).Run()
+		return fmt.Errorf("sudo install: %s", err)
+	}
+	if err := sudo("mv", "-f", stagingPath, installPath); err != nil {
+		sudo("rm", "-f", stagingPath)
+		return fmt.Errorf("sudo mv: %s", err)
 	}
 	return nil
 }
 
-func bash(scriptContent string, args ...string) error {
-	bashArgs := append([]string{"-c", scriptContent}, args...)
-	cmd := exec.Command("bash", bashArgs...)
+// Returns the download URL for the CLI release binary for the given
+// version, OS, and architecture.
+func releaseAssetURL(version, goos, goarch string) (string, error) {
+	arch := goarch
+	if goarch == "amd64" {
+		arch = "x86_64"
+	}
+	if (goos != "linux" && goos != "darwin") || (arch != "x86_64" && arch != "arm64") {
+		return "", fmt.Errorf("Could not find a CLI release for os '%s', arch '%s'", goos, goarch)
+	}
+	return fmt.Sprintf("%s/%s/bazel-%s-%s-%s", releaseDownloadBaseURL, version, version, goos, arch), nil
+}
+
+// Returns an HTTP client with timeouts that refuses to follow redirects to
+// non-https URLs.
+func newDownloadClient() *http.Client {
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
+	if t, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = t.Clone()
+	}
+	transport.TLSHandshakeTimeout = 30 * time.Second
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	return &http.Client{
+		Transport:     transport,
+		CheckRedirect: checkRedirect,
+	}
+}
+
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if req.URL.Scheme != "https" {
+		return fmt.Errorf("refusing redirect to non-https URL %s", req.URL)
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
+}
+
+// Downloads url to dest, verifying its contents against the sha256 published
+// at url + ".sha256".
+func downloadAndVerify(client *http.Client, url, dest string) error {
+	if !strings.HasPrefix(url, "https://") {
+		return fmt.Errorf("refusing to download from non-https URL %s", url)
+	}
+	expected, err := fetchChecksum(client, url)
+	if err != nil {
+		return err
+	}
+
+	res, err := httpGet(client, url)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	f, err := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	h := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(f, h), res.Body); err != nil {
+		f.Close()
+		return fmt.Errorf("download %s: %s", url, err)
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if actual := hex.EncodeToString(h.Sum(nil)); actual != expected {
+		return fmt.Errorf("checksum mismatch for %s: expected %s, got %s", url, expected, actual)
+	}
+	return nil
+}
+
+// Fetches url + ".sha256" and returns the sha256 it lists for url. Only the
+// leading hex digest of the `shasum -a 256` output is used.
+func fetchChecksum(client *http.Client, url string) (string, error) {
+	shaURL := url + ".sha256"
+	res, err := httpGet(client, shaURL)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(res.Body, 4096))
+	if err != nil {
+		return "", fmt.Errorf("read %s: %s", shaURL, err)
+	}
+	fields := strings.Fields(string(b))
+	if len(fields) == 0 {
+		return "", fmt.Errorf("empty checksum file at %s", shaURL)
+	}
+	sum := strings.ToLower(fields[0])
+	if _, err := hex.DecodeString(sum); err != nil || len(sum) != 64 {
+		return "", fmt.Errorf("malformed checksum %q at %s", fields[0], shaURL)
+	}
+	return sum, nil
+}
+
+func httpGet(client *http.Client, url string) (*http.Response, error) {
+	res, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		res.Body.Close()
+		return nil, fmt.Errorf("GET %s: unexpected status %s", url, res.Status)
+	}
+	return res, nil
+}
+
+func sudo(args ...string) error {
+	cmd := exec.Command("sudo", args...)
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

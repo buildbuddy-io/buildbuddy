@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -30,7 +31,6 @@ import (
 const (
 	ExecutableName                    = platform.CIRunnerExecutableBaseName + platform.ExecutableSuffix
 	CLIBinaryName                     = "bb" + platform.ExecutableSuffix
-	DefaultTimeoutExperimentName      = "remote_execution.remote_runner_default_timeout"
 	LowSpeedRetryConfigExperimentName = "remote_execution.ci_runner.low_speed_retry_config"
 	FreeTierTimeoutReason             = "free_tier_limit"
 )
@@ -44,31 +44,34 @@ var (
 	RecycledCIRunnerMaxWait = flag.Duration("remote_execution.ci_runner_recycling_max_wait", 3*time.Second, "Max duration that a ci_runner task should wait for a warm runner before running on a potentially cold runner.")
 	CIRunnerDefaultTimeout  = flag.Duration("remote_execution.ci_runner_default_timeout", 8*time.Hour, "Default timeout applied to all ci runners.")
 	InitCIRunnerFromCache   = flag.Bool("remote_execution.init_ci_runner_from_cache", true, "Whether the apps should upload ci_runner binaries to the cache so executors can fetch the latest versions without upgrading.")
+
+	BazelCommandOverride = expflag.String("remote_execution.ci_runner_bazel_command", "", "Override the Bazel command used by workflows and hosted runners.", expflag.DeprecatedExperimentName("ci-runner-bazel-command"))
+	PoolOverride         = expflag.String("remote_execution.remote_runner_pool", "", "Override the executor pool used by workflows and hosted runners.", expflag.DeprecatedExperimentName("remote-runner-pool"))
+
+	defaultTimeout      = expflag.String("remote_execution.remote_runner_default_timeout", "", "Override the default CI runner timeout with a duration, such as 24h.")
+	lowSpeedRetryConfig = expflag.Object(LowSpeedRetryConfigExperimentName, nil, "Git fetch retry settings for CI runners, with retries, duration, and rate fields.")
 )
 
-func RunnerTimeout(ctx context.Context, efp interfaces.ExperimentFlagProvider, requestedTimeout *time.Duration, actionName string, groupStatus grpb.Group_GroupStatus) (*RunnerTimeoutResult, error) {
+// RunnerTimeout returns the CI runner timeout, capped by the experiment when configured.
+func RunnerTimeout(ctx context.Context, requestedTimeout *time.Duration, actionName string, groupStatus grpb.Group_GroupStatus) (*RunnerTimeoutResult, error) {
 	if requestedTimeout != nil && *requestedTimeout <= 0 {
 		return nil, status.InvalidArgumentError("requested timeout is not positive")
 	}
 
-	if efp != nil {
-		timeoutString := efp.String(ctx, DefaultTimeoutExperimentName, "",
-			experiments.WithContext("workflow_action_name", actionName))
-		if timeoutString != "" {
-			timeout, err := time.ParseDuration(timeoutString)
-			if err != nil {
-				log.CtxErrorf(ctx, "Failed to parse %s experiment value %q: %s", DefaultTimeoutExperimentName, timeoutString, err)
-			} else {
-				if requestedTimeout != nil && *requestedTimeout < timeout {
-					return &RunnerTimeoutResult{Duration: *requestedTimeout}, nil
-				}
-
-				reason := ""
-				if groupStatus == grpb.Group_FREE_TIER_GROUP_STATUS {
-					reason = FreeTierTimeoutReason
-				}
-				return &RunnerTimeoutResult{Duration: timeout, Reason: reason}, nil
+	if timeoutString := defaultTimeout.Get(ctx, experiments.WithContext("workflow_action_name", actionName)); timeoutString != "" {
+		timeout, err := time.ParseDuration(timeoutString)
+		if err != nil {
+			log.CtxErrorf(ctx, "Failed to parse %s experiment value %q: %s", defaultTimeout.Name(), timeoutString, err)
+		} else {
+			if requestedTimeout != nil && *requestedTimeout < timeout {
+				return &RunnerTimeoutResult{Duration: *requestedTimeout}, nil
 			}
+
+			reason := ""
+			if groupStatus == grpb.Group_FREE_TIER_GROUP_STATUS {
+				reason = FreeTierTimeoutReason
+			}
+			return &RunnerTimeoutResult{Duration: timeout, Reason: reason}, nil
 		}
 	}
 	if requestedTimeout != nil {
@@ -96,11 +99,8 @@ type LowSpeedRetryConfig struct {
 // GitFetchLowSpeedRetryFlags returns the ci_runner git fetch retry flags
 // configured by the LowSpeedRetryConfigExperimentName experiment, or nil if
 // the experiment is not configured.
-func GitFetchLowSpeedRetryFlags(ctx context.Context, efp interfaces.ExperimentFlagProvider, opts ...any) []string {
-	if efp == nil {
-		return nil
-	}
-	object := efp.Object(ctx, LowSpeedRetryConfigExperimentName, nil, opts...)
+func GitFetchLowSpeedRetryFlags(ctx context.Context, opts ...any) []string {
+	object := lowSpeedRetryConfig.Get(ctx, opts...)
 	if len(object) == 0 {
 		return nil
 	}

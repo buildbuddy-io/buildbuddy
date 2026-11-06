@@ -19,6 +19,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -78,6 +80,7 @@ func (p *ClientConnPool) Check(ctx context.Context) error {
 	for _, c := range p.conns {
 		connState := c.GetState()
 		if connState == connectivity.Ready {
+			c.wasEverReady.Store(true)
 			goodConns++
 			continue
 		}
@@ -86,20 +89,28 @@ func (p *ClientConnPool) Check(ctx context.Context) error {
 			goodConns++
 			continue
 		}
+		if !c.wasEverReady.Load() {
+			// See comment in GetReadyConnection.
+			goodConns++
+			continue
+		}
 	}
 	if goodConns == 0 {
-		logConnPoolState(p.targetForLogging, p.conns)
-		return status.UnavailableError("No ready connections in gRPC connection pool")
+		return status.UnavailableErrorf(
+			"No ready connections in gRPC connection pool for %s. %d connections in states: %v",
+			p.targetForLogging,
+			len(p.conns),
+			statesCount(p.conns))
 	}
 	return nil
 }
 
-func logConnPoolState(target string, conns []*clientConn) {
-	states := map[string]int{}
+func statesCount(conns []*clientConn) map[string]int {
+	states := make(map[string]int, len(conns))
 	for _, c := range conns {
 		states[c.GetState().String()]++
 	}
-	log.Infof("gRPC client connection pool for %s has %d connections in states: %v", target, len(conns), states)
+	return states
 }
 
 func (p *ClientConnPool) Close() error {
@@ -109,6 +120,10 @@ func (p *ClientConnPool) Close() error {
 			log.Warningf("could not close connection: %s", err)
 		}
 	}
+	metrics.PendingClientRPCsPerConnection.DeletePartialMatch(prometheus.Labels{
+		metrics.GRPCTargetLabel: p.targetForLogging,
+		metrics.GRPCPoolIDLabel: p.id,
+	})
 	return nil
 }
 
@@ -240,7 +255,7 @@ func NewClientConnPoolSplitter(trafficAllocation map[*ClientConnPool]int) (*Clie
 	uniquePools := make([]*ClientConnPool, 0, len(trafficAllocation))
 	for pool, trafficPercent := range trafficAllocation {
 		totalTrafficPercent += trafficPercent
-		for i := 0; i < trafficPercent; i++ {
+		for range trafficPercent {
 			pools[poolIdx] = pool
 			poolIdx++
 		}
@@ -431,6 +446,7 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 	}
 	return []grpc.DialOption{
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler(otelOpts...)),
+		rpcutil.ClientSizeMetricsDialOption(),
 		interceptors.GetUnaryClientInterceptor(),
 		interceptors.GetStreamClientInterceptor(),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
@@ -449,5 +465,115 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 			// If true, client sends keepalive pings even with no active RPCs.
 			PermitWithoutStream: true,
 		}),
+	}
+}
+
+type ConnCacheOpts struct {
+	// Number of connections in each peer's pool.
+	PoolSize int
+	// Connections unused for this long are closed.
+	Expiration time.Duration
+	// How often to look for unused connections.
+	CheckInterval time.Duration
+	// Optional. Defaults to env.GetClock().
+	Clock clockwork.Clock
+}
+
+// ConnCache caches internal gRPC connections to peers, keyed by gRPC address,
+// closing connections that haven't been used recently in the background.
+type ConnCache struct {
+	env   environment.Env
+	clock clockwork.Clock
+	opts  ConnCacheOpts
+
+	stopOnce sync.Once
+	quit     chan struct{}
+	done     chan struct{}
+
+	mu    sync.Mutex
+	conns map[string]*cachedConn
+}
+
+type cachedConn struct {
+	conn       *ClientConnPool
+	lastAccess time.Time
+}
+
+// NewConnCache returns a ConnCache and starts expiring unused connections in
+// the background. Call StopExpiring() to stop the background connection
+// expiring goroutine.
+func NewConnCache(env environment.Env, opts ConnCacheOpts) (*ConnCache, error) {
+	if opts.PoolSize <= 0 || opts.Expiration <= 0 || opts.CheckInterval <= 0 {
+		return nil, status.InvalidArgumentErrorf("PoolSize, Expiration, and CheckInterval must be positive (got %d, %s, %s)", opts.PoolSize, opts.Expiration, opts.CheckInterval)
+	}
+	clock := opts.Clock
+	if clock == nil {
+		clock = env.GetClock()
+	}
+	c := &ConnCache{
+		env:   env,
+		clock: clock,
+		opts:  opts,
+		quit:  make(chan struct{}),
+		done:  make(chan struct{}),
+		conns: make(map[string]*cachedConn),
+	}
+	go c.expire()
+	return c, nil
+}
+
+// Get returns a connection to the requested peer, dialing it if necessary.
+func (c *ConnCache) Get(key string) (*ClientConnPool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cc, ok := c.conns[key]
+	if !ok {
+		log.Infof("Creating new connection to peer %q", log.ExecutionIDKey)
+		// This is non-blocking so it's OK to hold the lock.
+		conn, err := DialInternalWithPoolSize(c.env, "grpc://"+key, c.opts.PoolSize)
+		if err != nil {
+			return nil, status.UnavailableErrorf("could not dial peer %q: %s", key, err)
+		}
+		cc = &cachedConn{conn: conn}
+		c.conns[key] = cc
+	}
+	cc.lastAccess = c.clock.Now()
+	return cc.conn, nil
+}
+
+// StopExpiring stops the background expiry of unused connections and waits
+// for it to finish. Cached connections stay open and usable, allowing a server
+// to keep serving in-flight requests while it shuts down.
+//
+// TODO(iain): reference count connections handed out by Get so that shutdown
+// can close connections with no pending RPCs instead of leaving them all open.
+func (c *ConnCache) StopExpiring() {
+	c.stopOnce.Do(func() { close(c.quit) })
+	<-c.done
+}
+
+func (c *ConnCache) expire() {
+	defer close(c.done)
+	ticker := c.clock.NewTicker(c.opts.CheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.quit:
+			return
+		case <-ticker.Chan():
+		}
+		var toClose []*ClientConnPool
+		c.mu.Lock()
+		for hostPort, cc := range c.conns {
+			if c.clock.Since(cc.lastAccess) > c.opts.Expiration {
+				log.Debugf("Closing unused connection to peer %q", hostPort)
+				toClose = append(toClose, cc.conn)
+				delete(c.conns, hostPort)
+			}
+		}
+		c.mu.Unlock()
+		for _, conn := range toClose {
+			conn.Close()
+		}
 	}
 }

@@ -1,3 +1,5 @@
+"""Rule for building pnpm packages."""
+
 DEFAULT_CMD_TPL = """
 # NOTE: BazelBinResolverPlugin in docusaurus.config.js depends on ROOTDIR being set
 # to the original execution working directory.
@@ -40,6 +42,18 @@ EOF
 )
 
 def pnpm(name, srcs, package, command = "build", deps = [], pnpm = Label("@pnpm//:pnpm"), node = Label("@nodejs_toolchains//:resolved_toolchain"), **kwargs):
+    """Builds a pnpm package as an archive or executable script.
+
+    Args:
+      name: Name of the generated target.
+      srcs: Source files needed by the package.
+      package: Label of the package.json file.
+      command: pnpm command to run.
+      deps: Additional package inputs.
+      pnpm: Label of the pnpm executable.
+      node: Label of the Node.js toolchain.
+      **kwargs: Additional arguments passed to the generated genrule.
+    """
     extension = ".tar"
     executable = False
     if command != "build":

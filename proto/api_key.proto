@@ -23,7 +23,9 @@ message ApiKey {
   // Capabilities associated with this API key.
   repeated capability.Capability capability = 4;
 
-  // True if this API key is visible to developers.
+  // True if this API key is visible to non-admin group members with write
+  // access.
+  // Deprecated: use visibility instead.
   bool visible_to_developers = 5;
 
   // True if this is a user owned key.
@@ -38,6 +40,9 @@ message ApiKey {
 
   // Metadata about the creation of this API key.
   CreationMetadata creation_metadata = 9;
+
+  // Who can see this API key.
+  repeated Visibility visibility = 10;
 }
 
 message CreationMetadata {
@@ -47,6 +52,17 @@ message CreationMetadata {
   // The display name of the user who created this API key. Only provided if
   // known and if the requesting user may view this information.
   string created_by = 2;
+}
+
+// Who can see an API key. Each value is a distinct bit so that a set of
+// visibilities can be stored as a bitmask, like Capability.
+enum Visibility {
+  UNKNOWN_VISIBILITY = 0;
+  // Visible to non-admin members of the owning group with write access.
+  VISIBLE_TO_DEVELOPERS = 1;  // 2^0
+  // Visible to admins of the owning group. Keys used for internal purposes on
+  // behalf of the group omit this, and are visible only to server admins.
+  VISIBLE_TO_GROUP_ADMINS = 2;  // 2^1
 }
 
 message Certificate {
@@ -74,11 +90,18 @@ message CreateApiKeyRequest {
   // Optional. Capabilities granted to this API key.
   repeated capability.Capability capability = 4;
 
-  // True if this API key should be visible to developers.
+  // True if this API key should be visible to non-admin group members with
+  // write access.
+  // Deprecated: use visibility instead.
   bool visible_to_developers = 5;
 
   // Optional. Duration after which the API key should no longer be valid.
   google.protobuf.Duration expires_in = 7;
+
+  // Optional. Who can see this API key. If empty (during migration), the key is
+  // visible to group admins, and to non-admin group members with write access
+  // if visible_to_developers is set.
+  repeated Visibility visibility = 8;
 }
 
 message CreateApiKeyResponse {
@@ -98,6 +121,10 @@ message GetApiKeysRequest {
   // The ID of the group to get API keys for.
   // ex: "GR123456789"
   string group_id = 2;
+
+  // Whether to include expired API keys in the response. The values of
+  // expired API keys are not returned.
+  bool include_expired = 4;
 }
 
 message GetApiKeysResponse {
@@ -143,8 +170,15 @@ message UpdateApiKeyRequest {
   // this update.
   repeated capability.Capability capability = 4;
 
-  // True if this API key should be visible to developers.
+  // True if this API key should be visible to non-admin group members with
+  // write access.
+  // Deprecated: use visibility instead.
   bool visible_to_developers = 5;
+
+  // Optional. Who can see this API key. If empty (during migration), the key is
+  // visible to group admins, and to non-admin group members with write access
+  // if visible_to_developers is set.
+  repeated Visibility visibility = 6;
 }
 
 message UpdateApiKeyResponse {

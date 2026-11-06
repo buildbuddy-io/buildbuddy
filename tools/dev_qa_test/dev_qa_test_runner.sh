@@ -54,7 +54,7 @@ echo "=================================================="
 
 cd "${workspace_dir}"
 
-if ! curl -L "${tarball_url}" -o repo.tar.gz; then
+if ! curl -fL --no-progress-meter --retry 5 --retry-all-errors --speed-limit 1024 --speed-time 60 "${tarball_url}" -o repo.tar.gz; then
   echo >&2 "ERROR: Failed to download tarball from ${tarball_url}"
   exit 1
 fi
@@ -114,13 +114,19 @@ build:dev_qa_test --build_metadata=TAGS=qa-integration-test
 build:dev_qa_test --test_tag_filters=-performance,-webdriver,-docker,-bare
 test:dev_qa_test --flaky_test_attempts=3
 build:dev_qa_test --nocache_test_results
-build:dev_qa_test --extra_toolchains=@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64
 build:dev_qa_test --platforms=@toolchains_buildbuddy//platforms:host_compatible
 build:dev_qa_test --extra_execution_platforms=@toolchains_buildbuddy//platforms:host_compatible
 EOF
 
+# Repos that opt out of injection register their own toolchain, and their
+# remote image may not have the gcc that this toolchain expects.
+if [[ "${INJECT_TOOLCHAIN:-true}" == "true" ]]; then
+  echo "build:dev_qa_test --extra_toolchains=@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64" >> .bazelrc
+fi
+
 if [[ -n "${api_key}" ]]; then
   echo "build:dev_qa_test --remote_header=x-buildbuddy-api-key=${api_key}" >> .bazelrc
+  echo "build:dev_qa_test --bes_header=x-buildbuddy-api-key=${api_key}" >> .bazelrc
   echo "Added API key to .bazelrc"
 else
   echo "WARNING: No API key provided (BB_API_KEY environment variable is empty)"

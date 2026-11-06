@@ -53,6 +53,11 @@ go_test(
     srcs = ["db_test.go"],
     deps = [
         ":db",
+        "//server/real_environment",
+        "//server/testutil/testfs",
+        "//server/testutil/testhealthcheck",
+        "//server/testutil/testleak",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )

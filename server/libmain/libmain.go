@@ -106,6 +106,7 @@ var (
 		"/workflows/",
 		"/executors/",
 		"/cache-proxies/",
+		"/cache-proxy/",
 		"/code/",
 		"/search/",
 		"/audit-logs/",
@@ -256,6 +257,7 @@ func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Se
 }
 
 func startGRPCServers(env *real_environment.RealEnv, config grpc_server.GRPCServerConfig) error {
+	config.EnableConnectionAging = true
 	b, err := grpc_server.New(env, grpc_server.GRPCPort(), false /*=ssl*/, config)
 	if err != nil {
 		return err
@@ -464,6 +466,9 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 	mux.Handle("/rpc/BuildBuddyService/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
 	mux.Handle("/file/download", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
 	mux.Handle("/file/view", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
+	if us := env.GetUsageService(); us != nil && us.GetExportEnabled() {
+		mux.Handle("/usage/download", interceptors.WrapAuthenticatedExternalHandler(env, us.GetUsageExportHandler()))
+	}
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
@@ -532,6 +537,7 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
 		Handler: env.GetMux(),
 	}
+	static.RegisterAutoRefreshHandler(env, server)
 
 	env.GetHTTPServerWaitGroup().Add(1)
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {

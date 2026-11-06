@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -25,6 +26,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
 )
 
@@ -35,6 +37,16 @@ type pingServer struct {
 	lastOutgoingMD metadata.MD
 }
 
+type apiServer struct {
+	apipb.UnimplementedApiServiceServer
+	runCalls int
+}
+
+func (s *apiServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunResponse, error) {
+	s.runCalls++
+	return &apipb.RunResponse{}, nil
+}
+
 func (p *pingServer) Ping(ctx context.Context, req *pspb.PingRequest) (*pspb.PingResponse, error) {
 	p.lastClientIP = clientip.Get(ctx)
 	p.lastSubdomain = subdomain.Get(ctx)
@@ -43,6 +55,37 @@ func (p *pingServer) Ping(ctx context.Context, req *pspb.PingRequest) (*pspb.Pin
 	return &pspb.PingResponse{
 		Tag: req.GetTag(),
 	}, nil
+}
+
+func TestRoleAuthInterceptor_AppliesToAPIService(t *testing.T) {
+	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+
+	member := testauth.User("member", "GR1")
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		"member": member,
+	}))
+
+	grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
+	server := &apiServer{}
+	apipb.RegisterApiServiceServer(grpcServer, server)
+	lis, err := net.Listen("tcp", listenAddr)
+	require.NoError(t, err)
+	go func() { grpcServer.Serve(lis) }()
+	t.Cleanup(grpcServer.Stop)
+
+	conn, err := grpc.Dial(listenAddr, grpc.WithInsecure())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := apipb.NewApiServiceClient(conn)
+
+	_, err = client.Run(context.Background(), &apipb.RunRequest{})
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got %v", err)
+
+	ctx := metadata.AppendToOutgoingContext(context.Background(), authutil.APIKeyHeader, "member")
+	_, err = client.Run(ctx, &apipb.RunRequest{})
+	require.NoError(t, err)
+	require.Equal(t, 1, server.runCalls)
 }
 
 func TestClientIPInterceptor_FallsBackToPeerAddress(t *testing.T) {
@@ -299,7 +342,10 @@ func TestTrustedClientIPInterceptor(t *testing.T) {
 		name string
 		// clientIdentity is sent in the client-identity header; "" sends none.
 		clientIdentity string
-		wantIP         string
+		// xff is sent as X-Forwarded-For header lines, one per element. When
+		// set, the server trusts X-Forwarded-For and picks its last entry.
+		xff    []string
+		wantIP string
 	}{
 		{
 			name:           "proxy identity may assert client IP",
@@ -321,8 +367,30 @@ func TestTrustedClientIPInterceptor(t *testing.T) {
 			clientIdentity: "",
 			wantIP:         "127.0.0.1",
 		},
+		{
+			name:           "proxy identity takes precedence over X-Forwarded-For",
+			clientIdentity: interfaces.ClientIdentityGRPCProxy,
+			xff:            []string{"9.9.9.9, 8.8.8.8"},
+			wantIP:         assertedIP,
+		},
+		{
+			name:           "app identity ignores asserted IP and uses last X-Forwarded-For entry",
+			clientIdentity: interfaces.ClientIdentityApp,
+			xff:            []string{"9.9.9.9, 8.8.8.8"},
+			wantIP:         "8.8.8.8",
+		},
+		{
+			name:           "uses last entry across multiple X-Forwarded-For lines",
+			clientIdentity: interfaces.ClientIdentityApp,
+			xff:            []string{"9.9.9.9", "8.8.8.8"},
+			wantIP:         "8.8.8.8",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if len(tc.xff) > 0 {
+				flags.Set(t, "auth.trust_xforwardedfor_header", true)
+				flags.Set(t, "auth.xforwardedfor_trusted_hops", 1)
+			}
 			listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
 			env := testenv.GetTestEnv(t)
@@ -342,6 +410,9 @@ func TestTrustedClientIPInterceptor(t *testing.T) {
 			t.Cleanup(func() { conn.Close() })
 
 			ctx := metadata.AppendToOutgoingContext(context.Background(), clientip.HeaderName, assertedIP)
+			for _, v := range tc.xff {
+				ctx = metadata.AppendToOutgoingContext(ctx, "x-forwarded-for", v)
+			}
 			if tc.clientIdentity != "" {
 				ctx = metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, tc.clientIdentity)
 			}

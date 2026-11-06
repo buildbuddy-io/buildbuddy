@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -247,42 +248,11 @@ func TestGroupIDDefaultsToAuthenticatedGroupID(t *testing.T) {
 	}
 }
 
-func TestBlendedOLAPQuery(t *testing.T) {
-	flags.Set(t, "app.blended_invocation_search_enabled", true)
-	flags.Set(t, "testenv.use_clickhouse", true)
-	bgCtx := context.Background()
-	env := testenv.GetTestEnv(t)
-	ta := setUpDB(bgCtx, env, t)
-
-	testCtx, err := ta.WithAuthenticatedUser(bgCtx, "US1")
-	require.NoError(t, err)
-
-	service := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
-
-	rsp, err := service.QueryInvocations(testCtx, &inpb.SearchInvocationRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: "GR1"},
-		Query: &inpb.InvocationQuery{
-			User: "jdhollen",
-		},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{getUUIDString(7), getUUIDString(5), getUUIDString(2), getUUIDString(1), getUUIDString(0)}, getInvocationIDSlice(rsp))
-
-	rsp, err = service.QueryInvocations(testCtx, &inpb.SearchInvocationRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: "GR1"},
-		Query: &inpb.InvocationQuery{
-			User: "sluongng",
-		},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{getUUIDString(3)}, getInvocationIDSlice(rsp))
-}
-
-func TestUnblendedOLAPQuery(t *testing.T) {
+func TestOLAPQuery(t *testing.T) {
 	flags.Set(t, "app.olap_invocation_search_enabled", true)
-	flags.Set(t, "testenv.use_clickhouse", true)
 	bgCtx := context.Background()
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	ta := setUpDB(bgCtx, env, t)
 
 	testCtx, err := ta.WithAuthenticatedUser(bgCtx, "US1")

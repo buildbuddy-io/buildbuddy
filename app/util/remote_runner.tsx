@@ -2,55 +2,25 @@ import { git } from "../../proto/git_ts_proto";
 import { github } from "../../proto/github_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { runner } from "../../proto/runner_ts_proto";
+import SETUP_CLAUDE_COMMAND from "../../tools/agents/claude/setup";
+import SETUP_CODEX_COMMAND from "../../tools/agents/codex/setup";
 import error_service from "../errors/error_service";
 import InvocationModel from "../invocation/invocation_model";
 import rpcService from "../service/rpc_service";
 
 const DEFAULT_CONTAINER_IMAGE = "docker://gcr.io/flame-public/rbe-ubuntu24-04:latest";
 
-export type RemoteRunnerAgent = "claude" | "codex";
+export const REMOTE_RUNNER_AGENTS = [
+  { id: "claude", name: "Claude", apiKeyEnvVar: "ANTHROPIC_API_KEY" },
+  { id: "codex", name: "Codex", apiKeyEnvVar: "CODEX_API_KEY" },
+] as const;
 
-const SETUP_CLAUDE_COMMAND = `
-set -euo pipefail
+export type RemoteRunnerAgent = (typeof REMOTE_RUNNER_AGENTS)[number]["id"];
+export const DEFAULT_REMOTE_RUNNER_AGENT: RemoteRunnerAgent = "codex";
 
-if [[ -z "\${ANTHROPIC_API_KEY:-}" ]]; then
-  echo "ERROR: Add ANTHROPIC_API_KEY as a BuildBuddy secret to use Claude." >&2
-  exit 1
-fi
-
-if ! command -v claude &>/dev/null; then
-  echo "==> Installing Claude..." >&2
-  curl -fsSL https://claude.ai/install.sh | bash
-  if [[ -f "$HOME/.local/bin/claude" ]]; then
-    sudo mv "$HOME/.local/bin/claude" /usr/local/bin/claude
-  fi
-  if ! command -v claude &>/dev/null; then
-    echo "Error: Claude Code installation failed." >&2
-    exit 1
-  fi
-fi
-`;
-
-const SETUP_CODEX_COMMAND = `
-set -euo pipefail
-
-if [[ -z "\${CODEX_API_KEY:-}" ]]; then
-  echo "ERROR: Add CODEX_API_KEY as a BuildBuddy secret to use Codex." >&2
-  exit 1
-fi
-
-if ! command -v codex &>/dev/null; then
-  echo "==> Installing Codex..." >&2
-  curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
-  if [[ -f "$HOME/.local/bin/codex" ]]; then
-    sudo mv "$HOME/.local/bin/codex" /usr/local/bin/codex
-  fi
-  if ! command -v codex &>/dev/null; then
-    echo "Error: Codex installation failed." >&2
-    exit 1
-  fi
-fi
-`;
+export function getRemoteRunnerAgentConfig(agent: RemoteRunnerAgent) {
+  return REMOTE_RUNNER_AGENTS.find((config) => config.id === agent)!;
+}
 
 const SETUP_AGENT_COMMANDS: Record<RemoteRunnerAgent, string> = {
   claude: SETUP_CLAUDE_COMMAND,
@@ -78,7 +48,7 @@ export function triggerRemoteRun(
     platformProps = new Map<string, string>();
   }
 
-  if (!platformProps.has("container-image")) {
+  if (!platformProps.has("container-image") && platformProps.get("OSFamily") !== "darwin") {
     platformProps.set("container-image", DEFAULT_CONTAINER_IMAGE);
   }
 
@@ -125,7 +95,7 @@ export function triggerRemoteRun(
     name: name,
   });
 
-  rpcService.service
+  return rpcService.service
     .run(request)
     .then((response: runner.RunResponse) => {
       let url = `/invocation/${response.invocationId}?queued=true`;

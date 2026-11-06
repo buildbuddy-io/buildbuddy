@@ -15,10 +15,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-github/v59/github"
 	"github.com/stretchr/testify/require"
+
+	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 )
 
 const (
@@ -35,15 +38,24 @@ var (
 )
 
 type fakeAppClient struct {
-	t                  testing.TB
-	wantInstallationID int64
-	createTokenCalls   int
+	t                            testing.TB
+	wantInstallationID           int64
+	createTokenCalls             int
+	createTokenFailures          int
+	createTokenFailureStatusCode int
 }
 
 func (c *fakeAppClient) CreateInstallationToken(_ context.Context, installationID int64, opts *github.InstallationTokenOptions) (*github.InstallationToken, *github.Response, error) {
 	c.createTokenCalls++
 	require.Equal(c.t, c.wantInstallationID, installationID)
-	return &github.InstallationToken{Token: github.String(fakeToken)}, &github.Response{
+	if c.createTokenCalls <= c.createTokenFailures {
+		if c.createTokenFailureStatusCode != 0 {
+			res := &github.Response{Response: &http.Response{StatusCode: c.createTokenFailureStatusCode}}
+			return nil, res, &github.ErrorResponse{Response: res.Response, Message: "request failed"}
+		}
+		return nil, nil, status.UnavailableError("transient error")
+	}
+	return &github.InstallationToken{Token: new(fakeToken)}, &github.Response{
 		Response: &http.Response{StatusCode: http.StatusCreated},
 	}, nil
 }
@@ -107,6 +119,40 @@ func TestGetRepositoryInstallationToken(t *testing.T) {
 	tok, err := app.GetRepositoryInstallationToken(ctx, testGroupID, testRepoURL)
 	require.NoError(t, err)
 	require.Equal(t, fakeToken, tok)
+	require.Equal(t, 1, client.createTokenCalls)
+}
+
+func TestGetRepositoryInstallationToken_RetriesTokenCreation(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertInstallation(t, te, ctx)
+	insertRepo(t, te, ctx)
+	client := &fakeAppClient{
+		t:                   t,
+		wantInstallationID:  testInstallationID,
+		createTokenFailures: 2,
+	}
+	app := newTestApp(te, client)
+
+	tok, err := app.GetRepositoryInstallationToken(ctx, testGroupID, testRepoURL)
+	require.NoError(t, err)
+	require.Equal(t, fakeToken, tok)
+	require.Equal(t, 3, client.createTokenCalls)
+}
+
+func TestGetRepositoryInstallationToken_DoesNotRetryAuthFailure(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertInstallation(t, te, ctx)
+	insertRepo(t, te, ctx)
+	client := &fakeAppClient{
+		t:                            t,
+		wantInstallationID:           testInstallationID,
+		createTokenFailures:          1,
+		createTokenFailureStatusCode: http.StatusUnauthorized,
+	}
+	app := newTestApp(te, client)
+
+	_, err := app.GetRepositoryInstallationToken(ctx, testGroupID, testRepoURL)
+	require.Error(t, err)
 	require.Equal(t, 1, client.createTokenCalls)
 }
 
@@ -182,6 +228,39 @@ func TestGetInstallationTokenForInternalUseOnly(t *testing.T) {
 		WHERE group_id = ?
 	`, testGroupID).Take(gitRepository)
 	require.Error(t, err)
+}
+
+func TestUnlinkGitHubRepo_DeletesScheduledRuns(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertRepo(t, te, ctx)
+	otherRepoURL := "https://github.com/" + testOwner + "/other-repo"
+	for _, sr := range []*tables.ScheduledRun{
+		{ScheduleID: "WFS:1", GroupID: testGroupID, RepoURL: testRepoURL, ActionName: "a", CronExpr: "0 * * * *"},
+		{ScheduleID: "WFS:2", GroupID: testGroupID, RepoURL: testRepoURL, ActionName: "b", CronExpr: "0 0 * * *"},
+		// Same group, different repo.
+		{ScheduleID: "WFS:3", GroupID: testGroupID, RepoURL: otherRepoURL, ActionName: "a", CronExpr: "0 * * * *"},
+		// Same repo URL, different group.
+		{ScheduleID: "WFS:4", GroupID: "GR2", RepoURL: testRepoURL, ActionName: "a", CronExpr: "0 * * * *"},
+	} {
+		err := te.GetDBHandle().NewQuery(ctx, "test_insert_scheduled_run").Create(sr)
+		require.NoError(t, err)
+	}
+	app := newTestApp(te, &fakeAppClient{t: t})
+
+	_, err := app.UnlinkGitHubRepo(ctx, &ghpb.UnlinkRepoRequest{RepoUrl: testRepoURL})
+	require.NoError(t, err)
+
+	// Only the scheduled runs for the unlinked repo in the user's group should
+	// be deleted.
+	remaining, err := db.ScanAll(te.GetDBHandle().NewQuery(ctx, "test_get_scheduled_runs").Raw(`
+		SELECT * FROM "ScheduledRuns"
+	`), &tables.ScheduledRun{})
+	require.NoError(t, err)
+	var remainingIDs []string
+	for _, sr := range remaining {
+		remainingIDs = append(remainingIDs, sr.ScheduleID)
+	}
+	require.ElementsMatch(t, []string{"WFS:3", "WFS:4"}, remainingIDs)
 }
 
 func TestValidateWebhookPayload(t *testing.T) {

@@ -3,6 +3,7 @@ actions:
     container_image: ubuntu-22.04
     resource_requests:
       disk: 27GB
+      memory: 16GB
     triggers:
       push:
         branches:
@@ -12,7 +13,81 @@ actions:
         branches:
           - "*"
     steps:
-      - run: "bazel test //enterprise/server/cmd/executor:executor_linux_amd64_static //... --config=linux-workflows --config=race --config=tests-ci --experimental_enable_execution_graph_log --experimental_execution_graph_log_dep_type=all --experimental_execution_graph_include_change_pruned_actions"
+      - run: "bazel test //... --config=linux-workflows --config=race --config=tests-ci --experimental_enable_execution_graph_log --experimental_execution_graph_log_dep_type=all --experimental_execution_graph_include_change_pruned_actions"
+    allow_concurrent_runs: false
+  - name: Test (linux_arm64)
+    container_image: ubuntu-22.04
+    resource_requests:
+      disk: 27GB
+    triggers:
+      push:
+        branches:
+          - "master"
+          - "bb_release_*"
+      pull_request:
+        branches:
+          - "*"
+    steps:
+      # overlayfs_test and vbd_test need mount privileges and run in the GitHub
+      # arm64 workflow.
+      - run: >-
+          bazel test --config=linux-arm64-workflows --config=race --config=tests-linux-arm64
+          --
+          //enterprise/server/remote_execution/...
+          //enterprise/server/test/integration/remote_execution/...
+          //app/util:shlex_test
+          -//enterprise/server/remote_execution/containers/firecracker/...
+          -//enterprise/server/remote_execution/overlayfs:overlayfs_test
+          -//enterprise/server/test/integration/remote_execution:remote_execution_test
+          -//enterprise/server/remote_execution/vbd:vbd_test
+    allow_concurrent_runs: false
+  - name: Build public release artifacts (linux_amd64) # with -c opt and no race detection
+    container_image: ubuntu-22.04
+    resource_requests:
+      disk: 27GB
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    # Release stamping needs version tags.
+    git_fetch_depth: 0
+    steps:
+      # Linux amd64 GitHub release binaries and flame-public images from release.py.
+      - run: >-
+          bazel build --config=release --config=linux-workflows
+          //server/cmd/buildbuddy:buildbuddy
+          //enterprise/server/cmd/server:buildbuddy
+          //enterprise/server/cmd/executor:executor
+          //enterprise/server/cmd/executor:executor_linux_amd64_static
+          //server/cmd/buildbuddy:buildbuddy_image
+          //enterprise/server/cmd/server:buildbuddy_image
+          //enterprise/server/cmd/executor:executor_image
+          //enterprise/server/cmd/cache_proxy:cache_proxy_image
+    allow_concurrent_runs: false
+  - name: Build public release artifacts (linux_arm64)
+    container_image: ubuntu-22.04
+    resource_requests:
+      disk: 27GB
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    # Release stamping needs version tags.
+    git_fetch_depth: 0
+    steps:
+      # Linux arm64 GitHub release binaries.
+      - run: >-
+          bazel build --config=release --config=linux-arm64-workflows
+          //server/cmd/buildbuddy:buildbuddy
+          //enterprise/server/cmd/server:buildbuddy
+          //enterprise/server/cmd/executor
+          //enterprise/server/cmd/executor:executor_linux_arm64_static
     allow_concurrent_runs: false
   - name: Check style
     container_image: ubuntu-22.04
@@ -86,6 +161,8 @@ actions:
     allow_concurrent_runs: false
   - name: Benchmark
     container_image: ubuntu-22.04
+    resource_requests:
+      disk: 27GB
     triggers:
       push:
         branches:
@@ -130,8 +207,8 @@ actions:
     steps:
       - run: |
           enterprise/tools/agents/setup-gh.sh
-          enterprise/tools/agents/claude/setup.sh
-          bazel run //enterprise/tools/agent_review --config=linux-workflows
+          tools/agents/claude/setup.sh
+          bb agent review --effort=high
 
 plugins:
   - path: cli/plugins/go-deps

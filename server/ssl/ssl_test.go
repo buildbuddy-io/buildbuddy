@@ -1,16 +1,28 @@
 package ssl_test
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -147,4 +159,66 @@ func TestLoadCertificateKey_EncryptedNotSupported(t *testing.T) {
 	_, err := ssl.LoadCertificateKey("", string(keyPEM))
 	require.Error(t, err)
 	require.ErrorContains(t, err, "encrypted private keys are not supported")
+}
+
+type certificateHealthChecker struct {
+	interfaces.HealthChecker
+	shutdown func(context.Context) error
+}
+
+func (h *certificateHealthChecker) RegisterShutdownFunction(f interfaces.CheckerFunc) {
+	h.shutdown = f
+}
+
+func TestFileCertificateReload(t *testing.T) {
+	dir := t.TempDir()
+	certPath, keyPath := filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key")
+	writeCertificate := func() tls.Certificate {
+		cert, key, err := ssl.GenerateCert(pkix.Name{CommonName: "localhost"}, nil, time.Hour)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(certPath, []byte(cert), 0600))
+		require.NoError(t, os.WriteFile(keyPath, []byte(key), 0600))
+		pair, err := tls.X509KeyPair([]byte(cert), []byte(key))
+		require.NoError(t, err)
+		return pair
+	}
+	first := writeCertificate()
+	flags.Set(t, "ssl.enable_ssl", true)
+	flags.Set(t, "ssl.cert_file", certPath)
+	flags.Set(t, "ssl.key_file", keyPath)
+	flags.Set(t, "ssl.cert_reload_interval", 10*time.Second)
+	hc := &certificateHealthChecker{}
+	env := real_environment.NewRealEnv(hc)
+	clock := clockwork.NewFakeClock()
+	env.SetClock(clock)
+	service, err := ssl.NewSSLService(env)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, hc.shutdown(context.Background())) })
+	config, _ := service.ConfigureTLS(nil)
+	get := func() *tls.Certificate {
+		cert, err := config.GetCertificate(&tls.ClientHelloInfo{})
+		require.NoError(t, err)
+		return cert
+	}
+	original := get()
+	require.Equal(t, first.Certificate, original.Certificate)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, clock.BlockUntilContext(ctx, 1))
+	failures := testutil.ToFloat64(metrics.SSLCertificateReloadFailures)
+	require.NoError(t, os.WriteFile(keyPath, []byte("invalid key"), 0600))
+	clock.Advance(10 * time.Second)
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(metrics.SSLCertificateReloadFailures) == failures+1
+	}, time.Second, time.Millisecond)
+	require.Equal(t, first.Certificate, get().Certificate, "failed reload preserves the previous certificate")
+	second := writeCertificate()
+	require.Equal(t, first.Certificate, get().Certificate)
+	clock.Advance(10 * time.Second)
+	require.Eventually(t, func() bool {
+		cert, err := config.GetCertificate(&tls.ClientHelloInfo{})
+		return err == nil && cert != nil && len(cert.Certificate) > 0 && string(cert.Certificate[0]) == string(second.Certificate[0])
+	}, time.Second, time.Millisecond)
+	require.Equal(t, second.Certificate, get().Certificate)
+	require.Equal(t, first.Certificate, original.Certificate, "previously returned certificates remain unchanged")
 }

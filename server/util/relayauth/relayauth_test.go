@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"maps"
 	"math/big"
 	"strings"
 	"testing"
@@ -422,7 +423,7 @@ func TestSignerRejectsIncompleteArguments(t *testing.T) {
 // certDER in x5c when non-nil.
 func headerSegment(t *testing.T, alg string, certDER []byte) string {
 	t.Helper()
-	h := map[string]interface{}{"alg": alg, "typ": credentialType}
+	h := map[string]any{"alg": alg, "typ": credentialType}
 	if certDER != nil {
 		h["x5c"] = []string{base64.StdEncoding.EncodeToString(certDER)}
 	}
@@ -450,21 +451,17 @@ func TestHostileHeadersAreRejected(t *testing.T) {
 	key, err := parsePrivateKey(keyBlock.Bytes)
 	require.NoError(t, err)
 
-	withHeader := func(alg string, extra map[string]interface{}) string {
+	withHeader := func(alg string, extra map[string]any) string {
 		t.Helper()
 		token := jwt.NewWithClaims(jwt.GetSigningMethod(alg), &claims{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Audience:  jwt.ClaimStrings{testAudience},
-				ExpiresAt: jwt.NewNumericDate(time.Now().Add(DefaultAssertionLifetime)),
-			},
+			Audience:           jwt.ClaimStrings{testAudience},
+			ExpiresAt:          jwt.NewNumericDate(time.Now().Add(DefaultAssertionLifetime)),
 			WireGuardPublicKey: testWGKey,
 		})
 		token.Header["typ"] = credentialType
 		token.Header["x5c"] = []string{base64.StdEncoding.EncodeToString(certBlock.Bytes)}
-		for k, v := range extra {
-			token.Header[k] = v
-		}
-		var signingKey interface{} = key
+		maps.Copy(token.Header, extra)
+		var signingKey any = key
 		switch alg {
 		case "none":
 			signingKey = jwt.UnsafeAllowNoneSignatureType
@@ -488,10 +485,8 @@ func TestHostileHeadersAreRejected(t *testing.T) {
 		p384, err := parsePrivateKey(kb.Bytes)
 		require.NoError(t, err)
 		token := jwt.NewWithClaims(jwt.SigningMethodES384, &claims{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Audience:  jwt.ClaimStrings{testAudience},
-				ExpiresAt: jwt.NewNumericDate(time.Now().Add(DefaultAssertionLifetime)),
-			},
+			Audience:           jwt.ClaimStrings{testAudience},
+			ExpiresAt:          jwt.NewNumericDate(time.Now().Add(DefaultAssertionLifetime)),
 			WireGuardPublicKey: testWGKey,
 		})
 		token.Header["typ"] = credentialType
@@ -528,7 +523,7 @@ func TestHostileHeadersAreRejected(t *testing.T) {
 			want: "exactly one",
 		},
 		"wrong type": {
-			cred: withHeader("ES256", map[string]interface{}{"typ": "JWT"}),
+			cred: withHeader("ES256", map[string]any{"typ": "JWT"}),
 			want: "type",
 		},
 		// A jwk/jku header naming the attacker's key must be ignored in
@@ -556,7 +551,7 @@ func headerWithX5C(t *testing.T, certs ...[]byte) string {
 	for _, c := range certs {
 		x5c = append(x5c, base64.StdEncoding.EncodeToString(c))
 	}
-	b, err := json.Marshal(map[string]interface{}{"alg": "ES256", "typ": credentialType, "x5c": x5c})
+	b, err := json.Marshal(map[string]any{"alg": "ES256", "typ": credentialType, "x5c": x5c})
 	require.NoError(t, err)
 	return base64.RawURLEncoding.EncodeToString(b)
 }

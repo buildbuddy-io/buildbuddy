@@ -24,18 +24,19 @@ var (
 
 var (
 	SchemeRegexp                         = regexp.MustCompile(`^(([a-z0-9+.-]+:)?/)?/`)
-	MissingSlashBetweenPortAndPathRegexp = regexp.MustCompile(`^(([a-z0-9+.-]+:)?//([0-9a-zA-Z%._~-]+(:[0-9a-zA-Z%._~-]*)?@)?[0-9a-zA-Z%._~-]+:[0-9]*[^0-9/@])[^@]*$`)
+	MissingSlashBetweenPortAndPathRegexp = regexp.MustCompile(`^(([a-z0-9+.-]+:)?//([0-9a-zA-Z%._~-]+(:[0-9a-zA-Z%._~-]*)?@)?[0-9a-zA-Z%._~-]+:)[0-9]*[^0-9/@][^@]*$`)
 )
 
 // AuthRepoURL returns a Git repo URL with the given credentials set. The
-// returned URL can be used as a git remote.
+// returned URL can be used as a git remote. If token is empty, repoURL is
+// returned unchanged.
 //
 // The returned URL accounts for various Git provider quirks, so that if all
 // necessary credentials are provided, the returned URL will allow accessing
 // the repo. Note that if the credentials are invalid, this function does not
 // return an error (other parts of the system are responsible for that).
 func AuthRepoURL(repoURL, user, token string) (string, error) {
-	if user == "" && token == "" {
+	if token == "" {
 		return repoURL, nil
 	}
 	u, err := ParseRepoURL(repoURL)
@@ -118,7 +119,7 @@ func ParseRepoURL(repo string) (*url.URL, error) {
 	}
 	if matches := MissingSlashBetweenPortAndPathRegexp.FindStringSubmatchIndex(repo); matches != nil {
 		// convert e.g. //user@host:path/to/repo -> //user@host:/path/to/repo
-		repo = repo[:matches[3]-1] + "/" + repo[matches[3]-1:]
+		repo = repo[:matches[3]] + "/" + repo[matches[3]:]
 	}
 
 	repoURL, err := url.Parse(repo)

@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -33,6 +34,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -53,6 +55,15 @@ const (
 const (
 	// Maximum number of entries in API Key -> Group cache.
 	apiKeyGroupCacheSize = 10_000
+
+	// If the auth.cache_invalid_api_keys experiment is enabled, API keys that
+	// were not found are cached as invalid so that clients repeatedly sending
+	// an invalid key don't query the database. The TTL bounds how long a newly
+	// created key can be rejected if its first lookup hit a read replica that
+	// didn't have it yet. Misses aren't re-checked on the primary, so that
+	// invalid keys never add load there.
+	invalidAPIKeyCacheSize = 10_000
+	invalidAPIKeyCacheTTL  = 10 * time.Second
 )
 
 var (
@@ -62,6 +73,8 @@ var (
 	apiKeyEncryptionKey       = flag.String("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.", flag.Secret)
 	encryptNewKeys            = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
 	encryptOldKeys            = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
+
+	cacheInvalidAPIKeys = expflag.Bool("auth.cache_invalid_api_keys", false, "If true, briefly cache API keys that were not found so that repeated requests with an invalid key don't query the database. Only takes effect if auth.api_key_group_cache_ttl > 0.")
 )
 
 // newAPIKeyGroupCache creates a cache for API Key -> Group lookups. A single
@@ -82,13 +95,28 @@ func newAPIKeyGroupCache(clock clockwork.Clock) (lru.LRU[interfaces.APIKeyGroup]
 	return cache, nil
 }
 
+func newInvalidAPIKeyCache(clock clockwork.Clock) (lru.LRU[struct{}], error) {
+	cache, err := lru.New[struct{}](&lru.Config[struct{}]{
+		MaxSize:    invalidAPIKeyCacheSize,
+		SizeFn:     func(struct{}) int64 { return 1 },
+		TTL:        invalidAPIKeyCacheTTL,
+		ThreadSafe: true,
+		Clock:      clock,
+	})
+	if err != nil {
+		return nil, status.InternalErrorf("error initializing invalid API key cache: %v", err)
+	}
+	return cache, nil
+}
+
 type AuthDB struct {
 	env   environment.Env
 	h     interfaces.DBHandle
 	clock clockwork.Clock
 
-	apiKeyGroupCache lru.LRU[interfaces.APIKeyGroup]
-	apiKeyFetchGroup singleflight.Group[string, *apiKeyGroup]
+	apiKeyGroupCache   lru.LRU[interfaces.APIKeyGroup]
+	apiKeyFetchGroup   singleflight.Group[string, *apiKeyGroup]
+	invalidAPIKeyCache lru.LRU[struct{}]
 
 	// Nil if API key encryption is not enabled.
 	apiKeyEncryptionKey []byte
@@ -106,6 +134,11 @@ func NewAuthDB(env environment.Env, h interfaces.DBHandle) (interfaces.AuthDB, e
 			return nil, err
 		}
 		adb.apiKeyGroupCache = akgCache
+		invalidCache, err := newInvalidAPIKeyCache(adb.clock)
+		if err != nil {
+			return nil, err
+		}
+		adb.invalidAPIKeyCache = invalidCache
 	}
 	if *apiKeyEncryptionKey != "" {
 		key, err := base64.StdEncoding.DecodeString(*apiKeyEncryptionKey)
@@ -380,6 +413,10 @@ func (d *AuthDB) fillDecryptedAPIKey(ak *tables.APIKey) error {
 }
 
 func (d *AuthDB) populateAPIKeyValueForReadback(ak *tables.APIKey) error {
+	if ak.ExpiryUsec != 0 && ak.ExpiryUsec <= d.clock.Now().UnixMicro() {
+		ak.Value = ""
+		return nil
+	}
 	if !apiKeyValueReadbackEnabled() {
 		// If readback is disabled and decryption happens to be disabled, then
 		// [ak.Value] will already be set here - clear it.
@@ -395,6 +432,11 @@ func (d *AuthDB) populateAPIKeyValueForReadback(ak *tables.APIKey) error {
 
 func apiKeyValueReadbackEnabled() bool {
 	return *apiKeyValueReadbackConfig
+}
+
+func hasWriteCapability(caps []cappb.Capability) bool {
+	return slices.Contains(caps, cappb.Capability_CACHE_WRITE) ||
+		slices.Contains(caps, cappb.Capability_CAS_WRITE)
 }
 
 func (d *AuthDB) fillChildGroupIDs(ctx context.Context, akg *apiKeyGroup) error {
@@ -436,10 +478,13 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	}
 
 	if d.apiKeyGroupCache != nil {
-		d, ok := d.apiKeyGroupCache.Get(cacheKey)
-		if ok {
+		if akg, ok := d.apiKeyGroupCache.Get(cacheKey); ok {
 			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_hit"}).Inc()
-			return d, nil
+			return akg, nil
+		}
+		if d.invalidAPIKeyCache.Contains(cacheKey) {
+			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key_cache_hit"}).Inc()
+			return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 		}
 	}
 
@@ -449,6 +494,9 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 			if db.IsRecordNotFound(err) {
 				if d.apiKeyGroupCache != nil {
 					metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
+					if cacheInvalidAPIKeys.Get(ctx) {
+						d.invalidAPIKeyCache.Add(cacheKey, struct{}{})
+					}
 				}
 				return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 			}
@@ -489,7 +537,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 }
 
 func (d *AuthDB) lookupAPIKeyGroup(ctx context.Context, queryName, subDomain string, addConds func(*query_builder.Query) error) (*apiKeyGroup, error) {
-	row, err := d.fetchAPIKey(ctx, queryName, subDomain, db.Opts().WithStaleReads(), addConds)
+	row, err := d.fetchAPIKey(ctx, queryName, subDomain, db.Opts().WithStaleReads(), false /*=includeExpired*/, addConds)
 	if err != nil {
 		return nil, err
 	}
@@ -531,8 +579,8 @@ func (d *AuthDB) lookupAPIKeyGroupByID(ctx context.Context, subDomain string, ap
 // owning group.
 // The caller must use the addConds func to add restrictions to limit the
 // matching API keys to a single API key (i.e. by API key value or ID).
-func (d *AuthDB) fetchAPIKey(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, addConds func(*query_builder.Query) error) (*apiKeyGroupRow, error) {
-	rows, err := d.fetchAPIKeys(ctx, queryName, subDomain, dbOpts, addConds)
+func (d *AuthDB) fetchAPIKey(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, includeExpired bool, addConds func(*query_builder.Query) error) (*apiKeyGroupRow, error) {
+	rows, err := d.fetchAPIKeys(ctx, queryName, subDomain, dbOpts, includeExpired, addConds)
 	if err != nil {
 		return nil, err
 	}
@@ -550,8 +598,8 @@ func (d *AuthDB) fetchAPIKey(ctx context.Context, queryName, subDomain string, d
 // owning group.
 // The caller must use the addConds func to add restrictions to limit the
 // matching API keys to a single group or to a single API key.
-func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, addConds func(*query_builder.Query) error) ([]*apiKeyGroupRow, error) {
-	qb := d.newAPIKeyLookupQuery(subDomain)
+func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, dbOpts interfaces.DBOptions, includeExpired bool, addConds func(*query_builder.Query) error) ([]*apiKeyGroupRow, error) {
+	qb := d.newAPIKeyLookupQuery(subDomain, includeExpired)
 	if err := addConds(qb); err != nil {
 		return nil, err
 	}
@@ -632,7 +680,7 @@ func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, 
 	return out, nil
 }
 
-func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
+func (d *AuthDB) newAPIKeyLookupQuery(subDomain string, includeExpired bool) *query_builder.Query {
 	memberStatus := int32(grpb.GroupMembershipStatus_MEMBER)
 	// This query may return multiple rows per API key for user API keys
 	// when a user has multiple indirect memberships through user lists.
@@ -669,7 +717,9 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
 	}
 
 	qb := query_builder.NewQuery(baseQuery)
-	qb.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, d.clock.Now().UnixMicro())
+	if !includeExpired {
+		qb.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, d.clock.Now().UnixMicro())
+	}
 
 	if subDomain != "" {
 		qb.AddWhereClause("url_identifier = ?", subDomain)
@@ -754,6 +804,7 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 	if u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
 		ak.CreatedByUserID = u.GetUserID()
 	}
+	ak.Visibility = apiKeyVisibility(ak.VisibleToDevelopers, ak.Impersonation)
 
 	err = db.NewQuery(ctx, "authdb_create_api_key").Raw(`
 		INSERT INTO "APIKeys" (
@@ -767,12 +818,13 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 			nonce,
 			label,
 			visible_to_developers,
+			visibility,
 			impersonation,
 			expiry_usec,
 			created_at_usec,
 			updated_at_usec,
 			created_by_user_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		pk,
 		ak.UserID,
 		ak.GroupID,
@@ -783,6 +835,7 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 		nonce,
 		ak.Label,
 		ak.VisibleToDevelopers,
+		ak.Visibility,
 		ak.Impersonation,
 		ak.ExpiryUsec,
 		ak.CreatedAtUsec,
@@ -795,6 +848,16 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 	ak.APIKeyID = pk
 	ak.Value = key
 	return &ak, nil
+}
+
+func apiKeyVisibility(visibleToDevelopers, impersonation bool) int32 {
+	if impersonation {
+		return int32(akpb.Visibility_UNKNOWN_VISIBILITY)
+	}
+	if visibleToDevelopers {
+		return int32(akpb.Visibility_VISIBLE_TO_GROUP_ADMINS | akpb.Visibility_VISIBLE_TO_DEVELOPERS)
+	}
+	return int32(akpb.Visibility_VISIBLE_TO_GROUP_ADMINS)
 }
 
 func newAPIKeyToken() (string, error) {
@@ -988,11 +1051,11 @@ func (d *AuthDB) isGroupMember(ctx context.Context, groupID, userID string) (boo
 	return false, nil
 }
 
-func (d *AuthDB) getAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error) {
+func (d *AuthDB) getAPIKey(ctx context.Context, apiKeyID string, includeExpired bool) (*tables.APIKey, error) {
 	if apiKeyID == "" {
 		return nil, status.InvalidArgumentError("API key ID cannot be empty.")
 	}
-	row, err := d.fetchAPIKey(ctx, "authdb_get_api_key_by_id", "", db.Opts(), func(qb *query_builder.Query) error {
+	row, err := d.fetchAPIKey(ctx, "authdb_get_api_key_by_id", "", db.Opts(), includeExpired, func(qb *query_builder.Query) error {
 		qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
 		return nil
 	})
@@ -1011,7 +1074,7 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 		return nil, err
 	}
 
-	key, err := d.getAPIKey(ctx, apiKeyID)
+	key, err := d.getAPIKey(ctx, apiKeyID, true /*=includeExpired*/)
 	if err != nil {
 		return nil, err
 	}
@@ -1024,7 +1087,14 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	if err != nil {
 		return nil, status.WrapError(err, "get capabilities")
 	}
-	if !slices.Contains(caps, cappb.Capability_ORG_ADMIN) {
+	isAdmin := slices.Contains(caps, cappb.Capability_ORG_ADMIN)
+	isGroupOwnedKey := key.UserID == ""
+	isOwnKey := user.GetAPIKeyInfo().ID == key.APIKeyID
+	canUseGroupKey := key.VisibleToDevelopers && hasWriteCapability(caps)
+	if !isAdmin && isGroupOwnedKey && !isOwnKey && !canUseGroupKey {
+		return nil, status.PermissionDeniedError("You do not have permission to access this API key.")
+	}
+	if !isAdmin {
 		acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
 		if err := perms.AuthorizeRead(user, acl); err != nil {
 			return nil, err
@@ -1037,15 +1107,54 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	return key, nil
 }
 
-// GetAPIKeyForInternalUseOnly returns any API key for the group, with
-// preference for keys with greater cache capabilities. It is only to be used in
-// situations where the user has a pre-authorized grant to access resources on
-// behalf of the org, such as a publicly shared invocation. The returned API key
-// must only be used to access internal resources and must not be returned to
-// the caller.
+// GetAPIKeyForInternalUseOnly returns an API key for the group.
+//
+// If the caller authenticated with an API key, it returns that key, so that
+// work done on the caller's behalf is limited to that key's capabilities and
+// is attributed to its owner. If that key is owned by a different group, it
+// returns PermissionDenied.
+//
+// Callers authenticated with a web UI session or an impersonation key, and
+// unauthenticated callers, instead get the group-level API key with the
+// greatest cache capabilities, regardless of the caller's own permissions.
+// Impersonation keys are never returned, because callers pass the returned key
+// to runners that execute the group's code, and the server treats
+// impersonation keys as server admin credentials.
+//
+// It is only to be used in situations where the user has a pre-authorized
+// grant to access resources on behalf of the org. The returned API key must
+// only be used to access internal resources and must not be returned to the
+// caller.
 func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
+	}
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		if !authutil.IsAnonymousUserError(err) {
+			return nil, err
+		}
+	} else if apiKeyInfo := u.GetAPIKeyInfo(); apiKeyInfo.ID != "" && !u.IsImpersonating() {
+		// A parent org's API key can act on its child groups. We return an
+		// error instead of falling back to a key owned by the child group,
+		// because that key may have capabilities that the caller's key does
+		// not.
+		if apiKeyInfo.OwnerGroupID != groupID {
+			return nil, status.PermissionDeniedErrorf("API key is not owned by group %q", groupID)
+		}
+		// We look up the key by the ID in the auth claims instead of reading
+		// the x-buildbuddy-api-key header, because HTTP API requests, client
+		// certificates, and keys embedded in the gRPC authority authenticate
+		// without putting that header in the ctx. In those cases, the claims
+		// are the only record of which key was used.
+		key, err := d.getAPIKey(ctx, apiKeyInfo.ID, false /*=includeExpired*/)
+		if err != nil {
+			return nil, err
+		}
+		if err := d.fillDecryptedAPIKey(key); err != nil {
+			return nil, err
+		}
+		return key, nil
 	}
 	key := &tables.APIKey{}
 	rq := d.h.NewQuery(ctx, "authdb_get_api_key_for_group").Raw(`
@@ -1080,25 +1189,25 @@ func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string
 
 // GetAPIKeys returns group-level API keys that the user is authorized to
 // access.
-func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error) {
+func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string, includeExpired bool) ([]*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env.GetAuthenticator(), groupID)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "get capabilities")
 	}
-	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
-		return nil, err
+	isAdmin := slices.Contains(caps, cappb.Capability_ORG_ADMIN)
+	if !isAdmin && !hasWriteCapability(caps) {
+		return nil, nil
 	}
-	rows, err := d.fetchAPIKeys(ctx, "authdb_get_api_keys", "", db.Opts(), func(qb *query_builder.Query) error {
+	rows, err := d.fetchAPIKeys(ctx, "authdb_get_api_keys", "", db.Opts(), includeExpired, func(qb *query_builder.Query) error {
 		// Select group-owned keys only.
 		qb.AddWhereClause(`ak.user_id IS NULL OR ak.user_id = ''`)
 		qb.AddWhereClause(`ak.group_id = ?`, groupID)
-		if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
-			// If we're not an admin, restrict to keys that have only been made
-			// visible to non-admins. Note: the visible_to_developers field means "visible to
-			// non-admins" now that we have reader/writer roles.
+		if !isAdmin {
+			// If we're not an admin, restrict to keys that have been made visible
+			// to non-admin group members with write access.
 			qb.AddWhereClause("ak.visible_to_developers = ?", true)
 		}
 		qb.AddWhereClause(`ak.impersonation = false`)
@@ -1108,6 +1217,10 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	if err != nil {
 		return nil, err
 	}
+	return d.toListedAPIKeys(rows)
+}
+
+func (d *AuthDB) toListedAPIKeys(rows []*apiKeyGroupRow) ([]*tables.APIKey, error) {
 	keys := make([]*tables.APIKey, 0, len(rows))
 	for _, row := range rows {
 		k := row.toAPIKey()
@@ -1119,7 +1232,7 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	return keys, nil
 }
 
-func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiKeyID string) (*tables.APIKey, error) {
+func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiKeyID string, includeExpired bool) (*tables.APIKey, error) {
 	if apiKeyID == "" {
 		return nil, status.InvalidArgumentError("API key ID is required")
 	}
@@ -1127,7 +1240,7 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiK
 	if err != nil {
 		return nil, err
 	}
-	key, err := d.getAPIKey(ctx, apiKeyID)
+	key, err := d.getAPIKey(ctx, apiKeyID, includeExpired)
 	if err != nil {
 		return nil, err
 	}
@@ -1159,7 +1272,7 @@ func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 	if key == nil {
 		return status.InvalidArgumentError("API key cannot be nil.")
 	}
-	existingKey, err := d.authorizeAPIKeyWrite(ctx, d.h, key.APIKeyID)
+	existingKey, err := d.authorizeAPIKeyWrite(ctx, d.h, key.APIKeyID, false /*=includeExpired*/)
 	if err != nil {
 		return err
 	}
@@ -1176,26 +1289,28 @@ func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 		SET
 			label = ?,
 			capabilities = ?,
-			visible_to_developers = ?
+			visible_to_developers = ?,
+			visibility = ?
 		WHERE
 			api_key_id = ?`,
 		key.Label,
 		key.Capabilities,
 		key.VisibleToDevelopers,
+		apiKeyVisibility(key.VisibleToDevelopers, existingKey.Impersonation),
 		key.APIKeyID,
 	).Exec().Error
 }
 
 func (d *AuthDB) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
 	// TODO (zoey): could make this one query
-	if _, err := d.authorizeAPIKeyWrite(ctx, d.h, apiKeyID); err != nil {
+	if _, err := d.authorizeAPIKeyWrite(ctx, d.h, apiKeyID, true /*=includeExpired*/); err != nil {
 		return err
 	}
 	return d.h.NewQuery(ctx, "authdb_delete_api_key").Raw(
 		`DELETE FROM "APIKeys" WHERE api_key_id = ?`, apiKeyID).Exec().Error
 }
 
-func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]*tables.APIKey, error) {
+func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string, includeExpired bool) ([]*tables.APIKey, error) {
 	if !*userOwnedKeysEnabled {
 		return nil, status.UnimplementedError("not implemented")
 	}
@@ -1246,7 +1361,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]
 		return nil, status.PermissionDeniedError("user-owned keys are not enabled for this group")
 	}
 
-	rows, err := d.fetchAPIKeys(ctx, "authdb_get_user_api_keys", "" /*=subDomain*/, db.Opts(), func(qb *query_builder.Query) error {
+	rows, err := d.fetchAPIKeys(ctx, "authdb_get_user_api_keys", "" /*=subDomain*/, db.Opts(), includeExpired, func(qb *query_builder.Query) error {
 		qb.AddWhereClause(`ak.user_id = ?`, userID)
 		qb.AddWhereClause(`ak.group_id = ?`, groupID)
 		qb.AddWhereClause(`ak.impersonation = false`)
@@ -1256,15 +1371,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]
 	if err != nil {
 		return nil, err
 	}
-	keys := make([]*tables.APIKey, 0, len(rows))
-	for _, row := range rows {
-		k := row.toAPIKey()
-		if err := d.populateAPIKeyValueForReadback(k); err != nil {
-			return nil, err
-		}
-		keys = append(keys, k)
-	}
-	return keys, nil
+	return d.toListedAPIKeys(rows)
 }
 
 func (d *AuthDB) GetUserOwnedKeysEnabled() bool {

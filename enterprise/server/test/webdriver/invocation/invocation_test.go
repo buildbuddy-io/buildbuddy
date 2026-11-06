@@ -19,8 +19,8 @@ import (
 )
 
 func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
-	wt := webtester.New(t)
 	target := buildbuddy_enterprise.SetupWebTarget(t)
+	wt := webtester.New(t)
 
 	workspacePath := testbazel.MakeTempModule(t, map[string]string{
 		"BUILD": `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
@@ -60,6 +60,7 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	noRemoteCacheBuildArgs := append(buildArgs, "--noremote_accept_cached")
 	testbazel.Clean(context.Background(), t, workspacePath)
 	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", noRemoteCacheBuildArgs...)
+	require.NoError(t, result.Error, "inner bazel build failed; stderr:\n%s", result.Stderr)
 	require.NotEmpty(t, result.InvocationID)
 
 	// Make sure we can view the invocation while logged in
@@ -82,6 +83,7 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	// Second build of the same target
 	testbazel.Clean(context.Background(), t, workspacePath)
 	result = testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
+	require.NoError(t, result.Error, "inner bazel build failed; stderr:\n%s", result.Stderr)
 	require.NotEmpty(t, result.InvocationID)
 
 	wt.Get(target.HTTPURL() + "/invocation/" + result.InvocationID)
@@ -133,8 +135,8 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 }
 
 func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
-	wt := webtester.New(t)
 	target := buildbuddy_enterprise.SetupWebTarget(t)
+	wt := webtester.New(t)
 
 	workspacePath := testbazel.MakeTempModule(t, map[string]string{
 		"BUILD": `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
@@ -173,7 +175,7 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 	}
 	wt.Find(`.api-key-value-hide`).Click()
 	apiKey := ""
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		apiKey = wt.Find(".api-key-value").Text()
 		if !strings.Contains(apiKey, "••••") {
 			break
@@ -196,6 +198,7 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 	buildArgs = append(buildArgs, fmt.Sprintf("--remote_instance_name=%d", rand.Int63()))
 	testbazel.Clean(context.Background(), t, workspacePath)
 	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
+	require.NoError(t, result.Error, "inner bazel build failed; stderr:\n%s", result.Stderr)
 	require.NotEmpty(t, result.InvocationID)
 
 	// Make sure we can view the invocation while logged in
@@ -234,13 +237,13 @@ func TestInvocationWithRemoteExecution(t *testing.T) {
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 
 	ctx := context.Background()
-	wt := webtester.New(t)
 	target := buildbuddy_enterprise.SetupWebTarget(
 		t,
 		"--remote_execution.enable_remote_exec=true",
 	)
 	// Register an executor so that we can test RBE end-to-end.
 	_ = testexecutor.Run(t, "--executor.app_target="+target.GRPCAddress())
+	wt := webtester.New(t)
 
 	workspacePath := testbazel.MakeTempModule(t, map[string]string{
 		"BUILD": `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
@@ -264,6 +267,7 @@ func TestInvocationWithRemoteExecution(t *testing.T) {
 	buildArgs = append(buildArgs, buildbuddyBuildFlags...)
 
 	result := testbazel.Invoke(ctx, t, workspacePath, "build", buildArgs...)
+	require.NoError(t, result.Error, "inner bazel build failed; stderr:\n%s", result.Stderr)
 	require.NotEmpty(t, result.InvocationID)
 
 	wt.Get(target.HTTPURL() + "/invocation/" + result.InvocationID)

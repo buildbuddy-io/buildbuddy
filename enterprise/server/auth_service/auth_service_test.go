@@ -74,7 +74,7 @@ func TestAuthenticate_ES256SigningMethod(t *testing.T) {
 	require.Len(t, keysResp.PublicKeys, 1)
 	es256PublicKey, err := jwt.ParseECPublicKeyFromPEM([]byte(keysResp.PublicKeys[0].GetKey()))
 	require.NoError(t, err)
-	token, err := jwt.Parse(authResp.GetJwt(), func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(authResp.GetJwt(), func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodECDSA); !ok {
 			t.Fatalf("unexpected signing method: %v", token.Header["alg"])
 		}

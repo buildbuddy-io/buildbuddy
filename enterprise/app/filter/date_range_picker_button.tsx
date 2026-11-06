@@ -10,6 +10,11 @@ import { formatDateParam, formatDateRangeFromUrlParams, getDateRangeForPicker } 
 export interface DateRangePickerButtonProps {
   /** URL params holding the current date range selection. */
   search: URLSearchParams;
+  /**
+   * Names of the params holding the selection, defaulting to the global
+   * filter's. With custom names, "last N days" presets are stored as dates.
+   */
+  paramNames?: { start: string; end: string };
 }
 
 interface State {
@@ -24,6 +29,15 @@ export default class DateRangePickerButton extends React.Component<DateRangePick
   state: State = { isOpen: false };
 
   private onChange(range: Range) {
+    const { paramNames } = this.props;
+    if (paramNames) {
+      router.setQuery({
+        ...Object.fromEntries(this.props.search.entries()),
+        [paramNames.start]: formatDateParam(range.startDate ?? new Date()),
+        [paramNames.end]: formatDateParam(range.endDate ?? new Date()),
+      });
+      return;
+    }
     if (range.lastNDays) {
       router.setQuery({
         ...Object.fromEntries(this.props.search.entries()),
@@ -41,13 +55,24 @@ export default class DateRangePickerButton extends React.Component<DateRangePick
     });
   }
 
+  /** The selection under the global filter's param names, which the date helpers read. */
+  private globalFilterParams(): URLSearchParams {
+    const { search, paramNames } = this.props;
+    if (!paramNames) return search;
+    const selection = new URLSearchParams();
+    selection.set(START_DATE_PARAM_NAME, search.get(paramNames.start) ?? "");
+    selection.set(END_DATE_PARAM_NAME, search.get(paramNames.end) ?? "");
+    return selection;
+  }
+
   render() {
-    const { startDate, endDate } = getDateRangeForPicker(this.props.search);
+    const selection = this.globalFilterParams();
+    const { startDate, endDate } = getDateRangeForPicker(selection);
     return (
       <div className="popup-wrapper">
         <OutlinedButton onClick={() => this.setState({ isOpen: true })}>
           <Calendar className="icon" />
-          <span>{formatDateRangeFromUrlParams(this.props.search)}</span>
+          <span>{formatDateRangeFromUrlParams(selection)}</span>
         </OutlinedButton>
         <Popup isOpen={this.state.isOpen} onRequestClose={() => this.setState({ isOpen: false })}>
           <DateRangePicker

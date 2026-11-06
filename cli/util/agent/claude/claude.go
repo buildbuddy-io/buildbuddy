@@ -1,48 +1,39 @@
 package claude
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 
+	"github.com/armon/circbuf"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/agent/agentutil"
 )
 
-type response struct {
-	Result    string `json:"result"`
-	SessionID string `json:"session_id"`
-}
-
-func Run(ctx context.Context, request *agentutil.RunRequest) (*agentutil.RunResponse, error) {
+func Run(ctx context.Context, request *agentutil.RunRequest) error {
 	if _, err := exec.LookPath("claude"); err != nil {
-		return nil, fmt.Errorf("claude is not installed or not in PATH")
+		return fmt.Errorf("claude is not installed or not in PATH")
 	}
 
 	args := commandArgs(request)
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Stdin = strings.NewReader(request.Prompt)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		errMsg := "claude failed"
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			errMsg += ": " + msg
-		}
-		if msg := strings.TrimSpace(stdout.String()); msg != "" {
-			errMsg += ": " + msg
-		}
-		return nil, fmt.Errorf("%s: %w", errMsg, err)
+	cmd.Stdout = request.OutputWriter()
+	stderr, err := circbuf.NewBuffer(agentutil.StderrTailBytes)
+	if err != nil {
+		return fmt.Errorf("create stderr buffer: %w", err)
 	}
-	return parseResponse(stdout.Bytes())
+	cmd.Stderr = io.MultiWriter(request.ProgressWriter(), stderr)
+	if err := cmd.Run(); err != nil {
+		return agentutil.FormatCommandError("claude", err, stderr)
+	}
+	return nil
 }
 
 func commandArgs(request *agentutil.RunRequest) []string {
 	// Run in dontAsk mode so unapproved tool calls are denied rather than prompting.
-	args := []string{"--print", "--permission-mode", "dontAsk", "--output-format", "json"}
+	args := []string{"--print", "--permission-mode", "dontAsk"}
 	if request.Model != "" {
 		args = append(args, "--model", request.Model)
 	}
@@ -54,22 +45,4 @@ func commandArgs(request *agentutil.RunRequest) []string {
 		args = append(args, request.ClaudeAllowedTools...)
 	}
 	return args
-}
-
-func parseResponse(output []byte) (*agentutil.RunResponse, error) {
-	claudeResponse := &response{}
-	if err := json.Unmarshal(output, claudeResponse); err != nil {
-		return nil, fmt.Errorf("parse claude response: %w", err)
-	}
-	if claudeResponse.SessionID == "" {
-		return nil, fmt.Errorf("parse claude response: session ID is missing")
-	}
-	if strings.TrimSpace(claudeResponse.Result) == "" {
-		return nil, fmt.Errorf("parse claude response: result is empty")
-	}
-	return &agentutil.RunResponse{
-		Output:        claudeResponse.Result,
-		SessionID:     claudeResponse.SessionID,
-		ResumeCommand: fmt.Sprintf("claude --resume %s", claudeResponse.SessionID),
-	}, nil
 }

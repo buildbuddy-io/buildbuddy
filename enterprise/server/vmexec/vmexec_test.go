@@ -3,6 +3,7 @@ package vmexec_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"path"
 	"strings"
@@ -71,6 +72,38 @@ func TestExecStreamed_Stdio(t *testing.T) {
 	assert.Equal(t, "foo-stdout\n", stdout.String())
 	assert.Equal(t, "bar-stderr\n", stderr.String())
 	assert.Equal(t, 7, res.ExitCode)
+}
+
+func TestExecStreamed_LargeOutput(t *testing.T) {
+	client := startExecService(t)
+	// Write about 600 KB of distinct lines to stdout and stderr. The server reads
+	// output in chunks of up to 32 KiB, usually faster than it can stream them
+	// to the client, so several chunks are typically waiting to be sent while
+	// the next chunk is read.
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			seq 1 100000
+			seq 1 100000 >&2
+		`},
+	}
+	var expected strings.Builder
+	for i := range 100_000 {
+		fmt.Fprintf(&expected, "%d\n", i+1)
+	}
+
+	res := vmexec_client.Execute(t.Context(), client, cmd, ".", "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
+
+	// Every chunk should be sent with the contents it had when it was read, so
+	// the output received by the client should match exactly. Compare with ==
+	// to avoid printing a huge diff on failure.
+	require.NoError(t, res.Error)
+	stdout := string(res.Stdout)
+	stderr := string(res.Stderr)
+	assert.Equal(t, expected.Len(), len(stdout))
+	assert.True(t, stdout == expected.String(), "stdout should match")
+	assert.Equal(t, expected.Len(), len(stderr))
+	assert.True(t, stderr == expected.String(), "stderr should match")
+	assert.Equal(t, 0, res.ExitCode)
 }
 
 func TestExecStreamed_Timeout(t *testing.T) {

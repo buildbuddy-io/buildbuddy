@@ -35,8 +35,7 @@ func TestDo(t *testing.T) {
 	numExecutions := 0
 	usedWorker := ""
 
-	for i := 0; i < numWorkers; i++ {
-		i := i
+	for i := range numWorkers {
 		worker := fmt.Sprintf("worker_%d", i)
 		wg.Go(func() error {
 			res, err := c.Do(ctx, key, func() ([]byte, error) {
@@ -79,7 +78,7 @@ func TestDoError(t *testing.T) {
 	var mu sync.Mutex
 	numExecutions := 0
 
-	for i := 0; i < numWorkers; i++ {
+	for range numWorkers {
 		wg.Go(func() error {
 			res, err := c.Do(ctx, key, func() ([]byte, error) {
 				mu.Lock()

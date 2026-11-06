@@ -1,3 +1,5 @@
+"""Rules for packaging Bazel binaries and extracted installations."""
+
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
@@ -122,8 +124,13 @@ extract_bazel_installation = rule(
     doc = "Pre-extract a bazel installation and optionally a repository cache to the given output directory.",
 )
 
-def bazel_pkg_tar(name, versions = [], **kwargs):
-    """Create a tar file containing Bazel executable for each version in versions."""
+def bazel_binary_targets(versions = [], **kwargs):
+    """Creates Bazel binary and extracted-installation targets.
+
+    Args:
+      versions: Bazel versions for which to create targets.
+      **kwargs: Additional arguments passed to the generated targets.
+    """
     for version in versions:
         copy_file(
             name = "bazel-{}_crossplatform".format(version),
@@ -170,6 +177,10 @@ def bazel_pkg_tar(name, versions = [], **kwargs):
             exec_properties = {"dockerNetwork": "bridge"} if warm_repository_cache else {},
             **kwargs
         )
+
+def bazel_pkg_tar(name, versions = [], **kwargs):
+    """Create a tar file containing Bazel executables for the given versions."""
+    bazel_binary_targets(versions = versions, **kwargs)
     pkg_tar(
         name = name,
         srcs = [":bazel-{}_crossplatform".format(version) for version in versions],

@@ -1,7 +1,6 @@
 package watchdog_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -49,8 +48,7 @@ func TestDisabledWatchdogIsValidForever(t *testing.T) {
 
 func TestCrossThreadUsage(t *testing.T) {
 	clock := clockwork.NewFakeClock()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	wdt := watchdog.NewWithClock(clock, time.Hour)
 	go func() {

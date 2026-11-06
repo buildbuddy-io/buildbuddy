@@ -48,6 +48,7 @@ var DefaultFS = vfs.Default
 
 type FormatMajorVersion = pebble.FormatMajorVersion
 type Options = pebble.Options
+type WriteOptions = pebble.WriteOptions
 type IterOptions = pebble.IterOptions
 type LevelOptions = pebble.LevelOptions
 type BloomFilterPolicy = bloom.FilterPolicy
@@ -479,6 +480,7 @@ type Leaser interface {
 type leaser struct {
 	db       IPebbleDB
 	waiters  sync.WaitGroup
+	dbCalls  atomic.Int64
 	closedMu sync.RWMutex // PROTECTS(closed)
 	closed   bool
 }
@@ -493,21 +495,17 @@ type leaser struct {
 // Once the DB leaser has been closed with Close(), no new handles can be
 // acquired, instead an error is returned.
 func NewDBLeaser(db IPebbleDB) Leaser {
-	return &leaser{
-		db:       db,
-		waiters:  sync.WaitGroup{},
-		closedMu: sync.RWMutex{},
-		closed:   false,
-	}
+	return &leaser{db: db}
 }
 
 func (l *leaser) Close() {
 	l.closedMu.Lock()
-	defer l.closedMu.Unlock()
 	if l.closed {
+		l.closedMu.Unlock()
 		return
 	}
 	l.closed = true
+	l.closedMu.Unlock()
 
 	// wait for all db users to finish up.
 	l.waiters.Wait()
@@ -521,15 +519,17 @@ func (l *leaser) DB() (IPebbleDB, error) {
 	}
 
 	handle := &refCountedDB{
-		l.db,
-		newRefCounter(&l.waiters),
+		IPebbleDB:  l.db,
+		refCounter: newRefCounter(&l.waiters),
 	}
 
-	if *warnAboutLeaks {
+	// mod by a prime number to avoid always warning about the same call site.
+	if *warnAboutLeaks && l.dbCalls.Add(1)%11 == 1 {
 		location := "unknown"
 		if _, file, no, ok := runtime.Caller(1); ok {
 			location = fmt.Sprintf("%s:%d", file, no)
 		}
+		handle.finalizerSet = true
 		runtime.SetFinalizer(handle, func(h *refCountedDB) {
 			if !h.refCounter.closed {
 				alert.UnexpectedEvent("pebble_db_handle_leak", "DB() handle leak at %s!", location)
@@ -563,9 +563,13 @@ func (r *refCounter) Close() error {
 type refCountedDB struct {
 	IPebbleDB
 	*refCounter
+	finalizerSet bool
 }
 
 func (r *refCountedDB) Close() error {
+	if r.finalizerSet {
+		runtime.SetFinalizer(r, nil)
+	}
 	// Just close the refcounter, not the DB.
 	return r.refCounter.Close()
 }
@@ -649,11 +653,11 @@ func LookupProto(iter Iterator, key []byte, pb proto.Message) error {
 
 type MetricsCollector struct {
 	// Atomicly accessed metrics updated by pebble callbacks.
-	writeStallCount      int64
-	writeStallDuration   time.Duration
-	writeStallStartNanos int64
-	diskSlowCount        int64
-	diskStallCount       int64
+	writeStallCount      atomic.Int64
+	writeStallDuration   atomic.Int64
+	writeStallStartNanos atomic.Int64
+	diskSlowCount        atomic.Int64
+	diskStallCount       atomic.Int64
 }
 
 func (mc *MetricsCollector) BackgroundError(err error) {
@@ -661,25 +665,24 @@ func (mc *MetricsCollector) BackgroundError(err error) {
 }
 
 func (mc *MetricsCollector) WriteStallStats() (int64, time.Duration) {
-	count := atomic.LoadInt64(&mc.writeStallCount)
-	durationInt := atomic.LoadInt64((*int64)(&mc.writeStallDuration))
-	return count, time.Duration(durationInt)
+	count := mc.writeStallCount.Load()
+	return count, time.Duration(mc.writeStallDuration.Load())
 }
 
 func (mc *MetricsCollector) DiskStallStats() (int64, int64) {
-	slowCount := atomic.LoadInt64(&mc.diskSlowCount)
-	stallCount := atomic.LoadInt64(&mc.diskStallCount)
+	slowCount := mc.diskSlowCount.Load()
+	stallCount := mc.diskStallCount.Load()
 	return slowCount, stallCount
 }
 
 func (mc *MetricsCollector) WriteStallBegin(info pebble.WriteStallBeginInfo) {
 	startNanos := time.Now().UnixNano()
-	atomic.StoreInt64(&mc.writeStallStartNanos, startNanos)
-	atomic.AddInt64(&mc.writeStallCount, 1)
+	mc.writeStallStartNanos.Store(startNanos)
+	mc.writeStallCount.Add(1)
 }
 
 func (mc *MetricsCollector) WriteStallEnd() {
-	startNanos := atomic.SwapInt64(&mc.writeStallStartNanos, 0)
+	startNanos := mc.writeStallStartNanos.Swap(0)
 	if startNanos == 0 {
 		return
 	}
@@ -687,16 +690,16 @@ func (mc *MetricsCollector) WriteStallEnd() {
 	if stallDuration < 0 {
 		return
 	}
-	atomic.AddInt64((*int64)(&mc.writeStallDuration), stallDuration)
+	mc.writeStallDuration.Add(stallDuration)
 }
 
 func (mc *MetricsCollector) DiskSlow(info pebble.DiskSlowInfo) {
 	if info.Duration.Seconds() >= maxSyncDuration.Seconds() {
-		atomic.AddInt64(&mc.diskStallCount, 1)
+		mc.diskStallCount.Add(1)
 		log.Errorf("Pebble Cache: disk stall: unable to write %q in %.2f seconds.", info.Path, info.Duration.Seconds())
 		return
 	}
-	atomic.AddInt64(&mc.diskSlowCount, 1)
+	mc.diskSlowCount.Add(1)
 }
 
 func (mc *MetricsCollector) UpdateMetrics(m *Metrics, om Metrics, cacheName string) error {

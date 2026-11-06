@@ -63,6 +63,23 @@
   white-space: nowrap;
 }
 
+.api-keys .api-key-creation-details {
+  /* Own row spanning the full width, so the rest of the key's details stay
+   * inline with the label. The width/min-width pair keeps the text from
+   * contributing to the max-content width of any column it spans. */
+  grid-row: 2;
+  grid-column: 1 / -1;
+  width: 0;
+  min-width: 100%;
+  margin-right: 0;
+  font-size: 12px;
+  font-style: italic;
+  line-height: 20px;
+  color: var(--color-text-emphasis);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .api-keys .untitled-key {
   color: #757575;
 }
@@ -85,6 +102,34 @@
 
 .api-keys .api-key-value .display-value {
   margin-right: 4px;
+}
+
+.api-keys .api-key-expiration.expires-soon {
+  color: var(--color-yellow-800);
+}
+
+.api-keys .api-key-expiration.expires-very-soon {
+  color: var(--color-status-warning);
+}
+
+.api-keys .api-key-expiration.expires-imminently {
+  color: var(--color-status-error);
+}
+
+.api-keys .api-key-value-expired {
+  justify-content: center;
+  padding-right: 16px;
+  color: var(--color-text-emphasis);
+  font-weight: 600;
+}
+
+.api-keys .api-key-delete-button-wide {
+  grid-column: span 2;
+  justify-content: center;
+}
+
+.api-keys .api-key-value-expired .display-value {
+  margin-right: 0;
 }
 
 .api-keys .api-key-value button {
@@ -137,6 +182,38 @@
 
 .api-keys-form .field-description {
   color: var(--color-text-emphasis);
+  font-weight: normal;
+}
+
+.api-keys-form .note-input-label,
+.api-keys-form legend {
+  font-weight: 600;
+}
+
+.api-keys-form .form-section {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.api-keys-form .form-section:not(:last-child) {
+  margin-bottom: 16px;
+}
+
+.api-keys-form .form-section legend {
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+/* Options within a section sit closer together than separate fields, so the
+ * section reads as a single group. */
+.api-keys-form .form-section .field-container:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.api-keys-form .dialog-footer {
+  margin-top: 16px;
 }
 
 .api-keys-form label {
@@ -149,7 +226,9 @@
   height: 20px;
   flex-shrink: 0;
   user-select: none;
-  margin-right: 8px;
+  /* Drop the browser's default margins so controls line up with the label
+   * input's left edge. */
+  margin: 0 8px 0 0;
 }
 
 .api-keys-delete-modal .delete-modal-key-label {

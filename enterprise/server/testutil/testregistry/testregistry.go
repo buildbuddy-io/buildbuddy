@@ -148,11 +148,11 @@ func (r *Registry) PushRandomImage(t *testing.T, creds *BasicAuthCreds) (string,
 	files := map[string][]byte{}
 	buffer := bytes.Buffer{}
 	buffer.Grow(1024)
-	for i := 0; i < 1024; i++ {
+	for range 1024 {
 		_, err := buffer.WriteString("0")
 		require.NoError(t, err)
 	}
-	for i := 0; i < 100000; i++ {
+	for i := range 100000 {
 		files[fmt.Sprintf("/tmp/%d", i)] = buffer.Bytes()
 	}
 	image, err := imageFromFiles(files)
@@ -221,7 +221,7 @@ func imageFromFiles(files map[string][]byte) (ctr.Image, error) {
 func (r *Registry) PushNamedImageWithMultipleLayers(t *testing.T, imageName string, creds *BasicAuthCreds) (string, ctr.Image) {
 	base := empty.Image
 	layers := make([]ctr.Layer, 0, 9)
-	for i := 0; i < 9; i++ {
+	for range 9 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 128)
 		layer, err := crane.Layer(map[string][]byte{
 			"/layer/" + rn.Digest.Hash: buf,

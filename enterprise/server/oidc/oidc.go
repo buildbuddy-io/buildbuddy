@@ -230,8 +230,6 @@ type OpenIDAuthenticator struct {
 func createAuthenticatorsFromConfig(ctx context.Context, env environment.Env, authConfigs []OauthProvider, authURL *url.URL) ([]authenticator, error) {
 	var authenticators []authenticator
 	for _, authConfig := range authConfigs {
-		// declare local var that shadows loop var for closure capture
-		authConfig := authConfig
 		oidcConfig := &oidc.Config{
 			ClientID:        authConfig.ClientID,
 			SkipExpiryCheck: false,
@@ -715,7 +713,7 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	user.ImageURL = t.Picture
 	if t.slug != "" {
 		user.Groups = []*tables.GroupRole{
-			{Group: tables.Group{URLIdentifier: t.slug}},
+			{URLIdentifier: t.slug},
 		}
 	}
 	return nil

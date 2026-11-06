@@ -25,7 +25,7 @@ func MakeTree(ctx context.Context, t testing.TB, bsClient bspb.ByteStreamClient,
 	for d := depth; d > 0; d-- {
 		numNodes := int(math.Pow(float64(branchingFactor), float64(d)))
 		nextLeafNodes := make([]*repb.DirectoryNode, 0, numNodes)
-		for n := 0; n < numNodes; n++ {
+		for n := range numNodes {
 			subdir := &repb.Directory{}
 			if d == depth {
 				rn, buf := testdigest.RandomCASResourceBuf(t, 100)

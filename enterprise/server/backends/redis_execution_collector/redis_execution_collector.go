@@ -45,8 +45,17 @@ const (
 	invocationExpiration              = 24 * time.Hour
 	executionInvocationLinkExpiration = 24 * time.Hour
 	invocationExecutionLinkExpiration = 24 * time.Hour
-	executionExpiration               = 24 * time.Hour
 	executionUpdatesExpiration        = 24 * time.Hour
+
+	// Expire buffered Execution rows after a relatively short duration, since
+	// they can take up a lot of memory. The build event handler will
+	// periodically refresh the TTL so that we don't lose executions if the
+	// invocation is still running.
+	//
+	// Note: keep this in sync with invocationReconnectWindow in
+	// server/backends/invocationdb/invocationdb.go, so that executions from
+	// before a disconnect are still buffered if the invocation is retried.
+	executionExpiration = 4 * time.Hour
 )
 
 type collector struct {
@@ -267,6 +276,10 @@ func (c *collector) ExpireExecutions(ctx context.Context, iid string, ttl time.D
 	return c.rdb.Expire(ctx, getExecutionKey(iid), ttl).Err()
 }
 
+func (c *collector) RefreshExecutions(ctx context.Context, iid string) error {
+	return c.rdb.Expire(ctx, getExecutionKey(iid), executionExpiration).Err()
+}
+
 func (c *collector) DeleteExecutionInvocationLinks(ctx context.Context, executionID string) error {
 	return c.rdb.Del(ctx, getExecutionInvocationLinksKey(executionID)).Err()
 }
@@ -318,8 +331,12 @@ func mergeExecutionUpdates(serializedResults []string) (*repb.StoredExecution, e
 		proto.Merge(out, event)
 		// Slice-valued fields need special handling since they are merged by
 		// concatenating, which may or may not make sense. For now, just have
-		// the last value win.
-		out.Experiments = event.Experiments
+		// the last non-empty value win. Post-completion stats updates arrive
+		// after the COMPLETED update and do not include experiments, so they
+		// must not clear the experiments reported at completion.
+		if len(event.GetExperiments()) > 0 {
+			out.Experiments = event.GetExperiments()
+		}
 
 		lastStage = event.GetStage()
 	}

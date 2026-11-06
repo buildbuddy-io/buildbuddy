@@ -6,7 +6,7 @@ warnings and behave like test binaries). The transition below disables coverage
 and forces an opt build for those binaries so they behave like normal tools.
 """
 
-def _coverage_free_exec_transition_impl(settings, attr):
+def _coverage_free_exec_transition_impl(_settings, _attr):
     return {
         "//command_line_option:collect_code_coverage": "false",
         "//command_line_option:compilation_mode": "opt",

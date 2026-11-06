@@ -3,23 +3,33 @@ package priority_task_scheduler
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math/rand"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -29,6 +39,28 @@ const (
 	testGroupID2 = "group2"
 	testGroupID3 = "group3"
 )
+
+var (
+	testExperiment = expflag.Bool("priority_task_scheduler_test.experiment", false, "Exercises experiment flag propagation from the task to the execution context.")
+)
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
+}
+
+func TestPropagateExecutionTaskValuesToContext_ExperimentFlags(t *testing.T) {
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	scheduler := &PriorityTaskScheduler{exec: NewFakeExecutor()}
+
+	task := &repb.ExecutionTask{ExperimentFlags: []*expb.EvaluatedFlag{
+		{Name: testExperiment.Name(), Variant: "treatment", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true}},
+	}}
+	ctx := scheduler.propagateExecutionTaskValuesToContext(t.Context(), task)
+	value, details := testExperiment.GetWithDetails(ctx)
+	require.True(t, value)
+	require.Equal(t, "treatment", details.GetVariant())
+}
 
 func newTaskReservationRequest(taskID, taskGroupID string, priority int32) *scpb.EnqueueTaskReservationRequest {
 	return &scpb.EnqueueTaskReservationRequest{
@@ -155,6 +187,130 @@ func TestTaskQueue_DedupesTasks(t *testing.T) {
 	require.Nil(t, q.Dequeue())
 }
 
+func TestPriorityTaskScheduler_CanFitTaskWithGPUMemory(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		capacity int64
+		reserved int64
+		request  int64
+		wantFit  bool
+	}{
+		{name: "CPU task without GPU capacity", wantFit: true},
+		{name: "GPU task without GPU capacity", request: 1},
+		{name: "exact capacity", capacity: 8, request: 8, wantFit: true},
+		{name: "exceeds capacity", capacity: 8, request: 9},
+		{name: "exact remaining capacity", capacity: 8, reserved: 5, request: 3, wantFit: true},
+		{name: "exceeds remaining capacity", capacity: 8, reserved: 5, request: 4},
+		{name: "CPU task when GPU memory is full", capacity: 8, reserved: 8, wantFit: true},
+		{name: "CPU task after skipped GPU tasks", capacity: 8, reserved: 12, wantFit: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			q := &PriorityTaskScheduler{
+				resourceCapacity: &resourceCounts{RAMBytes: 100, CPUMillis: 100, GPUMemoryBytes: testCase.capacity},
+			}
+			reserved := &resourceCounts{GPUMemoryBytes: testCase.reserved}
+			task := &queuedTask{EnqueueTaskReservationRequest: &scpb.EnqueueTaskReservationRequest{
+				TaskSize: &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: testCase.request},
+			}}
+
+			// GPU requests must fit the unreserved capacity. CPU-only tasks
+			// can run even if earlier tasks reserve more GPU memory than exists.
+			require.Equal(t, testCase.wantFit, q.canFitTask(task, reserved))
+			require.Equal(t, testCase.reserved, reserved.GPUMemoryBytes)
+		})
+	}
+}
+
+// fakeGPUMemoryDetector reports a fixed GPU memory capacity.
+type fakeGPUMemoryDetector struct{ totalBytes int64 }
+
+func (d fakeGPUMemoryDetector) GetTotalGPUMemoryBytes() (int64, error) {
+	return d.totalBytes, nil
+}
+
+func TestPriorityTaskScheduler_GPUMemoryAccounting(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, resources.ConfigureGPU(nil))
+	})
+	t.Setenv("SYS_GPU_MEMORY_BYTES", "")
+	require.NoError(t, resources.ConfigureGPU(fakeGPUMemoryDetector{totalBytes: 8_000_000_000}))
+	q, err := NewPriorityTaskScheduler(testenv.GetTestEnv(t), NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{
+		RAMBytesCapacityOverride:  100,
+		CPUMillisCapacityOverride: 100,
+	})
+	require.NoError(t, err)
+	t.Cleanup(q.rootCancel)
+	require.Equal(t, int64(8_000_000_000), q.resourceCapacity.GPUMemoryBytes)
+	require.Empty(t, q.resourceCapacity.Custom)
+
+	size := &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: 4_000_000_000}
+	first := &scpb.EnqueueTaskReservationRequest{TaskId: "first", TaskSize: size}
+	second := &scpb.EnqueueTaskReservationRequest{TaskId: "second", TaskSize: size}
+	queued := &queuedTask{EnqueueTaskReservationRequest: second}
+
+	// Tasks can share the configured GPU memory until their combined usage
+	// fills it, even though no custom GPU resource is configured.
+	q.trackTask(first, nil)
+	require.True(t, q.canFitTask(queued, q.resourcesUsed))
+	q.trackTask(second, nil)
+	require.Equal(t, int64(8_000_000_000), q.resourcesUsed.GPUMemoryBytes)
+	require.False(t, q.canFitTask(queued, q.resourcesUsed))
+	require.Contains(t, q.stats(), "GPU memory: 8,000,000,000 of 8,000,000,000 bytes allocated (0 remaining)")
+
+	// Completing a task releases its memory so another GPU task can start.
+	q.untrackTask(first, nil)
+	require.Equal(t, int64(4_000_000_000), q.resourcesUsed.GPUMemoryBytes)
+	require.True(t, q.canFitTask(queued, q.resourcesUsed))
+	q.untrackTask(second, nil)
+	require.Zero(t, q.resourcesUsed.GPUMemoryBytes)
+}
+
+func TestPriorityTaskScheduler_QueueSkipping_GPUMemory(t *testing.T) {
+	for _, testCase := range []struct {
+		name             string
+		used             resourceCounts
+		concurrencyLimit int64
+		requests         []int64
+		wantTaskID       string
+	}{
+		{name: "first GPU task fits", requests: []int64{8, 4, 0}, wantTaskID: "0"},
+		{name: "GPU task fits remaining capacity", used: resourceCounts{GPUMemoryBytes: 4}, requests: []int64{4, 8, 0}, wantTaskID: "0"},
+		{name: "small GPU task cannot delay large task", used: resourceCounts{GPUMemoryBytes: 4}, requests: []int64{8, 4}},
+		{name: "CPU task skips blocked GPU tasks", used: resourceCounts{GPUMemoryBytes: 4}, requests: []int64{8, 4, 0}, wantTaskID: "2"},
+		{name: "CPU reservations prevent skipping", used: resourceCounts{CPUMillis: 98, GPUMemoryBytes: 4}, requests: []int64{8, 4, 0}},
+		{name: "RAM reservations prevent skipping", used: resourceCounts{RAMBytes: 98, GPUMemoryBytes: 4}, requests: []int64{8, 4, 0}},
+		{name: "concurrency reservations prevent skipping", used: resourceCounts{GPUMemoryBytes: 4, Concurrency: 1}, concurrencyLimit: 2, requests: []int64{8, 0}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			q := &PriorityTaskScheduler{
+				q:                newTaskQueue(clockwork.NewRealClock()),
+				resourceCapacity: &resourceCounts{RAMBytes: 100, CPUMillis: 100, GPUMemoryBytes: 8, Concurrency: testCase.concurrencyLimit},
+				resourcesUsed:    &testCase.used,
+			}
+			for i, gpuMemory := range testCase.requests {
+				q.q.Enqueue(t.Context(), &scpb.EnqueueTaskReservationRequest{
+					TaskId:   fmt.Sprint(i),
+					TaskSize: &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: gpuMemory},
+				})
+			}
+
+			// Backfilling must reserve the resources needed by skipped GPU
+			// tasks so later work cannot delay their start.
+			before := q.resourcesUsed.Clone()
+			task, pos := q.getNextSchedulableTask(t.Context())
+			if testCase.wantTaskID == "" {
+				require.Nil(t, task)
+				require.Nil(t, pos)
+			} else {
+				require.NotNil(t, task)
+				require.Equal(t, testCase.wantTaskID, task.GetTaskId())
+				require.Equal(t, task, q.q.DequeueAt(pos))
+			}
+			require.Equal(t, before, q.resourcesUsed, "searching the queue must not change active resource usage")
+		})
+	}
+}
+
 func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetRemoteExecutionClient(&FakeExecutionClient{})
@@ -176,8 +332,6 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -273,8 +427,6 @@ func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefini
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -371,8 +523,6 @@ func TestPriorityTaskScheduler_CustomResourceParentAccountingCeil(t *testing.T) 
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -590,8 +740,6 @@ func TestPriorityTaskScheduler_MaxConcurrentTasks(t *testing.T) {
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -671,8 +819,6 @@ func TestPriorityTaskScheduler_MaxConcurrentTasks_PreventsQueueSkipping(t *testi
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -764,8 +910,6 @@ func TestPriorityTaskScheduler_ExclusiveTaskScheduling(t *testing.T) {
 	scheduler.Start()
 	ctx := context.Background()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -878,8 +1022,6 @@ func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 			scheduler.Start()
 			ctx := context.Background()
 			t.Cleanup(func() {
-				err := scheduler.Stop()
-				require.NoError(t, err)
 				assert.NoError(t, scheduler.Shutdown(ctx))
 			})
 
@@ -925,8 +1067,6 @@ func TestLocalEnqueueTimestamp(t *testing.T) {
 	require.NoError(t, err)
 	scheduler.Start()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -956,8 +1096,6 @@ func TestTotalRunningTaskExecutionDuration(t *testing.T) {
 	require.NoError(t, err)
 	scheduler.Start()
 	t.Cleanup(func() {
-		err := scheduler.Stop()
-		require.NoError(t, err)
 		assert.NoError(t, scheduler.Shutdown(ctx))
 	})
 
@@ -1000,6 +1138,92 @@ func TestTotalRunningTaskExecutionDuration(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return scheduler.TotalRunningTaskExecutionDuration() == 0
 	}, 5*time.Second, 10*time.Millisecond)
+}
+
+func TestPriorityTaskScheduler_GroupResourceMetrics(t *testing.T) {
+	metrics.RemoteExecutionAssignedMilliCPUByGroup.Reset()
+	metrics.RemoteExecutionAssignedRAMBytesByGroup.Reset()
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{
+		RAMBytesCapacityOverride:  10_000,
+		CPUMillisCapacityOverride: 10_000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, scheduler.Start())
+	t.Cleanup(func() {
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	enqueue := func(taskID, groupID string, milliCPU, ramBytes int64) *FakeExecution {
+		size := &scpb.TaskSize{EstimatedMilliCpu: milliCPU, EstimatedMemoryBytes: ramBytes}
+		_, err := scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+			TaskId:   fakeTaskID(taskID),
+			TaskSize: size,
+			SchedulingMetadata: &scpb.SchedulingMetadata{
+				TaskGroupId: groupID,
+				TaskSize:    size,
+			},
+		})
+		require.NoError(t, err)
+		return <-executor.StartedExecutions
+	}
+	// seriesCount returns the number of groups with a reserved CPU series.
+	seriesCount := func() int {
+		return promtestutil.CollectAndCount(metrics.RemoteExecutionAssignedMilliCPUByGroup)
+	}
+	gaugeValues := func(groupID string) (float64, float64) {
+		labels := prometheus.Labels{metrics.GroupID: groupID}
+		return testmetrics.GaugeValueForLabels(t, metrics.RemoteExecutionAssignedMilliCPUByGroup, labels),
+			testmetrics.GaugeValueForLabels(t, metrics.RemoteExecutionAssignedRAMBytesByGroup, labels)
+	}
+
+	// Resources are attributed to each task's group as soon as it starts.
+	// Tasks without a group count toward the anonymous group.
+	group1Task1 := enqueue("group1-task1", testGroupID1, 1000, 1000)
+	group1Task2 := enqueue("group1-task2", testGroupID1, 2000, 3000)
+	group2Task1 := enqueue("group2-task1", testGroupID2, 500, 700)
+	anonTask := enqueue("anon-task", "", 300, 200)
+	cpu, ram := gaugeValues(testGroupID1)
+	require.Equal(t, float64(3000), cpu)
+	require.Equal(t, float64(4000), ram)
+	cpu, ram = gaugeValues(testGroupID2)
+	require.Equal(t, float64(500), cpu)
+	require.Equal(t, float64(700), ram)
+	cpu, ram = gaugeValues(interfaces.AuthAnonymousUser)
+	require.Equal(t, float64(300), cpu)
+	require.Equal(t, float64(200), ram)
+	require.Equal(t, 3, seriesCount())
+
+	// Finishing one of group 1's tasks releases only that task's resources.
+	// Task completion is asynchronous, so poll for the expected values.
+	group1Task1.Complete()
+	require.Eventually(t, func() bool {
+		cpu, ram := gaugeValues(testGroupID1)
+		return cpu == 2000 && ram == 3000
+	}, 5*time.Second, 10*time.Millisecond)
+
+	// Once a group's last task finishes, its series are removed entirely
+	// rather than left at zero.
+	group1Task2.Complete()
+	anonTask.Complete()
+	require.Eventually(t, func() bool {
+		return seriesCount() == 1
+	}, 5*time.Second, 10*time.Millisecond)
+	cpu, ram = gaugeValues(testGroupID2)
+	require.Equal(t, float64(500), cpu)
+	require.Equal(t, float64(700), ram)
+	scheduler.mu.Lock()
+	require.Equal(t, []string{testGroupID2}, slices.Collect(maps.Keys(scheduler.resourcesUsedByGroup)))
+	scheduler.mu.Unlock()
+
+	group2Task1.Complete()
 }
 
 func TestRemoveTaskFromQueue(t *testing.T) {
@@ -1180,4 +1404,32 @@ type FakePublishOperationClient struct {
 
 func (f *FakePublishOperationClient) CloseAndRecv() (*repb.PublishOperationResponse, error) {
 	return nil, f.CloseAndRecvErr
+}
+
+func TestStartAfterStopFails(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	scheduler, err := NewPriorityTaskScheduler(env, NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{})
+	require.NoError(t, err)
+	require.NoError(t, scheduler.Start())
+	require.NoError(t, scheduler.Stop())
+
+	err = scheduler.Start()
+	require.True(t, status.IsFailedPreconditionError(err), "got %v", err)
+}
+
+func TestStopCancelsDelayedEnqueue(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	scheduler, err := NewPriorityTaskScheduler(env, NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{})
+	require.NoError(t, err)
+	require.NoError(t, scheduler.Start())
+
+	req := newTaskReservationRequest(fakeTaskID("delayed"), "group1", 0)
+	req.Delay = durationpb.New(time.Hour)
+	_, err = scheduler.EnqueueTaskReservation(context.Background(), req)
+	require.NoError(t, err)
+
+	// Stop returns without waiting for the delay, and TestMain fails if the
+	// delayed enqueue's goroutine is still running.
+	require.NoError(t, scheduler.Stop())
+	require.Empty(t, scheduler.GetQueuedTaskReservations())
 }

@@ -82,7 +82,7 @@ func gitMetadataFlags() ([]string, error) {
 		flags = append(flags, "--build_metadata=COMMIT_SHA="+commitSHA)
 	}
 
-	branch, err := runGit(ws, "rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := runGit(ws, "branch", "--show-current")
 	if err != nil {
 		log.Debug(err)
 	} else if branch != "" {

@@ -9,6 +9,7 @@ package watcher
 import (
 	"context"
 	"iter"
+	"maps"
 	"strings"
 	"time"
 
@@ -141,9 +142,7 @@ func (w *Watcher) Poll(ctx context.Context) {
 			removed = append(removed, name)
 		}
 	}
-	for name, gen := range newGens {
-		w.generations[name] = gen
-	}
+	maps.Copy(w.generations, newGens)
 	for _, name := range removed {
 		delete(w.generations, name)
 	}

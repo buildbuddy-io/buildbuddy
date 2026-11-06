@@ -242,7 +242,7 @@ func TestCompressingReader_HoldErrors(t *testing.T) {
 	require.NoError(t, err)
 
 	p := make([]byte, 8)
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		n, err := zrc.Read(p)
 		require.NoError(t, err)
 		require.Equal(t, len(p), n)

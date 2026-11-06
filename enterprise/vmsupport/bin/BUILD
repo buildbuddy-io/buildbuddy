@@ -8,9 +8,9 @@ genrule(
     outs = ["initrd.cpio"],
     cmd_bash = """
         env \
-            GOINIT=$(location //enterprise/server/cmd/goinit:goinit) \
-            CPIO=$(location //enterprise/tools/cpio) \
-            ./$(location mkinitrd.sh) \
+            GOINIT=$(execpath //enterprise/server/cmd/goinit:goinit) \
+            CPIO=$(execpath //enterprise/tools/cpio) \
+            $(execpath mkinitrd.sh) \
             "$@"
     """,
     tools = [
@@ -30,9 +30,9 @@ genrule(
 )
 
 genrule(
-    name = "vmlinux_6.1_copy",
-    srcs = ["@org_kernel_git_linux_kernel-vmlinux-6.1//file:downloaded"],
-    outs = ["vmlinux_6.1"],
+    name = "vmlinux_6.18_copy",
+    srcs = ["@org_kernel_git_linux_kernel-vmlinux-6.18//file:downloaded"],
+    outs = ["vmlinux_6.18"],
     cmd = "cp $(SRCS) $@",
     target_compatible_with = ["@platforms//cpu:x86_64"],
 )

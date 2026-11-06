@@ -6,5 +6,8 @@ go_library(
     name = "claude",
     srcs = ["claude.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/util/agent/claude",
-    deps = ["//cli/util/agent/agentutil"],
+    deps = [
+        "//cli/util/agent/agentutil",
+        "@com_github_armon_circbuf//:circbuf",
+    ],
 )

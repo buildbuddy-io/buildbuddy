@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -37,6 +38,10 @@ const (
 	// filesystem with default settings.
 	defaultExt4BlockSize = 4096
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
+}
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
@@ -451,7 +456,7 @@ func TestFileAtomicity(t *testing.T) {
 	lock := sync.RWMutex{}
 	eg, gctx := errgroup.WithContext(ctx)
 	r, buf := testdigest.RandomCASResourceBuf(t, 100000)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		eg.Go(func() error {
 			lock.Lock()
 			defer lock.Unlock()
@@ -482,7 +487,7 @@ func TestAsyncLoading(t *testing.T) {
 
 	// Write some pre-existing data.
 	resources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
 		dest := filepath.Join(anonPath, rn.GetDigest().GetHash())
 		err := os.WriteFile(dest, buf, 0644)
@@ -509,7 +514,7 @@ func TestAsyncLoading(t *testing.T) {
 		}
 	}
 	// Write some more files, just to ensure the LRU is appended to.
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		r, buf := testdigest.RandomCASResourceBuf(t, 10000)
 		if err := dc.Set(ctx, r, buf); err != nil {
 			t.Fatal(err)
@@ -555,7 +560,7 @@ func testEviction(t *testing.T, rootDir string) {
 
 	// Fill the cache.
 	resources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 999; i++ {
+	for range 999 {
 		r, buf := testdigest.RandomCASResourceBuf(t, 10000)
 		err := dc.Set(ctx, r, buf)
 		require.NoError(t, err)
@@ -587,7 +592,7 @@ func testEviction(t *testing.T, rootDir string) {
 
 	// Write more data to push out what's left of the original digests.
 
-	for i := 0; i < 500; i++ {
+	for range 500 {
 		r, buf := testdigest.RandomCASResourceBuf(t, 10000)
 		err := dc.Set(ctx, r, buf)
 		require.NoError(t, err)
@@ -640,7 +645,7 @@ func TestJanitorThread(t *testing.T) {
 	}
 	// Fill the cache.
 	resources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 999; i++ {
+	for range 999 {
 		r, buf := testdigest.RandomCASResourceBuf(t, 10000)
 		err := dc.Set(ctx, r, buf)
 		if err != nil {
@@ -1090,4 +1095,19 @@ func TestV2LayoutMigration(t *testing.T) {
 	err = disk_cache.MigrateToV2Layout(rootDir)
 	require.NoError(t, err)
 	testfs.AssertExactFileContents(t, rootDir, expectedContents)
+}
+
+func TestNewDiskCache_InvalidPartitionStopsStartedPartitions(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, err := disk_cache.NewDiskCache(te, &disk_cache.Options{
+		ForceV1Layout: true,
+		RootDirectory: testfs.MakeTempDir(t),
+		Partitions: []disk.Partition{
+			{ID: "default", MaxSizeBytes: 10_000_000},
+			// Non-default partitions must have an ID.
+			{ID: "", MaxSizeBytes: 10_000_000},
+		},
+	}, 10_000_000)
+	require.True(t, status.IsInvalidArgumentError(err), "got %v", err)
+	// TestMain fails if the default partition's goroutines are still running.
 }

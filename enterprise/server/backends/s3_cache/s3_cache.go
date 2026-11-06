@@ -106,7 +106,7 @@ func NewS3Cache() (*S3Cache, error) {
 	if *endpoint != "" {
 		configOptions = append(configOptions, config.WithEndpointResolverWithOptions(
 			aws.EndpointResolverWithOptionsFunc(
-				func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
+				func(_, _ string, _ ...any) (aws.Endpoint, error) {
 					return aws.Endpoint{
 						URL:               *endpoint,
 						SigningRegion:     *region,

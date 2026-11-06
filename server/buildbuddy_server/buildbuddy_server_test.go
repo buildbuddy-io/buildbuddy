@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -34,15 +36,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -50,6 +55,7 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
+	zippb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 )
 
 const (
@@ -65,6 +71,20 @@ type fakeCASServer struct {
 	lastGetTreeRequest *repb.GetTreeRequest
 	getTreeResponses   []*repb.GetTreeResponse
 	getTreeErr         error
+}
+
+type notFoundPooledByteStreamClient struct{}
+
+func (*notFoundPooledByteStreamClient) StreamBytestreamFile(ctx context.Context, u *url.URL, w io.Writer) error {
+	return status.NotFoundError("not found")
+}
+
+func (*notFoundPooledByteStreamClient) FetchBytestreamZipManifest(ctx context.Context, u *url.URL) (*zippb.Manifest, error) {
+	return nil, status.NotFoundError("not found")
+}
+
+func (*notFoundPooledByteStreamClient) StreamSingleFileFromBytestreamZip(ctx context.Context, u *url.URL, entry *zippb.ManifestEntry, w io.Writer) error {
+	return status.NotFoundError("not found")
 }
 
 func (s *fakeCASServer) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
@@ -109,8 +129,24 @@ func (s *fakeUsageService) DeleteUsageAlertingRule(ctx context.Context, req *usa
 	return &usagepb.DeleteUsageAlertingRuleResponse{}, nil
 }
 
+func (s *fakeUsageService) GetCurrentBill(ctx context.Context, req *usagepb.GetCurrentBillRequest) (*usagepb.GetCurrentBillResponse, error) {
+	return &usagepb.GetCurrentBillResponse{}, nil
+}
+
 func (s *fakeUsageService) GetAlertsEnabled() bool {
 	return true
+}
+
+func (s *fakeUsageService) GetBillEnabled() bool {
+	return true
+}
+
+func (s *fakeUsageService) GetExportEnabled() bool {
+	return false
+}
+
+func (s *fakeUsageService) GetUsageExportHandler() http.Handler {
+	return http.NotFoundHandler()
 }
 
 func createInvocationForTesting(te environment.Env, user string) (string, error) {
@@ -261,7 +297,7 @@ func TestGetInvocation_FetchChildren(t *testing.T) {
 	require.True(t, created)
 
 	// Create child invocations
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		created, err = idb.CreateInvocation(ctx, &tables.Invocation{
 			InvocationID: fmt.Sprintf("child-%d", i),
 			ParentRunID:  "parent-id",
@@ -289,7 +325,7 @@ func TestGetInvocation_FetchChildren(t *testing.T) {
 
 	// Ensure child invocations are sorted by increasing creation time
 	require.Equal(t, 10, len(inv.ChildInvocations))
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		require.Equal(t, fmt.Sprintf("child-%d", i), inv.ChildInvocations[i].InvocationId)
 	}
 }
@@ -391,6 +427,258 @@ func TestDeleteInvocation(t *testing.T) {
 			Lookup:         &inpb.InvocationLookup{InvocationId: iid}},
 	)
 	require.Error(t, err)
+}
+
+type fakeAuthDB struct {
+	interfaces.AuthDB
+	keys []*tables.APIKey
+}
+
+func (f *fakeAuthDB) GetAPIKeys(ctx context.Context, groupID string, includeExpired bool) ([]*tables.APIKey, error) {
+	return f.keys, nil
+}
+
+func (f *fakeAuthDB) GetUserOwnedKeysEnabled() bool {
+	return true
+}
+
+func (f *fakeAuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string, includeExpired bool) ([]*tables.APIKey, error) {
+	var keys []*tables.APIKey
+	for _, k := range f.keys {
+		if k.UserID == userID {
+			keys = append(keys, k)
+		}
+	}
+	return keys, nil
+}
+
+type fakeUserDB struct {
+	interfaces.UserDB
+	users map[string]*tables.User
+	errs  map[string]error
+}
+
+func (f *fakeUserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string, opts *interfaces.GetUserOpts) (*tables.User, error) {
+	if err, ok := f.errs[id]; ok {
+		return nil, err
+	}
+	if u, ok := f.users[id]; ok {
+		return u, nil
+	}
+	return nil, status.NotFoundError("user not found")
+}
+
+func testUserWithCapabilities(userID, groupID string, caps ...cappb.Capability) *testauth.TestUser {
+	u := testauth.User(userID, groupID)
+	u.GroupMemberships[0].Capabilities = caps
+	return u
+}
+
+func tableUser(userID, firstName, lastName, email string) *tables.User {
+	return &tables.User{
+		UserID:    userID,
+		FirstName: firstName,
+		LastName:  lastName,
+		Email:     email,
+	}
+}
+
+func TestGetApiKeys_CreationMetadata(t *testing.T) {
+	const (
+		serverAdminGroup = "SERVER_ADMIN_GROUP"
+		adminID          = "ADMIN"
+		serverAdminID    = "SERVER_ADMIN"
+		devID            = "DEV"
+		leaverID         = "LEAVER"
+		bbAdminID        = "BB_ADMIN"
+		deletedID        = "DELETED"
+		brokenID         = "BROKEN"
+	)
+	flags.Set(t, "auth.admin_group_id", serverAdminGroup)
+	createdAt := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	model := tables.Model{CreatedAtUsec: createdAt.UnixMicro()}
+
+	// A server admin viewing group1's keys: an org admin of group1 who is also
+	// an admin of the server admin group.
+	serverAdmin := testUserWithCapabilities(serverAdminID, group1, cappb.Capability_ORG_ADMIN)
+	serverAdmin.GroupMemberships = append(serverAdmin.GroupMemberships, &interfaces.GroupMembership{
+		GroupID:      serverAdminGroup,
+		Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
+	})
+
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		adminID:       testUserWithCapabilities(adminID, group1, cappb.Capability_ORG_ADMIN),
+		serverAdminID: serverAdmin,
+		devID:         testUserWithCapabilities(devID, group1, cappb.Capability_CACHE_WRITE),
+	})
+	te.SetAuthenticator(auth)
+	te.SetAuthDB(&fakeAuthDB{keys: []*tables.APIKey{
+		{APIKeyID: "member", Model: model, CreatedByUserID: adminID},
+		{APIKeyID: "leaver", Model: model, CreatedByUserID: leaverID},
+		{APIKeyID: "bb-admin", Model: model, CreatedByUserID: bbAdminID},
+		{APIKeyID: "deleted", Model: model, CreatedByUserID: deletedID},
+		{APIKeyID: "broken", Model: model, CreatedByUserID: brokenID},
+		{APIKeyID: "time-only", Model: model},
+		{APIKeyID: "legacy"},
+	}})
+	te.SetUserDB(&fakeUserDB{
+		users: map[string]*tables.User{
+			adminID:   tableUser(adminID, "Ada", "Admin", "ada@example.com"),
+			leaverID:  tableUser(leaverID, "", "", "leaver@example.com"),
+			bbAdminID: tableUser(bbAdminID, "Bob", "Buildbuddy", "bob@buildbuddy.io"),
+		},
+		errs: map[string]error{brokenID: status.UnavailableError("db unavailable")},
+	})
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	getKeys := func(t *testing.T, userID string) map[string]*akpb.ApiKey {
+		ctx, err := auth.WithAuthenticatedUser(context.Background(), userID)
+		require.NoError(t, err)
+		rsp, err := server.GetApiKeys(ctx, &akpb.GetApiKeysRequest{
+			RequestContext: testauth.RequestContext(userID, group1),
+		})
+		require.NoError(t, err)
+		keys := map[string]*akpb.ApiKey{}
+		for _, k := range rsp.GetApiKey() {
+			keys[k.GetId()] = k
+		}
+		require.Len(t, keys, 7)
+		return keys
+	}
+	createdBy := func(t *testing.T, keys map[string]*akpb.ApiKey, id string) string {
+		md := keys[id].GetCreationMetadata()
+		require.NotNil(t, md, id)
+		require.Equal(t, createdAt.UnixMicro(), md.GetCreatedAt().AsTime().UnixMicro(), id)
+		return md.GetCreatedBy()
+	}
+
+	t.Run("admin", func(t *testing.T) {
+		keys := getKeys(t, adminID)
+		require.Equal(t, "Ada Admin", createdBy(t, keys, "member"))
+		// Users with no name fall back to their email, even if they have since
+		// left the group.
+		require.Equal(t, "leaver@example.com", createdBy(t, keys, "leaver"))
+		// BuildBuddy employees are not identified to customers.
+		require.Equal(t, "Buildbuddy Admin", createdBy(t, keys, "bb-admin"))
+		// Creators who no longer exist or can't be looked up are not
+		// attributed, but the timestamp is still returned.
+		require.Empty(t, createdBy(t, keys, "deleted"))
+		require.Empty(t, createdBy(t, keys, "broken"))
+		require.Empty(t, createdBy(t, keys, "time-only"))
+		// Keys with nothing to show get no metadata at all.
+		require.Nil(t, keys["legacy"].GetCreationMetadata())
+	})
+
+	t.Run("server_admin", func(t *testing.T) {
+		keys := getKeys(t, serverAdminID)
+		require.Equal(t, "Ada Admin", createdBy(t, keys, "member"))
+		require.Equal(t, "Bob Buildbuddy", createdBy(t, keys, "bb-admin"))
+	})
+
+	t.Run("developer", func(t *testing.T) {
+		keys := getKeys(t, devID)
+		for id, k := range keys {
+			require.Nil(t, k.GetCreationMetadata(), id)
+		}
+	})
+}
+
+func TestGetUserApiKeys_CreationMetadata(t *testing.T) {
+	const (
+		adminID = "ADMIN"
+		ownerID = "OWNER"
+		otherID = "OTHER"
+	)
+	createdAt := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	model := tables.Model{CreatedAtUsec: createdAt.UnixMicro()}
+
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		adminID: testUserWithCapabilities(adminID, group1, cappb.Capability_ORG_ADMIN),
+		ownerID: testUserWithCapabilities(ownerID, group1, cappb.Capability_CACHE_WRITE),
+		otherID: testUserWithCapabilities(otherID, group1, cappb.Capability_CACHE_WRITE),
+	})
+	te.SetAuthenticator(auth)
+	te.SetAuthDB(&fakeAuthDB{keys: []*tables.APIKey{
+		{APIKeyID: "owned", UserID: ownerID, Model: model, CreatedByUserID: ownerID},
+	}})
+	te.SetUserDB(&fakeUserDB{users: map[string]*tables.User{
+		ownerID: tableUser(ownerID, "Olive", "Owner", "olive@example.com"),
+	}})
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	// getKey fetches the owner's single key as the given user.
+	getKey := func(t *testing.T, userID string) *akpb.ApiKey {
+		ctx, err := auth.WithAuthenticatedUser(context.Background(), userID)
+		require.NoError(t, err)
+		rsp, err := server.GetUserApiKeys(ctx, &akpb.GetApiKeysRequest{
+			RequestContext: testauth.RequestContext(userID, group1),
+			UserId:         ownerID,
+		})
+		require.NoError(t, err)
+		require.Len(t, rsp.GetApiKey(), 1)
+		return rsp.GetApiKey()[0]
+	}
+
+	for _, userID := range []string{ownerID, adminID} {
+		t.Run(userID, func(t *testing.T) {
+			md := getKey(t, userID).GetCreationMetadata()
+			require.NotNil(t, md)
+			require.Equal(t, "Olive Owner", md.GetCreatedBy())
+			require.Equal(t, createdAt.UnixMicro(), md.GetCreatedAt().AsTime().UnixMicro())
+		})
+	}
+
+	t.Run("non_owner", func(t *testing.T) {
+		require.Nil(t, getKey(t, otherID).GetCreationMetadata())
+	})
+}
+
+func TestGetApiKeys_Visibility(t *testing.T) {
+	const (
+		developers = int32(akpb.Visibility_VISIBLE_TO_DEVELOPERS)
+		admins     = int32(akpb.Visibility_VISIBLE_TO_GROUP_ADMINS)
+		// A bit with no corresponding Visibility value.
+		unknown = int32(1 << 20)
+	)
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		"DEV": testUserWithCapabilities("DEV", group1, cappb.Capability_CACHE_WRITE),
+	})
+	te.SetAuthenticator(auth)
+	te.SetAuthDB(&fakeAuthDB{keys: []*tables.APIKey{
+		{APIKeyID: "none", Visibility: 0},
+		{APIKeyID: "developers", Visibility: developers},
+		{APIKeyID: "admins", Visibility: admins},
+		{APIKeyID: "both", Visibility: developers | admins},
+		{APIKeyID: "unknown", Visibility: unknown},
+		{APIKeyID: "both-and-unknown", Visibility: developers | admins | unknown},
+	}})
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	ctx, err := auth.WithAuthenticatedUser(context.Background(), "DEV")
+	require.NoError(t, err)
+	rsp, err := server.GetApiKeys(ctx, &akpb.GetApiKeysRequest{
+		RequestContext: testauth.RequestContext("DEV", group1),
+	})
+	require.NoError(t, err)
+	got := map[string][]akpb.Visibility{}
+	for _, k := range rsp.GetApiKey() {
+		got[k.GetId()] = k.GetVisibility()
+	}
+	require.Equal(t, map[string][]akpb.Visibility{
+		"none":       nil,
+		"developers": {akpb.Visibility_VISIBLE_TO_DEVELOPERS},
+		"admins":     {akpb.Visibility_VISIBLE_TO_GROUP_ADMINS},
+		"both":       {akpb.Visibility_VISIBLE_TO_DEVELOPERS, akpb.Visibility_VISIBLE_TO_GROUP_ADMINS},
+		// Bits that aren't explicitly returnable are never returned.
+		"unknown":          nil,
+		"both-and-unknown": {akpb.Visibility_VISIBLE_TO_DEVELOPERS, akpb.Visibility_VISIBLE_TO_GROUP_ADMINS},
+	}, got)
 }
 
 func TestGetTree(t *testing.T) {
@@ -582,6 +870,68 @@ func TestFileDownloadEndpoint(t *testing.T) {
 	}
 }
 
+func TestFileDownloadEndpoint_PersistedArtifactAuthorization(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(
+		user1, group1,
+		user2, group2,
+	))
+	te.SetAuthenticator(auth)
+	require.NoError(t, buildbuddy_server.Register(te))
+	te.SetPooledByteStreamClient(&notFoundPooledByteStreamClient{})
+
+	invocation1, err := createInvocationForTesting(te, user1)
+	require.NoError(t, err)
+	invocation2, err := createInvocationForTesting(te, user2)
+	require.NoError(t, err)
+
+	const resourcePath = "blobs/secret/6"
+	const secret = "secret"
+	_, err = te.GetBlobstore().WriteBlob(ctx, path.Join(invocation2, "artifacts/cache", resourcePath), []byte(secret))
+	require.NoError(t, err)
+
+	mux := http.NewServeMux()
+	mux.Handle("/file/download", interceptors.WrapAuthenticatedExternalHandler(te, te.GetBuildBuddyServer()))
+	baseURL := testhttp.StartServer(t, mux)
+
+	fetch := func(t *testing.T, user, invocationID, bytestreamURL string) (int, string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf(
+			"%s/file/download?invocation_id=%s&bytestream_url=%s",
+			baseURL, invocationID, url.QueryEscape(bytestreamURL)), nil)
+		require.NoError(t, err)
+		req.Header.Set(authutil.APIKeyHeader, user)
+		rsp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer rsp.Body.Close()
+		body, err := io.ReadAll(rsp.Body)
+		require.NoError(t, err)
+		return rsp.StatusCode, string(body)
+	}
+
+	t.Run("authorized_object", func(t *testing.T) {
+		code, body := fetch(t, user2, invocation2, "bytestream://cache.example/"+resourcePath)
+		require.Equal(t, http.StatusOK, code)
+		require.Equal(t, secret, body)
+	})
+
+	t.Run("invocation_acl", func(t *testing.T) {
+		code, body := fetch(t, user1, invocation2, "bytestream://cache.example/"+resourcePath)
+		require.Equal(t, http.StatusForbidden, code)
+		require.NotContains(t, body, secret)
+	})
+
+	t.Run("normalized_path_cannot_escape_authorized_invocation", func(t *testing.T) {
+		traversalURL := fmt.Sprintf(
+			"bytestream://cache.example/../../../%s/artifacts/cache/%s",
+			invocation2, resourcePath)
+		code, body := fetch(t, user1, invocation1, traversalURL)
+		require.Equal(t, http.StatusBadRequest, code)
+		require.NotContains(t, body, secret)
+	})
+}
+
 func TestWriteEventLog(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(user1, group1))
@@ -599,7 +949,7 @@ func TestWriteEventLog(t *testing.T) {
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, bbServer)
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	client := bbspb.NewBuildBuddyServiceClient(conn)
@@ -674,7 +1024,7 @@ func TestWriteEventLog_ServerTimeout(t *testing.T) {
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, bbServer)
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	client := bbspb.NewBuildBuddyServiceClient(conn)

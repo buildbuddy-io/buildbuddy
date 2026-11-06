@@ -5,6 +5,7 @@ package experiments_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -18,16 +19,177 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 
+	flagdsync "github.com/open-feature/flagd/core/pkg/sync"
+
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 )
+
+var (
+	testExperiment = expflag.Bool("experiments_test.expflag", false, "Exercises expflag evaluation through the registered provider.")
+	renamedBool    = expflag.Bool("experiments_test.bool", true, "A boolean value.", expflag.DeprecatedExperimentName("old-bool"))
+	renamedString  = expflag.String("experiments_test.string", "default", "A string value.", expflag.DeprecatedExperimentName("old-string"))
+	renamedInt64   = expflag.Int64("experiments_test.int64", 1, "An integer value.", expflag.DeprecatedExperimentName("old-int64"))
+	renamedFloat64 = expflag.Float64("experiments_test.float64", 1, "A floating point value.", expflag.DeprecatedExperimentName("old-float64"))
+	renamedObject  = expflag.Object("experiments_test.object", map[string]any{"default": true}, "An object value.", expflag.DeprecatedExperimentName("old-object"))
+)
+
+func TestDeprecatedExperimentName(t *testing.T) {
+	provider := openfeatureTesting.NewTestProvider()
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	t.Cleanup(provider.Cleanup)
+	fp, err := experiments.NewFlagProvider("expflag-renaming-test")
+	require.NoError(t, err)
+	expflag.SetFlagProvider(fp)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
+	for _, flagCase := range []struct {
+		name         string
+		get          func(context.Context) (any, *expb.EvaluatedFlag)
+		defaultValue any
+		newValue     any
+		oldValue     any
+	}{
+		{
+			name:         "bool",
+			get:          func(ctx context.Context) (any, *expb.EvaluatedFlag) { return renamedBool.GetWithDetails(ctx) },
+			defaultValue: true, newValue: false, oldValue: true,
+		},
+		{
+			name:         "string",
+			get:          func(ctx context.Context) (any, *expb.EvaluatedFlag) { return renamedString.GetWithDetails(ctx) },
+			defaultValue: "default", newValue: "", oldValue: "legacy",
+		},
+		{
+			name:         "int64",
+			get:          func(ctx context.Context) (any, *expb.EvaluatedFlag) { return renamedInt64.GetWithDetails(ctx) },
+			defaultValue: int64(1), newValue: int64(0), oldValue: int64(42),
+		},
+		{
+			name:         "float64",
+			get:          func(ctx context.Context) (any, *expb.EvaluatedFlag) { return renamedFloat64.GetWithDetails(ctx) },
+			defaultValue: float64(1), newValue: float64(0), oldValue: 1.5,
+		},
+		{
+			name:         "object",
+			get:          func(ctx context.Context) (any, *expb.EvaluatedFlag) { return renamedObject.GetWithDetails(ctx) },
+			defaultValue: map[string]any{"default": true}, newValue: map[string]any{}, oldValue: map[string]any{"legacy": true},
+		},
+	} {
+		for _, testCase := range []struct {
+			name       string
+			newPresent bool
+			oldPresent bool
+			disabled   bool
+			newValue   any
+			want       any
+			variant    string
+		}{
+			{name: "old_only", oldPresent: true, want: flagCase.oldValue, variant: "legacy"},
+			{name: "new_only", newPresent: true, newValue: flagCase.newValue, want: flagCase.newValue},
+			{name: "both", newPresent: true, oldPresent: true, newValue: flagCase.newValue, want: flagCase.newValue},
+			{name: "new_matches_default", newPresent: true, oldPresent: true, newValue: flagCase.defaultValue, want: flagCase.defaultValue},
+			{name: "new_wrong_type", newPresent: true, oldPresent: true, newValue: []string{"invalid"}, want: flagCase.defaultValue},
+			{name: "new_disabled", newPresent: true, oldPresent: true, disabled: true, newValue: flagCase.newValue, want: flagCase.defaultValue},
+			{name: "neither", want: flagCase.defaultValue},
+		} {
+			t.Run(flagCase.name+"/"+testCase.name, func(t *testing.T) {
+				configured := make(map[string]memprovider.InMemoryFlag)
+				for _, entry := range []struct {
+					name    string
+					present bool
+					value   any
+					variant string
+				}{
+					{name: "experiments_test." + flagCase.name, present: testCase.newPresent, value: testCase.newValue},
+					{name: "old-" + flagCase.name, present: testCase.oldPresent, value: flagCase.oldValue, variant: "legacy"},
+				} {
+					if !entry.present {
+						continue
+					}
+					// The SDK's in-memory provider represents integer variants as int.
+					if v, ok := entry.value.(int64); ok {
+						entry.value = int(v)
+					}
+					state := memprovider.Enabled
+					if testCase.disabled && entry.variant == "" {
+						state = memprovider.Disabled
+					}
+					configured[entry.name] = memprovider.InMemoryFlag{
+						State: state, DefaultVariant: entry.variant, Variants: map[string]any{entry.variant: entry.value},
+					}
+				}
+				provider.UsingFlags(t, configured)
+				value, details := flagCase.get(t.Context())
+				require.Equal(t, testCase.want, value)
+				require.Equal(t, testCase.variant, details.GetVariant())
+				require.Equal(t, "experiments_test."+flagCase.name, details.GetName())
+			})
+		}
+	}
+}
+
+func TestDeprecatedExperimentName_Flagd(t *testing.T) {
+	flags.Set(t, renamedBool.Name(), false)
+	for _, testCase := range []struct {
+		name    string
+		newFlag string
+		want    bool
+		variant string
+	}{
+		{name: "missing", want: true, variant: "legacy"},
+		{name: "false", newFlag: `"experiments_test.bool": {"state": "ENABLED", "defaultVariant": "off", "variants": {"off": false}},`, variant: "off"},
+		{name: "disabled", newFlag: `"experiments_test.bool": {"state": "DISABLED", "defaultVariant": "on", "variants": {"on": true}},`},
+		{name: "wrong_type", newFlag: `"experiments_test.bool": {"state": "ENABLED", "defaultVariant": "on", "variants": {"on": "true"}},`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			path := writeFlagConfig(t, fmt.Sprintf(`{"flags": {%s "old-bool": {"state": "ENABLED", "defaultVariant": "legacy", "variants": {"legacy": true}}}}`, testCase.newFlag))
+			provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(path))
+			require.NoError(t, err)
+			require.NoError(t, openfeature.SetProviderAndWait(provider))
+			t.Cleanup(func() {
+				require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+			})
+			fp, err := experiments.NewFlagProvider("flagd-renaming-test")
+			require.NoError(t, err)
+			expflag.SetFlagProvider(fp)
+			t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
+			value, details := renamedBool.GetWithDetails(t.Context())
+			require.Equal(t, testCase.want, value)
+			require.Equal(t, testCase.variant, details.GetVariant())
+			require.Equal(t, renamedBool.Name(), details.GetName())
+		})
+	}
+}
+
+func TestRegisterSetsExpflagProvider(t *testing.T) {
+	require.NoError(t, experiments.Register(testenv.GetTestEnv(t)))
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	provider := openfeatureTesting.NewTestProvider()
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	t.Cleanup(provider.Cleanup)
+	provider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		testExperiment.Name(): {
+			State:          memprovider.Enabled,
+			DefaultVariant: "enabled",
+			Variants:       map[string]any{"enabled": true},
+		},
+	})
+
+	value, details := testExperiment.GetWithDetails(t.Context())
+	require.True(t, value)
+	require.Equal(t, "enabled", details.GetVariant())
+}
 
 func TestNoopProviderProvidesDefaults(t *testing.T) {
 	ctx := context.Background()
@@ -41,6 +203,22 @@ func TestNoopProviderProvidesDefaults(t *testing.T) {
 	require.Equal(t, int64(0), fp.Int64(ctx, "my_flag", 0))
 	require.Equal(t, 1.0, fp.Float64(ctx, "my_flag", 1.0))
 	require.Nil(t, fp.Object(ctx, "my_flag", nil))
+}
+
+func TestProtoToVariantMap(t *testing.T) {
+	evaluated := []*expb.EvaluatedFlag{
+		{Name: "treatment_flag", Variant: "treatment", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true}},
+		{Name: "control_flag", Variant: "control", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: false}},
+		{Name: "unconfigured_flag", Value: &expb.EvaluatedFlag_StringValue{StringValue: ""}},
+	}
+
+	variants := experiments.ProtoToVariantMap(evaluated)
+
+	// Flags with an empty variant should be excluded.
+	require.Equal(t, map[string]string{
+		"treatment_flag": "treatment",
+		"control_flag":   "control",
+	}, variants)
 }
 
 func TestPrimitiveFlags(t *testing.T) {
@@ -579,4 +757,30 @@ func TestGroupStatusTargeting(t *testing.T) {
 		require.False(t, fp.Boolean(ctx, "enterprise_feature", false))
 		require.False(t, fp.Boolean(ctx, "free_tier_feature", false))
 	})
+}
+
+// failingSync is a flagdsync.ISync whose initial Sync fails, as gcsflagsync's
+// does when the first GCS read fails.
+type failingSync struct{}
+
+func (failingSync) Init(ctx context.Context) error { return nil }
+
+func (failingSync) IsReady() bool { return false }
+
+func (failingSync) ReSync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
+	return nil
+}
+
+func (failingSync) Sync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
+	return errors.New("initial GCS flag sync failed")
+}
+
+func TestRegisterInProcessSync_InitialSyncErrorIsFatal(t *testing.T) {
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
+
+	err := experiments.RegisterInProcessSync(testenv.GetTestEnv(t), failingSync{})
+	require.Error(t, err)
 }

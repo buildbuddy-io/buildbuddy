@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,11 +35,16 @@ var (
 
 // Set via x_defs in BUILD file.
 var (
+	buildifierRlocationpath  string
 	goimportsRlocationpath   string
+	actionlintRlocationpath  string
 	goRlocationpath          string
 	clangFormatRlocationpath string
 	bbCLIRlocationpath       string
 	prettierRlocationpath    string
+	// Space-separated: a `gazelle` rule has two outputs, which are equivalent
+	// runner scripts.
+	gazelleRlocationpaths string
 )
 
 var (
@@ -46,6 +52,8 @@ var (
 	tools = []Tool{
 		// Fixes go files - both imports and formatting.
 		{Name: "GoFormat", Run: runGoimports},
+		// Checks GitHub workflow files. Check-only: it has no fix mode.
+		{Name: "WorkflowLint", Run: runActionlint},
 		// Fixes proto files.
 		{Name: "ProtoFormat", Run: runClangFormat},
 		// Fixes frontend-related files, configs, and docs.
@@ -54,10 +62,12 @@ var (
 		// Runs exclusively because this might change deps.bzl which BuildFiles
 		// might also change.
 		{Name: "GoModulesFix", Run: runFixGoDeps, WriteLock: true},
-		// Fixes build+starlark file formatting and deps (via embedded gazelle).
-		// Runs exclusively because this might change deps.bzl which GoDeps
-		// might also change.
-		{Name: "BuildFix", Run: runBBFix, WriteLock: true},
+		// Fixes BUILD file deps, using the repo's gazelle.
+		// Runs exclusively in -fix mode, since it rewrites BUILD files.
+		{Name: "BuildDepsFix", Run: runGazelle, WriteLock: true},
+		// Fixes build+starlark file formatting and lint warnings (buildifier).
+		// Runs exclusively in -fix mode, since it rewrites BUILD and .bzl files.
+		{Name: "StarlarkFix", Run: runBuildifier, WriteLock: true},
 		// Ensures that MODULE.bazel.lock is up to date.
 		{Name: "UpdateLockfile", Run: runBazelModDeps, WriteLock: true},
 	}
@@ -88,30 +98,89 @@ type Tool struct {
 	Run func(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error
 }
 
-func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
+// runGazelle runs //:gazelle's runner script from runfiles, which is built by
+// the same bazel invocation as lint (rather than by a nested `bazel run`).
+// Gazelle always looks at the whole repo, so files is unused.
+func runGazelle(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	runner, _, _ := strings.Cut(gazelleRlocationpaths, " ")
+	cmd, err := getRunfileToolCommand(ctx, runner)
 	if err != nil {
-		return fmt.Errorf("get bb command: %w", err)
+		return fmt.Errorf("get gazelle command: %w", err)
 	}
-	cmd.Args = append(cmd.Args, "fix")
 	if !fix {
-		cmd.Args = append(cmd.Args, "--diff")
+		cmd.Args = append(cmd.Args, "-mode=diff")
 	}
-	stdoutCounter := &ioutil.Counter{}
-	cmd.Stdout = io.MultiWriter(stdout, stdoutCounter)
+	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	// bb fix runs gazelle, which needs 'go' in PATH to resolve imports.
+	// Gazelle needs 'go' in PATH to resolve imports.
 	goPath, err := runfiles.Rlocation(goRlocationpath)
 	if err != nil {
 		return fmt.Errorf("find go in runfiles: %w", err)
 	}
 	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+os.Getenv("PATH"))
+	// Gazelle exits non-zero if it fails, e.g. on a BUILD file it can't
+	// process, and in diff mode, if there's a diff.
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("run bb fix: %w", err)
+		return fmt.Errorf("run gazelle: %w", err)
 	}
-	// In diff mode, fail if the diff is non-empty.
-	if !fix && stdoutCounter.Count() > 0 {
-		return fmt.Errorf("bb fix found lint errors")
+	return nil
+}
+
+// buildifierInputs are files that determine buildifier's version, patches or
+// config. If any of them changed, all files are checked, not just changed
+// ones, since buildifier may now flag files that haven't changed.
+var buildifierInputs = []string{
+	// The buildifier version, as github.com/bazel-contrib/buildtools/v10.
+	"go.mod",
+	"buildpatches/buildifier.patch",
+	".buildifier.json",
+}
+
+func runBuildifier(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	if slices.ContainsFunc(files, func(f string) bool { return slices.Contains(buildifierInputs, f) }) {
+		allFiles, err := sh("git ls-files")
+		if err != nil {
+			return fmt.Errorf("list files: %w", err)
+		}
+		files = lines(allFiles)
+	}
+	files = filterToBuildifierFiles(files)
+	if len(files) == 0 {
+		return nil
+	}
+	if !fix {
+		return runBuildifierPass(ctx, stdout, stderr, "check", "warn", files)
+	}
+	fixErr := runBuildifierPass(ctx, stdout, stderr, "fix", "fix", files)
+	checkErr := runBuildifierPass(ctx, stdout, stderr, "check", "warn", files)
+	return errors.Join(fixErr, checkErr)
+}
+
+func filterToBuildifierFiles(files []string) []string {
+	var filtered []string
+	for _, file := range files {
+		name := filepath.Base(file)
+		ext := filepath.Ext(name)
+		if name == "BUILD" || name == "WORKSPACE" || name == "WORKSPACE.bzlmod" ||
+			slices.Contains([]string{".bazel", ".BUILD", ".bzl", ".sky", ".star"}, ext) ||
+			(ext == ".oss" && (strings.HasPrefix(name, "BUILD.") || strings.HasPrefix(name, "WORKSPACE."))) {
+			filtered = append(filtered, file)
+		}
+	}
+	return filtered
+}
+
+func runBuildifierPass(ctx context.Context, stdout, stderr io.Writer, mode, lintMode string, files []string) error {
+	cmd, err := getRunfileToolCommand(ctx, buildifierRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get buildifier command: %w", err)
+	}
+	cmd.Args = append(cmd.Args, "-mode="+mode, "-lint="+lintMode)
+	cmd.Args = append(cmd.Args, files...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run buildifier with mode %q and lint mode %q: %w", mode, lintMode, err)
 	}
 	return nil
 }
@@ -180,6 +249,30 @@ func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	}
 	if stdoutCounter.Count() > 0 {
 		return fmt.Errorf("goimports found lint errors")
+	}
+	return nil
+}
+
+// runActionlint checks all workflows whenever a workflow, a local action, the
+// actionlint config or its version (go.mod) changed, since any of those can
+// break workflows that didn't change, like the callers of a reusable workflow.
+// Checking every workflow takes milliseconds.
+func runActionlint(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	if !slices.ContainsFunc(files, func(f string) bool { return f == "go.mod" || strings.HasPrefix(f, ".github/") }) {
+		return nil
+	}
+	cmd, err := getRunfileToolCommand(ctx, actionlintRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get actionlint command: %w", err)
+	}
+	// With no file arguments, actionlint checks every workflow in the repo.
+	// Don't use shellcheck or pyflakes even if they're on PATH, so results
+	// don't depend on the machine.
+	cmd.Args = append(cmd.Args, "-shellcheck=", "-pyflakes=")
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run actionlint: %w", err)
 	}
 	return nil
 }

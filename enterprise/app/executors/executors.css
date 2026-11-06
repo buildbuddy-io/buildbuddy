@@ -132,6 +132,22 @@
   overflow-wrap: anywhere;
 }
 
+.executors-page .executor-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.executors-page .executor-card-actions .executor-history-button {
+  margin: 0;
+}
+
+.executors-page .executor-flags-section {
+  margin-top: 16px;
+}
+
 .executors-page .pool-size-warning {
   margin-top: 16px;
 }

@@ -22,7 +22,7 @@ var (
 // If a nil pointer is encountered the access path, an error is returned.
 //
 // Number-valued field names refer to slice indexes.
-func ExtractValues(obj interface{}, fieldPaths ...string) (map[string]string, error) {
+func ExtractValues(obj any, fieldPaths ...string) (map[string]string, error) {
 	values := map[string]string{}
 	objVal := reflect.Indirect(reflect.ValueOf(obj))
 	if !objVal.IsValid() {

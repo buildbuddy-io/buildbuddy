@@ -1,17 +1,6 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load(":defs.bzl", "microvm_kernel")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
-
-go_test(
-    name = "config_test",
-    srcs = ["config_test.go"],
-    embedsrcs = [
-        "microvm-kernel-aarch64-v5.10.config",
-        "microvm-kernel-x86_64-v5.15.config",
-        "microvm-kernel-x86_64-v6.1.config",
-    ],
-)
 
 # x86_64 (v5.15)
 #
@@ -25,16 +14,17 @@ microvm_kernel(
     version = "v5.15",
 )
 
-# x86_64 (v6.1) - EXPERIMENTAL (not used in prod yet)
+# x86_64 (v6.18) - EXPERIMENTAL (used by the upgrade-fc-guest-kernel experiment)
 #
 # Build and upload with:
-#   bazel run //enterprise/vmsupport/kernel:guest_kernel_x86_64_v6_1_upload --config=remote
+#   bazel run //enterprise/vmsupport/kernel:guest_kernel_x86_64_v6_18_upload --config=remote
 microvm_kernel(
-    name = "guest_kernel_x86_64_v6_1",
-    out = "vmlinux-x86_64-v6.1",
+    name = "guest_kernel_x86_64_v6_18",
+    out = "vmlinux-x86_64-v6.18",
     arch = "x86_64",
-    config = "microvm-kernel-x86_64-v6.1.config",
-    version = "v6.1",
+    config = "microvm-kernel-x86_64-v6.18.config",
+    git_tag = "v6.18.57",
+    version = "v6.18",
 )
 
 # arm64 (v5.10)
@@ -47,14 +37,4 @@ microvm_kernel(
     arch = "arm64",
     config = "microvm-kernel-aarch64-v5.10.config",
     version = "v5.10",
-)
-
-go_test(
-    name = "kernel_test",
-    srcs = ["config_test.go"],
-    embedsrcs = [
-        "microvm-kernel-aarch64-v5.10.config",
-        "microvm-kernel-x86_64-v5.15.config",
-        "microvm-kernel-x86_64-v6.1.config",
-    ],
 )

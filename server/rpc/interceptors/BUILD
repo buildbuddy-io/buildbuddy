@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:buildbuddy_service_go_proto",
+        "//proto/api/v1:api_v1_go_proto",
         "//server/capabilities_filter",
         "//server/environment",
         "//server/interfaces",
@@ -40,7 +41,9 @@ go_test(
     deps = [
         ":interceptors",
         "//proto:ping_service_go_proto",
+        "//proto/api/v1:api_v1_go_proto",
         "//server/interfaces",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/testutil/testport",
         "//server/util/authutil",

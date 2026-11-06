@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"os/signal"
@@ -75,7 +76,10 @@ func NewHealthChecker(serverType string) *HealthChecker {
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
-	go hc.handleSignals(signalChan)
+	go func() {
+		hc.handleSignals(signalChan)
+		signal.Stop(signalChan)
+	}()
 
 	go hc.handleShutdownFuncs()
 	go func() {
@@ -111,12 +115,27 @@ func (h *HealthChecker) Statusz(ctx context.Context) string {
 	return buf.String()
 }
 
+// handleSignals starts a graceful shutdown when the server is signaled. It
+// returns if the server finishes shutting down before being signaled. If the
+// server is signaled first, it keeps handling signals until the process exits.
 func (h *HealthChecker) handleSignals(signalChan <-chan os.Signal) {
 	// When running in a terminal, the ^C character echoed back to the user
 	// messes up the log output a bit. So, print a newline every time we get
 	// a signal to make the output a little cleaner.
 	isTTY := isatty.IsTerminal(uintptr(os.Stderr.Fd()))
-	sig := <-signalChan
+	var sig os.Signal
+	select {
+	case sig = <-signalChan:
+	case <-h.done:
+		return
+	}
+	// A signal can arrive as shutdown finishes, and select picks at random
+	// when both are ready.
+	select {
+	case <-h.done:
+		return
+	default:
+	}
 	if isTTY {
 		fmt.Println()
 	}
@@ -220,14 +239,11 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 
 	h.checkersMu.Lock()
 	checkers := make(map[string]interfaces.Checker, len(h.checkers))
-	for k, v := range h.checkers {
-		checkers[k] = v
-	}
+	maps.Copy(checkers, h.checkers)
 	h.checkersMu.Unlock()
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for name, ck := range checkers {
-		name := name
 		checkFn := ck
 		eg.Go(func() error {
 			err := checkFn.Check(ctx)

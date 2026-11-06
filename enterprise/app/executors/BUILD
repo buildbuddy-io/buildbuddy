@@ -41,6 +41,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//app/components/button",
         "//app/components/link",
         "//app/format",
         "//enterprise/app/trends:common",

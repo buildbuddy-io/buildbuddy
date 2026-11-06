@@ -1,12 +1,11 @@
-name: "Test linux/arm64 executor"
+# TODO: remove this workflow once firecracker is generally available on arm64.
+name: "Test linux/arm64 (root tests)"
 
 on:
   push:
     branches:
       - "master"
   pull_request:
-    branches:
-      - "*"
 
 jobs:
   test:
@@ -31,7 +30,13 @@ jobs:
           find /dev/shm -name 'libpod*' | xargs -r sudo rm -rf
 
       - name: Run tests
+        env:
+          IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != '' && github.event.pull_request.head.repo.full_name != github.repository }}
+          BUILDBUDDY_API_KEY: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && secrets.BUILDBUDDY_ORG_API_KEY || '' }}
         run: |
+          if [[ "$IS_FORK_PR" != "true" ]]; then
+            : "${BUILDBUDDY_API_KEY:?BUILDBUDDY_ORG_API_KEY is required for trusted CI}"
+          fi
           cat >> user.bazelrc <<'EOF'
           common --config=cache
           common --repository_cache=~/repo-cache
@@ -44,24 +49,16 @@ jobs:
           common --build_metadata=ROLE=CI
           common --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true
           common --color=yes
-          common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           EOF
 
-          bazel test --config=tests-linux-arm64 \
-            -- \
-            //enterprise/server/remote_execution/... \
-            //enterprise/server/test/integration/remote_execution/... \
-            -//enterprise/server/remote_execution/containers/firecracker/... \
-            -//enterprise/server/test/integration/remote_execution:remote_execution_test \
-            //app/util:shlex_test
+          if [[ "$IS_FORK_PR" == "true" ]]; then
+            echo 'common --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-arm64/rin20260818' >> user.bazelrc
+          else
+            printf 'common --remote_header=x-buildbuddy-api-key=%s\n' "$BUILDBUDDY_API_KEY" >> user.bazelrc
+            printf 'common --bes_header=x-buildbuddy-api-key=%s\n' "$BUILDBUDDY_API_KEY" >> user.bazelrc
+          fi
 
-          # Run a separate bazel invocation to invoke tests with the "docker" tag.
-          # TODO: improve platform setup so that we can run this whenever the
-          # host has podman available.
-          bazel test --config=tests-docker \
+          bazelisk test --config=race --test_tag_filters= \
+            //enterprise/server/remote_execution/overlayfs:overlayfs_test \
+            //enterprise/server/remote_execution/vbd:vbd_test \
             //enterprise/server/test/integration/podman:podman_test
-
-          # Make sure the executor binary builds.
-          bazel build \
-            //enterprise/server/cmd/executor \
-            //enterprise/server/cmd/executor:executor_linux_arm64_static

@@ -1,11 +1,12 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_test(
     name = "chunking_test",
     srcs = ["chunking_test.go"],
     deps = [
         "//enterprise/server/backends/pebble_cache",
-        "//enterprise/server/experiments",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/interfaces",
@@ -15,11 +16,7 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/prefix",
         "//server/util/testing/flags",
-        "@com_github_open_feature_go_sdk//openfeature",
-        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

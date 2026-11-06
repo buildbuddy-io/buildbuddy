@@ -3,19 +3,30 @@ load("//rules/typescript:index.bzl", "ts_library")
 package(default_visibility = ["//visibility:public"])
 
 ts_library(
+    name = "length_prefixed",
+    srcs = ["length_prefixed.ts"],
+    deps = [
+        "//:node_modules/browser-headers",
+        "//:node_modules/tslib",
+        "//app/util:errors",
+        "//proto:grpc_code_ts_proto",
+        "//proto:grpc_status_ts_proto",
+    ],
+)
+
+ts_library(
     name = "rpc_service",
     srcs = ["rpc_service.ts"],
     deps = [
-        "//:node_modules/browser-headers",
         "//:node_modules/protobufjs",
         "//:node_modules/rxjs",
         "//:node_modules/tslib",
         "//app/capabilities",
+        "//app/service:length_prefixed",
         "//app/util:async",
         "//app/util:errors",
         "//proto:buildbuddy_service_ts_proto",
         "//proto:context_ts_proto",
         "//proto:grpc_code_ts_proto",
-        "//proto:grpc_status_ts_proto",
     ],
 )

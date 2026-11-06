@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bbrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 )
@@ -163,7 +164,7 @@ func (a *BazelArgs) Prepend(arg string) error {
 }
 
 func prepend(args []string, arg string) []string {
-	_, commandIndex := parser.GetBazelCommandAndIndex(args)
+	_, commandIndex := bazel_command.GetCommandAndIndex(args)
 	if commandIndex == -1 {
 		return append([]string{arg}, args...)
 	}

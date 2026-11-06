@@ -6,6 +6,8 @@ import "proto/auditlog.proto";
 import "proto/context.proto";
 import "google/protobuf/timestamp.proto";
 
+option go_package = "github.com/buildbuddy-io/buildbuddy/proto/api/v1";
+
 // The selector used to specify which audit logs to return.
 message AuditLogSelector {
   // Optional inclusive lower bound for event time.

@@ -57,16 +57,26 @@ const (
 	UserNotFoundMsg   = "User not found"
 	LoggedOutMsg      = "User logged out"
 	ExpiredSessionMsg = "User session expired"
+
+	// AdminDisplayName is the name of a "server administrator" shown to users
+	AdminDisplayName = "Buildbuddy Admin"
+	adminEmailSuffix = "@buildbuddy.io"
 )
 
 var (
 	apiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
 
 	enableUserLists = flag.Bool("auth.enable_user_lists", false, "If enabled, check indirect group membership via user lists.", flag.Internal)
+
+	allowLocalCacheEncryption = flag.Bool("crypter.allow_local_cache_encryption", true, "If true, encrypting the contents of the local cache using a customer-managed encryption key is allowed. This flag is not sufficient to encrypt all cache contents -- encryption must still be enabled group-by-group. However, if this flag is false, all data in the local cache is stored in plaintext (unencrypted) regardless of the group settings. This is intended for use in customer-run proxies which can not access the derived encryption key.")
 )
 
 func UserListsEnabled() bool {
 	return *enableUserLists
+}
+
+func IsAdminEmail(email string) bool {
+	return strings.HasSuffix(email, adminEmailSuffix)
 }
 
 // AuthorizeOrgAdmin checks whether the given user has ORG_ADMIN capability
@@ -154,6 +164,16 @@ func IsAnonymousUserError(err error) bool {
 	return false
 }
 
+// IsAnonymousRequest reports whether anonymous usage is enabled and the
+// request did not provide authentication credentials.
+func IsAnonymousRequest(ctx context.Context, authenticator interfaces.Authenticator) bool {
+	if !authenticator.AnonymousUsageEnabled(ctx) {
+		return false
+	}
+	_, err := authenticator.AuthenticatedUser(ctx)
+	return IsAnonymousUserError(err)
+}
+
 // Parses and returns a BuildBuddy API key from the given string.
 func ParseAPIKeyFromString(input string) (string, error) {
 	matches := apiKeyRegex.FindAllStringSubmatch(input, -1)
@@ -206,7 +226,14 @@ func ValidateRestrictedACAccess(ctx context.Context, env environment.Env, instan
 	return status.UnauthenticatedError("Cannot access restricted ActionResult from untrusted client")
 }
 
+func AllowLocalCacheEncryption() bool {
+	return *allowLocalCacheEncryption
+}
+
 func EncryptionEnabled(ctx context.Context, authenticator interfaces.Authenticator) bool {
+	if !*allowLocalCacheEncryption {
+		return false
+	}
 	u, err := authenticator.AuthenticatedUser(ctx)
 	if err != nil {
 		return false

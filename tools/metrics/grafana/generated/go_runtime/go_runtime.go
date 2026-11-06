@@ -114,6 +114,33 @@ func gcPacingPanel() *timeseries.PanelBuilder {
 		WithTarget(dash.PromQuery(fmt.Sprintf(`sum(go_gc_gomemlimit_bytes{%s})`, f), "limit"))
 }
 
+func finalizerQueuePanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("Finalizer & cleanup queue length", dash.UnitShort).
+		Description("Finalizers (runtime.SetFinalizer) and cleanups (runtime.AddCleanup) the GC has queued but that have not finished running, per pod (queued minus executed counters; both count in blocks, so a run-in-progress block still shows as backlog). Finalizers all run on one goroutine, so one slow or blocked finalizer stalls every one behind it and whatever they would release (fds, cgo memory, pooled buffers) stays held. A short spike right after a GC cycle is normal; a backlog that keeps climbing is not.").
+		WithTarget(dash.PromQuery(
+			fmt.Sprintf(`clamp_min(sum by (pod_name) (go_gc_finalizers_queued_finalizers_total{%s} - go_gc_finalizers_executed_finalizers_total{%s}), 0)`, f, f),
+			"{{pod_name}} finalizers")).
+		WithTarget(dash.PromQuery(
+			fmt.Sprintf(`clamp_min(sum by (pod_name) (go_gc_cleanups_queued_cleanups_total{%s} - go_gc_cleanups_executed_cleanups_total{%s}), 0)`, f, f),
+			"{{pod_name}} cleanups"))
+}
+
+func finalizerRatePanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("Finalizer & cleanup queue rate", dash.UnitOps).
+		Description("Finalizers (runtime.SetFinalizer) and cleanups (runtime.AddCleanup) queued by the GC per second, per pod: the demand placed on the finalizer goroutine and the cleanup worker pool. Cleanups are plotted on the right axis because they are usually orders of magnitude rarer. In steady state this equals the executed rate; the queue-length panel shows when it does not.").
+		AxisLabel("finalizers/s").
+		WithTarget(dash.PromQuery(
+			fmt.Sprintf(`sum by (pod_name) (rate(go_gc_finalizers_queued_finalizers_total{%s}[$__rate_interval]))`, f),
+			"{{pod_name}} finalizers")).
+		WithTarget(dash.PromQuery(
+			fmt.Sprintf(`sum by (pod_name) (rate(go_gc_cleanups_queued_cleanups_total{%s}[$__rate_interval]))`, f),
+			"{{pod_name}} cleanups")).
+		OverrideByRegexp("/.* cleanups$/", []dashboard.DynamicConfigValue{
+			{Id: "custom.axisPlacement", Value: "right"},
+			{Id: "custom.axisLabel", Value: "cleanups/s"},
+		})
+}
+
 // --- Allocation ---
 
 func allocBytesPanel() *timeseries.PanelBuilder {
@@ -296,6 +323,8 @@ func build() (dashboard.Dashboard, error) {
 		WithPanel(gcPausePerPodPanel()).
 		WithPanel(gcPauseHeatmap()).
 		WithPanel(gcRatePanel()).
+		WithPanel(finalizerQueuePanel()).
+		WithPanel(finalizerRatePanel()).
 		WithRow(dashboard.NewRowBuilder("Allocation")).
 		WithPanel(allocBytesPanel()).
 		WithPanel(allocObjectsPanel()).

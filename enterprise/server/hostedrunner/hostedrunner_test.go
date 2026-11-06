@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -23,8 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -32,6 +29,7 @@ import (
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -62,7 +60,7 @@ func getEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 
 	go runFunc()
 
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
+	clientConn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { clientConn.Close() })
 
@@ -167,26 +165,6 @@ func setGroupStatus(t *testing.T, te *testenv.TestEnv, ctx context.Context, grou
 	return metadata.AppendToOutgoingContext(authCtx, authutil.ContextTokenStringKey, jwt)
 }
 
-func configureTimeout(t *testing.T, env *testenv.TestEnv, groupStatus grpb.Group_GroupStatus, timeout string) {
-	evaluator := func(_ memprovider.InMemoryFlag, flatCtx openfeature.FlattenedContext) (any, openfeature.ProviderResolutionDetail) {
-		if flatCtx["group_status"] == grpb.Group_GroupStatus_name[int32(groupStatus)] {
-			return timeout, openfeature.ProviderResolutionDetail{Reason: openfeature.TargetingMatchReason}
-		}
-		return "", openfeature.ProviderResolutionDetail{Reason: openfeature.DefaultReason}
-	}
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		ci_runner_util.DefaultTimeoutExperimentName: {
-			State:            memprovider.Enabled,
-			ContextEvaluator: &evaluator,
-		},
-	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
-}
-
 func TestRun_WithoutRepoURL(t *testing.T) {
 	te, ctx := getEnv(t)
 
@@ -206,16 +184,17 @@ func TestTimeout(t *testing.T) {
 	tests := []struct {
 		name                  string
 		groupStatus           grpb.Group_GroupStatus
+		experimentTimeout     string
 		expectedTimeout       time.Duration
 		expectedTimeoutReason string
 	}{
-		{name: "timeout configured in experiment", groupStatus: grpb.Group_FREE_TIER_GROUP_STATUS, expectedTimeout: 1 * time.Hour, expectedTimeoutReason: ci_runner_util.FreeTierTimeoutReason},
+		{name: "timeout configured in experiment", groupStatus: grpb.Group_FREE_TIER_GROUP_STATUS, experimentTimeout: "1h", expectedTimeout: 1 * time.Hour, expectedTimeoutReason: ci_runner_util.FreeTierTimeoutReason},
 		{name: "timeout not configured in experiment", groupStatus: grpb.Group_ENTERPRISE_GROUP_STATUS, expectedTimeout: 24 * time.Hour},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.remote_runner_default_timeout", tc.experimentTimeout)
 			te, ctx := getEnv(t)
-			configureTimeout(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
 
 			ctx = setGroupStatus(t, te, ctx, tc.groupStatus)
 
@@ -272,6 +251,68 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	// Check that credential-related overrides were not overwritten
 	for _, expectedCredential := range []string{"BUILDBUDDY_API_KEY", "REPO_TOKEN", "REPO_USER"} {
 		require.Contains(t, appliedEnvOverrides, expectedCredential)
+	}
+}
+
+func TestRun_BuildUser(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		subID    string
+		fullName string
+		groupKey bool
+		env      map[string]string
+		want     string
+	}{
+		{name: "GitHub user", subID: "https://github.com/alice", fullName: "Alice Example", want: "alice"},
+		{name: "user name", subID: "sso/alice", fullName: "Alice Example", want: "Alice Example"},
+		{name: "unnamed user", subID: "sso/alice", want: "US1"},
+		{name: "organization key", subID: "sso/alice", groupKey: true, want: "Acme, Inc."},
+		{name: "explicit user", subID: "sso/alice", env: map[string]string{"BUILD_USER": "custom-user"}, want: "custom-user"},
+		{name: "explicit empty user", subID: "sso/alice", env: map[string]string{"BUILD_USER": ""}, want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "app.user_owned_keys_enabled", true)
+			te, ctx := getEnv(t)
+			u, err := te.GetUserDB().GetUser(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, u.Groups)
+			groupID := u.Groups[0].Group.GroupID
+			err = te.GetDBHandle().NewQuery(ctx, "set_attribution_profile").Raw(
+				`UPDATE "Users" SET sub_id = ?, first_name = ? WHERE user_id = ?`,
+				tc.subID, tc.fullName, u.UserID).Exec().Error
+			require.NoError(t, err)
+			enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx, te, groupID, true)
+			err = te.GetDBHandle().NewQuery(ctx, "set_attribution_organization").Raw(
+				`UPDATE "Groups" SET name = ? WHERE group_id = ?`, "Acme, Inc.", groupID).Exec().Error
+			require.NoError(t, err)
+			var key *tables.APIKey
+			caps := []cappb.Capability{cappb.Capability_CACHE_WRITE}
+			if tc.groupKey {
+				key, err = te.GetAuthDB().CreateAPIKey(ctx, groupID, "test", caps, 0, false)
+			} else {
+				key, err = te.GetAuthDB().CreateUserAPIKey(ctx, groupID, u.UserID, "test", caps, 0)
+			}
+			require.NoError(t, err)
+			ctx = te.GetAuthenticator().AuthContextFromAPIKey(t.Context(), key.Value)
+			ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, key.Value)
+			r, err := New(te)
+			require.NoError(t, err)
+			_, err = r.Run(ctx, &rnpb.RunRequest{
+				Steps: []*rnpb.Step{{Run: "echo hello"}},
+				Env:   tc.env,
+			})
+			require.NoError(t, err)
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			require.Len(t, execClient.executeRequests, 1)
+			exec := getExecution(t, ctx, te, execClient.executeRequests[0].Payload)
+			var users []string
+			for _, env := range exec.Command.GetEnvironmentVariables() {
+				if env.GetName() == "BUILD_USER" {
+					users = append(users, env.GetValue())
+				}
+			}
+			require.Equal(t, []string{tc.want}, users)
+		})
 	}
 }
 
@@ -428,4 +469,28 @@ func TestCredentialEnvOverrides_PrivateRepo(t *testing.T) {
 
 	// Assert that REPO_TOKEN is set to the fake token.
 	require.Contains(t, envOverrides, "REPO_TOKEN="+fakeToken)
+}
+
+func TestRun_GitCredentialsFromEnv(t *testing.T) {
+	te, ctx := getEnv(t)
+	r, err := New(te)
+	require.NoError(t, err)
+
+	_, err = r.Run(ctx, &rnpb.RunRequest{
+		GitRepo:   &gitpb.GitRepo{RepoUrl: "https://bitbucket.org/org/repo"},
+		RepoState: &gitpb.RepoState{Branch: "main"},
+		Env:       map[string]string{"REPO_USER": "user", "REPO_TOKEN": "token"},
+		Steps:     []*rnpb.Step{{Run: "echo hello"}},
+	})
+	require.NoError(t, err)
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	require.Equal(t, 1, len(execClient.executeRequests))
+	execReq := execClient.executeRequests[0]
+	overrides := execReq.Metadata.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
+	require.Greater(t, len(overrides), 0)
+	require.Contains(t, overrides[len(overrides)-1], "REPO_USER=user,REPO_TOKEN=token")
+	for _, ev := range getExecution(t, ctx, te, execReq.Payload).Command.GetEnvironmentVariables() {
+		require.NotContains(t, []string{"REPO_USER", "REPO_TOKEN"}, ev.GetName())
+	}
 }

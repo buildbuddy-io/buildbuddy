@@ -155,7 +155,7 @@ func weightedResample(nodes []interfaces.ExecutionNode) []interfaces.ExecutionNo
 
 	unsampledOriginalNodes := make(map[interfaces.ExecutionNode]struct{}, len(nodes))
 	cumulativeSum := make([]float64, len(nodes))
-	for i := 0; i < len(nodes); i++ {
+	for i := range nodes {
 		cpu := float64(nodes[i].GetAssignableMilliCpu())
 		cumulativeSum[i] = cpu
 		if i > 0 {

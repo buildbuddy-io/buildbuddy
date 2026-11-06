@@ -271,7 +271,7 @@ func (s *SecretService) GetSecretEnvVars(ctx context.Context, groupID string, se
 	}
 
 	envVars := make([]*repb.Command_EnvironmentVariable, len(values))
-	for i := 0; i < len(values); i++ {
+	for i := range values {
 		envVars[i] = &repb.Command_EnvironmentVariable{
 			Name:  names[i],
 			Value: values[i],

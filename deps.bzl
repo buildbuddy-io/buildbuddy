@@ -1,3 +1,5 @@
+"""Declares pinned static dependencies used by the BuildBuddy workspace."""
+
 load("@bazel_skylib//lib:modules.bzl", "modules")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 
@@ -5,15 +7,50 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 # When changing this version, a new release of podman-static may be needed.
 # See dockerfiles/executor_image/README.md for instructions.
 # The checksums below will also need to be updated.
-PODMAN_VERSION = "v5.7.0"
-PODMAN_STATIC_SHA256_AMD64 = "6a1c06b78d7dad15d8d7155a180874939a04bd39ce2f64726c7f11142ab7aa7d"
-PODMAN_STATIC_SHA256_ARM64 = "703ffad8972aa2db70a173c80804a88185e6c2dc8a88a247a8ebffeac424b0ba"
+PODMAN_VERSION = "v5.8.8"
+PODMAN_STATIC_SHA256_AMD64 = "424d9478fdd08b61aeec4cca2b695709ffb23bca6133d0fd1029a4d0b610434b"
+PODMAN_STATIC_SHA256_ARM64 = "bd46c0acf2db23e1e693b46b46987c45ab6f7a360dd5f917ba2cd316b670ec10"
 
-# The bb CLI version used by //tools/lint for `bb fix` and `bb mod deps`.
-BB_CLI_VERSION = "5.0.333"
+# The bb CLI version used by //tools/lint for `bb mod deps`.
+BB_CLI_VERSION = "5.0.466"
 
 # Manually created
+# buildifier: disable=unused-variable
 def install_static_dependencies(workspace_name = "buildbuddy"):
+    """Installs static third-party archives and files.
+
+    Args:
+      workspace_name: Ignored; retained for compatibility with existing callers.
+    """
+    http_archive(
+        name = "clickhouse_linux_amd64",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-common-static-25.3.14.14-amd64.tgz"],
+        sha256 = "4fd9c705eb4952335c30ca09fa29a021e63d0e7e05da7f8d9f965e2f4cfb246a",
+        strip_prefix = "clickhouse-common-static-25.3.14.14",
+        build_file_content = 'exports_files(["usr/bin/clickhouse"])',
+    )
+    http_archive(
+        name = "clickhouse_linux_arm64",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-common-static-25.3.14.14-arm64.tgz"],
+        sha256 = "e82a0a450ad4e57b952be933294f805267c160e13d8cc89d6145f2647027edaf",
+        strip_prefix = "clickhouse-common-static-25.3.14.14",
+        build_file_content = 'exports_files(["usr/bin/clickhouse"])',
+    )
+    http_file(
+        name = "clickhouse_darwin_amd64",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-macos"],
+        sha256 = "4136ebc67aee500b7c02804d8116977d59264d937e8e78793ab4d54b538b516b",
+        downloaded_file_path = "clickhouse",
+        executable = True,
+    )
+    http_file(
+        name = "clickhouse_darwin_arm64",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-macos-aarch64"],
+        sha256 = "468e33062f3cbfeb6bbaa8709b7fdd31c73a177e31cb60ed7933452a6685648b",
+        downloaded_file_path = "clickhouse",
+        executable = True,
+    )
+
     http_archive(
         name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
         integrity = "sha256-0Glb6xE/18H8cVTsfolRVmAOX1Rgrm3XAkJMT1W1dkI=",
@@ -34,9 +71,9 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
             'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
-        ]).format(release = "v1.15.1-x86_64"),
-        sha256 = "d4a32ab2322d887ca1bc4a4e7afa9cc35393e6362dfc2b3becb389d362e4275a",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.15.1/firecracker-v1.15.1-x86_64.tgz"],
+        ]).format(release = "v1.16.2-x86_64"),
+        sha256 = "32e3cdcd4081f91fe2b024a266f57dcb3b4e5fec5033e0cb22467ad7f7820bda",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.2/firecracker-v1.16.2-x86_64.tgz"],
     )
     http_archive(
         name = "com_github_firecracker_microvm_firecracker_arm64",
@@ -44,9 +81,9 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
             'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
-        ]).format(release = "v1.11.0-aarch64"),
-        sha256 = "4b98f7cd669a772716fd1bef59c75188ba05a683bc0759ee4169eb351274fcb0",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.11.0/firecracker-v1.11.0-aarch64.tgz"],
+        ]).format(release = "v1.16.2-aarch64"),
+        sha256 = "751365040ca3dde7616c5a1d97cc1304674fae469ce02993104eab22f5961950",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.2/firecracker-v1.16.2-aarch64.tgz"],
     )
 
     http_file(
@@ -194,102 +231,110 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-9.1.1-darwin-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.1/bazel-9.1.1-darwin-arm64"],
-        sha256 = "2db883718453f0437a7bcb408e889dbf8539cdc4d61c8ebc3807a1a88d02ff08",
+        name = "io_bazel_bazel-9.2.0-darwin-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.2.0/bazel-9.2.0-darwin-arm64"],
+        sha256 = "dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6",
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-9.1.1-darwin-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.1/bazel-9.1.1-darwin-x86_64"],
-        sha256 = "6fd490084bdccf044d7a6d8360a26f8770fa09f4e624328efea292f493204930",
+        name = "io_bazel_bazel-9.2.0-darwin-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.2.0/bazel-9.2.0-darwin-x86_64"],
+        sha256 = "14c9bcb01303b38192e0e2895051c1bcf19bf89d7e416f5aeeeb48b6b624cfbf",
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-9.1.1-linux-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.1/bazel-9.1.1-linux-arm64"],
-        sha256 = "82d1163884e45a6a7ff764cc01197b1b1ed497000726b84dc4b47c1dfc8a2bb4",
+        name = "io_bazel_bazel-9.2.0-linux-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.2.0/bazel-9.2.0-linux-arm64"],
+        sha256 = "049dd21f40ad979db11c3ee68c96a42ce75f1185e69ac61ab20de1501427a410",
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-9.1.1-linux-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.1/bazel-9.1.1-linux-x86_64"],
-        sha256 = "857bed5d2756b4d998d3caebf2d941d13d434c4eda4b1d6d7dda205736c25a93",
+        name = "io_bazel_bazel-9.2.0-linux-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.2.0/bazel-9.2.0-linux-x86_64"],
+        sha256 = "7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694",
         executable = True,
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-darwin-amd64"],
-        sha256 = "0af019eeb642fa70744419d02aa32df55e6e7a084105d49fb26801a660aa56d3",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-darwin-amd64"],
+        sha256 = "a0e6468b0c6b812f782d8cbfb05824121f6980c0bd70aaa1774fb8272bb7b2ad",
         executable = True,
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-darwin-arm64"],
-        sha256 = "b13dd89c6ecd90944ca3539f5a2c715a18f69b7458878c471a902a8e482ceb4b",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-darwin-arm64"],
+        sha256 = "555d2ff912ccd336d0060bdb5251ef2f62629c6f8fbadb59005a45d5625793ec",
         executable = True,
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-linux-amd64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64"],
-        sha256 = "fd8fdff418a1758887520fa42da7e6ae39aefc788cf5e7f7bb8db6934d279fc4",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-linux-amd64"],
+        sha256 = "a248ae2b2b62b5baebb748f6fba7203bff1a27e5d01b55399a8406744cb539e8",
         executable = True,
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-linux-arm64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-arm64"],
-        sha256 = "4c8d966e40ac2c4efcc7f1a5a5cceef2c0a2f16b957e791fa7a867cce31e8fcb",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-linux-arm64"],
+        sha256 = "b2bcc040c213b44586b121bda6d983c35df121b917c3a7a66fb16f2fa0df1a4f",
         executable = True,
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-windows-amd64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-windows-amd64.exe"],
-        sha256 = "641a3dfebd717703675f912917735c44b45cf6300bfdfb924537f3cfbffcdd92",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-windows-amd64.exe"],
+        sha256 = "5d14a31e9d8a363c48ba1900dbd56764d730835232eb0d113cce255856ffe3ef",
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
-        sha256 = "0e1ec2bd6a3a6e5a50b220401dd14174eee234b532dcf1279777a181221d502f",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-0e1ec2bd6a3a6e5a50b220401dd14174eee234b532dcf1279777a181221d502f"],
+        sha256 = "c6dd56fff7dada624dcb68db317541f45504261ae6f2aae5dc91848aacbbfda3",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-c6dd56fff7dada624dcb68db317541f45504261ae6f2aae5dc91848aacbbfda3"],
         executable = True,
     )
     http_file(
-        name = "org_kernel_git_linux_kernel-vmlinux-6.1",
-        sha256 = "10ec6f850aff3fe98fdaa603b299fb22ad67d5013b7a28801a7c6b75e4c3406f",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-10ec6f850aff3fe98fdaa603b299fb22ad67d5013b7a28801a7c6b75e4c3406f"],
+        name = "org_kernel_git_linux_kernel-vmlinux-6.18",
+        sha256 = "757012f067c4db854f2a9bea6d76ce30242480c621114da8c07055bf1735819e",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.18-757012f067c4db854f2a9bea6d76ce30242480c621114da8c07055bf1735819e"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-arm64",
-        sha256 = "e6870fdc288621a5c9e3424bcd7ddee03816483e61846368de25e93f3db8e52e",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-e6870fdc288621a5c9e3424bcd7ddee03816483e61846368de25e93f3db8e52e"],
+        sha256 = "957d6da5c7ee7869c8a285784a201ac3928393087e2542131d4d107fc9556b45",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-957d6da5c7ee7869c8a285784a201ac3928393087e2542131d4d107fc9556b45"],
         executable = True,
+    )
+
+    # Mozilla root CA bundle, for actions running in images that do not ship
+    # CA certificates.
+    http_file(
+        name = "se_curl_cacert",
+        sha256 = "f66dff1bdf8f96060b8177976f8b7d9254bc89bc4db933d769f7384d28480bc9",
+        urls = ["https://curl.se/ca/cacert-2026-08-13.pem"],
     )
     http_file(
         name = "io_buildbuddy_bb_cli-darwin-arm64",
         executable = True,
-        integrity = "sha256-NIFvkFPQj2UW9voLTzgbVup7WAC6vzJo3w316d1sKVI=",
+        integrity = "sha256-TknY15EfrnJ8ETCY5hrETfITJaibK8vv1KPZSTzHt6M=",
         urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-darwin-arm64".format(version = BB_CLI_VERSION)],
     )
 
     http_file(
         name = "io_buildbuddy_bb_cli-darwin-x86_64",
         executable = True,
-        integrity = "sha256-B0rhObAwP/aGdtwnw7iZuCarOTS/jxp2eaUE8M67o5A=",
+        integrity = "sha256-uj3uG2RRSCx6w0DREhA3snFqXKBGX5a/zYp2BBYPBTk=",
         urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-darwin-x86_64".format(version = BB_CLI_VERSION)],
     )
 
     http_file(
         name = "io_buildbuddy_bb_cli-linux-arm64",
         executable = True,
-        integrity = "sha256-08m6+utxtg0CrYDgeNz/ZkZprSLeTMkjSKe5BPD9SW8=",
+        integrity = "sha256-haHXS2dlsoFYYk8LXK31EBBoYBh0ZwrtQerUEAlFTb0=",
         urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-linux-arm64".format(version = BB_CLI_VERSION)],
     )
 
     http_file(
         name = "io_buildbuddy_bb_cli-linux-x86_64",
         executable = True,
-        integrity = "sha256-TaoceuYO8XWwHFvEYAoEyBb2CvQsLnLIzVft9qwr5f0=",
+        integrity = "sha256-32GiCcxF7P+QWbsE4BzB28K5ihKHFcraKipUu03rpIU=",
         urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-linux-x86_64".format(version = BB_CLI_VERSION)],
     )
 
@@ -305,17 +350,19 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = PODMAN_STATIC_SHA256_ARM64,
     )
 
+    # crun static builds with buildpatches/crun_no_enable_controllers.patch
+    # applied (see tools/build_crun.sh)
     http_file(
         name = "com_github_containers_crun_crun-linux-amd64",
-        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28-linux-amd64-disable-systemd"],
-        sha256 = "137bce17e4a102683e9b6974f4141cf6c30da61c8ade43c8f2b2d6961a8b858b",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/crun/crun-1.28-buildbuddy.1_linux-amd64"],
+        sha256 = "0a7befed3ee49dd77022277990abea30600c25432e12fe5f8fba2e6396c5274c",
         downloaded_file_path = "crun",
         executable = True,
     )
     http_file(
         name = "com_github_containers_crun_crun-linux-arm64",
-        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28-linux-arm64-disable-systemd"],
-        sha256 = "decac16cacbc570a1d7739d2ba47da4ffe0d3918adb10e47712bd1da0a110a78",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/crun/crun-1.28-buildbuddy.1_linux-arm64"],
+        sha256 = "eb08c7acaf159d7786719437415b0d3311c67a10ca7dee9366271bda3e902ca8",
         downloaded_file_path = "crun",
         executable = True,
     )
@@ -358,6 +405,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "docker-credential-gcr.bin", srcs = ["docker-credential-gcr"])',
         ]),
         urls = ["https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.1.30/docker-credential-gcr_linux_amd64-2.1.30.tar.gz"],
+        # Note: make sure that updates to docker-credential-gcr do not break the string-matching logic in docker-credential-gcr-optional
         sha256 = "d5c90c03d90271873a8619b1f73023a0266ae3fc91965ce9c81d7903e4b54eb6",
     )
     http_archive(
@@ -367,6 +415,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "docker-credential-gcr.bin", srcs = ["docker-credential-gcr"])',
         ]),
         urls = ["https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.1.30/docker-credential-gcr_linux_arm64-2.1.30.tar.gz"],
+        # Note: make sure that updates to docker-credential-gcr do not break the string-matching logic in docker-credential-gcr-optional
         sha256 = "ac9c0237e40505f09796c2bf8a90377246a6fd3cb65e6eada77009ae0f2d3b00",
     )
 
@@ -400,8 +449,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.2.0/containerd-2.2.0-linux-amd64.tar.gz"],
-        sha256 = "b9626a94ab93b00bcbcbf13d98deef972c6fb064690e57940632df54ad39ee71",
+        urls = ["https://github.com/containerd/containerd/releases/download/v2.2.9/containerd-2.2.9-linux-amd64.tar.gz"],
+        sha256 = "a0f8e44adcb8f6cb969938b7f81182577b3c4e1872fc9905b311aae0d944c377",
     )
     http_archive(
         name = "com_github_containerd_containerd-linux-arm64",
@@ -412,8 +461,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.2.0/containerd-2.2.0-linux-arm64.tar.gz"],
-        sha256 = "8805c2123d3b7c7ee2030e9f8fc07a1167d8a3f871d6a7d7ec5d1deb0b51a4a7",
+        urls = ["https://github.com/containerd/containerd/releases/download/v2.2.9/containerd-2.2.9-linux-arm64.tar.gz"],
+        sha256 = "a4ace72f4f80260f39a5ec1c30c8a1c96b0b08b6636efc6ad1a3e0bfa24889d3",
     )
 
     http_archive(
@@ -426,15 +475,15 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
 
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-amd64",
-        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.3/runc.amd64"],
-        sha256 = "8781ab9f71c12f314d21c8e85f13ca1a82d90cf475aa5131a7b543fcc5487543",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.6/runc.amd64"],
+        sha256 = "3f3921dbbee7723e9868f97e88e51ffc910206e3ba55646e74d93d24ea76023c",
         downloaded_file_path = "runc",
         executable = True,
     )
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-arm64",
-        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.3/runc.arm64"],
-        sha256 = "3c9a8e9e6dafd00db61f4611692447ebab4a56388bae4f82192aed67b66df712",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.3.6/runc.arm64"],
+        sha256 = "6be27a061ef89bb14c6cb495405bba80f46cea213b8f79378a6086b1bac6b747",
         downloaded_file_path = "runc",
         executable = True,
     )

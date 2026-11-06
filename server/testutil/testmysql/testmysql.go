@@ -114,7 +114,7 @@ func Start(t testing.TB, reuseServer bool) string {
 
 type discardLogger struct{}
 
-func (d *discardLogger) Print(args ...interface{}) {}
+func (d *discardLogger) Print(args ...any) {}
 
 type logWriter struct {
 	tag string

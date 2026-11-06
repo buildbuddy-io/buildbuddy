@@ -243,9 +243,17 @@ To authorize your Remote Bazel run via CLI, you can use one of these options:
     edited in `.git/config` on your local machine, or by rerunning `bb login`.
 - Set the `BUILDBUDDY_API_KEY` environment variable.
 - Pass an API key via remote header.
-  - Just as you would authorize a typical BuildBuddy invocation, you can
-    pass an API key via remote header with `--remote_header=x-buildbuddy-api-key=`.
-  - Ex. `bb remote build //... --remote_header=x-buildbuddy-api-key=YOUR_BUILDBUDDY_API_KEY `
+
+  - Pass `--remote_header=x-buildbuddy-api-key=YOUR_BUILDBUDDY_API_KEY` to authorize
+    the remote run, and `--bes_header=x-buildbuddy-api-key=YOUR_BUILDBUDDY_API_KEY`
+    to authenticate the remote Bazel command's BES requests.
+  - Example:
+
+    ```bash
+    bb remote build //... \
+      --remote_header=x-buildbuddy-api-key=YOUR_BUILDBUDDY_API_KEY \
+      --bes_header=x-buildbuddy-api-key=YOUR_BUILDBUDDY_API_KEY
+    ```
 
 #### Running bash scripts
 

@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
@@ -459,10 +460,16 @@ func getCurrentRef() (string, error) {
 	detachedHeadOutput, _ := runGit("branch")
 	regex := regexp.MustCompile(".*detached (at|from) ([^)]+).*")
 	matches := regex.FindStringSubmatch(detachedHeadOutput)
-	if len(matches) != 3 {
-		return "", status.UnknownErrorf("unexpected branch state %s", detachedHeadOutput)
+	if len(matches) == 3 {
+		return strings.TrimSpace(matches[2]), nil
 	}
-	return strings.TrimSpace(matches[2]), nil
+
+	// Handle detached head state with no checkout entry in the reflog, e.g. `git worktree add --detach`
+	headCommit, err := runGit("rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return "", status.WrapErrorf(err, "resolve detached HEAD (git branch output: %s)", detachedHeadOutput)
+	}
+	return strings.TrimSpace(headCommit), nil
 }
 
 // branchTrackedRemotely returns whether the given branch exists remotely, as reflected in
@@ -590,7 +597,7 @@ func splitLogBuffer(buf []byte) []string {
 
 func commonPrefixLineCount(a, b []string) int {
 	n := min(len(a), len(b))
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if a[i] != b[i] {
 			return i
 		}
@@ -1091,15 +1098,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		envVars[envVar] = val
 	}
 
-	// If not explicitly set, set the build user (the user that initiated the build).
-	if !contains(envVars, "BUILD_USER") {
-		val := os.Getenv("BUILD_USER")
-		if val == "" {
-			val = os.Getenv("USER")
-		}
-		envVars["BUILD_USER"] = val
-	}
-
 	// If not explicitly set, try to set the default and base branch env vars,
 	// because it will allow us to fallback to snapshots for those branches
 	// if there is no snapshot for the current branch
@@ -1530,7 +1528,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		// Read API key from command line if it is set.
 		apiKey = arg.Get(bazelArgs, "remote_header=x-buildbuddy-api-key")
 
-		bazelCmd, _ := parser.GetBazelCommandAndIndex(bazelArgs)
+		bazelCmd, _ := bazel_command.GetCommandAndIndex(bazelArgs)
 		if bazelCmd == "build" || (bazelCmd == "run" && !*runRemotely) {
 			fetchOutputs = true
 			if bazelCmd == "run" {
@@ -1691,7 +1689,7 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 	endParsingIndex := len(args)
 	if !runBashScript {
 		// Stop parsing flags when we reach the bazel command
-		_, bazelCmdIdx := parser.GetBazelCommandAndIndex(args)
+		_, bazelCmdIdx := bazel_command.GetCommandAndIndex(args)
 		if bazelCmdIdx == -1 {
 			return nil, status.InvalidArgumentErrorf("no bazel command passed to run remotely")
 		}

@@ -2,7 +2,7 @@ package build_event_handler
 
 import (
 	"context"
-	"flag"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -37,8 +37,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -63,7 +63,6 @@ import (
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
@@ -105,13 +104,22 @@ const (
 	// finalized data to Clickhouse, expire it after this TTL so that even if Clickhouse
 	// has replication lag, clients will still be able to read the data from Redis.
 	expireRedisExecutionsTTL = 5 * time.Minute
+
+	// How often to refresh the TTLs of an invocation's Redis keys while the
+	// invocation is still running. Keep this interval well under the TTLs, so
+	// that if a refresh fails, Redis does not expire the keys before the next
+	// refresh.
+	redisRefreshInterval = 15 * time.Minute
 )
+
+var errMissingAPIKey = errors.New("missing API key")
 
 var (
 	chunkFileSizeBytes      = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
 	enableChunkedEventLogs  = flag.Bool("storage.enable_chunked_event_logs", true, "If true, Event logs will be stored separately from the invocation proto in chunks.")
 	disablePersistArtifacts = flag.Bool("storage.disable_persist_cache_artifacts", false, "If disabled, buildbuddy will not persist cache artifacts in the blobstore. This may make older invocations not display properly.")
 	writeToOLAPDBEnabled    = flag.Bool("app.enable_write_to_olap_db", true, "If enabled, complete invocations will be flushed to OLAP DB")
+	blackholeAnonymousBES   = flag.Bool("auth.blackhole_anonymous_build_event_streams", false, "If true and anonymous usage is enabled, anonymous build event streams without an API key are acknowledged but discarded. A minimal invocation row is retained so the invocation page can explain why the build was not recorded.", flag.Internal)
 
 	buildEventFilterStartThreshold = flag.Int("app.build_event_filter_start_threshold", 100_000, "When looking up an invocation, start filtering out unimportant events after this many events have been processed.")
 	cacheStatsFinalizationDelay    = flag.Duration("cache_stats_finalization_delay", 500*time.Millisecond, "The time allowed for all metrics collectors across all apps to flush their local cache stats to the backing storage, before finalizing stats in the DB.")
@@ -200,6 +208,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		requestedTerminalColumns:    eventlog.DefaultTerminalLineLength,
 		logWriter:                   nil,
 		onClose:                     onClose,
+		stopRedisRefresher:          func() {},
 		attempt:                     1,
 		groupIDForMetrics:           getGroupIDForMetrics(ctx, b.env),
 	}, nil
@@ -826,6 +835,7 @@ type EventChannel struct {
 	requestedTerminalLines           int
 	logWriter                        *eventlog.EventLogWriter
 	onClose                          func()
+	stopRedisRefresher               func()
 	attempt                          uint64
 	groupIDForMetrics                string
 
@@ -844,10 +854,43 @@ func (e *EventChannel) Context() context.Context {
 }
 
 func (e *EventChannel) Close() {
+	e.stopRedisRefresher()
 	e.onClose()
 }
 
+// startRedisRefresher periodically refreshes the TTLs of the invocation's
+// Redis keys until the build event stream is finalized or closed.
+func (e *EventChannel) startRedisRefresher(iid string) {
+	collector := e.env.GetExecutionCollector()
+	if collector == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(e.ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := e.env.GetClock().NewTicker(redisRefreshInterval)
+		defer ticker.Stop()
+		for {
+			if err := collector.RefreshExecutions(ctx, iid); err != nil && ctx.Err() == nil {
+				log.CtxWarningf(ctx, "Failed to refresh buffered executions: %s", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.Chan():
+			}
+		}
+	}()
+	e.stopRedisRefresher = func() {
+		cancel()
+		<-done
+	}
+}
+
 func (e *EventChannel) FinalizeInvocation(iid string) error {
+	e.stopRedisRefresher()
+
 	if e.isVoid || !e.hasReceivedEventWithOptions {
 		return nil
 	}
@@ -1064,6 +1107,28 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		log.CtxDebugf(e.ctx, "Received options! sequence: %d invocation_id: %s", seqNo, iid)
 
 		authenticated, err := e.authenticateEvent(&bazelBuildEvent)
+		if errors.Is(err, errMissingAPIKey) {
+			invocationUUID, err := uuid.StringToBytes(iid)
+			if err != nil {
+				return err
+			}
+			created, err := e.env.GetInvocationDB().CreateInvocation(e.ctx, &tables.Invocation{
+				InvocationID:     iid,
+				InvocationUUID:   invocationUUID,
+				InvocationStatus: int64(inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS),
+				RedactionFlags:   redact.RedactionFlagStandardRedactions,
+			})
+			if err != nil {
+				return err
+			}
+			if created {
+				metrics.DiscardedAnonymousBuildEventStreamCount.Inc()
+			}
+			log.CtxInfof(e.ctx, "Discarding anonymous build event stream for invocation %q", iid)
+			e.isVoid = true
+			e.bufferedEvents = nil
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -1110,6 +1175,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		e.attempt = ti.Attempt
 		e.ctx = log.EnrichContext(e.ctx, "invocation_attempt", fmt.Sprintf("%d", e.attempt))
 		log.CtxInfof(e.ctx, "Created invocation %q, attempt %d", ti.InvocationID, ti.Attempt)
+		e.startRedisRefresher(iid)
 		chunkFileSizeBytes := *chunkFileSizeBytes
 		if chunkFileSizeBytes == 0 {
 			chunkFileSizeBytes = defaultChunkFileSizeBytes
@@ -1170,6 +1236,9 @@ func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.Bui
 		return false, err
 	}
 	if apiKey == "" {
+		if *blackholeAnonymousBES && authutil.IsAnonymousRequest(e.ctx, auth) {
+			return false, errMissingAPIKey
+		}
 		return false, nil
 	}
 	e.ctx = auth.AuthContextFromAPIKey(e.ctx, apiKey)
@@ -1185,16 +1254,12 @@ func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.Bui
 }
 
 func (e *EventChannel) InitializeLogWriter(iid string) error {
-	// Attach the invocation ID to the context so experiments evaluated by the
-	// log writer can target and bucket by invocation.
-	ctx := bazel_request.OverrideRequestMetadata(e.ctx, &repb.RequestMetadata{ToolInvocationId: iid})
 	var err error
 	e.logWriter, err = eventlog.NewEventLogWriter(
-		ctx,
+		e.ctx,
 		e.env.GetBlobstore(),
 		e.env.GetKeyValStore(),
 		e.env.GetPubSub(),
-		e.env.GetExperimentFlagProvider(),
 		eventlog.GetEventLogPubSubChannel(iid),
 		eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, e.attempt),
 		e.requestedTerminalColumns,

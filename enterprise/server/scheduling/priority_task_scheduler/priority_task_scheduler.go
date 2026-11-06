@@ -1,6 +1,7 @@
 package priority_task_scheduler
 
 import (
+	"cmp"
 	"container/list"
 	"context"
 	"fmt"
@@ -19,8 +20,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
@@ -41,7 +42,7 @@ import (
 
 var (
 	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time.", flag.Deprecated("Set executor.max_concurrent_tasks=1 instead."))
-	maxConcurrentTasks      = flag.Int("executor.max_concurrent_tasks", 0, "The maximum number of tasks that can execute at the same time on this executor. If 0, the number of concurrent tasks is limited only by the CPU, memory, and custom resource capacity.")
+	maxConcurrentTasks      = flag.Int("executor.max_concurrent_tasks", 0, "The maximum number of tasks that can execute at the same time on this executor. If 0, the number of concurrent tasks is limited only by the CPU, memory, GPU memory, and custom resource capacity.")
 	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
 	queueTrimInterval       = flag.Duration("executor.queue_trim_interval", 15*time.Second, "The interval between attempts to prune tasks that have already been completed by other executors.  A value <= 0 disables this feature.")
 	excessCapacityThreshold = flag.Float64("executor.excess_capacity_threshold", .40, "A percentage (of RAM and CPU) utilization below which this executor may request additional work")
@@ -250,8 +251,8 @@ func (t *taskQueue) Dequeue() *queuedTask {
 //
 // For simplicity, the per-group queues are only rotated when popping from the
 // head of the taskQueue. If we are skipping past tasks that are currently only
-// blocked on custom resources, then we don't rotate to the next the
-// groupPriorityQueue. This is fine for now, because we don't support custom
+// blocked on GPU memory or custom resources, then we don't rotate to the next
+// groupPriorityQueue. This is fine for now, because we don't support these
 // resources in multi-tenant scenarios yet.
 func (t *taskQueue) DequeueAt(pos *queuePosition) *queuedTask {
 	// Remove from the group queue.
@@ -373,6 +374,13 @@ type PriorityTaskScheduler struct {
 	rootContext      context.Context
 	rootCancel       context.CancelFunc
 
+	// stopped is closed by Stop to stop the background goroutines, which
+	// background tracks. stopMu guards closing stopped and starting
+	// background goroutines, so that none start after Stop.
+	stopMu     sync.Mutex
+	stopped    chan struct{}
+	background sync.WaitGroup
+
 	mu                     sync.Mutex
 	q                      *taskQueue
 	activeTaskCancelFuncs  sync.WaitGroup
@@ -380,6 +388,10 @@ type PriorityTaskScheduler struct {
 	resourceCapacity       *resourceCounts
 	resourcesUsed          *resourceCounts
 	customResourceParents  map[string]resources.CustomResourceParent
+
+	// resourcesUsedByGroup tracks the resources reserved by running tasks,
+	// keyed by task group ID. Groups with no running tasks are not present.
+	resourcesUsedByGroup map[string]*resourceCounts
 
 	// activeTaskStartTimes contains, for each currently running task, the
 	// time at which the task started executing.
@@ -430,14 +442,16 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 		clock:            env.GetClock(),
 		runnerPool:       runnerPool,
 		checkQueueSignal: make(chan struct{}, 64),
+		stopped:          make(chan struct{}),
 		rootContext:      rootContext,
 		rootCancel:       rootCancel,
 		shuttingDown:     false,
 		resourceCapacity: &resourceCounts{
-			RAMBytes:    ramBytesCapacity,
-			CPUMillis:   cpuMillisCapacity,
-			Concurrency: concurrencyCapacity,
-			Custom:      customResourcesCapacity,
+			RAMBytes:       ramBytesCapacity,
+			CPUMillis:      cpuMillisCapacity,
+			GPUMemoryBytes: resources.GetAllocatedGPUMemoryBytes(),
+			Concurrency:    concurrencyCapacity,
+			Custom:         customResourcesCapacity,
 		},
 		resourcesUsed: &resourceCounts{
 			RAMBytes:    0,
@@ -446,6 +460,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 			Custom:      customResourcesUsed,
 		},
 		customResourceParents: customResourceParents,
+		resourcesUsedByGroup:  make(map[string]*resourceCounts),
 		activeTaskStartTimes:  make(map[string]time.Time),
 	}
 	qes.rootContext = qes.enrichContext(qes.rootContext)
@@ -521,7 +536,8 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 	// safe to wait for all pending cleanup jobs to finish.
 	q.runnerPool.Wait()
 
-	return nil
+	// No more work will be claimed, so the background loops can exit.
+	return q.Stop()
 }
 
 func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
@@ -544,15 +560,17 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 	}
 
 	if req.GetTaskSize().GetEstimatedMemoryBytes() > q.resourceCapacity.RAMBytes ||
-		req.GetTaskSize().GetEstimatedMilliCpu() > q.resourceCapacity.CPUMillis {
+		req.GetTaskSize().GetEstimatedMilliCpu() > q.resourceCapacity.CPUMillis ||
+		req.GetTaskSize().GetEstimatedGpuMemoryBytes() > q.resourceCapacity.GPUMemoryBytes {
 		// TODO(bduffany): Return an error here instead. Currently we cannot
 		// return an error because it causes the executor to disconnect and
 		// reconnect to the scheduler, and the scheduler will keep attempting to
 		// re-enqueue the oversized task onto this executor once reconnected.
 		log.CtxErrorf(ctx,
-			"Task exceeds executor capacity: requires %d bytes memory of %d available and %d milliCPU of %d available",
+			"Task exceeds executor capacity: requires %d bytes memory of %d available, %d milliCPU of %d available, and %d bytes GPU memory of %d available",
 			req.GetTaskSize().GetEstimatedMemoryBytes(), q.resourceCapacity.RAMBytes,
 			req.GetTaskSize().GetEstimatedMilliCpu(), q.resourceCapacity.CPUMillis,
+			req.GetTaskSize().GetEstimatedGpuMemoryBytes(), q.resourceCapacity.GPUMemoryBytes,
 		)
 	}
 
@@ -567,16 +585,19 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 			// yet.
 			return
 		}
-		log.CtxDebugf(ctx, "Added task %+v to pq.", req)
+		log.CtxDebugf(ctx, "Added task %q to pq.", req.GetTaskId())
 		// Wake up the scheduling loop so that it can run the task if there are
 		// enough resources available.
-		q.checkQueueSignal <- struct{}{}
+		q.signalQueue()
 	}
 	if req.GetDelay().AsDuration() > 0 {
-		go func() {
-			time.Sleep(req.GetDelay().AsDuration())
-			enqueueFn()
-		}()
+		q.goUnlessStopped(func() {
+			select {
+			case <-q.clock.After(req.GetDelay().AsDuration()):
+				enqueueFn()
+			case <-q.stopped:
+			}
+		})
 	} else {
 		enqueueFn()
 	}
@@ -610,12 +631,16 @@ func (q *PriorityTaskScheduler) CancelTaskReservation(ctx context.Context, taskI
 }
 
 func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
+	// Experiment flags read their values from the task rather than evaluating
+	// experiments on the executor.
+	ctx = expflag.ContextWithEvaluatedFlags(ctx, execTask.GetExperimentFlags())
+
 	// Make sure we identify any executor cache requests as being from the
 	// executor, and also set the client origin (e.g. internal / external).
 	ctx = usageutil.WithLocalServerLabels(ctx)
 
 	if execTask.GetJwt() != "" {
-		ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, execTask.GetJwt())
+		ctx = auth.ContextWithTrustedJWT(ctx, execTask.GetJwt())
 	}
 	rmd := execTask.GetRequestMetadata()
 	if rmd == nil {
@@ -677,47 +702,58 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeCancelFuncsCount.Add(1)
 	q.activeTaskStartTimes[res.GetTaskId()] = q.clock.Now()
-	q.resourcesUsed.Concurrency++
-	if size := res.GetTaskSize(); size != nil {
-		q.resourcesUsed.RAMBytes += size.GetEstimatedMemoryBytes()
-		q.resourcesUsed.CPUMillis += size.GetEstimatedMilliCpu()
-		for _, r := range size.GetCustomResources() {
-			if _, ok := q.resourcesUsed.Custom[r.GetName()]; ok {
-				q.resourcesUsed.Custom[r.GetName()] += customResource(r.GetValue())
-			}
-		}
-		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
-		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
-		for name := range q.resourcesUsed.Custom {
-			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
-				metrics.CustomResourceNameLabel: name,
-			}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / float64(customResourceUnit))
-		}
-		log.CtxDebugf(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
+	counts := q.taskResourceCounts(res.GetTaskSize())
+	q.resourcesUsed.Add(counts)
+	groupID := taskGroupID(res)
+	groupResourcesUsed, ok := q.resourcesUsedByGroup[groupID]
+	if !ok {
+		groupResourcesUsed = &resourceCounts{Custom: make(map[string]customResourceCount)}
+		q.resourcesUsedByGroup[groupID] = groupResourcesUsed
 	}
+	groupResourcesUsed.Add(counts)
+	q.updateAssignedResourceMetrics(groupID)
+	log.CtxDebugf(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
 }
 
 func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeCancelFuncsCount.Add(-1)
 	delete(q.activeTaskStartTimes, res.GetTaskId())
-	q.resourcesUsed.Concurrency--
-	if size := res.GetTaskSize(); size != nil {
-		q.resourcesUsed.RAMBytes -= size.GetEstimatedMemoryBytes()
-		q.resourcesUsed.CPUMillis -= size.GetEstimatedMilliCpu()
-		for _, r := range size.GetCustomResources() {
-			if _, ok := q.resourcesUsed.Custom[r.GetName()]; ok {
-				q.resourcesUsed.Custom[r.GetName()] -= customResource(r.GetValue())
-			}
+	counts := q.taskResourceCounts(res.GetTaskSize())
+	q.resourcesUsed.Sub(counts)
+	groupID := taskGroupID(res)
+	if groupResourcesUsed, ok := q.resourcesUsedByGroup[groupID]; ok {
+		groupResourcesUsed.Sub(counts)
+		if groupResourcesUsed.Concurrency == 0 {
+			delete(q.resourcesUsedByGroup, groupID)
 		}
-		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
-		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
-		for name := range q.resourcesUsed.Custom {
-			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
-				metrics.CustomResourceNameLabel: name,
-			}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / float64(customResourceUnit))
-		}
-		log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
 	}
+	q.updateAssignedResourceMetrics(groupID)
+	log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
+}
+
+func taskGroupID(res *scpb.EnqueueTaskReservationRequest) string {
+	return cmp.Or(res.GetSchedulingMetadata().GetTaskGroupId(), interfaces.AuthAnonymousUser)
+}
+
+// updateAssignedResourceMetrics publishes the resources reserved by running
+// tasks, both in total and for the given group. Must be called with q.mu held.
+func (q *PriorityTaskScheduler) updateAssignedResourceMetrics(groupID string) {
+	metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
+	metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
+	for name := range q.resourcesUsed.Custom {
+		metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
+			metrics.CustomResourceNameLabel: name,
+		}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / float64(customResourceUnit))
+	}
+	labels := prometheus.Labels{metrics.GroupID: groupID}
+	groupResourcesUsed, ok := q.resourcesUsedByGroup[groupID]
+	if !ok {
+		metrics.RemoteExecutionAssignedRAMBytesByGroup.Delete(labels)
+		metrics.RemoteExecutionAssignedMilliCPUByGroup.Delete(labels)
+		return
+	}
+	metrics.RemoteExecutionAssignedRAMBytesByGroup.With(labels).Set(float64(groupResourcesUsed.RAMBytes))
+	metrics.RemoteExecutionAssignedMilliCPUByGroup.With(labels).Set(float64(groupResourcesUsed.CPUMillis))
 }
 
 // TotalRunningTaskExecutionDuration returns the total time that currently
@@ -738,6 +774,7 @@ func (q *PriorityTaskScheduler) TotalRunningTaskExecutionDuration() time.Duratio
 func (q *PriorityTaskScheduler) stats() string {
 	cpuMillisRemaining := q.resourceCapacity.CPUMillis - q.resourcesUsed.CPUMillis
 	ramBytesRemaining := q.resourceCapacity.RAMBytes - q.resourcesUsed.RAMBytes
+	gpuMemoryBytesRemaining := q.resourceCapacity.GPUMemoryBytes - q.resourcesUsed.GPUMemoryBytes
 	var customResourcesStrs []string
 	for k := range q.resourcesUsed.Custom {
 		used := q.customResourceUsed(q.resourcesUsed, k)
@@ -752,9 +789,10 @@ func (q *PriorityTaskScheduler) stats() string {
 		maxConcurrentTasksDesc = fmt.Sprintf(" of %d max", q.resourceCapacity.Concurrency)
 	}
 	return message.NewPrinter(language.English).Sprintf(
-		"CPU: %d of %d milliCPU allocated (%d remaining), Memory: %d of %d bytes allocated (%d remaining),%s Tasks: %d active%s, %d queued",
+		"CPU: %d of %d milliCPU allocated (%d remaining), Memory: %d of %d bytes allocated (%d remaining), GPU memory: %d of %d bytes allocated (%d remaining),%s Tasks: %d active%s, %d queued",
 		q.resourcesUsed.CPUMillis, q.resourceCapacity.CPUMillis, cpuMillisRemaining,
 		q.resourcesUsed.RAMBytes, q.resourceCapacity.RAMBytes, ramBytesRemaining,
+		q.resourcesUsed.GPUMemoryBytes, q.resourceCapacity.GPUMemoryBytes, gpuMemoryBytesRemaining,
 		customResourcesDesc,
 		q.activeCancelFuncsCount.Load(), maxConcurrentTasksDesc, q.q.Len())
 }
@@ -779,6 +817,13 @@ func (q *PriorityTaskScheduler) canFitTask(res *queuedTask, reservedResources *r
 
 	availableCPU := q.resourceCapacity.CPUMillis - reservedResources.CPUMillis
 	if size.GetEstimatedMilliCpu() > availableCPU {
+		return false
+	}
+
+	// Skipped GPU tasks can reserve more than the total capacity. Tasks that
+	// need no GPU memory can still run without delaying those tasks.
+	availableGPUMemory := q.resourceCapacity.GPUMemoryBytes - reservedResources.GPUMemoryBytes
+	if size.GetEstimatedGpuMemoryBytes() > 0 && size.GetEstimatedGpuMemoryBytes() > availableGPUMemory {
 		return false
 	}
 
@@ -884,12 +929,11 @@ type queuePosition struct {
 // getNextSchedulableTask returns the next task that can be scheduled, and a
 // pointer to the task in the queue.
 func (q *PriorityTaskScheduler) getNextSchedulableTask(ctx context.Context) (*queuedTask, *queuePosition) {
-	// Use custom resource configuration as a flag guard for the backfilling
-	// logic, since backfilling only helps if custom resources are configured
-	// anyway.
+	// Enable backfilling when GPU memory or custom resources are configured so
+	// tasks waiting for them do not prevent CPU-only work from running.
 	// TODO: add more tests for the multi-tenant case and turn this on
 	// unconditionally to simplify logic.
-	if len(q.resourceCapacity.Custom) == 0 {
+	if q.resourceCapacity.GPUMemoryBytes == 0 && len(q.resourceCapacity.Custom) == 0 {
 		nextTask := q.q.Peek(ctx)
 		if nextTask == nil {
 			return nil, nil
@@ -951,7 +995,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 	ctx := log.EnrichContext(q.rootContext, log.ExecutionIDKey, reservation.GetTaskId())
 	ctx, cancel := context.WithCancel(ctx)
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, reservation.GetTraceMetadata())
-	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, reservation.GetJwt())
+	ctx = auth.ContextWithTrustedJWT(ctx, reservation.GetJwt())
 	log.CtxDebugf(ctx, "Scheduling task of size %s", tasksize.String(nextTask.GetTaskSize()))
 
 	q.trackTask(reservation.EnqueueTaskReservationRequest, &cancel)
@@ -964,7 +1008,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			q.mu.Unlock()
 			// Wake up the scheduling loop since the resources we just freed up
 			// may allow another task to become runnable.
-			q.checkQueueSignal <- struct{}{}
+			q.signalQueue()
 		}()
 
 		lease, err := q.taskLeaser.Lease(ctx, reservation.GetTaskId())
@@ -995,21 +1039,67 @@ func (q *PriorityTaskScheduler) handleTask() {
 	})
 }
 
+// signalQueue wakes up the scheduling loop, waiting for room in the signal
+// channel unless the scheduler is stopped. Each signal schedules at most one
+// task, so signals must not be dropped while the loop is running.
+func (q *PriorityTaskScheduler) signalQueue() {
+	select {
+	case q.checkQueueSignal <- struct{}{}:
+	case <-q.stopped:
+	}
+}
+
+func (q *PriorityTaskScheduler) isStopped() bool {
+	select {
+	case <-q.stopped:
+		return true
+	default:
+		return false
+	}
+}
+
+// goUnlessStopped runs f in a background goroutine that Stop waits for, unless
+// the scheduler is stopped. It reports whether f was started.
+func (q *PriorityTaskScheduler) goUnlessStopped(f func()) bool {
+	q.stopMu.Lock()
+	defer q.stopMu.Unlock()
+	if q.isStopped() {
+		return false
+	}
+	q.background.Go(f)
+	return true
+}
+
+// Start starts scheduling queued tasks. It returns an error if the scheduler
+// has been stopped.
 func (q *PriorityTaskScheduler) Start() error {
-	go func() {
-		for range q.checkQueueSignal {
-			q.handleTask()
+	q.stopMu.Lock()
+	defer q.stopMu.Unlock()
+	if q.isStopped() {
+		return status.FailedPreconditionError("priority task scheduler has been stopped")
+	}
+
+	q.background.Go(func() {
+		for {
+			select {
+			case <-q.stopped:
+				return
+			case <-q.checkQueueSignal:
+				q.handleTask()
+			}
 		}
-	}()
+	})
 
 	if *queueTrimInterval > 0 {
-		go func() {
+		q.background.Go(func() {
 			ticker := q.clock.NewTicker(*queueTrimInterval)
 			defer ticker.Stop()
 
 			for {
 				select {
 				case <-q.rootContext.Done():
+					return
+				case <-q.stopped:
 					return
 				case <-ticker.Chan():
 				}
@@ -1021,18 +1111,30 @@ func (q *PriorityTaskScheduler) Start() error {
 					log.CtxDebugf(q.rootContext, "Trimmed %d tasks from queue", trimCount)
 					// Wake up the scheduling loop since the task after the
 					// trimmed task may now be schedulable.
-					select {
-					case q.checkQueueSignal <- struct{}{}:
-					default:
-					}
+					q.signalQueue()
 				}
 			}
-		}()
+		})
 	}
 	return nil
 }
 
+// Stop stops the scheduler's background goroutines and waits for them to
+// exit. Queued tasks are no longer scheduled after Stop is called, and the
+// scheduler can't be started again. Shutdown calls Stop once active tasks have
+// finished.
 func (q *PriorityTaskScheduler) Stop() error {
+	// Keep the scheduling loop from starting a queued task if it receives a
+	// buffered signal before it sees that the scheduler is stopped.
+	q.mu.Lock()
+	q.shuttingDown = true
+	q.mu.Unlock()
+	q.stopMu.Lock()
+	if !q.isStopped() {
+		close(q.stopped)
+	}
+	q.stopMu.Unlock()
+	q.background.Wait()
 	return nil
 }
 
@@ -1110,6 +1212,9 @@ func (c customResourceCount) String() string {
 type resourceCounts struct {
 	RAMBytes  int64
 	CPUMillis int64
+	// GPUMemoryBytes counts total memory across all GPUs without assigning
+	// tasks to individual devices.
+	GPUMemoryBytes int64
 	// Concurrency counts tasks. Every task consumes one unit regardless of
 	// its size, so as a capacity it is the maximum number of tasks that can
 	// execute at the same time. A capacity of 0 means unlimited.
@@ -1127,10 +1232,11 @@ func (q *PriorityTaskScheduler) taskResourceCounts(res *scpb.TaskSize) *resource
 		custom[r.GetName()] = customResource(r.GetValue())
 	}
 	return &resourceCounts{
-		RAMBytes:    res.GetEstimatedMemoryBytes(),
-		CPUMillis:   res.GetEstimatedMilliCpu(),
-		Concurrency: 1,
-		Custom:      custom,
+		RAMBytes:       res.GetEstimatedMemoryBytes(),
+		CPUMillis:      res.GetEstimatedMilliCpu(),
+		GPUMemoryBytes: res.GetEstimatedGpuMemoryBytes(),
+		Concurrency:    1,
+		Custom:         custom,
 	}
 }
 
@@ -1161,9 +1267,20 @@ func (r *resourceCounts) Clone() *resourceCounts {
 func (r *resourceCounts) Add(other *resourceCounts) {
 	r.RAMBytes += other.RAMBytes
 	r.CPUMillis += other.CPUMillis
+	r.GPUMemoryBytes += other.GPUMemoryBytes
 	r.Concurrency += other.Concurrency
 	for k, v := range other.Custom {
 		r.Custom[k] += v
+	}
+}
+
+func (r *resourceCounts) Sub(other *resourceCounts) {
+	r.RAMBytes -= other.RAMBytes
+	r.CPUMillis -= other.CPUMillis
+	r.GPUMemoryBytes -= other.GPUMemoryBytes
+	r.Concurrency -= other.Concurrency
+	for k, v := range other.Custom {
+		r.Custom[k] -= v
 	}
 }
 
@@ -1174,6 +1291,9 @@ func (r *resourceCounts) AllGTE(other *resourceCounts) bool {
 		return false
 	}
 	if r.CPUMillis < other.CPUMillis {
+		return false
+	}
+	if r.GPUMemoryBytes < other.GPUMemoryBytes {
 		return false
 	}
 	if r.Concurrency < other.Concurrency {

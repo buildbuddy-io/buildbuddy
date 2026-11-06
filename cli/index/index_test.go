@@ -191,7 +191,7 @@ func TestIncremental_TooBig(t *testing.T) {
 	testgit.ConfigureRemoteOrigin(t, scratchDir, repoUrl)
 
 	filesToAdd := make(map[string]string, 1100)
-	for i := 0; i < 1100; i++ {
+	for i := range 1100 {
 		filesToAdd[fmt.Sprintf("test%d.txt", i)] = fmt.Sprintf("content %d", i)
 	}
 	commit1 := testgit.CommitFiles(t, scratchDir, filesToAdd)

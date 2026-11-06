@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
@@ -54,7 +55,7 @@ const (
 )
 
 func requestCountingUnaryInterceptor(count *atomic.Int32) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		count.Add(1)
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
@@ -78,7 +79,7 @@ func runRemoteCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*gr
 	go runFunc()
 	unaryRequestCounter := atomic.Int32{}
 	streamRequestCounter := atomic.Int32{}
-	conn, err := testenv.LocalGRPCConn(ctx, lis,
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis,
 		grpc.WithUnaryInterceptor(requestCountingUnaryInterceptor(&unaryRequestCounter)),
 		grpc.WithStreamInterceptor(requestCountingStreamInterceptor(&streamRequestCounter)))
 	require.NoError(t, err)
@@ -109,7 +110,7 @@ func runCASProxy(ctx context.Context, clientConn *grpc.ClientConn, env *testenv.
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	bspb.RegisterByteStreamServer(grpcServer, bsServer)
 	go runFunc()
-	conn, err := testenv.LocalGRPCConn(ctx, lis, grpc.WithDefaultCallOptions())
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis, grpc.WithDefaultCallOptions())
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return conn
@@ -217,7 +218,7 @@ func TestBatchUpdateBlobsCompressorMetricsLabelsAreBounded(t *testing.T) {
 func expectAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
 	wait := time.Millisecond
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		// The read that enqueued this atime update is processed asynchronously
 		// by the batcher goroutine, so the pending batch may not be ready when
 		// the sender's flush fires. Advance the clock on every iteration (rather
@@ -241,7 +242,7 @@ func expectAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *a
 
 func expectNoAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		clock.Advance(atimeUpdatePeriod + time.Second)
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -356,7 +357,7 @@ func TestFindMissingBlobs_Caching(t *testing.T) {
 	// within the TTL are served from the local cache.
 	findMissing(ctx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
 	require.Equal(t, int32(1), requestCount.Load())
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		findMissing(ctx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
 	}
 	require.Equal(t, int32(1), requestCount.Load())
@@ -439,7 +440,6 @@ func TestFindMissingBlobs_BypassCache(t *testing.T) {
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
-
 	ctx := testContext()
 	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	proxyEnv := testenv.GetTestEnv(t)
@@ -851,26 +851,10 @@ func BenchmarkBatchUpdateBlobs(b *testing.B) {
 }
 
 func TestSpliceBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
-	remoteEnv.SetExperimentFlagProvider(fp)
 	conn, requestCount, _ := runRemoteCASS(ctx, remoteEnv, t)
 	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetExperimentFlagProvider(fp)
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
 
@@ -903,26 +887,10 @@ func TestSpliceBlob(t *testing.T) {
 }
 
 func TestSplitBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
-	remoteEnv.SetExperimentFlagProvider(fp)
 	conn, _, _ := runRemoteCASS(ctx, remoteEnv, t)
 	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetExperimentFlagProvider(fp)
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
 	remote := repb.NewContentAddressableStorageClient(conn)
@@ -1076,4 +1044,27 @@ func BenchmarkGetTree(b *testing.B) {
 		require.Equal(b, int32(0), streamRequests.Load())
 	}
 
+}
+
+func TestFindMissingBlobs_QuorumBypassesPresenceCache(t *testing.T) {
+	flags.Set(t, "cache_proxy.find_missing_blobs_cache_ttl", 30*time.Second)
+	ctx := testContext()
+	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	require.NoError(t, atime_updater.Register(proxyEnv))
+	proxy := repb.NewContentAddressableStorageClient(runCASProxy(ctx, conn, proxyEnv, t))
+	ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, "US1")
+	d := digestProto(barDigest, 3)
+	update(ctx, proxy, map[*repb.Digest]string{d: "bar"}, t)
+	requestCount.Store(0)
+	findMissing(ctx, proxy, []*repb.Digest{d}, nil, t)
+	findMissing(ctx, proxy, []*repb.Digest{d}, nil, t)
+	require.Equal(t, int32(1), requestCount.Load())
+	// A cached presence result cannot establish or refresh replica quorum.
+	for i := int32(2); i <= 4; i++ {
+		findMissing(findmissing.WithQuorum(ctx), proxy, []*repb.Digest{d}, nil, t)
+		require.Equal(t, i, requestCount.Load())
+	}
 }

@@ -151,6 +151,13 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 		label := event.GetBuildEvent().GetId().GetTestResult().GetLabel()
 		idx.TestResultEventsByLabel[label] = append(idx.TestResultEventsByLabel[label], event.GetBuildEvent())
 		target := idx.getOrInitTestTarget(label)
+		if target.TestSummary != nil {
+			// The TestSummary has already determined the target's status and
+			// timing. A TestResult that arrives afterwards belongs to a
+			// re-execution of the test action (Bazel rewinds an action whose
+			// output a later action lost) and doesn't change them.
+			return
+		}
 		// We don't know what the final status for this label will be until we
 		// get the TestSummary, but until that happens we want to show something
 		// in the UI. So we report a rough status as follows: if all TestResults

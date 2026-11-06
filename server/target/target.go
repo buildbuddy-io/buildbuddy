@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
@@ -35,6 +36,12 @@ import (
 
 var (
 	readTargetStatusesFromOLAPDBEnabled = flag.Bool("app.enable_read_target_statuses_from_olap_db", false, "If enabled, read target statuses from OLAP DB")
+
+	// Only passed runs (status = 1) count as nearly timed out, so that no run
+	// is counted in more than one of flaky_runs, likely_flaky_runs and
+	// nearly_timed_out_runs. Flaky runs already count toward flaky_runs, and
+	// failed or timed out runs may count toward likely_flaky_runs.
+	nearlyTimedOutRunsFilter = fmt.Sprintf("status = 1 AND test_timeout_usec > 0 AND max_attempt_duration_usec >= test_timeout_usec * %v", nearlyTimedOutThreshold)
 )
 
 const (
@@ -45,6 +52,10 @@ const (
 
 	// The number of distinct commits returned in GetTargetHistoryResponse.
 	targetHistoryPageSize = 40
+
+	// A passed test run counts as nearly timed out if one of its test attempts
+	// took at least this fraction of the test's timeout.
+	nearlyTimedOutThreshold = 0.95
 
 	// The max number of targets returned in each TargetGroup page.
 	// TODO(bduffany): let the client set this. We want this to be 100 when on
@@ -120,8 +131,7 @@ func ApplyToQuery(timestampField string, t *tppb.PaginationToken, q *query_build
 }
 
 func GetTargetHistory(ctx context.Context, env environment.Env, req *trpb.GetTargetHistoryRequest) (*trpb.GetTargetHistoryResponse, error) {
-	_, err := env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, env, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
 	}
 
@@ -749,7 +759,7 @@ func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env,
 	return fetchTargetsFromPrimaryDB(ctx, env, q, repo)
 }
 
-func getTimeFilters(startedAfter *timestamppb.Timestamp, startedBefore *timestamppb.Timestamp) (string, []interface{}) {
+func getTimeFilters(startedAfter *timestamppb.Timestamp, startedBefore *timestamppb.Timestamp) (string, []any) {
 	startedAfterMicros := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
 	if startedAfter != nil {
 		if reqUpdatedAfterMicros := startedAfter.AsTime().UnixMicro(); reqUpdatedAfterMicros > 0 {
@@ -757,7 +767,7 @@ func getTimeFilters(startedAfter *timestamppb.Timestamp, startedBefore *timestam
 		}
 	}
 	out := " (invocation_start_time_usec > ?) "
-	outArgs := []interface{}{startedAfterMicros}
+	outArgs := []any{startedAfterMicros}
 
 	if startedBefore != nil {
 		if startedBeforeMicros := startedBefore.AsTime().UnixMicro(); startedBeforeMicros > startedAfterMicros {
@@ -778,7 +788,7 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 	}
 
 	innerWhereClause := "group_id = ? AND cached = 0"
-	qArgs := []interface{}{u.GetGroupID()}
+	qArgs := []any{u.GetGroupID()}
 
 	timeQStr, timeQArgs := getTimeFilters(req.GetStartedAfter(), req.GetStartedBefore())
 	innerWhereClause += " AND " + timeQStr
@@ -803,13 +813,14 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 	dateSelectorString := env.GetOLAPDBHandle().DateFromUsecTimestamp("invocation_start_time_usec", req.GetRequestContext().GetTimezoneOffsetMinutes())
 
 	qStr := `SELECT stats.date AS date, total_runs, successful_runs, flaky_runs,
-	    failed_runs, likely_flaky_runs, flaky_runs + likely_flaky_runs as total_flakes
+	    failed_runs, likely_flaky_runs, nearly_timed_out_runs, flaky_runs + likely_flaky_runs as total_flakes
 	FROM (SELECT
 		` + dateSelectorString + ` AS date,
 		count(*) AS total_runs,
 		countIf(status = 1) AS successful_runs,
 		countIf(status = 2) AS flaky_runs,
-		countIf(status > 2) AS failed_runs
+		countIf(status > 2) AS failed_runs,
+		countIf(` + nearlyTimedOutRunsFilter + `) AS nearly_timed_out_runs
 		FROM "TestTargetStatuses" WHERE (` + innerWhereClause + `) GROUP BY date) stats
 	LEFT JOIN (SELECT date, count(*) AS likely_flaky_runs
 		FROM (
@@ -832,25 +843,27 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 	rsp := &trpb.GetDailyTargetStatsResponse{}
 
 	type qRow struct {
-		Date            string
-		FlakyRuns       int64
-		TotalRuns       int64
-		FailedRuns      int64
-		LikelyFlakyRuns int64
+		Date               string
+		FlakyRuns          int64
+		TotalRuns          int64
+		FailedRuns         int64
+		LikelyFlakyRuns    int64
+		NearlyTimedOutRuns int64
 	}
 
 	db.ScanEach(rq, func(ctx context.Context, row *qRow) error {
-		if row.FlakyRuns+row.LikelyFlakyRuns == 0 {
+		if row.FlakyRuns+row.LikelyFlakyRuns+row.NearlyTimedOutRuns == 0 {
 			return nil
 		}
 
 		out := &trpb.DailyTargetStats{
 			Date: row.Date,
 			Data: &trpb.TargetStatsData{
-				FlakyRuns:       row.FlakyRuns,
-				TotalRuns:       row.TotalRuns,
-				FailedRuns:      row.FailedRuns,
-				LikelyFlakyRuns: row.LikelyFlakyRuns,
+				FlakyRuns:          row.FlakyRuns,
+				TotalRuns:          row.TotalRuns,
+				FailedRuns:         row.FailedRuns,
+				LikelyFlakyRuns:    row.LikelyFlakyRuns,
+				NearlyTimedOutRuns: row.NearlyTimedOutRuns,
 			},
 		}
 		rsp.Stats = append(rsp.Stats, out)
@@ -870,7 +883,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 	}
 
 	innerWhereClause := "group_id = ? AND cached = 0"
-	qArgs := []interface{}{u.GetGroupID()}
+	qArgs := []any{u.GetGroupID()}
 
 	timeQStr, timeQArgs := getTimeFilters(req.GetStartedAfter(), req.GetStartedBefore())
 	innerWhereClause += " AND " + timeQStr
@@ -892,14 +905,15 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 
 	qArgs = append(qArgs, qArgs...)
 	qStr := `SELECT stats.label AS label, total_runs, successful_runs, flaky_runs,
-	    failed_runs, likely_flaky_runs, (flaky_duration_usec + likely_flaky_duration_usec) AS total_flake_runtime_usec, flaky_runs + likely_flaky_runs as total_flakes
+	    failed_runs, likely_flaky_runs, nearly_timed_out_runs, (flaky_duration_usec + likely_flaky_duration_usec) AS total_flake_runtime_usec, flaky_runs + likely_flaky_runs as total_flakes
 	FROM (
 		SELECT label,
 		count(*) AS total_runs,
 		countIf(status = 1) AS successful_runs,
 		countIf(status = 2) AS flaky_runs,
 		countIf(status > 2) AS failed_runs,
-		sumIf(duration_usec, status = 2) AS flaky_duration_usec
+		sumIf(duration_usec, status = 2) AS flaky_duration_usec,
+		countIf(` + nearlyTimedOutRunsFilter + `) AS nearly_timed_out_runs
 		FROM "TestTargetStatuses" WHERE (` + innerWhereClause + `) GROUP BY label) stats
 	LEFT JOIN (SELECT label, sum(duration_usec) AS likely_flaky_duration_usec, count(*) AS likely_flaky_runs
 		FROM (
@@ -916,7 +930,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 				ORDER BY invocation_start_time_usec ASC
 				ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
 		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status IN (3, 4) GROUP BY label) lf
-	ON lf.label=stats.label ORDER BY total_flakes DESC LIMIT 500`
+	ON lf.label=stats.label ORDER BY total_flakes + nearly_timed_out_runs DESC, label ASC LIMIT 500`
 
 	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
 	type qRow struct {
@@ -925,12 +939,13 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 		TotalRuns             int64
 		FailedRuns            int64
 		LikelyFlakyRuns       int64
+		NearlyTimedOutRuns    int64
 		TotalFlakeRuntimeUsec int64
 	}
 
 	rsp := &trpb.GetTargetStatsResponse{}
 	db.ScanEach(rq, func(ctx context.Context, row *qRow) error {
-		if row.FlakyRuns+row.LikelyFlakyRuns == 0 {
+		if row.FlakyRuns+row.LikelyFlakyRuns+row.NearlyTimedOutRuns == 0 {
 			return nil
 		}
 		out := &trpb.AggregateTargetStats{
@@ -940,6 +955,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 				TotalRuns:             row.TotalRuns,
 				FailedRuns:            row.FailedRuns,
 				LikelyFlakyRuns:       row.LikelyFlakyRuns,
+				NearlyTimedOutRuns:    row.NearlyTimedOutRuns,
 				TotalFlakeRuntimeUsec: row.TotalFlakeRuntimeUsec,
 			},
 		}
@@ -966,7 +982,7 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 	pg.Limit = 5
 
 	innerWhereClause := "group_id = ? AND label = ? AND cached = 0"
-	qArgs := []interface{}{u.GetGroupID(), req.GetLabel()}
+	qArgs := []any{u.GetGroupID(), req.GetLabel()}
 
 	timeQStr, timeQArgs := getTimeFilters(req.GetStartedAfter(), req.GetStartedBefore())
 	innerWhereClause += " AND " + timeQStr

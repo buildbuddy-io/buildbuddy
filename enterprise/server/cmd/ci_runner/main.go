@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
@@ -112,12 +113,6 @@ const (
 
 	// maxGitFetchLowSpeedRetries caps --git_fetch_low_speed_retries.
 	maxGitFetchLowSpeedRetries = 3
-
-	// Env vars set by workflow runner
-	// NOTE: These env vars are not populated for non-private repos.
-
-	repoUserEnvVarName  = "REPO_USER"
-	repoTokenEnvVarName = "REPO_TOKEN"
 
 	// Exit code placeholder used when a command doesn't return an exit code on its own.
 	noExitCode         = -1
@@ -284,7 +279,7 @@ type workspace struct {
 	// The machine's hostname.
 	hostname string
 
-	// The operating user's username.
+	// The build's display username.
 	username string
 
 	// The buildbuddy API key, or "" if none was found.
@@ -1002,10 +997,10 @@ func (r *buildEventReporter) Write(b []byte) (int, error) {
 	return r.log.Write(b)
 }
 
-func (r *buildEventReporter) Println(vals ...interface{}) {
+func (r *buildEventReporter) Println(vals ...any) {
 	r.log.Println(vals...)
 }
-func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
+func (r *buildEventReporter) Printf(format string, vals ...any) {
 	r.log.Printf(format, vals...)
 }
 
@@ -1038,10 +1033,10 @@ func (invLog *invocationLog) Write(b []byte) (int, error) {
 	return len(b), err
 }
 
-func (invLog *invocationLog) Println(vals ...interface{}) {
+func (invLog *invocationLog) Println(vals ...any) {
 	invLog.Write([]byte(fmt.Sprintln(vals...)))
 }
-func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
+func (invLog *invocationLog) Printf(format string, vals ...any) {
 	invLog.Write([]byte(fmt.Sprintf(format+"\n", vals...)))
 }
 
@@ -1385,15 +1380,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 }
 
 func (ar *actionRunner) workspaceStatusEvent() *bespb.BuildEvent {
-	buildUser := os.Getenv("BUILD_USER")
-	if buildUser == "" {
-		buildUser = ar.username
-	}
 	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
 		Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bespb.WorkspaceStatus{
 			Item: []*bespb.WorkspaceStatus_Item{
-				{Key: "BUILD_USER", Value: buildUser},
+				{Key: "BUILD_USER", Value: ar.username},
 				{Key: "BUILD_HOST", Value: ar.hostname},
 				{Key: "GIT_BRANCH", Value: *pushedBranch},
 				{Key: "GIT_TAG", Value: *pushedTag},
@@ -1664,8 +1655,6 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir, executableP
 	// Output directories in runfiles are symlinks to physical directories.
 	// We upload the real directory, but return the logical directory that the binary expects.
 	for placePath, realPath := range dirs {
-		placePath := placePath
-		realPath := realPath
 		eg.Go(func() error {
 			_, td, err := cachetools.UploadDirectoryToCAS(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256, realPath)
 			if err != nil {
@@ -1695,11 +1684,50 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir, executableP
 // processRunScript processes the contents of a bazel run script (produced via bazel run --script_path) and extracts
 // information about the default binary arguments as well as about supporting files (runfiles).
 func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
+	parsed, err := parseRunScript(runScript)
+	if err != nil {
+		return nil, err
+	}
+
+	runfilesDir := parsed.bin + ".runfiles"
+	runfilesRoot := parsed.runfilesRoot
+	// Executable genrules do not have a runfiles tree. In that case, the cd
+	// command in points into the remote checkout, which is not valid for a
+	// local run.
+	if _, err := os.Stat(runfilesDir); os.IsNotExist(err) {
+		runfilesRoot = ""
+	}
+	runfiles, runfileDirs, runfileEntries, err := uploadRunfiles(ctx, parsed.wsRoot, runfilesDir, parsed.bin)
+	if err != nil {
+		return nil, err
+	}
+
+	return &runInfo{
+		args: parsed.args,
+		// TODO(Maggie): Delete deprecated field
+		runfiles:       runfiles,
+		runfileEntries: runfileEntries,
+		runfileDirs:    runfileDirs,
+		runfilesRoot:   runfilesRoot,
+		executablePath: parsed.executablePath,
+	}, nil
+}
+
+type parsedRunScript struct {
+	bin            string
+	args           []string
+	wsRoot         string
+	executablePath string
+	runfilesRoot   string
+}
+
+func parseRunScript(runScript string) (*parsedRunScript, error) {
 	runScriptBytes, err := os.ReadFile(runScript)
 	if err != nil {
 		return nil, status.UnknownErrorf("error reading run script: %s", err)
 	}
-	runScriptLines := strings.Split(string(runScriptBytes), "\n")
+	// Bazel 10+ terminates the script with a newline; older versions don't.
+	runScriptLines := strings.Split(strings.TrimRight(string(runScriptBytes), "\n"), "\n")
 	if len(runScriptLines) < 3 {
 		return nil, status.UnknownErrorf("run script not in expected format, too short")
 	}
@@ -1708,6 +1736,9 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 	binAndArgs, err := shlex.Split(runScriptLines[len(runScriptLines)-1])
 	if err != nil {
 		return nil, status.UnknownErrorf("error parsing run script: %s", err)
+	}
+	if len(binAndArgs) == 0 {
+		return nil, status.UnknownErrorf("run script not in expected format: binary not found on last line")
 	}
 	bin := binAndArgs[0]
 	var args []string
@@ -1746,26 +1777,12 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 		return nil, err
 	}
 
-	runfilesDir := bin + ".runfiles"
-	// Executable genrules do not have a runfiles tree. In that case, the cd
-	// command in points into the remote checkout, which is not valid for a
-	// local run.
-	if _, err := os.Stat(runfilesDir); os.IsNotExist(err) {
-		runfilesRoot = ""
-	}
-	runfiles, runfileDirs, runfileEntries, err := uploadRunfiles(ctx, wsRoot, runfilesDir, bin)
-	if err != nil {
-		return nil, err
-	}
-
-	return &runInfo{
-		args: args,
-		// TODO(Maggie): Delete deprecated field
-		runfiles:       runfiles,
-		runfileEntries: runfileEntries,
-		runfileDirs:    runfileDirs,
-		runfilesRoot:   runfilesRoot,
+	return &parsedRunScript{
+		bin:            bin,
+		args:           args,
+		wsRoot:         wsRoot,
 		executablePath: executablePath,
+		runfilesRoot:   runfilesRoot,
 	}, nil
 }
 
@@ -1934,6 +1951,10 @@ func (ws *workspace) getHostAndUserName() (string, string) {
 		ws.log.Printf("failed to get hostname: %s", err)
 		hostname = ""
 	}
+	if username, ok := os.LookupEnv("BUILD_USER"); ok {
+		return hostname, username
+	}
+	// Direct runner calls might not supply a caller identity.
 	user, err := user.Current()
 	username := ""
 	if err != nil {
@@ -2325,8 +2346,8 @@ func (ws *workspace) config(ctx context.Context) error {
 		{"credential.interactive", "false"},
 		// With the version of git that we have installed in the CI runner
 		// image, --filter=blob:none requires the partialClone extension to be
-		// enabled.
-		{"extensions.partialClone", "true"},
+		// enabled. Its value is the promisor remote name, not a boolean.
+		{"extensions.partialClone", gitRemoteName(*pushedRepoURL)},
 		// Disable this check for `git fetch` performance improvements
 		{"fetch.showForcedUpdates", "false"},
 		// Disable automatic gc - it can interfere with running `rm -rf .git` in
@@ -2382,7 +2403,7 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	fetchURL := remoteURL
 	useSystemGitCredentials := os.Getenv("USE_SYSTEM_GIT_CREDENTIALS") == "1"
 	if !useSystemGitCredentials {
-		authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
+		authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(ci_runner_env.RepoUserEnvVarName), os.Getenv(ci_runner_env.RepoTokenEnvVarName))
 		if err != nil {
 			return err
 		}
@@ -2667,7 +2688,7 @@ func formatNowUTC() string {
 	return time.Now().UTC().Format("2006-01-02 15:04:05.000 UTC")
 }
 
-func writeCommandSummary(out io.Writer, format string, args ...interface{}) {
+func writeCommandSummary(out io.Writer, format string, args ...any) {
 	io.WriteString(out, ansiGray+formatNowUTC()+ansiReset+" ")
 	io.WriteString(out, fmt.Sprintf(format, args...))
 	io.WriteString(out, "\n")
@@ -2715,6 +2736,9 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 		// artifact for easier debugging.
 		"common --heap_dump_on_oom",
 	}
+	if buildUser, ok := os.LookupEnv("BUILD_USER"); ok {
+		lines = append(lines, "common "+toShellToken("--build_metadata=USER="+buildUser))
+	}
 	isWorkflow := *workflowID != ""
 	if isWorkflow {
 		lines = append(lines, "common --build_metadata=WORKFLOW_ID="+*workflowID)
@@ -2731,7 +2755,9 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 	}
 	if apiKey := os.Getenv(ci_runner_env.BuildBuddyAPIKeyEnvVarName); apiKey != "" {
 		lines = append(lines, "common --remote_header=x-buildbuddy-api-key="+apiKey)
+		lines = append(lines, "common --bes_header=x-buildbuddy-api-key="+apiKey)
 		lines = append(lines, "build:buildbuddy_api_key --remote_header=x-buildbuddy-api-key="+apiKey)
+		lines = append(lines, "build:buildbuddy_api_key --bes_header=x-buildbuddy-api-key="+apiKey)
 	}
 	if origin := os.Getenv(ci_runner_env.BBGrpcClientOriginEnvVarName); origin != "" {
 		lines = append(lines, fmt.Sprintf("common --remote_header=%s=%s", usageutil.OriginHeaderName, origin))
@@ -2970,7 +2996,7 @@ func configureGlobalCredentialHelper(ctx context.Context) error {
 	if !strings.HasPrefix(baseRepoURL(), "https://") {
 		return nil
 	}
-	repoToken := os.Getenv(repoTokenEnvVarName)
+	repoToken := os.Getenv(ci_runner_env.RepoTokenEnvVarName)
 	if repoToken == "" {
 		return nil
 	}
@@ -3014,14 +3040,14 @@ func runCredentialHelper() error {
 	cmd := flag.Args()[0]
 	switch cmd {
 	case "get":
-		username := os.Getenv(repoUserEnvVarName)
+		username := os.Getenv(ci_runner_env.RepoUserEnvVarName)
 		if username == "" {
 			// git requires a username from the cred helper but GitHub doesn't
 			// care what the username is (it just looks at the token), so just
 			// set an arbitrary username.
 			username = "x-access-token"
 		}
-		fmt.Printf("username=%s\npassword=%s\n", username, os.Getenv(repoTokenEnvVarName))
+		fmt.Printf("username=%s\npassword=%s\n", username, os.Getenv(ci_runner_env.RepoTokenEnvVarName))
 		return nil
 	default:
 		// Do nothing
@@ -3057,7 +3083,7 @@ func runBazelWrapper() error {
 	// our bazel options. This can happen if the command is a `bb` CLI command
 	// and `bb` is being invoked via bazelisk (e.g. by setting
 	// USE_BAZEL_VERSION=buildbuddy-io/vX.Y.Z in env)
-	bazelSubcmd, cmdIdx := bazel.GetBazelCommandAndIndex(originalArgs)
+	bazelSubcmd, cmdIdx := bazel_command.GetCommandAndIndex(originalArgs)
 	if cmdIdx == -1 {
 		return runOrExec(bazelBin, append([]string{bazelBin}, originalArgs...), os.Environ())
 	}
@@ -3176,7 +3202,7 @@ func (ws *workspace) reclaimDiskSpace(ctx context.Context) error {
 	}
 	// Just print a few dirs for now so this doesn't take excessively long.
 	ws.log.Printf("WARNING: high VM disk usage (%.2f%%)", usageStats.usageFraction*100)
-	duArgs := []string{"--human-readable", "--max-depth=1", ".", filepath.Join("..", outputBaseDirName)}
+	duArgs := []string{"-h", "-d", "1", ".", filepath.Join("..", outputBaseDirName)}
 	if err = runCommand(ctx, "du", duArgs, nil /*=env*/, "" /*=dir*/, ws.log); err != nil {
 		return fmt.Errorf("du: %w", err)
 	}

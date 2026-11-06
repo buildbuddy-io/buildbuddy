@@ -188,6 +188,11 @@ message ExecuteWorkflowRequest {
   // Tag that was pushed, if applicable.
   // Ex. "v1.0.0"
   string pushed_tag = 17;
+
+  // Remote headers to be applied to the execution request for each workflow
+  // action. Can be used to set platform properties containing secrets.
+  // Ex. ["x-buildbuddy-platform.secret-env-overrides=SECRET_NAME=SECRET_VALUE"]
+  repeated string remote_headers = 18;
 }
 
 message ExecuteWorkflowResponse {

@@ -1521,7 +1521,7 @@ func writeNRecords(ctx context.Context, t *testing.T, store *testutil.TestingSto
 }
 func writeNRecordsAndFlush(ctx context.Context, t *testing.T, store *testutil.TestingStore, n int, flushFreq int) []*sgpb.FileRecord {
 	out := make([]*sgpb.FileRecord, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out = append(out, testutil.WriteRecord(ctx, t, store, "default", 1000))
 		if flushFreq != 0 && (i+1)%flushFreq == 0 {
 			store.DB().Flush()
@@ -1765,7 +1765,7 @@ func TestManySplits(t *testing.T) {
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 
 	var written []*sgpb.FileRecord
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		written = append(written, writeNRecords(ctx, t, stores[0], 100)...)
 
 		var clusters []uint64

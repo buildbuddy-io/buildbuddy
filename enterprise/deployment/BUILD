@@ -39,7 +39,7 @@ container_push(
 # ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu20-04-workflows --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu20-04-workflows/Dockerfile --platform=amd64 --platform=arm64 --user=_dcgcloud_token
 # ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu20-04-webtest --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu20-04-webtest/Dockerfile --platform=amd64 --platform=arm64 --user=_dcgcloud_token
 # ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu22-04 --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu22-04/Dockerfile --platform=amd64 --platform=arm64 --user=_dcgcloud_token
-# ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu22-04 --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu24-04/Dockerfile --platform=amd64 --platform=arm64 --user=_dcgcloud_token
+# ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu24-04 --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu24-04/Dockerfile --platform=amd64 --platform=arm64 --user=_dcgcloud_token
 # You'll need to enter a token, the value can be obtained by running:
 # $ gcloud auth print-access-token
 #

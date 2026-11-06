@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -15,8 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -32,25 +29,6 @@ type getMultiCountingCache struct {
 func (c *getMultiCountingCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	c.getMultiCalls += len(resources)
 	return c.Cache.GetMulti(ctx, resources)
-}
-
-func TestAvgChunkSizeOverride(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.avg_chunk_size_override": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "half_mb",
-			Variants: map[string]any{
-				"half_mb": 512 * 1024,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
-	ctx := context.Background()
-
-	require.Equal(t, uint64(512*1024), chunking.FastCDCParams(ctx, fp).GetAvgChunkSizeBytes())
 }
 
 func TestStore_SharedValidationMarkerSkipsRehashForIdenticalManifest(t *testing.T) {
@@ -80,7 +58,7 @@ func TestStore_SharedValidationMarkerSkipsRehashForIdenticalManifest(t *testing.
 	require.NoError(t, err)
 
 	var chunkDigests []*repb.Digest
-	c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes(ctx, nil)), func(data []byte) error {
+	c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
 		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
 		if err != nil {
 			return err

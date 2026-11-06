@@ -73,7 +73,12 @@ const CacheChartTooltip = ({
       <div className="trend-chart-hover-value">
         {dataSeries.map(
           (series, index) =>
-            !hiddenSeries.has(index) && <div key={series.name}>{series.formatHoverValue(series.dataKey(data))}</div>
+            !hiddenSeries.has(index) && (
+              <div key={series.name}>
+                <div className="color-swatch" style={{ backgroundColor: series.color }} />
+                {series.formatHoverValue(series.dataKey(data))}
+              </div>
+            )
         )}
       </div>
     </div>

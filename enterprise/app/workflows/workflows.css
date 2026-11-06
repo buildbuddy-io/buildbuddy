@@ -164,19 +164,78 @@
   margin-right: 8px;
 }
 
-.workflows-page .run-workflow-input {
-  padding: 12px;
+/* The run workflow dialog is rendered in a modal outside of .workflows-page. */
+.run-workflow-dialog .dialog-header {
+  margin-bottom: 4px;
 }
 
-.workflows-page .run-workflow-input .title {
+.run-workflow-dialog .run-workflow-repo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
   font-weight: 600;
-  font-size: 15px;
-  background: var(--color-bg-primary);
-  padding: 4px;
+  word-break: break-all;
 }
 
-.workflows-page .run-workflow-input button {
-  margin-top: 8px;
+.run-workflow-dialog .run-workflow-repo .icon {
+  --icon-size: 16px;
+  flex-shrink: 0;
+}
+
+.run-workflow-dialog .run-workflow-link-banner {
+  margin-bottom: 16px;
+  align-items: center;
+}
+
+.run-workflow-dialog .run-workflow-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.run-workflow-dialog .run-workflow-field:not(:last-child) {
+  margin-bottom: 16px;
+}
+
+.run-workflow-dialog .run-workflow-field-label {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.run-workflow-dialog .run-workflow-env-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.run-workflow-dialog .run-workflow-env-row .text-input {
+  min-width: 0;
+  font-family: var(--code-font);
+}
+
+.run-workflow-dialog .run-workflow-env-name {
+  flex: 1;
+}
+
+.run-workflow-dialog .run-workflow-env-value {
+  flex: 2;
+}
+
+.run-workflow-dialog .run-workflow-env-separator {
+  font-family: var(--code-font);
+  color: var(--color-text-secondary);
+}
+
+.run-workflow-dialog .run-workflow-add-env-button {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.run-workflow-dialog .icon {
+  --icon-size: 16px;
 }
 
 .workflows-page .checks-button {

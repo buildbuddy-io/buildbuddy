@@ -1,0 +1,566 @@
+package review
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
+	"github.com/buildbuddy-io/buildbuddy/cli/util/agent"
+	"github.com/buildbuddy-io/buildbuddy/cli/util/agent/agentutil"
+	"github.com/google/go-github/v59/github"
+)
+
+const Usage = `
+usage: bb agent review [ --fix ] [ --dry_run ] [ --verify=false ] [ --force ] [ --allow_fork ]
+
+Reviews the open GitHub pull request for the checked-out branch, then posts the
+findings as PR review comments.
+
+With --fix, fetches existing PR feedback, addresses actionable comments, then commits and pushes them to the PR branch.
+Requires a clean checkout at the PR head.
+Set AGENT_REVIEW_FIX=1 to enable --fix by default.
+Pass --verify=false to skip verification.
+With --fix --dry_run, applies changes in the local working tree without committing, pushing, or replying to comments.
+Fixing PRs from forks is not supported.
+
+The review reads the source from the local checkout, so to review another PR,
+check it out first with ` + "`gh pr checkout <pr>`" + `.
+
+Requires gh and a GitHub token in REPO_TOKEN, GH_TOKEN, or GITHUB_TOKEN.
+
+When generating reviews, drafts and PRs that already have a bot review are
+skipped; pass --force (or set AGENT_REVIEW_FORCE=1) to review them anyway.
+
+By default, PRs from forks are refused, because reviewing one runs the agent over
+untrusted code; pass --allow_fork to review one anyway.
+
+Examples:
+  bb agent review
+  bb agent review --dry_run
+  bb agent review --fix
+  bb agent review --fix --dry_run
+`
+
+// Flags holds the flags unique to this subcommand. The flags shared by all
+// `bb agent` subcommands are registered on it by the agent package.
+var (
+	Flags = flag.NewFlagSet("review", flag.ContinueOnError)
+
+	dryRun    = Flags.Bool("dry_run", false, "Print the review payload without posting it, or with --fix, apply changes locally without committing or pushing.")
+	fix       = Flags.Bool("fix", os.Getenv(agentReviewFixPreset) == "1", "Address existing PR feedback, then commit and push the changes. Set AGENT_REVIEW_FIX=1 to enable by default. With --dry_run, leave changes uncommitted in the working tree.")
+	verify    = Flags.Bool("verify", true, "Verify changes when using --fix. Set --verify=false to skip verification.")
+	force     = Flags.Bool("force", false, "Review the PR even if it is a draft or already has a bot review.")
+	allowFork = Flags.Bool("allow_fork", false, "Review the PR even if it comes from a fork. See the warning that --allow_fork suppresses.")
+)
+
+// reviewAllowedTools restricts the review agent to reading the repo and the PR.
+var reviewAllowedTools = []string{
+	"Read",
+	"Glob",
+	"Grep",
+	"Bash(git diff *)",
+	"Bash(git fetch *)",
+	"Bash(git log *)",
+	"Bash(git show *)",
+	"Bash(git blame *)",
+	"Bash(gh pr diff *)",
+	"Bash(gh pr view *)",
+}
+
+const reviewPrompt = `Review PR #%d. Load your code review skill but the following rules should take precedence:
+
+Rules
+- For every finding, include the exact file path and line number in the format "path/to/file.go:42" so findings can be posted as inline GitHub comments.
+- Review by reading the diff and the surrounding source. Do not build, run, or test the code — that can be slow and is not the goal of this review.
+- Do not edit any files, and do not commit, push, or post anything to GitHub. Only report the findings.
+- Only report actionable and high-impact findings (wrong results, security issues, performance regressions). Only report edge cases that are likely to occur given the current codebase and usage patterns.
+- Report rare edge cases, especially timing and concurrency bugs, when the impact is severe and silent, such as security vulnerabilities, wrong results, or data loss, and you
+  can describe the sequence of events that triggers them.
+- Do not flag speculative concerns, pre-existing problems, intentional behavior changes, issues from code not caused by this PR, or style nits.
+- Flag intentional behavior changes only if they break existing callers, deployments, or configs, or cause significant side effects the author may not expect.
+`
+
+const parsePrompt = `Parse the code review below and output ONLY a valid JSON object — no markdown fences, no explanation.
+
+Schema:
+{
+  "summary": "<1-2 plain-language sentences on what the change does and its impact>",
+  "comments": [
+    {
+      "file": "<file path relative to repo root, e.g. server/foo.go>",
+      "line": <integer — the line number in the NEW version of the file>,
+      "body": "<the condensed comment as markdown>"
+    }
+  ]
+}
+
+Rules:
+- Include a comment entry for every unique finding that mentions a file path, even if the line number is approximate — use the nearest relevant line you can infer from context.
+- File paths must be relative (no leading slash, no absolute paths).
+- Rewrite each comment body as at most two short sentences: first what goes wrong, then its impact. End the comment there. The reader will decide how to fix it, so leave out what to change, even when the review suggested it. Drop step-by-step mechanisms, code walkthroughs, and background. Keep the finding's claim unchanged.
+- The exception is a finding that is itself a recommendation, such as a simpler approach to the change or a missing helper. For those, state the recommendation.
+- Use simple language and one idea per sentence, with no asides in parentheses.
+- Write each comment directly, without introductory labels or categories. For example, write "strings.Split allocates. Use strings.SplitSeq instead." rather than "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead."
+- Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
+- If a comment raises more than one unrelated issue, split it into separate comments on the same line, one issue each.
+- Merge duplicate findings into one comment. Instead of repeating a comment on every line where an issue occurs, say "(same issue at ...)" or "(here and below)".
+- Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
+- Write the summary for a reviewer who may not know this code. Use at most two sentences. Say what the change does and what it means for users or the system when it works as intended. Don't name files, functions, or fields, and don't list implementation steps.
+- Leave out supporting details such as validation, error handling, logging, tests, and refactors, unless the change is mainly about them.
+- The summary describes only the change, never the review. Don't mention risks, bugs, or anything the comments raise. Don't include verdicts like "no issues found", a list of what was checked, or caveats about what the reviewer couldn't verify.
+- If an actionable finding has no file reference, add it after the summary as one short sentence.
+- Output ONLY the JSON object. No other text before or after it.
+
+REVIEW:
+`
+
+// reviewLinkMarker identifies the comment posted by postReviewLink, so that
+// it's only posted once per PR.
+const reviewLinkMarker = "<!-- bb-agent-review-link -->"
+
+const reviewDocsURL = "https://www.buildbuddy.io/docs/cli-commands#bb-agent-review"
+
+// Keep these in sync with ENV_PRESETS in run_workflow_deep_link.ts.
+const (
+	agentReviewPreset    = "AGENT_REVIEW"
+	agentReviewFixPreset = "AGENT_REVIEW_FIX"
+)
+
+var (
+	hunkRe = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
+	fileRe = regexp.MustCompile(`^\+\+\+ b/(.+)$`)
+)
+
+type reviewComment struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
+	Body string `json:"body"`
+}
+
+type reviewJSON struct {
+	Summary  string          `json:"summary"`
+	Comments []reviewComment `json:"comments"`
+}
+
+type fileLine struct {
+	file string
+	line int
+}
+
+// HandleReview receives only the positional args; the agent package parses
+// Flags before calling it.
+func HandleReview(args []string) (int, error) {
+	if len(args) != 0 {
+		log.Print(Usage)
+		return 1, nil
+	}
+	if _, err := exec.LookPath("gh"); err != nil {
+		return -1, fmt.Errorf("gh is not installed or not in PATH")
+	}
+
+	ctx := context.Background()
+	gh, err := newGHClient()
+	if err != nil {
+		return -1, err
+	}
+
+	// Fetch the PR associated with the current, checked-out branch.
+	owner, repo, branch, err := fetchRepoInfo()
+	if err != nil {
+		return -1, err
+	}
+	log.Printf("Fetching PR info...")
+	prs, _, err := gh.PullRequests.List(ctx, owner, repo, &github.PullRequestListOptions{
+		Head:  owner + ":" + branch,
+		State: "open",
+	})
+	if err != nil {
+		return -1, fmt.Errorf("list PRs: %w", err)
+	}
+	if len(prs) == 0 {
+		return -1, fmt.Errorf("no open PR found for branch %q", branch)
+	}
+	pr := prs[0]
+
+	headSHA := pr.GetHead().GetSHA()
+	headShort := headSHA
+	if len(headShort) > 8 {
+		headShort = headShort[:8]
+	}
+	log.Printf("PR #%d on %s/%s  (head: %s, base: %s)", pr.GetNumber(), owner, repo, headShort, pr.GetBase().GetRef())
+
+	if *fix {
+		return fixReview(ctx, gh, owner, repo, pr)
+	}
+
+	if !*allowFork && isFork(pr, owner, repo) {
+		log.Warnf("Reviewing this code runs an agent over untrusted code, which the agent reads as input. Proceed with caution. Read the diff yourself first, and pass --allow_fork to review it anyway.")
+		return 1, nil
+	}
+
+	// A PR is reviewed once, when it's ready for review, so skip drafts and PRs
+	// that already have a bot review to avoid spamming them with reviews.
+	if !*force && os.Getenv("AGENT_REVIEW_FORCE") != "1" {
+		skip, err := shouldSkip(ctx, gh, owner, repo, pr)
+		if err != nil {
+			return -1, err
+		}
+		if skip {
+			return 0, nil
+		}
+	}
+
+	// Have the agent generate the review.
+	log.Printf("%sRunning agent to review the PR (this may take a few minutes)...%s", terminal.Esc(90), terminal.Esc())
+	reviewBuf := &bytes.Buffer{}
+	err = agent.Run(ctx, &agentutil.RunRequest{
+		Agent:              *agentflags.Agent,
+		Model:              *agentflags.Model,
+		ReasoningEffort:    *agentflags.Effort,
+		Prompt:             fmt.Sprintf(reviewPrompt, pr.GetNumber()),
+		ClaudeAllowedTools: reviewAllowedTools,
+		// The agent reads the PR with gh, which needs network access. Codex only
+		// allows network access in the workspace-write sandbox, so the agent can
+		// also write to the workspace; it is told not to edit anything.
+		CodexSandbox: agentutil.SandboxWorkspaceWrite,
+		CodexArgs:    []string{"--config", "sandbox_workspace_write.network_access=true"},
+		Output:       reviewBuf,
+		Progress:     io.Discard,
+	})
+	if err != nil {
+		return -1, fmt.Errorf("error running review agent: %w", err)
+	}
+	reviewText := reviewBuf.String()
+	if strings.TrimSpace(reviewText) == "" {
+		return -1, fmt.Errorf("review produced no output.")
+	}
+
+	// Have the agent convert the review to structured JSON. If that fails,
+	// post the unstructured review as a single body comment.
+	log.Printf("Structuring review output into JSON...")
+	review, err := structureReview(ctx, reviewText)
+	if err != nil {
+		log.Warnf("Failed to structure review (%s); posting it as a single body comment.", err)
+		return postReview(ctx, gh, owner, repo, pr, reviewText, nil)
+	}
+	log.Printf("    Found %d candidate line-level comment(s).", len(review.Comments))
+
+	// GitHub only accepts inline comments on lines present in the diff hunks.
+	log.Printf("Fetching PR diff to validate line numbers...")
+	diff, _, err := gh.PullRequests.GetRaw(ctx, owner, repo, pr.GetNumber(), github.RawOptions{Type: github.Diff})
+	if err != nil {
+		return -1, fmt.Errorf("fetch PR diff: %w", err)
+	}
+	validLines := diffLines(diff)
+
+	// Partition comments into inline and body overflow.
+	var inlineComments []*github.DraftReviewComment
+	var overflowLines []string
+	for _, c := range review.Comments {
+		if validLines[fileLine{c.File, c.Line}] {
+			inlineComments = append(inlineComments, &github.DraftReviewComment{
+				Path: new(c.File),
+				Line: new(c.Line),
+				Side: new("RIGHT"),
+				Body: new(c.Body),
+			})
+		} else {
+			overflowLines = append(overflowLines, fmt.Sprintf("- `%s:%d` — %s", c.File, c.Line, c.Body))
+		}
+	}
+
+	fullBody := review.Summary
+	if len(overflowLines) > 0 {
+		fullBody += "\n\n### Additional findings (lines outside the diff)\n" + strings.Join(overflowLines, "\n")
+	}
+	log.Printf("    %d inline comment(s), %d folded into body.", len(inlineComments), len(overflowLines))
+
+	return postReview(ctx, gh, owner, repo, pr, fullBody, inlineComments)
+}
+
+// isFork reports whether the PR's head branch lives in the given repo. If it doesn't,
+// it's assumed to be from a fork.
+func isFork(pr *github.PullRequest, owner, repo string) bool {
+	return pr.GetHead().GetRepo().GetFullName() != owner+"/"+repo
+}
+
+// shouldSkip reports whether the PR is a draft or already has a bot review.
+func shouldSkip(ctx context.Context, gh *github.Client, owner, repo string, pr *github.PullRequest) (bool, error) {
+	log.Printf("Checking for existing reviews...")
+	// Only the first page of reviews is checked.
+	reviews, _, err := gh.PullRequests.ListReviews(ctx, owner, repo, pr.GetNumber(), nil)
+	if err != nil {
+		return false, fmt.Errorf("fetch existing reviews: %w", err)
+	}
+	hasBotReview, hasReviewLink := false, false
+	for _, r := range reviews {
+		if hasReviewLink && hasBotReview {
+			break
+		}
+		if strings.Contains(r.GetBody(), reviewLinkMarker) {
+			// The review link posted on drafts doesn't count as a review of the code.
+			hasReviewLink = true
+		} else if r.GetUser().GetType() == "Bot" {
+			hasBotReview = true
+		}
+	}
+
+	if pr.GetDraft() {
+		log.Printf("PR #%d is a draft — skipping (pass --force or set AGENT_REVIEW_FORCE=1 to override).", pr.GetNumber())
+		// Only post the review link if it hasn't been posted and the PR hasn't
+		// already been reviewed (e.g. by a forced run).
+		if !hasReviewLink && !hasBotReview {
+			if err := postReviewLink(ctx, gh, owner, repo, pr); err != nil {
+				log.Warnf("Failed to post review link comment: %s", err)
+			}
+		}
+		return true, nil
+	}
+	if hasBotReview {
+		log.Printf("PR #%d already has a bot review — skipping (pass --force or set AGENT_REVIEW_FORCE=1 to override).", pr.GetNumber())
+		return true, nil
+	}
+	return false, nil
+}
+
+// postReviewLink posts a comment with a link to trigger a review.
+func postReviewLink(ctx context.Context, gh *github.Client, owner, repo string, pr *github.PullRequest) error {
+	// Keep these in sync with the env var names in ci_runner_env.
+	actionName := os.Getenv("BUILDBUDDY_ACTION_NAME")
+	if actionName == "" || os.Getenv("BUILDBUDDY_TRIGGER_EVENT") != "pull_request" {
+		return nil
+	}
+
+	runURL, err := runReviewURL(pr, actionName, agentReviewPreset)
+	if err != nil {
+		return err
+	}
+	fixURL, err := runReviewURL(pr, actionName, agentReviewFixPreset)
+	if err != nil {
+		return err
+	}
+	body := reviewLinkMarker + "\n" +
+		"**Agent code review** · Get feedback on this pull request before a teammate reviews it.\n" +
+		"**[Run review](" + runURL + ")** · **[Address all feedback](" + fixURL + ")**\n\n" +
+		"<sub>Runs [`bb agent review`](" + reviewDocsURL + ") on BuildBuddy Workflows</sub>"
+
+	if *dryRun {
+		fmt.Println("Dry run — review link comment that would be posted:")
+		fmt.Println(body)
+		return nil
+	}
+	req := &github.PullRequestReviewRequest{
+		CommitID: new(pr.GetHead().GetSHA()),
+		Event:    new("COMMENT"),
+		Body:     new(body),
+	}
+	if _, _, err := gh.PullRequests.CreateReview(ctx, owner, repo, pr.GetNumber(), req); err != nil {
+		return fmt.Errorf("post review: %w", err)
+	}
+	log.Printf("Posted review link comment to PR #%d.", pr.GetNumber())
+	return nil
+}
+
+// runReviewURL returns a link that runs the given workflow action on the PR's
+// branch using an environment preset from run_workflow_deep_link.ts.
+func runReviewURL(pr *github.PullRequest, actionName, envPreset string) (string, error) {
+	runURL, err := url.JoinPath(*agentflags.HTTPTarget, "workflows", "run")
+	if err != nil {
+		return "", fmt.Errorf("build run review URL: %w", err)
+	}
+	return runURL + "?" + url.Values{
+		"repo_url":    {pr.GetBase().GetRepo().GetHTMLURL()},
+		"action_name": {actionName},
+		"branch":      {pr.GetHead().GetRef()},
+		"env_preset":  {envPreset},
+	}.Encode(), nil
+}
+
+func reviewFooter(pr *github.PullRequest) string {
+	// Keep this in sync with the env var name in ci_runner_env.
+	actionName := os.Getenv("BUILDBUDDY_ACTION_NAME")
+	if actionName == "" {
+		return "<sub>Reviewed with [`bb agent review`](" + reviewDocsURL + ")</sub>"
+	}
+	footer := "<sub>Reviewed with [`bb agent review`](" + reviewDocsURL + ") on BuildBuddy Workflows</sub>"
+	runURL, err := runReviewURL(pr, actionName, agentReviewPreset)
+	if err != nil {
+		log.Warnf("Omitting re-run link from review: %s", err)
+		return footer
+	}
+	fixURL, err := runReviewURL(pr, actionName, agentReviewFixPreset)
+	if err != nil {
+		log.Warnf("Omitting address feedback link from review: %s", err)
+		return "**[Re-run review](" + runURL + ")**\n\n" + footer
+	}
+	return "**[Re-run review](" + runURL + ")** · **[Address all feedback](" + fixURL + ")**\n\n" + footer
+}
+
+// structureReview has the agent convert a free-form review into reviewJSON.
+func structureReview(ctx context.Context, reviewText string) (*reviewJSON, error) {
+	buf := &bytes.Buffer{}
+	err := agent.Run(ctx, &agentutil.RunRequest{
+		Agent:           *agentflags.Agent,
+		Model:           *agentflags.Model,
+		ReasoningEffort: *agentflags.Effort,
+		Prompt:          parsePrompt + reviewText,
+		CodexSandbox:    agentutil.SandboxReadOnly,
+		Output:          buf,
+		Progress:        io.Discard,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Strip accidental markdown fences.
+	var cleanLines []string
+	for line := range strings.SplitSeq(buf.String(), "\n") {
+		if !strings.HasPrefix(line, "```") {
+			cleanLines = append(cleanLines, line)
+		}
+	}
+
+	review := &reviewJSON{}
+	if err := json.Unmarshal([]byte(strings.Join(cleanLines, "\n")), review); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w", err)
+	}
+	return review, nil
+}
+
+// diffLines returns the set of lines in the new version of each file that
+// appear in the diff hunks.
+func diffLines(diff string) map[fileLine]bool {
+	validLines := make(map[fileLine]bool)
+	var currentFile string
+	newLine := 0
+	scanner := bufio.NewScanner(strings.NewReader(diff))
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	for scanner.Scan() {
+		l := scanner.Text()
+		if m := fileRe.FindStringSubmatch(l); m != nil {
+			currentFile = m[1]
+			newLine = 0
+		} else if m := hunkRe.FindStringSubmatch(l); m != nil {
+			n, _ := strconv.Atoi(m[1])
+			newLine = n - 1
+		} else if currentFile != "" {
+			switch {
+			case strings.HasPrefix(l, "-"):
+				// deleted line — don't advance
+			case strings.HasPrefix(l, "+"), strings.HasPrefix(l, " "):
+				newLine++
+				validLines[fileLine{currentFile, newLine}] = true
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Warnf("Diff scanner error (some inline comments may be demoted to body): %s", err)
+	}
+	return validLines
+}
+
+func newGHClient() (*github.Client, error) {
+	token := ""
+	for _, env := range []string{"REPO_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"} {
+		if token = os.Getenv(env); token != "" {
+			break
+		}
+	}
+	if token == "" {
+		return nil, fmt.Errorf("no GitHub token found; set REPO_TOKEN, GH_TOKEN, or GITHUB_TOKEN")
+	}
+	// Propagate to GH_TOKEN so the gh CLI (used by the review agent) can authenticate.
+	os.Setenv("GH_TOKEN", token)
+	return github.NewClient(nil).WithAuthToken(token), nil
+}
+
+func fetchRepoInfo() (owner, repo, branch string, err error) {
+	repoRaw, err := run("gh", "repo", "view", "--json", "nameWithOwner")
+	if err != nil {
+		return "", "", "", fmt.Errorf("get repo info: %w", err)
+	}
+	var repoInfo struct {
+		NameWithOwner string `json:"nameWithOwner"`
+	}
+	if err := json.Unmarshal([]byte(repoRaw), &repoInfo); err != nil {
+		return "", "", "", fmt.Errorf("parse repo info: %w", err)
+	}
+	owner, repo, ok := strings.Cut(repoInfo.NameWithOwner, "/")
+	if !ok {
+		return "", "", "", fmt.Errorf("unexpected nameWithOwner format: %q", repoInfo.NameWithOwner)
+	}
+
+	branch, err = run("git", "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "", "", "", fmt.Errorf("get current branch: %w", err)
+	}
+	return owner, repo, branch, nil
+}
+
+// postReview posts the review to the PR, or prints it when --dry_run is set.
+func postReview(ctx context.Context, gh *github.Client, owner, repo string, pr *github.PullRequest, body string, comments []*github.DraftReviewComment) (int, error) {
+	prNumber := pr.GetNumber()
+	footer := reviewFooter(pr)
+	req := &github.PullRequestReviewRequest{
+		CommitID: new(pr.GetHead().GetSHA()),
+		Event:    new("COMMENT"),
+		Body:     new(body + "\n\n" + footer),
+		Comments: comments,
+	}
+	if *dryRun {
+		payload, err := json.MarshalIndent(req, "", "  ")
+		if err != nil {
+			return -1, fmt.Errorf("marshal review payload: %w", err)
+		}
+		fmt.Println("Dry run — payload that would be posted:")
+		fmt.Println(string(payload))
+		return 0, nil
+	}
+
+	log.Printf("Posting review to GitHub...")
+	posted, _, err := gh.PullRequests.CreateReview(ctx, owner, repo, prNumber, req)
+	if err != nil && len(comments) > 0 {
+		// Inline POST failed (likely invalid line numbers) — fold findings into body and retry.
+		log.Warnf("Posting inline comments failed (%s); retrying as a single body comment.", err)
+		var fallbackBody strings.Builder
+		fallbackBody.WriteString(body + "\n\n### Inline findings\n")
+		for _, c := range comments {
+			fmt.Fprintf(&fallbackBody, "- `%s:%d` — %s\n", c.GetPath(), c.GetLine(), c.GetBody())
+		}
+		fallbackBody.WriteString("\n" + footer)
+		req.Comments = nil
+		req.Body = new(fallbackBody.String())
+		posted, _, err = gh.PullRequests.CreateReview(ctx, owner, repo, prNumber, req)
+	}
+	if err != nil {
+		return -1, fmt.Errorf("post review: %w", err)
+	}
+	if url := posted.GetHTMLURL(); url != "" {
+		log.Printf("Review posted to: %s", url)
+	}
+	return 0, nil
+}
+
+func run(args ...string) (string, error) {
+	cmd := exec.Command(args[0], args[1:]...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("%v: %w\n%s", args, err, stderr.String())
+	}
+	return strings.TrimRight(stdout.String(), "\n"), nil
+}

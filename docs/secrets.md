@@ -91,6 +91,13 @@ environment variables via special platform properties that are automatically
 redacted from the action cache and workflow logs. These properties can be set
 via remote execution headers so they are never stored in plain text.
 
+To pass multiple secrets, use one `secret-env-overrides` header containing
+comma-separated `NAME=VALUE` pairs. If a value contains commas, use one
+`secret-env-overrides-base64` header instead: base64-encode each complete
+`NAME=VALUE` pair separately, then join the encoded strings with commas.
+Repeating the same header name does not combine its values; only the last
+header value is used.
+
 ```bash title="Simple Secrets"
 --remote_exec_header=x-buildbuddy-platform.secret-env-overrides=VAR_A=value_a,VAR_B=val_b
 

@@ -7,6 +7,10 @@ message GenerateRequest {
   string token = 1;
   // The SSH public key to be signed, in OpenSSH format.
   string ssh_public_key = 2;
+
+  // Public key to certify for authenticating to WireGuard gateways, as a PEM
+  // encoded PKIX ("PUBLIC KEY") block. Must be ECDSA P-256.
+  string tunnel_public_key = 3;
 }
 
 message KubernetesClusterCredentials {
@@ -29,11 +33,51 @@ message KubernetesClusterCredentials {
   string client_cert_key = 6;
 }
 
+// TunnelZone is a DNS suffix that the client should route over the tunnel.
+message TunnelZone {
+  // The DNS suffix (e.g. dev.bb.internal).
+  string suffix = 1;
+
+  // If set, replaces suffix in a name before the gateway is asked to dial it,
+  // e.g. "cluster.local", so that a cluster-qualified name on the workstation
+  // is an ordinary in-cluster name on the wire.
+  string rewrite_to = 2;
+}
+
+// TunnelGateway is a relay gateway and the zones that should be routed to it.
+message TunnelGateway {
+  // gRPC target of the gateway, e.g. "grpcs://foo.bar.example".
+  string target = 1;
+
+  // Zones never nest, within a gateway or across gateways, so every name
+  // belongs to exactly one gateway.
+  repeated TunnelZone zones = 2;
+}
+
+// TunnelCredentials is the credential used to authenticate against a WireGuard
+// gateway, identifying the holder as a specific person (email).
+message TunnelCredentials {
+  // Client certificate (PEM encoded) for the key in
+  // GenerateRequest.tunnel_public_key, with the user's email as its common
+  // name.
+  string client_cert = 1;
+
+  // The CA that issued client_cert (PEM encoded).
+  string ca = 2;
+
+  // The relay gateways this credential is for and the DNS zones each serves.
+  repeated TunnelGateway gateways = 3;
+}
+
 message GenerateResponse {
   // Signed SSH certificate, in OpenSSH format.
   string ssh_cert = 1;
 
   repeated KubernetesClusterCredentials kubernetes_credentials = 2;
+
+  // Credentials for authenticating to WireGuard gateways. Unset if the server
+  // has no tunnel CA configured.
+  TunnelCredentials tunnel_credentials = 3;
 }
 
 // Service responsible for generating short-lived user certificates.

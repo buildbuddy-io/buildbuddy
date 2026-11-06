@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"sync"
 	"time"
@@ -26,7 +27,7 @@ func (m *Context) Err() error {
 	return nil
 }
 
-func (m *Context) Value(key interface{}) interface{} {
+func (m *Context) Value(key any) any {
 	return nil
 }
 
@@ -65,9 +66,7 @@ func (m *Mockstore) GetBlobMap() map[string][]byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r := make(map[string][]byte, len(m.BlobMap))
-	for k, v := range m.BlobMap {
-		r[k] = v
-	}
+	maps.Copy(r, m.BlobMap)
 	return r
 }
 

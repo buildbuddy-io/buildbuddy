@@ -55,10 +55,10 @@ type NodeHost interface {
 	ID() string
 	GetNoOPSession(rangeID uint64) *client.Session
 	SyncPropose(ctx context.Context, session *client.Session, cmd []byte) (dbsm.Result, error)
-	SyncRead(ctx context.Context, rangeID uint64, query interface{}) (interface{}, error)
+	SyncRead(ctx context.Context, rangeID uint64, query any) (any, error)
 	ReadIndex(rangeID uint64, timeout time.Duration) (*dragonboat.RequestState, error)
-	ReadLocalNode(rs *dragonboat.RequestState, query interface{}) (interface{}, error)
-	StaleRead(rangeID uint64, query interface{}) (interface{}, error)
+	ReadLocalNode(rs *dragonboat.RequestState, query any) (any, error)
+	StaleRead(rangeID uint64, query any) (any, error)
 }
 
 type IRegistry interface {
@@ -86,6 +86,9 @@ func NewAPIClient(env environment.Env, name string, registry IRegistry) *APIClie
 func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient rfspb.ApiClient, returnedErr error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.clients == nil {
+		return nil, status.UnavailableError("api client is closed")
+	}
 	if client, ok := c.clients[peer]; ok {
 		conn, err := client.GetReadyConnection()
 		if err != nil {
@@ -116,6 +119,19 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient 
 	}
 	c.clients[peer] = conn
 	return rfspb.NewApiClient(conn), nil
+}
+
+// Close closes all cached connections. Later calls that need a connection
+// return an Unavailable error.
+func (c *APIClient) Close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for peer, conn := range c.clients {
+		if err := conn.Close(); err != nil {
+			c.log.Warningf("Error closing connection to peer %q: %s", peer, err)
+		}
+	}
+	c.clients = nil
 }
 
 func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, error) {
@@ -304,6 +320,11 @@ func NewSessionWithClock(clock clockwork.Clock) *Session {
 	}
 }
 
+// Close stops the session's background lock cleanup.
+func (s *Session) Close() {
+	s.locker.Close()
+}
+
 // maybeRefresh resets the id and index when the session expired.
 func (s *Session) maybeRefresh() {
 	now := s.clock.Now()
@@ -408,7 +429,7 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch
 	if batch.Header == nil {
 		return nil, status.FailedPreconditionError("Header must be set")
 	}
-	var raftResponseIface interface{}
+	var raftResponseIface any
 	err = RunNodehostFn(ctx, maxSingleOpTimeout, func(ctx context.Context) error {
 		switch batch.GetHeader().GetConsistencyMode() {
 		case rfpb.Header_LINEARIZABLE:

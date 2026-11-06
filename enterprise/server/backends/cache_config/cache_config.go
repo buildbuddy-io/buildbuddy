@@ -43,7 +43,7 @@ type DiskCacheConfig struct {
 type GCSConfig struct {
 	Bucket              string `yaml:"bucket" usage:"The name of the GCS bucket to store build artifact files in."`
 	ProjectID           string `yaml:"project_id" usage:"The Google Cloud project ID of the project owning the above credentials and GCS bucket."`
-	Credentials         string `yaml:"credentials" usage:"Credentials in JSON format that will be used to authenticate to GCS."`
+	Credentials         string `yaml:"credentials" usage:"Credentials in JSON format that will be used to authenticate to GCS." config:"secret"`
 	AppName             string `yaml:"app_name" usage:"The app name, under which blobstore data will be stored."`
 	MinGCSFileSizeBytes *int64 `yaml:"min_gcs_file_size_bytes" usage:"Files larger than this may be stored in GCS (0 is disabled)."`
 	TTLDays             *int64 `yaml:"ttl_days" usage:"An object TTL, specified in days, to apply to the GCS bucket (0 means disabled)."`

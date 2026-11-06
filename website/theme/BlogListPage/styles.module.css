@@ -1,0 +1,28 @@
+.overview.overview {
+  width: 100%;
+  max-width: 1344px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 24px 24px 64px;
+}
+
+.overview :global(.blog-post-list) > a {
+  min-width: 0;
+  color: var(--ifm-font-color-base);
+  border-radius: 16px;
+}
+
+.overview :global(.blog-post-list) > a:focus-visible {
+  outline: 3px solid rgba(73, 162, 245, 0.4);
+  outline-offset: 4px;
+}
+
+.overview :global(.pagination-nav) {
+  padding-top: 16px;
+}
+
+@media (max-width: 800px) {
+  .overview.overview {
+    padding: 8px 24px 48px;
+  }
+}

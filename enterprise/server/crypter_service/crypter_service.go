@@ -146,7 +146,7 @@ func derivedKey(groupID string, key *tables.EncryptionKeyVersion, kms interfaces
 
 func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, dbh interfaces.DBHandle, kms interfaces.KMS) ([]byte, *sgpb.EncryptionMetadata, error) {
 	var query string
-	var args []interface{}
+	var args []any
 	if ck.KeyID != "" {
 		query = `
 			SELECT * FROM "EncryptionKeyVersions" ekv
@@ -154,14 +154,14 @@ func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, dbh interfac
 			WHERE ek.group_id = ? 
 			AND ekv.encryption_key_id = ? AND ekv.version = ?
 		`
-		args = []interface{}{ck.GroupID, ck.KeyID, ck.Version}
+		args = []any{ck.GroupID, ck.KeyID, ck.Version}
 	} else {
 		query = `
 			SELECT * FROM "EncryptionKeyVersions" ekv
 			JOIN "EncryptionKeys" ek ON ekv.encryption_key_id = ek.encryption_key_id
 			WHERE ek.group_id = ?
 		`
-		args = []interface{}{ck.GroupID}
+		args = []any{ck.GroupID}
 	}
 
 	ekv := &tables.EncryptionKeyVersion{}
@@ -182,8 +182,8 @@ func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, dbh interfac
 	return key, md, nil
 }
 
-func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*crypter.Encryptor, error) {
-	loadedKey, err := c.cache.EncryptionKey(ctx)
+func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*crypter.Encryptor, error) {
+	loadedKey, err := c.cache.EncryptionKeyForMetadata(ctx, em)
 	if err != nil {
 		return nil, err
 	}
@@ -191,23 +191,24 @@ func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Di
 }
 
 func (c *Crypter) ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
-	loadedKey, err := c.cache.EncryptionKey(ctx)
+	loadedKey, err := c.cache.ActiveEncryptionKey(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return loadedKey.Metadata, nil
 }
 
-func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser) (interfaces.Encryptor, error) {
+// NewEncryptor creates an encryptor using the specified key metadata.
+func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, em *sgpb.EncryptionMetadata) (interfaces.Encryptor, error) {
 	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return c.newEncryptorWithChunkSize(ctx, digest, w, u.GetGroupID(), crypter.PlainTextChunkSize)
+	return c.newEncryptorWithChunkSize(ctx, digest, w, em, u.GetGroupID(), crypter.PlainTextChunkSize)
 }
 
 func (c *Crypter) newDecryptorWithChunkSize(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*crypter.Decryptor, error) {
-	loadedKey, err := c.cache.DecryptionKey(ctx, em)
+	loadedKey, err := c.cache.EncryptionKeyForMetadata(ctx, em)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +265,7 @@ func (c *Crypter) reencryptKey(ctx context.Context, ekv *encryptionKeyVersionWit
 		WHERE encryption_key_id = ? AND version = ?
 	`
 	now := c.clock.Now()
-	args := []interface{}{encMasterKeyPortion, encGroupKeyPortion, now.UnixMicro(), now.UnixMicro(), ekv.EncryptionKeyID, ekv.Version}
+	args := []any{encMasterKeyPortion, encGroupKeyPortion, now.UnixMicro(), now.UnixMicro(), ekv.EncryptionKeyID, ekv.Version}
 	if err := c.dbh.NewQuery(ctx, "crypter_update_key_version").Raw(q, args...).Exec().Error; err != nil {
 		return err
 	}
@@ -329,7 +330,7 @@ func (c *Crypter) keyReencryptorIteration(cutoff time.Time) error {
 				WHERE encryption_key_id = ? AND version = ?
 			`
 		now := c.clock.Now()
-		args := []interface{}{now.UnixMicro(), ekv.EncryptionKeyID, ekv.Version}
+		args := []any{now.UnixMicro(), ekv.EncryptionKeyID, ekv.Version}
 		if err := c.dbh.NewQuery(uCtx, "crypter_update_encryption_timestamp").Raw(q, args...).Exec().Error; err != nil {
 			log.Warningf("could not update attempt timestamp: %s", err)
 		}
@@ -615,13 +616,13 @@ func (c *Crypter) GetEncryptionKey(ctx context.Context, req *enpb.GetEncryptionK
 
 	var loadedKey *crypter.DerivedKey
 	if req.GetMetadata().GetVersion() == 0 {
-		loadedKey, err = c.cache.EncryptionKey(ctx)
+		loadedKey, err = c.cache.ActiveEncryptionKey(ctx)
 	} else {
 		metadata := sgpb.EncryptionMetadata{
 			EncryptionKeyId: req.GetMetadata().GetId(),
 			Version:         req.GetMetadata().GetVersion(),
 		}
-		loadedKey, err = c.cache.DecryptionKey(ctx, &metadata)
+		loadedKey, err = c.cache.EncryptionKeyForMetadata(ctx, &metadata)
 	}
 	if err != nil {
 		return nil, err

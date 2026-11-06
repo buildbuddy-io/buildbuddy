@@ -163,8 +163,9 @@ file which passes these default options to each bazel invocation listed in
 
 - `--bes_backend` and `--bes_results_url`, so that the results from each
   Bazel command are viewable with BuildBuddy
-- `--remote_header=x-buildbuddy-api-key=YOUR_API_KEY`, so that invocations
-  are authenticated by default
+- `--remote_header=x-buildbuddy-api-key=YOUR_API_KEY` and
+  `--bes_header=x-buildbuddy-api-key=YOUR_API_KEY`, so that remote cache,
+  execution, and BES requests are authenticated by default
 - `--build_metadata=ROLE=CI`, so that workflow invocations are tagged as
   CI invocations, and so that workflow tests are viewable in the test grid
 
@@ -684,6 +685,10 @@ pushed.
   `reopened`, and base-branch edits. Set this if you only want the Workflow
   to run on specific actions - for example, `[ "ready_for_review" ]` to run only when
   a draft PR is marked ready for review.
+- **`skip_drafts`** (`boolean`, default: `false`): Whether to skip running the
+  workflow while the PR is a draft. If `types` is unset, the workflow also runs
+  when a draft PR is marked ready for review, so that it runs once the PR is
+  ready. If `types` is set, only the listed types trigger the workflow.
 - **`merge_with_base`** (`boolean`, default: `true`): Whether to merge the
   base branch into the PR branch before running the workflow action. This
   can help ensure that the changes in the PR branch do not conflict with

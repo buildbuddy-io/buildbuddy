@@ -4,7 +4,7 @@ title: RBE with Firecracker MicroVMs
 sidebar_label: RBE with MicroVMs
 ---
 
-BuildBuddy Cloud has experimental support for running remote build actions
+BuildBuddy Cloud has support for running remote build actions
 within [Firecracker microVMs](https://github.com/firecracker-microvm/firecracker),
 which are lightweight VMs that are optimized for fast startup time.
 

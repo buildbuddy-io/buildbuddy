@@ -30,8 +30,8 @@ genrule(
     srcs = ["//server/metrics:metrics.go"],
     outs = ["docs.mdx"],
     cmd_bash = """
-    BAZEL_BINDIR=$(BINDIR) $(location :generate_docs) \
-        --prettier_path=$(location //tools/prettier) \
+    BAZEL_BINDIR=$(BINDIR) $(execpath :generate_docs) \
+        --prettier_path=$(execpath //tools/prettier) \
         --input_path=$(SRCS) \
         --output_path=$@
     """,

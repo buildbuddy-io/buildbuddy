@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_registration"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/local_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ocifetcher_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
@@ -79,9 +80,7 @@ var (
 
 	serverType = flag.String("server_type", "cache-proxy", "The server type to match on health checks")
 
-	remoteCache = flag.String("cache_proxy.remote_cache", "grpcs://remote.buildbuddy.dev", "The backing remote cache.")
-
-	proxyType = flag.String("cache_proxy.proxy_type", sku.ProxyBuildBuddy, "Whether this is a BuildBuddy-run (\"buildbuddy\") or customer-run (\"customer\") cache proxy. Used for usage tracking/billing.")
+	proxyType = flag.String("cache_proxy.proxy_type", sku.ProxyCustomer, "Whether this is a BuildBuddy-run (\"buildbuddy\") or customer-run (\"customer\") cache proxy. Used for usage tracking/billing.")
 )
 
 func main() {
@@ -120,7 +119,18 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	hit_tracker_client.Register(env)
+	if cache_proxy_config.RemoteCacheTarget() == "" {
+		log.Fatalf("--cache_proxy.remote_cache must be set")
+	}
+	if err := hit_tracker_client.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	// Register crypters, remote_crypter will return an error if the
+	// local_crypter successfully registers to avoid incompatibility.
+	if err := local_crypter.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := remote_crypter.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -179,7 +189,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Could not parse http proxy url: %v", err)
 		}
-		proxy := httputil.NewSingleHostReverseProxy(httpProxyUrl)
+		proxy := proxy_util.NewHTTPForwarder(env, httpProxyUrl)
 
 		// Fallback to forward any unmatched HTTP routes to the proxy target.
 		env.GetMux().Handle("/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -239,12 +249,13 @@ func main() {
 }
 
 func startGRPCServers(env *real_environment.RealEnv) error {
-	trafficStatsHandler, err := trafficstats.NewServerHandler()
+	trafficStatsHandler, err := trafficstats.NewServerHandler(env)
 	if err != nil {
 		return status.WrapError(err, "failed to create traffic stats handler")
 	}
 	// Add metadata-propagating interceptors for configured request headers.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
+		EnableConnectionAging: true,
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
 			interceptors.PropagateMetadataUnaryInterceptor(proxy_util.HeadersToPropagate...),
 		},
@@ -306,7 +317,7 @@ func startInternalGRPCServers(env *real_environment.RealEnv) error {
 
 func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv) {
 	// Connect to the remote cache and initialize gRPC clients.
-	conn, err := grpc_client.DialInternal(env, *remoteCache)
+	conn, err := grpc_client.DialInternal(env, cache_proxy_config.RemoteCacheTarget())
 	if err != nil {
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}
@@ -386,7 +397,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
 	ofpb.RegisterOCIFetcherServer(grpcServer, env.GetOCIFetcherServer())
 	rapb.RegisterFetchServer(grpcServer, env.GetFetchServer())
-	log.Infof("Cache proxy proxying requests to %s", *remoteCache)
+	log.Infof("Cache proxy proxying requests to %s", cache_proxy_config.RemoteCacheTarget())
 }
 
 func registerInternalServices(env *real_environment.RealEnv) error {

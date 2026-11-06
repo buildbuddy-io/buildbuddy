@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -27,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -38,9 +36,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
 	"github.com/google/uuid"
-	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -72,7 +67,7 @@ func runCASServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
 
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
+	clientConn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	if err != nil {
 		t.Error(err)
 	}
@@ -140,7 +135,7 @@ func TestBatchUpdateBlobs(t *testing.T) {
 
 	var digests []*repb.Digest
 	req := &repb.BatchUpdateBlobsRequest{}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
 			Digest: rn.GetDigest(),
@@ -161,6 +156,89 @@ func TestBatchUpdateBlobs(t *testing.T) {
 	}
 	_, err = casClient.BatchReadBlobs(ctx, readReq)
 	require.NoError(t, err)
+}
+
+func TestBlackholeAnonymousCacheRequests(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_cache_requests", false)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	te.SetAuthenticator(auth)
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	storedRN, storedData := testdigest.RandomCASResourceBuf(t, 10)
+	_, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{{Digest: storedRN.GetDigest(), Data: storedData}},
+	})
+	require.NoError(t, err)
+
+	flags.Set(t, "auth.blackhole_anonymous_cache_requests", true)
+	emptyDigest := &repb.Digest{Hash: digest.EmptySha256}
+	findRsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{storedRN.GetDigest(), emptyDigest},
+	})
+	require.NoError(t, err)
+	require.Equal(t, digestStrings(storedRN.GetDigest()), digestStrings(findRsp.GetMissingBlobDigests()...))
+
+	readRsp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+		Digests: []*repb.Digest{storedRN.GetDigest(), emptyDigest},
+	})
+	require.NoError(t, err)
+	require.Len(t, readRsp.GetResponses(), 2)
+	require.Equal(t, int32(gcodes.NotFound), readRsp.GetResponses()[0].GetStatus().GetCode())
+	require.Equal(t, int32(gcodes.OK), readRsp.GetResponses()[1].GetStatus().GetCode())
+
+	batchWriteRN, batchWriteData := testdigest.RandomCASResourceBuf(t, 10)
+	updateRsp, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{{Digest: batchWriteRN.GetDigest(), Data: batchWriteData}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(gcodes.OK), updateRsp.GetResponses()[0].GetStatus().GetCode())
+
+	readStream, err := bsClient.Read(ctx, &bspb.ReadRequest{ResourceName: digest.NewCASResourceName(storedRN.GetDigest(), "", repb.DigestFunction_SHA256).DownloadString()})
+	require.NoError(t, err)
+	_, err = readStream.Recv()
+	require.True(t, status.IsNotFoundError(err), "expected cache miss, got %v", err)
+
+	byteStreamWriteDigest, err := cachetools.UploadBlobToCAS(ctx, bsClient, "", repb.DigestFunction_SHA256, []byte("discard me"))
+	require.NoError(t, err)
+	_, err = bsClient.QueryWriteStatus(ctx, &bspb.QueryWriteStatusRequest{
+		ResourceName: digest.NewCASResourceName(byteStreamWriteDigest, "", repb.DigestFunction_SHA256).NewUploadString(),
+	})
+	require.True(t, status.IsNotFoundError(err), "expected missing upload, got %v", err)
+
+	treeStream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{RootDigest: storedRN.GetDigest(), DigestFunction: repb.DigestFunction_SHA256})
+	require.NoError(t, err)
+	_, err = treeStream.Recv()
+	require.True(t, status.IsNotFoundError(err), "expected cache miss, got %v", err)
+
+	_, err = casClient.SplitBlob(ctx, &repb.SplitBlobRequest{BlobDigest: storedRN.GetDigest(), DigestFunction: repb.DigestFunction_SHA256})
+	require.True(t, status.IsNotFoundError(err), "expected cache miss, got %v", err)
+	spliceRsp, err := casClient.SpliceBlob(ctx, &repb.SpliceBlobRequest{BlobDigest: storedRN.GetDigest()})
+	require.NoError(t, err)
+	require.Equal(t, storedRN.GetDigest(), spliceRsp.GetBlobDigest())
+
+	authCtx, err := auth.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	authenticatedRN, authenticatedData := testdigest.RandomCASResourceBuf(t, 10)
+	_, err = casClient.BatchUpdateBlobs(authCtx, &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{{Digest: authenticatedRN.GetDigest(), Data: authenticatedData}},
+	})
+	require.NoError(t, err)
+	authenticatedReadRsp, err := casClient.BatchReadBlobs(authCtx, &repb.BatchReadBlobsRequest{Digests: []*repb.Digest{authenticatedRN.GetDigest()}})
+	require.NoError(t, err)
+	require.Equal(t, int32(gcodes.OK), authenticatedReadRsp.GetResponses()[0].GetStatus().GetCode())
+	require.Equal(t, authenticatedData, authenticatedReadRsp.GetResponses()[0].GetData())
+
+	flags.Set(t, "auth.blackhole_anonymous_cache_requests", false)
+	findRsp, err = casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{storedRN.GetDigest(), batchWriteRN.GetDigest(), byteStreamWriteDigest},
+	})
+	require.NoError(t, err)
+	require.ElementsMatch(t, digestStrings(batchWriteRN.GetDigest(), byteStreamWriteDigest), digestStrings(findRsp.GetMissingBlobDigests()...))
 }
 
 func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
@@ -887,26 +965,9 @@ func TestGetTreeMissingRoot(t *testing.T) {
 }
 
 func TestSpliceAndSplitBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runCASServer(ctx, t, te)
@@ -993,79 +1054,80 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 
 func TestSpliceBlobWithoutValidation(t *testing.T) {
 	for _, tc := range []struct {
-		name           string
-		groupID        string
-		clientIdentity string
-		sendHeader     bool
-		missingChunk   bool
-		wrongBlobSize  bool
-		wantSuccess    bool
-		wantValidation string
+		name              string
+		groupID           string
+		clientIdentity    string
+		noIdentityService bool
+		sendHeader        bool
+		missingChunk      bool
+		wrongBlobSize     bool
+		wantSuccess       bool
+		wantValidation    string
 	}{
 		{
-			name:           "trusted executor in experiment",
-			groupID:        "GR_ALLOWED",
+			name:           "trusted executor",
+			groupID:        "GR1",
 			clientIdentity: interfaces.ClientIdentityExecutor,
 			sendHeader:     true,
 			wantSuccess:    true,
-			wantValidation: "skipped",
+			wantValidation: metrics.SpliceBlobValidationSkipped,
 		},
 		{
-			name:           "trusted cache proxy forwards experiment",
-			groupID:        "GR_ALLOWED",
+			name:           "trusted cache proxy forwards header",
+			groupID:        "GR1",
 			clientIdentity: interfaces.ClientIdentityCacheProxy,
 			sendHeader:     true,
 			wantSuccess:    true,
-			wantValidation: "skipped",
+			wantValidation: metrics.SpliceBlobValidationSkipped,
 		},
 		{
-			name:           "trusted executor without experiment header",
-			groupID:        "GR_ALLOWED",
+			name:           "trusted executor without header",
+			groupID:        "GR1",
 			clientIdentity: interfaces.ClientIdentityExecutor,
-			wantValidation: "full",
+			wantValidation: metrics.SpliceBlobValidationFull,
 		},
 		{
 			name:           "trusted executor cannot reference a missing chunk",
-			groupID:        "GR_ALLOWED",
+			groupID:        "GR1",
 			clientIdentity: interfaces.ClientIdentityExecutor,
 			sendHeader:     true,
 			missingChunk:   true,
-			wantValidation: "skipped",
+			wantValidation: metrics.SpliceBlobValidationSkipped,
 		},
 		{
 			name:           "trusted executor cannot claim wrong blob size",
-			groupID:        "GR_ALLOWED",
+			groupID:        "GR1",
 			clientIdentity: interfaces.ClientIdentityExecutor,
 			sendHeader:     true,
 			wrongBlobSize:  true,
-			wantValidation: "skipped",
+			wantValidation: metrics.SpliceBlobValidationSkipped,
 		},
 		{
-			name:           "trusted executor from group outside experiment",
-			groupID:        "GR_OTHER",
-			clientIdentity: interfaces.ClientIdentityExecutor,
-			sendHeader:     true,
-			wantValidation: "full",
+			name:              "server without client identity service",
+			groupID:           "GR1",
+			noIdentityService: true,
+			sendHeader:        true,
+			wantValidation:    metrics.SpliceBlobValidationFull,
 		},
 		{
-			name:           "untrusted caller cannot spoof experiment header",
-			groupID:        "GR_ALLOWED",
+			name:           "untrusted caller cannot spoof header",
+			groupID:        "GR1",
 			sendHeader:     true,
-			wantValidation: "full",
+			wantValidation: metrics.SpliceBlobValidationFull,
 		},
 		{
 			name:           "app identity cannot skip validation",
-			groupID:        "GR_ALLOWED",
+			groupID:        "GR1",
 			clientIdentity: interfaces.ClientIdentityApp,
 			sendHeader:     true,
-			wantValidation: "full",
+			wantValidation: metrics.SpliceBlobValidationFull,
 		},
 		{
-			name:           "signed unknown client cannot spoof experiment header",
-			groupID:        "GR_ALLOWED",
+			name:           "signed unknown client cannot spoof header",
+			groupID:        "GR1",
 			clientIdentity: "unknown-client",
 			sendHeader:     true,
-			wantValidation: "full",
+			wantValidation: metrics.SpliceBlobValidationFull,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1075,45 +1137,17 @@ func TestSpliceBlobWithoutValidation(t *testing.T) {
 				user.GetUserID(): user,
 			}))
 
-			flags.Set(t, "app.client_identity.key", "test-client-identity-key")
-			identityService, err := clientidentity.New(env.GetClock())
-			require.NoError(t, err)
-			env.SetClientIdentityService(identityService)
-
-			tmp := testfs.MakeTempDir(t)
-			offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
-{
-  "$schema": "https://flagd.dev/schema/v0/flags.json",
-  "flags": {
-    "cache.chunking_enabled": {
-      "state": "ENABLED",
-      "variants": {"enabled": true},
-      "defaultVariant": "enabled"
-    },
-    "splice-without-validation": {
-      "state": "ENABLED",
-      "variants": {"enabled": true, "disabled": false},
-      "defaultVariant": "disabled",
-      "targeting": {
-        "if": [
-          {"==": [{"var": "group_id"}, "GR_ALLOWED"]},
-          "enabled",
-          "disabled"
-        ]
-      }
-    }
-  }
-}
-`)
-			provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
-			require.NoError(t, err)
-			require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), provider))
-			fp, err := experiments.NewFlagProvider(t.Name())
-			require.NoError(t, err)
-			env.SetExperimentFlagProvider(fp)
+			var identityService *clientidentity.Service
+			if !tc.noIdentityService {
+				flags.Set(t, "app.client_identity.key", "test-client-identity-key")
+				var err error
+				identityService, err = clientidentity.New(env.GetClock())
+				require.NoError(t, err)
+				env.SetClientIdentityService(identityService)
+			}
 
 			ctx := testauth.WithAuthenticatedUserInfo(t.Context(), user)
-			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 			require.NoError(t, err)
 			if tc.sendHeader {
 				ctx = cdc.ContextWithSpliceWithoutValidation(ctx)
@@ -1174,26 +1208,9 @@ func TestSpliceBlobWithoutValidation(t *testing.T) {
 }
 
 func TestSplitBlobNotFound(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runCASServer(ctx, t, te)
@@ -1273,26 +1290,9 @@ func TestSplitBlobRejectsLayeredManifest(t *testing.T) {
 }
 
 func TestSpliceBlobSingleChunk(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runCASServer(ctx, t, te)
@@ -1329,26 +1329,9 @@ func TestSpliceBlobSingleChunk(t *testing.T) {
 }
 
 func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runCASServer(ctx, t, te)
@@ -1469,30 +1452,14 @@ func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-				"cache.chunking_enabled": {
-					State:          memprovider.Enabled,
-					DefaultVariant: "true",
-					Variants: map[string]any{
-						"true":  true,
-						"false": false,
-					},
-				},
-			})
-			require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-
-			fp, err := experiments.NewFlagProvider(t.Name())
-			require.NoError(t, err)
-
 			ctx := context.Background()
 			te := testenv.GetTestEnv(t)
-			te.SetExperimentFlagProvider(fp)
 			if tc.useCompressionCache {
 				flags.Set(t, "cache.zstd_transcoding_enabled", true)
 				te.SetCache(&casCompressionCache{Cache: te.GetCache()})
 			}
 
-			ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(t, err)
 
 			clientConn := runCASServer(ctx, t, te)
@@ -1553,26 +1520,9 @@ func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {
 }
 
 func TestBatchReadBlobsWithMismatchedChunkedManifest(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runCASServer(ctx, t, te)
@@ -1619,22 +1569,6 @@ func TestSpliceBlobReadOnlyKey(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	te.SetExperimentFlagProvider(fp)
-
 	readOnlyUser := &testauth.TestUser{
 		UserID:       "US1",
 		GroupID:      "GR1",
@@ -1654,7 +1588,7 @@ func TestSpliceBlobReadOnlyKey(t *testing.T) {
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	}
 
-	_, err = casClient.SpliceBlob(ctx, spliceReq)
+	_, err := casClient.SpliceBlob(ctx, spliceReq)
 	require.NoError(t, err)
 }
 

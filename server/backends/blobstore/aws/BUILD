@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "aws",
@@ -21,5 +21,19 @@ go_library(
         "@com_github_aws_aws_sdk_go_v2_service_s3//:s3",
         "@com_github_aws_aws_sdk_go_v2_service_s3//types",
         "@com_github_aws_aws_sdk_go_v2_service_sts//:sts",
+    ],
+)
+
+go_test(
+    name = "aws_test",
+    srcs = ["aws_test.go"],
+    embed = [":aws"],
+    deps = [
+        "//server/backends/blobstore/util",
+        "//server/util/status",
+        "@com_github_aws_aws_sdk_go_v2_feature_s3_manager//:manager",
+        "@com_github_aws_aws_sdk_go_v2_service_s3//:s3",
+        "@com_github_aws_aws_sdk_go_v2_service_s3//types",
+        "@com_github_stretchr_testify//require",
     ],
 )

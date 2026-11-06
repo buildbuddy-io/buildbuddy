@@ -3,6 +3,7 @@ package networking
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -213,8 +214,8 @@ type Namespace struct {
 	name string
 }
 
-// createUniqueNetNamespace creates a new unique net namespace.
-func createUniqueNetNamespace(ctx context.Context) (*Namespace, error) {
+// CreateUniqueNetNamespace creates a new unique net namespace.
+func CreateUniqueNetNamespace(ctx context.Context) (*Namespace, error) {
 	name := netNamespacePrefix + uuid.New()
 	if err := runCommand(ctx, "ip", "netns", "add", name); err != nil {
 		return nil, err
@@ -250,12 +251,25 @@ func randomVethName(prefix string) (string, error) {
 	return prefix + suffix, nil
 }
 
+// RetryDump calls list until its netlink dump isn't interrupted by a concurrent
+// change, which makes the dump fail with netlink.ErrDumpInterrupted.
+func RetryDump[T any](list func() ([]T, error)) ([]T, error) {
+	const maxAttempts = 5
+	for i := 1; ; i++ {
+		res, err := list()
+		// netlink.ErrDumpInterrupted matches EINTR and is only defined on Linux.
+		if !errors.Is(err, unix.EINTR) || i == maxAttempts {
+			return res, err
+		}
+	}
+}
+
 // cleanupStaleVeths removes any existing veth devices that have the given IP
 // address assigned. This handles the case where a previous process was killed
 // without cleanup (e.g. SIGKILL), leaving orphaned veth devices with stale
 // routes that would cause routing conflicts with newly created veth pairs.
 func cleanupStaleVeths(ctx context.Context, ipWithCIDR string) error {
-	links, err := netlink.LinkList()
+	links, err := RetryDump(netlink.LinkList)
 	if err != nil {
 		return status.WrapError(err, "list links")
 	}
@@ -269,7 +283,9 @@ func cleanupStaleVeths(ctx context.Context, ipWithCIDR string) error {
 		if link.Type() != "veth" {
 			continue
 		}
-		addrs, err := netlink.AddrList(link, 0 /* FAMILY_ALL */)
+		addrs, err := RetryDump(func() ([]netlink.Addr, error) {
+			return netlink.AddrList(link, 0 /* FAMILY_ALL */)
+		})
 		if err != nil {
 			continue
 		}
@@ -343,7 +359,7 @@ func checkVethRoute(ctx context.Context, veth *vethPair) {
 func createRandomVethPair(ctx context.Context, netns *Namespace) (string, string, error) {
 	var namespacedVeth, hostVeth string
 	var err error
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		// Compute unique veth names
 		namespacedVeth, err = randomVethName("veth0")
 		if err != nil {
@@ -375,6 +391,38 @@ func attachAddressToVeth(ctx context.Context, netns *Namespace, ipAddr, vethName
 	} else {
 		return runCommand(ctx, "ip", "addr", "add", ipAddr, "dev", vethName)
 	}
+}
+
+// Network is the net namespace that a container or VM runs in.
+type Network interface {
+	NamespacePath() string
+	Stats(ctx context.Context) (*repb.NetworkStats, error)
+	Cleanup(ctx context.Context) error
+}
+
+// TaskAllowedPrivateIPs returns the private IPs that actions may reach, as
+// configured by --executor.task_allowed_private_ips.
+func TaskAllowedPrivateIPs(ctx context.Context) ([]netip.Prefix, error) {
+	var prefixes []netip.Prefix
+	for _, allow := range *taskAllowedPrivateIPs {
+		if allow == "default" {
+			defaultIP, err := DefaultIP(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("find default IP: %w", err)
+			}
+			allow = defaultIP.String()
+		}
+		if addr, err := netip.ParseAddr(allow); err == nil {
+			prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
+			continue
+		}
+		prefix, err := netip.ParsePrefix(allow)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid allowed private IP %q", allow)
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	return prefixes, nil
 }
 
 // VethPairNetwork is the interface common to OCI container networks and VM
@@ -651,7 +699,7 @@ func (a *HostNetAllocator) Get() (*HostNet, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	for attempt := 0; attempt < numAssignableNetworks; attempt++ {
+	for range numAssignableNetworks {
 		netIdx := a.idx
 		a.idx = (a.idx + 1) % numAssignableNetworks
 
@@ -864,17 +912,14 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 		})
 	}
 
+	allowedIPs, err := TaskAllowedPrivateIPs(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var iptablesRules [][]string
-	for _, allow := range *taskAllowedPrivateIPs {
-		if allow == "default" {
-			defaultIP, err := DefaultIP(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("find default IP: %w", err)
-			}
-			allow = defaultIP.String()
-		}
-		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", allow, "-j", "ACCEPT"})
-		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", allow, "-j", "ACCEPT"})
+	for _, allow := range allowedIPs {
+		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", allow.String(), "-j", "ACCEPT"})
+		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", allow.String(), "-j", "ACCEPT"})
 	}
 	for _, r := range PrivateIPRanges {
 		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
@@ -1044,7 +1089,7 @@ func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string, e
 	}()
 
 	// Create a net namespace.
-	netns, err := createUniqueNetNamespace(ctx)
+	netns, err := CreateUniqueNetNamespace(ctx)
 	if err != nil {
 		return nil, status.WrapError(err, "create net namespace")
 	}
@@ -1211,7 +1256,7 @@ func CreateContainerNetwork(ctx context.Context, loopbackOnly bool) (_ *Containe
 	}()
 
 	// Create a net namespace.
-	netns, err := createUniqueNetNamespace(ctx)
+	netns, err := CreateUniqueNetNamespace(ctx)
 	if err != nil {
 		return nil, status.WrapError(err, "create net namespace")
 	}
@@ -1342,7 +1387,9 @@ type route struct {
 // Destination may be defaultRoute to find a default route.
 func findRoute(destination string) (route, error) {
 	// Get all routes.
-	rs, err := netlink.RouteList(nil, 0)
+	rs, err := RetryDump(func() ([]netlink.Route, error) {
+		return netlink.RouteList(nil, 0)
+	})
 	if err != nil {
 		return route{}, status.UnknownErrorf("could not get ip routes: %s", err)
 	}
@@ -1356,7 +1403,14 @@ func findRoute(destination string) (route, error) {
 	}
 
 	for _, r := range rs {
-		if targetDst.String() == r.Dst.String() {
+		dst := r.Dst
+		// netlink reports default routes as 0.0.0.0/0 or ::/0 rather than nil.
+		if dst != nil {
+			if ones, _ := dst.Mask.Size(); ones == 0 {
+				dst = nil
+			}
+		}
+		if targetDst.String() == dst.String() {
 			l, err := netlink.LinkByIndex(r.LinkIndex)
 			if err != nil {
 				return route{}, status.UnknownErrorf("could not lookup interface for route: %s", err)
@@ -1546,6 +1600,12 @@ func Configure(ctx context.Context) error {
 	}
 	hostNetAllocator = a
 
+	// Userspace networks forward pings using ping sockets, which the executor
+	// can only open if its group is in ping_group_range.
+	if err := allowPingSockets(); err != nil {
+		log.Warningf("Could not allow ping sockets; pings from userspace networks will fail: %s", err)
+	}
+
 	if IsSecondaryNetworkEnabled() {
 		// Adds a new routing table
 		if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
@@ -1554,6 +1614,31 @@ func Configure(ctx context.Context) error {
 		return configurePolicyBasedRoutingForSecondaryNetwork(ctx)
 	}
 	return nil
+}
+
+func allowPingSockets() error {
+	const path = "/proc/sys/net/ipv4/ping_group_range"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var minGID, maxGID int
+	if _, err := fmt.Sscan(string(b), &minGID, &maxGID); err != nil {
+		return status.InternalErrorf("parse %s: %s", path, err)
+	}
+	gid := os.Getgid()
+	if minGID <= gid && gid <= maxGID {
+		return nil
+	}
+	// The setting is shared with everything else in the net namespace, so
+	// widen the range rather than replacing it. An empty range (min > max,
+	// like the kernel default "1 0") is replaced.
+	if minGID <= maxGID {
+		minGID, maxGID = min(minGID, gid), max(maxGID, gid)
+	} else {
+		minGID, maxGID = gid, gid
+	}
+	return os.WriteFile(path, []byte(fmt.Sprintf("%d %d", minGID, maxGID)), 0)
 }
 
 // configurePolicyBasedRoutingForNetworkWIthRoutePrefix configures policy routing for secondary

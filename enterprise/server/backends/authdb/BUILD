@@ -7,6 +7,7 @@ go_library(
     srcs = ["authdb.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb",
     deps = [
+        "//proto:api_key_go_proto",
         "//proto:capability_go_proto",
         "//proto:group_go_proto",
         "//proto:user_id_go_proto",
@@ -18,6 +19,7 @@ go_library(
         "//server/util/capabilities",
         "//server/util/claims",
         "//server/util/db",
+        "//server/util/expflag",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/lru",

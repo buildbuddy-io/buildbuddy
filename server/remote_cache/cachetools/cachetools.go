@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
@@ -37,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -108,6 +110,7 @@ var (
 	acRPCTimeout                = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
 	filecacheTreeSalt           = flag.String("cache.filecache_tree_salt", "20250304", "A salt to invalidate filecache tree hashes, if/when needed.")
 	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", true, "If true, GetTree requests will set send_cached_subtree_digests.")
+	outputUploadConcurrency     = flag.Int("cache.client.output_upload_concurrency", 0, "Maximum number of CAS write RPCs in flight at once across this process, such as for action outputs and snapshot chunks. Each ByteStream write and each BatchUpdateBlobs request holds a slot until it finishes. 0 means no limit.")
 
 	uploadBufPool = bytebufferpool.VariableSize(uploadBufSizeBytes)
 
@@ -116,6 +119,8 @@ var (
 	chunkUploadSem = make(chan struct{}, 256)
 
 	defaultChunkLocationCache = newChunkLocationCache()
+
+	outputUploadLimit = &outputUploadLimiter{}
 )
 
 // readAtSeeker combines io.ReaderAt and io.ReadSeeker. This is satisfied by
@@ -140,6 +145,21 @@ func FindMissingBlobs(ctx context.Context, casClient repb.ContentAddressableStor
 		ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
 		defer cancel()
 		return casClient.FindMissingBlobs(ctx, req)
+	})
+}
+
+// BatchUpdateBlobs issues a BatchUpdateBlobs RPC with retry behavior and the
+// standard CAS RPC timeout applied to each attempt.
+func BatchUpdateBlobs(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
+	return retry.Do(ctx, retryOptions("BatchUpdateBlobs"), func(ctx context.Context) (*repb.BatchUpdateBlobsResponse, error) {
+		release, err := outputUploadLimit.acquire(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+		ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
+		defer cancel()
+		return casClient.BatchUpdateBlobs(ctx, req)
 	})
 }
 
@@ -511,6 +531,15 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 	return computeDigest(f, instanceName, digestFunction)
 }
 
+// openWriteStream starts a new Write stream, setting a feature header that
+// tells the server that this client can handle short-circuit "AlreadyExists"
+// errors. If the target blob already exists, CloseAndRecv will return an
+// AlreadyExists error which callers are expected to handle.
+func openWriteStream(ctx context.Context, bsClient bspb.ByteStreamClient) (bspb.ByteStream_WriteClient, error) {
+	ctx = clientfeatures.Advertise(ctx, clientfeatures.ByteStreamWriteAlreadyExists)
+	return bsClient.Write(ctx)
+}
+
 // uploadFromReader uploads data to the CAS. The readerCompression parameter
 // specifies the compression format of the data in the reader. If readerCompression
 // is IDENTITY and target is ZSTD, the data will be compressed. If readerCompression
@@ -523,9 +552,14 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if r.IsEmpty() {
 		return r.GetDigest(), 0, nil
 	}
+	release, err := outputUploadLimit.acquire(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer release()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream, err := bsClient.Write(ctx)
+	stream, err := openWriteStream(ctx, bsClient)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -548,7 +582,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	buf := uploadBufPool.Get(bufSize)
 	defer uploadBufPool.Put(buf)
 	bytesUploaded := int64(0)
-	sender := rpcutil.NewSender(ctx, stream)
+	sender := rpcutil.NewSender(cancel, stream)
 	resourceName := r.NewUploadString()
 	for {
 		n, err := ioutil.ReadTryFillBuffer(rc, buf)
@@ -565,10 +599,11 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		}
 		resourceName = "" // Only set resource name on first request
 
-		err = sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+		err = sender.SendWithTimeout(req, *casRPCTimeout)
 		if err != nil {
-			// If the blob already exists in the CAS, the server will respond EOF.
-			// It is safe to stop sending writes.
+			// If the blob already exists in the CAS, the server will close its
+			// end of the stream which will be surfaced as io.EOF here.
+			// The Recv below will return the final server response or error.
 			if err == io.EOF {
 				break
 			}
@@ -580,8 +615,11 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		}
 
 	}
-	rsp, err := sender.CloseAndRecvWithTimeoutCause(*casRPCTimeout, status.DeadlineExceededError("Timed out waiting for CloseAndRecv"))
+	rsp, err := sender.CloseAndRecvWithTimeout(*casRPCTimeout)
 	if err != nil {
+		if status.IsAlreadyExistsError(err) {
+			return r.GetDigest(), bytesUploaded, nil
+		}
 		// If there is a hash mismatch and the reader supports seeking, re-hash
 		// to check whether a concurrent mutation has occurred.
 		if rs, ok := in.(io.ReadSeeker); ok && status.IsInvalidArgumentError(err) {
@@ -989,6 +1027,38 @@ func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName 
 	return uploadProtoToCache(ctx, cache, rspb.CacheType_CAS, instanceName, digestFunction, in)
 }
 
+// outputUploadLimiter limits how many CAS write RPCs are in flight at once
+// across the whole process.
+//
+// Each of these RPCs consumes 1 slot until it finishes:
+//   - A ByteStream write, including each chunk of a chunked upload
+//   - A BatchUpdateBlobs request, regardless of how many blobs it holds
+//
+// Writes through an UploadWriter don't take a slot, because the caller decides
+// how long the writer stays open. For example, the OCI read-through cacher
+// keeps a writer open while it streams an image layer from the registry.
+type outputUploadLimiter struct {
+	init sync.Once
+	sem  *semaphore.Weighted
+}
+
+// acquire waits for a slot and returns a func that releases it.
+func (l *outputUploadLimiter) acquire(ctx context.Context) (release func(), err error) {
+	limit := int64(*outputUploadConcurrency)
+	if limit <= 0 {
+		return func() {}, nil
+	}
+	l.init.Do(func() { l.sem = semaphore.NewWeighted(limit) })
+	if err := l.sem.Acquire(ctx, 1); err != nil {
+		return nil, err
+	}
+	return func() { l.sem.Release(1) }, nil
+}
+
+func ResetOutputUploadLimiterForTest() {
+	outputUploadLimit = &outputUploadLimiter{}
+}
+
 // BatchCASUploader uploads many files to CAS concurrently, batching small
 // uploads together and falling back to bytestream uploads for large files.
 type BatchCASUploader struct {
@@ -1060,6 +1130,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 
 		byteStreamClient := ul.env.GetByteStreamClient()
 		if byteStreamClient == nil {
+			defer r.Close()
 			return status.InvalidArgumentError("missing bytestream client")
 		}
 		ul.eg.Go(func() error {
@@ -1071,6 +1142,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	}
 	b, err := io.ReadAll(r)
 	if err != nil {
+		defer r.Close()
 		return err
 	}
 	if err := r.Close(); err != nil {
@@ -1149,11 +1221,7 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 	}
 	ul.unsentBatchSize = 0
 	ul.eg.Go(func() error {
-		rsp, err := retry.Do(ul.ctx, retryOptions("BatchUpdateBlobs"), func(ctx context.Context) (*repb.BatchUpdateBlobsResponse, error) {
-			ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
-			defer cancel()
-			return casClient.BatchUpdateBlobs(ctx, req)
-		})
+		rsp, err := BatchUpdateBlobs(ul.ctx, casClient, req)
 		if err != nil {
 			return err
 		}
@@ -1426,7 +1494,7 @@ func getSubtree(ctx context.Context, subtree *digest.CASResourceName, fc interfa
 		metrics.GetTreeFilecacheBytesRead.Add(float64(bytesRead))
 		metrics.GetTreeFilecacheTreesRead.Add(1)
 		metrics.GetTreeDirectoryLookupCount.With(prometheus.Labels{
-			metrics.GetTreeLookupLocation: "filecache",
+			metrics.CacheLocationLabel: "filecache",
 		}).Add(float64(len(treeCache.GetChildren())))
 	} else if status.IsNotFoundError(err) {
 		// Not in the filecache--fetch from bytestream instead.
@@ -1443,7 +1511,7 @@ func getSubtree(ctx context.Context, subtree *digest.CASResourceName, fc interfa
 		metrics.GetTreeFilecacheBytesWritten.Add(float64(bytesWritten))
 		metrics.GetTreeFilecacheTreesWritten.Add(1)
 		metrics.GetTreeDirectoryLookupCount.With(prometheus.Labels{
-			metrics.GetTreeLookupLocation: "remote",
+			metrics.CacheLocationLabel: "remote",
 		}).Add(float64(len(treeCache.GetChildren())))
 	} else {
 		// Filecache read failed for some more nefarious reason.
@@ -1489,7 +1557,7 @@ func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.
 
 	uncachedDirCount := len(tree.dirs)
 	metrics.GetTreeDirectoryLookupCount.With(prometheus.Labels{
-		metrics.GetTreeLookupLocation: "uncached",
+		metrics.CacheLocationLabel: "uncached",
 	}).Add(float64(uncachedDirCount))
 
 	allStDirs := make([]*repb.Directory, 0)
@@ -1565,10 +1633,9 @@ func maybeSetCompressor(rn *digest.CASResourceName) {
 }
 
 type UploadWriter struct {
-	ctx          context.Context
 	cancel       context.CancelFunc
 	stream       bspb.ByteStream_WriteClient
-	sender       rpcutil.Sender[*bspb.WriteRequest, *bspb.WriteResponse]
+	sender       *rpcutil.Sender[*bspb.WriteRequest, *bspb.WriteResponse]
 	uploadString string
 
 	bytesUploaded int64
@@ -1630,12 +1697,15 @@ func (uw *UploadWriter) flush(finish bool) error {
 		WriteOffset:  uw.bytesUploaded,
 		FinishWrite:  finish,
 	}
-	uw.sendErr = uw.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+	uw.sendErr = uw.sender.SendWithTimeout(req, *casRPCTimeout)
 	if uw.sendErr != nil {
 		if uw.sendErr == io.EOF {
 			// The server closed the stream, so we need to call CloseAndRecv
 			// to find the error.
 			rsp, err := uw.stream.CloseAndRecv()
+			if err != nil && status.IsAlreadyExistsError(err) {
+				uw.committedSize = -1
+			}
 			if err == nil {
 				uw.committedSize = rsp.GetCommittedSize()
 				// byte_stream_server.go doesn't return an error when the
@@ -1664,6 +1734,7 @@ func (uw *UploadWriter) Commit() error {
 	}
 	if uw.sendErr != nil {
 		if status.IsAlreadyExistsError(uw.sendErr) {
+			uw.committed = true
 			return nil
 		}
 		return status.WrapError(uw.sendErr, "UploadWriter already encountered send error, cannot commit")
@@ -1686,6 +1757,10 @@ func (uw *UploadWriter) Commit() error {
 	}
 	rsp, err := uw.stream.CloseAndRecv()
 	if err != nil {
+		if status.IsAlreadyExistsError(err) {
+			uw.committedSize = -1
+			return nil
+		}
 		return err
 	}
 	uw.committedSize = rsp.GetCommittedSize()
@@ -1721,6 +1796,7 @@ var _ interfaces.CommittedWriteCloser = (*UploadWriter)(nil)
 // NewUploadWriter returns an UploadWriter that writes to the CAS for the specific resource name.
 // The blob is guaranteed to be written to the CAS only if all Write(...) calls and the Commit() calls succeed.
 // The caller is responsible for checking data integrity using GetCommittedSize() and GetBytesUploaded().
+// GetCommittedSize() can return -1 if the server terminated the write because the blob already exists.
 //
 // You must call Close() on an UploadWriter.
 // You also must either
@@ -1731,17 +1807,16 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	stream, err := bsClient.Write(ctx)
+	stream, err := openWriteStream(ctx, bsClient)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
 
 	bufSize := int64(digest.SafeBufferSize(r.ToProto(), uploadBufSizeBytes))
-	sender := rpcutil.NewSender[*bspb.WriteRequest, *bspb.WriteResponse](ctx, stream)
+	sender := rpcutil.NewSender(cancel, stream)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		return &UploadWriter{
-			ctx:          ctx,
 			cancel:       cancel,
 			stream:       stream,
 			sender:       sender,
@@ -1752,7 +1827,6 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		}, nil
 	}
 	return &UploadWriter{
-		ctx:          ctx,
 		cancel:       cancel,
 		stream:       stream,
 		sender:       sender,

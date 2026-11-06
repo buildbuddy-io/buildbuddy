@@ -6,11 +6,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"net/url"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -129,10 +129,12 @@ type Env struct {
 	rootDataDir                   string
 	buildBuddyServers             map[*BuildBuddyServer]struct{}
 	shutdownBuildBuddyServersOnce sync.Once
-	executors                     map[string]*Executor
-	testCommandController         *testCommandController
+	// conns are closed once the executors and apps have shut down.
+	conns                 []io.Closer
+	executors             map[string]*Executor
+	testCommandController *testCommandController
 	// Used to generate executor names when not specified.
-	executorNameCounter uint64
+	executorNameCounter atomic.Uint64
 	envOpts             *enterprise_testenv.Options
 
 	AppProxy     *testgrpc.Proxy
@@ -195,15 +197,13 @@ func (r *Env) shutdownBuildBuddyServers() {
 	log.Info("Waiting for buildbuddy servers to shutdown")
 	var wg sync.WaitGroup
 	for app := range r.buildBuddyServers {
-		app := app
 		app.env.GetHealthChecker().Shutdown()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			log.Infof("Waiting for buildbuddy server with port %d to shut down.", app.port)
 			app.env.GetHealthChecker().WaitForGracefulShutdown()
+			app.selfConn.Close()
 			log.Infof("Shut down for buildbuddy server with port %d completed.", app.port)
-		}()
+		})
 	}
 	wg.Wait()
 	log.Info("Buildbuddy servers are shut down")
@@ -290,7 +290,7 @@ func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
 	ctx := context.Background()
 	ctxUS1, err := auth.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
-	keys, err := testEnv.GetAuthDB().GetAPIKeys(ctxUS1, groupID)
+	keys, err := testEnv.GetAuthDB().GetAPIKeys(ctxUS1, groupID, false /*=includeExpired*/)
 	require.NoError(t, err)
 	key := keys[0]
 	key.Capabilities |= int32(cappb.Capability_REGISTER_EXECUTOR)
@@ -324,18 +324,20 @@ func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
 	flags.Set(t, "app.cache_api_url", *u)
 
 	t.Cleanup(func() {
+		for _, conn := range rbe.conns {
+			conn.Close()
+		}
+	})
+	t.Cleanup(func() {
 		log.Warningf("Shutting down executors...")
 		var wg sync.WaitGroup
 		for id, e := range rbe.executors {
-			id, e := id, e
 			e.env.GetHealthChecker().Shutdown()
-			wg.Add(1)
-			go func() {
+			wg.Go(func() {
 				log.Infof("Waiting for executor %q to shut down.", id)
 				e.env.GetHealthChecker().WaitForGracefulShutdown()
 				log.Infof("Shut down for executor %q completed.", id)
-				wg.Done()
-			}()
+			})
 		}
 		log.Warningf("Waiting for executor shutdown to finish...")
 		wg.Wait()
@@ -379,6 +381,9 @@ type BuildBuddyServer struct {
 	buildBuddyServiceServer *buildbuddy_server.BuildBuddyServer
 	buildEventServer        *build_event_server.BuildEventProtocolServer
 	olapDBHandle            *testolapdb.Handle
+	// selfConn is the server's connection to itself, used as its
+	// RemoteExecutionClient.
+	selfConn *grpc_client.ClientConnPool
 }
 
 func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBuddyServerOptions) *BuildBuddyServer {
@@ -459,6 +464,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	if err != nil {
 		assert.FailNowf(t, "could not connect to BuildBuddy server", err.Error())
 	}
+	server.selfConn = clientConn
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 
 	return server
@@ -720,6 +726,7 @@ func newTestCommandController(t *testing.T, env environment.Env) *testCommandCon
 	server := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
 	retpb.RegisterCommandControllerServer(server, controller)
 	go server.Serve(listener)
+	t.Cleanup(server.Stop)
 
 	return controller
 }
@@ -756,6 +763,20 @@ func (e *Executor) stop() {
 	e.env.GetHealthChecker().WaitForGracefulShutdown()
 }
 
+// BeginShutdown starts a graceful shutdown of the executor without waiting for
+// it to finish, like a SIGTERM would. The executor hands its queued task
+// reservations back to the scheduler and stops claiming work, but its
+// registration stream stays open until the shutdown completes and
+// DisconnectExecutor is called.
+func (e *Executor) BeginShutdown() {
+	e.env.GetHealthChecker().Shutdown()
+}
+
+// WaitForShutdown blocks until a shutdown started with BeginShutdown completes.
+func (e *Executor) WaitForShutdown() {
+	e.env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
 // ShutdownTaskScheduler stops the task scheduler from de-queueing any more work.
 func (e *Executor) ShutdownTaskScheduler() {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultWaitTimeout)
@@ -773,7 +794,7 @@ func (r *Env) AddBuildBuddyServer() *BuildBuddyServer {
 }
 
 func (r *Env) AddBuildBuddyServers(n int) {
-	for i := 0; i < n; i++ {
+	for range n {
 		r.AddBuildBuddyServer()
 	}
 }
@@ -797,6 +818,7 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 func (r *Env) RemoveBuildBuddyServer(server *BuildBuddyServer) {
 	server.env.GetHealthChecker().Shutdown()
 	server.env.GetHealthChecker().WaitForGracefulShutdown()
+	server.selfConn.Close()
 	delete(r.buildBuddyServers, server)
 	r.updateAppProxy()
 }
@@ -825,7 +847,7 @@ func (r *Env) AddExecutorWithOptions(t testing.TB, opts *ExecutorOptions) *Execu
 // otherwise use AddExecutorWithOptions and specify a custom Name.
 // Blocks until executor registers with the scheduler.
 func (r *Env) AddExecutor(t testing.TB) *Executor {
-	name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
+	name := fmt.Sprintf("unnamedExecutor%d", r.executorNameCounter.Add(1))
 	return r.AddExecutorWithOptions(t, &ExecutorOptions{Name: name})
 }
 
@@ -849,7 +871,7 @@ func (r *Env) AddSingleTaskExecutorWithOptions(t testing.TB, options *ExecutorOp
 // otherwise use AddSingleTaskExecutorWithOptions and specify a custom Name.
 // Blocks until executor registers with the scheduler.
 func (r *Env) AddSingleTaskExecutor(t testing.TB) *Executor {
-	name := fmt.Sprintf("unnamedExecutor%d_singleTask", atomic.AddUint64(&r.executorNameCounter, 1))
+	name := fmt.Sprintf("unnamedExecutor%d_singleTask", r.executorNameCounter.Add(1))
 	return r.AddSingleTaskExecutorWithOptions(t, &ExecutorOptions{Name: name})
 }
 
@@ -872,8 +894,8 @@ func (r *Env) AddNamedExecutors(t testing.TB, names []string) []*Executor {
 // Blocks until all executors register with the scheduler.
 func (r *Env) AddExecutors(t testing.TB, n int) []*Executor {
 	var names []string
-	for i := 0; i < n; i++ {
-		name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
+	for range n {
+		name := fmt.Sprintf("unnamedExecutor%d", r.executorNameCounter.Add(1))
 		names = append(names, name)
 	}
 	return r.AddNamedExecutors(t, names)
@@ -887,9 +909,18 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(clientConn))
 
+	// Like the real executor, present a client identity to the cache when
+	// one is configured (app.client_identity.key), so that the app trusts
+	// the internal headers the executor sends.
+	require.NoError(t, clientidentity.Register(env))
 	cacheConn := grpc.ClientConnInterface(clientConn)
 	if options.CacheConn != nil {
 		cacheConn = options.CacheConn
+	} else if env.GetClientIdentityService() != nil {
+		identityConn, err := grpc_client.DialInternalWithoutPooling(env, r.AppProxy.GRPCTarget())
+		require.NoError(t, err)
+		t.Cleanup(func() { identityConn.Close() })
+		cacheConn = identityConn
 	}
 	env.SetActionCacheClient(repb.NewActionCacheClient(cacheConn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(cacheConn))
@@ -929,7 +960,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}
-	taskLeaser := task_leaser.NewTaskLeaser(env, executorID, "fake-hostname")
+	taskLeaser := task_leaser.NewTaskLeaser(env, executorID, "fake-hostname", false /*=supportsExperimentFlags*/)
 	taskScheduler, err := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, runnerPool, taskLeaser, &options.priorityTaskSchedulerOptions)
 	if err != nil {
 		assert.FailNow(r.t, "could not create priority task scheduler", err)
@@ -967,41 +998,62 @@ func (r *Env) RemoveExecutor(executor *Executor) {
 	r.waitForExecutorRegistration()
 }
 
+// DisconnectExecutor simulates the executor process exiting. It waits until
+// the scheduler has unregistered the executor, which happens when the
+// scheduler receives the executor's shutdown hand-back, then tears down the
+// registration stream with no further coordination with the server and stops
+// tracking the executor. Use it after BeginShutdown and WaitForShutdown to
+// model an executor that exits as soon as its own graceful shutdown completes,
+// whether or not the scheduler is done re-enqueueing its work.
+func (r *Env) DisconnectExecutor(executor *Executor) {
+	if _, ok := r.executors[executor.id]; !ok {
+		assert.FailNow(r.t, fmt.Sprintf("Executor %q not in executor map", executor.id))
+	}
+	r.waitForExecutorUnregistered(executor.id)
+	executor.cancelRegistration()
+	delete(r.executors, executor.id)
+}
+
+// registeredExecutorIDs returns the IDs of the executors that the scheduler
+// currently lists for the test group.
+func (r *Env) registeredExecutorIDs(ctx context.Context) (map[string]bool, error) {
+	req := &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: r.GroupID1},
+	}
+	rsp, err := r.GetBuildBuddyServiceClient().GetExecutionNodes(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]bool, len(rsp.GetExecutor()))
+	for _, e := range rsp.GetExecutor() {
+		ids[e.GetNode().GetExecutorId()] = true
+	}
+	return ids, nil
+}
+
+// waitForExecutorUnregistered waits until the scheduler no longer lists the
+// executor with the given ID.
+func (r *Env) waitForExecutorUnregistered(executorID string) {
+	ctx := r.WithUserID(context.Background(), r.UserID1)
+	require.EventuallyWithT(r.t, func(t *assert.CollectT) {
+		ids, err := r.registeredExecutorIDs(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, ids, executorID)
+	}, defaultWaitTimeout, 100*time.Millisecond, "executor %q should be unregistered from the scheduler", executorID)
+}
+
 // waitForExecutorRegistration waits until the set of all registered executors matches expected internal set.
 func (r *Env) waitForExecutorRegistration() {
-	expectedNodesByID := make(map[string]bool)
+	expected := make(map[string]bool)
 	for _, e := range r.executors {
-		expectedNodesByID[e.id] = true
+		expected[e.id] = true
 	}
-
-	nodesByID := make(map[string]bool)
-	deadline := time.Now().Add(defaultWaitTimeout)
-
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
-	defer cancel()
-	ctx = r.WithUserID(ctx, r.UserID1)
-
-	for time.Now().Before(deadline) {
-		nodesByID = make(map[string]bool)
-
-		client := r.GetBuildBuddyServiceClient()
-		req := &scpb.GetExecutionNodesRequest{
-			RequestContext: &ctxpb.RequestContext{
-				GroupId: r.GroupID1,
-			},
-		}
-		rsp, err := client.GetExecutionNodes(ctx, req)
-		require.NoError(r.t, err)
-		for _, e := range rsp.GetExecutor() {
-			nodesByID[e.GetNode().GetExecutorId()] = true
-		}
-		if reflect.DeepEqual(expectedNodesByID, nodesByID) {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	require.Equal(r.t, expectedNodesByID, nodesByID, "set of registered executors should converge")
+	ctx := r.WithUserID(context.Background(), r.UserID1)
+	require.EventuallyWithT(r.t, func(t *assert.CollectT) {
+		ids, err := r.registeredExecutorIDs(ctx)
+		require.NoError(t, err)
+		require.Equal(t, expected, ids)
+	}, defaultWaitTimeout, 100*time.Millisecond, "set of registered executors should converge")
 }
 
 type CacheProxyOptions struct {
@@ -1015,6 +1067,12 @@ type CacheProxy struct {
 	env  *testenv.TestEnv
 	Port int
 	conn *grpc_client.ClientConnPool
+}
+
+// Conn returns a connection to the cache proxy, which is closed when the test
+// ends.
+func (cp *CacheProxy) Conn() grpc.ClientConnInterface {
+	return cp.conn
 }
 
 func (cp *CacheProxy) GetByteStreamClient() bspb.ByteStreamClient {
@@ -1093,6 +1151,7 @@ func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 	// Finally, create the client connection.
 	conn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", port))
 	require.NoError(r.t, err)
+	r.conns = append(r.conns, conn)
 	return &CacheProxy{t: r.t, env: proxyEnv, Port: port, conn: conn}
 }
 
@@ -1103,9 +1162,13 @@ func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
 	env.SetByteStreamClient(r.GetByteStreamClient())
 	env.SetContentAddressableStorageClient(r.GetContentAddressableStorageClient())
 	env.SetCapabilitiesClient(r.testEnv.GetCapabilitiesClient())
-	// TODO: Does the context need the user ID if the CommandResult was produced
-	// by an authenticated user?
-	if err := r.rbeClient.DownloadActionOutputs(context.Background(), env, res.CommandResult, tmpDir); err != nil {
+	// Read the outputs as the group that produced them: chunked blobs, for
+	// one, are only readable within that group.
+	ctx := context.Background()
+	if res.apiKey != "" {
+		ctx = r.WithAPIKey(ctx, res.apiKey)
+	}
+	if err := r.rbeClient.DownloadActionOutputs(ctx, env, res.CommandResult, tmpDir); err != nil {
 		assert.FailNow(r.t, "failed to download action outputs", err.Error())
 	}
 	return tmpDir
@@ -1148,6 +1211,8 @@ type CommandResult struct {
 	*rbeclient.CommandResult
 	Stdout string
 	Stderr string
+	// apiKey is the API key the command was executed with, if any.
+	apiKey string
 }
 
 // getResult blocks until the command either finishes executing or encounters
@@ -1181,6 +1246,7 @@ func (c *Command) getResult() *CommandResult {
 				CommandResult: result,
 				Stdout:        stdout,
 				Stderr:        stderr,
+				apiKey:        c.apiKey,
 			}
 		case <-timeout.C:
 			assert.FailNow(c.env.t, fmt.Sprintf("command %q did not finish within timeout", c.Name))

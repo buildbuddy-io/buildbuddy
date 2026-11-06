@@ -66,7 +66,7 @@ func (y *yamlTranslator) translateRule(m yaml.MapSlice, isModule bool) string {
 				log.Warnf("load: must be a list")
 			}
 		case "rules":
-			if rules, ok := i.Value.([]interface{}); ok {
+			if rules, ok := i.Value.([]any); ok {
 				for _, rule := range rules {
 					s = s + y.translateRule(rule.(yaml.MapSlice), isModule) + newLineSeparator
 				}
@@ -74,7 +74,7 @@ func (y *yamlTranslator) translateRule(m yaml.MapSlice, isModule bool) string {
 				log.Warnf("rules: must be a list")
 			}
 		case "deps":
-			if load, ok := i.Value.([]interface{}); ok {
+			if load, ok := i.Value.([]any); ok {
 				s = s + y.translateDeps(load, isModule) + newLineSeparator
 			} else {
 				log.Warnf("deps: must be a list, instead it was %T", i.Value)
@@ -94,7 +94,7 @@ func (y *yamlTranslator) translateRule(m yaml.MapSlice, isModule bool) string {
 		case "templates":
 			if load, ok := i.Value.(yaml.MapSlice); ok {
 				y.translateTemplateMap(load)
-			} else if load, ok := i.Value.([]interface{}); ok {
+			} else if load, ok := i.Value.([]any); ok {
 				y.translateTemplate(load)
 			} else {
 				log.Warnf("template: must be a list or a map, instead it was %T", i.Value)
@@ -123,7 +123,7 @@ func (y *yamlTranslator) translateMap(m yaml.MapSlice) string {
 	return strings.Join(values, commaSeparator)
 }
 
-func (y *yamlTranslator) translateList(l []interface{}) string {
+func (y *yamlTranslator) translateList(l []any) string {
 	values := []string{}
 	for _, i := range l {
 		values = append(values, y.translateValue(i, ""))
@@ -131,7 +131,7 @@ func (y *yamlTranslator) translateList(l []interface{}) string {
 	return strings.Join(values, commaSeparator)
 }
 
-func (y *yamlTranslator) translateValue(v interface{}, ruleName string) string {
+func (y *yamlTranslator) translateValue(v any, ruleName string) string {
 	switch i := v.(type) {
 	case yaml.MapSlice:
 		m := y.translateMap(i)
@@ -139,7 +139,7 @@ func (y *yamlTranslator) translateValue(v interface{}, ruleName string) string {
 			return fmt.Sprintf("%s(%s)", ruleName, m)
 		}
 		return fmt.Sprintf("{%s}", m)
-	case []interface{}:
+	case []any:
 		if ruleName != "" {
 			s := []string{}
 			for _, i := range i {
@@ -176,7 +176,7 @@ func (y *yamlTranslator) translateLoad(m yaml.MapSlice) string {
 	for _, i := range m {
 		value := ""
 		switch i := i.Value.(type) {
-		case []interface{}:
+		case []any:
 			value = y.translateList(i)
 			y.loadList = append(y.loadList, strings.Split(value, commaSeparator)...)
 		case string:
@@ -192,7 +192,7 @@ func (y *yamlTranslator) translateLoad(m yaml.MapSlice) string {
 	return strings.Join(values, newLineSeparator)
 }
 
-func (y *yamlTranslator) translateDeps(m []interface{}, isModule bool) string {
+func (y *yamlTranslator) translateDeps(m []any, isModule bool) string {
 	var output strings.Builder
 	for _, dep := range m {
 		depString, ok := dep.(string)
@@ -254,7 +254,7 @@ func (y *yamlTranslator) translateTemplateMap(m yaml.MapSlice) {
 	}
 }
 
-func (y *yamlTranslator) translateTemplate(m []interface{}) {
+func (y *yamlTranslator) translateTemplate(m []any) {
 	for _, s := range m {
 		from := ""
 		into := ""

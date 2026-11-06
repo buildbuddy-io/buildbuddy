@@ -95,13 +95,21 @@ func newFractionSampler(fraction float64, fractionOverrides map[string]float64, 
 	}
 }
 
-func (s *fractionSampler) checkForcedTrace(parameters sdktrace.SamplingParameters) bool {
-	if s.ignoreForcedTracingHeader {
+// IsForcedTrace reports whether the request's force-tracing header is honored.
+func IsForcedTrace(ctx context.Context) bool {
+	return isForcedTrace(ctx, *ignoreForcedTracingHeader)
+}
+
+func isForcedTrace(ctx context.Context, ignoreHeader bool) bool {
+	if ignoreHeader {
 		return false
 	}
-	hdrs := metadata.ValueFromIncomingContext(parameters.ParentContext, traceHeader)
-	forced := len(hdrs) > 0 && hdrs[0] == forceTraceHeaderValue
-	return forced
+	hdrs := metadata.ValueFromIncomingContext(ctx, traceHeader)
+	return len(hdrs) > 0 && hdrs[0] == forceTraceHeaderValue
+}
+
+func (s *fractionSampler) checkForcedTrace(parameters sdktrace.SamplingParameters) bool {
+	return isForcedTrace(parameters.ParentContext, s.ignoreForcedTracingHeader)
 }
 
 func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) sdktrace.SamplingResult {

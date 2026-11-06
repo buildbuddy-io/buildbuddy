@@ -116,7 +116,7 @@ type digestBuf struct {
 
 func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64, cacheType rspb.CacheType) []*digestBuf {
 	digestBufs := make([]*digestBuf, 0, numDigests)
-	for i := 0; i < numDigests; i++ {
+	for range numDigests {
 		r, buf := testdigest.NewRandomResourceAndBuf(t, digestSizeBytes, cacheType, "")
 		if *enableCompression {
 			r.Compressor = repb.Compressor_ZSTD
@@ -223,7 +223,7 @@ func getMetaCache(t testing.TB, te environment.Env) interfaces.Cache {
 	go runServer()
 	t.Cleanup(srv.Stop)
 
-	conn, err := testenv.LocalGRPCConn(
+	conn, err := testenv.LocalGRPCConn(t,
 		te.GetServerContext(),
 		lis,
 		interceptors.GetUnaryClientIdentityInterceptor(te),

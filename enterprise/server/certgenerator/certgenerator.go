@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -51,6 +55,13 @@ var (
 
 	kubernetesClusters     = flag.Slice("certgenerator.kubernetes.clusters", []KubernetesCluster{}, "List of clusters for which certificates will be generated.")
 	kubernetesCertDuration = flag.Duration("certgenerator.kubernetes.validity", 12*time.Hour, "How long the generated certificate will be valid.")
+
+	tunnelCAFile     = flag.String("certgenerator.tunnel.ca_file", "", "Path to a PEM encoded CA certificate used to issue WireGuard gateway client certificates.")
+	tunnelCA         = flag.String("certgenerator.tunnel.ca", "", "PEM encoded CA certificate used to issue WireGuard gateway client certificates.")
+	tunnelCAKeyFile  = flag.String("certgenerator.tunnel.ca_key_file", "", "Path to a PEM encoded CA key file used to issue WireGuard gateway client certificates.")
+	tunnelCAKey      = flag.String("certgenerator.tunnel.ca_key", "", "PEM encoded CA key used to issue WireGuard gateway client certificates.", flag.Secret)
+	tunnelCertExpiry = flag.Duration("certgenerator.tunnel.validity", 12*time.Hour, "How long the generated gateway client certificate will be valid.")
+	tunnelGateways   = flag.Slice("certgenerator.tunnel.gateways", []TunnelGateway{}, "Relay gateways and the DNS zones each serves, sent to the tunnel client with its tunnel certificate. Every zone suffix must be under "+tunnelZoneParent+".")
 )
 
 const (
@@ -65,6 +76,25 @@ type KubernetesCluster struct {
 	ServerCA    string `yaml:"server_ca"`
 	ClientCA    string `yaml:"client_ca"`
 	ClientCAKey string `yaml:"client_ca_key"`
+}
+
+// tunnelZoneParent is the one DNS suffix the tunnel client routes to its own
+// resolver when it is installed. Every zone lives under it, so zones added
+// here later need no change on the workstation.
+const tunnelZoneParent = "bb.internal"
+
+// TunnelGateway is a relay gateway and the DNS zones it serves. See
+// TunnelGateway in certgenerator.proto.
+type TunnelGateway struct {
+	Target string       `yaml:"target"`
+	Zones  []TunnelZone `yaml:"zones"`
+}
+
+// TunnelZone is a DNS suffix the tunnel client claims. See TunnelZone in
+// certgenerator.proto.
+type TunnelZone struct {
+	Suffix    string `yaml:"suffix"`
+	RewriteTo string `yaml:"rewrite_to"`
 }
 
 type parsedKubernetesCluster struct {
@@ -122,6 +152,13 @@ type generator struct {
 
 	sshSigner          ssh.Signer
 	kubernetesClusters []*parsedKubernetesCluster
+
+	// tunnelCA issues WireGuard gateway client certificates. Nil when no
+	// tunnel CA is configured, in which case no such certificate is returned.
+	tunnelCA *ssl.CACert
+	// tunnelGateways is sent with each tunnel certificate: the relay gateways
+	// and the DNS zones each serves, so workstations need no zone config.
+	tunnelGateways []*cgpb.TunnelGateway
 }
 
 type claims struct {
@@ -189,6 +226,174 @@ func (g *generator) generateKubernetesCerts(c *claims, req *cgpb.GenerateRequest
 	return nil
 }
 
+// tunnelNotBeforeSkew is how far a tunnel certificate's validity is backdated,
+// so a gateway whose clock trails ours does not reject a certificate that was
+// issued seconds ago.
+const tunnelNotBeforeSkew = 5 * time.Minute
+
+// generateTunnelCert issues the client certificate used to authenticate against
+// WireGuard gateways, for the public key the client sent. The common name of
+// the cert identifies the user.
+func (g *generator) generateTunnelCert(c *claims, req *cgpb.GenerateRequest, rsp *cgpb.GenerateResponse) error {
+	if g.tunnelCA == nil || req.GetTunnelPublicKey() == "" {
+		return nil
+	}
+	// Don't allow for service accounts at this time.
+	if c.Domain == "" {
+		return nil
+	}
+
+	pub, err := parseTunnelPublicKey(req.GetTunnelPublicKey())
+	if err != nil {
+		return err
+	}
+	serialLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serial, err := rand.Int(rand.Reader, serialLimit)
+	if err != nil {
+		return status.InternalErrorf("could not generate serial number: %s", err)
+	}
+	now := time.Now()
+	template := x509.Certificate{
+		SerialNumber: serial,
+		Subject: pkix.Name{
+			CommonName:   c.Email,
+			Organization: []string{"BuildBuddy Tunnel"},
+		},
+		EmailAddresses:        []string{c.Email},
+		NotBefore:             now.Add(-tunnelNotBeforeSkew),
+		NotAfter:              now.Add(*tunnelCertExpiry),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &template, g.tunnelCA.Cert, pub, g.tunnelCA.Key)
+	if err != nil {
+		return status.InternalErrorf("could not sign tunnel certificate: %s", err)
+	}
+
+	rsp.TunnelCredentials = &cgpb.TunnelCredentials{
+		ClientCert: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})),
+		Ca:         string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: g.tunnelCA.Cert.Raw})),
+		Gateways:   g.tunnelGateways,
+	}
+	return nil
+}
+
+// parseTunnelGateways validates the configured gateways and zones.
+func parseTunnelGateways(gateways []TunnelGateway) ([]*cgpb.TunnelGateway, error) {
+	var out []*cgpb.TunnelGateway
+	seen := make(map[string]string) // zone suffix -> gateway target
+	targets := make(map[string]bool)
+	for _, gw := range gateways {
+		target := strings.TrimSpace(gw.Target)
+		u, err := url.Parse(target)
+		if err != nil || (u.Scheme != "grpc" && u.Scheme != "grpcs") || u.Host == "" {
+			return nil, status.FailedPreconditionErrorf("tunnel gateway %q: target must be a grpc:// or grpcs:// target", gw.Target)
+		}
+		if targets[target] {
+			return nil, status.FailedPreconditionErrorf("tunnel gateway %q: listed twice", target)
+		}
+		targets[target] = true
+		if len(gw.Zones) == 0 {
+			return nil, status.FailedPreconditionErrorf("tunnel gateway %q: no zones", target)
+		}
+		pgw := &cgpb.TunnelGateway{Target: target}
+		for _, z := range gw.Zones {
+			suffix := strings.ToLower(strings.Trim(strings.TrimSpace(z.Suffix), "."))
+			if suffix == "" {
+				return nil, status.FailedPreconditionErrorf("tunnel gateway %q: zone suffix is required", target)
+			}
+			if suffix != tunnelZoneParent && !strings.HasSuffix(suffix, "."+tunnelZoneParent) {
+				return nil, status.FailedPreconditionErrorf("tunnel zone %q: suffix must be under %s, which is what the client routes to the tunnel", suffix, tunnelZoneParent)
+			}
+			for other, otherTarget := range seen {
+				if suffix == other || strings.HasSuffix(suffix, "."+other) || strings.HasSuffix(other, "."+suffix) {
+					return nil, status.FailedPreconditionErrorf("tunnel zone %q (%s) overlaps zone %q (%s)", suffix, target, other, otherTarget)
+				}
+			}
+			seen[suffix] = target
+			pgw.Zones = append(pgw.Zones, &cgpb.TunnelZone{
+				Suffix:    suffix,
+				RewriteTo: strings.Trim(strings.TrimSpace(z.RewriteTo), "."),
+			})
+		}
+		out = append(out, pgw)
+	}
+	return out, nil
+}
+
+func (g *generator) loadTunnelConfig() error {
+	if *tunnelCAFile == "" && *tunnelCA == "" && *tunnelCAKeyFile == "" && *tunnelCAKey == "" {
+		if len(*tunnelGateways) > 0 {
+			return status.FailedPreconditionError("certgenerator.tunnel.gateways needs a tunnel CA")
+		}
+		return nil
+	}
+	ca, err := loadTunnelCA(*tunnelCAFile, *tunnelCA, *tunnelCAKeyFile, *tunnelCAKey)
+	if err != nil {
+		return err
+	}
+	gateways, err := parseTunnelGateways(*tunnelGateways)
+	if err != nil {
+		return err
+	}
+	g.tunnelCA = ca
+	g.tunnelGateways = gateways
+	log.Infof("Tunnel CA loaded; issuing gateway client certificates valid for %s, for %d gateways.", *tunnelCertExpiry, len(gateways))
+	return nil
+}
+
+// parseTunnelPublicKey accepts only ECDSA P-256 keys.
+func parseTunnelPublicKey(pemKey string) (crypto.PublicKey, error) {
+	block, _ := pem.Decode([]byte(pemKey))
+	if block == nil || block.Type != "PUBLIC KEY" {
+		return nil, status.InvalidArgumentError("tunnel_public_key is not a PEM encoded PUBLIC KEY block")
+	}
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("could not parse tunnel_public_key: %s", err)
+	}
+	k, ok := pub.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, status.InvalidArgumentErrorf("tunnel_public_key must be an ECDSA P-256 key, got %T", pub)
+	}
+	if k.Curve != elliptic.P256() {
+		return nil, status.InvalidArgumentErrorf("tunnel_public_key must be an ECDSA P-256 key, got curve %s", k.Curve.Params().Name)
+	}
+	return k, nil
+}
+
+// loadTunnelCA loads and sanity-checks the tunnel CA so a misconfiguration
+// fails at startup rather than on every certificate request.
+func loadTunnelCA(certFile, certPEM, keyFile, keyPEM string) (*ssl.CACert, error) {
+	caCert, err := ssl.LoadCertificate(certFile, certPEM)
+	if err != nil {
+		return nil, status.FailedPreconditionErrorf("could not load tunnel CA certificate: %s", err)
+	}
+	caKey, err := ssl.LoadCertificateKey(keyFile, keyPEM)
+	if err != nil {
+		return nil, status.FailedPreconditionErrorf("could not load tunnel CA key: %s", err)
+	}
+	if !caCert.IsCA {
+		return nil, status.FailedPreconditionError("tunnel CA certificate is not a CA (basicConstraints CA:TRUE is missing)")
+	}
+	// The gateway's x509.Verify holds the CA to these when it checks any leaf
+	// we issue: keyCertSign if keyUsage is set at all, and clientAuth if the
+	// CA restricts extended key usage.
+	if caCert.KeyUsage != 0 && caCert.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return nil, status.FailedPreconditionError("tunnel CA certificate cannot sign certificates (keyUsage lacks keyCertSign)")
+	}
+	restrictsEKU := len(caCert.ExtKeyUsage) > 0 || len(caCert.UnknownExtKeyUsage) > 0
+	if restrictsEKU && !slices.Contains(caCert.ExtKeyUsage, x509.ExtKeyUsageClientAuth) && !slices.Contains(caCert.ExtKeyUsage, x509.ExtKeyUsageAny) {
+		return nil, status.FailedPreconditionError("tunnel CA certificate cannot issue client certificates (extendedKeyUsage lacks clientAuth)")
+	}
+	pub, ok := caKey.Public().(interface{ Equal(crypto.PublicKey) bool })
+	if !ok || !pub.Equal(caCert.PublicKey) {
+		return nil, status.FailedPreconditionError("tunnel CA key does not match the tunnel CA certificate")
+	}
+	return &ssl.CACert{Cert: caCert, Key: caKey}, nil
+}
+
 func (g *generator) Generate(ctx context.Context, req *cgpb.GenerateRequest) (*cgpb.GenerateResponse, error) {
 	idToken, err := g.verifier.Verify(ctx, req.GetToken())
 	if err != nil {
@@ -222,6 +427,10 @@ func (g *generator) Generate(ctx context.Context, req *cgpb.GenerateRequest) (*c
 		return nil, err
 	}
 
+	if err := g.generateTunnelCert(c, req, rsp); err != nil {
+		return nil, err
+	}
+
 	return rsp, nil
 }
 
@@ -252,6 +461,10 @@ func newGenerator(ctx context.Context) (*generator, error) {
 		verifier:           provider.Verifier(&oidc.Config{ClientID: *tokenClientID}),
 		sshSigner:          s,
 		kubernetesClusters: kcs,
+	}
+
+	if err := g.loadTunnelConfig(); err != nil {
+		return nil, err
 	}
 	return g, nil
 }

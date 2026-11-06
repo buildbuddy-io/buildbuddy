@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("//rules:platform_transitions.bzl", "linux_x86_64_alias")
 
 # These stamped files are platform-independent, so pin them to one target
@@ -44,11 +44,51 @@ linux_x86_64_alias(
     actual = ":populate_commit_impl",
 )
 
+genrule(
+    name = "populate_latest_public_release_impl",
+    outs = ["latest_public_release.txt"],
+    cmd_bash = select({
+        "//:fastbuild": "touch $@",
+        "//conditions:default": """
+            release=$$(grep ^STABLE_LATEST_PUBLIC_RELEASE bazel-out/stable-status.txt 2>/dev/null | cut -d' ' -f2 || true); \
+            printf '%s' $$release > $@;
+        """,
+    }),
+    stamp = 1,
+    tags = ["manual"],
+)
+
+linux_x86_64_alias(
+    name = "populate_latest_public_release",
+    actual = ":populate_latest_public_release_impl",
+)
+
+genrule(
+    name = "populate_public_commit_impl",
+    outs = ["public_commit.txt"],
+    cmd_bash = select({
+        "//:fastbuild": "touch $@",
+        "//conditions:default": """
+            commit=$$(grep ^STABLE_BUILDBUDDY_COMMIT_SHA bazel-out/stable-status.txt 2>/dev/null | cut -d' ' -f2 || true); \
+            printf '%s' $$commit > $@;
+        """,
+    }),
+    stamp = 1,
+    tags = ["manual"],
+)
+
+linux_x86_64_alias(
+    name = "populate_public_commit",
+    actual = ":populate_public_commit_impl",
+)
+
 go_library(
     name = "version",
     srcs = ["version.go"],
     embedsrcs = [
         ":populate_commit",
+        ":populate_latest_public_release",
+        ":populate_public_commit",
         ":populate_version",
     ],  # keep
     importpath = "github.com/buildbuddy-io/buildbuddy/server/version",
@@ -58,4 +98,11 @@ go_library(
         "//server/util/log",
         "@com_github_prometheus_client_golang//prometheus",
     ],
+)
+
+go_test(
+    name = "version_test",
+    srcs = ["version_test.go"],
+    embed = [":version"],
+    deps = ["@com_github_stretchr_testify//require"],
 )

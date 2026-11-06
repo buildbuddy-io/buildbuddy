@@ -232,6 +232,18 @@ func TestApplyLimitsNonRecyleableLargeDisk(t *testing.T) {
 	assert.Equal(t, tasksize.MaxEstimatedFreeDiskRecycleFalse, sz.EstimatedFreeDiskBytes)
 }
 
+func TestApplyLimits_NonRecyclableDiskBelowLimit(t *testing.T) {
+	const requestedDisk = int64(150 * 1e9)
+	sz := tasksize.ApplyLimits(
+		t.Context(),
+		nil,
+		&repb.Command{},
+		&platform.Properties{RecycleRunner: false},
+		&scpb.TaskSize{EstimatedFreeDiskBytes: requestedDisk},
+	)
+	assert.Equal(t, requestedDisk, sz.EstimatedFreeDiskBytes)
+}
+
 func TestApplyLimits_LargeTest(t *testing.T) {
 	sz := tasksize.ApplyLimits(
 		context.Background(),
@@ -569,7 +581,7 @@ func TestSizer_P90CPUExperiment(t *testing.T) {
 	}
 	// Simulate CPU usage as described above
 	timeline := usageStats.Timeline
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		elapsedDuration := 1 * time.Second
 		timeline.Timestamps = append(timeline.Timestamps, elapsedDuration.Milliseconds())
 		md.ExecutionCompletedTimestamp = timestamppb.New(md.ExecutionCompletedTimestamp.AsTime().Add(elapsedDuration))

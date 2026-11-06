@@ -70,7 +70,7 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 	// group ID info is lost.
 	//
 	testCases := []testCase{}
-	for i := filestore.UndefinedKeyVersion; i < filestore.MaxKeyVersion; i++ {
+	for i := range filestore.MaxKeyVersion {
 		for _, cacheType := range []rspb.CacheType{rspb.CacheType_AC, rspb.CacheType_CAS} {
 			maxCASMigratableVersion := filestore.Version5
 			if i >= filestore.Version6 {
@@ -165,7 +165,7 @@ func TestKnownVersions(t *testing.T) {
 		},
 	}
 
-	for version := filestore.UndefinedKeyVersion; version < filestore.MaxKeyVersion; version++ {
+	for version := range filestore.MaxKeyVersion {
 		exemplars, ok := versionExemplars[version]
 		if !ok {
 			t.Fatalf("Please add test exemplars for pebble key version: %d", version)
@@ -228,7 +228,7 @@ func TestMigration(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		for startingVersion := filestore.UndefinedKeyVersion; startingVersion < filestore.MaxKeyVersion; startingVersion++ {
+		for startingVersion := range filestore.MaxKeyVersion {
 			testCase, ok := tc[startingVersion]
 			if !ok {
 				t.Fatalf("Please add test exemplars for pebble key version: %d", startingVersion)

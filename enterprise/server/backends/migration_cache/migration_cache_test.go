@@ -30,6 +30,7 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -45,6 +46,10 @@ const (
 var (
 	emptyUserMap = testauth.TestUsers()
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
+}
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
@@ -632,7 +637,7 @@ func TestCopyDataInBackground(t *testing.T) {
 			defer mc.Stop()
 
 			eg, ctx := errgroup.WithContext(ctx)
-			for i := 0; i < numTests; i++ {
+			for range numTests {
 				eg.Go(func() error {
 					r, buf := testdigest.RandomCASResourceBuf(t, 100)
 					err := srcCache.Set(ctx, r, buf)
@@ -676,7 +681,7 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	lock := sync.RWMutex{}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		eg.Go(func() error {
 			r, buf := testdigest.RandomCASResourceBuf(t, 100)
 			lock.Lock()
@@ -722,7 +727,7 @@ func TestCopyDataInBackground_RateLimitMax(t *testing.T) {
 	lock := sync.RWMutex{}
 	start := time.Now()
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		eg.Go(func() error {
 			r, buf := testdigest.RandomCASResourceBuf(t, 100)
 			lock.Lock()
@@ -1220,7 +1225,7 @@ func TestGetMultiWithCopying(t *testing.T) {
 			lock := sync.RWMutex{}
 			resourceNames := make([]*rspb.ResourceName, 50)
 			expected := make(map[*repb.Digest][]byte, 50)
-			for i := 0; i < 50; i++ {
+			for i := range 50 {
 				idx := i
 				eg.Go(func() error {
 					r, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -1265,7 +1270,7 @@ func TestSetMulti(t *testing.T) {
 	eg := &errgroup.Group{}
 	lock := sync.RWMutex{}
 	dataToSet := make(map[*rspb.ResourceName][]byte, 50)
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		eg.Go(func() error {
 			rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 			lock.Lock()

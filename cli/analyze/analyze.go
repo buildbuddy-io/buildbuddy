@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -233,7 +234,7 @@ func computeTargetMetrics(graph *DependencyGraph) (map[string]*TargetMetrics, er
 	resultsCh := make(chan *targetResult, numWorkers)
 	eg := errgroup.Group{}
 	rulesCh := bufferedChanOf(mapValues(graph.Rules))
-	for i := 0; i < numWorkers; i++ {
+	for range numWorkers {
 		eg.Go(func() error {
 			for rule := range rulesCh {
 				res := compute(rule)
@@ -430,8 +431,7 @@ func (g *DependencyGraph) LongestPath() []string {
 
 	e := g.EdgeSet()
 	nodes := g.TopologicalSort()
-	for i := len(nodes) - 1; i >= 0; i-- {
-		n := nodes[i]
+	for _, n := range slices.Backward(nodes) {
 		for dep := range e.Outgoing[n] {
 			candidateLength := length[dep] + 1
 			if candidateLength > length[n] ||

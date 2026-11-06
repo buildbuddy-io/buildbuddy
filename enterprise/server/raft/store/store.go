@@ -220,6 +220,8 @@ func getNodehostConfigForTest(cfg *raftConfig.ServerConfig, raftListener *listen
 
 	nhc.RTTMillisecond = 1
 	nhc.Expert.LogDB = dbConfig.GetSmallMemLogDBConfig()
+	// Fewer Pebble instances speed up test startup.
+	nhc.Expert.LogDB.Shards = 2
 	nhc.EnableMetrics = false
 	return nhc
 }
@@ -457,7 +459,6 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	egStarter.SetLimit(numReplicaStarter)
 	numReplicas := len(nodeHostInfo.LogInfo)
 	for i, logInfo := range nodeHostInfo.LogInfo {
-		i, logInfo := i, logInfo
 		if !nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
 			// Skip nodes not on this machine.
 			continue
@@ -1015,6 +1016,12 @@ func (s *Store) Stop(ctx context.Context) error {
 	s.leaser.Close()
 	s.log.Info("Store: leaser closed")
 
+	s.sender.Close()
+	s.apiClient.Close()
+	s.session.Close()
+	s.evictionSession.Close()
+	s.shardStarterSession.Close()
+
 	return s.db.Close()
 }
 
@@ -1199,7 +1206,6 @@ func (s *Store) tryDroppingLeadership(ctx context.Context, nhidToPodIndex map[st
 	eg := errgroup.Group{}
 	remainingLeader := 0
 	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
-		clusterInfo := clusterInfo
 		if clusterInfo.LeaderID != clusterInfo.ReplicaID || clusterInfo.Term == 0 {
 			// skip if not the leader
 			continue
@@ -2904,6 +2910,12 @@ func newRangeGCWorker(clock clockwork.Clock, store *Store, clientSessionTTL, txn
 		handleFn: res.gcExpiredRangeState,
 	}
 	return res
+}
+
+// Start runs the worker until ctx is done, then closes its session.
+func (w *rangeGCWorker) Start(ctx context.Context) {
+	defer w.session.Close()
+	w.replicaWorker.Start(ctx)
 }
 
 // gcExpiredRangeState runs on the leaseholder and deletes expired per-range

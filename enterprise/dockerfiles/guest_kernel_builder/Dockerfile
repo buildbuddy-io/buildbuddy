@@ -1,4 +1,4 @@
-FROM marketplace.gcr.io/google/ubuntu2204@sha256:216c2da9e2b38855972398dc75335f1a53ec48c6bce7f2699d9a9d0697d6cb43
+FROM gcr.io/flame-public/marketplace/google/ubuntu2204@sha256:216c2da9e2b38855972398dc75335f1a53ec48c6bce7f2699d9a9d0697d6cb43
 
 ENV DEBIAN_FRONTEND=noninteractive
 

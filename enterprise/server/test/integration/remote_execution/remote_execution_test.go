@@ -546,7 +546,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServers(3)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "foo"})
 	}
 
@@ -818,7 +818,7 @@ func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {
 	rbe.AddExecutors(t, 5)
 
 	var cmds []*rbetest.Command
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
 		cmds = append(cmds, cmd)
 	}
@@ -838,7 +838,7 @@ func TestRedisAvailabilityMonitoring(t *testing.T) {
 	rbe.AddExecutors(t, 5)
 
 	var cmds []*rbetest.Command
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
 		cmds = append(cmds, cmd)
 	}
@@ -1397,17 +1397,15 @@ func TestSaturateTaskQueue(t *testing.T) {
 		},
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 10 {
+		wg.Go(func() {
 
 			cmd := rbe.Execute(cmdProto, &rbetest.ExecuteOpts{DoNotCacheAction: true})
 			res := cmd.Wait()
 
 			require.NoError(t, res.Err)
 			require.Equal(t, 0, res.ExitCode)
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -1435,7 +1433,7 @@ func TestMultipleSchedulersAndExecutors(t *testing.T) {
 	rbe.AddExecutors(t, 5)
 
 	var cmds []*rbetest.Command
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
 		cmds = append(cmds, cmd)
 	}
@@ -1464,7 +1462,7 @@ func TestWorkSchedulingOnNewExecutor(t *testing.T) {
 
 	// Schedule some additional commands that existing executors can't take on.
 	var cmds []*rbetest.Command
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
 		cmds = append(cmds, cmd)
 	}
@@ -1497,13 +1495,13 @@ func TestWaitExecution(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
 	// Start multiple servers so that executions are spread out across different servers.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		rbe.AddBuildBuddyServer()
 	}
 	rbe.AddExecutors(t, 5)
 
 	var cmds []*rbetest.ControlledCommand
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmds = append(cmds, rbe.ExecuteControlledCommand(fmt.Sprintf("command%d", i+1), &rbetest.ExecuteControlledOpts{}))
 	}
 
@@ -1543,6 +1541,9 @@ func (_ fakeRankedNode) IsPreferred() bool {
 type fixedNodeTaskRouter struct {
 	mu          sync.Mutex
 	executorIDs map[string]struct{}
+	// If non-nil, RankNodes blocks until this channel is closed or the
+	// caller's context is done.
+	blockChan chan struct{}
 }
 
 func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
@@ -1554,6 +1555,15 @@ func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
 }
 
 func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	f.mu.Lock()
+	blockChan := f.blockChan
+	f.mu.Unlock()
+	if blockChan != nil {
+		select {
+		case <-blockChan:
+		case <-ctx.Done():
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []interfaces.RankedExecutionNode
@@ -1569,6 +1579,27 @@ func (f *fixedNodeTaskRouter) MarkSucceeded(ctx context.Context, action *repb.Ac
 }
 
 func (f *fixedNodeTaskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
+}
+
+// Block makes RankNodes hold every caller until Unblock is called or the
+// caller's context is done. This can be used to stall the scheduler while it is
+// enqueueing tasks, since all tasks must be routed via the task router.
+func (f *fixedNodeTaskRouter) Block() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.blockChan == nil {
+		f.blockChan = make(chan struct{})
+	}
+}
+
+// Unblock releases callers held by Block.
+func (f *fixedNodeTaskRouter) Unblock() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.blockChan != nil {
+		close(f.blockChan)
+		f.blockChan = nil
+	}
 }
 
 func (f *fixedNodeTaskRouter) UpdateSubset(executorIDs []string) {
@@ -1606,7 +1637,7 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 	// Now schedule some commands. The fake task router will ensure that the reservations only land on "busy"
 	// executors.
 	var cmds []*rbetest.Command
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
 		cmds = append(cmds, cmd)
 	}
@@ -1629,6 +1660,78 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 	for _, cmd := range cmds {
 		res := cmd.Wait()
 		assert.Equal(t, "newExecutor", res.ActionResult.GetExecutionMetadata().GetExecutorId(), "[%s] should have been executed on new executor", cmd.Name)
+	}
+}
+
+func TestTaskReservationsNotLostWithMultipleExecutorsShuttingDown(t *testing.T) {
+	// Disable work stealing since we're testing the hand-back mechanism for
+	// re-enqueueing work.
+	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", int64(0))
+
+	rbe := rbetest.NewRBETestEnv(t)
+
+	doomedIDs := []string{"doomedExecutor1", "doomedExecutor2", "doomedExecutor3"}
+	const survivorID = "survivorExecutor"
+
+	// Set up "doomed" executors that accept reservations but never start them
+	// (simulating high queue length), and a "survivor" executor that stays
+	// healthy throughout the test. Initially, the task router routes all tasks
+	// to the "doomed" executors.
+	taskRouter := newFixedNodeTaskRouter(doomedIDs)
+	defer taskRouter.Unblock()
+	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{EnvModifier: func(env *testenv.TestEnv) {
+		env.SetTaskRouter(taskRouter)
+	}})
+	var doomed []*rbetest.Executor
+	for _, id := range doomedIDs {
+		e := rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: id})
+		e.ShutdownTaskScheduler()
+		doomed = append(doomed, e)
+	}
+	rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: survivorID})
+
+	// Queue up work. Every command gets reserved on all three doomed executors.
+	var cmds []*rbetest.Command
+	for i := range 10 {
+		cmds = append(cmds, rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i)))
+	}
+	for _, cmd := range cmds {
+		cmd.WaitAccepted()
+	}
+	for _, e := range doomed {
+		require.Eventually(t, func() bool { return e.QueueLength() == len(cmds) }, 10*time.Second, 10*time.Millisecond,
+			"all commands should be queued on the doomed executors")
+	}
+
+	// Now all three doomed executors get their shutdown signal at once. Block
+	// the task router so that the scheduler gets stuck trying to re-enqueue
+	// tasks.
+	taskRouter.Block()
+	for _, e := range doomed {
+		e.BeginShutdown()
+	}
+
+	// Now shut down the executors, handing off queued tasks to the scheduler,
+	// which will get stuck trying to re-enqueue tasks (because the task router
+	// is blocked).
+	for _, e := range doomed {
+		e.WaitForShutdown()
+		rbe.DisconnectExecutor(e)
+	}
+
+	// Now route all work to the survivor executor. Normally this would happen
+	// automatically when the executors unregister from the pool, but we have to
+	// do it explicitly here since we're controlling the task router.
+	taskRouter.UpdateSubset([]string{survivorID})
+
+	// Unblock the task router to let the app work through the hand-back
+	// requests from the now-terminated executors. Every command that was
+	// originally enqueued on the doomed executor set should now be executed on
+	// the survivor, and succeed.
+	taskRouter.Unblock()
+	for _, cmd := range cmds {
+		res := cmd.Wait()
+		assert.Equal(t, survivorID, res.ActionResult.GetExecutionMetadata().GetExecutorId(), "[%s] should have run on the survivor", cmd.Name)
 	}
 }
 
@@ -1672,7 +1775,7 @@ func TestRedisRestart(t *testing.T) {
 	}
 
 	var redisShards []*testredis.Handle
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		redisShards = append(redisShards, testredis.Start(t))
 	}
 
@@ -1814,7 +1917,7 @@ func WaitForPendingExecution(rdb redis.UniversalClient, opID string) error {
 	if err != nil {
 		return err
 	}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		_, err := rdb.Get(context.Background(), forwardKey).Result()
 		if err == nil {
 			return nil
@@ -1944,12 +2047,10 @@ func TestActionMerging_ScheduledConcurrently(t *testing.T) {
 		wg := sync.WaitGroup{}
 		ops := make(chan string, 5)
 		for i := range 5 {
-			wg.Add(1)
-			go func() {
+			wg.Go(func() {
 				exec := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: fmt.Sprintf("invocation%d", i)})
 				ops <- exec.WaitAccepted()
-				wg.Done()
-			}()
+			})
 		}
 		wg.Wait()
 		close(ops)
@@ -2137,16 +2238,14 @@ func TestActionMerging_DisabledWithDoNotCache(t *testing.T) {
 	wg := sync.WaitGroup{}
 	ops := make(chan string, numOps)
 	for i := range numOps {
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			exec := rbe.Execute(cmd, &rbetest.ExecuteOpts{
 				CheckCache:       true,
 				DoNotCacheAction: true,
 				InvocationID:     fmt.Sprintf("invocation%d", i),
 			})
 			ops <- exec.WaitAccepted()
-			wg.Done()
-		}()
+		})
 	}
 	wg.Wait()
 	close(ops)
@@ -2200,7 +2299,7 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 	rbe.AppProxy.SetDirector(director)
 
 	var cmds []*rbetest.ControlledCommand
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmd := rbe.ExecuteControlledCommand(fmt.Sprintf("cmd-%d", i), &rbetest.ExecuteControlledOpts{
 			// Allow reconnecting with WaitExecution since the test will hard
 			// stop the app, which kills the Execute stream.
@@ -2230,7 +2329,6 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 
 	eg := &errgroup.Group{}
 	for _, cmd := range cmds {
-		cmd := cmd
 		eg.Go(func() error {
 			// Maybe let the command continue execution for a bit, then exit.
 			randSleepMillis(0, 50)
@@ -2298,7 +2396,7 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 	rbe.AddExecutor(t)
 
 	var cmds []*rbetest.ControlledCommand
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmd := rbe.ExecuteControlledCommand(fmt.Sprintf("cmd-%d", i), &rbetest.ExecuteControlledOpts{
 			// Allow reconnecting with WaitExecution since the test will hard
 			// stop the app, which kills the Execute stream.
@@ -2328,7 +2426,6 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 
 	eg := &errgroup.Group{}
 	for _, cmd := range cmds {
-		cmd := cmd
 		eg.Go(func() error {
 			// Maybe let the command continue execution for a bit, then exit.
 			randSleepMillis(0, 50)
@@ -2403,9 +2500,6 @@ func TestContainerRegistryBypass(t *testing.T) {
 }
 
 func TestProactiveCancellation(t *testing.T) {
-	// Enable proactive cancellation on both the scheduler and executors.
-	flags.Set(t, "remote_execution.proactive_cancellation_enabled", true)
-	flags.Set(t, "executor.proactive_cancellation_enabled", true)
 	// Disable work stealing and queue pruning to make scheduling more
 	// predictable and make sure we're testing the right thing.
 	flags.Set(t, "executor.excess_capacity_threshold", -1)
@@ -2639,7 +2733,7 @@ func testCustomResources(t *testing.T, test customResourcesTest) {
 	// are all currently tied up by the command we've started above.
 	taskRouter.UpdateSubset([]string{ex1ID, ex2ID})
 	var cmds []*rbetest.ControlledCommand
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		log.Infof("Starting smaller commands...")
 		cmd := rbe.ExecuteControlledCommand(fmt.Sprintf("cmd-%d", i), &rbetest.ExecuteControlledOpts{
 			Properties: []*repb.Platform_Property{
@@ -2708,4 +2802,97 @@ func getExecutionAuxiliaryMetadata(t testing.TB, execRes *repb.ExecuteResponse) 
 	require.NoError(t, err)
 	require.True(t, ok)
 	return auxMeta
+}
+
+// spliceBlobCounts returns the number of SpliceBlob requests the cache has
+// served per metrics.SpliceBlobValidation label value, summed across groups.
+func spliceBlobCounts(t *testing.T) map[string]float64 {
+	counts := map[string]float64{}
+	for _, v := range testmetrics.CounterValues(t, metrics.SpliceBlobCount) {
+		counts[v.Labels[metrics.SpliceBlobValidation]] += v.Value
+	}
+	return counts
+}
+
+// executeChunkedOutputAction runs an action whose output is large enough for
+// the executor to upload it as chunks and splice them together, checks that
+// the output reads back whole, and returns the metrics.SpliceBlobValidation
+// label value under which the cache served the SpliceBlob requests meanwhile.
+func executeChunkedOutputAction(t *testing.T, rbe *rbetest.Env) string {
+	// Outputs larger than four times the average chunk size are chunked, as
+	// long as they are also too large for a batch upload.
+	const avgChunkSize = 1024 * 1024
+	flags.Set(t, "cache.avg_chunk_size_bytes", int64(avgChunkSize))
+	const outputSize = 5 * avgChunkSize
+
+	before := spliceBlobCounts(t)
+	cmd := rbe.Execute(&repb.Command{
+		Arguments:   []string{"sh", "-ec", fmt.Sprintf("head -c %d /dev/urandom > out", outputSize)},
+		OutputPaths: []string{"out"},
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "container-image", Value: "none"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		}},
+	}, &rbetest.ExecuteOpts{APIKey: rbe.APIKey1})
+	res := cmd.Wait()
+	require.Equal(t, 0, res.ExitCode, "stderr: %q", res.Stderr)
+
+	// The spliced output must read back whole either way.
+	outDir := rbe.DownloadOutputsToNewTempDir(res)
+	info, err := os.Stat(filepath.Join(outDir, "out"))
+	require.NoError(t, err)
+	require.EqualValues(t, outputSize, info.Size())
+
+	// Retries may make the cache serve more than one SpliceBlob request, but
+	// it must validate all of them the same way.
+	after := spliceBlobCounts(t)
+	var served []string
+	for validation, count := range after {
+		if count > before[validation] {
+			served = append(served, validation)
+		}
+	}
+	require.Len(t, served, 1, "SpliceBlob requests served per validation label: before %v, after %v", before, after)
+	return served[0]
+}
+
+func TestSpliceWithoutValidationExperiment(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+		// noIdentityService leaves client identity unconfigured, as on a
+		// self-hosted deployment that has not set it up.
+		noIdentityService bool
+		// anonymousExecutor makes the executor talk to the cache without
+		// presenting its client identity.
+		anonymousExecutor bool
+		validation        string
+	}{
+		{name: "trusted executor", enabled: true, validation: metrics.SpliceBlobValidationSkipped},
+		{name: "experiment disabled", enabled: false, validation: metrics.SpliceBlobValidationFull},
+		{name: "no client identity service", enabled: true, noIdentityService: true, validation: metrics.SpliceBlobValidationFull},
+		{name: "executor without client identity", enabled: true, anonymousExecutor: true, validation: metrics.SpliceBlobValidationFull},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The cache only skips validation for callers that present an
+			// executor (or cache proxy) client identity.
+			if !tc.noIdentityService {
+				flags.Set(t, "app.client_identity.key", "test-client-identity-key")
+				flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityExecutor)
+			}
+			flags.Set(t, "remote_execution.chunking_enabled", true)
+			flags.Set(t, "executor.splice_without_validation", tc.enabled)
+
+			rbe := rbetest.NewRBETestEnv(t)
+			rbe.AddBuildBuddyServer()
+			executorOpts := &rbetest.ExecutorOptions{}
+			if tc.anonymousExecutor {
+				executorOpts.CacheConn = rbe.AppProxy.Dial()
+			}
+			rbe.AddExecutorWithOptions(t, executorOpts)
+
+			require.Equal(t, tc.validation, executeChunkedOutputAction(t, rbe))
+		})
+	}
 }

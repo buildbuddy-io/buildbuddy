@@ -11,16 +11,24 @@ ts_library(
         "//:node_modules/@types/long",
         "//:node_modules/@types/react",
         "//:node_modules/long",
+        "//:node_modules/lucide-react",
         "//:node_modules/moment",
         "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/auth:auth_service",
-        "//app/components/select",
+        "//app/capabilities",
+        "//app/components/button:link_button",
+        "//app/components/tooltip:help_tooltip",
         "//app/errors:error_service",
         "//app/format",
         "//app/router",
         "//app/service:rpc_service",
+        "//enterprise/app/filter:date_range_picker_button",
+        "//enterprise/app/trends:common",
         "//enterprise/app/trends:trends_chart",
         "//enterprise/app/usage:usage_alerts",
+        "//enterprise/app/usage:usage_bill",
+        "//proto:stats_ts_proto",
         "//proto:usage_ts_proto",
     ],
 )
@@ -67,6 +75,39 @@ ts_jasmine_node_test(
         "//:node_modules/@types/long",
         "//:node_modules/long",
         "//:node_modules/tslib",
+        "//proto:usage_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "usage_bill",
+    srcs = ["usage_bill.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/moment",
+        "//:node_modules/react",
+        "//app/format",
+        "//enterprise/app/usage:usage_bill_model",
+        "//proto:usage_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "usage_bill_model",
+    srcs = ["usage_bill_model.ts"],
+    deps = [
+        "//app/format",
+        "//proto:usage_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "usage_bill_model_test",
+    srcs = ["usage_bill_model_test.ts"],
+    deps = [
+        ":usage_bill_model",
+        "//:node_modules/tslib",
+        "//app/util:proto",
         "//proto:usage_ts_proto",
     ],
 )

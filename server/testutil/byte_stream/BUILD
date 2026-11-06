@@ -12,6 +12,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest",
         "//server/util/bazel_request",
+        "//server/util/status",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],

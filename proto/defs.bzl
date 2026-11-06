@@ -1,3 +1,5 @@
+"""BuildBuddy protocol buffer rule wrappers."""
+
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@com_github_buildbuddy_io_protoc_gen_protobufjs//:rules.bzl", "protoc_gen_protobufjs")
 load("@io_bazel_rules_go//proto:def.bzl", _go_proto_library = "go_proto_library")

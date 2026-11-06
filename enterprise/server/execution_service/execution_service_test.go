@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -85,7 +86,8 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 					InvocationID:     iid1,
 					InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 					Perms:            perms.OTHERS_READ,
-					Model:            tables.Model{CreatedAtUsec: testTimestampUsec, UpdatedAtUsec: testTimestampUsec},
+					CreatedAtUsec:    testTimestampUsec,
+					UpdatedAtUsec:    testTimestampUsec,
 				},
 			},
 			wantExecutions: []*espb.Execution{},
@@ -97,7 +99,8 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 					InvocationID:     iid1,
 					InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 					Perms:            perms.OTHERS_READ,
-					Model:            tables.Model{CreatedAtUsec: testTimestampUsec, UpdatedAtUsec: testTimestampUsec},
+					CreatedAtUsec:    testTimestampUsec,
+					UpdatedAtUsec:    testTimestampUsec,
 				},
 			},
 			executions: []*olaptables.Execution{
@@ -127,7 +130,8 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 					GroupID:          "GR1",
 					InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 					Perms:            perms.GROUP_READ,
-					Model:            tables.Model{CreatedAtUsec: testTimestampUsec, UpdatedAtUsec: testTimestampUsec},
+					CreatedAtUsec:    testTimestampUsec,
+					UpdatedAtUsec:    testTimestampUsec,
 				},
 			},
 			executions: []*olaptables.Execution{
@@ -157,7 +161,8 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 					GroupID:          "GR1",
 					InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 					Perms:            perms.GROUP_READ,
-					Model:            tables.Model{CreatedAtUsec: testTimestampUsec, UpdatedAtUsec: testTimestampUsec},
+					CreatedAtUsec:    testTimestampUsec,
+					UpdatedAtUsec:    testTimestampUsec,
 				},
 			},
 			executions: []*olaptables.Execution{
@@ -173,11 +178,10 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			flags.Set(t, "testenv.use_clickhouse", true)
-			flags.Set(t, "testenv.reuse_server", true)
 			flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
 			flags.Set(t, "remote_execution.olap_reads_enabled", true)
 			env := testenv.GetTestEnv(t)
+			testclickhouse.Configure(t, env)
 			redis := testredis.Start(t)
 			env.SetDefaultRedisClient(redis.Client())
 			redis_execution_collector.Register(env)
@@ -234,14 +238,13 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 }
 
 func TestGetExecution_OLAPOnly_InvocationFinalizedWhileExecutionCleanupInProgress(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
 	flags.Set(t, "remote_execution.olap_reads_enabled", true)
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	flags.Set(t, "cache_stats_finalization_delay", 0)
 
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	redis := testredis.Start(t)
 	env.SetDefaultRedisClient(redis.Client())
 	redis_execution_collector.Register(env)
@@ -356,7 +359,8 @@ func TestGetExecution_PrimaryDBIncludesInvocationLinkType(t *testing.T) {
 		InvocationID:     iid,
 		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 		Perms:            perms.OTHERS_READ,
-		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:    nowUsec,
+		UpdatedAtUsec:    nowUsec,
 	}
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
 
@@ -369,7 +373,8 @@ func TestGetExecution_PrimaryDBIncludesInvocationLinkType(t *testing.T) {
 		ExecutionID:         executionID,
 		InvocationID:        iid,
 		Perms:               perms.OTHERS_READ,
-		Model:               tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:       nowUsec,
+		UpdatedAtUsec:       nowUsec,
 		QueuedTimestampUsec: nowUsec,
 	}).Error)
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation_execution").Create(&tables.InvocationExecution{
@@ -461,10 +466,8 @@ func TestGetExecutionDownloads(t *testing.T) {
 			GroupID:          ownerUser.GetGroupID(),
 			InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 			Perms:            invocationPerms,
-			Model: tables.Model{
-				CreatedAtUsec: nowUsec,
-				UpdatedAtUsec: nowUsec,
-			},
+			CreatedAtUsec:    nowUsec,
+			UpdatedAtUsec:    nowUsec,
 		}).Error
 		require.NoError(t, err)
 		err = app.GetDBHandle().GORM(ownerCtx, "create_execution").Create(&tables.Execution{
@@ -474,10 +477,8 @@ func TestGetExecutionDownloads(t *testing.T) {
 			InvocationID:        invocationID,
 			Perms:               executionPerms,
 			QueuedTimestampUsec: nowUsec,
-			Model: tables.Model{
-				CreatedAtUsec: nowUsec,
-				UpdatedAtUsec: nowUsec,
-			},
+			CreatedAtUsec:       nowUsec,
+			UpdatedAtUsec:       nowUsec,
 		}).Error
 		require.NoError(t, err)
 		err = app.GetDBHandle().GORM(ownerCtx, "create_invocation_execution").Create(&tables.InvocationExecution{
@@ -618,12 +619,11 @@ func TestGetExecutionDownloads(t *testing.T) {
 }
 
 func TestGetExecution_OLAPOnly_ExactFilters(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
 	flags.Set(t, "remote_execution.olap_reads_enabled", true)
 
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	redis := testredis.Start(t)
 	env.SetDefaultRedisClient(redis.Client())
 	redis_execution_collector.Register(env)
@@ -639,7 +639,8 @@ func TestGetExecution_OLAPOnly_ExactFilters(t *testing.T) {
 		GroupID:          "GR1",
 		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 		Perms:            perms.GROUP_READ,
-		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:    nowUsec,
+		UpdatedAtUsec:    nowUsec,
 	}
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
 
@@ -701,12 +702,11 @@ func TestGetExecution_OLAPOnly_ExactFilters(t *testing.T) {
 }
 
 func TestGetExecution_OLAPOnly_DoesNotCollapseDistinctExecutions(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
 	flags.Set(t, "remote_execution.olap_reads_enabled", true)
 
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	redis := testredis.Start(t)
 	env.SetDefaultRedisClient(redis.Client())
 	redis_execution_collector.Register(env)
@@ -722,7 +722,8 @@ func TestGetExecution_OLAPOnly_DoesNotCollapseDistinctExecutions(t *testing.T) {
 		GroupID:          "GR1",
 		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 		Perms:            perms.GROUP_READ,
-		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:    nowUsec,
+		UpdatedAtUsec:    nowUsec,
 	}
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
 
@@ -757,12 +758,11 @@ func TestGetExecution_OLAPOnly_DoesNotCollapseDistinctExecutions(t *testing.T) {
 }
 
 func TestGetExecution_OLAPOnly_BufferedExecutionIncludesInvocationLinkType(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
 	flags.Set(t, "remote_execution.olap_reads_enabled", true)
 
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	redis := testredis.Start(t)
 	env.SetDefaultRedisClient(redis.Client())
 	redis_execution_collector.Register(env)
@@ -778,7 +778,8 @@ func TestGetExecution_OLAPOnly_BufferedExecutionIncludesInvocationLinkType(t *te
 		GroupID:          "GR1",
 		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 		Perms:            perms.GROUP_READ,
-		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:    nowUsec,
+		UpdatedAtUsec:    nowUsec,
 	}
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
 
@@ -806,12 +807,11 @@ func TestGetExecution_OLAPOnly_BufferedExecutionIncludesInvocationLinkType(t *te
 }
 
 func TestGetExecution_PrefersOLAPWithoutDuplicatingPrimary(t *testing.T) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	flags.Set(t, "remote_execution.primary_db_reads_enabled", true)
 	flags.Set(t, "remote_execution.olap_reads_enabled", true)
 
 	env := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, env)
 	redis := testredis.Start(t)
 	env.SetDefaultRedisClient(redis.Client())
 	redis_execution_collector.Register(env)
@@ -827,7 +827,8 @@ func TestGetExecution_PrefersOLAPWithoutDuplicatingPrimary(t *testing.T) {
 		GroupID:          "GR1",
 		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 		Perms:            perms.GROUP_READ,
-		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:    nowUsec,
+		UpdatedAtUsec:    nowUsec,
 	}
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
 
@@ -838,7 +839,8 @@ func TestGetExecution_PrefersOLAPWithoutDuplicatingPrimary(t *testing.T) {
 		InvocationID:        iid,
 		GroupID:             "GR1",
 		Perms:               perms.GROUP_READ,
-		Model:               tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:       nowUsec,
+		UpdatedAtUsec:       nowUsec,
 		QueuedTimestampUsec: nowUsec,
 	}).Error)
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation_execution").Create(&tables.InvocationExecution{

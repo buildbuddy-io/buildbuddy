@@ -1,6 +1,7 @@
 import { timeDay, timeMinute } from "d3-time";
 import moment from "moment";
 import format from "../../../app/format/format";
+import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
 import { isExecutionMetric } from "../filter/filter_util";
@@ -36,13 +37,10 @@ function timeHourRangeWithDst(startToCopy: Date, end: Date, step: number): Date[
 }
 
 export function computeTimeKeys(
-  interval: stats.StatsInterval | null | undefined,
+  interval: stats.StatsInterval,
   domain: [Date, Date]
 ): { timeKeys: number[]; ticks: number[] } {
-  if (!interval) {
-    // Just let recharts pick the days to render.
-    return { timeKeys: timeDay.range(timeDay.floor(domain[0]), domain[1]).map((v) => v.getTime()), ticks: [] };
-  } else if (interval.type == stats.IntervalType.INTERVAL_TYPE_HOUR) {
+  if (interval.type == stats.IntervalType.INTERVAL_TYPE_HOUR) {
     // First, round down to the nearest interval in the local time.
     // For example, for a 2-hour interval, this will round 3:30 to 2:00.
     const hourMultiple = Math.floor(domain[0].getHours() / +interval.count);
@@ -91,7 +89,44 @@ export function computeTimeKeys(
     }
     return { timeKeys: keyDates.map((v) => v.getTime()), ticks };
   }
-  return { timeKeys: timeDay.range(timeDay.floor(domain[0]), domain[1]).map((v) => v.getTime()), ticks: [] };
+  const keys = timeDay.range(timeDay.floor(domain[0]), domain[1]).map((v) => v.getTime());
+  return { timeKeys: keys, ticks: keys };
+}
+
+function intervalUnit(t: stats.IntervalType): moment.unitOfTime.DurationConstructor {
+  switch (t) {
+    case stats.IntervalType.INTERVAL_TYPE_MINUTE:
+      return "minutes";
+    case stats.IntervalType.INTERVAL_TYPE_HOUR:
+      return "hours";
+    default:
+      return "days";
+  }
+}
+
+export function intervalEndUsec(interval: stats.StatsInterval, startUsec: number): number {
+  return (
+    moment(startUsec / 1000)
+      .add(+interval.count, intervalUnit(interval.type))
+      .valueOf() * 1000
+  );
+}
+
+export function longFormatTsForInterval(interval: stats.IntervalType, timestampMillis: number): string {
+  if (interval === stats.IntervalType.INTERVAL_TYPE_DAY) {
+    return moment(timestampMillis).format("dddd, MMMM Do YYYY");
+  }
+  return moment(timestampMillis).format("dddd, MMMM Do YYYY HH:mm");
+}
+
+export function shortFormatTsForAxis(timestampMillis: number) {
+  const time = moment(timestampMillis);
+
+  if (time.hour() === 0) {
+    return time.format("MMM D");
+  }
+
+  return time.format("HH:mm");
 }
 
 export function renderMetricValue(m: stat_filter.Metric, v: number) {
@@ -212,4 +247,12 @@ export function getTotal(stats: stats.ITrendStat[], fn: (stat: stats.ITrendStat)
 
 export function getAverage(stats: stats.ITrendStat[], fn: (stat: stats.ITrendStat) => number): number {
   return stats.map(fn).reduce((a, b) => a + b, 0) / stats.length;
+}
+
+/**
+ * Returns the value of the requested quantile (e.g. 50 for p50) from a list of
+ * execution timeline quantiles, or 0 if that quantile isn't present.
+ */
+export function getQuantile(quantiles: execution_stats.Quantile[] | undefined, quantile: number): number {
+  return +(quantiles?.find((q) => q.quantile === quantile)?.value ?? 0);
 }

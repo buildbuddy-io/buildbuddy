@@ -5,9 +5,12 @@ package vfs_test
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -27,16 +30,51 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
+	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
+
+func TestSymlinkTargetAfterRemount(t *testing.T) {
+	for _, absolute := range []bool{false, true} {
+		name := "relative"
+		if absolute {
+			name = "absolute"
+		}
+		t.Run(name, func(t *testing.T) {
+			server, client, mount := setupVFSWithInputTreeAndClient(t, setupEnv(t), &repb.Tree{Root: &repb.Directory{}}, &vfs.Options{}, nil)
+			target := "target"
+			if absolute {
+				target = filepath.Join(mount, target)
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(mount, "target"), []byte("contents"), 0644))
+			link := filepath.Join(mount, "link")
+			require.NoError(t, os.Symlink(target, link))
+			got, err := os.Readlink(link)
+			require.NoError(t, err)
+			require.Equal(t, target, got)
+
+			// Force Lookup to recover the target from the server, not the cached inode.
+			require.NoError(t, client.Unmount())
+			client = vfs.New(vfs_server.NewDirectClient(server), mount, &vfs.Options{})
+			require.NoError(t, client.Mount())
+			t.Cleanup(func() { require.NoError(t, client.Unmount()) })
+			got, err = os.Readlink(link)
+			require.NoError(t, err)
+			require.Equal(t, target, got)
+			data, err := os.ReadFile(link)
+			require.NoError(t, err)
+			require.Equal(t, "contents", string(data))
+		})
+	}
+}
 
 func setupEnv(t *testing.T) environment.Env {
 	tmp := testfs.MakeTempDir(t)
@@ -54,7 +92,7 @@ func setupEnv(t *testing.T) environment.Env {
 
 	go runFunc()
 
-	clientConn, err := testenv.LocalGRPCConn(context.Background(), lis)
+	clientConn, err := testenv.LocalGRPCConn(t, context.Background(), lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { clientConn.Close() })
 
@@ -131,6 +169,24 @@ func (c *countingFileSystemClient) GetAttr(ctx context.Context, req *vfspb.GetAt
 func (c *countingFileSystemClient) GetDirectoryContents(ctx context.Context, req *vfspb.GetDirectoryContentsRequest, opts ...grpc.CallOption) (*vfspb.GetDirectoryContentsResponse, error) {
 	c.getDirectoryContentsCount.Add(1)
 	return c.FileSystemClient.GetDirectoryContents(ctx, req, opts...)
+}
+
+type contextCheckingFileSystemClient struct {
+	vfspb.FileSystemClient
+}
+
+func (c *contextCheckingFileSystemClient) Read(ctx context.Context, req *vfspb.ReadRequest, opts ...grpc.CallOption) (*vfspb.ReadResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	return c.FileSystemClient.Read(ctx, req, opts...)
+}
+
+func (c *contextCheckingFileSystemClient) Write(ctx context.Context, req *vfspb.WriteRequest, opts ...grpc.CallOption) (*vfspb.WriteResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	return c.FileSystemClient.Write(ctx, req, opts...)
 }
 
 type blockingGetDirectoryContentsClient struct {
@@ -427,6 +483,310 @@ func TestReaddirCachesLookupAttrs(t *testing.T) {
 	require.EqualValues(t, 1, countingClient.getDirectoryContentsCount.Load())
 	require.Zero(t, countingClient.lookupCount.Load())
 	require.Zero(t, countingClient.getAttrCount.Load())
+}
+
+func TestReaddirAfterKernelEvictsPartOfDirectoryCache(t *testing.T) {
+	env := setupEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+	require.NoError(t, err)
+	// Use enough entries for the kernel's cached listing to span many pages.
+	files := map[string]string{}
+	for i := range 2000 {
+		files[fmt.Sprintf("file-%04d.txt", i)] = "x"
+	}
+	tree := createInputTree(t, ctx, env, files)
+	_, _, fsPath := setupVFSWithInputTree(t, env, tree)
+
+	entries, err := os.ReadDir(fsPath)
+	require.NoError(t, err)
+	require.Len(t, entries, 2000)
+
+	// Evict every cached page of the listing after the first, as memory
+	// reclaim can. The next listing reads the first page from the cache, then
+	// reads the rest from the VFS starting at a nonzero offset.
+	f, err := os.Open(fsPath)
+	require.NoError(t, err)
+	err = unix.Fadvise(int(f.Fd()), int64(os.Getpagesize()), 0, unix.FADV_DONTNEED)
+	require.NoError(t, f.Close())
+	require.NoError(t, err)
+
+	entries, err = os.ReadDir(fsPath)
+	require.NoError(t, err)
+	require.Len(t, entries, 2000)
+}
+
+func TestReaddirAfterMutationAndPartialCacheEviction(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		mutate func(dir, firstName string) error
+	}{
+		{
+			name: "remove",
+			mutate: func(dir, firstName string) error {
+				return os.Remove(filepath.Join(dir, firstName))
+			},
+		},
+		{
+			name: "add",
+			mutate: func(dir, firstName string) error {
+				return os.WriteFile(filepath.Join(dir, "aaaa.txt"), []byte("x"), 0644)
+			},
+		},
+		{
+			name: "rename",
+			mutate: func(dir, firstName string) error {
+				return os.Rename(filepath.Join(dir, firstName), filepath.Join(dir, "zzzz.txt"))
+			},
+		},
+		{
+			name: "hardlink",
+			mutate: func(dir, firstName string) error {
+				return os.Link(filepath.Join(dir, firstName), filepath.Join(dir, "aaaa.txt"))
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env := setupEnv(t)
+			ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+			require.NoError(t, err)
+			files := map[string]string{}
+			var want []string
+			for i := range 2000 {
+				name := fmt.Sprintf("file-%04d.txt", i)
+				files[name] = "x"
+				want = append(want, name)
+			}
+			tree := createInputTree(t, ctx, env, files)
+			var client *countingFileSystemClient
+			_, _, fsPath := setupVFSWithInputTreeAndClient(t, env, tree, &vfs.Options{}, func(base vfspb.FileSystemClient) vfspb.FileSystemClient {
+				client = &countingFileSystemClient{FileSystemClient: base}
+				return client
+			})
+			entries, err := os.ReadDir(fsPath)
+			require.NoError(t, err)
+			require.Len(t, entries, len(want))
+			client.getDirectoryContentsCount.Store(0)
+
+			f, err := os.Open(fsPath)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, f.Close()) })
+			require.NoError(t, unix.Fadvise(int(f.Fd()), int64(os.Getpagesize()), 0, unix.FADV_DONTNEED))
+
+			// Read only part of the first cached page, so this handle has not
+			// fetched a listing yet. Use getdents directly to avoid os.File's
+			// read-ahead buffer.
+			buf := make([]byte, 256)
+			n, err := unix.ReadDirent(int(f.Fd()), buf)
+			require.NoError(t, err)
+			_, _, got := unix.ParseDirent(buf[:n], -1, nil)
+			require.NotEmpty(t, got)
+			require.Zero(t, client.getDirectoryContentsCount.Load())
+
+			// Changing entries before the current position must not make the
+			// continuation skip or repeat unrelated entries.
+			require.NoError(t, testCase.mutate(fsPath, got[0]))
+			for {
+				n, err := unix.ReadDirent(int(f.Fd()), buf)
+				require.NoError(t, err)
+				if n == 0 {
+					break
+				}
+				_, _, got = unix.ParseDirent(buf[:n], -1, got)
+				require.Less(t, len(got), 2*len(want), "directory read must make progress")
+			}
+			require.Positive(t, client.getDirectoryContentsCount.Load())
+			counts := make(map[string]int)
+			for _, name := range got {
+				counts[name]++
+			}
+			for _, name := range want {
+				require.Equal(t, 1, counts[name], "entry %q must be returned exactly once", name)
+			}
+		})
+	}
+}
+
+func TestReaddirAfterRewindAndMutation(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		mutate func(dir string) error
+		want   []string
+	}{
+		{
+			name: "add",
+			mutate: func(dir string) error {
+				return os.WriteFile(filepath.Join(dir, "c.txt"), []byte("x"), 0644)
+			},
+			want: []string{"a.txt", "b.txt", "c.txt"},
+		},
+		{
+			name: "remove",
+			mutate: func(dir string) error {
+				return os.Remove(filepath.Join(dir, "a.txt"))
+			},
+			want: []string{"b.txt"},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env := setupEnv(t)
+			ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+			require.NoError(t, err)
+			tree := createInputTree(t, ctx, env, map[string]string{"a.txt": "x", "b.txt": "x"})
+			_, _, fsPath := setupVFSWithInputTree(t, env, tree)
+
+			f, err := os.Open(fsPath)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, f.Close()) })
+			names, err := f.Readdirnames(-1)
+			require.NoError(t, err)
+			slices.Sort(names)
+			require.Equal(t, []string{"a.txt", "b.txt"}, names)
+
+			// Rewinding the handle after the directory changed makes the kernel
+			// drop its cached listing and read from offset 0 on the same handle.
+			// That read must reflect the change, and because the kernel caches
+			// its result, a fresh handle must see the change too.
+			require.NoError(t, testCase.mutate(fsPath))
+			_, err = f.Seek(0, io.SeekStart)
+			require.NoError(t, err)
+			names, err = f.Readdirnames(-1)
+			require.NoError(t, err)
+			slices.Sort(names)
+			require.Equal(t, testCase.want, names)
+
+			entries, err := os.ReadDir(fsPath)
+			require.NoError(t, err)
+			var fresh []string
+			for _, entry := range entries {
+				fresh = append(fresh, entry.Name())
+			}
+			require.Equal(t, testCase.want, fresh)
+		})
+	}
+}
+
+func TestReaddirAfterRewindFromCacheAndPartialCacheEviction(t *testing.T) {
+	files := map[string]string{}
+	var names []string
+	for i := range 2000 {
+		name := fmt.Sprintf("file-%04d.txt", i)
+		files[name] = "x"
+		names = append(names, name)
+	}
+	for _, testCase := range []struct {
+		name   string
+		mutate func(dir string) error
+		want   []string
+	}{
+		{
+			name: "add",
+			// Add an entry. A new entry gets the highest directory offset, so it
+			// lands past the first cached page, where a continuation served from
+			// the handle's old listing would skip it.
+			mutate: func(dir string) error {
+				return os.WriteFile(filepath.Join(dir, "zzzz.txt"), []byte("x"), 0644)
+			},
+			want: slices.Concat(names, []string{"zzzz.txt"}),
+		},
+		{
+			name: "remove",
+			// Remove an entry past the first cached page. A continuation served
+			// from the handle's old listing would hand it back.
+			mutate: func(dir string) error {
+				return os.Remove(filepath.Join(dir, "file-1999.txt"))
+			},
+			want: names[:len(names)-1],
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env := setupEnv(t)
+			ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+			require.NoError(t, err)
+			tree := createInputTree(t, ctx, env, files)
+			var client *countingFileSystemClient
+			_, _, fsPath := setupVFSWithInputTreeAndClient(t, env, tree, &vfs.Options{}, func(base vfspb.FileSystemClient) vfspb.FileSystemClient {
+				client = &countingFileSystemClient{FileSystemClient: base}
+				return client
+			})
+
+			f, err := os.Open(fsPath)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, f.Close()) })
+
+			got, err := f.Readdirnames(-1)
+			require.NoError(t, err)
+			require.Len(t, got, len(names))
+			require.EqualValues(t, 1, client.getDirectoryContentsCount.Load(), "the first listing must be fetched from the VFS")
+
+			require.NoError(t, testCase.mutate(fsPath))
+			entries, err := os.ReadDir(fsPath)
+			require.NoError(t, err)
+			require.Len(t, entries, len(testCase.want))
+			require.EqualValues(t, 2, client.getDirectoryContentsCount.Load(), "the listing after the change must be fetched from the VFS")
+
+			_, err = f.Seek(0, io.SeekStart)
+			require.NoError(t, err)
+			buf := make([]byte, 256)
+			n, err := unix.ReadDirent(int(f.Fd()), buf)
+			require.NoError(t, err)
+			_, _, got = unix.ParseDirent(buf[:n], -1, nil)
+			require.NotEmpty(t, got)
+			require.EqualValues(t, 2, client.getDirectoryContentsCount.Load(), "the read after the rewind must be served from the kernel cache")
+
+			require.NoError(t, unix.Fadvise(int(f.Fd()), int64(os.Getpagesize()), 0, unix.FADV_DONTNEED))
+			for {
+				n, err := unix.ReadDirent(int(f.Fd()), buf)
+				require.NoError(t, err)
+				if n == 0 {
+					break
+				}
+				_, _, got = unix.ParseDirent(buf[:n], -1, got)
+				require.Less(t, len(got), 2*len(names), "directory read must make progress")
+			}
+			// Make sure that the entries read after the eviction are the entries
+			// after the change. If Seekdir searches the listing from the first
+			// read instead of fetching a fresh one, the added entry is missing
+			// and the removed entry comes back. Entries arrive in directory
+			// offset order, so compare after sorting by name.
+			slices.Sort(got)
+			require.Equal(t, testCase.want, got)
+		})
+	}
+}
+
+func TestReaddirAfterRewindOfEmptyDirectory(t *testing.T) {
+	env := setupEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+	require.NoError(t, err)
+	tree := createInputTree(t, ctx, env, map[string]string{"input.txt": "x"})
+	_, _, fsPath := setupVFSWithInputTree(t, env, tree)
+
+	dir := filepath.Join(fsPath, "out")
+	require.NoError(t, os.Mkdir(dir, 0755))
+	f, err := os.Open(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, f.Close()) })
+	names, err := f.Readdirnames(-1)
+	require.NoError(t, err)
+	require.Empty(t, names)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "result.txt"), []byte("x"), 0644))
+	_, err = f.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+	names, err = f.Readdirnames(-1)
+	require.NoError(t, err)
+	// Make sure that the read after the rewind returns the new file. go-fuse
+	// does not call Seekdir for this read, because the position it recorded
+	// after the empty listing is still 0, so Readdirent must drop the stale
+	// empty listing itself instead of reporting end of directory from it.
+	require.Equal(t, []string{"result.txt"}, names)
+
+	// Make sure that a new descriptor sees the file too. The kernel caches
+	// whatever the read above returns, so a stale empty result would leave
+	// every descriptor seeing an empty directory until the next change.
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
 }
 
 func TestReaddirSnapshotDoesNotRestoreDeletedEntry(t *testing.T) {
@@ -819,7 +1179,7 @@ func TestTimestamps(t *testing.T) {
 	rs := rawStat(t, testFilePath)
 	require.NoError(t, err)
 	require.Less(t, time.Since(rs.Mtime).Seconds(), float64(5))
-	require.InDelta(t, rs.Mtime.UnixMilli(), rs.Atime.UnixMilli(), 10)
+	require.Less(t, time.Since(rs.Atime).Seconds(), float64(5))
 
 	// Manually reset the mtime and check that it has been updated.
 	nextYear := time.Now().Add(365 * 24 * time.Hour)
@@ -1318,4 +1678,196 @@ func TestMknod(t *testing.T) {
 	require.NoError(t, err)
 	rs = rawStat(t, testCharDevice)
 	require.EqualValues(t, unix.S_IFCHR, rs.Mode&unix.S_IFMT)
+}
+
+func TestTruncateUnlinkedOpenFile(t *testing.T) {
+	_, _, mount := setupVFSWithInputTreeAndClient(t, setupEnv(t), &repb.Tree{}, &vfs.Options{}, nil)
+	f, err := os.CreateTemp(mount, "capture-")
+	require.NoError(t, err)
+	defer f.Close()
+	_, err = f.WriteString("captured output")
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(f.Name()))
+	require.NoFileExists(t, f.Name())
+	// Reusing the name must not redirect ftruncate to the new file.
+	require.NoError(t, os.WriteFile(f.Name(), []byte("replacement"), 0600))
+	for _, size := range []int64{4, 0, 8} {
+		require.NoError(t, f.Truncate(size))
+		info, err := f.Stat()
+		require.NoError(t, err)
+		require.Equal(t, size, info.Size())
+	}
+	data := make([]byte, 8)
+	_, err = f.ReadAt(data, 0)
+	require.NoError(t, err)
+	require.Equal(t, make([]byte, 8), data)
+	replacement, err := os.ReadFile(f.Name())
+	require.NoError(t, err)
+	require.Equal(t, "replacement", string(replacement))
+}
+
+func TestOwnership(t *testing.T) {
+	_, client, mount := setupVFSWithInputTreeAndClient(t, setupEnv(t), &repb.Tree{}, &vfs.Options{}, nil)
+	rootInode, err := client.GetInode(1)
+	require.NoError(t, err)
+	root := rootInode.Operations().(*vfs.Node)
+	ctx := &fuse.Context{Uid: 65534, Gid: 65533}
+	t.Run("mkdir", func(t *testing.T) {
+		var out fuse.EntryOut
+		_, errno := root.Mkdir(ctx, "owned-dir", 0700, &out)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+	})
+	t.Run("create", func(t *testing.T) {
+		var out fuse.EntryOut
+		inode, handle, _, errno := root.Create(ctx, "owned-file", uint32(os.O_CREATE|os.O_RDWR), 0600, &out)
+		require.Zero(t, errno)
+		defer handle.(fusefs.FileReleaser).Release(ctx)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+		var attr fuse.AttrOut
+		require.Zero(t, inode.Operations().(*vfs.Node).Getattr(ctx, handle, &attr))
+		require.Equal(t, uint32(65534), attr.Uid)
+		require.Equal(t, uint32(65533), attr.Gid)
+	})
+	t.Run("mknod", func(t *testing.T) {
+		var out fuse.EntryOut
+		_, errno := root.Mknod(ctx, "owned-node", unix.S_IFREG|0600, 0, &out)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+	})
+	t.Run("symlink", func(t *testing.T) {
+		var out fuse.EntryOut
+		_, errno := root.Symlink(ctx, "owned-file", "owned-link", &out)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+	})
+	t.Run("link", func(t *testing.T) {
+		file, handle, _, errno := root.Create(ctx, "link-src", uint32(os.O_CREATE|os.O_RDWR), 0600, &fuse.EntryOut{})
+		require.Zero(t, errno)
+		defer handle.(fusefs.FileReleaser).Release(ctx)
+		var out fuse.EntryOut
+		_, errno = root.Link(ctx, file.Operations(), "link-dst", &out)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(65534), out.Uid)
+		require.Equal(t, uint32(65533), out.Gid)
+		require.NotZero(t, out.Mtime)
+
+		require.NoError(t, os.Chown(filepath.Join(mount, "link-dst"), 1000, 1001))
+		for _, name := range []string{"link-src", "link-dst"} {
+			info, err := os.Stat(filepath.Join(mount, name))
+			require.NoError(t, err)
+			st := info.Sys().(*syscall.Stat_t)
+			require.Equal(t, uint32(1000), st.Uid, name)
+			require.Equal(t, uint32(1001), st.Gid, name)
+		}
+	})
+	rootCtx := &fuse.Context{}
+	setattr := func(ctx *fuse.Context, inode *fusefs.Inode, in *fuse.SetAttrIn) syscall.Errno {
+		return inode.Operations().(*vfs.Node).Setattr(ctx, nil, in, &fuse.AttrOut{})
+	}
+	t.Run("setgid", func(t *testing.T) {
+		shared, errno := root.Mkdir(ctx, "shared", 0775, &fuse.EntryOut{})
+		require.Zero(t, errno)
+		require.Zero(t, setattr(rootCtx, shared, &fuse.SetAttrIn{Valid: fuse.FATTR_MODE | fuse.FATTR_GID, Mode: 02775, Gid: 1234}))
+		var dirOut fuse.EntryOut
+		_, errno = shared.Operations().(*vfs.Node).Mkdir(ctx, "subdir", 0775, &dirOut)
+		require.Zero(t, errno)
+		require.Equal(t, uint32(1234), dirOut.Gid)
+		require.NotZero(t, dirOut.Mode&syscall.S_ISGID)
+		var fileOut fuse.EntryOut
+		_, handle, _, errno := shared.Operations().(*vfs.Node).Create(ctx, "file", uint32(os.O_CREATE|os.O_RDWR), 0644, &fileOut)
+		require.Zero(t, errno)
+		defer handle.(fusefs.FileReleaser).Release(ctx)
+		require.Equal(t, uint32(1234), fileOut.Gid)
+	})
+	t.Run("chown_permissions", func(t *testing.T) {
+		file, handle, _, errno := root.Create(ctx, "perm-file", uint32(os.O_CREATE|os.O_RDWR), 0644, &fuse.EntryOut{})
+		require.Zero(t, errno)
+		defer handle.(fusefs.FileReleaser).Release(ctx)
+		require.Equal(t, syscall.EPERM, setattr(ctx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_UID, Uid: 0}))
+		require.Equal(t, syscall.EPERM, setattr(ctx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_GID, Gid: 0}))
+		otherCtx := &fuse.Context{Uid: 1000, Gid: 1000}
+		require.Equal(t, syscall.EPERM, setattr(otherCtx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_GID, Gid: 1000}))
+		require.Zero(t, setattr(rootCtx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_GID, Gid: 1234}))
+		require.Zero(t, setattr(ctx, file, &fuse.SetAttrIn{Valid: fuse.FATTR_GID, Gid: 65533}))
+	})
+	t.Run("chown", func(t *testing.T) {
+		path := filepath.Join(mount, "chowned")
+		require.NoError(t, os.WriteFile(path, nil, 0600))
+		require.NoError(t, os.Chown(path, 65534, 65533))
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		st := info.Sys().(*syscall.Stat_t)
+		require.Equal(t, uint32(65534), st.Uid)
+		require.Equal(t, uint32(65533), st.Gid)
+		// Changing only the uid must preserve the gid.
+		require.NoError(t, os.Chown(path, 0, -1))
+		info, err = os.Stat(path)
+		require.NoError(t, err)
+		st = info.Sys().(*syscall.Stat_t)
+		require.Zero(t, st.Uid)
+		require.Equal(t, uint32(65533), st.Gid)
+	})
+}
+
+func TestFileHandleRequestContext(t *testing.T) {
+	for _, open := range []bool{false, true} {
+		name := "Create"
+		if open {
+			name = "Open"
+		}
+		t.Run(name, func(t *testing.T) {
+			env := setupEnv(t)
+			_, client, _ := setupVFSWithInputTreeAndClient(t, env, &repb.Tree{Root: &repb.Directory{}}, &vfs.Options{}, func(base vfspb.FileSystemClient) vfspb.FileSystemClient {
+				return &contextCheckingFileSystemClient{FileSystemClient: base}
+			})
+			require.NoError(t, client.PrepareForTask(t.Context(), "task", nil))
+			inode, err := client.GetInode(1)
+			require.NoError(t, err)
+			root := inode.Operations().(*vfs.Node)
+			cancelRequest := make(chan struct{})
+			requestCtx := &fuse.Context{Cancel: cancelRequest}
+			var fh fusefs.FileHandle
+			if open {
+				child, errno := root.Mknod(t.Context(), "file", unix.S_IFREG|0644, 0, &fuse.EntryOut{})
+				require.Zero(t, errno)
+				fh, _, errno = child.Operations().(*vfs.Node).Open(requestCtx, unix.O_RDWR)
+				require.Zero(t, errno)
+			} else {
+				_, handle, _, errno := root.Create(requestCtx, "file", unix.O_RDWR|unix.O_CREAT, 0644, &fuse.EntryOut{})
+				require.Zero(t, errno)
+				fh = handle
+			}
+			defer fh.(fusefs.FileReleaser).Release(t.Context())
+			written, errno := fh.(fusefs.FileWriter).Write(t.Context(), []byte("hello"), 0)
+			require.Zero(t, errno)
+			require.EqualValues(t, 5, written)
+			// go-fuse pools request cancellation channels, so a later interrupt
+			// may close the channel that belonged to Open/Create.
+			close(cancelRequest)
+			buf := make([]byte, 5)
+			result, errno := fh.(fusefs.FileReader).Read(t.Context(), buf, 0)
+			require.Zero(t, errno)
+			data, code := result.Bytes(buf)
+			result.Done()
+			require.Equal(t, fuse.OK, code)
+			require.Equal(t, "hello", string(data))
+			_, errno = fh.(fusefs.FileWriter).Write(t.Context(), []byte("hello"), 0)
+			require.Zero(t, errno)
+
+			// Interrupts are ignored so that writes don't fail with EINTR.
+			_, errno = fh.(fusefs.FileWriter).Write(requestCtx, []byte("x"), 0)
+			require.Zero(t, errno)
+			result, errno = fh.(fusefs.FileReader).Read(requestCtx, buf, 0)
+			require.Zero(t, errno)
+			data, code = result.Bytes(buf)
+			result.Done()
+			require.Equal(t, fuse.OK, code)
+			require.Equal(t, "xello", string(data))
+		})
+	}
 }

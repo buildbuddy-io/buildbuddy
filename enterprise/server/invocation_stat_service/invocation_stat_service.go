@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/stats"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -25,9 +27,15 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 )
+
+// targetTrendsPageSize is the number of targets returned per page by
+// GetTargetTrends.
+const targetTrendsPageSize = 50
 
 var (
 	readFromOLAPDBEnabled          = flag.Bool("app.enable_read_from_olap_db", true, "If enabled, read from OLAP DB")
@@ -36,7 +44,6 @@ var (
 	useTimezoneInHeatmapQueries    = flag.Bool("app.use_timezone_in_heatmap_queries", true, "If enabled, use timezone instead of 'timezone offset' to compute day boundaries in heatmap queries.")
 	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
 	tagsInDrilldowns               = flag.Bool("app.fetch_tags_drilldown_data", true, "If enabled, DrilldownType_TAG_DRILLDOWN_TYPE can be returned in GetStatDrilldownRequests")
-	finerTimeBuckets               = flag.Bool("app.finer_time_buckets", true, "If enabled, split trends and drilldowns into smaller time buckets when the user has a smaller date range selected.")
 	targetTrendsEnabled            = flag.Bool("app.enable_target_trends", true, "Enables GetTargetTrends, which returns execution data aggregated by Bazel target.")
 )
 
@@ -78,133 +85,11 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 	}
 }
 
-type StatInterval int
-
-const (
-	StatInterval5Minutes StatInterval = iota
-	StatInterval15Minutes
-	StatInterval30Minutes
-	StatInterval1Hour
-	StatInterval2Hours
-	StatInterval4Hours
-	StatInterval1Day
-)
-
-func (s StatInterval) Duration() time.Duration {
-	switch s {
-	case StatInterval5Minutes:
-		return 5 * time.Minute
-	case StatInterval15Minutes:
-		return 15 * time.Minute
-	case StatInterval30Minutes:
-		return 30 * time.Minute
-	case StatInterval1Hour:
-		return 1 * time.Hour
-	case StatInterval2Hours:
-		return 2 * time.Hour
-	case StatInterval4Hours:
-		return 4 * time.Hour
-	case StatInterval1Day:
-		return 24 * time.Hour
-	}
-	return 24 * time.Hour
-}
-
-func (s StatInterval) IntervalProto() *stpb.StatsInterval {
-	switch s {
-	case StatInterval5Minutes:
-		return &stpb.StatsInterval{
-			Type:  stpb.IntervalType_INTERVAL_TYPE_MINUTE,
-			Count: 5,
-		}
-	case StatInterval15Minutes:
-		return &stpb.StatsInterval{
-			Type:  stpb.IntervalType_INTERVAL_TYPE_MINUTE,
-			Count: 15,
-		}
-	case StatInterval30Minutes:
-		return &stpb.StatsInterval{
-			Type:  stpb.IntervalType_INTERVAL_TYPE_MINUTE,
-			Count: 30,
-		}
-	case StatInterval1Hour:
-		return &stpb.StatsInterval{
-			Type:  stpb.IntervalType_INTERVAL_TYPE_HOUR,
-			Count: 1,
-		}
-	case StatInterval2Hours:
-		return &stpb.StatsInterval{
-			Type:  stpb.IntervalType_INTERVAL_TYPE_HOUR,
-			Count: 2,
-		}
-	case StatInterval4Hours:
-		return &stpb.StatsInterval{
-			Type:  stpb.IntervalType_INTERVAL_TYPE_HOUR,
-			Count: 4,
-		}
-	case StatInterval1Day:
-		return &stpb.StatsInterval{
-			Type:  stpb.IntervalType_INTERVAL_TYPE_DAY,
-			Count: 1,
-		}
-	}
-	return &stpb.StatsInterval{
-		Type:  stpb.IntervalType_INTERVAL_TYPE_DAY,
-		Count: 1,
-	}
-}
-
-func (s StatInterval) ClickhouseInterval() string {
-	switch s {
-	case StatInterval5Minutes:
-		return "5 MINUTE"
-	case StatInterval15Minutes:
-		return "15 MINUTE"
-	case StatInterval30Minutes:
-		return "30 MINUTE"
-	case StatInterval1Hour:
-		return "1 HOUR"
-	case StatInterval2Hours:
-		return "2 HOUR"
-	case StatInterval4Hours:
-		return "4 HOUR"
-	case StatInterval1Day:
-		return "1 DAY"
-	}
-	return "1 DAY"
-}
-
 type trendTimeSettings struct {
 	start    *time.Time
 	end      *time.Time
-	interval StatInterval
+	interval stats.StatInterval
 	location *time.Location
-}
-
-// These values are currently set to keep us under ~50 intervals in a response.
-// We need to make some visual improvements to cache charts so that they're
-// easier to read with lots of small intervals before we can do more than this.
-func computeTrendsInterval(d time.Duration) StatInterval {
-	if d <= 3*time.Hour {
-		return StatInterval5Minutes
-	}
-	if d <= 12*time.Hour {
-		return StatInterval15Minutes
-	}
-	// 25 hours so that even when crossing DST, we still show 30-min intervals.
-	if d <= 25*time.Hour {
-		return StatInterval30Minutes
-	}
-	if d <= 48*time.Hour {
-		return StatInterval1Hour
-	}
-	if d <= 4*24*time.Hour {
-		return StatInterval2Hours
-	}
-	if d <= 8*24*time.Hour {
-		return StatInterval4Hours
-	}
-	return StatInterval1Day
 }
 
 func (i *InvocationStatService) getTrendTimeSettings(tq *stpb.TrendQuery, timezone string) *trendTimeSettings {
@@ -222,11 +107,11 @@ func (i *InvocationStatService) getTrendTimeSettings(tq *stpb.TrendQuery, timezo
 		location = time.UTC
 	}
 
-	var interval StatInterval
+	var interval stats.StatInterval
 	if !i.finerTimeBucketsEnabled() {
-		interval = StatInterval1Day
+		interval = stats.StatInterval1Day
 	} else {
-		interval = computeTrendsInterval(endTime.Sub(startTime))
+		interval = stats.ComputeStatInterval(endTime.Sub(startTime))
 	}
 
 	return &trendTimeSettings{
@@ -237,9 +122,9 @@ func (i *InvocationStatService) getTrendTimeSettings(tq *stpb.TrendQuery, timezo
 	}
 }
 
-func (i *InvocationStatService) getTrendBasicQuery(tq *stpb.TrendQuery, timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []interface{}) {
+func (i *InvocationStatService) getTrendBasicQuery(tq *stpb.TrendQuery, timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []any) {
 	var q string
-	var qArgs []interface{}
+	var qArgs []any
 	if i.isOLAPDBEnabled() {
 		if i.finerTimeBucketsEnabled() {
 			bucketStr, bucketArgs := i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())
@@ -325,7 +210,7 @@ func (i *InvocationStatService) flattenTrendsQuery(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, includeExecutionDimensionFilters bool, reqCtx *ctxpb.RequestContext) error {
+func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, isExecutionQuery bool, reqCtx *ctxpb.RequestContext) error {
 
 	if user := tq.GetUser(); user != "" {
 		q.AddWhereClause("\"user\" = ?", user)
@@ -405,7 +290,7 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		q.AddWhereClause(str, args...)
 	}
 	for _, f := range tq.GetDimensionFilter() {
-		if !includeExecutionDimensionFilters && f.GetDimension().Execution != nil {
+		if !isExecutionQuery && f.GetDimension().Execution != nil {
 			continue
 		}
 		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
@@ -414,8 +299,14 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		}
 		q.AddWhereClause(str, args...)
 	}
+	if isExecutionQuery {
+		// Merged links reuse work rather than adding executions to aggregates.
+		// If the original link is missing or outside the query, these aggregates
+		// intentionally omit the execution; selected examples retain merged links.
+		q.AddWhereClause("invocation_link_type != ?", int(sipb.StoredInvocationLink_MERGED))
+	}
 	queryObjects := sfpb.ObjectTypes_INVOCATION_OBJECTS
-	if includeExecutionDimensionFilters {
+	if isExecutionQuery {
 		queryObjects = sfpb.ObjectTypes_EXECUTION_OBJECTS
 	}
 
@@ -424,14 +315,10 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		dialectName = i.olapdbh.DialectName()
 	}
 
-	for _, f := range tq.GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, queryObjects, dialectName)
-		if err != nil {
-			return err
-		}
-		q.AddWhereClause(s, a...)
+	err := filter.AddGenericFiltersToQuery(q, tq.GetGenericFilters(), queryObjects, dialectName)
+	if err != nil {
+		return err
 	}
-
 	q.AddWhereClause(`group_id = ?`, reqCtx.GetGroupId())
 	return nil
 }
@@ -510,12 +397,12 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 	return res, nil
 }
 
-func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []interface{}) {
+func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []any) {
 	if !i.finerTimeBucketsEnabled() {
 		return fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
 		quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec AND queued_timestamp_usec > 0, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
 		SUM(GREATEST(COALESCE(worker_completed_timestamp_usec - worker_start_timestamp_usec, 0), 0)) as total_build_time_usec
-		FROM "Executions"`, make([]interface{}, 0)
+		FROM "Executions"`, make([]any, 0)
 	}
 
 	bucketStr, bucketArgs := i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())
@@ -710,7 +597,7 @@ var coarseLogStepMultipliers = []int64{1, 2, 4, 6, 8}
 
 // getMetricMinMax returns the smallest and largest values of the given metric
 // matching the where clause. found is false when there are no matching rows.
-func (i *InvocationStatService) getMetricMinMax(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) (low int64, high int64, found bool, err error) {
+func (i *InvocationStatService) getMetricMinMax(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []any) (low int64, high int64, found bool, err error) {
 	rangeQuery := fmt.Sprintf(`SELECT min(%s) as low, max(%s) as high FROM "%s" %s`, metric, metric, table, whereClauseStr)
 	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_metric_range").Raw(rangeQuery, whereClauseArgs...)
 	valueRange := struct {
@@ -847,7 +734,7 @@ func subdivideLogBuckets(buckets []int64, stepMultipliers []int64) []int64 {
 	return subdivided
 }
 
-func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}, logScale bool) (buckets []int64, arrayStr string, hadNegative bool, err error) {
+func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []any, logScale bool) (buckets []int64, arrayStr string, hadNegative bool, err error) {
 	low, high, found, err := i.getMetricMinMax(ctx, table, metric, whereClauseStr, whereClauseArgs)
 	if err != nil {
 		return nil, "", false, err
@@ -971,7 +858,7 @@ type HeatmapQueryInputs = struct {
 	HadNegativeMetricValues bool
 }
 
-func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []interface{}, requestContext *ctxpb.RequestContext, logScale bool) (*HeatmapQueryInputs, error) {
+func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []any, requestContext *ctxpb.RequestContext, logScale bool) (*HeatmapQueryInputs, error) {
 	timestampBuckets, timestampArrayStr, err := i.getTimestampBuckets(q, requestContext)
 	if err != nil {
 		return nil, err
@@ -1001,7 +888,7 @@ func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table s
 		HadNegativeMetricValues: hadNegative}, nil
 }
 
-func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []interface{}, error) {
+func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []any, error) {
 	placeholderQuery := query_builder.NewQuery("")
 	if err := i.addWhereClauses(placeholderQuery, q, m.Execution != nil, reqCtx); err != nil {
 		return "", nil, err
@@ -1015,7 +902,7 @@ func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q 
 
 type QueryAndBuckets = struct {
 	Query                   string
-	QueryArgs               []interface{}
+	QueryArgs               []any
 	TimestampBuckets        []int64
 	MetricBuckets           []int64
 	HadNegativeMetricValues bool
@@ -1236,13 +1123,9 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	} else {
 		dbh = i.dbh
 	}
-
-	for _, f := range req.GetQuery().GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS, dbh.DialectName())
-		if err != nil {
-			return nil, err
-		}
-		q.AddWhereClause(s, a...)
+	err = filter.AddGenericFiltersToQuery(q, req.GetQuery().GetGenericFilters(), sfpb.ObjectTypes_INVOCATION_OBJECTS, dbh.DialectName())
+	if err != nil {
+		return nil, err
 	}
 
 	statusClauses := toStatusClauses(req.GetQuery().GetStatus())
@@ -1269,7 +1152,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	return rsp, err
 }
 
-func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilldownFields []string, req *stpb.GetStatDrilldownRequest, where string, whereArgs []interface{}, drilldown string, drilldownArgs []interface{}, col string) (string, []interface{}) {
+func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilldownFields []string, req *stpb.GetStatDrilldownRequest, where string, whereArgs []any, drilldown string, drilldownArgs []any, col string) (string, []any) {
 	// This is really ugly--the clickhouse SQL engine doesn't play nice with GORM
 	// when you set a field name to NULL that matches a field in the table you are
 	// selecting--it blows away the type info and turns it into Sql.RawBytes.  To
@@ -1321,12 +1204,12 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 		nulledOutFieldList, drilldown, drilldown, table, where, groupByCol), args
 }
 
-func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{}, error) {
+func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []any, error) {
 	if len(filters) == 0 {
-		return "FALSE", []interface{}{}, nil
+		return "FALSE", []any{}, nil
 	}
 	var result []string
-	var resultArgs []interface{}
+	var resultArgs []any
 	for _, f := range filters[:] {
 		str, args, err := filter.GenerateFilterStringAndArgs(f)
 		if err != nil {
@@ -1341,7 +1224,7 @@ func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{},
 // TODO(jdhollen): This can be made much efficient using GROUPING SETS when we
 // are able to upgrade to clickhouse 22.6 or later.  The release date for 22.8
 // from Altinity is supposed to be 2023-02-15.
-func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []interface{}, error) {
+func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []any, error) {
 	if req.GetDrilldownMetric() == nil {
 		return "", nil, status.InvalidArgumentError("Missing metric for drilldown request.")
 	}
@@ -1350,12 +1233,15 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 		drilldownFields = append(drilldownFields, "tag")
 	}
 	executionDrilldownFields := []string{"worker", "target_label", "action_mnemonic", "effective_pool", "exit_code", "os", "arch"}
+	invocationDrilldownFields := []string{"bazel_exit_code"}
 	if req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC {
 		drilldownFields = append(drilldownFields, executionDrilldownFields...)
+	} else {
+		drilldownFields = append(drilldownFields, invocationDrilldownFields...)
 	}
 	placeholderQuery := query_builder.NewQuery("")
 
-	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC, req.GetRequestContext()); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetDrilldownMetric().Execution != nil, req.GetRequestContext()); err != nil {
 		return "", nil, err
 	}
 
@@ -1366,7 +1252,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 
 	whereString, whereArgs := placeholderQuery.Build()
 
-	args := make([]interface{}, 0)
+	args := make([]any, 0)
 	queries := make([]string, 0)
 	subQStr, subQArgs := i.getDrilldownSubquery(ctx, drilldownFields, req, whereString, whereArgs, drilldownStr, drilldownArgs, "")
 	queries = append(queries, subQStr)
@@ -1450,6 +1336,14 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 		return nil, err
 	}
 
+	page, err := paging.DecodeOffsetLimit(req.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	if page.GetOffset() < 0 {
+		return nil, status.InvalidArgumentErrorf("invalid page token: negative offset %d", page.GetOffset())
+	}
+
 	// Normalize repo URL before we use it in any queries.
 	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
 		repoURL, err := git.NormalizeRepoURL(repoURL)
@@ -1479,6 +1373,12 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 
 	innerQ.AddWhereClause("cached_result = FALSE")
 	innerQ.AddWhereClause("target_label != ''")
+	// Apply the label filter before aggregating so that we only aggregate
+	// executions for matching targets. Using a position function rather than
+	// LIKE means we don't need to escape wildcard characters in the filter.
+	if labelFilter := req.GetTargetLabelFilter(); labelFilter != "" {
+		innerQ.AddWhereClause("positionCaseInsensitiveUTF8(target_label, ?) > 0", labelFilter)
+	}
 	innerQ.SetGroupBy("target_label, execution_uuid")
 
 	innerQStr, innerQArgs := innerQ.Build()
@@ -1487,8 +1387,12 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 		SELECT target_label as target, toInt64(%s(v)) as value
 		FROM ( %s )`, getAggregationFnString(req.GetAgg()), innerQStr), innerQArgs)
 	q.SetGroupBy("target_label")
-	q.SetOrderBy("value", false) // Descending order
-	q.SetLimit(1000)             // Reasonable limit to avoid overwhelming the response
+	// Sort by value descending, breaking ties by label so that the ordering is
+	// stable across pages.
+	q.SetOrderBy("value DESC, target", true /*=ascending*/)
+	// Fetch one extra row so we can tell whether there is another page.
+	q.SetLimit(targetTrendsPageSize + 1)
+	q.SetOffset(page.GetOffset())
 
 	qStr, qArgs := q.Build()
 	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_target_trends").Raw(qStr, qArgs...)
@@ -1498,7 +1402,19 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 		return nil, err
 	}
 
-	return &stpb.GetTargetTrendsResponse{TargetStats: targetStats}, nil
+	rsp := &stpb.GetTargetTrendsResponse{TargetStats: targetStats}
+	if len(targetStats) > targetTrendsPageSize {
+		rsp.TargetStats = targetStats[:targetTrendsPageSize]
+		nextPageToken, err := paging.EncodeOffsetLimit(&pgpb.OffsetLimit{
+			Offset: page.GetOffset() + targetTrendsPageSize,
+			Limit:  targetTrendsPageSize,
+		})
+		if err != nil {
+			return nil, err
+		}
+		rsp.NextPageToken = nextPageToken
+	}
+	return rsp, nil
 }
 
 func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error) {
@@ -1539,6 +1455,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		GormExitCode       *string
 		GormArch           *string
 		GormOs             *string
+		GormBazelExitCode  *string
 		Selection          int64
 		Inverse            int64
 	}
@@ -1581,6 +1498,8 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 			addOutputChartEntry(m, dm, stpb.DrilldownType_OS_DRILLDOWN_TYPE, stat.GormOs, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormArch != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_ARCH_DRILLDOWN_TYPE, stat.GormArch, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormBazelExitCode != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_BAZEL_EXIT_CODE_DRILLDOWN_TYPE, stat.GormBazelExitCode, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormTag != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_TAG_DRILLDOWN_TYPE, stat.GormTag, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {
@@ -1632,7 +1551,7 @@ func (i *InvocationStatService) isOLAPDBEnabled() bool {
 }
 
 func (i *InvocationStatService) finerTimeBucketsEnabled() bool {
-	return i.isOLAPDBEnabled() && *finerTimeBuckets
+	return i.isOLAPDBEnabled() && stats.FinerTimeBucketsEnabled()
 }
 
 func (i *InvocationStatService) isInvocationPercentilesEnabled() bool {

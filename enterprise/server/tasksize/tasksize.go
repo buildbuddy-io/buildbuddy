@@ -729,15 +729,13 @@ func applyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd
 		limitMaxDisk = !efp.Boolean(ctx, "disable-task-sizing-disk-limit", false)
 	}
 
-	if limitMaxDisk && clone.EstimatedFreeDiskBytes > MaxEstimatedFreeDisk {
+	maxDisk := MaxEstimatedFreeDisk
+	if props != nil && !props.RecycleRunner {
+		maxDisk = MaxEstimatedFreeDiskRecycleFalse
+	}
+	if limitMaxDisk && clone.EstimatedFreeDiskBytes > maxDisk {
 		request := clone.EstimatedFreeDiskBytes
-		if props == nil {
-			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
-		} else if props.RecycleRunner {
-			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
-		} else {
-			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDiskRecycleFalse
-		}
+		clone.EstimatedFreeDiskBytes = maxDisk
 		log.CtxInfof(ctx, "Task requested %d free disk, capped at %d", request, clone.EstimatedFreeDiskBytes)
 	}
 	return clone

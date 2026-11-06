@@ -156,10 +156,7 @@ func (e *Encryptor) Write(p []byte) (n int, err error) {
 
 	readIdx := 0
 	for readIdx < len(p) {
-		readLen := e.bufCap - e.bufIdx
-		if readLen > len(p)-readIdx {
-			readLen = len(p) - readIdx
-		}
+		readLen := min(e.bufCap-e.bufIdx, len(p)-readIdx)
 		copy(e.buf[e.bufIdx:], p[readIdx:readIdx+readLen])
 		e.bufIdx += readLen
 		readIdx += readLen

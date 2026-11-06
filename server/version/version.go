@@ -22,6 +22,12 @@ var commitSha string
 //go:embed version.txt
 var versionTag string
 
+//go:embed latest_public_release.txt
+var latestPublicReleaseTag string
+
+//go:embed public_commit.txt
+var publicCommitSha string
+
 func init() {
 	metrics.Version.With(prometheus.Labels{
 		metrics.VersionLabel: Tag(),
@@ -42,6 +48,33 @@ func Tag() string {
 		return versionTag
 	}
 	return unknownValue
+}
+
+// LatestPublicRelease returns the latest public release (vX.Y.Z) as of this
+// build. If the build didn't stamp it, it falls back to the version tag, which
+// was the release for every build before STABLE_LATEST_PUBLIC_RELEASE existed.
+func LatestPublicRelease() string {
+	return selectLatestPublicRelease(latestPublicReleaseTag, Tag())
+}
+
+func selectLatestPublicRelease(stamped, tag string) string {
+	if stamped != "" && stamped != "{STABLE_LATEST_PUBLIC_RELEASE}" {
+		return stamped
+	}
+	return tag
+}
+
+// PublicCommit returns the commit to link the version to. If the build didn't
+// stamp STABLE_BUILDBUDDY_COMMIT_SHA, Commit() is already that commit.
+func PublicCommit() string {
+	return selectPublicCommit(publicCommitSha, Commit())
+}
+
+func selectPublicCommit(stamped, commit string) string {
+	if stamped != "" && stamped != "{STABLE_BUILDBUDDY_COMMIT_SHA}" {
+		return stamped
+	}
+	return commit
 }
 
 func GoVersion() string {

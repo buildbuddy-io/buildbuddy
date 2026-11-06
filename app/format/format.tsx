@@ -1,4 +1,4 @@
-import { isSameDay } from "date-fns";
+import { endOfMonth, isSameDay, startOfMonth } from "date-fns";
 import Long from "long";
 import moment from "moment";
 import { google as google_duration } from "../../proto/duration_ts_proto";
@@ -317,6 +317,13 @@ export function formatDateRange(startDate: Date, endDate?: Date, { now = new Dat
     }
   }
 
+  // Whole calendar months, as the date picker's month presets select.
+  if (endDate && isSameDay(startDate, startOfMonth(startDate)) && isSameDay(endDate, endOfMonth(startDate))) {
+    const monthsAgo = moment(now).startOf("month").diff(moment(startDate).startOf("month"), "months");
+    if (monthsAgo === 0) return "Current month";
+    if (monthsAgo === 1) return "Last month";
+  }
+
   // Start time is at midnight, end date is (implicitly or explicitly) today.
   if (!endDate || isSameDay(now, endDate)) {
     if (isSameDay(now, startDate)) {
@@ -403,6 +410,23 @@ export function formatWithCommas(num: number | Long | Number | undefined, option
   return (+num).toLocaleString("en-US", options);
 }
 
+/** Formats an amount in US cents as dollars, e.g. 815.84 -> "$8.16". */
+export function formatCents(cents: number): string {
+  return (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+/** Formats a unit price in US cents, dropping the cents when whole, e.g. 10000 -> "$100", 25 -> "$0.25". */
+export function formatPrice(cents: number): string {
+  const dollars = cents / 100;
+  const fractionDigits = Number.isInteger(dollars) ? 0 : 2;
+  return dollars.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  });
+}
+
 export function differenceInCalendarDays(start: Date, end: Date) {
   return moment(end).diff(start, "days");
 }
@@ -444,6 +468,8 @@ export default {
   formatCommitHash,
   formatRole,
   formatWithCommas,
+  formatCents,
+  formatPrice,
   formatDateRange,
   colorHashHue,
   enumLabel,

@@ -10,13 +10,13 @@ import (
 )
 
 // Run executes a request using the requested agent.
-func Run(ctx context.Context, req *agentutil.RunRequest) (*agentutil.RunResponse, error) {
+func Run(ctx context.Context, req *agentutil.RunRequest) error {
 	switch req.Agent {
 	case agentutil.Claude:
 		return claude.Run(ctx, req)
 	case agentutil.Codex:
 		return codex.Run(ctx, req)
 	default:
-		return nil, fmt.Errorf("unsupported agent %q", req.Agent)
+		return fmt.Errorf("unsupported agent %q", req.Agent)
 	}
 }

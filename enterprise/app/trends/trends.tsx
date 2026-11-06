@@ -12,11 +12,11 @@ import { stats } from "../../../proto/stats_ts_proto";
 import FilterComponent from "../filter/filter";
 import { getEndDate, getProtoFilterParams } from "../filter/filter_util";
 import CacheChartComponent from "./cache_chart";
-import { computeTimeKeys, getAverage, getTotal } from "./common";
+import { computeTimeKeys, getAverage, getTotal, longFormatTsForInterval, shortFormatTsForAxis } from "./common";
 import DrilldownPageComponent from "./drilldown_page";
 import PercentilesChartComponent from "./percentile_chart";
 import TrendsSummaryCard from "./summary_card";
-import TrendsChartComponent, { ChartColor } from "./trends_chart";
+import TrendsChartComponent, { ChartColor, SeriesType } from "./trends_chart";
 
 const BITS_PER_BYTE = 8;
 
@@ -216,23 +216,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
     return this.state.timeKeys.map((tsMillis) => this.getExecutionStat(tsMillis));
   }
 
-  formatLongDate(timestampMillis: number) {
-    if (this.state.interval == stats.IntervalType.INTERVAL_TYPE_DAY) {
-      return moment(timestampMillis).format("dddd, MMMM Do YYYY");
-    }
-    return moment(timestampMillis).format("dddd, MMMM Do YYYY HH:mm");
-  }
-
-  formatShortDate(timestampMillis: number) {
-    const time = moment(timestampMillis);
-
-    if (time.hour() === 0) {
-      return time.format("MMM D");
-    }
-
-    return time.format("HH:mm");
-  }
-
   onBarClicked(hash: string, sortBy: string, tsMillis: number) {
     const date = new Date(tsMillis).toISOString().split("T")[0];
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
@@ -311,6 +294,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: `failed builds (${format.count(
                       getTotal(this.getStats(), (stat) => +(stat.failedBuilds ?? 0))
                     )})`,
@@ -321,6 +305,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     color: ChartColor.RED,
                   },
                   {
+                    type: SeriesType.BAR,
                     name: `successful builds (${format.count(
                       getTotal(this.getStats(), (stat) => +(stat.successfulBuilds ?? 0))
                     )})`,
@@ -331,6 +316,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     color: ChartColor.GREEN,
                   },
                   {
+                    type: SeriesType.LINE,
                     name: `average build duration (${format.durationUsec(
                       getAverage(
                         this.getStats().filter((stat) => stat.completedInvocationCount),
@@ -345,8 +331,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                       );
                     },
                     formatHoverValue: (value) => `${format.durationSec(value)} average`,
-                    isLine: true,
                     usesSecondaryAxis: true,
+                    color: ChartColor.BLUE,
                   },
                 ]}
                 primaryYAxis={{
@@ -357,8 +343,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatTickValue: format.durationSec,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
                 onZoomSelection={this.onChartZoomed.bind(this, "")}
               />
@@ -368,8 +354,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   id="duration"
                   data={this.state.timeKeys}
                   ticks={this.state.ticks}
-                  extractLabel={this.formatShortDate.bind(this)}
-                  formatHoverLabel={this.formatLongDate.bind(this)}
+                  extractLabel={shortFormatTsForAxis}
+                  formatHoverLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                   extractP50={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP75={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP75 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP90={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
@@ -386,6 +372,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   data={this.state.timeKeys}
                   dataSeries={[
                     {
+                      type: SeriesType.BAR,
                       name: "average build duration",
                       extractValue: (tsMillis) => {
                         let stat = this.getStat(tsMillis);
@@ -393,20 +380,23 @@ export default class TrendsComponent extends React.Component<Props, State> {
                       },
                       formatHoverValue: (value) => `${format.durationSec(value || 0)} average`,
                       onClick: this.onBarClicked.bind(this, "", ""),
+                      color: ChartColor.GREEN,
                     },
                     {
+                      type: SeriesType.BAR,
                       name: "slowest build duration",
                       extractValue: (tsMillis) => +(this.getStat(tsMillis).maxDurationUsec ?? 0) / 1000000,
                       formatHoverValue: (value) => `${format.durationSec(value || 0)} slowest`,
                       onClick: this.onBarClicked.bind(this, "", "duration"),
+                      color: ChartColor.GREEN,
                     },
                   ]}
                   primaryYAxis={{
                     formatTickValue: format.durationSec,
                     allowDecimals: false,
                   }}
-                  formatXAxisLabel={this.formatShortDate.bind(this)}
-                  formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                  formatXAxisLabel={shortFormatTsForAxis}
+                  formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                   ticks={this.state.ticks}
                   onZoomSelection={this.onChartZoomed.bind(this, "duration")}
                 />
@@ -416,9 +406,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 title="Action Cache"
                 id="cache"
                 data={this.state.timeKeys}
-                extractLabel={this.formatShortDate.bind(this)}
+                extractLabel={shortFormatTsForAxis}
                 ticks={this.state.ticks}
-                formatHoverLabel={this.formatLongDate.bind(this)}
+                formatHoverLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 extractHits={(tsMillis) => +(this.getStat(tsMillis).actionCacheHits ?? 0)}
                 totalHits={getTotal(this.getStats(), (stat) => +(stat.actionCacheHits ?? 0))}
                 secondaryBarName="misses"
@@ -437,9 +427,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 title="Content Addressable Store"
                 id="cas"
                 data={this.state.timeKeys}
-                extractLabel={this.formatShortDate.bind(this)}
+                extractLabel={shortFormatTsForAxis}
                 ticks={this.state.ticks}
-                formatHoverLabel={this.formatLongDate.bind(this)}
+                formatHoverLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 extractHits={(tsMillis) => +(this.getStat(tsMillis).casCacheHits ?? 0)}
                 totalHits={getTotal(this.getStats(), (stat) => +(stat.casCacheHits ?? 0))}
                 secondaryBarName="writes"
@@ -457,20 +447,23 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: `total download size (${format.bytes(
                       getTotal(this.getStats(), (stat) => +(stat.totalDownloadSizeBytes ?? 0))
                     )})`,
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).totalDownloadSizeBytes ?? 0),
                     formatHoverValue: (value) => `${format.bytes(value || 0)} downloaded`,
+                    color: ChartColor.GREEN,
                   },
                   {
+                    type: SeriesType.LINE,
                     name: "download rate",
                     extractValue: (tsMillis) =>
                       (+(this.getStat(tsMillis).totalDownloadSizeBytes ?? 0) * BITS_PER_BYTE) /
                       (+(this.getStat(tsMillis).totalDownloadUsec ?? 0) * SECONDS_PER_MICROSECOND),
                     formatHoverValue: (value) => format.bitsPerSecond(value || 0),
-                    isLine: true,
                     usesSecondaryAxis: true,
+                    color: ChartColor.BLUE,
                   },
                 ]}
                 primaryYAxis={{
@@ -481,8 +474,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatTickValue: format.bitsPerSecond,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
                 onZoomSelection={this.onChartZoomed.bind(this, "")}
               />
@@ -492,20 +485,23 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: `total upload size (${format.bytes(
                       getTotal(this.getStats(), (stat) => +(stat.totalUploadSizeBytes ?? 0))
                     )})`,
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).totalUploadSizeBytes ?? 0),
                     formatHoverValue: (value) => `${format.bytes(value || 0)} uploaded`,
+                    color: ChartColor.GREEN,
                   },
                   {
+                    type: SeriesType.LINE,
                     name: "upload rate",
                     extractValue: (tsMillis) =>
                       (+(this.getStat(tsMillis).totalUploadSizeBytes ?? 0) * BITS_PER_BYTE) /
                       (+(this.getStat(tsMillis).totalUploadUsec ?? 0) * SECONDS_PER_MICROSECOND),
                     formatHoverValue: (value) => format.bitsPerSecond(value || 0),
-                    isLine: true,
                     usesSecondaryAxis: true,
+                    color: ChartColor.BLUE,
                   },
                 ]}
                 primaryYAxis={{
@@ -516,8 +512,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatTickValue: format.bitsPerSecond,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
                 onZoomSelection={this.onChartZoomed.bind(this, "")}
               />
@@ -529,18 +525,20 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   data={this.state.timeKeys}
                   dataSeries={[
                     {
+                      type: SeriesType.BAR,
                       name: "saved cpu time",
                       extractValue: (tsMillis) =>
                         +(this.getStat(tsMillis).totalCpuMicrosSaved ?? 0) * SECONDS_PER_MICROSECOND,
                       formatHoverValue: (value) => `${format.durationSec(value || 0)} CPU time saved`,
+                      color: ChartColor.GREEN,
                     },
                   ]}
                   primaryYAxis={{
                     formatTickValue: format.durationSec,
                     allowDecimals: false,
                   }}
-                  formatXAxisLabel={this.formatShortDate.bind(this)}
-                  formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                  formatXAxisLabel={shortFormatTsForAxis}
+                  formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                   ticks={this.state.ticks}
                   onZoomSelection={this.onChartZoomed.bind(this, "")}
                 />
@@ -550,18 +548,20 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "users with builds",
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).userCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " users",
                     onClick: this.onBarClicked.bind(this, "#users", ""),
+                    color: ChartColor.GREEN,
                   },
                 ]}
                 primaryYAxis={{
                   formatTickValue: format.count,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
               />
               <TrendsChartComponent
@@ -569,18 +569,20 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "commits with builds",
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).commitCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " commits",
                     onClick: this.onBarClicked.bind(this, "#commits", ""),
+                    color: ChartColor.GREEN,
                   },
                 ]}
                 primaryYAxis={{
                   formatTickValue: format.count,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
               />
               <TrendsChartComponent
@@ -588,18 +590,20 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "branches with builds",
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).branchCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " branches",
                     onClick: this.onBarClicked.bind(this, "#branches", ""),
+                    color: ChartColor.GREEN,
                   },
                 ]}
                 primaryYAxis={{
                   formatTickValue: format.count,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
               />
               <TrendsChartComponent
@@ -607,18 +611,20 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "hosts with builds",
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).hostCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " hosts",
                     onClick: this.onBarClicked.bind(this, "#hosts", ""),
+                    color: ChartColor.GREEN,
                   },
                 ]}
                 primaryYAxis={{
                   formatTickValue: format.count,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
               />
               <TrendsChartComponent
@@ -626,18 +632,20 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "repos with builds",
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).repoCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " repos",
                     onClick: this.onBarClicked.bind(this, "#repos", ""),
+                    color: ChartColor.GREEN,
                   },
                 ]}
                 primaryYAxis={{
                   formatTickValue: format.count,
                   allowDecimals: false,
                 }}
-                formatXAxisLabel={this.formatShortDate.bind(this)}
-                formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                formatXAxisLabel={shortFormatTsForAxis}
+                formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                 ticks={this.state.ticks}
               />
               {this.state.timeToExecutionStatMap.size > 0 && (
@@ -648,29 +656,31 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     id="build_time"
                     dataSeries={[
                       {
+                        type: SeriesType.BAR,
                         name: `build time, minutes (${format.durationUsec(
                           getTotal(this.getExecutionStats(), (stat) => +(stat.totalBuildTimeUsec ?? 0))
                         )})`,
                         extractValue: (tsMillis) =>
                           +(+(this.getExecutionStat(tsMillis).totalBuildTimeUsec ?? 0) / 60e6).toPrecision(3),
                         formatHoverValue: (value) => `${format.count(value || 0)} minutes of build time`,
+                        color: ChartColor.GREEN,
                       },
                     ]}
                     primaryYAxis={{
                       formatTickValue: format.count,
                       allowDecimals: false,
                     }}
-                    formatXAxisLabel={this.formatShortDate.bind(this)}
-                    formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                    formatXAxisLabel={shortFormatTsForAxis}
+                    formatHoverXAxisLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                     ticks={this.state.ticks}
                     onZoomSelection={this.onChartZoomed.bind(this, "")}
                   />
                   <PercentilesChartComponent
                     title="Remote Execution Queue Duration"
                     data={this.state.timeKeys}
-                    extractLabel={this.formatShortDate.bind(this)}
+                    extractLabel={shortFormatTsForAxis}
                     ticks={this.state.ticks}
-                    formatHoverLabel={this.formatLongDate.bind(this)}
+                    formatHoverLabel={(ts) => longFormatTsForInterval(this.state.interval, ts)}
                     extractP50={(tsMillis) =>
                       +(this.getExecutionStat(tsMillis).queueDurationUsecP50 ?? 0) * SECONDS_PER_MICROSECOND
                     }

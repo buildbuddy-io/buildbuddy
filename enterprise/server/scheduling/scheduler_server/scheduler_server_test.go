@@ -3,6 +3,7 @@ package scheduler_server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"sort"
@@ -24,30 +25,37 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testleak"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
+	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
-	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
 const (
@@ -106,6 +114,7 @@ type schedulerOpts struct {
 }
 
 func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, context.Context) {
+	testleak.Check(t)
 	redisTarget := testredis.Start(t).Target
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
@@ -122,7 +131,9 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	err = redis_execution_collector.Register(env)
 	require.NoError(t, err)
 
-	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	// Like GracefulStop in production, wait for handlers to return when the
+	// server stops, including any work they do on the way out.
+	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env, grpc.WaitForHandlers(true))
 	testcache.Setup(t, env, lis)
 
 	err = execution_server.Register(env)
@@ -137,13 +148,15 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
+	clientConn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
+	t.Cleanup(func() { clientConn.Close() })
 	sc := scpb.NewSchedulerClient(clientConn)
 	env.SetSchedulerClient(sc)
 
 	testUsers := make(map[string]interfaces.UserInfo, 0)
 	testUsers["user1"] = &testauth.TestUser{UserID: "user1", GroupID: "group1", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
+	testUsers["user2"] = &testauth.TestUser{UserID: "user2", GroupID: "group2", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
 
 	ta := testauth.NewTestAuthenticator(t, testUsers)
 	env.SetAuthenticator(ta)
@@ -155,6 +168,30 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 		ctx = authenticatedCtx
 	}
 	return env, ctx
+}
+
+// newTestFlagProvider returns a flag provider that serves the given flags.
+func newTestFlagProvider(t *testing.T, flags map[string]memprovider.InMemoryFlag) *experiments.FlagProvider {
+	require.NoError(t, openfeature.SetProviderAndWait(memprovider.NewInMemoryProvider(flags)))
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	return fp
+}
+
+// targeted returns an evaluator that serves the variant returned by pick, or
+// the flag's default variant if pick returns "".
+func targeted(pick func(ctx openfeature.FlattenedContext) string) memprovider.ContextEvaluator {
+	eval := func(flag memprovider.InMemoryFlag, ctx openfeature.FlattenedContext) (any, openfeature.ProviderResolutionDetail) {
+		variant, reason := flag.DefaultVariant, openfeature.DefaultReason
+		if v := pick(ctx); v != "" {
+			variant, reason = v, openfeature.TargetingMatchReason
+		}
+		return flag.Variants[variant], openfeature.ProviderResolutionDetail{Variant: variant, Reason: reason}
+	}
+	return &eval
 }
 
 func getScheduleServer(t *testing.T, userOwnedEnabled, groupOwnedEnabled bool, user string) (*SchedulerServer, context.Context) {
@@ -292,39 +329,23 @@ func TestSchedulerServerGetPoolInfoSelfHostedByDefault(t *testing.T) {
 }
 
 func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
-	tmp := testfs.MakeTempDir(t)
 	overridePool := "experimental-linux-amd64-pool"
-	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
-	"$schema": "https://flagd.dev/schema/v0/flags.json",
-	"flags": {
+	fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
 		"remote_execution.pool_override": {
-			"state": "ENABLED",
-			"defaultVariant": "default",
-			"variants": {
-				"experimentalPool": {
-					"pool": "`+overridePool+`"
-				},
-				"default": {}
+			State:          memprovider.Enabled,
+			DefaultVariant: "default",
+			Variants: map[string]any{
+				"experimentalPool": map[string]any{"pool": overridePool},
+				"default":          map[string]any{},
 			},
-			"targeting": {
-				"if": [
-					{
-						"and": [
-							{ "==": [{ "var": "os" }, "linux"] },
-							{ "==": [{ "var": "arch" }, "amd64"] }
-						]
-					},
-					"experimentalPool"
-				]
-			}
-		}
-	}
-}`)
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
-	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
+			ContextEvaluator: targeted(func(ctx openfeature.FlattenedContext) string {
+				if ctx["os"] == "linux" && ctx["arch"] == "amd64" {
+					return "experimentalPool"
+				}
+				return ""
+			}),
+		},
+	})
 
 	env, ctx := getEnv(t, &schedulerOpts{userOwnedEnabled: true}, "user1")
 	env.SetExperimentFlagProvider(fp)
@@ -356,35 +377,23 @@ func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
 }
 
 func TestSchedulerServerPersistentVolumes(t *testing.T) {
-	tmp := testfs.MakeTempDir(t)
-	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
-	"$schema": "https://flagd.dev/schema/v0/flags.json",
-	"flags": {
-		"remote_execution.persistent_volumes": {
-			"state": "ENABLED",
-			"defaultVariant": "default",
-			"variants": {
+	fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
+		"executor.persistent_volumes": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "tmp-cache",
+			Variants: map[string]any{
 				"tmp-cache": "cache:/tmp/.cache",
-				"default": ""
+				"default":   "",
 			},
-			"targeting": {
-				"fractional": [
-					["tmp-cache", 50],
-					["default", 0]
-				]
-			}
-		}
-	}
-}`)
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
-	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
+		},
+	})
+	expflag.SetFlagProvider(fp)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 
 	env, ctx := getEnv(t, &schedulerOpts{}, "")
 	env.SetExperimentFlagProvider(fp)
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.supportsExperimentFlags = true
 	fe.Register()
 
 	taskID := scheduleTask(ctx, t, env, map[string]string{})
@@ -393,10 +402,95 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 	lease := fe.Claim(taskID)
 	defer lease.Finalize()
 
-	require.Equal(t, []string{"remote_execution.persistent_volumes:tmp-cache"}, lease.task.GetExperiments())
-	require.Empty(t, cmp.Diff([]*repb.Platform_Property{
-		{Name: "persistent-volumes", Value: "cache:/tmp/.cache"},
-	}, lease.task.GetPlatformOverrides().GetProperties(), protocmp.Transform()), nil)
+	// The scheduler should send the experiment's value with the leased task,
+	// and leave it to the executor to apply the value to the task's platform.
+	var gotFlag *expb.EvaluatedFlag
+	for _, f := range lease.task.GetExperimentFlags() {
+		if f.GetName() == "executor.persistent_volumes" {
+			gotFlag = f
+		}
+	}
+	require.Empty(t, cmp.Diff(&expb.EvaluatedFlag{
+		Name: "executor.persistent_volumes", Variant: "tmp-cache", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"},
+	}, gotFlag, protocmp.Transform()))
+	gotOverrides := lease.task.GetPlatformOverrides().GetProperties()
+	require.Empty(t, gotOverrides)
+}
+
+func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
+	for _, tc := range []struct {
+		name                    string
+		supportsExperimentFlags bool
+		flagdFlags              map[string]memprovider.InMemoryFlag
+		// Note: persistent_volumes is just used as an example here. The
+		// scheduler should handle all experiments the same way.
+		wantPersistentVolumesFlag *expb.EvaluatedFlag
+	}{
+		{
+			name:                    "ExecutorSupportsExperimentFlags",
+			supportsExperimentFlags: true,
+			flagdFlags: map[string]memprovider.InMemoryFlag{
+				"executor.persistent_volumes": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "enabled",
+					Variants:       map[string]any{"enabled": "cache:/tmp/.cache"},
+				},
+			},
+			wantPersistentVolumesFlag: &expb.EvaluatedFlag{
+				Name:    "executor.persistent_volumes",
+				Variant: "enabled", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"},
+			},
+		},
+		{
+			name:                    "ExperimentNotDefinedInFlagd",
+			supportsExperimentFlags: true,
+			flagdFlags:              map[string]memprovider.InMemoryFlag{},
+			// If the flag is not defined in flagd explicitly, the scheduler
+			// should still send its configured (default) flag value.
+			wantPersistentVolumesFlag: &expb.EvaluatedFlag{
+				Name:  "executor.persistent_volumes",
+				Value: &expb.EvaluatedFlag_StringValue{StringValue: ""},
+			},
+		},
+		{
+			name:                    "ExecutorDoesNotSupportExperimentFlags",
+			supportsExperimentFlags: false,
+			flagdFlags: map[string]memprovider.InMemoryFlag{
+				"executor.persistent_volumes": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "enabled",
+					Variants:       map[string]any{"enabled": "cache:/tmp/.cache"},
+				},
+			},
+			wantPersistentVolumesFlag: nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fp := newTestFlagProvider(t, tc.flagdFlags)
+			expflag.SetFlagProvider(fp)
+			t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
+			env, ctx := getEnv(t, &schedulerOpts{}, "")
+			env.SetExperimentFlagProvider(fp)
+			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			fe.supportsExperimentFlags = tc.supportsExperimentFlags
+			fe.Register()
+
+			taskID := scheduleTask(ctx, t, env, map[string]string{})
+
+			fe.WaitForTask(taskID)
+			lease := fe.Claim(taskID)
+			defer lease.Finalize()
+
+			var gotFlag *expb.EvaluatedFlag
+			for _, f := range lease.task.GetExperimentFlags() {
+				if f.GetName() == "executor.persistent_volumes" {
+					gotFlag = f
+				}
+			}
+			require.Empty(t, cmp.Diff(tc.wantPersistentVolumesFlag, gotFlag, protocmp.Transform()))
+		})
+	}
 }
 
 type task struct {
@@ -417,8 +511,9 @@ type fakeExecutor struct {
 	t               *testing.T
 	schedulerClient scpb.SchedulerClient
 
-	id   string
-	node *scpb.ExecutionNode
+	id                      string
+	node                    *scpb.ExecutionNode
+	supportsExperimentFlags bool
 
 	ctx       context.Context
 	stop      context.CancelFunc
@@ -493,9 +588,7 @@ func (e *fakeExecutor) Register() {
 	require.NoError(e.t, err)
 
 	recvChan := make(chan Result[*scpb.RegisterAndStreamWorkResponse], 1)
-	e.wg.Add(1)
-	go func() {
-		defer e.wg.Done()
+	e.wg.Go(func() {
 		for {
 			msg, err := stream.Recv()
 			recvChan <- Result[*scpb.RegisterAndStreamWorkResponse]{Value: msg, Err: err}
@@ -503,10 +596,8 @@ func (e *fakeExecutor) Register() {
 				return
 			}
 		}
-	}()
-	e.wg.Add(1)
-	go func() {
-		defer e.wg.Done()
+	})
+	e.wg.Go(func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -551,7 +642,7 @@ func (e *fakeExecutor) Register() {
 				require.NoError(e.t, err)
 			}
 		}
-	}()
+	})
 
 	// Give the executor a moment to register with the scheduler.
 	// TODO: explicitly wait for a scheduler reply.
@@ -592,7 +683,7 @@ func (e *fakeExecutor) WaitForTask(taskID string) {
 }
 
 func (e *fakeExecutor) WaitForTaskWithDelay(taskID string, delay time.Duration) {
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		e.mu.Lock()
 		task, ok := e.tasks[taskID]
 		e.mu.Unlock()
@@ -629,6 +720,7 @@ func (e *fakeExecutor) ResetTasks() {
 type taskLease struct {
 	t       *testing.T
 	stream  scpb.Scheduler_LeaseTaskClient
+	cancel  context.CancelFunc
 	leaseID string
 	taskID  string
 	task    *repb.ExecutionTask
@@ -646,6 +738,12 @@ func (tl *taskLease) Renew() error {
 		return err
 	}
 	return nil
+}
+
+// Drop breaks the lease stream without releasing the lease, as is the case
+// when the connection between the executor and the scheduler is broken.
+func (tl *taskLease) Drop() {
+	tl.cancel()
 }
 
 func (tl *taskLease) Finalize() error {
@@ -691,16 +789,19 @@ func (e *fakeExecutor) Reconnect(taskID, reconnectToken string) (*taskLease, err
 }
 
 func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, error) {
-	stream, err := e.schedulerClient.LeaseTask(e.ctx)
+	ctx, cancel := context.WithCancel(e.ctx)
+	e.t.Cleanup(cancel)
+	stream, err := e.schedulerClient.LeaseTask(ctx)
 	if err != nil {
 		return nil, err
 	}
 	err = stream.Send(&scpb.LeaseTaskRequest{
-		TaskId:            taskID,
-		ExecutorId:        e.id,
-		ExecutorHostname:  e.node.GetHost(),
-		SupportsReconnect: true,
-		ReconnectToken:    reconnectToken,
+		TaskId:                  taskID,
+		ExecutorId:              e.id,
+		ExecutorHostname:        e.node.GetHost(),
+		SupportsReconnect:       true,
+		ReconnectToken:          reconnectToken,
+		SupportsExperimentFlags: e.supportsExperimentFlags,
 	})
 	if err != nil {
 		return nil, err
@@ -721,10 +822,22 @@ func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, err
 	lease := &taskLease{
 		t:       e.t,
 		stream:  stream,
+		cancel:  cancel,
 		taskID:  taskID,
 		task:    task,
 		leaseID: rsp.GetLeaseId(),
 	}
+	// Like a real executor, close the lease while still registered, so that
+	// the scheduler can promptly re-enqueue a task that is still claimed.
+	// Wait for the scheduler to finish with the lease.
+	e.t.Cleanup(func() {
+		stream.CloseSend()
+		for {
+			if _, err := stream.Recv(); err != nil {
+				return
+			}
+		}
+	})
 	return lease, nil
 }
 
@@ -753,9 +866,10 @@ func newScheduleRequest(ctx context.Context, t *testing.T, env environment.Env, 
 	return &scpb.ScheduleTaskRequest{
 		TaskId: taskID,
 		Metadata: &scpb.SchedulingMetadata{
-			Os:       defaultOS,
-			Arch:     defaultArch,
-			TaskSize: size,
+			Os:                     defaultOS,
+			Arch:                   defaultArch,
+			TaskSize:               size,
+			RequestedIsolationType: opts.props[platform.WorkloadIsolationPropertyName],
 		},
 		SerializedTask: taskBytes,
 	}
@@ -811,9 +925,7 @@ func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
 		TaskId: taskID,
 		Reason: "for fun",
 	})
-	require.NoError(t, err)
-	// On a successful re-enqueue the executor should receive the task again.
-	fe.WaitForTask(taskID)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition error, got: %v", err)
 }
 
 func TestExecutorReEnqueue_MatchingLeaseID(t *testing.T) {
@@ -877,6 +989,239 @@ func TestExecutorReEnqueue_RetriesDisabled(t *testing.T) {
 	fe.EnsureTaskNotReceived(taskID)
 }
 
+// authenticatedContext returns a context authenticated as the given test user.
+func authenticatedContext(t *testing.T, env environment.Env, userID string) context.Context {
+	ta := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), userID)
+	require.NoError(t, err)
+	return ctx
+}
+
+// nextReservation returns the next task reservation sent by the scheduler to
+// the given executor, and asserts that it is for the given task.
+func nextReservation(t *testing.T, fe *fakeExecutor, taskID string) *scpb.EnqueueTaskReservationRequest {
+	rsp := fe.NextSchedulerMessage()
+	req := rsp.GetEnqueueTaskReservationRequest()
+	require.NotNil(t, req, "expected a task reservation, got: %+v", rsp)
+	require.Equal(t, taskID, req.GetTaskId())
+	return req
+}
+
+// reservationGroupID returns the group ID identified by the JWT carried by the
+// given task reservation.
+func reservationGroupID(t *testing.T, req *scpb.EnqueueTaskReservationRequest) string {
+	require.NotEmpty(t, req.GetJwt(), "reservation for task %q has no JWT", req.GetTaskId())
+	parser, err := claims.NewClaimsParser(claims.DefaultKeyProvider)
+	require.NoError(t, err)
+	c, err := parser.Parse(context.Background(), req.GetJwt())
+	require.NoError(t, err)
+	return c.GetGroupID()
+}
+
+func TestAskForMoreWork_ReservationCarriesTaskOwnerJWT(t *testing.T) {
+	// Disable the unclaimed tasks cache so that the scheduled task is
+	// immediately visible to AskForMoreWork.
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	// Register the executor with an identity that differs from the task owner.
+	executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
+	executor.Register()
+
+	// Schedule a task as user1 but don't claim it, so that it's eligible to be
+	// enqueued again as part of AskForMoreWork.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor, taskID)))
+
+	executor.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	// The reservation built from the persisted task must identify the task
+	// owner, not the executor that asked for more work.
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor, taskID)))
+}
+
+func TestExecutorJoin_ReservationCarriesTaskOwnerJWT(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	executorCtx := authenticatedContext(t, env, "user2")
+
+	executor1 := newFakeExecutorWithId(executorCtx, t, "n1", env.GetSchedulerClient())
+	executor1.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor1, taskID)))
+
+	// An executor joining the pool is offered the unclaimed task. The
+	// reservation must identify the task owner, not the joining executor.
+	executor2 := newFakeExecutorWithId(executorCtx, t, "n2", env.GetSchedulerClient())
+	executor2.Register()
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor2, taskID)))
+}
+
+// fakeExecutorStream is the scheduler's end of an executor's work stream, for
+// tests that drive an executorHandle directly instead of through gRPC.
+type fakeExecutorStream struct {
+	scpb.Scheduler_RegisterAndStreamWorkServer
+	ctx  context.Context
+	sent chan *scpb.RegisterAndStreamWorkResponse
+}
+
+func (s *fakeExecutorStream) Context() context.Context {
+	return s.ctx
+}
+
+func (s *fakeExecutorStream) Send(rsp *scpb.RegisterAndStreamWorkResponse) error {
+	select {
+	case s.sent <- rsp:
+		return nil
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	}
+}
+
+func TestExecutorJoin_OffersWorkSizedForJoiningExecutor(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+
+	executor1 := newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
+	executor1.Register()
+
+	// Schedule a task with a measured size that differs from its default
+	// size. Only an executor whose registration is known gets the measured
+	// size; otherwise the scheduler falls back to the default.
+	req := newScheduleRequest(ctx, t, env, scheduleOpts{})
+	req.Metadata.MeasuredTaskSize = &scpb.TaskSize{
+		EstimatedMemoryBytes: 3_000_000_000,
+		EstimatedMilliCpu:    3_000,
+	}
+	require.NotEqual(t, req.GetMetadata().GetMeasuredTaskSize().GetEstimatedMilliCpu(), req.GetMetadata().GetTaskSize().GetEstimatedMilliCpu())
+	_, err := s.ScheduleTask(ctx, req)
+	require.NoError(t, err)
+	nextReservation(t, executor1, req.GetTaskId())
+
+	// Join a second executor the way Serve does when it receives a
+	// registration: by calling AddConnectedExecutor on a handle whose
+	// registration isn't set yet. AddConnectedExecutor offers the joining
+	// executor unclaimed tasks from another goroutine, so the registration
+	// must be set before that goroutine starts.
+	streamCtx, cancel := context.WithCancel(ctx)
+	t.Cleanup(cancel)
+	stream := &fakeExecutorStream{ctx: streamCtx, sent: make(chan *scpb.RegisterAndStreamWorkResponse, 10)}
+	handle := newExecutorHandle(env, s, false /*=requireAuthorization*/, stream)
+	node := &scpb.ExecutionNode{
+		ExecutorId:            "n2",
+		OsFamily:              defaultOS,
+		Arch:                  defaultArch,
+		Host:                  "foo",
+		AssignableMemoryBytes: 64_000_000_000,
+		AssignableMilliCpu:    32_000,
+	}
+	require.NoError(t, s.AddConnectedExecutor(ctx, handle, node))
+	t.Cleanup(func() { s.RemoveConnectedExecutor(ctx, handle, node) })
+
+	select {
+	case rsp := <-stream.sent:
+		reservation := rsp.GetEnqueueTaskReservationRequest()
+		require.Equal(t, req.GetTaskId(), reservation.GetTaskId(), "expected a task reservation, got: %+v", rsp)
+		require.Equal(t, int64(3_000), reservation.GetTaskSize().GetEstimatedMilliCpu())
+		require.Equal(t, int64(3_000_000_000), reservation.GetTaskSize().GetEstimatedMemoryBytes())
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "joining executor was not offered the unclaimed task")
+	}
+}
+
+func TestExecutorShutdown_ReEnqueuedReservationCarriesTaskOwnerJWT(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	executorCtx := authenticatedContext(t, env, "user2")
+
+	executor1 := newFakeExecutorWithId(executorCtx, t, "n1", env.GetSchedulerClient())
+	executor1.Register()
+	executor2 := newFakeExecutorWithId(executorCtx, t, "n2", env.GetSchedulerClient())
+	executor2.Register()
+
+	// Both executors receive the initial reservation.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor1, taskID)))
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor2, taskID)))
+
+	// executor1 shuts down and hands its reservation back to the scheduler,
+	// which re-enqueues it on executor2. The re-enqueued reservation must
+	// identify the task owner, not the executor that shut down.
+	executor1.Send(&scpb.RegisterAndStreamWorkRequest{
+		ShuttingDownRequest: &scpb.ShuttingDownRequest{TaskId: []string{taskID}},
+	})
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor2, taskID)))
+}
+
+func TestExecutorReEnqueue_ReservationCarriesTaskOwnerJWT(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
+	executor.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor, taskID)))
+
+	// The executor claims the task and then hands it back for another attempt.
+	// The re-enqueued reservation must identify the task owner, not the
+	// executor that gave up on it.
+	lease := executor.Claim(taskID)
+	require.NoError(t, lease.ReEnqueue())
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor, taskID)))
+}
+
+func TestExecutorShutdown_ReturnedReservationDoesNotAllowConcurrentClaim(t *testing.T) {
+	// Set up 3 executors: holder (holds a valid task lease), thief (tries to
+	// steal the lease), and shuttingdown (shuts down and leaves the pool)
+	//
+	// Set thief as the preferred executor, so the replacement reservation sent
+	// during shutdown goes to the thief.
+	env, ctx := getEnv(t, &schedulerOpts{preferredExecutors: []string{"thief"}}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	thief := newFakeExecutorWithId(ctx, t, "thief", env.GetSchedulerClient())
+	thief.Register()
+	shuttingdown := newFakeExecutorWithId(ctx, t, "shuttingdown", env.GetSchedulerClient())
+	shuttingdown.Register()
+
+	// Schedule a task with reservations on all 3 executors. This is a normal,
+	// retryable task.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	nextReservation(t, holder, taskID)
+	nextReservation(t, thief, taskID)
+	nextReservation(t, shuttingdown, taskID)
+
+	// Have holder claim the task.
+	holderLease := holder.Claim(taskID)
+
+	// Other executors should get a NotFound error if they try to lease the
+	// task. (This is just a sanity check demonstrating normal behavior; things
+	// get more interesting after shutdown below.)
+	_, err := thief.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.True(t, status.IsNotFoundError(err), "thief must not claim holder's running task before shuttingdown shuts down: %v", err)
+	task, err := s.readTask(ctx, taskID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, task.attemptCount)
+
+	// Simulate shuttingdown returning its queued reservation during shutdown.
+	// This should not affect the holder's in-flight execution of the task.
+	shuttingdown.Send(&scpb.RegisterAndStreamWorkRequest{
+		ShuttingDownRequest: &scpb.ShuttingDownRequest{TaskId: []string{taskID}},
+	})
+	nextReservation(t, thief, taskID)
+
+	// The holder still has a valid claim on the task, so the thief should still
+	// be unable to claim it, even though it received another reservation as a
+	// result of shuttingdown handing off the task reservation.
+	_, claimErr := thief.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.NoError(t, holderLease.Renew(), "holder's original lease should still be active")
+	require.True(t, status.IsNotFoundError(claimErr), "returning shuttingdown's queued reservation must not let thief claim holder's running task; thief's claim returned: %v", claimErr)
+	require.NoError(t, holderLease.Finalize())
+}
+
 func TestLeaseExpiration(t *testing.T) {
 	fakeClock := clockwork.NewFakeClock()
 	env, ctx := getEnv(t, &schedulerOpts{options: Options{
@@ -910,9 +1255,14 @@ func TestLeaseExpiration(t *testing.T) {
 	fakeClock.Advance(2 * time.Second)
 	fe.WaitForTask(taskID)
 
-	// Lease renewal should fail as the stream should be broken.
+	// Lease renewal should fail with the reason the lease ended.
 	err = lease.Renew()
-	require.ErrorIs(t, io.EOF, err)
+	if err == io.EOF {
+		// Send returns io.EOF once the stream has ended, and Recv returns the
+		// stream's status.
+		_, err = lease.stream.Recv()
+	}
+	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got: %v", err)
 }
 
 func TestLeaseReconnectGrace_OtherExecutorsCannotStealTask(t *testing.T) {
@@ -1001,6 +1351,510 @@ func TestLeaseReconnectGrace_RetriesDisabled(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, reconnectedLease.leaseID)
 	require.NoError(t, reconnectedLease.Finalize())
+}
+
+func TestLeaseReconnect_AfterBrokenStreamIsCleanedUp(t *testing.T) {
+	// Set a high reconnect grace period since we use real time in the test.
+	flags.Set(t, "remote_execution.lease_reconnect_grace_period", 24*time.Hour)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+
+	// "holder" executor establishes a lease.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+
+	// Lease breaks non-gracefully, e.g. broken connection.
+	lease.Drop()
+
+	// The task should now be in "reconnecting" state.
+	require.Eventually(t, func() bool {
+		task, err := s.readTask(ctx, taskID)
+		return err == nil && !task.reconnectPeriodEnd.IsZero()
+	}, 5*time.Second, 10*time.Millisecond, "task was not reserved for its executor to reconnect")
+
+	// Other "thief" executors cannot steal the task while it's in this
+	// "reconnecting" state.
+	thief := newFakeExecutorWithId(ctx, t, "thief", env.GetSchedulerClient())
+	thief.Register()
+	_, err := thief.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.True(t, status.IsNotFoundError(err), "unexpected claim error: %v", err)
+
+	// Original "holder" executor is able to reconnect.
+	reconnectedLease, err := holder.Reconnect(taskID, lease.leaseID)
+	require.NoError(t, err)
+	task, err := s.readTask(ctx, taskID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, task.attemptCount)
+	require.NoError(t, reconnectedLease.Finalize())
+}
+
+func TestLeaseReconnect_AnotherExecutorClaimsTaskAfterGracePeriod(t *testing.T) {
+	gracePeriod := 200 * time.Millisecond
+	flags.Set(t, "remote_execution.lease_reconnect_grace_period", gracePeriod)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	other := newFakeExecutorWithId(ctx, t, "other", env.GetSchedulerClient())
+	other.Register()
+
+	// "holder" executor establishes a lease. Other executors clear their
+	// queues, as though they tried and fail to lease.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+	other.ResetTasks()
+
+	// The lease stream breaks, and "holder" never reconnects, e.g. because it
+	// died.
+	lease.Drop()
+
+	// The scheduler re-enqueues the task, delayed by the grace period.
+	other.WaitForTaskWithDelay(taskID, gracePeriod)
+
+	// Once the grace period has ended, "other" can claim the task as a new
+	// attempt.
+	time.Sleep(gracePeriod)
+	otherLease := other.Claim(taskID)
+	task, err := s.readTask(ctx, taskID)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, task.attemptCount)
+	require.NoError(t, otherLease.Finalize())
+}
+
+func TestLeaseReconnect_BrokenStreamFailsTaskThatCannotBeRetried(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		props map[string]string
+		// Attempt count to set after the claim, if non-zero.
+		attemptCount int
+	}{
+		{
+			name:  "retries disabled",
+			props: map[string]string{platform.RetryPropertyName: "false"},
+		},
+		{
+			name:         "attempts used up",
+			props:        map[string]string{},
+			attemptCount: maxTaskAttemptCount,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			s := env.GetSchedulerService().(*SchedulerServer)
+			holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+			holder.Register()
+			taskID := scheduleTask(ctx, t, env, testCase.props)
+			holder.WaitForTask(taskID)
+			lease := holder.Claim(taskID)
+			if testCase.attemptCount != 0 {
+				err := s.rdb.HSet(ctx, s.redisKeyForTask(taskID), redisTaskAttempCountField, testCase.attemptCount).Err()
+				require.NoError(t, err)
+			}
+
+			// The scheduler only reserves tasks that it could later hand to
+			// another executor, so it fails these after a broken stream.
+			lease.Drop()
+
+			require.Eventually(t, func() bool {
+				_, err := s.readTask(ctx, taskID)
+				return status.IsNotFoundError(err)
+			}, 5*time.Second, 10*time.Millisecond, "task was not deleted")
+		})
+	}
+}
+
+func TestLeaseReconnect_BeforeOldStreamIsCleanedUp(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		props    map[string]string
+		shutdown bool
+	}{
+		{
+			name:  "retries enabled",
+			props: map[string]string{},
+		},
+		{
+			name:  "retries disabled",
+			props: map[string]string{platform.RetryPropertyName: "false"},
+		},
+		{
+			name:     "scheduler shutting down",
+			props:    map[string]string{},
+			shutdown: true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			s := env.GetSchedulerService().(*SchedulerServer)
+			holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+			holder.Register()
+			taskID := scheduleTask(ctx, t, env, testCase.props)
+			holder.WaitForTask(taskID)
+			lease := holder.Claim(taskID)
+			holder.ResetTasks()
+
+			reconnectedLease, err := holder.Reconnect(taskID, lease.leaseID)
+			require.NoError(t, err)
+			require.NotEmpty(t, reconnectedLease.leaseID)
+			require.NotEqual(t, lease.leaseID, reconnectedLease.leaseID)
+
+			if testCase.shutdown {
+				// During shutdown, the old stream's cleanup preserves its
+				// reconnect token. It must still leave the new lease alone.
+				env.GetHealthChecker().Shutdown()
+				select {
+				case <-s.shutdownCtx.Done():
+				case <-time.After(5 * time.Second):
+					require.FailNow(t, "scheduler did not start shutting down")
+				}
+			}
+
+			// Close the old stream after the reconnect. Receiving EOF waits
+			// for its deferred cleanup to finish before checking the new lease.
+			require.NoError(t, lease.stream.CloseSend())
+			_, err = lease.stream.Recv()
+			require.ErrorIs(t, err, io.EOF)
+
+			holder.EnsureTaskNotReceived(taskID)
+			task, err := s.rdb.HGetAll(ctx, s.redisKeyForTask(taskID)).Result()
+			require.NoError(t, err)
+			require.Equal(t, reconnectedLease.leaseID, task["leaseId"])
+			require.Equal(t, "1", task[redisTaskClaimedField])
+			require.Equal(t, "1", task[redisTaskAttempCountField])
+			require.NoError(t, reconnectedLease.Finalize())
+		})
+	}
+}
+
+func TestLeaseReconnect_OldStreamCleanupAfterNewLeaseReleasedTask(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+
+	// The executor re-claims the task on a new stream, and then releases it
+	// from there, which re-enqueues it.
+	reconnectedLease, err := holder.Reconnect(taskID, lease.leaseID)
+	require.NoError(t, err)
+	holder.ResetTasks()
+	require.NoError(t, reconnectedLease.ReEnqueue())
+	holder.WaitForTask(taskID)
+	holder.ResetTasks()
+
+	// Close the old stream and wait for its cleanup. It should leave the task
+	// alone instead of re-enqueueing it again.
+	require.NoError(t, lease.stream.CloseSend())
+	_, err = lease.stream.Recv()
+	require.ErrorIs(t, err, io.EOF)
+	holder.EnsureTaskNotReceived(taskID)
+}
+
+func TestDeleteTaskForLease_ReturnsNotFoundForFinalizedTask(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+	require.NoError(t, lease.Finalize())
+
+	// A late cleanup from an old stream finds the task already finalized, and
+	// shouldn't go on to fail the execution.
+	for _, testCase := range []struct {
+		name            string
+		expectedLeaseID string
+	}{
+		{name: "with lease ID", expectedLeaseID: "old-lease-id"},
+		{name: "without lease ID"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := s.deleteTaskForLease(ctx, taskID, testCase.expectedLeaseID)
+			require.True(t, status.IsNotFoundError(err), "unexpected delete error: %v", err)
+		})
+	}
+}
+
+func TestUnclaimTask_ReturnsNotFoundForFinalizedTask(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+	require.NoError(t, lease.Finalize())
+
+	// A late cleanup from an old stream finds the task already finalized, and
+	// shouldn't go on to re-enqueue it.
+	err := s.unclaimTask(ctx, taskID, lease.leaseID, "" /*=reconnectToken*/)
+
+	require.True(t, status.IsNotFoundError(err), "unexpected release error: %v", err)
+}
+
+// scheduleTaskForGroup schedules a task owned by the given group.
+func scheduleTaskForGroup(ctx context.Context, t *testing.T, env environment.Env, groupID string) string {
+	req := newScheduleRequest(ctx, t, env, scheduleOpts{})
+	req.Metadata.TaskGroupId = groupID
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	require.NoError(t, err)
+	return req.GetTaskId()
+}
+
+// configureLeaseTaskGroupCheck configures the task access check enforcement
+// experiment for the given env: enforcement is on or off by default, with a
+// targeting rule that turns it off for the excluded task owner groups.
+func configureLeaseTaskGroupCheck(t *testing.T, env *testenv.TestEnv, enforce bool, excludedGroupIDs []string) {
+	defaultVariant := "off"
+	if enforce {
+		defaultVariant = "on"
+	}
+	fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{
+		checkTaskAccessExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: defaultVariant,
+			Variants:       map[string]any{"on": true, "off": false},
+			ContextEvaluator: targeted(func(ctx openfeature.FlattenedContext) string {
+				if groupID, ok := ctx["group_id"].(string); ok && slices.Contains(excludedGroupIDs, groupID) {
+					return "off"
+				}
+				return ""
+			}),
+		},
+	})
+	env.SetExperimentFlagProvider(fp)
+}
+
+func TestLeaseTask_GroupCheck(t *testing.T) {
+	type experiment struct {
+		enforce          bool
+		excludedGroupIDs []string
+	}
+	for _, test := range []struct {
+		name string
+		// Experiment config, or nil if the experiment is not configured.
+		experiment *experiment
+		// User the executor authenticates as, or "" for an unauthenticated
+		// executor.
+		executorUser string
+		taskGroupID  string
+		wantRejected bool
+	}{
+		{
+			name:         "not configured: caller matches task owner",
+			executorUser: "user1",
+			taskGroupID:  "group1",
+		},
+		{
+			name:         "not configured: caller is a different group",
+			executorUser: "user2",
+			taskGroupID:  "group1",
+		},
+		{
+			name:         "not configured: caller is unauthenticated",
+			executorUser: "",
+			taskGroupID:  "group1",
+		},
+		{
+			name:         "not configured: anonymous task is not checked",
+			executorUser: "user2",
+			taskGroupID:  interfaces.AuthAnonymousUser,
+		},
+		{
+			name:         "not enforced: caller is a different group",
+			experiment:   &experiment{enforce: false},
+			executorUser: "user2",
+			taskGroupID:  "group1",
+		},
+		{
+			name:         "enforced: caller matches task owner",
+			experiment:   &experiment{enforce: true},
+			executorUser: "user1",
+			taskGroupID:  "group1",
+		},
+		{
+			name:         "enforced: caller is a different group",
+			experiment:   &experiment{enforce: true},
+			executorUser: "user2",
+			taskGroupID:  "group1",
+			wantRejected: true,
+		},
+		{
+			name:         "enforced: caller is unauthenticated",
+			experiment:   &experiment{enforce: true},
+			executorUser: "",
+			taskGroupID:  "group1",
+			wantRejected: true,
+		},
+		{
+			name:         "enforced: anonymous task is not checked",
+			experiment:   &experiment{enforce: true},
+			executorUser: "user2",
+			taskGroupID:  interfaces.AuthAnonymousUser,
+		},
+		{
+			name:         "enforced: excluded task owner group is only audited",
+			experiment:   &experiment{enforce: true, excludedGroupIDs: []string{"group1"}},
+			executorUser: "user2",
+			taskGroupID:  "group1",
+		},
+		{
+			name:         "enforced: exclusion of another group does not apply",
+			experiment:   &experiment{enforce: true, excludedGroupIDs: []string{"group2"}},
+			executorUser: "user2",
+			taskGroupID:  "group1",
+			wantRejected: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			if test.experiment != nil {
+				configureLeaseTaskGroupCheck(t, env, test.experiment.enforce, test.experiment.excludedGroupIDs)
+			}
+			executorCtx := context.Background()
+			if test.executorUser != "" {
+				executorCtx = authenticatedContext(t, env, test.executorUser)
+			}
+			executor := newFakeExecutor(executorCtx, t, env.GetSchedulerClient())
+			executor.Register()
+			taskID := scheduleTaskForGroup(ctx, t, env, test.taskGroupID)
+			executor.WaitForTask(taskID)
+
+			lease, err := executor.leaseTask(taskID, "" /*=reconnectToken*/)
+			if test.wantRejected {
+				require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
+				// A rejected lease must not count as an execution attempt,
+				// and the task must remain leasable by the task owner.
+				persisted, err := env.GetSchedulerService().(*SchedulerServer).readTask(ctx, taskID)
+				require.NoError(t, err)
+				require.EqualValues(t, 0, persisted.attemptCount)
+				owner := newFakeExecutor(authenticatedContext(t, env, "user1"), t, env.GetSchedulerClient())
+				ownerLease := owner.Claim(taskID)
+				require.NoError(t, ownerLease.Finalize())
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, lease.task)
+				require.NoError(t, lease.Finalize())
+			}
+		})
+	}
+}
+
+func TestReEnqueueTask_GroupCheck(t *testing.T) {
+	type experiment struct {
+		enforce          bool
+		excludedGroupIDs []string
+	}
+	for _, test := range []struct {
+		name string
+		// Experiment config, or nil if the experiment is not configured.
+		experiment *experiment
+		// User the re-enqueue request authenticates as, or "" for an
+		// unauthenticated request.
+		callerUser   string
+		taskGroupID  string
+		wantRejected bool
+	}{
+		{
+			name:        "not configured: caller is a different group",
+			callerUser:  "user2",
+			taskGroupID: "group1",
+		},
+		{
+			name:        "not configured: caller is unauthenticated",
+			callerUser:  "",
+			taskGroupID: "group1",
+		},
+		{
+			name:        "enforced: caller matches task owner",
+			experiment:  &experiment{enforce: true},
+			callerUser:  "user1",
+			taskGroupID: "group1",
+		},
+		{
+			name:         "enforced: caller is a different group",
+			experiment:   &experiment{enforce: true},
+			callerUser:   "user2",
+			taskGroupID:  "group1",
+			wantRejected: true,
+		},
+		{
+			name:         "enforced: caller is unauthenticated",
+			experiment:   &experiment{enforce: true},
+			callerUser:   "",
+			taskGroupID:  "group1",
+			wantRejected: true,
+		},
+		{
+			name:        "enforced: anonymous task is not checked",
+			experiment:  &experiment{enforce: true},
+			callerUser:  "user2",
+			taskGroupID: interfaces.AuthAnonymousUser,
+		},
+		{
+			name:        "enforced: excluded task owner group is only audited",
+			experiment:  &experiment{enforce: true, excludedGroupIDs: []string{"group1"}},
+			callerUser:  "user2",
+			taskGroupID: "group1",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			if test.experiment != nil {
+				configureLeaseTaskGroupCheck(t, env, test.experiment.enforce, test.experiment.excludedGroupIDs)
+			}
+			callerCtx := context.Background()
+			if test.callerUser != "" {
+				callerCtx = authenticatedContext(t, env, test.callerUser)
+			}
+
+			// The task owner's executor leases the task. The re-enqueue
+			// request then presents that lease ID under the caller's identity.
+			owner := newFakeExecutor(authenticatedContext(t, env, "user1"), t, env.GetSchedulerClient())
+			owner.Register()
+			taskID := scheduleTaskForGroup(ctx, t, env, test.taskGroupID)
+			owner.WaitForTask(taskID)
+			lease := owner.Claim(taskID)
+			owner.ResetTasks()
+
+			_, err := env.GetSchedulerClient().ReEnqueueTask(callerCtx, &scpb.ReEnqueueTaskRequest{
+				TaskId:  taskID,
+				LeaseId: lease.leaseID,
+				Reason:  "for fun",
+			})
+			if test.wantRejected {
+				require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied error, got: %v", err)
+				// The claim must not have been released.
+				owner.EnsureTaskNotReceived(taskID)
+			} else {
+				require.NoError(t, err)
+				// On a successful re-enqueue the executor receives the task
+				// again.
+				owner.WaitForTask(taskID)
+			}
+		})
+	}
+}
+
+func TestPerKeyLogLimiter(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	limiter := newPerKeyLogLimiter(clock, time.Minute)
+
+	require.True(t, limiter.allow("group1"))
+	require.False(t, limiter.allow("group1"), "repeat within the interval is suppressed")
+	require.True(t, limiter.allow("group2"), "keys are limited independently")
+
+	clock.Advance(time.Minute - time.Second)
+	require.False(t, limiter.allow("group1"))
+	clock.Advance(time.Second)
+	require.True(t, limiter.allow("group1"), "allowed again once the interval has passed")
+	require.False(t, limiter.allow("group1"))
 }
 
 func TestLeaseTask_RefreshToken_FailureDoesNotFailLease(t *testing.T) {
@@ -1153,6 +2007,48 @@ func TestEnqueueTaskReservation_DoesntOverwriteDelay(t *testing.T) {
 	taskID := enqueueTaskReservation(ctx, t, env, 3*time.Second)
 
 	fe1.WaitForTaskWithDelay(taskID, 3*time.Second)
+}
+
+func TestEnqueueTaskReservation_RequiresAppClientIdentity(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityApp)
+	scheduler := env.GetSchedulerService().(*SchedulerServer)
+
+	request := func() *scpb.EnqueueTaskReservationRequest {
+		return &scpb.EnqueueTaskReservationRequest{
+			TaskId:   "task-id",
+			TaskSize: &scpb.TaskSize{},
+			SchedulingMetadata: &scpb.SchedulingMetadata{
+				Os:   defaultOS,
+				Arch: defaultArch,
+			},
+		}
+	}
+	contextWithIdentity := func(client string) context.Context {
+		identityService := env.GetClientIdentityService()
+		header, err := identityService.NewIdentityHeader(&interfaces.ClientIdentity{
+			Origin: interfaces.ClientIdentityInternalOrigin,
+			Client: client,
+		}, time.Minute)
+		require.NoError(t, err)
+		incomingCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, header))
+		validatedCtx, err := identityService.ValidateIncomingIdentity(incomingCtx)
+		require.NoError(t, err)
+		return validatedCtx
+	}
+
+	_, err := scheduler.EnqueueTaskReservation(ctx, request())
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	_, err = scheduler.EnqueueTaskReservation(contextWithIdentity(interfaces.ClientIdentityExecutor), request())
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	_, err = scheduler.EnqueueTaskReservation(contextWithIdentity(interfaces.ClientIdentityApp), request())
+	require.True(t, status.IsUnavailableError(err))
+
+	localClient := &schedulerClient{localServer: scheduler}
+	_, err = localClient.EnqueueTaskReservation(ctx, request())
+	require.True(t, status.IsUnavailableError(err))
 }
 
 func TestEnqueueTaskReservation_Exists(t *testing.T) {
@@ -1349,6 +2245,364 @@ func TestAskForMoreWork_RespectRequestedExecutorID(t *testing.T) {
 	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
 }
 
+func TestSampleUnclaimedTasks(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		poolSize int
+		count    int
+	}{
+		{name: "empty pool", count: 3},
+		{name: "zero count", poolSize: 5},
+		{name: "single task", poolSize: 1, count: 1},
+		{name: "partial sample", poolSize: 5, count: 3},
+		{name: "whole pool", poolSize: 5, count: 5},
+		{name: "count exceeds pool", poolSize: 5, count: 10},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			tasks := []string{"a", "b", "c", "d", "e"}[:testCase.poolSize]
+			clock := clockwork.NewFakeClock()
+			np := &nodePool{
+				clock:                clock,
+				unclaimedTasks:       slices.Clone(tasks),
+				unclaimedTasksExpiry: clock.Now().Add(time.Minute),
+			}
+
+			// Repeated requests must return distinct IDs from the pool, capped
+			// at the number available, without removing tasks from future samples.
+			for range 20 {
+				sample, err := np.SampleUnclaimedTasks(t.Context(), testCase.count)
+				require.NoError(t, err)
+				require.Len(t, sample, min(testCase.count, len(tasks)))
+				require.Subset(t, tasks, sample)
+				slices.Sort(sample)
+				require.Equal(t, len(sample), len(slices.Compact(sample)))
+
+				// Callers own the returned slice, so changing a sample must not
+				// alter the IDs available to subsequent requests.
+				if len(sample) > 0 {
+					sample[0] = "modified"
+				}
+			}
+			sample, err := np.SampleUnclaimedTasks(t.Context(), len(tasks))
+			require.NoError(t, err)
+			require.ElementsMatch(t, tasks, sample)
+		})
+	}
+}
+
+func TestSampleUnclaimedTasks_Concurrent(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		cacheTTL time.Duration
+	}{
+		{name: "cache enabled", cacheTTL: time.Minute},
+		{name: "cache disabled", cacheTTL: 0},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			rdb := testredis.Start(t).Client()
+			t.Cleanup(func() { rdb.Close() })
+			clock := clockwork.NewFakeClock()
+			np := &nodePool{
+				rdb:                   rdb,
+				clock:                 clock,
+				unclaimedTasksKeys:    []string{"unclaimedTasks/test"},
+				unclaimedTasksTTL:     testCase.cacheTTL,
+				unclaimedTasksJanitor: newUnclaimedTasksJanitor(rdb, clock),
+			}
+			tasks := []string{"a", "b", "c", "d", "e"}
+			for _, task := range tasks {
+				require.NoError(t, np.AddUnclaimedTask(t.Context(), task))
+			}
+
+			// Concurrent callers may share either a cached list or an in-flight
+			// Redis result. Each must receive an independent sample with no repeats.
+			type result struct {
+				sample []string
+				err    error
+			}
+			results := make(chan result, 100)
+			for range cap(results) {
+				go func() {
+					sample, err := np.SampleUnclaimedTasks(t.Context(), 3)
+					results <- result{sample: sample, err: err}
+				}()
+			}
+			for range cap(results) {
+				r := <-results
+				require.NoError(t, r.err)
+				require.Len(t, r.sample, 3)
+				require.Subset(t, tasks, r.sample)
+				slices.Sort(r.sample)
+				require.Len(t, slices.Compact(r.sample), 3)
+				r.sample[0] = "modified"
+			}
+			sample, err := np.SampleUnclaimedTasks(t.Context(), len(tasks))
+			require.NoError(t, err)
+			require.ElementsMatch(t, tasks, sample)
+		})
+	}
+}
+
+func TestAddUnclaimedTask_SetsAndRefreshesTTL(t *testing.T) {
+	rdb := testredis.Start(t).Client()
+	clock := clockwork.NewFakeClock()
+	np := &nodePool{
+		rdb:                   rdb,
+		clock:                 clock,
+		unclaimedTasksKeys:    []string{"unclaimedTasks/test"},
+		unclaimedTasksJanitor: newUnclaimedTasksJanitor(rdb, clock),
+	}
+	key := np.unclaimedTasksKeys[0]
+
+	require.NoError(t, np.AddUnclaimedTask(t.Context(), "first"))
+	ttl, err := rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Greater(t, ttl, unclaimedTaskSetTTL-time.Minute)
+
+	// Adding to an existing set must renew its TTL before returning.
+	require.NoError(t, rdb.Expire(t.Context(), key, time.Minute).Err())
+	require.NoError(t, np.AddUnclaimedTask(t.Context(), "second"))
+	ttl, err = rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Greater(t, ttl, unclaimedTaskSetTTL-time.Minute)
+}
+
+func TestUnclaimedTasksJanitor(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", 3)
+	// Use a fake clock so that the janitor waits forever after being woken
+	// up, letting the test decide when its passes run.
+	env, _ := getEnv(t, &schedulerOpts{options: Options{Clock: clockwork.NewFakeClock()}}, "")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	rdb := env.GetRemoteExecutionRedisClient()
+	np := s.getOrCreatePool(nodePoolKey{os: defaultOS, arch: defaultArch, pool: "defaultPoolName"})
+	key := np.unclaimedTasksKeys[0]
+
+	// Add a task older than the max age, followed by more new tasks than the
+	// set can hold.
+	staleScore := float64(time.Now().Add(-unclaimedTaskMaxAge - time.Minute).Unix())
+	err := rdb.ZAdd(t.Context(), key, &redis.Z{Member: "stale", Score: staleScore}).Err()
+	require.NoError(t, err)
+	for i := range 5 {
+		err := np.AddUnclaimedTask(t.Context(), fmt.Sprintf("task-%d", i))
+		require.NoError(t, err)
+	}
+
+	// Adding tasks sets the TTL but leaves trimming to the janitor.
+	tasks, err := rdb.ZRange(t.Context(), key, 0, -1).Result()
+	require.NoError(t, err)
+	require.Equal(t, []string{"stale", "task-0", "task-1", "task-2", "task-3", "task-4"}, tasks)
+	ttl, err := rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Greater(t, ttl, time.Duration(0))
+
+	// Removing the TTL lets us check that the janitor does not set it.
+	require.NoError(t, rdb.Persist(t.Context(), key).Err())
+	// A janitor pass removes the stale task and the oldest tasks beyond the
+	// max set size.
+	err = s.unclaimedTasksJanitor.clean(t.Context())
+	require.NoError(t, err)
+	tasks, err = rdb.ZRange(t.Context(), key, 0, -1).Result()
+	require.NoError(t, err)
+	require.Equal(t, []string{"task-2", "task-3", "task-4"}, tasks)
+	ttl, err = rdb.TTL(t.Context(), key).Result()
+	require.NoError(t, err)
+	require.Equal(t, time.Duration(-1), ttl)
+
+	// Without new tasks added through AddUnclaimedTask, the next pass skips
+	// the set, so a stale entry inserted directly is not trimmed.
+	err = rdb.ZAdd(t.Context(), key, &redis.Z{Member: "stale", Score: staleScore}).Err()
+	require.NoError(t, err)
+	err = s.unclaimedTasksJanitor.clean(t.Context())
+	require.NoError(t, err)
+	score, err := rdb.ZScore(t.Context(), key, "stale").Result()
+	require.NoError(t, err)
+	require.Equal(t, staleScore, score)
+}
+
+func TestUnclaimedTasksSharding(t *testing.T) {
+	for _, testCase := range []struct {
+		name         string
+		shardCount   int
+		expectedKeys []string
+	}{
+		{
+			name:         "single shard uses unsharded key",
+			shardCount:   1,
+			expectedKeys: []string{"unclaimedTasks/GR1-linux-amd64-pool"},
+		},
+		{
+			name:       "multiple shards",
+			shardCount: 3,
+			expectedKeys: []string{
+				"unclaimedTasks/0/GR1-linux-amd64-pool",
+				"unclaimedTasks/1/GR1-linux-amd64-pool",
+				"unclaimedTasks/2/GR1-linux-amd64-pool",
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.unclaimed_tasks_shard_count", testCase.shardCount)
+			flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+			rdb := testredis.Start(t).Client()
+			t.Cleanup(func() { rdb.Close() })
+			env := testenv.GetTestEnv(t)
+			env.SetRemoteExecutionRedisClient(rdb)
+			np := newNodePool(env, nodePoolKey{groupID: "GR1", os: "linux", arch: "amd64", pool: "pool"}, newUnclaimedTasksJanitor(rdb, env.GetClock()))
+
+			// Add enough tasks that every shard receives some of them.
+			var tasks []string
+			for i := range 30 {
+				tasks = append(tasks, fmt.Sprintf("task-%d", i))
+			}
+			for _, task := range tasks {
+				require.NoError(t, np.AddUnclaimedTask(t.Context(), task))
+			}
+
+			// Each task should be stored in exactly one of the expected keys,
+			// and no shard should be left empty.
+			keys, err := rdb.Keys(t.Context(), "unclaimedTasks/*").Result()
+			require.NoError(t, err)
+			require.ElementsMatch(t, testCase.expectedKeys, keys)
+			var stored []string
+			for _, key := range testCase.expectedKeys {
+				members, err := rdb.ZRange(t.Context(), key, 0, -1).Result()
+				require.NoError(t, err)
+				require.NotEmpty(t, members)
+				stored = append(stored, members...)
+			}
+			require.ElementsMatch(t, tasks, stored)
+
+			// A sample large enough to hold every task should collect tasks
+			// from all shards.
+			sample, err := np.SampleUnclaimedTasks(t.Context(), len(tasks))
+			require.NoError(t, err)
+			require.ElementsMatch(t, tasks, sample)
+
+			// Removing tasks should remove them from whichever shard they were
+			// added to, so they no longer show up in samples.
+			for _, task := range tasks[:10] {
+				require.NoError(t, np.RemoveUnclaimedTask(t.Context(), task))
+			}
+			sample, err = np.SampleUnclaimedTasks(t.Context(), len(tasks))
+			require.NoError(t, err)
+			require.ElementsMatch(t, tasks[10:], sample)
+		})
+	}
+}
+
+func TestUnclaimedTasksSharding_MaxSize(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_shard_count", 3)
+	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", 2)
+	rdb := testredis.Start(t).Client()
+	t.Cleanup(func() { rdb.Close() })
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionRedisClient(rdb)
+	janitor := newUnclaimedTasksJanitor(rdb, env.GetClock())
+	np := newNodePool(env, nodePoolKey{os: "linux", arch: "amd64", pool: "pool"}, janitor)
+
+	// Add many more tasks than the max size, so that every shard is over it.
+	for i := range 30 {
+		require.NoError(t, np.AddUnclaimedTask(t.Context(), fmt.Sprintf("task-%d", i)))
+	}
+
+	// The max size applies to each shard, so a janitor pass should trim each
+	// of the 3 shards down to the max size.
+	err := janitor.clean(t.Context())
+	require.NoError(t, err)
+	for _, key := range np.unclaimedTasksKeys {
+		size, err := rdb.ZCard(t.Context(), key).Result()
+		require.NoError(t, err)
+		require.Equal(t, int64(2), size)
+	}
+}
+
+func TestUnclaimedTasksSharding_FailedShard(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_shard_count", 3)
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	rdb := testredis.Start(t).Client()
+	t.Cleanup(func() { rdb.Close() })
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionRedisClient(rdb)
+	np := newNodePool(env, nodePoolKey{os: "linux", arch: "amd64", pool: "pool"}, newUnclaimedTasksJanitor(rdb, env.GetClock()))
+
+	// Add enough tasks that every shard receives some of them.
+	var tasks []string
+	for i := range 30 {
+		task := fmt.Sprintf("task-%d", i)
+		tasks = append(tasks, task)
+		require.NoError(t, np.AddUnclaimedTask(t.Context(), task))
+	}
+
+	// Make reads of the first shard fail, as if its Redis shard were down.
+	failedKey := np.unclaimedTasksKeys[0]
+	failedKeys := []string{failedKey}
+	rdb.AddHook(testredis.Hook{
+		AfterProcessPipelineFunc: func(ctx context.Context, cmds []redis.Cmder) error {
+			for _, cmd := range cmds {
+				if cmd.Name() != "zrange" {
+					continue
+				}
+				if key, ok := cmd.Args()[1].(string); ok && slices.Contains(failedKeys, key) {
+					cmd.SetErr(errors.New("redis shard is down"))
+				}
+			}
+			return nil
+		},
+	})
+
+	// Sampling should still return the tasks stored in the other shards.
+	var expected []string
+	for _, task := range tasks {
+		if np.unclaimedTasksKey(task) != failedKey {
+			expected = append(expected, task)
+		}
+	}
+	sample, err := np.SampleUnclaimedTasks(t.Context(), len(tasks))
+	require.NoError(t, err)
+	require.ElementsMatch(t, expected, sample)
+
+	// If reads of every shard fail, sampling should return an error rather
+	// than an empty sample.
+	failedKeys = np.unclaimedTasksKeys
+	_, err = np.SampleUnclaimedTasks(t.Context(), len(tasks))
+	require.Error(t, err)
+}
+
+func BenchmarkSampleUnclaimedTasks(b *testing.B) {
+	for _, testCase := range []struct {
+		name     string
+		poolSize int
+	}{
+		{name: "10k tasks", poolSize: 10_000},
+		{name: "100k tasks", poolSize: 100_000},
+	} {
+		b.Run(testCase.name, func(b *testing.B) {
+			// Use execution IDs in the format generated by the execution server.
+			// ID generation is outside the timed loop so only sampling is measured.
+			gen := digest.RandomGenerator(0)
+			tasks := make([]string, testCase.poolSize)
+			for i := range tasks {
+				d, _, err := gen.RandomDigestBuf(142)
+				require.NoError(b, err)
+				tasks[i] = digest.NewCASResourceName(d, "benchmark-instance", repb.DigestFunction_SHA256).NewUploadString()
+			}
+			clock := clockwork.NewFakeClock()
+			np := &nodePool{
+				clock:                clock,
+				unclaimedTasks:       tasks,
+				unclaimedTasksExpiry: clock.Now().Add(time.Minute),
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				_, err := np.SampleUnclaimedTasks(b.Context(), tasksToEnqueueOnJoin)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func TestAskForMoreWork_CachesResultsToReduceRedisLoad(t *testing.T) {
 	for _, testCase := range []struct {
 		name                string
@@ -1498,6 +2752,118 @@ func TestAskForMoreWork_DebugExecutorLabels_MissingKey(t *testing.T) {
 	assertLabelsIgnored(taskID, executor1, executor2)
 }
 
+// registerIsolationTypeExecutorPair registers two executors in the same pool,
+// one supporting only OCI isolation and the other supporting only firecracker
+// isolation.
+func registerIsolationTypeExecutorPair(ctx context.Context, t *testing.T, env environment.Env) (ociExecutor, firecrackerExecutor *fakeExecutor) {
+	ociExecutor = newFakeExecutorWithId(ctx, t, "oci", env.GetSchedulerClient())
+	ociExecutor.node.SupportedIsolationTypes = []string{"oci"}
+	ociExecutor.Register()
+
+	firecrackerExecutor = newFakeExecutorWithId(ctx, t, "firecracker", env.GetSchedulerClient())
+	firecrackerExecutor.node.SupportedIsolationTypes = []string{"firecracker"}
+	firecrackerExecutor.Register()
+	return ociExecutor, firecrackerExecutor
+}
+
+func TestScheduleTask_RespectsRequestedIsolationType(t *testing.T) {
+	// Disable the unclaimed tasks cache so that the scheduled task is
+	// immediately visible to AskForMoreWork and to executors joining the pool.
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	ociExecutor, firecrackerExecutor := registerIsolationTypeExecutorPair(ctx, t, env)
+
+	// Schedule a task requesting firecracker isolation. Only the firecracker
+	// executor can run it, so the initial reservation should go there and the
+	// OCI executor should get nothing, even though probesPerTask exceeds the
+	// number of compatible executors.
+	taskID := scheduleTask(ctx, t, env, map[string]string{"workload-isolation-type": "firecracker"})
+	nextReservation(t, firecrackerExecutor, taskID)
+	ociExecutor.EnsureTaskNotReceived(taskID)
+
+	// The task is unclaimed, so it's eligible for work stealing. The OCI
+	// executor asking for more work should only get a backoff response, not
+	// the task.
+	ociExecutor.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	rsp := ociExecutor.NextSchedulerMessage()
+	require.Nil(t, rsp.GetEnqueueTaskReservationRequest())
+	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
+
+	// The firecracker executor asking for more work should be offered the
+	// unclaimed task again.
+	firecrackerExecutor.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	nextReservation(t, firecrackerExecutor, taskID)
+
+	// Executors joining the pool are eagerly offered unclaimed tasks. A new
+	// OCI executor should not be offered the task, but a new firecracker
+	// executor should.
+	ociExecutor2 := newFakeExecutorWithId(ctx, t, "oci2", env.GetSchedulerClient())
+	ociExecutor2.node.SupportedIsolationTypes = []string{"oci"}
+	ociExecutor2.Register()
+	ociExecutor2.EnsureTaskNotReceived(taskID)
+
+	firecrackerExecutor2 := newFakeExecutorWithId(ctx, t, "firecracker2", env.GetSchedulerClient())
+	firecrackerExecutor2.node.SupportedIsolationTypes = []string{"firecracker"}
+	firecrackerExecutor2.Register()
+	nextReservation(t, firecrackerExecutor2, taskID)
+}
+
+func TestScheduleTask_NoRequestedIsolationType_RunsOnAnyExecutor(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	ociExecutor, firecrackerExecutor := registerIsolationTypeExecutorPair(ctx, t, env)
+
+	// Schedule a task that doesn't request an isolation type. Either executor
+	// can run it using its own default, so both should receive a reservation
+	// (probesPerTask exceeds the number of executors).
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	ociExecutor.WaitForTask(taskID)
+	firecrackerExecutor.WaitForTask(taskID)
+}
+
+func TestScheduleTask_ExecutorWithUnknownIsolationTypes(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	// Register an executor that doesn't report its supported isolation types,
+	// as older executor versions don't, alongside one that only supports OCI.
+	unknownExecutor := newFakeExecutorWithId(ctx, t, "unknown", env.GetSchedulerClient())
+	unknownExecutor.Register()
+	ociExecutor := newFakeExecutorWithId(ctx, t, "oci", env.GetSchedulerClient())
+	ociExecutor.node.SupportedIsolationTypes = []string{"oci"}
+	ociExecutor.Register()
+
+	// Schedule a task requesting firecracker isolation. The scheduler can't
+	// tell whether the executor with unknown isolation types supports it, so
+	// that executor is not filtered out and should get the reservation, while
+	// the OCI executor should be filtered out.
+	taskID := scheduleTask(ctx, t, env, map[string]string{"workload-isolation-type": "firecracker"})
+	unknownExecutor.WaitForTask(taskID)
+	ociExecutor.EnsureTaskNotReceived(taskID)
+}
+
+func TestScheduleTask_NoExecutorSupportsRequestedIsolationType(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	ociExecutor := newFakeExecutorWithId(ctx, t, "oci", env.GetSchedulerClient())
+	ociExecutor.node.SupportedIsolationTypes = []string{"oci"}
+	ociExecutor.Register()
+
+	// Schedule a task requesting firecracker isolation when the only executor
+	// in the pool supports OCI. Scheduling should fail with an error naming
+	// the unsupported isolation type, rather than enqueueing the task on an
+	// executor that would reject it.
+	req := newScheduleRequest(ctx, t, env, scheduleOpts{props: map[string]string{"workload-isolation-type": "firecracker"}})
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	require.True(t, status.IsUnavailableError(err), "expected Unavailable error, got: %v", err)
+	require.Contains(t, err.Error(), `support workload isolation type "firecracker"`)
+	ociExecutor.EnsureTaskNotReceived(req.GetTaskId())
+}
+
 func TestGetExecutionNodes(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
@@ -1534,17 +2900,17 @@ func TestGetExecutionNodes(t *testing.T) {
 }
 
 // testUpgradeDetector prompts an upgrade when an executor is more than 10
-// minor versions behind the newest registered version, escalating at 20.
-func testUpgradeDetector() *upgrade.Detector {
+// minor versions behind the newest version, escalating at 20.
+func testUpgradeDetector(newest *semver.Version) *upgrade.Detector {
 	return upgrade.NewDetector(map[uppb.Prompt_Urgency]upgrade.Trigger{
 		uppb.Prompt_LOW:    {MaxLag: semver.MustParse("0.10.0")},
 		uppb.Prompt_MEDIUM: {MaxLag: semver.MustParse("0.20.0")},
-	})
+	}, newest)
 }
 
 func TestGetExecutionNodes_UpgradePrompt(t *testing.T) {
 	clock := clockwork.NewFakeClock()
-	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector()}}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector(semver.MustParse("v2.153.0"))}}, "user1")
 	enterprise_testauth.Configure(t, env)
 
 	for id, version := range map[string]string{"a": "v2.153.0", "b": "v2.140.0"} {
@@ -1571,7 +2937,7 @@ func TestGetExecutionNodes_UpgradePrompt(t *testing.T) {
 
 func TestGetExecutionNodes_UpgradePrompt_WithinAllowance(t *testing.T) {
 	clock := clockwork.NewFakeClock()
-	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector()}}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector(semver.MustParse("v2.153.0"))}}, "user1")
 	enterprise_testauth.Configure(t, env)
 
 	for id, version := range map[string]string{"a": "v2.153.0", "b": "v2.152.0"} {
@@ -1595,31 +2961,171 @@ func TestGetExecutionNodes_UpgradePrompt_WithinAllowance(t *testing.T) {
 	require.Nil(t, rsp.GetUpgradePrompt())
 }
 
-// With user-owned executors enabled, only registrations in the shared
-// executor pool group ("sharedGroupID", set by getEnv) set the
-// newest-version bar.
-func TestGetNewestVersion_ScopedToSharedPoolGroup(t *testing.T) {
+func TestShutdown_StopsBackgroundGoroutines(t *testing.T) {
+	// getEnv checks for leaked goroutines, which catches any goroutines (such
+	// as an executor's stream receiver) still running after shutdown.
+	env, _ := getEnv(t, &schedulerOpts{}, "user1")
+	executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
+	executor.Register()
+
+	env.GetHealthChecker().Shutdown()
+	env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
+func TestWatchTaskLiveness(t *testing.T) {
+	// Set the check interval far beyond how far the test advances the fake
+	// clock, so that the scheduler never checks on its own and the test
+	// decides when checks happen.
+	flags.Set(t, "remote_execution.task_liveness_check_interval", 999*time.Hour)
+	// The scheduler reports a task lost once it has been missing for the
+	// lease duration plus grace period, 20s here.
 	clock := clockwork.NewFakeClock()
-	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector()}, userOwnedEnabled: true}, "user1")
+	env, _ := getEnv(t, &schedulerOpts{options: Options{
+		Clock:            clock,
+		LeaseDuration:    10 * time.Second,
+		LeaseGracePeriod: 10 * time.Second,
+	}}, "")
 	s := env.GetSchedulerService().(*SchedulerServer)
-
-	register := func(groupID, version string) {
-		reg := &scpb.RegisteredExecutionNode{
-			Registration: &scpb.ExecutionNode{ExecutorId: "id-" + groupID, Version: version},
-			GroupId:      groupID,
-			LastPingTime: timestamppb.Now(),
+	rdb := env.GetRemoteExecutionRedisClient()
+	ctx := t.Context()
+	taskKey := s.redisKeyForTask("task1")
+	err := rdb.Set(ctx, taskKey, "1", 0).Err()
+	require.NoError(t, err)
+	lost := s.WatchTaskLiveness(ctx, "task1")
+	isLost := func() bool {
+		select {
+		case <-lost:
+			return true
+		default:
+			return false
 		}
-		b, err := proto.Marshal(reg)
-		require.NoError(t, err)
-		poolKey := "executorPool/" + groupID + "-linux-amd64-p"
-		require.NoError(t, s.rdb.HSet(ctx, poolKey, reg.GetRegistration().GetExecutorId(), b).Err())
-		require.NoError(t, s.rdb.SAdd(ctx, "executorPools/"+groupID, poolKey).Err())
 	}
-	// A newer version outside the shared pool group shouldn't set the bar.
-	register("GR-OTHER", "v2.199.0")
-	register("sharedGroupID", "v2.153.0")
 
-	v := s.getNewestVersion(ctx)
-	require.NotNil(t, v)
-	require.Equal(t, "2.153.0", v.String())
+	// While the task exists, the scheduler leaves the channel open.
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+
+	// After the test deletes the task, the scheduler does not report it lost
+	// until it has been missing for 20s, since an executor running it may
+	// still publish its final update until it fails a lease renewal.
+	err = rdb.Del(ctx, taskKey).Err()
+	require.NoError(t, err)
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+	clock.Advance(19 * time.Second)
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+
+	// If the scheduler finds the task again, it restarts the count, so it
+	// reports the task lost only after the task has been missing continually
+	// for 20s.
+	err = rdb.Set(ctx, taskKey, "1", 0).Err()
+	require.NoError(t, err)
+	s.checkTaskLivenessOnce(ctx)
+	err = rdb.Del(ctx, taskKey).Err()
+	require.NoError(t, err)
+	s.checkTaskLivenessOnce(ctx)
+	clock.Advance(19 * time.Second)
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+
+	// A failed check also restarts the count, since the scheduler cannot tell
+	// whether the task existed at that time. The test makes the check fail by
+	// running it with a canceled context.
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	s.checkTaskLivenessOnce(canceledCtx)
+	s.checkTaskLivenessOnce(ctx)
+	clock.Advance(19 * time.Second)
+	s.checkTaskLivenessOnce(ctx)
+	require.False(t, isLost())
+
+	// Once the task has been missing for 20s, the scheduler reports it lost
+	// and stops watching it.
+	clock.Advance(time.Second)
+	s.checkTaskLivenessOnce(ctx)
+	require.True(t, isLost())
+	s.livenessMu.Lock()
+	defer s.livenessMu.Unlock()
+	require.Empty(t, s.livenessWatches)
+}
+
+func TestWatchTaskLiveness_StopsWhenWatchersAreDone(t *testing.T) {
+	// Enable the check, which is off by default. The fake clock never
+	// advances, so the scheduler never runs it on its own.
+	flags.Set(t, "remote_execution.task_liveness_check_interval", 999*time.Hour)
+	env, _ := getEnv(t, &schedulerOpts{options: Options{Clock: clockwork.NewFakeClock()}}, "")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	watcherCount := func() int {
+		s.livenessMu.Lock()
+		defer s.livenessMu.Unlock()
+		if w, ok := s.livenessWatches["task1"]; ok {
+			return w.watchers
+		}
+		return 0
+	}
+
+	// Two clients watch the same task, so they share a single check.
+	ctx1, cancel1 := context.WithCancel(t.Context())
+	ctx2, cancel2 := context.WithCancel(t.Context())
+	s.WatchTaskLiveness(ctx1, "task1")
+	s.WatchTaskLiveness(ctx2, "task1")
+	require.Equal(t, 2, watcherCount())
+
+	// The scheduler keeps watching the task until both clients are done.
+	cancel1()
+	require.Eventually(t, func() bool { return watcherCount() == 1 }, 5*time.Second, time.Millisecond)
+	cancel2()
+	require.Eventually(t, func() bool { return watcherCount() == 0 }, 5*time.Second, time.Millisecond)
+	s.livenessMu.Lock()
+	defer s.livenessMu.Unlock()
+	require.Empty(t, s.livenessWatches)
+}
+
+func TestGetExecutionNodes_UpgradePrompt_MessageNamesNewestVersion(t *testing.T) {
+	detector := upgrade.NewDetector(map[uppb.Prompt_Urgency]upgrade.Trigger{
+		uppb.Prompt_LOW: {MaxLag: semver.MustParse("0.0.1")},
+	}, semver.MustParse("v2.41.0"))
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: detector}}, "user1")
+	enterprise_testauth.Configure(t, env)
+
+	executor := newFakeExecutorWithId(ctx, t, "customer", env.GetSchedulerClient())
+	executor.node.Version = "v2.40.0"
+	executor.Register()
+
+	u := enterprise_testauth.CreateRandomUser(t, env, "org1.invalid")
+	auther := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auther.WithAuthenticatedUser(ctx, u.UserID)
+	require.NoError(t, err)
+
+	rsp, err := env.GetSchedulerService().GetExecutionNodes(authCtx, &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: u.Groups[0].Group.GroupID},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, rsp.GetUpgradePrompt())
+	require.Equal(t, uppb.Prompt_LOW, rsp.GetUpgradePrompt().GetUrgency())
+	require.Contains(t, rsp.GetUpgradePrompt().GetMessage(), "2.41.0")
+}
+
+func TestGetExecutionNodes_UpgradePrompt_NoNewestVersion(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector(nil)}}, "user1")
+	enterprise_testauth.Configure(t, env)
+
+	executor := newFakeExecutorWithId(ctx, t, "old", env.GetSchedulerClient())
+	executor.node.Version = "v1.0.0"
+	executor.Register()
+
+	u := enterprise_testauth.CreateRandomUser(t, env, "org1.invalid")
+	auther := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auther.WithAuthenticatedUser(ctx, u.UserID)
+	require.NoError(t, err)
+
+	rsp, err := env.GetSchedulerService().GetExecutionNodes(authCtx, &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: u.Groups[0].Group.GroupID},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetExecutor(), 1)
+	require.Nil(t, rsp.GetUpgradePrompt())
 }

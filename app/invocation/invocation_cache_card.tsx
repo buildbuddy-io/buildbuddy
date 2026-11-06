@@ -6,6 +6,7 @@ import capabilities from "../capabilities/capabilities";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
 import DonutChart from "../components/chart/donut_chart";
+import { CACHE_COLORS } from "../util/color";
 
 interface Props {
   model: InvocationModel;
@@ -51,7 +52,12 @@ export default class CacheCardComponent extends React.Component<Props> {
                       <div className="cache-title">Action cache (AC)</div>
                       <div className="cache-subtitle">Maps action hashes to action result metadata</div>
                       <div className="cache-chart">
-                        {this.drawChart(+cacheStat.actionCacheHits, "#4CAF50", +cacheStat.actionCacheMisses, "#f44336")}
+                        {this.drawChart(
+                          +cacheStat.actionCacheHits,
+                          CACHE_COLORS.hits,
+                          +cacheStat.actionCacheMisses,
+                          CACHE_COLORS.misses
+                        )}
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-hit-color-swatch"></span>
@@ -71,7 +77,12 @@ export default class CacheCardComponent extends React.Component<Props> {
                       <div className="cache-title">Content addressable store (CAS)</div>
                       <div className="cache-subtitle">Stores files (including logs & profiling info)</div>
                       <div className="cache-chart">
-                        {this.drawChart(+cacheStat.casCacheHits, "#4CAF50", +cacheStat.casCacheUploads, "#f44336")}
+                        {this.drawChart(
+                          +cacheStat.casCacheHits,
+                          CACHE_COLORS.hits,
+                          +cacheStat.casCacheUploads,
+                          CACHE_COLORS.misses
+                        )}
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-hit-color-swatch"></span>
@@ -93,9 +104,9 @@ export default class CacheCardComponent extends React.Component<Props> {
                       <div className="cache-chart">
                         {this.drawChart(
                           +cacheStat.totalDownloadSizeBytes,
-                          "#03A9F4",
+                          CACHE_COLORS.reads,
                           +cacheStat.totalUploadSizeBytes,
-                          "#3F51B5"
+                          CACHE_COLORS.writes
                         )}
                         <div>
                           {this.renderVolumeChartLabel(
@@ -118,7 +129,7 @@ export default class CacheCardComponent extends React.Component<Props> {
                       <div className="cache-title">Throughput</div>
                       <div className="cache-subtitle">Upload / download speed (time-weighted avg)</div>
                       <div className="cache-chart">
-                        {this.drawChart(downloadThroughput, "#03A9F4", uploadThroughput, "#3F51B5")}
+                        {this.drawChart(downloadThroughput, CACHE_COLORS.reads, uploadThroughput, CACHE_COLORS.writes)}
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch download-color-swatch"></span>
@@ -138,9 +149,9 @@ export default class CacheCardComponent extends React.Component<Props> {
                         <div className="cache-chart">
                           {this.drawChart(
                             +cacheStat.totalCachedActionExecUsec,
-                            "#4CAF50",
+                            CACHE_COLORS.hits,
                             +cacheStat.totalUncachedActionExecUsec,
-                            "#f44336"
+                            CACHE_COLORS.misses
                           )}
                           <div>
                             <div className="cache-chart-label">

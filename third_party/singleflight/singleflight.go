@@ -18,7 +18,7 @@ import (
 // A panicError is an arbitrary value recovered from a panic
 // with the stack trace during the execution of given function.
 type panicError struct {
-	value interface{}
+	value any
 	stack []byte
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -148,9 +149,8 @@ func TestEvaluatorFiresAgainInNextWindow(t *testing.T) {
 	// Run the evaluator once for a daily rule, then advance the clock into the
 	// next UTC day with fresh usage that exceeds the threshold.
 	sender := &fakeEmailSender{}
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	te := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, te)
 	clock := clockwork.NewFakeClockAt(now)
 	evaluator := NewEvaluator(te.GetDBHandle(), te.GetOLAPDBHandle(), sender, clock, testEvaluatorMetrics(t))
 	dbh := te.GetDBHandle()
@@ -730,9 +730,8 @@ func TestWindowRange(t *testing.T) {
 }
 
 func newTestEvaluator(t testing.TB, now time.Time, sender emailSender, metrics *evaluatorMetrics) (*Evaluator, interfaces.DBHandle, interfaces.OLAPDBHandle) {
-	flags.Set(t, "testenv.use_clickhouse", true)
-	flags.Set(t, "testenv.reuse_server", true)
 	te := testenv.GetTestEnv(t)
+	testclickhouse.Configure(t, te)
 	return NewEvaluator(te.GetDBHandle(), te.GetOLAPDBHandle(), sender, clockwork.NewFakeClockAt(now), metrics), te.GetDBHandle(), te.GetOLAPDBHandle()
 }
 

@@ -82,7 +82,7 @@ func TestMmap_Concurrency(t *testing.T) {
 	s, _ := newMmap(t)
 
 	eg := &errgroup.Group{}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		eg.Go(func() error {
 			s.Source()
 			return nil
@@ -242,7 +242,7 @@ func TestCOW_Concurrency(t *testing.T) {
 
 	eg := &errgroup.Group{}
 	eg.SetLimit(1000)
-	for i := 0; i < 10_000; i++ {
+	for range 10_000 {
 		eg.Go(func() error {
 			if rand.Float64() < 0.2 {
 				tester.WriteRandomRange()
@@ -289,7 +289,7 @@ func TestCOW_SparseData(t *testing.T) {
 	// - 2: data block somewhere in the middle of the chunk
 	// - 3: data block at the end of the chunk
 	chunks := make([][]byte, 4)
-	for i := 0; i < len(chunks); i++ {
+	for i := range chunks {
 		chunks[i] = make([]byte, chunkSize)
 	}
 	// chunkData[0]: empty
@@ -306,14 +306,11 @@ func TestCOW_SparseData(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
-	// Make sure the full content matches our buffer.
-	dataOut := make([]byte, len(data))
-	n, err := c.ReadAt(dataOut, 0)
-	require.NoError(t, err)
-	require.Equal(t, len(dataOut), n)
-
 	// Inspect the chunk files and ensure they have the expected physical size.
-	for i := 0; i < len(chunks); i++ {
+	// Do this before reading through the store: reads go through a shared
+	// mmap, and on tmpfs, faulting in a hole allocates a page, so a full read
+	// makes every chunk dense.
+	for i := range chunks {
 		chunkPath := filepath.Join(outDir, strconv.Itoa(i*int(chunkSize)))
 		// We wrote one data block per chunk except for the one chunk that was
 		// all empty. The empty chunk should not have written a file.
@@ -325,6 +322,23 @@ func TestCOW_SparseData(t *testing.T) {
 		}
 		nb := numIOBlocks(t, chunkPath)
 		require.Equal(t, int64(1), nb, "chunk %d IO block count", i)
+	}
+
+	// Make sure the full content matches our buffer.
+	dataOut := make([]byte, len(data))
+	n, err := c.ReadAt(dataOut, 0)
+	require.NoError(t, err)
+	require.Equal(t, len(dataOut), n)
+	require.Equal(t, data, dataOut)
+
+	// A writable shared mmap read allocates holes on some filesystems. When
+	// the same read leaves a scratch sparse file unchanged, verify that reading
+	// through the store also preserves the chunk files' sparseness.
+	if !mmapReadPreservesHoles(t, outDir, ioBlockSize) {
+		for i := 1; i < len(chunks); i++ {
+			chunkPath := filepath.Join(outDir, strconv.Itoa(i*int(chunkSize)))
+			require.Equal(t, int64(1), numIOBlocks(t, chunkPath), "chunk %d IO block count after read", i)
+		}
 	}
 
 	// Now write a single data byte to the empty chunk (0), and sync it to disk.
@@ -366,7 +380,7 @@ func TestCOW_Resize(t *testing.T) {
 		{Name: "DecreaseSize", OldSize: chunkSize, NewSize: chunkSize - 1, ExpectError: true},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				// Start out with a file containing random data
 				startBuf := randBytes(t, int(test.OldSize))
 				src := makeTempFile(t, startBuf)
@@ -386,7 +400,7 @@ func TestCOW_Resize(t *testing.T) {
 				// Read random ranges; should match startBuf right-padded with
 				// zeroes.
 				startRightPad := append(startBuf, make([]byte, test.NewSize-test.OldSize)...)
-				for i := 0; i < 10; i++ {
+				for range 10 {
 					offset, length := randSubslice(int(test.NewSize))
 					b := make([]byte, length)
 					_, err := cow.ReadAt(b, int64(offset))
@@ -412,7 +426,7 @@ func TestCOW_Resize(t *testing.T) {
 				require.True(t, bytes.Equal(endBuf, b))
 
 				// Read random ranges again; should match endBuf this time.
-				for i := 0; i < 10; i++ {
+				for range 10 {
 					offset, length := randSubslice(int(test.NewSize))
 					b := make([]byte, length)
 					_, err := cow.ReadAt(b, int64(offset))
@@ -453,7 +467,7 @@ func TestCOW_MmapLRUDoesNotDeadlock(t *testing.T) {
 
 	var eg errgroup.Group
 	eg.SetLimit(100)
-	for i := 0; i < 10_000; i++ {
+	for range 10_000 {
 		eg.Go(func() error {
 			p := make([]byte, 1)
 			offset := rand.Int63n(fileSize - 1)
@@ -631,7 +645,7 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 				off := int64(0)
 
 				b.StartTimer()
-				for r := 0; r < ioCountPerBenchOp; r++ {
+				for range ioCountPerBenchOp {
 					if !test.sequential {
 						off = rand.Int63n(ioBlockSize)
 					}
@@ -732,7 +746,7 @@ func testStore(t *testing.T, s interfaces.Store, path string) {
 	expectedContent := make([]byte, int(size))
 	buf := make([]byte, int(size))
 	n := 1 + rand.Intn(50)
-	for i := 0; i < n; i++ {
+	for range n {
 		// With equal probability, either (a) read a random range and make sure
 		// it matches expectedContent, or (b) write a random range and update
 		// our expectedContent for subsequent reads.
@@ -965,6 +979,55 @@ func makeEmptyTempFile(t *testing.T, sizeBytes int64) string {
 // writeSparseFile writes only the data blocks from b to the given path, so
 // that the physical size of the file is minimal while still representing the
 // same underlying bytes.
+// BenchmarkCOW_FirstWriteToChunk measures the first write to each chunk of a
+// store, which copies the chunk before writing to it.
+func BenchmarkCOW_FirstWriteToChunk(b *testing.B) {
+	flags.Set(b, "app.log_level", "error")
+	log.Configure()
+
+	const chunkSize = 4000 * 1024 // same as firecracker.cowChunkSizeBytes
+	const numChunks = 64
+	ctx := context.Background()
+	env := testenv.GetTestEnv(b)
+	tmp := testfs.MakeTempDir(b)
+	blockSize := ioBlockSize(b, tmp)
+
+	for _, density := range []float64{0, 0.1, 0.5, 1} {
+		b.Run(fmt.Sprintf("density=%.1f", density), func(b *testing.B) {
+			// Fill the given fraction of the file's blocks with random data.
+			buf := make([]byte, chunkSize*numChunks)
+			for off := int64(0); off < int64(len(buf)); off += blockSize {
+				if rand.Float64() < density {
+					_, err := rand.Read(buf[off : off+blockSize])
+					require.NoError(b, err)
+				}
+			}
+			path := filepath.Join(tmp, "input")
+			writeSparseFile(b, path, buf, blockSize)
+			page := make([]byte, os.Getpagesize())
+
+			var elapsed time.Duration
+			for range b.N {
+				chunkDir, err := os.MkdirTemp(tmp, "")
+				require.NoError(b, err)
+				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSize, chunkDir, "", false, snaputil.ConvertToCOWConcurrency)
+				require.NoError(b, err)
+
+				start := time.Now()
+				for i := range numChunks {
+					_, err := cow.WriteAt(page, int64(i)*chunkSize)
+					require.NoError(b, err)
+				}
+				elapsed += time.Since(start)
+
+				require.NoError(b, cow.Close())
+				require.NoError(b, os.RemoveAll(chunkDir))
+			}
+			b.ReportMetric(float64(elapsed.Microseconds())/float64(b.N*numChunks), "us/chunk")
+		})
+	}
+}
+
 func writeSparseFile(t testing.TB, path string, b []byte, ioBlockSize int64) {
 	f, err := os.Create(path)
 	require.NoError(t, err)
@@ -995,6 +1058,31 @@ func numIOBlocks(t *testing.T, path string) int64 {
 	// See https://askubuntu.com/a/1308745
 	statBlocksPerIOBlock := int64(s.Blksize) / 512
 	return s.Blocks / statBlocksPerIOBlock
+}
+
+// mmapReadPreservesHoles reports whether reading a writable shared mmap of a
+// sparse file increases its allocated block count on this filesystem.
+func mmapReadPreservesHoles(t *testing.T, dir string, ioBlockSize int64) bool {
+	f, err := os.CreateTemp(dir, ".mmap-read-probe-*")
+	require.NoError(t, err)
+	defer f.Close()
+	defer os.Remove(f.Name())
+
+	size := int(4 * ioBlockSize)
+	require.NoError(t, f.Truncate(int64(size)))
+	_, err = f.WriteAt([]byte{1}, 0)
+	require.NoError(t, err)
+	require.NoError(t, f.Sync())
+	before := numIOBlocks(t, f.Name())
+	require.Equal(t, int64(1), before, "probe IO block count before read")
+
+	mapped, err := syscall.Mmap(int(f.Fd()), 0, size, syscall.PROT_WRITE, syscall.MAP_SHARED)
+	require.NoError(t, err)
+	defer syscall.Munmap(mapped)
+	buf := make([]byte, len(mapped))
+	copy(buf, mapped)
+	require.Equal(t, byte(1), buf[0])
+	return numIOBlocks(t, f.Name()) > before
 }
 
 func ioBlockSize(t testing.TB, path string) int64 {

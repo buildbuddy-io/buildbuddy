@@ -190,6 +190,10 @@ message GitRepository {
   // linked, even if buildbuddy.yaml is missing from the repo. If disabled,
   // workflows will only run when buildbuddy.yaml is present in the repo.
   bool use_default_workflow_config = 2;
+
+  // Whether the repo owner has the read-write BuildBuddy GitHub app installed
+  // and linked to the org.
+  bool read_write_app_installed = 3;
 }
 
 message GetLinkedReposResponse {

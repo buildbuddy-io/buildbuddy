@@ -15,8 +15,10 @@ import { copyToClipboard } from "../../../app/util/clipboard";
 import { timestampToDateWithFallback } from "../../../app/util/proto";
 import { target } from "../../../proto/target_ts_proto";
 import { getProtoFilterParams } from "../filter/filter_util";
-import TrendsChartComponent, { ChartColor } from "../trends/trends_chart";
+import TrendsChartComponent, { ChartColor, SeriesType } from "../trends/trends_chart";
 import TapEmptyStateComponent from "./tap_empty_state";
+import { longFormatTsForInterval, shortFormatTsForAxis } from "../trends/common";
+import { stats } from "../../../proto/stats_ts_proto";
 
 interface Props {
   search: URLSearchParams;
@@ -31,8 +33,8 @@ interface TestLogDataOrError {
   testLogString?: string;
 }
 
-type TableSort = "Flaky %" | "Flakes + Likely Flakes" | "Flakes";
-const TableSortValues: TableSort[] = ["Flaky %", "Flakes + Likely Flakes", "Flakes"];
+type TableSort = "Flaky %" | "Flakes + Likely Flakes" | "Flakes" | "Near-timeouts";
+const TableSortValues: TableSort[] = ["Flaky %", "Flakes + Likely Flakes", "Flakes", "Near-timeouts"];
 
 const TABLE_TRUNCATION_LENGTH = 25;
 
@@ -302,7 +304,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
   }
 
   handleStatsFilterChange(newValue: string) {
-    router.updateParams({ targetFilter: newValue.trim() });
+    router.setQueryParam("targetFilter", newValue.trim());
   }
 
   handleTableSortChange(tableSortString: string) {
@@ -402,14 +404,9 @@ export default class FlakesComponent extends React.Component<Props, State> {
   render() {
     const singleTarget = this.props.search.get("target");
 
-    const dailyFlakesHeader = (
-      <h3 className="flakes-chart-header">{`Daily flakes ${singleTarget ? `for ${singleTarget} ` : ""}`}</h3>
-    );
-
     if (this.state.chartAndTableLoading) {
       return (
         <div className="container">
-          {dailyFlakesHeader}
           <div className="loading"></div>
         </div>
       );
@@ -424,7 +421,9 @@ export default class FlakesComponent extends React.Component<Props, State> {
 
     let tableData = singleTarget ? [] : (this.state.tableData?.stats ?? []);
     let sortFn: (a: target.AggregateTargetStats, b: target.AggregateTargetStats) => number;
-    if (this.state.tableSort === "Flakes") {
+    if (this.state.tableSort === "Near-timeouts") {
+      sortFn = (a, b) => +(b.data?.nearlyTimedOutRuns ?? 0) - +(a.data?.nearlyTimedOutRuns ?? 0);
+    } else if (this.state.tableSort === "Flakes") {
       sortFn = (a, b) => {
         const aFlakes = +(a.data?.flakyRuns ?? 0);
         const bFlakes = +(b.data?.flakyRuns ?? 0);
@@ -460,6 +459,18 @@ export default class FlakesComponent extends React.Component<Props, State> {
     }
     filteredTableData.sort(sortFn);
 
+    const totalFlakyTargets = filteredTableData.filter(
+      (s) => +(s.data?.flakyRuns ?? 0) + +(s.data?.likelyFlakyRuns ?? 0) > 0
+    ).length;
+    let totalFlakes = 0;
+    let totalLikelyFlakes = 0;
+    let totalNearTimeouts = 0;
+    filteredTableData.forEach((s) => {
+      totalFlakes += +(s.data?.flakyRuns ?? 0);
+      totalLikelyFlakes += +(s.data?.likelyFlakyRuns ?? 0);
+      totalNearTimeouts += +(s.data?.nearlyTimedOutRuns ?? 0);
+    });
+
     let tableIsPaginated = filteredTableData.length > TABLE_TRUNCATION_LENGTH;
     if (!this.state.showAllTableEntries && tableIsPaginated) {
       filteredTableData.length = TABLE_TRUNCATION_LENGTH; // Javascript is so cool
@@ -484,13 +495,6 @@ export default class FlakesComponent extends React.Component<Props, State> {
 
     const isEmpty = this.state.tableData && this.state.tableData.stats.length === 0;
 
-    let totalFlakes = 0;
-    let totalLikelyFlakes = 0;
-    this.state.tableData?.stats.forEach((s) => {
-      totalFlakes += +(s.data?.flakyRuns ?? 0);
-      totalLikelyFlakes += +(s.data?.likelyFlakyRuns ?? 0);
-    });
-
     if (isEmpty) {
       return (
         <TapEmptyStateComponent
@@ -503,14 +507,27 @@ export default class FlakesComponent extends React.Component<Props, State> {
     return (
       <div>
         <div className="container">
-          {dailyFlakesHeader}
           <div className="card chart-card">
             <TrendsChartComponent
-              title=""
+              title="Flakes & near-timeouts"
+              titleHelp={
+                <>
+                  <p>
+                    Flakes are test runs that failed at least once and then passed when Bazel retried them, such as with{" "}
+                    <span className="inline-code nowrap">--flaky_test_attempts</span>.
+                  </p>
+                  <p>
+                    Likely flakes are test runs that failed or timed out, while the runs of the same target just before
+                    and after them passed.
+                  </p>
+                  <p>Near-timeouts are test runs that passed, but ran for over 95% of the test timeout.</p>
+                </>
+              }
               standaloneChart={true}
               data={dates}
               dataSeries={[
                 {
+                  type: SeriesType.BAR,
                   name: "flakes",
                   extractValue: (ts) => +(this.getChartData(ts).flakyRuns ?? 0),
                   formatHoverValue: (value) => this.renderPluralCount(value, "flake"),
@@ -518,52 +535,38 @@ export default class FlakesComponent extends React.Component<Props, State> {
                   color: ChartColor.ORANGE,
                 },
                 {
+                  type: SeriesType.BAR,
                   name: "likely flakes",
                   extractValue: (ts) => +(this.getChartData(ts).likelyFlakyRuns ?? 0),
                   formatHoverValue: (value) => this.renderPluralCount(value, "likely flake"),
                   stackId: "flakes",
                   color: ChartColor.RED,
                 },
+                {
+                  type: SeriesType.BAR,
+                  name: "near-timeouts",
+                  extractValue: (ts) => +(this.getChartData(ts).nearlyTimedOutRuns ?? 0),
+                  formatHoverValue: (value) => this.renderPluralCount(value, "near-timeout"),
+                  stackId: "flakes",
+                  color: ChartColor.PURPLE,
+                },
               ]}
               primaryYAxis={{
                 formatTickValue: count,
                 allowDecimals: false,
               }}
-              formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
-              formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
-              ticks={[]}></TrendsChartComponent>
+              formatXAxisLabel={(ts) => shortFormatTsForAxis(ts * 1000)}
+              formatHoverXAxisLabel={(ts) => longFormatTsForInterval(stats.IntervalType.INTERVAL_TYPE_DAY, ts * 1000)}
+              ticks={dates}></TrendsChartComponent>
           </div>
         </div>
         {tableData.length > 0 && (
           <div className="container">
-            <h3 className="flakes-list-header">Flaky targets</h3>
             <div className="card">
               <div className="content">
-                <div className="flake-table">
-                  {!singleTarget && (
-                    <div className="flake-table-row flake-table-summary-row">
-                      <div className="flake-table-row-image">
-                        <Target></Target>
-                      </div>
-                      <div className="flake-table-row-content">
-                        <div className="flake-table-row-header">Totals</div>
-                        <div className="flake-table-row-stats">
-                          <div className="flake-stat">
-                            <span className="flake-stat-value">{tableData.length}</span>{" "}
-                            {this.renderPluralName(tableData.length, "flaky target")}
-                          </div>
-                          <div className="flake-stat">
-                            <span className="flake-stat-value">{totalFlakes}</span>{" "}
-                            {this.renderPluralName(totalFlakes, "flake")}
-                          </div>
-                          <div className="flake-stat">
-                            <span className="flake-stat-value">{totalLikelyFlakes}</span>{" "}
-                            {this.renderPluralName(totalLikelyFlakes, "likely flake")}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                <div className="trend-chart-title targets-title">
+                  <Target className="icon" />
+                  Targets
                 </div>
                 <div className="flake-table-header">
                   <FilterInput onChange={(e) => this.handleStatsFilterChange(e.target.value)}></FilterInput>
@@ -573,16 +576,40 @@ export default class FlakesComponent extends React.Component<Props, State> {
                       <Option value="Flaky %">Flaky %</Option>
                       <Option value="Flakes">Flakes</Option>
                       <Option value="Flakes + Likely Flakes">Flakes + Likely Flakes</Option>
+                      <Option value="Near-timeouts">Near-timeouts</Option>
                     </Select>
                   </div>
                 </div>
                 <div className="flake-table">
+                  {!singleTarget && (
+                    <div className="flake-table-row flake-table-summary-row">
+                      <div className="flake-table-row-content">
+                        <div className="flake-table-row-stats">
+                          <div className="flake-stat">
+                            <span className="flake-stat-value">{totalFlakyTargets}</span>{" "}
+                            {this.renderPluralName(totalFlakyTargets, "flaky target")}
+                          </div>
+                          <div className="flake-stat">
+                            <span className="flake-stat-value">{totalFlakes}</span>{" "}
+                            {this.renderPluralName(totalFlakes, "flake")}
+                          </div>
+                          <div className="flake-stat">
+                            <span className="flake-stat-value">{totalLikelyFlakes}</span>{" "}
+                            {this.renderPluralName(totalLikelyFlakes, "likely flake")}
+                          </div>
+                          <div className="flake-stat">
+                            <span className="flake-stat-value">{totalNearTimeouts}</span>{" "}
+                            {this.renderPluralName(totalNearTimeouts, "near-timeout")}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="flake-table flake-target-table">
                   {filteredTableData.map((s, index) => {
                     return (
                       <Link key={index} className="flake-table-row" href={`/tests/?target=${s.label}#flakes`}>
-                        <div className="flake-table-row-image">
-                          <Target></Target>
-                        </div>
                         <div className="flake-table-row-content">
                           <div className="flake-table-row-header">
                             {s.label} <CopyButton text={s.label}></CopyButton>
@@ -598,6 +625,10 @@ export default class FlakesComponent extends React.Component<Props, State> {
                             <div className="flake-stat">
                               <span className="flake-stat-value">{s.data?.likelyFlakyRuns ?? 0}</span>{" "}
                               {this.renderPluralName(+(s.data?.likelyFlakyRuns ?? 0), "likely flake")}
+                            </div>
+                            <div className="flake-stat">
+                              <span className="flake-stat-value">{s.data?.nearlyTimedOutRuns ?? 0}</span>{" "}
+                              {this.renderPluralName(+(s.data?.nearlyTimedOutRuns ?? 0), "near-timeout")}
                             </div>
                             <div className="flake-stat">
                               <span className="flake-stat-value">{s.data?.totalRuns ?? 0}</span> total runs

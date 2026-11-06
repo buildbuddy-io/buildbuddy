@@ -26,9 +26,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
+	"github.com/buildbuddy-io/buildbuddy/proto/capability"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -46,10 +46,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -97,6 +97,9 @@ var (
 	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
 	chunkingEnabled                    = flag.Bool("remote_execution.chunking_enabled", false, "If true, executors upload outputs and download inputs using content-defined chunks.")
 
+	maxRunnerCPU         = expflag.Float64("remote_execution.runner.max_cpu", 0, "Maximum CPU that can be requested by a runner, in vCPUs. Must be non-negative. Zero disables the limit.")
+	maxRunnerMemoryBytes = expflag.Int64("remote_execution.runner.max_memory_bytes", 0, "Maximum memory that can be requested by a runner, in bytes. Must be non-negative. Zero disables the limit.")
+
 	teeInstanceNamePrefix = flag.String("remote_execution.tee_instance_name_prefix", "", "Instance name prefix used to identify tee'ed actions", flag.Internal)
 )
 
@@ -124,6 +127,17 @@ func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution 
 	execution.ExecutionCompletedTimestampUsec = md.GetExecutionCompletedTimestamp().AsTime().UnixMicro()
 	execution.OutputUploadStartTimestampUsec = md.GetOutputUploadStartTimestamp().AsTime().UnixMicro()
 	execution.OutputUploadCompletedTimestampUsec = md.GetOutputUploadCompletedTimestamp().AsTime().UnixMicro()
+}
+
+func (s *ExecutionServer) fillExecutionFromSchedulingMetadata(md *scpb.SchedulingMetadata, execution *repb.StoredExecution) {
+	execution.PreviousMeasuredMemoryBytes = md.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
+	execution.PreviousMeasuredMilliCpu = md.GetMeasuredTaskSize().GetEstimatedMilliCpu()
+	execution.PreviousMeasuredFreeDiskBytes = md.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
+	execution.PredictedMemoryBytes = md.GetPredictedTaskSize().GetEstimatedMemoryBytes()
+	execution.PredictedMilliCpu = md.GetPredictedTaskSize().GetEstimatedMilliCpu()
+	execution.PredictedFreeDiskBytes = md.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
+	execution.SelfHosted = md.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
+	execution.EffectivePool = md.GetPool()
 }
 
 func generateCommandSnippet(command *repb.Command) string {
@@ -479,6 +493,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 
 			executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
 			executionProto.Experiments = auxMeta.GetExperiments()
+			executionProto.ExperimentVariants = experiments.ProtoToVariantMap(auxMeta.GetExperimentFlags())
 
 			executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
 			executionProto.RunnerId = auxMeta.GetRunnerMetadata().GetRunnerId()
@@ -508,16 +523,12 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.Arch = properties.Arch
 			}
 
+			executionProto.EstimatedFreeDiskBytes = md.GetEstimatedTaskSize().GetEstimatedFreeDiskBytes()
 			if schedulingMeta := auxMeta.GetSchedulingMetadata(); schedulingMeta != nil {
-				executionProto.EstimatedFreeDiskBytes = md.GetEstimatedTaskSize().GetEstimatedFreeDiskBytes()
-				executionProto.PreviousMeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
-				executionProto.PreviousMeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
-				executionProto.PreviousMeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
-				executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
-				executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
-				executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
-				executionProto.SelfHosted = schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
-				executionProto.EffectivePool = schedulingMeta.GetPool()
+				s.fillExecutionFromSchedulingMetadata(schedulingMeta, executionProto)
+			} else if auxMeta != nil {
+				// Old self-hosted executors don't send scheduling metadata.
+				executionProto.SelfHosted = true
 			}
 
 			request := auxMeta.GetExecuteRequest()
@@ -535,6 +546,9 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 
 			}
 			executionProto.CommandSnippet = generateCommandSnippet(cmd)
+			// This is technically recorded when the command is originally
+			// dispatched, but it can go missing if redis restarts.
+			executionProto.OutputPath = primaryOutputPath(cmd)
 		}
 
 		if err := s.executionCollector.UpdateInProgressExecution(ctx, executionProto); err != nil {
@@ -602,6 +616,11 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 	executionProto, err := s.executionCollector.GetInProgressExecution(ctx, executionID)
 	if err != nil {
 		return nil, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
+	}
+	// If CreatedAtUsec is otherwise unset (perhaps redis restarted), let's at
+	// least make it match the queued timestamp so that the field is ~useful.
+	if executionProto.GetCreatedAtUsec() == 0 {
+		executionProto.CreatedAtUsec = executionProto.GetQueuedTimestampUsec()
 	}
 
 	links, err = s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
@@ -679,8 +698,7 @@ func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *diges
 	if err != nil {
 		return nil, err
 	}
-	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
-	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), chunkingEnabled, s.env.GetExperimentFlagProvider(), actionResult); err != nil {
+	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), actionResult); err != nil {
 		return nil, err
 	}
 	return actionResult, nil
@@ -774,6 +792,26 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 	return nil
 }
 
+// validateRunnerSize checks runner requests before scheduler sizing clamps them.
+func validateRunnerSize(ctx context.Context, size *scpb.TaskSize) error {
+	cpuLimit := maxRunnerCPU.Get(ctx)
+	memoryLimit := maxRunnerMemoryBytes.Get(ctx)
+	if cpuLimit < 0 {
+		return status.InternalError("remote_execution.runner.max_cpu must be non-negative")
+	}
+	if memoryLimit < 0 {
+		return status.InternalError("remote_execution.runner.max_memory_bytes must be non-negative")
+	}
+	cpu := tasksize.CpuComputeUnits(size.GetEstimatedMilliCpu())
+	if cpuLimit > 0 && cpu > cpuLimit {
+		return status.InvalidArgumentErrorf("Runner requests %g vCPUs, exceeding your organization's per-runner CPU limit of %g vCPUs. Reduce the runner size or contact support@buildbuddy.io to discuss your workload and request a higher limit.", cpu, cpuLimit)
+	}
+	if memoryLimit > 0 && size.GetEstimatedMemoryBytes() > memoryLimit {
+		return status.InvalidArgumentErrorf("Runner requests %g GiB of memory, exceeding your organization's per-runner memory limit of %g GiB. Reduce the runner size or contact support@buildbuddy.io to discuss your workload and request a higher limit.", float64(size.GetEstimatedMemoryBytes())/tasksize.GiB, float64(memoryLimit)/tasksize.GiB)
+	}
+	return nil
+}
+
 func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, executionID string) error {
 	pool, err := s.dispatch(ctx, req, action, executionID, &dispatchOpts{recordActionMergingState: true})
 	if err == nil && pool.IsShared && pool.Name == "" {
@@ -860,6 +898,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return nil, err
 	}
 
+	pool, err := scheduler.GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
+	if err != nil {
+		return nil, status.WrapError(err, "get executor pool info")
+	}
+
 	if err := s.insertExecution(ctx, executionID, invocationID, command, repb.ExecutionStage_UNKNOWN, props.Pool); err != nil {
 		return nil, status.UnavailableErrorf("create execution: %s", err)
 	}
@@ -880,8 +923,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
 		const taskSizeOverridesExperiment = "remote_execution.task_size_overrides"
-		expOverrides, details := fp.ObjectDetails(
-			ctx, taskSizeOverridesExperiment, nil,
+		requestedSize := tasksize.Requested(executionTask)
+		experimentOpts := []any{
 			// Set OriginalPool to allow configuring task sizing based on pool
 			// names from another remote execution platform.
 			experiments.WithContext("OriginalPool", props.OriginalPool),
@@ -889,7 +932,18 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 			experiments.WithContext("EstimatedComputeUnits", props.EstimatedComputeUnits),
 			experiments.WithContext("EstimatedMilliCPU", props.EstimatedMilliCPU),
 			experiments.WithContext("EstimatedMemoryBytes", props.EstimatedMemoryBytes),
-		)
+			// Set effective requested CPU and RAM in the experiment context.
+			// requestedSize considers both the EstimatedComputeUnits and the EstimatedMilliCPU/ EstimatedMemoryBytes requests and returns
+			// the value that will actually be applied to the task.
+			experiments.WithContext("effective_requested_cpu", tasksize.CpuComputeUnits(requestedSize.GetEstimatedMilliCpu())),
+			experiments.WithContext("effective_requested_ram_gib", float64(requestedSize.GetEstimatedMemoryBytes())/tasksize.GiB),
+		}
+		if rmd.GetActionMnemonic() == "BuildBuddyWorkflowRun" {
+			if actionName, ok := rexec.LookupEnv(command.GetEnvironmentVariables(), ci_runner_env.BuildBuddyActionNameEnvVarName); ok && actionName != "" {
+				experimentOpts = append(experimentOpts, experiments.WithContext("workflow_action_name", actionName))
+			}
+		}
+		expOverrides, details := fp.ObjectDetails(ctx, taskSizeOverridesExperiment, nil, experimentOpts...)
 		for propertyName, propertyValueAny := range expOverrides {
 			if propertyValue, ok := propertyValueAny.(string); ok {
 				executionTask.PlatformOverrides.Properties = append(executionTask.PlatformOverrides.Properties, &repb.Platform_Property{
@@ -902,30 +956,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 		if details.Variant() != "" {
 			executionTask.Experiments = append(executionTask.Experiments, taskSizeOverridesExperiment+":"+details.Variant())
-		}
-	}
-
-	// Rewrite container image name via experiment.
-	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
-		const containerImageRewriteExperiment = "remote_execution.container_image_rewrite"
-		rewriteConfig, details := fp.ObjectDetails(ctx, containerImageRewriteExperiment, nil)
-		if rewriteConfig != nil {
-			prefix, _ := rewriteConfig["prefix"].(string)
-			replacement, _ := rewriteConfig["replacement"].(string)
-			imageName := strings.TrimPrefix(props.ContainerImage, platform.DockerPrefix)
-			if prefix != "" && replacement != "" {
-				if after, ok := strings.CutPrefix(imageName, prefix); ok {
-					executionTask.PlatformOverrides.Properties = append(
-						executionTask.PlatformOverrides.Properties,
-						&repb.Platform_Property{
-							Name:  "container-image",
-							Value: "docker://" + replacement + after,
-						})
-				}
-			}
-		}
-		if details.Variant() != "" {
-			executionTask.Experiments = append(executionTask.Experiments, containerImageRewriteExperiment+":"+details.Variant())
 		}
 	}
 
@@ -952,14 +982,19 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		uploadOutputsChunked = efp.Boolean(ctx, "executor.upload_outputs_chunked", uploadOutputsChunked)
 		downloadInputsChunked = efp.Boolean(ctx, "executor.download_inputs_chunked", downloadInputsChunked)
 	}
-	if chunking.Enabled(ctx, efp) && uploadOutputsChunked {
+	if uploadOutputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
 		executionTask.FastCdc_2020Params = chunking.FastCDCWriteParams(ctx, efp)
-		if efp != nil && efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false) {
-			executionTask.Experiments = append(executionTask.Experiments, cdc.SpliceWithoutValidationExperiment)
+		// TODO (go/bug/8651): remove this once we go through a single release
+		// of the executors using execution_experiments.SpliceWithoutValidation.
+		if efp != nil {
+			// Always set because it's always enabled in flagd, and it only
+			// affects executors during a short rollout period.
+			executionTask.Experiments = append(executionTask.Experiments, "splice-without-validation")
 		}
+
 	}
-	if chunking.Enabled(ctx, efp) && downloadInputsChunked {
+	if downloadInputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.download_inputs_chunked")
 	}
 
@@ -968,11 +1003,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if efp != nil && platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType {
-		if efp.Boolean(ctx, snaputil.RemoteContainerImageReadsExperiment, false) {
-			executionTask.Experiments = append(executionTask.Experiments, snaputil.RemoteContainerImageReadsExperiment)
+		if efp.Boolean(ctx, "executor.remote_container_image_reads_enabled", false) {
+			executionTask.Experiments = append(executionTask.Experiments, "executor.remote_container_image_reads_enabled")
 		}
-		if efp.Boolean(ctx, snaputil.RemoteContainerImageWritesExperiment, false) {
-			executionTask.Experiments = append(executionTask.Experiments, snaputil.RemoteContainerImageWritesExperiment)
+		if efp.Boolean(ctx, "executor.remote_container_image_writes_enabled", false) {
+			executionTask.Experiments = append(executionTask.Experiments, "executor.remote_container_image_writes_enabled")
 		}
 	}
 
@@ -994,6 +1029,12 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		// sample, so we'll probably want to ignore the first few days of data.
 		if _, experiment := tasksize.EvaluateP90CPUTrial(ctx, s.env.GetExperimentFlagProvider(), command); experiment != "" {
 			executionTask.Experiments = append(executionTask.Experiments, experiment)
+		}
+	}
+
+	if !pool.IsSelfHosted {
+		if err := validateRunnerSize(ctx, requestedTaskSize); err != nil {
+			return nil, err
 		}
 	}
 
@@ -1030,10 +1071,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	executionTask.QueuedTimestamp = timestamppb.Now()
-	pool, err := scheduler.GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
-	if err != nil {
-		return nil, status.WrapError(err, "get executor pool info")
-	}
 	var hostnamePattern string
 	var routingConfig *scpb.RoutingConfig
 	if exp := s.env.GetExperimentFlagProvider(); exp != nil {
@@ -1074,6 +1111,22 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		TaskGroupId:       taskGroupID,
 		Priority:          req.GetExecutionPolicy().GetPriority(),
 		QueuedTimestamp:   executionTask.GetQueuedTimestamp(),
+		// Read the effective value here rather than from props, which were
+		// parsed before experiments appended their platform overrides above.
+		// Pass along the raw value rather than coercing unknown types, so that
+		// an unsupported request fails at scheduling time with a message
+		// naming the type that no executor supports.
+		RequestedIsolationType: platform.FindEffectiveValue(executionTask, platform.WorkloadIsolationPropertyName),
+	}
+	if *writeExecutionProgressStateToRedis {
+		// Record the scheduling metadata now rather than relying on getting it
+		// back from the executor: since executions that fail before an executor
+		// completes them never report it.
+		executionProto := &repb.StoredExecution{ExecutionId: executionID}
+		s.fillExecutionFromSchedulingMetadata(schedulingMetadata, executionProto)
+		if err := s.executionCollector.UpdateInProgressExecution(ctx, executionProto); err != nil {
+			log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
+		}
 	}
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {
@@ -1102,6 +1155,30 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	return pool, nil
 }
 
+const rejectAnonymousExecutionsExperiment = "remote_execution.reject_anonymous_executions"
+
+// checkAnonymousExecutionExperiment returns an error if anonymous execution is
+// disabled by experiment.
+func (s *ExecutionServer) checkAnonymousExecutionExperiment(ctx context.Context) error {
+	fp := s.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return nil
+	}
+	if _, err := s.authenticator.AuthenticatedUser(ctx); !authutil.IsAnonymousUserError(err) {
+		return nil
+	}
+	// Attach IP for fractional rollouts since there may not be an invocation_id
+	// attached.
+	var opts []any
+	if ip := clientip.Get(ctx); ip != "" {
+		opts = append(opts, experiments.WithContext("client_ip", ip))
+	}
+	if !fp.Boolean(ctx, rejectAnonymousExecutionsExperiment, false, opts...) {
+		return nil
+	}
+	return status.PermissionDeniedError("Anonymous remote execution is no longer supported. Please create an account at https://buildbuddy.io and use an API key.")
+}
+
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
 	// Enforce a priority range of -1000 to 1000 for now so that we have some
 	// flexibility to assign different meanings to priority values later on.
@@ -1112,6 +1189,19 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	adInstanceDigest := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.authenticator)
 	if err != nil {
+		return err
+	}
+	u, err := s.authenticator.AuthenticatedUser(ctx)
+	if err != nil && !authutil.IsAnonymousUserError(err) {
+		return err
+	}
+	if err == nil &&
+		u.GetAPIKeyInfo().ID != "" &&
+		!u.HasCapability(capability.Capability_CACHE_WRITE|capability.Capability_CAS_WRITE|capability.Capability_ORG_ADMIN) {
+		return status.PermissionDeniedError("remote execution requires an API key with write capability")
+	}
+
+	if err := s.checkAnonymousExecutionExperiment(ctx); err != nil {
 		return err
 	}
 
@@ -1305,8 +1395,32 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 	metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
 	defer metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Dec()
 
+	// End the wait if the scheduler loses the task, since nobody would publish
+	// a final update for it. See WatchTaskLiveness.
+	taskLost := s.env.GetSchedulerService().WatchTaskLiveness(ctx, req.GetName())
+
 	for {
-		msg, ok := <-streamPubSubChan
+		var msg *pubsub.Message
+		ok := true
+		// Set waitErr when the subscription fails (for example because a Redis
+		// node went away) or the scheduler reports the task lost. Either way,
+		// send Bazel a NOT_FOUND error so that it retries the execution.
+		var waitErr error
+		select {
+		case msg, ok = <-streamPubSubChan:
+		case <-taskLost:
+			// select picks at random among ready cases, so before ending the
+			// wait, take any update that is already waiting, since it may be
+			// the final result.
+			select {
+			case msg, ok = <-streamPubSubChan:
+			default:
+				waitErr = status.NotFoundErrorf("the scheduler lost task %q before it completed", req.GetName())
+			}
+		}
+		if ok && msg != nil && msg.Err != nil {
+			waitErr = status.NotFoundErrorf("receive execution update: %s", msg.Err)
+		}
 		if !ok {
 			if ctx.Err() != nil {
 				log.CtxInfof(ctx, "WaitExecution %q: client disconnected before action completed: %s", req.GetName(), ctx.Err())
@@ -1314,13 +1428,11 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 			return status.UnavailableErrorf("Stream PubSub channel closed for %q", req.GetName())
 		}
 		var data string
-		// If there's an error maintaining the subscription (e.g. because a Redis node went away) send a
-		// NOT FOUND error to Bazel so that it retries the execution.
-		if msg.Err != nil {
+		if waitErr != nil {
 			op, err := operation.Assemble(
 				req.GetName(),
 				operation.Metadata(repb.ExecutionStage_COMPLETED, actionResource.GetDigest()),
-				operation.ErrorResponse(status.NotFoundErrorf("receive execution update: %s", msg.Err)),
+				operation.ErrorResponse(waitErr),
 			)
 			if err != nil {
 				return err

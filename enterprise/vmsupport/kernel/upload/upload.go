@@ -103,8 +103,8 @@ func depsRepoName(arch, version string) (string, error) {
 	switch {
 	case arch == "x86_64" && version == "v5.15":
 		return "org_kernel_git_linux_kernel-vmlinux", nil
-	case arch == "x86_64" && version == "v6.1":
-		return "org_kernel_git_linux_kernel-vmlinux-6.1", nil
+	case arch == "x86_64" && version == "v6.18":
+		return "org_kernel_git_linux_kernel-vmlinux-6.18", nil
 	case arch == "aarch64" && version == "v5.10":
 		return "org_kernel_git_linux_kernel-vmlinux-arm64", nil
 	default:

@@ -1,15 +1,21 @@
 package resources
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
@@ -21,10 +27,11 @@ import (
 )
 
 var (
-	customResources   = flag.Slice("executor.custom_resources", []CustomResource{}, "Optional allocatable custom resources. This works similarly to bazel's local_extra_resources flag. Request these resources in exec_properties using the 'resources:<name>': '<value>' syntax.")
+	customResources   = flag.Slice("executor.custom_resources", []CustomResource{}, "Optional allocatable custom resources. This works similarly to bazel's local_extra_resources flag. Request these resources in exec_properties using the 'resources:<name>': '<value>' syntax. Resource names are case-insensitive.")
 	memoryBytes       = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
 	mmapMemoryBytes   = flag.Int64("executor.mmap_memory_bytes", 10e9, "Maximum memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. This is subtraced from the configured memory_bytes. Has no effect if firecracker is disabled or snapshot sharing is disabled.")
 	milliCPU          = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_CPU env var.")
+	gpuMemoryBytes    = flag.Int64("executor.gpu_memory_bytes", 0, "Optional total GPU memory in bytes across all GPUs available to execution tasks. If unset, this is read from the SYS_GPU_MEMORY_BYTES env var, or else detected from the GPUs on the executor. Cannot set both this option and the SYS_GPU_MEMORY_BYTES env var. Requires executor.gpu_memory_tracking_enabled.")
 	diskBytes         = flag.Int64("executor.disk_bytes", 0, "Optional maximum disk bytes to allocate to execution task workspaces (approximate). If unset, this is derived from the capacity of the filesystem holding the build root, scaled by executor.disk_capacity_ratio.")
 	diskCapacityRatio = flag.Float64("executor.disk_capacity_ratio", 0.9, "Fraction of the build root filesystem's total capacity to report as assignable to task workspaces. Leaves headroom for the OS, the local filecache, and root-reserved blocks. Ignored if executor.disk_bytes is set.")
 	zoneOverride      = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
@@ -33,6 +40,7 @@ var (
 const (
 	cpuEnvVarName       = "SYS_CPU"
 	memoryEnvVarName    = "SYS_MEMORY_BYTES"
+	gpuMemoryEnvVarName = "SYS_GPU_MEMORY_BYTES"
 	nodeNameEnvVarName  = "MY_NODE_NAME"
 	hostnameEnvVarName  = "MY_HOSTNAME"
 	namespaceEnvVarName = "MY_NAMESPACE"
@@ -51,10 +59,11 @@ const (
 )
 
 var (
-	allocatedRAMBytes     int64
-	allocatedMmapRAMBytes int64
-	allocatedCPUMillis    int64
-	allocatedDiskBytes    int64
+	allocatedRAMBytes       int64
+	allocatedMmapRAMBytes   int64
+	allocatedCPUMillis      int64
+	allocatedGPUMemoryBytes int64
+	allocatedDiskBytes      int64
 )
 
 var (
@@ -98,7 +107,7 @@ func setSysMilliCPUCapacityFromEnvOrSystem() error {
 	}
 
 	if v := os.Getenv(cpuEnvVarName); v != "" {
-		millis, err := parseCPU(v)
+		millis, err := ParseCPU(v)
 		if err != nil {
 			return fmt.Errorf("parse %s: %w", cpuEnvVarName, err)
 		}
@@ -115,9 +124,9 @@ func setSysMilliCPUCapacityFromEnvOrSystem() error {
 	return nil
 }
 
-// Parses a CPU string like "1.5" (fractional core count) or "1500m"
-// (milli-CPU).
-func parseCPU(v string) (cpuMillis int64, _ error) {
+// ParseCPU parses a CPU string like "1.5" (fractional core count) or "1500m"
+// (milli-CPU) and returns the amount in milli-CPU.
+func ParseCPU(v string) (cpuMillis int64, _ error) {
 	if s, ok := strings.CutSuffix(v, "m"); ok {
 		// Parse as milli-CPU
 		m, err := strconv.Atoi(s)
@@ -130,6 +139,11 @@ func parseCPU(v string) (cpuMillis int64, _ error) {
 	f, err := strconv.ParseFloat(v, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid CPU core count: parse float: %w", err)
+	}
+	// Reject values that don't fit in int64 milliCPU. Converting them would
+	// overflow, with a result that differs between platforms.
+	if math.IsNaN(f) || math.Abs(f) > math.MaxInt64/1000 {
+		return 0, fmt.Errorf("invalid CPU core count %q", v)
 	}
 
 	return int64(f * 1000), nil
@@ -178,6 +192,57 @@ func Configure(mmapLRUEnabled bool) error {
 	log.Debugf("Set allocatedRAMBytes to %d", allocatedRAMBytes)
 	log.Debugf("Set allocatedCPUMillis to %d", allocatedCPUMillis)
 
+	return nil
+}
+
+// GPUMemoryDetector detects the total GPU memory capacity of the executor.
+// This interface exists since the GPU package is currently an enterprise dep
+// and also has transitive enterprise deps.
+type GPUMemoryDetector interface {
+	GetTotalGPUMemoryBytes() (int64, error)
+}
+
+// ConfigureGPU sets the GPU memory capacity available to execution tasks from
+// the executor.gpu_memory_bytes flag, the SYS_GPU_MEMORY_BYTES env var, or the
+// detector, in that order. A nil detector means GPU memory tracking is
+// disabled. Any configured capacity is then rejected rather than ignored,
+// because for now GPU memory is only scheduled on executors that also measure
+// it.
+func ConfigureGPU(detector GPUMemoryDetector) error {
+	if *gpuMemoryBytes < 0 {
+		return status.InvalidArgumentErrorf("executor.gpu_memory_bytes must not be negative (got %d)", *gpuMemoryBytes)
+	}
+	if detector == nil {
+		if *gpuMemoryBytes > 0 || os.Getenv(gpuMemoryEnvVarName) != "" {
+			return status.InvalidArgumentErrorf("executor.gpu_memory_bytes and %s require GPU memory tracking (executor.gpu_memory_tracking_enabled)", gpuMemoryEnvVarName)
+		}
+		allocatedGPUMemoryBytes = 0
+		return nil
+	}
+	if *gpuMemoryBytes > 0 {
+		if os.Getenv(gpuMemoryEnvVarName) != "" {
+			return status.InvalidArgumentErrorf("Only one of the 'executor.gpu_memory_bytes' config option and '%s' environment variable may be set", gpuMemoryEnvVarName)
+		}
+		allocatedGPUMemoryBytes = *gpuMemoryBytes
+		return nil
+	}
+	if v := os.Getenv(gpuMemoryEnvVarName); v != "" {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", gpuMemoryEnvVarName, err)
+		}
+		if i < 0 {
+			return status.InvalidArgumentErrorf("%s must not be negative (got %d)", gpuMemoryEnvVarName, i)
+		}
+		allocatedGPUMemoryBytes = i
+		return nil
+	}
+	total, err := detector.GetTotalGPUMemoryBytes()
+	if err != nil {
+		return fmt.Errorf("detect total GPU memory: %w", err)
+	}
+	allocatedGPUMemoryBytes = total
+	log.Debugf("Set allocatedGPUMemoryBytes to %d (detected)", allocatedGPUMemoryBytes)
 	return nil
 }
 
@@ -240,6 +305,12 @@ func GetAllocatedCPUMillis() int64 {
 	return allocatedCPUMillis
 }
 
+// GetAllocatedGPUMemoryBytes returns the total GPU memory available to execution
+// tasks across all GPUs. A value of 0 means no GPU memory is available.
+func GetAllocatedGPUMemoryBytes() int64 {
+	return allocatedGPUMemoryBytes
+}
+
 // GetAllocatedDiskBytes returns the disk capacity allocated to task workspaces,
 // or 0 if it could not be determined (in which case disk should not be used as
 // a scheduling constraint).
@@ -264,7 +335,7 @@ func GetAllocatedCustomResources() ([]*scpb.CustomResource, error) {
 			return []*scpb.CustomResource{}, status.InvalidArgumentError("Custom resource names may not contain periods")
 		}
 		out = append(out, &scpb.CustomResource{
-			Name:  r.Name,
+			Name:  strings.ToLower(r.Name),
 			Value: float32(r.Value),
 		})
 	}
@@ -357,6 +428,11 @@ func GetOSDisplayName() string {
 
 func GetMyHostname() (string, error) {
 	if v := os.Getenv(hostnameEnvVarName); v != "" {
+		// Strip brackets from IPv6 literals like "[::1]" so callers can
+		// safely use net.JoinHostPort.
+		if strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]") {
+			v = v[1 : len(v)-1]
+		}
 		return v, nil
 	}
 	return os.Hostname()
@@ -376,6 +452,16 @@ func GetMyPort() (int32, error) {
 	return int32(i), nil
 }
 
+// GetZone returns the zone this process runs in: the zone_override flag if
+// set, else the GCE zone (e.g. "us-west1-b") or the EC2 availability zone
+// (e.g. "us-west-2a"), or "" if neither can be determined.
+//
+// Zones are only comparable within one deployment. GCE zone names are
+// global, but AWS maps availability zone names to physical zones
+// independently per account, so "us-west-2a" in two accounts is generally
+// two different zones. The account-independent AZ IDs (e.g. "usw2-az1")
+// would avoid that, but callers only compare zones among peers in one
+// account, and the name is what appears in the AWS console and in metrics.
 func GetZone() string {
 	if *zoneOverride != "" {
 		return *zoneOverride
@@ -384,8 +470,48 @@ func GetZone() string {
 		if z, err := metadata.Zone(); err == nil {
 			return z
 		}
+		return ""
 	}
-	return ""
+	return awsZone()
+}
+
+// awsZone is the EC2 availability zone, or "" off EC2 or if the lookup fails.
+var awsZone = sync.OnceValue(func() string {
+	if !onEC2() {
+		return ""
+	}
+	z, err := ec2AvailabilityZone()
+	if err != nil {
+		log.Warningf("Failed to get availability zone from EC2 instance metadata: %s", err)
+		return ""
+	}
+	return z
+})
+
+// onEC2 reports whether this is a (Nitro-based) EC2 instance, per
+// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/identify_ec2_instances.html.
+// It only reads sysfs, so unlike metadata.OnGCE it cannot hang on a host
+// where the metadata service address is unroutable.
+func onEC2() bool {
+	b, err := os.ReadFile("/sys/class/dmi/id/sys_vendor")
+	return err == nil && strings.TrimSpace(string(b)) == "Amazon EC2"
+}
+
+// ec2AvailabilityZone reads the zone from the EC2 instance metadata service.
+func ec2AvailabilityZone() (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client := imds.New(imds.Options{})
+	out, err := client.GetMetadata(ctx, &imds.GetMetadataInput{Path: "placement/availability-zone"})
+	if err != nil {
+		return "", err
+	}
+	defer out.Content.Close()
+	b, err := io.ReadAll(out.Content)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
 }
 
 func GetK8sNamespace() string {

@@ -2,6 +2,7 @@ package testhttp
 
 import (
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -81,9 +82,7 @@ func (c *RequestCounter) Snapshot() map[string]int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	snap := make(map[string]int, len(c.counts))
-	for k, v := range c.counts {
-		snap[k] = v
-	}
+	maps.Copy(snap, c.counts)
 	return snap
 }
 

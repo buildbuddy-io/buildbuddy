@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "testregistry",
     testonly = 1,
@@ -25,5 +27,3 @@ go_library(
         "@io_bazel_rules_go//go/runfiles",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

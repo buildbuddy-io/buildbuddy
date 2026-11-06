@@ -39,6 +39,11 @@ const (
 	UnitMicroseconds = "µs"
 	// UnitMilliseconds is a duration in ms, rescaled to larger units as it grows.
 	UnitMilliseconds = "ms"
+	// UnitDurationMs takes a count of milliseconds and renders it as a
+	// compound duration, breaking it into the largest units that fit
+	// (days, hours, minutes) rather than rescaling to a single unit the
+	// way UnitMilliseconds does.
+	UnitDurationMs = "dtdurationms"
 	// UnitNone is a plain unabbreviated number with no suffix.
 	UnitNone = "none"
 	// UnitOps formats as operations/sec ("ops/s").
@@ -54,6 +59,10 @@ const (
 	UnitShort = "short"
 	// UnitWatts formats as watts with SI prefixes (W, kW, MW).
 	UnitWatts = "watt"
+	// UnitVolts formats as volts with SI prefixes (V, kV).
+	UnitVolts = "volt"
+	// UnitAmps formats as amperes with SI prefixes (A, kA).
+	UnitAmps = "amp"
 )
 
 // Prometheus returns a reference to the default prometheus metrics datasource
@@ -105,6 +114,53 @@ func Timeseries(title, unit string) *timeseries.PanelBuilder {
 		Span(12)
 }
 
+// PlainTimeseries returns a timeseries panel with a list legend and a
+// single-series tooltip. An empty unit keeps Grafana's default.
+func PlainTimeseries(title, unit string) *timeseries.PanelBuilder {
+	p := timeseries.NewPanelBuilder().
+		Title(title).
+		Datasource(Prometheus()).
+		LineWidth(1).
+		FillOpacity(0).
+		GradientMode(common.GraphGradientModeNone).
+		Legend(common.NewVizLegendOptionsBuilder().
+			DisplayMode(common.LegendDisplayModeList).
+			Placement(common.LegendPlacementBottom).
+			ShowLegend(true)).
+		Tooltip(common.NewVizTooltipOptionsBuilder().
+			Mode(common.TooltipDisplayModeSingle).
+			Sort(common.SortOrderNone)).
+		Height(8).
+		Span(12)
+	if unit != "" {
+		p.Unit(unit)
+	}
+	return p
+}
+
+// RightLegend returns a list legend to the right of the graph.
+func RightLegend() *common.VizLegendOptionsBuilder {
+	return common.NewVizLegendOptionsBuilder().
+		DisplayMode(common.LegendDisplayModeList).
+		Placement(common.LegendPlacementRight).
+		ShowLegend(true)
+}
+
+// MultiTooltip returns a tooltip listing every series, sorted by value.
+func MultiTooltip() *common.VizTooltipOptionsBuilder {
+	return common.NewVizTooltipOptionsBuilder().
+		Mode(common.TooltipDisplayModeMulti).
+		Sort(common.SortOrderDescending)
+}
+
+// RightAxisProps moves a series to a right-hand axis with the given unit.
+func RightAxisProps(unit string) []dashboard.DynamicConfigValue {
+	return []dashboard.DynamicConfigValue{
+		{Id: "custom.axisPlacement", Value: "right"},
+		{Id: "unit", Value: unit},
+	}
+}
+
 // StackedTimeseries returns a timeseries panel suitable for stacked rates.
 func StackedTimeseries(title, unit string) *timeseries.PanelBuilder {
 	return Timeseries(title, unit).
@@ -124,6 +180,10 @@ func Stat(title, unit string) *stat.PanelBuilder {
 		Unit(unit).
 		GraphMode(common.BigValueGraphModeNone).
 		ColorMode(common.BigValueColorModeValue).
+		// The SDK serializes an unset orientation as "" rather than "auto".
+		// Grafana treats anything but "horizontal" as vertical, which stacks
+		// multi-series stats and shows only the first tile.
+		Orientation(common.VizOrientationAuto).
 		ReduceOptions(
 			common.NewReduceDataOptionsBuilder().
 				Calcs([]string{"lastNotNull"}).

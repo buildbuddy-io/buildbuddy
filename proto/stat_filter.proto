@@ -32,6 +32,7 @@ enum ExecutionMetricType {
   EXECUTION_WALL_TIME_EXECUTION_METRIC = 9;
   EXECUTION_CPU_NANOS_EXECUTION_METRIC = 10;
   EXECUTION_AVERAGE_MILLICORES_EXECUTION_METRIC = 11;
+  RUNNER_SETUP_TIME_EXECUTION_METRIC = 12;
 }
 
 message Metric {
@@ -414,6 +415,14 @@ enum FilterType {
       "arch";
     supported_objects:
       [EXECUTION_OBJECTS];
+  }];
+  INVOCATION_BAZEL_EXIT_CODE_FILTER_TYPE = 38 [(filter_type_options) = {
+    category:
+      STRING_FILTER_CATEGORY;
+    database_column_name:
+      "bazel_exit_code";
+    supported_objects:
+      [INVOCATION_OBJECTS];
   }];
 }
 

@@ -31,7 +31,8 @@ apt-get install -y --no-install-recommends \
 	skopeo
 
 # Install bazelisk
-wget -q https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64
+wget -q https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-linux-amd64
+echo "a248ae2b2b62b5baebb748f6fba7203bff1a27e5d01b55399a8406744cb539e8  bazelisk-linux-amd64" | sha256sum -c -
 mv bazelisk-linux-amd64 /usr/local/bin/bazelisk
 pushd /usr/local/bin
 chmod ugo+x bazelisk

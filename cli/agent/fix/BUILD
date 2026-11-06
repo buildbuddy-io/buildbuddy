@@ -4,7 +4,12 @@ package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
     name = "fix",
-    srcs = ["fix.go"],
+    srcs = [
+        "commit_message.go",
+        "fix.go",
+        "patch.go",
+        "push.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/agent/fix",
     deps = [
         "//cli/agent/agentflags",
@@ -17,11 +22,14 @@ go_library(
         "//cli/util/agent",
         "//cli/util/agent/agentutil",
         "//cli/util/download",
+        "//cli/util/git",
         "//cli/util/invocation",
         "//cli/view",
         "//proto:buildbuddy_service_go_proto",
         "//proto:invocation_go_proto",
+        "//proto:invocation_status_go_proto",
         "//server/util/flag",
+        "//server/util/git",
         "//server/util/grpc_client",
         "//server/util/uuid",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
@@ -31,7 +39,10 @@ go_library(
 
 go_test(
     name = "fix_test",
-    srcs = ["fix_test.go"],
+    srcs = [
+        "fix_test.go",
+        "push_test.go",
+    ],
     embed = [":fix"],
     deps = [
         "//cli/parser",

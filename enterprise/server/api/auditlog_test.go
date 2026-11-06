@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -30,8 +31,6 @@ import (
 
 func setAuditLogTestFlags(t *testing.T) {
 	flags.Set(t, "app.audit_logs_enabled", true)
-	flags.Set(t, "testenv.reuse_server", true)
-	flags.Set(t, "testenv.use_clickhouse", true)
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 }
 
@@ -61,6 +60,7 @@ func newAuditLogTestEnv(t *testing.T) *auditLogTestEnv {
 	setAuditLogTestFlags(t)
 
 	env := enterprise_testenv.New(t)
+	testclickhouse.Configure(t, env)
 	auth := enterprise_testauth.Configure(t, env)
 	require.NoError(t, auditlog.Register(env))
 	return &auditLogTestEnv{

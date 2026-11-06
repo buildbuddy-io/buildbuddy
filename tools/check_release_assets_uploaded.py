@@ -14,12 +14,14 @@ EXPECTED_ASSETS = [
     # OSS app
     "buildbuddy-darwin-amd64",
     "buildbuddy-linux-amd64",
+    "buildbuddy-linux-arm64",
     # executor
     "executor-enterprise-darwin-amd64",
     "executor-enterprise-darwin-arm64",
     "executor-enterprise-linux-amd64",
     "executor-enterprise-linux-amd64-static",
     "executor-enterprise-linux-arm64",
+    "executor-enterprise-linux-arm64-static",
     "executor-enterprise-windows-amd64-beta.exe",
 ]
 
@@ -88,6 +90,7 @@ def main():
 
     if len(expected_assets) > 0:
         print(f"Missing assets {expected_assets}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

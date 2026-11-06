@@ -60,10 +60,7 @@ func (p *pooledByteStreamClient) FetchBytestreamZipManifest(ctx context.Context,
 	// Let's just read 64K and see if we can find the central directory in there.
 	// We probably don't want to be in the business of rendering 3000-file zips'
 	// contents anyway.
-	offset := r.GetDigest().GetSizeBytes() - 65536
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(r.GetDigest().GetSizeBytes()-65536, 0)
 
 	var buf bytes.Buffer
 	err = p.StreamBytestreamFileChunk(ctx, url, offset, r.GetDigest().GetSizeBytes()-offset, &buf)

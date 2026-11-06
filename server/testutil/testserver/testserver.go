@@ -1,11 +1,13 @@
 package testserver
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
-	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -21,14 +23,31 @@ const (
 	// BuildBuddy server to become ready. If this timeout is reached, the test case
 	// running the server will fail with a timeout error.
 	readyCheckTimeout = 60 * time.Second
+
+	// shutdownTimeout is how long to wait for the binary to exit after
+	// sending it SIGTERM at the end of the test.
+	// --max_shutdown_duration is 25s by default.
+	shutdownTimeout = 35 * time.Second
+
+	// stackDumpTimeout is how long to wait for the binary to exit after
+	// sending it SIGQUIT to dump its goroutine stacks.
+	stackDumpTimeout = 5 * time.Second
+
+	// waitDelay bounds how long to wait for the binary's output to be fully
+	// read after it exits, in case a subprocess it started still holds its
+	// stdout or stderr open.
+	waitDelay = 5 * time.Second
+
+	raceDetectedExitCode = 66
 )
 
 type Server struct {
 	monitoringPort        int
 	healthCheckServerType string
-	mu                    sync.Mutex
-	exited                bool
-	// err is the error returned by `cmd.Wait()`.
+	// done is closed once `cmd.Wait()` returns.
+	done chan struct{}
+	// err is the error returned by `cmd.Wait()`. Only read it after done is
+	// closed.
 	err error
 }
 
@@ -51,27 +70,57 @@ func Run(t *testing.T, opts *Opts) *Server {
 	server := &Server{
 		monitoringPort:        opts.HTTPPort,
 		healthCheckServerType: opts.HealthCheckServerType,
+		done:                  make(chan struct{}),
 	}
 
 	cmd := exec.Command(runfile(t, opts.BinaryRunfilePath), opts.Args...)
 	cmd.Stdout = log.Writer("[testserver] ")
 	cmd.Stderr = log.Writer("[testserver] ")
+	cmd.WaitDelay = waitDelay
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	ready := false
 	t.Cleanup(func() {
-		cmd.Process.Kill() // ignore errors
+		// Shut the binary down gracefully and check that it exited cleanly.
+		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			t.Errorf("Failed to send SIGTERM to %s: %s", opts.BinaryRunfilePath, err)
+		}
+		select {
+		case <-server.done:
+		case <-time.After(shutdownTimeout):
+			// SIGQUIT makes the Go runtime dump all goroutine stacks to the
+			// log, to show what shutdown is stuck on.
+			cmd.Process.Signal(syscall.SIGQUIT) // ignore errors
+			select {
+			case <-server.done:
+			case <-time.After(stackDumpTimeout):
+				cmd.Process.Kill() // ignore errors
+				<-server.done
+			}
+			t.Errorf("%s did not exit within %s of receiving SIGTERM. See the test log for its goroutine stacks.", opts.BinaryRunfilePath, shutdownTimeout)
+			return
+		}
+		if !ready {
+			// waitForReady already failed the test.
+			return
+		}
+		switch exitCode := cmd.ProcessState.ExitCode(); exitCode {
+		case 0:
+		case raceDetectedExitCode:
+			t.Errorf("%s exited with code %d, meaning it detected data races. See the test log for the race reports.", opts.BinaryRunfilePath, exitCode)
+		default:
+			t.Errorf("%s did not exit cleanly: %s", opts.BinaryRunfilePath, server.err)
+		}
 	})
 	go func() {
-		err := cmd.Wait()
-		server.mu.Lock()
-		defer server.mu.Unlock()
-		server.exited = true
-		server.err = err
+		server.err = cmd.Wait()
+		close(server.done)
 	}()
 	if err := server.waitForReady(); err != nil {
 		t.Fatal(err)
 	}
+	ready = true
 	return server
 }
 
@@ -88,12 +137,10 @@ func (s *Server) waitForReady() error {
 	start := time.Now()
 	log.Debug("testserver waitForReady start")
 	for i := 0; ; i++ {
-		s.mu.Lock()
-		exited := s.exited
-		err := s.err
-		s.mu.Unlock()
-		if exited {
-			return fmt.Errorf("binary failed to start: %s", err)
+		select {
+		case <-s.done:
+			return fmt.Errorf("binary failed to start: %s", s.err)
+		default:
 		}
 		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/readyz?server-type=%s", s.monitoringPort, s.healthCheckServerType))
 		ok := false

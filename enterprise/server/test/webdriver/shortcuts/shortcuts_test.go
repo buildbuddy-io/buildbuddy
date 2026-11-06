@@ -86,8 +86,8 @@ func TestInvocationNavShortcuts(t *testing.T) {
 // values interferes with the local clipboard if running locally.
 
 func newWebTester(t *testing.T) (*webtester.WebTester, buildbuddy_enterprise.WebTarget) {
-	wt := webtester.New(t)
 	target := buildbuddy_enterprise.SetupWebTarget(t)
+	wt := webtester.New(t)
 	webtester.Login(wt, target)
 	return wt, target
 }

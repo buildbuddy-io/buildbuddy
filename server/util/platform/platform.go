@@ -34,8 +34,8 @@ const (
 	// the image aliases in enterprise/server/workflow/service/service.go
 	Ubuntu16_04Image = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 	Ubuntu20_04Image = "gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622"
-	Ubuntu22_04Image = "gcr.io/flame-public/rbe-ubuntu22-04@sha256:0d84a80bb0fc36ba5381942adcf6493249594dcc9044845c617b78c9b621cae3"
-	Ubuntu24_04Image = "gcr.io/flame-public/rbe-ubuntu24-04@sha256:f7db0d4791247f032fdb4451b7c3ba90e567923a341cc6dc43abfc283436791a"
+	Ubuntu22_04Image = "gcr.io/flame-public/rbe-ubuntu22-04@sha256:c3ea6288672add20a50fafbbeba27752731b24fe6cd4d20bac6c755a0619cc80"
+	Ubuntu24_04Image = "gcr.io/flame-public/rbe-ubuntu24-04@sha256:be9853fc45092d2cf2bda3abed30d22182881659a50bf35c7125161d7cfc8a75"
 
 	Ubuntu18_04WorkflowsImage = "gcr.io/flame-public/buildbuddy-ci-runner@sha256:8cf614fc4695789bea8321446402e7d6f84f6be09b8d39ec93caa508fa3e3cfc"
 	Ubuntu20_04WorkflowsImage = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:ba28945426fcdf4310f18e8a8e3c47af670bdcf9ba76bd76b269898c0579089e"
@@ -59,7 +59,7 @@ const (
 	// the default executor pool for remote execution.
 	DefaultPoolValue = "default"
 
-	containerImagePropertyName = "container-image"
+	ContainerImagePropertyName = "container-image"
 	DockerPrefix               = "docker://"
 
 	containerRegistryUsernamePropertyName = "container-registry-username"
@@ -115,14 +115,6 @@ const (
 	PersistentVolumesPropertyName            = "persistent-volumes"
 	execrootPathPropertyName                 = "execroot-path"
 
-	// CacheProxyActionCacheTTLPropertyName lets clients opt into caching
-	// action results in the cache proxy, rather than always revalidating them
-	// with the authoritative remote cache. The value is the duration to serve
-	// locally cached results for before revalidating, formatted as a Go
-	// duration string (e.g. "15m" or "1h"). A non-positive or unparseable value
-	// disables local caching.
-	CacheProxyActionCacheTTLPropertyName = "cache-proxy-action-cache-ttl"
-
 	// RunUnderPropertyName specifies a wrapper command to run the action
 	// under. The value is shell-tokenized and the resulting tokens are
 	// prepended to the command arguments, so the original executable becomes
@@ -169,8 +161,11 @@ const (
 	networkPropertyName = "network"
 
 	// NetworkEnableIPv6PropertyName specifies whether Firecracker guests should
-	// boot with IPv6 enabled.
+	// boot with IPv6 enabled, and whether OCI containers using userspace
+	// networking get an IPv6 address.
 	NetworkEnableIPv6PropertyName = "network-enable-ipv6"
+
+	UseGenericSnapshotPropertyName = "use-generic-snapshot"
 
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
@@ -277,6 +272,7 @@ type Properties struct {
 
 	// ShmSizeBytes is the requested size of the /dev/shm tmpfs mount.
 	ShmSizeBytes           *int64
+	UseGenericSnapshot     bool
 	RecycleRunner          bool
 	RunnerRecyclingMaxWait time.Duration
 
@@ -564,6 +560,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	}
 
 	return &Properties{
+		UseGenericSnapshot:        boolProp(m, UseGenericSnapshotPropertyName, false),
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
@@ -574,7 +571,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
 		EstimatedFreeDiskBytes:    iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
 		CustomResources:           customResources,
-		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
+		ContainerImage:            stringProp(m, ContainerImagePropertyName, ""),
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
 		WorkloadIsolationType:     isolationType,
@@ -857,6 +854,48 @@ func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 		return override
 	}
 	return FindValue(GetProto(task.GetAction(), task.GetCommand()), name)
+}
+
+// SetValue sets the given property to the given value, replacing any existing
+// values or else inserting it in name-sorted position.
+func SetValue(platform *repb.Platform, name, value string) {
+	found := false
+	for _, p := range platform.Properties {
+		if strings.EqualFold(p.GetName(), name) {
+			p.Value, found = value, true
+		}
+	}
+	if found {
+		return
+	}
+	i := slices.IndexFunc(platform.Properties, func(p *repb.Platform_Property) bool { return p.GetName() > name })
+	if i < 0 {
+		i = len(platform.Properties)
+	}
+	platform.Properties = slices.Insert(platform.Properties, i, &repb.Platform_Property{Name: name, Value: value})
+}
+
+// SetValueForTask sets the given platform property on the execution task,
+// updating the action's platform as well as the deprecated command platform if
+// applicable.
+func SetValueForTask(task *repb.ExecutionTask, name, value string) {
+	// Never create just one: GetProto prefers Action.Platform, hiding Command.Platform.
+	if task.GetAction().GetPlatform() == nil && task.GetCommand().GetPlatform() == nil {
+		if task.Action == nil {
+			task.Action = &repb.Action{}
+		}
+		if task.Command == nil {
+			task.Command = &repb.Command{}
+		}
+		task.Action.Platform = &repb.Platform{}
+		task.Command.Platform = &repb.Platform{}
+	}
+	if p := task.GetAction().GetPlatform(); p != nil {
+		SetValue(p, name, value)
+	}
+	if p := task.GetCommand().GetPlatform(); p != nil {
+		SetValue(p, name, value)
+	}
 }
 
 // IsTrue returns whether the given platform property value is truthy.

@@ -17,7 +17,6 @@ go_library(
         "//server/util/log",
         "//server/util/networking",
         "//server/util/rlimit",
-        "//server/util/status",
         "@com_github_jsimonetti_rtnetlink//rtnl",
         "@com_github_miekg_dns//:dns",
         "@org_golang_x_sync//errgroup",

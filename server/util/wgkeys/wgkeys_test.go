@@ -15,7 +15,7 @@ func TestGenerateKey_Length(t *testing.T) {
 }
 
 func TestGeneratePrivateKey_Clamping(t *testing.T) {
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		k, err := GeneratePrivateKey()
 		require.NoError(t, err)
 		// Per https://cr.yp.to/ecdh.html: low 3 bits of byte 0 cleared.

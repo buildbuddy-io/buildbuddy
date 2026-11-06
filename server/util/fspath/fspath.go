@@ -27,7 +27,7 @@ func NewKey(path string, isCaseInsensitive bool) Key {
 
 // NormalizedString returns a string representation of the key that does not
 // necessarily match the original path.
-func (k *Key) NormalizedString() string {
+func (k Key) NormalizedString() string {
 	return k.value
 }
 

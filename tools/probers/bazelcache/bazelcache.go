@@ -10,6 +10,10 @@
 // Latency is only reported for successful operations. The process exits
 // non-zero if any check failed.
 //
+// Every operation goes through a cachetools helper, which retries transient
+// RPC failures with a short backoff inside the operation's timeout, so a hung
+// RPC still fails the check while a single dropped connection does not.
+//
 // Each operation runs with its own --op_timeout so that a single slow RPC
 // produces a targeted error log and failure metric instead of tripping the
 // overall prober deadline. The worst-case run is the warm-up followed by the
@@ -29,6 +33,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -64,12 +69,14 @@ import (
 var (
 	cacheTarget  = flag.String("cache_target", "", "Cache grpc target (required)")
 	instanceName = flag.String("instance_name", "", "Remote instance name")
-	apiKey       = flag.String("api_key", "", "API key for authentication")
+	apiKey       = flag.String("api_key", "", "API key for authentication. If empty, the BUILDBUDDY_API_KEY env var is used.")
 	blobSize     = flag.Int64("blob_size", 100_000, "Size of test blobs in bytes")
 	opTimeout    = flag.Duration("op_timeout", 8*time.Second, "Timeout for each individual cache operation")
 
 	numConnections = flag.Int("connections", 8, "Number of independent connections to run the full check suite on, in parallel. Each opens its own gRPC connection and is warmed up separately. The connections run concurrently, so this does not change the overall run time.")
 )
+
+var dumpStacksOnce sync.Once
 
 type opResult struct {
 	op         string
@@ -220,6 +227,7 @@ func (p *prober) do(op, compressor string, fn func(ctx context.Context) error) e
 	ctx, cancel := context.WithTimeout(p.ctx, *opTimeout)
 	defer cancel()
 	operationID := uuid.New()
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-request-id", operationID)
 	ctx, span := otel.Tracer("bazelcache-prober").Start(ctx, "bazelcache."+op, trace.WithAttributes(
 		attribute.String("invocation_id", p.invocationID),
 		attribute.String("action_id", operationID),
@@ -240,9 +248,24 @@ func (p *prober) do(op, compressor string, fn func(ctx context.Context) error) e
 	if err != nil {
 		return err
 	}
+	stopDump := time.AfterFunc(*opTimeout*3/4, func() {
+		dumpStacksOnce.Do(func() {
+			var stacks bytes.Buffer
+			if err := pprof.Lookup("goroutine").WriteTo(&stacks, 2); err != nil {
+				log.Warningf("Failed to capture goroutine stacks: %s", err)
+				return
+			}
+			log.Warningf(
+				"Slow probe: operation=%s invocationID=%s operationID=%s connection=%d\n%s",
+				op, p.invocationID, operationID, p.connectionIndex, stacks.String(),
+			)
+		})
+	})
+
 	start := time.Now()
 	err = fn(ctx)
 	latency := time.Since(start)
+	stopDump.Stop()
 	timeline.record(timelineEvent{Event: "operation_return", Code: grpcstatus.Code(err).String()})
 
 	p.results.add(opResult{op: op, compressor: compressor, latency: latency, err: err})
@@ -284,15 +307,26 @@ func (p *prober) checkByteStream(compressor repb.Compressor_Value) error {
 		return err
 	}
 	return p.do("ByteStream.Read", c, func(ctx context.Context) error {
-		var downloaded bytes.Buffer
-		if err := cachetools.GetBlob(ctx, p.bs, rn, &downloaded); err != nil {
+		// GetBlob only retries when given an io.WriteSeeker.
+		downloaded := make(byteWriterAt, len(buf))
+		if err := cachetools.GetBlob(ctx, p.bs, rn, io.NewOffsetWriter(downloaded, 0)); err != nil {
 			return err
 		}
-		if !bytes.Equal(buf, downloaded.Bytes()) {
+		if !bytes.Equal(buf, downloaded) {
 			return fmt.Errorf("downloaded data does not match uploaded data")
 		}
 		return nil
 	})
+}
+
+// Oversized responses fail with io.ErrShortWrite, which is fine.
+type byteWriterAt []byte
+
+func (b byteWriterAt) WriteAt(p []byte, off int64) (int, error) {
+	if off < 0 || off+int64(len(p)) > int64(len(b)) {
+		return 0, io.ErrShortWrite
+	}
+	return copy(b[off:], p), nil
 }
 
 func (p *prober) checkActionCache() error {
@@ -309,23 +343,14 @@ func (p *prober) checkActionCache() error {
 		StderrRaw: []byte("test stderr"),
 	}
 
+	rn := digest.NewACResourceName(actionDigest, *instanceName, repb.DigestFunction_SHA256)
 	if err := p.do("ActionCache.UpdateActionResult", "", func(ctx context.Context) error {
-		_, err := p.ac.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
-			InstanceName:   *instanceName,
-			ActionDigest:   actionDigest,
-			ActionResult:   actionResult,
-			DigestFunction: repb.DigestFunction_SHA256,
-		})
-		return err
+		return cachetools.UploadActionResult(ctx, p.ac, rn, actionResult)
 	}); err != nil {
 		return err
 	}
 	return p.do("ActionCache.GetActionResult", "", func(ctx context.Context) error {
-		got, err := p.ac.GetActionResult(ctx, &repb.GetActionResultRequest{
-			ActionDigest:   actionDigest,
-			InstanceName:   *instanceName,
-			DigestFunction: repb.DigestFunction_SHA256,
-		})
+		got, err := cachetools.GetActionResult(ctx, p.ac, rn)
 		if err != nil {
 			return err
 		}
@@ -348,7 +373,7 @@ func (p *prober) checkCAS(compressor repb.Compressor_Value) error {
 
 	var digests []*repb.Digest
 	blobsByHash := make(map[string][]byte, numBlobs)
-	for i := 0; i < numBlobs; i++ {
+	for range numBlobs {
 		// math/rand.NewSource only has about 2^31 distinct seeds, so using
 		// digest.RandomGenerator can repeat batches from previous probe runs.
 		buf := make([]byte, 1024)
@@ -371,7 +396,7 @@ func (p *prober) checkCAS(compressor repb.Compressor_Value) error {
 		BlobDigests:    digests,
 	}
 	if err := p.do("CAS.FindMissingBlobs", c, func(ctx context.Context) error {
-		resp, err := p.cas.FindMissingBlobs(ctx, findReq)
+		resp, err := cachetools.FindMissingBlobs(ctx, p.cas, findReq)
 		if err != nil {
 			return err
 		}
@@ -398,7 +423,7 @@ func (p *prober) checkCAS(compressor repb.Compressor_Value) error {
 		})
 	}
 	if err := p.do("CAS.BatchUpdateBlobs", c, func(ctx context.Context) error {
-		resp, err := p.cas.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+		resp, err := cachetools.BatchUpdateBlobs(ctx, p.cas, &repb.BatchUpdateBlobsRequest{
 			InstanceName:   *instanceName,
 			DigestFunction: repb.DigestFunction_SHA256,
 			Requests:       requests,
@@ -417,7 +442,7 @@ func (p *prober) checkCAS(compressor repb.Compressor_Value) error {
 	}
 
 	if err := p.do("CAS.FindMissingBlobsAfterUpload", c, func(ctx context.Context) error {
-		resp, err := p.cas.FindMissingBlobs(ctx, findReq)
+		resp, err := cachetools.FindMissingBlobs(ctx, p.cas, findReq)
 		if err != nil {
 			return err
 		}
@@ -511,7 +536,7 @@ func (r *results) printMetrics(w io.Writer) {
 // Connection.Setup op so the handshake cost is visible as its own metric.
 func (p *prober) warmup() error {
 	return p.do("Connection.Setup", "", func(ctx context.Context) error {
-		_, err := p.cas.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		_, err := cachetools.FindMissingBlobs(ctx, p.cas, &repb.FindMissingBlobsRequest{
 			InstanceName:   *instanceName,
 			DigestFunction: repb.DigestFunction_SHA256,
 			BlobDigests:    []*repb.Digest{{Hash: digest.EmptySha256, SizeBytes: 0}},
@@ -611,6 +636,9 @@ func shutdownTracing() {
 
 func main() {
 	flag.Parse()
+	if *apiKey == "" {
+		*apiKey = os.Getenv("BUILDBUDDY_API_KEY")
+	}
 	if err := run(); err != nil {
 		log.Errorf("Probe failed: %s", err)
 		os.Exit(1)

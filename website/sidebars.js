@@ -31,6 +31,7 @@ module.exports = {
       "enterprise",
       "enterprise-setup",
       "enterprise-config",
+      "enterprise-cache-setup",
       "enterprise-helm",
       "enterprise-rbe",
       "enterprise-mac-rbe",

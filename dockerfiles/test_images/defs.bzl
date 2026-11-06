@@ -1,5 +1,7 @@
 # Keep in sync with oci.MODULE.bazel
 
+"""Pinned test container image references."""
+
 NET_TOOLS_IMAGE_REPO = "gcr.io/flame-public/net-tools"
 NET_TOOLS_IMAGE_DIGEST = "sha256:04210e04de235983e50ed5150ff99431cf1151e2da6bff201cd856dedb5dfc85"
 

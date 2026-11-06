@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -32,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -41,6 +43,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -235,7 +238,7 @@ func newUUID(t *testing.T) string {
 func newTestEnv(t *testing.T) *real_environment.RealEnv {
 	env := testenv.GetTestEnv(t)
 	var userGroups []string
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		userGroups = append(userGroups, fmt.Sprintf("US%d", i), fmt.Sprintf("GR%d", i))
 	}
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers(userGroups...)))
@@ -452,6 +455,82 @@ func TestRunnerPool_CanAddAndGetBackSameRunner_DockerReuseAlias(t *testing.T) {
 	assert.Equal(t, 0, pool.PausedRunnerCount())
 }
 
+func TestRunnerPool_OCISeccompDisableNewUserNS(t *testing.T) {
+	flags.Set(t, "executor.enable_oci", true)
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return NewFakeContainer(), nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
+	deniedCtx := expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
+		Name:  "executor.oci.seccomp_disable_new_userns",
+		Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true},
+	}})
+	allowedCtx := expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
+		Name:  "executor.oci.seccomp_disable_new_userns",
+		Value: &expb.EvaluatedFlag_BoolValue{BoolValue: false},
+	}})
+
+	denied := mustGetNewRunner(t, deniedCtx, pool, newTask())
+	mustAddWithoutEviction(t, deniedCtx, pool, denied)
+
+	allowed := mustGetNewRunner(t, allowedCtx, pool, newTask())
+	assert.NotSame(t, denied, allowed)
+	mustAddWithoutEviction(t, allowedCtx, pool, allowed)
+
+	reused := mustGetPausedRunner(t, allowedCtx, pool, newTask())
+	assert.Same(t, allowed, reused)
+	mustAddWithoutEviction(t, allowedCtx, pool, reused)
+
+	reused = mustGetPausedRunner(t, deniedCtx, pool, newTask())
+	assert.Same(t, denied, reused)
+}
+
+func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
+	flags.Set(t, "executor.enable_oci", true)
+	flags.Set(t, "executor.default_image", "gcr.io/default:v1")
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	env := newTestEnv(t)
+	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
+	explicitDefaultImageTask := newTask()
+	platform.SetValueForTask(explicitDefaultImageTask.ExecutionTask, platform.ContainerImagePropertyName, "docker://gcr.io/default:v1")
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			ctx := expflag.ContextWithEvaluatedFlags(ctx, []*expb.EvaluatedFlag{{
+				Name:  execution_experiments.DefaultImageInPlatform.Name(),
+				Value: &expb.EvaluatedFlag_BoolValue{BoolValue: enabled},
+			}})
+			cfg := noLimitsCfg()
+			cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+				return NewFakeContainer(), nil
+			})
+			pool := newRunnerPool(t, env, cfg)
+			r := mustGetNewRunner(t, ctx, pool, newTask())
+			mustAddWithoutEviction(t, ctx, pool, r)
+			// Only with the experiment is the runner reused for a task that
+			// explicitly requests the default image.
+			other := mustGet(t, ctx, pool, explicitDefaultImageTask.CloneVT())
+			assert.Equal(t, enabled, r == other)
+			if !enabled {
+				return
+			}
+			// A header override to another image doesn't reuse a runner for
+			// the same platform without the override.
+			pool = newRunnerPool(t, env, cfg)
+			r = mustGetNewRunner(t, ctx, pool, explicitDefaultImageTask.CloneVT())
+			mustAddWithoutEviction(t, ctx, pool, r)
+			headerTask := explicitDefaultImageTask.CloneVT()
+			headerTask.ExecutionTask.PlatformOverrides = &repb.Platform{Properties: []*repb.Platform_Property{{Name: "container-image", Value: "docker://gcr.io/other:v1"}}}
+			assert.NotSame(t, r, mustGet(t, ctx, pool, headerTask))
+		})
+	}
+}
+
 func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg())
@@ -532,7 +611,7 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 	// Run 30 trials where we create a pool that runs 50 tasks using runner
 	// recycling, shutting down the pool after roughly half of the tasks have been
 	// started.
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		pool := newRunnerPool(t, env, noLimitsCfg())
 		numTasks := 50
 		tasksStarted := make(chan struct{}, numTasks)
@@ -557,12 +636,10 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 		}
 
 		var wg sync.WaitGroup
-		for i := 0; i < numTasks; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range numTasks {
+			wg.Go(func() {
 				errs <- runTask()
-			}()
+			})
 			// Random, tiny delay to stagger the tasks a bit more.
 			sleepRandMicros(1)
 		}
@@ -666,12 +743,12 @@ func TestRunnerPool_DiskOnlyContainer_CanAddMultiple(t *testing.T) {
 
 	// Make sure we can add up to `maxRunnerCount` runners without eviction.
 	ctx := context.Background()
-	for i := 0; i < maxRunnerCount; i++ {
+	for i := range maxRunnerCount {
 		ctx = withAuthenticatedUser(t, ctx, env, fmt.Sprintf("US%d", i))
 		r := mustGetNewRunner(t, ctx, pool, newTask())
 		mustAddWithoutEviction(t, ctx, pool, r)
 	}
-	for i := 0; i < maxRunnerCount; i++ {
+	for i := range maxRunnerCount {
 		ctx = withAuthenticatedUser(t, ctx, env, fmt.Sprintf("US%d", i))
 		_ = mustGetPausedRunner(t, ctx, pool, newTask())
 	}
@@ -1028,6 +1105,8 @@ func TestRunnerPool_PersistentWorker_LargeFlagFile(t *testing.T) {
 
 	r, err := pool.Get(ctx, task)
 	require.NoError(t, err)
+	err = r.PrepareForTask(ctx)
+	require.NoError(t, err)
 	err = r.DownloadInputs(ctx)
 	require.NoError(t, err)
 	res := r.Run(context.Background(), &repb.IOStats{})
@@ -1316,4 +1395,26 @@ func TestTransientErrorExitCodes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRun_ContainerPanic_PropagatesOriginalPanic(t *testing.T) {
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		ctr := NewFakeContainer()
+		ctr.ExecFunc = func(context.Context) *interfaces.CommandResult { panic("test-container-panic") }
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	r, err := pool.Get(ctx, newTask())
+	require.NoError(t, err)
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		r.Run(ctx, &repb.IOStats{})
+	}()
+
+	require.Equal(t, "test-container-panic", recovered)
 }

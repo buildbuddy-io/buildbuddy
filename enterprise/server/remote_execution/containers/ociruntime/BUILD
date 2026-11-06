@@ -25,9 +25,11 @@ go_library(
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/ociruntime/seccomp",
+        "//enterprise/server/remote_execution/execution_experiments",
         "//enterprise/server/remote_execution/executor_auth",
         "//enterprise/server/remote_execution/gpu",
         "//enterprise/server/util/oci",
+        "//enterprise/server/util/usernet",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/environment",
@@ -69,6 +71,7 @@ go_test(
     data = [
         ":crun",
         "//enterprise/server/cmd/executor:tini",
+        "//enterprise/server/remote_execution/containers/ociruntime/testsyscall",
         "//enterprise/server/remote_execution/runner/testworker",
         "@busybox",
         "@net_tools",
@@ -97,9 +100,11 @@ go_test(
         "busyboxImageRlocationpath": "$(rlocationpath @busybox)",
         "netToolsImageRlocationpath": "$(rlocationpath @net_tools)",
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
+        "testsyscallRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/ociruntime/testsyscall)",
     },
     deps = [
         ":ociruntime",
+        "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/persistentworker",
@@ -133,6 +138,7 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles",
+        "@org_golang_x_sys//unix",
     ],
 )
 

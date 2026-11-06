@@ -5,6 +5,8 @@ package api.v1;
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
+option go_package = "github.com/buildbuddy-io/buildbuddy/proto/api/v1";
+
 message ApiKey {
   // The unique ID of this API key.
   // Example: "AK1234567890"

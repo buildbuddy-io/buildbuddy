@@ -2,6 +2,7 @@ package seccomp
 
 import (
 	"encoding/json"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -16,9 +17,31 @@ func TestNew_Default(t *testing.T) {
 	want := &specs.LinuxSeccomp{}
 	require.NoError(t, json.Unmarshal(defaultProfileJSON, want))
 
-	got, err := New(nil)
+	got, err := New(nil, nil, false)
 	require.NoError(t, err)
+	// Architecture conversion is asserted separately. All other fields must
+	// retain the existing OCI decoding behavior.
+	got.Architectures = nil
 	assert.Equal(t, want, got)
+}
+
+func TestNew_DefaultArchitectures(t *testing.T) {
+	wantByGoArch := map[string][]specs.Arch{
+		"amd64":    {specs.ArchX86_64, specs.ArchX86, specs.ArchX32},
+		"arm64":    {specs.ArchAARCH64, specs.ArchARM},
+		"mips64":   {specs.ArchMIPS64, specs.ArchMIPS, specs.ArchMIPS64N32},
+		"mips64le": {specs.ArchMIPSEL64, specs.ArchMIPSEL, specs.ArchMIPSEL64N32},
+		"s390x":    {specs.ArchS390X, specs.ArchS390},
+	}
+	want, ok := wantByGoArch[runtime.GOARCH]
+	if !ok {
+		t.Skipf("embedded profile has no compatibility architectures for %s", runtime.GOARCH)
+	}
+	for _, additionalSyscalls := range [][]string{nil, {"userfaultfd"}} {
+		profile, err := New(additionalSyscalls, nil, false)
+		require.NoError(t, err)
+		assert.Equal(t, want, profile.Architectures)
+	}
 }
 
 func TestNew_AdditionalSyscalls(t *testing.T) {
@@ -28,7 +51,7 @@ func TestNew_AdditionalSyscalls(t *testing.T) {
 		"io_uring_register",
 		"io_uring_setup",
 	}
-	profile, err := New(additionalSyscalls)
+	profile, err := New(additionalSyscalls, nil, false)
 	require.NoError(t, err)
 
 	wantNames := []string{
@@ -64,7 +87,7 @@ func TestNew_AdditionalSyscallsOverrideDefaultDenyRules(t *testing.T) {
 	// rules: the default allow list, then a cap-conditional allow and a
 	// cap-conditional deny whose conditions are dropped when parsing the JSON
 	// into specs.LinuxSeccomp.
-	defaultProfile, err := New(nil)
+	defaultProfile, err := New(nil, nil, false)
 	require.NoError(t, err)
 	for _, name := range []string{"userfaultfd", "setns"} {
 		denyRules := 0
@@ -82,7 +105,7 @@ func TestNew_AdditionalSyscallsOverrideDefaultDenyRules(t *testing.T) {
 	// rule for a syscall comes first, so userfaultfd would stay denied.
 	// setns exercises removing a name that appears in several rules,
 	// including allow rules that precede its deny rule.
-	profile, err := New([]string{"userfaultfd", "setns"})
+	profile, err := New([]string{"userfaultfd", "setns"}, nil, false)
 	require.NoError(t, err)
 	for _, name := range []string{"userfaultfd", "setns"} {
 		var matchingRules []specs.LinuxSyscall

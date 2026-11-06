@@ -4,13 +4,20 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
 )
@@ -70,6 +77,55 @@ func TestStatsHandler_RecordsTrafficByDestination(t *testing.T) {
 			groupID:  "GR567",
 			provider: "macstadium",
 			region:   "atlanta",
+		},
+		{
+			name:     "digitalocean",
+			ip:       "45.55.0.1",
+			groupID:  "GR101",
+			provider: "digitalocean",
+			region:   "san-francisco",
+		},
+		{
+			name:     "oracle",
+			ip:       "129.146.0.1",
+			groupID:  "GR102",
+			provider: "oracle",
+			region:   "us-phoenix-1",
+		},
+		{
+			name:     "phoenixnap",
+			ip:       "192.240.236.1",
+			groupID:  "GR103",
+			provider: "phoenixnap",
+			region:   "",
+		},
+		{
+			name:     "hetzner",
+			ip:       "46.4.0.1",
+			groupID:  "GR104",
+			provider: "hetzner",
+			region:   "",
+		},
+		{
+			name:     "ovh",
+			ip:       "51.79.0.1",
+			groupID:  "GR105",
+			provider: "ovh",
+			region:   "",
+		},
+		{
+			name:     "latitude",
+			ip:       "177.54.154.1", // In 177.54.144.0/21, allocated to Latitude.sh LTDA.
+			groupID:  "GR106",
+			provider: "latitude.sh",
+			region:   "",
+		},
+		{
+			name:     "namespace",
+			ip:       "64.6.39.1",
+			groupID:  "GR107",
+			provider: "namespace",
+			region:   "",
 		},
 		{
 			name:     "metal",
@@ -145,6 +201,7 @@ func TestStatsHandler_RecordsTrafficByDestination(t *testing.T) {
 
 			labels := prometheus.Labels{
 				metrics.GroupID:                  tc.groupID,
+				metrics.PeerTypeLabel:            externalPeerType,
 				metrics.DestinationProviderLabel: tc.provider,
 				metrics.DestinationRegionLabel:   tc.region,
 			}
@@ -171,6 +228,7 @@ func TestStatsHandler_IgnoresClientSidePayloads(t *testing.T) {
 
 	labels := prometheus.Labels{
 		metrics.GroupID:                  unknownGroupID,
+		metrics.PeerTypeLabel:            externalPeerType,
 		metrics.DestinationProviderLabel: "aws",
 		metrics.DestinationRegionLabel:   "eu-west-1",
 	}
@@ -192,11 +250,50 @@ func TestStatsHandler_NoPeerInfo(t *testing.T) {
 
 	labels := prometheus.Labels{
 		metrics.GroupID:                  unknownGroupID,
+		metrics.PeerTypeLabel:            externalPeerType,
 		metrics.DestinationProviderLabel: "other",
 		metrics.DestinationRegionLabel:   "unknown",
 	}
 	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerEgressBytes, labels); got != 50 {
 		t.Fatalf("metric value = %v, want 50", got)
+	}
+}
+
+func TestStatsHandler_ConcurrentStreamPayloads(t *testing.T) {
+	metrics.GRPCServerEgressBytes.Reset()
+	metrics.GRPCServerIngressBytes.Reset()
+
+	handler := newTestHandler(t)
+
+	ctx := handler.TagRPC(context.Background(), &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Stream"})
+	handler.initCounters(ctx)
+	// A bidi stream may send and receive on different goroutines, so gRPC
+	// can report outgoing and incoming payloads concurrently.
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for range 1000 {
+			handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 2})
+		}
+	})
+	wg.Go(func() {
+		for range 1000 {
+			handler.HandleRPC(ctx, &stats.InPayload{WireLength: 3})
+		}
+	})
+	wg.Wait()
+	handler.HandleRPC(ctx, &stats.End{})
+
+	labels := prometheus.Labels{
+		metrics.GroupID:                  unknownGroupID,
+		metrics.PeerTypeLabel:            externalPeerType,
+		metrics.DestinationProviderLabel: "other",
+		metrics.DestinationRegionLabel:   "unknown",
+	}
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerEgressBytes, labels); got != 2000 {
+		t.Fatalf("egress metric value = %v, want 2000", got)
+	}
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerIngressBytes, labels); got != 3000 {
+		t.Fatalf("ingress metric value = %v, want 3000", got)
 	}
 }
 
@@ -214,6 +311,7 @@ func TestStatsHandler_NoClaims(t *testing.T) {
 
 	labels := prometheus.Labels{
 		metrics.GroupID:                  unknownGroupID,
+		metrics.PeerTypeLabel:            externalPeerType,
 		metrics.DestinationProviderLabel: "aws",
 		metrics.DestinationRegionLabel:   "eu-west-1",
 	}
@@ -222,14 +320,134 @@ func TestStatsHandler_NoClaims(t *testing.T) {
 	}
 }
 
+func TestStatsHandler_RecordsPeerType(t *testing.T) {
+	te := enterprise_testenv.New(t)
+	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
+	cis := te.GetClientIdentityService()
+	classifier := newTestClassifier(t)
+
+	for _, tc := range []struct {
+		name string
+		// identity is the Client in a signed identity header; empty for none.
+		identity string
+		want     string
+	}{
+		{name: "cache_proxy", identity: interfaces.ClientIdentityCacheProxy, want: "cache-proxy"},
+		{name: "executor", identity: interfaces.ClientIdentityExecutor, want: "executor"},
+		{name: "no_identity", identity: "", want: externalPeerType},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			metrics.GRPCServerEgressBytes.Reset()
+			metrics.GRPCServerRequests.Reset()
+			// Reset detaches any counters a handler has cached, so each
+			// subtest needs its own handler.
+			handler := &StatsHandler{classifier: classifier, cis: cis}
+
+			// TagRPC runs before interceptors, and the context it returns
+			// becomes the stream context that HandleRPC receives.
+			rpcCtx := handler.TagRPC(context.Background(), &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
+
+			// The identity and clientip interceptors enrich a derived
+			// context, which only the trafficstats interceptor sees.
+			ctx := rpcCtx
+			if tc.identity != "" {
+				header, err := cis.NewIdentityHeader(&interfaces.ClientIdentity{
+					Origin: interfaces.ClientIdentityInternalOrigin,
+					Client: tc.identity,
+				}, clientidentity.DefaultExpiration)
+				if err != nil {
+					t.Fatalf("NewIdentityHeader() returned error: %v", err)
+				}
+				ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, header))
+			}
+			ctx, err := cis.ValidateIncomingIdentity(ctx)
+			if err != nil {
+				t.Fatalf("ValidateIncomingIdentity() returned error: %v", err)
+			}
+			ctx = context.WithValue(ctx, clientip.ContextKey, "3.4.12.4")
+			handler.initCounters(ctx)
+
+			// gRPC calls HandleRPC with the stream context, not the
+			// interceptor's, so the identity is not visible here.
+			handler.HandleRPC(rpcCtx, &stats.OutPayload{WireLength: 10})
+			handler.HandleRPC(rpcCtx, &stats.End{})
+
+			labels := prometheus.Labels{
+				metrics.GroupID:                  unknownGroupID,
+				metrics.PeerTypeLabel:            tc.want,
+				metrics.DestinationProviderLabel: "aws",
+				metrics.DestinationRegionLabel:   "eu-west-1",
+			}
+			if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerEgressBytes, labels); got != 10 {
+				t.Fatalf("metric value = %v, want 10", got)
+			}
+			if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerRequests, labels); got != 1 {
+				t.Fatalf("requests metric value = %v, want 1", got)
+			}
+		})
+	}
+}
+
+func resetCounters() {
+	metrics.GRPCServerRequests.Reset()
+	metrics.GRPCServerEgressBytes.Reset()
+	metrics.GRPCServerIngressBytes.Reset()
+}
+
+func TestStatsHandler_CountsRequestsOncePerRPC(t *testing.T) {
+	resetCounters()
+	handler := newTestHandler(t)
+	labels := prometheus.Labels{
+		metrics.GroupID:                  "GR123",
+		metrics.PeerTypeLabel:            externalPeerType,
+		metrics.DestinationProviderLabel: "aws",
+		metrics.DestinationRegionLabel:   "eu-west-1",
+	}
+
+	for range 3 {
+		ctx := context.WithValue(context.Background(), clientip.ContextKey, "3.4.12.4")
+		ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
+		ctx = claims.AuthContext(ctx, &claims.Claims{GroupID: "GR123"})
+		handler.initCounters(ctx)
+		handler.HandleRPC(ctx, &stats.InPayload{WireLength: 1})
+		handler.HandleRPC(ctx, &stats.OutPayload{WireLength: 1})
+		handler.HandleRPC(ctx, &stats.End{})
+		// A client-side End must not count.
+		handler.HandleRPC(ctx, &stats.End{Client: true})
+	}
+
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerRequests, labels); got != 3 {
+		t.Fatalf("requests metric value = %v, want 3", got)
+	}
+}
+
+func TestStatsHandler_UnsetLabelsWithoutInitCounters(t *testing.T) {
+	resetCounters()
+	handler := newTestHandler(t)
+
+	// An RPC rejected before the interceptor runs.
+	ctx := handler.TagRPC(context.Background(), &stats.RPCTagInfo{FullMethodName: "/buildbuddy.service/Test"})
+	handler.HandleRPC(ctx, &stats.End{Error: status.UnauthenticatedError("nope")})
+
+	labels := prometheus.Labels{
+		metrics.GroupID:                  unsetLabel,
+		metrics.PeerTypeLabel:            unsetLabel,
+		metrics.DestinationProviderLabel: unsetLabel,
+		metrics.DestinationRegionLabel:   unsetLabel,
+	}
+	if got := testmetrics.CounterValueForLabels(t, metrics.GRPCServerRequests, labels); got != 1 {
+		t.Fatalf("requests metric value = %v, want 1", got)
+	}
+}
+
 func BenchmarkClassifierClassify(b *testing.B) {
 	b.Run("cached_hit", func(b *testing.B) {
 		classifier := newTestClassifier(b)
-		classifier.classify("3.4.12.4")
+		classifier.classify(b.Context(), "3.4.12.4")
 
 		b.ReportAllocs()
 		for b.Loop() {
-			classifier.classify("3.4.12.4")
+			classifier.classify(b.Context(), "3.4.12.4")
 		}
 	})
 
@@ -239,10 +457,61 @@ func BenchmarkClassifierClassify(b *testing.B) {
 		b.ReportAllocs()
 		i := 0
 		for b.Loop() {
-			classifier.classify(benchmarkIP(i))
+			classifier.classify(b.Context(), benchmarkIP(i))
 			i++
 		}
 	})
+}
+
+func TestClassifier_MetalRanges(t *testing.T) {
+	classifier := newTestClassifier(t)
+
+	for _, tc := range []struct {
+		name string
+		ip   string
+		want Destination
+	}{
+		{name: "sjc_23_176_168", ip: "23.176.168.49", want: Destination{Provider: "metal", Region: "us-sjc"}},
+		{name: "sjc_216_226_69", ip: "216.226.69.212", want: Destination{Provider: "metal", Region: "us-sjc"}},
+		{name: "sjc_216_226_70", ip: "216.226.70.138", want: Destination{Provider: "metal", Region: "us-sjc"}},
+		{name: "sjc_216_226_71", ip: "216.226.71.2", want: Destination{Provider: "metal", Region: "us-sjc"}},
+		{name: "nuq_216_226_68", ip: "216.226.68.35", want: Destination{Provider: "metal", Region: "us-nuq"}},
+		{name: "nuq_last_ip", ip: "216.226.68.255", want: Destination{Provider: "metal", Region: "us-nuq"}},
+		{name: "sjc_first_ip_after_nuq", ip: "216.226.69.0", want: Destination{Provider: "metal", Region: "us-sjc"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifier.classify(t.Context(), tc.ip); got != tc.want {
+				t.Errorf("classify(%q) = %+v, want %+v", tc.ip, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestClassifier_PrivateRanges(t *testing.T) {
+	classifier := newTestClassifier(t)
+
+	for _, tc := range []struct {
+		name string
+		ip   string
+		want Destination
+	}{
+		{name: "psc_nat_ip", ip: "10.30.1.7", want: Destination{Provider: "psc", Region: "europe-west4"}},
+		{name: "psc_nat_ip_with_port", ip: "10.30.1.7:51234", want: Destination{Provider: "psc", Region: "europe-west4"}},
+		{name: "psc_nat_ip_ipv4_mapped", ip: "::ffff:10.30.1.7", want: Destination{Provider: "psc", Region: "europe-west4"}},
+		{name: "psc_nat_range_last_ip", ip: "10.30.3.255", want: Destination{Provider: "psc", Region: "europe-west4"}},
+		{name: "adjacent_private_ip_is_internal", ip: "10.30.4.0", want: Destination{Provider: "internal", Region: ""}},
+		{name: "privatelink_nlb_ip", ip: "192.168.124.241", want: Destination{Provider: "privatelink", Region: "us-west-2"}},
+		{name: "privatelink_nlb_ip_with_port", ip: "192.168.242.116:40012", want: Destination{Provider: "privatelink", Region: "us-west-2"}},
+		{name: "privatelink_neighbor_is_internal", ip: "192.168.124.242", want: Destination{Provider: "internal", Region: ""}},
+		{name: "other_private_ip_is_internal", ip: "192.168.1.1", want: Destination{Provider: "internal", Region: ""}},
+		{name: "public_ip_uses_provider_data", ip: "3.4.12.4", want: Destination{Provider: "aws", Region: "eu-west-1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifier.classify(t.Context(), tc.ip); got != tc.want {
+				t.Errorf("classify(%q) = %+v, want %+v", tc.ip, got, tc.want)
+			}
+		})
+	}
 }
 
 func newTestClassifier(t testing.TB) *classifier {

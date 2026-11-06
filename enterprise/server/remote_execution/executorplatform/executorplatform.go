@@ -3,6 +3,7 @@
 package executorplatform
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"runtime"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -215,11 +217,29 @@ func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) 
 	return nil
 }
 
-// ApplyOverrides modifies the platformProps and command as needed to match the
-// locally configured executor properties.
-func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, platformProps *platform.Properties, command *repb.Command) error {
+// ApplyOverrides modifies the platformProps and task (its command and
+// possibly the platform's container-image) as needed to match the locally
+// configured executor properties.
+func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *ExecutorProperties, platformProps *platform.Properties, task *repb.ExecutionTask) error {
+	command := task.GetCommand()
 	if len(executorProps.SupportedIsolationTypes) == 0 {
 		return status.FailedPreconditionError("No workload isolation types configured.")
+	}
+
+	// The persistent volumes experiment takes precedence over the
+	// persistent-volumes platform property.
+	if value := execution_experiments.PersistentVolumes.Get(ctx); value != "" {
+		var values []string
+		for v := range strings.SplitSeq(value, ",") {
+			if v := strings.TrimSpace(v); v != "" {
+				values = append(values, v)
+			}
+		}
+		volumes, err := platform.ParsePersistentVolumes(values...)
+		if err != nil {
+			return status.WrapErrorf(err, "parse %s experiment", execution_experiments.PersistentVolumes.Name())
+		}
+		platformProps.PersistentVolumes = volumes
 	}
 
 	// If VFS is not enabled then coerce the platform prop to false.
@@ -260,12 +280,20 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	} else {
 		// OCI container references lose the "docker://" prefix. If no
 		// container was set then we set our default.
+		experiment := execution_experiments.DefaultImageInPlatform.Get(ctx)
 		if strings.EqualFold(platformProps.ContainerImage, "none") || platformProps.ContainerImage == "" {
-			platformProps.ContainerImage = containerImageName(*defaultImage)
+			if experiment && *defaultImage != "" {
+				platformProps.ContainerImage = platform.DockerPrefix + strings.TrimPrefix(*defaultImage, platform.DockerPrefix)
+			} else {
+				platformProps.ContainerImage = containerImageName(*defaultImage)
+			}
 		} else if !strings.HasPrefix(platformProps.ContainerImage, platform.DockerPrefix) {
 			// Return an error if a client specified an unparseable
 			// container reference.
 			return status.InvalidArgumentErrorf("malformed container image string - should be prefixed with '%s'", platform.DockerPrefix)
+		}
+		if experiment && platformProps.ContainerImage != "" {
+			platform.SetValueForTask(task, platform.ContainerImagePropertyName, platformProps.ContainerImage)
 		}
 		// Trim the docker prefix from ContainerImage -- we no longer need it.
 		platformProps.ContainerImage = containerImageName(platformProps.ContainerImage)

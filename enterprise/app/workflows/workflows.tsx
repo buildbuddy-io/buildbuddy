@@ -1,8 +1,9 @@
-import { AlertCircle, CheckCircle, GitBranch, GitMerge, MoreVertical, Wrench, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, GitBranch, GitMerge, MoreVertical, Plus, Wrench, X, XCircle } from "lucide-react";
 import React from "react";
 import alert_service from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import Banner from "../../../app/components/banner/banner";
 import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import Button, { FilledButton, OutlinedButton } from "../../../app/components/button/button";
 import { OutlinedLinkButton } from "../../../app/components/button/link_button";
@@ -23,15 +24,42 @@ import ActionListComponent from "./action_list";
 import ChecksDropdown from "./checks_dropdown";
 import GitHubAppImport from "./github_app_import";
 import WorkflowsZeroStateAnimation from "./zero_state";
+import { EnvVar, parseRunRequestFromURL, RunWorkflowParams } from "./run_workflow_deep_link";
 
 type Workflow = workflow.GetWorkflowsResponse.Workflow;
 
 export type WorkflowsProps = {
   path: string;
+  search: URLSearchParams;
   user: User;
 };
 
-export default class WorkflowsComponent extends React.Component<WorkflowsProps> {
+type WorkflowsState = {
+  runRequest?: RunWorkflowParams;
+};
+
+export default class WorkflowsComponent extends React.Component<WorkflowsProps, WorkflowsState> {
+  state: WorkflowsState = {};
+
+  componentDidMount() {
+    this.updateRunRequest();
+  }
+
+  componentDidUpdate(prevProps: WorkflowsProps) {
+    if (prevProps.path !== this.props.path || prevProps.search.toString() !== this.props.search.toString()) {
+      this.updateRunRequest();
+    }
+  }
+
+  private updateRunRequest() {
+    try {
+      this.setState({ runRequest: parseRunRequestFromURL(this.props.path, this.props.search) });
+    } catch (e) {
+      this.setState({ runRequest: undefined });
+      errorService.handleError(e);
+    }
+  }
+
   render() {
     const { path, user } = this.props;
 
@@ -41,7 +69,7 @@ export default class WorkflowsComponent extends React.Component<WorkflowsProps> 
       }
     }
 
-    return <ListWorkflowsComponent user={user} />;
+    return <ListWorkflowsComponent user={user} runRequest={this.state.runRequest} />;
   }
 }
 
@@ -68,6 +96,7 @@ type State = {
 
 export type ListWorkflowsProps = {
   user: User;
+  runRequest?: RunWorkflowParams;
 };
 
 class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> {
@@ -95,15 +124,31 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
   private fetchWorkflowsRPC?: CancelablePromise;
   private fetchReposRPC?: CancelablePromise;
   private fetchWorkflowHistoryRPC?: CancelablePromise;
+  private reportedMissingRepoURL = "";
 
   componentDidMount() {
     document.title = "Workflows | BuildBuddy";
     this.fetch();
   }
 
-  componentDidUpdate(prevProps: WorkflowsProps) {
+  componentDidUpdate(prevProps: ListWorkflowsProps) {
     if (this.props.user !== prevProps.user) {
       this.fetch();
+    }
+    this.maybeReportMissingRunRequest();
+  }
+
+  private maybeReportMissingRunRequest() {
+    const repoURL = this.props.runRequest?.repoUrl;
+    if (!repoURL || !this.state.reposResponse) return;
+    const hasMatchingRepo = this.state.reposResponse.repos.some(
+      (repo) => normalizeRepoURL(repo.repoUrl) === normalizeRepoURL(repoURL)
+    );
+    if (hasMatchingRepo) {
+      this.reportedMissingRepoURL = "";
+    } else if (this.reportedMissingRepoURL !== repoURL) {
+      this.reportedMissingRepoURL = repoURL;
+      errorService.handleError("The requested repository is not linked to this organization.");
     }
   }
 
@@ -231,6 +276,11 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       // Then sort by repo URL.
       return a.repoUrl.localeCompare(b.repoUrl);
     });
+    const matchingRepoURL = this.props.runRequest?.repoUrl;
+    const runRequestMatchesRepo = (repoURL: string) =>
+      Boolean(
+        this.props.runRequest && matchingRepoURL && normalizeRepoURL(repoURL) === normalizeRepoURL(matchingRepoURL)
+      );
     return (
       <div className="workflows-page">
         <div className="shelf">
@@ -285,6 +335,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     onClickUnlinkItem={() => this.setState({ repoToUnlink: repo.repoUrl })}
                     onClickInvalidateAllItem={() => this.setState({ repoToInvalidate: repo.repoUrl })}
                     history={this.renderActionList(workflowHistory, repo.repoUrl)}
+                    runRequest={runRequestMatchesRepo(repo.repoUrl) ? this.props.runRequest : undefined}
                   />
                 </>
               ))}
@@ -358,15 +409,17 @@ type RepoItemProps = {
   onClickUnlinkItem: (url: string) => void;
   onClickInvalidateAllItem: ((url: string) => void) | null;
   history: React.ReactNode;
+  runRequest?: RunWorkflowParams;
 };
 
 type RepoItemState = {
   isMenuOpen: boolean;
 
   showRunWorkflowInput: boolean;
-  runWorkflowActionNames: string;
-  runWorkflowEnv: string;
+  runWorkflowActionName: string;
+  runWorkflowEnv: EnvVar[];
   runWorkflowBranch: string;
+  runWorkflowCommit: string;
   runWorkflowVisibility: string;
   isWorkflowRunning: boolean;
   runWorkflowActionStatuses: workflow.ExecuteWorkflowResponse.ActionStatus[] | null;
@@ -377,10 +430,11 @@ type RepoItemState = {
 class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   state: RepoItemState = {
     isMenuOpen: false,
-    showRunWorkflowInput: false,
-    runWorkflowActionNames: "",
-    runWorkflowEnv: "",
-    runWorkflowBranch: "",
+    showRunWorkflowInput: Boolean(this.props.runRequest),
+    runWorkflowActionName: this.props.runRequest?.actionName ?? "",
+    runWorkflowEnv: this.props.runRequest?.env.length ? this.props.runRequest.env : [{ name: "", value: "" }],
+    runWorkflowBranch: this.props.runRequest?.branch ?? "",
+    runWorkflowCommit: this.props.runRequest?.commit ?? "",
     runWorkflowVisibility: "",
     isWorkflowRunning: false,
     runWorkflowActionStatuses: null,
@@ -393,7 +447,11 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   }
 
   private onCloseMenu() {
-    this.setState({ isMenuOpen: false, showRunWorkflowInput: false });
+    this.setState({ isMenuOpen: false });
+  }
+
+  private onCloseRunWorkflowDialog() {
+    this.setState({ showRunWorkflowInput: false });
   }
 
   private onClickCopyWebhookUrl() {
@@ -444,27 +502,35 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     this.setState({ showRunWorkflowInput: true });
   }
 
+  private onChangeEnvVar(index: number, update: Partial<EnvVar>) {
+    this.setState({
+      runWorkflowEnv: this.state.runWorkflowEnv.map((envVar, i) => (i === index ? { ...envVar, ...update } : envVar)),
+    });
+  }
+
+  private onClickAddEnvVar() {
+    this.setState({ runWorkflowEnv: [...this.state.runWorkflowEnv, { name: "", value: "" }] });
+  }
+
+  private onClickRemoveEnvVar(index: number) {
+    this.setState({ runWorkflowEnv: this.state.runWorkflowEnv.filter((_, i) => i !== index) });
+  }
+
   private runWorkflow() {
     this.setState({ runWorkflowActionStatuses: null, isWorkflowRunning: true });
-    this.onCloseMenu();
+    this.onCloseRunWorkflowDialog();
 
     rpcService.service
       .executeWorkflow(
         new workflow.ExecuteWorkflowRequest({
+          commitSha: this.state.runWorkflowCommit,
           pushedRepoUrl: this.props.repoUrl,
-          // Parse "var1=val1,var2=val2" string from the input field to Record<string, string>
-          env: Object.fromEntries<string>(
+          env: Object.fromEntries(
             this.state.runWorkflowEnv
-              .split(",")
-              .filter((n) => n.includes("="))
-              .map((n) => n.trim().split("="))
-              .filter((parts) => parts.length)
-              .map(([name, ...valueParts]) => [name, valueParts.join("=")])
+              .filter((envVar) => envVar.name.trim())
+              .map((envVar) => [envVar.name.trim(), envVar.value])
           ),
-          actionNames: this.state.runWorkflowActionNames
-            .split(",")
-            .map((n) => n.trim())
-            .filter((n) => n.length > 0),
+          actionNames: this.state.runWorkflowActionName.trim() ? [this.state.runWorkflowActionName.trim()] : [],
           pushedBranch: this.state.runWorkflowBranch,
           targetRepoUrl: this.props.repoUrl,
           targetBranch: this.state.runWorkflowBranch,
@@ -473,8 +539,11 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
         })
       )
       .then((response) => {
-        if (response.actionStatuses.length > 0) {
-          this.setState({ runWorkflowActionStatuses: response.actionStatuses });
+        const statuses = response.actionStatuses;
+        if (statuses.length === 1 && (statuses[0].status?.code || 0) === 0) {
+          router.navigateTo(`/invocation/${statuses[0].invocationId}?queued=true`);
+        } else if (statuses.length > 0) {
+          this.setState({ runWorkflowActionStatuses: statuses });
         } else {
           errorService.handleError(`No actions to execute for ${this.props.repoUrl}.`);
         }
@@ -575,34 +644,97 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                     {this.state.isWorkflowRunning && <Spinner />}
                     <span>Run workflow</span>
                   </OutlinedButton>
-                  <Popup
+                  <SimpleModalDialog
+                    className="run-workflow-dialog"
+                    title="Run workflow"
                     isOpen={this.state.showRunWorkflowInput}
-                    onRequestClose={this.onCloseMenu.bind(this)}
-                    className="run-workflow-input">
-                    <div className="title">Run workflow from branch:</div>
-                    <TextInput
-                      placeholder={"e.g. main"}
-                      onChange={(e) => this.setState({ runWorkflowBranch: e.target.value })}
-                    />
-                    <div className="title">Visibility metadata:</div>
-                    <TextInput
-                      placeholder={"e.g. PUBLIC (optional)"}
-                      onChange={(e) => this.setState({ runWorkflowVisibility: e.target.value })}
-                    />
-                    <div className="title">Action Names:</div>
-                    <TextInput
-                      placeholder={"e.g. Test,Build"}
-                      onChange={(e) => this.setState({ runWorkflowActionNames: e.target.value })}
-                    />
-                    <div className="title">Environment Variables:</div>
-                    <TextInput
-                      placeholder={"e.g. VAR1=value1,VAR2=value2"}
-                      onChange={(e) => this.setState({ runWorkflowEnv: e.target.value })}
-                    />
-                    <FilledButton onClick={this.runWorkflow.bind(this)} disabled={this.state.runWorkflowBranch === ""}>
-                      Run
-                    </FilledButton>
-                  </Popup>
+                    onRequestClose={this.onCloseRunWorkflowDialog.bind(this)}
+                    submitLabel="Run"
+                    onSubmit={this.runWorkflow.bind(this)}
+                    submitDisabled={
+                      (this.state.runWorkflowBranch === "" && this.state.runWorkflowCommit === "") ||
+                      // Don't silently drop a value that is missing a name.
+                      this.state.runWorkflowEnv.some((envVar) => !envVar.name.trim() && envVar.value !== "")
+                    }>
+                    <div className="run-workflow-repo">
+                      <GitMerge className="icon" />
+                      <span>{formatURL(this.props.repoUrl)}</span>
+                    </div>
+                    {this.props.runRequest && (
+                      <Banner type="info" className="run-workflow-link-banner">
+                        This form was pre-filled from a link. Check the values below before running.
+                      </Banner>
+                    )}
+                    <label className="run-workflow-field">
+                      <span className="run-workflow-field-label">Action name</span>
+                      <TextInput
+                        autoFocus
+                        value={this.state.runWorkflowActionName}
+                        placeholder={"e.g. Test"}
+                        onChange={(e) => this.setState({ runWorkflowActionName: e.target.value })}
+                      />
+                    </label>
+                    <label className="run-workflow-field">
+                      <span className="run-workflow-field-label">Branch</span>
+                      <TextInput
+                        value={this.state.runWorkflowBranch}
+                        placeholder={"e.g. main"}
+                        onChange={(e) => this.setState({ runWorkflowBranch: e.target.value })}
+                      />
+                    </label>
+                    <label className="run-workflow-field">
+                      <span className="run-workflow-field-label">Commit SHA</span>
+                      <TextInput
+                        value={this.state.runWorkflowCommit}
+                        placeholder={"e.g. e782592f (optional)"}
+                        onChange={(e) => this.setState({ runWorkflowCommit: e.target.value })}
+                      />
+                    </label>
+                    <label className="run-workflow-field">
+                      <span className="run-workflow-field-label">Visibility metadata</span>
+                      <TextInput
+                        value={this.state.runWorkflowVisibility}
+                        placeholder={"e.g. PUBLIC (optional)"}
+                        onChange={(e) => this.setState({ runWorkflowVisibility: e.target.value })}
+                      />
+                    </label>
+                    <div className="run-workflow-field">
+                      <span className="run-workflow-field-label">Environment variables</span>
+                      {this.state.runWorkflowEnv.map((envVar, i) => (
+                        <div className="run-workflow-env-row" key={i}>
+                          <TextInput
+                            className="run-workflow-env-name"
+                            aria-label="Environment variable name"
+                            value={envVar.name}
+                            placeholder={"Name"}
+                            onChange={(e) => this.onChangeEnvVar(i, { name: e.target.value })}
+                          />
+                          <span className="run-workflow-env-separator">=</span>
+                          <TextInput
+                            className="run-workflow-env-value"
+                            aria-label="Environment variable value"
+                            value={envVar.value}
+                            placeholder={"Value"}
+                            onChange={(e) => this.onChangeEnvVar(i, { value: e.target.value })}
+                          />
+                          <OutlinedButton
+                            type="button"
+                            title="Remove variable"
+                            className="icon-button"
+                            onClick={() => this.onClickRemoveEnvVar(i)}>
+                            <X className="icon" />
+                          </OutlinedButton>
+                        </div>
+                      ))}
+                      <OutlinedButton
+                        type="button"
+                        className="run-workflow-add-env-button"
+                        onClick={this.onClickAddEnvVar.bind(this)}>
+                        <Plus className="icon" />
+                        <span>Add variable</span>
+                      </OutlinedButton>
+                    </div>
+                  </SimpleModalDialog>
                 </div>
               )}
               {!this.isDeprecatedWorkflow() && <ChecksDropdown repoUrl={this.props.repoUrl} />}

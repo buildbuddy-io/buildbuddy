@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,8 +24,10 @@ import (
 )
 
 var (
-	apiKey = flag.String("billing.metronome.api_key", "", "Metronome bearer token used to ingest usage events.", flag.Secret)
-	apiURL = flag.String("billing.metronome.api_url", "https://api.metronome.com", "Metronome API base URL.", flag.Internal)
+	apiKey              = flag.String("billing.metronome.api_key", "", "Metronome API bearer token.", flag.Secret)
+	readOnlyAPIKey      = flag.String("billing.metronome.read_only_api_key", "", "Metronome API bearer token with read-only access, used by the app to read bills.", flag.Secret)
+	apiURL              = flag.String("billing.metronome.api_url", "https://api.metronome.com", "Metronome API base URL.", flag.Internal)
+	defaultContractName = flag.String("billing.metronome.default_contract_name", "", "Default contract name (Metronome package alias) used when provisioning free tier or usage based customers without an existing contract.")
 )
 
 const (
@@ -62,21 +65,59 @@ type UsageEvent struct {
 
 // MetronomeEvent is the JSON payload Metronome's /v1/ingest endpoint expects.
 type MetronomeEvent struct {
-	TransactionID string            `json:"transaction_id"`
-	CustomerID    string            `json:"customer_id"`
-	EventType     string            `json:"event_type"`
-	Timestamp     string            `json:"timestamp"`
-	Properties    map[string]string `json:"properties"`
+	TransactionID string          `json:"transaction_id"`
+	CustomerID    string          `json:"customer_id"`
+	EventType     string          `json:"event_type"`
+	Timestamp     string          `json:"timestamp"`
+	Properties    EventProperties `json:"properties"`
+}
+
+// EventProperties are the event properties billable metrics filter and
+// aggregate on: the usage count plus one field per usage label. Count is a
+// number so metrics can sum it and SQL metrics can do math on it.
+//
+// DEPLOYMENT NOTE: adding a label to sku.go requires a field here. The
+// exporter fails on rows with labels it does not know instead of sending
+// events that could not be amended later, so deploy the exporter before or
+// with the app that writes a new label.
+type EventProperties struct {
+	GroupID     string `json:"group_id"`
+	SKU         string `json:"sku"`
+	Count       int64  `json:"count"`
+	PeriodStart string `json:"period_start"`
+	PeriodEnd   string `json:"period_end"`
+
+	Client        string `json:"client,omitempty"`
+	Server        string `json:"server,omitempty"`
+	Origin        string `json:"origin,omitempty"`
+	Proxy         string `json:"proxy,omitempty"`
+	OS            string `json:"os,omitempty"`
+	Arch          string `json:"arch,omitempty"`
+	SelfHosted    string `json:"self_hosted,omitempty"`
+	IsolationType string `json:"isolation_type,omitempty"`
 }
 
 type Client struct {
 	httpClient   *http.Client
 	retryOptions *retry.Options
+	apiKey       string
+}
+
+func ReadOnlyConfigured() bool {
+	return *readOnlyAPIKey != ""
 }
 
 func NewClient(httpClient *http.Client, retryOpts *retry.Options) (*Client, error) {
-	if *apiKey == "" {
-		return nil, status.FailedPreconditionError("billing.metronome.api_key is required")
+	return newClient(*apiKey, "billing.metronome.api_key", httpClient, retryOpts)
+}
+
+func NewReadOnlyClient(httpClient *http.Client, retryOpts *retry.Options) (*Client, error) {
+	return newClient(*readOnlyAPIKey, "billing.metronome.read_only_api_key", httpClient, retryOpts)
+}
+
+func newClient(key, keyFlag string, httpClient *http.Client, retryOpts *retry.Options) (*Client, error) {
+	if key == "" {
+		return nil, status.FailedPreconditionErrorf("%s is required", keyFlag)
 	}
 	if *apiURL == "" {
 		return nil, status.FailedPreconditionError("billing.metronome.api_url is required")
@@ -91,6 +132,7 @@ func NewClient(httpClient *http.Client, retryOpts *retry.Options) (*Client, erro
 	return &Client{
 		httpClient:   httpClient,
 		retryOptions: retryOpts,
+		apiKey:       strings.TrimSpace(key),
 	}, nil
 }
 
@@ -111,10 +153,7 @@ func (c *Client) ReportUsage(ctx context.Context, events []UsageEvent) error {
 		encoded = append(encoded, *ue)
 	}
 	for start := 0; start < len(encoded); start += MaxEventsPerIngestRequest {
-		end := start + MaxEventsPerIngestRequest
-		if end > len(encoded) {
-			end = len(encoded)
-		}
+		end := min(start+MaxEventsPerIngestRequest, len(encoded))
 		batch := encoded[start:end]
 		err := retry.DoVoid(ctx, c.retryOptions, func(ctx context.Context) error {
 			err := c.ingestToMetronome(ctx, batch)
@@ -144,15 +183,34 @@ func encodeEvent(e UsageEvent) (*MetronomeEvent, error) {
 		return nil, status.InvalidArgumentErrorf("[%s, %s] must be of window size %s", e.PeriodStart, e.PeriodEnd, WindowSize)
 	}
 
-	properties := map[string]string{
-		"group_id":     e.GroupID,
-		"sku":          e.SKU.String(),
-		"count":        strconv.FormatInt(e.Count, 10),
-		"period_start": e.PeriodStart.UTC().Format(time.RFC3339),
-		"period_end":   e.PeriodEnd.UTC().Format(time.RFC3339),
+	properties := EventProperties{
+		GroupID:     e.GroupID,
+		SKU:         e.SKU.String(),
+		Count:       e.Count,
+		PeriodStart: e.PeriodStart.UTC().Format(time.RFC3339),
+		PeriodEnd:   e.PeriodEnd.UTC().Format(time.RFC3339),
 	}
-	for k, v := range e.Labels {
-		properties[k] = v
+	for name, value := range e.Labels {
+		switch name {
+		case sku.Client:
+			properties.Client = value
+		case sku.Server:
+			properties.Server = value
+		case sku.Origin:
+			properties.Origin = value
+		case sku.Proxy:
+			properties.Proxy = value
+		case sku.OS:
+			properties.OS = value
+		case sku.Arch:
+			properties.Arch = value
+		case sku.SelfHosted:
+			properties.SelfHosted = value
+		case sku.IsolationType:
+			properties.IsolationType = value
+		default:
+			return nil, status.InvalidArgumentErrorf("usage label %q has no event property", name)
+		}
 	}
 	return &MetronomeEvent{
 		TransactionID: transactionID(e),
@@ -207,15 +265,235 @@ func isRetryable(err error) bool {
 func (c *Client) ingestToMetronome(ctx context.Context, events []MetronomeEvent) error {
 	// The ingest endpoint expects a bare JSON array of events.
 	// See: https://docs.metronome.com/api-reference/usage/ingest-events
-	body, err := json.Marshal(events)
+	return c.do(ctx, http.MethodPost, ingestPath, nil, events, nil)
+}
+
+// FindCustomerID returns "" if no customer has the ingest alias.
+func (c *Client) FindCustomerID(ctx context.Context, ingestAlias string) (string, error) {
+	var resp struct {
+		Data []struct {
+			ID            string   `json:"id"`
+			IngestAliases []string `json:"ingest_aliases"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/v1/customers", url.Values{"ingest_alias": {ingestAlias}}, nil, &resp); err != nil {
+		return "", err
+	}
+	// Don't rely on the API filter alone.
+	for _, customer := range resp.Data {
+		if slices.Contains(customer.IngestAliases, ingestAlias) {
+			return customer.ID, nil
+		}
+	}
+	return "", nil
+}
+
+type customerRequest struct {
+	Name          string   `json:"name"`
+	IngestAliases []string `json:"ingest_aliases"`
+}
+
+func (c *Client) CreateCustomer(ctx context.Context, name, ingestAlias string) (string, error) {
+	var resp struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	body := customerRequest{Name: name, IngestAliases: []string{ingestAlias}}
+	if err := c.do(ctx, http.MethodPost, "/v1/customers", nil, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data.ID, nil
+}
+
+// Metronome rejects any other contract terms alongside a package.
+type contractRequest struct {
+	CustomerID    string `json:"customer_id"`
+	PackageAlias  string `json:"package_alias"`
+	StartingAt    string `json:"starting_at"`
+	UniquenessKey string `json:"uniqueness_key"`
+}
+
+// DefaultContractName returns the package alias used for fallback contract provisioning.
+func DefaultContractName() string {
+	return *defaultContractName
+}
+
+// HasContract reports whether the customer has an active contract effective
+// at usageTime.
+func (c *Client) HasContract(ctx context.Context, customerID string, usageTime time.Time) (bool, error) {
+	body := struct {
+		CustomerID   string `json:"customer_id"`
+		CoveringDate string `json:"covering_date"`
+		Limit        int    `json:"limit"`
+	}{CustomerID: customerID, CoveringDate: usageTime.UTC().Format(time.RFC3339Nano), Limit: 1}
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v1/contracts/list", nil, body, &resp); err != nil {
+		return false, err
+	}
+	return len(resp.Data) > 0, nil
+}
+
+// CreateContract creates a contract from the specified package alias, which holds
+// the rate card and any credits. It is a no-op if a contract with the
+// uniqueness key already exists.
+func (c *Client) CreateContract(ctx context.Context, customerID, contractName string, startingAt time.Time, uniquenessKey string) error {
+	if contractName == "" {
+		return status.FailedPreconditionError("contract name is required")
+	}
+	body := contractRequest{
+		CustomerID:    customerID,
+		PackageAlias:  contractName,
+		StartingAt:    startingAt.UTC().Format(time.RFC3339),
+		UniquenessKey: uniquenessKey,
+	}
+	err := c.do(ctx, http.MethodPost, "/v1/contracts/create", nil, body, nil)
+	if status.IsAlreadyExistsError(err) {
+		return nil
+	}
+	return err
+}
+
+// Invoice amounts are in the invoice's credit type, US cents for USD.
+type Invoice struct {
+	StartTimestamp time.Time         `json:"start_timestamp"`
+	EndTimestamp   time.Time         `json:"end_timestamp"`
+	Total          float64           `json:"total"`
+	LineItems      []InvoiceLineItem `json:"line_items"`
+}
+
+type LineItemType string
+
+const (
+	LineItemTypeUsage                 LineItemType = "usage"
+	LineItemTypeAppliedCommitOrCredit LineItemType = "applied_commit_or_credit"
+)
+
+type InvoiceLineItem struct {
+	Name         string       `json:"name"`
+	Type         LineItemType `json:"type"`
+	Quantity     float64      `json:"quantity"`
+	UnitPrice    float64      `json:"unit_price"`
+	Total        float64      `json:"total"`
+	StartingAt   time.Time    `json:"starting_at"`
+	EndingBefore time.Time    `json:"ending_before"`
+}
+
+func (i *Invoice) UsageLineItems() []InvoiceLineItem {
+	var items []InvoiceLineItem
+	for _, item := range i.LineItems {
+		if item.Type == LineItemTypeUsage {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+// GetCurrentInvoice returns nil if the customer has no draft usage invoice for
+// the period containing now.
+func (c *Client) GetCurrentInvoice(ctx context.Context, customerID string, now time.Time) (*Invoice, error) {
+	var resp struct {
+		Data []Invoice `json:"data"`
+	}
+	query := url.Values{"status": {"DRAFT"}, "type": {"USAGE"}, "sort": {"date_desc"}}
+	if err := c.do(ctx, http.MethodGet, "/v1/customers/"+url.PathEscape(customerID)+"/invoices", query, nil, &resp); err != nil {
+		return nil, err
+	}
+	for i := range resp.Data {
+		inv := &resp.Data[i]
+		if !now.Before(inv.StartTimestamp) && now.Before(inv.EndTimestamp) {
+			return inv, nil
+		}
+	}
+	return nil, nil
+}
+
+// Credit amounts are in US cents.
+type Credit struct {
+	Granted   float64
+	Remaining float64
+}
+
+const balanceTypeCredit = "CREDIT"
+
+type balancesRequest struct {
+	CustomerID              string `json:"customer_id"`
+	CoveringDate            string `json:"covering_date"`
+	IncludeBalance          bool   `json:"include_balance"`
+	IncludeContractBalances bool   `json:"include_contract_balances"`
+}
+
+// GetCredit returns the customer's credit for the period containing now, or
+// nil if it has none.
+func (c *Client) GetCredit(ctx context.Context, customerID string, now time.Time) (*Credit, error) {
+	var resp struct {
+		Data []struct {
+			Type           string  `json:"type"`
+			Balance        float64 `json:"balance"`
+			AccessSchedule struct {
+				ScheduleItems []struct {
+					Amount       float64   `json:"amount"`
+					StartingAt   time.Time `json:"starting_at"`
+					EndingBefore time.Time `json:"ending_before"`
+				} `json:"schedule_items"`
+			} `json:"access_schedule"`
+		} `json:"data"`
+	}
+	body := balancesRequest{
+		CustomerID:              customerID,
+		CoveringDate:            now.UTC().Format(time.RFC3339),
+		IncludeBalance:          true,
+		IncludeContractBalances: true,
+	}
+	if err := c.do(ctx, http.MethodPost, "/v1/contracts/customerBalances/list", nil, body, &resp); err != nil {
+		return nil, err
+	}
+	var credit *Credit
+	for _, b := range resp.Data {
+		if b.Type != balanceTypeCredit {
+			continue
+		}
+		if credit == nil {
+			credit = &Credit{}
+		}
+		credit.Remaining += b.Balance
+		for _, item := range b.AccessSchedule.ScheduleItems {
+			if !now.Before(item.StartingAt) && now.Before(item.EndingBefore) {
+				credit.Granted += item.Amount
+			}
+		}
+	}
+	return credit, nil
+}
+
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, body, out any) error {
+	endpoint, err := url.JoinPath(*apiURL, path)
 	if err != nil {
 		return err
 	}
-	req, err := c.newRequest(ctx, http.MethodPost, bytes.NewReader(body))
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
+	}
+	var reqBody io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reqBody = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reqBody)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -228,20 +506,10 @@ func (c *Client) ingestToMetronome(ctx context.Context, events []MetronomeEvent)
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return errorForStatusCode(resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
-	return nil
-}
-
-func (c *Client) newRequest(ctx context.Context, method string, body io.Reader) (*http.Request, error) {
-	endpoint, err := url.JoinPath(*apiURL, ingestPath)
-	if err != nil {
-		return nil, err
+	if out == nil {
+		return nil
 	}
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(*apiKey))
-	return req, nil
+	return json.Unmarshal(respBody, out)
 }
 
 func errorForStatusCode(statusCode int, body string) error {
@@ -255,6 +523,8 @@ func errorForStatusCode(statusCode int, body string) error {
 		return status.PermissionDeniedError(message)
 	case http.StatusNotFound:
 		return status.NotFoundError(message)
+	case http.StatusConflict:
+		return status.AlreadyExistsError(message)
 	case http.StatusTooManyRequests:
 		return status.ResourceExhaustedError(message)
 	}

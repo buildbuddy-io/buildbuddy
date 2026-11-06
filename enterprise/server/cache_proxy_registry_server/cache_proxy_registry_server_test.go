@@ -3,6 +3,7 @@ package cache_proxy_registry_server
 import (
 	"context"
 	"io"
+	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,45 +26,43 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
 )
 
-const (
-	testGroupID = "GR1"
-	// The group whose proxies are operated by BuildBuddy; the newest version
-	// among its registrations sets the bar for upgrade prompts.
-	testSharedPoolGroupID = "GR-SHARED"
-)
+const testGroupID = "GR1"
 
 // newServer wires up a registry server backed by a real Redis and the
 // provided test users. Note: the server snapshots env.GetAuthenticator() /
 // env.GetClock() at construction, so everything the test needs from env
 // must be set before calling this.
 func newServer(t *testing.T, users map[string]interfaces.UserInfo) (*CacheProxyRegistryServer, *testenv.TestEnv) {
-	redisTarget := testredis.Start(t).Target
+	return newServerWithRedis(t, testredis.Start(t).Target, users)
+}
+
+func newServerWithRedis(t *testing.T, redisTarget string, users map[string]interfaces.UserInfo) (*CacheProxyRegistryServer, *testenv.TestEnv) {
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
 	})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
-	flags.Set(t, "cache_proxy.shared_pool_group_id", testSharedPoolGroupID)
 
-	s, err := NewCacheProxyRegistryServer(env, testDetector())
+	s, err := NewCacheProxyRegistryServer(env, testDetector(nil))
 	require.NoError(t, err)
 	env.SetCacheProxyRegistryService(s)
 	return s, env
 }
 
 // testDetector prompts an upgrade when a proxy is more than 10 minor
-// versions behind the newest registered version, escalating at 20 and 40.
-func testDetector() *upgrade.Detector {
+// versions behind the newest version, escalating at 20 and 40.
+func testDetector(newest *semver.Version) *upgrade.Detector {
 	return upgrade.NewDetector(map[uppb.Prompt_Urgency]upgrade.Trigger{
 		uppb.Prompt_LOW:    {MaxLag: semver.MustParse("0.10.0")},
 		uppb.Prompt_MEDIUM: {MaxLag: semver.MustParse("0.20.0")},
 		uppb.Prompt_HIGH:   {MaxLag: semver.MustParse("0.40.0")},
-	})
+	}, newest)
 }
 
 func userWithCapabilities(userID, groupID string, caps ...cappb.Capability) interfaces.UserInfo {
@@ -117,30 +116,30 @@ func TestAuthorize_Success(t *testing.T) {
 	assert.Equal(t, testGroupID, groupID)
 }
 
-func TestGetCacheProxies(t *testing.T) {
+func TestListCacheProxies(t *testing.T) {
 	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
 
 	// Insert two proxies out of host-order; expect them returned alphabetically.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host:    "host-b",
 		ProxyId: "id-b",
 		Version: "1.0",
 	}, nil))
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host:    "host-a",
 		ProxyId: "id-a",
 		Version: "1.0",
 	}, nil))
 
 	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+	resp, err := s.ListCacheProxies(ctx, &cppb.ListCacheProxiesRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
 	})
 	require.NoError(t, err)
-	require.Len(t, resp.GetCacheProxy(), 2)
-	assert.Equal(t, "host-a", resp.GetCacheProxy()[0].GetNode().GetHost())
-	assert.Equal(t, "host-b", resp.GetCacheProxy()[1].GetNode().GetHost())
+	require.Len(t, resp.GetSummary(), 2)
+	assert.Equal(t, "host-a", resp.GetSummary()[0].GetHost())
+	assert.Equal(t, "host-b", resp.GetSummary()[1].GetHost())
 }
 
 func TestUpgradeTriggersFromFlags(t *testing.T) {
@@ -181,122 +180,54 @@ func TestUpgradeTriggersFromFlags_Invalid(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestGetCacheProxies_UpgradePrompt(t *testing.T) {
+// listUpgradePrompt registers a proxy running proxyVersion and returns the
+// upgrade prompt from listing the group's proxies, with newest as the version
+// to compare against.
+func listUpgradePrompt(t *testing.T, newest *semver.Version, proxyVersion string) *uppb.Prompt {
 	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+	s.detector = testDetector(newest)
 
-	// The newest version is registered by the shared executor pool group
-	// (BuildBuddy's own proxies); the prompt compares against it.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxyNode{
-		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
-	}, nil))
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
-		Host: "host-old", ProxyId: "id-old", Version: "v2.140.0",
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
+		Host: "host", ProxyId: "id", Version: proxyVersion,
 	}, nil))
 
 	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+	resp, err := s.ListCacheProxies(ctx, &cppb.ListCacheProxiesRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
 	})
 	require.NoError(t, err)
-	require.Len(t, resp.GetCacheProxy(), 1)
-	require.NotNil(t, resp.GetUpgradePrompt())
-	assert.Equal(t, uppb.Prompt_LOW, resp.GetUpgradePrompt().GetUrgency())
+	require.Len(t, resp.GetSummary(), 1)
+	return resp.GetUpgradePrompt()
 }
 
-func TestGetCacheProxies_UpgradePrompt_WithinAllowance(t *testing.T) {
-	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
-	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
-
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxyNode{
-		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
-	}, nil))
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
-		Host: "host-old", ProxyId: "id-old", Version: "v2.152.0",
-	}, nil))
-
-	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
-	})
-	require.NoError(t, err)
-	assert.Nil(t, resp.GetUpgradePrompt())
+func TestListCacheProxies_UpgradePrompt(t *testing.T) {
+	prompt := listUpgradePrompt(t, semver.MustParse("v2.153.0"), "v2.140.0")
+	require.NotNil(t, prompt)
+	assert.Equal(t, uppb.Prompt_LOW, prompt.GetUrgency())
+	assert.Contains(t, prompt.GetMessage(), "2.153.0")
 }
 
-func TestGetCacheProxies_UpgradePrompt_IgnoresOtherGroups(t *testing.T) {
-	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
-	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
-
-	// A newer version registered outside the shared executor pool group
-	// shouldn't set the bar.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), "GR-OTHER", &cppb.CacheProxyNode{
-		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
-	}, nil))
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
-		Host: "host-old", ProxyId: "id-old", Version: "v2.140.0",
-	}, nil))
-
-	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
-	})
-	require.NoError(t, err)
-	assert.Nil(t, resp.GetUpgradePrompt())
+func TestListCacheProxies_UpgradePrompt_WithinAllowance(t *testing.T) {
+	assert.Nil(t, listUpgradePrompt(t, semver.MustParse("v2.153.0"), "v2.152.0"))
 }
 
-func TestGetCacheProxies_UpgradePrompt_SkipsUnparseableVersions(t *testing.T) {
-	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
-	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
-
-	// Dev builds report "unknown"; they should neither count as the newest
-	// version nor trigger the prompt themselves.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxyNode{
-		Host: "host-dev", ProxyId: "id-dev", Version: "unknown",
-	}, nil))
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
-		Host: "host-old", ProxyId: "id-old", Version: "unknown",
-	}, nil))
-
-	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
-	})
-	require.NoError(t, err)
-	assert.Nil(t, resp.GetUpgradePrompt())
+func TestListCacheProxies_UpgradePrompt_NoNewestVersion(t *testing.T) {
+	assert.Nil(t, listUpgradePrompt(t, nil, "v1.0.0"))
 }
 
-func TestGetCacheProxies_UpgradePrompt_IgnoresStaleRegistrations(t *testing.T) {
-	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
-	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
-
-	// A long-gone proxy with a very new version shouldn't set the bar.
-	stale := &cppb.RegisteredCacheProxy{
-		Registration: &cppb.CacheProxyNode{Host: "host-new", ProxyId: "id-new", Version: "v2.199.0"},
-		GroupId:      testSharedPoolGroupID,
-		LastPingTime: timestamppb.New(time.Now().Add(-2 * maxRegistrationStaleness)),
-	}
-	b, err := proto.Marshal(stale)
-	require.NoError(t, err)
-	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies(testSharedPoolGroupID), "id-new", b).Err())
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
-		Host: "host-old", ProxyId: "id-old", Version: "v2.150.0",
-	}, nil))
-
-	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
-	})
-	require.NoError(t, err)
-	assert.Nil(t, resp.GetUpgradePrompt())
+func TestListCacheProxies_UpgradePrompt_SkipsUnparseableVersions(t *testing.T) {
+	// Dev builds report "unknown"; they don't trigger the prompt.
+	assert.Nil(t, listUpgradePrompt(t, semver.MustParse("v2.153.0"), "unknown"))
 }
 
-func TestGetCacheProxies_Isolation(t *testing.T) {
+func TestListCacheProxies_Isolation(t *testing.T) {
 	const otherGroupID = "GR2"
 	other := userWithCapabilities("U2", otherGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	s, _ := newServer(t, map[string]interfaces.UserInfo{"OTHER_KEY": other})
 
 	// A proxy was registered for the original test group.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "host", ProxyId: "id",
 	}, nil))
 
@@ -304,23 +235,23 @@ func TestGetCacheProxies_Isolation(t *testing.T) {
 	// ACL filter must drop the entry — the response should be empty even
 	// though the entry exists in the queried hash.
 	ctx := claims.AuthContextWithJWT(context.Background(), other.(*claims.Claims), nil)
-	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+	resp, err := s.ListCacheProxies(ctx, &cppb.ListCacheProxiesRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
 	})
 	require.NoError(t, err)
-	assert.Empty(t, resp.GetCacheProxy(), "user from %q should not see proxies registered under %q", otherGroupID, testGroupID)
+	assert.Empty(t, resp.GetSummary(), "user from %q should not see proxies registered under %q", otherGroupID, testGroupID)
 }
 
-func TestGetCacheProxies_Expiration(t *testing.T) {
+func TestListCacheProxies_Expiration(t *testing.T) {
 	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
 
 	// Insert a fresh proxy and a stale one directly into Redis.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
 		Host: "fresh", ProxyId: "fresh",
 	}, nil))
 	stale := &cppb.RegisteredCacheProxy{
-		Registration: &cppb.CacheProxyNode{Host: "stale", ProxyId: "stale"},
+		Summary:      &cppb.CacheProxySummary{Host: "stale", ProxyId: "stale"},
 		GroupId:      testGroupID,
 		LastPingTime: timestamppb.New(time.Now().Add(-2 * maxRegistrationStaleness)),
 	}
@@ -329,119 +260,49 @@ func TestGetCacheProxies_Expiration(t *testing.T) {
 	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies(testGroupID), "stale", b).Err())
 
 	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+	resp, err := s.ListCacheProxies(ctx, &cppb.ListCacheProxiesRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
 	})
 	require.NoError(t, err)
-	require.Len(t, resp.GetCacheProxy(), 1)
-	assert.Equal(t, "fresh", resp.GetCacheProxy()[0].GetNode().GetHost())
-}
-
-func TestGetCacheProxies_Statistics(t *testing.T) {
-	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
-	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
-
-	stats := &cppb.Statistics{
-		AcReadHits:       100,
-		AcReadMisses:     25,
-		AcReadHitBytes:   1024,
-		AcReadMissBytes:  256,
-		CasReadHits:      4000,
-		CasReadMisses:    1000,
-		CasReadHitBytes:  50_000_000,
-		CasReadMissBytes: 12_500_000,
-		AcWrites:         100,
-		AcWriteBytes:     1024,
-		CasWrites:        1000,
-		CasWriteBytes:    10_000_000,
-	}
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
-		Host: "h", ProxyId: "id",
-	}, stats))
-
-	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
-	})
-	require.NoError(t, err)
-	require.Len(t, resp.GetCacheProxy(), 1)
-	got := resp.GetCacheProxy()[0].GetStatistics()
-	require.NotNil(t, got)
-	assert.Equal(t, int64(100), got.GetAcReadHits())
-	assert.Equal(t, int64(25), got.GetAcReadMisses())
-	assert.Equal(t, int64(1024), got.GetAcReadHitBytes())
-	assert.Equal(t, int64(256), got.GetAcReadMissBytes())
-	assert.Equal(t, int64(4000), got.GetCasReadHits())
-	assert.Equal(t, int64(1000), got.GetCasReadMisses())
-	assert.Equal(t, int64(50_000_000), got.GetCasReadHitBytes())
-	assert.Equal(t, int64(12_500_000), got.GetCasReadMissBytes())
-	assert.Equal(t, int64(100), got.GetAcWrites())
-	assert.Equal(t, int64(1024), got.GetAcWriteBytes())
-	assert.Equal(t, int64(1000), got.GetCasWrites())
-	assert.Equal(t, int64(10_000_000), got.GetCasWriteBytes())
-}
-
-func TestGetCacheProxies_StatisticsNil(t *testing.T) {
-	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
-	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
-
-	// A proxy that reports no stats (older client, or no traffic yet) should
-	// still round-trip cleanly, just with a nil Statistics on the response.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
-		Host: "h", ProxyId: "id",
-	}, nil))
-
-	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
-	})
-	require.NoError(t, err)
-	require.Len(t, resp.GetCacheProxy(), 1)
-	assert.Nil(t, resp.GetCacheProxy()[0].GetStatistics())
-}
-
-func TestInsertOrUpdateProxy_StatisticsOverwritten(t *testing.T) {
-	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
-	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
-
-	// Each heartbeat reports cumulative absolute counters, so the second
-	// write for a given proxy ID must fully replace the first — we don't
-	// want the UI showing yesterday's numbers because today's heartbeat
-	// happened to omit a field.
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
-		Host: "h", ProxyId: "id",
-	}, &cppb.Statistics{AcReadHits: 1, CasReadHits: 2}))
-	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
-		Host: "h", ProxyId: "id",
-	}, &cppb.Statistics{AcReadHits: 10, CasReadHits: 20}))
-
-	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
-	})
-	require.NoError(t, err)
-	require.Len(t, resp.GetCacheProxy(), 1)
-	got := resp.GetCacheProxy()[0].GetStatistics()
-	require.NotNil(t, got)
-	assert.Equal(t, int64(10), got.GetAcReadHits())
-	assert.Equal(t, int64(20), got.GetCasReadHits())
+	require.Len(t, resp.GetSummary(), 1)
+	assert.Equal(t, "fresh", resp.GetSummary()[0].GetHost())
 }
 
 func startGRPCRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*CacheProxyRegistryServer, cppb.CacheProxyRegistryClient) {
 	s, env := newServer(t, users)
+	return s, serveRegistry(t, s, env)
+}
 
+func serveRegistry(t *testing.T, s *CacheProxyRegistryServer, env *testenv.TestEnv) cppb.CacheProxyRegistryClient {
 	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	cppb.RegisterCacheProxyRegistryServer(server, s)
 	go runFunc()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
-	return s, cppb.NewCacheProxyRegistryClient(conn)
+	return cppb.NewCacheProxyRegistryClient(conn)
 }
+
+// closeAndWait closes the stream and waits for the server to finish it,
+// returning the stream's final status (nil if the server returned OK).
+func closeAndWait(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient) error {
+	if err := stream.CloseSend(); err != nil {
+		return err
+	}
+	for {
+		if _, err := stream.Recv(); err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
 func TestStreamHeartbeat_PersistsRegistration(t *testing.T) {
 	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": user})
@@ -449,54 +310,30 @@ func TestStreamHeartbeat_PersistsRegistration(t *testing.T) {
 	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
 	require.NoError(t, err)
 	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
-		Node: &cppb.CacheProxyNode{
+		Summary: &cppb.CacheProxySummary{
 			Host: "proxy-1", ProxyId: "id-1", Version: "v1",
 		},
 	}))
-	resp, err := stream.CloseAndRecv()
-	require.NoError(t, err)
-	require.NotNil(t, resp)
+	require.NoError(t, closeAndWait(stream))
 
-	// The heartbeat should be visible via GetCacheProxies (which uses the
+	// The heartbeat should be visible via ListCacheProxies (which uses the
 	// AuthenticatedUser context, so we build one directly).
 	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-	getResp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+	listResp, err := s.ListCacheProxies(ctx, &cppb.ListCacheProxiesRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
 	})
 	require.NoError(t, err)
-	require.Len(t, getResp.GetCacheProxy(), 1)
-	assert.Equal(t, "id-1", getResp.GetCacheProxy()[0].GetNode().GetProxyId())
-}
+	require.Len(t, listResp.GetSummary(), 1)
+	assert.Equal(t, "id-1", listResp.GetSummary()[0].GetProxyId())
 
-func TestStreamHeartbeat_PersistsStatistics(t *testing.T) {
-	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
-	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": user})
-
-	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
+	// The stored registration should record which app instance holds the
+	// stream, so other instances can route requests to it.
+	data, err := s.rdb.HGet(ctx, redisKeyForCacheProxies(testGroupID), "id-1").Result()
 	require.NoError(t, err)
-	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
-		Node: &cppb.CacheProxyNode{
-			Host: "proxy-1", ProxyId: "id-1", Version: "v1",
-		},
-		Statistics: &cppb.Statistics{
-			AcReadHits: 7, AcReadMisses: 3, CasReadHits: 70, CasReadMisses: 30,
-		},
-	}))
-	_, err = stream.CloseAndRecv()
-	require.NoError(t, err)
-
-	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
-	getResp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
-	})
-	require.NoError(t, err)
-	require.Len(t, getResp.GetCacheProxy(), 1)
-	got := getResp.GetCacheProxy()[0].GetStatistics()
-	require.NotNil(t, got)
-	assert.Equal(t, int64(7), got.GetAcReadHits())
-	assert.Equal(t, int64(3), got.GetAcReadMisses())
-	assert.Equal(t, int64(70), got.GetCasReadHits())
-	assert.Equal(t, int64(30), got.GetCasReadMisses())
+	reg := &cppb.RegisteredCacheProxy{}
+	require.NoError(t, proto.Unmarshal([]byte(data), reg))
+	assert.Equal(t, s.ownHostPort, reg.GetAppHostPort())
+	assert.NotEmpty(t, s.ownHostPort)
 }
 
 func TestStreamHeartbeat_ShutDown(t *testing.T) {
@@ -512,17 +349,16 @@ func TestStreamHeartbeat_ShutDown(t *testing.T) {
 	keepStream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_ = keepStream.CloseSend()
-		_, _ = keepStream.CloseAndRecv()
+		_ = closeAndWait(keepStream)
 	})
 	require.NoError(t, keepStream.Send(&cppb.RegisterCacheProxyRequest{
-		Node: &cppb.CacheProxyNode{Host: "h-keep", ProxyId: "id-keep"},
+		Summary: &cppb.CacheProxySummary{Host: "h-keep", ProxyId: "id-keep"},
 	}))
 
 	shutdownStream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
 	require.NoError(t, err)
 	require.NoError(t, shutdownStream.Send(&cppb.RegisterCacheProxyRequest{
-		Node: &cppb.CacheProxyNode{Host: "h-bye", ProxyId: "id-bye"},
+		Summary: &cppb.CacheProxySummary{Host: "h-bye", ProxyId: "id-bye"},
 	}))
 
 	// stream.Send only buffers — the server-side recv→insertOrUpdateProxy
@@ -530,30 +366,30 @@ func TestStreamHeartbeat_ShutDown(t *testing.T) {
 	// reflect both heartbeats before sending the shutdown signal.
 	ctx := claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil)
 	require.Eventually(t, func() bool {
-		resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+		resp, err := s.ListCacheProxies(ctx, &cppb.ListCacheProxiesRequest{
 			RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
 		})
-		return err == nil && len(resp.GetCacheProxy()) == 2
+		return err == nil && len(resp.GetSummary()) == 2
 	}, 2*time.Second, 25*time.Millisecond, "both proxies should have registered")
 
 	// Now send ShuttingDown=true on the second stream only.
 	require.NoError(t, shutdownStream.Send(&cppb.RegisterCacheProxyRequest{
-		Node:         &cppb.CacheProxyNode{Host: "h-bye", ProxyId: "id-bye"},
+		Summary:      &cppb.CacheProxySummary{Host: "h-bye", ProxyId: "id-bye"},
 		ShuttingDown: true,
 	}))
-	_, err = shutdownStream.CloseAndRecv()
+	err = closeAndWait(shutdownStream)
 	require.NoError(t, err)
 
 	// Wait for the registry to reflect the removal of only the shutting-down
 	// proxy. The other one must still be present.
 	require.Eventually(t, func() bool {
-		resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+		resp, err := s.ListCacheProxies(ctx, &cppb.ListCacheProxiesRequest{
 			RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
 		})
-		if err != nil || len(resp.GetCacheProxy()) != 1 {
+		if err != nil || len(resp.GetSummary()) != 1 {
 			return false
 		}
-		return resp.GetCacheProxy()[0].GetNode().GetProxyId() == "id-keep"
+		return resp.GetSummary()[0].GetProxyId() == "id-keep"
 	}, 2*time.Second, 25*time.Millisecond, "only the shutting-down proxy should have been removed")
 }
 
@@ -562,7 +398,7 @@ func TestStreamHeartbeat_Anonymous(t *testing.T) {
 
 	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey(""))
 	require.NoError(t, err)
-	_, err = stream.CloseAndRecv()
+	err = closeAndWait(stream)
 	require.Error(t, err)
 	assert.True(t, status.IsUnauthenticatedError(err), "expected unauthenticated, got: %v", err)
 }
@@ -573,19 +409,19 @@ func TestStreamHeartbeat_Unauthorized(t *testing.T) {
 
 	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("NOCAP_KEY"))
 	require.NoError(t, err)
-	_, err = stream.CloseAndRecv()
+	err = closeAndWait(stream)
 	require.Error(t, err)
 	assert.True(t, status.IsPermissionDeniedError(err), "expected permission denied, got: %v", err)
 }
 
-func TestStreamHeartbeat_MissingNode(t *testing.T) {
+func TestStreamHeartbeat_MissingSummary(t *testing.T) {
 	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	_, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": user})
 
 	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
 	require.NoError(t, err)
 	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{}))
-	_, err = stream.CloseAndRecv()
+	err = closeAndWait(stream)
 	require.Error(t, err)
 	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument, got: %v", err)
 }
@@ -597,9 +433,9 @@ func TestStreamHeartbeat_MissingID(t *testing.T) {
 	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
 	require.NoError(t, err)
 	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
-		Node: &cppb.CacheProxyNode{Host: "h", ProxyId: ""},
+		Summary: &cppb.CacheProxySummary{Host: "h", ProxyId: ""},
 	}))
-	_, err = stream.CloseAndRecv()
+	err = closeAndWait(stream)
 	require.Error(t, err)
 	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument, got: %v", err)
 }
@@ -629,7 +465,7 @@ func TestStreamHeartbeat_AccessRevoked(t *testing.T) {
 	}
 	env.SetAuthenticator(auth)
 
-	s, err := NewCacheProxyRegistryServer(env, upgrade.NewDetector(nil))
+	s, err := NewCacheProxyRegistryServer(env, upgrade.NewDetector(nil, nil))
 	require.NoError(t, err)
 	env.SetCacheProxyRegistryService(s)
 
@@ -639,7 +475,7 @@ func TestStreamHeartbeat_AccessRevoked(t *testing.T) {
 
 	dialCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	conn, err := testenv.LocalGRPCConn(dialCtx, lis)
+	conn, err := testenv.LocalGRPCConn(t, dialCtx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	client := cppb.NewCacheProxyRegistryClient(conn)
@@ -648,7 +484,7 @@ func TestStreamHeartbeat_AccessRevoked(t *testing.T) {
 	require.NoError(t, err)
 	// Confirm the stream is up by sending an initial heartbeat.
 	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
-		Node: &cppb.CacheProxyNode{Host: "h", ProxyId: "id"},
+		Summary: &cppb.CacheProxySummary{Host: "h", ProxyId: "id"},
 	}))
 
 	// Wait until the server-side ticker is registered on the fake clock
@@ -664,11 +500,392 @@ func TestStreamHeartbeat_AccessRevoked(t *testing.T) {
 	// once the server has closed its side.
 	require.Eventually(t, func() bool {
 		return stream.Send(&cppb.RegisterCacheProxyRequest{
-			Node: &cppb.CacheProxyNode{Host: "h", ProxyId: "id"},
+			Summary: &cppb.CacheProxySummary{Host: "h", ProxyId: "id"},
 		}) == io.EOF
 	}, 5*time.Second, 25*time.Millisecond, "server did not terminate stream after revocation")
 
-	_, err = stream.CloseAndRecv()
+	err = closeAndWait(stream)
 	require.Error(t, err)
 	assert.True(t, status.IsUnauthenticatedError(err), "expected unauthenticated, got: %v", err)
+}
+
+// registerProxy opens a registration stream for the given proxy, sends an
+// initial heartbeat, and waits until the server is tracking the stream.
+func registerProxy(t *testing.T, s *CacheProxyRegistryServer, client cppb.CacheProxyRegistryClient, proxyID string) cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient {
+	ctx, cancel := context.WithCancel(ctxWithOutgoingAPIKey("CP_KEY"))
+	t.Cleanup(cancel)
+	stream, err := client.RegisterAndStreamHeartbeat(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
+		Summary: &cppb.CacheProxySummary{Host: "host", ProxyId: proxyID},
+	}))
+	require.Eventually(t, func() bool {
+		return s.lookupStream(testGroupID, proxyID) != nil
+	}, 2*time.Second, 10*time.Millisecond, "server did not track registration stream")
+	return stream
+}
+
+func getCacheProxyRequest(proxyID string) *cppb.GetCacheProxyRequest {
+	return &cppb.GetCacheProxyRequest{
+		RequestContext:         &ctxpb.RequestContext{GroupId: testGroupID},
+		Selector:               &cppb.CacheProxySelector{ProxyId: proxyID},
+		IncludeConfiguredFlags: true,
+		IncludeStatistics:      true,
+	}
+}
+
+func TestGetCacheProxy_ReturnsDetails(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	// A UI user: a member of the proxy's group with no capabilities.
+	readerUser := userWithCapabilities("U2", testGroupID)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+	stream := registerProxy(t, s, client, "id-1")
+
+	// Play the proxy: answer the details request, interleaved with a
+	// heartbeat that the server must not mistake for the answer.
+	proxyErr := make(chan error, 1)
+	go func() {
+		rsp, err := stream.Recv()
+		if err != nil {
+			proxyErr <- err
+			return
+		}
+		summary := &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"}
+		if err := stream.Send(&cppb.RegisterCacheProxyRequest{Summary: summary}); err != nil {
+			proxyErr <- err
+			return
+		}
+		details := &cppb.CacheProxyDetails{Summary: summary}
+		if rsp.GetDetailsRequest().GetIncludeConfiguredFlags() {
+			details.ConfiguredFlags = []string{"--foo=bar"}
+		}
+		if rsp.GetDetailsRequest().GetIncludeStatistics() {
+			details.Statistics = &cppb.Statistics{AcReadHits: 42}
+		}
+		proxyErr <- stream.Send(&cppb.RegisterCacheProxyRequest{
+			Summary:   summary,
+			Details:   details,
+			RequestId: rsp.GetRequestId(),
+		})
+	}()
+
+	ctx := claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil)
+	rsp, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.NoError(t, err)
+	require.NoError(t, <-proxyErr)
+	assert.Equal(t, "id-1", rsp.GetDetails().GetSummary().GetProxyId())
+	assert.NotNil(t, rsp.GetDetails().GetSummary().GetLastCheckInTime())
+	assert.Equal(t, []string{"--foo=bar"}, rsp.GetDetails().GetConfiguredFlags())
+	assert.Equal(t, int64(42), rsp.GetDetails().GetStatistics().GetAcReadHits())
+}
+
+func TestGetCacheProxy_NotConnected(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	// The proxy is registered in Redis, but its stream is held elsewhere.
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
+		Host: "host", ProxyId: "id-1",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	for _, doNotForward := range []bool{false, true} {
+		req := getCacheProxyRequest("id-1")
+		req.DoNotForward = doNotForward
+		_, err := s.GetCacheProxy(ctx, req)
+		require.Error(t, err)
+		assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+	}
+}
+
+func TestGetCacheProxy_OtherGroup(t *testing.T) {
+	const otherGroupID = "GR2"
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	other := userWithCapabilities("U2", otherGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+	registerProxy(t, s, client, "id-1")
+
+	ctx := claims.AuthContextWithJWT(context.Background(), other.(*claims.Claims), nil)
+	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsPermissionDeniedError(err), "expected permission denied, got: %v", err)
+
+	// Asking for the proxy under the caller's own group must not find it
+	// either.
+	req := getCacheProxyRequest("id-1")
+	req.RequestContext.GroupId = otherGroupID
+	_, err = s.GetCacheProxy(ctx, req)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+}
+
+func TestGetCacheProxy_StreamClosed(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	// A UI user: a member of the proxy's group with no capabilities.
+	readerUser := userWithCapabilities("U2", testGroupID)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+	stream := registerProxy(t, s, client, "id-1")
+
+	// The proxy receives the details request, then disconnects without
+	// answering.
+	go func() {
+		if _, err := stream.Recv(); err != nil {
+			return
+		}
+		_ = closeAndWait(stream)
+	}()
+
+	ctx := claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil)
+	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsUnavailableError(err), "expected unavailable, got: %v", err)
+	assert.Nil(t, s.lookupStream(testGroupID, "id-1"))
+}
+
+func TestGetCacheProxy_Reconnect(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	oldStream := registerProxy(t, s, client, "id-1")
+	oldHandle := s.lookupStream(testGroupID, "id-1")
+
+	// The proxy reconnects before the old stream is torn down.
+	newStream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = closeAndWait(newStream) })
+	require.NoError(t, newStream.Send(&cppb.RegisterCacheProxyRequest{
+		Summary: &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"},
+	}))
+	require.Eventually(t, func() bool {
+		return s.lookupStream(testGroupID, "id-1") != oldHandle
+	}, 2*time.Second, 10*time.Millisecond, "server did not track new registration stream")
+	newHandle := s.lookupStream(testGroupID, "id-1")
+
+	// Closing the old stream must not untrack the new one.
+	require.NoError(t, closeAndWait(oldStream))
+	assert.Same(t, newHandle, s.lookupStream(testGroupID, "id-1"))
+}
+
+func TestStreamHeartbeat_ProxyIDChanged(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	stream := registerProxy(t, s, client, "id-1")
+	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
+		Summary: &cppb.CacheProxySummary{Host: "host", ProxyId: "id-2"},
+	}))
+	err := closeAndWait(stream)
+	require.Error(t, err)
+	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument, got: %v", err)
+}
+
+func TestStreamHeartbeat_ShutDownWithChangedProxyID(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxySummary{
+		Host: "host", ProxyId: "id-2",
+	}, nil))
+
+	// A stream registered as id-1 must not be able to remove id-2.
+	stream := registerProxy(t, s, client, "id-1")
+	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{
+		Summary:      &cppb.CacheProxySummary{Host: "host", ProxyId: "id-2"},
+		ShuttingDown: true,
+	}))
+	err := closeAndWait(stream)
+	require.Error(t, err)
+	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument, got: %v", err)
+
+	exists, err := s.rdb.HExists(context.Background(), redisKeyForCacheProxies(testGroupID), "id-2").Result()
+	require.NoError(t, err)
+	assert.True(t, exists, "id-2's registration should not have been removed")
+}
+
+func TestGetCacheProxy_CallerCanceled(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	// A UI user: a member of the proxy's group with no capabilities.
+	readerUser := userWithCapabilities("U2", testGroupID)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+	stream := registerProxy(t, s, client, "id-1")
+
+	ctx, cancel := context.WithCancel(claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil))
+	// The proxy receives the details request but never answers; the caller
+	// gives up.
+	go func() {
+		if _, err := stream.Recv(); err == nil {
+			cancel()
+		}
+	}()
+
+	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsCanceledError(err), "expected canceled, got: %v", err)
+}
+
+// peerBuildBuddyService serves GetCacheProxy for a peer app instance.
+type peerBuildBuddyService struct {
+	bbspb.UnimplementedBuildBuddyServiceServer
+	s         *CacheProxyRegistryServer
+	forwarded chan *cppb.GetCacheProxyRequest
+}
+
+func (p *peerBuildBuddyService) GetCacheProxy(ctx context.Context, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error) {
+	p.forwarded <- req
+	return p.s.GetCacheProxy(ctx, req)
+}
+
+// startPeer starts a registry server sharing the given Redis that serves
+// GetCacheProxy over TCP, as a peer app instance would.
+func startPeer(t *testing.T, redisTarget string, users map[string]interfaces.UserInfo) (*CacheProxyRegistryServer, cppb.CacheProxyRegistryClient, *peerBuildBuddyService) {
+	s, env := newServerWithRedis(t, redisTarget, users)
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	// Registrations record this as the address of the app holding the
+	// stream, so it must be set before any proxy registers.
+	s.ownHostPort = lis.Addr().String()
+	peer := &peerBuildBuddyService{s: s, forwarded: make(chan *cppb.GetCacheProxyRequest, 10)}
+	server, runFunc := testenv.GRPCServer(env, lis)
+	bbspb.RegisterBuildBuddyServiceServer(server, peer)
+	go runFunc()
+	t.Cleanup(server.Stop)
+	return s, serveRegistry(t, s, env), peer
+}
+
+// answerDetailsRequest plays the proxy: it answers one details request on the
+// stream with the given summary and statistics.
+func answerDetailsRequest(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, summary *cppb.CacheProxySummary, stats *cppb.Statistics) <-chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		rsp, err := stream.Recv()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		errCh <- stream.Send(&cppb.RegisterCacheProxyRequest{
+			Summary:   summary,
+			Details:   &cppb.CacheProxyDetails{Summary: summary, Statistics: stats},
+			RequestId: rsp.GetRequestId(),
+		})
+	}()
+	return errCh
+}
+
+func TestGetCacheProxy_ForwardsToPeer(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	// GetCacheProxy is admin-only, which the peer's RPC filter enforces.
+	readerUser := userWithCapabilities("U2", testGroupID, cappb.Capability_ORG_ADMIN)
+	users := map[string]interfaces.UserInfo{"CP_KEY": streamUser}
+	redisTarget := testredis.Start(t).Target
+	peerServer, peerClient, peer := startPeer(t, redisTarget, users)
+	s, _ := newServerWithRedis(t, redisTarget, users)
+
+	stream := registerProxy(t, peerServer, peerClient, "id-1")
+	summary := &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"}
+	proxyErr := answerDetailsRequest(stream, summary, &cppb.Statistics{AcReadHits: 42})
+
+	ctx := claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil)
+	rsp, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.NoError(t, err)
+	require.NoError(t, <-proxyErr)
+	assert.Equal(t, "id-1", rsp.GetDetails().GetSummary().GetProxyId())
+	assert.Equal(t, int64(42), rsp.GetDetails().GetStatistics().GetAcReadHits())
+
+	fwd := <-peer.forwarded
+	assert.True(t, fwd.GetDoNotForward())
+	assert.Equal(t, "id-1", fwd.GetSelector().GetProxyId())
+	assert.True(t, fwd.GetIncludeStatistics())
+}
+
+func TestGetCacheProxy_ForwardedProxyDoesNotRespond(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	readerUser := userWithCapabilities("U2", testGroupID, cappb.Capability_ORG_ADMIN)
+	users := map[string]interfaces.UserInfo{"CP_KEY": streamUser}
+	redisTarget := testredis.Start(t).Target
+	peerServer, peerClient, _ := startPeer(t, redisTarget, users)
+	s, _ := newServerWithRedis(t, redisTarget, users)
+	// The proxy never answers the details request.
+	registerProxy(t, peerServer, peerClient, "id-1")
+
+	ctx, cancel := context.WithTimeout(claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil), time.Second)
+	defer cancel()
+	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsDeadlineExceededError(err), "expected deadline exceeded, got: %v", err)
+	assert.Contains(t, err.Error(), "did not respond")
+}
+
+func TestGetCacheProxy_DoNotForward(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	users := map[string]interfaces.UserInfo{"CP_KEY": streamUser}
+	redisTarget := testredis.Start(t).Target
+	peerServer, peerClient, peer := startPeer(t, redisTarget, users)
+	s, _ := newServerWithRedis(t, redisTarget, users)
+	registerProxy(t, peerServer, peerClient, "id-1")
+
+	ctx := claims.AuthContextWithJWT(context.Background(), streamUser.(*claims.Claims), nil)
+	req := getCacheProxyRequest("id-1")
+	req.DoNotForward = true
+	_, err := s.GetCacheProxy(ctx, req)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+	assert.Empty(t, peer.forwarded)
+}
+
+func TestGetCacheProxy_NotRegistered(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+}
+
+func TestGetCacheProxy_StaleRegistration(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	users := map[string]interfaces.UserInfo{"CP_KEY": user}
+	redisTarget := testredis.Start(t).Target
+	peerServer, _, peer := startPeer(t, redisTarget, users)
+	s, _ := newServerWithRedis(t, redisTarget, users)
+
+	writeRegistration(t, s, &cppb.RegisteredCacheProxy{
+		Summary:      &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"},
+		GroupId:      testGroupID,
+		LastPingTime: timestamppb.New(time.Now().Add(-2 * maxRegistrationStaleness)),
+		AppHostPort:  peerServer.ownHostPort,
+	})
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	_, err := s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err), "expected not found, got: %v", err)
+	assert.Empty(t, peer.forwarded)
+}
+
+func TestGetCacheProxy_PeerUnreachable(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	deadAddr := lis.Addr().String()
+	require.NoError(t, lis.Close())
+	writeRegistration(t, s, &cppb.RegisteredCacheProxy{
+		Summary:      &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"},
+		GroupId:      testGroupID,
+		LastPingTime: timestamppb.Now(),
+		AppHostPort:  deadAddr,
+	})
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	_, err = s.GetCacheProxy(ctx, getCacheProxyRequest("id-1"))
+	require.Error(t, err)
+	assert.True(t, status.IsUnavailableError(err), "expected unavailable, got: %v", err)
+}
+
+func writeRegistration(t *testing.T, s *CacheProxyRegistryServer, reg *cppb.RegisteredCacheProxy) {
+	b, err := proto.Marshal(reg)
+	require.NoError(t, err)
+	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies(reg.GetGroupId()), reg.GetSummary().GetProxyId(), b).Err())
 }

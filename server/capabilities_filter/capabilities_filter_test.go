@@ -25,13 +25,13 @@ var (
 
 func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {
 	serviceMethodNames := []string{}
-	buildbuddyServiceType := reflect.TypeOf((*bbspb.BuildBuddyServiceServer)(nil)).Elem()
-	for i := 0; i < buildbuddyServiceType.NumMethod(); i++ {
-		serviceMethodNames = append(serviceMethodNames, buildBuddyServicePrefix+buildbuddyServiceType.Method(i).Name)
+	buildbuddyServiceType := reflect.TypeFor[bbspb.BuildBuddyServiceServer]()
+	for method := range buildbuddyServiceType.Methods() {
+		serviceMethodNames = append(serviceMethodNames, buildBuddyServicePrefix+method.Name)
 	}
-	apiServiceType := reflect.TypeOf((*apipb.ApiServiceServer)(nil)).Elem()
-	for i := 0; i < apiServiceType.NumMethod(); i++ {
-		serviceMethodNames = append(serviceMethodNames, apiServicePrefix+apiServiceType.Method(i).Name)
+	apiServiceType := reflect.TypeFor[apipb.ApiServiceServer]()
+	for method := range apiServiceType.Methods() {
+		serviceMethodNames = append(serviceMethodNames, apiServicePrefix+method.Name)
 	}
 
 	allDefinedMethods := capabilities_filter.AllRPCsForTestOnly()
@@ -50,14 +50,14 @@ func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {
 func TestBuildBuddyServiceRPCsHaveRequestAndResponseContextFields(t *testing.T) {
 	type Req interface{ GetRequestContext() *ctxpb.RequestContext }
 	type Res interface{ GetResponseContext() *ctxpb.ResponseContext }
-	expectedReqType := reflect.TypeOf((*Req)(nil)).Elem()
-	expectedResType := reflect.TypeOf((*Res)(nil)).Elem()
-	ctxType := reflect.TypeOf((*context.Context)(nil)).Elem()
+	expectedReqType := reflect.TypeFor[Req]()
+	expectedResType := reflect.TypeFor[Res]()
+	ctxType := reflect.TypeFor[context.Context]()
 
-	buildbuddyServiceType := reflect.TypeOf((*bbspb.BuildBuddyServiceServer)(nil)).Elem()
-	for i := 0; i < buildbuddyServiceType.NumMethod(); i++ {
-		methodFunc := buildbuddyServiceType.Method(i).Type
-		methodName := buildbuddyServiceType.Method(i).Name
+	buildbuddyServiceType := reflect.TypeFor[bbspb.BuildBuddyServiceServer]()
+	for method := range buildbuddyServiceType.Methods() {
+		methodFunc := method.Type
+		methodName := method.Name
 
 		var actualReqType, actualResType reflect.Type
 		if methodFunc.In(0).Implements(ctxType) {
@@ -131,8 +131,20 @@ func TestAllowedRPCs(t *testing.T) {
 			Allowed:   false,
 		},
 		{
+			Name:      "OrgMemberRPC_GetTargetHistory_Anonymous_NotAllowed",
+			RPC:       buildBuddyServicePrefix + "GetTargetHistory",
+			Anonymous: true,
+			Allowed:   false,
+		},
+		{
 			Name:         "OrgMemberRPC_OrgMember_Allowed",
 			RPC:          buildBuddyServicePrefix + "SearchInvocation",
+			Capabilities: []cappb.Capability{},
+			Allowed:      true,
+		},
+		{
+			Name:         "OrgMemberRPC_GetTargetHistory_OrgMember_Allowed",
+			RPC:          buildBuddyServicePrefix + "GetTargetHistory",
 			Capabilities: []cappb.Capability{},
 			Allowed:      true,
 		},
@@ -223,8 +235,38 @@ func TestAllowedRPCs(t *testing.T) {
 			Allowed:   true,
 		},
 		{
-			Name:         "OrgMemberRPC_API_OrgMember_Allowed",
+			Name:         "GroupWriteRPC_API_ReadOnlyMember_NotAllowed",
 			RPC:          apiServicePrefix + "Run",
+			Capabilities: []cappb.Capability{},
+			Allowed:      false,
+		},
+		{
+			Name:         "GroupWriteRPC_API_CASWriter_Allowed",
+			RPC:          apiServicePrefix + "Run",
+			Capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE},
+			Allowed:      true,
+		},
+		{
+			Name:         "GroupWriteRPC_ReadOnlyMember_NotAllowed",
+			RPC:          buildBuddyServicePrefix + "DeleteInvocation",
+			Capabilities: []cappb.Capability{},
+			Allowed:      false,
+		},
+		{
+			Name:         "GroupWriteRPC_CacheWriter_Allowed",
+			RPC:          buildBuddyServicePrefix + "DeleteInvocation",
+			Capabilities: []cappb.Capability{cappb.Capability_CACHE_WRITE},
+			Allowed:      true,
+		},
+		{
+			Name:         "GroupWriteRPC_OrgAdmin_Allowed",
+			RPC:          buildBuddyServicePrefix + "DeleteInvocation",
+			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
+			Allowed:      true,
+		},
+		{
+			Name:         "GroupMemberRPC_GetApiKeys_ReadOnlyMember_Allowed",
+			RPC:          buildBuddyServicePrefix + "GetApiKeys",
 			Capabilities: []cappb.Capability{},
 			Allowed:      true,
 		},

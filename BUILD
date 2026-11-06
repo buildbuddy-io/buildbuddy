@@ -2,43 +2,38 @@ load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("@com_github_bazelbuild_buildtools//buildifier:def.bzl", "buildifier")
+load("@com_github_bazel_contrib_buildtools_v10//buildifier:def.bzl", "buildifier")
 load("@com_github_sluongng_nogo_analyzer//staticcheck:def.bzl", "ANALYZERS", "staticcheck_analyzers")
 load("@io_bazel_rules_go//go:def.bzl", "nogo")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@pypi//:requirements.bzl", "all_whl_requirements")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("@rules_python//python:pip.bzl", "compile_pip_requirements")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("@rules_uv//uv:pip.bzl", "pip_compile")
 load("//rules/go:index.bzl", "go_sdk_tool")
-load("//rules/go/analyzer:def.bzl", "MODERNIZE_ANALYZERS")
+load("//rules/go/analyzer:def.bzl", "MODERNIZE_ANALYZERS", "MODERNIZE_CONFIG")
 
 package(default_visibility = ["//visibility:public"])
 
 npm_link_all_packages(name = "node_modules")
 
 # Rendered JSON result could be checked by doing:
-#   bazel build //:no_go_config
-#   cat bazel-bin/no_go_config.json | jq .
+#   bazel build //:nogo_config
+#   cat bazel-bin/nogo_config.json | jq .
 write_file(
     name = "nogo_config",
     out = "nogo_config.json",
     content = [
         json.encode_indent(
-            {
-                "exhaustive": {
+            dict(
+                MODERNIZE_CONFIG,
+                exhaustive = {
                     "analyzer_flags": {
                         "default-signifies-exhaustive": "true",
                     },
                 },
-                "slicescontains": {
-                    "exclude_files": {
-                        ".*/gazelle\\+/cmd/gazelle/.*": "third-party gazelle sources compiled by //cli/fix/langs:gazelle",
-                    },
-                },
-            },
+            ),
         ),
     ],
 )

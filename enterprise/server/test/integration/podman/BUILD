@@ -10,12 +10,14 @@ go_test(
     srcs = ["podman_test.go"],
     data = [
         "//enterprise/server/remote_execution/containers/ociruntime:crun",
+        "@busybox",
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
+        "test.network": "off",
         "test.EstimatedComputeUnits": "4",
         "test.EstimatedFreeDiskBytes": "10GB",
-        # Enable runner recycling to cache test images.
+        # Reuse the VM to avoid reinstalling podman.
         "test.recycle-runner": "true",
         # Include podman version in the snapshot key so that we reinstall from
         # scratch if we change podman versions.
@@ -27,17 +29,20 @@ go_test(
     # locally but not when using --config=remote. For now just use the "docker"
     # tag which we apply to tests that only run on CI.
     tags = [
+        "block-network",
         "docker",
     ],
     target_compatible_with = ["@platforms//os:linux"],
     x_defs = {
         "crunRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/ociruntime:crun)",
+        "busyboxImageRlocationpath": "$(rlocationpath @busybox)",
     },
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/docker",
         "//enterprise/server/remote_execution/containers/podman",
+        "//enterprise/server/testutil/testregistry",
         "//enterprise/server/util/oci",
         "//enterprise/server/util/testpodman",
         "//proto:remote_execution_go_proto",
@@ -49,8 +54,10 @@ go_test(
         "//server/util/platform",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_google_go_containerregistry//pkg/v1/mutate",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@com_github_vishvananda_netlink//:netlink",
         "@io_bazel_rules_go//go/runfiles",
     ],
 )

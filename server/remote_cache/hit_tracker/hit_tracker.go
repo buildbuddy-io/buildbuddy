@@ -41,6 +41,13 @@ var (
 	actionRegexp = regexp.MustCompile(`^(?P<action_mnemonic>[[:alnum:]]*)\((?P<target_id>.+)\)/(?P<action_id>[[:alnum:]]+)$`)
 )
 
+const (
+	// maxDetailedResults caps the number of detailed results stored and read
+	// for an invocation. A large build can make millions of cache requests,
+	// and storing a result for each of them can take hundreds of MB.
+	maxDetailedResults = 500_000
+)
+
 type counterType int
 
 const (
@@ -480,7 +487,9 @@ func (h *hitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		return err
 	}
 	key := resultsKey(h.iid)
-	if err := h.c.ListAppend(h.ctx, key, string(b)); err != nil {
+	// readResults only reads the first maxDetailedResults entries, so drop the
+	// rest instead of storing them until the list expires.
+	if err := h.c.ListAppendAndTruncate(h.ctx, key, maxDetailedResults, string(b)); err != nil {
 		return err
 	}
 	if err := h.c.Expire(h.ctx, key, *scorecardResultsTTL); err != nil {
@@ -820,10 +829,7 @@ func readResults(ctx context.Context, env environment.Env, iid string) *capb.Sco
 		return nil
 	}
 	sc := &capb.ScoreCard{}
-	// This limit is a safeguard against buffering too many results in memory.
-	// We expect to hit this rarely (if ever) in production usage.
-	const limit = 500_000
-	serializedResults, err := c.ListRange(ctx, resultsKey(iid), 0, limit-1)
+	serializedResults, err := c.ListRange(ctx, resultsKey(iid), 0, maxDetailedResults-1)
 	if err != nil {
 		log.Warningf("Failed to read cache scorecard for invocation %s: %s", iid, err)
 		return sc

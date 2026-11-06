@@ -1,6 +1,9 @@
 package bazel_command
 
-import "github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
+import (
+	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
+)
 
 var (
 	commands = set.Set[string]{
@@ -64,4 +67,33 @@ func IsCommand(command string) bool {
 // if command has no parent.
 func Parent(command string) string {
 	return parentByCommand[command]
+}
+
+// GetCommandAndIndex returns the bazel command in args and its index, or an
+// empty string and -1 if args contains no bazel command.
+// Ex. For `bazel build //...` it will return `build` and `1`.
+// This can be helpful for splitting bazel commands into their different
+// components.
+//
+// We hard-code the commands here because running `bazel help` to generate them
+// can result in undesirable behavior. For example if it's run with different
+// startup options than the last bazel command, it will restart the bazel
+// server.
+//
+// TODO: More robust parsing of startup options. For example, this has a bug
+// that passing `bazel --output_base build test ...` returns "build" as the
+// bazel command, even though "build" is the argument to --output_base.
+func GetCommandAndIndex(args []string) (string, int) {
+	for i, a := range args {
+		// Check for bazel commands first, since a few names (like "version")
+		// are both a bazel command and a bb CLI command, and bazel wins when
+		// the args are being interpreted as a bazel command at all.
+		if IsCommand(a) {
+			return a, i
+		}
+		if cli_command.IsCommand(a) {
+			return "", -1
+		}
+	}
+	return "", -1
 }

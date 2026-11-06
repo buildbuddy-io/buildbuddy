@@ -549,7 +549,7 @@ func TestFieldMapAndPreservesFieldFrequencies(t *testing.T) {
 
 func BenchmarkListSerializationPosting(b *testing.B) {
 	ids := make([]uint64, 1_000_000)
-	for i := 0; i < len(ids); i++ {
+	for i := range ids {
 		if i == 0 {
 			ids[i] = 1
 		} else {
@@ -579,7 +579,7 @@ func BenchmarkBuildList(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			pl := posting.NewBuilderList()
-			for i := uint64(0); i < n; i++ {
+			for i := range uint64(n) {
 				pl.AddWithFrequency(i, freq(i))
 			}
 			if _, err := pl.Marshal(); err != nil {
@@ -603,7 +603,7 @@ func BenchmarkBuildList(b *testing.B) {
 
 func BenchmarkListDeserializationPosting(b *testing.B) {
 	ids := make([]uint64, 1_000_000)
-	for i := 0; i < len(ids); i++ {
+	for i := range ids {
 		if i == 0 {
 			ids[i] = 1
 		} else {
@@ -690,7 +690,7 @@ func BenchmarkMergeListDeleteCompaction(b *testing.B) {
 	const n = 100_000
 	base := posting.NewBuilderList()
 	delIDs := make([]uint64, 0, n/10)
-	for i := uint64(0); i < n; i++ {
+	for i := range uint64(n) {
 		freq := uint32(1)
 		if i%50 == 0 { // sparse TF>1 outliers, so the list is counted
 			freq = 3

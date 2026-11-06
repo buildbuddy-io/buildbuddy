@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -24,13 +23,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -89,7 +87,7 @@ func runByteStreamServer(ctx context.Context, t *testing.T, env *testenv.TestEnv
 	go runFunc()
 
 	// TODO(vadim): can we remove the MsgSize override from the default options?
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)))
+	clientConn, err := testenv.LocalGRPCConn(t, ctx, lis, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)))
 	if err != nil {
 		t.Error(err)
 	}
@@ -345,6 +343,84 @@ func TestRPCWriteWithDirectWrite(t *testing.T) {
 	_, _, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A duplicate upload is short-circuited either way. A client that advertises
+// support for it, or that is Bazel 6.2.0 or later, receives an ALREADY_EXISTS
+// status when the experiment is enabled; otherwise it receives a WriteResponse
+// with the committed size.
+func TestRPCWriteAlreadyExists(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		experiment   bool
+		advertise    bool
+		bazelVersion string
+		compressed   bool
+		wantStatus   bool
+	}{
+		{name: "experiment_on_advertised", experiment: true, advertise: true, wantStatus: true},
+		{name: "experiment_on_advertised_compressed", experiment: true, advertise: true, compressed: true, wantStatus: true},
+		{name: "experiment_on_not_advertised", experiment: true, advertise: false, wantStatus: false},
+		{name: "experiment_off_advertised", experiment: false, advertise: true, wantStatus: false},
+		{name: "experiment_on_bazel_6.2.0", experiment: true, bazelVersion: "6.2.0", wantStatus: true},
+		{name: "experiment_on_bazel_8.0.0_compressed", experiment: true, bazelVersion: "8.0.0", compressed: true, wantStatus: true},
+		{name: "experiment_on_bazel_6.1.0", experiment: true, bazelVersion: "6.1.0", wantStatus: false},
+		{name: "experiment_on_bazel_6.2.0rc1", experiment: true, bazelVersion: "6.2.0rc1", wantStatus: false},
+		{name: "experiment_off_bazel_6.2.0", experiment: false, bazelVersion: "6.2.0", wantStatus: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "cache.bytestream_already_exists_status", tc.experiment)
+			flags.Set(t, "cache.zstd_transcoding_enabled", true)
+			te := testenv.GetTestEnv(t)
+			te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
+			ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+			require.NoError(t, err)
+			bsClient := bspb.NewByteStreamClient(runByteStreamServer(ctx, t, te))
+
+			// Large enough that the server checks whether the blob exists
+			// instead of writing straight to the cache.
+			rnProto, blob := testdigest.RandomCASResourceBuf(t, 64*1024)
+			rn, err := digest.CASResourceNameFromProto(rnProto)
+			require.NoError(t, err)
+			_, _, err = cachetools.UploadFromReader(ctx, bsClient, rn, bytes.NewReader(blob))
+			require.NoError(t, err)
+
+			// Upload a duplicate in a single request.
+			uploadRN := digest.NewCASResourceName(rn.GetDigest(), "", rn.GetDigestFunction())
+			data := blob
+			if tc.compressed {
+				uploadRN.SetCompressor(repb.Compressor_ZSTD)
+				data = compression.CompressZstd(nil, blob)
+			}
+			writeCtx := ctx
+			if tc.bazelVersion != "" {
+				writeCtx = byte_stream.WithBazelVersion(t, writeCtx, tc.bazelVersion)
+			}
+			if tc.advertise {
+				writeCtx = clientfeatures.Advertise(writeCtx, clientfeatures.ByteStreamWriteAlreadyExists)
+			}
+			stream, err := bsClient.Write(writeCtx)
+			require.NoError(t, err)
+			require.NoError(t, stream.Send(&bspb.WriteRequest{
+				ResourceName: uploadRN.NewUploadString(),
+				Data:         data,
+				FinishWrite:  true,
+			}))
+			resp, err := stream.CloseAndRecv()
+			if tc.wantStatus {
+				require.True(t, status.IsAlreadyExistsError(err), "err = %v", err)
+				require.Nil(t, resp)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, rn.GetDigest().GetSizeBytes(), resp.GetCommittedSize())
+			}
+
+			// cachetools advertises support and handles the status itself, so
+			// a duplicate upload through it succeeds either way.
+			_, _, err = cachetools.UploadFromReader(ctx, bsClient, rn, bytes.NewReader(blob))
+			require.NoError(t, err)
+		})
 	}
 }
 
@@ -790,26 +866,9 @@ func newUUID(t *testing.T) string {
 }
 
 func TestReadChunked(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runByteStreamServer(ctx, t, te)
@@ -843,26 +902,9 @@ func TestReadChunked(t *testing.T) {
 }
 
 func TestReadChunked_NonZeroOffset(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runByteStreamServer(ctx, t, te)
@@ -930,27 +972,11 @@ func TestReadChunked_NonZeroOffset(t *testing.T) {
 }
 
 func TestReadChunked_NonZeroOffset_ZstdBLAKE3(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runByteStreamServer(ctx, t, te)
@@ -1174,7 +1200,7 @@ func TestChunkedBlobReader_CloseDoesNotWaitForActiveReads(t *testing.T) {
 		},
 	}, bytebufferpool.VariableSize(8), []*rspb.ResourceName{rn1, rn2}, 0, "false")
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case <-started:
 		case <-time.After(time.Second):
@@ -1209,28 +1235,13 @@ func TestNewByteStreamServer_BufferPoolAccommodatesCompressedChunkOverhead(t *te
 
 func TestReadChunked_ZstdBLAKE3_PassthroughIncompressible(t *testing.T) {
 	chunkSize := int64(1024 * 1024)
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
 	te.SetCache(&casCompressionCache{Cache: te.GetCache()})
 
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runByteStreamServer(ctx, t, te)
@@ -1289,28 +1300,13 @@ func TestReadChunked_ZstdBLAKE3_PassthroughIncompressible(t *testing.T) {
 }
 
 func TestReadChunked_ZstdPassthroughCompressedChunkLargerThanCompressBound(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
 	te.SetCache(&casCompressionCache{Cache: te.GetCache()})
 
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runByteStreamServer(ctx, t, te)
@@ -1376,26 +1372,9 @@ func TestReadChunked_ZstdPassthroughCompressedChunkLargerThanCompressBound(t *te
 }
 
 func TestReadChunked_MissingManifest(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runByteStreamServer(ctx, t, te)
@@ -1448,28 +1427,12 @@ func TestReadChunked_UsesParallelReads(t *testing.T) {
 		{name: "zstd_many_chunks", chunkCount: 2 * defaultChunkedReadMaxInFlight, want: defaultChunkedReadMaxInFlight, compressor: repb.Compressor_ZSTD},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-				"cache.chunking_enabled": {
-					State:          memprovider.Enabled,
-					DefaultVariant: "true",
-					Variants: map[string]any{
-						"true":  true,
-						"false": false,
-					},
-				},
-			})
-			require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-			fp, err := experiments.NewFlagProvider(t.Name())
-			require.NoError(t, err)
 			if tc.compressor == repb.Compressor_ZSTD {
 				flags.Set(t, "cache.zstd_transcoding_enabled", true)
 			}
 
 			ctx := context.Background()
 			te := testenv.GetTestEnv(t)
-			te.SetExperimentFlagProvider(fp)
-
 			baseCache := te.GetCache()
 			if tc.compressor == repb.Compressor_ZSTD {
 				baseCache = &casCompressionCache{Cache: baseCache}
@@ -1482,7 +1445,7 @@ func TestReadChunked_UsesParallelReads(t *testing.T) {
 			}
 			te.SetCache(cache)
 
-			ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(t, err)
 
 			clientConn := runByteStreamServer(ctx, t, te)

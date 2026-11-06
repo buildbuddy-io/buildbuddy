@@ -43,7 +43,7 @@ func Setup(t testing.TB) {
 		require.NoError(t, err, "enable IPv4 forwarding")
 	}
 
-	// Set up default hostNetAllocator
+	// Set up default hostNetAllocator and allow ping sockets
 	err = networking.Configure(context.Background())
 	require.NoError(t, err)
 }

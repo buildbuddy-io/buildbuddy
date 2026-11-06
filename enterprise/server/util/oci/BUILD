@@ -46,6 +46,7 @@ go_test(
         "//enterprise/server/testutil/testregistry",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
@@ -66,5 +67,7 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
     ],
 )

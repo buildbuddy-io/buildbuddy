@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "gcsutil",
     srcs = ["gcsutil.go"],
@@ -10,5 +12,3 @@ go_library(
         "@com_github_jonboulle_clockwork//:clockwork",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

@@ -33,6 +33,7 @@ go_library(
         "//server/util/claims",
         "//server/util/clickhouse/schema",
         "//server/util/db",
+        "//server/util/expflag",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/perms",
@@ -47,7 +48,7 @@ go_library(
 )
 
 # Tell gazelle to make each file a separate test target,
-# so the ClickHouse-backed audit-log test can keep separate runner properties.
+# keeping the audit-log test separate from the general API tests.
 # gazelle:go_test file
 
 go_test(
@@ -57,7 +58,6 @@ go_test(
     data = glob(["testdata/**"]),
     embed = [":api"],
     deps = [
-        "//enterprise/server/experiments",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:build_event_stream_go_proto",
@@ -77,15 +77,12 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
-        "//server/testutil/testfs",
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/prefix",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_uuid//:uuid",
-        "@com_github_open_feature_go_sdk//openfeature",
-        "@com_github_open_feature_go_sdk_contrib_providers_flagd//pkg",
         "@com_github_prometheus_client_model//io/prometheus/client:go",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
@@ -101,14 +98,6 @@ go_test(
     srcs = ["auditlog_test.go"],
     data = glob(["testdata/**"]),
     embed = [":api"],
-    exec_properties = {
-        "test.workload-isolation-type": "firecracker",
-        "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622",
-        "test.init-dockerd": "true",
-        "test.recycle-runner": "true",
-        "test.runner-recycling-key": "clickhouse25.3",
-    },
-    tags = ["docker"],
     deps = [
         "//enterprise/server/auditlog",
         "//enterprise/server/testutil/enterprise_testauth",
@@ -122,6 +111,7 @@ go_test(
         "//server/http/protolet",
         "//server/tables",
         "//server/testutil/testauth",
+        "//server/testutil/testclickhouse",
         "//server/testutil/testenv",
         "//server/util/authutil",
         "//server/util/testing/flags",

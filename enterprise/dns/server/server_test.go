@@ -441,7 +441,7 @@ func TestASNRoutingRollout(t *testing.T) {
 
 	const n = 1000
 	overridden := 0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		name := fmt.Sprintf("host%d.buildbuddy.io.", i)
 		m := queryFromIP(t, h, name, dns.TypeA, "8.8.8.8")
 		require.Equal(t, dns.RcodeSuccess, m.Rcode)

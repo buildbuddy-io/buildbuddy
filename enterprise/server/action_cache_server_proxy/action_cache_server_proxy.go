@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
@@ -14,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -39,7 +38,7 @@ var (
 )
 
 type ActionCacheServerProxy struct {
-	supportsEncryption func(context.Context) bool
+	supportsEncryption bool
 	env                environment.Env
 	authenticator      interfaces.Authenticator
 	localCache         interfaces.Cache
@@ -167,19 +166,19 @@ func (s *ActionCacheServerProxy) actionCacheTTL(ctx context.Context) time.Durati
 		}
 	}
 
-	// Clients may opt into this caching via a platform property as well, whose
-	// value is the duration to serve locally cached results for.
-	for _, prop := range platform.RemoteHeaderOverrides(ctx) {
-		if strings.EqualFold(prop.GetName(), platform.CacheProxyActionCacheTTLPropertyName) {
-			ttl, err := time.ParseDuration(prop.GetValue())
-			if err != nil {
-				log.CtxWarningf(ctx, "Ignoring invalid %q platform property value %q: %s", platform.CacheProxyActionCacheTTLPropertyName, prop.GetValue(), err)
-				return 0
-			}
-			if ttl > 0 {
-				return ttl
-			}
+	// Clients may opt into this caching via a header as well, whose value is
+	// the duration to serve locally cached results for.
+	if vals := metadata.ValueFromIncomingContext(ctx, proxy_util.ActionCacheTTLHeaderName); len(vals) > 0 {
+		// Use the last value, so that a later --remote_header flag overrides
+		// an earlier one.
+		val := vals[len(vals)-1]
+		ttl, err := time.ParseDuration(val)
+		if err != nil {
+			log.CtxWarningf(ctx, "Ignoring invalid %q header value %q: %s", proxy_util.ActionCacheTTLHeaderName, val, err)
 			return 0
+		}
+		if ttl > 0 {
+			return ttl
 		}
 	}
 
@@ -202,7 +201,7 @@ func (s *ActionCacheServerProxy) shouldCacheUpdatedActionResult(ctx context.Cont
 	if err != nil || !canWrite {
 		return false
 	}
-	return s.supportsEncryption(ctx) || !authutil.EncryptionEnabled(ctx, s.authenticator)
+	return s.supportsEncryption || !authutil.EncryptionEnabled(ctx, s.authenticator)
 }
 
 func (s *ActionCacheServerProxy) recordLocalACHit(ctx context.Context, req *repb.GetActionResultRequest, resp *repb.ActionResult, sizeBytes int64) {
@@ -230,10 +229,13 @@ func (s *ActionCacheServerProxy) recordLocalACHit(ctx context.Context, req *repb
 // send a hash of the last value we received to avoid transferring data on
 // unmodified actions.
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.authenticator) {
+		return s.localACServer.GetActionResult(ctx, req)
+	}
 	if err := authutil.ValidateRestrictedACAccess(ctx, s.env, req.GetInstanceName()); err != nil {
 		return nil, err
 	}
-	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
 		resp, err := s.remoteACClient.GetActionResult(ctx, req)
 		labels := prometheus.Labels{
 			metrics.StatusLabel:            status.MetricsLabel(err),
@@ -375,11 +377,14 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 }
 
 func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.authenticator) {
+		return s.localACServer.UpdateActionResult(ctx, req)
+	}
 	if err := authutil.ValidateRestrictedACAccess(ctx, s.env, req.GetInstanceName()); err != nil {
 		return nil, err
 	}
 	// Only if it's explicitly requested do we cache AC results locally.
-	if proxy_util.SkipRemote(ctx) && (!authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption(ctx)) {
+	if proxy_util.SkipRemote(ctx) && (!authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption) {
 		resp, err := s.localACServer.UpdateActionResult(ctx, req)
 
 		labels := prometheus.Labels{

@@ -123,10 +123,7 @@ func (m *listModel) clampCursorAndOffset() {
 	}
 
 	visibleRows := m.visibleRows()
-	maxOffset := len(m.invocations) - visibleRows
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
+	maxOffset := max(len(m.invocations)-visibleRows, 0)
 	if m.offset < 0 {
 		m.offset = 0
 	}
@@ -219,20 +216,8 @@ func (m listModel) renderTable() string {
 	widths := m.columnWidths()
 	allRows := m.buildRows(widths)
 	tableHeight := m.tableAreaHeight()
-	start := m.offset
-	if start < 0 {
-		start = 0
-	}
-	if start > len(allRows) {
-		start = len(allRows)
-	}
-	end := start + (tableHeight - 2)
-	if end < start {
-		end = start
-	}
-	if end > len(allRows) {
-		end = len(allRows)
-	}
+	start := min(max(m.offset, 0), len(allRows))
+	end := min(max(start+(tableHeight-2), start), len(allRows))
 	visibleRows := allRows[start:end]
 
 	t := lgtable.New().

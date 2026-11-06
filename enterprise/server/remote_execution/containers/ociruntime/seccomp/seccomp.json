@@ -176,6 +176,7 @@
 				"ftruncate64",
 				"futex",
 				"futex_time64",
+				"futex_waitv",
 				"futimesat",
 				"get_mempolicy",
 				"get_robust_list",

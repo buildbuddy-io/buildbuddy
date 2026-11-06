@@ -7,12 +7,14 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -21,14 +23,27 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	flagdsync "github.com/open-feature/flagd/core/pkg/sync"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
+// inProcessInitDeadline bounds provider initialization for the in-process
+// provider. The first sync reads from GCS, which on a cold pod can take much
+// longer than the flagd provider's 500ms default. flagd also uses it as the
+// per-evaluation timeout, which doesn't matter for in-memory evaluation.
+const inProcessInitDeadline = 10 * time.Second
+
 var (
 	appName      = flag.String("experiments.app_name", "buildbuddy-app", "Client name to use for experiments")
 	flagdBackend = flag.String("experiments.flagd_backend", "", "Flagd backend to use for evaluating flags")
+
+	// noDetails are the details returned when flag evaluation fails.
+	noDetails = (*details)(nil)
+	// flagNotFoundDetails are the details returned when the flag is not defined
+	// in the experiment config.
+	flagNotFoundDetails = &details{flagNotFound: true}
 )
 
 // Register adds a new interfaces.ExperimentFlagProvider to the env. If the
@@ -61,7 +76,7 @@ func Register(env *real_environment.RealEnv) error {
 // binaries that pull flags directly from a source rather than talking to a
 // separate flagd process. It will not return until the provider is ready.
 func RegisterInProcessSync(env *real_environment.RealEnv, syncProvider flagdsync.ISync) error {
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithCustomSyncProvider(syncProvider))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithCustomSyncProvider(syncProvider), flagd.WithDeadline(int(inProcessInitDeadline.Milliseconds())))
 	if err != nil {
 		return err
 	}
@@ -69,8 +84,8 @@ func RegisterInProcessSync(env *real_environment.RealEnv, syncProvider flagdsync
 }
 
 // setProvider installs the given OpenFeature provider as the global provider
-// and wires the resulting FlagProvider into env. It blocks until the provider
-// is ready.
+// and wires the resulting FlagProvider into env and expflag. It blocks until
+// the provider is ready.
 func setProvider(env *real_environment.RealEnv, provider openfeature.FeatureProvider) error {
 	if err := openfeature.SetProviderAndWait(provider); err != nil {
 		return err
@@ -81,6 +96,7 @@ func setProvider(env *real_environment.RealEnv, provider openfeature.FeatureProv
 		return err
 	}
 	env.SetExperimentFlagProvider(fp)
+	expflag.SetFlagProvider(fp)
 	statusz.AddSection("experiments", "Configured experiments config", fp)
 	return nil
 }
@@ -97,17 +113,33 @@ func NewFlagProvider(clientName string) (*FlagProvider, error) {
 // details implements the interfaces.ExperimentFlagDetails interface,
 // providing details about flag evaluation.
 type details struct {
-	variant string
+	variant      string
+	flagNotFound bool
 }
-
-// noDetails are returned when flag evaluation fails.
-var noDetails = (*details)(nil)
 
 func (d *details) Variant() string {
 	if d == nil {
 		return ""
 	}
 	return d.variant
+}
+
+// FlagNotFound lets expflag fall back to a flag's deprecated experiment name.
+// expflag checks for this method with a type assertion, so renaming it would
+// silently disable the fallback.
+func (d *details) FlagNotFound() bool {
+	return d != nil && d.flagNotFound
+}
+
+func evaluationErrorDetails(d openfeature.EvaluationDetails) *details {
+	// openfeature returns the same error code for not found and disabled, so we
+	// check the error message here. There's a test that will fail if
+	// openfeature changes the error string here
+	// (TestDeprecatedExperimentName_Flagd/disabled)
+	if d.ErrorCode == openfeature.FlagNotFoundCode && d.ErrorMessage != "flag: "+d.FlagKey+" is disabled" {
+		return flagNotFoundDetails
+	}
+	return noDetails
 }
 
 // FlagProvider implements the interface.ExperimentFlagProvider interface.
@@ -132,7 +164,7 @@ func (fp *FlagProvider) Statusz(ctx context.Context) string {
 // Options is evaluated by a set of Option functions, which configure it.
 type Options struct {
 	targetingKey string
-	attributes   map[string]interface{}
+	attributes   map[string]any
 }
 type Option func(*Options)
 
@@ -156,7 +188,7 @@ type Option func(*Options)
 func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) openfeature.EvaluationContext {
 	options := &Options{
 		targetingKey: interfaces.AuthAnonymousUser,
-		attributes:   make(map[string]interface{}, 0),
+		attributes:   make(map[string]any, 0),
 	}
 
 	if claims, err := claims.ClaimsFromContext(ctx); err == nil {
@@ -231,11 +263,25 @@ func ObjectToProto(object map[string]any, dest proto.Message) error {
 	return nil
 }
 
+// ProtoToVariantMap returns a map from flag name to selected variant, for
+// recording which experiment variants applied to a request. Flags with an
+// empty variant are excluded, since no variant was selected (for example, the
+// flag is missing from the experiment config).
+func ProtoToVariantMap(flags []*expb.EvaluatedFlag) map[string]string {
+	variants := make(map[string]string, len(flags))
+	for _, f := range flags {
+		if v := f.GetVariant(); v != "" {
+			variants[f.GetName()] = v
+		}
+	}
+	return variants
+}
+
 // WithContext adds the provided key and value into the experiment context when
 // the flag is evaluated. This allows selectively enabling flags only when they
 // make sense. For example, you might want to only enable a certain performance
 // optimization if the platform is linux, etc.
-func WithContext(key string, value interface{}) Option {
+func WithContext(key string, value any) Option {
 	return func(o *Options) {
 		o.attributes[key] = value
 	}
@@ -277,9 +323,9 @@ func (fp *FlagProvider) BooleanDetails(ctx context.Context, flagName string, def
 	d, err := fp.client.BooleanValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
 		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
-		return defaultValue, noDetails
+		return defaultValue, evaluationErrorDetails(d.EvaluationDetails)
 	}
-	return d.Value, &details{d.Variant}
+	return d.Value, &details{variant: d.Variant}
 }
 
 // String extracts the evaluationContext from ctx, applies any option
@@ -298,9 +344,9 @@ func (fp *FlagProvider) StringDetails(ctx context.Context, flagName string, defa
 	d, err := fp.client.StringValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
 		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
-		return defaultValue, noDetails
+		return defaultValue, evaluationErrorDetails(d.EvaluationDetails)
 	}
-	return d.Value, &details{d.Variant}
+	return d.Value, &details{variant: d.Variant}
 }
 
 // Float64 extracts the evaluationContext from ctx, applies any option
@@ -319,9 +365,9 @@ func (fp *FlagProvider) Float64Details(ctx context.Context, flagName string, def
 	d, err := fp.client.FloatValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
 		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
-		return defaultValue, noDetails
+		return defaultValue, evaluationErrorDetails(d.EvaluationDetails)
 	}
-	return d.Value, &details{d.Variant}
+	return d.Value, &details{variant: d.Variant}
 }
 
 // Int64 extracts the evaluationContext from ctx, applies any option
@@ -340,9 +386,9 @@ func (fp *FlagProvider) Int64Details(ctx context.Context, flagName string, defau
 	d, err := fp.client.IntValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
 		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
-		return defaultValue, noDetails
+		return defaultValue, evaluationErrorDetails(d.EvaluationDetails)
 	}
-	return d.Value, &details{d.Variant}
+	return d.Value, &details{variant: d.Variant}
 }
 
 // Object extracts the evaluationContext from ctx, applies any option
@@ -361,11 +407,11 @@ func (fp *FlagProvider) ObjectDetails(ctx context.Context, flagName string, defa
 	d, err := fp.client.ObjectValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
 		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
-		return defaultValue, noDetails
+		return defaultValue, evaluationErrorDetails(d.EvaluationDetails)
 	}
 	v := d.Value
 	if m, ok := d.Value.(map[string]any); ok {
-		return m, &details{d.Variant}
+		return m, &details{variant: d.Variant}
 	} else {
 		log.CtxWarningf(ctx, "Experiment flag %q expected value of type map[string]any, but the value is %T (%v)", flagName, v, v)
 	}

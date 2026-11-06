@@ -189,6 +189,7 @@ const STRING_TYPES: stat_filter.FilterType[] = [
   stat_filter.FilterType.INVOCATION_ID_FILTER_TYPE,
   stat_filter.FilterType.EXECUTION_OS_FILTER_TYPE,
   stat_filter.FilterType.EXECUTION_ARCH_FILTER_TYPE,
+  stat_filter.FilterType.INVOCATION_BAZEL_EXIT_CODE_FILTER_TYPE,
 ];
 
 const STRING_ARRAY_TYPES: stat_filter.FilterType[] = [stat_filter.FilterType.TAG_FILTER_TYPE];
@@ -238,6 +239,8 @@ function getType(stringRep: string): stat_filter.FilterType | undefined {
       return stat_filter.FilterType.EXECUTION_ARCH_FILTER_TYPE;
     case "os":
       return stat_filter.FilterType.EXECUTION_OS_FILTER_TYPE;
+    case "bazel_exit_code":
+      return stat_filter.FilterType.INVOCATION_BAZEL_EXIT_CODE_FILTER_TYPE;
   }
   return undefined;
 }

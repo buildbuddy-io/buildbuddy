@@ -140,12 +140,6 @@ type PushTrigger struct {
 	Tags     []string `yaml:"tags"`
 }
 
-// defaultPullRequestTypes are the pull_request actions that trigger a
-// pull_request trigger when "types" is not specified. This matches the default
-// behavior of GitHub Actions' pull_request trigger ("edited" is included
-// because the webhook only emits it for base-branch changes).
-var defaultPullRequestTypes = []string{"opened", "synchronize", "reopened", "edited"}
-
 type PullRequestTrigger struct {
 	Branches []string `yaml:"branches"`
 	// Types optionally restricts the trigger to specific pull_request actions.
@@ -161,6 +155,10 @@ type PullRequestTrigger struct {
 	//   - "auto_merge_enabled": auto-merge was enabled on the PR.
 	//   - "approved": the PR received an approving review.
 	Types []string `yaml:"types"`
+	// SkipDrafts prevents the trigger from firing while the PR is a draft.
+	// If Types is empty, "ready_for_review" is added to the default type set so
+	// that the action runs once the draft is marked ready for review.
+	SkipDrafts bool `yaml:"skip_drafts"`
 	// NOTE: If nil, defaults to true.
 	MergeWithBase *bool `yaml:"merge_with_base"`
 	// MergeWithBaseInterval only applies if MergeWithBase is enabled.
@@ -234,7 +232,21 @@ func (t *PullRequestTrigger) matchesAction(action string) bool {
 	if len(t.Types) > 0 {
 		return slices.Contains(t.Types, action)
 	}
-	return action == "" || action == "approved" || slices.Contains(defaultPullRequestTypes, action)
+	return action == "" || action == "approved" || slices.Contains(t.defaultTypes(), action)
+}
+
+// defaultTypes returns the pull_request actions that trigger the workflow when
+// Types is not specified. This matches the default behavior of GitHub Actions'
+// pull_request trigger ("edited" is included because the webhook only emits it
+// for base-branch changes).
+func (t *PullRequestTrigger) defaultTypes() []string {
+	defaultTypes := []string{"opened", "synchronize", "reopened", "edited"}
+	if t.SkipDrafts {
+		// If SkipDrafts is set, we should run the workflow when the draft is marked ready for review,
+		// so add the "ready_for_review" trigger to the default types.
+		defaultTypes = append(defaultTypes, "ready_for_review")
+	}
+	return defaultTypes
 }
 
 type ScheduleTrigger struct {
@@ -244,13 +256,13 @@ type ScheduleTrigger struct {
 type ResourceRequests struct {
 	// Memory is a numeric quantity of memory in bytes, or human-readable IEC
 	// byte notation like "1GB" = 1024^3 bytes.
-	Memory interface{} `yaml:"memory"`
+	Memory any `yaml:"memory"`
 	// CPU is a numeric quantity of CPU cores, or a string with a numeric
 	// quantity followed by an "m"-suffix for milli-CPU.
-	CPU interface{} `yaml:"cpu"`
+	CPU any `yaml:"cpu"`
 	// Disk is a numeric quantity of disk size in bytes, or human-readable
 	// IEC byte notation like "1GB" = 1024^3 bytes.
-	Disk interface{} `yaml:"disk"`
+	Disk any `yaml:"disk"`
 }
 
 // GetEstimatedMemory converts the memory resource request to a value compatible
@@ -359,7 +371,7 @@ func GetDefault(targetRepoDefaultBranch string) *BuildBuddyConfig {
 // published to the given branch or tag. prAction is the pull_request action
 // (e.g. "opened", "ready_for_review") for pull_request events, and is empty for
 // other events.
-func MatchesAnyTrigger(action *Action, event, branch, tag, prAction string) bool {
+func MatchesAnyTrigger(action *Action, event, branch, tag, prAction string, isDraft bool) bool {
 	// If action was manually or automatically (via schedule) dispatched, always run it
 	if event == webhook_data.EventName.ManualDispatch || event == webhook_data.EventName.ScheduledDispatch {
 		return true
@@ -377,6 +389,9 @@ func MatchesAnyTrigger(action *Action, event, branch, tag, prAction string) bool
 	}
 
 	if prCfg := action.Triggers.PullRequest; prCfg != nil && event == webhook_data.EventName.PullRequest {
+		if prCfg.SkipDrafts && isDraft {
+			return false
+		}
 		return matchesAnyPattern(prCfg.Branches, branch) && prCfg.matchesAction(prAction)
 	}
 	return false
@@ -416,7 +431,7 @@ func matchesAnyPattern(haystack []string, needle string) bool {
 	return matched
 }
 
-func yamlNumberToString(num interface{}) (str string, ok bool) {
+func yamlNumberToString(num any) (str string, ok bool) {
 	if i, ok := num.(int); ok {
 		return strconv.Itoa(i), true
 	}

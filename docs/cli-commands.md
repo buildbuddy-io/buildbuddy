@@ -16,6 +16,134 @@ bb help
 bb help <command>
 ```
 
+## bb agent
+
+`bb agent` subcommands use an AI coding agent to analyze BuildBuddy invocations.
+
+Relevant invocation data is sent to the selected AI provider. This data can contain target names, file paths, build and test output, and other details about the build.
+
+#### Prerequisites
+
+The selected agent's CLI must be installed and available in `PATH`: `claude` or `codex`.
+
+#### Authentication
+
+On remote runners, only authorization via an API key is supported. It should be set as a [BuildBuddy secret](/docs/secrets).
+
+Agent usage is billed according to the selected provider and authentication method.
+
+```bash
+ANTHROPIC_API_KEY=<API_KEY> bb agent <SUBCOMMAND> --agent=claude <INVOCATION_ID>
+
+CODEX_API_KEY=<API_KEY> bb agent <SUBCOMMAND> --agent=codex <INVOCATION_ID>
+```
+
+Local runs can use a locally authenticated Claude Code or Codex subscription if available, or can authenticate with an API key.
+
+#### Choosing an agent and model
+
+Use `--agent` to select Claude or Codex.
+If `--model` and `--effort` are omitted, the selected agent's defaults are used.
+
+```bash
+bb agent fix \
+  --agent=codex \
+  --model=gpt-5.4 \
+  --effort=high \
+  <INVOCATION_ID>
+
+bb agent fix \
+  --agent=claude \
+  --model=claude-opus-5 \
+  --effort=low \
+  <INVOCATION_ID>
+```
+
+### bb agent analyze-profile
+
+`bb agent analyze-profile` analyzes a Bazel timing profile uploaded by a BuildBuddy invocation. It produces a detailed report with recommendations for improving build performance.
+
+The command accepts an invocation ID or invocation URL:
+
+```bash
+bb agent analyze-profile <INVOCATION_ID>
+bb agent analyze-profile https://app.buildbuddy.io/invocation/<INVOCATION_ID>
+```
+
+#### Prerequisites
+
+- The build must have uploaded a timing profile to the remote cache.
+- Only `darwin-arm64` and `linux-amd64` are currently supported.
+
+### bb agent fix
+
+`bb agent fix` fixes a failure from a previous invocation by editing the current working tree, then verifies the fix.
+
+The agent inspects the failure output and relevant source code, applies a minimal fix, and reruns the invocation's original command to verify it.
+Pass `--verify=false` to skip reproduction and verification for a faster fix.
+
+When run locally, the changes are applied to the current working tree.
+When run remotely, the diffset is uploaded to the 'Artifacts' tab of the remote `agent fix` run. It can be [fetched from the invocation](/docs/remote-runner-features#fetching-artifacts-programmatically) and applied to a local workspace using `git apply <DIFF_FILE>`.
+
+#### Usage
+
+```bash
+# Fix the error log from the invocation.
+bb agent fix <INVOCATION_ID>
+
+# Fix only a single failing target.
+bb agent fix <INVOCATION_ID> //foo:bar_test
+
+# Fix only the failing test cases that match a test filter.
+bb agent fix <INVOCATION_ID> //foo:bar_test --test_filter=TestBaz
+
+# Skip reproduction and verification for a faster fix.
+bb agent fix <INVOCATION_ID> --verify=false
+
+# Run the command remotely.
+bb remote --script='bb agent fix <INVOCATION_ID>'
+```
+
+#### Prerequisites
+
+- Run the command from the workspace that produced the failure, ideally checked out at the same commit.
+
+### bb agent review
+
+`bb agent review` reviews the open GitHub pull request for the checked-out branch, then posts the findings as PR review comments.
+
+The review reads the source from the local checkout, so to review another PR, check it out first with `gh pr checkout <PR>`.
+
+Draft PRs and PRs that already have a bot review are skipped. Pass `--force` (or set `AGENT_REVIEW_FORCE=1`) to review them anyway.
+PRs from forks are refused by default, because reviewing one runs the agent over untrusted code. Pass `--allow_fork` to review one anyway.
+
+#### Addressing review feedback with an agent
+
+Pass `--fix` to `bb agent review` to fetch existing PR feedback and have the agent address actionable requests.
+
+By default, `--fix` pushes changes to the PR branch. Pass `--dry_run` to leave edits uncommitted in the working tree without pushing to GitHub.
+
+#### Usage
+
+```bash
+# Review the PR and post comments.
+bb agent review
+
+# Print the review without posting it.
+bb agent review --dry_run
+
+# Address existing PR feedback, verify, commit, and push changes.
+bb agent review --fix
+
+# Apply fixes locally without committing or pushing.
+bb agent review --fix --dry_run
+```
+
+#### Prerequisites
+
+- The `gh` CLI must be installed and available in `PATH`.
+- A GitHub token must be set in `REPO_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN`.
+
 ## bb detect
 
 ### bb detect nondeterminism
@@ -82,52 +210,38 @@ make the builds faster, and make the Workflow runner less likely to run out of l
 bb detect nondeterminism --bazel_command='build //foo:bar --remote_executor=grpcs://remote.buildbuddy.io'
 ```
 
-## bb agent
+## bb remote
 
-### bb agent analyze-profile
-
-`bb agent analyze-profile` uses an AI coding agent to analyze a Bazel timing profile uploaded by a BuildBuddy invocation. It produces a detailed report with recommendations for improving build performance.
-
-The command accepts an invocation ID or invocation URL:
+`bb remote` runs Bazel commands or scripts on a remote runner, automatically mirroring your local git state.
 
 ```bash
-bb agent analyze-profile <INVOCATION_ID>
-bb agent analyze-profile https://app.buildbuddy.io/invocation/<INVOCATION_ID>
+bb remote build //foo:bar
+bb remote --script='bb agent fix <INVOCATION_ID>'
 ```
 
-Relevant timing-profile data is sent to the selected AI provider. Timing profiles can contain target names, file paths, and other details about the build.
+See [Remote Bazel](/docs/remote-bazel) for full documentation.
 
-#### Prerequisites
+## bb view
 
-Before running the command:
+`bb view` fetches and prints the build logs for an invocation. It accepts an invocation ID or invocation URL.
 
-- The build must have uploaded a timing profile.
-- The selected agent's CLI must be installed and available in `PATH`: `claude` or `codex`.
-
-Only `darwin-arm64` and `linux-amd64` are currently supported.
-
-#### Authentication
-
-On remote runners, only authorization via an API key is supported. It should be set as a [BuildBuddy secret](/docs/secrets).
-Local runs can use a locally authenticated Claude Code or Codex subscription if available, or can authenticate with an API key.
-
-Agent usage is billed according to the selected provider and authentication method.
+#### Usage
 
 ```bash
-ANTHROPIC_API_KEY=<API_KEY> bb agent analyze-profile --agent=claude <INVOCATION_ID>
+# Print the full build logs.
+bb view <INVOCATION_ID>
+bb view https://app.buildbuddy.io/invocation/<INVOCATION_ID>
 
-CODEX_API_KEY=<API_KEY> bb agent analyze-profile --agent=codex <INVOCATION_ID>
+# Print only the first build error.
+bb view <INVOCATION_ID> --errors
+
+# Print the output of failed test cases for a target.
+bb view <INVOCATION_ID> //foo:bar_test
+
+# Print the output of failed test cases matching a test filter.
+bb view <INVOCATION_ID> //foo:bar_test --test_filter=TestBaz
 ```
 
-#### Choosing an agent and model
+`--errors` cannot be combined with targets or `--test_filter`.
 
-Use `--agent` to select Claude or Codex.
-If `--model` and `--effort` are omitted, the selected agent's defaults are used.
-
-```bash
-bb agent analyze-profile \
-  --agent=codex \
-  --model=gpt-5.4 \
-  --effort=high \
-  <INVOCATION_ID>
-```
+Use `--lines` to set the minimum number of log lines to fetch (default `100000`).

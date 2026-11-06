@@ -21,6 +21,11 @@ func (s *Server) ComputeStats() *repb.VfsStats {
 	return nil
 }
 
+// TaskError returns nil because VFS is unsupported on this platform.
+func (s *Server) TaskError() error {
+	return nil
+}
+
 func New(env environment.Env, workspacePath string) (*Server, error) {
 	return nil, fmt.Errorf("not implemented")
 }

@@ -1,19 +1,25 @@
 .wrapper.wrapper {
   max-width: 860px;
+  padding-top: 1.5rem;
+  padding-bottom: 3rem;
 }
 
 .header {
-  margin-bottom: 0.75rem;
+  margin-bottom: 1.5rem;
 }
 
 .title {
   font-size: 40px;
   font-weight: 800;
-  margin-bottom: 0.25rem;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  margin-bottom: 0.75rem;
 }
 
 .subtitle {
   margin-bottom: 0;
+  font-size: 18px;
+  line-height: 1.6;
   color: var(--ifm-color-emphasis-700);
 }
 
@@ -30,43 +36,42 @@
   border: 1px solid var(--ifm-color-emphasis-200);
   background: transparent;
   color: var(--ifm-color-emphasis-700);
-  border-radius: 999px;
-  padding: 0.3rem 0.85rem;
+  border-radius: 10px;
+  padding: 0.45rem 0.9rem;
   font-size: 0.85rem;
-  font-weight: 500;
+  font-weight: 600;
   text-decoration: none;
   cursor: pointer;
-  transition: all 150ms ease;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .filterButton:hover {
   border-color: var(--ifm-color-emphasis-400);
   color: var(--ifm-font-color-base);
-  background: var(--ifm-color-emphasis-100);
+  box-shadow: 0 2px 6px rgba(28, 28, 31, 0.06);
 }
 
-.filterButtonActive {
-  background: var(--ifm-color-primary);
-  border-color: var(--ifm-color-primary);
-  color: #fff;
-}
-
-.filterButtonActive:hover {
-  background: var(--ifm-color-primary);
-  border-color: var(--ifm-color-primary);
+.filterButton.filterButtonActive,
+.filterButton.filterButtonActive:hover {
+  background: #202024;
+  border-color: #202024;
   color: #fff;
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.5rem;
 }
 
 .item {
   border: 1px solid var(--ifm-color-emphasis-200);
-  border-radius: 12px;
-  padding: 1.5rem;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 4px 16px rgba(28, 28, 31, 0.04);
   transition:
     border-color 200ms ease,
     box-shadow 200ms ease;
@@ -74,14 +79,15 @@
 
 .item:hover {
   border-color: var(--ifm-color-emphasis-300);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 8px 24px rgba(28, 28, 31, 0.07);
 }
 
 .itemMeta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.75rem;
   font-size: 0.85rem;
   color: var(--ifm-color-emphasis-600);
 }
@@ -97,19 +103,19 @@
   letter-spacing: -0.02em;
   line-height: 1.1em;
   max-width: 90%;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 
-.itemTitle a {
-  color: var(--ifm-font-color-base);
-}
-
+.itemTitle a,
 .itemTitle a:hover {
-  color: var(--ifm-color-emphasis-600);
+  color: var(--ifm-font-color-base);
 }
 
 .preview {
   margin-bottom: 0.75rem;
   line-height: 1.65;
+  color: var(--ifm-color-emphasis-800);
 }
 
 .preview a {
@@ -123,7 +129,7 @@
 .preview :global(img),
 .preview :global(video) {
   border: 1px solid var(--ifm-color-emphasis-200);
-  border-radius: 8px;
+  border-radius: 12px;
   max-width: 100%;
   height: auto;
   margin: 0.75rem 0;
@@ -153,14 +159,36 @@
   font-size: 0.78rem;
   text-decoration: none;
   cursor: pointer;
-  transition:
-    background 150ms ease,
-    color 150ms ease;
+  transition: color 150ms ease;
 }
 
 .tag:hover {
-  background: var(--ifm-color-emphasis-200);
   color: var(--ifm-font-color-base);
+}
+
+.filterButton:focus-visible,
+.itemTitle a:focus-visible,
+.tag:focus-visible {
+  outline: 3px solid rgba(73, 162, 245, 0.4);
+  outline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .wrapper.wrapper {
+    padding-top: 0.5rem;
+  }
+
+  .item {
+    padding: 1.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filterButton,
+  .item,
+  .tag {
+    transition: none;
+  }
 }
 
 .copyLinkButton {

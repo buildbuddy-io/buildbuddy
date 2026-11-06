@@ -21,6 +21,6 @@ go_binary(
 genrule(
     name = "disk_performance_json",
     outs = ["disk-performance.json"],
-    cmd = "$(location :disk_performance) > $@",
+    cmd = "$(execpath :disk_performance) > $@",
     tools = [":disk_performance"],
 )

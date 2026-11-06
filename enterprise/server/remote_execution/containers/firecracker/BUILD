@@ -1,4 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load(
+    "//enterprise/server/remote_execution/containers/firecracker/testdata:defs.bzl",
+    "BUSYBOX_IMAGE",
+    "DOCKER_DIND_IMAGE",
+    "DOCKER_ENABLED_IMAGE",
+    "DOCKER_HUB_BUSYBOX_IMAGE",
+    "UBUNTU_20_04_IMAGE",
+    "UBUNTU_24_04_IMAGE",
+    "WORKFLOWS_IMAGE",
+)
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -12,7 +22,7 @@ go_library(
         "//platforms/configs:linux_x86_64": [
             "//enterprise/vmsupport/bin:initrd.cpio",
             "//enterprise/vmsupport/bin:vmlinux",
-            "//enterprise/vmsupport/bin:vmlinux_6.1",
+            "//enterprise/vmsupport/bin:vmlinux_6.18",
         ],
         "//platforms/configs:linux_arm64": [
             "//enterprise/vmsupport/bin:initrd.cpio",
@@ -28,7 +38,7 @@ go_library(
         "//platforms/configs:linux_x86_64": {
             "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
             "vmlinuxRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux)",
-            "vmlinux6_1RunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux_6.1)",
+            "vmlinux6_18RunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux_6.18)",
         },
         "//platforms/configs:linux_arm64": {
             "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
@@ -42,14 +52,17 @@ go_library(
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
+        "//enterprise/server/remote_execution/execution_experiments",
         "//enterprise/server/remote_execution/snaploader",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/remote_execution/uffd",
         "//enterprise/server/remote_execution/vbd",
         "//enterprise/server/remote_execution/vmexec_client",
+        "//enterprise/server/tasksize",
         "//enterprise/server/util/cpuset",
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",
+        "//enterprise/server/util/usernet",
         "//enterprise/server/util/vfs_server",
         "//enterprise/server/util/vsock",
         "//enterprise/vmsupport:bundle",
@@ -63,10 +76,12 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/digest",
+        "//server/resources",
         "//server/util/background",
         "//server/util/disk",
         "//server/util/error_util",
         "//server/util/flag",
+        "//server/util/hash",
         "//server/util/log",
         "//server/util/networking",
         "//server/util/platform",
@@ -74,6 +89,7 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/uuid",
+        "//third_party/singleflight",
         "@com_github_armon_circbuf//:circbuf",
         "@com_github_firecracker_microvm_firecracker_go_sdk//:firecracker-go-sdk",
         "@com_github_firecracker_microvm_firecracker_go_sdk//client/models",
@@ -112,6 +128,21 @@ genrule(
     ],
 )
 
+_TEST_IMAGE_X_DEFS = {
+    "busyboxImage": BUSYBOX_IMAGE,
+    "busyboxOCIImageRlocationpath": "$(rlocationpath @busybox)",
+    "dockerDindImage": DOCKER_DIND_IMAGE,
+    "dockerHubBusyboxImage": DOCKER_HUB_BUSYBOX_IMAGE,
+    "imageWithDockerInstalled": DOCKER_ENABLED_IMAGE,
+    "imageWithDockerV28Installed": UBUNTU_24_04_IMAGE,
+    "ubuntuImage": UBUNTU_20_04_IMAGE,
+    "workflowsImage": WORKFLOWS_IMAGE,
+    "busyboxExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:busybox.ext4)",
+    "dockerDindExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:docker_dind.ext4)",
+    "ubuntu20_04Ext4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_20_04.ext4)",
+    "ubuntu24_04Ext4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_24_04.ext4)",
+}
+
 # NOTE: to run this test locally, use `test.sh` or `bench.sh`
 #
 # To remotely execute this test, select the bare test suite:
@@ -123,18 +154,30 @@ go_test(
     srcs = ["firecracker_test.go"],
     args = [
         "--executor.enable_remote_snapshot_sharing=true",
-        # Uncomment to test the 6.1 kernel.
-        # TODO: turn this on by default once the 6.1 kernel is used everywhere
-        # "--executor.firecracker_enable_linux_6_1=true",
+        # Uncomment to test the 6.18 kernel.
+        # TODO: turn this on by default once the 6.18 kernel is used everywhere
+        # "--executor.firecracker_enable_linux_6_18=true",
     ],
+    data = [
+        "//enterprise/server/remote_execution/containers/firecracker/testdata:busybox.ext4",
+        "//enterprise/server/remote_execution/containers/firecracker/testdata:docker_dind.ext4",
+        "//enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_20_04.ext4",
+        "//enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_24_04.ext4",
+        "@busybox",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "//enterprise/server/remote_execution/containers/firecracker/testdata:docker_enabled.ext4",
+            "//enterprise/server/remote_execution/containers/firecracker/testdata:workflows.ext4",
+        ],
+        "//conditions:default": [],
+    }),
     exec_properties = {
         "test.Pool": "bare",
+        # Firecracker startup and timing tests are sensitive to contention when
+        # too many shards share an executor.
+        "test.EstimatedComputeUnits": "10",
         "test.use-self-hosted-executors": "true",
         "test.container-image": "none",
-        # These tests can get pretty expensive when running on a cold executor
-        # because of OCI image conversion. Size the task manually to avoid OOM.
-        # TODO: include test ext4 images as deps to avoid conversion.
-        "test.EstimatedComputeUnits": "10",
         "test.no-sandbox": "",  # Firecracker is not compatible with Bazel's sandbox environment
     },
     shard_count = 30,
@@ -144,12 +187,21 @@ go_test(
     target_compatible_with = [
         "@platforms//os:linux",
     ],
+    x_defs = select({
+        "@platforms//cpu:x86_64": _TEST_IMAGE_X_DEFS | {
+            "dockerEnabledExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:docker_enabled.ext4)",
+            "workflowsExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:workflows.ext4)",
+        },
+        "//conditions:default": _TEST_IMAGE_X_DEFS,
+    }),
     deps = [
         ":firecracker",
         "//enterprise/server/action_cache_server_proxy",
         "//enterprise/server/byte_stream_server_proxy",
         "//enterprise/server/clientidentity",
+        "//enterprise/server/oci/ociconv",
         "//enterprise/server/oci/ociregistry",
+        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",
@@ -164,6 +216,7 @@ go_test(
         "//enterprise/server/util/oci",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//server/backends/disk_cache",
         "//server/interfaces",
         "//server/metrics",
@@ -192,6 +245,7 @@ go_test(
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@io_bazel_rules_go//go/runfiles",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_x_sync//errgroup",

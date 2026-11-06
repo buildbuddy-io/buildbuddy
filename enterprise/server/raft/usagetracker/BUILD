@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -19,7 +19,6 @@ go_library(
         "//proto:storage_go_proto",
         "//server/interfaces",
         "//server/metrics",
-        "//server/util/alert",
         "//server/util/approxlru",
         "//server/util/disk",
         "//server/util/log",
@@ -31,5 +30,22 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sync//semaphore",
+    ],
+)
+
+go_test(
+    name = "usagetracker_test",
+    srcs = ["usagetracker_test.go"],
+    embed = [":usagetracker"],
+    deps = [
+        "//enterprise/server/raft/sender",
+        "//proto:raft_go_proto",
+        "//proto:raft_service_go_proto",
+        "//server/util/approxlru",
+        "//server/util/status",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//status",
     ],
 )

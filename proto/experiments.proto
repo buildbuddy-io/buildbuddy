@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package experiments;
+
+import "google/protobuf/struct.proto";
+
+// Carries an evaluated experiment flag so another process can use the same
+// value without re-evaluating the targeting rules.
+message EvaluatedFlag {
+  // Name of the experiment flag.
+  string name = 1;
+
+  // Selected variant, or empty if no variant was selected.
+  string variant = 2;
+
+  // Must be set, including for false, zero, and empty string values. The oneof
+  // preserves the flag's type and distinguishes these values from an unset
+  // value.
+  oneof value {
+    bool bool_value = 3;
+    string string_value = 4;
+    int64 int64_value = 5;
+    double float64_value = 6;
+    google.protobuf.Struct object_value = 7;
+  }
+}

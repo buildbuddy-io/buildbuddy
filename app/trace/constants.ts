@@ -5,8 +5,8 @@
  */
 export const MODEL_X_PER_SECOND = 1_000_000;
 
-export const EVENTS_PANEL_HEIGHT = 540;
-export const LINE_PLOTS_PANEL_HEIGHT = 400;
+export const PANEL_BORDER_WIDTH = 2;
+export const PANEL_GAP = 16;
 
 export const TIMESTAMP_HEADER_SIZE = 16;
 export const TIMESTAMP_FONT_SIZE = "11px";

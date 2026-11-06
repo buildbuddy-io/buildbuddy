@@ -74,7 +74,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
   }
 
   isCacheProxiesSelected() {
-    return this.props.path.startsWith("/cache-proxies/");
+    return this.props.path.startsWith("/cache-proxies/") || this.props.path.startsWith("/cache-proxy/");
   }
 
   isTapSelected() {

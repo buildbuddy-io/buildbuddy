@@ -46,7 +46,7 @@ func TestHostNetAllocator(t *testing.T) {
 	uniqueCIDRs := map[string]struct{}{}
 
 	// Reserve all possible CIDRs
-	for i := 0; i < n; i++ {
+	for i := range n {
 		nets[i], err = a.Get()
 		require.NoError(t, err, "Get(%d)", i)
 		uniqueCIDRs[nets[i].HostIPWithCIDR()] = struct{}{}
@@ -77,7 +77,7 @@ func TestHostNetAllocator(t *testing.T) {
 	}
 
 	// Attempting to get a new host net should now fail
-	for i := 0; i < n; i++ {
+	for range n {
 		net, err := a.Get()
 		require.Error(t, err)
 		require.Nil(t, net)
@@ -102,7 +102,7 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 
 	eg, gCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(8)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		// Note: gCtx is only used for short-circuiting this loop.
 		// Each goroutine is allowed to run to completion, to avoid leaving
 		// things in a messy state.
@@ -685,5 +685,30 @@ func trafficTestHandler(w http.ResponseWriter, r *http.Request) {
 		if _, err := w.Write(buf[:min(len(buf), n-i)]); err != nil {
 			return
 		}
+	}
+}
+
+func TestConfigureAllowsPingSockets(t *testing.T) {
+	testnetworking.Setup(t)
+	const path = "/proc/sys/net/ipv4/ping_group_range"
+	original, err := os.ReadFile(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { os.WriteFile(path, original, 0) })
+
+	gid := os.Getgid()
+	for _, tc := range []struct {
+		name, initial, want string
+	}{
+		{"empty range is replaced", "1 0", fmt.Sprintf("%d %d", gid, gid)},
+		{"range is widened", fmt.Sprintf("%d %d", gid+100, gid+2000), fmt.Sprintf("%d %d", gid, gid+2000)},
+		{"range containing gid is unchanged", fmt.Sprintf("%d %d", gid, gid+2000), fmt.Sprintf("%d %d", gid, gid+2000)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, os.WriteFile(path, []byte(tc.initial), 0))
+			require.NoError(t, networking.Configure(context.Background()))
+			b, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, strings.Join(strings.Fields(string(b)), " "))
+		})
 	}
 }

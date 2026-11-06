@@ -14,6 +14,7 @@ container_image(
         "//tools/probers/bazelrbe",
         "//tools/probers/remote_runner",
         "@cloudprober",
+        "@net_busybox_busybox-linux-amd64//file:busybox",
     ],
     tags = ["manual"],
     tars = [
@@ -40,6 +41,7 @@ pkg_tar(
         "//tools/probers/bazelrbe",
         "//tools/probers/remote_runner",
         "@cloudprober",
+        "@net_busybox_busybox-linux-amd64//file:busybox",
     ],
 )
 

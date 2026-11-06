@@ -27,6 +27,7 @@ import SettingsComponent from "../settings/settings";
 import ShortcutsComponent from "../shortcuts/shortcuts";
 import SidebarComponent from "../sidebar/sidebar";
 import TapComponent from "../tap/tap";
+import SingleTargetComponent from "../targets/single_target";
 import TargetsComponent from "../targets/targets";
 import TrendsComponent from "../trends/trends";
 import UsageComponent from "../usage/usage";
@@ -44,6 +45,7 @@ import rpc_service from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import CacheProxiesComponent from "../cache_proxies/cache_proxies";
+import CacheProxyComponent from "../cache_proxies/cache_proxy";
 import CliLoginComponent from "../cli_login/cli_login";
 import CodeSearchComponent from "../codesearch/codesearch";
 import ExecutorsComponent from "../executors/executors";
@@ -73,6 +75,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.targetsPath,
   Path.executorsPath,
   Path.cacheProxiesPath,
+  Path.cacheProxyPath,
   Path.tapPath,
   Path.codePath,
   Path.codesearchPath,
@@ -235,10 +238,19 @@ export default class EnterpriseRootComponent extends React.Component {
       this.state.user;
     let orgAccessDenied = this.state.user && this.state.path === Path.orgAccessDeniedPath;
     let trends = this.state.user && this.state.path.startsWith("/trends");
-    let targets = this.state.user && this.state.path.startsWith("/targets");
+    // The targets list and the per-target detail page share the "/targets/"
+    // prefix; the detail page is distinguished by the presence of a "target"
+    // query param (e.g. "/targets/?target=//foo:bar").
+    let singleTarget =
+      this.state.user &&
+      this.state.path.startsWith("/targets") &&
+      Boolean(this.state.search.get("target")) &&
+      Boolean(capabilities.config.singleTargetStatsEnabled);
+    let targets = this.state.user && this.state.path.startsWith("/targets") && !singleTarget;
     let usage = this.state.user && this.state.path.startsWith("/usage/");
     let auditLogs = this.state.user && this.state.path.startsWith("/audit-logs/");
     let executors = this.state.user && this.state.path.startsWith("/executors");
+    let cacheProxy = this.state.user && this.state.path.startsWith(Path.cacheProxyPath);
     let cacheProxies = this.state.user && this.state.path.startsWith("/cache-proxies");
     let tests = this.state.user && this.state.path.startsWith("/tests");
     let workflows = this.state.user && this.state.path.startsWith("/workflows");
@@ -257,9 +269,11 @@ export default class EnterpriseRootComponent extends React.Component {
       !orgAccessDenied &&
       !trends &&
       !targets &&
+      !singleTarget &&
       !usage &&
       !executors &&
       !cacheProxies &&
+      !cacheProxy &&
       !tests &&
       !invocationId &&
       !compareInvocationIds &&
@@ -426,16 +440,30 @@ export default class EnterpriseRootComponent extends React.Component {
                     </Suspense>
                   )}
                   {targets && this.state.user && <TargetsComponent user={this.state.user} search={this.state.search} />}
-                  {usage && this.state.user && <UsageComponent path={this.state.path} user={this.state.user} />}
+                  {singleTarget && this.state.user && (
+                    <SingleTargetComponent user={this.state.user} search={this.state.search} />
+                  )}
+                  {usage && this.state.user && (
+                    <UsageComponent path={this.state.path} user={this.state.user} search={this.state.search} />
+                  )}
                   {auditLogs && this.state.user && (
                     <AuditLogsComponent user={this.state.user} search={this.state.search} />
                   )}
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                   {cacheProxies && this.state.user && (
-                    <CacheProxiesComponent path={this.state.path} user={this.state.user} />
+                    <CacheProxiesComponent path={this.state.path} search={this.state.search} user={this.state.user} />
+                  )}
+                  {cacheProxy && this.state.user && (
+                    <CacheProxyComponent
+                      user={this.state.user}
+                      path={this.state.path}
+                      region={this.state.search.get("region") ?? undefined}
+                    />
                   )}
                   {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}
-                  {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
+                  {workflows && this.state.user && (
+                    <WorkflowsComponent path={this.state.path} search={this.state.search} user={this.state.user} />
+                  )}
                   {repo && <RepoComponent path={this.state.path} search={this.state.search} user={this.state.user} />}
                   {codesearch && <CodeSearchComponent path={this.state.path} search={this.state.search} />}
                   {review && (

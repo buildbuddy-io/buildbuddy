@@ -33,7 +33,7 @@ func Setup(t *testing.T, env *testenv.TestEnv, lis *bufconn.Listener) {
 
 	RegisterServers(t, env)
 
-	conn, err := testenv.LocalGRPCConn(
+	conn, err := testenv.LocalGRPCConn(t,
 		env.GetServerContext(),
 		lis,
 		interceptors.GetUnaryClientIdentityInterceptor(env),

@@ -34,6 +34,12 @@ const (
 // Compile-time check that cpuLeaser implements the interface.
 var _ interfaces.CPULeaser = (*CPULeaser)(nil)
 
+// LeasingEnabled returns whether CPU leasing is enabled via the
+// executor.cpu_leaser.enable flag.
+func LeasingEnabled() bool {
+	return *cpuLeaserEnable
+}
+
 type CPULeaser struct {
 	mu        sync.Mutex
 	cpus      []CPUInfo
@@ -199,10 +205,7 @@ func computeNumCPUs(milliCPU int64, allowOverhead bool) int {
 		return rawNumCPUs
 	}
 
-	overheadCPUs := int(*cpuLeaserOverhead*float64(milliCPU)) / 1000
-	if overheadCPUs < *cpuLeaserMinOverhead {
-		overheadCPUs = *cpuLeaserMinOverhead
-	}
+	overheadCPUs := max(int(*cpuLeaserOverhead*float64(milliCPU))/1000, *cpuLeaserMinOverhead)
 	return rawNumCPUs + overheadCPUs
 }
 
@@ -231,7 +234,9 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 		}
 	}
 
-	numCPUs := computeNumCPUs(milliCPU, !options.disableOverhead)
+	// Overhead is extra room rather than a requirement, so never ask for more
+	// CPUs than can be leased.
+	numCPUs := min(computeNumCPUs(milliCPU, !options.disableOverhead), len(l.cpus))
 	// If the CPU leaser is disabled; return all CPUs.
 	if !*cpuLeaserEnable {
 		numCPUs = len(l.cpus)

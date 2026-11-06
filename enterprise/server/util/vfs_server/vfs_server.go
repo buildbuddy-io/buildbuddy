@@ -3,9 +3,11 @@
 package vfs_server
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -232,6 +234,12 @@ type fsNode struct {
 	parent      *fsNode
 	children    map[string]*fsNode
 	backingPath string
+
+	// Directory offset of each child entry, keyed by name. An offset survives
+	// additions and removals of other entries so a reader can resume an older
+	// listing without skipping or repeating entries.
+	directoryOffsets    map[string]uint64
+	nextDirectoryOffset uint64
 }
 
 func (fsn *fsNode) IsDirectory() bool {
@@ -370,11 +378,9 @@ type Server struct {
 
 	server *grpc.Server
 
-	nextNodeID atomic.Uint64
-
 	mu                 sync.Mutex
 	blocks             int64
-	nextId             uint64
+	nextId             atomic.Uint64
 	nodes              map[uint64]*fsNode
 	internalTaskCtx    context.Context
 	root               *fsNode
@@ -382,6 +388,7 @@ type Server struct {
 	retryInputFetcher  *casFetcher
 	remoteInstanceName string
 	fileHandles        map[uint64]*fileHandle
+	taskError          error
 
 	// total number of CAS files in the tree.
 	casFileCount int64
@@ -409,12 +416,20 @@ func New(env environment.Env, workspacePath string) (*Server, error) {
 		root:             rootNode,
 		nodes:            nodes,
 	}
-	atomic.StoreUint64(&s.nextId, vfscommon.RootInodeId+1)
+	s.nextId.Store(vfscommon.RootInodeId + 1)
 	return s, nil
 }
 
 func (p *Server) Path() string {
 	return p.workspacePath
+}
+
+// TaskError returns the first input download error exposed to the current task,
+// or nil if no download failed after retries. Prepare clears this error.
+func (p *Server) TaskError() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.taskError
 }
 
 func (p *Server) generateScratchPath(name string) (string, error) {
@@ -432,7 +447,7 @@ func (p *Server) taskCtx() context.Context {
 }
 
 func (p *Server) addNode(node *fsNode) uint64 {
-	id := atomic.AddUint64(&p.nextId, 1)
+	id := p.nextId.Add(1)
 	node.server = p
 	node.id = id
 	p.mu.Lock()
@@ -487,9 +502,11 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 	var walkDir func(dir *repb.Directory, parentNode *fsNode) error
 	walkDir = func(dir *repb.Directory, parentNode *fsNode) error {
 		numDirs++
+		parentNode.mu.Lock()
 		if parentNode.children == nil && (len(dir.GetDirectories()) > 0 || len(dir.GetFiles()) > 0 || len(dir.GetSymlinks()) > 0) {
 			parentNode.children = make(map[string]*fsNode)
 		}
+		parentNode.mu.Unlock()
 		for _, childDirNode := range dir.GetDirectories() {
 			childDir, ok := dirMap[digest.NewKey(childDirNode.Digest)]
 			if !ok {
@@ -710,9 +727,8 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 	p.casFileCount = 0
 	p.casFileSizeBytes = 0
 	p.mu.Unlock()
-	// There may already be nodes in the tree prior to `Prepare` to be called,
-	// for example by the workspace code pre-creating the action output
-	// directories. We merge the known CAS inputs with the tree we already have.
+	// There may already be nodes in the tree before `Prepare` is called. We
+	// merge the known CAS inputs with the tree we already have.
 	invalidatedInodes, err := p.updateLayout(ctx, layout.Inputs, layout.DigestFunction)
 	if err != nil {
 		return nil, err
@@ -730,6 +746,7 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 	p.inputFetcher = inputFetcher
 	p.retryInputFetcher = retryInputFetcher
 	p.internalTaskCtx = ctx
+	p.taskError = nil
 	return invalidatedInodes, nil
 }
 
@@ -800,28 +817,46 @@ func (p *Server) GetDirectoryContents(ctx context.Context, request *vfspb.GetDir
 	for name := range node.children {
 		names = append(names, name)
 	}
-	node.mu.Unlock()
-
 	slices.Sort(names)
 
+	if node.directoryOffsets == nil {
+		node.directoryOffsets = make(map[string]uint64, len(names))
+	}
+	for name := range node.directoryOffsets {
+		if _, ok := node.children[name]; !ok {
+			delete(node.directoryOffsets, name)
+		}
+	}
+	children := make(map[string]*fsNode, len(names))
 	var nodes []*vfspb.Node
 	for _, name := range names {
-		node.mu.Lock()
-		child, ok := node.children[name]
-		node.mu.Unlock()
-
-		// Shouldn't happen in practice.
+		offset, ok := node.directoryOffsets[name]
 		if !ok {
-			return nil, status.UnknownError("child node disappeared")
+			node.nextDirectoryOffset++
+			offset = node.nextDirectoryOffset
+			node.directoryOffsets[name] = offset
 		}
-
-		child.mu.Lock()
+		children[name] = node.children[name]
 		nodes = append(nodes, &vfspb.Node{
-			Id:    child.id,
-			Mode:  child.mode(),
-			Name:  name,
-			Attrs: child.attrs,
+			Name:            name,
+			DirectoryOffset: offset,
 		})
+	}
+	node.mu.Unlock()
+
+	// Sort by stable directory offset so that clients can do a simple binary
+	// search to implement seekdir.
+	slices.SortFunc(nodes, func(a, b *vfspb.Node) int {
+		return cmp.Compare(a.GetDirectoryOffset(), b.GetDirectoryOffset())
+	})
+	// Read attributes from the captured children so concurrent removals do not
+	// make this listing fail partway through.
+	for _, n := range nodes {
+		child := children[n.GetName()]
+		child.mu.Lock()
+		n.Id = child.id
+		n.Mode = child.mode()
+		n.Attrs = child.attrs
 		child.mu.Unlock()
 	}
 	return &vfspb.GetDirectoryContentsResponse{Nodes: nodes}, nil
@@ -943,7 +978,7 @@ func (h *fileHandle) allocate(req *vfspb.AllocateRequest) (*vfspb.AllocateRespon
 	return &vfspb.AllocateResponse{}, nil
 }
 
-func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, parentNode *fsNode, name string) (*fsNode, error) {
+func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, parentNode *fsNode, name string, owner *vfspb.Owner) (*fsNode, error) {
 	now := time.Now()
 
 	node := &fsNode{
@@ -951,6 +986,8 @@ func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, pare
 		name:     name,
 		attrs: &vfspb.Attrs{
 			Perm:       mode,
+			Uid:        owner.GetUid(),
+			Gid:        owner.GetGid(),
 			Nlink:      1,
 			MtimeNanos: uint64(now.UnixNano()),
 			AtimeNanos: uint64(now.UnixNano()),
@@ -960,6 +997,7 @@ func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, pare
 	}
 
 	parentNode.mu.Lock()
+	inheritSetgid(parentNode, node.attrs, false)
 	if parentNode.children == nil {
 		parentNode.children = make(map[string]*fsNode)
 	}
@@ -969,13 +1007,42 @@ func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, pare
 	return node, nil
 }
 
-func (p *Server) createFile(ctx context.Context, mode uint32, parentNode *fsNode, name string) (*fsNode, error) {
+// inheritSetgid gives a new child the group of a setgid parent directory, and
+// propagates the setgid bit to child directories. parent.mu must be held.
+func inheritSetgid(parent *fsNode, attrs *vfspb.Attrs, isDir bool) {
+	if parent.attrs.GetPerm()&syscall.S_ISGID == 0 {
+		return
+	}
+	attrs.Gid = parent.attrs.GetGid()
+	if isDir {
+		attrs.Perm |= syscall.S_ISGID
+	}
+}
+
+// checkChown applies the Linux rules for changing ownership: only root may
+// change the owner, and the owner may only change the group to its own.
+func checkChown(request *vfspb.SetAttrRequest, attrs *vfspb.Attrs) error {
+	caller := request.GetCaller()
+	if caller.GetUid() == 0 {
+		return nil
+	}
+	isOwner := caller.GetUid() == attrs.GetUid()
+	if request.Uid != nil && (!isOwner || request.GetUid() != attrs.GetUid()) {
+		return syscall.EPERM
+	}
+	if request.Gid != nil && (!isOwner || (request.GetGid() != attrs.GetGid() && request.GetGid() != caller.GetGid())) {
+		return syscall.EPERM
+	}
+	return nil
+}
+
+func (p *Server) createFile(ctx context.Context, mode uint32, parentNode *fsNode, name string, owner *vfspb.Owner) (*fsNode, error) {
 	localFilePath, err := p.generateScratchPath(name)
 	if err != nil {
 		return nil, syscallErrStatus(err)
 	}
 
-	return p.createNode(fsFileNode, localFilePath, mode, parentNode, name)
+	return p.createNode(fsFileNode, localFilePath, mode, parentNode, name, owner)
 }
 
 func groupIDStringFromContext(ctx context.Context) string {
@@ -1092,12 +1159,18 @@ func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error
 		return nil, status.FailedPreconditionError("no input fetcher is configured")
 	}
 	if err := inputFetcher.Fetch(ctx, node.fileNode); err != nil {
-		return nil, err
+		// The CAS downloader already handles retryable failures.
+		if inputFetcher == retryInputFetcher {
+			return nil, err
+		}
+	} else {
+		f, err := p.env.GetFileCache().Open(ctx, node.fileNode)
+		if err == nil {
+			return f, nil
+		}
 	}
-	f, err := p.env.GetFileCache().Open(ctx, node.fileNode)
-	if err == nil {
-		return f, nil
-	}
+	// A failed prefetcher cannot restart its downloads. Fetch directly from
+	// CAS if prefetch failed or the file was evicted before it could be opened.
 	if err := retryInputFetcher.Fetch(ctx, node.fileNode); err != nil {
 		return nil, err
 	}
@@ -1154,9 +1227,7 @@ func (p *Server) materializeNode(ctx context.Context, node *fsNode, destination 
 	target := node.target
 	backingPath := node.backingPath
 	children := make(map[string]*fsNode, len(node.children))
-	for name, child := range node.children {
-		children[name] = child
-	}
+	maps.Copy(children, node.children)
 	node.mu.Unlock()
 
 	switch nodeType {
@@ -1229,7 +1300,7 @@ func (p *Server) Mknod(ctx context.Context, request *vfspb.MknodRequest) (*vfspb
 	}
 
 	if request.GetMode()&unix.S_IFREG != 0 {
-		node, err := p.createFile(ctx, request.GetMode(), parentNode, request.GetName())
+		node, err := p.createFile(ctx, request.GetMode(), parentNode, request.GetName(), request.GetOwner())
 		if err != nil {
 			return nil, err
 		}
@@ -1243,7 +1314,7 @@ func (p *Server) Mknod(ctx context.Context, request *vfspb.MknodRequest) (*vfspb
 		if request.GetDev() != 0 {
 			return nil, syscallErrStatus(syscall.ENOSYS)
 		}
-		node, err := p.createNode(fsCharDevNode, "", request.GetMode(), parentNode, request.GetName())
+		node, err := p.createNode(fsCharDevNode, "", request.GetMode(), parentNode, request.GetName(), request.GetOwner())
 		if err != nil {
 			return nil, err
 		}
@@ -1259,7 +1330,7 @@ func (p *Server) Create(ctx context.Context, request *vfspb.CreateRequest) (*vfs
 		return nil, err
 	}
 
-	node, err := p.createFile(ctx, request.GetMode(), parentNode, request.GetName())
+	node, err := p.createFile(ctx, request.GetMode(), parentNode, request.GetName(), request.GetOwner())
 	if err != nil {
 		log.CtxWarningf(p.taskCtx(), "Open %q could not create new file: %s", request.GetName(), err)
 		return nil, err
@@ -1287,7 +1358,7 @@ func (p *Server) Create(ctx context.Context, request *vfspb.CreateRequest) (*vfs
 	p.mu.Lock()
 	p.fileHandles[handleID] = fh
 	p.mu.Unlock()
-	return &vfspb.CreateResponse{Id: id, HandleId: handleID}, nil
+	return &vfspb.CreateResponse{Id: id, HandleId: handleID, Attrs: node.attrs}, nil
 }
 
 func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.OpenResponse, error) {
@@ -1318,6 +1389,21 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	} else if node.fileNode != nil {
 		f, err := p.openCASFile(p.taskCtx(), node)
 		if err != nil {
+			// FUSE can only return an errno to the process. Record the gRPC
+			// error here so that we can later return it, taking precedence
+			// over any result that might be returned by command execution.
+			if s := gstatus.FromContextError(err); s.Code() != codes.Unknown {
+				err = s.Err()
+			}
+			err = status.WrapErrorf(gstatus.Convert(err).Err(), "download VFS input %q", node.Path())
+			p.mu.Lock()
+			if p.taskError == nil {
+				p.taskError = err
+			}
+			p.mu.Unlock()
+			// TODO: Cancel action execution here to avoid work whose result will
+			// be discarded because of this error. Keep the original download error
+			// as the action failure so cancellation does not hide its cause.
 			log.CtxWarningf(p.taskCtx(), "Open %q could not fetch file from CAS: %s", node.Path(), err)
 			return nil, err
 		}
@@ -1439,16 +1525,30 @@ func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*v
 	return &vfspb.GetAttrResponse{Attrs: node.attrs}, nil
 }
 
-func (p *Server) processSetAttr(node *fsNode, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
+func (p *Server) processSetAttr(node *fsNode, file *os.File, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
+	// Ownership is tracked virtually; backing files are owned by the executor.
+	if err := checkChown(request, newAttrs); err != nil {
+		return err
+	}
+	if request.Uid != nil {
+		newAttrs.Uid = request.GetUid()
+	}
+	if request.Gid != nil {
+		newAttrs.Gid = request.GetGid()
+	}
 	if request.SetPerms != nil {
 		newAttrs.Perm = request.SetPerms.Perms
 	}
 
 	if request.SetSize != nil {
-		if node.backingPath == "" {
+		if file != nil {
+			// The backing path may no longer exist if the file was unlinked.
+			if err := file.Truncate(request.SetSize.GetSize()); err != nil {
+				return err
+			}
+		} else if node.backingPath == "" {
 			return syscall.EPERM
-		}
-		if err := os.Truncate(node.backingPath, request.SetSize.GetSize()); err != nil {
+		} else if err := os.Truncate(node.backingPath, request.SetSize.GetSize()); err != nil {
 			return err
 		}
 		newAttrs.Size = request.SetSize.GetSize()
@@ -1535,6 +1635,20 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 		return nil, err
 	}
 
+	var file *os.File
+	if request.HandleId != nil {
+		fh, err := p.getFileHandle(request.GetHandleId())
+		if err != nil {
+			return nil, err
+		}
+		fh.mu.Lock()
+		defer fh.mu.Unlock()
+		if fh.node != node {
+			return nil, syscallErrStatus(syscall.EBADF)
+		}
+		file = fh.f
+	}
+
 	node.mu.Lock()
 	defer node.mu.Unlock()
 
@@ -1547,7 +1661,7 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 			return nil, syscallErrStatus(err)
 		}
 	} else {
-		if err := p.processSetAttr(node, request, newAttrs); err != nil {
+		if err := p.processSetAttr(node, file, request, newAttrs); err != nil {
 			return nil, syscallErrStatus(err)
 		}
 	}
@@ -1582,7 +1696,7 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 	// If RENAME_WHITEOUT flag is present, we need to create a character
 	// device where the old node used to be.
 	if request.GetFlags()&unix.RENAME_WHITEOUT != 0 {
-		_, err := p.createNode(fsCharDevNode, "", 0644, oldParentNode, request.GetOldName())
+		_, err := p.createNode(fsCharDevNode, "", 0644, oldParentNode, request.GetOldName(), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1622,9 +1736,12 @@ func (p *Server) Mkdir(ctx context.Context, request *vfspb.MkdirRequest) (*vfspb
 		attrs: &vfspb.Attrs{
 			Size: 1000,
 			Perm: request.GetPerms(),
+			Uid:  request.GetOwner().GetUid(),
+			Gid:  request.GetOwner().GetGid(),
 		},
 		parent: parentNode,
 	}
+	inheritSetgid(parentNode, newNode.attrs, true)
 	parentNode.children[request.GetName()] = newNode
 	p.addNode(newNode)
 
@@ -1697,9 +1814,12 @@ func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*v
 		parentNode.children = make(map[string]*fsNode)
 	}
 	node := newSymlinkNode(parentNode, request.GetName(), request.GetTarget())
+	node.attrs.Uid = request.GetOwner().GetUid()
+	node.attrs.Gid = request.GetOwner().GetGid()
+	inheritSetgid(parentNode, node.attrs, false)
 	parentNode.children[request.GetName()] = node
 	id := p.addNode(node)
-	return &vfspb.SymlinkResponse{Id: id}, nil
+	return &vfspb.SymlinkResponse{Id: id, Attrs: node.attrs}, nil
 }
 
 func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
@@ -1874,12 +1994,9 @@ func (p *Server) Statfs(ctx context.Context, request *vfspb.StatfsRequest) (*vfs
 
 	totalBlocks := reportedSizeBytes / p.backingBlockSize
 
-	free := totalBlocks - p.blocks
 	// We don't enforce a usage limit yet so used blocks may go over the
 	// total blocks.
-	if free < 0 {
-		free = 0
-	}
+	free := max(totalBlocks-p.blocks, 0)
 
 	return &vfspb.StatfsResponse{
 		BlockSize:       p.backingBlockSize,

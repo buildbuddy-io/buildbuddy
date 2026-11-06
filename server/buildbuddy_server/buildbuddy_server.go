@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,11 +38,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -55,6 +56,7 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
@@ -82,7 +84,6 @@ import (
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
-	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
@@ -98,10 +99,9 @@ import (
 var (
 	disableCertConfig   = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
 	paginateInvocations = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
-)
 
-const (
-	maxGroupsPerUserExperiment = "app.max_groups_per_user"
+	codesearchAllowed = expflag.Bool("app.codesearch_ui_enabled", false, "Whether codesearch functionality is enabled in the UI. Requires enabling an org setting in addition to setting the flag.", expflag.DeprecatedExperimentName("codesearch-allowed"))
+	maxGroupsPerUser  = expflag.Int64("app.max_groups_per_user", 0, "Maximum number of non-enterprise organizations a user can own. Zero disables the limit.")
 )
 
 const (
@@ -111,6 +111,10 @@ const (
 
 var (
 	WriteEventLogTimeout = 1 * time.Hour
+
+	// API Key visibilities that may be returned to client. Exists to prevent
+	// accidentally returning any new visibilities to the client.
+	returnableAPIKeyVisibilities = int32(akpb.Visibility_VISIBLE_TO_DEVELOPERS | akpb.Visibility_VISIBLE_TO_GROUP_ADMINS)
 )
 
 // samlMetadataHTTPClient fetches the customer-provided SAML IdP metadata URL
@@ -443,18 +447,11 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		return nil, err
 	}
 
-	cs := false
-	if efp := s.env.GetExperimentFlagProvider(); efp != nil {
-		// HACK: On an initial page load, the group id may not be set in the claims yet.
-		// Add it in here so the experiment flags are resolved correctly.
-		clm, err := claims.ClaimsFromContext(ctx)
-		if err == nil {
-			if clm.GetGroupID() == "" {
-				clm.GroupID = selectedGroupID
-				ctx = claims.AuthContext(ctx, clm)
-			}
-		}
-		cs = efp.Boolean(ctx, "codesearch-allowed", false /*=default*/)
+	// HACK: On an initial page load, the group id may not be set in the claims yet.
+	// Add it in here so the experiment flags are resolved correctly.
+	if clm, err := claims.ClaimsFromContext(ctx); err == nil && clm.GetGroupID() == "" {
+		clm.GroupID = selectedGroupID
+		ctx = claims.AuthContext(ctx, clm)
 	}
 	allowedRPCs := capabilities_filter.AllowedRPCs(ctx, s.env, selectedGroupID)
 	// Keep GetUserResponse.allowed_rpc in its legacy bare-method format so the
@@ -477,7 +474,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		SubdomainGroupId: subdomainGroupID,
 		IsImpersonating:  u.IsImpersonating(),
 		Experiments: &uspb.Experiments{
-			CodesearchAllowed: cs,
+			CodesearchAllowed: codesearchAllowed.Get(ctx),
 		},
 	}, nil
 }
@@ -574,12 +571,12 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 	return &grpb.UpdateGroupUsersResponse{}, nil
 }
 
-func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp interfaces.ExperimentFlagProvider, u interfaces.UserInfo) (*tables.User, error) {
+func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, u interfaces.UserInfo) (*tables.User, error) {
 	isEnterprise := u.GetGroupStatus() == grpb.Group_ENTERPRISE_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS
-	if isEnterprise || efp == nil {
+	if isEnterprise {
 		return nil, nil
 	}
-	maxGroupsPerUser := efp.Int64(ctx, maxGroupsPerUserExperiment, 0)
+	maxGroups := maxGroupsPerUser.Get(ctx)
 
 	// User-owned API keys retain a user ID, so the API key ID is the reliable
 	// way to distinguish both user- and org-owned API keys from browser users.
@@ -606,7 +603,7 @@ func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp inter
 		return nil, status.PermissionDeniedError("Error creating organization. Please contact support@buildbuddy.io.")
 	}
 
-	if maxGroupsPerUser > 0 && ownedNonEnterpriseGroupCount >= maxGroupsPerUser {
+	if maxGroups > 0 && ownedNonEnterpriseGroupCount >= maxGroups {
 		return nil, status.PermissionDeniedError("You've reached the limit on non-enterprise organizations. Please contact support@buildbuddy.io to upgrade to an enterprise plan.")
 	}
 	return user, nil
@@ -626,7 +623,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		return nil, status.InvalidArgumentError("Group name cannot be empty")
 	}
 
-	user, err := createGroupAllowed(ctx, userDB, s.env.GetExperimentFlagProvider(), u)
+	user, err := createGroupAllowed(ctx, userDB, u)
 	if err != nil {
 		return nil, err
 	}
@@ -797,6 +794,18 @@ func (s *BuildBuddyServer) SetSSOConfig(ctx context.Context, req *grpb.SetSSOCon
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Group status claims apply to the authenticated user's selected group.
+	if u.GetGroupID() != groupID {
+		return nil, status.PermissionDeniedError("SSO configuration must be updated for the authenticated organization.")
+	}
+	isEnterprise := u.GetGroupStatus() == grpb.Group_ENTERPRISE_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS
+	if !isEnterprise && claims.AuthorizeServerAdmin(ctx) != nil {
+		return nil, status.PermissionDeniedError("SSO configuration is available on paid plans. Contact support@buildbuddy.io to get started.")
 	}
 	metadataURL := strings.TrimSpace(req.GetConfig().GetSamlIdpMetadataUrl())
 	if metadataURL != "" {
@@ -1006,12 +1015,28 @@ func (s *BuildBuddyServer) UpdateUserListMembership(ctx context.Context, request
 	return &ulpb.UpdateUserListMembershipResponse{}, nil
 }
 
+func apiKeyVisibilities(mask int32) []akpb.Visibility {
+	mask &= returnableAPIKeyVisibilities
+	var visibilities []akpb.Visibility
+	for bit := int32(1); bit <= mask; bit <<= 1 {
+		if mask&bit != 0 {
+			visibilities = append(visibilities, akpb.Visibility(bit))
+		}
+	}
+	return visibilities
+}
+
 func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
 	authDB := s.env.GetAuthDB()
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	tableKeys, err := authDB.GetAPIKeys(ctx, req.GetRequestContext().GetGroupId())
+	groupID := req.GetRequestContext().GetGroupId()
+	tableKeys, err := authDB.GetAPIKeys(ctx, groupID, req.GetIncludeExpired())
+	if err != nil {
+		return nil, err
+	}
+	creationMetadata, err := s.getAPIKeyCreationMetadata(ctx, groupID, tableKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -1025,9 +1050,86 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(k.Visibility),
+			CreationMetadata:    creationMetadata[k.APIKeyID],
+			ExpiryUsec:          k.ExpiryUsec,
 		})
 	}
 	return rsp, nil
+}
+
+// getAPIKeyCreationMetadata returns a map from API Key ID to a CreationMetadata
+// proto containing creation metadata for the API key.
+func (s *BuildBuddyServer) getAPIKeyCreationMetadata(ctx context.Context, groupID string, keys []*tables.APIKey) (map[string]*akpb.CreationMetadata, error) {
+	isServerAdmin := claims.AuthorizeServerAdmin(ctx) == nil
+	if !isServerAdmin {
+		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+		if err != nil {
+			return nil, nil
+		}
+		// Creation metadata is visible to: server admins, org admins, and the
+		// user who owns the key. We only hit the user-who-owns-the-key branch
+		// when retrieving keys for the user-owned API keys page, which we can
+		// detect by checking if all of the keys retrieved from the database are
+		// owned by the user making the request.
+		userID := u.GetUserID()
+		ownsAllKeys := userID != "" && !slices.ContainsFunc(keys, func(k *tables.APIKey) bool {
+			return k.UserID != userID
+		})
+		if authutil.AuthorizeOrgAdmin(u, groupID) != nil && !ownsAllKeys {
+			return nil, nil
+		}
+	}
+
+	udb := s.env.GetUserDB()
+	creatorNames := map[string]string{}
+	// This loop performs sequential lookups of users to populate the created_by
+	// field. This is fine because most groups don't have many keys. If this
+	// becomes a bottleneck, we can optimize it by batching lookups.
+	if udb != nil {
+		for _, key := range keys {
+			id := key.CreatedByUserID
+			if _, seen := creatorNames[id]; id == "" || seen {
+				continue
+			}
+			creatorNames[id] = ""
+			creator, err := udb.GetUserByIDWithoutAuthCheck(ctx, id, &interfaces.GetUserOpts{})
+			if err != nil {
+				if !status.IsNotFoundError(err) {
+					log.CtxDebugf(ctx, "Failed to look up creator %q of API key %q: %s", id, key.APIKeyID, err)
+				}
+				continue
+			}
+			if !isServerAdmin && authutil.IsAdminEmail(creator.Email) {
+				creatorNames[id] = authutil.AdminDisplayName
+				continue
+			}
+			creatorProto := creator.ToProto()
+			creatorNames[id] = creatorProto.GetName().GetFull()
+			if creatorNames[id] == "" {
+				creatorNames[id] = creatorProto.GetEmail()
+			}
+		}
+	}
+
+	metadata := make(map[string]*akpb.CreationMetadata, len(keys))
+	for _, k := range keys {
+		md := &akpb.CreationMetadata{
+			CreatedBy: creatorNames[k.CreatedByUserID],
+		}
+		if k.CreatedAtUsec > 0 {
+			md.CreatedAt = timestamppb.New(time.UnixMicro(k.CreatedAtUsec))
+		}
+		if md.CreatedAt == nil && md.CreatedBy == "" {
+			continue
+		}
+		metadata[k.APIKeyID] = md
+	}
+	return metadata, nil
+}
+
+func (s *BuildBuddyServer) isExpired(key *tables.APIKey) bool {
+	return key.ExpiryUsec != 0 && key.ExpiryUsec <= s.env.GetClock().Now().UnixMicro()
 }
 
 func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyRequest) (*akpb.GetApiKeyResponse, error) {
@@ -1058,9 +1160,11 @@ func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyReq
 			Label:               key.Label,
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(key.Visibility),
+			ExpiryUsec:          key.ExpiryUsec,
 		},
 	}
-	if req.GetIncludeCertificate() {
+	if req.GetIncludeCertificate() && !s.isExpired(key) {
 		if !s.sslService.IsCertGenerationEnabled() {
 			return nil, status.FailedPreconditionError("SSL certificate generation is not enabled by this server")
 		}
@@ -1103,6 +1207,8 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(k.Visibility),
+			ExpiryUsec:          k.ExpiryUsec,
 		},
 	}, nil
 }
@@ -1193,6 +1299,7 @@ func (s *BuildBuddyServer) CreateImpersonationApiKey(ctx context.Context, req *a
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(k.Visibility),
 			ExpiryUsec:          k.ExpiryUsec,
 		},
 	}, nil
@@ -1215,7 +1322,11 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 		userID = u.GetUserID()
 	}
 
-	tableKeys, err := authDB.GetUserAPIKeys(ctx, userID, groupID)
+	tableKeys, err := authDB.GetUserAPIKeys(ctx, userID, groupID, req.GetIncludeExpired())
+	if err != nil {
+		return nil, err
+	}
+	creationMetadata, err := s.getAPIKeyCreationMetadata(ctx, groupID, tableKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -1229,6 +1340,9 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(k.Visibility),
+			CreationMetadata:    creationMetadata[k.APIKeyID],
+			ExpiryUsec:          k.ExpiryUsec,
 		})
 	}
 	return rsp, nil
@@ -1262,9 +1376,11 @@ func (s *BuildBuddyServer) GetUserApiKey(ctx context.Context, req *akpb.GetApiKe
 			Label:               key.Label,
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(key.Visibility),
+			ExpiryUsec:          key.ExpiryUsec,
 		},
 	}
-	if req.GetIncludeCertificate() {
+	if req.GetIncludeCertificate() && !s.isExpired(key) {
 		if !s.sslService.IsCertGenerationEnabled() {
 			return nil, status.FailedPreconditionError("SSL certificate generation is not enabled by this server")
 		}
@@ -1318,6 +1434,8 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(k.Visibility),
+			ExpiryUsec:          k.ExpiryUsec,
 		},
 	}, nil
 
@@ -1445,6 +1563,7 @@ func toProtoAPIKeys(tableKeys []*tables.APIKey) []*akpb.ApiKey {
 			Value:               k.Value,
 			Label:               k.Label,
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(k.Visibility),
 			UserOwned:           k.Perms&perms.OWNER_READ > 0,
 		}
 	}
@@ -1474,7 +1593,7 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 		if err != nil {
 			return nil, err
 		}
-		keys, err := authDB.GetUserAPIKeys(ctx, u.GetUserID(), groupID)
+		keys, err := authDB.GetUserAPIKeys(ctx, u.GetUserID(), groupID, false /*=includeExpired*/)
 		// PermissionDenied means the Group doesn't have user-owned API keys
 		// enabled; ignore.
 		if err != nil && !status.IsPermissionDeniedError(err) {
@@ -1483,7 +1602,7 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 		userKeys = keys
 	}
 	// Then list group-owned keys
-	groupKeys, err := authDB.GetAPIKeys(ctx, groupID)
+	groupKeys, err := authDB.GetAPIKeys(ctx, groupID, false /*=includeExpired*/)
 	if err != nil {
 		return nil, err
 	}
@@ -1699,6 +1818,22 @@ func (s *BuildBuddyServer) GetCacheProxies(ctx context.Context, req *cppb.GetCac
 	return cps.GetCacheProxies(ctx, req)
 }
 
+func (s *BuildBuddyServer) ListCacheProxies(ctx context.Context, req *cppb.ListCacheProxiesRequest) (*cppb.ListCacheProxiesResponse, error) {
+	cps := s.env.GetCacheProxyRegistryService()
+	if cps == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return cps.ListCacheProxies(ctx, req)
+}
+
+func (s *BuildBuddyServer) GetCacheProxy(ctx context.Context, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error) {
+	cps := s.env.GetCacheProxyRegistryService()
+	if cps == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return cps.GetCacheProxy(ctx, req)
+}
+
 func (s *BuildBuddyServer) SearchExecution(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error) {
 	if req == nil {
 		return nil, status.InvalidArgumentErrorf("SearchExecutionRequest cannot be empty")
@@ -1708,6 +1843,17 @@ func (s *BuildBuddyServer) SearchExecution(ctx context.Context, req *espb.Search
 		return nil, fmt.Errorf("No searcher was configured")
 	}
 	return searcher.SearchExecutions(ctx, req)
+}
+
+func (s *BuildBuddyServer) GetExecutionTimeline(ctx context.Context, req *espb.GetExecutionTimelineRequest) (*espb.GetExecutionTimelineResponse, error) {
+	if req == nil {
+		return nil, status.InvalidArgumentErrorf("GetExecutionTimelineRequest cannot be empty")
+	}
+	searcher := s.env.GetExecutionSearchService()
+	if searcher == nil {
+		return nil, fmt.Errorf("No execution service was configured")
+	}
+	return searcher.GetExecutionTimeline(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetTargetHistory(ctx context.Context, req *trpb.GetTargetHistoryRequest) (*trpb.GetTargetHistoryResponse, error) {
@@ -1880,10 +2026,7 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 			default:
 				return status.InvalidArgumentErrorf("Unsupported log type %s", req.GetType())
 			}
-			// Attach the invocation ID to the context so experiments evaluated
-			// by the log writer can target and bucket by invocation.
-			writerCtx := bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{ToolInvocationId: req.GetMetadata().GetInvocationId()})
-			eventLogWriter, err = eventlog.NewEventLogWriter(writerCtx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), s.env.GetExperimentFlagProvider(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
+			eventLogWriter, err = eventlog.NewEventLogWriter(ctx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
 			if err != nil {
 				return err
 			}
@@ -2298,6 +2441,13 @@ func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRe
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) GetCurrentBill(ctx context.Context, req *usagepb.GetCurrentBillRequest) (*usagepb.GetCurrentBillResponse, error) {
+	if us := s.env.GetUsageService(); us != nil {
+		return us.GetCurrentBill(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetUsageAlertingRules(ctx context.Context, req *usagepb.GetUsageAlertingRulesRequest) (*usagepb.GetUsageAlertingRulesResponse, error) {
 	if us := s.env.GetUsageService(); us != nil {
 		return us.GetUsageAlertingRules(ctx, req)
@@ -2346,13 +2496,6 @@ func (s *BuildBuddyServer) DeleteUsageAlertingRule(ctx context.Context, req *usa
 func (s *BuildBuddyServer) SendNotification(ctx context.Context, req *npb.SendNotificationRequest) (*npb.SendNotificationResponse, error) {
 	if ns := s.env.GetNotificationService(); ns != nil {
 		return ns.SendNotification(ctx, req)
-	}
-	return nil, status.UnimplementedError("Not implemented")
-}
-
-func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {
-	if us := s.env.GetSuggestionService(); us != nil {
-		return us.GetSuggestion(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
@@ -2595,7 +2738,12 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		if err != nil {
 			return http.StatusBadRequest, status.FailedPreconditionErrorf("Could not parse bytestream_url '%s' for cache artifact.", params.Get("bytestream_url"))
 		}
-		b, err := s.env.GetBlobstore().ReadBlob(ctx, path.Join(iid, "artifacts", "cache", lookup.URL.Path))
+		prefix := path.Join(iid, "artifacts", "cache") + "/"
+		blobPath := path.Join(prefix, lookup.URL.Path)
+		if !strings.HasPrefix(blobPath, prefix) {
+			return http.StatusBadRequest, status.InvalidArgumentError("invalid cache artifact path")
+		}
+		b, err := s.env.GetBlobstore().ReadBlob(ctx, blobPath)
 		if err != nil {
 			if status.IsNotFoundError(err) {
 				return http.StatusNotFound, status.NotFoundError("File not found.")

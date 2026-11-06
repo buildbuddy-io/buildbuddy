@@ -34,13 +34,26 @@ runs:
 
         echo "gomodcache=$gomodcache" >> "$GITHUB_OUTPUT"
 
-    - name: Restore Go module cache
+    # Only save the cache outside of PRs. A cache saved by a PR is only visible
+    # to that PR, and each one is several hundred MB, so PRs saving caches
+    # quickly push the repo past GitHub's 10GB limit and evict master's caches.
+    - name: Restore and save Go module cache
+      if: github.event_name != 'pull_request'
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ${{ steps.config.outputs.gomodcache }}
         # GitHub cache entries are immutable. Hash go.mod and keep separate
         # caches per OS/arch: dependency changes restore an older cache via
         # restore-keys, then save a new cache populated with any new modules.
+        key: go-mod-${{ runner.os }}-${{ runner.arch }}-v1-${{ hashFiles('go.mod') }}
+        restore-keys: |
+          go-mod-${{ runner.os }}-${{ runner.arch }}-v1-
+
+    - name: Restore Go module cache
+      if: github.event_name == 'pull_request'
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: ${{ steps.config.outputs.gomodcache }}
         key: go-mod-${{ runner.os }}-${{ runner.arch }}-v1-${{ hashFiles('go.mod') }}
         restore-keys: |
           go-mod-${{ runner.os }}-${{ runner.arch }}-v1-

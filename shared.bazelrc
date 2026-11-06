@@ -5,9 +5,7 @@
 # Use BLAKE3 digest function.
 startup --digest_function=BLAKE3
 
-# Bazel doesn't track the contents of source directories by default, which can result
-# in non-hermeticity.
-startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
+startup --experimental_remote_repo_contents_cache
 
 ################
 # COMMON FLAGS #
@@ -22,34 +20,12 @@ common --module_mirrors=https://bcr.cloudflaremirrors.com
 # Avoid being broken by version requirement changes in transitive deps.
 common --check_direct_dependencies=error
 
-# Enable proto toolchain resolution to use pre-built protoc.
-common --incompatible_enable_proto_toolchain_resolution
-common --@com_google_protobuf//bazel/toolchains:prefer_prebuilt_protoc
-
-# Sanitize environment variables to avoid cache misses.
-common --incompatible_strict_action_env
-
 # Write build outputs in a platform-specific directory,
 # avoid outputs being wiped and rewritten when switching between platforms.
 common --experimental_platform_in_output_dir
 
-# Workaround for Bazel 7,8:
-# rules_docker (archived) defines a transition that helps ensure building containers with binary would use the same platform for both.
-# Reference: https://github.com/bazelbuild/rules_docker/pull/1963
-#
-# However, the platform and transition made use of `label_setting` instead of `constraint_value`.
-# This used to work in Bazel 6, but Bazel 7 introduced a new mandatory provider `ConstraintValueInfo` for all constraints_value targets.
-# Since `label_setting` does not return this provider, it is no longer possible to use `label_setting` in Bazel 7.
-#
-# Disabling this is safe because today, we are building these constainers on Linux host, executing Linux actions and targeting Linux machines.
-# This assumption might not hold in the future, but we can revisit this when that happens.
-common --@io_bazel_rules_docker//transitions:enable=false
-
-# Currently only works for go tests
-# Coverage outputs could be viewed with `genhtml`:
-#   $ genhtml -o cover bazel-out/_coverage/_coverage_report.dat
-#   $ open cover/index.html
-common --combined_report=lcov
+# Recover lost inputs within a single build rather than via a restart of the command.
+common --rewind_lost_inputs
 
 # Include target names in timing profile so it's clickable.
 common --experimental_profile_include_target_label
@@ -159,9 +135,8 @@ common:tests-macos --test_tag_filters=-performance,-webdriver,-docker,-bare
 # Windows CI runs locally and excludes benchmarks.
 common:tests-windows --test_tag_filters=-performance
 
-# Linux arm64 CI runs locally over a curated target list. Docker tests run in a
-# separate invocation using the docker suite below.
-common:tests-linux-arm64 --test_tag_filters=-performance,-docker
+# Linux arm64 CI excludes benchmarks, bare tests, and Docker tests.
+common:tests-linux-arm64 --test_tag_filters=-performance,-bare,-docker
 
 common:tests-bare --test_tag_filters=+bare
 common:tests-bare --build_tag_filters=+bare
@@ -179,10 +154,6 @@ common:tests-performance --test_tag_filters=+performance
 # Enable special "macos", "linux" and "windows" config that are automatically applied
 # based on the host machine.
 common --enable_platform_specific_config=true
-
-# rules_nodejs needs runfiles to be explicitly enabled.
-common:linux --enable_runfiles
-common:macos --enable_runfiles
 
 # Allow disk/remote cache hits across different Bazel configurations for supported actions (e.g. GoCompilePkg).
 # Requires a sandboxed execution strategy and is thus not enabled on Windows.
@@ -212,8 +183,8 @@ common --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
 # Set the minimum OS version for macOS binaries
-common --macos_minimum_os=12.0
-common --host_macos_minimum_os=12.0
+common --macos_minimum_os=13.0
+common --host_macos_minimum_os=13.0
 
 # Silence noise about -lm -lm which has no functional downside
 #
@@ -265,9 +236,9 @@ build:dev --experimental_execution_graph_include_change_pruned_actions
 
 # Common flags to be used with remote cache
 common:cache-shared --remote_cache_compression
-common:cache-shared --experimental_remote_cache_compression_threshold=100
 common:cache-shared --experimental_remote_cache_chunking
 common:cache-shared --remote_timeout=10m
+common:cache-shared --jobs=100
 
 common:cache-dev --config=cache-shared
 common:cache-dev --config=dev
@@ -294,7 +265,6 @@ common:download-minimal --nobuild_runfile_links
 common:remote-shared --config=cache-shared
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
-common:remote-shared --rewind_lost_inputs
 common:remote-shared --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64,@toolchains_buildbuddy//platforms:darwin_arm64,@toolchains_buildbuddy//platforms:darwin_x86_64
 
 # Flags shared for prod RBE and cache
@@ -417,13 +387,21 @@ common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 # common:untrusted-ci --remote_header=x-buildbuddy-platform.enable-vfs=true
 
 # Disabled RBE for Windows
-common:untrusted-ci-windows --config=ci-shared
-common:untrusted-ci-windows --config=tests-windows
+common:ci-windows-shared --config=ci-shared
+common:ci-windows-shared --config=tests-windows
+common:ci-windows-shared --repository_cache=C:/bazel/repo-cache/
+common:ci-windows-shared --bes_results_url=https://app.buildbuddy.io/invocation/
+common:ci-windows-shared --bes_backend=grpcs://remote.buildbuddy.io
+common:ci-windows-shared --remote_cache=grpcs://remote.buildbuddy.io
+
+# Windows CI for PRs.
+common:untrusted-ci-windows --config=ci-windows-shared
 common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows-25/rin20260818
-common:untrusted-ci-windows --repository_cache=C:/bazel/repo-cache/
-common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
-common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
-common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
+
+# Windows CI for master. Uses a separate cache from PRs so that master builds
+# never use outputs uploaded by PR code, like ci and untrusted-ci.
+common:ci-windows --config=ci-windows-shared
+common:ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/ci-windows-25/rin20260818
 
 # Use BuildBuddy endpoints from the ci_runner-generated bazelrc.
 # These will point to local, dev, or prod, depending on which app created the workflow action.
@@ -432,10 +410,12 @@ common:workflows --config=buildbuddy_bes_results_url
 common:workflows --config=buildbuddy_remote_cache
 common:workflows --config=buildbuddy_experimental_remote_downloader
 common:workflows --noexperimental_remote_downloader_local_fallback
-# Explicitly disable repository cache for BuildBuddy Workflows.
-# This helps reduce disk space usage in the Firecracker, thus reduce the VM snapshot size.
-# Rely on remote downloader to cache downloads through Remote Asset API instead.
-common:workflows --repository_cache=
+
+# Keep the disk small on Firecracker-snapshotted runners, to keep snapshots
+# small. An empty --repository_cache also disables the repo contents cache.
+# Rely on the remote downloader to cache downloads via the Remote Asset API.
+common:firecracker-disk-minimal --config=download-minimal
+common:firecracker-disk-minimal --repository_cache=
 
 # Configuration used for Linux workflows
 common:linux-workflows --config=remote-shared
@@ -443,13 +423,26 @@ common:linux-workflows --config=target-linux-x86
 common:linux-workflows --config=workflows
 common:linux-workflows --config=buildbuddy_remote_executor
 common:linux-workflows --build_metadata=TAGS=linux-workflow
+common:linux-workflows --config=firecracker-disk-minimal
+
+# Configuration used for Linux ARM64 workflows. The workflow runner itself is
+# x86_64; only build actions are scheduled on ARM64 executors.
+common:linux-arm64-workflows --config=remote-shared
+# Prefer ARM64 for all compatible actions. This overrides remote-shared's
+# multi-architecture execution platform list, where x86_64 is first.
+common:linux-arm64-workflows --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
+common:linux-arm64-workflows --config=target-linux-arm64
+common:linux-arm64-workflows --config=workflows
+common:linux-arm64-workflows --config=buildbuddy_remote_executor
+common:linux-arm64-workflows --build_metadata=TAGS=linux-arm64-workflow
+common:linux-arm64-workflows --config=firecracker-disk-minimal
 # TODO(vanja) turn on once https://github.com/buildbuddy-io/buildbuddy-internal/issues/6247 is fixed
 # common:linux-workflows --remote_header=x-buildbuddy-platform.enable-vfs=true
 
 # Configuration used for Mac workflows
-# TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
-common:mac-workflows --config=cache
+common:mac-workflows --config=remote-shared
 common:mac-workflows --config=workflows
+common:mac-workflows --config=buildbuddy_remote_executor
 common:mac-workflows --config=tests-macos
 common:mac-workflows --build_metadata=TAGS=mac-workflow
 

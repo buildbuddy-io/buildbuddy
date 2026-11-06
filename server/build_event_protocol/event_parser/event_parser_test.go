@@ -506,6 +506,43 @@ func TestEnvVarDiscovery(t *testing.T) {
 	}
 }
 
+func TestDetachedHeadBranchNameIgnored(t *testing.T) {
+	invocation := &inpb.Invocation{
+		InvocationId: "test-invocation",
+	}
+	parser := event_parser.NewStreamingEventParser(invocation)
+	parser.ParseEvent(&build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_StructuredCommandLine{
+			StructuredCommandLine: &command_line.CommandLine{
+				CommandLineLabel: "canonical",
+				Sections: []*command_line.CommandLineSection{
+					{
+						SectionType: &command_line.CommandLineSection_OptionList{
+							OptionList: &command_line.OptionList{
+								Option: []*command_line.Option{
+									{OptionName: "client_env", OptionValue: "GIT_BRANCH=main"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+	// A higher priority "HEAD" branch from the workspace status should not
+	// override the real branch name.
+	parser.ParseEvent(&build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_WorkspaceStatus{
+			WorkspaceStatus: &build_event_stream.WorkspaceStatus{
+				Item: []*build_event_stream.WorkspaceStatus_Item{
+					{Key: "GIT_BRANCH", Value: "HEAD"},
+				},
+			},
+		},
+	})
+	assert.Equal(t, "main", invocation.BranchName)
+}
+
 func TestRemoteCacheOptions(t *testing.T) {
 	tests := []struct {
 		desc                              string

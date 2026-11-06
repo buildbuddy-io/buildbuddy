@@ -62,7 +62,7 @@ func startTestRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*cac
 	})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
 
-	registry, err := cache_proxy_registry_server.NewCacheProxyRegistryServer(env, upgrade.NewDetector(nil))
+	registry, err := cache_proxy_registry_server.NewCacheProxyRegistryServer(env, upgrade.NewDetector(nil, nil))
 	require.NoError(t, err)
 	env.SetCacheProxyRegistryService(registry)
 
@@ -72,7 +72,7 @@ func startTestRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*cac
 
 	dialCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	conn, err := testenv.LocalGRPCConn(dialCtx, lis)
+	conn, err := testenv.LocalGRPCConn(t, dialCtx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -101,7 +101,7 @@ func TestStreamHeartbeats_RegistersProxy(t *testing.T) {
 	readerUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	registry, client := startTestRegistry(t, map[string]interfaces.UserInfo{testAPIKey: streamUser})
 
-	node := &cppb.CacheProxyNode{
+	summary := &cppb.CacheProxySummary{
 		Host: "host-1", ProxyId: "proxy-1", OsFamily: "linux", Arch: "amd64", Version: "v1",
 	}
 
@@ -112,7 +112,7 @@ func TestStreamHeartbeats_RegistersProxy(t *testing.T) {
 	// Run the stream loop in a goroutine; it returns once we cancel.
 	done := make(chan error, 1)
 	go func() {
-		done <- streamHeartbeats(streamCtx, make(chan struct{}), client, node)
+		done <- streamHeartbeats(streamCtx, make(chan struct{}), client, summary)
 	}()
 
 	// The initial heartbeat should make the proxy visible to GetCacheProxies
@@ -122,7 +122,7 @@ func TestStreamHeartbeats_RegistersProxy(t *testing.T) {
 		resp, err := registry.GetCacheProxies(authedCtx, &cppb.GetCacheProxiesRequest{
 			RequestContext: groupReqContext(testGroupID),
 		})
-		return err == nil && len(resp.GetCacheProxy()) == 1 && resp.GetCacheProxy()[0].GetNode().GetProxyId() == "proxy-1"
+		return err == nil && len(resp.GetCacheProxy()) == 1 && resp.GetCacheProxy()[0].GetSummary().GetProxyId() == "proxy-1"
 	}, 2*time.Second, 25*time.Millisecond, "proxy should have registered")
 
 	cancel()
@@ -147,15 +147,14 @@ func TestStreamHeartbeats_ShutdownRemovesProxy(t *testing.T) {
 	readerUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	registry, client := startTestRegistry(t, map[string]interfaces.UserInfo{testAPIKey: streamUser})
 
-	node := &cppb.CacheProxyNode{Host: "host-x", ProxyId: "proxy-x", Version: "v1"}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	summary := &cppb.CacheProxySummary{Host: "host-x", ProxyId: "proxy-x", Version: "v1"}
+	ctx := t.Context()
 	streamCtx := outgoingCtx(ctx, testAPIKey)
 
 	shutdownCh := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- streamHeartbeats(streamCtx, shutdownCh, client, node)
+		done <- streamHeartbeats(streamCtx, shutdownCh, client, summary)
 	}()
 
 	authedCtx := claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil)
@@ -194,11 +193,10 @@ func TestStreamHeartbeats_UnauthorizedReturnsError(t *testing.T) {
 	noCap := userWithCapabilities("U1", testGroupID, cappb.Capability_CACHE_WRITE)
 	_, client := startTestRegistry(t, map[string]interfaces.UserInfo{"NOCAP_KEY": noCap})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	streamCtx := outgoingCtx(ctx, "NOCAP_KEY")
 
-	err := streamHeartbeats(streamCtx, make(chan struct{}), client, &cppb.CacheProxyNode{Host: "h", ProxyId: "id"})
+	err := streamHeartbeats(streamCtx, make(chan struct{}), client, &cppb.CacheProxySummary{Host: "h", ProxyId: "id"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "REGISTER_CACHE_PROXY", "expected capability error, got: %v", err)
 }
@@ -230,7 +228,7 @@ func TestStreamHeartbeats_UnreachableTarget(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- streamHeartbeats(context.Background(), make(chan struct{}), client, &cppb.CacheProxyNode{Host: "h", ProxyId: "id"})
+		done <- streamHeartbeats(context.Background(), make(chan struct{}), client, &cppb.CacheProxySummary{Host: "h", ProxyId: "id"})
 	}()
 	select {
 	case err := <-done:
@@ -300,7 +298,7 @@ type fakeHeartbeatStream struct {
 
 func (f *fakeHeartbeatStream) Send(req *cppb.RegisterCacheProxyRequest) error {
 	// Clone the request: real gRPC streams serialize at Send time, but
-	// sendHeartbeat mutates the shared node between sends.
+	// sendHeartbeat mutates the shared summary between sends.
 	f.sent = append(f.sent, proto.Clone(req).(*cppb.RegisterCacheProxyRequest))
 	return nil
 }
@@ -310,41 +308,107 @@ func (f *fakeHeartbeatStream) Send(req *cppb.RegisterCacheProxyRequest) error {
 // config.OnReload refreshes after each completed reload.
 func TestSendHeartbeat_RefreshesConfiguredFlags(t *testing.T) {
 	stream := &fakeHeartbeatStream{}
-	node := &cppb.CacheProxyNode{Host: "h", ProxyId: "id"}
+	summary := &cppb.CacheProxySummary{Host: "h", ProxyId: "id"}
 
 	flags.Set(t, "cache_proxy.app_target", "grpcs://before.example.com")
 	refreshConfiguredFlags()
-	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}))
+	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary}))
 
 	// After a config reload (e.g. on SIGHUP), config.OnReload triggers
 	// refreshConfiguredFlags and subsequent heartbeats pick up the change.
 	flags.Set(t, "cache_proxy.app_target", "grpcs://after.example.com")
 	refreshConfiguredFlags()
-	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}))
+	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary}))
 
 	require.Len(t, stream.sent, 2)
-	assert.Contains(t, stream.sent[0].GetNode().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://before.example.com")
-	assert.Contains(t, stream.sent[1].GetNode().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://after.example.com")
+	for _, req := range stream.sent {
+		assert.Equal(t, "id", req.GetDetails().GetSummary().GetProxyId())
+	}
+	assert.Contains(t, stream.sent[0].GetSummary().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://before.example.com")
+	assert.Contains(t, stream.sent[1].GetSummary().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://after.example.com")
 }
 
 func TestSendHeartbeat_FlagMutationRaciness(t *testing.T) {
 	stream := &fakeHeartbeatStream{}
-	node := &cppb.CacheProxyNode{Host: "h", ProxyId: "id"}
+	summary := &cppb.CacheProxySummary{Host: "h", ProxyId: "id"}
 	refreshConfiguredFlags()
 
 	const iterations = 1_000
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < iterations; i++ {
-			_ = sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node})
+		for range iterations {
+			_ = sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary})
 		}
 	}()
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		flags.Set(t, "cache_proxy.app_target", fmt.Sprintf("grpcs://app-%d.example.com", i))
 	}
 	<-done
 
 	assert.Len(t, stream.sent, iterations)
+}
+
+// detailsRequestingRegistry is a fake registry server that sends a details
+// request after the initial heartbeat and records the messages it receives.
+type detailsRequestingRegistry struct {
+	cppb.UnimplementedCacheProxyRegistryServer
+	request  *cppb.RegisterCacheProxyResponse
+	received chan *cppb.RegisterCacheProxyRequest
+}
+
+func (r *detailsRequestingRegistry) RegisterAndStreamHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatServer) error {
+	for sent := false; ; sent = true {
+		req, err := stream.Recv()
+		if err != nil {
+			return nil
+		}
+		r.received <- req
+		if !sent {
+			if err := stream.Send(r.request); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func TestStreamHeartbeats_AnswersDetailsRequestWithRequestID(t *testing.T) {
+	registry := &detailsRequestingRegistry{
+		request: &cppb.RegisterCacheProxyResponse{
+			DetailsRequest: &cppb.GetCacheProxyRequest{IncludeConfiguredFlags: true, IncludeStatistics: true},
+			RequestId:      "req-1",
+		},
+		received: make(chan *cppb.RegisterCacheProxyRequest, 10),
+	}
+	env := testenv.GetTestEnv(t)
+	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	cppb.RegisterCacheProxyRegistryServer(server, registry)
+	go runFunc()
+	conn, err := testenv.LocalGRPCConn(t, context.Background(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	refreshConfiguredFlags()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- streamHeartbeats(ctx, make(chan struct{}), cppb.NewCacheProxyRegistryClient(conn), &cppb.CacheProxySummary{Host: "h", ProxyId: "id"})
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	heartbeat := <-registry.received
+	assert.Empty(t, heartbeat.GetRequestId(), "heartbeats should not carry a request ID")
+
+	select {
+	case reply := <-registry.received:
+		assert.Equal(t, "req-1", reply.GetRequestId())
+		assert.Equal(t, "id", reply.GetDetails().GetSummary().GetProxyId())
+		assert.NotNil(t, reply.GetDetails().GetStatistics())
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "proxy did not answer the details request")
+	}
 }

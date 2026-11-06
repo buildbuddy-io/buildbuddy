@@ -91,7 +91,7 @@ export default class LoginComponent extends React.Component<Props, State> {
       popup
         .open(url)
         .then(() => authService.refreshUser())
-        .catch(error_service.handleError);
+        .catch((e) => error_service.handleError(e));
       return;
     }
 

@@ -80,7 +80,9 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
       request.executionLookup.targetLabel = this.props.targetLabel;
     }
     let inProgressBeforeRequestWasMade = this.props.model.isInProgress();
-    rpcService.service
+    // Live executions are buffered in the remote executor's region.
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+    service
       .getExecution(request)
       .then((response) => {
         this.setState({ executions: response.execution, loading: false });

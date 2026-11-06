@@ -447,7 +447,7 @@ type ZstdDecoderPool struct {
 func NewZstdDecoderPool() *ZstdDecoderPool {
 	return &ZstdDecoderPool{
 		pool: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				dc, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
 				if err != nil {
 					return err

@@ -214,7 +214,7 @@ func spliceValidationSkipRateByGroupPanel() *timeseries.PanelBuilder {
 	total := sumRateBy("group_id", "buildbuddy_remote_cache_splice_blob_count", appFilter)
 
 	return dash.Timeseries("SpliceBlob Validation Skip Rate by Group [app]", dash.UnitPercentUnit).
-		Description("Share of SpliceBlob requests skipping content verification, by group ID. Groups outside the splice-without-validation experiment have no skipped requests and so do not appear.").
+		Description("Share of SpliceBlob requests skipping content verification, by group ID. Groups whose executors have executor.splice_without_validation off have no skipped requests and so do not appear.").
 		Min(0).
 		Max(1).
 		LineWidth(2).

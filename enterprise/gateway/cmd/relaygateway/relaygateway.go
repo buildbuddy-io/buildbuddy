@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/relay"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -62,6 +63,10 @@ func main() {
 	env.SetAuthenticator(nullauth.NewNullAuthenticator(true /*=anonymousUsageEnabled*/))
 
 	env.SetListenAddr(*listen)
+	// The SSL service caches ACME certs in the blobstore.
+	if err := blobstore.Register(env); err != nil {
+		log.Fatalf("Error configuring blobstore: %s", err)
+	}
 	if err := ssl.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}

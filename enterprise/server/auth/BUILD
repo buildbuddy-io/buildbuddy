@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -21,5 +21,17 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@com_github_golang_jwt_jwt_v4//:jwt",
+    ],
+)
+
+go_test(
+    name = "auth_test",
+    srcs = ["auth_test.go"],
+    deps = [
+        ":auth",
+        "//server/util/authutil",
+        "//server/util/claims",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
+        "@com_github_stretchr_testify//require",
     ],
 )

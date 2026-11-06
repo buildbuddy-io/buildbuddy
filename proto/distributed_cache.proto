@@ -45,12 +45,9 @@ message WriteRequest {
   // Clients should attempt to replicate this data when possible.
   string handoff_peer = 5;
 
-  // A reference to the written data's location in shared storage. If no data
-  // bytes accompany the write, the write must be performed from the
-  // reference. If data bytes are also present, the bytes should be written
-  // and the reference should be verified. Because a write's reference is not
-  // known until all of its bytes have been seen, the reference will arrive
-  // on the final message of a write stream (the one with finish_write set).
+  // A reference to the written data's location in shared storage. If this field
+  // is present on the first message with no `data` and `finish_write` set to
+  // true, the write will be applied by reference. Otherwise, `data` is used.
   reference.Reference reference = 9;
 
   // If true, the provided reference must be cloned by the server that handles

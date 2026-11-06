@@ -3,6 +3,7 @@ package composable_cache
 import (
 	"context"
 	"io"
+	"maps"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -105,9 +106,7 @@ func (c *ComposableCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	if outerFoundMap, err := c.outer.GetMulti(ctx, resources); err == nil {
-		for d, data := range outerFoundMap {
-			foundMap[d] = data
-		}
+		maps.Copy(foundMap, outerFoundMap)
 	}
 	stillMissing := make([]*rspb.ResourceName, 0)
 	for _, r := range resources {
@@ -128,9 +127,7 @@ func (c *ComposableCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 	if err != nil {
 		return nil, err
 	}
-	for d, data := range innerFoundMap {
-		foundMap[d] = data
-	}
+	maps.Copy(foundMap, innerFoundMap)
 	return foundMap, nil
 }
 

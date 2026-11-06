@@ -12,6 +12,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/gpu",
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/resources",
         "//server/util/flag",
     ] + select({
         # Static builds compile gpu_unsupported.go instead of gpu_linux.go,

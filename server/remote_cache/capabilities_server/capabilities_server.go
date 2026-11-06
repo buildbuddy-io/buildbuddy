@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -67,7 +68,6 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 		compressors = []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD}
 	}
 	if s.supportCAS {
-		chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
 		c.CacheCapabilities = &repb.CacheCapabilities{
 			DigestFunctions: digest.SupportedDigestFunctions(),
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
@@ -81,16 +81,13 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 					},
 				},
 			},
-			MaxBatchTotalSizeBytes:          0, // Default to protocol limit.
+			MaxBatchTotalSizeBytes:          rpcutil.GRPCMaxSizeBytes,
 			SymlinkAbsolutePathStrategy:     repb.SymlinkAbsolutePathStrategy_ALLOWED,
 			SupportedCompressors:            compressors,
 			SupportedBatchUpdateCompressors: compressors,
-			SplitBlobSupport:                chunkingEnabled,
-			SpliceBlobSupport:               chunkingEnabled,
-		}
-
-		if chunkingEnabled {
-			c.CacheCapabilities.FastCdc_2020Params = chunking.FastCDCParams(ctx, s.env.GetExperimentFlagProvider())
+			SplitBlobSupport:                true,
+			SpliceBlobSupport:               true,
+			FastCdc_2020Params:              chunking.FastCDCParams(),
 		}
 	}
 	if s.supportRemoteExec {

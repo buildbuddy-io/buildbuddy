@@ -277,7 +277,7 @@ func unmarshalFieldLengths(buf []byte) (map[string]uint32, error) {
 	// uvarint field length), so len(buf)/2 is a safe upper bound on real entries.
 	sizeHint := min(fieldCount, uint64(len(buf)/2))
 	fieldLengths := make(map[string]uint32, int(sizeHint))
-	for i := uint64(0); i < fieldCount; i++ {
+	for range fieldCount {
 		fieldNameLen, err := readUvarint()
 		if err != nil {
 			return nil, err
@@ -587,10 +587,7 @@ func (w *Writer) AddDocument(doc types.Document) error {
 			s.tokens++
 		})
 		tfStats := tokenizer.TermFrequencyStats()
-		occurrences := tfStats.Occurrences
-		if occurrences < 0 {
-			occurrences = 0
-		}
+		occurrences := max(tfStats.Occurrences, 0)
 		fieldLengths[field.Name()] = uint32(min(occurrences, math.MaxUint32))
 		indexprofile.RecordTermFrequencyStats(field.Name(), tfStats)
 
@@ -688,9 +685,7 @@ func (w *Writer) Flush() error {
 		postingLists := w.fieldPostingLists[fieldName]
 		log.Printf("field: %q had %d ngrams", fieldName, len(postingLists))
 		for ngram, docIDs := range postingLists {
-			ngram := ngram
 			fieldName := fieldName
-			docIDs := docIDs
 			eg.Go(func() error {
 				return writePLs(w.postingListKey(ngram, fieldName), docIDs, fieldName, ngram)
 			})

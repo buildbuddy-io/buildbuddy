@@ -2,11 +2,17 @@ load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("//proto:defs.bzl", "ts_proto_library")
 
+# Keep common messages in their existing Go package while grouping the API
+# messages and service together.
+# gazelle:proto package
+# gazelle:proto_group go_package
+# gazelle:go_generate_proto true
+# gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2
+# gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status
+
 proto_library(
     name = "common_proto",
-    srcs = [
-        "common.proto",
-    ],
+    srcs = ["common.proto"],
     visibility = ["//visibility:public"],
     deps = [
         "@com_google_protobuf//:duration_proto",
@@ -33,7 +39,7 @@ ts_proto_library(
 )
 
 proto_library(
-    name = "api_v1_proto",
+    name = "v1_proto",
     srcs = [
         "action.proto",
         "api_key.proto",
@@ -70,7 +76,7 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_grpc_v2",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/api/v1",
-    proto = ":api_v1_proto",
+    proto = ":v1_proto",
     visibility = ["//visibility:public"],
     deps = [
         ":common_go_proto",

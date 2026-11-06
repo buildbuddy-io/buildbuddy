@@ -125,7 +125,6 @@ type Env interface {
 	GetKMS() interfaces.KMS
 	GetSecretService() interfaces.SecretService
 	GetExecutionCollector() interfaces.ExecutionCollector
-	GetSuggestionService() interfaces.SuggestionService
 	GetCrypter() interfaces.Crypter
 	GetSingleFlightDeduper() interfaces.SingleFlightDeduper
 	GetPromQuerier() interfaces.PromQuerier

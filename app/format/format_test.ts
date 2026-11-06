@@ -1,5 +1,5 @@
 import Long from "long";
-import format from "./format";
+import format, { formatDateRange } from "./format";
 
 describe("percent", () => {
   it("should handle zero", () => {
@@ -106,6 +106,22 @@ describe("formatWithCommas", () => {
   });
 });
 
+describe("formatCents", () => {
+  it("should format cents as dollars", () => {
+    expect(format.formatCents(98765.4)).toEqual("$987.65");
+    expect(format.formatCents(0)).toEqual("$0.00");
+    expect(format.formatCents(123456)).toEqual("$1,234.56");
+  });
+});
+
+describe("formatPrice", () => {
+  it("should drop the cents when whole", () => {
+    expect(format.formatPrice(12)).toEqual("$0.12");
+    expect(format.formatPrice(7)).toEqual("$0.07");
+    expect(format.formatPrice(300000)).toEqual("$3,000");
+  });
+});
+
 describe("bytes", () => {
   it("should abbreviate large numbers", () => {
     expect(format.bytes(0)).toEqual("0B");
@@ -146,5 +162,25 @@ describe("count", () => {
     expect(format.count(1.5e6)).toEqual("1.5M");
     expect(format.count(1e9 - 1)).toEqual("1000M");
     expect(format.count(1e9)).toEqual("1B");
+  });
+});
+
+describe("formatDateRange", () => {
+  // The date picker's URL helpers pass an exclusive end.
+  const october = [new Date(2026, 9, 1), new Date(2026, 10, 1)] as const;
+
+  it("should name the current month throughout the month", () => {
+    for (const now of [new Date(2026, 9, 1), new Date(2026, 9, 15), new Date(2026, 9, 31)]) {
+      expect(formatDateRange(...october, { now })).toEqual("Current month");
+    }
+  });
+  it("should name the last month", () => {
+    expect(formatDateRange(...october, { now: new Date(2026, 10, 15) })).toEqual("Last month");
+  });
+  it("should spell out other months and partial months", () => {
+    expect(formatDateRange(...october, { now: new Date(2026, 11, 15) })).toMatch(/^October 1st/);
+    expect(formatDateRange(new Date(2026, 9, 1), new Date(2026, 9, 31), { now: new Date(2026, 9, 31) })).toMatch(
+      /^October 1st/
+    );
   });
 });

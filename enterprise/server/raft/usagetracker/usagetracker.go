@@ -2,7 +2,6 @@ package usagetracker
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -20,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -227,69 +225,81 @@ func (pu *partitionUsage) partitionKeyPrefix() string {
 	return filestore.PartitionDirectoryPrefix + pu.part.ID
 }
 
-func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender.KeyMeta) {
+// evictionKeyMeta is a key to evict with its eviction sample.
+type evictionKeyMeta = sender.KeyMeta[*approxlru.Sample[*evictionKey]]
+
+// deleteBatchResult tracks the outcome of evictions on one range.
+type deleteBatchResult struct {
+	evicted   []*approxlru.Sample[*evictionKey]
+	numFailed int
+	lastErr   error
+}
+
+// deleteBatch evicts keys in one range.
+//
+// Per-key failures are returned in the result so successful deletes can still
+// update metrics and enqueue GCS cleanup.
+func (pu *partitionUsage) deleteBatch(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*evictionKeyMeta) (*deleteBatchResult, error) {
+	batch := rbuilder.NewBatchBuilder()
+	samples := make([]*approxlru.Sample[*evictionKey], 0, len(keys))
+	for _, k := range keys {
+		sample := k.Meta
+		samples = append(samples, sample)
+		batch.Add(&rfpb.DeleteRequest{
+			Key:        k.Key,
+			MatchAtime: sample.Timestamp.UnixMicro(),
+		})
+	}
+	batchCmd, err := batch.ToProto()
+	if err != nil {
+		return nil, fmt.Errorf("could not construct delete req proto: %s", err)
+	}
+	rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+		Header: h,
+		Batch:  batchCmd,
+	})
+	if err != nil {
+		return nil, err
+	}
+	parsed := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
+	res := &deleteBatchResult{}
+	for i, sample := range samples {
+		if _, err := parsed.DeleteResponse(i); err != nil {
+			res.numFailed++
+			res.lastErr = err
+			continue
+		}
+		res.evicted = append(res.evicted, sample)
+	}
+	return res, nil
+}
+
+func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evictionKeyMeta) {
 	if len(keys) == 0 {
 		return
 	}
 	start := pu.clock.Now()
-	defer metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
+	// Measure at return time, not when defer is registered.
+	defer func() {
+		metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
+	}()
 
 	// Eviction delete is replay-safe: a duplicate retry after the entry is gone
 	// still returns success, so this path does not need sender-owned sessions.
-	rsps, err := pu.sender.RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
-		batch := rbuilder.NewBatchBuilder()
-		for _, k := range keys {
-			sample, ok := k.Meta.(*approxlru.Sample[*evictionKey])
-			if !ok {
-				return nil, errors.New("meta not type of approxlru.Sample[*evictionKey]")
-			}
-			batch.Add(&rfpb.DeleteRequest{
-				Key:        k.Key,
-				MatchAtime: sample.Timestamp.UnixMicro(),
-			})
-		}
-		batchCmd, err := batch.ToProto()
-		if err != nil {
-			return nil, fmt.Errorf("could not construct delete req proto: %s", err)
-		}
-		rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-			Header: h,
-			Batch:  batchCmd,
-		})
-		if err != nil {
-			return nil, err
-		}
-		parsed := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
-		res := make([]*approxlru.Sample[*evictionKey], 0)
-		errCount := 0
-		var lastErr error
-		for i, k := range keys {
-			_, lastErr = parsed.DeleteResponse(i)
-			if lastErr == nil {
-				res = append(res, k.Meta.(*approxlru.Sample[*evictionKey]))
-			} else {
-				errCount++
-			}
-		}
-		if errCount > 0 {
-			return res, fmt.Errorf("failed to evict %d keys in partition %s, last error: %s", errCount, pu.part.ID, lastErr)
-		}
-		return res, nil
-	})
+	rsps, err := pu.sender.RunMultiKey(ctx, keys, pu.deleteBatch)
+	failed := err != nil
 	if err != nil {
-		metrics.RaftEvictionErrorCount.Inc()
 		log.Warning(err.Error())
 	}
-	for _, rsp := range rsps {
-		res, ok := rsp.([]*approxlru.Sample[*evictionKey])
-		if !ok {
-			alert.UnexpectedEvent("raft_unexpected_delete_rsp", "response not type of approxlru.Sample[*evictionKey]")
-			continue
+	for _, res := range rsps {
+		if res.numFailed > 0 {
+			failed = true
+			log.Warningf("failed to evict %d keys in partition %s, last error: %s", res.numFailed, pu.part.ID, res.lastErr)
 		}
 
-		pu.updateEvictionMetrics(res)
+		pu.updateEvictionMetrics(res.evicted)
 
-		for _, s := range res {
+		for _, s := range res.evicted {
 			if gcsMD := s.Key.storageMetadata.GetGcsMetadata(); gcsMD != nil {
 				select {
 				case pu.gcsDeletes <- gcsMD:
@@ -300,17 +310,20 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 			}
 		}
 	}
+	if failed {
+		metrics.RaftEvictionErrorCount.Inc()
+	}
 }
 
 func (pu *partitionUsage) processEviction(ctx context.Context) {
-	batches := make(chan []*sender.KeyMeta, 1)
+	batches := make(chan []*evictionKeyMeta, 1)
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		defer close(batches)
 		// sendBatch hands a batch to the dispatcher, but bails out on ctx.Done
 		// so the batcher stops promptly on shutdown instead of blocking until
 		// pu.deletes drains. Returns false if ctx was cancelled (return then).
-		sendBatch := func(b []*sender.KeyMeta) bool {
+		sendBatch := func(b []*evictionKeyMeta) bool {
 			select {
 			case batches <- b:
 				return true
@@ -318,17 +331,14 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 				return false
 			}
 		}
-		var batch []*sender.KeyMeta
+		var batch []*evictionKeyMeta
 		timer := time.NewTimer(evictFlushPeriod)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case sampleToDelete := <-pu.deletes:
-				batch = append(batch, &sender.KeyMeta{
-					Key:  sampleToDelete.Key.bytes,
-					Meta: sampleToDelete,
-				})
+				batch = append(batch, sender.NewKeyMeta(sampleToDelete.Key.bytes, sampleToDelete))
 				if len(batch) >= pu.evictionBatchSize {
 					if !sendBatch(batch) {
 						return
@@ -337,10 +347,13 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 					timer.Reset(evictFlushPeriod)
 				}
 			case <-timer.C:
-				if !sendBatch(batch) {
-					return
+				if len(batch) > 0 {
+					if !sendBatch(batch) {
+						return
+					}
+					batch = nil
 				}
-				batch = nil
+				timer.Reset(evictFlushPeriod)
 			}
 		}
 	})
@@ -426,7 +439,7 @@ var digestRunes = []rune("abcdef1234567890")
 func (pu *partitionUsage) randomKey(n int) []byte {
 	var randKey strings.Builder
 	randKey.WriteString(pu.partitionKeyPrefix() + "/")
-	for i := 0; i < n; i++ {
+	for range n {
 		randKey.WriteString(string(digestRunes[rand.Intn(len(digestRunes))]))
 	}
 	return []byte(randKey.String())
@@ -587,6 +600,10 @@ func (pu *partitionUsage) updateEvictionMetrics(samples []*approxlru.Sample[*evi
 	pu.mu.Lock()
 	defer pu.mu.Unlock()
 	localSizeBytes := float64(pu.sizeBytes)
+	// Wait for a local size estimate before scaling remote estimates.
+	if localSizeBytes <= 0 {
+		return nil
+	}
 
 	// Assume eviction on all stores is happening at a similar rate as on the
 	// current store and update the usage information speculatively since we
@@ -605,7 +622,7 @@ func (pu *partitionUsage) updateEvictionMetrics(samples []*approxlru.Sample[*evi
 
 func (pu *partitionUsage) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
 	samples := make([]*approxlru.Sample[*evictionKey], 0, k)
-	for i := 0; i < k; i++ {
+	for range k {
 		s, ok := <-pu.samples
 		if ok {
 			samples = append(samples, s)
@@ -721,11 +738,8 @@ func (ut *Tracker) Start() {
 		pu.gcsDeleteCancel = gcsCancel
 		gcsEg, gcsGctx := errgroup.WithContext(gcsCtx)
 		pu.gcsDeleteEg = gcsEg
-		numGCSWorkers := pu.numGCSDeleteWorkers
-		if numGCSWorkers < 1 {
-			numGCSWorkers = 1
-		}
-		for i := 0; i < numGCSWorkers; i++ {
+		numGCSWorkers := max(pu.numGCSDeleteWorkers, 1)
+		for range numGCSWorkers {
 			pu.gcsDeleteEg.Go(func() error {
 				pu.processGCSDeletions(gcsGctx)
 				return nil

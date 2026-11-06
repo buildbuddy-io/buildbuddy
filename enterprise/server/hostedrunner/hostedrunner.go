@@ -1,6 +1,7 @@
 package hostedrunner
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -120,6 +121,10 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
+	buildUser, err := r.buildUser(ctx)
+	if err != nil {
+		return nil, status.WrapError(err, "get build attribution")
+	}
 
 	// The top level OS and arch fields are deprecated, so prefer the platform property values.
 	os := req.GetOs()
@@ -195,7 +200,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
 		groupStatus = u.GetGroupStatus()
 	}
-	runnerTimeout, err := ci_runner_util.RunnerTimeout(ctx, r.env.GetExperimentFlagProvider(), requestedTimeout, "remote_bazel", groupStatus)
+	runnerTimeout, err := ci_runner_util.RunnerTimeout(ctx, requestedTimeout, "remote_bazel", groupStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -230,13 +235,10 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	for _, patchURI := range patchURIs {
 		args = append(args, "--patch_uri="+patchURI)
 	}
-	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
-		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "", experiments.WithContext("workflow-name", "remote-bazel"))
-		if bazelCommandOverride != "" {
-			args = append(args, "--bazel_command="+bazelCommandOverride)
-		}
-		args = append(args, ci_runner_util.GitFetchLowSpeedRetryFlags(ctx, efp, experiments.WithContext("workflow_action_name", "remote_bazel"))...)
+	if bazelCommandOverride := ci_runner_util.BazelCommandOverride.Get(ctx, experiments.WithContext("workflow-name", "remote-bazel")); bazelCommandOverride != "" {
+		args = append(args, "--bazel_command="+bazelCommandOverride)
 	}
+	args = append(args, ci_runner_util.GitFetchLowSpeedRetryFlags(ctx, experiments.WithContext("workflow_action_name", "remote_bazel"))...)
 	args = append(args, req.GetRunnerFlags()...)
 
 	affinityKey := req.GetSessionAffinityKey()
@@ -280,12 +282,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	retry := !req.GetDisableRetry()
 
 	pool := r.env.GetWorkflowService().WorkflowsPoolName()
-	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
-		poolOverride := efp.String(ctx, "remote-runner-pool", "",
-			experiments.WithContext("workflow-name", "remote-bazel"))
-		if poolOverride != "" {
-			pool = poolOverride
-		}
+	if poolOverride := ci_runner_util.PoolOverride.Get(ctx, experiments.WithContext("workflow-name", "remote-bazel")); poolOverride != "" {
+		pool = poolOverride
 	}
 
 	// Hosted Bazel shares the same pool with workflows.
@@ -295,6 +293,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 			// between runs, which may not be very Bazel-friendly.
 			{Name: "WORKDIR_OVERRIDE", Value: wd},
 			{Name: "GIT_BRANCH", Value: req.GetRepoState().GetBranch()},
+			// Attribute the invocation to its caller, not the runner's OS user.
+			{Name: "BUILD_USER", Value: buildUser},
 		},
 		Arguments: args,
 		Platform: &repb.Platform{
@@ -316,6 +316,11 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	for k, v := range req.GetEnv() {
+		// Credentials are passed via env overrides (see credentialEnvOverrides)
+		// so they aren't persisted in the Command, where they could be shown in the UI.
+		if k == ci_runner_env.RepoUserEnvVarName || k == ci_runner_env.RepoTokenEnvVarName {
+			continue
+		}
 		cmd.EnvironmentVariables = append(cmd.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 			Name:  k,
 			Value: v,
@@ -359,6 +364,27 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	return actionDigest, nil
 }
 
+func (r *runnerService) buildUser(ctx context.Context) (string, error) {
+	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	if u.GetUserID() != "" && !u.IsImpersonating() {
+		user, err := r.env.GetUserDB().GetUser(ctx)
+		if err != nil {
+			return "", err
+		}
+		profile := user.ToProto()
+		return cmp.Or(profile.GetUsername(), profile.GetName().GetFull(), u.GetUserID()), nil
+	}
+	// Organization keys identify an organization, not an individual member.
+	group, err := r.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return "", err
+	}
+	return cmp.Or(group.Name, u.GetGroupID()), nil
+}
+
 func getExecProperty(execProps []*repb.Platform_Property, key string) string {
 	for _, p := range execProps {
 		if p.Name == key {
@@ -378,15 +404,15 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 		return nil, err
 	}
 
-	// If no access token is provided explicitly, try reading from the REPO_TOKEN env var.
+	// If credentials aren't set on the GitRepo, fall back to the REPO_USER
+	// and REPO_TOKEN env vars.
+	username := req.GetGitRepo().GetUsername()
+	if username == "" {
+		username = req.GetEnv()[ci_runner_env.RepoUserEnvVarName]
+	}
 	accessToken := req.GetGitRepo().GetAccessToken()
 	if accessToken == "" {
-		for k, v := range req.GetEnv() {
-			if k == "REPO_TOKEN" {
-				accessToken = v
-				break
-			}
-		}
+		accessToken = req.GetEnv()[ci_runner_env.RepoTokenEnvVarName]
 	}
 	// If the token is still not set, try fetching the token from a Workflow
 	// configured for the same repo.
@@ -408,8 +434,8 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 	// TODO(Maggie): Remove REPO_TOKEN once the leaser fetches the token.
 	envOverrides := []string{
 		ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=" + apiKey.Value,
-		"REPO_USER=" + req.GetGitRepo().GetUsername(),
-		"REPO_TOKEN=" + accessToken,
+		ci_runner_env.RepoUserEnvVarName + "=" + username,
+		ci_runner_env.RepoTokenEnvVarName + "=" + accessToken,
 	}
 	return envOverrides, nil
 }

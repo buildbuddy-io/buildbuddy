@@ -493,14 +493,23 @@ func (l *writeLoop) run(ctx context.Context) {
 	chunk := []byte{}
 	volatileTail := []byte{}
 	chunkIndex := uint16(0)
+
+	// A bit of clunkiness to avoid defers in a loop, which heap-allocate.
+	delay := time.NewTimer(year)
+	var finalizeCancel func()
+	defer func() {
+		if finalizeCancel != nil {
+			finalizeCancel()
+		}
+		delay.Stop()
+	}()
 	for open {
 		timeout := false
 		lastWriteSize := 0
 		bytesFlushed := 0
 		var req *WriteRequest
 
-		delay := time.NewTimer(time.Until(flushTime))
-		defer delay.Stop()
+		delay.Reset(time.Until(flushTime))
 		// Get the write request for this iteration.
 		select {
 		case req, open = <-l.writeChannel:
@@ -537,9 +546,7 @@ func (l *writeLoop) run(ctx context.Context) {
 
 			// The context was canceled before the file was closed; extend the life of
 			// the context so we can flush the contents of the chunk and tail to disk.
-			var cancel func()
-			ctx, cancel = background.ExtendContextForFinalization(ctx, time.Second*10)
-			defer cancel()
+			ctx, finalizeCancel = background.ExtendContextForFinalization(ctx, time.Second*10)
 		}
 
 		if !open {

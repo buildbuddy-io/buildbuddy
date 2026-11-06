@@ -104,7 +104,7 @@ func TestViewFilteredTestOutput_ExplicitTargetWithFilter(t *testing.T) {
 	dl := downloadtest.New().Add(testXMLURI, []byte(testXML))
 
 	var buf bytes.Buffer
-	code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &buf, invocationID, []string{targetLabel}, "TestFoo")
+	code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &buf, invocationID, []string{targetLabel}, "TestFoo", view.FilteredTestOutputOptions{})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, code)
@@ -123,7 +123,7 @@ func TestViewFilteredTestOutput_ExplicitTargetNoFilterPrintsAllFailures(t *testi
 	dl := downloadtest.New().Add(testXMLURI, []byte(testXML))
 
 	var buf bytes.Buffer
-	code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &buf, invocationID, []string{targetLabel}, "")
+	code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &buf, invocationID, []string{targetLabel}, "", view.FilteredTestOutputOptions{})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, code)
@@ -155,7 +155,7 @@ func TestViewFilteredTestOutput_MultipleTargets(t *testing.T) {
 		Add(otherURI, []byte(otherXML))
 
 	var buf bytes.Buffer
-	code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &buf, invocationID, []string{targetLabel, otherLabel}, "")
+	code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &buf, invocationID, []string{targetLabel, otherLabel}, "", view.FilteredTestOutputOptions{})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, code)
@@ -180,7 +180,7 @@ func TestViewFilteredTestOutput_NoMatchingFailedCases(t *testing.T) {
 			dl := downloadtest.New().Add(testXMLURI, []byte(testXML))
 
 			var buf bytes.Buffer
-			code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &buf, invocationID, []string{targetLabel}, tc.pattern)
+			code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &buf, invocationID, []string{targetLabel}, tc.pattern, view.FilteredTestOutputOptions{})
 
 			require.NoError(t, err)
 			require.Equal(t, 0, code)
@@ -205,7 +205,7 @@ func TestViewFilteredTestOutput_NoTargetSpecifiedWithTestFilter(t *testing.T) {
 	dl := downloadtest.New().Add(testXMLURI, []byte(testXML))
 
 	var buf bytes.Buffer
-	code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &buf, invocationID, nil, "TestFoo")
+	code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &buf, invocationID, nil, "TestFoo", view.FilteredTestOutputOptions{})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, code)
@@ -219,7 +219,7 @@ func TestViewFilteredTestOutput_TargetWithoutTestResults(t *testing.T) {
 	dl := downloadtest.New()
 
 	var buf bytes.Buffer
-	code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &buf, invocationID, []string{targetLabel}, "")
+	code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &buf, invocationID, []string{targetLabel}, "", view.FilteredTestOutputOptions{})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, code)

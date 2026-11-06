@@ -16,28 +16,28 @@ func TestQPS(t *testing.T) {
 	require.Equal(t, float64(0), counter.Get())
 	counter.Inc()
 	require.Equal(t, float64(12), counter.Get())
-	for i := 0; i < 59; i++ {
+	for range 59 {
 		counter.Inc()
 	}
 	require.Equal(t, float64(720), counter.Get())
-	for i := 0; i < 29; i++ {
+	for range 29 {
 		counter.update()
 	}
 	require.Equal(t, float64(24), counter.Get())
 
 	// Test cases where the ring buffer is  full.
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		counter.update()
 	}
 	require.Equal(t, float64(0), counter.Get())
-	for i := 0; i < 61; i++ {
+	for range 61 {
 		counter.update()
 		counter.Inc()
 	}
 	require.Equal(t, float64(12), counter.Get())
-	for i := 0; i < 60; i++ {
+	for i := range 60 {
 		counter.update()
-		for j := 0; j < i; j++ {
+		for range i {
 			counter.Inc()
 		}
 	}
