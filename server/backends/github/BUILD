@@ -6,6 +6,7 @@ go_test(
     deps = [
         ":github",
         "//server/testutil/testenv",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )
@@ -29,6 +30,7 @@ go_library(
         "//server/util/git",
         "//server/util/log",
         "//server/util/random",
+        "//server/util/retry",
         "//server/util/status",
         "@com_github_google_go_github_v59//github",
     ],
