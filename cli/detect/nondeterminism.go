@@ -378,18 +378,10 @@ func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, invocati
 			return nil, err
 		}
 	}
-	// Resolve rc files so that headers set in a bazelrc are visible.
-	resolved, err := arg.NewBazelArgs(clonedArgs.Forwarded())
-	if err != nil {
+	if err := login.ConfigureAPIKey(clonedArgs); err != nil {
 		return nil, err
 	}
-	if err := login.ConfigureAPIKey(resolved); err != nil {
-		return nil, err
-	}
-	if err := login.ConfigureBESAPIKey(resolved); err != nil {
-		return nil, err
-	}
-	return resolved.Forwarded(), nil
+	return clonedArgs.Forwarded(), nil
 }
 
 func (c *checker) runExplainDiff(ctx context.Context, m *buildMetadata) (*sdpb.DiffResult, error) {
