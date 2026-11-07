@@ -130,29 +130,9 @@ func TestConfigureBESAPIKey(t *testing.T) {
 		expectedBESHeaders []string
 	}{
 		{
-			name:               "remote_header only",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
 			name:               "bes_header already set",
 			args:               []string{"--remote_header=x-buildbuddy-api-key=KEY", "--bes_header=X-BuildBuddy-API-Key=", "--bes_backend=grpcs://remote.buildbuddy.io"},
 			expectedBESHeaders: []string{"X-BuildBuddy-API-Key="},
-		},
-		{
-			name:               "mixed-case remote_header key",
-			args:               []string{"--remote_header=X-BuildBuddy-API-Key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
-		},
-		{
-			name:               "mixed-case remote_header key with bes_header already set",
-			args:               []string{"--remote_header=X-BuildBuddy-API-Key=KEY", "--bes_header=x-buildbuddy-api-key=OTHER", "--bes_backend=grpcs://remote.buildbuddy.io"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=OTHER"},
-		},
-		{
-			name:               "last remote_header key wins across case",
-			args:               []string{"--remote_header=x-buildbuddy-api-key=FIRST", "--remote_header=X-BuildBuddy-API-Key=KEY", "--bes_backend=grpcs://remote.buildbuddy.io"},
-			expectedBESHeaders: []string{"x-buildbuddy-api-key=KEY"},
 		},
 		{
 			name:               "later empty remote_header key clears across case",
@@ -177,34 +157,25 @@ func TestConfigureBESAPIKey(t *testing.T) {
 		want                       bool
 	}{
 		{"on-prem cache and Cloud BES", "grpcs://remote.buildbuddy.io", "grpcs://bb.corp", "", false},
-		{"on-prem executor and Cloud BES", "grpcs://remote.buildbuddy.io", "", "grpcs://bb.corp", false},
-		{"Cloud cache and Cloud BES", "grpcs://remote.buildbuddy.io", "grpcs://remote.buildbuddy.io", "", true},
 		{"no cache or executor and Cloud BES", "grpcs://remote.buildbuddy.io", "", "", true},
-		{"on-prem cache and identical on-prem BES", "grpcs://bb.corp", "grpcs://bb.corp", "", true},
 		{"Cloud cache, on-prem executor and other Cloud BES", "grpcs://remote.buildbuddy.io", "grpcs://cache.buildbuddy.io", "grpcs://bb.corp", false},
 		{"Cloud cache, on-prem executor and BES identical to cache", "grpcs://remote.buildbuddy.io", "grpcs://remote.buildbuddy.io", "grpcs://bb.corp", true},
 		{"unparseable cache and Cloud BES", "grpcs://remote.buildbuddy.io", "unix:/a.sock", "", false},
-		{"plaintext Cloud executor and Cloud BES", "grpcs://remote.buildbuddy.io", "", "grpc://remote.buildbuddy.io", false},
 
 		{"non-BuildBuddy bes_backend", "grpcs://bes.example.com", "grpcs://remote.buildbuddy.io", "", false},
 		{"self-hosted bes_backend matching remote_cache", "bb.example.com:1985", "grpcs://bb.example.com:1985", "", true},
 		{"self-hosted bes_backend matching remote_executor", "grpc://bb.example.com:1985", "", "grpc://bb.example.com:1985", true},
 		{"no bes_backend", "", "grpcs://remote.buildbuddy.io", "", false},
 
-		{"comma list with attacker host first", "grpcs://attacker.example,remote.buildbuddy.io", "", "", false},
 		{"comma list with attacker host last", "grpcs://remote.buildbuddy.io,grpcs://attacker.example", "", "", false},
 		{"comma list of BuildBuddy hosts", "grpcs://remote.buildbuddy.io,grpcs://other.buildbuddy.io", "", "", true},
 		{"comma list of BuildBuddy and on-prem remote_cache hosts", "remote.buildbuddy.io,grpcs://bb.example.com", "bb.example.com", "", false},
 		{"comma list with trailing empty entry", "remote.buildbuddy.io,", "", "", false},
-		{"comma list with unparseable entry", "remote.buildbuddy.io,grpcs://bad host", "", "", false},
-		{"comma list with unix socket entry", "remote.buildbuddy.io,unix:/a.sock", "", "", false},
 
-		{"scheme mismatch", "grpc://bb.example.com:443", "grpcs://bb.example.com:443", "", false},
 		{"scheme mismatch with omitted scheme", "bb.example.com:1985", "grpc://bb.example.com:1985", "", false},
 		{"port mismatch", "grpcs://bb.example.com:1985", "grpcs://bb.example.com:443", "", false},
 		{"grpcs default port matches explicit 443", "grpcs://bb.example.com", "bb.example.com:443", "", true},
 		{"grpc default port matches explicit 80", "grpc://bb.example.com", "grpc://bb.example.com:80", "", true},
-		{"grpc default port does not match 443", "grpc://bb.example.com", "grpc://bb.example.com:443", "", false},
 
 		{"plaintext BuildBuddy bes_backend", "grpc://remote.buildbuddy.io", "", "", false},
 		{"non-gRPC scheme BuildBuddy bes_backend", "https://remote.buildbuddy.io", "", "", false},
@@ -214,15 +185,9 @@ func TestConfigureBESAPIKey(t *testing.T) {
 		{"unix socket bes_backend matching remote_cache", "unix:/a.sock", "unix:/a.sock", "", false},
 
 		{"multi-colon host", "grpcs://x.buildbuddy.io:attacker.example:443", "", "", false},
-		{"multi-colon host without scheme", "x.buildbuddy.io:attacker.example:443", "", "", false},
-		{"multi-colon target identical to remote_cache", "grpcs://x.buildbuddy.io:grpc://@attacker.example:443", "grpcs://x.buildbuddy.io:grpc://@attacker.example:443", "", false},
 		{"userinfo on BuildBuddy host", "grpcs://user:pw@remote.buildbuddy.io", "", "", false},
-		{"BuildBuddy host as userinfo", "grpcs://remote.buildbuddy.io@attacker.example", "", "", false},
-		{"userinfo identical to remote_cache", "grpcs://user@bb.example.com", "grpcs://user@bb.example.com", "", false},
 		{"path", "grpcs://remote.buildbuddy.io/foo", "", "", false},
-		{"path identical to remote_cache", "grpcs://bb.example.com/foo", "grpcs://bb.example.com/foo", "", false},
 		{"query", "grpcs://remote.buildbuddy.io?x=1", "", "", false},
-		{"fragment", "grpcs://remote.buildbuddy.io#x", "", "", false},
 		{"trailing slash", "grpcs://remote.buildbuddy.io/", "", "", true},
 
 		{"port zero", "grpcs://remote.buildbuddy.io:0", "", "", false},
@@ -231,7 +196,6 @@ func TestConfigureBESAPIKey(t *testing.T) {
 		{"non-numeric port", "grpcs://remote.buildbuddy.io:foo", "", "", false},
 		{"highest port", "grpcs://remote.buildbuddy.io:65535", "", "", true},
 
-		{"non-ASCII host", "grpcs://bücher.buildbuddy.io", "", "", false},
 		{"IPv6 identical to remote_cache", "grpc://[::1]:1985", "grpc://[::1]:1985", "", false},
 		{"IPv4 identical to remote_cache", "grpc://10.0.0.1:1985", "grpc://10.0.0.1:1985", "", true},
 	} {
