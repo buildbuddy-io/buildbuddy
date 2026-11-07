@@ -143,13 +143,9 @@ func TestAsynchronousModeForwardsOnlyAPIKey(t *testing.T) {
 		rootCtx: t.Context(),
 	}
 
-	// Simulate a request ctx with outgoing metadata (the API key, as added by
-	// the CLI sidecar, plus an unrelated internal header) and ctx values that
-	// the gRPC client interceptors would turn into headers (as on an
-	// authenticated app server). The ctx has already
-	// been canceled because the request handler returned. Both upstream calls
-	// are made after the cancellation, so the ctx recorded by the fake shows
-	// whether they outlive the request.
+	// The request ctx carries the API key plus headers and values that must not
+	// be forwarded, and is already canceled because the handler returned, so
+	// the ctx recorded by the fake shows whether the calls outlive the request.
 	reqCtx := metadata.AppendToOutgoingContext(t.Context(),
 		"x-buildbuddy-api-key", "test-api-key",
 		"x-buildbuddy-bypass-ip-rules", "true")
