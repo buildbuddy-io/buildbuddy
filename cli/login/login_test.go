@@ -2,6 +2,7 @@ package login
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -124,6 +125,91 @@ func TestAPIKeyDiscovery(t *testing.T) {
 			require.NoError(t, err)
 			err = ConfigureAPIKey(args)
 
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedArgs, args.Resolved())
+		})
+	}
+}
+
+func TestConfigureCredentialHelper(t *testing.T) {
+	helper := filepath.Join(t.TempDir(), "helper")
+	require.NoError(t, os.WriteFile(helper, []byte("#!/bin/sh\n"), 0o755))
+
+	for _, testCase := range []struct {
+		name             string
+		credentialHelper string
+		args             []string
+		expectedArgs     []string
+		expectedErr      string
+	}{
+		{
+			name:         "no helper configured",
+			args:         []string{"build", "--bes_backend=grpcs://bes.example.com", "//foo:bar"},
+			expectedArgs: []string{"--ignore_all_rc_files", "build", "--bes_backend=grpcs://bes.example.com", "//foo:bar"},
+		},
+		{
+			name:             "unsupported command",
+			credentialHelper: helper,
+			args:             []string{"version"},
+			expectedArgs:     []string{"--ignore_all_rc_files", "version"},
+		},
+		{
+			name:             "one helper per host",
+			credentialHelper: helper,
+			args:             []string{"build", "--bes_backend=grpcs://remote.example.com", "--remote_cache=remote.example.com", "//foo:bar"},
+			expectedArgs: []string{
+				"--ignore_all_rc_files",
+				"build",
+				"--bes_backend=grpcs://remote.example.com",
+				"--remote_cache=remote.example.com",
+				"--credential_helper=remote.example.com=" + helper,
+				"//foo:bar",
+			},
+		},
+		{
+			name:             "skips hostless targets",
+			credentialHelper: helper,
+			args:             []string{"build", "--bes_backend=grpcs://bes.example.com:443", "--remote_executor=unix:///tmp/executor.sock", "//foo:bar"},
+			expectedArgs: []string{
+				"--ignore_all_rc_files",
+				"build",
+				"--bes_backend=grpcs://bes.example.com:443",
+				"--remote_executor=unix:///tmp/executor.sock",
+				"--credential_helper=bes.example.com=" + helper,
+				"//foo:bar",
+			},
+		},
+		{
+			name:             "keeps a scope the user configured",
+			credentialHelper: helper,
+			args:             []string{"build", "--bes_backend=grpcs://bes.example.com", "--remote_cache=grpcs://cache.example.com", "--credential_helper=bes.example.com=/usr/bin/mine", "//foo:bar"},
+			expectedArgs: []string{
+				"--ignore_all_rc_files",
+				"build",
+				"--bes_backend=grpcs://bes.example.com",
+				"--remote_cache=grpcs://cache.example.com",
+				"--credential_helper=bes.example.com=/usr/bin/mine",
+				"--credential_helper=cache.example.com=" + helper,
+				"//foo:bar",
+			},
+		},
+		{
+			name:             "helper not found",
+			credentialHelper: filepath.Join(t.TempDir(), "missing"),
+			args:             []string{"build", "--bes_backend=grpcs://bes.example.com", "//foo:bar"},
+			expectedErr:      "failed to find credential helper",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv(credentialhelper.EnvVar, testCase.credentialHelper)
+			args, err := arg.NewBazelArgs(testCase.args)
+			require.NoError(t, err)
+
+			err = ConfigureCredentialHelper(args)
+			if testCase.expectedErr != "" {
+				require.ErrorContains(t, err, testCase.expectedErr)
+				return
+			}
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedArgs, args.Resolved())
 		})

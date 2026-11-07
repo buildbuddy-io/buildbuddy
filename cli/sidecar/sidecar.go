@@ -32,6 +32,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/config"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
@@ -123,13 +124,14 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 	}
 	args = append(args, extraArgs...)
 
-	// A sidecar instance is identified by the args passed to it as well as its
-	// version.
+	// A sidecar instance is identified by the args passed to it, its version,
+	// and the credential helper it inherits from the environment, so that
+	// changing the helper doesn't reuse a sidecar running without it.
 	//
 	// Note: During development, the version string will be "unknown".
 	// To get the sidecar to restart, you can shut it down manually with
 	// `kill -INT <sidecar_pid>`, then re-run the CLI.
-	sidecarID := hashStrings(append([]string{version.String()}, args...))
+	sidecarID := hashStrings(append([]string{version.String(), os.Getenv(credentialhelper.EnvVar)}, args...))
 	sockName := sockPrefix + sidecarID + ".sock"
 	sockPath := filepath.Join(os.TempDir(), sockName)
 

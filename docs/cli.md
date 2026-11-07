@@ -86,6 +86,12 @@ one, and bb no longer prompts you to `bb login`. This lets you reach
 BuildBuddy through a proxy that accepts your own identity provider's tokens.
 The helper's response is reused until it expires.
 
+When bb runs Bazel, it also passes the helper to Bazel with
+`--credential_helper`, scoped to the hosts of `--bes_backend`,
+`--remote_cache` and `--remote_executor`, so you don't need to configure it
+in your `.bazelrc` too. A host you already set a `--credential_helper` for is
+left alone.
+
 ### Configuration
 
 You can save BuildBuddy CLI options in a [`.bbrc` file](/docs/cli-config). It

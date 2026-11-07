@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +49,22 @@ func Enabled() bool {
 
 func helperPath() string {
 	return strings.TrimSpace(os.Getenv(EnvVar))
+}
+
+// AbsPath returns the configured helper as an absolute path, so that Bazel,
+// which runs from the workspace root rather than bb's working directory, runs
+// the same executable.
+func AbsPath() (string, error) {
+	helper := helperPath()
+	resolved, err := exec.LookPath(helper)
+	if err != nil {
+		return "", fmt.Errorf("failed to find credential helper %q: %w", helper, err)
+	}
+	abs, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve credential helper %q: %w", helper, err)
+	}
+	return abs, nil
 }
 
 // Headers returns the headers the credential helper supplies for uri. The

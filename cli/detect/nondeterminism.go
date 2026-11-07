@@ -367,6 +367,9 @@ func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, invocati
 	if err := login.ConfigureAPIKey(clonedArgs); err != nil {
 		return nil, err
 	}
+	if err := login.ConfigureCredentialHelper(clonedArgs); err != nil {
+		return nil, err
+	}
 	return clonedArgs.Forwarded(), nil
 }
 
