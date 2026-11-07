@@ -391,9 +391,7 @@ func ConfigureAPIKey(args *arg.BazelArgs) error {
 // line. It only does so when every comma-separated BES backend either has the
 // same scheme, host and port as the remote cache or executor, or is BuildBuddy
 // over TLS while any set remote cache and executor are too, so the key isn't
-// sent to other BES services or an on-prem key to BuildBuddy Cloud. Targets that
-// parseGRPCTarget doesn't accept never match or count as BuildBuddy, and header
-// names are case-insensitive.
+// sent to other BES services or an on-prem key to BuildBuddy Cloud.
 func ConfigureBESAPIKey(args *arg.BazelArgs) error {
 	if !isSupportedCommand(args.GetCommand()) {
 		return nil
@@ -437,16 +435,14 @@ type grpcTarget struct {
 	scheme, host, port string
 }
 
-// isBuildBuddy returns whether the target is BuildBuddy over TLS.
 func (t grpcTarget) isBuildBuddy() bool {
 	return t.scheme == "grpcs" && (t.host == "buildbuddy.io" || strings.HasSuffix(t.host, ".buildbuddy.io"))
 }
 
 // parseGRPCTarget parses a Bazel gRPC target, which may omit the scheme (meaning
 // grpcs) and port (meaning gRPC's default for the scheme: 443 for grpcs, 80 for
-// grpc). It returns the zero value for anything but grpcTargetRegexp with a port
-// from 1 to 65535, including empty and non-gRPC targets, unix sockets, IPv6
-// literals, userinfo, paths, queries and fragments.
+// grpc). It returns the zero value for anything else, i.e. targets
+// grpcTargetRegexp doesn't match or with a port outside 1-65535.
 func parseGRPCTarget(target string) grpcTarget {
 	if strings.HasPrefix(target, "unix:") {
 		return grpcTarget{}
