@@ -65,11 +65,14 @@ bazel_integration_test(
 
 bazel_integration_test(
     name = "buildbuddy_dev_qa_test",
+    # The nested `test //...` can outlast the default "long" timeout (900s). The
+    # GitHub job's 30-minute timeout still bounds it.
+    timeout = "eternal",
     bazel_binaries = bazel_binaries,
     bazel_version = "9.3.1",
     env = {
-        "QA_TARBALL_URL": "https://github.com/buildbuddy-io/buildbuddy/tarball/e2d8ef9f4e581d9865f6cbbadf6123b3b4e48c0e",
-        "QA_STRIP_PREFIX": "buildbuddy-io-buildbuddy-e2d8ef9",
+        "QA_TARBALL_URL": "https://github.com/buildbuddy-io/buildbuddy/tarball/e79378aab31f690ed0315e5f502e39b1db410e9a",
+        "QA_STRIP_PREFIX": "buildbuddy-io-buildbuddy-e79378a",
         "QA_BAZEL_COMMAND": "test //...",
         "INJECT_TOOLCHAIN": "false",
         "UPDATE_LOCKFILE": "false",

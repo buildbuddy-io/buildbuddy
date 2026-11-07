@@ -159,6 +159,18 @@ func TestGetCustomResourceParentMap(t *testing.T) {
 	}, parentMap)
 }
 
+func TestGetAllocatedCustomResources_CanonicalizesNames(t *testing.T) {
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "FooBar", Value: 1000},
+	})
+
+	allocated, err := resources.GetAllocatedCustomResources()
+	require.NoError(t, err)
+	require.Len(t, allocated, 1)
+	require.Equal(t, "foobar", allocated[0].GetName())
+	require.Equal(t, float32(1000), allocated[0].GetValue())
+}
+
 func TestGetCustomResourceParentMap_Invalid(t *testing.T) {
 	for _, test := range []struct {
 		name      string

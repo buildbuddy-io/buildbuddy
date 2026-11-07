@@ -3,6 +3,7 @@ syntax = "proto3";
 import "google/protobuf/timestamp.proto";
 import "proto/acl.proto";
 import "proto/context.proto";
+import "proto/profile.proto";
 import "proto/upgrade.proto";
 
 package cache_proxy;
@@ -78,6 +79,9 @@ message CacheProxyDetails {
 
   // Statistics about this cache proxy's performance.
   Statistics statistics = 3;
+
+  // The profile requested via GetCacheProxyRequest.get_profile.
+  profile.Profile profile = 4;
 }
 
 // Statistics about this cache proxy's performance. Cumulative over the
@@ -209,6 +213,10 @@ message GetCacheProxyRequest {
 
   // Whether to include the cache proxy's statistics in the response.
   bool include_statistics = 5;
+
+  // If set, the cache proxy collects the requested profile and returns it in
+  // details.profile. Requires server admin permissions.
+  profile.GetProfileRequest get_profile = 6;
 }
 
 message GetCacheProxyResponse {

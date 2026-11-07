@@ -423,6 +423,9 @@ type CacheSnapshotOptions struct {
 	//
 	// The snapshot write policy determines whether the snapshot is actually written.
 	EligibleToWriteUniversalManifest bool
+
+	// GroupID is the group that owns the snapshot.
+	GroupID string
 }
 
 type UnpackedSnapshot struct {
@@ -915,7 +918,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				}
 			}
 			out.Digest = d
-			if _, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.CacheSnapshotRemotely, opts.CacheSnapshotLocally, d, key.InstanceName, filePath, fileType); err != nil {
+			if _, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.CacheSnapshotRemotely, opts.CacheSnapshotLocally, d, key.InstanceName, filePath, fileType, opts.GroupID); err != nil {
 				return err
 			}
 			return nil
@@ -1429,7 +1432,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			}
 
 			path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, dirty))
-			bytesWritten, err := snaputil.Cache(uploadCtx, l.env.GetFileCache(), l.env.GetByteStreamClient(), shouldCacheRemotely, shouldCacheLocally, chunkDigest, remoteInstanceName, path, name)
+			bytesWritten, err := snaputil.Cache(uploadCtx, l.env.GetFileCache(), l.env.GetByteStreamClient(), shouldCacheRemotely, shouldCacheLocally, chunkDigest, remoteInstanceName, path, name, cacheOpts.GroupID)
 			if err != nil {
 				return status.WrapErrorf(err, "write chunk %d/%d to cache", i, len(chunks))
 			}
@@ -1456,7 +1459,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err != nil {
 		return nil, err
 	}
-	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.CacheSnapshotRemotely, cacheOpts.CacheSnapshotLocally, treeDigest, remoteInstanceName, treeBytes, "snapshot_tree"); err != nil {
+	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.CacheSnapshotRemotely, cacheOpts.CacheSnapshotLocally, treeDigest, remoteInstanceName, treeBytes, "snapshot_tree", cacheOpts.GroupID); err != nil {
 		return nil, err
 	}
 

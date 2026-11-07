@@ -333,6 +333,43 @@ func TestCleanupStopsGoroutines(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond)
 }
 
+func TestCleanupWhileReceivingPackets(t *testing.T) {
+	testnetworking.Setup(t)
+	ctx := context.Background()
+	for range 10 {
+		n, err := NewContainerNetwork(ctx, false /*=enableIPv6*/)
+		require.NoError(t, err)
+		var conn net.Conn
+		require.NoError(t, inNamespace(n.netns, func() error {
+			conn, err = net.Dial("udp", "10.1.2.3:9")
+			return err
+		}))
+		// Send a burst of packets into the stack.
+		go func() {
+			defer conn.Close()
+			for range 10_000 {
+				conn.Write([]byte("hello"))
+			}
+		}()
+
+		// Wait for the stack to start receiving packets.
+		require.Eventually(t, func() bool {
+			return n.stack.Stats().IP.PacketsReceived.Value() > 0
+		}, 5*time.Second, time.Millisecond)
+
+		// While the stack is receiving packets, clean up concurrently.
+		// This should eventually succeed.
+		cleanedUp := make(chan error, 1)
+		go func() { cleanedUp <- n.Cleanup(ctx) }()
+		select {
+		case err := <-cleanedUp:
+			require.NoError(t, err)
+		case <-time.After(10 * time.Second):
+			t.Fatal("Cleanup did not complete within 10s")
+		}
+	}
+}
+
 func TestOneWayUDPFlowStaysOpen(t *testing.T) {
 	testnetworking.Setup(t)
 	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})

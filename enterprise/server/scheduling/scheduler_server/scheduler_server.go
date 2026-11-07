@@ -1702,7 +1702,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 		if groupID, ok := groupIDValue.(string); ok {
 			override.GroupID = groupID
 		} else {
-			alert.CtxUnexpectedEvent(ctx, "%s: 'group_id' is not a string: %v", experimentName, groupIDValue)
+			alert.CtxUnexpectedEvent(ctx, "pool_override_invalid_group_id", "%s: 'group_id' is not a string: %v", experimentName, groupIDValue)
 			return nil
 		}
 	}
@@ -1710,7 +1710,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 		if pool, ok := poolValue.(string); ok {
 			override.Name = pool
 		} else {
-			alert.CtxUnexpectedEvent(ctx, "%s: 'pool' is not a string: %v", experimentName, poolValue)
+			alert.CtxUnexpectedEvent(ctx, "pool_override_invalid_pool", "%s: 'pool' is not a string: %v", experimentName, poolValue)
 			return nil
 		}
 	}

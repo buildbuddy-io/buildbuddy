@@ -2,6 +2,7 @@ package login
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -35,8 +36,21 @@ const (
 	apiKeyRepoSetting = "api-key"
 	apiKeyHeaderName  = "x-buildbuddy-api-key"
 	apiKeyHeader      = "remote_header=" + apiKeyHeaderName
-	DefaultApiTarget  = "grpcs://remote.buildbuddy.io"
-	DefaultHTTPTarget = "https://app.buildbuddy.io"
+
+	// APITargetEnvVar overrides DefaultApiTarget, e.g. to reach BuildBuddy
+	// through a proxy.
+	APITargetEnvVar = "BUILDBUDDY_API_TARGET"
+	// HTTPTargetEnvVar overrides DefaultHTTPTarget.
+	HTTPTargetEnvVar = "BUILDBUDDY_HTTP_TARGET"
+)
+
+var (
+	// DefaultApiTarget is the gRPC target commands use unless one is passed
+	// explicitly.
+	DefaultApiTarget = cmp.Or(os.Getenv(APITargetEnvVar), "grpcs://remote.buildbuddy.io")
+	// DefaultHTTPTarget is the web URL commands use unless one is passed
+	// explicitly.
+	DefaultHTTPTarget = cmp.Or(os.Getenv(HTTPTargetEnvVar), "https://app.buildbuddy.io")
 )
 
 var (

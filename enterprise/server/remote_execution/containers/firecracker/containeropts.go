@@ -88,4 +88,7 @@ type ContainerOpts struct {
 	// UseOCIFetcher enables using the OCI fetcher service for pulling container
 	// images instead of pulling directly from the registry.
 	UseOCIFetcher bool
+
+	// GroupID is the group of the task that the container is created for.
+	GroupID string
 }

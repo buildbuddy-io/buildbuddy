@@ -28,7 +28,7 @@ var (
 	flags = flag.NewFlagSet("view", flag.ContinueOnError)
 	Flags = flags
 
-	apiTarget   = flags.String("target", "remote.buildbuddy.io", "BuildBuddy gRPC target")
+	apiTarget   = flags.String("target", login.DefaultApiTarget, "BuildBuddy gRPC target")
 	lines       = flags.Int("lines", 100_000, "Minimum number of lines to fetch")
 	testFilter  = flags.String("test_filter", "", "If set, print only the output of matching failed test cases instead of the full build logs. The value is a test-name pattern (regular expression), matching bazel's --test_filter.")
 	errorFilter = flags.Bool("errors", false, "Print only the first build error instead of the full build logs.")
