@@ -2,6 +2,7 @@ package region
 
 import (
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -43,21 +44,51 @@ func Protos() []*cfgpb.Region {
 	return protos
 }
 
+// canonicalOrigin validates an HTTP origin and removes its default port.
+// Configured server URLs may include a trailing slash; browser Origins may not.
+func canonicalOrigin(server string, allowTrailingSlash bool) string {
+	if strings.ContainsAny(server, "?#") {
+		return ""
+	}
+	u, err := url.Parse(server)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Opaque != "" {
+		return ""
+	}
+	if u.Path != "" && !(allowTrailingSlash && u.Path == "/") {
+		return ""
+	}
+	host := strings.ToLower(u.Host)
+	if strings.HasSuffix(host, ":") {
+		return ""
+	}
+	if (u.Scheme == "https" && u.Port() == "443") || (u.Scheme == "http" && u.Port() == "80") {
+		host = strings.TrimSuffix(host, ":"+u.Port())
+	}
+	return u.Scheme + "://" + host
+}
+
 func isRegionalServer(regions []Region, server string) bool {
+	origin := canonicalOrigin(server, false)
+	if origin == "" {
+		return false
+	}
 	for _, region := range regions {
-		if region.Server == server {
+		if configuredOrigin := canonicalOrigin(region.Server, true); configuredOrigin != "" && configuredOrigin == origin {
 			return true
 		}
-		chunks := strings.Split(region.Subdomains, "*")
+		// Match canonical origins so configured wildcard default ports agree
+		// with the Origin header emitted by browsers. Invalid patterns stay
+		// invalid rather than being reduced to their host.
+		chunks := strings.Split(canonicalOrigin(region.Subdomains, true), "*")
 		// Only one wildcard is allowed for the subdomain.
 		if len(chunks) != 2 {
 			continue
 		}
 		// Trim the http:// prefix bit and the top level domain suffix.
-		if !strings.HasPrefix(server, chunks[0]) || !strings.HasSuffix(server, chunks[1]) {
+		if !strings.HasPrefix(origin, chunks[0]) || !strings.HasSuffix(origin, chunks[1]) {
 			continue
 		}
-		subdomain := strings.TrimSuffix(strings.TrimPrefix(server, chunks[0]), chunks[1])
+		subdomain := strings.TrimSuffix(strings.TrimPrefix(origin, chunks[0]), chunks[1])
 		// Make sure the subdomain doesn't have any non alphanumeric or dash characters.
 		if subdomainRegex.MatchString(subdomain) {
 			return true
@@ -74,11 +105,14 @@ func CORS(next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// We only need CORS for POST and OPTIONS requests.
-		if r.Method != "POST" && r.Method != "OPTIONS" {
+		// Support RPCs and authenticated file downloads.
+		if r.Method != "POST" && r.Method != "GET" && r.Method != "HEAD" && r.Method != "OPTIONS" {
 			next.ServeHTTP(w, r)
 			return
 		}
+
+		// Responses vary by Origin, including when the origin is not allowed.
+		w.Header().Add("Vary", "Origin")
 
 		// If we're not dealing with a regional server, we don't have to set any CORS headers.
 		if r.Header.Get("Origin") == "" || !isRegionalServer(*regions, r.Header.Get("Origin")) {
@@ -92,6 +126,8 @@ func CORS(next http.Handler) http.Handler {
 
 		// If it's an OPTIONS request, we can exit early.
 		if r.Method == "OPTIONS" {
+			w.Header().Add("Vary", "Access-Control-Request-Method")
+			w.Header().Add("Vary", "Access-Control-Request-Headers")
 			w.Header().Set("Access-Control-Allow-Methods", r.Header.Get("Access-Control-Request-Method"))
 			w.Header().Set("Access-Control-Allow-Headers", r.Header.Get("Access-Control-Request-Headers"))
 			w.WriteHeader(http.StatusOK)
