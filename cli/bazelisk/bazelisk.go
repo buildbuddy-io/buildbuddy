@@ -38,7 +38,11 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 	if err := setBazelVersion(); err != nil {
 		return -1, fmt.Errorf("failed to set bazel version: %s", err)
 	}
-	repos := createRepositories(core.MakeDefaultConfig())
+	bazeliskConf := core.MakeDefaultConfig()
+	if v := getEnvVersion(); strings.HasPrefix(v, bbFork+"/") && (bazeliskConf.Get(core.BaseURLEnv) != "" || bazeliskConf.Get(core.FormatURLEnv) != "") {
+		log.Warnf("%s or %s is set, so the signature of %s won't be checked if it is downloaded.", core.BaseURLEnv, core.FormatURLEnv, v)
+	}
+	repos := createRepositories(bazeliskConf)
 
 	if opts.Stdout != nil || opts.Stderr != nil {
 		var errRedirect **os.File
@@ -139,7 +143,8 @@ func createRepositories(bazeliskConf config.Config) *core.Repositories {
 	config := core.MakeDefaultConfig()
 	gitHub := repositories.CreateGitHubRepo(config.Get("BAZELISK_GITHUB_TOKEN"))
 	// Fetch LTS releases & candidates, rolling releases and Bazel-at-commits from GCS, forks from GitHub.
-	return core.CreateRepositories(gcs, gitHub, gcs, gcs, true)
+	// bb releases from the buildbuddy-io fork are checked against their signature.
+	return core.CreateRepositories(gcs, newSignedForkRepo(gitHub), gcs, gcs, true)
 }
 
 func getBazeliskHome(bazeliskConf config.Config) (string, error) {

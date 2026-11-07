@@ -10,6 +10,7 @@ go_library(
         "//cli/arg",
         "//cli/log",
         "//cli/login",
+        "//cli/signedrelease",
         "//cli/ssh",
         "//cli/version",
         "//proto:buildbuddy_service_go_proto",
