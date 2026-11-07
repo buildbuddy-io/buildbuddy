@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/githubutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -279,7 +280,7 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 		sep.setRepoUrl(url, priority)
 	}
 	if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
-		sep.setRepoUrl(url, priority)
+		sep.setRepoUrl(githubRepositoryURL(url), priority)
 	}
 	if branch, ok := envVarMap["TRAVIS_BRANCH"]; ok && branch != "" {
 		sep.setBranchName(branch, priority)
@@ -369,6 +370,22 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 	if val, ok := options["remote_upload_local_results"]; ok && val == "1" {
 		sep.invocation.UploadLocalResultsEnabled = true
 	}
+}
+
+func githubRepositoryURL(repository string) string {
+	repository = strings.TrimSpace(repository)
+	if repository == "" {
+		return repository
+	}
+	if githubRepositoryHasHost(repository) {
+		return repository
+	}
+	return "https://" + githubutil.Host() + "/" + strings.TrimPrefix(repository, "/")
+}
+
+func githubRepositoryHasHost(repository string) bool {
+	firstSegment, _, _ := strings.Cut(repository, "/")
+	return strings.Contains(repository, "://") || strings.Contains(repository, "@") || strings.ContainsAny(firstSegment, ".:")
 }
 
 func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus) {
