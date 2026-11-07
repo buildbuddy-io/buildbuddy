@@ -58,6 +58,18 @@ func TestAddBazelFlags_DoesNotMutateBaseArgs(t *testing.T) {
 	assert.Equal(t, []string{"build", "//foo:bar"}, baseArgs.Forwarded())
 }
 
+func TestAddBazelFlags_BESHeaderFromBazelrc(t *testing.T) {
+	t.Setenv("BUILDBUDDY_API_KEY", "K2")
+	bazelrc := filepath.Join(t.TempDir(), ".bazelrc")
+	require.NoError(t, os.WriteFile(bazelrc, []byte("common --bes_header=x-buildbuddy-api-key=K1\n"), 0644))
+
+	args, err := addBazelFlags(bazelArgsForTest(t, "--bazelrc="+bazelrc, "build", "//foo:bar"), "/tmp/output-base", "/tmp/log.pb.zst", "test-invocation-id", defaultBESBackend, defaultBESResultsURL)
+	require.NoError(t, err)
+
+	assert.Contains(t, args, "--remote_header=x-buildbuddy-api-key=K2")
+	assert.Empty(t, arg.GetMulti(args, "bes_header"))
+}
+
 func TestParseBazelCommand(t *testing.T) {
 	bazelArgs, err := parseBazelCommand(`--bazelrc=/tmp/bazelrc test //foo:bar --test_output=errors`)
 	require.NoError(t, err)
