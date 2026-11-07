@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
@@ -23,6 +24,7 @@ func TestAPIKeyDiscovery(t *testing.T) {
 		envAPIKey         string
 		repoAPIKey        string
 		expectedAPIKey    string
+		credentialHelper  string
 		expectedArgs      []string
 		expectedGetAPIErr bool
 	}{
@@ -65,6 +67,23 @@ func TestAPIKeyDiscovery(t *testing.T) {
 			expectedArgs:      []string{"--ignore_all_rc_files", "build", "//foo:bar"},
 			expectedGetAPIErr: true,
 		},
+		{
+			name:             "credential helper and no API key",
+			credentialHelper: "/path/to/helper",
+			expectedArgs:     []string{"--ignore_all_rc_files", "build", "//foo:bar"},
+		},
+		{
+			name:             "credential helper and env API key",
+			envAPIKey:        "env-api-key",
+			credentialHelper: "/path/to/helper",
+			expectedAPIKey:   "env-api-key",
+			expectedArgs: []string{
+				"--ignore_all_rc_files",
+				"build",
+				"--remote_header=x-buildbuddy-api-key=env-api-key",
+				"//foo:bar",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			homeDir := t.TempDir()
@@ -85,6 +104,7 @@ func TestAPIKeyDiscovery(t *testing.T) {
 			// Simulate either CI-provided credentials, repo-local config, or both.
 			setNonTTYStdin(t)
 			t.Setenv("BUILDBUDDY_API_KEY", testCase.envAPIKey)
+			t.Setenv(credentialhelper.EnvVar, testCase.credentialHelper)
 			if testCase.repoAPIKey != "" {
 				require.NoError(t, storage.WriteRepoConfig(apiKeyRepoSetting, testCase.repoAPIKey))
 			}

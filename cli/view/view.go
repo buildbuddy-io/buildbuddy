@@ -95,7 +95,7 @@ func HandleView(args []string) (exitCode int, err error) {
 	}
 
 	apiKey, err := login.GetAPIKey()
-	if (err != nil || apiKey == "") && !credentialhelper.Enabled() {
+	if err != nil {
 		return -1, fmt.Errorf("not logged in: %w", err)
 	}
 

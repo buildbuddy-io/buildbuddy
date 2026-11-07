@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/config"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/devnull"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -172,7 +173,7 @@ func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 
 func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	cacheTarget := normalizeGrpcTarget(*remoteCache)
-	conn, err := grpc_client.DialSimple(cacheTarget)
+	conn, err := grpc_client.DialSimple(cacheTarget, credentialhelper.DialOptions(cacheTarget)...)
 	if err != nil {
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}

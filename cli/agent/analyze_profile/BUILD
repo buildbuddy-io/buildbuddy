@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//cli/agent/agentflags",
         "//cli/agent/analyze_profile/ztracing",
+        "//cli/credentialhelper",
         "//cli/log",
         "//cli/terminal",
         "//cli/util/agent",

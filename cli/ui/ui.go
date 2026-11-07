@@ -50,7 +50,7 @@ func HandleUI(args []string) (int, error) {
 	}
 
 	apiKey, err := login.GetAPIKey()
-	if (err != nil || apiKey == "") && !credentialhelper.Enabled() {
+	if err != nil {
 		return -1, fmt.Errorf("not logged in; run `bb login` first: %w", err)
 	}
 

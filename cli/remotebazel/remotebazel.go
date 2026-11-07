@@ -21,6 +21,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
@@ -41,7 +42,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
-	"google.golang.org/grpc/metadata"
 
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -1075,7 +1075,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	conn, err := grpc_client.DialSimple(opts.Server)
+	conn, err := grpc_client.DialSimple(opts.Server, credentialhelper.DialOptions(opts.Server)...)
 	if err != nil {
 		return 1, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
 	}
@@ -1261,7 +1261,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	exitCode := int(executeResponse.GetResult().GetExitCode())
 	if opts.FetchOutputs && exitCode == 0 {
 		if childIID != "" {
-			conn, err := grpc_client.DialSimple(opts.Server)
+			conn, err := grpc_client.DialSimple(opts.Server, credentialhelper.DialOptions(opts.Server)...)
 			if err != nil {
 				return 1, fmt.Errorf("dial sidecar: %w", err)
 			}
@@ -1556,7 +1556,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 			return 1, fmt.Errorf("get api key: %w", err)
 		}
 	}
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+	ctx = login.WithAPIKey(ctx, apiKey)
 
 	exitCode, err := Run(ctx, RunOpts{
 		Server:                   runner,

@@ -67,7 +67,7 @@ The exit code indicates the result of the check:
 )
 
 func authenticate(apiKey string) error {
-	conn, err := grpc_client.DialSimple(*apiTarget)
+	conn, err := grpc_client.DialSimple(*apiTarget, credentialhelper.DialOptions(*apiTarget)...)
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", *apiTarget, err)
 	}
@@ -407,7 +407,9 @@ func isSupportedCommand(command string) bool {
 // GetAPIKey attempts to read an API key from the
 // BUILDBUDDY_API_KEY environment variable and, if not set, from the buildbuddy
 // config set at the key `buildbuddy.api-key` in .git/config. If neither is set,
-// and we're running in a tty, this will start the login flow.
+// and we're running in a tty, this will start the login flow. When a credential
+// helper is configured, a missing API key is not an error: it returns an empty
+// key and the helper's headers authenticate requests instead.
 func GetAPIKey() (string, error) {
 	return getAPIKey(true /*=interactive*/)
 }
@@ -429,10 +431,13 @@ func getAPIKey(interactive bool) (string, error) {
 		debugAPIKey(".git/config buildbuddy.api-key", apiKey)
 		return apiKey, nil
 	}
+	if credentialhelper.Enabled() {
+		log.Debugf("No API key set; using credentials from %s", credentialhelper.EnvVar)
+		return "", nil
+	}
 	// If an API key is not set, and we're running in a terminal, start the
-	// login flow. A configured credential helper supplies credentials instead,
-	// so there is nothing to log in to.
-	if interactive && !credentialhelper.Enabled() && terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
+	// login flow.
+	if interactive && terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
 		if _, err = HandleLogin([]string{}); err != nil {
 			return "", status.WrapError(err, "handle login")
 		}
@@ -448,6 +453,16 @@ func getAPIKey(interactive bool) (string, error) {
 	} else {
 		return "", status.NotFoundErrorf("API key not set")
 	}
+}
+
+// WithAPIKey returns ctx with apiKey attached as outgoing metadata. It returns
+// ctx unchanged when apiKey is empty, which GetAPIKey returns when a credential
+// helper authenticates requests instead.
+func WithAPIKey(ctx context.Context, apiKey string) context.Context {
+	if apiKey == "" {
+		return ctx
+	}
+	return metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 }
 
 func debugAPIKey(source, apiKey string) {

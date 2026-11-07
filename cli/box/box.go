@@ -17,6 +17,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/ssh"
@@ -226,11 +227,11 @@ func handleCreate(args []string) (int, error) {
 	}
 
 	ctx := context.Background()
-	gwCtx := metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
+	gwCtx := login.WithAPIKey(ctx, key)
 
 	// The gateway is dialed up front for readiness detection below, and to
 	// check whether this box is already running.
-	gwConn, err := grpc_client.DialSimple(*gatewayFlag)
+	gwConn, err := grpc_client.DialSimple(*gatewayFlag, credentialhelper.DialOptions(*gatewayFlag)...)
 	if err != nil {
 		return -1, fmt.Errorf("dialing gateway: %w", err)
 	}
@@ -258,14 +259,14 @@ func handleCreate(args []string) (int, error) {
 	}
 	defer cleanupBB()
 
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
+	ctx = login.WithAPIKey(ctx, key)
 	if *trace {
 		// Force server-side OTel sampling for every RPC in this session,
 		// including the remote execution itself.
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
 	}
 
-	conn, err := grpc_client.DialSimple(*targetFlag)
+	conn, err := grpc_client.DialSimple(*targetFlag, credentialhelper.DialOptions(*targetFlag)...)
 	if err != nil {
 		return -1, fmt.Errorf("dialing executor: %w", err)
 	}
@@ -610,9 +611,9 @@ func handleList(args []string) (int, error) {
 	}
 
 	ctx := context.Background()
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
+	ctx = login.WithAPIKey(ctx, key)
 
-	conn, err := grpc_client.DialSimple(*listGatewayFlag)
+	conn, err := grpc_client.DialSimple(*listGatewayFlag, credentialhelper.DialOptions(*listGatewayFlag)...)
 	if err != nil {
 		return -1, fmt.Errorf("dialing gateway: %w", err)
 	}

@@ -13,12 +13,12 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"golang.org/x/crypto/nacl/box"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
@@ -79,7 +79,7 @@ func HandleSecrets(args []string) (exitCode int, err error) {
 		return 1, nil
 	}
 
-	conn, err := grpc_client.DialSimple(*target)
+	conn, err := grpc_client.DialSimple(*target, credentialhelper.DialOptions(*target)...)
 	if err != nil {
 		log.Print(err)
 		return 1, nil
@@ -100,11 +100,7 @@ func authenticatedContext() (context.Context, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get API key: %w", err)
 	}
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return nil, fmt.Errorf("api key is empty")
-	}
-	return metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey), nil
+	return login.WithAPIKey(context.Background(), apiKey), nil
 }
 
 func runSubcommand(ctx context.Context, client secretsClient, stdout io.Writer, subcommand string, args []string) error {

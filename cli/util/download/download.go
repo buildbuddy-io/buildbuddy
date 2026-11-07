@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"google.golang.org/grpc/metadata"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -48,16 +47,12 @@ func NewByteStreamDownloader(bsClient bspb.ByteStreamClient) Downloader {
 // reader without buffering the entire file in memory.
 func GetInvocationFile(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, w io.Writer, appURL, invocationID, description string, selector InvocationFileSelector) error {
 	apiKey, err := login.GetAPIKey()
-	if err != nil && !credentialhelper.Enabled() {
+	if err != nil {
 		return err
 	}
 
 	// Fetch the URI for the file from the invocation.
-	grpcCtx := ctx
-	if apiKey != "" {
-		grpcCtx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
-	}
-	file, err := getInvocationResource(grpcCtx, bbClient, invocationID, description, selector)
+	file, err := getInvocationResource(login.WithAPIKey(ctx, apiKey), bbClient, invocationID, description, selector)
 	if err != nil {
 		return err
 	}

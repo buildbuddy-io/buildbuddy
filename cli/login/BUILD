@@ -26,6 +26,7 @@ go_test(
     embed = [":login"],
     deps = [
         "//cli/arg",
+        "//cli/credentialhelper",
         "//cli/parser",
         "//cli/parser/test_data",
         "//cli/storage",

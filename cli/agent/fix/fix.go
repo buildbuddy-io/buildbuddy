@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
@@ -272,7 +273,7 @@ func findLatestFailure(ctx context.Context, target string) (string, error) {
 		return "", err
 	}
 
-	conn, err := grpc_client.DialSimple(target)
+	conn, err := grpc_client.DialSimple(target, credentialhelper.DialOptions(target)...)
 	if err != nil {
 		return "", fmt.Errorf("dial %q: %w", target, err)
 	}
@@ -354,7 +355,7 @@ func verificationInstructions(isTestFailure bool) string {
 // failureLogs reads an invocation failure. It also reports whether the failure
 // came from failed tests rather than a build error.
 func failureLogs(ctx context.Context, invocationID, target, testFilter string) (string, bool, error) {
-	conn, err := grpc_client.DialSimple(*agentflags.APITarget)
+	conn, err := grpc_client.DialSimple(*agentflags.APITarget, credentialhelper.DialOptions(*agentflags.APITarget)...)
 	if err != nil {
 		return "", false, fmt.Errorf("dial %q: %w", *agentflags.APITarget, err)
 	}
@@ -417,7 +418,7 @@ func withTarget(cmd []string, target string) ([]string, error) {
 }
 
 func fetchInvocation(ctx context.Context, target, invocationID string) (*inpb.Invocation, error) {
-	conn, err := grpc_client.DialSimple(target)
+	conn, err := grpc_client.DialSimple(target, credentialhelper.DialOptions(target)...)
 	if err != nil {
 		return nil, fmt.Errorf("dial %q: %w", target, err)
 	}
