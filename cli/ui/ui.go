@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -49,11 +50,11 @@ func HandleUI(args []string) (int, error) {
 	}
 
 	apiKey, err := login.GetAPIKey()
-	if err != nil || apiKey == "" {
+	if (err != nil || apiKey == "") && !credentialhelper.Enabled() {
 		return -1, fmt.Errorf("not logged in; run `bb login` first: %w", err)
 	}
 
-	conn, err := grpc_client.DialSimple(*apiTarget)
+	conn, err := grpc_client.DialSimple(*apiTarget, credentialhelper.DialOptions(*apiTarget)...)
 	if err != nil {
 		return -1, fmt.Errorf("failed to connect to BuildBuddy: %w", err)
 	}

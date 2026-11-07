@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -274,7 +275,7 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := grpc_client.DialSimple(target)
+	conn, err := grpc_client.DialSimple(target, credentialhelper.DialOptions(target)...)
 	if err != nil {
 		return nil, err
 	}

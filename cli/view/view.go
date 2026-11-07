@@ -10,6 +10,7 @@ import (
 	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
@@ -94,11 +95,11 @@ func HandleView(args []string) (exitCode int, err error) {
 	}
 
 	apiKey, err := login.GetAPIKey()
-	if err != nil || apiKey == "" {
+	if (err != nil || apiKey == "") && !credentialhelper.Enabled() {
 		return -1, fmt.Errorf("not logged in: %w", err)
 	}
 
-	conn, err := grpc_client.DialSimple(*apiTarget)
+	conn, err := grpc_client.DialSimple(*apiTarget, credentialhelper.DialOptions(*apiTarget)...)
 	if err != nil {
 		return -1, fmt.Errorf("failed to connect to BuildBuddy: %w", err)
 	}
