@@ -53,6 +53,11 @@ func authUserCtx(ctx context.Context, env environment.Env, t *testing.T, userID 
 	return ctx
 }
 
+func authUserCtxWithSelectedGroup(ctx context.Context, env environment.Env, t *testing.T, userID, groupID string) context.Context {
+	ctx = requestcontext.ContextWithProtoRequestContext(ctx, &ctxpb.RequestContext{GroupId: groupID})
+	return authUserCtx(ctx, env, t, userID)
+}
+
 func findGroupUser(t *testing.T, userID string, groupUsers []*grpb.GetGroupUsersResponse_GroupUser) *grpb.GetGroupUsersResponse_GroupUser {
 	for _, user := range groupUsers {
 		if user.User != nil && user.User.UserId.Id == userID {
@@ -294,7 +299,7 @@ func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 	require.Equal(t, "US1", selfOwnedGroup.UserID, "user ID of self-owned group should be the owner's user ID")
 	require.Equal(t, grpb.Group_FREE_TIER_GROUP_STATUS, selfOwnedGroup.Status, "self-owned group should have FREE_TIER_GROUP_STATUS")
 
-	groupUsers, err := udb.GetGroupUsers(ctx1, selfOwnedGroup.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+	groupUsers, err := udb.GetGroupUsers(ctx1, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 1, "self-owned group should have 1 member")
@@ -368,7 +373,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	selectedGroup := u.Groups[0].Group
 	require.Equal(t, orgGroupID, selectedGroup.GroupID, "group ID of selected group should be the org's group")
 
-	groupUsers, err := udb.GetGroupUsers(ctx1, selectedGroup.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+	groupUsers, err := udb.GetGroupUsers(ctx1, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 1, "org group should have 1 member")
@@ -387,7 +392,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	selectedGroup = u2.Groups[0].Group
 	require.NotEqual(t, orgGroupID, selectedGroup.GroupID, "group ID of selected group should not be the org's group")
 
-	groupUsers, err = udb.GetGroupUsers(ctx2, selectedGroup.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+	groupUsers, err = udb.GetGroupUsers(ctx2, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 1, "org1.io should still have 1 member, since US2 is in org2.io")
@@ -406,7 +411,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 
 	// Have US1 inspect their group members again (for org1); they should
 	// now see one more member (US3).
-	groupUsers, err = udb.GetGroupUsers(ctx1, selectedGroup.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+	groupUsers, err = udb.GetGroupUsers(ctx1, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 2, "org1.io group should have 2 members, since US3 is in org1.io")
@@ -498,8 +503,7 @@ func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t
 	require.Len(t, u.Groups, 1, "US1 should be added to the default group")
 	require.Equal(t, userdb.DefaultGroupID, u.Groups[0].Group.GroupID)
 
-	defaultGroup := u.Groups[0].Group
-	groupUsers, err := udb.GetGroupUsers(ctx1, defaultGroup.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+	groupUsers, err := udb.GetGroupUsers(ctx1, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 	require.NoError(t, err)
 	require.Len(t, groupUsers, 2, "default group should have 2 members")
 	us1 := findGroupUser(t, "US1", groupUsers)
@@ -690,11 +694,11 @@ func TestCreateGroup(t *testing.T) {
 	groupID, err := udb.CreateGroup(ctx1, &tables.Group{})
 	require.NoError(t, err)
 
-	// Re-authenticate to pick up the new group membership
-	ctx1 = authUserCtx(ctx, env, t, "US1")
+	// Re-authenticate with the new group selected
+	ctx1 = authUserCtxWithSelectedGroup(ctx, env, t, "US1", groupID)
 
 	// Make sure they are the group admin
-	groupUsers, err := udb.GetGroupUsers(ctx1, groupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+	groupUsers, err := udb.GetGroupUsers(ctx1, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 	require.NoError(t, err, "failed to get group users")
 	require.Len(t, groupUsers, 1)
 	gu := groupUsers[0]
@@ -1031,7 +1035,7 @@ func TestUpdateGroupUsers_UserLists(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	groupUsers, err := udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+	groupUsers, err := udb.GetGroupUsers(ctx1, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 	require.NoError(t, err)
 	require.Len(t, groupUsers, 3)
 
@@ -1062,7 +1066,7 @@ func TestUpdateGroupUsers_UserLists(t *testing.T) {
 		}})
 		require.NoError(t, err)
 
-		groupUsers, err = udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+		groupUsers, err = udb.GetGroupUsers(ctx1, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 		require.NoError(t, err)
 		require.Len(t, groupUsers, 2)
 
@@ -1088,7 +1092,7 @@ func TestUpdateGroupUsers_UserLists(t *testing.T) {
 		}})
 		require.NoError(t, err)
 
-		groupUsers, err = udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+		groupUsers, err = udb.GetGroupUsers(ctx1, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 		require.NoError(t, err)
 		require.Len(t, groupUsers, 2)
 
@@ -1109,12 +1113,12 @@ func TestUpdateGroupUsers_UserLists(t *testing.T) {
 	{
 		// User lists can never be in "requested" status so this should only
 		// return direct users.
-		groupUsers, err = udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_REQUESTED}})
+		groupUsers, err = udb.GetGroupUsers(ctx1, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_REQUESTED}})
 		require.NoError(t, err)
 		require.Empty(t, groupUsers)
 
 		// When filtering by Sub ID prefix, no user lists should be returned.
-		groupUsers, err = udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{
+		groupUsers, err = udb.GetGroupUsers(ctx1, &interfaces.GetGroupUsersOpts{
 			Statuses:    []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER},
 			SubIDPrefix: "US1",
 		})
@@ -1257,19 +1261,13 @@ func TestUpdateGroupUsers_Role(t *testing.T) {
 	}})
 	require.NoError(t, err, "US1 should be able to update their own group role")
 
-	groupUsers, err := udb.GetGroupUsers(ctx1, us1Group.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+	groupUsers, err := udb.GetGroupUsers(ctx1, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 	require.NoError(t, err)
 	us1 := findGroupUser(t, "US1", groupUsers)
 	require.Equal(t, grpb.Group_DEVELOPER_ROLE, us1.Role, "US1 role should be DEVELOPER")
 
 	createUser(t, ctx, env, "US2", "org2.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
-
-	_, err = udb.GetGroupUsers(ctx2, us1Group.GroupID, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
-	require.True(
-		t, status.IsPermissionDeniedError(err),
-		"expected PermissionDeniedError if US2 tries to list US1's group users; got: %T",
-		err)
 
 	err = udb.UpdateGroupUsers(ctx2, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
 		UserId: &uidpb.UserId{Id: "US1"},
@@ -1468,7 +1466,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 		{UserId: &uidpb.UserId{Id: "US2"}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
 	})
 	require.NoError(t, err)
-	users, err := udb.GetGroupUsers(ctx1, groupID1, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
+	users, err := udb.GetGroupUsers(ctx1, &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}})
 	require.NoError(t, err)
 	found := false
 	for _, u := range users {
@@ -2599,7 +2597,7 @@ func TestUpdateGroupUsersRequiresMembershipRequest(t *testing.T) {
 
 	err = udb.UpdateGroupUsers(adminCtx, groupID, updates)
 	require.NoError(t, err)
-	groupUsers, err := udb.GetGroupUsers(adminCtx, groupID, &interfaces.GetGroupUsersOpts{
+	groupUsers, err := udb.GetGroupUsers(adminCtx, &interfaces.GetGroupUsersOpts{
 		Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER},
 	})
 	require.NoError(t, err)
@@ -2984,7 +2982,7 @@ func TestChildGroupAuth(t *testing.T) {
 		requestcontext.ContextWithProtoRequestContext(
 			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), key1.Value)
 	require.NoError(t, udb.UpdateGroupUsers(gr2Ctx, us2Group.GroupID, addMember))
-	groupUsers, err := udb.GetGroupUsers(gr2Ctx, us2Group.GroupID, &interfaces.GetGroupUsersOpts{
+	groupUsers, err := udb.GetGroupUsers(gr2Ctx, &interfaces.GetGroupUsersOpts{
 		Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER},
 	})
 	require.NoError(t, err)
@@ -3778,4 +3776,52 @@ func TestGetUserBySubIDNoGroup(t *testing.T) {
 	u, err := udb.GetUserBySubIDWithoutAuthCheck(ctx, randUser.SubID, &interfaces.GetUserOpts{})
 	require.NoError(t, err)
 	require.Equal(t, randUser, u)
+}
+
+func TestGetGroupUsers_UsesSelectedGroup(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	group1 := getGroup(t, ctx1, env).Group
+	createUser(t, ctx, env, "US2", "org2.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	group2 := getGroup(t, ctx2, env).Group
+
+	// Make US1 a developer in US2's group as well, so US1 is a member of both
+	// groups but only an admin of their own.
+	_, err := udb.RequestToJoinGroup(ctx1, group2.GroupID)
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx2, group2.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId:           &uidpb.UserId{Id: "US1"},
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		Role:             grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	userIDs := func(groupUsers []*grpb.GetGroupUsersResponse_GroupUser) []string {
+		ids := []string{}
+		for _, gu := range groupUsers {
+			ids = append(ids, gu.GetUser().GetUserId().GetId())
+		}
+		return ids
+	}
+	opts := &interfaces.GetGroupUsersOpts{Statuses: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}}
+
+	// With group 1 selected, only group 1's members are returned: there is no
+	// way to ask for another group's member list.
+	select1Ctx := authUserCtxWithSelectedGroup(ctx, env, t, "US1", group1.GroupID)
+	groupUsers, err := udb.GetGroupUsers(select1Ctx, opts)
+	require.NoError(t, err)
+	require.Equal(t, []string{"US1"}, userIDs(groupUsers))
+
+	// With group 2 selected, group 2's members are returned instead.
+	select2Ctx := authUserCtxWithSelectedGroup(ctx, env, t, "US1", group2.GroupID)
+	groupUsers, err = udb.GetGroupUsers(select2Ctx, opts)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"US1", "US2"}, userIDs(groupUsers))
 }
