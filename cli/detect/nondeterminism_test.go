@@ -58,16 +58,40 @@ func TestAddBazelFlags_DoesNotMutateBaseArgs(t *testing.T) {
 	assert.Equal(t, []string{"build", "//foo:bar"}, baseArgs.Forwarded())
 }
 
-func TestAddBazelFlags_BESHeaderFromBazelrc(t *testing.T) {
-	t.Setenv("BUILDBUDDY_API_KEY", "K2")
-	bazelrc := filepath.Join(t.TempDir(), ".bazelrc")
-	require.NoError(t, os.WriteFile(bazelrc, []byte("common --bes_header=x-buildbuddy-api-key=K1\n"), 0644))
+func TestAddBazelFlags_APIKeyHeadersFromBazelrc(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		envAPIKey   string
+		bazelrc     string
+		wantContain string
+		wantBES     []string
+	}{
+		{
+			name:        "bes_header in bazelrc suppresses copy",
+			envAPIKey:   "K2",
+			bazelrc:     "common --bes_header=x-buildbuddy-api-key=K1\n",
+			wantContain: "--remote_header=x-buildbuddy-api-key=K2",
+		},
+		{
+			name:        "remote_header in bazelrc is copied to bes_header",
+			bazelrc:     "common --remote_header=x-buildbuddy-api-key=K1\n",
+			wantContain: "--bes_header=x-buildbuddy-api-key=K1",
+			wantBES:     []string{"x-buildbuddy-api-key=K1"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("BUILDBUDDY_API_KEY", tc.envAPIKey)
+			t.Setenv("HOME", t.TempDir())
+			bazelrc := filepath.Join(t.TempDir(), ".bazelrc")
+			require.NoError(t, os.WriteFile(bazelrc, []byte(tc.bazelrc), 0644))
 
-	args, err := addBazelFlags(bazelArgsForTest(t, "--bazelrc="+bazelrc, "build", "//foo:bar"), "/tmp/output-base", "/tmp/log.pb.zst", "test-invocation-id", defaultBESBackend, defaultBESResultsURL)
-	require.NoError(t, err)
+			args, err := addBazelFlags(bazelArgsForTest(t, "--bazelrc="+bazelrc, "build", "//foo:bar"), "/tmp/output-base", "/tmp/log.pb.zst", "test-invocation-id", defaultBESBackend, defaultBESResultsURL)
+			require.NoError(t, err)
 
-	assert.Contains(t, args, "--remote_header=x-buildbuddy-api-key=K2")
-	assert.Empty(t, arg.GetMulti(args, "bes_header"))
+			assert.Contains(t, args, tc.wantContain)
+			assert.Equal(t, tc.wantBES, arg.GetMulti(args, "bes_header"))
+		})
+	}
 }
 
 func TestParseBazelCommand(t *testing.T) {
