@@ -30,18 +30,27 @@ export function streamWithRetry<Request, Response>(
   let retryAttempt = 1;
   let lastErrorTimestamp = 0;
   let stream: ServerStream<Response> | null = null;
+  let canceled = false;
   const attemptCall = () => {
+    if (canceled) return;
+    retryTimeout = null;
     const request = typeof requestArg === "function" ? (requestArg as Function)() : requestArg;
+    if (canceled) return;
     stream = method(request, {
       next: (response) => {
+        if (canceled) return;
         // The max retry count applies to each reconnect attempt across the
         // entire lifecycle of the stream. So if we successfully get a message
         // on the stream, reset the retry attempt number.
         retryAttempt = 1;
         handler.next(response);
       },
-      complete: handler.complete,
+      complete: () => {
+        if (canceled) return;
+        handler.complete();
+      },
       error: (error: any) => {
+        if (canceled) return;
         // If it's been a long time since the last error, we most likely were
         // able to reconnect successfully but just didn't get any messages on
         // the stream to let us know that we successfully reconnected. So we
@@ -61,14 +70,22 @@ export function streamWithRetry<Request, Response>(
         retryTimeout = window.setTimeout(() => attemptCall(), delay);
       },
     });
+    // A synchronous callback from a retry attempt may cancel the wrapper before
+    // the new underlying stream has been assigned.
+    if (canceled) stream.cancel();
   };
 
   attemptCall();
 
   return {
     cancel: () => {
+      if (canceled) return;
+      // Abort can surface as a delayed FetchError rather than AbortError. Latch
+      // cancellation before aborting so that it cannot reconnect the stream.
+      canceled = true;
       if (retryTimeout !== null) {
         clearTimeout(retryTimeout);
+        retryTimeout = null;
       }
       stream?.cancel();
     },
