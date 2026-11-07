@@ -161,6 +161,7 @@ func TestConfigureBESAPIKey(t *testing.T) {
 		{"Cloud cache, on-prem executor and other Cloud BES", "grpcs://remote.buildbuddy.io", "grpcs://cache.buildbuddy.io", "grpcs://bb.corp", false},
 		{"Cloud cache, on-prem executor and BES identical to cache", "grpcs://remote.buildbuddy.io", "grpcs://remote.buildbuddy.io", "grpcs://bb.corp", true},
 		{"unparseable cache and Cloud BES", "grpcs://remote.buildbuddy.io", "unix:/a.sock", "", false},
+		{"plaintext Cloud executor and Cloud BES", "grpcs://remote.buildbuddy.io", "", "grpc://remote.buildbuddy.io", false},
 
 		{"non-BuildBuddy bes_backend", "grpcs://bes.example.com", "grpcs://remote.buildbuddy.io", "", false},
 		{"self-hosted bes_backend matching remote_cache", "bb.example.com:1985", "grpcs://bb.example.com:1985", "", true},
@@ -196,6 +197,7 @@ func TestConfigureBESAPIKey(t *testing.T) {
 		{"non-numeric port", "grpcs://remote.buildbuddy.io:foo", "", "", false},
 		{"highest port", "grpcs://remote.buildbuddy.io:65535", "", "", true},
 
+		{"non-ASCII host", "grpcs://bücher.buildbuddy.io", "", "", false},
 		{"IPv6 identical to remote_cache", "grpc://[::1]:1985", "grpc://[::1]:1985", "", false},
 		{"IPv4 identical to remote_cache", "grpc://10.0.0.1:1985", "grpc://10.0.0.1:1985", "", true},
 	} {
