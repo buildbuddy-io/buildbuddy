@@ -250,6 +250,55 @@ func TestRun(t *testing.T) {
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
+func TestRunRecordFileAccesses(t *testing.T) {
+	if _, err := os.Stat("/sys/kernel/btf/vmlinux"); err != nil {
+		t.Skip("kernel BTF is required for file access recording")
+	}
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+
+	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	flags.Set(t, "executor.oci.record_file_accesses", true)
+
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	testfs.WriteAllFileContents(t, wd, map[string]string{
+		"read.txt":      "a",
+		"dir/read.txt":  "b",
+		"unread.txt":    "c",
+		"overwrite.txt": "d",
+	})
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			cat read.txt dir/read.txt >/dev/null
+			echo x > overwrite.txt
+			echo x > output.txt
+		`},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode, string(res.Stderr))
+	assert.ElementsMatch(t, []string{"read.txt", "dir/read.txt"}, res.AccessedPaths)
+}
+
 func TestRunWithEmptyRootfs(t *testing.T) {
 	setupNetworking(t)
 	env := testenv.GetTestEnv(t)
