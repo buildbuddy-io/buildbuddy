@@ -51,6 +51,14 @@ describe("durationSec", () => {
     expect(format.durationSec(0.001)).toEqual("1.00ms");
     expect(format.durationSec(0.999)).toEqual("999ms");
   });
+  it("should move up a unit instead of using exponent notation", () => {
+    expect(format.durationSec(0.0009994)).toEqual("999µs");
+    expect(format.durationSec(0.0009996)).toEqual("1.00ms");
+    expect(format.durationSec(0.9994)).toEqual("999ms");
+    expect(format.durationSec(0.9996)).toEqual("1.00s");
+    expect(format.durationSec(0.999999)).toEqual("1.00s");
+    expect(format.durationUsec(999_600)).toEqual("1.00s");
+  });
   it("should format < 1 minute as fractional seconds", () => {
     expect(format.durationSec(7.42)).toEqual("7.42s");
     expect(format.durationSec(59.94999)).toEqual("59.9s");
