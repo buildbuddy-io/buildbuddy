@@ -117,7 +117,8 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       }
     }
 
-    this.inFlightRpc = rpcService.service
+    this.inFlightRpc = rpcService
+      .getRegionalServiceOrDefault(this.props.model.getRemoteExecutorEndpoint())
       .executeWorkflow(req)
       .then((response) => {
         let invocationId = "";
@@ -148,7 +149,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
     if (!workflowExecution.actionDigest) {
       throw new Error(`empty workflow execution action digest`);
     }
-    const actionUrl = this.props.model.getBytestreamURL(workflowExecution.actionDigest!);
+    const actionUrl = this.props.model.getExecutionBytestreamURL(workflowExecution.actionDigest);
     const actionContents = await rpcService.fetchBytestreamFile(
       actionUrl,
       this.props.model.getInvocationId(),
@@ -170,7 +171,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       throw new Error(`no command digest for action ${action.commandDigest}`);
     }
 
-    let commandURL = this.props.model.getBytestreamURL(action.commandDigest);
+    const commandURL = this.props.model.getExecutionBytestreamURL(action.commandDigest);
     const contents = await rpcService.fetchBytestreamFile(
       commandURL,
       this.props.model.getInvocationId(),
@@ -201,7 +202,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       return;
     }
 
-    rpcService.service.invalidateSnapshot(
+    await rpcService.getRegionalServiceOrDefault(this.props.model.getRemoteExecutorEndpoint()).invalidateSnapshot(
       new workflow.InvalidateSnapshotRequest({
         snapshotKey: snapshotKey,
       })
@@ -226,7 +227,9 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
     const executionRequest = new execution_stats.GetExecutionRequest();
     executionRequest.executionLookup = new execution_stats.ExecutionLookup();
     executionRequest.executionLookup.invocationId = this.props.model.getInvocationId();
-    const executionResponse = await rpcService.service.getExecution(executionRequest);
+    const executionResponse = await rpcService
+      .getRegionalServiceOrDefault(this.props.model.getRemoteExecutorEndpoint())
+      .getExecution(executionRequest);
 
     if (executionResponse.execution.length != 1) {
       throw new Error(`expected 1 workflow execution, got ${executionResponse.execution.length}`);
@@ -242,7 +245,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       throw new Error(`empty workflow execute response digest`);
     }
 
-    const executeResponseUrl = this.props.model.getActionCacheURL(executeResponseDigest);
+    const executeResponseUrl = this.props.model.getExecuteResponseURL(executeResponseDigest);
     const executeResponseBuffer = await rpcService
       .fetchBytestreamFile(executeResponseUrl, this.props.model.getInvocationId(), "arraybuffer")
       .catch((e) => {
