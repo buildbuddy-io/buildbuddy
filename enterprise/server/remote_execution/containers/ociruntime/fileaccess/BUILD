@@ -6,8 +6,9 @@ genrule(
     name = "fileaccess_bpf",
     srcs = ["fileaccess.bpf.c"],
     outs = ["fileaccess.bpf.o"],
-    cmd = "$(execpath @llvm//tools:clang) -O2 -g -Wall -target bpf -c $< -o $@",
-    tools = ["@llvm//tools:clang"],
+    cmd = "$(CC) -O2 -g -Wall -target bpf -c $< -o $@",
+    target_compatible_with = ["@platforms//os:linux"],
+    toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
 )
 
 go_library(
