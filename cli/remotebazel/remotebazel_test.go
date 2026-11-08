@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
@@ -26,10 +27,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	gstatus "google.golang.org/grpc/status"
 )
 
 func init() {
@@ -551,6 +560,97 @@ func TestPrintLogs(t *testing.T) {
 	require.Equal(t, "Analyzing: 2\nBuilding.\nDone.\n", out)
 }
 
+func TestPrintLogs_ReconnectsAfterTransientStreamErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{
+			// The error grpc-go returns when a proxy or load balancer resets
+			// the HTTP/2 stream with INTERNAL_ERROR.
+			name: "RST_STREAM",
+			err:  status.InternalError("stream terminated by RST_STREAM with error code: INTERNAL_ERROR"),
+		},
+		{
+			// grpc-go maps some reset codes to codes other than Internal.
+			name: "RST_STREAM CANCEL",
+			err:  status.CanceledError("stream terminated by RST_STREAM with error code: CANCEL"),
+		},
+		{
+			name: "unavailable",
+			err:  status.UnavailableError("connection reset by peer"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &scriptedBuildBuddyClient{
+				script: []scriptedRecv{
+					{rsp: &elpb.GetEventLogChunkResponse{
+						Buffer:      []byte("Analyzing: 1\n"),
+						NextChunkId: "0001",
+					}},
+					{err: tc.err},
+					{rsp: &elpb.GetEventLogChunkResponse{
+						Buffer: []byte("Done.\n"),
+					}},
+				},
+			}
+
+			out, err := runPrintLogsWithCapturedStdout(t, client)
+
+			require.NoError(t, err)
+			require.Equal(t, "Analyzing: 1\nDone.\n", out)
+			// The reconnect should resume from the chunk after the last one
+			// received.
+			require.Equal(t, []string{"", "0001"}, client.requestedChunkIDs)
+		})
+	}
+}
+
+func TestPrintLogs_ReturnsNonTransientInternalError(t *testing.T) {
+	client := &scriptedBuildBuddyClient{
+		script: []scriptedRecv{
+			{rsp: &elpb.GetEventLogChunkResponse{
+				Buffer:      []byte("Analyzing: 1\n"),
+				NextChunkId: "0001",
+			}},
+			// An Internal error that is not a stream reset is a server-side
+			// failure, and retrying it would not help.
+			{err: status.InternalError("failed to read chunk")},
+		},
+	}
+
+	out, err := runPrintLogsWithCapturedStdout(t, client)
+
+	require.True(t, status.IsInternalError(err), "expected Internal, got: %v", err)
+	require.Equal(t, "Analyzing: 1\n", out)
+	require.Equal(t, []string{""}, client.requestedChunkIDs)
+}
+
+func TestIsTransientLogStreamError(t *testing.T) {
+	canceledCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		err  error
+		want bool
+	}{
+		{"unavailable", t.Context(), status.UnavailableError("connection reset"), true},
+		{"RST_STREAM", t.Context(), status.InternalError("stream terminated by RST_STREAM with error code: INTERNAL_ERROR"), true},
+		{"RST_STREAM CANCEL", t.Context(), status.CanceledError("stream terminated by RST_STREAM with error code: CANCEL"), true},
+		{"RST_STREAM after own context done", canceledCtx, status.CanceledError("stream terminated by RST_STREAM with error code: CANCEL"), false},
+		{"other internal", t.Context(), status.InternalError("failed to read chunk"), false},
+		{"canceled", canceledCtx, status.CanceledError("context canceled"), false},
+		{"deadline exceeded", t.Context(), status.DeadlineExceededError("deadline exceeded"), false},
+		{"not found", t.Context(), status.NotFoundError("invocation not found"), false},
+		{"EOF", t.Context(), io.EOF, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isTransientLogStreamError(tc.ctx, tc.err))
+		})
+	}
+}
+
 func TestPrintLogs_ReturnsStreamError(t *testing.T) {
 	client := &scriptedBuildBuddyClient{
 		script: []scriptedRecv{
@@ -570,6 +670,277 @@ func TestPrintLogs_ReturnsStreamError(t *testing.T) {
 
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
 	require.Equal(t, "Analyzing: 1\n", out)
+}
+
+// runClient fakes the BuildBuddy service RPCs used by attemptRun. Unless a
+// script is set, the run's log is empty, so the log stream ends immediately.
+type runClient struct {
+	scriptedBuildBuddyClient
+
+	// Returned by successive GetInvocation calls; the last one repeats.
+	invocations []*inpb.Invocation
+	// If set, GetInvocation fails with this error.
+	getInvocationErr  error
+	cancelExecutionsN int
+}
+
+func (c *runClient) Run(ctx context.Context, req *rnpb.RunRequest, opts ...grpc.CallOption) (*rnpb.RunResponse, error) {
+	return &rnpb.RunResponse{InvocationId: "test-invocation-id"}, nil
+}
+
+func (c *runClient) GetInvocation(ctx context.Context, req *inpb.GetInvocationRequest, opts ...grpc.CallOption) (*inpb.GetInvocationResponse, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.getInvocationErr != nil {
+		return nil, c.getInvocationErr
+	}
+	inv := c.invocations[0]
+	if len(c.invocations) > 1 {
+		c.invocations = c.invocations[1:]
+	}
+	return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
+}
+
+func (c *runClient) GetExecution(ctx context.Context, req *espb.GetExecutionRequest, opts ...grpc.CallOption) (*espb.GetExecutionResponse, error) {
+	return &espb.GetExecutionResponse{Execution: []*espb.Execution{{ExecutionId: "test-execution-id"}}}, nil
+}
+
+func (c *runClient) CancelExecutions(ctx context.Context, req *inpb.CancelExecutionsRequest, opts ...grpc.CallOption) (*inpb.CancelExecutionsResponse, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cancelExecutionsN++
+	return &inpb.CancelExecutionsResponse{}, nil
+}
+
+// waitExecutionClient fakes WaitExecution, returning a stream that yields op
+// or fails with err.
+type waitExecutionClient struct {
+	repb.ExecutionClient
+
+	op  *longrunningpb.Operation
+	err error
+}
+
+func (c *waitExecutionClient) WaitExecution(ctx context.Context, req *repb.WaitExecutionRequest, opts ...grpc.CallOption) (repb.Execution_WaitExecutionClient, error) {
+	return &waitExecutionStream{op: c.op, err: c.err}, nil
+}
+
+type waitExecutionStream struct {
+	grpc.ClientStream
+
+	op  *longrunningpb.Operation
+	err error
+}
+
+func (s *waitExecutionStream) Recv() (*longrunningpb.Operation, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.op, nil
+}
+
+func (s *waitExecutionStream) CloseSend() error { return nil }
+
+func completedInvocation(exitCode int32) *inpb.Invocation {
+	return &inpb.Invocation{
+		InvocationId:     "test-invocation-id",
+		InvocationStatus: inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
+		Event: []*inpb.InvocationEvent{{
+			BuildEvent: &bespb.BuildEvent{
+				Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
+				Payload: &bespb.BuildEvent_Finished{Finished: &bespb.BuildFinished{
+					ExitCode: &bespb.BuildFinished_ExitCode{Code: exitCode},
+				}},
+			},
+		}},
+	}
+}
+
+func doneOperation(t *testing.T, exitCode int32) *longrunningpb.Operation {
+	rsp, err := anypb.New(&repb.ExecuteResponse{Result: &repb.ActionResult{ExitCode: exitCode}})
+	require.NoError(t, err)
+	return &longrunningpb.Operation{
+		Name:   "test-execution-id",
+		Done:   true,
+		Result: &longrunningpb.Operation_Response{Response: rsp},
+	}
+}
+
+// Error seen when the execution stream breaks after the remote run finished.
+var errTaskStillClaimed = status.InternalError("stream closed with task still claimed")
+
+func runAttemptRun(t *testing.T, bbClient *runClient, execClient repb.ExecutionClient) (*inpb.GetInvocationResponse, *repb.ExecuteResponse, error) {
+	// Make stdin a non-TTY so attemptRun prints logs non-interactively, even
+	// when the test is run from a terminal.
+	devNull, err := os.Open(os.DevNull)
+	require.NoError(t, err)
+	defer devNull.Close()
+	oldStdin := os.Stdin
+	os.Stdin = devNull
+	defer func() { os.Stdin = oldStdin }()
+	return attemptRun(t.Context(), bbClient, execClient, &rnpb.RunRequest{})
+}
+
+func TestAttemptRun_UsesWaitExecutionResult(t *testing.T) {
+	bbClient := &runClient{invocations: []*inpb.Invocation{completedInvocation(7)}}
+	execClient := &waitExecutionClient{op: doneOperation(t, 3)}
+
+	inRsp, execRsp, err := runAttemptRun(t, bbClient, execClient)
+
+	require.NoError(t, err)
+	require.Equal(t, "test-invocation-id", inRsp.GetInvocation()[0].GetInvocationId())
+	// The execution's own result takes precedence over the invocation.
+	require.EqualValues(t, 3, execRsp.GetResult().GetExitCode())
+	require.Equal(t, 0, bbClient.cancelExecutionsN)
+}
+
+func TestAttemptRun_LogStreamResetDoesNotCancelRun(t *testing.T) {
+	bbClient := &runClient{invocations: []*inpb.Invocation{completedInvocation(0)}}
+	bbClient.script = []scriptedRecv{
+		{err: status.InternalError("stream terminated by RST_STREAM with error code: INTERNAL_ERROR")},
+	}
+	execClient := &waitExecutionClient{op: doneOperation(t, 0)}
+
+	_, execRsp, err := runAttemptRun(t, bbClient, execClient)
+
+	require.NoError(t, err)
+	require.EqualValues(t, 0, execRsp.GetResult().GetExitCode())
+	require.Equal(t, 0, bbClient.cancelExecutionsN)
+	require.Equal(t, []string{"", ""}, bbClient.requestedChunkIDs)
+}
+
+func TestAttemptRun_LogStreamFailureCancelsRun(t *testing.T) {
+	bbClient := &runClient{invocations: []*inpb.Invocation{completedInvocation(0)}}
+	bbClient.script = []scriptedRecv{
+		{err: status.NotFoundError("invocation not found")},
+	}
+	execClient := &waitExecutionClient{op: doneOperation(t, 0)}
+
+	_, _, err := runAttemptRun(t, bbClient, execClient)
+
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+	require.Equal(t, 1, bbClient.cancelExecutionsN)
+}
+
+func TestAttemptRun_WaitExecutionErrorFallsBackToCompletedInvocation(t *testing.T) {
+	for _, exitCode := range []int32{0, 3} {
+		t.Run(fmt.Sprint(exitCode), func(t *testing.T) {
+			bbClient := &runClient{invocations: []*inpb.Invocation{completedInvocation(exitCode)}}
+			execClient := &waitExecutionClient{err: errTaskStillClaimed}
+
+			inRsp, execRsp, err := runAttemptRun(t, bbClient, execClient)
+
+			require.NoError(t, err)
+			require.Equal(t, "test-invocation-id", inRsp.GetInvocation()[0].GetInvocationId())
+			require.Equal(t, exitCode, execRsp.GetResult().GetExitCode())
+			require.Equal(t, 0, bbClient.cancelExecutionsN)
+		})
+	}
+}
+
+func TestAttemptRun_WaitExecutionErrorRefetchesInvocation(t *testing.T) {
+	// The invocation fetched when the log ended is not yet complete, but it is
+	// by the time waiting for the execution fails.
+	inProgress := completedInvocation(0)
+	inProgress.InvocationStatus = inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS
+	bbClient := &runClient{invocations: []*inpb.Invocation{inProgress, completedInvocation(3)}}
+	execClient := &waitExecutionClient{err: errTaskStillClaimed}
+
+	inRsp, execRsp, err := runAttemptRun(t, bbClient, execClient)
+
+	require.NoError(t, err)
+	require.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, inRsp.GetInvocation()[0].GetInvocationStatus())
+	require.EqualValues(t, 3, execRsp.GetResult().GetExitCode())
+}
+
+func TestAttemptRun_ExecutionFailureIsNotMaskedByInvocation(t *testing.T) {
+	failed := doneOperation(t, 0)
+	rsp, err := anypb.New(&repb.ExecuteResponse{
+		Result: &repb.ActionResult{},
+		Status: gstatus.New(codes.Internal, "executor failed").Proto(),
+	})
+	require.NoError(t, err)
+	failed.Result = &longrunningpb.Operation_Response{Response: rsp}
+
+	emptyRsp, err := anypb.New(&repb.ExecuteResponse{})
+	require.NoError(t, err)
+	empty := doneOperation(t, 0)
+	empty.Result = &longrunningpb.Operation_Response{Response: emptyRsp}
+
+	for _, tc := range []struct {
+		name    string
+		op      *longrunningpb.Operation
+		wantErr string
+	}{
+		{"execution error", failed, "executor failed"},
+		{"empty result", empty, "empty execute response"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Even though the invocation reports success, the execution's
+			// own failure must be returned.
+			bbClient := &runClient{invocations: []*inpb.Invocation{completedInvocation(0)}}
+			execClient := &waitExecutionClient{op: tc.op}
+
+			_, _, err := runAttemptRun(t, bbClient, execClient)
+
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+}
+
+func TestAttemptRun_WaitExecutionErrorPreferredOverInvocationError(t *testing.T) {
+	bbClient := &runClient{getInvocationErr: status.UnavailableError("invocation lookup failed")}
+	execClient := &waitExecutionClient{err: status.DeadlineExceededError("deadline exceeded")}
+
+	_, _, err := runAttemptRun(t, bbClient, execClient)
+
+	// Run treats some execution errors specially (e.g. DeadlineExceeded is
+	// not retried), so the execution error must not be hidden.
+	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got: %v", err)
+}
+
+func TestAttemptRun_InvocationErrorReturnedWhenWaitSucceeds(t *testing.T) {
+	bbClient := &runClient{getInvocationErr: status.UnavailableError("invocation lookup failed")}
+	execClient := &waitExecutionClient{op: doneOperation(t, 0)}
+
+	_, _, err := runAttemptRun(t, bbClient, execClient)
+
+	require.True(t, status.IsUnavailableError(err), "expected Unavailable, got: %v", err)
+}
+
+func TestAttemptRun_WaitExecutionErrorWithoutUsableInvocationResult(t *testing.T) {
+	notComplete := completedInvocation(0)
+	notComplete.InvocationStatus = inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS
+
+	noFinishedEvent := completedInvocation(0)
+	noFinishedEvent.Event = nil
+
+	// The ci_runner reports -1 when it fails before the command runs.
+	noExitCode := completedInvocation(-1)
+
+	noExitCodeField := completedInvocation(0)
+	noExitCodeField.Event[0].BuildEvent.GetFinished().ExitCode = nil
+
+	for _, tc := range []struct {
+		name       string
+		invocation *inpb.Invocation
+	}{
+		{"not complete", notComplete},
+		{"no finished event", noFinishedEvent},
+		{"no exit code", noExitCode},
+		{"no exit code field", noExitCodeField},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bbClient := &runClient{invocations: []*inpb.Invocation{tc.invocation}}
+			execClient := &waitExecutionClient{err: errTaskStillClaimed}
+
+			_, _, err := runAttemptRun(t, bbClient, execClient)
+
+			// Without a trustworthy result, the original error is returned.
+			require.ErrorContains(t, err, "wait for run result")
+			require.ErrorContains(t, err, "stream closed with task still claimed")
+		})
+	}
 }
 
 func TestGitConfig_BranchAndSha(t *testing.T) {
