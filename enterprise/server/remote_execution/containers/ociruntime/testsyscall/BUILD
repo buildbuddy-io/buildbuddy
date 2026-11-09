@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//rules:coverage_transitions.bzl", "coverage_free_tool")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -16,4 +17,10 @@ go_binary(
     embed = [":testsyscall_lib"],
     pure = "on",
     static = "on",
+)
+
+coverage_free_tool(
+    name = "testsyscall_no_cov",
+    tags = ["manual"],
+    target = ":testsyscall",
 )
