@@ -485,6 +485,91 @@ func TestMaterializeOutputsOutsideWorkingDirectory(t *testing.T) {
 	require.Equal(t, "result", string(b))
 }
 
+func TestMaterializeOutputsRejectsInvalidNames(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+	d := setFile(t, env, ctx, "", "content")
+	outDir := &repb.Directory{
+		Files: []*repb.FileNode{{Name: "../../escaped.txt", Digest: d}},
+	}
+	outDirDigest, err := digest.ComputeForMessage(outDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	layout := &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{
+			Root: &repb.Directory{
+				Directories: []*repb.DirectoryNode{{Name: "out", Digest: outDirDigest}},
+			},
+			Children: []*repb.Directory{outDir},
+		},
+		OutputDirectories: []string{"out"},
+	}
+	baseDir := testfs.MakeTempDir(t)
+	outputRoot := filepath.Join(baseDir, "root")
+	require.NoError(t, os.MkdirAll(outputRoot, 0755))
+
+	_, prepareErr := server.Prepare(ctx, layout, nil)
+	var materializeErr error
+	if prepareErr == nil {
+		materializeErr = server.MaterializeOutputs(ctx, layout, outputRoot)
+	}
+	assert.NoFileExists(t, filepath.Join(baseDir, "escaped.txt"))
+	require.True(t, prepareErr != nil || materializeErr != nil, "expected Prepare or MaterializeOutputs to reject input name %q", "../../escaped.txt")
+}
+
+func TestMaterializeOutputsDoesNotFollowHostSymlinks(t *testing.T) {
+	ctx, _, server, _ := newServerWithEnv(t)
+	layout := &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs:         &repb.Tree{Root: &repb.Directory{}},
+		OutputFiles:    []string{"a/b/c"},
+	}
+	_, err := server.Prepare(ctx, layout, nil)
+	require.NoError(t, err)
+	aRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "a"})
+	require.NoError(t, err)
+	bRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: aRsp.GetId(), Name: "b"})
+	require.NoError(t, err)
+	createRsp, err := server.Create(ctx, &vfspb.CreateRequest{
+		ParentId: bRsp.GetId(),
+		Name:     "c",
+		Flags:    uint32(os.O_CREATE | os.O_RDWR),
+		Mode:     0644,
+	})
+	require.NoError(t, err)
+	_, err = server.Release(ctx, &vfspb.ReleaseRequest{HandleId: createRsp.GetHandleId()})
+	require.NoError(t, err)
+
+	// An earlier output left a symlink at a/b pointing outside the output
+	// root.
+	baseDir := testfs.MakeTempDir(t)
+	outsideDir := filepath.Join(baseDir, "outside")
+	outputRoot := filepath.Join(baseDir, "root")
+	require.NoError(t, os.MkdirAll(outsideDir, 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(outputRoot, "a"), 0755))
+	require.NoError(t, os.Symlink(outsideDir, filepath.Join(outputRoot, "a", "b")))
+
+	_ = server.MaterializeOutputs(ctx, layout, outputRoot)
+	assert.NoFileExists(t, filepath.Join(outsideDir, "c"))
+}
+
+func TestMaterializeOutputsStopsAtDirectoryCycle(t *testing.T) {
+	ctx, _, server, _ := newServerWithEnv(t)
+	layout := &container.FileSystemLayout{
+		DigestFunction:    repb.DigestFunction_SHA256,
+		Inputs:            &repb.Tree{Root: &repb.Directory{}},
+		OutputDirectories: []string{"out"},
+	}
+	_, err := server.Prepare(ctx, layout, nil)
+	require.NoError(t, err)
+	outRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "out"})
+	require.NoError(t, err)
+	_, err = server.Link(ctx, &vfspb.LinkRequest{ParentId: outRsp.GetId(), Name: "loop", TargetId: outRsp.GetId()})
+	require.NoError(t, err)
+
+	err = server.MaterializeOutputs(ctx, layout, testfs.MakeTempDir(t))
+	require.True(t, status.IsInvalidArgumentError(err), "error: %v", err)
+}
+
 func TestPrepareRejectsEscapingOutputPath(t *testing.T) {
 	ctx, _, server, _ := newServerWithEnv(t)
 	_, err := server.Prepare(ctx, &container.FileSystemLayout{
@@ -763,6 +848,54 @@ func TestFilenameOps(t *testing.T) {
 	// File shouldn't exist anymore.
 	_, err = server.Lookup(ctx, &vfspb.LookupRequest{Name: newName})
 	requireSyscallError(t, err, syscall.ENOENT)
+}
+
+func TestCreateKeepsBackingFileInWorkspace(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	baseDir := testfs.MakeTempDir(t)
+	workspaceDir := filepath.Join(baseDir, "workspace")
+	require.NoError(t, os.MkdirAll(workspaceDir, 0755))
+	server, err := vfs_server.New(env, workspaceDir)
+	require.NoError(t, err)
+	ctx := context.Background()
+	prepare(t, env, server, &repb.Tree{})
+
+	// The guest-chosen name must not end up in the backing file's path.
+	_, err = server.Create(ctx, &vfspb.CreateRequest{
+		ParentId: vfscommon.RootInodeId,
+		Name:     "../x",
+		Mode:     0644,
+		Flags:    uint32(os.O_CREATE | os.O_RDWR),
+	})
+	requireSyscallError(t, err, syscall.EINVAL)
+	matches, err := filepath.Glob(filepath.Join(baseDir, "x*"))
+	require.NoError(t, err)
+	require.Empty(t, matches)
+}
+
+func TestMkdirRejectsInvalidName(t *testing.T) {
+	server, env := newServer(t)
+	ctx := context.Background()
+	prepare(t, env, server, &repb.Tree{})
+
+	_, err := server.Mkdir(ctx, &vfspb.MkdirRequest{ParentId: vfscommon.RootInodeId, Name: "../x", Perms: 0755})
+	requireSyscallError(t, err, syscall.EINVAL)
+}
+
+func TestRenameRejectsInvalidName(t *testing.T) {
+	server, env := newServer(t)
+	ctx := context.Background()
+	prepare(t, env, server, &repb.Tree{})
+	writeToVFS(t, server, "a.file", "some data")
+
+	_, err := server.Rename(ctx, &vfspb.RenameRequest{
+		OldParentId: vfscommon.RootInodeId,
+		OldName:     "a.file",
+		NewParentId: vfscommon.RootInodeId,
+		NewName:     "../x",
+	})
+	requireSyscallError(t, err, syscall.EINVAL)
+	require.Equal(t, "some data", readFromVFS(t, server, "a.file"))
 }
 
 func TestHardlink(t *testing.T) {
