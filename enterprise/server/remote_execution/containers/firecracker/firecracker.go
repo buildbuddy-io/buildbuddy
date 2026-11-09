@@ -3918,7 +3918,7 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 	// Read available memory in the guest to determine the target balloon size.
 	// /proc/meminfo reports amounts in KiB, and we're converting to MiB.
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", "awk '/MemAvailable/ {print $2 / 1024}' /proc/meminfo"},
+		Arguments: []string{"awk", "/MemAvailable/ {print $2 / 1024}", "/proc/meminfo"},
 	}
 	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
 	if res.Error != nil {

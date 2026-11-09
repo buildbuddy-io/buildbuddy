@@ -427,7 +427,7 @@ require (
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/rhysd/actionlint v1.7.12 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/russellhaering/goxmldsig v1.6.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
