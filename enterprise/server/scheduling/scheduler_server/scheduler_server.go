@@ -1998,29 +1998,13 @@ func (s *SchedulerServer) sendCancellationRequests(ctx context.Context, taskID, 
 		return nil
 	}
 
-	// Find all connected executors across all pools.
-	s.mu.RLock()
-	pools := make([]*nodePool, 0, len(s.pools))
-	for _, pool := range s.pools {
-		pools = append(pools, pool)
-	}
-	s.mu.RUnlock()
-
 	// Send cancellation requests to matching executors.
 	var remoteExecutorIDs []string
 	for _, executorID := range executorIDs {
 		if executorID == finalizingExecutorID {
 			continue
 		}
-		found := false
-		for _, pool := range pools {
-			if node := pool.FindConnectedExecutorByID(executorID); node != nil && node.handle != nil {
-				node.handle.sendProactiveCancellation(ctx, taskID)
-				found = true
-				break // Found the executor, no need to check other pools.
-			}
-		}
-		if !found {
+		if !s.cancelOnConnectedExecutor(ctx, executorID, taskID) {
 			remoteExecutorIDs = append(remoteExecutorIDs, executorID)
 		}
 	}
@@ -2120,19 +2104,13 @@ func (s *SchedulerServer) deleteTaskForLease(ctx context.Context, taskID, expect
 func (s *SchedulerServer) forwardCancellations(ctx context.Context, taskID string, poolKey nodePoolKey, executorIDs []string) {
 	pool := s.getOrCreatePool(poolKey)
 	if err := pool.RefreshNodes(ctx); err != nil {
-		log.CtxWarningf(ctx, "Could not refresh nodes to forward cancellations for task %q: %s", taskID, err)
+		log.CtxDebugf(ctx, "Could not refresh nodes to forward cancellations for task %q: %s", taskID, err)
 		return
 	}
-	nodes := make(map[string]*executionNode)
 	for _, node := range pool.GetNodes(false) {
-		nodes[node.GetExecutorId()] = node
-	}
-	for _, executorID := range executorIDs {
-		node, ok := nodes[executorID]
-		if !ok {
-			continue
+		if slices.Contains(executorIDs, node.GetExecutorId()) {
+			s.cancelOnRemoteExecutor(ctx, node, taskID)
 		}
-		s.cancelOnRemoteExecutor(ctx, node, taskID)
 	}
 }
 
@@ -3362,6 +3340,13 @@ func (s *SchedulerServer) CancelTaskReservation(ctx context.Context, req *scpb.C
 }
 
 func (s *SchedulerServer) cancelTaskReservation(ctx context.Context, req *scpb.CancelTaskReservationRequest) (*scpb.CancelTaskReservationResponse, error) {
+	s.cancelOnConnectedExecutor(ctx, req.GetExecutorId(), req.GetTaskId())
+	return &scpb.CancelTaskReservationResponse{}, nil
+}
+
+// cancelOnConnectedExecutor sends a proactive cancellation to the executor if
+// it is connected to this app. It returns whether the executor was found.
+func (s *SchedulerServer) cancelOnConnectedExecutor(ctx context.Context, executorID, taskID string) bool {
 	s.mu.RLock()
 	pools := make([]*nodePool, 0, len(s.pools))
 	for _, pool := range s.pools {
@@ -3370,12 +3355,12 @@ func (s *SchedulerServer) cancelTaskReservation(ctx context.Context, req *scpb.C
 	s.mu.RUnlock()
 
 	for _, pool := range pools {
-		if node := pool.FindConnectedExecutorByID(req.GetExecutorId()); node != nil && node.handle != nil {
-			node.handle.sendProactiveCancellation(ctx, req.GetTaskId())
-			break
+		if node := pool.FindConnectedExecutorByID(executorID); node != nil && node.handle != nil {
+			node.handle.sendProactiveCancellation(ctx, taskID)
+			return true
 		}
 	}
-	return &scpb.CancelTaskReservationResponse{}, nil
+	return false
 }
 
 func (s *SchedulerServer) enqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {

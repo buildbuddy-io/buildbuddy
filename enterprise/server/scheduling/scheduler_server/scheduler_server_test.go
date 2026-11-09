@@ -2051,6 +2051,38 @@ func TestEnqueueTaskReservation_RequiresAppClientIdentity(t *testing.T) {
 	require.True(t, status.IsUnavailableError(err))
 }
 
+func TestCancelTaskReservation_RequiresAppClientIdentity(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityApp)
+	scheduler := env.GetSchedulerService().(*SchedulerServer)
+
+	request := func() *scpb.CancelTaskReservationRequest {
+		return &scpb.CancelTaskReservationRequest{TaskId: "task-id", ExecutorId: "executor-id"}
+	}
+	contextWithIdentity := func(client string) context.Context {
+		identityService := env.GetClientIdentityService()
+		header, err := identityService.NewIdentityHeader(&interfaces.ClientIdentity{
+			Origin: interfaces.ClientIdentityInternalOrigin,
+			Client: client,
+		}, time.Minute)
+		require.NoError(t, err)
+		incomingCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, header))
+		validatedCtx, err := identityService.ValidateIncomingIdentity(incomingCtx)
+		require.NoError(t, err)
+		return validatedCtx
+	}
+
+	_, err := scheduler.CancelTaskReservation(ctx, request())
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	_, err = scheduler.CancelTaskReservation(contextWithIdentity(interfaces.ClientIdentityExecutor), request())
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// The executor isn't connected to this app, which is not an error.
+	_, err = scheduler.CancelTaskReservation(contextWithIdentity(interfaces.ClientIdentityApp), request())
+	require.NoError(t, err)
+}
+
 func TestEnqueueTaskReservation_Exists(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
