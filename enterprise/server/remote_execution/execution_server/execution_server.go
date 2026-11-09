@@ -1011,6 +1011,14 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	// Platform overrides applied above can switch a task to the "skip-unused" VFS
+	// prefetch mode, so decide from the effective properties.
+	if effectiveProps, err := platform.ParseProperties(executionTask); err != nil {
+		log.CtxWarningf(ctx, "Failed to parse effective platform properties: %s", err)
+	} else {
+		executionTask.VfsUnusedInputsDigest, executionTask.TrackVfsUnusedInputs = s.taskSizer.UnusedInputsForTask(ctx, command, effectiveProps)
+	}
+
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
 	secretService := s.env.GetSecretService()
 	if props.IncludeSecrets || len(props.EnvSecrets) > 0 {
@@ -1802,6 +1810,9 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		md := executeResponse.GetResult().GetExecutionMetadata()
 		if err := s.taskSizer.Update(ctx, cmd, properties, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
+		}
+		if err := s.taskSizer.UpdateUnusedInputsDigest(ctx, cmd, auxMeta.GetVfsUnusedInputsDigest()); err != nil {
+			log.CtxWarningf(ctx, "Failed to update unused inputs: %s", err)
 		}
 	} else if details, ok := oom.DetailsFromError(execErr); ok {
 		// The task was killed by the executor OOM killer. Record a higher memory

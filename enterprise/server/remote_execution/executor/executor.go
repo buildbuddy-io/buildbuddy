@@ -469,9 +469,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		metrics.VFSCASFilesAccessedCount.Add(float64(vs.CasFilesAccessedCount))
 		metrics.VFSCASFilesSizeBytes.Add(float64(vs.CasFilesSizeBytes))
 		metrics.VFSCASFilesAccessedBytes.Add(float64(vs.CasFilesAccessedBytes))
-		log.CtxInfof(ctx, "VFS CAS inputs used count %d/%d (%.2f) used size %s/%s (%.2f)",
+		log.CtxInfof(ctx, "VFS CAS inputs used count %d/%d (%.2f) used size %s/%s (%.2f) prefetch misses %d",
 			vs.CasFilesAccessedCount, vs.CasFilesCount, float64(vs.CasFilesAccessedCount)/float64(vs.CasFilesCount),
-			units.HumanSize(float64(vs.CasFilesAccessedBytes)), units.HumanSize(float64(vs.CasFilesSizeBytes)), float64(vs.CasFilesAccessedBytes)/float64(vs.CasFilesSizeBytes))
+			units.HumanSize(float64(vs.CasFilesAccessedBytes)), units.HumanSize(float64(vs.CasFilesSizeBytes)), float64(vs.CasFilesAccessedBytes)/float64(vs.CasFilesSizeBytes),
+			vs.PrefetchMissCount)
 	}
 
 	if cmdResult.ExitCode != 0 {
@@ -533,6 +534,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		}
 		return finishWithErrFn(status.UnavailableErrorf("upload outputs: %s", err.Error()))
 	}
+	auxMetadata.VfsUnusedInputsDigest = cmdResult.VfsUnusedInputsDigest
 	md.OutputUploadCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	actionResult.ExecutionMetadata = md

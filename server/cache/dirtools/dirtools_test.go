@@ -1353,6 +1353,100 @@ func TestDownloadTree_InputFetchMetadataUsesDeterministicLeafOrder(t *testing.T)
 	require.Equal(t, []uint32{2, 4, 5}, bitmap.ToArray())
 }
 
+func TestDownloadTree_UnusedInputsLeftOutOfFetch(t *testing.T) {
+	// A previous execution left b.txt unopened but opened a.txt. sub/c.txt is
+	// not excluded either, as a file added since the previous execution would
+	// not be, so it is prefetched. The mask also excludes a path that is not
+	// in the tree, which is ignored.
+	record, err := proto.Marshal(&repb.TreeMask{ExcludedPaths: []string{"b.txt", "missing.txt"}})
+	require.NoError(t, err)
+	recordDigest, err := digest.Compute(bytes.NewReader(record), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	instanceName := "foo"
+	for _, testCase := range []struct {
+		name string
+		// storeRecord makes the mask available the way the test case wants.
+		storeRecord   func(t *testing.T, env *testenv.TestEnv, ctx context.Context)
+		wantCached    []string
+		wantNotCached []string
+	}{
+		{
+			// The mask is fetched from the CAS.
+			name: "record_in_cas",
+			storeRecord: func(t *testing.T, env *testenv.TestEnv, ctx context.Context) {
+				setFile(t, env, ctx, instanceName, string(record))
+			},
+			wantCached:    []string{"a", "c"},
+			wantNotCached: []string{"b"},
+		},
+		{
+			// The executor already has the mask in its file cache, so it is
+			// used without the CAS holding it.
+			name: "record_in_file_cache_only",
+			storeRecord: func(t *testing.T, env *testenv.TestEnv, ctx context.Context) {
+				_, err := env.GetFileCache().Write(ctx, &repb.FileNode{Digest: recordDigest}, record)
+				require.NoError(t, err)
+			},
+			wantCached:    []string{"a", "c"},
+			wantNotCached: []string{"b"},
+		},
+		{
+			// The mask is nowhere to be found, so every input is fetched.
+			name:        "record_missing",
+			storeRecord: func(t *testing.T, env *testenv.TestEnv, ctx context.Context) {},
+			wantCached:  []string{"a", "b", "c"},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env, ctx := testEnv(t)
+			nodes := map[string]*repb.FileNode{}
+			for _, name := range []string{"a", "b", "c"} {
+				nodes[name] = &repb.FileNode{Name: name + ".txt", Digest: setFile(t, env, ctx, instanceName, "contents of "+name)}
+			}
+			subDir := &repb.Directory{Files: []*repb.FileNode{nodes["c"]}}
+			subDigest, err := digest.ComputeForMessage(subDir, repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			tree := &repb.Tree{
+				Root: &repb.Directory{
+					Files:       []*repb.FileNode{nodes["a"], nodes["b"]},
+					Directories: []*repb.DirectoryNode{{Name: "sub", Digest: subDigest}},
+				},
+				Children: []*repb.Directory{subDir},
+			}
+			testCase.storeRecord(t, env, ctx)
+
+			info, err := dirtools.DownloadTree(ctx, env, instanceName, repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
+				UnusedInputsDigest: recordDigest,
+			})
+			require.NoError(t, err)
+			require.EqualValues(t, len(testCase.wantCached), info.FileCount)
+			for _, name := range testCase.wantCached {
+				cached := env.GetFileCache().ContainsFile(ctx, nodes[name])
+				require.True(t, cached, "%s should have been fetched", nodes[name].GetName())
+			}
+			for _, name := range testCase.wantNotCached {
+				cached := env.GetFileCache().ContainsFile(ctx, nodes[name])
+				require.False(t, cached, "%s should not have been fetched", nodes[name].GetName())
+			}
+		})
+	}
+}
+
+func TestDownloadTree_UnusedInputsRejectedWhenMaterializingTree(t *testing.T) {
+	env, ctx := testEnv(t)
+	tree := &repb.Tree{Root: &repb.Directory{
+		Files: []*repb.FileNode{{Name: "a.txt", Digest: setFile(t, env, ctx, "", "a")}},
+	}}
+
+	// A tree materialized on disk must contain every file, so leaving out
+	// previously unused inputs is not allowed.
+	_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
+		RootDir:            testfs.MakeTempDir(t),
+		UnusedInputsDigest: &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1},
+	})
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+}
+
 func TestDownloadTree_InputFetchMetadataTracksBytestreamDownloads(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)

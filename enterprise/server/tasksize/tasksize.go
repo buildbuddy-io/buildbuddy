@@ -32,6 +32,7 @@ import (
 
 var (
 	useMeasuredSizes          = flag.Bool("remote_execution.use_measured_task_sizes", false, "Whether to use measured usage stats to determine task sizes.")
+	storeVFSUnusedInputs      = flag.Bool("remote_execution.store_vfs_unused_inputs", false, "Whether to store the digests of the unused inputs masks that actions with vfs-prefetch-mode=skip-unused produce, so that later executions of the same command skip prefetching those files. Requires the remote execution Redis client.")
 	oomResizeMultiplier       = flag.Float64("remote_execution.oom_resize_multiplier", 1.2, "When a task is OOM-killed after using more memory than its estimate, its memory estimate for the next attempt is set to this factor times the observed memory usage. Must be at least 1, or 0 to disable resizing. Has no effect if the executor OOM killer is not enabled.")
 	modelEnabled              = flag.Bool("remote_execution.task_size_model.enabled", false, "Whether to enable model-based task size prediction.")
 	psiCorrectionFactor       = flag.Float64("remote_execution.task_size_psi_correction", 1.0, "What percentage of full-stall time should be subtracted from the execution duration.")
@@ -99,11 +100,16 @@ const (
 	// The fraction of an executor's allocatable resources to make available for task sizing.
 	MaxResourceCapacityRatio = 1
 
-	// The expiration for task usage measurements stored in Redis.
+	// The expiration for task usage measurements and unused inputs digests
+	// stored in Redis.
 	sizeMeasurementExpiration = 5 * 24 * time.Hour
 
 	// Redis key prefix used for holding current task size estimates.
 	redisKeyPrefix = "taskSize"
+
+	// Redis key prefix used for holding the digests of the unused inputs masks
+	// that VFS-backed tasks produced during their last execution.
+	unusedInputsRedisKeyPrefix = "vfsUnusedInputs"
 )
 
 // The OCI spec only supports "shares" for specifying CPU weights, which are
@@ -149,7 +155,7 @@ func NewSizer(env environment.Env) (*taskSizer, error) {
 		return nil, status.InvalidArgumentErrorf("remote_execution.oom_resize_multiplier must be 0 (disabled) or at least 1, but got %v", *oomResizeMultiplier)
 	}
 	ts := &taskSizer{env: env}
-	if *useMeasuredSizes {
+	if *useMeasuredSizes || *storeVFSUnusedInputs {
 		if env.GetRemoteExecutionRedisClient() == nil {
 			return nil, status.FailedPreconditionError("missing Redis client configuration")
 		}
@@ -360,6 +366,56 @@ func (s *taskSizer) UpdateForOOM(ctx context.Context, cmd *repb.Command, props *
 	return nil
 }
 
+// UnusedInputsForTask returns the digest recorded by UpdateUnusedInputsDigest
+// for a previous execution of the command, or nil if none is stored, and
+// whether the executor should record the inputs the task leaves unopened.
+// Both are unset when the store is disabled or the task's VFS prefetch mode
+// is not "skip-unused", so that executors neither skip any prefetching nor
+// record anything in that case.
+func (s *taskSizer) UnusedInputsForTask(ctx context.Context, cmd *repb.Command, props *platform.Properties) (*repb.Digest, bool) {
+	if !*storeVFSUnusedInputs || !props.EnableVFS || props.VFSPrefetchMode != platform.VFSPrefetchModeSkipUnused {
+		return nil, false
+	}
+	key, err := s.commandScopedKey(ctx, unusedInputsRedisKeyPrefix, cmd)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to compute unused inputs key: %s", err)
+		return nil, true
+	}
+	serialized, err := s.rdb.Get(ctx, key).Result()
+	if err != nil {
+		if !errors.Is(err, redis.Nil) {
+			log.CtxWarningf(ctx, "Failed to read unused inputs digest from Redis: %s", err)
+		}
+		return nil, true
+	}
+	d := &repb.Digest{}
+	if err := proto.Unmarshal([]byte(serialized), d); err != nil {
+		log.CtxWarningf(ctx, "Failed to unmarshal unused inputs digest from Redis: %s", err)
+		return nil, true
+	}
+	return d, true
+}
+
+// UpdateUnusedInputsDigest records the digest of the unused inputs mask that an
+// execution of the command produced, replacing any previously recorded
+// digest. A nil digest, from a task that did not record unused inputs, is
+// ignored. Executors only record for tasks that UnusedInputsForTask asked to
+// record, so the digest needs no further checks here.
+func (s *taskSizer) UpdateUnusedInputsDigest(ctx context.Context, cmd *repb.Command, d *repb.Digest) error {
+	if !*storeVFSUnusedInputs || d == nil {
+		return nil
+	}
+	key, err := s.commandScopedKey(ctx, unusedInputsRedisKeyPrefix, cmd)
+	if err != nil {
+		return err
+	}
+	b, err := proto.Marshal(d)
+	if err != nil {
+		return err
+	}
+	return s.rdb.Set(ctx, key, string(b), sizeMeasurementExpiration).Err()
+}
+
 // EvaluateP90CPUTrial returns whether the command is included in the treatment
 // arm for the p90 CPU experiment. The second return value is the experiment arm
 // identifier (experiment name + arm name) which will be non-empty if the
@@ -522,6 +578,12 @@ func (s *taskSizer) lastRecordedSize(ctx context.Context, cmd *repb.Command) (*s
 }
 
 func (s *taskSizer) taskSizeKey(ctx context.Context, cmd *repb.Command) (string, error) {
+	return s.commandScopedKey(ctx, redisKeyPrefix, cmd)
+}
+
+// commandScopedKey returns the Redis key under which data about the command is
+// stored, segmented by group and by the exact command.
+func (s *taskSizer) commandScopedKey(ctx context.Context, keyPrefix string, cmd *repb.Command) (string, error) {
 	// Get group ID (task sizing is segmented by group)
 	groupKey, err := s.groupKey(ctx)
 	if err != nil {
@@ -535,7 +597,7 @@ func (s *taskSizer) taskSizeKey(ctx context.Context, cmd *repb.Command) (string,
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s/%s", redisKeyPrefix, groupKey, cmdKey), nil
+	return fmt.Sprintf("%s/%s/%s", keyPrefix, groupKey, cmdKey), nil
 }
 
 func (s *taskSizer) groupKey(ctx context.Context) (string, error) {

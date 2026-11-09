@@ -1,6 +1,7 @@
 package firecracker
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -48,9 +49,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -86,6 +89,9 @@ import (
 )
 
 var (
+	cachedVEXT4OutputReads                = flag.Bool("executor.firecracker_vext4_cached_output_reads", false, "Prototype: let debugfs read a vext4 image through the host page cache when extracting outputs, even when the guest reads it with direct I/O.", flag.Internal)
+	bufferedVEXT4LazyReads                = flag.Bool("executor.firecracker_vext4_lazy_buffered_reads", false, "Prototype: serve lazily fetched vext4 images to the guest through the host page cache, so that host readahead applies.", flag.Internal)
+	streamVEXT4Outputs                    = flag.Bool("executor.firecracker_vext4_stream_outputs", false, "Prototype: read vext4 outputs with one debugfs session, hashing each file as it is read and uploading it while the next one is read.", flag.Internal)
 	firecrackerCgroupVersion              = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
 	debugStreamVMLogs                     = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
 	debugTerminal                         = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
@@ -100,6 +106,8 @@ var (
 	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
 	enableLinux6_18                       = flag.Bool("executor.firecracker_enable_linux_6_18", false, "Enable the 6.18 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
+	preloadInputs                         = flag.String("executor.firecracker_preload_inputs", "", "Prototype: which input files vmexec reads into the guest page cache while the command runs. \"used\" reads every input that the task's unused inputs mask does not exclude, and nothing when the task has no mask. \"command\" reads only the input file that the command's first argument names. Empty disables preloading.", flag.Internal)
+	preloadParallelism                    = flag.Int("executor.firecracker_preload_parallelism", 16, "How many input files vmexec reads at a time for executor.firecracker_preload_inputs.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
@@ -127,7 +135,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "20"
+	GuestAPIVersion = "21"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -744,8 +752,10 @@ type FirecrackerContainer struct {
 	workspaceStore *vext4.Store
 	workspaceVBD   *vbd.FS
 	// workspaceInputs opens the input files that a lazily populated
-	// workspace image serves, for the current task.
-	workspaceInputs *vfs_server.CASFiles
+	// workspace image serves, for the current task, and workspaceInputsRead
+	// records which of them the guest has read.
+	workspaceInputs     *vfs_server.CASFiles
+	workspaceInputsRead *inputReadSet
 
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
@@ -1664,7 +1674,7 @@ func (c *FirecrackerContainer) buildAndMountWorkspaceVEXT4(ctx context.Context, 
 	// fetched inputs it would instead block each read until the neighbours
 	// have been downloaded, so those images are served without the page
 	// cache.
-	d, err := vbd.NewWithOptions(store, vbd.Options{DirectIO: c.usesLazyWorkspaceImage()})
+	d, err := vbd.NewWithOptions(store, vbd.Options{DirectIO: c.usesLazyWorkspaceImage() && !*bufferedVEXT4LazyReads})
 	if err != nil {
 		return 0, err
 	}
@@ -1694,12 +1704,13 @@ func (c *FirecrackerContainer) buildWorkspaceVEXT4(ctx context.Context, workspac
 		return nil, err
 	}
 	inputs := vfs_server.NewCASFiles(c.env, c.fsLayout, c.fsLayout.InputFetcher)
+	read := &inputReadSet{hashes: map[string]struct{}{}}
 	t := &vext4.Tree{
 		Inputs:         c.fsLayout.Inputs,
 		DigestFunction: c.fsLayout.DigestFunction,
 		Dirs:           dirs,
 		Source: func(path string, node *repb.FileNode) vext4.Source {
-			return &casFileSource{inputs: inputs, path: path, node: node}
+			return &casFileSource{inputs: inputs, read: read, path: path, node: node}
 		},
 	}
 	store, err := vext4.BuildTree(ctx, t, imagePath, freeBytes)
@@ -1707,6 +1718,7 @@ func (c *FirecrackerContainer) buildWorkspaceVEXT4(ctx context.Context, workspac
 		return nil, err
 	}
 	c.workspaceInputs = inputs
+	c.workspaceInputsRead = read
 	return store, nil
 }
 
@@ -1723,6 +1735,29 @@ func (c *FirecrackerContainer) usesGuestVFS() bool {
 // guest reads it.
 func (c *FirecrackerContainer) usesLazyWorkspaceImage() bool {
 	return c.fsLayout != nil && c.vext4LazyInputs
+}
+
+// lazyWorkspaceUnusedInputs returns a TreeMask that excludes the input files
+// of the lazily populated workspace image that the guest did not read during
+// the task. Files with the same contents share a source in the image, so a
+// path counts as read once any path with its digest was read.
+func (c *FirecrackerContainer) lazyWorkspaceUnusedInputs(ctx context.Context) *repb.TreeMask {
+	if c.workspaceInputsRead == nil {
+		return nil
+	}
+	files, _, err := inputTreePaths(c.fsLayout.Inputs, c.fsLayout.DigestFunction)
+	if err != nil {
+		log.CtxWarningf(ctx, "Not recording unused inputs: %s", err)
+		return nil
+	}
+	var paths []string
+	for path, node := range files {
+		if !c.workspaceInputsRead.contains(node.GetDigest().GetHash()) {
+			paths = append(paths, path)
+		}
+	}
+	slices.Sort(paths)
+	return &repb.TreeMask{ExcludedPaths: paths}
 }
 
 // lazyWorkspaceStats reports the lazily populated workspace image's inputs
@@ -2143,6 +2178,13 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 			return err
 		}
 		workspaceExt4Path = p
+		if *cachedVEXT4OutputReads {
+			// debugfs reads the image a block at a time, so with direct I/O
+			// every block is a FUSE request. The guest no longer has the
+			// image mounted, and the VBD is unmounted after the outputs are
+			// copied, so the cached pages cannot go stale.
+			c.workspaceVBD.SetDirectIO(false)
+		}
 	}
 
 	start := time.Now()
@@ -2164,6 +2206,13 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	defer os.RemoveAll(wsDir) // clean up
 
 	outputPaths := workspacePathsToExtract(c.task)
+	if *streamVEXT4Outputs && c.workspaceVBD != nil {
+		err := c.streamOutputs(ctx, workspaceExt4Path, outputPaths)
+		if err != errUnsupportedOutput {
+			return err
+		}
+		log.CtxInfof(ctx, "Falling back to rdump for outputs: %s", err)
+	}
 	if err := ext4.ImageToDirectory(ctx, workspaceExt4Path, wsDir, outputPaths); err != nil {
 		return err
 	}
@@ -2186,6 +2235,238 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 		return nil
 	})
 	return walkErr
+}
+
+// errUnsupportedOutput means an output holds something other than regular
+// files and directories, which streamOutputs leaves to rdump.
+var errUnsupportedOutput = errors.New("output has an entry that is not a regular file or directory")
+
+// imageFile is a regular file found by listing the workspace image.
+type imageFile struct {
+	path string
+	mode os.FileMode
+	size int64
+}
+
+// listImageDir lists dir in the image with debugfs, and returns its
+// subdirectories and regular files as paths relative to the image root.
+func listImageDir(ctx context.Context, image, dir string) (dirs []string, files []imageFile, err error) {
+	start := time.Now()
+	defer func() { log.CtxInfof(ctx, "Stream outputs: ls %q took %s", dir, time.Since(start)) }()
+	out, err := exec.CommandContext(ctx, "/sbin/debugfs", "-R", fmt.Sprintf("ls -p %q", "/"+dir), image).Output()
+	if err != nil {
+		return nil, nil, status.InternalErrorf("debugfs ls %q: %s", dir, err)
+	}
+	// Each line is /inode/mode/uid/gid/name/size/, with an empty size for
+	// directories.
+	for line := range strings.SplitSeq(string(out), "\n") {
+		f := strings.Split(line, "/")
+		if len(f) != 8 || f[5] == "." || f[5] == ".." {
+			continue
+		}
+		mode, err := strconv.ParseUint(f[2], 8, 32)
+		if err != nil {
+			return nil, nil, status.InternalErrorf("parse debugfs mode %q: %s", f[2], err)
+		}
+		p := filepath.Join(dir, f[5])
+		switch mode & syscall.S_IFMT {
+		case syscall.S_IFDIR:
+			dirs = append(dirs, p)
+		case syscall.S_IFREG:
+			size, err := strconv.ParseInt(f[6], 10, 64)
+			if err != nil {
+				return nil, nil, status.InternalErrorf("parse debugfs size %q: %s", f[6], err)
+			}
+			files = append(files, imageFile{path: p, mode: os.FileMode(mode & 0777), size: size})
+		default:
+			return nil, nil, errUnsupportedOutput
+		}
+	}
+	return dirs, files, nil
+}
+
+// streamOutputs copies the outputs at paths from the workspace image into the
+// action's working directory, like ImageToDirectory, but reads every file in
+// a single debugfs session, hashes each one as it is read, and starts
+// uploading it to the CAS while later files are still being read. The output
+// upload that follows then finds the files already hashed and uploaded.
+func (c *FirecrackerContainer) streamOutputs(ctx context.Context, image string, paths []string) error {
+	// Find the declared outputs that exist, listing each directory once.
+	var dirs []string
+	var files []imageFile
+	listed := map[string][]string{}
+	listedFiles := map[string][]imageFile{}
+	list := func(dir string) ([]string, []imageFile, error) {
+		if d, ok := listed[dir]; ok {
+			return d, listedFiles[dir], nil
+		}
+		d, f, err := listImageDir(ctx, image, dir)
+		if err != nil {
+			return nil, nil, err
+		}
+		listed[dir], listedFiles[dir] = d, f
+		return d, f, nil
+	}
+	var walk func(dir string) error
+	walk = func(dir string) error {
+		subdirs, fs, err := list(dir)
+		if err != nil {
+			return err
+		}
+		files = append(files, fs...)
+		for _, d := range subdirs {
+			dirs = append(dirs, d)
+			if err := walk(d); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, p := range paths {
+		p = filepath.Clean(strings.TrimPrefix(p, "/"))
+		parentDirs, parentFiles, err := list(filepath.Dir(p))
+		if err != nil {
+			return err
+		}
+		if slices.Contains(parentDirs, p) {
+			dirs = append(dirs, p)
+			if err := walk(p); err != nil {
+				return err
+			}
+		}
+		for _, f := range parentFiles {
+			if f.path == p {
+				files = append(files, f)
+			}
+		}
+	}
+	for _, d := range dirs {
+		if err := disk.EnsureDirectoryExists(filepath.Join(c.actionWorkingDir, d)); err != nil {
+			return err
+		}
+	}
+	if len(files) == 0 {
+		return nil
+	}
+
+	digestFunction := c.task.GetExecuteRequest().GetDigestFunction()
+	if digestFunction == repb.DigestFunction_UNKNOWN {
+		digestFunction = repb.DigestFunction_SHA256
+	}
+	instanceName := c.task.GetExecuteRequest().GetInstanceName()
+	ul := cachetools.NewBatchCASUploader(ctx, c.env, instanceName, digestFunction, nil)
+	// Like the normal output upload, skip files the CAS already has. Small
+	// files are checked in batches, and large ones as soon as they are read.
+	type pendingFile struct {
+		path   string
+		digest *repb.Digest
+	}
+	var pending []pendingFile
+	var pendingBytes int64
+	uploadMissing := func() error {
+		if len(pending) == 0 {
+			return nil
+		}
+		req := &repb.FindMissingBlobsRequest{InstanceName: instanceName, DigestFunction: digestFunction}
+		for _, f := range pending {
+			req.BlobDigests = append(req.BlobDigests, f.digest)
+		}
+		rsp, err := c.env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, req)
+		if err != nil {
+			return err
+		}
+		missing := make(map[string]bool, len(rsp.GetMissingBlobDigests()))
+		for _, d := range rsp.GetMissingBlobDigests() {
+			missing[d.GetHash()] = true
+		}
+		for _, f := range pending {
+			if !missing[f.digest.GetHash()] {
+				continue
+			}
+			in, err := os.Open(f.path)
+			if err != nil {
+				return err
+			}
+			if err := ul.Upload(f.digest, in); err != nil {
+				return err
+			}
+		}
+		pending, pendingBytes = nil, 0
+		return nil
+	}
+
+	catStart := time.Now()
+	cmd := exec.CommandContext(ctx, "/sbin/debugfs", "-f", "-", image)
+	var cmds strings.Builder
+	for _, f := range files {
+		fmt.Fprintf(&cmds, "cat %q\n", "/"+f.path)
+	}
+	cmd.Stdin = strings.NewReader(cmds.String())
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	// debugfs echoes each command before its output, and each file's
+	// output is exactly its listed size.
+	r := bufio.NewReaderSize(stdout, 1<<20)
+	readErr := func() error {
+		for _, f := range files {
+			if _, err := r.ReadString('\n'); err != nil {
+				return err
+			}
+			dest := filepath.Join(c.actionWorkingDir, f.path)
+			if exists, err := disk.FileExists(ctx, dest); err != nil || exists {
+				if _, err := io.CopyN(io.Discard, r, f.size); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+				return err
+			}
+			out, err := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, f.mode)
+			if err != nil {
+				return err
+			}
+			h, err := digest.HashForDigestType(digestFunction)
+			if err != nil {
+				out.Close()
+				return err
+			}
+			if _, err := io.CopyN(io.MultiWriter(out, h), r, f.size); err != nil {
+				out.Close()
+				return err
+			}
+			if err := out.Close(); err != nil {
+				return err
+			}
+			d := &repb.Digest{Hash: hex.EncodeToString(h.Sum(nil)), SizeBytes: f.size}
+			dirtools.SetPrecomputedDigest(dest, f.size, d)
+			pending = append(pending, pendingFile{path: dest, digest: d})
+			pendingBytes += f.size
+			if len(pending) >= 256 || pendingBytes >= 4<<20 {
+				if err := uploadMissing(); err != nil {
+					return err
+				}
+			}
+		}
+		return uploadMissing()
+	}()
+	waitErr := cmd.Wait()
+	log.CtxInfof(ctx, "Stream outputs: cat of %d files took %s", len(files), time.Since(catStart))
+	defer func(start time.Time) { log.CtxInfof(ctx, "Stream outputs: upload wait took %s", time.Since(start)) }(time.Now())
+	if readErr != nil {
+		return status.InternalErrorf("read debugfs output: %s: %s", readErr, stderr.String())
+	}
+	if waitErr != nil {
+		return status.InternalErrorf("debugfs: %s: %s", waitErr, stderr.String())
+	}
+	return ul.Wait()
 }
 
 func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
@@ -2655,7 +2936,7 @@ func getDockerDaemonConfig() ([]byte, error) {
 	return configJSON, nil
 }
 
-func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
+func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, preload *vmxpb.InputPreload, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -2685,7 +2966,7 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 		statsListener := func(stats *repb.UsageStats) {
 			c.updateLatestGuestStats(stats)
 		}
-		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
+		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, preload, statsListener, stdio)
 		resultCh <- res
 	}()
 	// While we're executing the task in the VM, also track cgroup stats on the
@@ -2750,6 +3031,127 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 		c.fillNetStats(ctx, res.UsageStats)
 		return res, false
 	}
+}
+
+// inputPreload returns the input files that vmexec should read into the
+// guest page cache while the command runs, as executor.firecracker_preload_inputs
+// asks, or nil when there is nothing to read. inputRoot is the guest directory
+// that the task's input root is mounted at.
+func (c *FirecrackerContainer) inputPreload(ctx context.Context, cmd *repb.Command, inputRoot string) *vmxpb.InputPreload {
+	if *preloadInputs == "" || c.fsLayout == nil {
+		return nil
+	}
+	files, symlinks, err := inputTreePaths(c.fsLayout.Inputs, c.fsLayout.DigestFunction)
+	if err != nil {
+		log.CtxWarningf(ctx, "Not preloading inputs: %s", err)
+		return nil
+	}
+	var paths []string
+	switch *preloadInputs {
+	case "used":
+		d := c.task.GetVfsUnusedInputsDigest()
+		if d == nil {
+			log.CtxInfof(ctx, "Not preloading inputs, since the task has no unused inputs mask")
+			return nil
+		}
+		// An empty mask excludes nothing and has no blob to read.
+		mask := &repb.TreeMask{}
+		if d.GetSizeBytes() > 0 {
+			mask, err = dirtools.ReadTreeMask(ctx, c.env, c.fsLayout.RemoteInstanceName, c.fsLayout.DigestFunction, d)
+			if err != nil {
+				log.CtxWarningf(ctx, "Not preloading inputs: %s", err)
+				return nil
+			}
+		}
+		excluded := make(map[string]struct{}, len(mask.GetExcludedPaths()))
+		for _, p := range mask.GetExcludedPaths() {
+			excluded[p] = struct{}{}
+		}
+		for p := range files {
+			if _, ok := excluded[p]; !ok {
+				paths = append(paths, p)
+			}
+		}
+		slices.Sort(paths)
+	case "command":
+		if args := cmd.GetArguments(); len(args) > 0 {
+			if p, ok := resolveInputPath(files, symlinks, cmd.GetWorkingDirectory(), args[0]); ok {
+				paths = []string{p}
+			}
+		}
+	default:
+		log.CtxWarningf(ctx, "Not preloading inputs: unknown executor.firecracker_preload_inputs value %q", *preloadInputs)
+		return nil
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	return &vmxpb.InputPreload{InputRoot: inputRoot, Paths: paths, Parallelism: int32(*preloadParallelism)}
+}
+
+// inputTreePaths returns the regular files in the input tree by their input
+// root-relative paths, and the tree's symlinks by path with their targets.
+func inputTreePaths(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (files map[string]*repb.FileNode, symlinks map[string]string, err error) {
+	_, dirMap, err := dirtools.DirMapFromTree(tree, digestFunction)
+	if err != nil {
+		return nil, nil, err
+	}
+	files = make(map[string]*repb.FileNode)
+	symlinks = make(map[string]string)
+	var walk func(dir *repb.Directory, dirPath string) error
+	walk = func(dir *repb.Directory, dirPath string) error {
+		for _, f := range dir.GetFiles() {
+			files[filepath.Join(dirPath, f.GetName())] = f
+		}
+		for _, s := range dir.GetSymlinks() {
+			symlinks[filepath.Join(dirPath, s.GetName())] = s.GetTarget()
+		}
+		for _, d := range dir.GetDirectories() {
+			child, ok := dirMap[digest.NewKey(d.GetDigest())]
+			if !ok {
+				if digest.IsEmptyHash(d.GetDigest(), digestFunction) {
+					continue
+				}
+				return status.NotFoundErrorf("input tree is missing directory %s", digest.String(d.GetDigest()))
+			}
+			if err := walk(child, filepath.Join(dirPath, d.GetName())); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := walk(tree.GetRoot(), ""); err != nil {
+		return nil, nil, err
+	}
+	return files, symlinks, nil
+}
+
+// resolveInputPath returns the input root-relative path of the input file
+// that executable names when the command runs in workingDir, following
+// symlinks within the input tree, and false when it names something else,
+// such as a program found through PATH or a file of the container image.
+func resolveInputPath(files map[string]*repb.FileNode, symlinks map[string]string, workingDir, executable string) (string, bool) {
+	if executable == "" || filepath.IsAbs(executable) || !strings.Contains(executable, "/") {
+		return "", false
+	}
+	// Resolve the path a component at a time, since a parent directory can
+	// be a symlink.
+	resolved := ""
+	for component := range strings.SplitSeq(filepath.Join(workingDir, executable), "/") {
+		resolved = filepath.Join(resolved, component)
+		for range 40 {
+			target, ok := symlinks[resolved]
+			if !ok {
+				break
+			}
+			if filepath.IsAbs(target) {
+				return "", false
+			}
+			resolved = filepath.Join(filepath.Dir(resolved), target)
+		}
+	}
+	_, ok := files[resolved]
+	return resolved, ok
 }
 
 func (c *FirecrackerContainer) fillNetStats(ctx context.Context, usageStats *repb.UsageStats) {
@@ -3058,10 +3460,15 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	stage = "exec"
-	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), stdio)
+	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), c.inputPreload(ctx, cmd, guestWorkspaceMountDir), stdio)
 	if c.usesGuestVFS() {
 		// Recycling is not supported for firecracker + fuse yet.
 		result.DoNotRecycle = true
+	}
+	if c.usesLazyWorkspaceImage() && c.task.GetTrackVfsUnusedInputs() {
+		// Record before the outputs are copied out, since the host reads
+		// them through the same image.
+		result.VfsUnusedInputs = c.lazyWorkspaceUnusedInputs(ctx)
 	}
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
@@ -3074,6 +3481,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			return result
 		}
 		result.VfsStats = c.vfsServer.ComputeStats()
+		if c.task.GetTrackVfsUnusedInputs() {
+			result.VfsUnusedInputs = c.vfsServer.UnusedInputs()
+		}
 	} else if !*disableWorkspaceSync {
 		c.emitCOWAndUFFDMetrics(stage)
 		stage = "copy_workspace_outputs"
@@ -3663,7 +4073,7 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", "awk '/MemAvailable/ {print $2 / 1024}' /proc/meminfo"},
 	}
-	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
+	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /*=preload*/, nil /* statsListener*/, &interfaces.Stdio{})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -4338,13 +4748,38 @@ func snapshotReadPolicy(task *repb.ExecutionTask) (string, error) {
 }
 
 // casFileSource is the vext4.Source for an input file of a lazily
-// populated workspace image, opened through the task's CAS inputs.
+// populated workspace image, opened through the task's CAS inputs. The
+// image opens a source the first time the guest reads one of the file's
+// blocks, so an Open means that the guest read the file.
 type casFileSource struct {
 	inputs *vfs_server.CASFiles
+	read   *inputReadSet
 	path   string
 	node   *repb.FileNode
 }
 
 func (s *casFileSource) Open(ctx context.Context) (*os.File, error) {
+	s.read.add(s.node.GetDigest().GetHash())
 	return s.inputs.Open(ctx, s.path, s.node)
+}
+
+// inputReadSet records, by digest hash, the input files that the guest has
+// read through a lazily populated workspace image. The image serves reads
+// from several goroutines, so mu guards hashes.
+type inputReadSet struct {
+	mu     sync.Mutex
+	hashes map[string]struct{}
+}
+
+func (s *inputReadSet) add(hash string) {
+	s.mu.Lock()
+	s.hashes[hash] = struct{}{}
+	s.mu.Unlock()
+}
+
+func (s *inputReadSet) contains(hash string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.hashes[hash]
+	return ok
 }

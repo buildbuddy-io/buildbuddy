@@ -37,8 +37,10 @@ var (
 	errRecvTimeout = status.UnavailableErrorf("stream recv timed out after %s", streamRecvTimeout)
 )
 
-// Execute executes the command using the ExecStreamed API.
-func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir, user string, statsListener procstats.Listener, stdio *interfaces.Stdio) *interfaces.CommandResult {
+// Execute executes the command using the ExecStreamed API. preload, if set,
+// names input files for the guest to read into its page cache while the
+// command runs.
+func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir, user string, preload *vmxpb.InputPreload, statsListener procstats.Listener, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -63,6 +65,7 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 		User:             user,
 		Arguments:        cmd.GetArguments(),
 		OpenStdin:        stdio.Stdin != nil,
+		Preload:          preload,
 	}
 	for _, ev := range cmd.GetEnvironmentVariables() {
 		req.EnvironmentVariables = append(req.EnvironmentVariables, &vmxpb.ExecRequest_EnvironmentVariable{
@@ -141,6 +144,9 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	})
 
 	err = eg.Wait()
+	if stats := res.GetPreloadStats(); stats != nil {
+		log.CtxInfof(ctx, "Guest preloaded %d of %d input files (%d bytes) in %s", stats.GetFilesRead(), len(preload.GetPaths()), stats.GetBytesRead(), time.Duration(stats.GetDurationUsec())*time.Microsecond)
+	}
 	exitCode := commandutil.NoExitCode
 	if res != nil {
 		exitCode = int(res.GetExitCode())

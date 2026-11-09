@@ -336,6 +336,11 @@ func TestBuildTree_RejectsBadNames(t *testing.T) {
 			error: "outside the tree",
 		},
 		{
+			name:  "directory name over 255 bytes",
+			tree:  &vext4.Tree{Dirs: []string{"out/" + strings.Repeat("x", 256)}},
+			error: "name longer than 255 bytes",
+		},
+		{
 			name: "directory over a file",
 			tree: &vext4.Tree{
 				Inputs: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "a"}}}},
@@ -351,6 +356,54 @@ func TestBuildTree_RejectsBadNames(t *testing.T) {
 			require.ErrorContains(t, err, tc.error)
 		})
 	}
+}
+
+func TestBuildTree_EmptySymlinkTargetIsDot(t *testing.T) {
+	root := testfs.MakeTempDir(t)
+	tree := &vext4.Tree{
+		Inputs:         &repb.Tree{Root: &repb.Directory{Symlinks: []*repb.SymlinkNode{{Name: "here", Target: ""}}}},
+		DigestFunction: repb.DigestFunction_SHA256,
+		Source:         func(string, *repb.FileNode) vext4.Source { return nil },
+	}
+
+	store, err := vext4.BuildTree(t.Context(), tree, filepath.Join(root, "image.ext4"), 1<<20)
+	require.NoError(t, err)
+	defer store.Close()
+
+	// Bazel encodes the target "." as an empty target, which the image
+	// stores as ".", as the input downloader does.
+	flat := materialize(t, store, filepath.Join(root, "flat.ext4"))
+	fsck(t, flat)
+	stat := debugfs(t, flat, "stat /here")
+	require.Contains(t, stat, `Fast link dest: "."`)
+}
+
+func TestStore_ShortInputFailsRead(t *testing.T) {
+	root := testfs.MakeTempDir(t)
+	content := bytes.Repeat([]byte("x"), 10_000)
+	d, err := digest.Compute(bytes.NewReader(content), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	// The source holds only half of the input that the tree describes, as a
+	// truncated file cache entry would.
+	opens := &openCounter{counts: map[string]int{}}
+	tree := &vext4.Tree{
+		Inputs:         &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "f", Digest: d}}}},
+		DigestFunction: repb.DigestFunction_SHA256,
+		Source: func(path string, _ *repb.FileNode) vext4.Source {
+			return &memSource{opens: opens, path: path, content: content[:5_000]}
+		},
+	}
+	store, err := vext4.BuildTree(t.Context(), tree, filepath.Join(root, "image.ext4"), 1<<20)
+	require.NoError(t, err)
+	defer store.Close()
+
+	// Reading the whole image reaches the missing half of the file, which
+	// fails instead of reading as zeros.
+	size, err := store.SizeBytes()
+	require.NoError(t, err)
+	buf := make([]byte, size)
+	_, err = store.ReadAt(buf, 0)
+	require.ErrorContains(t, err, "shorter than")
 }
 
 // openCounter counts how often each path's Source is opened.

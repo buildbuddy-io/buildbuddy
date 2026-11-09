@@ -297,7 +297,9 @@ func newSourcePool(ctx context.Context, files []*sourceFile) *sourcePool {
 
 // pread fills p from the file starting at off, zero-filling past the end
 // of the file. Image blocks past a file's last byte must read as zeros,
-// since the guest kernel may expose them through mmap.
+// since the guest kernel may expose them through mmap. A source shorter
+// than the size in its inode is an error, so that a truncated input does
+// not read as zeros.
 func (sp *sourcePool) pread(f *sourceFile, p []byte, off int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -317,6 +319,9 @@ func (sp *sourcePool) pread(f *sourceFile, p []byte, off int64) error {
 	n, err := f.file.ReadAt(p, off)
 	if err != nil && err != io.EOF {
 		return err
+	}
+	if want := min(int64(len(p)), max(f.size-off, 0)); int64(n) < want {
+		return fmt.Errorf("input is shorter than its %d bytes: read %d bytes at offset %d", f.size, n, off)
 	}
 	clear(p[n:])
 	sp.readBytes.Add(uint64(len(p)))

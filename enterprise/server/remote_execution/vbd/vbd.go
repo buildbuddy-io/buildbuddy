@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -47,6 +48,7 @@ type BlockDevice interface {
 type FS struct {
 	store     BlockDevice
 	opts      Options
+	directIO  atomic.Bool
 	root      *Node
 	server    *fuse.Server
 	lockFile  *os.File
@@ -71,8 +73,15 @@ func New(store BlockDevice) (*FS, error) {
 // NewWithOptions returns a new FS serving the given file with the options.
 func NewWithOptions(store BlockDevice, opts Options) (*FS, error) {
 	f := &FS{store: store, opts: opts}
+	f.directIO.Store(opts.DirectIO)
 	f.root = &Node{fs: f}
 	return f, nil
+}
+
+// SetDirectIO changes Options.DirectIO for opens of the file from now on.
+// Files already open keep the setting they were opened with.
+func (f *FS) SetDirectIO(directIO bool) {
+	f.directIO.Store(directIO)
 }
 
 func (f *FS) SetFile(file BlockDevice) {
@@ -212,7 +221,7 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fusefs.FileHandle, uint3
 		return nil, 0, syscall.EOPNOTSUPP
 	}
 	var fuseFlags uint32
-	if n.fs.opts.DirectIO {
+	if n.fs.directIO.Load() {
 		fuseFlags = fuse.FOPEN_DIRECT_IO
 	}
 	return &fileHandle{file: n.file}, fuseFlags, 0

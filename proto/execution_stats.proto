@@ -166,6 +166,11 @@ message ExecutionAuxiliaryMetadata {
   // Experiment flags that the executor received with the task, so that the
   // app can record which variants were applied to this execution.
   repeated experiments.EvaluatedFlag experiment_flags = 13;
+
+  // The digest of a TreeMask that excludes the input files the action did not
+  // open while running on a VFS-backed workspace. Only set for tasks with
+  // ExecutionTask.track_vfs_unused_inputs set.
+  build.bazel.remote.execution.v2.Digest vfs_unused_inputs_digest = 14;
 }
 
 // Metrics associated with the guest VM which executed an action. Mostly

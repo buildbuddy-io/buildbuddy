@@ -358,10 +358,16 @@ func (b *builder) addProtoDir(in *inode, dirPath string, dir *repb.Directory, di
 		if len(s.GetTarget()) >= blockSize {
 			return fmt.Errorf("%s: symlink target longer than %d bytes", childPath, blockSize-1)
 		}
+		// Bazel can encode the target "." as an empty target, which Linux
+		// does not allow, so store "." as the input downloader does.
+		target := s.GetTarget()
+		if target == "" {
+			target = "."
+		}
 		child := b.newEntry(kindSymlink, syscall.S_IFLNK|0777)
 		child.links = 1
-		child.size = int64(len(s.GetTarget()))
-		child.target = s.GetTarget()
+		child.size = int64(len(target))
+		child.target = target
 		in.children = append(in.children, dirEntry{name: s.GetName(), inode: child})
 	}
 	return nil
@@ -379,6 +385,9 @@ func (b *builder) mkdirAll(root *inode, p string) error {
 	}
 	in := root
 	for name := range strings.SplitSeq(p, "/") {
+		if len(name) > maxNameLen {
+			return fmt.Errorf("%s: name longer than %d bytes", p, maxNameLen)
+		}
 		child := in.child(name)
 		if child == nil {
 			child = b.newEntry(kindDir, syscall.S_IFDIR|0755)

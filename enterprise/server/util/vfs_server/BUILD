@@ -82,6 +82,7 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/hash",
         "//server/util/prefix",
+        "//server/util/proto",
         "//server/util/status",
         "@com_github_google_go_cmp//cmp",
         "@com_github_hanwen_go_fuse_v2//fuse",

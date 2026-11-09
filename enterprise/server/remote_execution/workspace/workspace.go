@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/gobwas/glob"
@@ -101,8 +102,9 @@ type Workspace struct {
 type VFSPrefetchMode string
 
 const (
-	VFSPrefetchModeAll  VFSPrefetchMode = platform.VFSPrefetchModeAll
-	VFSPrefetchModeNone VFSPrefetchMode = platform.VFSPrefetchModeNone
+	VFSPrefetchModeAll        VFSPrefetchMode = platform.VFSPrefetchModeAll
+	VFSPrefetchModeSkipUnused VFSPrefetchMode = platform.VFSPrefetchModeSkipUnused
+	VFSPrefetchModeNone       VFSPrefetchMode = platform.VFSPrefetchModeNone
 )
 
 type Opts struct {
@@ -125,7 +127,9 @@ type Opts struct {
 
 // New creates a new workspace directly under the given parent directory.
 func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) {
-	if opts.VFSPrefetchMode != "" && opts.VFSPrefetchMode != VFSPrefetchModeAll && opts.VFSPrefetchMode != VFSPrefetchModeNone {
+	switch opts.VFSPrefetchMode {
+	case "", VFSPrefetchModeAll, VFSPrefetchModeSkipUnused, VFSPrefetchModeNone:
+	default:
 		return nil, status.InvalidArgumentErrorf("invalid VFS prefetch mode %q", opts.VFSPrefetchMode)
 	}
 	dirPerms := fs.FileMode(0777)
@@ -351,6 +355,12 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	}
 	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
 	opts.RecordInputFetchMetadata = execution_experiments.RecordInputFetchMetadata.Get(ctx)
+	if vfsPrefetchMode == VFSPrefetchModeSkipUnused {
+		// Skip prefetching the inputs that a previous execution of this
+		// command left unopened, if known. The VFS fetches them on demand if
+		// this execution opens them after all.
+		opts.UnusedInputsDigest = ws.task.GetVfsUnusedInputsDigest()
+	}
 	if ws.Opts.Preserve {
 		opts.KnownInputs = ws.Inputs
 		opts.TrackTransfers = true
@@ -509,7 +519,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	digestFunction := ws.task.GetExecuteRequest().GetDigestFunction()
 
 	var txInfo *dirtools.TransferInfo
-	var stdoutDigest, stderrDigest *repb.Digest
+	var stdoutDigest, stderrDigest, unusedInputsDigest *repb.Digest
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
@@ -581,9 +591,36 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			return nil
 		})
 	}
+	if cmdResult.VfsUnusedInputs != nil {
+		eg.Go(func() error {
+			// The mask only saves prefetching in later executions, so losing
+			// it isn't worth failing the task.
+			b, err := proto.Marshal(cmdResult.VfsUnusedInputs)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to marshal VFS unused inputs mask: %s", err)
+				return nil
+			}
+			d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(b))
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to upload VFS unused inputs mask: %s", err)
+				return nil
+			}
+			// Task routing often sends the next execution of the command to
+			// this executor, so keep a local copy that it can read without a
+			// round trip to the CAS.
+			if fc := ws.env.GetFileCache(); fc != nil {
+				if _, err := fc.Write(egCtx, &repb.FileNode{Digest: d}, b); err != nil {
+					log.CtxWarningf(ctx, "Failed to add VFS unused inputs mask to the file cache: %s", err)
+				}
+			}
+			unusedInputsDigest = d
+			return nil
+		})
+	}
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
+	cmdResult.VfsUnusedInputsDigest = unusedInputsDigest
 	txInfo.FileCount += 2 // for stdout and stderr
 	txInfo.BytesTransferred += int64(len(cmdResult.Stdout) + len(cmdResult.Stderr))
 	txInfo.FileCount += int64(len(cmdResult.AuxiliaryLogs))
@@ -680,6 +717,16 @@ func (ws *Workspace) VFSError() error {
 		return nil
 	}
 	return ws.vfsServer.TaskError()
+}
+
+// VFSUnusedInputs returns a TreeMask that excludes the CAS inputs that the
+// current task didn't open, or nil if the workspace doesn't serve inputs
+// through VFS or the task doesn't record unused inputs.
+func (ws *Workspace) VFSUnusedInputs() *repb.TreeMask {
+	if ws.vfsServer == nil || !ws.task.GetTrackVfsUnusedInputs() {
+		return nil
+	}
+	return ws.vfsServer.UnusedInputs()
 }
 
 // TaskFinished informs the workspace that task execution is done.

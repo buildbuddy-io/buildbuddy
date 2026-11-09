@@ -13,14 +13,19 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -714,10 +719,49 @@ func TestDownloadInputs_VFSPrefetchModeAll_PreserveWorkspace(t *testing.T) {
 	require.NoError(t, ws.Clean())
 }
 
+func TestUploadOutputs_VFSUnusedInputs(t *testing.T) {
+	ctx := t.Context()
+	te := testenv.GetTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 1e9, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	te.SetFileCache(fc)
+	ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{})
+	require.NoError(t, err)
+	ws.SetTask(ctx, &repb.ExecutionTask{Command: &repb.Command{}})
+
+	// The command left two inputs unopened. Uploading the outputs also
+	// uploads the mask excluding them and records its digest for the
+	// execution metadata.
+	cmdResult := &interfaces.CommandResult{VfsUnusedInputs: &repb.TreeMask{ExcludedPaths: []string{"a.txt", "b.txt"}}}
+	executeResponse := &repb.ExecuteResponse{Result: &repb.ActionResult{}}
+	_, err = ws.UploadOutputs(ctx, &repb.Command{}, executeResponse, cmdResult)
+	require.NoError(t, err)
+	require.NotNil(t, cmdResult.VfsUnusedInputsDigest)
+
+	// The uploaded mask can be read back from the CAS by that digest.
+	uploaded := &repb.TreeMask{}
+	rn := digest.NewCASResourceName(cmdResult.VfsUnusedInputsDigest, "", repb.DigestFunction_SHA256)
+	err = cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), rn, uploaded)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(cmdResult.VfsUnusedInputs, uploaded, protocmp.Transform()))
+
+	// The executor also keeps the mask in its file cache, so that the next
+	// execution on this executor reads it without a round trip to the CAS.
+	cached := fc.ContainsFile(ctx, &repb.FileNode{Digest: cmdResult.VfsUnusedInputsDigest})
+	require.True(t, cached)
+}
+
 func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 	for _, testCase := range []struct {
-		name             string
-		mode             workspace.VFSPrefetchMode
+		name string
+		mode workspace.VFSPrefetchMode
+		// unusedRecord gives the task a list from a previous execution that
+		// names input.txt as unopened.
+		unusedRecord     bool
 		wantInputFetcher bool
 		wantCached       bool
 		wantMaterialized bool
@@ -730,6 +774,22 @@ func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 		{
 			name:             "all",
 			mode:             workspace.VFSPrefetchModeAll,
+			wantInputFetcher: true,
+			wantCached:       true,
+		},
+		{
+			// A previous execution of the task didn't open the input, so it
+			// isn't prefetched.
+			name:             "skip_unused",
+			mode:             workspace.VFSPrefetchModeSkipUnused,
+			unusedRecord:     true,
+			wantInputFetcher: true,
+		},
+		{
+			// No previous execution has been recorded, so every input is
+			// prefetched.
+			name:             "skip_unused_without_record",
+			mode:             workspace.VFSPrefetchModeSkipUnused,
 			wantInputFetcher: true,
 			wantCached:       true,
 		},
@@ -762,7 +822,14 @@ func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 
 			ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{Preserve: true, VFSPrefetchMode: testCase.mode})
 			require.NoError(t, err)
-			ws.SetTask(ctx, &repb.ExecutionTask{})
+			task := &repb.ExecutionTask{}
+			if testCase.unusedRecord {
+				record, err := proto.Marshal(&repb.TreeMask{ExcludedPaths: []string{inputNode.GetName()}})
+				require.NoError(t, err)
+				task.VfsUnusedInputsDigest, err = cachetools.UploadBlobToCAS(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, record)
+				require.NoError(t, err)
+			}
+			ws.SetTask(ctx, task)
 			require.NoError(t, ws.DownloadInputs(ctx, layout))
 			_, err = ws.TaskFinished()
 			require.NoError(t, err)

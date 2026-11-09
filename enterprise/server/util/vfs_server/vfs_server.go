@@ -550,6 +550,12 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 				if _, err := addChild(parentNode, fileNode, childFileNode.GetName()); err != nil {
 					return err
 				}
+			} else {
+				// The node is reused for the new task, so forget that the
+				// previous task opened it.
+				existingNode.mu.Lock()
+				existingNode.accessed = false
+				existingNode.mu.Unlock()
 			}
 			numFiles++
 		}
@@ -725,6 +731,29 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 	}
 
 	return stats
+}
+
+// UnusedInputs returns a TreeMask that excludes the CAS inputs not opened
+// since the last Prepare call.
+func (p *Server) UnusedInputs() *repb.TreeMask {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var paths []string
+	var walkNode func(node *fsNode, path string)
+	walkNode = func(node *fsNode, path string) {
+		node.mu.Lock()
+		if node.fileNode != nil && !node.accessed {
+			paths = append(paths, path)
+		}
+		children := node.children
+		node.mu.Unlock()
+		for name, child := range children {
+			walkNode(child, filepath.Join(path, name))
+		}
+	}
+	walkNode(p.root, "")
+	slices.Sort(paths)
+	return &repb.TreeMask{ExcludedPaths: paths}
 }
 
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
@@ -1149,6 +1178,9 @@ type CASFiles struct {
 
 	mu        sync.Mutex
 	taskError error
+	// prefetchMissCount is the number of files opened that the input fetcher
+	// had left out of its fetch.
+	prefetchMissCount int64
 }
 
 func NewCASFiles(env environment.Env, layout *container.FileSystemLayout, inputFetcher container.InputFetcher) *CASFiles {
@@ -1200,6 +1232,17 @@ func (c *CASFiles) open(ctx context.Context, node *repb.FileNode) (*os.File, err
 			return f, nil
 		}
 	}
+	// The file is missing from the file cache either because it was evicted
+	// after the fetch, or because the input fetcher left it out as unused by
+	// a previous execution (see dirtools.DownloadTreeOpts.UnusedInputsDigest)
+	// and returned without fetching it. Either way, fetch it directly, but
+	// count the latter case so that misses caused by leaving out unused
+	// inputs can be measured separately from evictions.
+	if prefetcher, ok := c.inputFetcher.(interface{ Prefetching(*repb.FileNode) bool }); ok && !prefetcher.Prefetching(node) {
+		c.mu.Lock()
+		c.prefetchMissCount++
+		c.mu.Unlock()
+	}
 	if err := c.retryInputFetcher.Fetch(ctx, node); err != nil {
 		return nil, err
 	}
@@ -1222,6 +1265,9 @@ func (c *CASFiles) UpdateStats(stats *repb.VfsStats) {
 	if c.inputFetcher != c.retryInputFetcher {
 		c.retryInputFetcher.UpdateIOStats(stats)
 	}
+	c.mu.Lock()
+	stats.PrefetchMissCount += c.prefetchMissCount
+	c.mu.Unlock()
 }
 
 func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error) {

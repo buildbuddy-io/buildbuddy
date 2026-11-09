@@ -26,6 +26,10 @@ func (s *Server) TaskError() error {
 	return nil
 }
 
+func (s *Server) UnusedInputs() *repb.TreeMask {
+	return nil
+}
+
 func New(env environment.Env, workspacePath string) (*Server, error) {
 	return nil, fmt.Errorf("not implemented")
 }

@@ -67,6 +67,38 @@ message ExecRequest {
   // Optional user to run the command as. If unset, the command will run as
   // root.
   string user = 9;
+
+  // Input files to read into the guest page cache while the command runs.
+  InputPreload preload = 10;
+}
+
+// InputPreload names input files that vmexec reads in the background, from
+// the moment it starts the command, so that their contents are in the guest
+// page cache by the time the command reads them. Reading stops once the
+// command exits.
+message InputPreload {
+  // The guest directory that the task's input root is mounted at, which the
+  // paths are relative to. The command's working directory is under it.
+  string input_root = 1;
+
+  // The input root-relative paths of the files to read.
+  repeated string paths = 2;
+
+  // How many files to read at a time.
+  int32 parallelism = 3;
+}
+
+// InputPreloadStats reports what an InputPreload read.
+message InputPreloadStats {
+  // The number of files that were read to the end.
+  int64 files_read = 1;
+
+  // The bytes read, including from files that were only partly read.
+  int64 bytes_read = 2;
+
+  // How long the reading took, until every file was read or the command
+  // exited, whichever came first.
+  int64 duration_usec = 3;
 }
 
 message ExecResponse {
@@ -80,6 +112,10 @@ message ExecResponse {
   // from a snapshot, the boot (and these waits) happened before some earlier
   // command, not this one.
   Metrics metrics = 5;
+
+  // What the preload that ExecRequest.preload asked for read. Unset when
+  // the request asked for none.
+  InputPreloadStats preload_stats = 6;
 }
 
 // Metrics reported by the vmexec server, including timings of one-time
