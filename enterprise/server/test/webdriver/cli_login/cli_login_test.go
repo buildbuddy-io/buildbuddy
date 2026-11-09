@@ -209,7 +209,7 @@ func checkOrgAccess(t *testing.T, app buildbuddy_enterprise.WebTarget, slug, api
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	_, err = client.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
-		Query:          &inpb.InvocationQuery{},
+		Query:          &inpb.InvocationQuery{GroupId: groupID},
 	})
 	require.NoError(t, err)
 }

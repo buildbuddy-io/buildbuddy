@@ -89,7 +89,7 @@ func waitForInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildB
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
 		searchResp, err := bb.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
 			RequestContext: reqCtx,
-			Query:          &inpb.InvocationQuery{},
+			Query:          &inpb.InvocationQuery{GroupId: reqCtx.GetGroupId()},
 		})
 		if err != nil && !strings.Contains(err.Error(), "not found") {
 			require.NoError(t, err)
@@ -229,7 +229,7 @@ sh_binary(
 	}
 	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
 		RequestContext: reqCtx,
-		Query:          &inpb.InvocationQuery{},
+		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
 	})
 	require.NoError(t, err)
 	require.Len(t, searchRsp.GetInvocation(), 2)
@@ -515,7 +515,7 @@ genrule(
 	}
 	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
 		RequestContext: reqCtx,
-		Query:          &inpb.InvocationQuery{},
+		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
 	})
 	require.NoError(t, err)
 	require.Equal(t, 2, len(searchRsp.GetInvocation()))
@@ -808,7 +808,7 @@ sh_binary(
 	// Check the invocation logs to ensure the bazel command successfully ran
 	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
 		RequestContext: reqCtx,
-		Query:          &inpb.InvocationQuery{},
+		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
 	})
 	require.NoError(t, err)
 
@@ -918,7 +918,7 @@ func TestBashScript(t *testing.T) {
 	}
 	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
 		RequestContext: reqCtx,
-		Query:          &inpb.InvocationQuery{},
+		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, len(searchRsp.GetInvocation()))
@@ -996,7 +996,7 @@ func TestEmbeddedBinariesFromApp(t *testing.T) {
 	}
 	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
 		RequestContext: reqCtx,
-		Query:          &inpb.InvocationQuery{},
+		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, len(searchRsp.GetInvocation()))

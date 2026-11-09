@@ -272,8 +272,11 @@ message InvocationQuery {
   // The host this build was executed on.
   string host = 2;
 
-  reserved 3;
-  reserved "group_id";
+  // The group to search. Searches are always scoped to the authenticated
+  // group, which clients select using request_context.group_id, so new
+  // clients should leave this unset. If set, it must match the authenticated
+  // group or an error will be returned.
+  string group_id = 3;
 
   // The git repo the build was for.
   string repo_url = 4;

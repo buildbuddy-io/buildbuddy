@@ -368,7 +368,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     });
   }
 
-  fetchInvocationList(heatmapSelection?: HeatmapSelection) {
+  fetchInvocationList(groupId: string, heatmapSelection?: HeatmapSelection) {
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
@@ -382,6 +382,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         tags: filterParams.tags,
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
+        groupId: groupId,
         role: filterParams.role || [],
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,
@@ -422,7 +423,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     if (isExecution) {
       this.fetchExecutionList(this.currentHeatmapSelection);
     } else {
-      this.fetchInvocationList(this.currentHeatmapSelection);
+      this.fetchInvocationList(groupId, this.currentHeatmapSelection);
     }
   }
 

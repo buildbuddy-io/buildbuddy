@@ -231,6 +231,13 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	if u.GetGroupID() == "" {
 		return "", nil, status.InternalError("user is unexpectedly missing group ID")
 	}
+	// Older clients choose the group to search using the query group ID. We
+	// reject a query group ID that differs from the authenticated group,
+	// because we would otherwise ignore it and return invocations from a group
+	// the client did not ask for.
+	if gid := req.GetQuery().GetGroupId(); gid != "" && gid != u.GetGroupID() {
+		return "", nil, status.InvalidArgumentErrorf("query group ID %q does not match the authenticated group ID %q (set request_context.group_id to select the group to search)", gid, u.GetGroupID())
+	}
 	if blocklist.IsBlockedForStatsQuery(u.GetGroupID()) {
 		return "", nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}

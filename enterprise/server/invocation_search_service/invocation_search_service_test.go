@@ -218,6 +218,26 @@ func TestQueryIsScopedToAuthenticatedGroupID(t *testing.T) {
 			},
 		},
 		{
+			name:  "query group ID matches authenticated group ID",
+			user:  "US1",
+			query: &inpb.InvocationQuery{GroupId: "GR1"},
+			expectedInvocationIDs: []string{
+				getUUIDString(0),
+				getUUIDString(1),
+				getUUIDString(2),
+				getUUIDString(3),
+				getUUIDString(5),
+				getUUIDString(6),
+				getUUIDString(7),
+			},
+		},
+		{
+			name:          "query group ID does not match authenticated group ID",
+			user:          "US1",
+			query:         &inpb.InvocationQuery{GroupId: "GR2"},
+			expectedError: status.IsInvalidArgumentError,
+		},
+		{
 			name:          "unauthenticated",
 			user:          "",
 			query:         nil,
