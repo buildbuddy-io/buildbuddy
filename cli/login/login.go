@@ -12,7 +12,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,7 +34,8 @@ import (
 
 const (
 	apiKeyRepoSetting = "api-key"
-	apiKeyHeader      = "remote_header=x-buildbuddy-api-key"
+	apiKeyHeaderName  = "x-buildbuddy-api-key"
+	apiKeyHeader      = "remote_header=" + apiKeyHeaderName
 	envAPIKeyVarName  = "BUILDBUDDY_API_KEY"
 
 	// APITargetEnvVar overrides DefaultApiTarget, e.g. to reach BuildBuddy
@@ -83,6 +86,11 @@ func envAPIKey() string {
 }
 
 var (
+	// grpcTargetRegexp matches the only gRPC target forms considered safe to
+	// send the API key to: a scheme, a plain DNS name or IPv4 address, an
+	// optional port, and an optional trailing slash.
+	grpcTargetRegexp = regexp.MustCompile(`^(grpcs?)://([A-Za-z0-9.-]+)(?::([0-9]+))?/?$`)
+
 	flags = flag.NewFlagSet("login", flag.ContinueOnError)
 	Flags = flags
 
@@ -439,6 +447,83 @@ func ConfigureAPIKey(args *arg.BazelArgs) error {
 		return err
 	}
 	return nil
+}
+
+// ConfigureBESAPIKey copies the BuildBuddy API key from remote_header to
+// bes_header, since Bazel 10 redacts remote_header values from the BEP command
+// line. It only does so when every comma-separated BES backend either has the
+// same scheme, host and port as the remote cache or executor, or is BuildBuddy
+// over TLS while any set remote cache and executor are too, so the key isn't
+// sent to other BES services or an on-prem key to BuildBuddy Cloud.
+func ConfigureBESAPIKey(args *arg.BazelArgs) error {
+	if !isSupportedCommand(args.GetCommand()) {
+		return nil
+	}
+	bazelArgs := arg.GetBazelArgs(args.Resolved())
+	apiKey := ""
+	for _, h := range arg.GetMulti(bazelArgs, "remote_header") {
+		if name, value, ok := strings.Cut(h, "="); ok && strings.EqualFold(name, apiKeyHeaderName) {
+			apiKey = value
+		}
+	}
+	if apiKey == "" {
+		return nil
+	}
+	for _, h := range arg.GetMulti(bazelArgs, "bes_header") {
+		if name, _, _ := strings.Cut(h, "="); strings.EqualFold(name, apiKeyHeaderName) {
+			return nil
+		}
+	}
+	remoteCacheFlag := arg.Get(bazelArgs, "remote_cache")
+	remoteExecutorFlag := arg.Get(bazelArgs, "remote_executor")
+	remoteCache := parseGRPCTarget(remoteCacheFlag)
+	remoteExecutor := parseGRPCTarget(remoteExecutorFlag)
+	// Check the flags for emptiness, since an unparseable target is also zero.
+	allowBuildBuddy := (remoteCacheFlag == "" || remoteCache.isBuildBuddy()) &&
+		(remoteExecutorFlag == "" || remoteExecutor.isBuildBuddy())
+	for besBackend := range strings.SplitSeq(arg.Get(bazelArgs, "bes_backend"), ",") {
+		bes := parseGRPCTarget(besBackend)
+		if bes == (grpcTarget{}) {
+			return nil
+		}
+		if !(allowBuildBuddy && bes.isBuildBuddy()) && bes != remoteCache && bes != remoteExecutor {
+			return nil
+		}
+	}
+	return args.Append("--bes_header=" + apiKeyHeaderName + "=" + apiKey)
+}
+
+// grpcTarget is the endpoint that a Bazel gRPC target connects to.
+type grpcTarget struct {
+	scheme, host, port string
+}
+
+func (t grpcTarget) isBuildBuddy() bool {
+	return t.scheme == "grpcs" && (t.host == "buildbuddy.io" || strings.HasSuffix(t.host, ".buildbuddy.io"))
+}
+
+// parseGRPCTarget parses a Bazel gRPC target, which may omit the scheme (meaning
+// grpcs) and port (meaning gRPC's default for the scheme: 443 for grpcs, 80 for
+// grpc). It returns the zero value for anything else, i.e. targets
+// grpcTargetRegexp doesn't match or with a port outside 1-65535.
+func parseGRPCTarget(target string) grpcTarget {
+	if strings.HasPrefix(target, "unix:") {
+		return grpcTarget{}
+	}
+	if !strings.Contains(target, "://") {
+		target = "grpcs://" + target
+	}
+	m := grpcTargetRegexp.FindStringSubmatch(target)
+	if m == nil {
+		return grpcTarget{}
+	}
+	scheme, host, port := m[1], m[2], m[3]
+	if port == "" {
+		port = map[string]string{"grpcs": "443", "grpc": "80"}[scheme]
+	} else if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return grpcTarget{}
+	}
+	return grpcTarget{scheme: scheme, host: host, port: port}
 }
 
 // Commands that support the `--remote_header` bazel flag

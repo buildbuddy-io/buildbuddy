@@ -613,6 +613,60 @@ func TestDefaultImageInPlatform(t *testing.T) {
 	}
 }
 
+func TestSnapshotSalt(t *testing.T) {
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	for _, tc := range []struct {
+		name            string
+		isolation       string
+		forcedIsolation string
+		recycle         bool
+		providedSalt    string
+		salt            string
+		wantSalt        string
+	}{
+		{name: "recyclable Firecracker", isolation: "firecracker", recycle: true, salt: "salt", wantSalt: "salt"},
+		{name: "forced Firecracker", isolation: "podman", forcedIsolation: "firecracker", recycle: true, salt: "salt", wantSalt: "salt"},
+		{name: "empty salt", isolation: "firecracker", recycle: true},
+		{name: "non-recyclable Firecracker", isolation: "firecracker", salt: "salt"},
+		{name: "recyclable Podman", isolation: "podman", recycle: true, salt: "salt"},
+		{name: "recyclable bare", isolation: "none", recycle: true, salt: "salt"},
+		{name: "overrides provided salt", isolation: "firecracker", recycle: true, providedSalt: "original", salt: "salt", wantSalt: "salt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.forced_network_isolation_type", tc.forcedIsolation)
+			ctx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{{
+				Name:  execution_experiments.SnapshotSalt.Name(),
+				Value: &expb.EvaluatedFlag_StringValue{StringValue: tc.salt},
+			}})
+			plat := &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: fmt.Sprint(tc.recycle)},
+				{Name: platform.WorkloadIsolationPropertyName, Value: tc.isolation},
+			}}
+			if tc.providedSalt != "" {
+				plat.Properties = append(plat.Properties, &repb.Platform_Property{Name: platform.SnapshotSaltPropertyName, Value: tc.providedSalt})
+			}
+			task := &repb.ExecutionTask{
+				Action:  &repb.Action{Platform: plat},
+				Command: &repb.Command{Platform: plat.CloneVT()},
+			}
+			original := task.CloneVT()
+			props, err := platform.ParseProperties(task)
+			require.NoError(t, err)
+			execProps := &ExecutorProperties{SupportedIsolationTypes: []platform.ContainerType{
+				platform.BareContainerType, platform.PodmanContainerType, platform.FirecrackerContainerType,
+			}}
+			require.NoError(t, ApplyOverrides(ctx, testenv.GetTestEnv(t), execProps, props, task))
+
+			assert.Equal(t, tc.wantSalt, platform.FindValue(platform.GetProto(task.Action, task.Command), platform.SnapshotSaltPropertyName))
+			assert.Equal(t, tc.wantSalt, platform.FindValue(task.Command.Platform, platform.SnapshotSaltPropertyName))
+			if tc.wantSalt == "" {
+				require.Empty(t, cmp.Diff(original, task, protocmp.Transform()))
+			}
+		})
+	}
+}
+
 func TestForceNetworkIsolationType(t *testing.T) {
 	for _, testCase := range []struct {
 		dockerNetworkValue         string

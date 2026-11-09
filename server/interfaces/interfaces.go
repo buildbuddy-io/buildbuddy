@@ -57,6 +57,7 @@ import (
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
@@ -525,6 +526,7 @@ type APIKeyGroup interface {
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
+	GetUserAccountType() uidpb.AccountType
 	IsImpersonating() bool
 	GetGroupStatus() grpb.Group_GroupStatus
 }

@@ -76,11 +76,11 @@ func TestAcquireAndRelease(t *testing.T) {
 	rd := &rfpb.RangeDescriptor{
 		Start:   []byte("a"),
 		End:     []byte("z"),
-		RangeId: 1,
+		RangeId: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{RangeId: 1, ReplicaId: 1},
-			{RangeId: 1, ReplicaId: 2},
-			{RangeId: 1, ReplicaId: 3},
+			{RangeId: 2, ReplicaId: 1},
+			{RangeId: 2, ReplicaId: 2},
+			{RangeId: 2, ReplicaId: 3},
 		},
 	}
 	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd.GetRangeId(), rep)
@@ -116,7 +116,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 	rd := &rfpb.RangeDescriptor{
 		Start:   keys.MinByte,
 		End:     []byte("z"),
-		RangeId: 2,
+		RangeId: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{RangeId: 1, ReplicaId: 1},
 			{RangeId: 1, ReplicaId: 2},
@@ -148,8 +148,6 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 
 func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	bgCtx := context.Background()
-	ctx, cancel := context.WithTimeout(bgCtx, 3*time.Second)
-	defer cancel()
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New(bgCtx, "replicaID-3", sender)
@@ -158,18 +156,20 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	rd := &rfpb.RangeDescriptor{
 		Start:   keys.MinByte,
 		End:     []byte("z"),
-		RangeId: 3,
+		RangeId: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{RangeId: 1, ReplicaId: 1},
 			{RangeId: 1, ReplicaId: 2},
 			{RangeId: 1, ReplicaId: 3},
 		},
 	}
-	leaseDuration := 100 * time.Millisecond
-	gracePeriod := 50 * time.Millisecond
+	leaseDuration := 500 * time.Millisecond
+	gracePeriod := 250 * time.Millisecond
 	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd.GetRangeId(), rep).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to get a rangelease.
+	ctx, cancel := context.WithTimeout(bgCtx, 3*time.Second)
+	defer cancel()
 	err := l.Lease(ctx)
 	require.NoError(t, err)
 
