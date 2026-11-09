@@ -445,6 +445,7 @@ image_layer(
             "@debian13//amazon-ecr-credential-helper/%s" % arch,
             "@debian13//lxcfs/%s" % arch,
             "@debian13//rootlesskit/%s" % arch,
+            "@debian13//tar/%s" % arch,
 
             # nvidia packages
             "@debian13//nvidia-container-toolkit-base/%s" % arch,
@@ -700,32 +701,22 @@ image_manifest(
         ),
     ],
     layers = select({
-        "@platforms//cpu:x86_64": [
-            ":apt_image_layer_amd64",
-            ":docker_credential_gcr_image_layer_amd64",
-            ":containerd_patch_image_layer_amd64",
-            ":runc_patch_image_layer_amd64",
+        platform: [
+            ":apt_image_layer_%s" % arch,
+            ":docker_credential_gcr_image_layer_%s" % arch,
+            ":containerd_patch_image_layer_%s" % arch,
+            ":runc_patch_image_layer_%s" % arch,
             # Updating these layers does not currently afford us any vulnerability
             # fixes; leave them out for now.
-            # ":rootlesskit_patch_layer_amd64",
-            ":executor_tools_image_layer_amd64",
+            # ":rootlesskit_patch_layer_%s" % arch,
+            ":executor_tools_image_layer_%s" % arch,
             ":podman_static_image_layer",
             ":licenses_image_layer",
             ":binary_image_layer",
-        ],
-        "@platforms//cpu:arm64": [
-            ":apt_image_layer_arm64",
-            ":docker_credential_gcr_image_layer_arm64",
-            ":containerd_patch_image_layer_arm64",
-            ":runc_patch_image_layer_arm64",
-            # Updating these layers does not currently afford us any vulnerability
-            # fixes; leave them out for now.
-            # ":rootlesskit_patch_layer_arm64",
-            ":executor_tools_image_layer_arm64",
-            ":podman_static_image_layer",
-            ":licenses_image_layer",
-            ":binary_image_layer",
-        ],
+        ] for platform, arch in {
+            "@platforms//cpu:x86_64": "amd64",
+            "@platforms//cpu:arm64": "arm64",
+        }.items()
     }),
     tags = ["manual"],
 )
