@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
@@ -369,7 +370,7 @@ func Config() (*RepoConfig, error) {
 	if *gitFetchURL != "" {
 		fetchURL = *gitFetchURL
 	}
-	log.Debugf("Using fetch URL: %s", fetchURL)
+	log.Debugf("Using fetch URL: %s", redact.RedactText(fetchURL))
 
 	defaultBranch, err := determineDefaultBranch(remote.name)
 	if err != nil {
@@ -1072,6 +1073,27 @@ func workingDirectory(repoRootPath, workspaceFilePath string) (string, error) {
 	return relPath, nil
 }
 
+func redactedRunRequest(req *rnpb.RunRequest) (string, error) {
+	redacted := req.CloneVT()
+	for i, header := range redacted.GetRemoteHeaders() {
+		name, _, _ := strings.Cut(header, "=")
+		redacted.RemoteHeaders[i] = name + "=REDACTED"
+	}
+	encoded, err := json.Marshal(redacted)
+	if err != nil {
+		return "", err
+	}
+	return redact.RedactTextWithValues(string(encoded), sensitiveEnvValues(req.GetEnv())), nil
+}
+
+func sensitiveEnvValues(envVars map[string]string) []string {
+	environ := make([]string, 0, len(envVars))
+	for name, value := range envVars {
+		environ = append(environ, name+"="+value)
+	}
+	return redact.CollectSensitiveEnvValues(environ)
+}
+
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
 	env := real_environment.NewBatchEnv()
 
@@ -1185,12 +1207,12 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		req.Timeout = timeout.String()
 	}
 
-	encodedReq, err := json.Marshal(req)
-	if err != nil {
-		log.Debugf("Failed to marshall req: %s", err)
-	}
-	if len(encodedReq) > 0 {
-		log.Debugf("Run request: %s", string(encodedReq))
+	if log.DebugEnabled() {
+		if encodedReq, err := redactedRunRequest(req); err != nil {
+			log.Debugf("Failed to marshall req: %s", err)
+		} else {
+			log.Debugf("Run request: %s", encodedReq)
+		}
 	}
 	log.Printf("\nWaiting for available remote runner...\n")
 

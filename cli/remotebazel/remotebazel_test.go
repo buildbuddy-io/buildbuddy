@@ -30,6 +30,7 @@ import (
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 func init() {
@@ -1149,4 +1150,26 @@ func runPrintLogsWithCapturedStdout(t *testing.T, client bbspb.BuildBuddyService
 	out, err := io.ReadAll(r)
 	require.NoError(t, err)
 	return string(out), printErr
+}
+
+func TestRedactedRunRequest(t *testing.T) {
+	req := &rnpb.RunRequest{
+		Env: map[string]string{
+			"REPO_USER":  "test-user",
+			"REPO_TOKEN": "env-secret",
+			"NOT_SECRET": "not-secret",
+		},
+		RemoteHeaders: []string{
+			"x-buildbuddy-platform.secret-env-overrides=TOKEN=header-secret",
+		},
+	}
+	encoded, err := redactedRunRequest(req)
+	require.NoError(t, err)
+	require.NotContains(t, encoded, "env-secret")
+	require.NotContains(t, encoded, "header-secret")
+	require.Contains(t, encoded, "test-user")
+	require.Contains(t, encoded, "not-secret")
+	require.Contains(t, encoded, "x-buildbuddy-platform.secret-env-overrides=REDACTED")
+	// The original request, which is sent to the server, is unchanged.
+	require.Equal(t, "x-buildbuddy-platform.secret-env-overrides=TOKEN=header-secret", req.GetRemoteHeaders()[0])
 }
