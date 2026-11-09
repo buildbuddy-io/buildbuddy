@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -370,7 +371,7 @@ func Config() (*RepoConfig, error) {
 	if *gitFetchURL != "" {
 		fetchURL = *gitFetchURL
 	}
-	log.Debugf("Using fetch URL: %s", redact.RedactText(fetchURL))
+	log.Debugf("Using fetch URL: %s", redactedRepoURL(fetchURL))
 
 	defaultBranch, err := determineDefaultBranch(remote.name)
 	if err != nil {
@@ -1073,8 +1074,20 @@ func workingDirectory(repoRootPath, workspaceFilePath string) (string, error) {
 	return relPath, nil
 }
 
+func redactedRepoURL(repoURL string) string {
+	// Tokens don't appear in SSH URLs, as they authenticate via SSH keys.
+	// `StripRepoURLCredentials` can trigger false positives on the `git@` username prefix.
+	if strings.HasPrefix(repoURL, "https://") || strings.HasPrefix(repoURL, "http://") {
+		repoURL = git.StripRepoURLCredentials(repoURL)
+	}
+	return redact.RedactText(repoURL)
+}
+
 func redactedRunRequest(req *rnpb.RunRequest) (string, error) {
 	redacted := req.CloneVT()
+	if redacted.GetGitRepo() != nil {
+		redacted.GitRepo.RepoUrl = redactedRepoURL(redacted.GetGitRepo().GetRepoUrl())
+	}
 	for i, header := range redacted.GetRemoteHeaders() {
 		name, _, _ := strings.Cut(header, "=")
 		redacted.RemoteHeaders[i] = name + "=REDACTED"
@@ -1083,7 +1096,10 @@ func redactedRunRequest(req *rnpb.RunRequest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return redact.RedactTextWithValues(string(encoded), sensitiveEnvValues(req.GetEnv())), nil
+	// Also redact sensitive values from the local environment, since they may be expanded into the command
+	// via another flag, not just being passed as an env var.
+	sensitiveValues := append(sensitiveEnvValues(req.GetEnv()), redact.CollectSensitiveEnvValues(os.Environ())...)
+	return redact.RedactTextWithValues(string(encoded), sensitiveValues), nil
 }
 
 func sensitiveEnvValues(envVars map[string]string) []string {
