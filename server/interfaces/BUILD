@@ -38,6 +38,7 @@ go_library(
         "//proto:stored_invocation_go_proto",
         "//proto:telemetry_go_proto",
         "//proto:usage_go_proto",
+        "//proto:user_id_go_proto",
         "//proto:user_list_go_proto",
         "//proto:workflow_go_proto",
         "//proto:workspace_go_proto",
