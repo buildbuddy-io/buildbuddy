@@ -1967,6 +1967,12 @@ func (s *SchedulerServer) redisKeyForTaskReservations(taskID string) string {
 	}
 }
 
+// ExecutorsWithTaskReservation returns the IDs of the executors recorded as
+// having received a reservation for the task, for proactive cancellation.
+func (s *SchedulerServer) ExecutorsWithTaskReservation(ctx context.Context, taskID string) ([]string, error) {
+	return s.rdb.SMembers(ctx, s.redisKeyForTaskReservations(taskID)).Result()
+}
+
 // recordProbeForProactiveCancellation adds an executor ID to the set of
 // executors that have received a task reservation request for the given task.
 // This allows us to later request proactive cancellation when the task
@@ -3091,15 +3097,19 @@ func enqueueOnConnectedExecutor(ctx context.Context, node *executionNode, reques
 	return err == nil, nil
 }
 
-func (s *SchedulerServer) enqueueOnRemoteExecutor(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest) (bool, error) {
+// schedulerClientForNode returns a client for the app that the node's work
+// stream is connected to.
+func (s *SchedulerServer) schedulerClientForNode(node *executionNode) (*schedulerClient, error) {
 	if node.schedulerHostPort == "" {
-		log.CtxErrorf(ctx, "node %q has no scheduler host:port set", node.GetExecutorId())
-		return false, nil
+		return nil, status.FailedPreconditionErrorf("node %q has no scheduler host:port set", node.GetExecutorId())
 	}
+	return s.schedulerClientCache.get(node.schedulerHostPort)
+}
 
-	schedulerClient, err := s.schedulerClientCache.get(node.schedulerHostPort)
+func (s *SchedulerServer) enqueueOnRemoteExecutor(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest) (bool, error) {
+	schedulerClient, err := s.schedulerClientForNode(node)
 	if err != nil {
-		log.CtxWarningf(ctx, "Could not get SchedulerClient for %q: %s", node.schedulerHostPort, err)
+		log.CtxWarningf(ctx, "Could not get SchedulerClient for node %q: %s", node.GetExecutorId(), err)
 		return false, nil
 	}
 	rpcCtx, cancel := context.WithTimeout(ctx, schedulerEnqueueTaskReservationTimeout)
@@ -3116,13 +3126,9 @@ func (s *SchedulerServer) enqueueOnRemoteExecutor(ctx context.Context, node *exe
 // cancel the task reservation. This is best-effort: older apps return
 // Unimplemented during rollouts.
 func (s *SchedulerServer) cancelOnRemoteExecutor(ctx context.Context, node *executionNode, taskID string) {
-	if node.schedulerHostPort == "" {
-		log.CtxDebugf(ctx, "node %q has no scheduler host:port set", node.GetExecutorId())
-		return
-	}
-	schedulerClient, err := s.schedulerClientCache.get(node.schedulerHostPort)
+	schedulerClient, err := s.schedulerClientForNode(node)
 	if err != nil {
-		log.CtxDebugf(ctx, "Could not get SchedulerClient for %q: %s", node.schedulerHostPort, err)
+		log.CtxDebugf(ctx, "Could not get SchedulerClient for node %q: %s", node.GetExecutorId(), err)
 		return
 	}
 	rpcCtx, cancel := context.WithTimeout(ctx, schedulerEnqueueTaskReservationTimeout)

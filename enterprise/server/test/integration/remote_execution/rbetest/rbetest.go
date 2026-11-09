@@ -793,6 +793,29 @@ func (e *Executor) QueueLength() int {
 	return e.taskScheduler.QueueLength()
 }
 
+// ID returns the ID that the executor registers with the scheduler.
+func (e *Executor) ID() string {
+	return e.id
+}
+
+// WaitForTaskReservationsRecorded waits until the scheduler has recorded, for
+// proactive cancellation, that each of the executors received a reservation
+// for the task. Recording happens after the reservation is sent to the
+// executor, so this also means that the executors have received it.
+func (r *Env) WaitForTaskReservationsRecorded(taskID string, executors ...*Executor) {
+	var app *BuildBuddyServer
+	for app = range r.buildBuddyServers {
+		break // All apps share the same Redis.
+	}
+	require.EventuallyWithT(r.t, func(c *assert.CollectT) {
+		ids, err := app.schedulerServer.ExecutorsWithTaskReservation(context.Background(), taskID)
+		require.NoError(c, err)
+		for _, e := range executors {
+			assert.Contains(c, ids, e.ID())
+		}
+	}, defaultWaitTimeout, 10*time.Millisecond)
+}
+
 func (r *Env) AddBuildBuddyServer() *BuildBuddyServer {
 	return r.AddBuildBuddyServerWithOptions(&BuildBuddyServerOptions{})
 }

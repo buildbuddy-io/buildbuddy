@@ -2527,7 +2527,11 @@ func testProactiveCancellation(t *testing.T, forward bool) {
 
 	// Schedule command1 to occupy one executor.
 	cmd1 := rbe.ExecuteControlledCommand("command1", &rbetest.ExecuteControlledOpts{})
+	cmd1TaskID := cmd1.WaitAccepted()
 	cmd1.WaitStarted()
+	// Make sure both of command1's reservations have been delivered, so that
+	// a late one can't be queued behind command2.
+	rbe.WaitForTaskReservationsRecorded(cmd1TaskID, executor1, executor2)
 
 	// The other executor should try the lease and fail, then eventually there
 	// should be no tasks in either queue.
@@ -2539,9 +2543,12 @@ func testProactiveCancellation(t *testing.T, forward bool) {
 	// - Get queued on the busy executor (waiting for resources)
 	// - Start running on the other executor
 	cmd2 := rbe.ExecuteControlledCommand("command2", &rbetest.ExecuteControlledOpts{})
+	cmd2TaskID := cmd2.WaitAccepted()
 	cmd2.WaitStarted()
 
-	// Wait for the task reservation to be queued on the busy executor.
+	// Wait for the task reservation to be queued on the busy executor, and
+	// recorded for proactive cancellation.
+	rbe.WaitForTaskReservationsRecorded(cmd2TaskID, executor1, executor2)
 	require.Eventually(t, func() bool {
 		return totalQueueLen() == 1
 	}, time.Minute, 10*time.Millisecond)
@@ -2583,15 +2590,22 @@ func TestProactiveCancellation_AcrossApps(t *testing.T) {
 	}
 
 	cmd1 := rbe.ExecuteControlledCommand("command1", &rbetest.ExecuteControlledOpts{})
+	cmd1TaskID := cmd1.WaitAccepted()
 	cmd1.WaitStarted()
+	// Make sure both of command1's reservations have been delivered, so that
+	// a late one can't be queued behind command2.
+	rbe.WaitForTaskReservationsRecorded(cmd1TaskID, executor1, executor2)
 	require.Eventually(t, func() bool {
 		return totalQueueLen() == 0
 	}, time.Minute, 10*time.Millisecond)
 
 	// command2 can only start on the free executor, and is queued on the busy
-	// one.
+	// one. Wait until that reservation is also recorded for proactive
+	// cancellation.
 	cmd2 := rbe.ExecuteControlledCommand("command2", &rbetest.ExecuteControlledOpts{})
+	cmd2TaskID := cmd2.WaitAccepted()
 	cmd2.WaitStarted()
+	rbe.WaitForTaskReservationsRecorded(cmd2TaskID, executor1, executor2)
 	require.Eventually(t, func() bool {
 		return totalQueueLen() == 1
 	}, time.Minute, 10*time.Millisecond)
