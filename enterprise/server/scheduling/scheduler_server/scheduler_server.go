@@ -1982,12 +1982,12 @@ func (s *SchedulerServer) recordProbeForProactiveCancellation(ctx context.Contex
 	return err
 }
 
-// sendCancellationRequests sends CancelTaskReservationRequest to all
-// executors that have received a task reservation for the given task, then
-// deletes the Redis tracking set. Executors connected to this app are canceled
-// directly; if forwarding is enabled, the others are canceled via the app that
-// they are connected to. The finalizing executor is skipped since it has
-// already removed the task from its queue.
+// sendCancellationRequests cancels the task's reservations on the executors
+// that received one, then deletes the Redis tracking set. Executors connected
+// to this app are canceled directly; if forwarding is enabled, the others are
+// canceled in the background via the app that they are connected to. The
+// finalizing executor is skipped since it has already removed the task from
+// its queue.
 func (s *SchedulerServer) sendCancellationRequests(ctx context.Context, taskID, finalizingExecutorID string, poolKey nodePoolKey) error {
 	key := s.redisKeyForTaskReservations(taskID)
 	executorIDs, err := s.rdb.SMembers(ctx, key).Result()
@@ -1998,21 +1998,18 @@ func (s *SchedulerServer) sendCancellationRequests(ctx context.Context, taskID, 
 		return nil
 	}
 
-	// Send cancellation requests to matching executors.
-	var remoteExecutorIDs []string
 	for _, executorID := range executorIDs {
 		if executorID == finalizingExecutorID {
 			continue
 		}
-		if !s.cancelOnConnectedExecutor(ctx, executorID, taskID) {
-			remoteExecutorIDs = append(remoteExecutorIDs, executorID)
+		if s.cancelOnConnectedExecutor(ctx, executorID, taskID) {
+			continue
 		}
-	}
-
-	if *forwardProactiveCancellations && len(remoteExecutorIDs) > 0 {
-		s.goBackground(context.WithoutCancel(ctx), func(ctx context.Context) {
-			s.forwardCancellations(ctx, taskID, poolKey, remoteExecutorIDs)
-		})
+		if *forwardProactiveCancellations {
+			s.goBackground(context.WithoutCancel(ctx), func(ctx context.Context) {
+				s.forwardCancellation(ctx, poolKey, executorID, taskID)
+			})
+		}
 	}
 
 	// Clean up the Redis set.
@@ -2099,17 +2096,18 @@ func (s *SchedulerServer) deleteTaskForLease(ctx context.Context, taskID, expect
 	return nil
 }
 
-// forwardCancellations forwards cancellations for the given task to the apps
-// that the given executors are connected to. This is best-effort.
-func (s *SchedulerServer) forwardCancellations(ctx context.Context, taskID string, poolKey nodePoolKey, executorIDs []string) {
+// forwardCancellation forwards a cancellation for the given task to the app
+// that the executor is connected to. This is best-effort.
+func (s *SchedulerServer) forwardCancellation(ctx context.Context, poolKey nodePoolKey, executorID, taskID string) {
 	pool := s.getOrCreatePool(poolKey)
 	if err := pool.RefreshNodes(ctx); err != nil {
-		log.CtxDebugf(ctx, "Could not refresh nodes to forward cancellations for task %q: %s", taskID, err)
+		log.CtxDebugf(ctx, "Could not refresh nodes to forward cancellation for task %q: %s", taskID, err)
 		return
 	}
 	for _, node := range pool.GetNodes(false) {
-		if slices.Contains(executorIDs, node.GetExecutorId()) {
+		if node.GetExecutorId() == executorID {
 			s.cancelOnRemoteExecutor(ctx, node, taskID)
+			return
 		}
 	}
 }
