@@ -743,6 +743,10 @@ type ExecutorOptions struct {
 	// Optional connection for the executor to use for CAS/AC/ByteStream.
 	// Defaults to the app proxy connection if unset.
 	CacheConn grpc.ClientConnInterface
+	// Optional app to pin the executor to. If set, the executor's scheduler,
+	// execution and capabilities clients connect to this app directly instead
+	// of the random app proxy.
+	PinnedApp *BuildBuddyServer
 	// Optional interceptor for command execution results.
 	RunInterceptor
 	priorityTaskSchedulerOptions priority_task_scheduler.Options
@@ -905,6 +909,12 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
 
 	clientConn := r.appProxyConn
+	if options.PinnedApp != nil {
+		pinnedConn, err := grpc_client.DialSimpleWithoutPooling(options.PinnedApp.GRPCAddress())
+		require.NoError(t, err)
+		t.Cleanup(func() { pinnedConn.Close() })
+		clientConn = pinnedConn
+	}
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(clientConn))

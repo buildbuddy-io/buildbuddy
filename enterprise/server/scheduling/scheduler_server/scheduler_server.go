@@ -60,20 +60,21 @@ import (
 )
 
 var (
-	defaultPoolName              = flag.String("remote_execution.default_pool_name", "", "The default executor pool to use if one is not specified.")
-	sharedExecutorPoolGroupID    = flag.String("remote_execution.shared_executor_pool_group_id", "", "Group ID that owns the shared executor pool.")
-	requireExecutorAuthorization = flag.Bool("remote_execution.require_executor_authorization", false, "If true, executors connecting to this server must provide a valid executor API key.")
-	leaseDuration                = flag.Duration("remote_execution.lease_duration", 10*time.Second, "How long before a task lease must be renewed by the executor client.")
-	leaseGracePeriod             = flag.Duration("remote_execution.lease_grace_period", 10*time.Second, "How long to wait for the executor to renew the lease after the TTL duration has elapsed.")
-	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown or a broken lease stream).")
-	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
-	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
-	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", true, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
-	debugExecutorLabelsKey       = flag.String("remote_execution.debug_executor_labels_key", "", "If set, requests using the 'debug-executor-labels' platform property must also set the 'debug-executor-labels-key' platform property to this value, otherwise the requested labels are ignored. If empty, anyone can use 'debug-executor-labels'.", flag.Secret)
-	unclaimedTasksSetMaxSize     = flag.Int64("remote_execution.unclaimed_tasks_set_max_size", 100_000, "Max number of unclaimed tasks to track in redis per executor pool, per shard (see remote_execution.unclaimed_tasks_shard_count). This set of tasks is used for eager work assignments (when executors newly join a pool) and work-stealing requests (when executors are nearly idle).")
-	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
-	unclaimedTasksShardCount     = flag.Int("remote_execution.unclaimed_tasks_shard_count", 1, "Number of Redis sets that each executor pool's unclaimed tasks are split across. With a sharded Redis client, this spreads the load of large pools across Redis shards. If the unclaimedTasks/* keys become a source of contention, try setting this value to twice the number of Redis shards. Since remote_execution.unclaimed_tasks_set_max_size applies to each set, consider lowering it when raising this. Changing this value is relatively safe, but it may temporarily increase Redis memory usage, failed task lease attempts, and execution latency in some cases.")
-	taskLivenessCheckInterval    = flag.Duration("remote_execution.task_liveness_check_interval", 0, "How often the scheduler checks that the tasks clients are waiting on still exist. Once a task has been missing for remote_execution.lease_duration plus remote_execution.lease_grace_period, the app ends the clients' waits with a NOT_FOUND error so that they retry the execution. 0 (the default) disables the check.")
+	defaultPoolName               = flag.String("remote_execution.default_pool_name", "", "The default executor pool to use if one is not specified.")
+	sharedExecutorPoolGroupID     = flag.String("remote_execution.shared_executor_pool_group_id", "", "Group ID that owns the shared executor pool.")
+	requireExecutorAuthorization  = flag.Bool("remote_execution.require_executor_authorization", false, "If true, executors connecting to this server must provide a valid executor API key.")
+	leaseDuration                 = flag.Duration("remote_execution.lease_duration", 10*time.Second, "How long before a task lease must be renewed by the executor client.")
+	leaseGracePeriod              = flag.Duration("remote_execution.lease_grace_period", 10*time.Second, "How long to wait for the executor to renew the lease after the TTL duration has elapsed.")
+	leaseReconnectGracePeriod     = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown or a broken lease stream).")
+	maxSchedulingDelay            = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
+	cgroupSettingsEnabled         = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
+	proactiveCancellationEnabled  = flag.Bool("remote_execution.proactive_cancellation_enabled", true, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
+	forwardProactiveCancellations = flag.Bool("remote_execution.forward_proactive_cancellations", false, "If true, the scheduler forwards proactive cancellations to the app that the executor is connected to.")
+	debugExecutorLabelsKey        = flag.String("remote_execution.debug_executor_labels_key", "", "If set, requests using the 'debug-executor-labels' platform property must also set the 'debug-executor-labels-key' platform property to this value, otherwise the requested labels are ignored. If empty, anyone can use 'debug-executor-labels'.", flag.Secret)
+	unclaimedTasksSetMaxSize      = flag.Int64("remote_execution.unclaimed_tasks_set_max_size", 100_000, "Max number of unclaimed tasks to track in redis per executor pool, per shard (see remote_execution.unclaimed_tasks_shard_count). This set of tasks is used for eager work assignments (when executors newly join a pool) and work-stealing requests (when executors are nearly idle).")
+	unclaimedTasksCacheTTL        = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
+	unclaimedTasksShardCount      = flag.Int("remote_execution.unclaimed_tasks_shard_count", 1, "Number of Redis sets that each executor pool's unclaimed tasks are split across. With a sharded Redis client, this spreads the load of large pools across Redis shards. If the unclaimedTasks/* keys become a source of contention, try setting this value to twice the number of Redis shards. Since remote_execution.unclaimed_tasks_set_max_size applies to each set, consider lowering it when raising this. Changing this value is relatively safe, but it may temporarily increase Redis memory usage, failed task lease attempts, and execution latency in some cases.")
+	taskLivenessCheckInterval     = flag.Duration("remote_execution.task_liveness_check_interval", 0, "How often the scheduler checks that the tasks clients are waiting on still exist. Once a task has been missing for remote_execution.lease_duration plus remote_execution.lease_grace_period, the app ends the clients' waits with a NOT_FOUND error so that they retry the execution. 0 (the default) disables the check.")
 
 	upgradePromptMaxLags     = flag.Map("remote_execution.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) an executor may fall behind the latest public release before GetExecutionNodes prompts an upgrade at that urgency.")
 	upgradePromptMinVersions = flag.Map("remote_execution.upgrade_prompt_min_versions", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the minimum version (semver) below which GetExecutionNodes prompts an upgrade at that urgency.")
@@ -1402,6 +1403,13 @@ func (c *schedulerClient) EnqueueTaskReservation(ctx context.Context, request *s
 	return c.rpcClient.EnqueueTaskReservation(ctx, request)
 }
 
+func (c *schedulerClient) CancelTaskReservation(ctx context.Context, request *scpb.CancelTaskReservationRequest) (*scpb.CancelTaskReservationResponse, error) {
+	if c.localServer != nil {
+		return c.localServer.cancelTaskReservation(ctx, request)
+	}
+	return c.rpcClient.CancelTaskReservation(ctx, request)
+}
+
 type schedulerClientCache struct {
 	// Cache holding connections to peers.
 	conns *grpc_client.ConnCache
@@ -1976,8 +1984,11 @@ func (s *SchedulerServer) recordProbeForProactiveCancellation(ctx context.Contex
 
 // sendCancellationRequests sends CancelTaskReservationRequest to all
 // executors that have received a task reservation for the given task, then
-// deletes the Redis tracking set.
-func (s *SchedulerServer) sendCancellationRequests(ctx context.Context, taskID string) error {
+// deletes the Redis tracking set. Executors connected to this app are canceled
+// directly; if forwarding is enabled, the others are canceled via the app that
+// they are connected to. The finalizing executor is skipped since it has
+// already removed the task from its queue.
+func (s *SchedulerServer) sendCancellationRequests(ctx context.Context, taskID, finalizingExecutorID string, poolKey nodePoolKey) error {
 	key := s.redisKeyForTaskReservations(taskID)
 	executorIDs, err := s.rdb.SMembers(ctx, key).Result()
 	if err != nil && err != redis.Nil {
@@ -1996,13 +2007,28 @@ func (s *SchedulerServer) sendCancellationRequests(ctx context.Context, taskID s
 	s.mu.RUnlock()
 
 	// Send cancellation requests to matching executors.
+	var remoteExecutorIDs []string
 	for _, executorID := range executorIDs {
+		if executorID == finalizingExecutorID {
+			continue
+		}
+		found := false
 		for _, pool := range pools {
 			if node := pool.FindConnectedExecutorByID(executorID); node != nil && node.handle != nil {
 				node.handle.sendProactiveCancellation(ctx, taskID)
+				found = true
 				break // Found the executor, no need to check other pools.
 			}
 		}
+		if !found {
+			remoteExecutorIDs = append(remoteExecutorIDs, executorID)
+		}
+	}
+
+	if *forwardProactiveCancellations && len(remoteExecutorIDs) > 0 {
+		s.goBackground(context.WithoutCancel(ctx), func(ctx context.Context) {
+			s.forwardCancellations(ctx, taskID, poolKey, remoteExecutorIDs)
+		})
 	}
 
 	// Clean up the Redis set.
@@ -2089,7 +2115,28 @@ func (s *SchedulerServer) deleteTaskForLease(ctx context.Context, taskID, expect
 	return nil
 }
 
-func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) error {
+// forwardCancellations forwards cancellations for the given task to the apps
+// that the given executors are connected to. This is best-effort.
+func (s *SchedulerServer) forwardCancellations(ctx context.Context, taskID string, poolKey nodePoolKey, executorIDs []string) {
+	pool := s.getOrCreatePool(poolKey)
+	if err := pool.RefreshNodes(ctx); err != nil {
+		log.CtxWarningf(ctx, "Could not refresh nodes to forward cancellations for task %q: %s", taskID, err)
+		return
+	}
+	nodes := make(map[string]*executionNode)
+	for _, node := range pool.GetNodes(false) {
+		nodes[node.GetExecutorId()] = node
+	}
+	for _, executorID := range executorIDs {
+		node, ok := nodes[executorID]
+		if !ok {
+			continue
+		}
+		s.cancelOnRemoteExecutor(ctx, node, taskID)
+	}
+}
+
+func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID, executorID string, poolKey nodePoolKey) error {
 	// The script will return 1 if the task is claimed & has been deleted.
 	r, err := redisDeleteClaimedTask.Run(ctx, s.rdb, []string{s.redisKeyForTask(taskID)}).Result()
 	if err != nil {
@@ -2103,7 +2150,7 @@ func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) 
 
 	// Send cancellation requests to executors that have the task queued.
 	if *proactiveCancellationEnabled {
-		if err := s.sendCancellationRequests(ctx, taskID); err != nil {
+		if err := s.sendCancellationRequests(ctx, taskID, executorID, poolKey); err != nil {
 			log.CtxWarningf(ctx, "Failed to cancel task reservations for task %q: %s", taskID, err)
 		}
 	}
@@ -2415,6 +2462,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	taskID := ""
 	reconnectToken := ""
 	leaseID := ""
+	var key nodePoolKey
 	// Set when the stream breaks, e.g. because the connection to the executor
 	// dropped. The executor may still be running the task.
 	streamBroken := false
@@ -2551,7 +2599,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 
 			log.CtxInfof(ctx, "LeaseTask task successfully claimed by executor %q", executorID)
 
-			key := nodePoolKey{
+			key = nodePoolKey{
 				os:      task.metadata.GetOs(),
 				arch:    task.metadata.GetArch(),
 				pool:    task.metadata.GetPool(),
@@ -2599,7 +2647,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			// Finalize deletes the task (and implicitly releases the lease).
 			// It implies that no further work will/can be attempted for this task.
 
-			err := s.deleteClaimedTask(ctx, taskID)
+			err := s.deleteClaimedTask(ctx, taskID, executorID, key)
 			if err == nil {
 				claimed = false
 				log.CtxDebugf(ctx, "LeaseTask task %q successfully finalized by %q", taskID, executorID)
@@ -3088,6 +3136,30 @@ func (s *SchedulerServer) enqueueOnRemoteExecutor(ctx context.Context, node *exe
 	return true, nil
 }
 
+// cancelOnRemoteExecutor asks the app that the executor is connected to to
+// cancel the task reservation. This is best-effort: older apps return
+// Unimplemented during rollouts.
+func (s *SchedulerServer) cancelOnRemoteExecutor(ctx context.Context, node *executionNode, taskID string) {
+	if node.schedulerHostPort == "" {
+		log.CtxDebugf(ctx, "node %q has no scheduler host:port set", node.GetExecutorId())
+		return
+	}
+	schedulerClient, err := s.schedulerClientCache.get(node.schedulerHostPort)
+	if err != nil {
+		log.CtxDebugf(ctx, "Could not get SchedulerClient for %q: %s", node.schedulerHostPort, err)
+		return
+	}
+	rpcCtx, cancel := context.WithTimeout(ctx, schedulerEnqueueTaskReservationTimeout)
+	defer cancel()
+	_, err = schedulerClient.CancelTaskReservation(rpcCtx, &scpb.CancelTaskReservationRequest{
+		TaskId:     taskID,
+		ExecutorId: node.GetExecutorId(),
+	})
+	if err != nil {
+		log.CtxDebugf(ctx, "CancelTaskReservation via scheduler target %q failed: %s", node.schedulerHostPort, err)
+	}
+}
+
 func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
 	if req.GetTaskId() == "" {
 		return nil, status.FailedPreconditionError("A task_id is required")
@@ -3277,6 +3349,33 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 		}
 	}
 	return s.enqueueTaskReservation(ctx, req)
+}
+
+func (s *SchedulerServer) CancelTaskReservation(ctx context.Context, req *scpb.CancelTaskReservationRequest) (*scpb.CancelTaskReservationResponse, error) {
+	if identityService := s.env.GetClientIdentityService(); identityService != nil {
+		identity, err := identityService.IdentityFromContext(ctx)
+		if err != nil || identity == nil || identity.Client != interfaces.ClientIdentityApp {
+			return nil, status.PermissionDeniedError("app client identity required")
+		}
+	}
+	return s.cancelTaskReservation(ctx, req)
+}
+
+func (s *SchedulerServer) cancelTaskReservation(ctx context.Context, req *scpb.CancelTaskReservationRequest) (*scpb.CancelTaskReservationResponse, error) {
+	s.mu.RLock()
+	pools := make([]*nodePool, 0, len(s.pools))
+	for _, pool := range s.pools {
+		pools = append(pools, pool)
+	}
+	s.mu.RUnlock()
+
+	for _, pool := range pools {
+		if node := pool.FindConnectedExecutorByID(req.GetExecutorId()); node != nil && node.handle != nil {
+			node.handle.sendProactiveCancellation(ctx, req.GetTaskId())
+			break
+		}
+	}
+	return &scpb.CancelTaskReservationResponse{}, nil
 }
 
 func (s *SchedulerServer) enqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
