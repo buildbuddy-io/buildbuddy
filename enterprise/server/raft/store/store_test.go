@@ -1065,6 +1065,115 @@ func TestRemoveReplicaRemoveData(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// scanKeys returns keys in [start, end), releasing its DB lease so Stop can run.
+func scanKeys(t *testing.T, ts *testutil.TestingStore, start, end []byte) [][]byte {
+	db, err := ts.LeaserForTest().DB()
+	require.NoError(t, err)
+	defer db.Close()
+	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+	require.NoError(t, err)
+	defer iter.Close()
+	var out [][]byte
+	for iter.First(); iter.Valid(); iter.Next() {
+		out = append(out, bytes.Clone(iter.Key()))
+	}
+	return out
+}
+
+// RemoveData deletes must survive a crash without Raft replay or cleanup retries.
+func TestRemoveDataIsDurableAcrossCrash(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
+
+	sf := testutil.NewStoreFactory(t)
+	opts := testutil.StoreOptions{CrashablePebble: true}
+	s1 := sf.NewStore(t, opts)
+	s2 := sf.NewStore(t, opts)
+	s3 := sf.NewStore(t, opts)
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.StartShard(t, ctx, stores...)
+
+	const numRecords = 10
+	writeNRecords(ctx, t, s1, numRecords)
+
+	// RemoveReplica requires a remote replica.
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	rd := s.GetRange(2)
+	var replicaToRemove *rfpb.ReplicaDescriptor
+	for _, repl := range rd.GetReplicas() {
+		if repl.GetNhid() != s.NHID() {
+			replicaToRemove = repl
+			break
+		}
+	}
+	require.NotNil(t, replicaToRemove)
+	var target *testutil.TestingStore
+	remaining := make([]*testutil.TestingStore, 0, 2)
+	for _, store := range stores {
+		if store.NHID() == replicaToRemove.GetNhid() {
+			target = store
+		} else {
+			remaining = append(remaining, store)
+		}
+	}
+	require.NotNil(t, target)
+
+	start, end := rd.GetStart(), rd.GetEnd()
+	localStart, localEnd := keys.Range(replica.LocalKeyPrefix(2, replicaToRemove.GetReplicaId()))
+
+	// Persist the data so lost deletes bring it back.
+	deadline := time.Now().Add(30 * time.Second)
+	for len(scanKeys(t, target, start, end)) < numRecords {
+		require.True(t, time.Now().Before(deadline), "target didn't apply the records")
+		time.Sleep(10 * time.Millisecond)
+	}
+	require.NotEmpty(t, scanKeys(t, target, localStart, localEnd))
+	db, err := target.LeaserForTest().DB()
+	require.NoError(t, err)
+	require.NoError(t, db.Flush())
+	db.Close()
+
+	retry(t, func() error {
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		_, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: replicaToRemove.GetReplicaId(),
+		})
+		return err
+	})
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
+	rd = s.GetRange(2)
+	require.Equal(t, 1, len(rd.GetRemoved()))
+
+	_, err = target.RemoveData(ctx, &rfpb.RemoveDataRequest{
+		ReplicaId: replicaToRemove.GetReplicaId(),
+		Range:     rd,
+	})
+	require.NoError(t, err)
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
+	require.Equal(t, 0, len(s.GetRange(2).GetRemoved()))
+
+	// Verify the crash drops unsynced writes.
+	sentinel, sentinelEnd := []byte("crash-sentinel"), []byte("crash-sentinel\x00")
+	db, err = target.LeaserForTest().DB()
+	require.NoError(t, err)
+	require.NoError(t, db.Set(sentinel, []byte("v"), pebble.NoSync))
+	db.Close()
+
+	target.Crash()
+	sf.RecreateStore(t, target)
+
+	require.Empty(t, scanKeys(t, target, sentinel, sentinelEnd), "crash kept an unsynced write")
+	require.Empty(t, scanKeys(t, target, start, end), "range data returned after crash")
+	require.Empty(t, scanKeys(t, target, localStart, localEnd), "replica-local data returned after crash")
+}
+
 func TestRemoveData_ShardStartedNoRangeDescriptor(t *testing.T) {
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup.
