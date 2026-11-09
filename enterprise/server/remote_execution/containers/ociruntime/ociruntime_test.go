@@ -388,8 +388,8 @@ func TestSeccompSyscalls(t *testing.T) {
 			}
 			require.NoError(t, res.Error)
 			assert.Equal(t, int(testCase.wantErrno), res.ExitCode, "stderr: %s", res.Stderr)
-			// Stderr is unchecked: coverage instrumentation writes to it.
 			assert.Equal(t, fmt.Sprintf("errno=%d\n", testCase.wantErrno), string(res.Stdout))
+			assert.Empty(t, string(res.Stderr))
 		})
 	}
 }
