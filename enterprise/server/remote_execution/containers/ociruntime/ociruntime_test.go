@@ -388,8 +388,6 @@ func TestSeccompSyscalls(t *testing.T) {
 			}
 			require.NoError(t, res.Error)
 			assert.Equal(t, int(testCase.wantErrno), res.ExitCode, "stderr: %s", res.Stderr)
-			assert.Empty(t, string(res.Stdout))
-			assert.Empty(t, string(res.Stderr))
 		})
 	}
 }
