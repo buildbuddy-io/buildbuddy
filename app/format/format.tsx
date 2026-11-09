@@ -59,14 +59,21 @@ export function durationSec(duration: number | Long) {
     const s = Math.floor(seconds - m * 60);
     return `${m}m ${s}s`;
   }
-  if (seconds >= 1) {
+  const milliseconds = seconds * 1000;
+  const microseconds = milliseconds * 1000;
+  // Move up a unit when rounding to 3 digits reaches 1000, otherwise
+  // toPrecision switches to exponent notation ("1.00e+3ms").
+  if (seconds >= 1 || roundsToThousand(milliseconds)) {
     return `${seconds.toPrecision(3)}s`;
   }
-  const milliseconds = seconds * 1000;
-  if (milliseconds >= 1) {
-    return `${(seconds * 1000).toPrecision(3)}ms`;
+  if (milliseconds >= 1 || roundsToThousand(microseconds)) {
+    return `${milliseconds.toPrecision(3)}ms`;
   }
-  return `${(milliseconds * 1000).toPrecision(3)}µs`;
+  return `${microseconds.toPrecision(3)}µs`;
+}
+
+function roundsToThousand(value: number): boolean {
+  return Number(value.toPrecision(3)) >= 1000;
 }
 
 export function roundedDurationSec(duration: number | Long) {
