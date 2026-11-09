@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
@@ -266,8 +267,9 @@ func TestHitTrackerService_Usage(t *testing.T) {
 						Server: "servicio",
 					},
 					Counts: tables.UsageCounts{
-						ActionCacheHits:        2,
-						TotalDownloadSizeBytes: 456,
+						ActionCacheHits:           2,
+						TotalDownloadSizeBytes:    456,
+						TotalCachedActionExecUsec: (3 * time.Minute).Microseconds(),
 					},
 				},
 			},
@@ -278,8 +280,9 @@ func TestHitTrackerService_Usage(t *testing.T) {
 						sku.Server: "servicio",
 					},
 					Counts: map[sku.SKU]int64{
-						sku.RemoteCacheACHits:             2,
-						sku.RemoteCacheCASDownloadedBytes: 456,
+						sku.RemoteCacheACHits:                    2,
+						sku.RemoteCacheCASDownloadedBytes:        456,
+						sku.RemoteCacheACCachedExecDurationNanos: (3 * time.Minute).Nanoseconds(),
 					},
 				},
 			},
@@ -329,12 +332,17 @@ func TestHitTrackerService_Usage(t *testing.T) {
 				SizeBytes: 456,
 			}
 			rn := digest.NewResourceName(&d, "", tc.cacheType, repb.DigestFunction_SHA256)
+			execStart := time.Unix(1000, 0)
 			hit := hitpb.CacheHit{
 				RequestMetadata:  rmd,
 				Resource:         rn.ToProto(),
 				SizeBytes:        456,
 				Duration:         durationpb.New(time.Minute),
 				CacheRequestType: tc.requestType,
+				ExecutedActionMetadata: &repb.ExecutedActionMetadata{
+					ExecutionStartTimestamp:     timestamppb.New(execStart),
+					ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(3 * time.Minute)),
+				},
 			}
 			req := hitpb.TrackRequest{Hits: []*hitpb.CacheHit{&emptyHit, &hit}, Server: "servicio"}
 			_, err = env.GetHitTrackerServiceServer().Track(ctx, &req)
