@@ -36,16 +36,17 @@ const (
 )
 
 var (
-	deferRootfsMount = flag.Bool("defer_rootfs_mount", false, "Mount the rootfs after restoring a generic snapshot.")
-	path             = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
-	vmExecPort       = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
-	enableRootfs     = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
-	enableVFS        = flag.Bool("enable_vfs", false, "Whether to run the VFS client.")
-	debugMode        = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
-	enableLogging    = flag.Bool("enable_logging", false, "If true, output logs to the console. By default, only kernel logs are output to the console.")
-	setDefaultRoute  = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
-	initDockerd      = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
-	enableDockerdTCP = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
+	deferRootfsMount  = flag.Bool("defer_rootfs_mount", false, "Mount the rootfs after restoring a generic snapshot.")
+	path              = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
+	vmExecPort        = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
+	enableRootfs      = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
+	enableVFS         = flag.Bool("enable_vfs", false, "Whether to run the VFS client.")
+	vfsWritebackCache = flag.Bool("vfs_writeback_cache", false, "Mount the VFS with the kernel's writeback cache.")
+	debugMode         = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
+	enableLogging     = flag.Bool("enable_logging", false, "If true, output logs to the console. By default, only kernel logs are output to the console.")
+	setDefaultRoute   = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
+	initDockerd       = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
+	enableDockerdTCP  = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
 
 	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
 	isVMVFS  = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
@@ -215,7 +216,7 @@ func main() {
 		return
 	}
 	if *isVMVFS {
-		die(vmvfs.Run())
+		die(vmvfs.Run(*vfsWritebackCache))
 		return
 	}
 

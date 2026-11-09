@@ -489,6 +489,9 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		if stats := r.Workspace.ComputeVFSStats(); stats != nil {
 			res.VfsStats = stats
 		}
+		if unused := r.Workspace.VFSUnusedInputs(); unused != nil {
+			res.VfsUnusedInputs = unused
+		}
 	}()
 
 	if !r.PlatformProperties.RecycleRunner {

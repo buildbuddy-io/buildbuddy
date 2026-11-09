@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -48,6 +49,11 @@ const (
 	vmDNSInitTimeout                   = 5 * time.Second
 	vmExecReadySignalInitialRetryDelay = 2 * time.Millisecond
 	vmExecReadySignalMaxRetryDelay     = 1 * time.Second
+
+	// preloadChunkSize is how much of a preloaded input is read per read
+	// call. The contents are discarded, so it only bounds the memory each
+	// preload goroutine uses and how often cancellation is checked.
+	preloadChunkSize = 1 << 20
 )
 
 func init() {
@@ -594,6 +600,9 @@ func (x *execServer) ExecStreamed(stream vmxpb.Exec_ExecStreamedServer) error {
 
 type command struct {
 	cmd *exec.Cmd
+	// preload, if set, names the input files to read into the page cache
+	// while cmd runs.
+	preload *vmxpb.InputPreload
 
 	stdin        io.WriteCloser
 	stdoutWriter *io.PipeWriter
@@ -642,6 +651,7 @@ func newCommand(start *vmxpb.ExecRequest) (*command, error) {
 	}
 	return &command{
 		cmd:          cmd,
+		preload:      start.GetPreload(),
 		stdin:        stdin,
 		stdoutReader: stdoutReader,
 		stdoutWriter: stdoutWriter,
@@ -783,21 +793,31 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 			msgs <- &message{Response: &vmxpb.ExecStreamedResponse{UsageStats: stats}}
 		}
 	}()
+	// Read the preloaded inputs while the command runs, and stop once it
+	// exits, since reading on would only slow down whatever runs next.
+	preloadCtx, cancelPreload := context.WithCancel(ctx)
+	preloadDone := make(chan *vmxpb.InputPreloadStats, 1)
+	go func() {
+		preloadDone <- preloadInputs(preloadCtx, c.preload)
+	}()
 	// Using a nil statsListener since we'd rather report stats from the whole
 	// VM (which includes e.g. docker-in-firecracker containers) -- not just the
 	// process being run.
 	_, err := commandutil.RunWithProcessTreeCleanup(ctx, c.cmd, nil /*=statsListener*/)
+	cancelPreload()
 
 	close(commandDone)
 	<-statsDone
+	preloadStats := <-preloadDone
 
 	exitCode, err := commandutil.ExitCode(ctx, c.cmd, err)
 	if err != nil {
 		c.logErrorDiagnostics(err)
 	}
 	rsp := &vmxpb.ExecResponse{
-		ExitCode: int32(exitCode),
-		Status:   gstatus.Convert(err).Proto(),
+		ExitCode:     int32(exitCode),
+		Status:       gstatus.Convert(err).Proto(),
+		PreloadStats: preloadStats,
 	}
 	c.stdoutWriter.Close()
 	if err := <-stdoutErrCh; err != nil {
@@ -808,6 +828,76 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 		return nil, status.InternalErrorf("failed to copy stderr: %s", err)
 	}
 	return &vmxpb.ExecStreamedResponse{Response: rsp}, nil
+}
+
+// preloadInputs reads the files that preload names into the page cache,
+// preload.parallelism at a time, until every file is read or ctx is
+// cancelled, and reports what it read. It returns nil when preload names no
+// files.
+func preloadInputs(ctx context.Context, preload *vmxpb.InputPreload) *vmxpb.InputPreloadStats {
+	if len(preload.GetPaths()) == 0 {
+		return nil
+	}
+	start := time.Now()
+	paths := make(chan string)
+	var filesRead, bytesRead atomic.Int64
+	var wg sync.WaitGroup
+	for range max(int(preload.GetParallelism()), 1) {
+		wg.Go(func() {
+			buf := make([]byte, preloadChunkSize)
+			for path := range paths {
+				n, err := readIntoPageCache(ctx, filepath.Join(preload.GetInputRoot(), path), buf)
+				bytesRead.Add(n)
+				if err != nil {
+					if ctx.Err() == nil {
+						log.Warningf("Could not preload input %q: %s", path, err)
+					}
+					continue
+				}
+				filesRead.Add(1)
+			}
+		})
+	}
+send:
+	for _, path := range preload.GetPaths() {
+		select {
+		case paths <- path:
+		case <-ctx.Done():
+			break send
+		}
+	}
+	close(paths)
+	wg.Wait()
+	stats := &vmxpb.InputPreloadStats{
+		FilesRead:    filesRead.Load(),
+		BytesRead:    bytesRead.Load(),
+		DurationUsec: time.Since(start).Microseconds(),
+	}
+	log.Infof("Preloaded %d of %d input files (%d bytes) in %s", stats.GetFilesRead(), len(preload.GetPaths()), stats.GetBytesRead(), time.Since(start))
+	return stats
+}
+
+// readIntoPageCache reads the whole file at path through buf, discarding the
+// contents so that only the page cache keeps them. It returns how many bytes
+// it read, and stops early when ctx is cancelled.
+func readIntoPageCache(ctx context.Context, path string, buf []byte) (int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	var total int64
+	for ctx.Err() == nil {
+		n, err := f.Read(buf)
+		total += int64(n)
+		if err == io.EOF {
+			return total, nil
+		}
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, ctx.Err()
 }
 
 type stdoutWriter struct{ msgs chan *message }

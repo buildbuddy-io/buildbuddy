@@ -35,7 +35,7 @@ func TestExecStreamed_Simple(t *testing.T) {
 		`},
 	}
 
-	res := vmexec_client.Execute(context.Background(), client, cmd, ".", "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
+	res := vmexec_client.Execute(context.Background(), client, cmd, ".", "" /*=user*/, nil /*=preload*/, nil /*=statsListener*/, nil /*=stdio*/)
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, "foo-stdout\n", string(res.Stdout))
@@ -66,7 +66,7 @@ func TestExecStreamed_Stdio(t *testing.T) {
 		Stderr: &stderr,
 	}
 
-	res := vmexec_client.Execute(context.Background(), client, cmd, ".", "" /*=user*/, nil /*=statsListener*/, stdio)
+	res := vmexec_client.Execute(context.Background(), client, cmd, ".", "" /*=user*/, nil /*=preload*/, nil /*=statsListener*/, stdio)
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, "foo-stdout\n", stdout.String())
@@ -91,7 +91,7 @@ func TestExecStreamed_LargeOutput(t *testing.T) {
 		fmt.Fprintf(&expected, "%d\n", i+1)
 	}
 
-	res := vmexec_client.Execute(t.Context(), client, cmd, ".", "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
+	res := vmexec_client.Execute(t.Context(), client, cmd, ".", "" /*=user*/, nil /*=preload*/, nil /*=statsListener*/, nil /*=stdio*/)
 
 	// Every chunk should be sent with the contents it had when it was read, so
 	// the output received by the client should match exactly. Compare with ==
@@ -119,7 +119,7 @@ func TestExecStreamed_Timeout(t *testing.T) {
 		`},
 	}
 
-	res := vmexec_client.Execute(ctx, client, cmd, ".", "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
+	res := vmexec_client.Execute(ctx, client, cmd, ".", "" /*=user*/, nil /*=preload*/, nil /*=statsListener*/, nil /*=stdio*/)
 
 	assert.Error(t, res.Error)
 
@@ -154,7 +154,7 @@ func TestExecStreamed_Cancel(t *testing.T) {
 		cancel()
 	}()
 
-	res := vmexec_client.Execute(ctx, client, cmd, wd, "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
+	res := vmexec_client.Execute(ctx, client, cmd, wd, "" /*=user*/, nil /*=preload*/, nil /*=statsListener*/, nil /*=stdio*/)
 
 	assert.Error(t, res.Error)
 
@@ -176,7 +176,7 @@ func TestExecStreamed_Crash(t *testing.T) {
 		`},
 	}
 
-	res := vmexec_client.Execute(ctx, client, cmd, wd, "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
+	res := vmexec_client.Execute(ctx, client, cmd, wd, "" /*=user*/, nil /*=preload*/, nil /*=statsListener*/, nil /*=stdio*/)
 
 	assert.Error(t, res.Error)
 

@@ -47,6 +47,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/usernet"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -70,6 +71,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 
 	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -81,11 +83,18 @@ import (
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
+	gstatus "google.golang.org/grpc/status"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var (
-	useGuestVFSServer                     = flag.Bool("executor.firecracker_guest_vfs_server", false, "Run VFS metadata inside the guest. Experimental; declared outputs are not supported.", flag.Internal)
+	useGuestVFSServer                     = flag.Bool("executor.firecracker_guest_vfs_server", false, "Run VFS metadata inside the guest. Experimental.", flag.Internal)
+	vfsWritebackCache                     = flag.Bool("executor.firecracker_vfs_writeback_cache", false, "Mount VFS in the guest with the kernel's writeback cache, which sends writes to the VFS server in large batches.", flag.Internal)
+	guestVFSMaxDirtyRatio                 = flag.Int("executor.firecracker_guest_vfs_max_dirty_ratio", 0, "If set, the share of the guest's dirty page limit, in percent, that the guest VFS FUSE mount may use.", flag.Internal)
+	guestVFSReadAheadKB                   = flag.Int("executor.firecracker_guest_vfs_read_ahead_kb", 0, "If set, the readahead window of the guest VFS FUSE mount in KiB.", flag.Internal)
+	guestVFSNoFlushInputs                 = flag.Bool("executor.firecracker_guest_vfs_noflush_inputs", false, "Tell the guest kernel not to send FLUSH when closing guest VFS inputs.", flag.Internal)
+	guestVFSOutputs                       = flag.String("executor.firecracker_guest_vfs_outputs", "copy", "How the guest VFS server returns outputs: copy (the host copies them out of the guest after the action), mirror (the guest sends every write to the host as it happens) or upload (the guest uploads them to the cache through the host).", flag.Internal)
+	guestVFSContentMode                   = flag.String("executor.firecracker_guest_vfs_content", "remote", "Where the guest VFS server gets input contents: remote (gRPC from the remote CAS, copied to the guest disk), filecache (gRPC from the host file cache, copied), raw (raw protocol from the host file cache, copied) or direct (raw protocol on every read, no guest copy).", flag.Internal)
 	firecrackerCgroupVersion              = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
 	debugStreamVMLogs                     = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
 	debugTerminal                         = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
@@ -100,6 +109,8 @@ var (
 	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
 	enableLinux6_18                       = flag.Bool("executor.firecracker_enable_linux_6_18", false, "Enable the 6.18 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
+	preloadInputs                         = flag.String("executor.firecracker_preload_inputs", "", "Prototype: which input files vmexec reads into the guest page cache while the command runs. \"used\" reads every input that the task's unused inputs mask does not exclude, and nothing when the task has no mask. \"command\" reads only the input file that the command's first argument names. Empty disables preloading.", flag.Internal)
+	preloadParallelism                    = flag.Int("executor.firecracker_preload_parallelism", 16, "How many input files vmexec reads at a time for executor.firecracker_preload_inputs.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
@@ -127,7 +138,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "20"
+	GuestAPIVersion = "22"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -609,9 +620,20 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	if err != nil {
 		return nil, err
 	}
+	memSizeMB := int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6))
+	if *useGuestVFSServer && args.Props.EnableVFS {
+		// The guest VFS server, and the page cache that holds every input
+		// the action reads, use the VM's own memory. In smaller VMs, a test
+		// that loads hundreds of large shared libraries can leave the guest
+		// too little memory to make progress after a snapshot resume. The
+		// scheduler does not know about this extra memory, so it should
+		// move into the task size estimate before guest VFS leaves
+		// experiments.
+		memSizeMB = max(memSizeMB, 512)
+	}
 	vmConfig = &fcpb.VMConfiguration{
 		NumCpus:           numCPUs,
-		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+		MemSizeMb:         memSizeMB,
 		ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
 		EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
 		NetworkMode:       networkMode,
@@ -727,6 +749,9 @@ type FirecrackerContainer struct {
 	// when VFS is enabled, this contains the layout for the next execution
 	fsLayout  *container.FileSystemLayout
 	vfsServer *vfs_server.Server
+	// guestVFSMirrorDir holds the files that the guest VFS server mirrors
+	// writes to, for the current task, if it mirrors writes.
+	guestVFSMirrorDir string
 
 	scratchStore            *copy_on_write.COWStore
 	scratchVBD              *vbd.FS
@@ -1808,6 +1833,9 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	}
 	if vmConfig.EnableVfs {
 		initArgs = append(initArgs, "-enable_vfs")
+		if *vfsWritebackCache {
+			initArgs = append(initArgs, "-vfs_writeback_cache")
+		}
 	}
 	return strings.Join(append(initArgs, kernelArgs...), " ")
 }
@@ -2142,6 +2170,7 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	vfsSrv.SetWritebackCache(*vfsWritebackCache)
 	c.vfsServer = vfsSrv
 	lis, err := net.Listen("unix", vsockServerPath)
 	if err != nil {
@@ -2149,6 +2178,18 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	}
 	if err := c.vfsServer.Start(lis); err != nil {
 		return status.InternalErrorf("Could not start VFS server: %s", err)
+	}
+	if *useGuestVFSServer {
+		contentLis, err := net.Listen("unix", vsock.HostListenSocketPath(filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.HostVFSContentPort))
+		if err != nil {
+			return err
+		}
+		go c.vfsServer.ServeGuestContent(contentLis)
+		mirrorLis, err := net.Listen("unix", vsock.HostListenSocketPath(filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.HostVFSMirrorPort))
+		if err != nil {
+			return err
+		}
+		go c.vfsServer.ServeGuestMirror(mirrorLis)
 	}
 	return nil
 }
@@ -2473,7 +2514,7 @@ func getDockerDaemonConfig() ([]byte, error) {
 	return configJSON, nil
 }
 
-func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
+func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, preload *vmxpb.InputPreload, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -2503,7 +2544,7 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 		statsListener := func(stats *repb.UsageStats) {
 			c.updateLatestGuestStats(stats)
 		}
-		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
+		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, preload, statsListener, stdio)
 		resultCh <- res
 	}()
 	// While we're executing the task in the VM, also track cgroup stats on the
@@ -2568,6 +2609,127 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 		c.fillNetStats(ctx, res.UsageStats)
 		return res, false
 	}
+}
+
+// inputPreload returns the input files that vmexec should read into the
+// guest page cache while the command runs, as executor.firecracker_preload_inputs
+// asks, or nil when there is nothing to read. inputRoot is the guest directory
+// that the task's input root is mounted at.
+func (c *FirecrackerContainer) inputPreload(ctx context.Context, cmd *repb.Command, inputRoot string) *vmxpb.InputPreload {
+	if *preloadInputs == "" || c.fsLayout == nil {
+		return nil
+	}
+	files, symlinks, err := inputTreePaths(c.fsLayout.Inputs, c.fsLayout.DigestFunction)
+	if err != nil {
+		log.CtxWarningf(ctx, "Not preloading inputs: %s", err)
+		return nil
+	}
+	var paths []string
+	switch *preloadInputs {
+	case "used":
+		d := c.task.GetVfsUnusedInputsDigest()
+		if d == nil {
+			log.CtxInfof(ctx, "Not preloading inputs, since the task has no unused inputs mask")
+			return nil
+		}
+		// An empty mask excludes nothing and has no blob to read.
+		mask := &repb.TreeMask{}
+		if d.GetSizeBytes() > 0 {
+			mask, err = dirtools.ReadTreeMask(ctx, c.env, c.fsLayout.RemoteInstanceName, c.fsLayout.DigestFunction, d)
+			if err != nil {
+				log.CtxWarningf(ctx, "Not preloading inputs: %s", err)
+				return nil
+			}
+		}
+		excluded := make(map[string]struct{}, len(mask.GetExcludedPaths()))
+		for _, p := range mask.GetExcludedPaths() {
+			excluded[p] = struct{}{}
+		}
+		for p := range files {
+			if _, ok := excluded[p]; !ok {
+				paths = append(paths, p)
+			}
+		}
+		slices.Sort(paths)
+	case "command":
+		if args := cmd.GetArguments(); len(args) > 0 {
+			if p, ok := resolveInputPath(files, symlinks, cmd.GetWorkingDirectory(), args[0]); ok {
+				paths = []string{p}
+			}
+		}
+	default:
+		log.CtxWarningf(ctx, "Not preloading inputs: unknown executor.firecracker_preload_inputs value %q", *preloadInputs)
+		return nil
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	return &vmxpb.InputPreload{InputRoot: inputRoot, Paths: paths, Parallelism: int32(*preloadParallelism)}
+}
+
+// inputTreePaths returns the regular files in the input tree by their input
+// root-relative paths, and the tree's symlinks by path with their targets.
+func inputTreePaths(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (files map[string]*repb.FileNode, symlinks map[string]string, err error) {
+	_, dirMap, err := dirtools.DirMapFromTree(tree, digestFunction)
+	if err != nil {
+		return nil, nil, err
+	}
+	files = make(map[string]*repb.FileNode)
+	symlinks = make(map[string]string)
+	var walk func(dir *repb.Directory, dirPath string) error
+	walk = func(dir *repb.Directory, dirPath string) error {
+		for _, f := range dir.GetFiles() {
+			files[filepath.Join(dirPath, f.GetName())] = f
+		}
+		for _, s := range dir.GetSymlinks() {
+			symlinks[filepath.Join(dirPath, s.GetName())] = s.GetTarget()
+		}
+		for _, d := range dir.GetDirectories() {
+			child, ok := dirMap[digest.NewKey(d.GetDigest())]
+			if !ok {
+				if digest.IsEmptyHash(d.GetDigest(), digestFunction) {
+					continue
+				}
+				return status.NotFoundErrorf("input tree is missing directory %s", digest.String(d.GetDigest()))
+			}
+			if err := walk(child, filepath.Join(dirPath, d.GetName())); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := walk(tree.GetRoot(), ""); err != nil {
+		return nil, nil, err
+	}
+	return files, symlinks, nil
+}
+
+// resolveInputPath returns the input root-relative path of the input file
+// that executable names when the command runs in workingDir, following
+// symlinks within the input tree, and false when it names something else,
+// such as a program found through PATH or a file of the container image.
+func resolveInputPath(files map[string]*repb.FileNode, symlinks map[string]string, workingDir, executable string) (string, bool) {
+	if executable == "" || filepath.IsAbs(executable) || !strings.Contains(executable, "/") {
+		return "", false
+	}
+	// Resolve the path a component at a time, since a parent directory can
+	// be a symlink.
+	resolved := ""
+	for component := range strings.SplitSeq(filepath.Join(workingDir, executable), "/") {
+		resolved = filepath.Join(resolved, component)
+		for range 40 {
+			target, ok := symlinks[resolved]
+			if !ok {
+				break
+			}
+			if filepath.IsAbs(target) {
+				return "", false
+			}
+			resolved = filepath.Join(filepath.Dir(resolved), target)
+		}
+	}
+	_, ok := files[resolved]
+	return resolved, ok
 }
 
 func (c *FirecrackerContainer) fillNetStats(ctx context.Context, usageStats *repb.UsageStats) {
@@ -2682,11 +2844,34 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 		return nil, status.FailedPreconditionError("Firecracker VFS server is not configured")
 	}
 	if *useGuestVFSServer {
-		if len(c.fsLayout.OutputFiles)+len(c.fsLayout.OutputDirectories)+len(c.fsLayout.OutputPaths) != 0 {
-			return nil, status.UnimplementedError("guest VFS metadata prototype does not support output extraction")
+		c.vfsServer.PrepareContentProxy(ctx, c.fsLayout, *guestVFSContentMode)
+		req.OutputDirectories = c.fsLayout.OutputDirectories
+		req.OutputFiles = c.fsLayout.OutputFiles
+		req.OutputPaths = c.fsLayout.OutputPaths
+		if *guestVFSOutputs == "mirror" {
+			// Mirrored files are linked into the workspace, so they are kept
+			// on the same filesystem.
+			dir, err := os.MkdirTemp(filepath.Dir(c.actionWorkingDir), "guest-vfs-mirror-")
+			if err != nil {
+				return nil, err
+			}
+			c.guestVFSMirrorDir = dir
+			c.vfsServer.SetMirrorDir(dir)
+			req.MirrorWrites = true
 		}
-		c.vfsServer.PrepareContentProxy(ctx)
 		req.UseGuestServer = true
+		req.ContentMode = *guestVFSContentMode
+		req.NoFlushInputs = *guestVFSNoFlushInputs
+		// Each page fault in a file that the action maps into memory reads
+		// a whole readahead window into the guest's page cache. When a test
+		// in a VM under 1 GB loads hundreds of large shared libraries, the
+		// pages it never touches in those windows evict the ones it does,
+		// so the loader reads them again and again. Keep the kernel's
+		// default window in those VMs.
+		if c.vmConfig.GetMemSizeMb() >= 1000 {
+			req.FuseReadAheadKb = int32(*guestVFSReadAheadKB)
+		}
+		req.FuseMaxDirtyRatio = int32(*guestVFSMaxDirtyRatio)
 		req.RemoteInstanceName = c.fsLayout.RemoteInstanceName
 		req.DigestFunction = c.fsLayout.DigestFunction
 		req.WorkingDirectory = c.fsLayout.WorkingDirectory
@@ -2717,6 +2902,70 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 		return nil, status.WrapError(err, "prepare guest VFS")
 	}
 	return rsp, nil
+}
+
+// getGuestVFSOutputs gets the action's outputs from the guest VFS server, in
+// the way executor.firecracker_guest_vfs_outputs sets. It writes them to the
+// action's working directory, or, if the guest uploads them, sets them in
+// result.
+func (c *FirecrackerContainer) getGuestVFSOutputs(ctx context.Context, result *interfaces.CommandResult) error {
+	start := time.Now()
+	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	defer cancel()
+	conn, err := vsock.SimpleGRPCDial(dialCtx, filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.VMVFSPort)
+	if err != nil {
+		return status.WrapError(err, "dial guest VFS server")
+	}
+	defer conn.Close()
+	client := vmfspb.NewFileSystemClient(conn)
+	var fileCount, byteCount int64
+	switch mode := *guestVFSOutputs; mode {
+	case "upload":
+		rsp, err := client.UploadOutputs(ctx, &vmfspb.UploadOutputsRequest{})
+		if err != nil {
+			return status.WrapError(err, "upload guest VFS outputs")
+		}
+		result.UploadedOutputs = rsp.GetActionResult()
+		result.UploadedOutputFileCount = rsp.GetFileCount()
+		result.UploadedOutputBytes = rsp.GetBytesTransferred()
+		fileCount, byteCount = rsp.GetFileCount(), rsp.GetBytesTransferred()
+	case "copy", "mirror":
+		stream, err := client.ReadOutputs(ctx, &vmfspb.ReadOutputsRequest{SendContents: mode == "copy"})
+		if err != nil {
+			return status.WrapError(err, "read guest VFS outputs")
+		}
+		fileCount, byteCount, err = c.vfsServer.WriteOutputs(ctx, stream.Recv, c.actionWorkingDir, mode == "mirror")
+		if err != nil {
+			return status.WrapError(err, "write guest VFS outputs")
+		}
+	default:
+		return status.InvalidArgumentErrorf("unknown guest VFS output mode %q", mode)
+	}
+	log.CtxInfof(ctx, "Guest VFS outputs: mode=%s files=%d bytes=%d duration_usec=%d", *guestVFSOutputs, fileCount, byteCount, time.Since(start).Microseconds())
+	return nil
+}
+
+// finishGuestVFS ends the task in the guest VFS server and returns the first
+// input error it hit, if any.
+// finishGuestVFS tells the guest VFS server that the task is done. When the
+// task records unused inputs, it returns the CAS inputs the task left
+// unopened.
+func (c *FirecrackerContainer) finishGuestVFS(ctx context.Context) (*repb.TreeMask, error) {
+	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	defer cancel()
+	conn, err := vsock.SimpleGRPCDial(dialCtx, filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.VMVFSPort)
+	if err != nil {
+		return nil, status.WrapError(err, "dial guest VFS server")
+	}
+	defer conn.Close()
+	rsp, err := vmfspb.NewFileSystemClient(conn).Finish(ctx, &vmfspb.FinishRequest{ReportUnusedInputs: c.task.GetTrackVfsUnusedInputs()})
+	if err != nil {
+		return nil, status.WrapError(err, "finish guest VFS")
+	}
+	if rsp.GetTaskErrorCode() != 0 {
+		return nil, gstatus.Error(codes.Code(rsp.GetTaskErrorCode()), rsp.GetTaskErrorMessage())
+	}
+	return rsp.GetUnusedInputs(), nil
 }
 
 // monitorVMContext returns a context that is cancelled if the VM exits. The
@@ -2757,8 +3006,10 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	stage := "init"
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
-	if c.fsLayout != nil {
-		// Recycling is not supported for firecracker + fuse yet.
+	if c.fsLayout != nil && !*useGuestVFSServer {
+		// Recycling is not supported for firecracker + fuse yet, except
+		// with the server in the guest, which resets its namespace to the
+		// next action's inputs.
 		result.DoNotRecycle = true
 	}
 	defer func() {
@@ -2811,10 +3062,13 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 	} else {
 		req := &vmfspb.PrepareRequest{}
-		_, err := c.SendPrepareFileSystemRequestToGuest(ctx, req)
+		rsp, err := c.SendPrepareFileSystemRequestToGuest(ctx, req)
 		if err != nil {
 			result.Error = err
 			return result
+		}
+		if req.GetUseGuestServer() {
+			log.CtxInfof(ctx, "Guest VFS prepared: get_tree_usec=%d namespace_usec=%d", rsp.GetGetTreeDurationUsec(), rsp.GetNamespacePrepareDurationUsec())
 		}
 	}
 	if c.createFromSnapshot {
@@ -2880,9 +3134,35 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	stage = "exec"
-	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), stdio)
-	if c.fsLayout != nil {
-		// Recycling is not supported for firecracker + fuse yet.
+	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), c.inputPreload(ctx, cmd, guestWorkspaceMountDir), stdio)
+	if c.fsLayout != nil && *useGuestVFSServer && vmHealthy {
+		finishCtx, cancel := background.ExtendContextForFinalization(ctx, finalizationTimeout)
+		// Outputs are read before Finish, which stops the guest from
+		// fetching inputs that outputs may include.
+		if result.Error == nil {
+			if err := c.getGuestVFSOutputs(finishCtx, result); err != nil {
+				result.Error = err
+			}
+		}
+		// As with the host server below, an input the guest server could
+		// not fetch fails the action, even if the command succeeded.
+		unusedInputs, err := c.finishGuestVFS(finishCtx)
+		if err != nil {
+			result.Error = err
+		}
+		result.VfsUnusedInputs = unusedInputs
+		cancel()
+	}
+	if c.guestVFSMirrorDir != "" {
+		c.vfsServer.SetMirrorDir("")
+		if err := os.RemoveAll(c.guestVFSMirrorDir); err != nil {
+			log.CtxWarningf(ctx, "Could not remove guest VFS mirror directory: %s", err)
+		}
+		c.guestVFSMirrorDir = ""
+	}
+	if c.fsLayout != nil && !*useGuestVFSServer {
+		// Recycling is not supported for firecracker + fuse yet, except
+		// with the server in the guest.
 		result.DoNotRecycle = true
 	}
 
@@ -2897,6 +3177,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 				return result
 			}
 			result.VfsStats = c.vfsServer.ComputeStats()
+			if c.task.GetTrackVfsUnusedInputs() {
+				result.VfsUnusedInputs = c.vfsServer.UnusedInputs()
+			}
 		}
 	} else if !*disableWorkspaceSync {
 		c.emitCOWAndUFFDMetrics(stage)
@@ -3471,7 +3754,7 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", "awk '/MemAvailable/ {print $2 / 1024}' /proc/meminfo"},
 	}
-	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
+	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /*=preload*/, nil /* statsListener*/, &interfaces.Stdio{})
 	if res.Error != nil {
 		return res.Error
 	}

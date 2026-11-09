@@ -17,6 +17,23 @@ message PrepareRequest {
   repeated string output_files = 7;
   repeated string output_paths = 8;
   bool profile_preparation = 9;
+  // Where the guest server gets the contents of CAS inputs, and how: one of
+  // "remote", "filecache", "raw" or "direct". Empty means "remote".
+  string content_mode = 10;
+  // Tell the guest kernel not to send FLUSH when closing CAS inputs, which
+  // have nothing to flush.
+  bool no_flush_inputs = 11;
+  // If set, the readahead window of the FUSE mount in KiB. FUSE caps a
+  // buffered read request at the readahead window, which defaults to 128.
+  int32 fuse_read_ahead_kb = 12;
+  // If set, the share of the dirty page limit, in percent, that the FUSE
+  // mount may use. Linux caps a FUSE mount at 1% by default, which makes
+  // the kernel write back almost as soon as a program writes.
+  int32 fuse_max_dirty_ratio = 13;
+  // Send every change to the contents of a file the action writes to the
+  // host as it happens, keyed by the file's node ID, so that the host has
+  // the action's outputs when it finishes.
+  bool mirror_writes = 14;
 }
 
 message PrepareResponse {
@@ -27,7 +44,11 @@ message PrepareResponse {
 
 // Indicates that the FUSE filesystem is no longer needed.
 // All remote IO will fail until the next Prepare call.
-message FinishRequest {}
+message FinishRequest {
+  // Report the CAS inputs that nothing opened since the last Prepare call
+  // in the response.
+  bool report_unused_inputs = 1;
+}
 
 message Stats {
   int64 read_io_bytes = 1;
@@ -43,12 +64,71 @@ message FinishResponse {
   // output_directories list.
   repeated build.bazel.remote.execution.v2.OutputDirectory output_directories =
       3;
+  // The gRPC code and message of the first input error that the guest VFS
+  // server hit since the last Prepare call, or 0 if there was none.
+  int32 task_error_code = 4;
+  string task_error_message = 5;
+  // The CAS inputs that nothing opened since the last Prepare call, when the
+  // request asked for them.
+  build.bazel.remote.execution.v2.TreeMask unused_inputs = 6;
+}
+
+message ReadOutputsRequest {
+  // Send the contents of the files the action wrote. Without it, the host
+  // must already have them, from mirror_writes.
+  bool send_contents = 1;
+}
+
+// A file, directory or symlink under one of the action's output paths.
+message OutputEntry {
+  enum Type {
+    UNKNOWN = 0;
+    FILE = 1;
+    DIRECTORY = 2;
+    SYMLINK = 3;
+  }
+  // Relative to the workspace root, with directories before their contents.
+  string path = 1;
+  Type type = 2;
+  uint32 perms = 3;
+  string symlink_target = 4;
+  // The size of a file.
+  int64 size = 5;
+  // Set for an input file the action did not replace, which the host can
+  // take from its file cache.
+  build.bazel.remote.execution.v2.Digest input_digest = 6;
+  // For a file the action wrote, the node ID that mirrored writes used.
+  uint64 node_id = 7;
+}
+
+message ReadOutputsResponse {
+  // Set in the first message for each entry.
+  OutputEntry entry = 1;
+  // The next part of the current file's contents, if send_contents is set.
+  bytes data = 2;
+}
+
+message UploadOutputsRequest {}
+
+message UploadOutputsResponse {
+  // The action result with only its output fields set.
+  build.bazel.remote.execution.v2.ActionResult action_result = 1;
+  int64 file_count = 2;
+  int64 bytes_transferred = 3;
 }
 
 // FileSystem is a service for controlling the FUSE filesystem inside a VM.
 service FileSystem {
   // Prepare the filesystem for use.
   rpc Prepare(PrepareRequest) returns (PrepareResponse);
+
+  // Stream the entries under the action's output paths to the host. Call it
+  // before Finish, which stops fetching inputs that outputs may still need.
+  rpc ReadOutputs(ReadOutputsRequest) returns (stream ReadOutputsResponse);
+
+  // Upload the action's outputs to the cache through the host and return
+  // their digests. Call it before Finish.
+  rpc UploadOutputs(UploadOutputsRequest) returns (UploadOutputsResponse);
 
   // Finish any outstanding work (such as uploading data to the CAS).
   rpc Finish(FinishRequest) returns (FinishResponse);

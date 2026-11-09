@@ -1,0 +1,31 @@
+diff --git a/fuse/api.go b/fuse/api.go
+index d335435..86f6bf1 100644
+--- a/fuse/api.go
++++ b/fuse/api.go
+@@ -330,6 +330,12 @@ type MountOptions struct {
+ 	// ReadDir, as no per-file stat calls are needed
+ 	DisableReadDirPlus bool
+ 
++	// EnableWritebackCache lets the kernel collect writes in its page cache
++	// and send them in large batches. The filesystem must then allow reads
++	// of files opened write-only, and must write at the offsets the kernel
++	// gives even for files opened with O_APPEND.
++	EnableWritebackCache bool
++
+ 	// Disable splicing from files to the FUSE device.
+ 	DisableSplice bool
+ 
+diff --git a/fuse/opcode.go b/fuse/opcode.go
+index c7a66b8..269147f 100644
+--- a/fuse/opcode.go
++++ b/fuse/opcode.go
+@@ -119,6 +119,9 @@ func doInit(server *protocolServer, req *request) {
+ 		// Clear CAP_READDIRPLUS
+ 		kernelFlags &= ^uint64(CAP_READDIRPLUS)
+ 	}
++	if server.opts.EnableWritebackCache && input.Flags64()&CAP_WRITEBACK_CACHE != 0 {
++		kernelFlags |= CAP_WRITEBACK_CACHE
++	}
+ 
+ 	dataCacheMode := kernelFlags & CAP_AUTO_INVAL_DATA
+ 	if server.opts.ExplicitDataCacheControl {

@@ -1211,6 +1211,20 @@ type TaskSizer interface {
 	// scheduledSize is the size the task was scheduled with, and
 	// observedMemoryBytes is the memory usage observed by the OOM killer.
 	UpdateForOOM(ctx context.Context, cmd *repb.Command, props *platform.Properties, scheduledSize *scpb.TaskSize, observedMemoryBytes int64) error
+
+	// UnusedInputsForTask returns, for a task about to be dispatched, the
+	// digest of the CAS blob listing the input files that a previous execution
+	// of the command did not open while running on a VFS-backed workspace (see
+	// ExecutionTask.vfs_unused_inputs_digest), or nil if none is stored, and
+	// whether the executor should record the inputs the task leaves unopened.
+	// Both are unset when the store is disabled or the task's VFS prefetch
+	// mode is not "skip-unused".
+	UnusedInputsForTask(ctx context.Context, cmd *repb.Command, props *platform.Properties) (*repb.Digest, bool)
+
+	// UpdateUnusedInputsDigest records the digest of the unused inputs blob that
+	// an execution of the command produced, replacing any previously recorded
+	// digest. A nil digest is ignored.
+	UpdateUnusedInputsDigest(ctx context.Context, cmd *repb.Command, d *repb.Digest) error
 }
 
 // ScheduledTask represents an execution task along with its scheduling metadata
@@ -1393,6 +1407,14 @@ type CommandResult struct {
 	// command has executed.
 	DoNotRecycle bool
 
+	// UploadedOutputs, if set, holds the command's outputs, which the
+	// container already uploaded to the cache, so the workspace does not
+	// upload outputs from its directory. UploadedOutputFileCount and
+	// UploadedOutputBytes count what the container uploaded.
+	UploadedOutputs         *repb.ActionResult
+	UploadedOutputFileCount int64
+	UploadedOutputBytes     int64
+
 	// ExitCode is one of the following:
 	// * The exit code returned by the executed command
 	// * -1 if the process was killed or did not exit
@@ -1410,6 +1432,15 @@ type CommandResult struct {
 	// InputFetchMetadata describes which action inputs were fetched from
 	// remote CAS while preparing or serving the workspace.
 	InputFetchMetadata *espb.InputFetchMetadata
+
+	// VfsUnusedInputs excludes the action inputs that the command didn't open
+	// while running on a VFS-backed workspace. It is nil unless the task
+	// records unused inputs.
+	VfsUnusedInputs *repb.TreeMask
+
+	// VfsUnusedInputsDigest is the digest of VfsUnusedInputs, set by
+	// UploadOutputs once the mask has been uploaded to the CAS.
+	VfsUnusedInputsDigest *repb.Digest
 
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata

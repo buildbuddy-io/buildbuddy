@@ -5,9 +5,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -44,6 +47,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
+	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -186,6 +190,31 @@ func readFromVFS(t *testing.T, server *vfs_server.Server, name string) string {
 	return string(res.Data)
 }
 
+// openFromVFS opens and immediately releases the file at the given
+// slash-separated path, which is how an action reading an input looks to the
+// VFS server.
+func openFromVFS(t *testing.T, server *vfs_server.Server, path string) {
+	ctx := t.Context()
+	id := uint64(vfscommon.RootInodeId)
+	for name := range strings.SplitSeq(path, "/") {
+		rsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: id, Name: name})
+		require.NoError(t, err, "lookup %s", path)
+		id = rsp.GetId()
+	}
+	f, err := server.Open(ctx, &vfspb.OpenRequest{Id: id, Flags: uint32(os.O_RDONLY)})
+	require.NoError(t, err, "open %s", path)
+	_, err = server.Release(ctx, &vfspb.ReleaseRequest{HandleId: f.GetHandleId()})
+	require.NoError(t, err, "release %s", path)
+}
+
+// unusedInputsRecord stores a TreeMask excluding the given paths in the CAS,
+// as a previous execution would have, and returns its digest.
+func unusedInputsRecord(t *testing.T, env *testenv.TestEnv, ctx context.Context, paths ...string) *repb.Digest {
+	b, err := proto.Marshal(&repb.TreeMask{ExcludedPaths: paths})
+	require.NoError(t, err)
+	return setFile(t, env, ctx, "", string(b))
+}
+
 func prepare(t *testing.T, env environment.Env, server *vfs_server.Server, tree *repb.Tree) {
 	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
 	require.NoError(t, err)
@@ -274,7 +303,7 @@ func TestGetTreeProxyPreservesWireResponses(t *testing.T) {
 			server, err := vfs_server.New(env, t.TempDir())
 			require.NoError(t, err)
 			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
-			server.PrepareContentProxy(metadata.NewOutgoingContext(ctx, metadata.Pairs("task-context", "executor")))
+			server.PrepareContentProxy(metadata.NewOutgoingContext(ctx, metadata.Pairs("task-context", "executor")), &container.FileSystemLayout{}, vfs_server.GuestContentRemote)
 			proxyListener := bufconn.Listen(1024 * 1024)
 			require.NoError(t, server.Start(proxyListener))
 			t.Cleanup(server.Stop)
@@ -757,6 +786,137 @@ func TestPrefetchedFileRefetchedIfEvictedBeforeOpen(t *testing.T) {
 	_, err = server.Prepare(ctx, layout, tf)
 	require.NoError(t, err)
 	require.Equal(t, contents, readFromVFS(t, server, "input.txt"))
+
+	// The file was prefetched and then evicted, so fetching it again counts
+	// as a download but not as a prefetch miss.
+	stats := server.ComputeStats()
+	require.EqualValues(t, 1, stats.GetFileDownloadCount())
+	require.EqualValues(t, 0, stats.GetPrefetchMissCount())
+}
+
+func TestUnusedInputs(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+	aDigest := setFile(t, env, ctx, "", "a")
+	bDigest := setFile(t, env, ctx, "", "b")
+	cDigest := setFile(t, env, ctx, "", "c")
+	dDigest := setFile(t, env, ctx, "", "d")
+	eDigest := setFile(t, env, ctx, "", "e")
+
+	// Build an input tree with nested directories and a symlink.
+	deepDir := &repb.Directory{
+		Files: []*repb.FileNode{{Name: "e.txt", Digest: eDigest}},
+	}
+	deepDigest, err := digest.ComputeForMessage(deepDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	subDir := &repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "c.txt", Digest: cDigest},
+			{Name: "d.txt", Digest: dDigest},
+		},
+		Directories: []*repb.DirectoryNode{{Name: "deep", Digest: deepDigest}},
+		Symlinks:    []*repb.SymlinkNode{{Name: "link", Target: "c.txt"}},
+	}
+	subDigest, err := digest.ComputeForMessage(subDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				{Name: "a.txt", Digest: aDigest},
+				{Name: "b.txt", Digest: bDigest},
+			},
+			Directories: []*repb.DirectoryNode{{Name: "sub", Digest: subDigest}},
+		},
+		Children: []*repb.Directory{subDir, deepDir},
+	}
+	layout := &container.FileSystemLayout{DigestFunction: repb.DigestFunction_SHA256, Inputs: tree}
+	_, err = server.Prepare(ctx, layout, nil)
+	require.NoError(t, err)
+
+	// Before anything is opened, every file is listed as unused.
+	allFiles := []string{"a.txt", "b.txt", "sub/c.txt", "sub/d.txt", "sub/deep/e.txt"}
+	paths := server.UnusedInputs().GetExcludedPaths()
+	require.Equal(t, allFiles, paths)
+
+	// Open some inputs, one of them twice. Looking up an input without
+	// opening it and creating a scratch file should not count as usage.
+	openFromVFS(t, server, "b.txt")
+	openFromVFS(t, server, "sub/deep/e.txt")
+	openFromVFS(t, server, "sub/d.txt")
+	openFromVFS(t, server, "sub/d.txt")
+	_, err = server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "a.txt"})
+	require.NoError(t, err)
+	writeToVFS(t, server, "scratch.txt", "scratch")
+
+	paths = server.UnusedInputs().GetExcludedPaths()
+	require.Equal(t, []string{"a.txt", "sub/c.txt"}, paths)
+
+	// Preparing the server for a new task with the same tree reuses the
+	// nodes but forgets which ones the previous task opened.
+	_, err = server.Prepare(ctx, layout, nil)
+	require.NoError(t, err)
+	paths = server.UnusedInputs().GetExcludedPaths()
+	require.Equal(t, allFiles, paths)
+
+	openFromVFS(t, server, "a.txt")
+	paths = server.UnusedInputs().GetExcludedPaths()
+	require.Equal(t, []string{"b.txt", "sub/c.txt", "sub/d.txt", "sub/deep/e.txt"}, paths)
+}
+
+func TestUnusedInputsEmptyWhenAllOpened(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+	tree := &repb.Tree{Root: &repb.Directory{
+		Files: []*repb.FileNode{{Name: "a.txt", Digest: setFile(t, env, ctx, "", "a")}},
+	}}
+	_, err := server.Prepare(ctx, &container.FileSystemLayout{DigestFunction: repb.DigestFunction_SHA256, Inputs: tree}, nil)
+	require.NoError(t, err)
+
+	// A task that opens every input still produces a mask, which excludes
+	// nothing. Reporting it replaces the stored mask, so the next execution
+	// prefetches everything instead of skipping inputs that an older
+	// execution left unopened.
+	openFromVFS(t, server, "a.txt")
+	mask := server.UnusedInputs()
+	require.NotNil(t, mask)
+	require.Empty(t, mask.GetExcludedPaths())
+}
+
+func TestInputSkippedAsUnusedFetchedOnDemand(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+	usedDigest := setFile(t, env, ctx, "", "opened by the previous execution")
+	unusedDigest := setFile(t, env, ctx, "", "not opened by the previous execution")
+	usedNode := &repb.FileNode{Name: "used.txt", Digest: usedDigest}
+	unusedNode := &repb.FileNode{Name: "unused.txt", Digest: unusedDigest}
+	tree := &repb.Tree{Root: &repb.Directory{
+		Files: []*repb.FileNode{unusedNode, usedNode},
+	}}
+
+	// Leave out the input that a previous execution did not open.
+	tf, err := dirtools.NewTreeFetcher(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
+		UnusedInputsDigest: unusedInputsRecord(t, env, ctx, "unused.txt"),
+	})
+	require.NoError(t, err)
+	_, err = tf.Start()
+	require.NoError(t, err)
+	_, err = tf.Wait()
+	require.NoError(t, err)
+	require.True(t, env.GetFileCache().ContainsFile(ctx, usedNode))
+	require.False(t, env.GetFileCache().ContainsFile(ctx, unusedNode))
+
+	layout := &container.FileSystemLayout{DigestFunction: repb.DigestFunction_SHA256, Inputs: tree}
+	_, err = server.Prepare(ctx, layout, tf)
+	require.NoError(t, err)
+
+	// Opening the input that was not prefetched fetches it on demand. The
+	// list for the next execution then names only the file this execution
+	// left unopened, so the next execution prefetches the one opened here.
+	contents := readFromVFS(t, server, "unused.txt")
+	require.Equal(t, "not opened by the previous execution", contents)
+	require.True(t, env.GetFileCache().ContainsFile(ctx, unusedNode))
+	stats := server.ComputeStats()
+	require.EqualValues(t, 1, stats.GetFileDownloadCount())
+	require.EqualValues(t, 1, stats.GetPrefetchMissCount())
+	paths := server.UnusedInputs().GetExcludedPaths()
+	require.Equal(t, []string{"used.txt"}, paths)
 }
 
 func TestMaterializeOutputs(t *testing.T) {
@@ -823,6 +983,156 @@ func TestMaterializeOutputsOutsideWorkingDirectory(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(outputRoot, "gen", "result.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "result", string(b))
+}
+
+// readOutputs returns the messages that the guest VFS server's ReadOutputs
+// sends for server's outputs, with contents split into 4-byte messages if
+// sendContents is set.
+func readOutputs(t *testing.T, server *vfs_server.Server, layout *container.FileSystemLayout, sendContents bool) []*vmfspb.ReadOutputsResponse {
+	var rsps []*vmfspb.ReadOutputsResponse
+	err := server.WalkOutputs(layout, func(entry *vmfspb.OutputEntry, backingPath string) error {
+		rsps = append(rsps, &vmfspb.ReadOutputsResponse{Entry: entry})
+		if !sendContents || backingPath == "" {
+			return nil
+		}
+		b, err := os.ReadFile(backingPath)
+		if err != nil {
+			return err
+		}
+		for chunk := range slices.Chunk(b, 4) {
+			rsps = append(rsps, &vmfspb.ReadOutputsResponse{Data: chunk})
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	return rsps
+}
+
+func recvFrom(rsps []*vmfspb.ReadOutputsResponse) func() (*vmfspb.ReadOutputsResponse, error) {
+	return func() (*vmfspb.ReadOutputsResponse, error) {
+		if len(rsps) == 0 {
+			return nil, io.EOF
+		}
+		rsp := rsps[0]
+		rsps = rsps[1:]
+		return rsp, nil
+	}
+}
+
+func createAndWrite(t *testing.T, server *vfs_server.Server, parentID uint64, name, contents string) uint64 {
+	ctx := t.Context()
+	rsp, err := server.Create(ctx, &vfspb.CreateRequest{ParentId: parentID, Name: name, Flags: uint32(os.O_CREATE | os.O_RDWR), Mode: 0644})
+	require.NoError(t, err)
+	if contents != "" {
+		_, err = server.Write(ctx, &vfspb.WriteRequest{HandleId: rsp.GetHandleId(), Data: []byte(contents)})
+		require.NoError(t, err)
+	}
+	_, err = server.Release(ctx, &vfspb.ReleaseRequest{HandleId: rsp.GetHandleId()})
+	require.NoError(t, err)
+	return rsp.GetId()
+}
+
+func TestWriteOutputsFromCopiedContents(t *testing.T) {
+	ctx, env, guest, _ := newServerWithEnv(t)
+	input := "an input the action left alone"
+	inputNode := &repb.FileNode{Name: "input.txt", Digest: setFile(t, env, ctx, "", input)}
+	outDir := &repb.Directory{Files: []*repb.FileNode{inputNode}}
+	outDigest, err := digest.ComputeForMessage(outDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	layout := &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{
+			Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "out", Digest: outDigest}}},
+			Children: []*repb.Directory{outDir},
+		},
+		OutputDirectories: []string{"out"},
+	}
+	_, err = guest.Prepare(ctx, layout, nil)
+	require.NoError(t, err)
+
+	// The action writes a file, a file in a new directory, and a symlink
+	// next to the input.
+	outRsp, err := guest.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "out"})
+	require.NoError(t, err)
+	createAndWrite(t, guest, outRsp.GetId(), "new.txt", "new contents")
+	subRsp, err := guest.Mkdir(ctx, &vfspb.MkdirRequest{ParentId: outRsp.GetId(), Name: "sub", Perms: 0755})
+	require.NoError(t, err)
+	createAndWrite(t, guest, subRsp.GetId(), "deep.txt", "deep")
+	_, err = guest.Symlink(ctx, &vfspb.SymlinkRequest{ParentId: outRsp.GetId(), Name: "link", Target: "new.txt"})
+	require.NoError(t, err)
+
+	// The host takes the written files from the stream and the input from
+	// its file cache.
+	host, err := vfs_server.New(env, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	host.PrepareContentProxy(ctx, layout, vfs_server.GuestContentFileCache)
+	outputRoot := testfs.MakeTempDir(t)
+	files, size, err := host.WriteOutputs(ctx, recvFrom(readOutputs(t, guest, layout, true)), outputRoot, false)
+	require.NoError(t, err)
+
+	require.Equal(t, int64(3), files)
+	require.Equal(t, int64(len(input)+len("new contents")+len("deep")), size)
+	for path, want := range map[string]string{"out/input.txt": input, "out/new.txt": "new contents", "out/sub/deep.txt": "deep"} {
+		b, err := os.ReadFile(filepath.Join(outputRoot, path))
+		require.NoError(t, err)
+		require.Equal(t, want, string(b), path)
+	}
+	target, err := os.Readlink(filepath.Join(outputRoot, "out/link"))
+	require.NoError(t, err)
+	require.Equal(t, "new.txt", target)
+}
+
+func TestMirroredWritesReachHost(t *testing.T) {
+	ctx, env, guest, _ := newServerWithEnv(t)
+	layout := &container.FileSystemLayout{
+		DigestFunction:    repb.DigestFunction_SHA256,
+		Inputs:            &repb.Tree{Root: &repb.Directory{}},
+		OutputDirectories: []string{"out"},
+	}
+	host, err := vfs_server.New(env, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	host.PrepareContentProxy(ctx, layout, vfs_server.GuestContentFileCache)
+	host.SetMirrorDir(testfs.MakeTempDir(t))
+	lis, err := net.Listen("unix", filepath.Join(testfs.MakeTempDir(t), "mirror.sock"))
+	require.NoError(t, err)
+	go host.ServeGuestMirror(lis)
+	t.Cleanup(host.Stop)
+	conn, err := net.Dial("unix", lis.Addr().String())
+	require.NoError(t, err)
+	mirror := vfs_server.NewMirrorClient(conn)
+	guest.SetWriteMirror(mirror)
+	_, err = guest.Prepare(ctx, layout, nil)
+	require.NoError(t, err)
+
+	// The action writes a file, truncates it and writes past the cut, links
+	// it, and creates a file it never writes to.
+	outRsp, err := guest.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "out"})
+	require.NoError(t, err)
+	id := createAndWrite(t, guest, outRsp.GetId(), "a.txt", "hello world")
+	_, err = guest.SetAttr(ctx, &vfspb.SetAttrRequest{Id: id, SetSize: &vfspb.SetAttrRequest_SetSize{Size: 5}})
+	require.NoError(t, err)
+	openRsp, err := guest.Open(ctx, &vfspb.OpenRequest{Id: id, Flags: uint32(os.O_RDWR)})
+	require.NoError(t, err)
+	_, err = guest.Write(ctx, &vfspb.WriteRequest{HandleId: openRsp.GetHandleId(), Offset: 5, Data: []byte(" there")})
+	require.NoError(t, err)
+	_, err = guest.Release(ctx, &vfspb.ReleaseRequest{HandleId: openRsp.GetHandleId()})
+	require.NoError(t, err)
+	_, err = guest.Link(ctx, &vfspb.LinkRequest{ParentId: outRsp.GetId(), Name: "b.txt", TargetId: id})
+	require.NoError(t, err)
+	createAndWrite(t, guest, outRsp.GetId(), "empty.txt", "")
+
+	// After a sync, the host builds the outputs from the mirrored files
+	// alone, without their contents in the stream.
+	require.NoError(t, mirror.Sync())
+	outputRoot := testfs.MakeTempDir(t)
+	_, _, err = host.WriteOutputs(ctx, recvFrom(readOutputs(t, guest, layout, false)), outputRoot, true)
+	require.NoError(t, err)
+
+	for path, want := range map[string]string{"out/a.txt": "hello there", "out/b.txt": "hello there", "out/empty.txt": ""} {
+		b, err := os.ReadFile(filepath.Join(outputRoot, path))
+		require.NoError(t, err)
+		require.Equal(t, want, string(b), path)
+	}
 }
 
 func TestPrepareRejectsEscapingOutputPath(t *testing.T) {

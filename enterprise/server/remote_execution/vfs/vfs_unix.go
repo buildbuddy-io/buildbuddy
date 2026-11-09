@@ -16,13 +16,12 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfscommon"
-	"golang.org/x/sys/unix"
-
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/go-units"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"golang.org/x/sys/unix"
 
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	gstatus "google.golang.org/grpc/status"
@@ -154,6 +153,7 @@ type VFS struct {
 	vfsClient           atomic.Pointer[vfsClientHolder]
 	mountDir            string
 	enablePassthrough   bool
+	writebackCache      bool
 	verbose             bool
 	logFUSEOps          bool
 	logFUSELatencyStats bool
@@ -174,6 +174,14 @@ type VFS struct {
 	// These detect attribute mutations that overlap a directory snapshot.
 	attrsGeneration        atomic.Uint64
 	attrsMutationsInFlight atomic.Int64
+
+	// keepImmutableCache lets the kernel keep the cached contents of
+	// immutable files when they are opened again, instead of reading them
+	// from the server again.
+	keepImmutableCache atomic.Bool
+	// noFlushImmutable tells the kernel not to send FLUSH when closing
+	// immutable files.
+	noFlushImmutable atomic.Bool
 }
 
 type Options struct {
@@ -193,6 +201,10 @@ type Options struct {
 	// LogFUSEPerFileStats enables tracking of operation counts on a per-file
 	// basis. The stats are logged when the filesystem is unmounted.
 	LogFUSEPerFileStats bool
+	// WritebackCache lets the kernel collect writes in its page cache and
+	// send them to the server in large batches. The server must allow it,
+	// with vfs_server.Server.SetWritebackCache.
+	WritebackCache bool
 }
 
 func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *VFS {
@@ -203,6 +215,7 @@ func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *V
 	vfs := &VFS{
 		mountDir:            mountDir,
 		enablePassthrough:   options.EnablePassthrough,
+		writebackCache:      options.WritebackCache,
 		verbose:             options.Verbose,
 		logFUSEOps:          options.LogFUSEOps,
 		logFUSELatencyStats: options.LogFUSELatencyStats,
@@ -280,6 +293,19 @@ func (r *latencyRecorder) Add(name string, dt time.Duration) {
 	stats.timeSpent += dt
 }
 
+// SetKeepImmutableCache sets whether the kernel keeps the cached contents of
+// immutable files across opens. Immutable files are CAS inputs, whose
+// contents never change while the filesystem is prepared for a task.
+func (vfs *VFS) SetKeepImmutableCache(keep bool) {
+	vfs.keepImmutableCache.Store(keep)
+}
+
+// SetNoFlushImmutable sets whether closing an immutable file skips the FLUSH
+// request. Immutable files are never written, so they have nothing to flush.
+func (vfs *VFS) SetNoFlushImmutable(noFlush bool) {
+	vfs.noFlushImmutable.Store(noFlush)
+}
+
 func (vfs *VFS) Mount() error {
 	if vfs.server != nil {
 		return status.FailedPreconditionError("VFS already mounted")
@@ -296,9 +322,10 @@ func (vfs *VFS) Mount() error {
 		// Don't depend on `fusermount`.
 		// Disable fallback to fusermount as well, since it can cause
 		// deadlocks. See https://github.com/hanwen/go-fuse/issues/506
-		DirectMountStrict: true,
-		FsName:            "bbvfs",
-		MaxWrite:          fuse.MAX_KERNEL_WRITE,
+		DirectMountStrict:    true,
+		FsName:               "bbvfs",
+		MaxWrite:             fuse.MAX_KERNEL_WRITE,
+		EnableWritebackCache: vfs.writebackCache,
 		RootStableAttr: &fs.StableAttr{
 			Ino: vfscommon.RootInodeId,
 		},
@@ -562,6 +589,10 @@ type Node struct {
 
 	vfs       *VFS
 	immutable bool
+	// casInput is set for CAS inputs, as reported by the server's Immutable
+	// attribute when the node was looked up. Their contents only change
+	// between tasks, which PrepareForTask invalidates.
+	casInput bool
 
 	mu                         sync.Mutex
 	symlinkTarget              string
@@ -741,6 +772,7 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (nod
 	child := &Node{
 		vfs:           n.vfs,
 		symlinkTarget: rsp.SymlinkTarget,
+		casInput:      attrs.GetImmutable(),
 	}
 	node = n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: rsp.Mode, Ino: rsp.Id})
 	if !n.AddChild(name, node, false) {
@@ -1069,13 +1101,19 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 		return nil, 0, rpcErrToSyscallErrno(err)
 	}
 	n.vfs.inodeCache.opened(n.StableAttr().Ino)
+	if n.casInput && n.vfs.keepImmutableCache.Load() {
+		fuseFlags |= fuse.FOPEN_KEEP_CACHE
+	}
+	if n.casInput && n.vfs.noFlushImmutable.Load() && int(flags)&(os.O_WRONLY|os.O_RDWR) == 0 {
+		fuseFlags |= fuse.FOPEN_NOFLUSH
+	}
 	return &remoteFile{
 		vfsClient: client,
 		path:      n.relativePath(),
 		id:        rsp.GetHandleId(),
 		node:      n,
 		data:      rsp.GetData(),
-	}, 0, 0
+	}, fuseFlags, 0
 
 }
 

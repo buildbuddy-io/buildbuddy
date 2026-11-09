@@ -3,7 +3,9 @@
 package vfs_server
 
 import (
+	"bufio"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"maps"
@@ -11,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -34,7 +37,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"golang.org/x/sys/unix"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding"
@@ -42,7 +44,9 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
+	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -55,6 +59,34 @@ const (
 	// This is the total (arbitrary) size we report via statfs.
 	// We don't actually enforce this is a limit.
 	reportedSizeBytes = 20 * 1024 * 1024 * 1024
+
+	// Guest content modes say where a guest VFS server gets the contents of
+	// CAS inputs, and how.
+	//
+	// GuestContentRemote fetches each input from the remote CAS over gRPC,
+	// through the host, and the guest keeps a copy on its own disk.
+	GuestContentRemote = "remote"
+	// GuestContentFileCache is like GuestContentRemote, except that the host
+	// serves inputs from its file cache, filling it from the remote CAS on a
+	// miss.
+	GuestContentFileCache = "filecache"
+	// GuestContentRaw is like GuestContentFileCache, but uses the raw content
+	// protocol served by ServeGuestContent instead of gRPC.
+	GuestContentRaw = "raw"
+	// GuestContentDirect sends every read of an input over the raw content
+	// protocol, and the guest keeps no copy of its own. The guest kernel's
+	// page cache still holds what was read.
+	GuestContentDirect = "direct"
+
+	// The raw content protocol. The guest sends requests on a connection one
+	// at a time, each a contentRequestHeaderSize header and then the input's
+	// hash. The header holds the hash length, 1 if the input is executable
+	// or else 0, and then, as big-endian int64s, the input's size, the offset
+	// to read from and the number of bytes to read. The host answers with a
+	// big-endian int64 n and n bytes of content, or, if it cannot, with -n
+	// and an n-byte error message.
+	contentRequestHeaderSize = 2 + 3*8
+	contentChunkSize         = 1 << 20
 )
 
 var (
@@ -102,9 +134,28 @@ type inputRangeFetcher interface {
 	FetchRange(context.Context, *repb.FileNode, int64, int64) error
 }
 
+// InputReader reads part of a CAS input into buf and returns how many bytes
+// it read, which is less than len(buf) only at the end of the input.
+type InputReader func(ctx context.Context, node *repb.FileNode, buf []byte, offset int64) (int, error)
+
+// WriteMirror receives every change that the server makes to the contents of
+// a backing file, keyed by node ID, so that a copy of each file the action
+// writes can be kept elsewhere. The server makes the calls for a node in the
+// same order as the changes.
+type WriteMirror interface {
+	Write(id uint64, offset int64, data []byte) error
+	Truncate(id uint64, size int64) error
+	Allocate(id uint64, mode uint32, offset, length int64) error
+}
+
 type fileHandle struct {
 	node         *fsNode
 	rangeFetcher inputRangeFetcher
+	// remote is set for handles of CAS inputs whose reads go to the
+	// server's InputReader. These handles have no local file, so f is nil.
+	remote InputReader
+	// mirror, if set, receives the changes made through this handle.
+	mirror WriteMirror
 
 	mu        sync.Mutex
 	f         *os.File
@@ -236,6 +287,10 @@ type fsNode struct {
 	fileNode       *repb.FileNode
 	target         string
 	inputTimestamp uint64
+
+	// writeMu is held across each change to the backing file's contents and
+	// the call that mirrors it, so that the mirror sees the changes in order.
+	writeMu sync.Mutex
 
 	mu          sync.Mutex
 	accessed    bool
@@ -399,8 +454,39 @@ type Server struct {
 	inputFetcher       container.InputFetcher
 	retryInputFetcher  *casFetcher
 	remoteInstanceName string
-	fileHandles        map[uint64]*fileHandle
-	taskError          error
+	// prefetchMissCount is the number of CAS files opened during the current
+	// task that the input fetcher had left out of its fetch.
+	prefetchMissCount int64
+	fileHandles       map[uint64]*fileHandle
+	taskError         error
+
+	// cacheFetcher fills the host file cache with the inputs that the guest
+	// server or its outputs need. contentFromFileCache serves the guest's
+	// ByteStream reads from the file cache instead of the remote cache.
+	cacheFetcher         *casFetcher
+	contentFromFileCache bool
+	// inputReader, when set, serves reads of CAS inputs directly instead of
+	// opening a local copy of each input. Handles opened this way have no
+	// file descriptor, so they get IDs from nextRemoteHandleID, which starts
+	// above any file descriptor.
+	inputReader        InputReader
+	nextRemoteHandleID atomic.Uint64
+	// pruneStale makes Prepare remove entries that the new input tree does
+	// not have, instead of merging the tree into the existing namespace.
+	pruneStale bool
+	// writebackCache is set when the FUSE client lets the kernel cache
+	// writes, which changes how backing files must be opened.
+	writebackCache bool
+	// contentListener accepts raw content protocol connections from the
+	// guest, if ServeGuestContent was called.
+	contentListener net.Listener
+	// writeMirror, if set, receives the changes to backing files' contents.
+	writeMirror WriteMirror
+	// mirrorDir is where the host keeps the files that a guest server
+	// mirrors to it, one per node ID, and mirrorListener accepts the guest's
+	// connections.
+	mirrorDir      string
+	mirrorListener net.Listener
 
 	// total number of CAS files in the tree.
 	casFileCount int64
@@ -430,6 +516,72 @@ func NewLocal(workspacePath string, inputOpener func(context.Context, *repb.File
 	return s, nil
 }
 
+// SetPruneStale makes each Prepare remove the entries that its input tree
+// does not have, such as the last action's outputs, so that a reused VM sees
+// only the new action's inputs. By default Prepare merges the tree into the
+// existing namespace.
+func (p *Server) SetPruneStale(prune bool) {
+	p.mu.Lock()
+	p.pruneStale = prune
+	p.mu.Unlock()
+}
+
+// SetWritebackCache tells the server that its FUSE client mounts with the
+// kernel's writeback cache. The kernel then reads pages of files that were
+// opened write-only, to fill in the parts of a page it did not write, and it
+// computes append offsets itself, so backing files are opened read-write and
+// without O_APPEND.
+func (p *Server) SetWritebackCache(enabled bool) {
+	p.mu.Lock()
+	p.writebackCache = enabled
+	p.mu.Unlock()
+}
+
+// backingOpenFlags returns the flags to open a backing file with, for a FUSE
+// open or create with the given flags. The write mirror also needs read
+// access, to read back the data that copy_file_range copies.
+func (p *Server) backingOpenFlags(flags uint32) uint32 {
+	p.mu.Lock()
+	writeback := p.writebackCache
+	mirror := p.writeMirror != nil
+	p.mu.Unlock()
+	if (writeback || mirror) && flags&syscall.O_ACCMODE == syscall.O_WRONLY {
+		flags = flags&^syscall.O_ACCMODE | syscall.O_RDWR
+	}
+	if writeback {
+		flags &^= syscall.O_APPEND
+	}
+	return flags
+}
+
+// SetInputReader makes CAS inputs opened from now on read through r, or
+// through the input opener again if r is nil.
+func (p *Server) SetInputReader(r InputReader) {
+	p.mu.Lock()
+	p.inputReader = r
+	p.mu.Unlock()
+}
+
+// SetWriteMirror makes the server send every change to the contents of a
+// file the action writes to m, or stop if m is nil.
+func (p *Server) SetWriteMirror(m WriteMirror) {
+	p.mu.Lock()
+	p.writeMirror = m
+	p.mu.Unlock()
+}
+
+// mirrorError records a failure to mirror a change as the task's error,
+// since the mirrored copy of the file is now wrong, and returns the errno for
+// the process that made the change.
+func (p *Server) mirrorError(err error) error {
+	p.mu.Lock()
+	if p.taskError == nil {
+		p.taskError = status.UnavailableErrorf("mirror a write to the host: %s", err)
+	}
+	p.mu.Unlock()
+	return syscall.EIO
+}
+
 func newServer(workspacePath string) (*Server, error) {
 	rootNode := newDirNode(nil, "")
 	rootNode.id = vfscommon.RootInodeId
@@ -450,6 +602,7 @@ func newServer(workspacePath string) (*Server, error) {
 		nodes:            nodes,
 	}
 	s.nextId.Store(vfscommon.RootInodeId + 1)
+	s.nextRemoteHandleID.Store(1 << 32)
 	return s, nil
 }
 
@@ -505,6 +658,7 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 		nodeCount += len(dir.GetDirectories()) + len(dir.GetFiles()) + len(dir.GetSymlinks())
 	}
 	p.mu.Lock()
+	pruneStale := p.pruneStale
 	if len(p.nodes) == 1 {
 		p.nodes = make(map[uint64]*fsNode, nodeCount)
 		p.nodes[p.root.id] = p.root
@@ -533,6 +687,7 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 		if err := unlink(parentNode, existingChild, childName); err != nil {
 			return status.WrapErrorf(err, "error unlinking child %q from existing node %q during layout update", childName, existingChild.Path())
 		}
+		p.forgetNode(existingChild)
 		return nil
 	}
 
@@ -543,6 +698,25 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 		parentNode.children[childName] = childNode
 		parentNode.mu.Unlock()
 		return ino, nil
+	}
+
+	// removeSubtree unlinks everything under node, so that the backing
+	// files of anything the last action created there are deleted.
+	var removeSubtree func(node *fsNode) error
+	removeSubtree = func(node *fsNode) error {
+		node.mu.Lock()
+		children := maps.Clone(node.children)
+		node.mu.Unlock()
+		for name, child := range children {
+			if err := removeSubtree(child); err != nil {
+				return err
+			}
+			if err := unlink(node, child, name); err != nil {
+				return err
+			}
+			p.forgetNode(child)
+		}
+		return nil
 	}
 
 	var walkDir func(dir *repb.Directory, parentNode *fsNode) error
@@ -590,7 +764,7 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 			parentNode.mu.Lock()
 			existingNode := parentNode.children[childFileNode.GetName()]
 			parentNode.mu.Unlock()
-			if existingNode != nil && (!existingNode.IsFile() || !digest.Equal(existingNode.fileNode.GetDigest(), childFileNode.GetDigest()) || existingNode.fileNode.IsExecutable != childFileNode.IsExecutable) {
+			if existingNode != nil && (!existingNode.IsFile() || !digest.Equal(existingNode.fileNode.GetDigest(), childFileNode.GetDigest()) || existingNode.fileNode.IsExecutable != childFileNode.IsExecutable || attrsChanged(existingNode)) {
 				if err := removeExistingChild(parentNode, existingNode, childFileNode.GetName()); err != nil {
 					return err
 				}
@@ -601,6 +775,12 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 				if _, err := addChild(parentNode, fileNode, childFileNode.GetName()); err != nil {
 					return err
 				}
+			} else {
+				// The node is reused for the new task, so forget that the
+				// previous task opened it.
+				existingNode.mu.Lock()
+				existingNode.accessed = false
+				existingNode.mu.Unlock()
 			}
 			numFiles++
 		}
@@ -621,6 +801,38 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 				}
 			}
 			numSymlinks++
+		}
+		if !pruneStale {
+			return nil
+		}
+		// Remove entries the new tree does not have, such as the last
+		// action's outputs or inputs it no longer needs, so that a reused VM
+		// sees only the new inputs.
+		wanted := make(map[string]struct{}, childCount)
+		for _, d := range dir.GetDirectories() {
+			wanted[d.GetName()] = struct{}{}
+		}
+		for _, f := range dir.GetFiles() {
+			wanted[f.GetName()] = struct{}{}
+		}
+		for _, l := range dir.GetSymlinks() {
+			wanted[l.GetName()] = struct{}{}
+		}
+		parentNode.mu.Lock()
+		stale := make(map[string]*fsNode)
+		for name, child := range parentNode.children {
+			if _, ok := wanted[name]; !ok {
+				stale[name] = child
+			}
+		}
+		parentNode.mu.Unlock()
+		for name, child := range stale {
+			if err := removeSubtree(child); err != nil {
+				return err
+			}
+			if err := removeExistingChild(parentNode, child, name); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -645,6 +857,36 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 		Content: modifiedInodes,
 		Entry:   invalidatedEntries,
 	}, nil
+}
+
+// attrsChanged reports whether an input's attributes differ from those of a
+// new node for it, other than its times, as when an action changed its mode.
+// A reused VM must not see the last action's changes to its inputs.
+func attrsChanged(n *fsNode) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.attrs == nil || n.backingPath != "" {
+		return n.backingPath != ""
+	}
+	fresh := newCASFileNode(nil, n.fileNode, 0)
+	cur := proto.Clone(n.attrs).(*vfspb.Attrs)
+	want := proto.Clone(fresh.getAttrs()).(*vfspb.Attrs)
+	cur.MtimeNanos, cur.AtimeNanos, want.MtimeNanos, want.AtimeNanos = 0, 0, 0, 0
+	return !proto.Equal(cur, want)
+}
+
+// forgetNode drops a node that is no longer in the namespace from the node
+// table, once no other link to it remains.
+func (p *Server) forgetNode(n *fsNode) {
+	n.mu.Lock()
+	gone := n.attrs == nil || n.attrs.GetNlink() == 0
+	id := n.id
+	n.mu.Unlock()
+	if gone {
+		p.mu.Lock()
+		delete(p.nodes, id)
+		p.mu.Unlock()
+	}
 }
 
 func cleanRelativePath(path string) (string, error) {
@@ -741,6 +983,7 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 	}
 
 	p.mu.Lock()
+	stats.PrefetchMissCount = p.prefetchMissCount
 	var walkNode func(node *fsNode)
 	walkNode = func(node *fsNode) {
 		node.mu.Lock()
@@ -768,11 +1011,35 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 	return stats
 }
 
+// UnusedInputs returns a TreeMask that excludes the CAS inputs not opened
+// since the last Prepare call.
+func (p *Server) UnusedInputs() *repb.TreeMask {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var paths []string
+	var walkNode func(node *fsNode, path string)
+	walkNode = func(node *fsNode, path string) {
+		node.mu.Lock()
+		if node.fileNode != nil && !node.accessed {
+			paths = append(paths, path)
+		}
+		children := node.children
+		node.mu.Unlock()
+		for name, child := range children {
+			walkNode(child, filepath.Join(path, name))
+		}
+	}
+	walkNode(p.root, "")
+	slices.Sort(paths)
+	return &repb.TreeMask{ExcludedPaths: paths}
+}
+
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
 func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout, inputFetcher container.InputFetcher) (*vfscommon.InodeInvalidations, error) {
 	p.mu.Lock()
 	p.casFileCount = 0
 	p.casFileSizeBytes = 0
+	p.prefetchMissCount = 0
 	p.mu.Unlock()
 	// There may already be nodes in the tree before `Prepare` is called. We
 	// merge the known CAS inputs with the tree we already have.
@@ -924,6 +1191,24 @@ func (h *fileHandle) read(ctx context.Context, req *vfspb.ReadRequest) (*vfspb.R
 	if req.GetOffset() < 0 || req.GetNumBytes() < 0 {
 		return nil, syscallStatusEINVAL
 	}
+	buf := make([]byte, req.GetNumBytes())
+	if h.remote != nil {
+		n, err := h.remote(ctx, h.node.fileNode, buf, req.GetOffset())
+		if err != nil {
+			// As with downloads at open time, record the error so that it
+			// fails the task even if the command ignores the failed read.
+			p := h.node.server
+			err = status.WrapErrorf(err, "read VFS input %q", h.node.Path())
+			p.mu.Lock()
+			if p.taskError == nil {
+				p.taskError = err
+			}
+			p.mu.Unlock()
+			log.CtxWarningf(p.taskCtx(), "%s", err)
+			return nil, err
+		}
+		return &vfspb.ReadResponse{Data: buf[:n]}, nil
+	}
 	if err := h.fetchRange(ctx, req.GetOffset(), int64(req.GetNumBytes())); err != nil {
 		return nil, err
 	}
@@ -931,7 +1216,6 @@ func (h *fileHandle) read(ctx context.Context, req *vfspb.ReadRequest) (*vfspb.R
 	f := h.f
 	h.mu.Unlock()
 
-	buf := make([]byte, req.GetNumBytes())
 	n, err := f.ReadAt(buf, req.GetOffset())
 	if err != nil && err != io.EOF {
 		return nil, syscallErrStatus(err)
@@ -943,16 +1227,34 @@ func (h *fileHandle) write(req *vfspb.WriteRequest) (*vfspb.WriteResponse, error
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	if h.remote != nil {
+		return nil, syscallErrStatus(syscall.EBADF)
+	}
+	if h.mirror != nil {
+		h.node.writeMu.Lock()
+		defer h.node.writeMu.Unlock()
+	}
 	var n int
 	var err error
+	offset := req.GetOffset()
 	if int(h.openFlags)&os.O_APPEND != 0 {
 		n, err = h.f.Write(req.GetData())
+		if err == nil && h.mirror != nil {
+			var end int64
+			end, err = h.f.Seek(0, io.SeekCurrent)
+			offset = end - int64(n)
+		}
 	} else {
 		n, err = h.f.WriteAt(req.GetData(), req.GetOffset())
 	}
 
 	if err != nil {
 		return nil, syscallErrStatus(err)
+	}
+	if h.mirror != nil {
+		if err := h.mirror.Write(h.node.id, offset, req.GetData()[:n]); err != nil {
+			return nil, syscallErrStatus(h.node.server.mirrorError(err))
+		}
 	}
 	return &vfspb.WriteResponse{NumBytes: uint32(n)}, nil
 }
@@ -961,6 +1263,9 @@ func (h *fileHandle) fsync(req *vfspb.FsyncRequest) (*vfspb.FsyncResponse, error
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	if h.remote != nil {
+		return &vfspb.FsyncResponse{}, nil
+	}
 	if err := h.f.Sync(); err != nil {
 		return nil, syscallErrStatus(err)
 	}
@@ -971,8 +1276,9 @@ func (h *fileHandle) lseek(request *vfspb.LseekRequest) (*vfspb.LseekResponse, e
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Missing cached ranges are not holes in the logical CAS file.
-	if h.rangeFetcher != nil && (request.GetWhence() == unix.SEEK_DATA || request.GetWhence() == unix.SEEK_HOLE) {
+	// Missing cached ranges are not holes in the logical CAS file, and a
+	// remote input has no local file to seek in.
+	if (h.rangeFetcher != nil || h.remote != nil) && (request.GetWhence() == unix.SEEK_DATA || request.GetWhence() == unix.SEEK_HOLE) {
 		size := uint64(h.node.fileNode.GetDigest().GetSizeBytes())
 		if request.GetOffset() >= size {
 			return nil, syscallErrStatus(syscall.ENXIO)
@@ -981,6 +1287,15 @@ func (h *fileHandle) lseek(request *vfspb.LseekRequest) (*vfspb.LseekResponse, e
 			return &vfspb.LseekResponse{Offset: size}, nil
 		}
 		return &vfspb.LseekResponse{Offset: request.GetOffset()}, nil
+	}
+	if h.remote != nil {
+		switch request.GetWhence() {
+		case unix.SEEK_SET:
+			return &vfspb.LseekResponse{Offset: request.GetOffset()}, nil
+		case unix.SEEK_END:
+			return &vfspb.LseekResponse{Offset: uint64(h.node.fileNode.GetDigest().GetSizeBytes()) + request.GetOffset()}, nil
+		}
+		return nil, syscallErrStatus(syscall.EINVAL)
 	}
 	off, err := h.f.Seek(int64(request.GetOffset()), int(request.GetWhence()))
 	if err != nil {
@@ -992,6 +1307,10 @@ func (h *fileHandle) lseek(request *vfspb.LseekRequest) (*vfspb.LseekResponse, e
 func (h *fileHandle) flush(req *vfspb.FlushRequest) (*vfspb.FlushResponse, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	if h.remote != nil {
+		return &vfspb.FlushResponse{}, nil
+	}
 
 	// Flush may be called more than once for the same handle if the user duplicated the FD.
 	// We can't close our local FD until all the user FDs are closed.
@@ -1015,10 +1334,12 @@ func (h *fileHandle) release(req *vfspb.ReleaseRequest) (*vfspb.ReleaseResponse,
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if err := h.f.Close(); err != nil {
-		return nil, syscallErrStatus(err)
+	if h.f != nil {
+		if err := h.f.Close(); err != nil {
+			return nil, syscallErrStatus(err)
+		}
+		h.f = nil
 	}
-	h.f = nil
 
 	if h.lockFD != 0 {
 		if err := syscall.Close(h.lockFD); err != nil {
@@ -1033,8 +1354,20 @@ func (h *fileHandle) allocate(req *vfspb.AllocateRequest) (*vfspb.AllocateRespon
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	if h.remote != nil {
+		return nil, syscallErrStatus(syscall.EBADF)
+	}
+	if h.mirror != nil {
+		h.node.writeMu.Lock()
+		defer h.node.writeMu.Unlock()
+	}
 	if err := syscall.Fallocate(int(h.f.Fd()), req.GetMode(), req.GetOffset(), req.GetNumBytes()); err != nil {
 		return nil, syscallErrStatus(err)
+	}
+	if h.mirror != nil {
+		if err := h.mirror.Allocate(h.node.id, req.GetMode(), req.GetOffset(), req.GetNumBytes()); err != nil {
+			return nil, syscallErrStatus(h.node.server.mirrorError(err))
+		}
 	}
 	return &vfspb.AllocateResponse{}, nil
 }
@@ -1234,8 +1567,18 @@ func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error
 			return nil, err
 		}
 	}
-	// A failed prefetcher cannot restart its downloads. Fetch directly from
-	// CAS if prefetch failed or the file was evicted before it could be opened.
+	// A failed prefetcher cannot restart its downloads, so fetch directly
+	// from the CAS if the prefetch failed. The file can also be missing from
+	// the file cache because it was evicted after the fetch, or because the
+	// input fetcher left it out as unused by a previous execution (see
+	// dirtools.DownloadTreeOpts.UnusedInputsDigest) and returned without
+	// fetching it. Count the latter case so that misses caused by leaving
+	// out unused inputs can be measured separately from evictions.
+	if prefetcher, ok := inputFetcher.(interface{ Prefetching(*repb.FileNode) bool }); ok && !prefetcher.Prefetching(node.fileNode) {
+		p.mu.Lock()
+		p.prefetchMissCount++
+		p.mu.Unlock()
+	}
 	if err := retryInputFetcher.Fetch(ctx, node.fileNode); err != nil {
 		return nil, err
 	}
@@ -1411,7 +1754,8 @@ func (p *Server) Create(ctx context.Context, request *vfspb.CreateRequest) (*vfs
 		return nil, err
 	}
 
-	file, err := os.OpenFile(node.backingPath, int(request.GetFlags()), os.FileMode(request.GetMode()))
+	flags := p.backingOpenFlags(request.GetFlags())
+	file, err := os.OpenFile(node.backingPath, int(flags), os.FileMode(request.GetMode()))
 	if err != nil {
 		return nil, syscallErrStatus(err)
 	}
@@ -1420,10 +1764,14 @@ func (p *Server) Create(ctx context.Context, request *vfspb.CreateRequest) (*vfs
 	id := node.id
 	node.mu.Unlock()
 
+	p.mu.Lock()
+	mirror := p.writeMirror
+	p.mu.Unlock()
 	fh := &fileHandle{
 		node:      node,
 		f:         file,
-		openFlags: request.GetFlags(),
+		openFlags: flags,
+		mirror:    mirror,
 	}
 	// We use the file descriptor as the file handle ID so that we can directly
 	// use the flock/fcntl syscalls to implement file locking (SetLk, SetLkw,
@@ -1454,8 +1802,40 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	}
 	node.accessed = true
 	node.mu.Unlock()
+	p.mu.Lock()
+	inputReader := p.inputReader
+	p.mu.Unlock()
+	if backingFile == "" && node.fileNode != nil && inputReader != nil && int(request.GetFlags())&(os.O_WRONLY|os.O_RDWR) == 0 {
+		// Reads of this handle go to inputReader, so there is nothing to
+		// open or download yet.
+		fh := &fileHandle{node: node, remote: inputReader, openFlags: request.GetFlags()}
+		handleID := p.nextRemoteHandleID.Add(1)
+		p.mu.Lock()
+		p.fileHandles[handleID] = fh
+		p.mu.Unlock()
+		return &vfspb.OpenResponse{HandleId: handleID}, nil
+	}
+	openFlags := request.GetFlags()
+	var mirror WriteMirror
 	if backingFile != "" {
-		f, err := os.OpenFile(backingFile, int(request.GetFlags()), os.FileMode(request.GetFlags()))
+		openFlags = p.backingOpenFlags(openFlags)
+		p.mu.Lock()
+		mirror = p.writeMirror
+		p.mu.Unlock()
+		truncate := mirror != nil && openFlags&syscall.O_TRUNC != 0
+		if truncate {
+			node.writeMu.Lock()
+		}
+		f, err := os.OpenFile(backingFile, int(openFlags), os.FileMode(request.GetFlags()))
+		if err == nil && truncate {
+			if mErr := mirror.Truncate(node.id, 0); mErr != nil {
+				f.Close()
+				err = p.mirrorError(mErr)
+			}
+		}
+		if truncate {
+			node.writeMu.Unlock()
+		}
 		if err != nil {
 			log.CtxWarningf(p.taskCtx(), "Open %d could not open file %q: %s", request.GetId(), backingFile, err)
 			return nil, syscallErrStatus(err)
@@ -1491,7 +1871,8 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	fh := &fileHandle{
 		node:      node,
 		f:         openedFile,
-		openFlags: request.GetFlags(),
+		openFlags: openFlags,
+		mirror:    mirror,
 	}
 	if backingFile == "" && node.fileNode != nil {
 		p.mu.Lock()
@@ -1621,6 +2002,13 @@ func (p *Server) processSetAttr(node *fsNode, file *os.File, request *vfspb.SetA
 	}
 
 	if request.SetSize != nil {
+		p.mu.Lock()
+		mirror := p.writeMirror
+		p.mu.Unlock()
+		if mirror != nil {
+			node.writeMu.Lock()
+			defer node.writeMu.Unlock()
+		}
 		if file != nil {
 			// The backing path may no longer exist if the file was unlinked.
 			if err := file.Truncate(request.SetSize.GetSize()); err != nil {
@@ -1630,6 +2018,11 @@ func (p *Server) processSetAttr(node *fsNode, file *os.File, request *vfspb.SetA
 			return syscall.EPERM
 		} else if err := os.Truncate(node.backingPath, request.SetSize.GetSize()); err != nil {
 			return err
+		}
+		if mirror != nil {
+			if err := mirror.Truncate(node.id, request.SetSize.GetSize()); err != nil {
+				return p.mirrorError(err)
+			}
 		}
 		newAttrs.Size = request.SetSize.GetSize()
 	}
@@ -1956,9 +2349,23 @@ func (p *Server) getLockFD(handleID uint64) (int, error) {
 		// Theoretically an application could open a file, delete it and then
 		// call the lock functions, but we assume that's unlikely to happen
 		// in practice.
-		lockFD, err := syscall.Open(fh.f.Name(), syscall.O_RDWR, 0)
+		lockPath := ""
+		flags := syscall.O_RDWR
+		if fh.f != nil {
+			lockPath = fh.f.Name()
+		} else {
+			// A remote input handle has no local file, so lock a per-node
+			// stand-in file instead. Every handle of the node locks the
+			// same file, which gives the same exclusion as locking the input.
+			if err := os.MkdirAll(filepath.Join(p.workspacePath, ".locks"), 0755); err != nil {
+				return 0, syscallErrStatus(err)
+			}
+			lockPath = filepath.Join(p.workspacePath, ".locks", fmt.Sprint(fh.node.id))
+			flags |= syscall.O_CREAT
+		}
+		lockFD, err := syscall.Open(lockPath, flags, 0644)
 		if err != nil {
-			log.CtxWarningf(p.taskCtx(), "could not open file %q for locking: %s", fh.f.Name(), err)
+			log.CtxWarningf(p.taskCtx(), "could not open file %q for locking: %s", lockPath, err)
 			return 0, syscallErrStatus(err)
 		}
 		fh.lockFD = lockFD
@@ -2045,6 +2452,20 @@ func (p *Server) CopyFileRange(ctx context.Context, request *vfspb.CopyFileRange
 	if err != nil {
 		return nil, err
 	}
+	if rh.remote != nil {
+		// A remote input has no file descriptor to copy from, so read the
+		// range and write it instead, at most 16 MiB at a time. The caller
+		// copies the rest with further calls.
+		rsp, err := rh.read(ctx, &vfspb.ReadRequest{Offset: int64(request.GetReadHandleOffset()), NumBytes: int32(min(request.GetNumBytes(), 16<<20))})
+		if err != nil {
+			return nil, err
+		}
+		wrsp, err := wh.write(&vfspb.WriteRequest{Data: rsp.GetData(), Offset: int64(request.GetWriteHandleOffset())})
+		if err != nil {
+			return nil, err
+		}
+		return &vfspb.CopyFileRangeResponse{NumBytesCopied: wrsp.GetNumBytes()}, nil
+	}
 	if err := rh.fetchRange(ctx, int64(request.GetReadHandleOffset()), int64(request.GetNumBytes())); err != nil {
 		return nil, err
 	}
@@ -2063,10 +2484,26 @@ func (p *Server) CopyFileRange(ctx context.Context, request *vfspb.CopyFileRange
 		lockSecond.mu.Lock()
 		defer lockSecond.mu.Unlock()
 	}
+	if wh.mirror != nil {
+		wh.node.writeMu.Lock()
+		defer wh.node.writeMu.Unlock()
+	}
 
+	writeOffset := int64(request.GetWriteHandleOffset())
 	n, err := unix.CopyFileRange(int(rh.f.Fd()), &request.ReadHandleOffset, int(wh.f.Fd()), &request.WriteHandleOffset, int(request.GetNumBytes()), int(request.GetFlags()))
 	if err != nil {
 		return nil, syscallErrStatus(err)
+	}
+	if wh.mirror != nil && n > 0 {
+		// The kernel copied the data without the server seeing it, so read
+		// it back to mirror it.
+		data := make([]byte, n)
+		if _, err := wh.f.ReadAt(data, writeOffset); err != nil {
+			return nil, syscallErrStatus(p.mirrorError(err))
+		}
+		if err := wh.mirror.Write(wh.node.id, writeOffset, data); err != nil {
+			return nil, syscallErrStatus(p.mirrorError(err))
+		}
 	}
 	return &vfspb.CopyFileRangeResponse{NumBytesCopied: uint32(n)}, nil
 }
@@ -2104,11 +2541,158 @@ func (p *Server) Start(lis net.Listener) error {
 }
 
 // PrepareContentProxy authorizes CAS proxy requests using ctx without building
-// a host-side VFS namespace.
-func (p *Server) PrepareContentProxy(ctx context.Context) {
+// a host-side VFS namespace. mode is one of the guest content modes.
+func (p *Server) PrepareContentProxy(ctx context.Context, layout *container.FileSystemLayout, mode string) {
 	p.mu.Lock()
 	p.internalTaskCtx = ctx
+	p.cacheFetcher = newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
+	p.contentFromFileCache = mode != GuestContentRemote
 	p.mu.Unlock()
+}
+
+// openContent opens a CAS input from the host file cache, downloading it
+// there first if it is missing. The file cache keeps executable and other
+// inputs apart, so a miss tries the other kind before downloading.
+func (p *Server) openContent(ctx context.Context, d *repb.Digest, executable bool) (*os.File, error) {
+	p.mu.Lock()
+	fetcher := p.cacheFetcher
+	p.mu.Unlock()
+	if fetcher == nil {
+		return nil, status.FailedPreconditionError("the guest VFS content proxy is not prepared")
+	}
+	fc := p.env.GetFileCache()
+	node := &repb.FileNode{Digest: d, IsExecutable: executable}
+	if f, err := fc.Open(ctx, node); err == nil {
+		return f, nil
+	}
+	if f, err := fc.Open(ctx, &repb.FileNode{Digest: d, IsExecutable: !executable}); err == nil {
+		return f, nil
+	}
+	if err := fetcher.Fetch(ctx, node); err != nil {
+		return nil, err
+	}
+	return fc.Open(ctx, node)
+}
+
+// ServeGuestContent answers raw content protocol requests on lis from the
+// host file cache, until lis is closed.
+func (p *Server) ServeGuestContent(lis net.Listener) {
+	p.mu.Lock()
+	p.contentListener = lis
+	p.mu.Unlock()
+	for {
+		conn, err := lis.Accept()
+		if err != nil {
+			return
+		}
+		go p.serveGuestContentConn(conn)
+	}
+}
+
+func (p *Server) serveGuestContentConn(conn net.Conn) {
+	defer conn.Close()
+	r := bufio.NewReader(conn)
+	buf := make([]byte, contentChunkSize)
+	var hdr [contentRequestHeaderSize]byte
+	var rspHdr [8]byte
+	// Keep the last input open, since large inputs are read with many
+	// requests in a row.
+	var f *os.File
+	var fHash string
+	defer func() {
+		if f != nil {
+			f.Close()
+		}
+	}()
+	for {
+		if _, err := io.ReadFull(r, hdr[:]); err != nil {
+			return
+		}
+		hash := make([]byte, hdr[0])
+		if _, err := io.ReadFull(r, hash); err != nil {
+			return
+		}
+		size := int64(binary.BigEndian.Uint64(hdr[2:]))
+		offset := int64(binary.BigEndian.Uint64(hdr[10:]))
+		length := int64(binary.BigEndian.Uint64(hdr[18:]))
+		if f == nil || fHash != string(hash) {
+			if f != nil {
+				f.Close()
+				f = nil
+			}
+			var err error
+			f, err = p.openContent(p.taskCtx(), &repb.Digest{Hash: string(hash), SizeBytes: size}, hdr[1] == 1)
+			if err != nil {
+				msg := []byte(err.Error())
+				binary.BigEndian.PutUint64(rspHdr[:], uint64(-int64(len(msg))))
+				if _, err := (&net.Buffers{rspHdr[:], msg}).WriteTo(conn); err != nil {
+					return
+				}
+				continue
+			}
+			fHash = string(hash)
+		}
+		n := max(0, min(length, size-offset))
+		binary.BigEndian.PutUint64(rspHdr[:], uint64(n))
+		// Send the header with the first chunk, so that a small input
+		// takes a single write.
+		out := net.Buffers{rspHdr[:]}
+		for n > 0 || len(out) > 0 {
+			k := min(n, int64(len(buf)))
+			if k > 0 {
+				if m, err := f.ReadAt(buf[:k], offset); int64(m) < k {
+					// The response has started, so the guest cannot tell an
+					// error from content. Closing the connection fails its
+					// request instead.
+					log.CtxWarningf(p.taskCtx(), "Read guest content %q: %s", hash, err)
+					return
+				}
+				out = append(out, buf[:k])
+			}
+			if _, err := out.WriteTo(conn); err != nil {
+				return
+			}
+			out = nil
+			offset += k
+			n -= k
+		}
+	}
+}
+
+// WriteContentRequest writes a raw content protocol request for length bytes
+// of node at offset.
+func WriteContentRequest(w io.Writer, node *repb.FileNode, offset, length int64) error {
+	hash := node.GetDigest().GetHash()
+	// Send the request in a single write, since each write to a vsock
+	// connection becomes a separate packet for the VMM to handle.
+	req := make([]byte, contentRequestHeaderSize, contentRequestHeaderSize+len(hash))
+	req[0] = byte(len(hash))
+	if node.GetIsExecutable() {
+		req[1] = 1
+	}
+	binary.BigEndian.PutUint64(req[2:], uint64(node.GetDigest().GetSizeBytes()))
+	binary.BigEndian.PutUint64(req[10:], uint64(offset))
+	binary.BigEndian.PutUint64(req[18:], uint64(length))
+	_, err := w.Write(append(req, hash...))
+	return err
+}
+
+// ReadContentResponseHeader reads the header of a raw content protocol
+// response and returns how many bytes of content follow it.
+func ReadContentResponseHeader(r io.Reader) (int64, error) {
+	var hdr [8]byte
+	if _, err := io.ReadFull(r, hdr[:]); err != nil {
+		return 0, err
+	}
+	n := int64(binary.BigEndian.Uint64(hdr[:]))
+	if n >= 0 {
+		return n, nil
+	}
+	msg := make([]byte, -n)
+	if _, err := io.ReadFull(r, msg); err != nil {
+		return 0, err
+	}
+	return 0, status.UnavailableErrorf("host content request: %s", msg)
 }
 
 type contentAddressableStorageProxy struct {
@@ -2176,6 +2760,12 @@ type byteStreamProxy struct {
 }
 
 func (p *byteStreamProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+	p.vfsServer.mu.Lock()
+	fromFileCache := p.vfsServer.contentFromFileCache
+	p.vfsServer.mu.Unlock()
+	if fromFileCache {
+		return p.readFromFileCache(req, stream)
+	}
 	client := p.vfsServer.env.GetByteStreamClient()
 	if client == nil {
 		return status.FailedPreconditionError("ByteStream client is not configured")
@@ -2198,15 +2788,551 @@ func (p *byteStreamProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Rea
 	}
 }
 
+// taskProxyContext returns a context for forwarding a guest request: it has
+// the task's credentials, and is canceled when the guest's request is.
+func (p *Server) taskProxyContext(guestCtx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(p.taskCtx())
+	stop := context.AfterFunc(guestCtx, cancel)
+	return ctx, func() {
+		stop()
+		cancel()
+	}
+}
+
+func (p *contentAddressableStorageProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+	client := p.vfsServer.env.GetContentAddressableStorageClient()
+	if client == nil {
+		return nil, status.FailedPreconditionError("content addressable storage client is not configured")
+	}
+	ctx, cancel := p.vfsServer.taskProxyContext(ctx)
+	defer cancel()
+	return client.FindMissingBlobs(ctx, req)
+}
+
+func (p *contentAddressableStorageProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
+	client := p.vfsServer.env.GetContentAddressableStorageClient()
+	if client == nil {
+		return nil, status.FailedPreconditionError("content addressable storage client is not configured")
+	}
+	ctx, cancel := p.vfsServer.taskProxyContext(ctx)
+	defer cancel()
+	return client.BatchUpdateBlobs(ctx, req)
+}
+
+func (p *byteStreamProxy) Write(stream bspb.ByteStream_WriteServer) error {
+	client := p.vfsServer.env.GetByteStreamClient()
+	if client == nil {
+		return status.FailedPreconditionError("ByteStream client is not configured")
+	}
+	ctx, cancel := p.vfsServer.taskProxyContext(stream.Context())
+	defer cancel()
+	remote, err := client.Write(ctx)
+	if err != nil {
+		return err
+	}
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		// The cache ends the stream early if it already has the blob, and
+		// CloseAndRecv then returns its response.
+		if err := remote.Send(req); err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+	}
+	rsp, err := remote.CloseAndRecv()
+	if err != nil {
+		return err
+	}
+	return stream.SendAndClose(rsp)
+}
+
+func (p *byteStreamProxy) readFromFileCache(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
+	if err != nil {
+		return err
+	}
+	if rn.GetCompressor() != repb.Compressor_IDENTITY {
+		return status.InvalidArgumentError("compressed reads are not served from the file cache")
+	}
+	f, err := p.vfsServer.openContent(p.vfsServer.taskCtx(), rn.GetDigest(), false)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	offset := req.GetReadOffset()
+	n := rn.GetDigest().GetSizeBytes() - offset
+	if req.GetReadLimit() > 0 {
+		n = min(n, req.GetReadLimit())
+	}
+	buf := make([]byte, min(max(n, 0), contentChunkSize))
+	for n > 0 {
+		k, err := f.ReadAt(buf[:min(n, int64(len(buf)))], offset)
+		if err != nil && err != io.EOF {
+			return err
+		}
+		if k == 0 {
+			return status.DataLossError("file cache input is shorter than its digest")
+		}
+		if err := stream.Send(&bspb.ReadResponse{Data: buf[:k]}); err != nil {
+			return err
+		}
+		offset += int64(k)
+		n -= int64(k)
+	}
+	return nil
+}
+
+// WalkOutputs calls fn for each file, directory and symlink under the
+// layout's output paths, with each directory before its contents. For a file
+// the action wrote, backingPath is where its contents are, and for an input
+// the action left alone, the entry has the input's digest.
+func (p *Server) WalkOutputs(layout *container.FileSystemLayout, fn func(entry *vmfspb.OutputEntry, backingPath string) error) error {
+	for _, outputPath := range outputPaths(layout) {
+		relativePath, err := joinRelativePath(layout.WorkingDirectory, outputPath)
+		if err != nil {
+			return err
+		}
+		node, err := p.lookupPath(relativePath)
+		if err != nil {
+			return err
+		}
+		if node == nil {
+			continue
+		}
+		if err := walkOutputNode(node, relativePath, fn); err != nil {
+			return status.WrapErrorf(err, "walk output %q", outputPath)
+		}
+	}
+	return nil
+}
+
+func walkOutputNode(node *fsNode, path string, fn func(*vmfspb.OutputEntry, string) error) error {
+	node.mu.Lock()
+	entry := &vmfspb.OutputEntry{Path: path, Perms: node.getAttrs().GetPerm()}
+	backingPath := node.backingPath
+	var children map[string]*fsNode
+	switch node.nodeType {
+	case fsDirectoryNode:
+		entry.Type = vmfspb.OutputEntry_DIRECTORY
+		children = maps.Clone(node.children)
+	case fsFileNode:
+		entry.Type = vmfspb.OutputEntry_FILE
+		if backingPath == "" {
+			entry.InputDigest = node.fileNode.GetDigest()
+			entry.Size = node.fileNode.GetDigest().GetSizeBytes()
+		} else {
+			entry.NodeId = node.id
+		}
+	case fsSymlinkNode:
+		entry.Type = vmfspb.OutputEntry_SYMLINK
+		entry.SymlinkTarget = node.target
+	default:
+		nodeType := node.nodeType
+		node.mu.Unlock()
+		return status.UnimplementedErrorf("cannot return VFS node type %d as an output", nodeType)
+	}
+	node.mu.Unlock()
+	if entry.GetType() == vmfspb.OutputEntry_FILE {
+		if backingPath != "" {
+			info, err := os.Stat(backingPath)
+			if err != nil {
+				return err
+			}
+			entry.Size = info.Size()
+		} else if entry.GetInputDigest() == nil {
+			return status.FailedPreconditionErrorf("output file %q has no contents", path)
+		}
+	}
+	if err := fn(entry, backingPath); err != nil {
+		return err
+	}
+	for _, name := range slices.Sorted(maps.Keys(children)) {
+		if err := walkOutputNode(children[name], filepath.Join(path, name), fn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// WriteOutputs creates the output entries that recv returns under
+// outputRoot, until recv returns io.EOF, and returns how many files and bytes
+// it wrote. An input the action left alone comes from the host file cache. A
+// file the action wrote comes from the messages after its entry, or, if
+// mirrored is set, from the file that its mirrored writes went to.
+func (p *Server) WriteOutputs(ctx context.Context, recv func() (*vmfspb.ReadOutputsResponse, error), outputRoot string, mirrored bool) (int64, int64, error) {
+	p.mu.Lock()
+	mirrorDir := p.mirrorDir
+	p.mu.Unlock()
+	var fileCount, byteCount int64
+	// f receives the contents of the current file, which has remaining bytes
+	// still to come.
+	var f *os.File
+	var current string
+	var remaining int64
+	finishFile := func() error {
+		if f == nil {
+			return nil
+		}
+		err := f.Close()
+		f = nil
+		if remaining != 0 {
+			return status.DataLossErrorf("output %q is missing %d bytes", current, remaining)
+		}
+		return err
+	}
+	defer func() {
+		if f != nil {
+			f.Close()
+		}
+	}()
+	for {
+		rsp, err := recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, 0, err
+		}
+		if e := rsp.GetEntry(); e != nil {
+			if err := finishFile(); err != nil {
+				return 0, 0, err
+			}
+			if !filepath.IsLocal(e.GetPath()) {
+				return 0, 0, status.InvalidArgumentErrorf("output path %q is not under the workspace", e.GetPath())
+			}
+			current = e.GetPath()
+			destination := filepath.Join(outputRoot, e.GetPath())
+			mode := os.FileMode(e.GetPerms()) & os.ModePerm
+			if e.GetType() == vmfspb.OutputEntry_DIRECTORY {
+				if info, err := os.Lstat(destination); err == nil && !info.IsDir() {
+					if err := os.RemoveAll(destination); err != nil {
+						return 0, 0, err
+					}
+				}
+				if err := os.MkdirAll(destination, mode); err != nil {
+					return 0, 0, err
+				}
+				continue
+			}
+			if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
+				return 0, 0, err
+			}
+			if err := os.RemoveAll(destination); err != nil {
+				return 0, 0, err
+			}
+			switch {
+			case e.GetType() == vmfspb.OutputEntry_SYMLINK:
+				if err := os.Symlink(e.GetSymlinkTarget(), destination); err != nil {
+					return 0, 0, err
+				}
+			case e.GetType() != vmfspb.OutputEntry_FILE:
+				return 0, 0, status.InvalidArgumentErrorf("output %q has unknown type %s", e.GetPath(), e.GetType())
+			case e.GetInputDigest() != nil:
+				source, err := p.openContent(ctx, e.GetInputDigest(), mode&0111 != 0)
+				if err != nil {
+					return 0, 0, status.WrapErrorf(err, "open input for output %q", e.GetPath())
+				}
+				err = copyFile(source, destination, mode)
+				source.Close()
+				if err != nil {
+					return 0, 0, err
+				}
+			case mirrored:
+				if err := linkMirroredOutput(filepath.Join(mirrorDir, strconv.FormatUint(e.GetNodeId(), 10)), destination, e); err != nil {
+					return 0, 0, err
+				}
+			default:
+				f, err = os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+				if err != nil {
+					return 0, 0, err
+				}
+				remaining = e.GetSize()
+			}
+			if e.GetType() == vmfspb.OutputEntry_FILE {
+				fileCount++
+				byteCount += e.GetSize()
+			}
+		}
+		if data := rsp.GetData(); len(data) > 0 {
+			if f == nil || int64(len(data)) > remaining {
+				return 0, 0, status.InvalidArgumentErrorf("unexpected contents after output %q", current)
+			}
+			if _, err := f.Write(data); err != nil {
+				return 0, 0, err
+			}
+			remaining -= int64(len(data))
+		}
+	}
+	if err := finishFile(); err != nil {
+		return 0, 0, err
+	}
+	return fileCount, byteCount, nil
+}
+
+// linkMirroredOutput puts the file that a guest server mirrored at
+// destination. A file the action created but never wrote to has no mirrored
+// file, so it is created empty.
+func linkMirroredOutput(mirrorPath, destination string, e *vmfspb.OutputEntry) error {
+	mode := os.FileMode(e.GetPerms()) & os.ModePerm
+	info, err := os.Stat(mirrorPath)
+	if os.IsNotExist(err) && e.GetSize() == 0 {
+		f, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+		if err != nil {
+			return err
+		}
+		return f.Close()
+	}
+	if err != nil {
+		return err
+	}
+	if info.Size() != e.GetSize() {
+		return status.DataLossErrorf("mirrored output %q has %d bytes, but the guest has %d", e.GetPath(), info.Size(), e.GetSize())
+	}
+	// An output that is a hard link of another one links the same file.
+	if err := os.Link(mirrorPath, destination); err != nil {
+		return err
+	}
+	return os.Chmod(destination, mode)
+}
+
+// The mirror protocol carries a guest server's changes to the files an action
+// writes over a connection to the host. Each frame is a header of an op, a
+// node ID, two 8-byte arguments and a 4-byte argument, followed, for
+// mirrorWrite, by the data.
+const (
+	// mirrorWrite writes the length that follows at an offset.
+	mirrorWrite = 'W'
+	// mirrorTruncate sets the size.
+	mirrorTruncate = 'T'
+	// mirrorAllocate calls fallocate with an offset, length and mode.
+	mirrorAllocate = 'A'
+	// mirrorSync asks the host to reply once it has applied every frame
+	// before it, with the length of an error message and the message, which
+	// is empty if every change was applied.
+	mirrorSync = 'S'
+
+	mirrorHeaderSize = 1 + 8 + 8 + 8 + 4
+	// maxMirrorWrite is the most data a mirrorWrite frame carries.
+	maxMirrorWrite = 1 << 20
+)
+
+// MirrorClient is a WriteMirror that sends a guest server's changes to the
+// host over a mirror protocol connection.
+type MirrorClient struct {
+	mu   sync.Mutex
+	conn net.Conn
+	// err is the first error sending to conn, after which every call fails.
+	err error
+}
+
+func NewMirrorClient(conn net.Conn) *MirrorClient {
+	return &MirrorClient{conn: conn}
+}
+
+func (m *MirrorClient) send(op byte, id uint64, a, b int64, c uint32, data []byte) error {
+	frame := make([]byte, mirrorHeaderSize, mirrorHeaderSize+len(data))
+	frame[0] = op
+	binary.BigEndian.PutUint64(frame[1:], id)
+	binary.BigEndian.PutUint64(frame[9:], uint64(a))
+	binary.BigEndian.PutUint64(frame[17:], uint64(b))
+	binary.BigEndian.PutUint32(frame[25:], c)
+	// Send each frame in a single write, since each write to a vsock
+	// connection becomes a separate packet for the VMM to handle.
+	frame = append(frame, data...)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return m.err
+	}
+	if _, err := m.conn.Write(frame); err != nil {
+		m.err = err
+	}
+	return m.err
+}
+
+func (m *MirrorClient) Write(id uint64, offset int64, data []byte) error {
+	for len(data) > 0 {
+		n := min(len(data), maxMirrorWrite)
+		if err := m.send(mirrorWrite, id, offset, int64(n), 0, data[:n]); err != nil {
+			return err
+		}
+		data = data[n:]
+		offset += int64(n)
+	}
+	return nil
+}
+
+func (m *MirrorClient) Truncate(id uint64, size int64) error {
+	return m.send(mirrorTruncate, id, size, 0, 0, nil)
+}
+
+func (m *MirrorClient) Allocate(id uint64, mode uint32, offset, length int64) error {
+	return m.send(mirrorAllocate, id, offset, length, mode, nil)
+}
+
+// Sync waits until the host has applied every change sent before it, and
+// returns the first error the host hit applying them.
+func (m *MirrorClient) Sync() error {
+	if err := m.send(mirrorSync, 0, 0, 0, 0, nil); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var hdr [8]byte
+	if _, err := io.ReadFull(m.conn, hdr[:]); err != nil {
+		m.err = err
+		return err
+	}
+	msg := make([]byte, binary.BigEndian.Uint64(hdr[:]))
+	if _, err := io.ReadFull(m.conn, msg); err != nil {
+		m.err = err
+		return err
+	}
+	if len(msg) > 0 {
+		return status.UnavailableErrorf("host could not apply mirrored writes: %s", msg)
+	}
+	return nil
+}
+
+func (m *MirrorClient) Close() error {
+	return m.conn.Close()
+}
+
+// SetMirrorDir sets the directory where the files that the guest mirrors
+// from now on are kept, one per node ID.
+func (p *Server) SetMirrorDir(dir string) {
+	p.mu.Lock()
+	p.mirrorDir = dir
+	p.mu.Unlock()
+}
+
+// ServeGuestMirror applies the changes that guest servers mirror over
+// connections from lis, until lis is closed.
+func (p *Server) ServeGuestMirror(lis net.Listener) {
+	p.mu.Lock()
+	p.mirrorListener = lis
+	p.mu.Unlock()
+	for {
+		conn, err := lis.Accept()
+		if err != nil {
+			return
+		}
+		go p.serveGuestMirrorConn(conn)
+	}
+}
+
+func (p *Server) serveGuestMirrorConn(conn net.Conn) {
+	defer conn.Close()
+	// The guest connects once per task, after the host sets its directory.
+	p.mu.Lock()
+	dir := p.mirrorDir
+	p.mu.Unlock()
+	files := make(map[uint64]*os.File)
+	defer func() {
+		for _, f := range files {
+			f.Close()
+		}
+	}()
+	open := func(id uint64) (*os.File, error) {
+		if f, ok := files[id]; ok {
+			return f, nil
+		}
+		if dir == "" {
+			return nil, status.FailedPreconditionError("no mirror directory is set")
+		}
+		f, err := os.OpenFile(filepath.Join(dir, strconv.FormatUint(id, 10)), os.O_RDWR|os.O_CREATE, 0644)
+		if err != nil {
+			return nil, err
+		}
+		files[id] = f
+		return f, nil
+	}
+	// applyErr is the first error applying a change. Later frames are still
+	// read, to keep reading at frame boundaries, but not applied.
+	var applyErr error
+	r := bufio.NewReaderSize(conn, 2*maxMirrorWrite)
+	buf := make([]byte, maxMirrorWrite)
+	var hdr [mirrorHeaderSize]byte
+	for {
+		if _, err := io.ReadFull(r, hdr[:]); err != nil {
+			return
+		}
+		id := binary.BigEndian.Uint64(hdr[1:])
+		a := int64(binary.BigEndian.Uint64(hdr[9:]))
+		b := int64(binary.BigEndian.Uint64(hdr[17:]))
+		c := binary.BigEndian.Uint32(hdr[25:])
+		switch hdr[0] {
+		case mirrorWrite:
+			if b < 0 || b > maxMirrorWrite {
+				log.Warningf("Mirrored write of %d bytes is too large", b)
+				return
+			}
+			if _, err := io.ReadFull(r, buf[:b]); err != nil {
+				return
+			}
+			if applyErr == nil {
+				f, err := open(id)
+				if err == nil {
+					_, err = f.WriteAt(buf[:b], a)
+				}
+				applyErr = err
+			}
+		case mirrorTruncate:
+			if applyErr == nil {
+				f, err := open(id)
+				if err == nil {
+					err = f.Truncate(a)
+				}
+				applyErr = err
+			}
+		case mirrorAllocate:
+			if applyErr == nil {
+				f, err := open(id)
+				if err == nil {
+					err = unix.Fallocate(int(f.Fd()), c, a, b)
+				}
+				applyErr = err
+			}
+		case mirrorSync:
+			var msg []byte
+			if applyErr != nil {
+				msg = []byte(applyErr.Error())
+			}
+			rsp := binary.BigEndian.AppendUint64(nil, uint64(len(msg)))
+			if _, err := conn.Write(append(rsp, msg...)); err != nil {
+				return
+			}
+		default:
+			log.Warningf("Unknown mirror op %q", hdr[0])
+			return
+		}
+	}
+}
+
 func (p *Server) Stop() {
 	p.mu.Lock()
 	for _, fh := range p.fileHandles {
 		_, _ = fh.release(&vfspb.ReleaseRequest{})
 	}
 	server := p.server
+	contentListener := p.contentListener
+	mirrorListener := p.mirrorListener
 	p.mu.Unlock()
 	if server != nil {
 		server.Stop()
+	}
+	if contentListener != nil {
+		contentListener.Close()
+	}
+	if mirrorListener != nil {
+		mirrorListener.Close()
 	}
 }
 

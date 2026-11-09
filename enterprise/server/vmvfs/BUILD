@@ -16,6 +16,7 @@ go_library(
         "//proto:vfs_go_proto",
         "//proto:vmvfs_go_proto",
         "//server/cache/dirtools",
+        "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/log",
@@ -24,5 +25,6 @@ go_library(
         "@com_github_mdlayher_vsock//:vsock",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//status",
     ],
 )

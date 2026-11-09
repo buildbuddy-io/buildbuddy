@@ -49,6 +49,12 @@ const (
 	// keeps this connection open so that a snapshot restore resets it and causes
 	// the guest to send a new signal.
 	HostVMExecReadyPort = 25412
+	// HostVFSContentPort is the host port for the raw protocol that serves
+	// the contents of CAS inputs to the guest VFS server.
+	HostVFSContentPort = 25413
+	// HostVFSMirrorPort is the host port on which the guest VFS server sends
+	// the writes it mirrors to the host.
+	HostVFSMirrorPort = 25414
 
 	// VMExecReadyMessage is written to HostVMExecReadyPort once vmexec is ready
 	// to serve requests.
