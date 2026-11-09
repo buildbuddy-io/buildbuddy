@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/time/rate"
 )
 
 var (
@@ -33,6 +34,7 @@ var (
 const (
 	ingestPath                = "/v1/ingest"
 	MaxEventsPerIngestRequest = 100
+	ingestRequestsPerSecond   = 45
 
 	// Caution: Do not change this value!
 	// Each Metronome event should cover a window of this size, aligned to the nearest interval of this duration.
@@ -98,9 +100,10 @@ type EventProperties struct {
 }
 
 type Client struct {
-	httpClient   *http.Client
-	retryOptions *retry.Options
-	apiKey       string
+	httpClient    *http.Client
+	retryOptions  *retry.Options
+	apiKey        string
+	ingestLimiter *rate.Limiter
 }
 
 func ReadOnlyConfigured() bool {
@@ -133,6 +136,9 @@ func newClient(key, keyFlag string, httpClient *http.Client, retryOpts *retry.Op
 		httpClient:   httpClient,
 		retryOptions: retryOpts,
 		apiKey:       strings.TrimSpace(key),
+		// Share the limit across batches, retries, and ReportUsage calls.
+		// A single-token burst prevents backfills from sending a large burst.
+		ingestLimiter: rate.NewLimiter(ingestRequestsPerSecond, 1),
 	}, nil
 }
 
@@ -156,6 +162,9 @@ func (c *Client) ReportUsage(ctx context.Context, events []UsageEvent) error {
 		end := min(start+MaxEventsPerIngestRequest, len(encoded))
 		batch := encoded[start:end]
 		err := retry.DoVoid(ctx, c.retryOptions, func(ctx context.Context) error {
+			if err := c.ingestLimiter.Wait(ctx); err != nil {
+				return retry.NonRetryableError(err)
+			}
 			err := c.ingestToMetronome(ctx, batch)
 			if err == nil {
 				return nil

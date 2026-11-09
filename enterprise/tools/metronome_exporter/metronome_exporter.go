@@ -244,7 +244,7 @@ func exportedGroups(ctx context.Context, env *real_environment.RealEnv) ([]*tabl
 		clauses = append(clauses, "status IN ?")
 		args = append(args, *groupStatuses)
 	}
-	query := `SELECT group_id, status FROM "Groups" WHERE ` + strings.Join(clauses, " OR ")
+	query := `SELECT group_id, name, status FROM "Groups" WHERE ` + strings.Join(clauses, " OR ")
 	groups, err := db.ScanAll(env.GetDBHandle().NewQuery(ctx, "metronome_exporter_groups").Raw(query, args...), &tables.Group{})
 	if err != nil {
 		return nil, err
@@ -326,7 +326,11 @@ func ensureCustomer(ctx context.Context, client metronomeClient, group *tables.G
 		return err
 	}
 	if customerID == "" {
-		customerID, err = client.CreateCustomer(ctx, groupID, groupID)
+		name := group.Name
+		if strings.TrimSpace(name) == "" {
+			name = groupID
+		}
+		customerID, err = client.CreateCustomer(ctx, name, groupID)
 		if err != nil {
 			return err
 		}
