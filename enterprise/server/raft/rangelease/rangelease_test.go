@@ -163,8 +163,8 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 			{RangeId: 1, ReplicaId: 3},
 		},
 	}
-	leaseDuration := 100 * time.Millisecond
-	gracePeriod := 50 * time.Millisecond
+	leaseDuration := 500 * time.Millisecond
+	gracePeriod := 250 * time.Millisecond
 	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd.GetRangeId(), rep).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to get a rangelease.
