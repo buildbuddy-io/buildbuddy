@@ -27,7 +27,7 @@ func cleanup() {
 	}
 	// Reset to an empty (non-nil) map so a subsequent test that dials through
 	// getConnectionPool doesn't panic assigning into a nil map.
-	backendConnectionPools = map[string]*grpc_client.ClientConnPool{}
+	backendConnectionPools = map[int]*grpc_client.ClientConnPool{}
 }
 
 // TestForwarding_PropagatesClientHeadersToBackend tests that the unknown-RPC
@@ -78,10 +78,11 @@ func TestForwarding_PropagatesClientHeadersToBackend(t *testing.T) {
 		"the client-supplied header must be forwarded through the proxy to the backend")
 }
 
-func TestGetConnectionPool_DedupesConcurrentDialsForSameTarget(t *testing.T) {
+func TestGetConnectionPool_DedupesConcurrentDialsForSameRule(t *testing.T) {
 	t.Cleanup(cleanup)
 
-	dial := func(_ string, _ ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
+	flags.Set(t, "app.proxy_targets", []proxyPair{{Prefix: "", Target: "remote.example.com"}})
+	dial := func(_ string, _ int, _ ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
 		// Sleep for a bit to increase the chance of race conditions.
 		time.Sleep(10 * time.Millisecond)
 		return &grpc_client.ClientConnPool{}, nil
@@ -91,7 +92,7 @@ func TestGetConnectionPool_DedupesConcurrentDialsForSameTarget(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range pools {
 		wg.Go(func() {
-			p, err := getConnectionPool(dial, "remote.example.com")
+			p, err := getConnectionPool(dial, 0)
 			require.NotNil(t, p)
 			require.NoError(t, err)
 			pools[i] = p
@@ -103,6 +104,115 @@ func TestGetConnectionPool_DedupesConcurrentDialsForSameTarget(t *testing.T) {
 	for _, pool := range pools[1:] {
 		require.Same(t, pools[0], pool)
 	}
+}
+
+type dialCall struct {
+	target string
+	size   int
+}
+
+func poolForMethod(t *testing.T, dialer dialFn, method string) *grpc_client.ClientConnPool {
+	idx, err := lookupProxyRule(method)
+	require.NoError(t, err)
+	pool, err := getConnectionPool(dialer, idx)
+	require.NoError(t, err)
+	return pool
+}
+
+func TestGetConnectionPool_DistinctRulesWithSameTargetGetDistinctPools(t *testing.T) {
+	t.Cleanup(cleanup)
+	const target = "remote.example.com"
+	flags.Set(t, "app.proxy_targets", []proxyPair{
+		{Prefix: "/build.bazel.remote.execution.v2.Execution/", Target: target},
+		{Prefix: "", Target: target},
+	})
+	dials := 0
+	dialer := func(string, int, ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
+		dials++
+		return &grpc_client.ClientConnPool{}, nil
+	}
+
+	execute := poolForMethod(t, dialer, "/build.bazel.remote.execution.v2.Execution/Execute")
+	bes := poolForMethod(t, dialer, "/google.devtools.build.v1.PublishBuildEvent/PublishLifecycleEvent")
+	wait := poolForMethod(t, dialer, "/build.bazel.remote.execution.v2.Execution/WaitExecution")
+
+	require.NotSame(t, execute, bes)
+	require.Same(t, execute, wait)
+	require.Equal(t, 2, dials)
+}
+
+func TestGetConnectionPool_UsesPerRulePoolSize(t *testing.T) {
+	t.Cleanup(cleanup)
+	flags.Set(t, "app.proxy_pool_size", 5)
+	flags.Set(t, "app.proxy_targets", []proxyPair{
+		{Prefix: "/a.A/", Target: "a.example.com", PoolSize: 3},
+		{Prefix: "", Target: "b.example.com"},
+	})
+	var calls []dialCall
+	dialer := func(target string, size int, _ ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
+		calls = append(calls, dialCall{target, size})
+		return &grpc_client.ClientConnPool{}, nil
+	}
+
+	poolForMethod(t, dialer, "/a.A/Foo")
+	poolForMethod(t, dialer, "/b.B/Bar")
+
+	require.Equal(t, []dialCall{{"a.example.com", 3}, {"b.example.com", 5}}, calls)
+}
+
+// A held stream saturating one rule's pool must not block RPCs on another rule.
+func TestForwarding_SaturatedRulePoolDoesNotBlockOtherRules(t *testing.T) {
+	t.Cleanup(cleanup)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	backendHandler := func(_ any, stream grpc.ServerStream) error {
+		method, _ := grpc.MethodFromServerStream(stream)
+		if err := stream.RecvMsg(&emptypb.Empty{}); err != nil {
+			return err
+		}
+		if method == "/a.A/Stream" {
+			close(started)
+			select {
+			case <-release:
+			case <-stream.Context().Done():
+			}
+		}
+		return stream.SendMsg(&emptypb.Empty{})
+	}
+	backendLis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	backend := grpc.NewServer(grpc.MaxConcurrentStreams(1), grpc.UnknownServiceHandler(backendHandler))
+	go func() { _ = backend.Serve(backendLis) }()
+	t.Cleanup(backend.Stop)
+	backendTarget := fmt.Sprintf("grpc://localhost:%d", backendLis.Addr().(*net.TCPAddr).Port)
+
+	flags.Set(t, "app.proxy_targets", []proxyPair{
+		{Prefix: "/a.A/", Target: backendTarget, PoolSize: 1},
+		{Prefix: "", Target: backendTarget, PoolSize: 1},
+	})
+	proxyLis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	proxy := grpc.NewServer(GetForwardingServerOption(real_environment.NewRealEnv(nil)))
+	go func() { _ = proxy.Serve(proxyLis) }()
+	t.Cleanup(proxy.Stop)
+
+	clientConn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", proxyLis.Addr().(*net.TCPAddr).Port))
+	require.NoError(t, err)
+	t.Cleanup(func() { clientConn.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	stream, err := clientConn.NewStream(ctx, &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}, "/a.A/Stream")
+	require.NoError(t, err)
+	require.NoError(t, stream.SendMsg(&emptypb.Empty{}))
+	require.NoError(t, stream.CloseSend())
+	<-started
+
+	err = clientConn.Invoke(ctx, "/b.B/Unary", &emptypb.Empty{}, &emptypb.Empty{})
+	require.NoError(t, err)
+
+	close(release)
+	require.NoError(t, stream.RecvMsg(&emptypb.Empty{}))
 }
 
 // fakeIdentityService records the identity it was asked to sign and returns a

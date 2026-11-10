@@ -23,6 +23,8 @@ import (
 type proxyPair struct {
 	Prefix string `yaml:"prefix" json:"prefix" usage:"The gRPC method prefix to match."`
 	Target string `yaml:"target" json:"target" usage:"The gRPC target to forward requests to."`
+	// PoolSize overrides app.proxy_pool_size for this rule's connection pool.
+	PoolSize int `yaml:"pool_size" json:"pool_size" usage:"Number of gRPC connections for this rule's pool. Defaults to app.proxy_pool_size."`
 }
 
 var (
@@ -30,35 +32,40 @@ var (
 	poolSize     = flag.Int("app.proxy_pool_size", 0, "Number of gRPC connections to create for proxying unknown RPCs.")
 
 	mu                     sync.RWMutex
-	backendConnectionPools = map[string]*grpc_client.ClientConnPool{}
+	backendConnectionPools = map[int]*grpc_client.ClientConnPool{}
 )
 
-func lookupProxyTarget(fullMethodName string) (string, error) {
-	for _, pair := range *proxyTargets {
+// lookupProxyRule returns the index in proxyTargets of the first rule matching
+// the method.
+func lookupProxyRule(fullMethodName string) (int, error) {
+	for i, pair := range *proxyTargets {
 		if strings.HasPrefix(fullMethodName, pair.Prefix) {
-			return pair.Target, nil
+			return i, nil
 		}
 	}
-	return "", status.UnimplementedErrorf("unknown service %s", fullMethodName)
+	return 0, status.UnimplementedErrorf("unknown service %s", fullMethodName)
 }
 
-type dialFn = func(string, ...grpc.DialOption) (*grpc_client.ClientConnPool, error)
+type dialFn = func(target string, poolSize int, opts ...grpc.DialOption) (*grpc_client.ClientConnPool, error)
 
-func dial(target string, opts ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
-	if *poolSize < 0 {
-		return nil, status.InvalidArgumentErrorf("Invalid pool size: %d", *poolSize)
+func dial(target string, poolSize int, opts ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
+	if poolSize < 0 {
+		return nil, status.InvalidArgumentErrorf("Invalid pool size: %d", poolSize)
 	}
-	if *poolSize == 0 {
+	if poolSize == 0 {
 		return grpc_client.DialSimple(target, opts...)
 	}
-	return grpc_client.DialSimpleWithPoolSize(target, *poolSize, opts...)
+	return grpc_client.DialSimpleWithPoolSize(target, poolSize, opts...)
 }
 
-func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPool, error) {
+// getConnectionPool returns the pool for the rule at index ruleIdx in
+// proxyTargets. Each rule gets its own pool, even if rules share a target, so
+// that long-lived streams on one rule can't starve RPCs matched by another.
+func getConnectionPool(dialer dialFn, ruleIdx int) (*grpc_client.ClientConnPool, error) {
 	// Fast path: take a non-exclusive lock and check for an existing
 	// connection.
 	mu.RLock()
-	pool, ok := backendConnectionPools[target]
+	pool, ok := backendConnectionPools[ruleIdx]
 	mu.RUnlock()
 	if ok {
 		return pool, nil
@@ -68,17 +75,22 @@ func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPoo
 	defer mu.Unlock()
 
 	// Check the map again since we briefly released the lock.
-	if pool, ok := backendConnectionPools[target]; ok {
+	if pool, ok := backendConnectionPools[ruleIdx]; ok {
 		return pool, nil
 	}
 
+	rule := (*proxyTargets)[ruleIdx]
+	size := rule.PoolSize
+	if size == 0 {
+		size = *poolSize
+	}
 	// Note: dial should be non-blocking, so it's fine to do it with the mutex
 	// held.
-	newPool, err := dialer(target)
+	newPool, err := dialer(rule.Target, size)
 	if err != nil {
 		return nil, err
 	}
-	backendConnectionPools[target] = newPool
+	backendConnectionPools[ruleIdx] = newPool
 	return newPool, nil
 }
 
@@ -155,12 +167,12 @@ func ctxForBackend(ctx context.Context, cis interfaces.ClientIdentityService) (c
 func newDirector(env environment.Env) proxy.StreamDirector {
 	cis := env.GetClientIdentityService()
 	return func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
-		target, err := lookupProxyTarget(fullMethodName)
+		ruleIdx, err := lookupProxyRule(fullMethodName)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		pool, err := getConnectionPool(dial, target)
+		pool, err := getConnectionPool(dial, ruleIdx)
 		if err != nil {
 			return nil, nil, err
 		}
