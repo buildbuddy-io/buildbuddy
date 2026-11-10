@@ -169,6 +169,17 @@ func makeLocalGitRepo(t *testing.T, contents map[string]string) (path, commitSHA
 	return path, commitSHA
 }
 
+// digestFunctionStartupFlag returns a --digest_function startup flag for
+// tests of startup flag parsing. Bazel 7's lockfile and vendor dir digests
+// depend on the digest function, so testbazel's prewarmed (SHA256) offline
+// deps are stale under BLAKE3 there.
+func digestFunctionStartupFlag() string {
+	if strings.HasPrefix(testbazel.Version, "7.") {
+		return "--digest_function=SHA256"
+	}
+	return "--digest_function=BLAKE3"
+}
+
 // Run remote bazel in a separate process so it doesn't interfere with
 // the local server and cause a race condition.
 func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress string, args ...string) string {
@@ -401,7 +412,7 @@ genrule(
 		// and we won't be able to fetch it.
 		"--runner_exec_properties=instance_name="+randomStr,
 		// Pass a startup flag to test parsing
-		"--digest_function=BLAKE3",
+		digestFunctionStartupFlag(),
 		"build",
 		":main",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
@@ -497,7 +508,7 @@ genrule(
 		// and we won't be able to fetch it.
 		"--runner_exec_properties=instance_name=" + randomStr,
 		// Pass a startup flag to test parsing
-		"--digest_function=BLAKE3",
+		digestFunctionStartupFlag(),
 		"--run_remotely=0",
 		"run",
 		":main",
@@ -808,7 +819,7 @@ sh_binary(
 		"--runner_exec_properties=include-secrets=true",
 		// Use --script here, because otherwise $SECRET_TARGET will be parsed
 		// as a string literal and will not be expanded as an env var
-		"--script=echo secret=$SECRET_MESSAGE && bazel run $SECRET_TARGET --noenable_bzlmod --enable_workspace",
+		"--script=echo secret=$SECRET_MESSAGE && bazel run $SECRET_TARGET",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check the invocation logs to ensure the bazel command successfully ran
