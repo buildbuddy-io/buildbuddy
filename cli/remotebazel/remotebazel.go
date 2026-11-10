@@ -50,6 +50,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	bbflag "github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -676,7 +677,7 @@ func (s *logStream) Recv() (string, *elpb.GetEventLogChunkResponse, error) {
 		if err == nil {
 			return l, nil
 		}
-		if err == io.EOF || !status.IsUnavailableError(err) {
+		if !isTransientLogStreamError(ctx, err) {
 			return nil, retry.NonRetryableError(err)
 		}
 		log.Debugf("Log stream interrupted, reconnecting: %s", err)
@@ -696,6 +697,23 @@ func (s *logStream) Recv() (string, *elpb.GetEventLogChunkResponse, error) {
 		s.chunkID = l.GetNextChunkId()
 	}
 	return chunkID, l, nil
+}
+
+// isTransientLogStreamError reports whether a log stream error is transient,
+// meaning the stream should be reconnected instead of failing the run.
+func isTransientLogStreamError(ctx context.Context, err error) bool {
+	if err == io.EOF {
+		return false
+	}
+	if status.IsUnavailableError(err) {
+		return true
+	}
+	// A proxy or load balancer resetting the HTTP/2 stream surfaces as e.g.
+	// Internal or Canceled, with a message like "stream terminated by
+	// RST_STREAM with error code: INTERNAL_ERROR". grpc-go does not expose
+	// this any other way. Our own context being done also produces resets,
+	// which must not be retried.
+	return ctx.Err() == nil && strings.Contains(status.Message(err), "stream terminated by RST_STREAM")
 }
 
 // streamLogs streams the logs with real-time progress updates. It uses ANSI
@@ -1399,7 +1417,12 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 		}
 		return nil
 	})
-	eg.Go(func() error {
+	// Waiting for the execution is kept separate from the invocation lookup
+	// so that a wait failure can fall back to the invocation's result.
+	waitEG := errgroup.Group{}
+	// Set if the execution itself failed, as opposed to waiting for it.
+	executionFailed := false
+	waitEG.Go(func() error {
 		execution, err := retry.Do(ctx, &retry.Options{
 			InitialBackoff: 500 * time.Millisecond,
 			MaxBackoff:     5 * time.Second,
@@ -1435,8 +1458,10 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 		if err != nil {
 			return fmt.Errorf("wait execution: %w", err)
 		} else if rsp.Err != nil {
+			executionFailed = true
 			return fmt.Errorf("wait execution: %w", rsp.Err)
 		} else if rsp.ExecuteResponse.GetResult() == nil {
+			executionFailed = true
 			return fmt.Errorf("empty execute response from WaitExecution: %v", rsp.ExecuteResponse.GetStatus())
 		}
 		execRsp = rsp.ExecuteResponse
@@ -1444,11 +1469,59 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 	})
 
 	err = eg.Wait()
+	waitErr := waitEG.Wait()
+	if waitErr != nil {
+		// The log has ended, so the run has finished, but waiting for its
+		// execution can still fail (e.g. the execution stream breaks). Rather
+		// than dropping the result of a completed run, use the exit code its
+		// invocation reported.
+		if err == nil && !executionFailed && ctx.Err() == nil {
+			if invRsp, invExecRsp := resultFromInvocation(ctx, bbClient, iid); invExecRsp != nil {
+				log.Warnf("Failed to wait for the remote run's execution (%s); using the result reported by its completed invocation.", waitErr)
+				return invRsp, invExecRsp, nil
+			}
+		}
+		return nil, nil, fmt.Errorf("wait for run result: %w", waitErr)
+	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("wait for run result: %w", err)
 	}
 
 	return inRsp, execRsp, nil
+}
+
+// resultFromInvocation re-fetches the remote run invocation iid, returning it
+// along with an execute response built from the exit code it reported. The
+// execute response is nil if the invocation has not completed with one.
+func resultFromInvocation(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, iid string) (*inpb.GetInvocationResponse, *repb.ExecuteResponse) {
+	rsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
+	if err != nil || len(rsp.GetInvocation()) == 0 {
+		return nil, nil
+	}
+	return rsp, executeResponseFromInvocation(rsp.GetInvocation()[0])
+}
+
+// executeResponseFromInvocation builds an execute response from the exit code
+// a completed remote run invocation reported, or returns nil if the
+// invocation did not report one.
+func executeResponseFromInvocation(inv *inpb.Invocation) *repb.ExecuteResponse {
+	if inv.GetInvocationStatus() != inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS {
+		return nil
+	}
+	for _, e := range inv.GetEvent() {
+		finished, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_Finished)
+		if !ok {
+			continue
+		}
+		exitCode := finished.Finished.GetExitCode()
+		// The ci_runner reports a negative exit code when it fails without
+		// a command exit code; its process then exits with a different code.
+		if exitCode == nil || exitCode.GetCode() < 0 {
+			return nil
+		}
+		return &repb.ExecuteResponse{Result: &repb.ActionResult{ExitCode: exitCode.GetCode()}}
+	}
+	return nil
 }
 
 func normalizeGRPCTarget(target string) string {
