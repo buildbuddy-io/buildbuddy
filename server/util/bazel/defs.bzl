@@ -109,6 +109,11 @@ extract_bazel_installation = rule(
         "bazel": attr.label(executable = True, cfg = "exec", mandatory = True, allow_single_file = True),
         "out_dir": attr.string(mandatory = True),
     },
+    # The install base holds platform-specific files (e.g. the embedded JDK),
+    # so it must be extracted on the target platform to match the binary that
+    # tests run. Bazel's default test toolchain makes the exec platform match
+    # the target platform's constraints.
+    toolchains = ["@bazel_tools//tools/test:default_test_toolchain_type"],
     doc = "Pre-extract a bazel installation and offline dependencies for genrule / sh_binary / sh_test to the given output directory.",
 )
 
