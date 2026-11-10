@@ -39,6 +39,7 @@ go_library(
         "//server/util/log",
         "//server/util/platform",
         "//server/util/redact",
+        "//server/util/shlex",
         "//server/util/status",
         "//server/util/usageutil",
         "@com_github_creack_pty//:pty",

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -486,6 +487,10 @@ func TestWorkspaceConfigPartialCloneRemote(t *testing.T) {
 			}
 			flags.Set(t, "git_fetch_filters", []string{"blob:none"})
 			t.Setenv("USE_SYSTEM_GIT_CREDENTIALS", "1")
+			// config() can write the global git config, so keep it out of the
+			// real HOME.
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("XDG_CONFIG_HOME", "")
 			checkoutDir := t.TempDir()
 			t.Chdir(checkoutDir)
 			invocationLog := newInvocationLog(nil)
@@ -520,8 +525,9 @@ func TestFetch_KeepsAccessTokenOutOfRepoConfig(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		// Whether the workspace is restored from a snapshot taken by an older
-		// runner, which disabled credential helpers in the repo config and
-		// saved the access token in the remote URL.
+		// runner, which disabled credential helpers in the repo config, saved
+		// the access token in the remote URL, and configured the credential
+		// helper in the global config.
 		oldSnapshot bool
 	}{
 		{name: "NewWorkspace", oldSnapshot: false},
@@ -538,8 +544,11 @@ func TestFetch_KeepsAccessTokenOutOfRepoConfig(t *testing.T) {
 			t.Setenv("REPO_USER", "x-testgit-access-token")
 			t.Setenv("REPO_TOKEN", remote.AccessToken())
 
-			// Stand in for the CI runner binary in credential helper mode.
-			credentialHelper := filepath.Join(t.TempDir(), "credential_helper.sh")
+			// Stand in for the CI runner binary in credential helper mode. Put
+			// it in a directory with a space to make sure the path is quoted.
+			credentialHelperDir := filepath.Join(t.TempDir(), "credential helper")
+			require.NoError(t, os.Mkdir(credentialHelperDir, 0755))
+			credentialHelper := filepath.Join(credentialHelperDir, "credential_helper.sh")
 			require.NoError(t, os.WriteFile(credentialHelper, []byte("#!/bin/sh\nprintf 'username=%s\\npassword=%s\\n' \"$REPO_USER\" \"$REPO_TOKEN\"\n"), 0755))
 			t.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", credentialHelper)
 			flags.Set(t, "pushed_repo_url", remoteURL)
@@ -556,7 +565,11 @@ func TestFetch_KeepsAccessTokenOutOfRepoConfig(t *testing.T) {
 			require.NoError(t, ws.init(ctx))
 
 			if test.oldSnapshot {
-				_, gitErr := git(ctx, io.Discard, "config", "credential.helper", "")
+				u, err := url.Parse(remoteURL)
+				require.NoError(t, err)
+				_, gitErr := git(ctx, io.Discard, "config", "--global", fmt.Sprintf("credential.%s://%s.helper", u.Scheme, u.Host), fmt.Sprintf("!%s --credential_helper", credentialHelper))
+				require.Nil(t, gitErr)
+				_, gitErr = git(ctx, io.Discard, "config", "credential.helper", "")
 				require.Nil(t, gitErr)
 				_, gitErr = git(ctx, io.Discard, "remote", "add", "origin", remote.RepoURL("test-org", "test-repo", remote.AccessToken()))
 				require.Nil(t, gitErr)

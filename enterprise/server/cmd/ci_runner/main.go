@@ -63,6 +63,7 @@ import (
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	backendLog "github.com/buildbuddy-io/buildbuddy/server/util/log"
+	bbshlex "github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -2990,49 +2991,65 @@ func getStructuredCommandLine() *clpb.CommandLine {
 // fetched by bazel, which are cloned into separate repos. This means Mac workflows cannot
 // clone private git repos as Bazel dependencies.
 func setupCredentialHelper(ctx context.Context, currentWorkspaceOnly bool) error {
+	credentialKey := ""
+	// We only configure the credential helper for the base repo URL. If the token is for a fork,
+	// the token most likely isn't valid for the target repo.
+	if repoURL := baseRepoURL(); repoURL != "" && os.Getenv(ci_runner_env.RepoTokenEnvVarName) != "" {
+		u, err := gitutil.ParseRepoURL(repoURL)
+		if err != nil {
+			return status.InvalidArgumentErrorf("invalid repo URL %q", repoURL)
+		}
+		if u.Scheme == "https" || u.Scheme == "http" {
+			credentialKey = fmt.Sprintf("credential.%s://%s", u.Scheme, u.Host)
+		}
+	}
+
 	scope := "--global"
 	if currentWorkspaceOnly {
 		scope = "--local"
 	} else {
-		// TODO(Clean up if we upgrade past firecracker::GuestAPIVersion=20): Older Linux runners
-		// disabled credential helpers in the repo config, which
-		// hides the global credential helper. Remove that setting from repos
-		// restored from their snapshots.
-		if _, err := git(ctx, io.Discard, "config", "--local", "--get-all", "credential.helper"); err == nil {
-			if _, err := git(ctx, io.Discard, "config", "--local", "--unset-all", "credential.helper"); err != nil {
-				return err
-			}
+		if err := cleanUpOldLinuxSnapshotGitConfig(ctx, credentialKey); err != nil {
+			return err
 		}
 	}
 
 	// Disable any other credential helpers (in particular, osxkeychain which
 	// displays a blocking popup dialog). This clears the helpers
-	// configured before it, so this must come before we configure the ci_runner
-	// credential helper below.
+	// configured before it, so we must configure the ci_runner credential helper after it.
 	if _, err := git(ctx, io.Discard, "config", scope, "--replace-all", "credential.helper", ""); err != nil {
 		return err
 	}
-	if os.Getenv(ci_runner_env.RepoTokenEnvVarName) == "" {
+
+	if credentialKey == "" {
 		return nil
 	}
 
-	// Only provide the token to the host of the repo it belongs to. If a fork
-	// is on a different host, the token most likely isn't valid for it.
-	repoURL := baseRepoURL()
-	if repoURL == "" {
-		return nil
-	}
-	u, err := gitutil.ParseRepoURL(repoURL)
-	if err != nil {
-		return status.InvalidArgumentErrorf("invalid repo URL %q", repoURL)
-	}
-	if u.Scheme != "https" && u.Scheme != "http" {
-		return nil
-	}
-	configKey := fmt.Sprintf("credential.%s://%s.helper", u.Scheme, u.Host)
-	configValue := fmt.Sprintf("!%s --credential_helper", os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"))
-	if _, err := git(ctx, io.Discard, "config", scope, "--replace-all", configKey, configValue); err != nil {
+	configValue := "!" + bbshlex.Quote(os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH")) + " --credential_helper"
+	if _, err := git(ctx, io.Discard, "config", scope, "--replace-all", credentialKey+".helper", configValue); err != nil {
 		return err
+	}
+	return nil
+}
+
+// cleanUpOldLinuxSnapshotGitConfig cleans up the git config that older Linux runners
+// saved in snapshots, which would otherwise hide the global credential helper we're now using
+// for authentication
+//
+// TODO(We can delete this if we upgrade past firecracker::GuestAPIVersion=20 and invalidate all older snapshots)
+func cleanUpOldLinuxSnapshotGitConfig(ctx context.Context, configKey string) error {
+	// If we disabled credential helpers in the repo workspace, remove that line. Otherwise it will invalidate
+	// the global credential helper we're now using.
+	if _, err := git(ctx, io.Discard, "config", "--local", "--get-all", "credential.helper"); err == nil {
+		if _, err := git(ctx, io.Discard, "config", "--local", "--unset-all", "credential.helper"); err != nil {
+			return err
+		}
+	}
+	// If we added a global credential helper, remove it. setupCredentialHelper will re-add it, with the correct ordering to make sure
+	// it still applies, even when we disable all other credential helpers.
+	if configKey != "" {
+		if _, err := git(ctx, io.Discard, "config", "--global", "--remove-section", configKey); err != nil && !strings.Contains(err.Output, "no such section") {
+			return err
+		}
 	}
 	return nil
 }
