@@ -444,7 +444,6 @@ image_layer(
             "@debian13//conntrack/%s" % arch,
             "@debian13//amazon-ecr-credential-helper/%s" % arch,
             "@debian13//lxcfs/%s" % arch,
-            "@debian13//rootlesskit/%s" % arch,
             "@debian13//tar/%s" % arch,
 
             # nvidia packages
@@ -494,17 +493,17 @@ image_layer(
 
 image_layer(
     name = "alternatives_symlink_layer",
-    symlinks = {
-        "/usr/sbin/iptables-nft": "/usr/sbin/iptables",
-        "/usr/sbin/iptables-restore": "/usr/sbin/iptables-nft-restore",
-        "/usr/sbin/iptables-save": "iptables-save /usr/sbin/iptables-nft-save",
-    },
     annotations = {
         "org.opencontainers.image.title": "Alternatives symlink layer",
         "org.opencontainers.image.description": (
             "Registers symlinks similarly to `update-alternatives`."
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    symlinks = {
+        "/usr/sbin/iptables-nft": "/usr/sbin/iptables",
+        "/usr/sbin/iptables-restore": "/usr/sbin/iptables-nft-restore",
+        "/usr/sbin/iptables-save": "iptables-save /usr/sbin/iptables-nft-save",
     },
     tags = ["manual"],
 )
@@ -551,35 +550,6 @@ image_layer(
             "org.opencontainers.image.title": "Patch for containerd",
             "org.opencontainers.image.description": (
                 "Files to patch debian's standard containerd to remove known vulnerabilities in the go binaries."
-            ),
-            "org.opencontainers.image.vendor": "BuildBuddy",
-        },
-        tags = ["manual"],
-        target_compatible_with = [
-            "@platforms//os:linux",
-            "@platforms//cpu:%s" % {
-                "amd64": "x86_64",
-                "arm64": "aarch64",
-            }[arch],
-        ],
-    )
-    for arch in [
-        "amd64",
-        "arm64",
-    ]
-]
-
-[
-    image_layer(
-        name = "rootlesskit_patch_image_layer_%s" % arch,
-        srcs = {
-            # "/usr/bin/rootlessctl": "@com_github_rootless_containers_rootlesskit-linux-%s//:rootlessctl.bin" % arch,
-            "/usr/bin/rootlesskit": "@com_github_rootless_containers_rootlesskit-linux-%s//:rootlesskit.bin" % arch,
-        },
-        annotations = {
-            "org.opencontainers.image.title": "Patch for rootlesskit",
-            "org.opencontainers.image.description": (
-                "Files to patch debian's standard rootlesskit to remove known vulnerabilities in the go binaries."
             ),
             "org.opencontainers.image.vendor": "BuildBuddy",
         },
@@ -724,14 +694,12 @@ image_manifest(
             ":docker_credential_gcr_image_layer_%s" % arch,
             ":containerd_patch_image_layer_%s" % arch,
             ":runc_patch_image_layer_%s" % arch,
-            # Updating these layers does not currently afford us any vulnerability
-            # fixes; leave them out for now.
-            # ":rootlesskit_patch_layer_%s" % arch,
             ":executor_tools_image_layer_%s" % arch,
             ":podman_static_image_layer",
             ":licenses_image_layer",
             ":binary_image_layer",
-        ] for platform, arch in {
+        ]
+        for platform, arch in {
             "@platforms//cpu:x86_64": "amd64",
             "@platforms//cpu:arm64": "arm64",
         }.items()

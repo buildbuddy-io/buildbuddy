@@ -123,7 +123,6 @@ apt.install(
         "conntrack",
         "amazon-ecr-credential-helper",
         "lxcfs",
-        "rootlesskit",
         "tar",
     ],
     suites = [
