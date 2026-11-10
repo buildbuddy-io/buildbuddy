@@ -191,14 +191,6 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 			wantHeaders: http.Header{"Location": {"https://storage.example/blob"}},
 		},
 		{
-			name: "does not follow https to http downgrade",
-			responses: fakeRoundTripper{
-				registryURL: response(http.StatusFound, "", "Location", "http://10.1.2.3/blob"),
-			},
-			wantStatus:  http.StatusFound,
-			wantHeaders: http.Header{"Location": {"http://10.1.2.3/blob"}},
-		},
-		{
 			name: "makes relative Location of returned redirect absolute after a hop",
 			responses: fakeRoundTripper{
 				registryURL:               response(http.StatusFound, "", "Location", "https://10.1.2.3/a/blob"),

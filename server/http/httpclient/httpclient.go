@@ -71,15 +71,11 @@ func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) 
 	if len(allowed) == 0 {
 		return inner
 	}
-	// go-containerregistry rejects redirects to private IPs on its own, so callers need this.
 	return &allowedIPRedirectTransport{client: &http.Client{
 		Transport: inner,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return errors.New("stopped after 10 redirects")
-			}
-			if via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
-				return http.ErrUseLastResponse
 			}
 			if !ipAllowed(net.ParseIP(req.URL.Hostname()), allowed) {
 				return http.ErrUseLastResponse

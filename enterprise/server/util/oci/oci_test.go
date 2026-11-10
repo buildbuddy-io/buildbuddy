@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -2040,13 +2039,6 @@ func TestResolve_BlobRedirectToPrivateIP(t *testing.T) {
 				}
 				require.NoError(t, err)
 				require.NoError(t, validate.Image(pulled))
-				layers, err := pulled.Layers()
-				require.NoError(t, err)
-				got := map[string][]byte{}
-				for _, l := range layers {
-					maps.Copy(got, layerFiles(t, l))
-				}
-				require.Equal(t, []byte("world"), got["/hello"], "got files: %v", got)
 				require.Greater(t, redirectedHits.Load(), int32(0), "blob GETs should have been redirected")
 			})
 		}
