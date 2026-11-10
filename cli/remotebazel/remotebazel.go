@@ -92,6 +92,7 @@ var (
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+	gitFetchURL             = RemoteFlagset.String("git_fetch_url", "", "The URL the remote runner should fetch the git repo from. Defaults to the fetch URL of the git remote. Useful for non-interactive runs if there are multiple fetch URLs configured.")
 	gitFetchDepth           = RemoteFlagset.Int("git_fetch_depth", -1, "Git fetch depth. Defaults to 'smart' behavior chosen by the remote runner. Can be set to 0 to fetch the full history, or N >= 1 to fetch the last N commits.")
 	// From a shell, pass the JSON in single quotes.
 	// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
@@ -365,6 +366,9 @@ func Config() (*RepoConfig, error) {
 		return nil, status.WrapError(err, "determine remote")
 	}
 	fetchURL := remote.url
+	if *gitFetchURL != "" {
+		fetchURL = *gitFetchURL
+	}
 	log.Debugf("Using fetch URL: %s", fetchURL)
 
 	defaultBranch, err := determineDefaultBranch(remote.name)

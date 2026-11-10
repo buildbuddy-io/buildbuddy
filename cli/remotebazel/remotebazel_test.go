@@ -717,6 +717,7 @@ func TestGitConfig_FetchURL(t *testing.T) {
 		expectedURL     string
 		multipleRemotes bool
 		isRemoteCached  bool
+		gitFetchURL     string
 	}{
 		{
 			name:        "One remote is configured",
@@ -728,7 +729,13 @@ func TestGitConfig_FetchURL(t *testing.T) {
 			isRemoteCached:  true,
 			expectedURL:     remoteUrl,
 		},
+		{
+			name:        "Fetch URL is set with a flag",
+			gitFetchURL: "https://git.example.com/scm/project/repo.git",
+			expectedURL: "https://git.example.com/scm/project/repo.git",
+		},
 	}
+	t.Cleanup(func() { *gitFetchURL = "" })
 
 	for _, tc := range testCases {
 		// Setup a "local" repo
@@ -743,6 +750,7 @@ func TestGitConfig_FetchURL(t *testing.T) {
 		if tc.isRemoteCached {
 			testshell.Run(t, localRepoPath, fmt.Sprintf("git config --replace-all %s.%s extra", gitConfigSection, gitConfigRemoteBazelRemote))
 		}
+		*gitFetchURL = tc.gitFetchURL
 
 		config, err := Config()
 		require.NoError(t, err, tc.name)
