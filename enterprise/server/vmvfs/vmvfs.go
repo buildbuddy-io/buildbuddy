@@ -7,10 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"math/bits"
 	"net"
 	"os"
 	"path/filepath"
+	"runtime/metrics"
 	"runtime/pprof"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -47,6 +51,9 @@ const (
 	inputChunkSize = 128 * 1024
 	// outputChunkSize is the most file contents a ReadOutputs message has.
 	outputChunkSize = 1 << 20
+	// contentTimeBuckets is how many buckets the content request times are
+	// counted in.
+	contentTimeBuckets = 16
 )
 
 type vfsServer struct {
@@ -63,6 +70,14 @@ type vfsServer struct {
 	layout *container.FileSystemLayout
 	// mirror, if set, sends the current task's writes to the host.
 	mirror *vfs_server.MirrorClient
+	// taskProfile, if set, receives the CPU profile of the current task.
+	taskProfile *bytes.Buffer
+	// taskCounters is what serverCounters returned when the current task
+	// was prepared.
+	taskCounters map[string]int64
+	// finishCounters is what serverCounters returned at the end of the last
+	// Finish call.
+	finishCounters map[string]int64
 }
 
 // contentClient makes raw content protocol requests to the host over a pool
@@ -71,6 +86,11 @@ type contentClient struct {
 	mu   sync.Mutex
 	idle []*contentConn
 
+	// What the requests since the last Finish call added up to.
+	requests, bytes, nanos, dials atomic.Int64
+	// The same requests by how long they took. See
+	// FinishResponse.content_time_counts.
+	timeCounts, timeUsec, timeBytes [contentTimeBuckets]atomic.Int64
 	// blocking makes new connections blockingConns.
 	blocking atomic.Bool
 }
@@ -179,6 +199,7 @@ func (c *contentClient) get() (conn *contentConn, reused bool, err error) {
 		return conn, true, nil
 	}
 	c.mu.Unlock()
+	c.dials.Add(1)
 	if c.blocking.Load() {
 		bc, err := dialBlocking(vsock.HostVFSContentPort)
 		if err != nil {
@@ -221,6 +242,17 @@ func (c *contentClient) reset() {
 // started, it may have written part of the content, so it is not retried.
 // Cancelling ctx fails the request.
 func (c *contentClient) read(ctx context.Context, node *repb.FileNode, offset, length int64, consume func(r io.Reader, n int64) error) error {
+	start := time.Now()
+	c.requests.Add(1)
+	var received int64
+	defer func() {
+		dt := time.Since(start)
+		c.nanos.Add(int64(dt))
+		b := min(bits.Len64(uint64(dt.Microseconds())/32), contentTimeBuckets-1)
+		c.timeCounts[b].Add(1)
+		c.timeUsec[b].Add(dt.Microseconds())
+		c.timeBytes[b].Add(received)
+	}()
 	for attempt := 0; ; attempt++ {
 		conn, reused, err := c.get()
 		if err != nil {
@@ -235,6 +267,8 @@ func (c *contentClient) read(ctx context.Context, node *repb.FileNode, offset, l
 			n, err = vfs_server.ReadContentResponseHeader(conn.r)
 			if err == nil {
 				consumed = true
+				c.bytes.Add(n)
+				received = n
 				err = consume(conn.r, n)
 			}
 		}
@@ -544,11 +578,54 @@ func NewServer(writebackCache bool) (*vfsServer, error) {
 	}, nil
 }
 
+// serverCounters returns this process's cumulative CPU time, page faults,
+// context switches and garbage collection counters.
+func serverCounters() map[string]int64 {
+	out := map[string]int64{}
+	var ru unix.Rusage
+	if err := unix.Getrusage(unix.RUSAGE_SELF, &ru); err == nil {
+		out["user_usec"] = ru.Utime.Nano() / 1000
+		out["system_usec"] = ru.Stime.Nano() / 1000
+		out["minor_faults"] = ru.Minflt
+		out["major_faults"] = ru.Majflt
+		out["voluntary_switches"] = ru.Nvcsw
+		out["involuntary_switches"] = ru.Nivcsw
+	}
+	// These come from runtime/metrics and not from runtime.ReadMemStats,
+	// which stops the world. With Go 1.26 and 1.27, a stop that begins while
+	// a GC mark worker is scanning a goroutine that is blocked in a system
+	// call with its P (such as go-fuse's readers of /dev/fuse) does not
+	// finish until the runtime's monitor thread wakes, which takes until the
+	// process's next timer, or up to two minutes if it has none.
+	samples := []metrics.Sample{{Name: "/cpu/classes/gc/total:cpu-seconds"}, {Name: "/cpu/classes/scavenge/total:cpu-seconds"}, {Name: "/gc/cycles/total:gc-cycles"}}
+	metrics.Read(samples)
+	out["gc_cpu_usec"] = int64(samples[0].Value.Float64() * 1e6)
+	out["scavenge_cpu_usec"] = int64(samples[1].Value.Float64() * 1e6)
+	out["gc_cycles"] = int64(samples[2].Value.Uint64())
+	return out
+}
+
+// countersSince formats how much each of serverCounters' values grew from
+// before to now, with prefix before each name.
+func countersSince(prefix string, now, before map[string]int64) string {
+	var b strings.Builder
+	for _, name := range slices.Sorted(maps.Keys(now)) {
+		fmt.Fprintf(&b, "%s%s=%d ", prefix, name, now[name]-before[name])
+	}
+	return strings.TrimSpace(b.String())
+}
+
 func (s *vfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
+	prepareStart := time.Now()
+	startCounters := serverCounters()
+	s.mu.Lock()
+	finishCounters := s.finishCounters
+	s.mu.Unlock()
 	conn, err := dialHost(ctx, true)
 	if err != nil {
 		return nil, status.WrapError(err, "redial host VFS server")
 	}
+	dialDuration := time.Since(prepareStart)
 
 	// This is the context that is used to make RPCs to the host.
 	// It needs to stay alive as long as there's an active command on the VM.
@@ -557,7 +634,10 @@ func (s *vfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*v
 	var invalidations *vfscommon.InodeInvalidations
 	var layout *container.FileSystemLayout
 	var mirror *vfs_server.MirrorClient
-	rsp := &vmfspb.PrepareResponse{}
+	rsp := &vmfspb.PrepareResponse{DialDurationUsec: dialDuration.Microseconds()}
+	if finishCounters != nil {
+		rsp.IdleStats = countersSince("idle_", startCounters, finishCounters)
+	}
 	if req.GetUseGuestServer() {
 		var cpuProfile bytes.Buffer
 		if req.GetProfilePreparation() {
@@ -578,6 +658,7 @@ func (s *vfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*v
 			return nil, status.WrapError(err, "fetch input tree")
 		}
 		rsp.GetTreeDurationUsec = time.Since(treeStart).Microseconds()
+		validateStart := time.Now()
 		if err := dirtools.ValidateTreeNames(tree, false); err != nil {
 			cancel()
 			_ = conn.Close()
@@ -590,6 +671,7 @@ func (s *vfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*v
 				return nil, err
 			}
 		}
+		rsp.ValidateDurationUsec = time.Since(validateStart).Microseconds()
 		mode := req.GetContentMode()
 		if mode == "" {
 			mode = vfs_server.GuestContentRemote
@@ -676,10 +758,40 @@ func (s *vfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*v
 		_ = oldConn.Close()
 	}
 
+	invalidateStart := time.Now()
 	if err := s.vfs.PrepareForTask(rpcCtx, "fc", invalidations); err != nil {
 		return nil, err
 	}
+	rsp.KernelInvalidateDurationUsec = time.Since(invalidateStart).Microseconds()
 
+	// Count only what the task does from here on.
+	s.vfs.TakeOpStats()
+	s.content.requests.Store(0)
+	s.content.bytes.Store(0)
+	s.content.nanos.Store(0)
+	s.content.dials.Store(0)
+	for i := range contentTimeBuckets {
+		s.content.timeCounts[i].Store(0)
+		s.content.timeUsec[i].Store(0)
+		s.content.timeBytes[i].Store(0)
+	}
+	if req.GetProfileTask() {
+		profile := &bytes.Buffer{}
+		if err := pprof.StartCPUProfile(profile); err != nil {
+			log.Warningf("Could not profile the task: %s", err)
+		} else {
+			s.mu.Lock()
+			s.taskProfile = profile
+			s.mu.Unlock()
+		}
+	}
+
+	counters := serverCounters()
+	s.mu.Lock()
+	s.taskCounters = counters
+	s.mu.Unlock()
+	rsp.PrepareStats = countersSince("prep_", counters, startCounters)
+	rsp.TotalDurationUsec = time.Since(prepareStart).Microseconds()
 	return rsp, nil
 }
 
@@ -703,7 +815,38 @@ func (s *vfsServer) Finish(ctx context.Context, request *vmfspb.FinishRequest) (
 
 	// Input fetch errors in the guest server must fail the action, as they
 	// do with the host server, since the command may have ignored them.
-	rsp := &vmfspb.FinishResponse{}
+	rsp := &vmfspb.FinishResponse{
+		ContentRequests: s.content.requests.Swap(0),
+		ContentBytes:    s.content.bytes.Swap(0),
+		ContentUsec:     s.content.nanos.Swap(0) / 1000,
+		ContentDials:    s.content.dials.Swap(0),
+	}
+	for i := range contentTimeBuckets {
+		rsp.ContentTimeCounts = append(rsp.ContentTimeCounts, s.content.timeCounts[i].Swap(0))
+		rsp.ContentTimeUsec = append(rsp.ContentTimeUsec, s.content.timeUsec[i].Swap(0))
+		rsp.ContentTimeBytes = append(rsp.ContentTimeBytes, s.content.timeBytes[i].Swap(0))
+	}
+	after := serverCounters()
+	s.mu.Lock()
+	profile := s.taskProfile
+	s.taskProfile = nil
+	before := s.taskCounters
+	s.mu.Unlock()
+	memory := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}, {Name: "/memory/classes/total:bytes"}}
+	metrics.Read(memory)
+	rsp.ServerStats = fmt.Sprintf("%s heap_kb=%d runtime_kb=%d threads=%d", countersSince("", after, before), memory[0].Value.Uint64()/1000, memory[1].Value.Uint64()/1000, pprof.Lookup("threadcreate").Count())
+	if profile != nil {
+		pprof.StopCPUProfile()
+		rsp.TaskCpuProfile = profile.Bytes()
+	}
+	opStats := s.vfs.TakeOpStats()
+	for _, op := range slices.Sorted(maps.Keys(opStats)) {
+		rsp.FuseOpStats = append(rsp.FuseOpStats, &vmfspb.FuseOpStats{
+			Op:           op,
+			Count:        opStats[op].Count,
+			DurationUsec: opStats[op].Duration.Microseconds(),
+		})
+	}
 	if request.GetReportUnusedInputs() {
 		rsp.UnusedInputs = s.local.UnusedInputs()
 	}
@@ -712,6 +855,10 @@ func (s *vfsServer) Finish(ctx context.Context, request *vmfspb.FinishRequest) (
 		rsp.TaskErrorCode = int32(st.Code())
 		rsp.TaskErrorMessage = st.Message()
 	}
+	finishCounters := serverCounters()
+	s.mu.Lock()
+	s.finishCounters = finishCounters
+	s.mu.Unlock()
 	return rsp, nil
 }
 

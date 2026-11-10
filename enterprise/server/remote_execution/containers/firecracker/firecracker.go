@@ -92,10 +92,11 @@ var (
 	vfsWritebackCache                     = flag.Bool("executor.firecracker_vfs_writeback_cache", false, "Mount VFS in the guest with the kernel's writeback cache, which sends writes to the VFS server in large batches.", flag.Internal)
 	guestVFSMaxDirtyRatio                 = flag.Int("executor.firecracker_guest_vfs_max_dirty_ratio", 0, "If set, the share of the guest's dirty page limit, in percent, that the guest VFS FUSE mount may use.", flag.Internal)
 	guestVFSReadAheadKB                   = flag.Int("executor.firecracker_guest_vfs_read_ahead_kb", 0, "If set, the readahead window of the guest VFS FUSE mount in KiB.", flag.Internal)
+	guestVFSTaskProfileDir                = flag.String("executor.firecracker_guest_vfs_task_profile_dir", "", "If set, record a CPU profile of the guest VFS process during each task and write it to this directory.", flag.Internal)
+	guestVFSBlockingContent               = flag.Bool("executor.firecracker_guest_vfs_blocking_content", false, "Have the guest VFS server read input contents from the host with blocking system calls instead of through the Go network poller.", flag.Internal)
 	guestVFSNoFlushInputs                 = flag.Bool("executor.firecracker_guest_vfs_noflush_inputs", false, "Tell the guest kernel not to send FLUSH when closing guest VFS inputs.", flag.Internal)
 	guestVFSOutputs                       = flag.String("executor.firecracker_guest_vfs_outputs", "copy", "How the guest VFS server returns outputs: copy (the host copies them out of the guest after the action), mirror (the guest sends every write to the host as it happens) or upload (the guest uploads them to the cache through the host).", flag.Internal)
 	guestVFSContentMode                   = flag.String("executor.firecracker_guest_vfs_content", "remote", "Where the guest VFS server gets input contents: remote (gRPC from the remote CAS, copied to the guest disk), filecache (gRPC from the host file cache, copied), raw (raw protocol from the host file cache, copied) or direct (raw protocol on every read, no guest copy).", flag.Internal)
-	guestVFSBlockingContent               = flag.Bool("executor.firecracker_guest_vfs_blocking_content", false, "Have the guest VFS server read input contents from the host with blocking system calls instead of through the Go network poller.", flag.Internal)
 	firecrackerCgroupVersion              = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
 	debugStreamVMLogs                     = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
 	debugTerminal                         = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
@@ -112,6 +113,9 @@ var (
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
 	preloadInputs                         = flag.String("executor.firecracker_preload_inputs", "", "Prototype: which input files vmexec reads into the guest page cache while the command runs. \"used\" reads every input that the task's unused inputs mask does not exclude, and nothing when the task has no mask. \"command\" reads only the input file that the command's first argument names. Empty disables preloading.", flag.Internal)
 	preloadParallelism                    = flag.Int("executor.firecracker_preload_parallelism", 16, "How many input files vmexec reads at a time for executor.firecracker_preload_inputs.", flag.Internal)
+	preloadWait                           = flag.Bool("executor.firecracker_preload_wait", false, "Prototype: finish executor.firecracker_preload_inputs before starting the command, instead of reading while it runs.", flag.Internal)
+	guestVFSPrepareWatchdog               = flag.Duration("executor.firecracker_guest_vfs_prepare_watchdog", 0, "Experiment: if set and the guest VFS Prepare call is still running after this long, log what the guest's threads are doing and make the guest VFS server print its goroutines to the VM console. This ends the VM.", flag.Internal)
+	resumeProbe                           = flag.Bool("executor.firecracker_resume_probe", false, "Experiment: at the start of Exec, wait 300 ms and then dial the guest's vmexec server, and report both as steps of the Exec timeline, to tell what makes a resumed guest touch snapshot memory.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
@@ -690,8 +694,53 @@ func parseDNSOverrides() (string, error) {
 	return string(marshalledOverrides), nil
 }
 
+// execTimeline records how long each step of an Exec call took, for
+// comparing workspace implementations. Each mark covers the time since the
+// previous one, so the steps add up to the whole call.
+type execTimeline struct {
+	last  time.Time
+	steps []string
+	// faultStats, if set, returns how many guest memory page faults the
+	// host has resolved from the VM's snapshot, how long that took and how
+	// many bytes it copied. The last three fields are what it last returned.
+	faultStats func() (int64, time.Duration, int64)
+	// Experiment: faultOffsets, if set, returns the offsets in the memory
+	// snapshot of the pages that faulted since its last call. census holds
+	// those pages by step, for vmexec to classify.
+	faultOffsets  func() []int64
+	census        []*vmxpb.PageCensusStep
+	faults        int64
+	faultDuration time.Duration
+	faultBytes    int64
+}
+
+func (t *execTimeline) mark(step string) {
+	if t == nil {
+		return
+	}
+	now := time.Now()
+	t.steps = append(t.steps, fmt.Sprintf("%s_usec=%d", step, now.Sub(t.last).Microseconds()))
+	t.last = now
+	if t.faultOffsets != nil {
+		if offsets := t.faultOffsets(); len(offsets) > 0 {
+			t.census = append(t.census, &vmxpb.PageCensusStep{Name: step, Offsets: offsets})
+		}
+	}
+	if t.faultStats == nil {
+		return
+	}
+	faults, duration, bytes := t.faultStats()
+	if faults > t.faults {
+		t.steps = append(t.steps, fmt.Sprintf("%s_faults=%d %s_fault_usec=%d %s_fault_kb=%d", step, faults-t.faults, step, (duration-t.faultDuration).Microseconds(), step, (bytes-t.faultBytes)/1000))
+	}
+	t.faults, t.faultDuration, t.faultBytes = faults, duration, bytes
+}
+
 // FirecrackerContainer executes commands inside of a firecracker VM.
 type FirecrackerContainer struct {
+	// timeline is the current Exec call's.
+	timeline *execTimeline
+
 	id         string // a random GUID, unique per-run of firecracker
 	snapshotID string // a random GUID, unique per-run of firecracker
 	vmIdx      int    // the index of this vm on the host machine
@@ -2095,6 +2144,9 @@ func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 		return status.WrapError(err, "create uffd handler")
 	}
 	sockAbsPath := filepath.Join(c.getChroot(), uffdSockName)
+	if *resumeProbe {
+		h.RecordFaultOffsets()
+	}
 	if err := h.Start(ctx, sockAbsPath, c.memoryStore); err != nil {
 		return status.WrapError(err, "start uffd handler")
 	}
@@ -2665,7 +2717,7 @@ func (c *FirecrackerContainer) inputPreload(ctx context.Context, cmd *repb.Comma
 	if len(paths) == 0 {
 		return nil
 	}
-	return &vmxpb.InputPreload{InputRoot: inputRoot, Paths: paths, Parallelism: int32(*preloadParallelism)}
+	return &vmxpb.InputPreload{InputRoot: inputRoot, Paths: paths, Parallelism: int32(*preloadParallelism), Wait: *preloadWait}
 }
 
 // inputTreePaths returns the regular files in the input tree by their input
@@ -2861,6 +2913,7 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 			req.MirrorWrites = true
 		}
 		req.UseGuestServer = true
+		req.ProfileTask = *guestVFSTaskProfileDir != ""
 		req.BlockingContentReads = *guestVFSBlockingContent
 		req.ContentMode = *guestVFSContentMode
 		req.NoFlushInputs = *guestVFSNoFlushInputs
@@ -2885,6 +2938,7 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 	} else if _, err := c.vfsServer.Prepare(ctx, c.fsLayout, c.fsLayout.InputFetcher); err != nil {
 		return nil, status.WrapError(err, "prepare host VFS server")
 	}
+	c.timeline.mark("prepare_request")
 
 	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
 	defer cancel()
@@ -2897,13 +2951,76 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 		return nil, status.WrapError(err, "dial guest VFS server")
 	}
 	defer conn.Close()
+	c.timeline.mark("setup_dial")
 
 	client := vmfspb.NewFileSystemClient(conn)
+	// Experiment: Prepare takes well under a second. If the watchdog is set
+	// and Prepare is still running after its delay, log what the guest's
+	// threads are doing. That ends the VM.
+	if *guestVFSPrepareWatchdog > 0 {
+		watchdog := time.AfterFunc(*guestVFSPrepareWatchdog, func() { c.logGuestThreads(ctx) })
+		defer watchdog.Stop()
+	}
 	rsp, err := client.Prepare(ctx, req)
 	if err != nil {
 		return nil, status.WrapError(err, "prepare guest VFS")
 	}
+	c.timeline.mark("prepare_rpc")
 	return rsp, nil
+}
+
+// logGuestThreads logs the system call and kernel stack of each thread of the
+// guest's Go servers, and of each other guest thread that is running or in
+// uninterruptible sleep. It then sends the guest VFS server SIGQUIT, which
+// makes the Go runtime print the stack of each goroutine to the VM's console
+// and exit, so this ends the VM. With
+// executor.firecracker_debug_stream_vm_logs, the console is in the executor's
+// log. The server gets no signal handler or timer of its own for this,
+// because either could change when the Go scheduler's threads sleep.
+func (c *FirecrackerContainer) logGuestThreads(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	conn, err := vsock.SimpleGRPCDial(ctx, filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.VMExecPort)
+	if err != nil {
+		log.CtxWarningf(ctx, "Guest VFS Prepare is taking long, and vmexec could not be dialed: %s", err)
+		return
+	}
+	defer conn.Close()
+	script := `
+echo "uptime $(cat /proc/uptime)"
+grep -E 'MemFree|MemAvailable|^Cached|Dirty|Writeback|Shmem|Slab' /proc/meminfo | tr -s ' ' | tr '\n' ';'
+echo
+cat /proc/pressure/memory /proc/pressure/io 2>/dev/null
+grep -i 'system ram' /proc/iomem | tr '\n' ';'
+echo
+vmvfs=""
+for p in /proc/[0-9]*; do
+  pc=$(cat $p/comm 2>/dev/null) || continue
+  cmdline=$(tr '\0' ' ' < $p/cmdline 2>/dev/null)
+  case "$pc:$cmdline" in
+    exe:*-vmvfs*) vmvfs=${p#/proc/}; pc=vmvfs ;;
+    exe:*-vmexec*) pc=vmexec ;;
+  esac
+  for t in $p/task/*; do
+    st=$(sed 's/^.*) //' $t/stat 2>/dev/null | cut -d' ' -f1)
+    case "$pc:$st" in
+      vmvfs:*|vmexec:*|exe:*|*:D|*:R) ;;
+      *) continue ;;
+    esac
+    echo "== pid ${p#/proc/} ($pc) tid ${t##*/} ($(cat $t/comm 2>/dev/null)) state $st syscall $(cat $t/syscall 2>/dev/null) wchan $(cat $t/wchan 2>/dev/null)"
+    sed 's/^/     /' $t/stack 2>/dev/null
+  done
+done
+dmesg 2>/dev/null | tail -30
+if [ -n "$vmvfs" ]; then
+  echo "== sending SIGQUIT to the guest VFS server (pid $vmvfs)"
+  kill -QUIT $vmvfs
+fi
+`
+	var out strings.Builder
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", script}}
+	res := vmexec_client.Execute(ctx, vmxpb.NewExecClient(conn), cmd, "/", "0:0", nil /*=preload*/, nil /*=statsListener*/, &interfaces.Stdio{Stdout: &out, Stderr: &out})
+	log.CtxWarningf(ctx, "Guest VFS Prepare is taking long. Guest threads (exit code %d, error %v):\n%s", res.ExitCode, res.Error, out.String())
 }
 
 // getGuestVFSOutputs gets the action's outputs from the guest VFS server, in
@@ -2960,9 +3077,45 @@ func (c *FirecrackerContainer) finishGuestVFS(ctx context.Context) (*repb.TreeMa
 		return nil, status.WrapError(err, "dial guest VFS server")
 	}
 	defer conn.Close()
+	// The response carries the mask of unused inputs, which exceeds gRPC's
+	// default limit of 4 MB for the largest input trees.
 	rsp, err := vmfspb.NewFileSystemClient(conn).Finish(ctx, &vmfspb.FinishRequest{ReportUnusedInputs: c.task.GetTrackVfsUnusedInputs()}, grpc.MaxCallRecvMsgSize(256<<20))
 	if err != nil {
 		return nil, status.WrapError(err, "finish guest VFS")
+	}
+	var ops strings.Builder
+	var opCount, opUsec int64
+	for _, s := range rsp.GetFuseOpStats() {
+		fmt.Fprintf(&ops, " %s=%d/%dms", s.GetOp(), s.GetCount(), s.GetDurationUsec()/1000)
+		opCount += s.GetCount()
+		opUsec += s.GetDurationUsec()
+	}
+	log.CtxInfof(ctx, "Guest VFS handled %d FUSE requests in %d ms (count/time by kind:%s); it sent the host %d content requests for %d bytes, which took %d ms and %d new connections",
+		opCount, opUsec/1000, ops.String(), rsp.GetContentRequests(), rsp.GetContentBytes(), rsp.GetContentUsec()/1000, rsp.GetContentDials())
+	var times strings.Builder
+	for i, n := range rsp.GetContentTimeCounts() {
+		if n > 0 {
+			lower := 0
+			if i > 0 {
+				lower = 32 << (i - 1)
+			}
+			fmt.Fprintf(&times, " >=%dus: %d requests, %d ms, %d KB;", lower, n, rsp.GetContentTimeUsec()[i]/1000, rsp.GetContentTimeBytes()[i]/1000)
+		}
+	}
+	log.CtxInfof(ctx, "Guest content requests by time:%s", times.String())
+	log.CtxInfof(ctx, "Guest VFS server stats: %s", rsp.GetServerStats())
+	if c.vfsServer != nil {
+		cs := c.vfsServer.ContentStats()
+		log.CtxInfof(ctx, "Host served %d guest content requests in %d ms; %d opened their input, taking %d ms, and %d of those downloaded it first, taking %d ms; reading the inputs took %d ms and writing the responses %d ms",
+			cs.Requests, cs.ServeNanos/1e6, cs.Opens, cs.OpenNanos/1e6, cs.Fetches, cs.FetchNanos/1e6, cs.ReadNanos/1e6, cs.WriteNanos/1e6)
+	}
+	if profile := rsp.GetTaskCpuProfile(); len(profile) > 0 {
+		path := filepath.Join(*guestVFSTaskProfileDir, fmt.Sprintf("guestvfs-%d.pprof", time.Now().UnixMilli()))
+		if err := os.WriteFile(path, profile, 0644); err != nil {
+			log.CtxWarningf(ctx, "Could not write the guest VFS task profile: %s", err)
+		} else {
+			log.CtxInfof(ctx, "Wrote the guest VFS task CPU profile to %s", path)
+		}
 	}
 	if rsp.GetTaskErrorCode() != 0 {
 		return nil, gstatus.Error(codes.Code(rsp.GetTaskErrorCode()), rsp.GetTaskErrorMessage())
@@ -3001,6 +3154,28 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer span.End()
 
 	start := time.Now()
+	c.timeline = &execTimeline{last: start}
+	if c.uffdHandler != nil {
+		// The first mark reports the faults since the VM was resumed.
+		c.timeline.faultStats = c.uffdHandler.FaultStats
+		if *resumeProbe {
+			c.timeline.faultOffsets = c.uffdHandler.TakeFaultOffsets
+		}
+		c.timeline.mark("vm_start")
+	}
+	if *resumeProbe {
+		time.Sleep(300 * time.Millisecond)
+		c.timeline.mark("settle")
+		dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+		conn, err := vsock.SimpleGRPCDial(dialCtx, filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.VMExecPort)
+		cancel()
+		if err != nil {
+			log.CtxWarningf(ctx, "Resume probe could not dial vmexec: %s", err)
+		} else {
+			conn.Close()
+		}
+		c.timeline.mark("wake_dial")
+	}
 
 	// Ensure that ctx gets cancelled if the VM crashes.
 	ctx, cancel := c.monitorVMContext(ctx)
@@ -3015,6 +3190,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		result.DoNotRecycle = true
 	}
 	defer func() {
+		c.timeline.mark("tail")
+		log.CtxInfof(ctx, "Exec timeline: total_usec=%d %s", time.Since(start).Microseconds(), strings.Join(c.timeline.steps, " "))
+		c.timeline = nil
 		ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 		defer cancel()
 		if result.VMMetrics == nil {
@@ -3070,7 +3248,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			return result
 		}
 		if req.GetUseGuestServer() {
-			log.CtxInfof(ctx, "Guest VFS prepared: get_tree_usec=%d namespace_usec=%d", rsp.GetGetTreeDurationUsec(), rsp.GetNamespacePrepareDurationUsec())
+			log.CtxInfof(ctx, "Guest VFS prepared: total_usec=%d dial_usec=%d get_tree_usec=%d validate_usec=%d namespace_usec=%d kernel_invalidate_usec=%d %s %s", rsp.GetTotalDurationUsec(), rsp.GetDialDurationUsec(), rsp.GetGetTreeDurationUsec(), rsp.GetValidateDurationUsec(), rsp.GetNamespacePrepareDurationUsec(), rsp.GetKernelInvalidateDurationUsec(), rsp.GetIdleStats(), rsp.GetPrepareStats())
 		}
 	}
 	if c.createFromSnapshot {
@@ -3080,6 +3258,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			return result
 		}
 	}
+	c.timeline.mark("reset_guest")
 
 	guestWorkspaceMountDir := "/workspace/"
 	if c.fsLayout != nil {
@@ -3120,6 +3299,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 	// Emit metrics to track time spent preparing VM to execute a command
 	c.emitCOWAndUFFDMetrics(stage)
+	c.timeline.mark("exec_dial")
 
 	// Deflate the balloon so the execution has access to full memory.
 	//
@@ -3136,7 +3316,18 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	stage = "exec"
-	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), c.inputPreload(ctx, cmd, guestWorkspaceMountDir), stdio)
+	c.timeline.mark("balloon")
+	preload := c.inputPreload(ctx, cmd, guestWorkspaceMountDir)
+	if *resumeProbe {
+		if preload == nil {
+			preload = &vmxpb.InputPreload{}
+		}
+		preload.ReportIdleActivity = true
+		preload.PageCensus = c.timeline.census
+	}
+	c.timeline.mark("preload_list")
+	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), preload, stdio)
+	c.timeline.mark("command")
 	if c.fsLayout != nil && *useGuestVFSServer && vmHealthy {
 		finishCtx, cancel := background.ExtendContextForFinalization(ctx, finalizationTimeout)
 		// Outputs are read before Finish, which stops the guest from
@@ -3146,6 +3337,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 				result.Error = err
 			}
 		}
+		c.timeline.mark("outputs")
 		// As with the host server below, an input the guest server could
 		// not fetch fails the action, even if the command succeeded.
 		unusedInputs, err := c.finishGuestVFS(finishCtx)
@@ -3154,6 +3346,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 		result.VfsUnusedInputs = unusedInputs
 		cancel()
+		c.timeline.mark("finish")
 	}
 	if c.guestVFSMirrorDir != "" {
 		c.vfsServer.SetMirrorDir("")

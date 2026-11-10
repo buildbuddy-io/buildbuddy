@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -148,6 +149,14 @@ type Handler struct {
 	earlyTerminationWriter *os.File
 
 	pageFaultTotalDurationNanos atomic.Int64
+	// See FaultStats.
+	faults, faultNanos, faultBytes atomic.Int64
+	// Experiment: with recordFaults set, faultOffsets holds the offset in the
+	// memory snapshot of each page that faulted since the last
+	// TakeFaultOffsets call.
+	recordFaults   atomic.Bool
+	faultOffsetsMu sync.Mutex
+	faultOffsets   []int64
 
 	// Addresses of pages that were removed by the balloon.
 	// If these pages page fault again, they should be handled with UFFDIO_ZEROPAGE.
@@ -422,7 +431,18 @@ func (h *Handler) processEvents(
 	}
 
 	for i, pageFault := range pageFaults {
-		if err := h.handlePageFault(uffd, memoryStore, mappings, uintptr(pageFault.Address)); err != nil {
+		start := time.Now()
+		err := h.handlePageFault(uffd, memoryStore, mappings, uintptr(pageFault.Address))
+		if h.recordFaults.Load() {
+			if mapping, mapErr := guestMemoryAddrToMapping(uintptr(pageFault.Address), mappings); mapErr == nil {
+				h.faultOffsetsMu.Lock()
+				h.faultOffsets = append(h.faultOffsets, int64(uintptr(pageFault.Address)-mapping.BaseHostVirtAddr+mapping.Offset))
+				h.faultOffsetsMu.Unlock()
+			}
+		}
+		h.faults.Add(1)
+		h.faultNanos.Add(int64(time.Since(start)))
+		if err != nil {
 			// If a new remove event has arrived in the queue before we finish
 			// handling all the page faults, the remaining page faults will
 			// all fail with EAGAIN. Defer these page faults so we can
@@ -460,6 +480,28 @@ func (h *Handler) handleRemoveEvent(memoryStore *copy_on_write.COWStore, mapping
 		memoryStore.MarkPartiallyMapped(chunkStartOffset)
 	}
 	return nil
+}
+
+// RecordFaultOffsets makes the handler keep the offset in the memory snapshot
+// of each page that faults, for TakeFaultOffsets.
+func (h *Handler) RecordFaultOffsets() {
+	h.recordFaults.Store(true)
+}
+
+// TakeFaultOffsets returns the offsets recorded since the last call.
+func (h *Handler) TakeFaultOffsets() []int64 {
+	h.faultOffsetsMu.Lock()
+	defer h.faultOffsetsMu.Unlock()
+	offsets := h.faultOffsets
+	h.faultOffsets = nil
+	return offsets
+}
+
+// FaultStats returns how many page faults the handler has resolved since
+// it started, how long resolving them took, and how many bytes of the memory
+// snapshot it copied into the guest.
+func (h *Handler) FaultStats() (faults int64, duration time.Duration, bytes int64) {
+	return h.faults.Load(), time.Duration(h.faultNanos.Load()), h.faultBytes.Load()
 }
 
 // EmitSummaryMetrics will export cumulative metrics for the given stage, and
@@ -619,6 +661,7 @@ func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_
 
 // copyRange resolves page faults by copying memory from the host into the guest.
 func (h *Handler) copyRange(uffd uintptr, destAddr uintptr, hostAddr uintptr, size int64) error {
+	h.faultBytes.Add(size)
 	pageSize := int64(os.Getpagesize())
 	for size > 0 {
 		// A single UFFDIO_COPY may stop partway through the range - for example if it

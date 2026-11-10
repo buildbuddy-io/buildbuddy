@@ -86,6 +86,25 @@ message InputPreload {
 
   // How many files to read at a time.
   int32 parallelism = 3;
+
+  // Finish reading the files before starting the command, instead of
+  // reading them while it runs.
+  bool wait = 4;
+
+  // Report in ExecResponse.guest_stats what the guest did since the last
+  // command finished.
+  bool report_idle_activity = 5;
+
+  // Experiment: guest pages to classify, by the step of the host's Exec
+  // timeline in which the guest first touched them after it was resumed.
+  // ExecResponse.guest_stats reports the count of each class.
+  repeated PageCensusStep page_census = 6;
+}
+
+message PageCensusStep {
+  string name = 1;
+  // The pages' offsets in the VM's memory snapshot.
+  repeated int64 offsets = 2;
 }
 
 // InputPreloadStats reports what an InputPreload read.
@@ -116,6 +135,11 @@ message ExecResponse {
   // What the preload that ExecRequest.preload asked for read. Unset when
   // the request asked for none.
   InputPreloadStats preload_stats = 6;
+
+  // How much the guest's CPU, pressure, paging and disk counters grew while
+  // the command ran, as space-separated NAME=VALUE pairs, along with how
+  // long the command and the sync after it took.
+  string guest_stats = 7;
 }
 
 // Metrics reported by the vmexec server, including timings of one-time

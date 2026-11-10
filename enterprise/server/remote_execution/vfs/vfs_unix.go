@@ -33,6 +33,13 @@ type opStats struct {
 	timeSpent time.Duration
 }
 
+// OpStat is how many FUSE requests of a kind the VFS handled, and how long
+// it spent handling them in total.
+type OpStat struct {
+	Count    int64
+	Duration time.Duration
+}
+
 type perOpStats map[string]int
 
 type inodeCacheEntry struct {
@@ -503,6 +510,19 @@ func (vfs *VFS) logStats() {
 			log.CtxDebugf(vfs.rpcCtx, "%s %s", p, s.String())
 		}
 	}
+}
+
+// TakeOpStats returns the FUSE requests handled since the last call, by
+// kind, and starts counting again from zero.
+func (vfs *VFS) TakeOpStats() map[string]OpStat {
+	vfs.mu.Lock()
+	defer vfs.mu.Unlock()
+	out := make(map[string]OpStat, len(vfs.opStats))
+	for op, s := range vfs.opStats {
+		out[op] = OpStat{Count: int64(s.count), Duration: s.timeSpent}
+	}
+	vfs.opStats = make(map[string]*opStats)
+	return out
 }
 
 func (vfs *VFS) FinishTask() error {

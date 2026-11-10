@@ -147,6 +147,9 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	if stats := res.GetPreloadStats(); stats != nil {
 		log.CtxInfof(ctx, "Guest preloaded %d of %d input files (%d bytes) in %s", stats.GetFilesRead(), len(preload.GetPaths()), stats.GetBytesRead(), time.Duration(stats.GetDurationUsec())*time.Microsecond)
 	}
+	if stats := res.GetGuestStats(); stats != "" {
+		log.CtxInfof(ctx, "Guest command stats: %s", stats)
+	}
 	exitCode := commandutil.NoExitCode
 	if res != nil {
 		exitCode = int(res.GetExitCode())

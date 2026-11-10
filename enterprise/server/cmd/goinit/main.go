@@ -442,6 +442,9 @@ func main() {
 			return nil
 		}
 		cmd := exec.CommandContext(ctx, selfExePath, append(os.Args[1:], "--vmvfs")...)
+		// Experiment: if the server is killed with SIGQUIT, have the Go
+		// runtime print its own goroutines too, such as the GC's workers.
+		cmd.Env = append(os.Environ(), "GOTRACEBACK=system")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()

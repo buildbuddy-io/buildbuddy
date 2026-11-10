@@ -34,6 +34,9 @@ message PrepareRequest {
   // host as it happens, keyed by the file's node ID, so that the host has
   // the action's outputs when it finishes.
   bool mirror_writes = 14;
+  // Record a CPU profile of the guest VFS process from the end of this call
+  // until Finish, which returns it.
+  bool profile_task = 15;
   // Read input contents from the host with blocking system calls instead of
   // through the Go network poller.
   bool blocking_content_reads = 16;
@@ -43,6 +46,18 @@ message PrepareResponse {
   int64 get_tree_duration_usec = 1;
   int64 namespace_prepare_duration_usec = 2;
   bytes preparation_cpu_profile = 3;
+  // How long the whole call took in the guest, and its other steps, which
+  // are dialing the host, validating the tree, and telling the kernel to
+  // drop what it cached of the previous task's files.
+  int64 total_duration_usec = 4;
+  int64 dial_duration_usec = 5;
+  int64 validate_duration_usec = 6;
+  int64 kernel_invalidate_duration_usec = 7;
+  // What the server process did between the end of the last Finish call and
+  // the start of this call, and during this call, as "name=value" pairs of
+  // the counters that FinishResponse.server_stats has.
+  string idle_stats = 8;
+  string prepare_stats = 9;
 }
 
 // Indicates that the FUSE filesystem is no longer needed.
@@ -56,6 +71,14 @@ message FinishRequest {
 message Stats {
   int64 read_io_bytes = 1;
   int64 write_io_bytes = 2;
+}
+
+// How many FUSE requests of a kind the guest VFS handled, and how long it
+// spent handling them in total.
+message FuseOpStats {
+  string op = 1;
+  int64 count = 2;
+  int64 duration_usec = 3;
 }
 
 message FinishResponse {
@@ -74,6 +97,32 @@ message FinishResponse {
   // The CAS inputs that nothing opened since the last Prepare call, when the
   // request asked for them.
   build.bazel.remote.execution.v2.TreeMask unused_inputs = 6;
+  // The FUSE requests that the guest VFS handled since the last Prepare call,
+  // for finding out where an action's time goes.
+  repeated FuseOpStats fuse_op_stats = 7;
+  // The requests for input contents that the guest VFS sent to the host since
+  // the last Prepare call, the bytes they returned, how long they took in
+  // total and how many of them had to open a new connection.
+  int64 content_requests = 8;
+  int64 content_bytes = 9;
+  int64 content_usec = 10;
+  int64 content_dials = 11;
+  // The CPU profile of the guest VFS process since Prepare, if the Prepare
+  // request asked for one.
+  bytes task_cpu_profile = 12;
+  // The content requests by how long they took. Entry 0 covers requests
+  // that took under 32 microseconds, and entry i covers those that took at
+  // least 32 << (i - 1) microseconds and less than twice that. Each entry
+  // has how many requests there were, how long they took in total and how
+  // many bytes they returned.
+  repeated int64 content_time_counts = 13;
+  repeated int64 content_time_usec = 14;
+  repeated int64 content_time_bytes = 15;
+
+  // How much the server process's CPU time, page faults, context switches
+  // and garbage collection counters grew since the last Prepare call, and
+  // its heap size, as space-separated NAME=VALUE pairs.
+  string server_stats = 16;
 }
 
 message ReadOutputsRequest {

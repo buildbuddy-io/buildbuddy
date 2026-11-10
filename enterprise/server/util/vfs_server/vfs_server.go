@@ -480,6 +480,10 @@ type Server struct {
 	// contentListener accepts raw content protocol connections from the
 	// guest, if ServeGuestContent was called.
 	contentListener net.Listener
+	// What serving the guest's content requests has added up to. See
+	// ContentStats.
+	contentRequests, contentServeNanos, contentOpens, contentOpenNanos, contentFetches, contentFetchNanos atomic.Int64
+	contentReadNanos, contentWriteNanos                                                                   atomic.Int64
 	// writeMirror, if set, receives the changes to backing files' contents.
 	writeMirror WriteMirror
 	// mirrorDir is where the host keeps the files that a guest server
@@ -2568,10 +2572,40 @@ func (p *Server) openContent(ctx context.Context, d *repb.Digest, executable boo
 	if f, err := fc.Open(ctx, &repb.FileNode{Digest: d, IsExecutable: !executable}); err == nil {
 		return f, nil
 	}
-	if err := fetcher.Fetch(ctx, node); err != nil {
+	start := time.Now()
+	err := fetcher.Fetch(ctx, node)
+	p.contentFetches.Add(1)
+	p.contentFetchNanos.Add(int64(time.Since(start)))
+	if err != nil {
 		return nil, err
 	}
 	return fc.Open(ctx, node)
+}
+
+// ContentStats describes the raw content protocol requests served since the
+// server was created. Requests is how many there were and ServeNanos how long
+// they took in total, from reading a request to finishing its response. Opens
+// is how many of them had to open their input, and Fetches how many of those
+// found it missing from the file cache and downloaded it, which took
+// FetchNanos in total. ReadNanos is how long reading the inputs took, and
+// WriteNanos how long writing the responses to the guest took.
+type ContentStats struct {
+	Requests, ServeNanos, Opens, OpenNanos, Fetches, FetchNanos int64
+	ReadNanos, WriteNanos                                       int64
+}
+
+// ContentStats returns what serving guest content requests has added up to.
+func (p *Server) ContentStats() ContentStats {
+	return ContentStats{
+		Requests:   p.contentRequests.Load(),
+		ServeNanos: p.contentServeNanos.Load(),
+		Opens:      p.contentOpens.Load(),
+		OpenNanos:  p.contentOpenNanos.Load(),
+		Fetches:    p.contentFetches.Load(),
+		FetchNanos: p.contentFetchNanos.Load(),
+		ReadNanos:  p.contentReadNanos.Load(),
+		WriteNanos: p.contentWriteNanos.Load(),
+	}
 }
 
 // ServeGuestContent answers raw content protocol requests on lis from the
@@ -2615,6 +2649,8 @@ func (p *Server) serveGuestContentConn(conn net.Conn) {
 		size := int64(binary.BigEndian.Uint64(hdr[2:]))
 		offset := int64(binary.BigEndian.Uint64(hdr[10:]))
 		length := int64(binary.BigEndian.Uint64(hdr[18:]))
+		requestStart := time.Now()
+		p.contentRequests.Add(1)
 		if f == nil || fHash != string(hash) {
 			if f != nil {
 				f.Close()
@@ -2622,6 +2658,8 @@ func (p *Server) serveGuestContentConn(conn net.Conn) {
 			}
 			var err error
 			f, err = p.openContent(p.taskCtx(), &repb.Digest{Hash: string(hash), SizeBytes: size}, hdr[1] == 1)
+			p.contentOpens.Add(1)
+			p.contentOpenNanos.Add(int64(time.Since(requestStart)))
 			if err != nil {
 				msg := []byte(err.Error())
 				binary.BigEndian.PutUint64(rspHdr[:], uint64(-int64(len(msg))))
@@ -2640,7 +2678,10 @@ func (p *Server) serveGuestContentConn(conn net.Conn) {
 		for n > 0 || len(out) > 0 {
 			k := min(n, int64(len(buf)))
 			if k > 0 {
-				if m, err := f.ReadAt(buf[:k], offset); int64(m) < k {
+				readStart := time.Now()
+				m, err := f.ReadAt(buf[:k], offset)
+				p.contentReadNanos.Add(int64(time.Since(readStart)))
+				if int64(m) < k {
 					// The response has started, so the guest cannot tell an
 					// error from content. Closing the connection fails its
 					// request instead.
@@ -2649,13 +2690,17 @@ func (p *Server) serveGuestContentConn(conn net.Conn) {
 				}
 				out = append(out, buf[:k])
 			}
-			if _, err := out.WriteTo(conn); err != nil {
+			writeStart := time.Now()
+			_, err := out.WriteTo(conn)
+			p.contentWriteNanos.Add(int64(time.Since(writeStart)))
+			if err != nil {
 				return
 			}
 			out = nil
 			offset += k
 			n -= k
 		}
+		p.contentServeNanos.Add(int64(time.Since(requestStart)))
 	}
 }
 

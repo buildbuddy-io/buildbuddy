@@ -3,10 +3,12 @@ package vmexec
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"os"
 	"os/exec"
@@ -95,7 +97,20 @@ var (
 
 	// The time at which this process started, recorded in init().
 	processStartTime time.Time
+
+	// What guestCounters and threadActivities returned when the last command
+	// finished, for commands that report what the guest did since then.
+	lastCounters map[string]int64
+	lastThreads  map[int]threadActivity
 )
+
+// threadActivity is how often a thread has been switched out, and how much
+// CPU time it has used, since it started.
+type threadActivity struct {
+	comm     string
+	switches int64
+	cpuTicks int64
+}
 
 type execServer struct {
 	rootMu             sync.Mutex
@@ -717,9 +732,6 @@ func (c *command) logErrorDiagnostics(err error) {
 }
 
 func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStreamedResponse, error) {
-	// TODO(tylerw): use syncfs or something better here.
-	defer unix.Sync()
-
 	log.Infof("Running command in VM: %q", c.cmd.String())
 	stdoutErrCh := make(chan error, 1)
 	go func() {
@@ -793,6 +805,11 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 			msgs <- &message{Response: &vmxpb.ExecStreamedResponse{UsageStats: stats}}
 		}
 	}()
+	var idle string
+	if c.preload.GetReportIdleActivity() {
+		idle = idleActivity()
+	}
+	idle += pageCensus(c.preload.GetPageCensus())
 	// Read the preloaded inputs while the command runs, and stop once it
 	// exits, since reading on would only slow down whatever runs next.
 	preloadCtx, cancelPreload := context.WithCancel(ctx)
@@ -803,12 +820,38 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 	// Using a nil statsListener since we'd rather report stats from the whole
 	// VM (which includes e.g. docker-in-firecracker containers) -- not just the
 	// process being run.
+	var preloadStats *vmxpb.InputPreloadStats
+	if c.preload.GetWait() {
+		preloadStats = <-preloadDone
+	}
+	countersBefore := guestCounters()
+	commandStart := time.Now()
 	_, err := commandutil.RunWithProcessTreeCleanup(ctx, c.cmd, nil /*=statsListener*/)
+	commandDuration := time.Since(commandStart)
 	cancelPreload()
+	countersAfter := guestCounters()
+	// TODO(tylerw): use syncfs or something better here.
+	syncStart := time.Now()
+	unix.Sync()
+	syncDuration := time.Since(syncStart)
 
 	close(commandDone)
 	<-statsDone
-	preloadStats := <-preloadDone
+	if !c.preload.GetWait() {
+		preloadStats = <-preloadDone
+	}
+	var guestStats strings.Builder
+	fmt.Fprintf(&guestStats, "command_usec=%d sync_usec=%d preload_usec=%d", commandDuration.Microseconds(), syncDuration.Microseconds(), preloadStats.GetDurationUsec())
+	if ps := c.cmd.ProcessState; ps != nil {
+		fmt.Fprintf(&guestStats, " child_user_ms=%d child_system_ms=%d", ps.UserTime().Milliseconds(), ps.SystemTime().Milliseconds())
+	}
+	for _, name := range slices.Sorted(maps.Keys(countersAfter)) {
+		fmt.Fprintf(&guestStats, " %s=%d", name, countersAfter[name]-countersBefore[name])
+	}
+	guestStats.WriteString(idle)
+	if c.preload.GetReportIdleActivity() {
+		lastCounters, lastThreads = guestCounters(), threadActivities()
+	}
 
 	exitCode, err := commandutil.ExitCode(ctx, c.cmd, err)
 	if err != nil {
@@ -818,6 +861,7 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 		ExitCode:     int32(exitCode),
 		Status:       gstatus.Convert(err).Proto(),
 		PreloadStats: preloadStats,
+		GuestStats:   guestStats.String(),
 	}
 	c.stdoutWriter.Close()
 	if err := <-stdoutErrCh; err != nil {
@@ -828,6 +872,162 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 		return nil, status.InternalErrorf("failed to copy stderr: %s", err)
 	}
 	return &vmxpb.ExecStreamedResponse{Response: rsp}, nil
+}
+
+// guestCounters reads the guest's cumulative CPU, pressure, paging and disk
+// counters, so that a caller can report how much each grew while a command
+// ran. Times are in the unit that each name ends with.
+func guestCounters() map[string]int64 {
+	out := map[string]int64{}
+	fields := func(path string) [][]string {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var lines [][]string
+		for line := range strings.SplitSeq(string(b), "\n") {
+			lines = append(lines, strings.Fields(line))
+		}
+		return lines
+	}
+	num := func(s string) int64 {
+		v, _ := strconv.ParseInt(s, 10, 64)
+		return v
+	}
+	for _, f := range fields("/proc/stat") {
+		if len(f) >= 9 && f[0] == "cpu" {
+			for i, name := range []string{"user", "nice", "system", "idle", "iowait", "irq", "softirq", "steal"} {
+				out["cpu_"+name+"_ms"] = num(f[i+1]) * 1000 / ticksPerSec
+			}
+		} else if len(f) == 2 && (f[0] == "ctxt" || f[0] == "processes") {
+			out[f[0]] = num(f[1])
+		}
+	}
+	for _, resource := range []string{"cpu", "io", "memory"} {
+		for _, f := range fields("/proc/pressure/" + resource) {
+			if len(f) == 5 && strings.HasPrefix(f[4], "total=") {
+				out["psi_"+resource+"_"+f[0]+"_usec"] = num(strings.TrimPrefix(f[4], "total="))
+			}
+		}
+	}
+	vmstat := []string{"pgfault", "pgmajfault", "pgpgin", "pgpgout", "pgscan_kswapd", "pgscan_direct", "pgsteal_kswapd", "pgsteal_direct", "workingset_refault_file", "nr_dirtied", "nr_written"}
+	for _, f := range fields("/proc/vmstat") {
+		if len(f) == 2 && slices.Contains(vmstat, f[0]) {
+			out[f[0]] = num(f[1])
+		}
+	}
+	for _, f := range fields("/proc/diskstats") {
+		if len(f) >= 11 && strings.HasPrefix(f[2], "vd") {
+			for i, name := range []string{"reads", "", "read_sectors", "read_ms", "writes", "", "write_sectors", "write_ms"} {
+				if name != "" {
+					out[f[2]+"_"+name] = num(f[i+3])
+				}
+			}
+		}
+	}
+	return out
+}
+
+// threadActivities reads the activity of every thread in the guest, by
+// thread ID.
+func threadActivities() map[int]threadActivity {
+	out := map[int]threadActivity{}
+	dirs, _ := filepath.Glob("/proc/[0-9]*/task/[0-9]*")
+	for _, dir := range dirs {
+		tid, err := strconv.Atoi(filepath.Base(dir))
+		if err != nil {
+			continue
+		}
+		var a threadActivity
+		b, err := os.ReadFile(filepath.Join(dir, "status"))
+		if err != nil {
+			continue
+		}
+		for line := range strings.SplitSeq(string(b), "\n") {
+			name, value, _ := strings.Cut(line, ":")
+			value = strings.TrimSpace(value)
+			switch name {
+			case "Name":
+				a.comm = strings.Map(func(r rune) rune {
+					if strings.ContainsRune(" ,=:", r) {
+						return '_'
+					}
+					return r
+				}, value)
+			case "voluntary_ctxt_switches", "nonvoluntary_ctxt_switches":
+				n, _ := strconv.ParseInt(value, 10, 64)
+				a.switches += n
+			}
+		}
+		// The fields after the command name, which may contain spaces,
+		// start with the state. User and system time are the 12th and
+		// 13th after it.
+		if b, err := os.ReadFile(filepath.Join(dir, "stat")); err == nil {
+			if i := strings.LastIndexByte(string(b), ')'); i >= 0 {
+				if f := strings.Fields(string(b[i+1:])); len(f) > 12 {
+					user, _ := strconv.ParseInt(f[11], 10, 64)
+					system, _ := strconv.ParseInt(f[12], 10, 64)
+					a.cpuTicks = user + system
+				}
+			}
+		}
+		out[tid] = a
+	}
+	return out
+}
+
+// idleActivity reports what the guest did since the last command finished,
+// which includes the VM's pause and resume. It reports how much each of
+// guestCounters' values grew, how many threads ran, and the commands whose
+// threads were switched out most often, each as
+// name:threads:switches:cpu_ms.
+func idleActivity() string {
+	if lastCounters == nil {
+		return ""
+	}
+	var b strings.Builder
+	counters := guestCounters()
+	for _, name := range slices.Sorted(maps.Keys(counters)) {
+		fmt.Fprintf(&b, " gap_%s=%d", name, counters[name]-lastCounters[name])
+	}
+	type commActivity struct{ threads, switches, cpuTicks int64 }
+	byComm := map[string]*commActivity{}
+	var ran, total int64
+	for tid, now := range threadActivities() {
+		total++
+		before := lastThreads[tid]
+		if before.comm != now.comm {
+			// Another thread had this ID, or none did.
+			before = threadActivity{}
+		}
+		if now.switches <= before.switches {
+			continue
+		}
+		ran++
+		a := byComm[now.comm]
+		if a == nil {
+			a = &commActivity{}
+			byComm[now.comm] = a
+		}
+		a.threads++
+		a.switches += now.switches - before.switches
+		a.cpuTicks += now.cpuTicks - before.cpuTicks
+	}
+	fmt.Fprintf(&b, " gap_threads_ran=%d gap_threads=%d gap_top=", ran, total)
+	names := slices.SortedFunc(maps.Keys(byComm), func(x, y string) int {
+		return cmp.Or(cmp.Compare(byComm[y].switches, byComm[x].switches), cmp.Compare(x, y))
+	})
+	for i, name := range names {
+		if i == 40 {
+			break
+		}
+		if i > 0 {
+			b.WriteString(",")
+		}
+		a := byComm[name]
+		fmt.Fprintf(&b, "%s:%d:%d:%d", name, a.threads, a.switches, a.cpuTicks*1000/ticksPerSec)
+	}
+	return b.String()
 }
 
 // preloadInputs reads the files that preload names into the page cache,
@@ -1126,4 +1326,159 @@ func ResizeExt4FS(devicePath, mountPath string) error {
 		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
 	}
 	return nil
+}
+
+// pageCensus classifies the guest pages that the host names, by the step in
+// which the guest first touched them, and returns the count of each class as
+// " census_<step>_<class>=<count>". The classes are
+//
+//   - free, for pages that nothing has allocated,
+//   - slab, for the kernel's small objects,
+//   - pgtable, for page tables,
+//   - anon_<owner>, for process memory, where owner is the command of a
+//     process that maps the page (vmvfs, vmexec or goinit for the guest's Go
+//     servers), or "unmapped",
+//   - file, for page cache, or file_<owner> if a process maps the page,
+//   - kernel, for the rest, such as kernel stacks and the kernel's own data.
+func pageCensus(steps []*vmxpb.PageCensusStep) string {
+	if len(steps) == 0 {
+		return ""
+	}
+	// The memory snapshot holds the guest's memory below Firecracker's MMIO
+	// gap, followed by its memory from 4 GiB up. /proc/iomem tells where the
+	// memory below the gap ends.
+	var lowEnd uint64
+	iomem, _ := os.ReadFile("/proc/iomem")
+	for line := range strings.SplitSeq(string(iomem), "\n") {
+		addrs, name, _ := strings.Cut(line, " : ")
+		_, hi, _ := strings.Cut(strings.TrimSpace(addrs), "-")
+		if end, err := strconv.ParseUint(hi, 16, 64); err == nil && name == "System RAM" && end < 1<<32 {
+			lowEnd = max(lowEnd, (end+1<<20)&^(1<<20-1))
+		}
+	}
+	pageFrame := func(offset int64) uint64 {
+		addr := uint64(offset)
+		if addr >= lowEnd {
+			addr += 1<<32 - lowEnd
+		}
+		return addr / 4096
+	}
+	owners := map[uint64]string{}
+	for _, step := range steps {
+		for _, offset := range step.GetOffsets() {
+			owners[pageFrame(offset)] = ""
+		}
+	}
+	// Find a process that maps each page, in the page map of each readable
+	// mapping of each process.
+	procs, _ := os.ReadDir("/proc")
+	buf := make([]byte, 8*8192)
+	for _, proc := range procs {
+		pid := proc.Name()
+		if _, err := strconv.Atoi(pid); err != nil {
+			continue
+		}
+		comm, _ := os.ReadFile("/proc/" + pid + "/comm")
+		owner := strings.TrimSpace(string(comm))
+		if owner == "exe" {
+			cmdline, _ := os.ReadFile("/proc/" + pid + "/cmdline")
+			switch {
+			case bytes.Contains(cmdline, []byte("--vmvfs")):
+				owner = "vmvfs"
+			case bytes.Contains(cmdline, []byte("--vmexec")):
+				owner = "vmexec"
+			default:
+				owner = "goinit"
+			}
+		}
+		owner = strings.Map(func(r rune) rune {
+			if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+				return r
+			}
+			return '_'
+		}, owner)
+		mappings, err := os.ReadFile("/proc/" + pid + "/maps")
+		if err != nil {
+			continue
+		}
+		pagemap, err := os.Open("/proc/" + pid + "/pagemap")
+		if err != nil {
+			continue
+		}
+		for line := range strings.SplitSeq(string(mappings), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 || !strings.HasPrefix(fields[1], "r") {
+				continue
+			}
+			lo, hi, _ := strings.Cut(fields[0], "-")
+			start, err1 := strconv.ParseUint(lo, 16, 64)
+			end, err2 := strconv.ParseUint(hi, 16, 64)
+			if err1 != nil || err2 != nil {
+				continue
+			}
+			for addr := start; addr < end; {
+				n, err := pagemap.ReadAt(buf[:min(uint64(len(buf)), (end-addr)/4096*8)], int64(addr/4096*8))
+				for i := 0; i+8 <= n; i += 8 {
+					entry := binary.LittleEndian.Uint64(buf[i:])
+					// Bit 63 is set if the page is in memory, and the low
+					// 55 bits are then its page frame number.
+					if entry>>63 == 0 {
+						continue
+					}
+					pfn := entry & (1<<55 - 1)
+					if cur, ok := owners[pfn]; ok && cur == "" {
+						owners[pfn] = owner
+					}
+				}
+				if n < 8 || err != nil {
+					break
+				}
+				addr += uint64(n/8) * 4096
+			}
+		}
+		pagemap.Close()
+	}
+	flagsFile, err := os.Open("/proc/kpageflags")
+	if err != nil {
+		return " census_error=1"
+	}
+	defer flagsFile.Close()
+	var b strings.Builder
+	for _, step := range steps {
+		counts := map[string]int{}
+		for _, offset := range step.GetOffsets() {
+			pfn := pageFrame(offset)
+			var raw [8]byte
+			if _, err := flagsFile.ReadAt(raw[:], int64(pfn*8)); err != nil {
+				counts["unknown"]++
+				continue
+			}
+			// The bits are the KPF_* flags of the kernel's
+			// include/uapi/linux/kernel-page-flags.h.
+			flags := binary.LittleEndian.Uint64(raw[:])
+			owner := owners[pfn]
+			switch {
+			case flags&(1<<20) != 0:
+				counts["nopage"]++
+			case flags&(1<<10) != 0:
+				counts["free"]++
+			case flags&(1<<7) != 0:
+				counts["slab"]++
+			case flags&(1<<26) != 0:
+				counts["pgtable"]++
+			case flags&(1<<12) != 0:
+				counts["anon_"+cmp.Or(owner, "unmapped")]++
+			case owner != "":
+				counts["file_"+owner]++
+			case flags&(1<<5|1<<11) != 0:
+				counts["file"]++
+			default:
+				counts["kernel"]++
+			}
+		}
+		for _, class := range slices.Sorted(maps.Keys(counts)) {
+			fmt.Fprintf(&b, " census_%s_%s=%d", step.GetName(), class, counts[class])
+		}
+	}
+	return b.String()
 }
