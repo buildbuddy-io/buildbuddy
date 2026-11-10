@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
@@ -58,7 +59,6 @@ func (a *apiClient) fetchInvocations(f filters) tea.Cmd {
 	return func() tea.Msg {
 		sevenDaysAgo := time.Now().AddDate(0, 0, -7)
 		query := &inpb.InvocationQuery{
-			GroupId:      a.groupID,
 			UpdatedAfter: timestamppb.New(sevenDaysAgo),
 		}
 		if f.user != "" {
@@ -72,7 +72,8 @@ func (a *apiClient) fetchInvocations(f filters) tea.Cmd {
 		}
 
 		resp, err := a.client.SearchInvocation(a.ctx(), &inpb.SearchInvocationRequest{
-			Query: query,
+			RequestContext: &ctxpb.RequestContext{GroupId: a.groupID},
+			Query:          query,
 			Sort: &inpb.InvocationSort{
 				SortField: inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD,
 				Ascending: false,
