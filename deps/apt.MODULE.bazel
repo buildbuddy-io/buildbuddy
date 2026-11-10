@@ -124,6 +124,7 @@ apt.install(
         "amazon-ecr-credential-helper",
         "lxcfs",
         "tar",
+        "dash",
     ],
     suites = [
         "trixie",
