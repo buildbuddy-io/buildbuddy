@@ -17,6 +17,7 @@ message StoredInvocation {
   int64 invocation_status = 10;
   bool success = 11;
   string tags = 12;
+  string agent = 13;
 }
 
 // Proto representation of tables.InvocationExecution. Only used in backends.

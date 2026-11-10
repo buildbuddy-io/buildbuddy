@@ -136,6 +136,8 @@ type RunOpts struct {
 	Name string
 	// Command to run remotely.
 	Command string
+	// Explicit build_metadata assignments from the parsed Bazel command.
+	BuildMetadata []string
 	// Whether the remotely built outputs should be fetched locally.
 	FetchOutputs bool
 	// Whether the remotely built target should be fetched and run locally.
@@ -1097,6 +1099,36 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		val := os.Getenv(envVar)
 		envVars[envVar] = val
 	}
+	// Bazel uses the last assignment for each build metadata key. Match that
+	// behavior without re-parsing the shell command or losing repeated flags.
+	metadata := make(map[string]string)
+	for _, assignment := range opts.BuildMetadata {
+		if key, value, ok := strings.Cut(assignment, "="); ok {
+			metadata[key] = value
+		}
+	}
+	hint, explicitAgent := metadata[bazel.CodingAgentEnvVar]
+	// Explicit metadata overrides --env hints and inferred markers. Forward
+	// only the normalized provider ID, not the caller's agent session ID. Keep an
+	// empty hint present so the remote runner does not fall back to markers.
+	if explicitAgent {
+		envVars[bazel.CodingAgentEnvVar] = bazel.NormalizeCodingAgent(hint)
+	} else if !contains(envVars, bazel.CodingAgentEnvVar) {
+		lookup := os.LookupEnv
+		if contains(envVars, "CLAUDECODE") || contains(envVars, "CODEX_SESSION_ID") {
+			// An explicitly selected remote marker takes precedence over the
+			// caller's local markers and inherited attribution hint.
+			lookup = func(name string) (string, bool) {
+				value, ok := envVars[name]
+				return value, ok
+			}
+		}
+		provider := bazel.DetectCodingAgent(lookup)
+		_, hintSet := lookup(bazel.CodingAgentEnvVar)
+		if hintSet || provider != "" {
+			envVars[bazel.CodingAgentEnvVar] = provider
+		}
+	}
 
 	// If not explicitly set, try to set the default and base branch env vars,
 	// because it will allow us to fallback to snapshots for those branches
@@ -1513,6 +1545,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	fetchOutputs := false
 	runOutputLocally := false
 	var localExecArgs []string
+	var buildMetadata []string
 	if *script != "" {
 		cmd = *script
 
@@ -1524,6 +1557,8 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		if err != nil {
 			return 1, status.WrapError(err, "parse args")
 		}
+
+		buildMetadata = arg.GetMulti(bazelArgs, "build_metadata")
 
 		// Read API key from command line if it is set.
 		apiKey = arg.Get(bazelArgs, "remote_header=x-buildbuddy-api-key")
@@ -1562,6 +1597,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		Server:                   runner,
 		Name:                     remoteRunName,
 		Command:                  cmd,
+		BuildMetadata:            buildMetadata,
 		RunOutputLocally:         runOutputLocally,
 		ExecArgs:                 localExecArgs,
 		RelativeWorkspaceDir:     workingDirectory,

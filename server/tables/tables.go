@@ -104,10 +104,12 @@ func (m *Model) BeforeUpdate(tx *gorm.DB) (err error) {
 }
 
 type Invocation struct {
-	Role         string `gorm:"index:role_index"`
-	InvocationID string `gorm:"primaryKey;"`
-	UserID       string `gorm:"index:user_id"`
-	GroupID      string `gorm:"index:group_id"`
+	Role string `gorm:"index:role_index"`
+	// Nil omits attribution from a partial update; a pointer to empty clears it.
+	Agent        *string `gorm:"not null;default:'';"`
+	InvocationID string  `gorm:"primaryKey;"`
+	UserID       string  `gorm:"index:user_id"`
+	GroupID      string  `gorm:"index:group_id"`
 	BlobID       string
 	Pattern      string `gorm:"type:text;"`
 	User         string `gorm:"index:user_index"`
@@ -192,6 +194,13 @@ type Invocation struct {
 	GitFetchTotalBytes   int64 `gorm:"-"`
 	GitFetchDurationUsec int64 `gorm:"-"`
 	GitFetchRetryCount   int64 `gorm:"-"`
+}
+
+func (i *Invocation) GetAgent() string {
+	if i.Agent == nil {
+		return ""
+	}
+	return *i.Agent
 }
 
 func (i *Invocation) TableName() string {

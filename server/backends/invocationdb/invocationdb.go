@@ -55,6 +55,11 @@ func getACL(i *tables.Invocation) *aclpb.ACL {
 
 func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	ti.Attempt = 1
+	// Every new attempt starts with its own attribution snapshot. A non-nil
+	// empty value also clears a previous attempt through ordinary Updates.
+	if ti.Agent == nil {
+		ti.Agent = new(string)
+	}
 	// First, try inserting the invocation. This will work for first attempts.
 	result := d.h.GORM(ctx, "invocationdb_insert_invocation").Clauses(clause.OnConflict{DoNothing: true}).Create(ti)
 	if result.Error != nil {
@@ -348,6 +353,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.BranchName = i.BranchName
 	out.CommitSha = i.CommitSHA
 	out.Role = i.Role
+	out.Agent = i.GetAgent()
 	out.Command = i.Command
 	if i.Pattern != "" {
 		out.Pattern = strings.Split(i.Pattern, ", ")

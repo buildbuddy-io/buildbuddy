@@ -56,6 +56,7 @@ var (
 	trendsSummaryEnabled                   = flag.Bool("app.trends_summary_enabled", false, "If set, show the new 'summary' section at the top of the trends UI.")
 	customerManagedEncryptionKeysEnabled   = flag.Bool("app.customer_managed_encryption_keys_enabled", false, "If set, show customer-managed encryption configuration UI.")
 	tagsUIEnabled                          = flag.Bool("app.tags_ui_enabled", false, "If set, expose tags data and let users filter by tag.")
+	agentFilterEnabled                     = flag.Bool("app.agent_filter_enabled", false, "Expose Agent filtering after the agent schema and all query backends have been upgraded.")
 	timeseriesChartsInTimingProfileEnabled = flag.Bool("app.timeseries_charts_in_timing_profile_enabled", true, "If set, charts with sampled time series data (such as CPU and memory usage) will be shown")
 	timingProfileMaxSizeBytes              = flag.Int64("app.timing_profile_max_size_bytes", 350_000_000, "Maximum compressed timing profile size that the UI will load.")
 	auditLogsUIEnabled                     = flag.Bool("app.audit_logs_ui_enabled", false, "If set, the audit logs UI will be accessible from the sidebar.")
@@ -258,6 +259,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		ActionResultOriginEnabled:              action_cache_server.RecordActionResultOriginEnabled(),
 		CustomerManagedEncryptionKeysEnabled:   *customerManagedEncryptionKeysEnabled,
 		TagsUiEnabled:                          *tagsUIEnabled,
+		AgentFilterEnabled:                     *agentFilterEnabled,
 		TimeseriesChartsInTimingProfileEnabled: *timeseriesChartsInTimingProfileEnabled,
 		TimingProfileMaxSizeBytes:              *timingProfileMaxSizeBytes,
 		AuditLogsUiEnabled:                     *auditLogsUIEnabled,

@@ -1,5 +1,6 @@
 import React from "react";
 import { User } from "../../auth/auth_service";
+import format from "../../format/format";
 import router from "../../router/router";
 import InvocationButtons from "../invocation_buttons";
 import InvocationModel from "../invocation_model";
@@ -19,13 +20,19 @@ export default class DenseInvocationOverviewComponent extends React.Component<Pr
 
   render() {
     const isBazelInvocation = this.props.model.isBazelInvocation();
+    const agentLabel = format.formatCodingAgent(this.props.model.invocation.agent);
 
     return (
       <div className={`container nopadding-dense ${isBazelInvocation ? "" : "workflow-invocation"}`}>
         <div className="dense-invocation">
           <div>
             <div className="dense-invocation-title">
-              {isBazelInvocation ? <>Invocation</> : <>Workflow invocation</>}
+              {isBazelInvocation ? <>Invocation</> : <>Workflow invocation</>}{" "}
+              {agentLabel && (
+                <span className="role-badge coding-agent" title="Coding agent">
+                  {agentLabel}
+                </span>
+              )}
             </div>
             <div className="dense-invocation-invocation-id">
               {this.props.model.getInvocationId()} ({this.props.model.getFormattedStartedDate()})

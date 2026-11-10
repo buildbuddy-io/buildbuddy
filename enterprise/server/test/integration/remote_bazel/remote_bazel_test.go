@@ -440,6 +440,106 @@ genrule(
 	require.Equal(t, "Hello from main!", buf.String())
 }
 
+func TestAgentAttribution(t *testing.T) {
+	for _, key := range []string{"CLAUDECODE", "CODEX_SESSION_ID", "BUILDBUDDY_AGENT"} {
+		t.Setenv(key, "")
+		require.NoError(t, os.Unsetenv(key))
+	}
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{
+		"BUILD": `genrule(name = "main", outs = ["main.txt"], cmd = "echo hello > $@")`,
+	})
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
+	ctx := env.WithUserID(t.Context(), env.UserID1)
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
+	}
+	bbClient := env.GetBuildBuddyServiceClient()
+	seenInvocations := make(map[string]bool)
+	for _, tc := range []struct {
+		name  string
+		env   []string
+		args  []string
+		agent string
+	}{
+		{
+			name:  "Claude marker takes precedence",
+			env:   []string{"CLAUDECODE=1", "CODEX_SESSION_ID=private-session-id"},
+			agent: "claude",
+		},
+		{
+			name:  "explicit Codex overrides Claude marker precedence",
+			env:   []string{"CLAUDECODE=1", "CODEX_SESSION_ID=private-session-id"},
+			args:  []string{"--build_metadata=BUILDBUDDY_AGENT=codex"},
+			agent: "codex",
+		},
+		{
+			name: "explicit empty provider disables Codex",
+			env:  []string{"CODEX_SESSION_ID=private-session-id"},
+			args: []string{"--build_metadata=BUILDBUDDY_AGENT="},
+		},
+		{
+			name: "unmarked caller",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := []string{
+				"remote",
+				"--remote_runner=" + bbServer.GRPCAddress(),
+				"--runner_exec_properties=workload-isolation-type=none",
+				"--runner_exec_properties=container-image=",
+			}
+			args = append(args,
+				"build", ":main",
+				"--remote_header=x-buildbuddy-api-key="+env.APIKey1,
+			)
+			args = append(args, tc.args...)
+			cmd := testcli.Command(t, repoDir, args...)
+			// Set the caller's markers only on the CLI process. The in-process
+			// executor must not inherit them independently of RunRequest.Env.
+			callerEnv := cmd.Environ()
+			cmd.Env = nil
+			for _, entry := range callerEnv {
+				key, _, _ := strings.Cut(entry, "=")
+				if key == "CLAUDECODE" || key == "CODEX_SESSION_ID" || key == "BUILDBUDDY_AGENT" {
+					continue
+				}
+				cmd.Env = append(cmd.Env, entry)
+			}
+			cmd.Env = append(cmd.Env, tc.env...)
+			output, err := cmd.CombinedOutput()
+			t.Log(string(output))
+			require.NoError(t, err)
+
+			searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
+				RequestContext: reqCtx,
+				Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
+			})
+			require.NoError(t, err)
+			var parent, child *inpb.Invocation
+			for _, inv := range searchRsp.GetInvocation() {
+				if seenInvocations[inv.GetInvocationId()] {
+					continue
+				}
+				seenInvocations[inv.GetInvocationId()] = true
+				if inv.GetParentRunId() == "" {
+					require.Nil(t, parent)
+					parent = inv
+				} else {
+					require.Nil(t, child)
+					child = inv
+				}
+			}
+			require.NotNil(t, parent)
+			require.NotNil(t, child)
+			require.Equal(t, "HOSTED_BAZEL", parent.GetRole())
+			require.Empty(t, child.GetRole())
+			require.Equal(t, tc.agent, parent.GetAgent())
+			require.Equal(t, tc.agent, child.GetAgent())
+		})
+	}
+}
+
 func TestBuildRemotelyRunLocally(t *testing.T) {
 	for _, tc := range []struct {
 		name string

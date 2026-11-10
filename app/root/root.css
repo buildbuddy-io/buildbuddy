@@ -957,6 +957,11 @@ code .comment {
   color: var(--color-text-on-light-bg);
 }
 
+.role-badge.coding-agent {
+  background: var(--color-green-100);
+  color: var(--color-green-900);
+}
+
 .role-badge.HOSTED_BAZEL {
   background: var(--color-blue-900);
   color: var(--color-text-inverted);
