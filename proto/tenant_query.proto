@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package tenant_query;
+
+message QueryRequest {
+  // A ClickHouse SELECT statement. It runs as a ClickHouse user that can only
+  // read the rows of the authenticated group, so it does not need to filter by
+  // group. The tables and columns that the query may read are listed in
+  // system.tables and system.columns.
+  string query = 1;
+}
+
+message QueryResponse {
+  // The result as text. Unless the query has a FORMAT clause, the result is in
+  // ClickHouse's TSVWithNames format, which is a header line of column names
+  // followed by a line per row, with values separated by tabs. Tabs and
+  // newlines inside values are escaped as \t and \n. Bytes that are not valid
+  // UTF-8 are replaced with U+FFFD.
+  string output = 1;
+
+  // The number of rows and bytes that the query read.
+  int64 read_rows = 2;
+  int64 read_bytes = 3;
+}

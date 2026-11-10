@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/tenantquery"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -616,6 +617,12 @@ func Register(env *real_environment.RealEnv) error {
 			log.Info("Clickhouse migration completed. Exiting due to --clickhouse.print_schema_changes_and_exit.")
 			os.Exit(0)
 		}
+
+		// We don't print these statements as schema changes above, because
+		// they run on every migration.
+		if err := tenantquery.RunMigrations(db); err != nil {
+			return err
+		}
 	}
 
 	dbh := &DBHandle{
@@ -635,5 +642,5 @@ func Register(env *real_environment.RealEnv) error {
 
 	env.SetOLAPDBHandle(dbh)
 	log.Info("Successfully configured OLAP database.")
-	return nil
+	return tenantquery.Register(env)
 }

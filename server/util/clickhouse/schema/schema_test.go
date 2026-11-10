@@ -100,6 +100,16 @@ func TestSchemaInSync(t *testing.T) {
 	}
 }
 
+func TestTenantFieldsExist(t *testing.T) {
+	for _, table := range getAllTables() {
+		chType := reflect.Indirect(reflect.ValueOf(table)).Type()
+		for _, f := range table.TenantFields() {
+			_, found := chType.FieldByName(f)
+			assert.True(t, found, "Field %q is not found in %s, but it's in TenantFields()", f, chType)
+		}
+	}
+}
+
 var NonStandardInvocationCopyFields = []string{
 	"InvocationUUID",
 	"Tags",

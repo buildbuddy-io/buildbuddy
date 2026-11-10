@@ -892,6 +892,11 @@ proto_library(
 )
 
 proto_library(
+    name = "tenant_query_proto",
+    srcs = ["tenant_query.proto"],
+)
+
+proto_library(
     name = "scheduler_proto",
     srcs = ["scheduler.proto"],
     deps = [
@@ -1868,6 +1873,12 @@ go_proto_library(
     deps = [
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
+)
+
+go_proto_library(
+    name = "tenant_query_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/tenant_query",
+    proto = ":tenant_query_proto",
 )
 
 go_proto_library(

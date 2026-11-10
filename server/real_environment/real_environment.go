@@ -120,6 +120,7 @@ type RealEnv struct {
 	grpcServer                           *grpc.Server
 	grpcsServer                          *grpc.Server
 	olapDBHandle                         interfaces.OLAPDBHandle
+	tenantQueryService                   interfaces.TenantQueryService
 	kms                                  interfaces.KMS
 	secretService                        interfaces.SecretService
 	executionCollector                   interfaces.ExecutionCollector
@@ -721,6 +722,14 @@ func (r *RealEnv) GetOLAPDBHandle() interfaces.OLAPDBHandle {
 
 func (r *RealEnv) SetOLAPDBHandle(dbh interfaces.OLAPDBHandle) {
 	r.olapDBHandle = dbh
+}
+
+func (r *RealEnv) GetTenantQueryService() interfaces.TenantQueryService {
+	return r.tenantQueryService
+}
+
+func (r *RealEnv) SetTenantQueryService(s interfaces.TenantQueryService) {
+	r.tenantQueryService = s
 }
 
 func (r *RealEnv) GetKMS() interfaces.KMS {
