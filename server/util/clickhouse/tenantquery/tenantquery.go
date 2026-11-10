@@ -69,6 +69,9 @@ func RunMigrations(gdb *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+	// ClickHouse's sha256_hash authentication stores the SHA-256 hash of the
+	// password. We compute the hash here so that the password does not appear
+	// in the SQL statements that create the user.
 	password, _ := u.User.Password()
 	passwordHash := sha256.Sum256([]byte(password))
 	err = schema.EnsureTenantAccess(gdb, &schema.TenantAccess{
