@@ -552,7 +552,7 @@ func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, c
 		}))
 	}
 
-	tr := ocifetcher.NewAllowedPrivateIPRedirectTransport(httpclient.New(r.allowedPrivateIPs, "oci").Transport, r.allowedPrivateIPs)
+	tr := httpclient.FollowRedirectsToAllowedIPs(httpclient.New(r.allowedPrivateIPs, "oci").Transport, r.allowedPrivateIPs)
 	mirrors := ocifetcher.Mirrors()
 	if len(mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(ocifetcher.NewMirrorTransport(tr, mirrors)))
