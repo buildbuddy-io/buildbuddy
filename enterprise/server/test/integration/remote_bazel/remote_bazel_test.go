@@ -169,16 +169,9 @@ func makeLocalGitRepo(t *testing.T, contents map[string]string) (path, commitSHA
 	return path, commitSHA
 }
 
-// testStartupFlag returns a non-default startup flag for tests of startup flag
-// parsing. Bazel 7's lockfile and vendor dir digests depend on the digest
-// function, so testbazel's prewarmed (SHA256) offline deps are stale under
-// BLAKE3 there.
-func testStartupFlag() string {
-	if strings.HasPrefix(testbazel.Version, "7.") {
-		return "--host_jvm_args=-Dbuildbuddy.remote_bazel_test=true"
-	}
-	return "--digest_function=BLAKE3"
-}
+// testStartupFlag is a non-default startup flag for tests of startup flag
+// parsing.
+const testStartupFlag = "--host_jvm_args=-Dbuildbuddy.remote_bazel_test=true"
 
 // Run remote bazel in a separate process so it doesn't interfere with
 // the local server and cause a race condition.
@@ -412,7 +405,7 @@ genrule(
 		// and we won't be able to fetch it.
 		"--runner_exec_properties=instance_name="+randomStr,
 		// Pass a startup flag to test parsing
-		testStartupFlag(),
+		testStartupFlag,
 		"build",
 		":main",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
@@ -508,7 +501,7 @@ genrule(
 		// and we won't be able to fetch it.
 		"--runner_exec_properties=instance_name=" + randomStr,
 		// Pass a startup flag to test parsing
-		testStartupFlag(),
+		testStartupFlag,
 		"--run_remotely=0",
 		"run",
 		":main",
@@ -565,7 +558,7 @@ genrule(
 		}
 	}
 	require.Equal(t, 1, userMetadataCount)
-	require.Contains(t, startupOptions, testStartupFlag())
+	require.Contains(t, startupOptions, testStartupFlag)
 
 	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 		InvocationId: parentInv.InvocationId,

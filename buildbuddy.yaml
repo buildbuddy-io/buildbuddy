@@ -38,6 +38,7 @@ actions:
           //app/util:shlex_test
           -//enterprise/server/remote_execution/containers/firecracker/...
           -//enterprise/server/remote_execution/overlayfs:overlayfs_test
+          -//enterprise/server/test/integration/remote_execution:all
           -//enterprise/server/remote_execution/vbd:vbd_test
     allow_concurrent_runs: false
   - name: Build public release artifacts (linux_amd64) # with -c opt and no race detection

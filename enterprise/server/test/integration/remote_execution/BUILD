@@ -17,10 +17,7 @@ bazel_versions_test(
     },
     rule = go_test,
     shard_count = 11,
-    tags = [
-        "cpu:8",
-        "no-arm64",
-    ],
+    tags = ["cpu:8"],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/oom",
