@@ -492,6 +492,23 @@ image_layer(
     ]
 ]
 
+image_layer(
+    name = "alternatives_symlink_layer",
+    symlinks = {
+        "/usr/sbin/iptables-nft": "/usr/sbin/iptables",
+        "/usr/sbin/iptables-restore": "/usr/sbin/iptables-nft-restore",
+        "/usr/sbin/iptables-save": "iptables-save /usr/sbin/iptables-nft-save",
+    },
+    annotations = {
+        "org.opencontainers.image.title": "Alternatives symlink layer",
+        "org.opencontainers.image.description": (
+            "Registers symlinks similarly to `update-alternatives`."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    tags = ["manual"],
+)
+
 [
     image_layer(
         name = "docker_credential_gcr_image_layer_%s" % arch,
@@ -703,6 +720,7 @@ image_manifest(
     layers = select({
         platform: [
             ":apt_image_layer_%s" % arch,
+            ":alternatives_symlink_layer",
             ":docker_credential_gcr_image_layer_%s" % arch,
             ":containerd_patch_image_layer_%s" % arch,
             ":runc_patch_image_layer_%s" % arch,
