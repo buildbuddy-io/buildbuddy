@@ -63,7 +63,13 @@ func TestInvocationUploadWebhook(t *testing.T) {
 	wsDir := testbazel.MakeTempModule(t, map[string]string{
 		"BUILD": `genrule(name = "gen", outs = ["out"], cmd_bash = "touch $@")`,
 	})
-	buildFlags := []string{":gen", "--remote_header=x-buildbuddy-api-key=" + apiKey.Value}
+	// Pass the API key to BES directly: Bazel 10 redacts --remote_header
+	// values from the BEP, so the server can't pick it up from there.
+	buildFlags := []string{
+		":gen",
+		"--remote_header=x-buildbuddy-api-key=" + apiKey.Value,
+		"--bes_header=x-buildbuddy-api-key=" + apiKey.Value,
+	}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
