@@ -24,7 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/local_crypter"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ocifetcher_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_action_cache_client"
@@ -378,9 +378,6 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if err := content_addressable_storage_server_proxy.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := ocifetcher_server_proxy.Register(env); err != nil {
-		log.Fatalf("%v", err)
-	}
 	if err := cache_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -420,6 +417,7 @@ func registerInternalServices(env *real_environment.RealEnv) error {
 		return status.InternalErrorf("CacheProxy: error starting local actioncache server: %s", err.Error())
 	}
 	env.SetLocalActionCacheServer(localAC)
+	repb.RegisterActionCacheServer(env.GetInternalGRPCServer(), localAC)
 
 	conn, err := grpc_client.DialInternalWithoutPooling(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.InternalGRPCPort()))
 	if err != nil {
@@ -428,5 +426,31 @@ func registerInternalServices(env *real_environment.RealEnv) error {
 	env.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
 	env.SetLocalContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
+	// The OCI fetcher fetches from upstream registries itself and caches
+	// manifests and blobs only in the proxy's local cache.
+	ociFetcher, err := ocifetcher.NewServer(
+		env.GetLocalByteStreamClient(),
+		skipRemoteActionCacheClient{repb.NewActionCacheClient(conn)},
+	)
+	if err != nil {
+		return status.InternalErrorf("CacheProxy: error creating OCI fetcher server: %s", err)
+	}
+	env.SetOCIFetcherServer(ociFetcher)
+
 	return nil
+}
+
+// skipRemoteActionCacheClient marks every request as proxy_skip_remote. These
+// requests go only to the proxy's local AC server, so its AC hit tracker must
+// track them itself rather than expect the app to (and alert).
+type skipRemoteActionCacheClient struct {
+	repb.ActionCacheClient
+}
+
+func (c skipRemoteActionCacheClient) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	return c.ActionCacheClient.GetActionResult(proxy_util.SetSkipRemote(ctx), req, opts...)
+}
+
+func (c skipRemoteActionCacheClient) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	return c.ActionCacheClient.UpdateActionResult(proxy_util.SetSkipRemote(ctx), req, opts...)
 }
