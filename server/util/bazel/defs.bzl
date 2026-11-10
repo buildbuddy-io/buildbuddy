@@ -161,7 +161,8 @@ def bazel_versions_test(rule, name, data = [], x_defs = {}, tags = None, **kwarg
     `name` runs against TESTBAZEL_DEFAULT_VERSION. Each other version gets a
     target named `<name>_bazel_<version with dots replaced by underscores>`,
     which overrides the testbazel library's x_defs to point at that version.
-    Release-candidate targets are tagged manual and bazel-rc.
+    Release-candidate targets are tagged manual and bazel-rc, unless the test
+    is already manual.
 
     Args:
       rule: The test rule or macro to wrap, e.g. go_test or go_web_test_suite.
@@ -183,8 +184,10 @@ def bazel_versions_test(rule, name, data = [], x_defs = {}, tags = None, **kwarg
             _TESTBAZEL_IMPORTPATH + ".outdirRlocationpath": "$(rlocationpath {})".format(installation),
         })
         version_tags = list(tags or [])
-        if version in TESTBAZEL_RC_VERSIONS:
-            version_tags += [t for t in ["manual", "bazel-rc"] if t not in version_tags]
+        if version in TESTBAZEL_RC_VERSIONS and "manual" not in version_tags:
+            # Tests that are already manual (i.e. disabled) stay out of the
+            # nightly bazel-rc run.
+            version_tags += ["manual", "bazel-rc"]
         rule(
             name = "{}_bazel_{}".format(name, version.replace(".", "_")),
             data = data + [binary, installation],
