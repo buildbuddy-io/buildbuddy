@@ -219,7 +219,7 @@ actions:
             URL="https://app.buildbuddy.io/invocation/$INVOCATION_ID"
             curl -fsS --max-time 30 -X POST -H 'Content-Type: application/json' \
               --data "{\"text\": \"Bazel RC tests failed: $URL\"}" \
-              "$BB_CHECKS_SLACK_WEBHOOK_URL" || true
+              "${BB_CHECKS_SLACK_WEBHOOK_URL:-}" || true
           fi
           exit "$STATUS"
   - name: Code review
