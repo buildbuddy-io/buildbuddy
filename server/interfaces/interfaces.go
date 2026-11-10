@@ -1400,6 +1400,11 @@ type CommandResult struct {
 	// command has executed.
 	DoNotRecycle bool
 
+	// AccessedPaths lists the execroot-relative paths of regular files that
+	// the command opened for reading. Only populated when file access
+	// recording is enabled for the isolation type.
+	AccessedPaths []string
+
 	// ExitCode is one of the following:
 	// * The exit code returned by the executed command
 	// * -1 if the process was killed or did not exit

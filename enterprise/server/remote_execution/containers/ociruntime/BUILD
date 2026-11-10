@@ -24,6 +24,7 @@ go_library(
         "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/containers/ociruntime/fileaccess",
         "//enterprise/server/remote_execution/containers/ociruntime/seccomp",
         "//enterprise/server/remote_execution/execution_experiments",
         "//enterprise/server/remote_execution/executor_auth",

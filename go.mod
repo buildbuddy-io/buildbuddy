@@ -82,6 +82,7 @@ require (
 	github.com/buildkite/terminal-to-html/v3 v3.17.1
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/cilium/ebpf v0.16.0
 	github.com/cockroachdb/pebble v1.1.4
 	github.com/containerd/errdefs v1.0.0
 	github.com/coreos/go-oidc/v3 v3.10.0

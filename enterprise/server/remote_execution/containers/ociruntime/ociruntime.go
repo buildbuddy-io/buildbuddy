@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime/fileaccess"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime/seccomp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
@@ -99,6 +100,7 @@ var (
 	nofileLimit               = flag.Uint64("executor.oci.nofile_limit", 0, "Soft and hard RLIMIT_NOFILE (open file descriptor limit) for initial OCI container processes. If 0, leave the limit unset in the OCI spec.")
 	cgroupMemoryCushion       = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
 	enableImageEviction       = flag.Bool("executor.oci.image_eviction_enabled", false, "If true, track OCI image layers in the filecache LRU for eviction. When enabled, unused image layers can be evicted to make room for other cached files.")
+	recordFileAccesses        = flag.Bool("executor.oci.record_file_accesses", false, "If true, use eBPF to record which execroot files each command opens for reading. Requires a kernel with BTF.")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -239,6 +241,9 @@ type provider struct {
 	// CDI registry used for resolving configured CDI devices.
 	// This is initialized once at startup when CDI devices are configured.
 	cdiRegistry *cdi.Cache
+
+	// Optional. nil if executor.oci.record_file_accesses == false.
+	fileAccessTracker *fileaccess.Tracker
 
 	// Seccomp profile attached to OCI containers created by this provider.
 	seccompProfile *specs.LinuxSeccomp
@@ -456,6 +461,14 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		cdiRegistry = registry
 	}
 
+	var fileAccessTracker *fileaccess.Tracker
+	if *recordFileAccesses {
+		fileAccessTracker, err = fileaccess.NewTracker()
+		if err != nil {
+			return nil, fmt.Errorf("create file access tracker: %w", err)
+		}
+	}
+
 	return &provider{
 		env:            env,
 		runtime:        rt,
@@ -470,6 +483,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		seccompProfile: seccompProfile,
 
 		noNewUserNSSeccompProfile: noNewUserNSSeccompProfile,
+		fileAccessTracker:         fileAccessTracker,
 	}, nil
 }
 
@@ -513,6 +527,8 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		lxcfsMount:     p.lxcfsMount,
 		cdiRegistry:    p.cdiRegistry,
 		seccompProfile: seccompProfile,
+
+		fileAccessTracker: p.fileAccessTracker,
 
 		blockDevice:        args.BlockDevice,
 		cgroupParent:       args.CgroupParent,
@@ -584,6 +600,8 @@ type ociContainer struct {
 	cdiRegistry *cdi.Cache
 
 	seccompProfile *specs.LinuxSeccomp
+
+	fileAccessTracker *fileaccess.Tracker
 }
 
 // Assert [*ociContainer] implements [container.StatsRecorder].
@@ -1020,7 +1038,9 @@ func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 // in particular are translated to errors.
 func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
 	stop := c.startStatsTracking(ctx)
+	stopRecording := c.startFileAccessRecording(ctx)
 	res := invokeRuntimeFn(ctx)
+	res.AccessedPaths = stopRecording()
 	stop()
 	// statsCh will report stats for processes inside the container, and
 	// res.UsageStats will report stats for the container runtime itself.
@@ -1061,6 +1081,34 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 	}
 
 	return res
+}
+
+// startFileAccessRecording starts recording the files opened by the container.
+// The returned function stops recording and returns the opened paths relative
+// to the execroot.
+func (c *ociContainer) startFileAccessRecording(ctx context.Context) func() []string {
+	if c.fileAccessTracker == nil {
+		return func() []string { return nil }
+	}
+	rec, err := c.fileAccessTracker.Start(c.cgroupPath())
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to start file access recording: %s", err)
+		return func() []string { return nil }
+	}
+	return func() []string {
+		paths, err := rec.Stop()
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to stop file access recording: %s", err)
+		}
+		var relPaths []string
+		for _, p := range paths {
+			if rel, ok := strings.CutPrefix(p, c.execrootPath+"/"); ok {
+				relPaths = append(relPaths, rel)
+			}
+		}
+		log.CtxDebugf(ctx, "Recorded %d opened execroot files (%d total)", len(relPaths), len(paths))
+		return relPaths
+	}
 }
 
 func (c *ociContainer) startStatsTracking(ctx context.Context) func() {
