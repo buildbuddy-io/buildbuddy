@@ -13,6 +13,7 @@ import (
 	"runtime/pprof"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -68,11 +70,104 @@ type vfsServer struct {
 type contentClient struct {
 	mu   sync.Mutex
 	idle []*contentConn
+
+	// blocking makes new connections blockingConns.
+	blocking atomic.Bool
 }
 
 type contentConn struct {
-	net.Conn
-	r *bufio.Reader
+	io.ReadWriteCloser
+	// interrupt makes the connection's pending and later reads and writes
+	// fail.
+	interrupt func()
+	r         *bufio.Reader
+}
+
+// blockingConn is a vsock connection to the host whose reads and writes
+// block their thread in the system call, instead of parking the goroutine
+// until the Go network poller reports the socket ready.
+//
+// The FUSE server's threads block in reads of /dev/fuse, which the poller
+// does not cover. When a thread that was polling the network picks up a
+// response and then goes back to reading /dev/fuse, no thread is left
+// polling, and another request's response waits until the runtime's monitor
+// thread polls, which it does only every 10 ms. A blocking read is woken by
+// the kernel as soon as the response arrives.
+type blockingConn struct {
+	mu     sync.Mutex
+	fd     int
+	closed bool
+}
+
+func dialBlocking(port uint32) (*blockingConn, error) {
+	for {
+		fd, err := unix.Socket(unix.AF_VSOCK, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+		if err != nil {
+			return nil, err
+		}
+		err = unix.Connect(fd, &unix.SockaddrVM{CID: unix.VMADDR_CID_HOST, Port: port})
+		if err == nil {
+			return &blockingConn{fd: fd}, nil
+		}
+		unix.Close(fd)
+		// A signal, such as the Go runtime's preemption signal, cancels a
+		// vsock connect in progress, so we start over with a new socket.
+		if err != unix.EINTR {
+			return nil, err
+		}
+	}
+}
+
+func (c *blockingConn) Read(p []byte) (int, error) {
+	for {
+		n, err := unix.Read(c.fd, p)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			return 0, err
+		}
+		if n == 0 && len(p) > 0 {
+			return 0, io.EOF
+		}
+		return n, nil
+	}
+}
+
+func (c *blockingConn) Write(p []byte) (int, error) {
+	written := 0
+	for written < len(p) {
+		n, err := unix.Write(c.fd, p[written:])
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			return written, err
+		}
+		written += n
+	}
+	return written, nil
+}
+
+func (c *blockingConn) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return nil
+	}
+	c.closed = true
+	return unix.Close(c.fd)
+}
+
+// interrupt makes pending and later reads and writes fail. It holds the
+// lock that Close takes, so that it never shuts down a descriptor that was
+// closed and given to another file.
+func (c *blockingConn) interrupt() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.closed {
+		unix.Shutdown(c.fd, unix.SHUT_RDWR)
+	}
 }
 
 func (c *contentClient) get() (conn *contentConn, reused bool, err error) {
@@ -84,11 +179,22 @@ func (c *contentClient) get() (conn *contentConn, reused bool, err error) {
 		return conn, true, nil
 	}
 	c.mu.Unlock()
+	if c.blocking.Load() {
+		bc, err := dialBlocking(vsock.HostVFSContentPort)
+		if err != nil {
+			return nil, false, status.UnavailableErrorf("dial host content server: %s", err)
+		}
+		return &contentConn{ReadWriteCloser: bc, interrupt: bc.interrupt, r: bufio.NewReaderSize(bc, 64*1024)}, false, nil
+	}
 	nc, err := libVsock.Dial(libVsock.Host, vsock.HostVFSContentPort, &libVsock.Config{})
 	if err != nil {
 		return nil, false, status.UnavailableErrorf("dial host content server: %s", err)
 	}
-	return &contentConn{Conn: nc, r: bufio.NewReaderSize(nc, 64*1024)}, false, nil
+	return &contentConn{
+		ReadWriteCloser: nc,
+		interrupt:       func() { nc.SetDeadline(time.Unix(1, 0)) },
+		r:               bufio.NewReaderSize(nc, 64*1024),
+	}, false, nil
 }
 
 func (c *contentClient) put(conn *contentConn) {
@@ -121,7 +227,7 @@ func (c *contentClient) read(ctx context.Context, node *repb.FileNode, offset, l
 			return err
 		}
 		// Unblock the reads and writes below when ctx is cancelled.
-		stop := context.AfterFunc(ctx, func() { conn.SetDeadline(time.Unix(1, 0)) })
+		stop := context.AfterFunc(ctx, conn.interrupt)
 		consumed := false
 		err = vfs_server.WriteContentRequest(conn, node, offset, length)
 		if err == nil {
@@ -492,6 +598,7 @@ func (s *vfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*v
 		switch mode {
 		case vfs_server.GuestContentRemote, vfs_server.GuestContentFileCache:
 		case vfs_server.GuestContentRaw, vfs_server.GuestContentDirect:
+			s.content.blocking.Store(req.GetBlockingContentReads())
 			s.content.reset()
 			content = s.content
 		default:

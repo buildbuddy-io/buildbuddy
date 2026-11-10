@@ -95,6 +95,7 @@ var (
 	guestVFSNoFlushInputs                 = flag.Bool("executor.firecracker_guest_vfs_noflush_inputs", false, "Tell the guest kernel not to send FLUSH when closing guest VFS inputs.", flag.Internal)
 	guestVFSOutputs                       = flag.String("executor.firecracker_guest_vfs_outputs", "copy", "How the guest VFS server returns outputs: copy (the host copies them out of the guest after the action), mirror (the guest sends every write to the host as it happens) or upload (the guest uploads them to the cache through the host).", flag.Internal)
 	guestVFSContentMode                   = flag.String("executor.firecracker_guest_vfs_content", "remote", "Where the guest VFS server gets input contents: remote (gRPC from the remote CAS, copied to the guest disk), filecache (gRPC from the host file cache, copied), raw (raw protocol from the host file cache, copied) or direct (raw protocol on every read, no guest copy).", flag.Internal)
+	guestVFSBlockingContent               = flag.Bool("executor.firecracker_guest_vfs_blocking_content", false, "Have the guest VFS server read input contents from the host with blocking system calls instead of through the Go network poller.", flag.Internal)
 	firecrackerCgroupVersion              = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
 	debugStreamVMLogs                     = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
 	debugTerminal                         = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
@@ -2860,6 +2861,7 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 			req.MirrorWrites = true
 		}
 		req.UseGuestServer = true
+		req.BlockingContentReads = *guestVFSBlockingContent
 		req.ContentMode = *guestVFSContentMode
 		req.NoFlushInputs = *guestVFSNoFlushInputs
 		// Each page fault in a file that the action maps into memory reads
@@ -2958,7 +2960,7 @@ func (c *FirecrackerContainer) finishGuestVFS(ctx context.Context) (*repb.TreeMa
 		return nil, status.WrapError(err, "dial guest VFS server")
 	}
 	defer conn.Close()
-	rsp, err := vmfspb.NewFileSystemClient(conn).Finish(ctx, &vmfspb.FinishRequest{ReportUnusedInputs: c.task.GetTrackVfsUnusedInputs()})
+	rsp, err := vmfspb.NewFileSystemClient(conn).Finish(ctx, &vmfspb.FinishRequest{ReportUnusedInputs: c.task.GetTrackVfsUnusedInputs()}, grpc.MaxCallRecvMsgSize(256<<20))
 	if err != nil {
 		return nil, status.WrapError(err, "finish guest VFS")
 	}

@@ -34,6 +34,9 @@ message PrepareRequest {
   // host as it happens, keyed by the file's node ID, so that the host has
   // the action's outputs when it finishes.
   bool mirror_writes = 14;
+  // Read input contents from the host with blocking system calls instead of
+  // through the Go network poller.
+  bool blocking_content_reads = 16;
 }
 
 message PrepareResponse {
