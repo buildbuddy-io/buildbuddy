@@ -11,6 +11,16 @@ def _extract_bazel_installation_impl(ctx):
         mnemonic = "ExtractBazelInstall",
         command = """
             set -e
+            # Actions don't get a PATH by default. Export bash's default PATH
+            # so that bazel's repository rules can find host tools.
+            export PATH
+            # Bazel 7's native sh_binary / sh_test depend on the autodetected
+            # C++ toolchain, and autodetection fails if there is no C compiler
+            # in the exec image. Nothing here compiles C++, so point
+            # autodetection at a no-op compiler in that case.
+            if [ -z "${CC:-}" ] && ! command -v gcc >/dev/null; then
+                export CC=/bin/true
+            fi
 
             BAZEL="$PWD/$BAZEL"
             OUT_DIR="$PWD/$OUT_DIR"
@@ -118,7 +128,7 @@ extract_bazel_installation = rule(
             default = False,
             doc = "If set, also run `bazel vendor` and write the " +
                   "vendor dir to `$OUT_DIR/vendor_dir`. Requires " +
-                  "`warm_repository_cache = True` and Bazel 7+.",
+                  "`warm_repository_cache = True` and Bazel 7.1+.",
         ),
     },
     doc = "Pre-extract a bazel installation and optionally a repository cache to the given output directory.",
@@ -146,23 +156,21 @@ def bazel_binary_targets(versions = [], **kwargs):
             **kwargs
         )
 
-        # Pre-warm repository cache only for bazel 8+, where we've started
-        # using repository_cache combined with MODULE.bazel.lock to make
-        # bazel work without network access.
+        # For Bazel 7+, pre-warm the repository cache, write a
+        # MODULE.bazel.lock, and vendor the bzlmod module sources (including
+        # @rules_shell) so that tests can run fully offline with
+        # --lockfile_mode=error and --vendor_dir on any host OS/arch. Bazel 6
+        # predates `bazel vendor` and bzlmod-by-default, so it only gets an
+        # extracted install_base.
+        #
+        # @rules_shell is strictly required on Bazel 9+ (sh_binary / sh_test
+        # are no longer native). On older versions it's optional but cheap,
+        # and lets test-written BUILD files use a single
+        # `load("@rules_shell//shell:...")` form that works on every version.
         major_version = int(version.split(".")[0])
-        warm_repository_cache = major_version >= 8
-
-        # Always warm @rules_shell. On Bazel 9+ it's strictly required
-        # (sh_binary / sh_test are no longer native). On Bazel 8 it's
-        # optional but cheap, and lets test-written BUILD files use a
-        # single `load("@rules_shell//shell:...")` form that works on
-        # both versions.
-        use_rules_shell = major_version >= 8
-
-        # For Bazel 9+, also vendor the bzlmod module sources so test
-        # invocations can run fully offline with --lockfile_mode=error
-        # on any host OS/arch.
-        use_vendor_dir = major_version >= 9
+        warm_repository_cache = major_version >= 7
+        use_rules_shell = major_version >= 7
+        use_vendor_dir = major_version >= 7
         extract_bazel_installation(
             name = "bazel-{}_extract_installation".format(version),
             bazel = ":bazel-{}_crossplatform".format(version),
