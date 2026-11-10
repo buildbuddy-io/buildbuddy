@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -21,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/bytestream"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -33,6 +35,7 @@ var (
 	storeSnapshotsInLocalClusterOnly = flag.Bool("executor.store_snapshots_in_local_cluster_only", false, "If true, snapshots are only stored in the cache proxy in the cluster where this executor is running.")
 	requireQuorumForSnapshots        = flag.Bool("executor.require_quorum_for_snapshots", true, "Require quorum for snapshot availability checks.")
 	enableUploadCompresssion         = flag.Bool("executor.enable_snapshot_chunk_upload_compression", true, "If true, snapshot chunks will be sent to the remote cache compressed.")
+	enforceSnapshotCapabilities      = flag.Bool("executor.enforce_snapshot_capabilities", false, "If true, tasks may only read or write VM snapshots if their API key has the SNAPSHOT_READ or SNAPSHOT_WRITE capability.")
 	ThrottleSnapshotWrites           = flag.Bool("executor.throttle_snapshot_writes", false, "If true, snapshot writes will be throttled to avoid high IO pressure.")
 )
 
@@ -345,4 +348,28 @@ func GetSnapshotAccessContext(ctx context.Context) context.Context {
 		return proxy_util.SetSkipRemote(ctx)
 	}
 	return ctx
+}
+
+// SnapshotReadAllowed returns whether the task's API key (from the trusted
+// JWT in ctx) may resume from a snapshot.
+func SnapshotReadAllowed(ctx context.Context) bool {
+	return hasSnapshotCapability(ctx, cappb.Capability_SNAPSHOT_READ)
+}
+
+// SnapshotWriteAllowed returns whether the task's API key (from the trusted
+// JWT in ctx) may save a snapshot.
+func SnapshotWriteAllowed(ctx context.Context) bool {
+	return hasSnapshotCapability(ctx, cappb.Capability_SNAPSHOT_WRITE)
+}
+
+func hasSnapshotCapability(ctx context.Context, cap cappb.Capability) bool {
+	if !*enforceSnapshotCapabilities {
+		return true
+	}
+	// Anonymous users have no snapshot access.
+	u, err := auth.UserFromTrustedJWT(ctx)
+	if err != nil {
+		return false
+	}
+	return u.HasCapability(cap)
 }

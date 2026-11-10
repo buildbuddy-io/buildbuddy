@@ -58,6 +58,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -74,6 +75,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -1218,6 +1220,88 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 
 	err = c.Pause(ctx)
 	require.NoError(t, err)
+}
+
+func TestFirecracker_SnapshotCapabilities(t *testing.T) {
+	flags.Set(t, "executor.enforce_snapshot_capabilities", true)
+	env := getTestEnv(context.Background(), t, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	rootDir := testfs.MakeTempDir(t)
+	cfg := getExecutorConfig(t)
+
+	ctxWithCapabilities := func(caps ...cappb.Capability) context.Context {
+		return testauth.WithAuthenticatedUserInfo(context.Background(), &claims.Claims{
+			UserID:       "US1",
+			GroupID:      "GR1",
+			Capabilities: append([]cappb.Capability{cappb.Capability_CACHE_WRITE}, caps...),
+		})
+	}
+	readWriteCtx := ctxWithCapabilities(cappb.Capability_SNAPSHOT_READ, cappb.Capability_SNAPSHOT_WRITE)
+	writeOnlyCtx := ctxWithCapabilities(cappb.Capability_SNAPSHOT_WRITE)
+	readOnlyCtx := ctxWithCapabilities(cappb.Capability_SNAPSHOT_READ)
+
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				// Save a snapshot for every run, if allowed.
+				{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.AlwaysSaveSnapshot},
+			}},
+			Arguments: []string{"./buildbuddy_ci_runner"},
+		},
+	}
+	// Starts a VM, appends message to a log file in the VM, and returns the
+	// VM and the exec result.
+	runVM := func(ctx context.Context, name, message string) (*firecracker.FirecrackerContainer, *interfaces.CommandResult) {
+		workDir := testfs.MakeDirAll(t, rootDir, name)
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+				ScratchDiskSizeMb: 100,
+			},
+			ExecutorConfig: cfg,
+		}
+		vm, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			assert.NoError(t, vm.Remove(context.Background()))
+		})
+		err = container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
+		require.NoError(t, err)
+		err = vm.Create(ctx, workDir)
+		require.NoError(t, err)
+		res := vm.Exec(ctx, appendToLog(message), nil /*=stdio*/)
+		require.NoError(t, res.Error)
+		return vm, res
+	}
+
+	// A key with read and write access saves a snapshot.
+	vm, res := runVM(readWriteCtx, "read-write", "Base")
+	require.Equal(t, "Base\n", string(res.Stdout))
+	require.True(t, res.VMMetadata.GetSavedLocalSnapshot())
+	require.True(t, res.VMMetadata.GetSavedRemoteSnapshot())
+	require.NoError(t, vm.Pause(readWriteCtx))
+
+	// A key without write access resumes from the snapshot, but doesn't save
+	// a new one.
+	vm, res = runVM(readOnlyCtx, "read-only", "ReadOnly")
+	require.Equal(t, "Base\nReadOnly\n", string(res.Stdout))
+	assert.False(t, res.VMMetadata.GetSavedLocalSnapshot())
+	require.False(t, res.VMMetadata.SavedRemoteSnapshot)
+	require.NoError(t, vm.Pause(readOnlyCtx))
+
+	// The next VM still resumes from the original snapshot.
+	_, res = runVM(readWriteCtx, "read-write-2", "Last")
+	require.Equal(t, "Base\nLast\n", string(res.Stdout))
+
+	// A key without read access boots a fresh VM instead of resuming from
+	// the snapshot.
+	_, res = runVM(writeOnlyCtx, "write-only", "WriteOnly")
+	require.Equal(t, "WriteOnly\n", string(res.Stdout))
 }
 
 func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {

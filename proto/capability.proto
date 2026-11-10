@@ -20,4 +20,8 @@ enum Capability {
   REGISTER_CACHE_PROXY = 32;  // 2^5
   // Allows sending notifications (such as email) via the notification API.
   SEND_NOTIFICATION = 64;  // 2^6
+  // Allows resuming from saved firecracker snapshots.
+  SNAPSHOT_READ = 128;  // 2^7
+  // Allows saving firecracker snapshots.
+  SNAPSHOT_WRITE = 256;  // 2^8
 }

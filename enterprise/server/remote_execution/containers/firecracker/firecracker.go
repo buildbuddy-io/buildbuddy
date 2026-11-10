@@ -1107,7 +1107,11 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 
 		recyclingEnabled := platform.IsRecyclingEnabled(task)
 		c.recyclingEnabled = recyclingEnabled
-		if recyclingEnabled && snaputil.IsChunkedSnapshotSharingEnabled() {
+		readAllowed := snaputil.SnapshotReadAllowed(ctx)
+		if recyclingEnabled && !readAllowed {
+			log.CtxInfof(ctx, "Not resuming from a snapshot: the API key lacks the SNAPSHOT_READ capability")
+		}
+		if recyclingEnabled && readAllowed && snaputil.IsChunkedSnapshotSharingEnabled() {
 			readPolicy, err := snapshotReadPolicy(task)
 			if err != nil {
 				return nil, err
@@ -1133,6 +1137,9 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	} else {
 		if !snaputil.IsChunkedSnapshotSharingEnabled() {
 			return nil, status.InvalidArgumentError("chunked snapshot sharing must be enabled to provide an override snapshot key")
+		}
+		if !snaputil.SnapshotReadAllowed(ctx) {
+			return nil, status.PermissionDeniedError("resuming from a snapshot requires an API key with the SNAPSHOT_READ capability")
 		}
 		writeSnapshotID := uuid.New()
 		writeKey := opts.OverrideSnapshotKey.CloneVT()
@@ -1444,7 +1451,7 @@ func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
 }
 
 func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) bool {
-	if !c.supportsRemoteSnapshots || !c.recyclingEnabled {
+	if !c.supportsRemoteSnapshots || !c.recyclingEnabled || !snaputil.SnapshotWriteAllowed(ctx) {
 		return false
 	}
 
@@ -1487,7 +1494,7 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 }
 
 func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool {
-	if !*snaputil.EnableLocalSnapshotSharing || !c.recyclingEnabled {
+	if !*snaputil.EnableLocalSnapshotSharing || !c.recyclingEnabled || !snaputil.SnapshotWriteAllowed(ctx) {
 		return false
 	}
 	// For RBE actions, we don't save another snapshot if one already exists.
@@ -1551,6 +1558,10 @@ func snapshotWriteInterval(ctx context.Context, task *repb.ExecutionTask) time.D
 func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	if !snaputil.SnapshotReadAllowed(ctx) {
+		return status.PermissionDeniedError("resuming from a snapshot requires an API key with the SNAPSHOT_READ capability")
+	}
 
 	getSnapshotOpts, err := c.getSnapshotOptions()
 	if err != nil {

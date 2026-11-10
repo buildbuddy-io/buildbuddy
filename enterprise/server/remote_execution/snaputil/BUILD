@@ -7,7 +7,9 @@ go_library(
     srcs = ["snaputil.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil",
     deps = [
+        "//enterprise/server/auth",
         "//enterprise/server/util/proxy_util",
+        "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/metrics",

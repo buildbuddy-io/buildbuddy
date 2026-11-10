@@ -1728,6 +1728,9 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 	snapshotEnabledRunner := platform.ContainerType(cr.PlatformProperties.WorkloadIsolationType) == platform.FirecrackerContainerType &&
 		snaputil.IsChunkedSnapshotSharingEnabled()
 	if snapshotEnabledRunner {
+		if !snaputil.SnapshotWriteAllowed(ctx) {
+			return
+		}
 		if err := cr.Container.Pause(ctx); err != nil {
 			// TODO(vanja) maybe recycled should be set to true here?
 			log.CtxErrorf(ctx, "Failed to save snapshot for runner %s: %s", cr, err)
