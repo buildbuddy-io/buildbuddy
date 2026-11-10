@@ -121,14 +121,14 @@ apt.install(
     packages = [
         # executor packages
         "tini",
+        "tar",
+        "dash",
         "e2fsprogs",
         "fuse3",
         "iproute2",
         "conntrack",
         "amazon-ecr-credential-helper",
         "lxcfs",
-        "tar",
-        "dash",
     ],
     suites = [
         "trixie",

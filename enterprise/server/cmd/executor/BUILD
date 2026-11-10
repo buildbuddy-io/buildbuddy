@@ -438,14 +438,14 @@ image_layer(
         tars = [
             # debian packages
             "@debian13//tini/%s" % arch,
+            "@debian13//tar/%s" % arch,
+            "@debian13//dash/%s" % arch,
             "@debian13//e2fsprogs/%s" % arch,
             "@debian13//fuse3/%s" % arch,
             "@debian13//iproute2/%s" % arch,
             "@debian13//conntrack/%s" % arch,
             "@debian13//amazon-ecr-credential-helper/%s" % arch,
             "@debian13//lxcfs/%s" % arch,
-            "@debian13//tar/%s" % arch,
-            "@debian13//dash/%s" % arch,
 
             # nvidia packages
             "@debian13//nvidia-container-toolkit-base/%s" % arch,
@@ -502,10 +502,10 @@ image_layer(
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
     symlinks = {
+        "/usr/bin/sh": "/usr/bin/dash",
         "/usr/sbin/iptables": "/usr/sbin/iptables-nft",
         "/usr/sbin/iptables-restore": "/usr/sbin/iptables-nft-restore",
         "/usr/sbin/iptables-save": "/usr/sbin/iptables-nft-save",
-        "/usr/bin/sh": "/usr/bin/dash",
     },
     tags = ["manual"],
 )
