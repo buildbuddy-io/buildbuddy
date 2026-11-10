@@ -37,7 +37,7 @@ var (
 	cacheActionResults = flag.Bool("cache_proxy.cache_action_results", true, "If true, the proxy will cache ActionCache.GetActionResult responses.")
 	actionCacheSalt    = flag.String("cache_proxy.action_cache_salt", "actioncache-170401", "A salt to reset action cache contents when needed.")
 
-	actionCacheTTLSeconds = expflag.Int64("cache_proxy.action_cache_ttl_seconds", 0, "If greater than 0, serve action results from the proxy's local cache without checking the remote cache, for this many seconds after the proxy last validated or updated them. Otherwise, clients can opt in with the "+platform.CacheProxyActionCacheTTLPropertyName+" platform property.")
+	actionCacheTTLSeconds = expflag.Int64("cache_proxy.action_cache_ttl_seconds", 0, "If greater than 0, serve action results from the proxy's local cache without checking the remote cache, for this many seconds after the proxy last validated or updated them. Otherwise, clients can opt in with the "+proxy_util.ActionCacheTTLHeaderName+" header.")
 )
 
 type ActionCacheServerProxy struct {

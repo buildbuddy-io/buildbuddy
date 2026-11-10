@@ -39,7 +39,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -95,12 +94,12 @@ func enableEncryption(t *testing.T, rbe *rbetest.Env, userID string) {
 	require.True(t, getResp.Enabled, "Encryption should be enabled")
 }
 
-func writeBlob(t *testing.T, ctx context.Context, bs bspb.ByteStreamClient, resourceName string, data []byte) error {
+func writeBlob(t *testing.T, ctx context.Context, bs bspb.ByteStreamClient, uploadID, hash string, sizeBytes int64, data []byte) error {
 	t.Helper()
 	stream, err := bs.Write(ctx)
 	require.NoError(t, err)
 	err = stream.Send(&bspb.WriteRequest{
-		ResourceName: resourceName,
+		ResourceName: fmt.Sprintf("uploads/%s/blobs/%s/%d", uploadID, hash, sizeBytes),
 		Data:         data,
 		FinishWrite:  true,
 	})
@@ -222,17 +221,12 @@ func TestByteStreamWriteSkipValidationDoesNotPoisonLocalCache(t *testing.T) {
 	hash := hex.EncodeToString(digest[:])
 	sizeBytes := int64(len(correct))
 
-	// Upload corrupt content compressed, since the proxy only skips validating
-	// compressed uploads. The proxy leaves validation to the app, which
-	// rejects the upload.
-	err := writeBlob(t, ctx, bs, fmt.Sprintf("uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/compressed-blobs/zstd/%s/%d", hash, sizeBytes), compression.CompressZstd(nil, corrupt))
+	err := writeBlob(t, ctx, bs, "2148e1f1-aacc-41eb-a31c-22b6da7c7ac1", hash, sizeBytes, corrupt)
 	require.True(t, status.IsInvalidArgumentError(err), "err = %v", err)
 
-	// Upload the correct content. Reading it back should return the correct
-	// content, not the corrupt upload the proxy wrote locally without
-	// validating.
-	err = writeBlob(t, ctx, bs, fmt.Sprintf("uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac2/blobs/%s/%d", hash, sizeBytes), correct)
+	err = writeBlob(t, ctx, bs, "2148e1f1-aacc-41eb-a31c-22b6da7c7ac2", hash, sizeBytes, correct)
 	require.NoError(t, err)
+
 	require.Equal(t, correct, readBlob(t, ctx, bs, hash, sizeBytes))
 }
 

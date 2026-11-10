@@ -33,7 +33,6 @@ go_test(
         "//server/testutil/testport",
         "//server/util/authutil",
         "//server/util/claims",
-        "//server/util/compression",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/log",
