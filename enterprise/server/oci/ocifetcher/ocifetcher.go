@@ -946,6 +946,11 @@ func NewAllowedPrivateIPRedirectTransport(inner http.RoundTripper, allowed []*ne
 	return &allowedPrivateIPRedirectTransport{client: &http.Client{
 		Transport: inner,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Same cap as http.Client's default policy. http.Client closes the last
+			// response's body when this returns an error.
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
 			if via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
 				return http.ErrUseLastResponse
 			}
@@ -979,9 +984,11 @@ func (t *allowedPrivateIPRedirectTransport) RoundTrip(req *http.Request) (*http.
 	if resp.Request == nil || resp.Request.URL.String() == req.URL.String() {
 		return resp, nil
 	}
-	// At least one hop was followed. A challenge from the storage host is not a registry
+	// At least one hop was followed. A challenge from another host is not a registry
 	// challenge, and a relative Location must be resolved against the URL that returned it.
-	resp.Header.Del("WWW-Authenticate")
+	if resp.Request.URL.Scheme != req.URL.Scheme || resp.Request.URL.Host != req.URL.Host {
+		resp.Header.Del("WWW-Authenticate")
+	}
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		if loc, err := resp.Location(); err == nil {
 			resp.Header.Set("Location", loc.String())

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -39,6 +39,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/validate"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1996,55 +1997,32 @@ func TestResolve_BlobRedirectToPrivateIP(t *testing.T) {
 					te = setupTestEnvWithCache(t)
 				}
 
-				blobs := map[string][]byte{}
-				var cdnHits atomic.Int32
-				cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					cdnHits.Add(1)
-					b, ok := blobs[r.URL.Path]
-					if !ok {
-						http.NotFound(w, r)
-						return
-					}
-					_, _ = w.Write(b)
-				}))
-				t.Cleanup(cdn.Close)
-
-				blobGet := regexp.MustCompile(`^/v2/.+/blobs/(sha256:[0-9a-f]+)$`)
+				// Once enabled, blob GETs to the registry's localhost address are
+				// redirected to the same server via 127.0.0.1, a different host.
+				var redirectBlobs atomic.Bool
+				var redirectedHits atomic.Int32
+				blobGet := regexp.MustCompile(`^/v2/.+/blobs/sha256:[0-9a-f]+$`)
 				registry := testregistry.Run(t, testregistry.Opts{
 					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-						if r.Method == http.MethodGet {
-							if m := blobGet.FindStringSubmatch(r.URL.Path); m != nil {
-								if _, ok := blobs["/blob/"+m[1]]; ok {
-									// cdn.URL is http://127.0.0.1:<port>, a different host
-									// from the registry's localhost.
-									http.Redirect(w, r, cdn.URL+"/blob/"+m[1], http.StatusFound)
-									return false
-								}
-							}
+						if r.Method != http.MethodGet || !blobGet.MatchString(r.URL.Path) || !redirectBlobs.Load() {
+							return true
 						}
-						return true
+						if r.URL.Query().Get("redirected") == "1" {
+							redirectedHits.Add(1)
+							return true
+						}
+						_, port, err := net.SplitHostPort(r.Host)
+						if err != nil {
+							http.Error(w, err.Error(), http.StatusBadRequest)
+							return false
+						}
+						http.Redirect(w, r, "http://127.0.0.1:"+port+r.URL.Path+"?redirected=1", http.StatusFound)
+						return false
 					},
 				})
 				files := map[string][]byte{"/hello": []byte("world")}
-				_, img := registry.PushNamedImageWithFiles(t, "redirect_image", files, nil)
-
-				cfgDigest, err := img.ConfigName()
-				require.NoError(t, err)
-				rawCfg, err := img.RawConfigFile()
-				require.NoError(t, err)
-				blobs["/blob/"+cfgDigest.String()] = rawCfg
-				pushedLayers, err := img.Layers()
-				require.NoError(t, err)
-				for _, l := range pushedLayers {
-					d, err := l.Digest()
-					require.NoError(t, err)
-					rc, err := l.Compressed()
-					require.NoError(t, err)
-					b, err := io.ReadAll(rc)
-					require.NoError(t, err)
-					rc.Close()
-					blobs["/blob/"+d.String()] = b
-				}
+				registry.PushNamedImageWithFiles(t, "redirect_image", files, nil)
+				redirectBlobs.Store(true)
 
 				pulled, err := newResolver(t, te).Resolve(
 					context.Background(),
@@ -2055,14 +2033,13 @@ func TestResolve_BlobRedirectToPrivateIP(t *testing.T) {
 				)
 				if tc.wantErr != "" {
 					if err == nil {
-						err = readImage(pulled)
+						err = validate.Image(pulled)
 					}
 					require.ErrorContains(t, err, tc.wantErr)
 					return
 				}
 				require.NoError(t, err)
-				_, err = pulled.ConfigFile()
-				require.NoError(t, err)
+				require.NoError(t, validate.Image(pulled))
 				layers, err := pulled.Layers()
 				require.NoError(t, err)
 				got := map[string][]byte{}
@@ -2070,31 +2047,8 @@ func TestResolve_BlobRedirectToPrivateIP(t *testing.T) {
 					maps.Copy(got, layerFiles(t, l))
 				}
 				require.Equal(t, []byte("world"), got["/hello"], "got files: %v", got)
-				require.Greater(t, cdnHits.Load(), int32(0), "blob GETs should have been redirected to the CDN")
+				require.Greater(t, redirectedHits.Load(), int32(0), "blob GETs should have been redirected")
 			})
 		}
 	}
-}
-
-// readImage reads img's config and all of its layer contents, returning the first error.
-func readImage(img ctr.Image) error {
-	if _, err := img.ConfigFile(); err != nil {
-		return err
-	}
-	layers, err := img.Layers()
-	if err != nil {
-		return err
-	}
-	for _, l := range layers {
-		rc, err := l.Compressed()
-		if err != nil {
-			return err
-		}
-		_, err = io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
