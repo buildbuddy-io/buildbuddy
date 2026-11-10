@@ -3,6 +3,7 @@ package testbazel
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -123,12 +124,10 @@ if ! [ -f MODULE.bazel.lock ]; then
 fi
 cd "$STARTDIR"
 `
-		if majorVersion(t) < 8 {
-			// Bazel 7's native sh_binary / sh_test depend on the
-			// autodetected C++ toolchain, and autodetection fails if there
-			// is no C compiler on the host (as in our RBE images). Tests
-			// don't compile C++ with the test bazel, so point autodetection
-			// at a no-op compiler in that case.
+		if major, _ := version(t); major < 8 {
+			// Bazel < 8's native sh rules need an autodetected C++
+			// toolchain, which fails without a C compiler; tests don't
+			// compile C++.
 			script += `
 if [ -z "${CC:-}" ] && ! command -v gcc >/dev/null; then export CC=/bin/true; fi
 `
@@ -153,32 +152,31 @@ func HermeticFlags(t testing.TB) []string {
 		"--repository_cache=" + repoCachePath(t),
 		"--lockfile_mode=error",
 	}
-	// --repo_contents_cache only exists in Bazel 8+, and Bazel 9 enables it by
-	// default as {repository_cache}/contents. Tests share a prewarmed
-	// repository_cache under the runfiles tree, so nested Bazel invocations
-	// can contend on the contents-cache lock and hang. Disable the contents
-	// cache for test launchers.
-	if majorVersion(t) >= 8 {
+	major, minor := version(t)
+	// The repo contents cache (Bazel 8.3+) defaults to a dir inside the
+	// shared prewarmed repository_cache, where nested invocations can contend
+	// on its lock and hang.
+	if major > 8 || (major == 8 && minor >= 3) {
 		flags = append(flags, "--repo_contents_cache=")
 	}
-	// Point at the prewarmed vendor directory, if extract_bazel_installation
-	// created one for this version. Combined with --lockfile_mode=error, this
-	// guarantees the inner Bazel makes zero network requests for bzlmod
-	// resolution, on any host OS/arch. The vendor dir is generated via
-	// `bazel vendor` and is platform-neutral (sources only, no binary
-	// artifacts).
-	if vendorDir := vendorDirPath(t); testfs.Exists(t, "", vendorDir) {
-		flags = append(flags, "--vendor_dir="+vendorDir)
-	}
+	// Combined with --lockfile_mode=error, the prewarmed vendor dir keeps
+	// bzlmod resolution offline on any host OS/arch.
+	vendorDir := vendorDirPath(t)
+	require.True(t, testfs.Exists(t, "", vendorDir), "missing prewarmed vendor dir %q for Bazel %s", vendorDir, Version)
+	flags = append(flags, "--vendor_dir="+vendorDir)
 	return flags
 }
 
-// majorVersion returns the major version of the embedded test bazel binary,
-// e.g. 10 for "10.0.0rc2".
-func majorVersion(t testing.TB) int {
-	major, err := strconv.Atoi(strings.SplitN(Version, ".", 2)[0])
+// version returns the major and minor version of the embedded test bazel
+// binary, e.g. 10, 0 for "10.0.0rc2".
+func version(t testing.TB) (major, minor int) {
+	parts := strings.SplitN(Version, ".", 3)
+	require.Len(t, parts, 3, "parse bazel version %q", Version)
+	major, err := strconv.Atoi(parts[0])
 	require.NoError(t, err, "parse bazel version %q", Version)
-	return major
+	minor, err = strconv.Atoi(parts[1])
+	require.NoError(t, err, "parse bazel version %q", Version)
+	return major, minor
 }
 
 func repoCachePath(t testing.TB) string {
@@ -217,13 +215,16 @@ func initInstallBase(t testing.TB) string {
 
 		installBasePath = copyPath
 	}
-	mtime := time.Now().Add(10 * 365 * 24 * time.Hour).Format("2006-01-02T00:00:00")
-	cmd := exec.Command(
-		"find", ".", "-type", "f",
-		"-exec", "touch", "-d", mtime, "{}", "+")
-	cmd.Dir = installBasePath
-	b, err := cmd.CombinedOutput()
-	require.NoError(t, err, "command output: %s", string(b))
+	mtime := time.Now().Add(10 * 365 * 24 * time.Hour)
+	// The trailing separator makes WalkDir follow installBasePath if it's a
+	// symlink.
+	err = filepath.WalkDir(installBasePath+string(filepath.Separator), func(path string, d fs.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() {
+			return err
+		}
+		return os.Chtimes(path, mtime, mtime)
+	})
+	require.NoError(t, err, "set install base mtimes")
 	return installBasePath
 }
 

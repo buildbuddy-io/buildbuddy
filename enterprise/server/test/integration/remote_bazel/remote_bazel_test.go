@@ -686,9 +686,11 @@ bazel_dep(name = "message_dep", version = "1.0", repo_name = "messages")
 local_path_override(module_name = "message_dep", path = "dep")
 `,
 				// The local_path_override makes the prewarmed lockfile stale, so
-				// let bazel update it. With lockfile_mode=off, Bazel 9.3.2 fetches
-				// rules_shell's registry files from the network instead of using
-				// the prewarmed vendor dir.
+				// let the CI runner's bazel update it. (Where bazel runs through
+				// the testbazel launcher, the launcher's own --bazelrc sets
+				// lockfile_mode=error and wins.) With lockfile_mode=off, Bazel
+				// 9.3.2 fetches rules_shell's registry files from the network
+				// instead of using the prewarmed vendor dir.
 				".bazelrc": "common --lockfile_mode=update\n",
 				"dep/MODULE.bazel": `
 module(name = "message_dep", version = "1.0")

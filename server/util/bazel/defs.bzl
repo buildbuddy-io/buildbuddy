@@ -14,11 +14,9 @@ def _extract_bazel_installation_impl(ctx):
             # Actions don't get a PATH by default. Export bash's default PATH
             # so that bazel's repository rules can find host tools.
             export PATH
-            # Bazel 7's native sh_binary / sh_test depend on the autodetected
-            # C++ toolchain, and autodetection fails if there is no C compiler
-            # in the exec image. Nothing here compiles C++, so point
-            # autodetection at a no-op compiler in that case.
-            if [ -z "${CC:-}" ] && ! command -v gcc >/dev/null; then
+            # Bazel < 8's native sh rules need an autodetected C++ toolchain,
+            # which fails without a C compiler; nothing here compiles C++.
+            if [ "$STUB_MISSING_CC" = "1" ] && [ -z "${CC:-}" ] && ! command -v gcc >/dev/null; then
                 export CC=/bin/true
             fi
 
@@ -53,18 +51,16 @@ def _extract_bazel_installation_impl(ctx):
             echo >> .bazelrc "common --repository_cache=$REPOSITORY_CACHE"
             echo >> .bazelrc "common --noexperimental_convenience_symlinks"
 
-            if [ "$WARM_REPOSITORY_CACHE" = "0" ]; then
+            if [ "$PREPARE_OFFLINE" = "0" ]; then
                 # Run bazel with no args; this should install it to the install_base.
                 _bazel
             else
                 # Download dependencies of commonly used rules in tests.
                 # For Bazel 9+, sh_binary and sh_test are no longer native rules;
                 # they must be loaded from @rules_shell.
-                if [ "$USE_RULES_SHELL" = "1" ]; then
-                    echo >>MODULE.bazel 'bazel_dep(name = "rules_shell", version = "0.6.1")'
-                    echo >>BUILD 'load("@rules_shell//shell:sh_binary.bzl", "sh_binary")'
-                    echo >>BUILD 'load("@rules_shell//shell:sh_test.bzl", "sh_test")'
-                fi
+                echo >>MODULE.bazel 'bazel_dep(name = "rules_shell", version = "0.6.1")'
+                echo >>BUILD 'load("@rules_shell//shell:sh_binary.bzl", "sh_binary")'
+                echo >>BUILD 'load("@rules_shell//shell:sh_test.bzl", "sh_test")'
                 echo >>BUILD 'genrule(name = "genrule", outs = ["genrule.out"], cmd = "touch $@")'
                 echo >>BUILD 'sh_binary(name = "sh_binary", srcs = ["empty.sh"])'
                 echo >>BUILD 'sh_test(name = "sh_test", srcs = ["empty.sh"])'
@@ -73,36 +69,34 @@ def _extract_bazel_installation_impl(ctx):
                 # Copy lockfile; needed to avoid registry requests.
                 cp MODULE.bazel.lock "$OUT_DIR/MODULE.bazel.lock"
 
-                if [ "$USE_VENDOR_DIR" = "1" ]; then
-                    # `bazel vendor` writes all bzlmod-resolved module
-                    # sources into a platform-neutral directory. Test
-                    # invocations can then use --vendor_dir=... with
-                    # --lockfile_mode=error and make no network requests,
-                    # regardless of host OS/arch. This is more robust than
-                    # relying on a repository_cache populated on one exec
-                    # platform and consumed on another.
-                    VENDOR_DIR="$OUT_DIR/vendor_dir"
-                    _bazel vendor --vendor_dir="$VENDOR_DIR" //...
-                    # `bazel vendor` leaves behind a convenience
-                    # symlink (bazel-external -> output_base/external)
-                    # that points into our scratch WORKDIR. It has no
-                    # relationship to the vendored sources and becomes a
-                    # dangling symlink once WORKDIR is cleaned up, which
-                    # makes Bazel reject the tree artifact. Remove it.
-                    rm -f "$VENDOR_DIR/bazel-external"
-                    # `bazel mod vendor` marks the vendor dir with a
-                    # VENDOR.bazel file listing pinned repo names. Strip
-                    # absolute paths from any generated files so the
-                    # artifact is reproducible and relocatable.
-                    if [ -f "$VENDOR_DIR/VENDOR.bazel" ]; then
-                        # VENDOR.bazel contains only repo-name entries; no
-                        # paths. Nothing to rewrite today, but assert it so
-                        # we notice if Bazel ever starts embedding paths.
-                        if grep -qE "$WORKDIR|$OUT_DIR" "$VENDOR_DIR/VENDOR.bazel"; then
-                            echo >&2 "VENDOR.bazel contains absolute paths; vendor dir is not relocatable"
-                            cat >&2 "$VENDOR_DIR/VENDOR.bazel"
-                            exit 1
-                        fi
+                # `bazel vendor` writes all bzlmod-resolved module
+                # sources into a platform-neutral directory. Test
+                # invocations can then use --vendor_dir=... with
+                # --lockfile_mode=error and make no network requests,
+                # regardless of host OS/arch. This is more robust than
+                # relying on a repository_cache populated on one exec
+                # platform and consumed on another.
+                VENDOR_DIR="$OUT_DIR/vendor_dir"
+                _bazel vendor --vendor_dir="$VENDOR_DIR" //...
+                # `bazel vendor` leaves behind a convenience
+                # symlink (bazel-external -> output_base/external)
+                # that points into our scratch WORKDIR. It has no
+                # relationship to the vendored sources and becomes a
+                # dangling symlink once WORKDIR is cleaned up, which
+                # makes Bazel reject the tree artifact. Remove it.
+                rm -f "$VENDOR_DIR/bazel-external"
+                # `bazel mod vendor` marks the vendor dir with a
+                # VENDOR.bazel file listing pinned repo names. Strip
+                # absolute paths from any generated files so the
+                # artifact is reproducible and relocatable.
+                if [ -f "$VENDOR_DIR/VENDOR.bazel" ]; then
+                    # VENDOR.bazel contains only repo-name entries; no
+                    # paths. Nothing to rewrite today, but assert it so
+                    # we notice if Bazel ever starts embedding paths.
+                    if grep -qE "$WORKDIR|$OUT_DIR" "$VENDOR_DIR/VENDOR.bazel"; then
+                        echo >&2 "VENDOR.bazel contains absolute paths; vendor dir is not relocatable"
+                        cat >&2 "$VENDOR_DIR/VENDOR.bazel"
+                        exit 1
                     fi
                 fi
             fi
@@ -110,9 +104,8 @@ def _extract_bazel_installation_impl(ctx):
         env = {
             "BAZEL": ctx.executable.bazel.path,
             "OUT_DIR": out_dir.path,
-            "WARM_REPOSITORY_CACHE": "1" if ctx.attr.warm_repository_cache else "0",
-            "USE_RULES_SHELL": "1" if ctx.attr.use_rules_shell else "0",
-            "USE_VENDOR_DIR": "1" if ctx.attr.use_vendor_dir else "0",
+            "PREPARE_OFFLINE": "1" if ctx.attr.prepare_offline else "0",
+            "STUB_MISSING_CC": "1" if ctx.attr.stub_missing_cc else "0",
         },
     )
     return [DefaultInfo(files = depset([out_dir]))]
@@ -122,16 +115,20 @@ extract_bazel_installation = rule(
     attrs = {
         "bazel": attr.label(executable = True, cfg = "exec", mandatory = True, allow_single_file = True),
         "out_dir": attr.string(mandatory = True),
-        "warm_repository_cache": attr.bool(default = False),
-        "use_rules_shell": attr.bool(default = False),
-        "use_vendor_dir": attr.bool(
+        "prepare_offline": attr.bool(
             default = False,
-            doc = "If set, also run `bazel vendor` and write the " +
-                  "vendor dir to `$OUT_DIR/vendor_dir`. Requires " +
-                  "`warm_repository_cache = True` and Bazel 7.1+.",
+            doc = "If set, pre-warm a repository cache, write a " +
+                  "MODULE.bazel.lock and vendor dir with @rules_shell so " +
+                  "that genrule / sh_binary / sh_test work offline. " +
+                  "Requires Bazel 7.1+.",
+        ),
+        "stub_missing_cc": attr.bool(
+            default = False,
+            doc = "If set and there is no C compiler, set CC=/bin/true. " +
+                  "Needed for Bazel < 8.",
         ),
     },
-    doc = "Pre-extract a bazel installation and optionally a repository cache to the given output directory.",
+    doc = "Pre-extract a bazel installation and optionally offline dependencies to the given output directory.",
 )
 
 # Bazel versions that tests using //server/testutil/testbazel run against.
@@ -196,11 +193,13 @@ def bazel_versions_test(rule, name, data = [], x_defs = {}, tags = None, **kwarg
             **kwargs
         )
 
-def bazel_binary_targets(versions = [], **kwargs):
+def bazel_binary_targets(versions = [], extract_installation = True, **kwargs):
     """Creates Bazel binary and extracted-installation targets.
 
     Args:
       versions: Bazel versions for which to create targets.
+      extract_installation: Whether to also create
+        `bazel-<version>_extract_installation` targets.
       **kwargs: Additional arguments passed to the generated targets.
     """
     for version in versions:
@@ -218,39 +217,28 @@ def bazel_binary_targets(versions = [], **kwargs):
             **kwargs
         )
 
-        # For Bazel 7+, pre-warm the repository cache, write a
-        # MODULE.bazel.lock, and vendor the bzlmod module sources (including
-        # @rules_shell) so that tests can run fully offline with
-        # --lockfile_mode=error and --vendor_dir on any host OS/arch. Bazel 6
-        # predates `bazel vendor` and bzlmod-by-default, so it only gets an
-        # extracted install_base.
-        #
-        # @rules_shell is strictly required on Bazel 9+ (sh_binary / sh_test
-        # are no longer native). On older versions it's optional but cheap,
-        # and lets test-written BUILD files use a single
-        # `load("@rules_shell//shell:...")` form that works on every version.
+        if not extract_installation:
+            continue
+
+        # Bazel 7+ gets what it needs to build genrule / sh_binary / sh_test
+        # offline (see prepare_offline). Bazel 6 predates `bazel vendor`, so
+        # it only gets an extracted install_base.
         major_version = int(version.split(".")[0])
-        warm_repository_cache = major_version >= 7
-        use_rules_shell = major_version >= 7
-        use_vendor_dir = major_version >= 7
+        prepare_offline = major_version >= 7
         extract_bazel_installation(
             name = "bazel-{}_extract_installation".format(version),
             bazel = ":bazel-{}_crossplatform".format(version),
             out_dir = "bazel-{}_outdir".format(version),
-            warm_repository_cache = warm_repository_cache,
-            use_rules_shell = use_rules_shell,
-            use_vendor_dir = use_vendor_dir,
-            # If we are warming the repository cache then we need network access
-            # so that this rule can download the dependencies. Targets that use
-            # this rule can then use the cached dependencies without needing the
-            # network.
-            exec_properties = {"dockerNetwork": "bridge"} if warm_repository_cache else {},
+            prepare_offline = prepare_offline,
+            stub_missing_cc = major_version < 8,
+            # Preparing offline dependencies needs network access.
+            exec_properties = {"dockerNetwork": "bridge"} if prepare_offline else {},
             **kwargs
         )
 
 def bazel_pkg_tar(name, versions = [], **kwargs):
     """Create a tar file containing Bazel executables for the given versions."""
-    bazel_binary_targets(versions = versions, **kwargs)
+    bazel_binary_targets(versions = versions, extract_installation = False, **kwargs)
     pkg_tar(
         name = name,
         srcs = [":bazel-{}_crossplatform".format(version) for version in versions],
