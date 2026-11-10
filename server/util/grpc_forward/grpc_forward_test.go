@@ -3,18 +3,23 @@ package grpc_forward
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -213,6 +218,107 @@ func TestForwarding_SaturatedRulePoolDoesNotBlockOtherRules(t *testing.T) {
 
 	close(release)
 	require.NoError(t, stream.RecvMsg(&emptypb.Empty{}))
+}
+
+type ctxStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *ctxStream) Context() context.Context { return s.ctx }
+
+// startForwardingProxy starts a backend running backendHandler and a
+// forwarding proxy in front of it. If groupID is non-empty, the proxy attaches
+// claims for that group to each stream, as the auth interceptor would.
+func startForwardingProxy(t *testing.T, backendHandler grpc.StreamHandler, groupID string) *grpc_client.ClientConnPool {
+	t.Cleanup(cleanup)
+	backendLis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	backend := grpc.NewServer(grpc.UnknownServiceHandler(backendHandler))
+	go func() { _ = backend.Serve(backendLis) }()
+	t.Cleanup(backend.Stop)
+	backendTarget := fmt.Sprintf("grpc://localhost:%d", backendLis.Addr().(*net.TCPAddr).Port)
+
+	flags.Set(t, "app.proxy_targets", []proxyPair{{Prefix: "", Target: backendTarget}})
+	opts := []grpc.ServerOption{GetForwardingServerOption(real_environment.NewRealEnv(nil))}
+	if groupID != "" {
+		opts = append(opts, grpc.StreamInterceptor(func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, h grpc.StreamHandler) error {
+			ctx := claims.AuthContext(ss.Context(), &claims.Claims{GroupID: groupID})
+			return h(srv, &ctxStream{ServerStream: ss, ctx: ctx})
+		}))
+	}
+	proxyLis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	proxy := grpc.NewServer(opts...)
+	go func() { _ = proxy.Serve(proxyLis) }()
+	t.Cleanup(proxy.Stop)
+
+	conn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", proxyLis.Addr().(*net.TCPAddr).Port))
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	return conn
+}
+
+func activeStreams(method, groupID string) float64 {
+	return testutil.ToFloat64(metrics.GRPCForwardActiveStreams.WithLabelValues(method, groupID))
+}
+
+func requireActiveStreamsEventuallyZero(t *testing.T, method, groupID string) {
+	require.Eventually(t, func() bool { return activeStreams(method, groupID) == 0 }, 30*time.Second, 10*time.Millisecond)
+}
+
+// Each test uses its own method name because the gauge is global.
+func testActiveStreamsWhileBlocked(t *testing.T, method, serverGroupID, wantGroupID string) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	handler := func(_ any, stream grpc.ServerStream) error {
+		if err := stream.RecvMsg(&emptypb.Empty{}); err != nil {
+			return err
+		}
+		close(started)
+		select {
+		case <-release:
+		case <-stream.Context().Done():
+		}
+		return stream.SendMsg(&emptypb.Empty{})
+	}
+	conn := startForwardingProxy(t, handler, serverGroupID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	stream, err := conn.NewStream(ctx, &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}, method)
+	require.NoError(t, err)
+	require.NoError(t, stream.SendMsg(&emptypb.Empty{}))
+	require.NoError(t, stream.CloseSend())
+	<-started
+
+	require.Equal(t, 1.0, activeStreams(method, wantGroupID))
+
+	close(release)
+	require.NoError(t, stream.RecvMsg(&emptypb.Empty{}))
+	require.Equal(t, io.EOF, stream.RecvMsg(&emptypb.Empty{}))
+	requireActiveStreamsEventuallyZero(t, method, wantGroupID)
+}
+
+func TestForwarding_ActiveStreamsGaugeTracksOpenStream(t *testing.T) {
+	testActiveStreamsWhileBlocked(t, "/gauge.Test/Tracked", "GR123", "GR123")
+}
+
+func TestForwarding_ActiveStreamsGaugeUsesFallbackGroupWithoutClaims(t *testing.T) {
+	testActiveStreamsWhileBlocked(t, "/gauge.Test/Unauthenticated", "", unknownGroupID)
+}
+
+func TestForwarding_ActiveStreamsGaugeReturnsToZeroOnError(t *testing.T) {
+	const method = "/gauge.Test/Rejected"
+	// An empty backend handler would succeed; use a handler that rejects.
+	handler := func(any, grpc.ServerStream) error {
+		return status.UnimplementedError("nope")
+	}
+	conn := startForwardingProxy(t, handler, "GR123")
+
+	err := conn.Invoke(context.Background(), method, &emptypb.Empty{}, &emptypb.Empty{})
+	require.Error(t, err)
+	requireActiveStreamsEventuallyZero(t, method, "GR123")
 }
 
 // fakeIdentityService records the identity it was asked to sign and returns a

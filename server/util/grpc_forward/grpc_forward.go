@@ -7,7 +7,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -191,5 +193,22 @@ func GetForwardingServerOption(env environment.Env) grpc.ServerOption {
 	if len(*proxyTargets) == 0 {
 		return nil
 	}
-	return grpc.UnknownServiceHandler(proxy.TransparentHandler(newDirector(env)))
+	return grpc.UnknownServiceHandler(trackActiveStreams(proxy.TransparentHandler(newDirector(env))))
+}
+
+// Matches the group label value used by the cache proxy's traffic metrics.
+const unknownGroupID = "unknown"
+
+func trackActiveStreams(h grpc.StreamHandler) grpc.StreamHandler {
+	return func(srv any, stream grpc.ServerStream) error {
+		method, _ := grpc.MethodFromServerStream(stream)
+		groupID := unknownGroupID
+		if c, err := claims.ClaimsFromContext(stream.Context()); err == nil && c.GetGroupID() != "" {
+			groupID = c.GetGroupID()
+		}
+		g := metrics.GRPCForwardActiveStreams.WithLabelValues(method, groupID)
+		g.Inc()
+		defer g.Dec()
+		return h(srv, stream)
+	}
 }

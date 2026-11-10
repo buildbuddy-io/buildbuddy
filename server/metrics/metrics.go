@@ -4815,6 +4815,16 @@ var (
 		ConnectionIndexLabel,
 	})
 
+	GRPCForwardActiveStreams = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "forward_active_streams",
+		Help:      "Number of RPCs currently being forwarded by the unknown-service handler, by gRPC method and group ID.",
+	}, []string{
+		GRPCMethodLabel,
+		GroupID,
+	})
+
 	GRPCClientConnectionCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "grpc",
