@@ -13,6 +13,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -54,6 +55,10 @@ type Store struct {
 	fileBytes             int64
 	virtualBlocks         uint64
 	dirtyBlocks           atomic.Uint64
+
+	// See Stats.
+	reads, readBytes, readNanos    atomic.Int64
+	writes, writeBytes, writeNanos atomic.Int64
 }
 
 func newStore(ctx context.Context, image *os.File, l *blockLayout, inodes inodeList) *Store {
@@ -95,6 +100,12 @@ func (s *Store) ReadAt(p []byte, off int64) (int, error) {
 	if off < 0 || off > s.size || int64(len(p)) > s.size-off {
 		return 0, fmt.Errorf("read [%d, %d) outside image of size %d", off, off+int64(len(p)), s.size)
 	}
+	start := time.Now()
+	defer func() {
+		s.reads.Add(1)
+		s.readBytes.Add(int64(len(p)))
+		s.readNanos.Add(int64(time.Since(start)))
+	}()
 	n := 0
 	for n < len(p) {
 		// cur is the image offset of p[n], and blk the block it falls in.
@@ -141,6 +152,12 @@ func (s *Store) WriteAt(p []byte, off int64) (int, error) {
 	if off < 0 || off > s.size || int64(len(p)) > s.size-off {
 		return 0, fmt.Errorf("write [%d, %d) outside image of size %d", off, off+int64(len(p)), s.size)
 	}
+	start := time.Now()
+	defer func() {
+		s.writes.Add(1)
+		s.writeBytes.Add(int64(len(p)))
+		s.writeNanos.Add(int64(time.Since(start)))
+	}()
 	n := 0
 	for n < len(p) {
 		cur := off + int64(n)
@@ -178,6 +195,14 @@ func (s *Store) Stats() Stats {
 		ReadFileBytes:   s.sources.readFileBytes.Load(),
 		DirtyBytes:      int64(s.dirtyBlocks.Load()) * blockSize,
 		SourceReadBytes: int64(s.sources.readBytes.Load()),
+		Reads:           s.reads.Load(),
+		ReadBytes:       s.readBytes.Load(),
+		ReadNanos:       s.readNanos.Load(),
+		Writes:          s.writes.Load(),
+		WriteBytes:      s.writeBytes.Load(),
+		WriteNanos:      s.writeNanos.Load(),
+		SourceOpens:     s.sources.opens.Load(),
+		SourceOpenNanos: s.sources.openNanos.Load(),
 	}
 }
 
@@ -289,6 +314,8 @@ type sourcePool struct {
 	filesRead     atomic.Int64
 	readFileBytes atomic.Int64
 	readBytes     atomic.Uint64
+	// opens counts the calls to Source.Open, which took openNanos in total.
+	opens, openNanos atomic.Int64
 }
 
 func newSourcePool(ctx context.Context, files []*sourceFile) *sourcePool {
@@ -304,7 +331,10 @@ func (sp *sourcePool) pread(f *sourceFile, p []byte, off int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.file == nil {
+		start := time.Now()
 		file, err := f.source.Open(sp.ctx)
+		sp.opens.Add(1)
+		sp.openNanos.Add(int64(time.Since(start)))
 		if err != nil {
 			return err
 		}

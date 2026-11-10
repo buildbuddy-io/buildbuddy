@@ -108,6 +108,8 @@ var (
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
 	preloadInputs                         = flag.String("executor.firecracker_preload_inputs", "", "Prototype: which input files vmexec reads into the guest page cache while the command runs. \"used\" reads every input that the task's unused inputs mask does not exclude, and nothing when the task has no mask. \"command\" reads only the input file that the command's first argument names. Empty disables preloading.", flag.Internal)
 	preloadParallelism                    = flag.Int("executor.firecracker_preload_parallelism", 16, "How many input files vmexec reads at a time for executor.firecracker_preload_inputs.", flag.Internal)
+	preloadWait                           = flag.Bool("executor.firecracker_preload_wait", false, "Prototype: finish executor.firecracker_preload_inputs before starting the command, instead of reading while it runs.", flag.Internal)
+	resumeProbe                           = flag.Bool("executor.firecracker_resume_probe", false, "Experiment: at the start of Exec, wait 300 ms and then dial the guest's vmexec server, and report both as steps of the Exec timeline, to tell what makes a resumed guest touch snapshot memory.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
@@ -675,8 +677,53 @@ func parseDNSOverrides() (string, error) {
 	return string(marshalledOverrides), nil
 }
 
+// execTimeline records how long each step of an Exec call took, for
+// comparing workspace implementations. Each mark covers the time since the
+// previous one, so the steps add up to the whole call.
+type execTimeline struct {
+	last  time.Time
+	steps []string
+	// faultStats, if set, returns how many guest memory page faults the
+	// host has resolved from the VM's snapshot, how long that took and how
+	// many bytes it copied. The last three fields are what it last returned.
+	faultStats func() (int64, time.Duration, int64)
+	// Experiment: faultOffsets, if set, returns the offsets in the memory
+	// snapshot of the pages that faulted since its last call. census holds
+	// those pages by step, for vmexec to classify.
+	faultOffsets  func() []int64
+	census        []*vmxpb.PageCensusStep
+	faults        int64
+	faultDuration time.Duration
+	faultBytes    int64
+}
+
+func (t *execTimeline) mark(step string) {
+	if t == nil {
+		return
+	}
+	now := time.Now()
+	t.steps = append(t.steps, fmt.Sprintf("%s_usec=%d", step, now.Sub(t.last).Microseconds()))
+	t.last = now
+	if t.faultOffsets != nil {
+		if offsets := t.faultOffsets(); len(offsets) > 0 {
+			t.census = append(t.census, &vmxpb.PageCensusStep{Name: step, Offsets: offsets})
+		}
+	}
+	if t.faultStats == nil {
+		return
+	}
+	faults, duration, bytes := t.faultStats()
+	if faults > t.faults {
+		t.steps = append(t.steps, fmt.Sprintf("%s_faults=%d %s_fault_usec=%d %s_fault_kb=%d", step, faults-t.faults, step, (duration-t.faultDuration).Microseconds(), step, (bytes-t.faultBytes)/1000))
+	}
+	t.faults, t.faultDuration, t.faultBytes = faults, duration, bytes
+}
+
 // FirecrackerContainer executes commands inside of a firecracker VM.
 type FirecrackerContainer struct {
+	// timeline is the current Exec call's.
+	timeline *execTimeline
+
 	id         string // a random GUID, unique per-run of firecracker
 	snapshotID string // a random GUID, unique per-run of firecracker
 	vmIdx      int    // the index of this vm on the host machine
@@ -1801,6 +1848,7 @@ func (c *FirecrackerContainer) unmountWorkspaceVBD(ctx context.Context) error {
 	if c.workspaceStore != nil {
 		stats := c.workspaceStore.Stats()
 		log.CtxInfof(ctx, "Virtualized EXT4 workspace image served %d MB from %d of %d files, and the guest overwrote %d MB of virtual file data", stats.SourceReadBytes/1e6, stats.FilesRead, stats.Files, stats.DirtyBytes/1e6)
+		log.CtxInfof(ctx, "Virtualized EXT4 workspace image requests: reads=%d read_bytes=%d read_usec=%d writes=%d write_bytes=%d write_usec=%d source_opens=%d source_open_usec=%d", stats.Reads, stats.ReadBytes, stats.ReadNanos/1000, stats.Writes, stats.WriteBytes, stats.WriteNanos/1000, stats.SourceOpens, stats.SourceOpenNanos/1000)
 		if err := c.workspaceStore.Close(); err != nil {
 			log.CtxWarningf(ctx, "Failed to close workspace image store: %s", err)
 		}
@@ -1895,6 +1943,7 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 		}
 		sizeBytes = size
 		chrootRelativeImagePath = filepath.Join(workspaceDriveID+vbdMountDirSuffix, vbd.FileName)
+		c.timeline.mark("image_build")
 	} else {
 		if err := c.createWorkspaceImage(ctx, c.actionWorkingDir, workspaceExt4Path); err != nil {
 			return status.WrapError(err, "failed to create workspace image")
@@ -1911,6 +1960,7 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 		return err
 	}
 	execClient := vmxpb.NewExecClient(conn)
+	c.timeline.mark("setup_dial")
 
 	// UpdateGuestDrive can only be called after the VM boots (https://github.com/firecracker-microvm/firecracker/blob/c862760999f15d27034098a53a4d5bee3fba829d/src/firecracker/swagger/firecracker.yaml#L256-L260)
 	// The only way to tell if the VM booted seems to be monitoring its stdout.
@@ -1919,6 +1969,7 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
 		return status.UnavailableErrorf("error updating workspace drive attached to snapshot: %s", err)
 	}
+	c.timeline.mark("drive_update")
 
 	if err := c.mountWorkspace(ctx, execClient, sizeBytes); err != nil {
 		// Translate deadline-exceeded to unavailable so the caller retries.
@@ -1927,6 +1978,7 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 		}
 		return status.WrapError(err, "failed to remount workspace after update")
 	}
+	c.timeline.mark("mount")
 
 	return nil
 }
@@ -2529,6 +2581,9 @@ func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 		return status.WrapError(err, "create uffd handler")
 	}
 	sockAbsPath := filepath.Join(c.getChroot(), uffdSockName)
+	if *resumeProbe {
+		h.RecordFaultOffsets()
+	}
 	if err := h.Start(ctx, sockAbsPath, c.memoryStore); err != nil {
 		return status.WrapError(err, "start uffd handler")
 	}
@@ -3086,7 +3141,7 @@ func (c *FirecrackerContainer) inputPreload(ctx context.Context, cmd *repb.Comma
 	if len(paths) == 0 {
 		return nil
 	}
-	return &vmxpb.InputPreload{InputRoot: inputRoot, Paths: paths, Parallelism: int32(*preloadParallelism)}
+	return &vmxpb.InputPreload{InputRoot: inputRoot, Paths: paths, Parallelism: int32(*preloadParallelism), Wait: *preloadWait}
 }
 
 // inputTreePaths returns the regular files in the input tree by their input
@@ -3320,6 +3375,28 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer span.End()
 
 	start := time.Now()
+	c.timeline = &execTimeline{last: start}
+	if c.uffdHandler != nil {
+		// The first mark reports the faults since the VM was resumed.
+		c.timeline.faultStats = c.uffdHandler.FaultStats
+		if *resumeProbe {
+			c.timeline.faultOffsets = c.uffdHandler.TakeFaultOffsets
+		}
+		c.timeline.mark("vm_start")
+	}
+	if *resumeProbe {
+		time.Sleep(300 * time.Millisecond)
+		c.timeline.mark("settle")
+		dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+		conn, err := vsock.SimpleGRPCDial(dialCtx, filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.VMExecPort)
+		cancel()
+		if err != nil {
+			log.CtxWarningf(ctx, "Resume probe could not dial vmexec: %s", err)
+		} else {
+			conn.Close()
+		}
+		c.timeline.mark("wake_dial")
+	}
 
 	// Ensure that ctx gets cancelled if the VM crashes.
 	ctx, cancel := c.monitorVMContext(ctx)
@@ -3332,6 +3409,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		result.DoNotRecycle = true
 	}
 	defer func() {
+		c.timeline.mark("tail")
+		log.CtxInfof(ctx, "Exec timeline: total_usec=%d %s", time.Since(start).Microseconds(), strings.Join(c.timeline.steps, " "))
+		c.timeline = nil
 		ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 		defer cancel()
 		if result.VMMetrics == nil {
@@ -3404,6 +3484,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			return result
 		}
 	}
+	c.timeline.mark("reset_guest")
 
 	guestWorkspaceMountDir := "/workspace/"
 	if c.usesGuestVFS() {
@@ -3444,6 +3525,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 	// Emit metrics to track time spent preparing VM to execute a command
 	c.emitCOWAndUFFDMetrics(stage)
+	c.timeline.mark("exec_dial")
 
 	// Deflate the balloon so the execution has access to full memory.
 	//
@@ -3460,7 +3542,18 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	stage = "exec"
-	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), c.inputPreload(ctx, cmd, guestWorkspaceMountDir), stdio)
+	c.timeline.mark("balloon")
+	preload := c.inputPreload(ctx, cmd, guestWorkspaceMountDir)
+	if *resumeProbe {
+		if preload == nil {
+			preload = &vmxpb.InputPreload{}
+		}
+		preload.ReportIdleActivity = true
+		preload.PageCensus = c.timeline.census
+	}
+	c.timeline.mark("preload_list")
+	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), preload, stdio)
+	c.timeline.mark("command")
 	if c.usesGuestVFS() {
 		// Recycling is not supported for firecracker + fuse yet.
 		result.DoNotRecycle = true
@@ -3470,6 +3563,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		// them through the same image.
 		result.VfsUnusedInputs = c.lazyWorkspaceUnusedInputs(ctx)
 	}
+	c.timeline.mark("unused_inputs")
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
@@ -3513,14 +3607,17 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 				}
 			}
 		}
+		c.timeline.mark("unmount")
 		if err := c.pauseVM(ctx); err != nil {
 			result.Error = status.UnavailableErrorf("error pausing VM: %s", err)
 			return result
 		}
+		c.timeline.mark("pause")
 		if err := c.copyOutputsToWorkspace(ctx); err != nil {
 			result.Error = status.WrapError(err, "failed to copy action outputs from VM workspace")
 			return result
 		}
+		c.timeline.mark("copy_outputs")
 		if c.workspaceInputs != nil && c.workspaceStore != nil {
 			result.VfsStats = c.lazyWorkspaceStats()
 		}
@@ -3528,6 +3625,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			result.Error = status.UnavailableErrorf("error resuming VM after copying workspace outputs: %s", err)
 			return result
 		}
+		c.timeline.mark("resume")
 		// Release the workspace files now rather than when the VM is paused
 		// or removed. If the guest still has the workspace mounted, the VM
 		// is not recycled and Remove unmounts the VBD after stopping it.
@@ -3537,6 +3635,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 				result.DoNotRecycle = true
 			}
 		}
+		c.timeline.mark("detach")
 	}
 
 	return result

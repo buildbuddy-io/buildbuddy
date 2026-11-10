@@ -103,4 +103,11 @@ type Stats struct {
 	DirtyBytes int64
 	// SourceReadBytes is the number of bytes read from sources.
 	SourceReadBytes int64
+	// Reads and Writes count the block device requests served, ReadBytes
+	// and WriteBytes their sizes, and ReadNanos and WriteNanos how long they
+	// took in total. SourceOpens counts the sources opened, which took
+	// SourceOpenNanos in total, including any download.
+	Reads, ReadBytes, ReadNanos    int64
+	Writes, WriteBytes, WriteNanos int64
+	SourceOpens, SourceOpenNanos   int64
 }
