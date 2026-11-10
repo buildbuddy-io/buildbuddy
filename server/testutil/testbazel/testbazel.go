@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -124,14 +123,11 @@ if ! [ -f MODULE.bazel.lock ]; then
 fi
 cd "$STARTDIR"
 `
-		if major, _ := version(t); major < 8 {
-			// Bazel < 8's native sh rules need an autodetected C++
-			// toolchain, which fails without a C compiler; tests don't
-			// compile C++.
-			script += `
+		// Bazel 7's native sh rules need an autodetected C++ toolchain, which
+		// fails without a C compiler; tests don't compile C++.
+		script += `
 if [ -z "${CC:-}" ] && ! command -v gcc >/dev/null; then export CC=/bin/true; fi
 `
-		}
 		script += fmt.Sprintf(`exec %q --install_base=%q --bazelrc=%q "$@"`, path, installBase, bazelrc)
 		err = os.WriteFile(entrypoint, []byte(script), 0755)
 		require.NoError(t, err)
@@ -152,11 +148,10 @@ func HermeticFlags(t testing.TB) []string {
 		"--repository_cache=" + repoCachePath(t),
 		"--lockfile_mode=error",
 	}
-	major, minor := version(t)
-	// The repo contents cache (Bazel 8.3+) defaults to a dir inside the
-	// shared prewarmed repository_cache, where nested invocations can contend
-	// on its lock and hang.
-	if major > 8 || (major == 8 && minor >= 3) {
+	// Bazel 8.3+ (every supported version but 7.x) puts the repo contents
+	// cache in the shared prewarmed repository_cache, where nested
+	// invocations can contend on its lock and hang.
+	if !strings.HasPrefix(Version, "7.") {
 		flags = append(flags, "--repo_contents_cache=")
 	}
 	// Combined with --lockfile_mode=error, the prewarmed vendor dir keeps
@@ -165,18 +160,6 @@ func HermeticFlags(t testing.TB) []string {
 	require.True(t, testfs.Exists(t, "", vendorDir), "missing prewarmed vendor dir %q for Bazel %s", vendorDir, Version)
 	flags = append(flags, "--vendor_dir="+vendorDir)
 	return flags
-}
-
-// version returns the major and minor version of the embedded test bazel
-// binary, e.g. 10, 0 for "10.0.0rc2".
-func version(t testing.TB) (major, minor int) {
-	parts := strings.SplitN(Version, ".", 3)
-	require.Len(t, parts, 3, "parse bazel version %q", Version)
-	major, err := strconv.Atoi(parts[0])
-	require.NoError(t, err, "parse bazel version %q", Version)
-	minor, err = strconv.Atoi(parts[1])
-	require.NoError(t, err, "parse bazel version %q", Version)
-	return major, minor
 }
 
 func repoCachePath(t testing.TB) string {

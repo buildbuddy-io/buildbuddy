@@ -169,13 +169,13 @@ func makeLocalGitRepo(t *testing.T, contents map[string]string) (path, commitSHA
 	return path, commitSHA
 }
 
-// digestFunctionStartupFlag returns a --digest_function startup flag for
-// tests of startup flag parsing. Bazel 7's lockfile and vendor dir digests
-// depend on the digest function, so testbazel's prewarmed (SHA256) offline
-// deps are stale under BLAKE3 there.
-func digestFunctionStartupFlag() string {
+// testStartupFlag returns a non-default startup flag for tests of startup flag
+// parsing. Bazel 7's lockfile and vendor dir digests depend on the digest
+// function, so testbazel's prewarmed (SHA256) offline deps are stale under
+// BLAKE3 there.
+func testStartupFlag() string {
 	if strings.HasPrefix(testbazel.Version, "7.") {
-		return "--digest_function=SHA256"
+		return "--host_jvm_args=-Dbuildbuddy.remote_bazel_test=true"
 	}
 	return "--digest_function=BLAKE3"
 }
@@ -412,7 +412,7 @@ genrule(
 		// and we won't be able to fetch it.
 		"--runner_exec_properties=instance_name="+randomStr,
 		// Pass a startup flag to test parsing
-		digestFunctionStartupFlag(),
+		testStartupFlag(),
 		"build",
 		":main",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
@@ -508,7 +508,7 @@ genrule(
 		// and we won't be able to fetch it.
 		"--runner_exec_properties=instance_name=" + randomStr,
 		// Pass a startup flag to test parsing
-		digestFunctionStartupFlag(),
+		testStartupFlag(),
 		"--run_remotely=0",
 		"run",
 		":main",
@@ -556,13 +556,16 @@ genrule(
 	require.NoError(t, err)
 	require.Len(t, invResp.GetInvocation(), 1)
 	userMetadataCount := 0
+	var startupOptions []string
 	for _, event := range invResp.GetInvocation()[0].GetEvent() {
+		startupOptions = append(startupOptions, event.GetBuildEvent().GetOptionsParsed().GetExplicitStartupOptions()...)
 		if user, ok := event.GetBuildEvent().GetBuildMetadata().GetMetadata()["USER"]; ok {
 			require.Equal(t, childUser, user)
 			userMetadataCount++
 		}
 	}
 	require.Equal(t, 1, userMetadataCount)
+	require.Contains(t, startupOptions, testStartupFlag())
 
 	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 		InvocationId: parentInv.InvocationId,
@@ -696,12 +699,9 @@ module(name = "runfiles_test")
 bazel_dep(name = "message_dep", version = "1.0", repo_name = "messages")
 local_path_override(module_name = "message_dep", path = "dep")
 `,
-				// The local_path_override makes the prewarmed lockfile stale, so
-				// let the CI runner's bazel update it. (Where bazel runs through
-				// the testbazel launcher, the launcher's own --bazelrc sets
-				// lockfile_mode=error and wins.) With lockfile_mode=off, Bazel
-				// 9.3.2 fetches rules_shell's registry files from the network
-				// instead of using the prewarmed vendor dir.
+				// The local_path_override makes the prewarmed lockfile stale,
+				// and lockfile_mode=off makes Bazel 9 fetch rules_shell from
+				// the network, so let the CI runner's bazel update it.
 				".bazelrc": "common --lockfile_mode=update\n",
 				"dep/MODULE.bazel": `
 module(name = "message_dep", version = "1.0")

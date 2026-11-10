@@ -38,9 +38,6 @@ actions:
           //app/util:shlex_test
           -//enterprise/server/remote_execution/containers/firecracker/...
           -//enterprise/server/remote_execution/overlayfs:overlayfs_test
-          -//enterprise/server/test/integration/remote_execution:remote_execution_test
-          -//enterprise/server/test/integration/remote_execution:remote_execution_test_bazel_8_8_2
-          -//enterprise/server/test/integration/remote_execution:remote_execution_test_bazel_7_7_2
           -//enterprise/server/remote_execution/vbd:vbd_test
     allow_concurrent_runs: false
   - name: Build public release artifacts (linux_amd64) # with -c opt and no race detection
@@ -216,13 +213,15 @@ actions:
             exit 1
           fi
           INVOCATION_ID=$(cat /proc/sys/kernel/random/uuid)
-          if ! bazel test --config=linux-workflows --config=tests-ci --invocation_id="$INVOCATION_ID" -- $TARGETS; then
+          STATUS=0
+          bazel test --config=linux-workflows --config=tests-ci --invocation_id="$INVOCATION_ID" -- $TARGETS || STATUS=$?
+          if [ "$STATUS" -ne 0 ]; then
             URL="https://app.buildbuddy.io/invocation/$INVOCATION_ID"
-            curl -fsS -X POST -H 'Content-Type: application/json' \
+            curl -fsS --max-time 30 -X POST -H 'Content-Type: application/json' \
               --data "{\"text\": \"Bazel RC tests failed: $URL\"}" \
-              "$BB_CHECKS_SLACK_WEBHOOK_URL"
-            exit 1
+              "$BB_CHECKS_SLACK_WEBHOOK_URL" || true
           fi
+          exit "$STATUS"
   - name: Code review
     container_image: ubuntu-22.04
     triggers:
