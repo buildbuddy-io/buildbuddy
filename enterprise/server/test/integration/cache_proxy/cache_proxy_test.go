@@ -25,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/local_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -47,8 +46,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/jonboulle/clockwork"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/pkg/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -210,27 +207,11 @@ func TestES256Auth_RemoteExecution(t *testing.T) {
 }
 
 func TestByteStreamWriteSkipValidationDoesNotPoisonLocalCache(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.skip_write_validation": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true": true,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
+	flags.Set(t, "cache_proxy.skip_write_validation", true)
 
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
-	proxy := rbe.AddCacheProxyWithOptions(&rbetest.CacheProxyOptions{
-		EnvModifier: func(env *testenv.TestEnv) {
-			env.SetExperimentFlagProvider(fp)
-		},
-	})
-	bs := proxy.GetByteStreamClient()
+	bs := rbe.AddCacheProxy().GetByteStreamClient()
 
 	ctx := metadata.AppendToOutgoingContext(t.Context(), authutil.APIKeyHeader, rbe.APIKey1)
 	correct := bytes.Repeat([]byte("correct content"), 3_000)
@@ -240,7 +221,7 @@ func TestByteStreamWriteSkipValidationDoesNotPoisonLocalCache(t *testing.T) {
 	hash := hex.EncodeToString(digest[:])
 	sizeBytes := int64(len(correct))
 
-	err = writeBlob(t, ctx, bs, "2148e1f1-aacc-41eb-a31c-22b6da7c7ac1", hash, sizeBytes, corrupt)
+	err := writeBlob(t, ctx, bs, "2148e1f1-aacc-41eb-a31c-22b6da7c7ac1", hash, sizeBytes, corrupt)
 	require.True(t, status.IsInvalidArgumentError(err), "err = %v", err)
 
 	err = writeBlob(t, ctx, bs, "2148e1f1-aacc-41eb-a31c-22b6da7c7ac2", hash, sizeBytes, correct)
@@ -791,7 +772,7 @@ func BenchmarkActionCacheTTLFullBuildWithProxyAppLatency(b *testing.B) {
 
 	for _, test := range []struct {
 		name       string
-		ttlSeconds int
+		ttlSeconds int64
 	}{
 		{name: "ttl_disabled", ttlSeconds: 0},
 		{name: "ttl_enabled", ttlSeconds: 60},
@@ -838,19 +819,7 @@ func BenchmarkActionCacheTTLFullBuildWithProxyAppLatency(b *testing.B) {
 			})
 			proxyEnv.SetCache(pc)
 
-			testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-				"cache_proxy.action_cache_ttl_seconds": {
-					State:          memprovider.Enabled,
-					DefaultVariant: "enabled",
-					Variants: map[string]any{
-						"enabled": test.ttlSeconds,
-					},
-				},
-			})
-			require.NoError(b, openfeature.SetNamedProviderAndWait(b.Name(), testProvider))
-			fp, err := experiments.NewFlagProvider(b.Name())
-			require.NoError(b, err)
-			proxyEnv.SetExperimentFlagProvider(fp)
+			flags.Set(b, "cache_proxy.action_cache_ttl_seconds", test.ttlSeconds)
 
 			backendTarget := fmt.Sprintf("grpc://localhost:%d", backendPort)
 			conn, err := grpc_client.DialSimple(backendTarget)

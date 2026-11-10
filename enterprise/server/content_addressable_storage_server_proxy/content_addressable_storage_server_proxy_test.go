@@ -13,7 +13,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
@@ -29,8 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -428,23 +425,11 @@ func TestFindMissingBlobs_CachingSeparatesChunksAndBlobs(t *testing.T) {
 
 func TestFindMissingBlobs_BypassCache(t *testing.T) {
 	flags.Set(t, "cache_proxy.find_missing_blobs_cache_ttl", 30*time.Second)
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.bypass_find_missing_cache": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true": true,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
+	flags.Set(t, "cache_proxy.bypass_find_missing_cache", true)
 	ctx := testContext()
 	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	proxyEnv := testenv.GetTestEnv(t)
 	proxyEnv.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
-	proxyEnv.SetExperimentFlagProvider(fp)
 	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	require.NoError(t, atime_updater.Register(proxyEnv))
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
