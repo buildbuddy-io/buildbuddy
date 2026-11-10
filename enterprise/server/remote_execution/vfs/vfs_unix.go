@@ -365,7 +365,10 @@ func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string, invalidatedIn
 			return status.WrapErrorf(err, "could not find inode for invalidation")
 		}
 		errno := node.NotifyContent(0, -1)
-		if errno != 0 {
+		// The kernel answers ENOENT when it has no inode for this node
+		// (go-fuse keeps using the node ID after the kernel forgot it), so
+		// it has nothing to drop and the inode still counts as invalidated.
+		if errno != 0 && errno != syscall.ENOENT {
 			log.CtxWarningf(ctx, "Failed to notify content for inode %d for path %q: %d", invalidatedInodeID, node.Path(nil), errno)
 			return status.InternalErrorf("could not invalidate directory inode %d for path %q: %s", invalidatedInodeID, node.Path(nil), errno)
 		}
@@ -388,7 +391,12 @@ func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string, invalidatedIn
 			return status.WrapErrorf(err, "could not find inode for invalidation")
 		}
 		errno := node.NotifyEntry(invalidatedEntry.Name)
-		if errno != 0 {
+		// The kernel answers ENOENT when it has no inode for this directory
+		// (go-fuse keeps using the node ID after the kernel forgot it) or no
+		// dentry for the name under it, and ENOTDIR when the inode it has is
+		// not a directory. The kernel has nothing to drop for this name in
+		// these cases, so the entry still counts as invalidated.
+		if errno != 0 && errno != syscall.ENOENT && errno != syscall.ENOTDIR {
 			log.CtxWarningf(ctx, "Failed to notify entry %q for inode %d for path %q: %d", invalidatedEntry.Name, invalidatedEntry.InodeID, node.Path(nil), errno)
 			return status.InternalErrorf("could not invalidate entry %q for inode %d for path %q: %s", invalidatedEntry.Name, invalidatedEntry.InodeID, node.Path(nil), errno)
 		}

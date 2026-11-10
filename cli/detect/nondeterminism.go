@@ -71,6 +71,7 @@ var (
 	)
 	notifyEmail = nondeterminismFlags.Bool("notify_email", false, "Send an email to workspace admins when nondeterminism is detected.")
 	notifySlack = nondeterminismFlags.String("notify_slack", "", "Name of the BuildBuddy secret with the Slack webhook URL to notify when nondeterminism is detected.")
+	tempDir     = nondeterminismFlags.String("temp_dir", "", "Directory in which temporary output bases and build logs will be created. Defaults to the OS temp directory.")
 )
 
 var errNondeterminismDetected = errors.New("nondeterminism detected")
@@ -98,6 +99,7 @@ type options struct {
 	bazelArgs     *arg.BazelArgs
 	besBackend    string
 	besResultsURL string
+	tempDir       string
 }
 
 type checker struct {
@@ -148,10 +150,18 @@ func handleNondeterminism(args []string) (int, error) {
 		log.Print(nondeterminismUsage)
 		return -1, err
 	}
+	absTempDir := *tempDir
+	if absTempDir != "" {
+		absTempDir, err = filepath.Abs(absTempDir)
+		if err != nil {
+			return -1, fmt.Errorf("resolve --temp_dir: %w", err)
+		}
+	}
 	opts := options{
 		bazelArgs:     bazelArgs,
 		besBackend:    *besBackend,
 		besResultsURL: *besResultsURL,
+		tempDir:       absTempDir,
 	}
 
 	c := &checker{
@@ -189,7 +199,7 @@ func parseBazelCommand(command string) (*arg.BazelArgs, error) {
 }
 
 func (c *checker) Run(ctx context.Context) error {
-	m, err := newBuildMetadata()
+	m, err := newBuildMetadata(c.opts.tempDir)
 	if err != nil {
 		return err
 	}
@@ -279,8 +289,13 @@ func (c *checker) notifyNondeterminism(ctx context.Context, m *buildMetadata) er
 	return nil
 }
 
-func newBuildMetadata() (*buildMetadata, error) {
-	dir, err := os.MkdirTemp("", "nondeterminism-check-*")
+func newBuildMetadata(tempDir string) (*buildMetadata, error) {
+	if tempDir != "" {
+		if err := os.MkdirAll(tempDir, 0755); err != nil {
+			return nil, err
+		}
+	}
+	dir, err := os.MkdirTemp(tempDir, "nondeterminism-check-*")
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +354,8 @@ func (c *checker) cleanupBazel(outputBase string) {
 
 func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, invocationID, besBackend, besResultsURL string) ([]string, error) {
 	// Clone the base args to avoid mutating the original, because each build has different flags (output base, compact log path, etc.).
-	clonedArgs, err := arg.NewBazelArgsNoResolve(baseArgs.Forwarded())
+	// Resolve rc files so that headers set in a bazelrc are visible.
+	clonedArgs, err := arg.NewBazelArgs(baseArgs.Forwarded())
 	if err != nil {
 		return nil, err
 	}
@@ -368,6 +384,9 @@ func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, invocati
 		return nil, err
 	}
 	if err := login.ConfigureCredentialHelper(clonedArgs); err != nil {
+		return nil, err
+	}
+	if err := login.ConfigureBESAPIKey(clonedArgs); err != nil {
 		return nil, err
 	}
 	return clonedArgs.Forwarded(), nil

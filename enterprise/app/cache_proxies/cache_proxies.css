@@ -422,7 +422,7 @@
   color: var(--color-text-secondary);
 }
 
-.cache-proxy-page .cache-proxy-labels {
+.cache-proxy-labels {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -430,22 +430,29 @@
 
 /* --label-hue is derived from the label key, and the lightness variable
  * (shared with digest hashes) adapts the color to light and dark themes. */
-.cache-proxy-page .cache-proxy-label {
+.cache-proxy-label {
   display: inline-flex;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid hsl(var(--label-hue), 50%, var(--color-digest-color-lightness));
-  font-size: 13px;
+  box-shadow: inset 0 0 0 1px hsl(var(--label-hue), 50%, var(--color-digest-color-lightness));
+  height: 1lh;
 }
 
-.cache-proxy-page .cache-proxy-label-key {
-  padding: 2px 8px;
+.cache-proxy-label-key,
+.cache-proxy-label-value {
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+}
+
+.cache-proxy-label-key {
+  padding: 0 8px;
   background-color: hsl(var(--label-hue), 50%, var(--color-digest-color-lightness));
   font-weight: 600;
 }
 
-.cache-proxy-page .cache-proxy-label-value {
-  padding: 2px 8px;
+.cache-proxy-label-value {
+  padding: 0 8px;
 }
 
 .cache-proxy-page .cache-proxy-stat-rings {

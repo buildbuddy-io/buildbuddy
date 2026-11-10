@@ -221,6 +221,7 @@ type apiKeyGroup struct {
 	UseGroupOwnedExecutors bool
 	CacheEncryptionEnabled bool
 	EnforceIPRules         bool
+	UserAccountType        uidpb.AccountType
 	Impersonation          bool
 	Status                 int32
 }
@@ -261,6 +262,10 @@ func (g *apiKeyGroup) GetEnforceIPRules() bool {
 	return g.EnforceIPRules
 }
 
+func (g *apiKeyGroup) GetUserAccountType() uidpb.AccountType {
+	return g.UserAccountType
+}
+
 func (g *apiKeyGroup) IsImpersonating() bool {
 	return g.Impersonation
 }
@@ -282,7 +287,8 @@ type apiKeyGroupRow struct {
 	CacheEncryptionEnabled bool
 	EnforceIPRules         bool
 	IsParent               bool
-	GroupStatus            int32 `gorm:"column:group_status"`
+	GroupStatus            int32  `gorm:"column:group_status"`
+	UserSubID              string `gorm:"column:user_sub_id"`
 	// Role from direct group membership for user-owned keys.
 	DirectMembershipRole *uint32 `gorm:"column:direct_membership_role"`
 	// Role from indirect membership via user lists for user-owned keys.
@@ -290,6 +296,10 @@ type apiKeyGroupRow struct {
 }
 
 func (r *apiKeyGroupRow) toAPIKeyGroup() *apiKeyGroup {
+	accountType := uidpb.AccountType_UNKNOWN_USER_TYPE
+	if r.UserID != "" {
+		accountType = tables.AccountTypeFromSubID(r.UserSubID)
+	}
 	return &apiKeyGroup{
 		APIKeyID:               r.APIKeyID,
 		UserID:                 r.UserID,
@@ -299,6 +309,7 @@ func (r *apiKeyGroupRow) toAPIKeyGroup() *apiKeyGroup {
 		UseGroupOwnedExecutors: r.UseGroupOwnedExecutors,
 		CacheEncryptionEnabled: r.CacheEncryptionEnabled,
 		EnforceIPRules:         r.EnforceIPRules,
+		UserAccountType:        accountType,
 		Impersonation:          r.Impersonation,
 		Status:                 r.GroupStatus,
 	}
@@ -692,6 +703,7 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string, includeExpired bool) *qu
 	baseQuery := fmt.Sprintf(`
 		SELECT
 			ak.*,
+			COALESCE(u.sub_id, '') AS user_sub_id,
 			ug.role AS direct_membership_role,
 			%s AS user_list_membership_role,
 			g.use_group_owned_executors,
@@ -701,6 +713,7 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string, includeExpired bool) *qu
 			g.status AS group_status
 		FROM "APIKeys" AS ak
 		JOIN "Groups" AS g ON ak.group_id = g.group_id
+		LEFT JOIN "Users" AS u ON ak.user_id != '' AND u.user_id = ak.user_id
 		LEFT JOIN "UserGroups" AS ug
 			ON ug.user_user_id = ak.user_id
 			AND ug.group_group_id = ak.group_id

@@ -37,6 +37,7 @@ var (
 var (
 	buildifierRlocationpath  string
 	goimportsRlocationpath   string
+	actionlintRlocationpath  string
 	goRlocationpath          string
 	clangFormatRlocationpath string
 	bbCLIRlocationpath       string
@@ -51,6 +52,8 @@ var (
 	tools = []Tool{
 		// Fixes go files - both imports and formatting.
 		{Name: "GoFormat", Run: runGoimports},
+		// Checks GitHub workflow files. Check-only: it has no fix mode.
+		{Name: "WorkflowLint", Run: runActionlint},
 		// Fixes proto files.
 		{Name: "ProtoFormat", Run: runClangFormat},
 		// Fixes frontend-related files, configs, and docs.
@@ -246,6 +249,30 @@ func runGoimports(ctx context.Context, stdout, stderr io.Writer, fix bool, files
 	}
 	if stdoutCounter.Count() > 0 {
 		return fmt.Errorf("goimports found lint errors")
+	}
+	return nil
+}
+
+// runActionlint checks all workflows whenever a workflow, a local action, the
+// actionlint config or its version (go.mod) changed, since any of those can
+// break workflows that didn't change, like the callers of a reusable workflow.
+// Checking every workflow takes milliseconds.
+func runActionlint(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	if !slices.ContainsFunc(files, func(f string) bool { return f == "go.mod" || strings.HasPrefix(f, ".github/") }) {
+		return nil
+	}
+	cmd, err := getRunfileToolCommand(ctx, actionlintRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get actionlint command: %w", err)
+	}
+	// With no file arguments, actionlint checks every workflow in the repo.
+	// Don't use shellcheck or pyflakes even if they're on PATH, so results
+	// don't depend on the machine.
+	cmd.Args = append(cmd.Args, "-shellcheck=", "-pyflakes=")
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run actionlint: %w", err)
 	}
 	return nil
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -348,6 +349,101 @@ func TestDispatch_TaskSizingUsesCommandWithoutInjectedSecrets(t *testing.T) {
 	require.Equal(t, "original-value", envVars["ORIGINAL"])
 }
 
+func TestDispatch_ValidateRunnerSize(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		maxCPU         float64
+		maxMemoryBytes int64
+		props          map[string]string
+		wantErr        bool
+	}{
+		{
+			name:  "no limits",
+			props: map[string]string{"EstimatedCPU": "64", "EstimatedMemory": "256GB"},
+		},
+		{
+			name:           "within limits",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "8", "EstimatedMemory": "16GB"},
+		},
+		{
+			name:           "cpu exceeds limit, but not memory",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "8.5", "EstimatedMemory": "10GB"},
+			wantErr:        true,
+		},
+		{
+			name:           "memory exceeds limit, but not cpu",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "4", "EstimatedMemory": "17GB"},
+			wantErr:        true,
+		},
+		{
+			name:           "memory and cpu exceed limits",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "9", "EstimatedMemory": "17GB"},
+			wantErr:        true,
+		},
+		{
+			name:    "compute units exceed cpu limit",
+			maxCPU:  2,
+			props:   map[string]string{"EstimatedComputeUnits": "3"},
+			wantErr: true,
+		},
+		{
+			name:           "self-hosted pool is not limited",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props: map[string]string{
+				"use-self-hosted-executors": "true",
+				"EstimatedCPU":              "64",
+				"EstimatedMemory":           "256GB",
+			},
+		},
+		{
+			name:    "negative cpu limit",
+			maxCPU:  -1,
+			wantErr: true,
+		},
+		{
+			name:           "negative memory limit",
+			maxMemoryBytes: -1,
+			wantErr:        true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.runner.max_cpu", tc.maxCPU)
+			flags.Set(t, "remote_execution.runner.max_memory_bytes", tc.maxMemoryBytes)
+			env, _, _ := setupEnv(t)
+			s := env.GetRemoteExecutionService()
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(t.Context(), "US1")
+			require.NoError(t, err)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+
+			action := &repb.Action{Platform: &repb.Platform{}}
+			for name, value := range tc.props {
+				action.Platform.Properties = append(action.Platform.Properties, &repb.Platform_Property{Name: name, Value: value})
+			}
+			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString())
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			if !tc.wantErr {
+				require.NoError(t, err)
+				require.Len(t, sched.scheduleReqs, 1)
+				return
+			}
+			require.Error(t, err)
+			require.Empty(t, sched.scheduleReqs)
+		})
+	}
+}
+
 func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
 	env, _, _ := setupEnv(t)
 
@@ -513,13 +609,19 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
         "test": {
           "EstimatedMemory": "30GB"
         },
+        "workflow": {
+          "EstimatedCPU": "16"
+        },
         "default": {}
       },
       "defaultVariant": "default",
       "targeting": {
         "if": [
           { "==": [ { "var": "EstimatedComputeUnits" }, 8.0 ] },
-          "test"
+          "test",
+          { "==": [ { "var": "workflow_action_name" }, "Expensive benchmarks" ] },
+          "workflow",
+          "default"
         ]
       }
     }
@@ -578,6 +680,43 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 			},
 		},
 	}, task.GetPlatformOverrides(), protocmp.Transform()))
+
+	for _, tc := range []struct {
+		name       string
+		mnemonic   string
+		actionName string
+		overridden bool
+	}{
+		{"matching_workflow", "BuildBuddyWorkflowRun", "Expensive benchmarks", true},
+		{"other_workflow", "BuildBuddyWorkflowRun", "Other workflow", false},
+		{"missing_name", "BuildBuddyWorkflowRun", "", false},
+		{"ordinary_action", "TestRunner", "Expensive benchmarks", false},
+		{"remote_bazel", "RemoteBazelRun", "Expensive benchmarks", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolInvocationId: iid,
+				ActionMnemonic:   tc.mnemonic,
+			})
+			cmd := &repb.Command{Arguments: []string{"test"}}
+			if tc.actionName != "" {
+				cmd.EnvironmentVariables = []*repb.Command_EnvironmentVariable{{
+					Name:  ci_runner_env.BuildBuddyActionNameEnvVarName,
+					Value: tc.actionName,
+				}}
+			}
+			action := &repb.Action{}
+			arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, action, cmd)
+			require.NoError(t, s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString()))
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[len(sched.scheduleReqs)-1].SerializedTask, task))
+			if tc.overridden {
+				require.Equal(t, []*repb.Platform_Property{{Name: "EstimatedCPU", Value: "16"}}, task.GetPlatformOverrides().GetProperties())
+			} else {
+				require.Empty(t, task.GetPlatformOverrides().GetProperties())
+			}
+		})
+	}
 }
 
 func TestDispatch_DisableOCIFetcherExperiment(t *testing.T) {

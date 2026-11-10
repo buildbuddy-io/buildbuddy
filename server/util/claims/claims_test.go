@@ -3,6 +3,7 @@ package claims_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -21,6 +22,7 @@ import (
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
@@ -103,6 +105,7 @@ type fakeAPIKeyGroup struct {
 	useGroupOwnedExecutors bool
 	cacheEncryptionEnabled bool
 	enforceIPRules         bool
+	userAccountType        uidpb.AccountType
 	impersonation          bool
 	groupStatus            grpb.Group_GroupStatus
 }
@@ -139,6 +142,10 @@ func (f *fakeAPIKeyGroup) GetEnforceIPRules() bool {
 	return f.enforceIPRules
 }
 
+func (f *fakeAPIKeyGroup) GetUserAccountType() uidpb.AccountType {
+	return f.userAccountType
+}
+
 func (f *fakeAPIKeyGroup) IsImpersonating() bool {
 	return f.impersonation
 }
@@ -153,9 +160,10 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	baseGroupID := "GR9000"
 	caps := capabilities.AnonymousUserCapabilities
 	akg := &fakeAPIKeyGroup{
-		groupID:      baseGroupID,
-		capabilities: capabilities.ToInt(caps),
-		groupStatus:  grpb.Group_ENTERPRISE_GROUP_STATUS,
+		groupID:         baseGroupID,
+		capabilities:    capabilities.ToInt(caps),
+		userAccountType: uidpb.AccountType_SAML,
+		groupStatus:     grpb.Group_ENTERPRISE_GROUP_STATUS,
 	}
 	c, err := claims.APIKeyGroupClaims(ctx, akg)
 	require.NoError(t, err)
@@ -167,6 +175,8 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	require.Equal(t, []string{baseGroupID}, c.GetAllowedGroups())
 	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership}, c.GetGroupMemberships())
 	require.Equal(t, grpb.Group_ENTERPRISE_GROUP_STATUS, c.GetGroupStatus())
+	require.True(t, c.IsSAML())
+	require.True(t, c.IsCustomerSSO())
 
 	// Should be able to set group ID to the base group ID via request context which should yield same results
 	// as before.
@@ -320,6 +330,48 @@ func TestGroupStatusPropagation(t *testing.T) {
 			require.Equal(t, status, c.GetGroupStatus())
 		})
 	}
+}
+
+func TestAssembleJWT_ZeroExpiration(t *testing.T) {
+	const jwtKey = "test-jwt-key"
+	const jwtDuration = time.Hour
+	flags.Set(t, "auth.jwt_key", jwtKey)
+	flags.Set(t, "auth.jwt_duration", jwtDuration)
+
+	c := &claims.Claims{UserID: "US123"}
+	minExpiration := time.Now().Add(jwtDuration).Truncate(time.Minute).Unix()
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodHS256)
+	maxExpiration := time.Now().Add(jwtDuration).Truncate(time.Minute).Unix()
+	require.NoError(t, err)
+
+	parsedClaims := &claims.Claims{}
+	_, err = jwt.ParseWithClaims(tokenString, parsedClaims, func(token *jwt.Token) (any, error) {
+		return []byte(jwtKey), nil
+	})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, parsedClaims.ExpiresAt, minExpiration)
+	require.LessOrEqual(t, parsedClaims.ExpiresAt, maxExpiration)
+	require.Zero(t, parsedClaims.ExpiresAt%60)
+}
+
+func TestAssembleJWT_ExpiredClaimsRemainExpired(t *testing.T) {
+	const jwtKey = "test-jwt-key"
+	flags.Set(t, "auth.jwt_key", jwtKey)
+
+	expiration := time.Now().Add(-time.Hour).Unix()
+	c := &claims.Claims{
+		ExpiresAt: expiration,
+		UserID:    "US123",
+	}
+	tokenString, err := claims.AssembleJWT(c, jwt.SigningMethodHS256)
+	require.NoError(t, err)
+
+	parsedClaims := &claims.Claims{}
+	_, err = jwt.ParseWithClaims(tokenString, parsedClaims, func(token *jwt.Token) (any, error) {
+		return []byte(jwtKey), nil
+	})
+	require.ErrorIs(t, err, jwt.ErrTokenExpired)
+	require.Equal(t, expiration, parsedClaims.ExpiresAt)
 }
 
 func TestAssembleJWT_ES256(t *testing.T) {

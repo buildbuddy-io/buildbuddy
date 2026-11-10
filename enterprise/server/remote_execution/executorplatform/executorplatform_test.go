@@ -7,15 +7,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/testing/protocmp"
 
@@ -405,6 +410,103 @@ func TestRunUnder(t *testing.T) {
 	}
 }
 
+func TestApplyOverrides_CIRunnerEnvVars(t *testing.T) {
+	flags.Set(t, "grpc_client_origin_header", "internal")
+	flags.Set(t, "app.client_identity.key", "test-client-identity-signing-key")
+	cis, err := clientidentity.New(clockwork.NewRealClock())
+	require.NoError(t, err)
+
+	ciRunnerArgs := []string{"./buildbuddy_ci_runner", "--bazel_command=test //..."}
+	for _, tc := range []struct {
+		name            string
+		args            []string
+		platformProps   []*repb.Platform_Property
+		identityService bool
+		expectArgs      []string
+		expectOrigin    bool
+		expectIdentity  bool
+	}{
+		{
+			name:            "ci runner",
+			args:            ciRunnerArgs,
+			identityService: true,
+			expectOrigin:    true,
+			expectIdentity:  true,
+		},
+		{
+			// run-under is prepended to the arguments before the env vars are
+			// added, so the CI runner check must not look at the wrapped
+			// argument list.
+			name: "ci runner with run-under",
+			args: ciRunnerArgs,
+			platformProps: []*repb.Platform_Property{
+				{Name: "run-under", Value: "tools/wrapper.sh --flag"},
+			},
+			identityService: true,
+			expectArgs:      append([]string{"tools/wrapper.sh", "--flag"}, ciRunnerArgs...),
+			expectOrigin:    true,
+			expectIdentity:  true,
+		},
+		{
+			name:         "ci runner without identity service",
+			args:         ciRunnerArgs,
+			expectOrigin: true,
+		},
+		{
+			// The command decides, not the workflow-id property.
+			name: "regular action with workflow-id",
+			args: []string{"./some_test", "--test-arg"},
+			platformProps: []*repb.Platform_Property{
+				{Name: "workflow-id", Value: "WF123"},
+			},
+			identityService: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := &repb.ExecutionTask{Command: &repb.Command{
+				Arguments: tc.args,
+				Platform:  &repb.Platform{Properties: tc.platformProps},
+			}}
+			platformProps, err := platform.ParseProperties(task)
+			require.NoError(t, err)
+			env := testenv.GetTestEnv(t)
+			if tc.identityService {
+				env.SetClientIdentityService(cis)
+			}
+			err = ApplyOverrides(t.Context(), env, bare, platformProps, task)
+			require.NoError(t, err)
+
+			if tc.expectArgs != nil {
+				require.Equal(t, tc.expectArgs, task.GetCommand().GetArguments())
+			}
+			envVars := map[string]string{}
+			for _, e := range task.GetCommand().GetEnvironmentVariables() {
+				envVars[e.GetName()] = e.GetValue()
+			}
+
+			origin, ok := envVars[ci_runner_env.BBGrpcClientOriginEnvVarName]
+			require.Equal(t, tc.expectOrigin, ok, "%s present", ci_runner_env.BBGrpcClientOriginEnvVarName)
+			if ok {
+				require.Equal(t, "internal", origin)
+			}
+
+			identity, ok := envVars[ci_runner_env.BBGrpcClientIdentityEnvVarName]
+			require.Equal(t, tc.expectIdentity, ok, "%s present", ci_runner_env.BBGrpcClientIdentityEnvVarName)
+			if ok {
+				ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, identity))
+				ctx, err = cis.ValidateIncomingIdentity(ctx)
+				require.NoError(t, err)
+				id, err := cis.IdentityFromContext(ctx)
+				require.NoError(t, err)
+				require.Equal(t, &interfaces.ClientIdentity{
+					Origin: interfaces.ClientIdentityInternalOrigin,
+					Client: interfaces.ClientIdentityWorkflow,
+				}, id)
+			}
+		})
+	}
+}
+
 func TestExtraEnvVars(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
@@ -609,6 +711,60 @@ func TestDefaultImageInPlatform(t *testing.T) {
 			}
 			require.Equal(t, tc.wantImage, apply(t, ctx, tc.task))
 			require.Empty(t, cmp.Diff(tc.wantTask, tc.task, protocmp.Transform()))
+		})
+	}
+}
+
+func TestSnapshotSalt(t *testing.T) {
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	for _, tc := range []struct {
+		name            string
+		isolation       string
+		forcedIsolation string
+		recycle         bool
+		providedSalt    string
+		salt            string
+		wantSalt        string
+	}{
+		{name: "recyclable Firecracker", isolation: "firecracker", recycle: true, salt: "salt", wantSalt: "salt"},
+		{name: "forced Firecracker", isolation: "podman", forcedIsolation: "firecracker", recycle: true, salt: "salt", wantSalt: "salt"},
+		{name: "empty salt", isolation: "firecracker", recycle: true},
+		{name: "non-recyclable Firecracker", isolation: "firecracker", salt: "salt"},
+		{name: "recyclable Podman", isolation: "podman", recycle: true, salt: "salt"},
+		{name: "recyclable bare", isolation: "none", recycle: true, salt: "salt"},
+		{name: "overrides provided salt", isolation: "firecracker", recycle: true, providedSalt: "original", salt: "salt", wantSalt: "salt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.forced_network_isolation_type", tc.forcedIsolation)
+			ctx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{{
+				Name:  execution_experiments.SnapshotSalt.Name(),
+				Value: &expb.EvaluatedFlag_StringValue{StringValue: tc.salt},
+			}})
+			plat := &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: fmt.Sprint(tc.recycle)},
+				{Name: platform.WorkloadIsolationPropertyName, Value: tc.isolation},
+			}}
+			if tc.providedSalt != "" {
+				plat.Properties = append(plat.Properties, &repb.Platform_Property{Name: platform.SnapshotSaltPropertyName, Value: tc.providedSalt})
+			}
+			task := &repb.ExecutionTask{
+				Action:  &repb.Action{Platform: plat},
+				Command: &repb.Command{Platform: plat.CloneVT()},
+			}
+			original := task.CloneVT()
+			props, err := platform.ParseProperties(task)
+			require.NoError(t, err)
+			execProps := &ExecutorProperties{SupportedIsolationTypes: []platform.ContainerType{
+				platform.BareContainerType, platform.PodmanContainerType, platform.FirecrackerContainerType,
+			}}
+			require.NoError(t, ApplyOverrides(ctx, testenv.GetTestEnv(t), execProps, props, task))
+
+			assert.Equal(t, tc.wantSalt, platform.FindValue(platform.GetProto(task.Action, task.Command), platform.SnapshotSaltPropertyName))
+			assert.Equal(t, tc.wantSalt, platform.FindValue(task.Command.Platform, platform.SnapshotSaltPropertyName))
+			if tc.wantSalt == "" {
+				require.Empty(t, cmp.Diff(original, task, protocmp.Transform()))
+			}
 		})
 	}
 }

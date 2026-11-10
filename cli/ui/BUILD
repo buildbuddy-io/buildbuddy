@@ -21,6 +21,7 @@ go_library(
         "//cli/log",
         "//cli/login",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:context_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",

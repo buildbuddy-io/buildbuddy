@@ -30,6 +30,7 @@ import (
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
@@ -281,6 +282,7 @@ func parseClaimsInternal(ctx context.Context, token string, keyProvider KeyProvi
 }
 
 func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims, error) {
+	accountType := akg.GetUserAccountType()
 	allowedGroups := []string{akg.GetGroupID()}
 	groupMemberships := []*interfaces.GroupMembership{{
 		GroupID:      akg.GetGroupID(),
@@ -327,6 +329,8 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		UseGroupOwnedExecutors:     akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled:     akg.GetCacheEncryptionEnabled(),
 		EnforceIPRules:             akg.GetEnforceIPRules(),
+		SAML:                       accountType == uidpb.AccountType_SAML,
+		CustomerSSO:                accountType == uidpb.AccountType_SAML || accountType == uidpb.AccountType_OIDC,
 		Impersonating:              akg.IsImpersonating(),
 		GroupStatus:                akg.GetGroupStatus(),
 	}, nil
@@ -437,11 +441,14 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 }
 
 func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
-	expirationTime := time.Now().Add(*jwtDuration)
-	expiresAt := expirationTime.Unix()
-	// Round expiration times down to the nearest minute to improve stability
-	// of JWTs for caching purposes.
-	expiresAt -= (expiresAt % 60)
+	expiresAt := c.ExpiresAt
+	if expiresAt == 0 {
+		expirationTime := time.Now().Add(*jwtDuration)
+		expiresAt = expirationTime.Unix()
+		// Round expiration times down to the nearest minute to improve stability
+		// of JWTs for caching purposes.
+		expiresAt -= (expiresAt % 60)
+	}
 	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
 	token := jwt.NewWithClaims(method, c)
 	if method == jwt.SigningMethodHS256 {

@@ -21,7 +21,7 @@ var (
 	flags = flag.NewFlagSet("ui", flag.ContinueOnError)
 	Flags = flags
 
-	apiTarget  = flags.String("target", "remote.buildbuddy.io", "BuildBuddy gRPC target")
+	apiTarget  = flags.String("target", login.DefaultApiTarget, "BuildBuddy gRPC target")
 	userFlag   = flags.String("user", "", "Filter by user")
 	meFlag     = flags.Bool("me", false, "Filter to your own builds (current $USER)")
 	repoFlag   = flags.String("repo", "", "Filter by repo URL")

@@ -14,7 +14,7 @@ import { BuildBuddyError } from "../../../app/util/errors";
 import { cache_proxy } from "../../../proto/cache_proxy_ts_proto";
 import { upgrade } from "../../../proto/upgrade_ts_proto";
 import { CACHE_COLORS } from "../../../app/util/color";
-import { readWriteRatio, toNumber } from "./cache_proxy_card";
+import { CacheProxyLabels, readWriteRatio, toNumber } from "./cache_proxy_card";
 
 // cacheProxyIdFromPath returns the proxy ID from a /cache-proxy/<id> path, or
 // "" if the path has no ID or its escapes are malformed.
@@ -138,7 +138,7 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
   renderDetails(details: cache_proxy.ICacheProxyDetails) {
     const summary: cache_proxy.ICacheProxySummary = details.summary ?? {};
     const stats = details.statistics;
-    const labels = Object.entries(summary.labels ?? {}).sort(([a], [b]) => a.localeCompare(b));
+    const hasLabels = Object.keys(summary.labels ?? {}).length > 0;
     const cpuMillis = toNumber(summary.allocatedCpuMillis);
     const memoryBytes = toNumber(summary.allocatedMemoryBytes);
     const hasACReads = toNumber(stats?.acReadHits) > 0;
@@ -157,21 +157,7 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
             <KeyValue label="Version">{summary.version}</KeyValue>
             <KeyValue label="Operating system">{summary.osFamily}</KeyValue>
             <KeyValue label="Architecture">{summary.arch}</KeyValue>
-            <KeyValue label="Labels">
-              {labels.length > 0 && (
-                <div className="cache-proxy-labels">
-                  {labels.map(([k, v]) => (
-                    <span
-                      key={k}
-                      className="cache-proxy-label"
-                      style={{ "--label-hue": format.colorHashHue(k) } as React.CSSProperties}>
-                      <span className="cache-proxy-label-key">{k}</span>
-                      <span className="cache-proxy-label-value">{v}</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </KeyValue>
+            <KeyValue label="Labels">{hasLabels && <CacheProxyLabels labels={summary.labels!} />}</KeyValue>
           </Panel>
           <Panel Icon={Cpu} title="Resources">
             <KeyValue label="CPU">{cpuMillis > 0 && `${cpuMillis / 1000} cores`}</KeyValue>

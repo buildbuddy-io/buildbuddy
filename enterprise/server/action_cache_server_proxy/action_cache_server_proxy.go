@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -35,6 +36,8 @@ import (
 var (
 	cacheActionResults = flag.Bool("cache_proxy.cache_action_results", true, "If true, the proxy will cache ActionCache.GetActionResult responses.")
 	actionCacheSalt    = flag.String("cache_proxy.action_cache_salt", "actioncache-170401", "A salt to reset action cache contents when needed.")
+
+	actionCacheTTLSeconds = expflag.Int64("cache_proxy.action_cache_ttl_seconds", 0, "If greater than 0, serve action results from the proxy's local cache without checking the remote cache, for this many seconds after the proxy last validated or updated them. Otherwise, clients can opt in with the "+proxy_util.ActionCacheTTLHeaderName+" header.")
 )
 
 type ActionCacheServerProxy struct {
@@ -158,12 +161,8 @@ func (s *ActionCacheServerProxy) cacheActionResultToLocalCAS(ctx context.Context
 }
 
 func (s *ActionCacheServerProxy) actionCacheTTL(ctx context.Context) time.Duration {
-	efp := s.env.GetExperimentFlagProvider()
-	if efp != nil {
-		ttlSeconds := efp.Int64(ctx, "cache_proxy.action_cache_ttl_seconds", 0)
-		if ttlSeconds > 0 {
-			return time.Duration(ttlSeconds) * time.Second
-		}
+	if ttlSeconds := actionCacheTTLSeconds.Get(ctx); ttlSeconds > 0 {
+		return time.Duration(ttlSeconds) * time.Second
 	}
 
 	// Clients may opt into this caching via a header as well, whose value is

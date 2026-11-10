@@ -228,10 +228,21 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	if err != nil {
 		return "", nil, err
 	}
+	if u.GetGroupID() == "" {
+		return "", nil, status.InternalError("user is unexpectedly missing group ID")
+	}
+	// Older clients choose the group to search using the query group ID. We
+	// reject a query group ID that differs from the authenticated group,
+	// because we would otherwise ignore it and return invocations from a group
+	// the client did not ask for.
+	if gid := req.GetQuery().GetGroupId(); gid != "" && gid != u.GetGroupID() {
+		return "", nil, status.InvalidArgumentErrorf("query group ID %q does not match the authenticated group ID %q (set request_context.group_id to select the group to search)", gid, u.GetGroupID())
+	}
 	if blocklist.IsBlockedForStatsQuery(u.GetGroupID()) {
 		return "", nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}
 	q := query_builder.NewQuery(fmt.Sprintf(`SELECT %s FROM "Invocations" as i`, fields))
+	q.AddWhereClause("group_id = ?", u.GetGroupID())
 
 	// Don't include anonymous builds.
 	q.AddWhereClause("((user_id != '' AND user_id IS NOT NULL) OR (group_id != '' AND group_id IS NOT NULL))")
@@ -256,9 +267,6 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	}
 	if sha := req.GetQuery().GetCommitSha(); sha != "" {
 		q.AddWhereClause("commit_sha = ?", sha)
-	}
-	if group_id := req.GetQuery().GetGroupId(); group_id != "" {
-		q.AddWhereClause("group_id = ?", group_id)
 	}
 	roleClauses := query_builder.OrClauses{}
 	for _, role := range req.GetQuery().GetRole() {
@@ -394,25 +402,6 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		req.Sort = defaultSortParams()
 	} else if req.Sort.SortField == inpb.InvocationSort_UNKNOWN_SORT_FIELD {
 		req.Sort.SortField = defaultSortParams().SortField
-	}
-
-	// Default the query group_id to the authenticated group ID.
-	if req.GetQuery().GetGroupId() == "" {
-		req = req.CloneVT()
-		if req.Query == nil {
-			req.Query = &inpb.InvocationQuery{}
-		}
-		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-		// Note: the two cases below should not happen in practice because
-		// capabilities_filter requires that the user is authenticated and that
-		// they are a member of a group.
-		if err != nil {
-			return nil, status.InternalErrorf("user is unexpectedly unauthenticated: %v", err)
-		}
-		if u.GetGroupID() == "" {
-			return nil, status.InternalError("user is unexpectedly missing group ID")
-		}
-		req.Query.GroupId = u.GetGroupID()
 	}
 
 	var invocations []*inpb.Invocation

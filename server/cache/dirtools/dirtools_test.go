@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
@@ -33,6 +34,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -1419,6 +1422,10 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 					Name:   "fileB.txt",
 					Digest: fileBDigest,
 				},
+				&repb.FileNode{
+					Name:   "fileB-copy.txt",
+					Digest: fileBDigest,
+				},
 			},
 			Directories: []*repb.DirectoryNode{
 				&repb.DirectoryNode{
@@ -1431,6 +1438,10 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 			childDir,
 		},
 	}
+	hits := metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: "hit"})
+	misses := metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: "miss"})
+	hitsBefore := testutil.ToFloat64(hits)
+	missesBefore := testutil.ToFloat64(misses)
 	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 	if err != nil {
 		t.Fatal(err)
@@ -1438,9 +1449,14 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 	assert.NotNil(t, info, "transfers are not nil")
 	assert.Equal(t, int64(1), info.FileCount, "one file should be transferred, one linked from filecache")
 	assert.Equal(t, int64(len(fileBContents)), info.BytesTransferred, "only file B should be downloaded; file A should be linked from filecache")
+	hitCount := testutil.ToFloat64(hits) - hitsBefore
+	missCount := testutil.ToFloat64(misses) - missesBefore
+	assert.Equal(t, float64(1), hitCount, "file A should count as a filecache hit")
+	assert.Equal(t, float64(2), missCount, "both paths of file B should count as filecache misses")
 	assert.DirExists(t, filepath.Join(tmpDir, "my-directory"), "my-directory should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "my-directory/fileA.txt"), "fileA.txt should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "fileB.txt"), "fileB.txt should exist")
+	assert.FileExists(t, filepath.Join(tmpDir, "fileB-copy.txt"), "fileB-copy.txt should exist")
 }
 
 func TestDownloadTree_InputFetchMetadataUsesDeterministicLeafOrder(t *testing.T) {

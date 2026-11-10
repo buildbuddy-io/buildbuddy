@@ -3,14 +3,17 @@ package build_event_proxy
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -78,13 +81,29 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *
 		return c.client.PublishLifecycleEvent(ctx, req)
 	}
 
+	asyncCtx := c.asyncContext(ctx)
 	go func() {
+		// Bound the publish, since it isn't cancelled when the request ends.
+		ctx, cancel := context.WithTimeout(asyncCtx, 30*time.Second)
+		defer cancel()
 		// TODO: retry these, since the client won't retry.
 		if _, err := c.client.PublishLifecycleEvent(ctx, req); err != nil {
 			log.Warningf("Error publishing lifecycle event: %s", err.Error())
 		}
 	}()
 	return &emptypb.Empty{}, nil
+}
+
+// asyncContext returns a context for async publishes that is detached from the
+// request ctx. It carries only the API key header, which the sidecar
+// propagates; other headers and ctx values (e.g. the user's JWT) must not reach
+// proxy hosts.
+func (c *BuildEventProxyClient) asyncContext(ctx context.Context) context.Context {
+	apiKeys := metadata.ValueFromOutgoingContext(ctx, authutil.APIKeyHeader)
+	if len(apiKeys) == 0 {
+		return c.rootCtx
+	}
+	return metadata.NewOutgoingContext(c.rootCtx, metadata.MD{authutil.APIKeyHeader: apiKeys})
 }
 
 type asyncStreamProxy struct {
@@ -143,5 +162,5 @@ func (c *BuildEventProxyClient) PublishBuildToolEventStream(ctx context.Context,
 		return c.client.PublishBuildToolEventStream(ctx, opts...)
 	}
 
-	return c.newAsyncStreamProxy(c.rootCtx, opts...)
+	return c.newAsyncStreamProxy(c.asyncContext(ctx), opts...)
 }

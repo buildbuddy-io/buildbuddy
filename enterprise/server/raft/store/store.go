@@ -1869,6 +1869,12 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 		if err := db.DeleteRange(localStart, localEnd, pebble.NoSync); err != nil {
 			return nil, status.InternalErrorf("failed to delete data of local range of c%dn%d from pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
+
+		// Persist deletes before clearing the removal marker; neither Raft
+		// replay nor RemoveData retries can restore them afterward.
+		if err := db.Flush(); err != nil {
+			return nil, status.InternalErrorf("failed to flush deletes of c%dn%d to pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
+		}
 	}
 
 	// update range descriptor: remove the replica descriptor from the removed list.

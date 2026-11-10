@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -130,6 +132,53 @@ func TestPublishBuildToolEventStream_AsynchronousModeDropsWhenBufferIsFull(t *te
 	assert.Same(t, firstReq, sent[0])
 }
 
+func TestAsynchronousModeForwardsOnlyAPIKey(t *testing.T) {
+	client := &fakePublishBuildEventClient{
+		stream:         newBlockingBuildToolEventStream(t.Context()),
+		streamCalls:    make(chan recordedCall, 1),
+		lifecycleCalls: make(chan recordedCall, 1),
+	}
+	proxy := &BuildEventProxyClient{
+		client:  client,
+		rootCtx: t.Context(),
+	}
+
+	// The request ctx carries the API key plus headers and values that must not
+	// be forwarded, and is already canceled because the handler returned, so
+	// the ctx recorded by the fake shows whether the calls outlive the request.
+	reqCtx := metadata.AppendToOutgoingContext(t.Context(),
+		"x-buildbuddy-api-key", "test-api-key",
+		"x-buildbuddy-bypass-ip-rules", "true")
+	reqCtx = context.WithValue(reqCtx, authutil.ContextTokenStringKey, "test-jwt")
+	reqCtx = context.WithValue(reqCtx, usageutil.OriginHeaderName, "test-origin")
+	reqCtx, cancel := context.WithCancel(reqCtx)
+	cancel()
+
+	stream, err := proxy.PublishBuildToolEventStream(reqCtx)
+	require.NoError(t, err)
+	t.Cleanup(func() { stream.CloseSend() })
+	_, err = proxy.PublishLifecycleEvent(reqCtx, &pepb.PublishLifecycleEventRequest{})
+	require.NoError(t, err)
+
+	checkAsyncCall(t, "stream", client.streamCalls)
+	checkAsyncCall(t, "lifecycle", client.lifecycleCalls)
+}
+
+func checkAsyncCall(t *testing.T, name string, ch chan recordedCall) {
+	t.Helper()
+	var call recordedCall
+	select {
+	case call = <-ch:
+	case <-time.After(waitTimeout):
+		require.FailNowf(t, "timed out", "timed out waiting for upstream %s call", name)
+	}
+	assert.Equal(t, []string{"test-api-key"}, call.md.Get("x-buildbuddy-api-key"), "%s API key", name)
+	assert.Empty(t, call.md.Get("x-buildbuddy-bypass-ip-rules"), "%s should not forward other headers", name)
+	assert.NoError(t, call.ctxErr, "%s ctx should outlive the request ctx", name)
+	assert.Nil(t, call.jwt, "%s ctx should not carry the JWT", name)
+	assert.Nil(t, call.origin, "%s ctx should not carry the origin", name)
+}
+
 // waitForSendStart waits until the fake upstream stream has observed a Send for
 // wantReq, which lets the tests distinguish a blocked upstream call from a
 // request that was dropped before reaching the upstream stream.
@@ -176,15 +225,43 @@ func waitForCloseSend(t *testing.T, stream *blockingBuildToolEventStream) {
 	}
 }
 
-type fakePublishBuildEventClient struct {
-	stream pepb.PublishBuildEvent_PublishBuildToolEventStreamClient
+// recordedCall captures the outgoing metadata, ctx state and selected ctx
+// values at the time the fake upstream client was called.
+type recordedCall struct {
+	md     metadata.MD
+	ctxErr error
+	jwt    any
+	origin any
 }
 
-func (c *fakePublishBuildEventClient) PublishLifecycleEvent(context.Context, *pepb.PublishLifecycleEventRequest, ...grpc.CallOption) (*emptypb.Empty, error) {
+func recordCall(ctx context.Context, ch chan recordedCall) {
+	if ch == nil {
+		return
+	}
+	md, _ := metadata.FromOutgoingContext(ctx)
+	ch <- recordedCall{
+		md:     md,
+		ctxErr: ctx.Err(),
+		jwt:    ctx.Value(authutil.ContextTokenStringKey),
+		origin: ctx.Value(usageutil.OriginHeaderName),
+	}
+}
+
+type fakePublishBuildEventClient struct {
+	stream pepb.PublishBuildEvent_PublishBuildToolEventStreamClient
+
+	// If set, calls are recorded to these channels.
+	streamCalls    chan recordedCall
+	lifecycleCalls chan recordedCall
+}
+
+func (c *fakePublishBuildEventClient) PublishLifecycleEvent(ctx context.Context, _ *pepb.PublishLifecycleEventRequest, _ ...grpc.CallOption) (*emptypb.Empty, error) {
+	recordCall(ctx, c.lifecycleCalls)
 	return &emptypb.Empty{}, nil
 }
 
-func (c *fakePublishBuildEventClient) PublishBuildToolEventStream(context.Context, ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
+func (c *fakePublishBuildEventClient) PublishBuildToolEventStream(ctx context.Context, _ ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
+	recordCall(ctx, c.streamCalls)
 	return c.stream, nil
 }
 

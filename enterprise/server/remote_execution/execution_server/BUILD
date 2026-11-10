@@ -80,6 +80,7 @@ go_test(
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/tasksize",
         "//enterprise/server/testutil/testredis",
+        "//enterprise/server/util/ci_runner_env",
         "//enterprise/server/util/execution",
         "//enterprise/server/util/redisutil",
         "//proto:capability_go_proto",

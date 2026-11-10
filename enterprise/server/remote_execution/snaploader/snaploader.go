@@ -58,6 +58,9 @@ const (
 	// chunked file's contents to cache (one goroutine is spawned per chunk).
 	chunkedFileWriteConcurrency = 4
 
+	// Each chunk is up to 1000 * hostPageSize, and hostPageSize is at most 64K.
+	maxSnapshotChunkSizeBytes = 1000 * 64 * 1024
+
 	// Batch size used when checking remote snapshot chunks.
 	// The maximum gRPC message size is 4MB. Each digest proto is
 	// 64 bytes (hash) + 8 bytes (size) + 2 bytes (tags) = 74 bytes. The
@@ -423,6 +426,9 @@ type CacheSnapshotOptions struct {
 	//
 	// The snapshot write policy determines whether the snapshot is actually written.
 	EligibleToWriteUniversalManifest bool
+
+	// GroupID is the group that owns the snapshot.
+	GroupID string
 }
 
 type UnpackedSnapshot struct {
@@ -728,12 +734,25 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 		if err != nil {
 			return nil, err
 		}
+		if fileSize < 0 || chunkSize <= 0 || chunkSize > maxSnapshotChunkSizeBytes {
+			return nil, status.InvalidArgumentErrorf("invalid size %d or chunk size %d for chunked file %q", fileSize, chunkSize, fileName)
+		}
 
 		chunks := make([]*fcpb.Chunk, 0, len(tree.GetRoot().GetFiles()))
+		prevOffset := int64(-1)
 		for _, chunk := range tree.GetRoot().GetFiles() {
 			offset, err := strconv.ParseInt(chunk.GetName(), 10, 64)
 			if err != nil {
 				return nil, status.InternalErrorf("parse chunk offset: %s", chunk.GetName())
+			}
+			// cacheCOW writes chunks in increasing offset order. Requiring
+			// that order here also rejects negative and duplicate offsets.
+			if offset <= prevOffset || offset >= fileSize || offset%chunkSize != 0 {
+				return nil, status.InvalidArgumentErrorf("invalid offset %d for chunk of chunked file %q", offset, fileName)
+			}
+			prevOffset = offset
+			if chunk.GetDigest().GetSizeBytes() > chunkSize {
+				return nil, status.InvalidArgumentErrorf("chunk at offset %d of chunked file %q is larger than the chunk size %d", offset, fileName, chunkSize)
 			}
 			chunks = append(chunks, &fcpb.Chunk{
 				Offset: offset,
@@ -915,7 +934,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				}
 			}
 			out.Digest = d
-			if _, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.CacheSnapshotRemotely, opts.CacheSnapshotLocally, d, key.InstanceName, filePath, fileType); err != nil {
+			if _, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.CacheSnapshotRemotely, opts.CacheSnapshotLocally, d, key.InstanceName, filePath, fileType, opts.GroupID); err != nil {
 				return err
 			}
 			return nil
@@ -1429,7 +1448,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			}
 
 			path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, dirty))
-			bytesWritten, err := snaputil.Cache(uploadCtx, l.env.GetFileCache(), l.env.GetByteStreamClient(), shouldCacheRemotely, shouldCacheLocally, chunkDigest, remoteInstanceName, path, name)
+			bytesWritten, err := snaputil.Cache(uploadCtx, l.env.GetFileCache(), l.env.GetByteStreamClient(), shouldCacheRemotely, shouldCacheLocally, chunkDigest, remoteInstanceName, path, name, cacheOpts.GroupID)
 			if err != nil {
 				return status.WrapErrorf(err, "write chunk %d/%d to cache", i, len(chunks))
 			}
@@ -1456,7 +1475,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err != nil {
 		return nil, err
 	}
-	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.CacheSnapshotRemotely, cacheOpts.CacheSnapshotLocally, treeDigest, remoteInstanceName, treeBytes, "snapshot_tree"); err != nil {
+	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.CacheSnapshotRemotely, cacheOpts.CacheSnapshotLocally, treeDigest, remoteInstanceName, treeBytes, "snapshot_tree", cacheOpts.GroupID); err != nil {
 		return nil, err
 	}
 

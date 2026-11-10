@@ -69,6 +69,10 @@ func Setup(bazelArgs *arg.BazelArgs, execArgs []string, tempDir string) (*Result
 		}
 	}
 
+	if err := login.ConfigureBESAPIKey(bazelArgs); err != nil {
+		return nil, err
+	}
+
 	// Save the original BES backend value before it is rewritten by the sidecar.
 	originalBESBackend := bazelArgs.Get("bes_backend")
 

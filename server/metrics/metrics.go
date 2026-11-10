@@ -298,8 +298,9 @@ const (
 	// The TreeCache split lookup status: hit/miss/failure
 	TreeCacheSplitLookupStatus = "status"
 
-	// Where a directory from a GetTree request was found: one of "uncached", "filecache", "remote"
-	GetTreeLookupLocation = "location"
+	// Where data was read from or written to, such as `filecache` (executor
+	// local filecache) or `remote` (remote cache).
+	CacheLocationLabel = "location"
 
 	// The Lookaside cache status: hit/miss.
 	LookasideCacheLookupStatus = "status"
@@ -1384,7 +1385,7 @@ var (
 		Name:      "get_tree_directory_lookup_count",
 		Help:      "Number of directories fetched by GetTree calls, split by where the directory was found.",
 	}, []string{
-		GetTreeLookupLocation,
+		CacheLocationLabel,
 	})
 
 	GetTreeFilecacheTreesRead = promauto.NewCounter(prometheus.CounterOpts{
@@ -2070,12 +2071,25 @@ var (
 		FirecrackerErrorReason,
 	})
 
+	// TODO(maggie): Clean up this metric in favor of SnapshotCacheBytesWritten, which captures both
+	// local and remote cache writes.
 	SnapshotRemoteCacheUploadSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "snapshot_remote_cache_upload_size_bytes",
 		Help:      "After a copy-on-write snapshot has been used, the total count of compressed bytes written to the cache (i.e. will be 0 if the artifact is already cached).",
 	}, []string{
+		FileName,
+	})
+
+	SnapshotCacheBytesWritten = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "snapshot_cache_bytes_written",
+		Help:      "Snapshot bytes written to the cache. Remote writes count compressed bytes, local writes are uncompressed. Both exclude artifacts that were already cached.",
+	}, []string{
+		GroupID,
+		CacheLocationLabel,
 		FileName,
 	})
 

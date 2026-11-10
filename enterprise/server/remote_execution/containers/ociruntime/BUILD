@@ -71,7 +71,7 @@ go_test(
     data = [
         ":crun",
         "//enterprise/server/cmd/executor:tini",
-        "//enterprise/server/remote_execution/containers/ociruntime/testsyscall",
+        "//enterprise/server/remote_execution/containers/ociruntime/testsyscall:testsyscall_no_cov",
         "//enterprise/server/remote_execution/runner/testworker",
         "@busybox",
         "@net_tools",
@@ -100,7 +100,7 @@ go_test(
         "busyboxImageRlocationpath": "$(rlocationpath @busybox)",
         "netToolsImageRlocationpath": "$(rlocationpath @net_tools)",
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
-        "testsyscallRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/ociruntime/testsyscall)",
+        "testsyscallRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/ociruntime/testsyscall:testsyscall_no_cov)",
     },
     deps = [
         ":ociruntime",
