@@ -857,10 +857,9 @@ func TestBackfill(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := Options{
-		ReplicationFactor:    3,
-		Nodes:                []string{peer1, peer2, peer3},
-		DisableLocalLookup:   true,
-		RPCHeartbeatInterval: 100 * time.Millisecond,
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
@@ -949,10 +948,9 @@ func TestBackfillCopiesToAllMissingPeers(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := Options{
-		ReplicationFactor:    3,
-		Nodes:                []string{peer1, peer2, peer3},
-		DisableLocalLookup:   true,
-		RPCHeartbeatInterval: 100 * time.Millisecond,
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
 	}
 
 	// peer1 holds the blob; peer2 and peer3 are missing it.
@@ -1002,10 +1000,9 @@ func TestBackfillContinuesWhenOnePeerFails(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := Options{
-		ReplicationFactor:    3,
-		Nodes:                []string{peer1, peer2, peer3},
-		DisableLocalLookup:   true,
-		RPCHeartbeatInterval: 100 * time.Millisecond,
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
 	}
 
 	// peer1 holds the blob, peer2 is a healthy target, and peer3 always fails
@@ -1061,10 +1058,9 @@ func TestBackfillViaGet(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := Options{
-		ReplicationFactor:    3,
-		Nodes:                []string{peer1, peer2, peer3},
-		DisableLocalLookup:   true,
-		RPCHeartbeatInterval: 100 * time.Millisecond,
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
