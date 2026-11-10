@@ -70,8 +70,9 @@ func TestInvocationUploadWebhook(t *testing.T) {
 		"--remote_header=x-buildbuddy-api-key=" + apiKey.Value,
 	}
 	// Older Bazels let the server read the API key from --remote_header in the
-	// BEP. Bazel 8.9 and 10 redact it there, so pass it to BES directly.
-	if major, minor := bazelVersion(t); major >= 10 || (major == 8 && minor >= 9) {
+	// BEP. Bazel 8.9.0, 9.4.0 and 10.0.0 redact it there (bazelbuild/bazel
+	// #32039, #32037, #32032), so pass it to BES directly.
+	if major, minor := bazelVersion(t); major >= 10 || (major == 9 && minor >= 4) || (major == 8 && minor >= 9) {
 		buildFlags = append(buildFlags, "--bes_header=x-buildbuddy-api-key="+apiKey.Value)
 	}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
