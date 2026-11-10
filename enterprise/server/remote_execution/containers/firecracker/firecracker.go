@@ -94,6 +94,7 @@ var (
 	guestVFSReadAheadKB                   = flag.Int("executor.firecracker_guest_vfs_read_ahead_kb", 0, "If set, the readahead window of the guest VFS FUSE mount in KiB.", flag.Internal)
 	guestVFSTaskProfileDir                = flag.String("executor.firecracker_guest_vfs_task_profile_dir", "", "If set, record a CPU profile of the guest VFS process during each task and write it to this directory.", flag.Internal)
 	guestVFSBlockingContent               = flag.Bool("executor.firecracker_guest_vfs_blocking_content", false, "Have the guest VFS server read input contents from the host with blocking system calls instead of through the Go network poller.", flag.Internal)
+	guestVFSCloseConnsOnFinish            = flag.Bool("executor.firecracker_guest_vfs_close_conns_on_finish", false, "Experiment: have the guest VFS server close its connections to the host when a task finishes, so that none is open while the VM is paused.", flag.Internal)
 	guestVFSNoFlushInputs                 = flag.Bool("executor.firecracker_guest_vfs_noflush_inputs", false, "Tell the guest kernel not to send FLUSH when closing guest VFS inputs.", flag.Internal)
 	guestVFSOutputs                       = flag.String("executor.firecracker_guest_vfs_outputs", "copy", "How the guest VFS server returns outputs: copy (the host copies them out of the guest after the action), mirror (the guest sends every write to the host as it happens) or upload (the guest uploads them to the cache through the host).", flag.Internal)
 	guestVFSContentMode                   = flag.String("executor.firecracker_guest_vfs_content", "remote", "Where the guest VFS server gets input contents: remote (gRPC from the remote CAS, copied to the guest disk), filecache (gRPC from the host file cache, copied), raw (raw protocol from the host file cache, copied) or direct (raw protocol on every read, no guest copy).", flag.Internal)
@@ -3079,7 +3080,7 @@ func (c *FirecrackerContainer) finishGuestVFS(ctx context.Context) (*repb.TreeMa
 	defer conn.Close()
 	// The response carries the mask of unused inputs, which exceeds gRPC's
 	// default limit of 4 MB for the largest input trees.
-	rsp, err := vmfspb.NewFileSystemClient(conn).Finish(ctx, &vmfspb.FinishRequest{ReportUnusedInputs: c.task.GetTrackVfsUnusedInputs()}, grpc.MaxCallRecvMsgSize(256<<20))
+	rsp, err := vmfspb.NewFileSystemClient(conn).Finish(ctx, &vmfspb.FinishRequest{ReportUnusedInputs: c.task.GetTrackVfsUnusedInputs(), CloseHostConnections: *guestVFSCloseConnsOnFinish}, grpc.MaxCallRecvMsgSize(256<<20))
 	if err != nil {
 		return nil, status.WrapError(err, "finish guest VFS")
 	}

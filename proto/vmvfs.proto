@@ -66,6 +66,9 @@ message FinishRequest {
   // Report the CAS inputs that nothing opened since the last Prepare call
   // in the response.
   bool report_unused_inputs = 1;
+  // Experiment: close the server's connections to the host at the end of
+  // this call, so that none is open while the VM is paused.
+  bool close_host_connections = 2;
 }
 
 message Stats {

@@ -855,6 +855,19 @@ func (s *vfsServer) Finish(ctx context.Context, request *vmfspb.FinishRequest) (
 		rsp.TaskErrorCode = int32(st.Code())
 		rsp.TaskErrorMessage = st.Message()
 	}
+	if request.GetCloseHostConnections() {
+		// Experiment: a VM snapshot restore resets every vsock connection.
+		// Leave none open, to see whether those resets are what makes this
+		// process run right after a resume.
+		s.content.reset()
+		s.mu.Lock()
+		conn := s.hostConn
+		s.hostConn = nil
+		s.mu.Unlock()
+		if conn != nil {
+			_ = conn.Close()
+		}
+	}
 	finishCounters := serverCounters()
 	s.mu.Lock()
 	s.finishCounters = finishCounters
