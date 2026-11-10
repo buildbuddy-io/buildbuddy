@@ -182,10 +182,6 @@ func TestGitFetchRetriesSlowTransfer(t *testing.T) {
 			require.NoError(t, os.Unsetenv(envVar))
 		})
 	}
-	// Fetch from the proxy URL as-is. Otherwise fetch() embeds the REPO_USER
-	// and REPO_TOKEN credentials in the URL if they are set, which they are
-	// when this test itself runs in a BuildBuddy workflow.
-	t.Setenv("USE_SYSTEM_GIT_CREDENTIALS", "1")
 
 	// Serve a real repository over HTTP.
 	remote := testgit.StartServer(t, testgit.ServerOptions{LogWriter: io.Discard})
@@ -254,10 +250,6 @@ func TestGitCheckoutRetriesSlowLazyFetch(t *testing.T) {
 			require.NoError(t, os.Unsetenv(envVar))
 		})
 	}
-	// Fetch from the proxy URL as-is. Otherwise fetch() embeds the REPO_USER
-	// and REPO_TOKEN credentials in the URL if they are set, which they are
-	// when this test itself runs in a BuildBuddy workflow.
-	t.Setenv("USE_SYSTEM_GIT_CREDENTIALS", "1")
 
 	// Serve a real repository over HTTP.
 	remote := testgit.StartServer(t, testgit.ServerOptions{LogWriter: io.Discard})
@@ -346,10 +338,6 @@ func TestGitMergeRetriesSlowLazyFetch(t *testing.T) {
 			require.NoError(t, os.Unsetenv(envVar))
 		})
 	}
-	// Fetch from the proxy URL as-is. Otherwise fetch() embeds the REPO_USER
-	// and REPO_TOKEN credentials in the URL if they are set, which they are
-	// when this test itself runs in a BuildBuddy workflow.
-	t.Setenv("USE_SYSTEM_GIT_CREDENTIALS", "1")
 
 	// Serve a repository over HTTP in which a feature branch and master have
 	// diverged, so that merging master into the feature branch needs master's
@@ -518,6 +506,78 @@ func TestWorkspaceConfigPartialCloneRemote(t *testing.T) {
 			// Reading the missing blob must lazily retrieve it from the real remote.
 			require.Contains(t, runGit(checkoutDir, "cat-file", "blob", blobOID), "lazy contents")
 			require.NotContains(t, strings.Fields(runGit(checkoutDir, "remote")), "true")
+		})
+	}
+}
+
+func TestFetch_KeepsAccessTokenOutOfRepoConfig(t *testing.T) {
+	remote := testgit.StartServer(t, testgit.ServerOptions{LogWriter: io.Discard})
+	remote.CreateProject("test-org", "test-repo", &testgit.ProjectSettings{Public: false})
+	sourceDir, wantCommitSHA := testgit.MakeTempRepo(t, map[string]string{"README.md": "test repo"})
+	remote.Push("test-org", "test-repo", remote.AccessToken(), sourceDir)
+	remoteURL := remote.RepoURL("test-org", "test-repo", "")
+
+	for _, test := range []struct {
+		name string
+		// Whether the workspace is restored from a snapshot taken by an older
+		// runner, which disabled credential helpers in the repo config and
+		// saved the access token in the remote URL.
+		oldSnapshot bool
+	}{
+		{name: "NewWorkspace", oldSnapshot: false},
+		{name: "OldSnapshot", oldSnapshot: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			// config() writes the global git config, so keep it out of the
+			// real HOME.
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", "")
+			t.Setenv("USE_SYSTEM_GIT_CREDENTIALS", "")
+			t.Setenv("REPO_USER", "x-testgit-access-token")
+			t.Setenv("REPO_TOKEN", remote.AccessToken())
+
+			// Stand in for the CI runner binary in credential helper mode.
+			credentialHelper := filepath.Join(t.TempDir(), "credential_helper.sh")
+			require.NoError(t, os.WriteFile(credentialHelper, []byte("#!/bin/sh\nprintf 'username=%s\\npassword=%s\\n' \"$REPO_USER\" \"$REPO_TOKEN\"\n"), 0755))
+			t.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", credentialHelper)
+			flags.Set(t, "pushed_repo_url", remoteURL)
+			flags.Set(t, "target_repo_url", remoteURL)
+
+			checkoutDir := t.TempDir()
+			t.Chdir(checkoutDir)
+			invocationLog := newInvocationLog(nil)
+			invocationLog.writer = io.Discard
+			ws := &workspace{
+				rootDir: checkoutDir,
+				log:     &buildEventReporter{log: invocationLog},
+			}
+			require.NoError(t, ws.init(ctx))
+
+			if test.oldSnapshot {
+				_, gitErr := git(ctx, io.Discard, "config", "credential.helper", "")
+				require.Nil(t, gitErr)
+				_, gitErr = git(ctx, io.Discard, "remote", "add", "origin", remote.RepoURL("test-org", "test-repo", remote.AccessToken()))
+				require.Nil(t, gitErr)
+			}
+
+			require.NoError(t, ws.config(ctx))
+			require.NoError(t, ws.fetch(ctx, remoteURL, []string{"refs/heads/master"}, 1))
+
+			fetchedCommitSHA, gitErr := git(ctx, io.Discard, "rev-parse", "FETCH_HEAD")
+			require.Nil(t, gitErr)
+			require.Equal(t, wantCommitSHA, strings.TrimSpace(fetchedCommitSHA))
+			// The access token should not be saved in the workspace's .git/config or the global .gitconfig
+			// (Only applies on Linux CI).
+			repoConfig, err := os.ReadFile(filepath.Join(checkoutDir, ".git", "config"))
+			require.NoError(t, err)
+			require.NotContains(t, string(repoConfig), remote.AccessToken())
+			globalConfig, err := os.ReadFile(filepath.Join(home, ".gitconfig"))
+			if !os.IsNotExist(err) {
+				require.NoError(t, err)
+				require.NotContains(t, string(globalConfig), remote.AccessToken())
+			}
 		})
 	}
 }

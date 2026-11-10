@@ -2357,12 +2357,6 @@ func (ws *workspace) config(ctx context.Context) error {
 		// the microvm while it's running.
 		{"gc.autoDetach", "false"},
 	}
-	if !useSystemGitCredentials {
-		// Disable any credential helpers (in particular, osxkeychain which
-		// displays a blocking popup dialog)
-		cfg = append(cfg, []string{"credential.helper", ""})
-	}
-
 	writeCommandSummary(ws.log, "Configuring repository...")
 	for _, kv := range cfg {
 		// Don't show the config output.
@@ -2371,16 +2365,22 @@ func (ws *workspace) config(ctx context.Context) error {
 		}
 	}
 
-	// Set up global config (~/.gitconfig) but only on Linux for now since Linux
-	// workflows are isolated.
+	if useSystemGitCredentials {
+		return nil
+	}
+	// Only set up global config (~/.gitconfig) on Linux for now since Linux
+	// workflows are isolated. This means Mac workflows cannot clone private
+	// git repos as Bazel dependencies, because they are cloned as separate
+	// repos, and don't share the current workspace's credential helper.
 	// TODO(bduffany): find a solution that works for Mac workflows too.
-	if !useSystemGitCredentials && runtime.GOOS == "linux" {
-		// SSH URL rewrites and git credential helper are used for external git
-		// deps fetched by bazel, so these need to be in the global config.
+	localOnly := runtime.GOOS != "linux"
+	if err := setupCredentialHelper(ctx, localOnly); err != nil {
+		return err
+	}
+	if !localOnly {
+		// SSH URL rewrites are used for external git deps fetched by bazel, so
+		// these need to be in the global config.
 		if err := configureGlobalURLRewrites(ctx); err != nil {
-			return err
-		}
-		if err := configureGlobalCredentialHelper(ctx); err != nil {
 			return err
 		}
 	}
@@ -2400,27 +2400,17 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 		return nil
 	}
 
-	fetchURL := remoteURL
-	useSystemGitCredentials := os.Getenv("USE_SYSTEM_GIT_CREDENTIALS") == "1"
-	if !useSystemGitCredentials {
-		authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(ci_runner_env.RepoUserEnvVarName), os.Getenv(ci_runner_env.RepoTokenEnvVarName))
-		if err != nil {
-			return err
-		}
-		fetchURL = authURL
-	}
-
 	remoteName := gitRemoteName(remoteURL)
 	writeCommandSummary(ws.log, "Configuring remote %q...", remoteName)
 
 	// Don't show `git remote add` command or the error message since the URL may
-	// contain the repo access token.
-	if _, err := git(ctx, io.Discard, "remote", "add", remoteName, fetchURL); err != nil {
+	// contain credentials.
+	if _, err := git(ctx, io.Discard, "remote", "add", remoteName, remoteURL); err != nil {
 		// Rename the existing remote. Removing then re-adding would be simpler,
 		// but unfortunately that drops the "partialclonefilter" options on the
 		// existing remote.
 		if isRemoteAlreadyExists(err) {
-			if _, err := git(ctx, io.Discard, "remote", "set-url", remoteName, fetchURL); err != nil {
+			if _, err := git(ctx, io.Discard, "remote", "set-url", remoteName, remoteURL); err != nil {
 				return err
 			}
 		} else {
@@ -2992,22 +2982,56 @@ func getStructuredCommandLine() *clpb.CommandLine {
 	}
 }
 
-func configureGlobalCredentialHelper(ctx context.Context) error {
-	if !strings.HasPrefix(baseRepoURL(), "https://") {
+// setupCredentialHelper configures the CI runner as the git credential helper
+// If currentWorkspaceOnly is set, the credential helper is only scoped to the current
+// workspace.
+//
+// TODO(Mac): with currentWorkspaceOnly=true, the credential helper doesn't apply to git deps
+// fetched by bazel, which are cloned into separate repos. This means Mac workflows cannot
+// clone private git repos as Bazel dependencies.
+func setupCredentialHelper(ctx context.Context, currentWorkspaceOnly bool) error {
+	scope := "--global"
+	if currentWorkspaceOnly {
+		scope = "--local"
+	} else {
+		// TODO(Clean up if we upgrade past firecracker::GuestAPIVersion=20): Older Linux runners
+		// disabled credential helpers in the repo config, which
+		// hides the global credential helper. Remove that setting from repos
+		// restored from their snapshots.
+		if _, err := git(ctx, io.Discard, "config", "--local", "--get-all", "credential.helper"); err == nil {
+			if _, err := git(ctx, io.Discard, "config", "--local", "--unset-all", "credential.helper"); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Disable any other credential helpers (in particular, osxkeychain which
+	// displays a blocking popup dialog). This clears the helpers
+	// configured before it, so this must come before we configure the ci_runner
+	// credential helper below.
+	if _, err := git(ctx, io.Discard, "config", scope, "--replace-all", "credential.helper", ""); err != nil {
+		return err
+	}
+	if os.Getenv(ci_runner_env.RepoTokenEnvVarName) == "" {
 		return nil
 	}
-	repoToken := os.Getenv(ci_runner_env.RepoTokenEnvVarName)
-	if repoToken == "" {
+
+	// Only provide the token to the host of the repo it belongs to. If a fork
+	// is on a different host, the token most likely isn't valid for it.
+	repoURL := baseRepoURL()
+	if repoURL == "" {
 		return nil
 	}
-	u, err := url.Parse(baseRepoURL())
+	u, err := gitutil.ParseRepoURL(repoURL)
 	if err != nil {
-		return nil // if URL is unparseable, do nothing
+		return status.InvalidArgumentErrorf("invalid repo URL %q", repoURL)
 	}
-	repoHostURL := fmt.Sprintf("https://%s", u.Host)
-	configKey := fmt.Sprintf("credential.%s.helper", repoHostURL)
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return nil
+	}
+	configKey := fmt.Sprintf("credential.%s://%s.helper", u.Scheme, u.Host)
 	configValue := fmt.Sprintf("!%s --credential_helper", os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"))
-	if _, err := git(ctx, io.Discard, "config", "--global", configKey, configValue); err != nil {
+	if _, err := git(ctx, io.Discard, "config", scope, "--replace-all", configKey, configValue); err != nil {
 		return err
 	}
 	return nil
