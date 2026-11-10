@@ -66,6 +66,8 @@ const (
 	// the BatchReadBlobs RPC. In experiments, 2MiB blobs are 5-10% faster to
 	// read using the bytestream.Read api.
 	BatchReadLimitBytes = min(2*1024*1024, rpcutil.GRPCMaxSizeBytes)
+	// MaxTreeDepth is the deepest directory nesting allowed in a tree.
+	MaxTreeDepth = 500
 )
 
 func groupIDStringFromContext(ctx context.Context) string {
@@ -1384,11 +1386,6 @@ func IsValidName(name string) bool {
 	// Windows.
 	return name != "" && name != "." && name != ".." && !strings.ContainsRune(name, '/') && (filepath.Separator == '/' || !strings.ContainsRune(name, filepath.Separator))
 }
-
-const (
-	// MaxTreeDepth is the deepest directory nesting allowed in a tree.
-	MaxTreeDepth = 500
-)
 
 // ValidateTreeNames checks that every entry name in the tree under root is a
 // single path component, and that each directory's names are unique, as the

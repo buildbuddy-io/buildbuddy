@@ -1240,6 +1240,7 @@ func (p *Server) materializeNode(ctx context.Context, root *os.Root, node *fsNod
 	maps.Copy(children, node.children)
 	node.mu.Unlock()
 
+	// Bound depth to stop directory cycles (Link allows hard-linked dirs) and very deep outputs.
 	maxDepth := dirtools.MaxTreeDepth
 	if nodeType != fsDirectoryNode {
 		maxDepth++
