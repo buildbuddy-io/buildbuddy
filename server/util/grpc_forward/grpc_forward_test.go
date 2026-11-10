@@ -38,11 +38,8 @@ func cleanup() {
 // TestForwarding_PropagatesClientHeadersToBackend tests that the unknown-RPC
 // gRPC forwarder preserves client-supplied headers.
 func TestForwarding_PropagatesClientHeadersToBackend(t *testing.T) {
-	t.Cleanup(cleanup)
 	const clientHeader = "x-test-client-header"
 
-	backendLis, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
 	var mu sync.Mutex
 	var gotMD metadata.MD
 	backendHandler := func(_ any, stream grpc.ServerStream) error {
@@ -53,28 +50,12 @@ func TestForwarding_PropagatesClientHeadersToBackend(t *testing.T) {
 		_ = stream.RecvMsg(&emptypb.Empty{})
 		return stream.SendMsg(&emptypb.Empty{})
 	}
-	backend := grpc.NewServer(grpc.UnknownServiceHandler(backendHandler))
-	go func() { _ = backend.Serve(backendLis) }()
-	t.Cleanup(backend.Stop)
-	backendTarget := fmt.Sprintf("grpc://localhost:%d", backendLis.Addr().(*net.TCPAddr).Port)
-
+	backendTarget := startBackend(t, backendHandler)
 	flags.Set(t, "app.proxy_targets", []proxyPair{{Prefix: "", Target: backendTarget}})
-	fwdOpt := GetForwardingServerOption(real_environment.NewRealEnv(nil))
-	require.NotNil(t, fwdOpt, "forwarding must be enabled when app.proxy_targets is set")
-
-	proxyLis, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	proxy := grpc.NewServer(fwdOpt)
-	go func() { _ = proxy.Serve(proxyLis) }()
-	t.Cleanup(proxy.Stop)
-	proxyTarget := fmt.Sprintf("grpc://localhost:%d", proxyLis.Addr().(*net.TCPAddr).Port)
-
-	clientConn, err := grpc_client.DialSimple(proxyTarget)
-	require.NoError(t, err)
-	t.Cleanup(func() { clientConn.Close() })
+	clientConn := startProxy(t, "")
 
 	ctx := metadata.AppendToOutgoingContext(context.Background(), clientHeader, "test-value")
-	err = clientConn.Invoke(ctx, "/test.TestService/TestMethod", &emptypb.Empty{}, &emptypb.Empty{})
+	err := clientConn.Invoke(ctx, "/test.TestService/TestMethod", &emptypb.Empty{}, &emptypb.Empty{})
 	require.NoError(t, err)
 
 	mu.Lock()
@@ -167,7 +148,6 @@ func TestGetConnectionPool_UsesPerRulePoolSize(t *testing.T) {
 
 // A held stream saturating one rule's pool must not block RPCs on another rule.
 func TestForwarding_SaturatedRulePoolDoesNotBlockOtherRules(t *testing.T) {
-	t.Cleanup(cleanup)
 	started := make(chan struct{})
 	release := make(chan struct{})
 	backendHandler := func(_ any, stream grpc.ServerStream) error {
@@ -184,26 +164,12 @@ func TestForwarding_SaturatedRulePoolDoesNotBlockOtherRules(t *testing.T) {
 		}
 		return stream.SendMsg(&emptypb.Empty{})
 	}
-	backendLis, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	backend := grpc.NewServer(grpc.MaxConcurrentStreams(1), grpc.UnknownServiceHandler(backendHandler))
-	go func() { _ = backend.Serve(backendLis) }()
-	t.Cleanup(backend.Stop)
-	backendTarget := fmt.Sprintf("grpc://localhost:%d", backendLis.Addr().(*net.TCPAddr).Port)
-
+	backendTarget := startBackend(t, backendHandler, grpc.MaxConcurrentStreams(1))
 	flags.Set(t, "app.proxy_targets", []proxyPair{
 		{Prefix: "/a.A/", Target: backendTarget, PoolSize: 1},
 		{Prefix: "", Target: backendTarget, PoolSize: 1},
 	})
-	proxyLis, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	proxy := grpc.NewServer(GetForwardingServerOption(real_environment.NewRealEnv(nil)))
-	go func() { _ = proxy.Serve(proxyLis) }()
-	t.Cleanup(proxy.Stop)
-
-	clientConn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", proxyLis.Addr().(*net.TCPAddr).Port))
-	require.NoError(t, err)
-	t.Cleanup(func() { clientConn.Close() })
+	clientConn := startProxy(t, "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -211,7 +177,7 @@ func TestForwarding_SaturatedRulePoolDoesNotBlockOtherRules(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, stream.SendMsg(&emptypb.Empty{}))
 	require.NoError(t, stream.CloseSend())
-	<-started
+	waitForStarted(ctx, t, started)
 
 	err = clientConn.Invoke(ctx, "/b.B/Unary", &emptypb.Empty{}, &emptypb.Empty{})
 	require.NoError(t, err)
@@ -227,20 +193,25 @@ type ctxStream struct {
 
 func (s *ctxStream) Context() context.Context { return s.ctx }
 
-// startForwardingProxy starts a backend running backendHandler and a
-// forwarding proxy in front of it. If groupID is non-empty, the proxy attaches
-// claims for that group to each stream, as the auth interceptor would.
-func startForwardingProxy(t *testing.T, backendHandler grpc.StreamHandler, groupID string) *grpc_client.ClientConnPool {
-	t.Cleanup(cleanup)
-	backendLis, err := net.Listen("tcp", "localhost:0")
+// startBackend starts a server that handles every method with backendHandler
+// and returns its target.
+func startBackend(t *testing.T, backendHandler grpc.StreamHandler, opts ...grpc.ServerOption) string {
+	lis, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
-	backend := grpc.NewServer(grpc.UnknownServiceHandler(backendHandler))
-	go func() { _ = backend.Serve(backendLis) }()
+	backend := grpc.NewServer(append(opts, grpc.UnknownServiceHandler(backendHandler))...)
+	go func() { _ = backend.Serve(lis) }()
 	t.Cleanup(backend.Stop)
-	backendTarget := fmt.Sprintf("grpc://localhost:%d", backendLis.Addr().(*net.TCPAddr).Port)
+	return fmt.Sprintf("grpc://localhost:%d", lis.Addr().(*net.TCPAddr).Port)
+}
 
-	flags.Set(t, "app.proxy_targets", []proxyPair{{Prefix: "", Target: backendTarget}})
-	opts := []grpc.ServerOption{GetForwardingServerOption(real_environment.NewRealEnv(nil))}
+// startProxy starts a forwarding proxy for the app.proxy_targets already set
+// and returns a client connected to it. If groupID is non-empty, the proxy
+// attaches claims for that group to each stream, as the auth interceptor would.
+func startProxy(t *testing.T, groupID string) *grpc_client.ClientConnPool {
+	t.Cleanup(cleanup)
+	fwdOpt := GetForwardingServerOption(real_environment.NewRealEnv(nil))
+	require.NotNil(t, fwdOpt, "forwarding must be enabled when app.proxy_targets is set")
+	opts := []grpc.ServerOption{fwdOpt}
 	if groupID != "" {
 		opts = append(opts, grpc.StreamInterceptor(func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, h grpc.StreamHandler) error {
 			ctx := claims.AuthContext(ss.Context(), &claims.Claims{GroupID: groupID})
@@ -257,6 +228,21 @@ func startForwardingProxy(t *testing.T, backendHandler grpc.StreamHandler, group
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return conn
+}
+
+// startForwardingProxy starts a backend running backendHandler behind a proxy
+// with a single catch-all rule.
+func startForwardingProxy(t *testing.T, backendHandler grpc.StreamHandler, groupID string) *grpc_client.ClientConnPool {
+	flags.Set(t, "app.proxy_targets", []proxyPair{{Prefix: "", Target: startBackend(t, backendHandler)}})
+	return startProxy(t, groupID)
+}
+
+func waitForStarted(ctx context.Context, t *testing.T, started <-chan struct{}) {
+	select {
+	case <-started:
+	case <-ctx.Done():
+		require.FailNow(t, "backend never received the forwarded stream")
+	}
 }
 
 func activeStreams(method, groupID string) float64 {
@@ -290,7 +276,7 @@ func testActiveStreamsWhileBlocked(t *testing.T, method, serverGroupID, wantGrou
 	require.NoError(t, err)
 	require.NoError(t, stream.SendMsg(&emptypb.Empty{}))
 	require.NoError(t, stream.CloseSend())
-	<-started
+	waitForStarted(ctx, t, started)
 
 	require.Equal(t, 1.0, activeStreams(method, wantGroupID))
 
@@ -305,7 +291,7 @@ func TestForwarding_ActiveStreamsGaugeTracksOpenStream(t *testing.T) {
 }
 
 func TestForwarding_ActiveStreamsGaugeUsesFallbackGroupWithoutClaims(t *testing.T) {
-	testActiveStreamsWhileBlocked(t, "/gauge.Test/Unauthenticated", "", unknownGroupID)
+	testActiveStreamsWhileBlocked(t, "/gauge.Test/Unauthenticated", "", interfaces.AuthAnonymousUser)
 }
 
 func TestForwarding_ActiveStreamsGaugeReturnsToZeroOnError(t *testing.T) {
@@ -316,7 +302,9 @@ func TestForwarding_ActiveStreamsGaugeReturnsToZeroOnError(t *testing.T) {
 	}
 	conn := startForwardingProxy(t, handler, "GR123")
 
-	err := conn.Invoke(context.Background(), method, &emptypb.Empty{}, &emptypb.Empty{})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	err := conn.Invoke(ctx, method, &emptypb.Empty{}, &emptypb.Empty{})
 	require.Error(t, err)
 	requireActiveStreamsEventuallyZero(t, method, "GR123")
 }

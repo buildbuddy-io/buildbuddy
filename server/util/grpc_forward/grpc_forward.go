@@ -196,13 +196,10 @@ func GetForwardingServerOption(env environment.Env) grpc.ServerOption {
 	return grpc.UnknownServiceHandler(trackActiveStreams(proxy.TransparentHandler(newDirector(env))))
 }
 
-// Matches the group label value used by the cache proxy's traffic metrics.
-const unknownGroupID = "unknown"
-
 func trackActiveStreams(h grpc.StreamHandler) grpc.StreamHandler {
 	return func(srv any, stream grpc.ServerStream) error {
 		method, _ := grpc.MethodFromServerStream(stream)
-		groupID := unknownGroupID
+		groupID := interfaces.AuthAnonymousUser
 		if c, err := claims.ClaimsFromContext(stream.Context()); err == nil && c.GetGroupID() != "" {
 			groupID = c.GetGroupID()
 		}
