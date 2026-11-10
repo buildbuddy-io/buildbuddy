@@ -66,6 +66,8 @@ const (
 	// the BatchReadBlobs RPC. In experiments, 2MiB blobs are 5-10% faster to
 	// read using the bytestream.Read api.
 	BatchReadLimitBytes = min(2*1024*1024, rpcutil.GRPCMaxSizeBytes)
+	// MaxTreeDepth is the deepest directory nesting allowed in a tree.
+	MaxTreeDepth = 500
 )
 
 func groupIDStringFromContext(ctx context.Context) string {
@@ -1379,6 +1381,12 @@ func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) erro
 	}
 }
 
+func IsValidName(name string) bool {
+	// filepath.Separator is checked too because it differs from '/' on
+	// Windows.
+	return name != "" && name != "." && name != ".." && !strings.ContainsRune(name, '/') && (filepath.Separator == '/' || !strings.ContainsRune(name, filepath.Separator))
+}
+
 // ValidateTreeNames checks that every entry name in the tree under root is a
 // single path component, and that each directory's names are unique, as the
 // REAPI spec requires. The tree fetcher builds paths from these names, so a
@@ -1404,11 +1412,7 @@ func ValidateTreeNames(root *repb.Directory, dirMap map[digest.Key]*repb.Directo
 	// each key by appending "/" and the entry's name to its parent's key,
 	// lowercasing the name if the filesystem is case-insensitive.
 	add := func(parentPath, parentKey, name string, isDir bool) (string, string, error) {
-		// Disallow empty names, and names that refer to directories ("." and
-		// ".."). Disallow '/' chars which is a valid path separator on all
-		// platforms we support, as well as filepath.Separator (if different -
-		// which in particular is the case on Windows)
-		if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') || (filepath.Separator != '/' && strings.ContainsRune(name, filepath.Separator)) {
+		if !IsValidName(name) {
 			return "", "", status.InvalidArgumentErrorf("input tree directory %q has entry name %q, which isn't a single path component", parentPath, name)
 		}
 		p := path.Join(parentPath, name)

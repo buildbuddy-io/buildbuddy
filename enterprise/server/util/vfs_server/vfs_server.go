@@ -432,12 +432,12 @@ func (p *Server) TaskError() error {
 	return p.taskError
 }
 
-func (p *Server) generateScratchPath(name string) (string, error) {
+func (p *Server) generateScratchPath() (string, error) {
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(p.workspacePath, name+"."+randStr), nil
+	return filepath.Join(p.workspacePath, randStr), nil
 }
 
 func (p *Server) taskCtx() context.Context {
@@ -463,6 +463,9 @@ func (p *Server) addNode(node *fsNode) uint64 {
 func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestFunction repb.DigestFunction_Value) (*vfscommon.InodeInvalidations, error) {
 	_, dirMap, err := dirtools.DirMapFromTree(inputTree, digestFunction)
 	if err != nil {
+		return nil, err
+	}
+	if err := dirtools.ValidateTreeNames(inputTree.GetRoot(), dirMap, digestFunction, false); err != nil {
 		return nil, err
 	}
 	numDirs := 0
@@ -979,6 +982,9 @@ func (h *fileHandle) allocate(req *vfspb.AllocateRequest) (*vfspb.AllocateRespon
 }
 
 func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, parentNode *fsNode, name string, owner *vfspb.Owner) (*fsNode, error) {
+	if !dirtools.IsValidName(name) {
+		return nil, syscallErrStatus(syscall.EINVAL)
+	}
 	now := time.Now()
 
 	node := &fsNode{
@@ -1037,7 +1043,7 @@ func checkChown(request *vfspb.SetAttrRequest, attrs *vfspb.Attrs) error {
 }
 
 func (p *Server) createFile(ctx context.Context, mode uint32, parentNode *fsNode, name string, owner *vfspb.Owner) (*fsNode, error) {
-	localFilePath, err := p.generateScratchPath(name)
+	localFilePath, err := p.generateScratchPath()
 	if err != nil {
 		return nil, syscallErrStatus(err)
 	}
@@ -1198,17 +1204,17 @@ func (p *Server) lookupPath(path string) (*fsNode, error) {
 	return node, nil
 }
 
-func copyFile(source *os.File, destination string, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
+func copyFile(root *os.Root, source *os.File, destination string, mode os.FileMode) error {
+	if err := root.MkdirAll(filepath.Dir(destination), 0755); err != nil {
 		return err
 	}
-	if err := os.RemoveAll(destination); err != nil {
+	if err := root.RemoveAll(destination); err != nil {
 		return err
 	}
 	if _, err := source.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	destinationFile, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	destinationFile, err := root.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 	if err != nil {
 		return err
 	}
@@ -1220,28 +1226,41 @@ func copyFile(source *os.File, destination string, mode os.FileMode) error {
 	return closeErr
 }
 
-func (p *Server) materializeNode(ctx context.Context, node *fsNode, destination string) error {
+// depth is the number of path components in destination.
+func (p *Server) materializeNode(ctx context.Context, root *os.Root, node *fsNode, destination string, depth int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	node.mu.Lock()
 	nodeType := node.nodeType
-	mode := os.FileMode(node.attrs.GetPerm())
+	mode := os.FileMode(node.attrs.GetPerm()).Perm()
 	target := node.target
 	backingPath := node.backingPath
 	children := make(map[string]*fsNode, len(node.children))
 	maps.Copy(children, node.children)
 	node.mu.Unlock()
 
+	// Bound depth to stop directory cycles (Link allows hard-linked dirs) and very deep outputs.
+	maxDepth := dirtools.MaxTreeDepth
+	if nodeType != fsDirectoryNode {
+		maxDepth++
+	}
+	if depth > maxDepth {
+		return status.InvalidArgumentErrorf("output is more than %d directories deep", dirtools.MaxTreeDepth)
+	}
+
 	switch nodeType {
 	case fsDirectoryNode:
-		if info, err := os.Lstat(destination); err == nil && !info.IsDir() {
-			if err := os.RemoveAll(destination); err != nil {
+		if info, err := root.Lstat(destination); err == nil && !info.IsDir() {
+			if err := root.RemoveAll(destination); err != nil {
 				return err
 			}
 		}
-		if err := os.MkdirAll(destination, mode); err != nil {
+		if err := root.MkdirAll(destination, mode); err != nil {
 			return err
 		}
 		for name, child := range children {
-			if err := p.materializeNode(ctx, child, filepath.Join(destination, name)); err != nil {
+			if err := p.materializeNode(ctx, root, child, filepath.Join(destination, name), depth+1); err != nil {
 				return err
 			}
 		}
@@ -1258,15 +1277,15 @@ func (p *Server) materializeNode(ctx context.Context, node *fsNode, destination 
 			return err
 		}
 		defer source.Close()
-		return copyFile(source, destination, mode)
+		return copyFile(root, source, destination, mode)
 	case fsSymlinkNode:
-		if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
+		if err := root.MkdirAll(filepath.Dir(destination), 0755); err != nil {
 			return err
 		}
-		if err := os.RemoveAll(destination); err != nil {
+		if err := root.RemoveAll(destination); err != nil {
 			return err
 		}
-		return os.Symlink(target, destination)
+		return root.Symlink(target, destination)
 	default:
 		return status.UnimplementedErrorf("cannot materialize VFS node type %d", nodeType)
 	}
@@ -1274,6 +1293,11 @@ func (p *Server) materializeNode(ctx context.Context, node *fsNode, destination 
 
 // MaterializeOutputs copies declared outputs into the action workspace.
 func (p *Server) MaterializeOutputs(ctx context.Context, layout *container.FileSystemLayout, outputRoot string) error {
+	root, err := os.OpenRoot(outputRoot)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	for _, outputPath := range outputPaths(layout) {
 		relativePath, err := joinRelativePath(layout.WorkingDirectory, outputPath)
 		if err != nil {
@@ -1286,7 +1310,11 @@ func (p *Server) MaterializeOutputs(ctx context.Context, layout *container.FileS
 		if node == nil {
 			continue
 		}
-		if err := p.materializeNode(ctx, node, filepath.Join(outputRoot, relativePath)); err != nil {
+		depth := 0
+		if relativePath != "" {
+			depth = strings.Count(relativePath, string(filepath.Separator)) + 1
+		}
+		if err := p.materializeNode(ctx, root, node, filepath.Join(".", relativePath), depth); err != nil {
 			return status.WrapErrorf(err, "materialize output %q", outputPath)
 		}
 	}
@@ -1672,6 +1700,9 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 }
 
 func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfspb.RenameResponse, error) {
+	if !dirtools.IsValidName(request.GetNewName()) {
+		return nil, syscallErrStatus(syscall.EINVAL)
+	}
 	oldParentNode, oldChildNode, err := p.lookupParentAndChild(request.GetOldParentId(), request.GetOldName())
 	if err != nil {
 		return nil, err
@@ -1717,6 +1748,9 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 }
 
 func (p *Server) Mkdir(ctx context.Context, request *vfspb.MkdirRequest) (*vfspb.MkdirResponse, error) {
+	if !dirtools.IsValidName(request.GetName()) {
+		return nil, syscallErrStatus(syscall.EINVAL)
+	}
 	parentNode, err := p.lookupNode(request.GetParentId())
 	if err != nil {
 		return nil, err
@@ -1770,6 +1804,9 @@ func (p *Server) Rmdir(ctx context.Context, request *vfspb.RmdirRequest) (*vfspb
 }
 
 func (p *Server) Link(ctx context.Context, request *vfspb.LinkRequest) (*vfspb.LinkResponse, error) {
+	if !dirtools.IsValidName(request.GetName()) {
+		return nil, syscallErrStatus(syscall.EINVAL)
+	}
 	existingNode, err := p.lookupNode(request.GetTargetId())
 	if err != nil {
 		return nil, err
@@ -1798,6 +1835,9 @@ func (p *Server) Link(ctx context.Context, request *vfspb.LinkRequest) (*vfspb.L
 }
 
 func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*vfspb.SymlinkResponse, error) {
+	if !dirtools.IsValidName(request.GetName()) {
+		return nil, syscallErrStatus(syscall.EINVAL)
+	}
 	parentNode, err := p.lookupNode(request.GetParentId())
 	if err != nil {
 		return nil, err
