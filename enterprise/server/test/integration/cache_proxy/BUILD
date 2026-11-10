@@ -1,12 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-go_test(
+bazel_versions_test(
     name = "cache_proxy_test",
     size = "small",
     timeout = "short",
     srcs = ["cache_proxy_test.go"],
+    rule = go_test,
     deps = [
         "//enterprise/server/action_cache_server_proxy",
         "//enterprise/server/backends/pebble_cache",

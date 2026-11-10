@@ -1,14 +1,16 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-go_test(
+bazel_versions_test(
     name = "stream_run_logs_test",
     srcs = ["stream_run_logs_test.go"],
     exec_properties = {
         # TODO: remove network dependency.
         "test.dockerNetwork": "bridge",
     },
+    rule = go_test,
     deps = [
         "//cli/stream_run_logs",
         "//cli/testutil/testcli",

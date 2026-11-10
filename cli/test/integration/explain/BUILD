@@ -1,14 +1,16 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
-go_test(
+bazel_versions_test(
     name = "explain_test",
     srcs = ["explain_test.go"],
     data = [
         "//cli/test/integration/compact:testdata/1.binpb.zst",
         "//cli/test/integration/compact:testdata/2.binpb.zst",
     ],
+    rule = go_test,
     x_defs = {
         "oldCompactLogRunfilePath": "$(rlocationpath //cli/test/integration/compact:testdata/1.binpb.zst)",
         "newCompactLogRunfilePath": "$(rlocationpath //cli/test/integration/compact:testdata/2.binpb.zst)",

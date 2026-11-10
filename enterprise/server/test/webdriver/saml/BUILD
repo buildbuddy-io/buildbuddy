@@ -1,8 +1,9 @@
 load("//rules/webdriver:index.bzl", "go_web_test_suite")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-go_web_test_suite(
+bazel_versions_test(
     name = "saml_test",
     srcs = ["saml_test.go"],
     exec_properties = {
@@ -12,6 +13,7 @@ go_web_test_suite(
         "test.init-dockerd": "true",
         "test.runner-recycling-key": "mocksaml",
     },
+    rule = go_web_test_suite,
     shard_count = 1,
     tags = ["docker"],
     deps = [

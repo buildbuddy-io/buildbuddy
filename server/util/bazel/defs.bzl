@@ -134,6 +134,65 @@ extract_bazel_installation = rule(
     doc = "Pre-extract a bazel installation and optionally a repository cache to the given output directory.",
 )
 
+# Bazel versions that tests using //server/testutil/testbazel run against.
+# TESTBAZEL_DEFAULT_VERSION is the one the testbazel library embeds.
+TESTBAZEL_DEFAULT_VERSION = "9.3.2"
+
+# Other LTS versions. Every test wrapped with bazel_versions_test also runs
+# against these.
+TESTBAZEL_LTS_VERSIONS = [
+    "8.8.2",
+    "7.7.2",
+]
+
+# Release candidates. Their targets are tagged manual and bazel-rc so that
+# they only run in the nightly "Bazel RC tests" workflow.
+TESTBAZEL_RC_VERSIONS = [
+    "10.0.0rc2",
+    "8.9.0rc1",
+]
+
+_TESTBAZEL_PKG = "//server/testutil/testbazel"
+_TESTBAZEL_IMPORTPATH = "github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
+
+def bazel_versions_test(rule, name, data = [], x_defs = {}, tags = None, **kwargs):
+    """Defines a test that uses testbazel once per supported Bazel version.
+
+    `name` runs against TESTBAZEL_DEFAULT_VERSION. Each other version gets a
+    target named `<name>_bazel_<version with dots replaced by underscores>`,
+    which overrides the testbazel library's x_defs to point at that version.
+    Release-candidate targets are tagged manual and bazel-rc.
+
+    Args:
+      rule: The test rule or macro to wrap, e.g. go_test or go_web_test_suite.
+        It must forward data and x_defs to a go_test.
+      name: Name of the default-version test.
+      data: Runtime data for the test.
+      x_defs: x_defs for the test.
+      tags: Tags for the test.
+      **kwargs: Additional arguments passed to every generated test.
+    """
+    rule(name = name, data = data, x_defs = x_defs, tags = tags, **kwargs)
+    for version in TESTBAZEL_LTS_VERSIONS + TESTBAZEL_RC_VERSIONS:
+        binary = "{}:bazel-{}_crossplatform".format(_TESTBAZEL_PKG, version)
+        installation = "{}:bazel-{}_extract_installation".format(_TESTBAZEL_PKG, version)
+        version_x_defs = dict(x_defs)
+        version_x_defs.update({
+            _TESTBAZEL_IMPORTPATH + ".Version": version,
+            _TESTBAZEL_IMPORTPATH + ".bazelRlocationpath": "$(rlocationpath {})".format(binary),
+            _TESTBAZEL_IMPORTPATH + ".outdirRlocationpath": "$(rlocationpath {})".format(installation),
+        })
+        version_tags = list(tags or [])
+        if version in TESTBAZEL_RC_VERSIONS:
+            version_tags += [t for t in ["manual", "bazel-rc"] if t not in version_tags]
+        rule(
+            name = "{}_bazel_{}".format(name, version.replace(".", "_")),
+            data = data + [binary, installation],
+            x_defs = version_x_defs,
+            tags = version_tags,
+            **kwargs
+        )
+
 def bazel_binary_targets(versions = [], **kwargs):
     """Creates Bazel binary and extracted-installation targets.
 

@@ -1,10 +1,12 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-go_test(
+bazel_versions_test(
     name = "invocation_webhook_test",
     srcs = ["invocation_webhook_test.go"],
+    rule = go_test,
     deps = [
         "//enterprise/server/backends/userdb",
         "//enterprise/server/testutil/buildbuddy_enterprise",

@@ -1,8 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-go_test(
+bazel_versions_test(
     name = "remote_execution_test",
     size = "enormous",
     # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/2379):
@@ -14,6 +15,7 @@ go_test(
         # order to not be flaky.
         "test.EstimatedComputeUnits": "16",
     },
+    rule = go_test,
     shard_count = 11,
     tags = ["cpu:8"],
     deps = [

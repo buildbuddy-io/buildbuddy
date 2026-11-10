@@ -1,11 +1,13 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-go_test(
+bazel_versions_test(
     name = "remote_cache_test",
     size = "small",
     srcs = ["remote_cache_test.go"],
+    rule = go_test,
     shard_count = 8,
     tags = ["block-network"],
     deps = [

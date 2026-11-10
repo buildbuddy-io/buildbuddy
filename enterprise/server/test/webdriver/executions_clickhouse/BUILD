@@ -1,14 +1,16 @@
 load("//rules/webdriver:index.bzl", "go_web_test_suite")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-go_web_test_suite(
+bazel_versions_test(
     name = "executions_clickhouse_test",
     srcs = ["executions_clickhouse_test.go"],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
         "test.EstimatedComputeUnits": "8",
     },
+    rule = go_web_test_suite,
     shard_count = 2,
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",

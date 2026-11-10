@@ -1,10 +1,12 @@
 load("//rules/webdriver:index.bzl", "go_web_test_suite")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-go_web_test_suite(
+bazel_versions_test(
     name = "cli_login_test",
     srcs = ["cli_login_test.go"],
+    rule = go_web_test_suite,
     shard_count = 3,
     deps = [
         "//cli/testutil/testcli",
