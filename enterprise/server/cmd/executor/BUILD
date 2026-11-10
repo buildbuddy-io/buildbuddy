@@ -445,6 +445,7 @@ image_layer(
             "@debian13//amazon-ecr-credential-helper/%s" % arch,
             "@debian13//lxcfs/%s" % arch,
             "@debian13//tar/%s" % arch,
+            "@debian13//dash/%s" % arch,
 
             # nvidia packages
             "@debian13//nvidia-container-toolkit-base/%s" % arch,
@@ -501,9 +502,10 @@ image_layer(
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
     symlinks = {
-        "/usr/sbin/iptables-nft": "/usr/sbin/iptables",
+        "/usr/sbin/iptables": "/usr/sbin/iptables-nft",
         "/usr/sbin/iptables-restore": "/usr/sbin/iptables-nft-restore",
-        "/usr/sbin/iptables-save": "iptables-save /usr/sbin/iptables-nft-save",
+        "/usr/sbin/iptables-save": "/usr/sbin/iptables-nft-save",
+        "/usr/bin/sh": "/usr/bin/dash",
     },
     tags = ["manual"],
 )
