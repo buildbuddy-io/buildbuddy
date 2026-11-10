@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -2500,6 +2501,93 @@ func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 				http.MethodGet + " /v2/": 2,
 				manifestHead:             2,
 			})
+		})
+	}
+}
+
+type fakeRoundTripper map[string]*http.Response
+
+func (f fakeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, ok := f[req.URL.String()]
+	if !ok {
+		return nil, fmt.Errorf("unexpected request to %s", req.URL)
+	}
+	resp.Request = req
+	resp.Body = io.NopCloser(strings.NewReader(""))
+	return resp, nil
+}
+
+func TestAllowedPrivateIPRedirectTransport(t *testing.T) {
+	response := func(code int, headers ...string) *http.Response {
+		h := http.Header{}
+		for i := 0; i < len(headers); i += 2 {
+			h.Set(headers[i], headers[i+1])
+		}
+		return &http.Response{StatusCode: code, Header: h}
+	}
+	const start = "https://registry.example/v2/img/blobs/sha256:abc"
+	for _, tc := range []struct {
+		name      string
+		responses fakeRoundTripper
+		// wantStatus and wantHeaders describe the response returned for start.
+		wantStatus  int
+		wantHeaders http.Header
+	}{
+		{
+			name: "follows redirect to allowlisted IP and strips WWW-Authenticate",
+			responses: fakeRoundTripper{
+				start:                   response(http.StatusFound, "Location", "https://10.1.2.3/blob"),
+				"https://10.1.2.3/blob": response(http.StatusOK, "WWW-Authenticate", `Bearer realm="storage"`),
+			},
+			wantStatus:  http.StatusOK,
+			wantHeaders: http.Header{},
+		},
+		{
+			name: "leaves redirect to non-allowlisted IP untouched",
+			responses: fakeRoundTripper{
+				start: response(http.StatusFound, "Location", "https://192.168.1.1/blob", "WWW-Authenticate", "Basic"),
+			},
+			wantStatus:  http.StatusFound,
+			wantHeaders: http.Header{"Location": {"https://192.168.1.1/blob"}, "Www-Authenticate": {"Basic"}},
+		},
+		{
+			name: "leaves redirect to hostname untouched",
+			responses: fakeRoundTripper{
+				start: response(http.StatusFound, "Location", "https://storage.example/blob"),
+			},
+			wantStatus:  http.StatusFound,
+			wantHeaders: http.Header{"Location": {"https://storage.example/blob"}},
+		},
+		{
+			name: "does not follow https to http downgrade",
+			responses: fakeRoundTripper{
+				start: response(http.StatusFound, "Location", "http://10.1.2.3/blob"),
+			},
+			wantStatus:  http.StatusFound,
+			wantHeaders: http.Header{"Location": {"http://10.1.2.3/blob"}},
+		},
+		{
+			name: "makes relative Location of returned redirect absolute after a hop",
+			responses: fakeRoundTripper{
+				start: response(http.StatusFound, "Location", "https://10.1.2.3/a/blob"),
+				// 300 has a Location but is not followed by http.Client.
+				"https://10.1.2.3/a/blob": response(http.StatusMultipleChoices, "Location", "other"),
+			},
+			wantStatus:  http.StatusMultipleChoices,
+			wantHeaders: http.Header{"Location": {"https://10.1.2.3/a/other"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, allowed, err := net.ParseCIDR("10.0.0.0/8")
+			require.NoError(t, err)
+			tr := ocifetcher.NewAllowedPrivateIPRedirectTransport(tc.responses, []*net.IPNet{allowed})
+			req, err := http.NewRequest(http.MethodGet, start, nil)
+			require.NoError(t, err)
+			resp, err := tr.RoundTrip(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			require.Equal(t, tc.wantStatus, resp.StatusCode)
+			require.Equal(t, tc.wantHeaders, resp.Header)
 		})
 	}
 }

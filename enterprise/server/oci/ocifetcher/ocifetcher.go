@@ -636,6 +636,7 @@ func (s *ociFetcherServer) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 	}
 
 	client := httpclient.New(s.allowedPrivateIPs, "oci_fetcher")
+	client.Transport = NewAllowedPrivateIPRedirectTransport(client.Transport, s.allowedPrivateIPs)
 	// The mirror transport sits inside the client, below the blob HEAD fallback transport, so
 	// the fallback's allowlist check sees original registry hostnames rather than mirror
 	// hostnames and its ranged GETs get the same mirror rewriting as any other request.
@@ -926,6 +927,67 @@ func blobSizeFromRangedGetResponse(resp *http.Response) (int64, error) {
 		return resp.ContentLength, nil
 	}
 	return 0, status.UnavailableErrorf("HTTP status %d", resp.StatusCode)
+}
+
+// NewAllowedPrivateIPRedirectTransport wraps inner so that it follows redirects to IP-literal
+// hosts within allowed itself, returning only the final response.
+//
+// go-containerregistry's http.Client rejects redirects to a different host that is a private,
+// loopback or link-local IP literal, and offers no way to opt out. Some registries redirect blob
+// GETs to presigned storage URLs on such IPs (e.g. an in-cluster MinIO). Following those hops
+// below go-containerregistry means it never sees them. Only redirects to operator-allowlisted IPs
+// are followed, and https->http downgrades never are; every other redirect is returned unchanged
+// for go-containerregistry to judge. This applies to all requests through the transport,
+// including token requests and foreign-layer fetches.
+func NewAllowedPrivateIPRedirectTransport(inner http.RoundTripper, allowed []*net.IPNet) http.RoundTripper {
+	if len(allowed) == 0 {
+		return inner
+	}
+	return &allowedPrivateIPRedirectTransport{client: &http.Client{
+		Transport: inner,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
+				return http.ErrUseLastResponse
+			}
+			ip := net.ParseIP(req.URL.Hostname())
+			if ip == nil {
+				return http.ErrUseLastResponse
+			}
+			for _, n := range allowed {
+				if n.Contains(ip) {
+					return nil
+				}
+			}
+			return http.ErrUseLastResponse
+		},
+	}}
+}
+
+type allowedPrivateIPRedirectTransport struct {
+	client *http.Client
+}
+
+func (t *allowedPrivateIPRedirectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.client.Do(req)
+	if err != nil {
+		// Unwrap the *url.Error added by http.Client so callers see what inner returned.
+		if urlErr, ok := err.(*url.Error); ok {
+			return nil, urlErr.Err
+		}
+		return nil, err
+	}
+	if resp.Request == nil || resp.Request.URL.String() == req.URL.String() {
+		return resp, nil
+	}
+	// At least one hop was followed. A challenge from the storage host is not a registry
+	// challenge, and a relative Location must be resolved against the URL that returned it.
+	resp.Header.Del("WWW-Authenticate")
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		if loc, err := resp.Location(); err == nil {
+			resp.Header.Set("Location", loc.String())
+		}
+	}
+	return resp, nil
 }
 
 // NewMirrorTransport wraps an http.RoundTripper with registry mirror support.
