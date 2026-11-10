@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"syscall"
 	"time"
@@ -46,8 +45,10 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 			return err
 		}
 		ip := net.ParseIP(host)
-		if ipAllowed(ip, allowed) {
-			return nil
+		for _, ipNet := range allowed {
+			if ipNet.Contains(ip) {
+				return nil
+			}
 		}
 		if (!ip.IsGlobalUnicast() || ip.IsPrivate()) && !(ip.IsLoopback() && *allowLocalhost) {
 			log.Infof("Dialer control blocked address %s", address)
@@ -55,60 +56,6 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 		}
 		return nil
 	}
-}
-
-func ipAllowed(ip net.IP, allowed []*net.IPNet) bool {
-	for _, ipNet := range allowed {
-		if ipNet.Contains(ip) {
-			return true
-		}
-	}
-	return false
-}
-
-// FollowRedirectsToAllowedIPs wraps inner so that it follows redirects to IP literals in allowed.
-func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) http.RoundTripper {
-	if len(allowed) == 0 {
-		return inner
-	}
-	return &allowedIPRedirectTransport{client: &http.Client{
-		Transport: inner,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return errors.New("stopped after 10 redirects")
-			}
-			if !ipAllowed(net.ParseIP(req.URL.Hostname()), allowed) {
-				return http.ErrUseLastResponse
-			}
-			return nil
-		},
-	}}
-}
-
-type allowedIPRedirectTransport struct {
-	client *http.Client
-}
-
-func (t *allowedIPRedirectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := t.client.Do(req)
-	if err != nil {
-		if urlErr, ok := err.(*url.Error); ok {
-			return nil, urlErr.Err
-		}
-		return nil, err
-	}
-	if resp.Request == nil || resp.Request.URL.String() == req.URL.String() {
-		return resp, nil
-	}
-	if resp.Request.URL.Scheme != req.URL.Scheme || resp.Request.URL.Host != req.URL.Host {
-		resp.Header.Del("WWW-Authenticate")
-	}
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		if loc, err := resp.Location(); err == nil {
-			resp.Header.Set("Location", loc.String())
-		}
-	}
-	return resp, nil
 }
 
 // verify that metricsTransport implements the RoundTripper interface

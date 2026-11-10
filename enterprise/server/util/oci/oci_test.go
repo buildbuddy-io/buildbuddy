@@ -38,6 +38,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/validate"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
@@ -1991,6 +1992,7 @@ func TestResolve_BlobRedirectToPrivateIP(t *testing.T) {
 				// The registry is served on localhost, so it must be reachable even when
 				// 127.0.0.1 is not allowlisted.
 				flags.Set(t, "http.client.allow_localhost", true)
+				t.Cleanup(func() { remote.SetAllowedPrivateIPs(nil) })
 				te := testenv.GetTestEnv(t)
 				if useOCIFetcher {
 					te = setupTestEnvWithCache(t)
