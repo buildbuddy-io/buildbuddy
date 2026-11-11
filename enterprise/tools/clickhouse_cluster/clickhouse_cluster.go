@@ -215,6 +215,9 @@ func getConfigXML(r int) string {
  <interserver_listen_host>127.0.0.1</interserver_listen_host>
  <tcp_port>%d</tcp_port>
  <http_port>%d</http_port>
+ <!-- The stock config also listens on fixed ports for MySQL and PostgreSQL
+      clients. Those ports would clash between the servers of the cluster,
+      and the cluster doesn't need either protocol. -->
  <mysql_port remove="remove"/>
  <postgresql_port remove="remove"/>
  <interserver_http_host>127.0.0.1</interserver_http_host>
@@ -223,7 +226,6 @@ func getConfigXML(r int) string {
  <tmp_path>./tmp/</tmp_path>
  <user_files_path>./user_files/</user_files_path>
  <format_schema_path>./format_schemas/</format_schema_path>
- <custom_cached_disks_base_directory>./caches/</custom_cached_disks_base_directory>
  <user_directories replace="replace">
   <users_xml><path>users.xml</path></users_xml>
   <local_directory><path>./access/</path></local_directory>

@@ -31,6 +31,10 @@ const testConfigXML = `
  <logger replace="replace"><level>information</level><console>1</console></logger>
  <listen_host>127.0.0.1</listen_host>
  <tcp_port>%d</tcp_port>
+ <!-- The stock config also listens on fixed ports for HTTP, MySQL and
+      PostgreSQL clients and for replication between servers. Those ports
+      would clash when several test servers run on one machine, and a test
+      server doesn't need any of them. -->
  <http_port remove="remove"/>
  <mysql_port remove="remove"/>
  <postgresql_port remove="remove"/>
@@ -39,7 +43,6 @@ const testConfigXML = `
  <tmp_path>./tmp/</tmp_path>
  <user_files_path>./user_files/</user_files_path>
  <format_schema_path>./format_schemas/</format_schema_path>
- <custom_cached_disks_base_directory>./caches/</custom_cached_disks_base_directory>
  <user_directories replace="replace">
   <users_xml><path>users.xml</path></users_xml>
   <local_directory><path>./access/</path></local_directory>
