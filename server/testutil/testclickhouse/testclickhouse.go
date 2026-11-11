@@ -3,10 +3,15 @@ package testclickhouse
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -17,10 +22,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	clickhouseutil "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+
+	chproto "github.com/ClickHouse/ch-go/proto"
 )
 
 const (
@@ -32,11 +40,11 @@ const (
  <logger replace="replace"><level>information</level><console>1</console></logger>
  <listen_host>127.0.0.1</listen_host>
  <tcp_port>%d</tcp_port>
- <!-- The stock config also listens on fixed ports for HTTP, MySQL and
-      PostgreSQL clients and for replication between servers. Those ports
-      would clash when several test servers run on one machine, and a test
-      server doesn't need any of them. -->
- <http_port remove="remove"/>
+ <http_port>%d</http_port>
+ <!-- The stock config also listens on fixed ports for MySQL and PostgreSQL
+      clients and for replication between servers. Those ports would clash
+      when several test servers run on one machine, and a test server doesn't
+      need any of them. -->
  <mysql_port remove="remove"/>
  <postgresql_port remove="remove"/>
  <interserver_http_port remove="remove"/>
@@ -136,12 +144,14 @@ func GetOrStart(t testing.TB) *Server {
 
 // Server is a ClickHouse server that Start runs for a test.
 type Server struct {
-	port int
+	port     int
+	httpPort int
 }
 
 // Start creates an isolated server which is stopped when the test completes.
 func Start(t testing.TB) *Server {
 	port := testport.FindFree(t)
+	httpPort := testport.FindFree(t)
 	dir := t.TempDir()
 	// Copy the stock config into dir, because ClickHouse reads overrides from
 	// the config.d directory next to the main config file.
@@ -150,7 +160,7 @@ func Start(t testing.TB) *Server {
 	configPath := filepath.Join(dir, "config.xml")
 	require.NoError(t, os.WriteFile(configPath, stockConfig, 0600))
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "config.d"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.d", "test.xml"), fmt.Appendf(nil, testConfigXML, port), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.d", "test.xml"), fmt.Appendf(nil, testConfigXML, port, httpPort), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "users.xml"), []byte(usersXML), 0600))
 	logPath := filepath.Join(dir, "server.log")
 	logFile, err := os.Create(logPath)
@@ -220,10 +230,42 @@ func Start(t testing.TB) *Server {
 			t.Fatalf("ClickHouse did not become ready: %v (log read error: %v)\n%s", err, readErr, logs)
 		}
 	}
-	return &Server{port: port}
+	return &Server{port: port, httpPort: httpPort}
 }
 
 // DSN returns the native protocol data source of the server's test database.
 func (s *Server) DSN() string {
 	return fmt.Sprintf("clickhouse://default:@127.0.0.1:%d/%s", s.port, dbName)
+}
+
+// TenantDataSource returns a tenant data source URL for the server's test
+// database with the given credentials.
+func (s *Server) TenantDataSource(user, password string) string {
+	return fmt.Sprintf("http://%s:%s@127.0.0.1:%d/%s", user, password, s.httpPort, dbName)
+}
+
+// TenantQuery sends query to ClickHouse over HTTP as the user in the tenant
+// data source, with the settings that schema.EnsureTenantAccess requires for a
+// query of the given group. It returns the response body, and the ClickHouse
+// error code if ClickHouse rejected the query.
+func TenantQuery(t testing.TB, dataSource, groupID, query string) (string, chproto.Error) {
+	u, err := url.Parse(dataSource)
+	require.NoError(t, err)
+	params := url.Values{}
+	params.Set("database", strings.Trim(u.Path, "/"))
+	params.Set("default_format", "TSVWithNames")
+	params.Set(schema.TenantGroupIDSetting, groupID)
+	params.Set("readonly", "1")
+	queryURL := url.URL{Scheme: u.Scheme, User: u.User, Host: u.Host, RawQuery: params.Encode()}
+	rsp, err := http.Post(queryURL.String(), "text/plain", strings.NewReader(query))
+	require.NoError(t, err)
+	defer rsp.Body.Close()
+	body, err := io.ReadAll(rsp.Body)
+	require.NoError(t, err)
+	if rsp.StatusCode == http.StatusOK {
+		return string(body), 0
+	}
+	code, err := strconv.Atoi(rsp.Header.Get("X-ClickHouse-Exception-Code"))
+	require.NoError(t, err, "ClickHouse responded with %s: %s", rsp.Status, body)
+	return string(body), chproto.Error(code)
 }
