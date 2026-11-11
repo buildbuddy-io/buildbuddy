@@ -168,7 +168,7 @@ require (
 	github.com/tklauser/go-sysconf v0.4.0
 	github.com/vishvananda/netlink v1.3.1-0.20250303224720-0e7078ed04c8
 	github.com/xiam/s-expr v0.0.0-20240311144413-9d7e25c9d7d1
-	github.com/zeebo/blake3 v0.2.3
+	github.com/zeebo/blake3 v0.2.5-0.20261020032212-28a397d2ee4c
 	go.opentelemetry.io/contrib/detectors/aws/ec2/v2 v2.5.0
 	go.opentelemetry.io/contrib/detectors/gcp v1.45.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0
