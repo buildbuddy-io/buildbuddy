@@ -60,10 +60,15 @@ func dial(target string, poolSize int, opts ...grpc.DialOption) (*grpc_client.Cl
 	return grpc_client.DialSimpleWithPoolSize(target, poolSize, opts...)
 }
 
-// getConnectionPool returns the pool for the rule at index ruleIdx in
-// proxyTargets. Each rule gets its own pool, even if rules share a target, so
-// that long-lived streams on one rule can't starve RPCs matched by another.
-func getConnectionPool(dialer dialFn, ruleIdx int) (*grpc_client.ClientConnPool, error) {
+// getConnectionPool returns the pool for the first rule matching the method.
+// Each rule gets its own pool, even if rules share a target, so that
+// long-lived streams on one rule can't starve RPCs matched by another.
+func getConnectionPool(dialer dialFn, fullMethodName string) (*grpc_client.ClientConnPool, error) {
+	ruleIdx, err := lookupProxyRule(fullMethodName)
+	if err != nil {
+		return nil, err
+	}
+
 	// Fast path: take a non-exclusive lock and check for an existing
 	// connection.
 	mu.RLock()
@@ -169,12 +174,7 @@ func ctxForBackend(ctx context.Context, cis interfaces.ClientIdentityService) (c
 func newDirector(env environment.Env) proxy.StreamDirector {
 	cis := env.GetClientIdentityService()
 	return func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
-		ruleIdx, err := lookupProxyRule(fullMethodName)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		pool, err := getConnectionPool(dial, ruleIdx)
+		pool, err := getConnectionPool(dial, fullMethodName)
 		if err != nil {
 			return nil, nil, err
 		}

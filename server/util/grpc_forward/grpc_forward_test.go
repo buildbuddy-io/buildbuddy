@@ -78,7 +78,7 @@ func TestGetConnectionPool_DedupesConcurrentDialsForSameRule(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range pools {
 		wg.Go(func() {
-			p, err := getConnectionPool(dial, 0)
+			p, err := getConnectionPool(dial, "/test.TestService/TestMethod")
 			require.NotNil(t, p)
 			require.NoError(t, err)
 			pools[i] = p
@@ -98,9 +98,7 @@ type dialCall struct {
 }
 
 func poolForMethod(t *testing.T, dialer dialFn, method string) *grpc_client.ClientConnPool {
-	idx, err := lookupProxyRule(method)
-	require.NoError(t, err)
-	pool, err := getConnectionPool(dialer, idx)
+	pool, err := getConnectionPool(dialer, method)
 	require.NoError(t, err)
 	return pool
 }
