@@ -32,19 +32,20 @@ var (
 	proxyTargets = flag.Slice("app.proxy_targets", []proxyRule{}, "")
 	poolSize     = flag.Int("app.proxy_pool_size", 0, "Number of gRPC connections to create for proxying unknown RPCs.")
 
-	mu                     sync.RWMutex
-	backendConnectionPools = map[int]*grpc_client.ClientConnPool{}
+	mu sync.RWMutex
+	// Keyed by value, not by index or pointer into proxyTargets, so that a
+	// config reload (SIGHUP) can't map a rule onto another rule's pool and
+	// unchanged rules keep their pools.
+	backendConnectionPools = map[proxyRule]*grpc_client.ClientConnPool{}
 )
 
-// lookupProxyRule returns the index in proxyTargets of the first rule matching
-// the method.
-func lookupProxyRule(fullMethodName string) (int, error) {
-	for i, rule := range *proxyTargets {
+func lookupProxyRule(fullMethodName string) (proxyRule, error) {
+	for _, rule := range *proxyTargets {
 		if strings.HasPrefix(fullMethodName, rule.Prefix) {
-			return i, nil
+			return rule, nil
 		}
 	}
-	return 0, status.UnimplementedErrorf("unknown service %s", fullMethodName)
+	return proxyRule{}, status.UnimplementedErrorf("unknown service %s", fullMethodName)
 }
 
 type dialFn = func(target string, poolSize int, opts ...grpc.DialOption) (*grpc_client.ClientConnPool, error)
@@ -63,7 +64,7 @@ func dial(target string, poolSize int, opts ...grpc.DialOption) (*grpc_client.Cl
 // Each rule gets its own pool, even if rules share a target, so that
 // long-lived streams on one rule can't starve RPCs matched by another.
 func getConnectionPool(dialer dialFn, fullMethodName string) (*grpc_client.ClientConnPool, error) {
-	ruleIdx, err := lookupProxyRule(fullMethodName)
+	rule, err := lookupProxyRule(fullMethodName)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +72,7 @@ func getConnectionPool(dialer dialFn, fullMethodName string) (*grpc_client.Clien
 	// Fast path: take a non-exclusive lock and check for an existing
 	// connection.
 	mu.RLock()
-	pool, ok := backendConnectionPools[ruleIdx]
+	pool, ok := backendConnectionPools[rule]
 	mu.RUnlock()
 	if ok {
 		return pool, nil
@@ -81,11 +82,10 @@ func getConnectionPool(dialer dialFn, fullMethodName string) (*grpc_client.Clien
 	defer mu.Unlock()
 
 	// Check the map again since we briefly released the lock.
-	if pool, ok := backendConnectionPools[ruleIdx]; ok {
+	if pool, ok := backendConnectionPools[rule]; ok {
 		return pool, nil
 	}
 
-	rule := (*proxyTargets)[ruleIdx]
 	size := rule.PoolSize
 	if size == 0 {
 		size = *poolSize
@@ -96,7 +96,7 @@ func getConnectionPool(dialer dialFn, fullMethodName string) (*grpc_client.Clien
 	if err != nil {
 		return nil, err
 	}
-	backendConnectionPools[ruleIdx] = newPool
+	backendConnectionPools[rule] = newPool
 	return newPool, nil
 }
 
