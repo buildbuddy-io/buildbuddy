@@ -51,6 +51,17 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
 
+    # The stock server config.xml, which test servers use as their base config.
+    # The config is the same on every platform, so fetch the amd64 package for
+    # all of them.
+    http_archive(
+        name = "clickhouse_server_config",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-server-25.3.14.14-amd64.tgz"],
+        sha256 = "514bb8e5a8a3532b2b5a772d9bba0dee7e6c6c7a9e84c6cf204004dd3c420861",
+        strip_prefix = "clickhouse-server-25.3.14.14",
+        build_file_content = 'exports_files(["etc/clickhouse-server/config.xml"])',
+    )
+
     http_archive(
         name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
         integrity = "sha256-0Glb6xE/18H8cVTsfolRVmAOX1Rgrm3XAkJMT1W1dkI=",

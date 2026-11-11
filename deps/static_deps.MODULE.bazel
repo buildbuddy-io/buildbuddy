@@ -5,6 +5,7 @@ use_repo(
     "clickhouse_darwin_arm64",
     "clickhouse_linux_amd64",
     "clickhouse_linux_arm64",
+    "clickhouse_server_config",
     "cloudprober",
     "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
     "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",

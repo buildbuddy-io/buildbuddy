@@ -23,19 +23,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const configXML = `
+// testConfigXML overrides the parts of ClickHouse's stock config.xml that
+// would make the server listen on fixed ports or write outside of its
+// temporary directory.
+const testConfigXML = `
 <clickhouse>
- <logger><level>information</level><console>1</console></logger>
+ <logger replace="replace"><level>information</level><console>1</console></logger>
  <listen_host>127.0.0.1</listen_host>
  <tcp_port>%d</tcp_port>
+ <http_port remove="remove"/>
+ <mysql_port remove="remove"/>
+ <postgresql_port remove="remove"/>
+ <interserver_http_port remove="remove"/>
  <path>./data/</path>
  <tmp_path>./tmp/</tmp_path>
  <user_files_path>./user_files/</user_files_path>
  <format_schema_path>./format_schemas/</format_schema_path>
- <user_directories>
+ <custom_cached_disks_base_directory>./caches/</custom_cached_disks_base_directory>
+ <user_directories replace="replace">
   <users_xml><path>users.xml</path></users_xml>
   <local_directory><path>./access/</path></local_directory>
  </user_directories>
+ <!-- The stock config locks the ClickHouse binary in memory, which wastes
+      memory on machines that run several test servers. -->
+ <mlock_executable>false</mlock_executable>
  <background_schedule_pool_size>16</background_schedule_pool_size>
 </clickhouse>
 `
@@ -57,11 +68,14 @@ const usersXML = `
 `
 
 var (
-	// Set by Bazel to the platform-specific ClickHouse executable.
-	clickhouseRlocationpath string
-	clickhouseBinaryPath    string
-	targetsMu               sync.Mutex
-	targets                 = map[testing.TB]string{}
+	// Set by Bazel to the platform-specific ClickHouse executable and to
+	// ClickHouse's stock config.xml.
+	clickhouseRlocationpath       string
+	clickhouseConfigRlocationpath string
+	clickhouseBinaryPath          string
+	clickhouseConfigPath          string
+	targetsMu                     sync.Mutex
+	targets                       = map[testing.TB]string{}
 )
 
 func init() {
@@ -72,6 +86,10 @@ func init() {
 	clickhouseBinaryPath, err = filepath.Abs(path)
 	if err != nil {
 		log.Fatalf("Failed to resolve absolute ClickHouse binary path: %s", err)
+	}
+	clickhouseConfigPath, err = runfiles.Rlocation(clickhouseConfigRlocationpath)
+	if err != nil {
+		log.Fatalf("Failed to locate ClickHouse config.xml in runfiles: %s", err)
 	}
 }
 
@@ -111,8 +129,14 @@ func Start(t testing.TB) string {
 
 	port := testport.FindFree(t)
 	dir := t.TempDir()
+	// Copy the stock config into dir, because ClickHouse reads overrides from
+	// the config.d directory next to the main config file.
+	stockConfig, err := os.ReadFile(clickhouseConfigPath)
+	require.NoError(t, err)
 	configPath := filepath.Join(dir, "config.xml")
-	require.NoError(t, os.WriteFile(configPath, fmt.Appendf(nil, configXML, port), 0600))
+	require.NoError(t, os.WriteFile(configPath, stockConfig, 0600))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "config.d"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.d", "test.xml"), fmt.Appendf(nil, testConfigXML, port), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "users.xml"), []byte(usersXML), 0600))
 	logPath := filepath.Join(dir, "server.log")
 	logFile, err := os.Create(logPath)

@@ -37,7 +37,10 @@ var (
 )
 
 // Set via x_defs in the BUILD file.
-var clickhouseRlocationpath string
+var (
+	clickhouseRlocationpath       string
+	clickhouseConfigRlocationpath string
+)
 
 const (
 	clusterName                  = "bb_clickhouse_cluster_local"
@@ -86,6 +89,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	stockConfigPath, err := runfiles.Rlocation(clickhouseConfigRlocationpath)
+	if err != nil {
+		return err
+	}
+	stockConfig, err := os.ReadFile(stockConfigPath)
+	if err != nil {
+		return fmt.Errorf("read stock config.xml: %w", err)
+	}
 	tmp, err := os.MkdirTemp("", "buildbuddy-clickhouse-")
 	if err != nil {
 		return err
@@ -102,14 +113,21 @@ func run() error {
 			if err := os.MkdirAll(filepath.Join(dir, "config.d"), 0700); err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(dir, "config.xml"), []byte(getConfigXML(r)), 0600); err != nil {
+			// Start from ClickHouse's stock config, and override it with the
+			// files in config.d. ClickHouse merges those files in name order,
+			// so the --config_file files come after cluster.xml and can
+			// override it.
+			if err := os.WriteFile(filepath.Join(dir, "config.xml"), stockConfig, 0600); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(dir, "config.d", "cluster.xml"), []byte(getConfigXML(r)), 0600); err != nil {
 				return err
 			}
 			if err := os.WriteFile(filepath.Join(dir, "users.xml"), []byte(usersConfigXML), 0600); err != nil {
 				return err
 			}
 			for i, content := range configs {
-				if err := os.WriteFile(filepath.Join(dir, "config.d", fmt.Sprintf("%04d.xml", i)), content, 0600); err != nil {
+				if err := os.WriteFile(filepath.Join(dir, "config.d", fmt.Sprintf("user-%04d.xml", i)), content, 0600); err != nil {
 					return err
 				}
 			}
@@ -185,25 +203,34 @@ func readEnvFiles(files []string) (map[string]string, error) {
 	return env, nil
 }
 
+// getConfigXML returns the settings of server r that override ClickHouse's
+// stock config.xml, namely the server's ports, paths in its directory, and its
+// place in the cluster.
 func getConfigXML(r int) string {
 	var xml strings.Builder
 	fmt.Fprintf(&xml, `
 <clickhouse>
- <logger><level>%s</level><console>1</console></logger>
+ <logger replace="replace"><level>%s</level><console>1</console></logger>
  <listen_host>127.0.0.1</listen_host>
  <interserver_listen_host>127.0.0.1</interserver_listen_host>
  <tcp_port>%d</tcp_port>
  <http_port>%d</http_port>
+ <mysql_port remove="remove"/>
+ <postgresql_port remove="remove"/>
  <interserver_http_host>127.0.0.1</interserver_http_host>
  <interserver_http_port>%d</interserver_http_port>
  <path>./data/</path>
  <tmp_path>./tmp/</tmp_path>
  <user_files_path>./user_files/</user_files_path>
  <format_schema_path>./format_schemas/</format_schema_path>
- <user_directories>
+ <custom_cached_disks_base_directory>./caches/</custom_cached_disks_base_directory>
+ <user_directories replace="replace">
   <users_xml><path>users.xml</path></users_xml>
   <local_directory><path>./access/</path></local_directory>
  </user_directories>
+ <!-- The stock config locks the ClickHouse binary in memory, which wastes
+      memory when several servers run on one machine. -->
+ <mlock_executable>false</mlock_executable>
  <background_schedule_pool_size>16</background_schedule_pool_size>
  <remote_servers>
   <%s>
