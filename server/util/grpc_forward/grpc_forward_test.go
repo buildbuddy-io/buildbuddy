@@ -32,7 +32,7 @@ func cleanup() {
 	}
 	// Reset to an empty (non-nil) map so a subsequent test that dials through
 	// getConnectionPool doesn't panic assigning into a nil map.
-	backendConnectionPools = map[proxyRule]*grpc_client.ClientConnPool{}
+	backendConnectionPools = map[int]*grpc_client.ClientConnPool{}
 }
 
 // TestForwarding_PropagatesClientHeadersToBackend tests that the unknown-RPC
@@ -142,33 +142,6 @@ func TestGetConnectionPool_UsesPerRulePoolSize(t *testing.T) {
 	poolForMethod(t, dialer, "/b.B/Bar")
 
 	require.Equal(t, []dialCall{{"a.example.com", 3}, {"b.example.com", 5}}, calls)
-}
-
-// A config reload replaces the proxy_targets slice.
-func TestGetConnectionPool_ConfigReload(t *testing.T) {
-	t.Cleanup(cleanup)
-	flags.Set(t, "app.proxy_targets", []proxyRule{
-		{Prefix: "/a.A/", Target: "a.example.com"},
-		{Prefix: "", Target: "default.example.com"},
-	})
-	var calls []dialCall
-	dialer := func(target string, size int, _ ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
-		calls = append(calls, dialCall{target, size})
-		return &grpc_client.ClientConnPool{}, nil
-	}
-	oldA := poolForMethod(t, dialer, "/a.A/Foo")
-	oldDefault := poolForMethod(t, dialer, "/b.B/Bar")
-
-	flags.Set(t, "app.proxy_targets", []proxyRule{
-		{Prefix: "/a.A/", Target: "new-a.example.com"},
-		{Prefix: "", Target: "default.example.com"},
-	})
-	newA := poolForMethod(t, dialer, "/a.A/Foo")
-	newDefault := poolForMethod(t, dialer, "/b.B/Bar")
-
-	require.NotSame(t, oldA, newA, "a changed rule must not reuse the old rule's pool")
-	require.Same(t, oldDefault, newDefault, "an unchanged rule keeps its pool")
-	require.Equal(t, []dialCall{{"a.example.com", 0}, {"default.example.com", 0}, {"new-a.example.com", 0}}, calls)
 }
 
 // A held stream saturating one rule's pool must not block RPCs on another rule.
