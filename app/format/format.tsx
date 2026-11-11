@@ -386,7 +386,7 @@ export function formatGitUrl(url: string) {
   return url
     ?.replace("https://", "")
     .replace("ssh://", "")
-    .replace(".git", "")
+    .replace(/\.git$/, "")
     .replace("git@", "")
     .replace("github.com/", "")
     .replace("github.com:", "");
