@@ -19,6 +19,8 @@ go_library(
         "//server/interfaces",
         "//server/real_environment",
         "//server/resources",
+        "//server/util/authutil",
+        "//server/util/claims",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",

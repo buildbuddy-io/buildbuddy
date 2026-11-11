@@ -971,3 +971,40 @@ func TestGetCacheProxy_ProfileTypeRequired(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument, got: %v", err)
 }
+
+func TestGetCacheProxy_ProfileRequiresAdmin(t *testing.T) {
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	readerUser := userWithCapabilities("U2", testGroupID)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+	registerProxy(t, s, client, "id-1")
+
+	ctx := claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil)
+	_, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.GetProfileRequest_HEAP))
+	require.Error(t, err)
+	assert.True(t, status.IsPermissionDeniedError(err), "expected permission denied, got: %v", err)
+}
+
+func TestGetCacheProxy_ProfileAllowsServerAdmin(t *testing.T) {
+	const serverAdminGroupID = "GR_SERVER_ADMIN"
+	flags.Set(t, "auth.admin_group_id", serverAdminGroupID)
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	serverAdmin := &claims.Claims{
+		UserID:        "U2",
+		GroupID:       testGroupID,
+		AllowedGroups: []string{testGroupID, serverAdminGroupID},
+		GroupMemberships: []*interfaces.GroupMembership{
+			{GroupID: testGroupID},
+			{GroupID: serverAdminGroupID, Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN}},
+		},
+	}
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+	stream := registerProxy(t, s, client, "id-1")
+	summary := &cppb.CacheProxySummary{Host: "host", ProxyId: "id-1"}
+	proxyErr := answerProfileRequest(stream, summary)
+
+	ctx := claims.AuthContextWithJWT(context.Background(), serverAdmin, nil)
+	rsp, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.GetProfileRequest_HEAP))
+	require.NoError(t, err)
+	require.NoError(t, <-proxyErr)
+	assert.Equal(t, []byte("profile-data"), rsp.GetDetails().GetProfile().GetData())
+}

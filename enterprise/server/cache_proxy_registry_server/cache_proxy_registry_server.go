@@ -41,6 +41,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -521,6 +523,10 @@ func (s *CacheProxyRegistryServer) GetCacheProxy(ctx context.Context, req *cppb.
 	if profileReq := req.GetGetProfile(); profileReq != nil {
 		if profileReq.GetType() == pfpb.GetProfileRequest_UNKNOWN_TYPE {
 			return nil, status.InvalidArgumentError("profile type not specified")
+		}
+		// Confirm the caller is an org/server admin
+		if authutil.AuthorizeOrgAdmin(user, groupID) != nil && claims.AuthorizeServerAdmin(ctx) != nil {
+			return nil, status.PermissionDeniedError("collecting profiles requires org or server admin permissions")
 		}
 		log.CtxDebugf(ctx, "User %q requested a %s profile from cache proxy %q (group %q)", user.GetUserID(), profileReq.GetType(), proxyID, groupID)
 	}
