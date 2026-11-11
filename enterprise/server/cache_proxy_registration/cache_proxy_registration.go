@@ -82,8 +82,7 @@ var (
 	maxLabels   = 20
 	maxLabelLen = 50
 
-	// Caching for parsed command-line flags, to avoid racing against config
-	// reparsing logic in config.go.
+	// Snapshotted at registration so heartbeats don't re-walk the flagset.
 	configuredFlagsCache atomic.Pointer[[]string]
 )
 
@@ -121,7 +120,6 @@ func Register(env *real_environment.RealEnv) error {
 		}
 		trimmedLabels[key] = val
 	}
-	// Snapshot the configured flags once at startup.
 	refreshConfiguredFlags()
 
 	log.Infof("Registering Cache Proxy %s on host %q", proxyID, hostname)

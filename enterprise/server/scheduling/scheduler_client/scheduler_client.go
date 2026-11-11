@@ -58,8 +58,7 @@ const (
 )
 
 var (
-	// Caching for parsed command-line flags, to avoid racing against config
-	// reparsing logic in config.go.
+	// Snapshotted at registration so heartbeats don't re-walk the flagset.
 	configuredFlagsCache atomic.Pointer[[]string]
 )
 
@@ -464,7 +463,6 @@ func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler
 	if options.APIKeyOverride != "" {
 		apiKey = options.APIKeyOverride
 	}
-	// Snapshot the configured flags once at startup.
 	refreshConfiguredFlags()
 
 	shutdownSignal := make(chan struct{})

@@ -306,6 +306,18 @@ func (f *fakeHeartbeatStream) Send(req *cppb.RegisterCacheProxyRequest) error {
 	return nil
 }
 
+func TestSendHeartbeat_IncludesConfiguredFlags(t *testing.T) {
+	stream := &fakeHeartbeatStream{}
+	summary := &cppb.CacheProxySummary{Host: "h", ProxyId: "id"}
+
+	flags.Set(t, "cache_proxy.app_target", "grpcs://app.example.com")
+	refreshConfiguredFlags()
+	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary}))
+
+	require.Len(t, stream.sent, 1)
+	assert.Contains(t, stream.sent[0].GetSummary().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://app.example.com")
+}
+
 func TestSendHeartbeat_FlagMutationRaciness(t *testing.T) {
 	stream := &fakeHeartbeatStream{}
 	summary := &cppb.CacheProxySummary{Host: "h", ProxyId: "id"}
