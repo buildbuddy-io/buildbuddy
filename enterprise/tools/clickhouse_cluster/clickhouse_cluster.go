@@ -234,6 +234,9 @@ func getConfigXML(r int) string {
       memory when several servers run on one machine. -->
  <mlock_executable>false</mlock_executable>
  <send_crash_reports><enabled>false</enabled></send_crash_reports>
+ <!-- By default, ClickHouse waits minutes for open connections to close when
+      it shuts down, which would slow down every test. -->
+ <shutdown_wait_unfinished>5</shutdown_wait_unfinished>
  <background_schedule_pool_size>16</background_schedule_pool_size>
  <remote_servers>
   <%s>

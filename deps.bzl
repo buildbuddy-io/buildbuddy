@@ -24,29 +24,29 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     """
     http_archive(
         name = "clickhouse_linux_amd64",
-        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-common-static-25.3.14.14-amd64.tgz"],
-        sha256 = "4fd9c705eb4952335c30ca09fa29a021e63d0e7e05da7f8d9f965e2f4cfb246a",
-        strip_prefix = "clickhouse-common-static-25.3.14.14",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v26.8.34.13-lts/clickhouse-common-static-26.8.34.13-amd64.tgz"],
+        sha256 = "d64b69ce0a13a1e89960b5ffcc6f07ea471b314ae21348e457dd232c8fa5506e",
+        strip_prefix = "clickhouse-common-static-26.8.34.13",
         build_file_content = 'exports_files(["usr/bin/clickhouse"])',
     )
     http_archive(
         name = "clickhouse_linux_arm64",
-        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-common-static-25.3.14.14-arm64.tgz"],
-        sha256 = "e82a0a450ad4e57b952be933294f805267c160e13d8cc89d6145f2647027edaf",
-        strip_prefix = "clickhouse-common-static-25.3.14.14",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v26.8.34.13-lts/clickhouse-common-static-26.8.34.13-arm64.tgz"],
+        sha256 = "152b78259e897481260d65914bf40a63148235b072548e0229c11d9b7a80de37",
+        strip_prefix = "clickhouse-common-static-26.8.34.13",
         build_file_content = 'exports_files(["usr/bin/clickhouse"])',
     )
     http_file(
         name = "clickhouse_darwin_amd64",
-        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-macos"],
-        sha256 = "4136ebc67aee500b7c02804d8116977d59264d937e8e78793ab4d54b538b516b",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v26.8.34.13-lts/clickhouse-macos"],
+        sha256 = "45b51d207a4df5f6b2cf3d47576b5a41c3301f0a83b6322c1b4de3fb359e06f2",
         downloaded_file_path = "clickhouse",
         executable = True,
     )
     http_file(
         name = "clickhouse_darwin_arm64",
-        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-macos-aarch64"],
-        sha256 = "468e33062f3cbfeb6bbaa8709b7fdd31c73a177e31cb60ed7933452a6685648b",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v26.8.34.13-lts/clickhouse-macos-aarch64"],
+        sha256 = "d1666bb409243aee970c6ea76d8b97e18cbcb6351d61d52dd3d88baab14d26db",
         downloaded_file_path = "clickhouse",
         executable = True,
     )
@@ -56,9 +56,9 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     # all of them.
     http_archive(
         name = "clickhouse_server_config",
-        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-server-25.3.14.14-amd64.tgz"],
-        sha256 = "514bb8e5a8a3532b2b5a772d9bba0dee7e6c6c7a9e84c6cf204004dd3c420861",
-        strip_prefix = "clickhouse-server-25.3.14.14",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v26.8.34.13-lts/clickhouse-server-26.8.34.13-amd64.tgz"],
+        sha256 = "33764a16ba5f95c3f07f902a6380a63cede63f098cd8e4e71d93243966d33b57",
+        strip_prefix = "clickhouse-server-26.8.34.13",
         build_file_content = 'exports_files(["etc/clickhouse-server/config.xml"])',
     )
 
