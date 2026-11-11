@@ -346,8 +346,6 @@ func main() {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 
-	config.ReloadOnSIGHUP()
-
 	if *maxThreads > 0 {
 		debug.SetMaxThreads(*maxThreads)
 	}

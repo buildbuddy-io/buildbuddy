@@ -36,8 +36,6 @@ func main() {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 
-	config.ReloadOnSIGHUP()
-
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	appFS, err := app_bundle.GetAppFS()
 	if err != nil {

@@ -176,8 +176,6 @@ func main() {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 
-	config.ReloadOnSIGHUP()
-
 	redisutil.ConfigureLogging()
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
