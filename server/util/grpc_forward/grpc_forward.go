@@ -20,17 +20,16 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// proxyPair defines a prefix to match against the incoming grpc method name
-// and a target to proxy this traffic to.
-type proxyPair struct {
-	Prefix string `yaml:"prefix" json:"prefix" usage:"The gRPC method prefix to match."`
-	Target string `yaml:"target" json:"target" usage:"The gRPC target to forward requests to."`
-	// PoolSize overrides app.proxy_pool_size for this rule's connection pool.
-	PoolSize int `yaml:"pool_size" json:"pool_size" usage:"Number of gRPC connections for this rule's pool. Defaults to app.proxy_pool_size."`
+// proxyRule forwards RPCs whose method name starts with Prefix to Target, over
+// a connection pool of its own.
+type proxyRule struct {
+	Prefix   string `yaml:"prefix" json:"prefix" usage:"The gRPC method prefix to match."`
+	Target   string `yaml:"target" json:"target" usage:"The gRPC target to forward requests to."`
+	PoolSize int    `yaml:"pool_size" json:"pool_size" usage:"Number of gRPC connections for this rule's pool. Defaults to app.proxy_pool_size."`
 }
 
 var (
-	proxyTargets = flag.Slice("app.proxy_targets", []proxyPair{}, "")
+	proxyTargets = flag.Slice("app.proxy_targets", []proxyRule{}, "")
 	poolSize     = flag.Int("app.proxy_pool_size", 0, "Number of gRPC connections to create for proxying unknown RPCs.")
 
 	mu                     sync.RWMutex
@@ -40,8 +39,8 @@ var (
 // lookupProxyRule returns the index in proxyTargets of the first rule matching
 // the method.
 func lookupProxyRule(fullMethodName string) (int, error) {
-	for i, pair := range *proxyTargets {
-		if strings.HasPrefix(fullMethodName, pair.Prefix) {
+	for i, rule := range *proxyTargets {
+		if strings.HasPrefix(fullMethodName, rule.Prefix) {
 			return i, nil
 		}
 	}

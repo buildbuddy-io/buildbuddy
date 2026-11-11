@@ -51,7 +51,7 @@ func TestForwarding_PropagatesClientHeadersToBackend(t *testing.T) {
 		return stream.SendMsg(&emptypb.Empty{})
 	}
 	backendTarget := startBackend(t, backendHandler)
-	flags.Set(t, "app.proxy_targets", []proxyPair{{Prefix: "", Target: backendTarget}})
+	flags.Set(t, "app.proxy_targets", []proxyRule{{Prefix: "", Target: backendTarget}})
 	clientConn := startProxy(t, "")
 
 	ctx := metadata.AppendToOutgoingContext(context.Background(), clientHeader, "test-value")
@@ -67,7 +67,7 @@ func TestForwarding_PropagatesClientHeadersToBackend(t *testing.T) {
 func TestGetConnectionPool_DedupesConcurrentDialsForSameRule(t *testing.T) {
 	t.Cleanup(cleanup)
 
-	flags.Set(t, "app.proxy_targets", []proxyPair{{Prefix: "", Target: "remote.example.com"}})
+	flags.Set(t, "app.proxy_targets", []proxyRule{{Prefix: "", Target: "remote.example.com"}})
 	dial := func(_ string, _ int, _ ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
 		// Sleep for a bit to increase the chance of race conditions.
 		time.Sleep(10 * time.Millisecond)
@@ -106,7 +106,7 @@ func poolForMethod(t *testing.T, dialer dialFn, method string) *grpc_client.Clie
 func TestGetConnectionPool_DistinctRulesWithSameTargetGetDistinctPools(t *testing.T) {
 	t.Cleanup(cleanup)
 	const target = "remote.example.com"
-	flags.Set(t, "app.proxy_targets", []proxyPair{
+	flags.Set(t, "app.proxy_targets", []proxyRule{
 		{Prefix: "/build.bazel.remote.execution.v2.Execution/", Target: target},
 		{Prefix: "", Target: target},
 	})
@@ -128,7 +128,7 @@ func TestGetConnectionPool_DistinctRulesWithSameTargetGetDistinctPools(t *testin
 func TestGetConnectionPool_UsesPerRulePoolSize(t *testing.T) {
 	t.Cleanup(cleanup)
 	flags.Set(t, "app.proxy_pool_size", 5)
-	flags.Set(t, "app.proxy_targets", []proxyPair{
+	flags.Set(t, "app.proxy_targets", []proxyRule{
 		{Prefix: "/a.A/", Target: "a.example.com", PoolSize: 3},
 		{Prefix: "", Target: "b.example.com"},
 	})
@@ -163,7 +163,7 @@ func TestForwarding_SaturatedRulePoolDoesNotBlockOtherRules(t *testing.T) {
 		return stream.SendMsg(&emptypb.Empty{})
 	}
 	backendTarget := startBackend(t, backendHandler, grpc.MaxConcurrentStreams(1))
-	flags.Set(t, "app.proxy_targets", []proxyPair{
+	flags.Set(t, "app.proxy_targets", []proxyRule{
 		{Prefix: "/a.A/", Target: backendTarget, PoolSize: 1},
 		{Prefix: "", Target: backendTarget, PoolSize: 1},
 	})
@@ -231,7 +231,7 @@ func startProxy(t *testing.T, groupID string) *grpc_client.ClientConnPool {
 // startForwardingProxy starts a backend running backendHandler behind a proxy
 // with a single catch-all rule.
 func startForwardingProxy(t *testing.T, backendHandler grpc.StreamHandler, groupID string) *grpc_client.ClientConnPool {
-	flags.Set(t, "app.proxy_targets", []proxyPair{{Prefix: "", Target: startBackend(t, backendHandler)}})
+	flags.Set(t, "app.proxy_targets", []proxyRule{{Prefix: "", Target: startBackend(t, backendHandler)}})
 	return startProxy(t, groupID)
 }
 
