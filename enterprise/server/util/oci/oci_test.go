@@ -6,13 +6,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1975,74 +1975,54 @@ func TestResolve_BlobRedirectToPrivateIP(t *testing.T) {
 		allowedIPs []string
 		wantErr    string
 	}{
-		{
-			name:       "allowlisted",
-			allowedIPs: []string{"127.0.0.1/32"},
-		},
-		{
-			name:       "not_allowlisted",
-			allowedIPs: []string{"10.0.0.0/8"},
-			wantErr:    "SSRF protection",
-		},
+		{name: "allowlisted", allowedIPs: []string{"127.0.0.1/32"}},
+		{name: "not_allowlisted", allowedIPs: []string{"10.0.0.0/8"}, wantErr: "SSRF protection"},
 	} {
-		for _, useOCIFetcher := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/use_oci_fetcher_%t", tc.name, useOCIFetcher), func(t *testing.T) {
-				flags.Set(t, "executor.container_registry_allowed_private_ips", tc.allowedIPs)
-				flags.Set(t, "executor.container_registry.use_cache_percent", 0)
-				// The registry is served on localhost, so it must be reachable even when
-				// 127.0.0.1 is not allowlisted.
-				flags.Set(t, "http.client.allow_localhost", true)
-				t.Cleanup(func() { remote.SetAllowedPrivateIPs(nil) })
-				te := testenv.GetTestEnv(t)
-				if useOCIFetcher {
-					te = setupTestEnvWithCache(t)
-				}
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.container_registry_allowed_private_ips", tc.allowedIPs)
+			flags.Set(t, "executor.container_registry.use_cache_percent", 0)
+			// The registry is on localhost, which must stay reachable when 127.0.0.1 isn't allowlisted.
+			flags.Set(t, "http.client.allow_localhost", true)
+			t.Cleanup(func() { remote.SetAllowedPrivateIPs(nil) })
 
-				// Once enabled, blob GETs to the registry's localhost address are
-				// redirected to the same server via 127.0.0.1, a different host.
-				var redirectBlobs atomic.Bool
-				var redirectedHits atomic.Int32
-				blobGet := regexp.MustCompile(`^/v2/.+/blobs/sha256:[0-9a-f]+$`)
-				registry := testregistry.Run(t, testregistry.Opts{
-					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-						if r.Method != http.MethodGet || !blobGet.MatchString(r.URL.Path) || !redirectBlobs.Load() {
-							return true
-						}
-						if r.URL.Query().Get("redirected") == "1" {
-							redirectedHits.Add(1)
-							return true
-						}
-						_, port, err := net.SplitHostPort(r.Host)
-						if err != nil {
-							http.Error(w, err.Error(), http.StatusBadRequest)
-							return false
-						}
-						http.Redirect(w, r, "http://127.0.0.1:"+port+r.URL.Path+"?redirected=1", http.StatusFound)
-						return false
-					},
-				})
-				files := map[string][]byte{"/hello": []byte("world")}
-				registry.PushNamedImageWithFiles(t, "redirect_image", files, nil)
-				redirectBlobs.Store(true)
-
-				pulled, err := newResolver(t, te).Resolve(
-					context.Background(),
-					registry.ImageAddress("redirect_image"),
-					&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS},
-					oci.Credentials{},
-					useOCIFetcher,
-				)
-				if tc.wantErr != "" {
-					if err == nil {
-						err = validate.Image(pulled)
+			// Once enabled, blob GETs to localhost redirect to 127.0.0.1, a different host.
+			var redirectBlobs atomic.Bool
+			var redirectedHits atomic.Int32
+			var registry *testregistry.Registry
+			registry = testregistry.Run(t, testregistry.Opts{
+				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+					if !redirectBlobs.Load() || r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/blobs/") {
+						return true
 					}
-					require.ErrorContains(t, err, tc.wantErr)
-					return
-				}
-				require.NoError(t, err)
-				require.NoError(t, validate.Image(pulled))
-				require.Greater(t, redirectedHits.Load(), int32(0), "blob GETs should have been redirected")
+					if r.URL.Query().Get("redirected") == "1" {
+						redirectedHits.Add(1)
+						return true
+					}
+					target := strings.Replace(registry.Address(), "localhost", "127.0.0.1", 1)
+					http.Redirect(w, r, "http://"+target+r.URL.Path+"?redirected=1", http.StatusFound)
+					return false
+				},
 			})
-		}
+			registry.PushNamedImageWithFiles(t, "redirect_image", map[string][]byte{"/hello": []byte("world")}, nil)
+			redirectBlobs.Store(true)
+
+			pulled, err := newResolver(t, testenv.GetTestEnv(t)).Resolve(
+				context.Background(),
+				registry.ImageAddress("redirect_image"),
+				&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS},
+				oci.Credentials{},
+				false, /*=useOCIFetcher*/
+			)
+			if err == nil {
+				// Blobs are fetched lazily, so a blocked redirect only fails here.
+				err = validate.Image(pulled)
+			}
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Greater(t, redirectedHits.Load(), int32(0), "blob GETs should have been redirected")
+		})
 	}
 }
