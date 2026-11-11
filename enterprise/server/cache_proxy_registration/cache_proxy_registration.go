@@ -269,7 +269,7 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 		case rsp := <-rspCh:
 			detailsReq := rsp.GetDetailsRequest()
 			if detailsReq == nil {
-				break
+				continue
 			}
 			// Profiles can take a while to collect, so collect them in a
 			// separate goroutine to not block heartbeats and other requests.
@@ -280,7 +280,7 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 					if err := send(detailsResponse(summary, rsp, profileResp)); err != nil {
 						return err
 					}
-					break
+					continue
 				}
 
 				go func() {
@@ -297,7 +297,7 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 					}
 				}()
 
-				break
+				continue
 			}
 			if err := send(detailsResponse(summary, rsp, nil)); err != nil {
 				return err
