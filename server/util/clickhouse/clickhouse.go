@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/tenantquery"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -615,6 +616,12 @@ func Register(env *real_environment.RealEnv) error {
 			gormutil.PrintMigrationSchemaChanges(sqlStrings)
 			log.Info("Clickhouse migration completed. Exiting due to --clickhouse.print_schema_changes_and_exit.")
 			os.Exit(0)
+		}
+
+		// Don't print these statements as schema changes above, because
+		// tenantquery.RunMigrations runs them on every migration.
+		if err := tenantquery.RunMigrations(db); err != nil {
+			return err
 		}
 	}
 
