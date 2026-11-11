@@ -1,3 +1,6 @@
+// This package contains utilities for collecting runtime profiles from the
+// running Go process. This can be used for profiling hooks in cache proxies /
+// executors, or any other context where runtime profiles are needed.
 package profile
 
 import (
