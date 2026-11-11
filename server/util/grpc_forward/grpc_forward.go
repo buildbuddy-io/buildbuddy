@@ -7,7 +7,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -18,47 +20,58 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// proxyPair defines a prefix to match against the incoming grpc method name
-// and a target to proxy this traffic to.
-type proxyPair struct {
-	Prefix string `yaml:"prefix" json:"prefix" usage:"The gRPC method prefix to match."`
-	Target string `yaml:"target" json:"target" usage:"The gRPC target to forward requests to."`
+// proxyRule forwards RPCs whose method name starts with Prefix to Target, over
+// a connection pool of its own.
+type proxyRule struct {
+	Prefix   string `yaml:"prefix" json:"prefix" usage:"The gRPC method prefix to match."`
+	Target   string `yaml:"target" json:"target" usage:"The gRPC target to forward requests to."`
+	PoolSize int    `yaml:"pool_size" json:"pool_size" usage:"Number of gRPC connections for this rule's pool. Defaults to app.proxy_pool_size."`
 }
 
 var (
-	proxyTargets = flag.Slice("app.proxy_targets", []proxyPair{}, "")
+	proxyTargets = flag.Slice("app.proxy_targets", []proxyRule{}, "")
 	poolSize     = flag.Int("app.proxy_pool_size", 0, "Number of gRPC connections to create for proxying unknown RPCs.")
 
 	mu                     sync.RWMutex
-	backendConnectionPools = map[string]*grpc_client.ClientConnPool{}
+	backendConnectionPools = map[int]*grpc_client.ClientConnPool{}
 )
 
-func lookupProxyTarget(fullMethodName string) (string, error) {
-	for _, pair := range *proxyTargets {
-		if strings.HasPrefix(fullMethodName, pair.Prefix) {
-			return pair.Target, nil
+// lookupProxyRule returns the index in proxyTargets of the first rule matching
+// the method.
+func lookupProxyRule(fullMethodName string) (int, error) {
+	for i, rule := range *proxyTargets {
+		if strings.HasPrefix(fullMethodName, rule.Prefix) {
+			return i, nil
 		}
 	}
-	return "", status.UnimplementedErrorf("unknown service %s", fullMethodName)
+	return 0, status.UnimplementedErrorf("unknown service %s", fullMethodName)
 }
 
-type dialFn = func(string, ...grpc.DialOption) (*grpc_client.ClientConnPool, error)
+type dialFn = func(target string, poolSize int, opts ...grpc.DialOption) (*grpc_client.ClientConnPool, error)
 
-func dial(target string, opts ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
-	if *poolSize < 0 {
-		return nil, status.InvalidArgumentErrorf("Invalid pool size: %d", *poolSize)
+func dial(target string, poolSize int, opts ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
+	if poolSize < 0 {
+		return nil, status.InvalidArgumentErrorf("Invalid pool size: %d", poolSize)
 	}
-	if *poolSize == 0 {
+	if poolSize == 0 {
 		return grpc_client.DialSimple(target, opts...)
 	}
-	return grpc_client.DialSimpleWithPoolSize(target, *poolSize, opts...)
+	return grpc_client.DialSimpleWithPoolSize(target, poolSize, opts...)
 }
 
-func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPool, error) {
+// getConnectionPool returns the pool for the first rule matching the method.
+// Each rule gets its own pool, even if rules share a target, so that
+// long-lived streams on one rule can't starve RPCs matched by another.
+func getConnectionPool(dialer dialFn, fullMethodName string) (*grpc_client.ClientConnPool, error) {
+	ruleIdx, err := lookupProxyRule(fullMethodName)
+	if err != nil {
+		return nil, err
+	}
+
 	// Fast path: take a non-exclusive lock and check for an existing
 	// connection.
 	mu.RLock()
-	pool, ok := backendConnectionPools[target]
+	pool, ok := backendConnectionPools[ruleIdx]
 	mu.RUnlock()
 	if ok {
 		return pool, nil
@@ -68,17 +81,22 @@ func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPoo
 	defer mu.Unlock()
 
 	// Check the map again since we briefly released the lock.
-	if pool, ok := backendConnectionPools[target]; ok {
+	if pool, ok := backendConnectionPools[ruleIdx]; ok {
 		return pool, nil
 	}
 
+	rule := (*proxyTargets)[ruleIdx]
+	size := rule.PoolSize
+	if size == 0 {
+		size = *poolSize
+	}
 	// Note: dial should be non-blocking, so it's fine to do it with the mutex
 	// held.
-	newPool, err := dialer(target)
+	newPool, err := dialer(rule.Target, size)
 	if err != nil {
 		return nil, err
 	}
-	backendConnectionPools[target] = newPool
+	backendConnectionPools[ruleIdx] = newPool
 	return newPool, nil
 }
 
@@ -155,12 +173,7 @@ func ctxForBackend(ctx context.Context, cis interfaces.ClientIdentityService) (c
 func newDirector(env environment.Env) proxy.StreamDirector {
 	cis := env.GetClientIdentityService()
 	return func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
-		target, err := lookupProxyTarget(fullMethodName)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		pool, err := getConnectionPool(dial, target)
+		pool, err := getConnectionPool(dial, fullMethodName)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -179,5 +192,25 @@ func GetForwardingServerOption(env environment.Env) grpc.ServerOption {
 	if len(*proxyTargets) == 0 {
 		return nil
 	}
-	return grpc.UnknownServiceHandler(proxy.TransparentHandler(newDirector(env)))
+	return grpc.UnknownServiceHandler(trackActiveStreams(proxy.TransparentHandler(newDirector(env))))
+}
+
+func trackActiveStreams(h grpc.StreamHandler) grpc.StreamHandler {
+	return func(srv any, stream grpc.ServerStream) error {
+		// Label by rule rather than method: method names are client-supplied,
+		// so they'd make the series unbounded.
+		method, _ := grpc.MethodFromServerStream(stream)
+		ruleIdx, err := lookupProxyRule(method)
+		if err != nil {
+			return h(srv, stream)
+		}
+		groupID := interfaces.AuthAnonymousUser
+		if c, err := claims.ClaimsFromContext(stream.Context()); err == nil && c.GetGroupID() != "" {
+			groupID = c.GetGroupID()
+		}
+		g := metrics.GRPCForwardActiveStreams.WithLabelValues((*proxyTargets)[ruleIdx].Prefix, groupID)
+		g.Inc()
+		defer g.Dec()
+		return h(srv, stream)
+	}
 }

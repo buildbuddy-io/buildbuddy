@@ -422,6 +422,9 @@ const (
 
 	GRPCMethodLabel = "grpc_method"
 
+	// Method prefix of the app.proxy_targets rule an RPC was forwarded by.
+	GRPCForwardRulePrefixLabel = "rule_prefix"
+
 	// The direction of an HTTP/2 flow-control window relative to the local
 	// endpoint: `remote` (the window for data we send) or `local` (the window
 	// for data we receive).
@@ -4813,6 +4816,16 @@ var (
 		GRPCPoolIDLabel,
 		GRPCMethodLabel,
 		ConnectionIndexLabel,
+	})
+
+	GRPCForwardActiveStreams = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "grpc",
+		Name:      "forward_active_streams",
+		Help:      "Number of RPCs currently being forwarded by the unknown-service handler, by the matched app.proxy_targets rule's prefix and group ID.",
+	}, []string{
+		GRPCForwardRulePrefixLabel,
+		GroupID,
 	})
 
 	GRPCClientConnectionCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
