@@ -23,10 +23,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testConfigXML overrides the parts of ClickHouse's stock config.xml that
-// would make the server listen on fixed ports or write outside of its
-// temporary directory.
-const testConfigXML = `
+const (
+	// testConfigXML overrides the parts of ClickHouse's stock config.xml that
+	// would make the server listen on fixed ports or write outside of its
+	// temporary directory.
+	testConfigXML = `
 <clickhouse>
  <logger replace="replace"><level>information</level><console>1</console></logger>
  <listen_host>127.0.0.1</listen_host>
@@ -55,7 +56,9 @@ const testConfigXML = `
 </clickhouse>
 `
 
-const usersXML = `
+	dbName = "buildbuddy_test"
+
+	usersXML = `
 <clickhouse>
  <profiles><default/></profiles>
  <users>
@@ -70,6 +73,7 @@ const usersXML = `
  <quotas><default/></quotas>
 </clickhouse>
 `
+)
 
 var (
 	// Set by Bazel to the platform-specific ClickHouse executable and to
@@ -79,7 +83,7 @@ var (
 	clickhouseBinaryPath          string
 	clickhouseConfigPath          string
 	targetsMu                     sync.Mutex
-	targets                       = map[testing.TB]string{}
+	targets                       = map[testing.TB]*Server{}
 )
 
 func init() {
@@ -99,7 +103,7 @@ func init() {
 
 // Configure starts ClickHouse and registers its database handle with env.
 func Configure(t testing.TB, env *real_environment.RealEnv) {
-	flags.Set(t, "olap_database.data_source", GetOrStart(t))
+	flags.Set(t, "olap_database.data_source", GetOrStart(t).DSN())
 	// Cleanups run in reverse order. Finish OLAP shutdown hooks before Start's
 	// cleanup stops the server, even if testenv was created before Configure.
 	t.Cleanup(func() {
@@ -109,28 +113,31 @@ func Configure(t testing.TB, env *real_environment.RealEnv) {
 	require.NoError(t, clickhouseutil.Register(env))
 }
 
-// GetOrStart starts a new instance for the given test if one is not already
-// running; otherwise it returns the existing target.
-func GetOrStart(t testing.TB) string {
+// GetOrStart starts a new server for the given test if one is not already
+// running; otherwise it returns the existing server.
+func GetOrStart(t testing.TB) *Server {
 	targetsMu.Lock()
 	defer targetsMu.Unlock()
-	if target := targets[t]; target != "" {
-		return target
+	if server := targets[t]; server != nil {
+		return server
 	}
-	target := Start(t)
-	targets[t] = target
+	server := Start(t)
+	targets[t] = server
 	t.Cleanup(func() {
 		targetsMu.Lock()
 		defer targetsMu.Unlock()
 		delete(targets, t)
 	})
-	return target
+	return server
+}
+
+// Server is a ClickHouse server that Start runs for a test.
+type Server struct {
+	port int
 }
 
 // Start creates an isolated server which is stopped when the test completes.
-func Start(t testing.TB) string {
-	const dbName = "buildbuddy_test"
-
+func Start(t testing.TB) *Server {
 	port := testport.FindFree(t)
 	dir := t.TempDir()
 	// Copy the stock config into dir, because ClickHouse reads overrides from
@@ -210,5 +217,10 @@ func Start(t testing.TB) string {
 			t.Fatalf("ClickHouse did not become ready: %v (log read error: %v)\n%s", err, readErr, logs)
 		}
 	}
-	return fmt.Sprintf("clickhouse://default:@127.0.0.1:%d/%s", port, dbName)
+	return &Server{port: port}
+}
+
+// DSN returns the native protocol data source of the server's test database.
+func (s *Server) DSN() string {
+	return fmt.Sprintf("clickhouse://default:@127.0.0.1:%d/%s", s.port, dbName)
 }
