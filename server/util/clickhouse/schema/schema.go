@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,14 @@ var (
 	zooPath                = flag.String("olap_database.zoo_path", "/clickhouse/{installation}/{cluster}/tables/{shard}/{database}/{table}", "The path to the table name in zookeeper, used to set up data replication")
 	replicaName            = flag.String("olap_database.replica_name", "{replica}", "The replica name of the table in zookeeper")
 	clusterName            = flag.String("olap_database.cluster_name", "{cluster}", "The cluster name of the database")
+
+	// minTenantAccessVersion is the oldest ClickHouse version that applies
+	// readonly and settings constraints to SETTINGS clauses in subqueries and
+	// to "SETTINGS x = DEFAULT". Older versions apply them without any check,
+	// so tenant queries could change their group ID or lift their limits. Some
+	// older release lines got the fix in later patch releases, but every
+	// release from this one on has it.
+	minTenantAccessVersion = [3]int{26, 8, 2}
 )
 
 const (
@@ -1071,7 +1080,21 @@ type TenantAccess struct {
 //   - users_without_row_policies_can_read_rows set to true. Otherwise
 //     ClickHouse hides every row from the users that no row policy applies
 //     to, including the user of the OLAP DB handle.
+//
+// EnsureTenantAccess fails if the server runs a ClickHouse version older than
+// minTenantAccessVersion.
 func EnsureTenantAccess(gdb *gorm.DB, access *TenantAccess) error {
+	var version string
+	if err := gdb.Raw("SELECT version()").Scan(&version).Error; err != nil {
+		return fmt.Errorf("get ClickHouse version: %w", err)
+	}
+	supported, err := versionAtLeast(version, minTenantAccessVersion)
+	if err != nil {
+		return err
+	}
+	if !supported {
+		return fmt.Errorf("tenant queries require ClickHouse %d.%d.%d or later, but the server runs %s", minTenantAccessVersion[0], minTenantAccessVersion[1], minTenantAccessVersion[2], version)
+	}
 	db := gdb.Migrator().CurrentDatabase()
 	// Need an explicit ON CLUSTER when data replication is enabled, because
 	// ClickHouse only applies these statements to the server that the
@@ -1225,6 +1248,25 @@ func reconcileTenantGrants(gdb *gorm.DB, db, onCluster string) error {
 		}
 	}
 	return nil
+}
+
+// versionAtLeast reports whether a ClickHouse version such as "26.8.34.13" is
+// at least minVersion.
+func versionAtLeast(version string, minVersion [3]int) (bool, error) {
+	parts := strings.Split(version, ".")
+	if len(parts) < len(minVersion) {
+		return false, fmt.Errorf("parse ClickHouse version %q", version)
+	}
+	for i, want := range minVersion {
+		got, err := strconv.Atoi(parts[i])
+		if err != nil {
+			return false, fmt.Errorf("parse ClickHouse version %q: %w", version, err)
+		}
+		if got != want {
+			return got > want, nil
+		}
+	}
+	return true, nil
 }
 
 func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {

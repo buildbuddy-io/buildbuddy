@@ -61,6 +61,52 @@ func TestRunMigrations_TenantCannotChangeGroup(t *testing.T) {
 	assert.Equal(t, chproto.ErrReadonly, code, output)
 }
 
+func TestRunMigrations_TenantCannotChangeGroupInSubquery(t *testing.T) {
+	_, dataSource := setup(t)
+
+	output, code := testclickhouse.TenantQuery(t, dataSource, "GR1", "SELECT group_id, invocation_uuid FROM (SELECT group_id, invocation_uuid FROM Invocations SETTINGS SQL_group_id = 'GR2') ORDER BY invocation_uuid")
+
+	require.Zero(t, code, output)
+	assert.Equal(t, "group_id\tinvocation_uuid\nGR1\ta\nGR1\tb\n", output)
+}
+
+func TestRunMigrations_TenantCannotResetSettingsToDefault(t *testing.T) {
+	_, dataSource := setup(t)
+	for _, setting := range []string{"readonly", "max_execution_time", "max_memory_usage", "max_result_rows"} {
+		t.Run(setting, func(t *testing.T) {
+			output, code := testclickhouse.TenantQuery(t, dataSource, "GR1", "SELECT getSetting('"+setting+"') SETTINGS "+setting+" = DEFAULT")
+
+			assert.Equal(t, chproto.ErrReadonly, code, output)
+		})
+	}
+}
+
+func TestRunMigrations_TenantCannotLiftLimitsInSubquery(t *testing.T) {
+	_, dataSource := setup(t)
+	for _, testCase := range []struct {
+		name    string
+		setting string
+		value   string
+		// ClickHouse ignores the subquery's SETTINGS clause, so the query sees
+		// the value from the settings profile.
+		want string
+	}{
+		{name: "ResetTimeout", setting: "max_execution_time", value: "DEFAULT", want: "60"},
+		{name: "RemoveTimeout", setting: "max_execution_time", value: "0", want: "60"},
+		{name: "ResetMemoryLimit", setting: "max_memory_usage", value: "DEFAULT", want: "4000000000"},
+		{name: "RemoveMemoryLimit", setting: "max_memory_usage", value: "0", want: "4000000000"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			query := "SELECT * FROM (SELECT getSetting('" + testCase.setting + "') AS v SETTINGS " + testCase.setting + " = " + testCase.value + ")"
+
+			output, code := testclickhouse.TenantQuery(t, dataSource, "GR1", query)
+
+			require.Zero(t, code, output)
+			assert.Equal(t, "v\n"+testCase.want+"\n", output)
+		})
+	}
+}
+
 func TestRunMigrations_TenantReadsOnlyVisibleFields(t *testing.T) {
 	_, dataSource := setup(t)
 
