@@ -104,7 +104,16 @@ type TransferInfo struct {
 // /foo/bar matches one of a set of paths like /foo/bar/baz/bap and /a/b/c/d.
 // Really should use a trie but this will do for now.
 type DirHelper struct {
-	// The directory under which all paths should descend.
+	// The input root, which the executor creates. We only access outputs
+	// through an os.Root at the input root, so that we never follow a symlink
+	// created by the action to a path outside of it.
+	inputRoot string
+
+	// The working directory relative to inputRoot.
+	workingDirectory string
+
+	// The working directory joined to inputRoot. All output paths should
+	// descend from it.
 	rootDir string
 
 	// Prefixes of any output path -- used to truncate tree traversal if we're
@@ -127,7 +136,7 @@ type DirHelper struct {
 	dirPerms fs.FileMode
 }
 
-func NewDirHelper(rootDir string, cmd *repb.Command, dirPerms fs.FileMode) *DirHelper {
+func NewDirHelper(inputRoot string, cmd *repb.Command, dirPerms fs.FileMode) *DirHelper {
 	// Convert the older output_directories and output_files fields to
 	// output_paths, if applicable.
 	outputPaths := cmd.GetOutputPaths()
@@ -136,12 +145,14 @@ func NewDirHelper(rootDir string, cmd *repb.Command, dirPerms fs.FileMode) *DirH
 	}
 
 	c := &DirHelper{
-		rootDir:      rootDir,
-		prefixes:     make(map[string]struct{}, 0),
-		fullPaths:    make(map[string]struct{}, 0),
-		dirsToCreate: make([]string, 0),
-		outputPaths:  make(map[string]struct{}, 0),
-		dirPerms:     dirPerms,
+		inputRoot:        inputRoot,
+		workingDirectory: filepath.Join(".", cmd.GetWorkingDirectory()),
+		rootDir:          filepath.Join(inputRoot, cmd.GetWorkingDirectory()),
+		prefixes:         make(map[string]struct{}, 0),
+		fullPaths:        make(map[string]struct{}, 0),
+		dirsToCreate:     make([]string, 0),
+		outputPaths:      make(map[string]struct{}, 0),
+		dirPerms:         dirPerms,
 	}
 
 	// Per the API documentation, create the parent dir of each output path. We
@@ -187,10 +198,15 @@ func NewDirHelper(rootDir string, cmd *repb.Command, dirPerms fs.FileMode) *DirH
 // of rootDir, since an input symlink could otherwise make us create
 // directories outside the workspace.
 func (c *DirHelper) CreateOutputDirs() error {
-	if err := os.MkdirAll(c.rootDir, c.dirPerms); err != nil {
+	inputRoot, err := os.OpenRoot(c.inputRoot)
+	if err != nil {
 		return err
 	}
-	root, err := os.OpenRoot(c.rootDir)
+	defer inputRoot.Close()
+	if err := inputRoot.MkdirAll(c.workingDirectory, c.dirPerms); err != nil {
+		return err
+	}
+	root, err := inputRoot.OpenRoot(c.workingDirectory)
 	if err != nil {
 		return err
 	}
@@ -313,17 +329,31 @@ func (d *dirToUpload) Open() (io.ReadSeekCloser, error) {
 
 // fileToUpload represents a regular file to be uploaded to cache.
 type fileToUpload struct {
+	// root is the working directory, and relPath is the file's path relative
+	// to it.
+	root     *os.Root
+	relPath  string
 	fullPath string
 	digest   *repb.Digest
 	info     os.FileInfo
 }
 
-func newFileToUpload(digestFunction repb.DigestFunction_Value, fullPath string, info os.FileInfo) (*fileToUpload, error) {
-	d, err := digest.ComputeForFile(fullPath, digestFunction)
+// newFileToUpload computes the digest of the file at relPath in root. We open
+// the file through dir, its parent directory, since opening it through root
+// would resolve every component of relPath again.
+func newFileToUpload(digestFunction repb.DigestFunction_Value, root, dir *os.Root, relPath, fullPath string, info os.FileInfo) (*fileToUpload, error) {
+	file, err := dir.Open(info.Name())
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	d, err := digest.Compute(file, digestFunction)
 	if err != nil {
 		return nil, err
 	}
 	return &fileToUpload{
+		root:     root,
+		relPath:  relPath,
 		digest:   d,
 		fullPath: fullPath,
 		info:     info,
@@ -351,7 +381,7 @@ func (f *fileToUpload) Digest() *repb.Digest {
 }
 
 func (f *fileToUpload) Open() (io.ReadSeekCloser, error) {
-	file, err := os.Open(f.fullPath)
+	file, err := f.root.Open(f.relPath)
 	if err != nil {
 		return nil, status.UnavailableErrorf("open output file: %s", err)
 	}
@@ -453,13 +483,13 @@ func uploadBlobs(ctx context.Context, uploader *cachetools.BatchCASUploader, fc 
 
 // handleSymlink adds the symlink to the directory and actionResult proto so that
 // they could be recreated on the Bazel client side if needed.
-func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, directory *repb.Directory, fqfn string) error {
-	target, err := os.Readlink(fqfn)
+func handleSymlink(dirHelper *DirHelper, root *os.Root, cmd *repb.Command, actionResult *repb.ActionResult, directory *repb.Directory, relPath, fqfn string) error {
+	target, err := root.Readlink(relPath)
 	if err != nil {
 		return err
 	}
 	symlink := &repb.OutputSymlink{
-		Path:   filepath.ToSlash(trimPathPrefix(fqfn, rootDir)),
+		Path:   filepath.ToSlash(relPath),
 		Target: filepath.ToSlash(target),
 	}
 	if !dirHelper.ShouldUploadFile(fqfn) {
@@ -493,9 +523,11 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 		//
 		// Reference:
 		//   https://github.com/bazelbuild/bazel/commit/4310aeb36c134e5fc61ed5cdfdf683f3e95f19b7
-		symlinkInfo, err := os.Stat(fqfn)
+		symlinkInfo, err := root.Stat(relPath)
 		if err != nil {
 			// When encounter a dangling symlink, skip setting it to legacy fields.
+			// This includes symlinks that resolve outside of the working
+			// directory, since we don't look up paths outside of it.
 			// TODO(sluongng): do we care to log this?
 			log.Warningf("Could not find symlink %q's target: %s, skip legacy fields", fqfn, err)
 			return nil
@@ -518,15 +550,27 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 	return nil
 }
 
-func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, addToFileCache bool, chunkingParams *repb.FastCdc2020Params) (*TransferInfo, error) {
+func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, cmd *repb.Command, actionResult *repb.ActionResult, addToFileCache bool, chunkingParams *repb.FastCdc2020Params) (*TransferInfo, error) {
 	startTime := time.Now()
+	rootDir := dirHelper.rootDir
+	inputRoot, err := os.OpenRoot(dirHelper.inputRoot)
+	if err != nil {
+		return nil, err
+	}
+	defer inputRoot.Close()
+	root, err := inputRoot.OpenRoot(dirHelper.workingDirectory)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+
 	outputDirectoryPaths := make([]string, 0)
 	// Output files and Directory protos, in the order they were visited.
 	blobsToUpload := make([]uploadable, 0)
 	visitedDirectories := make([]*dirToUpload, 0)
 
-	visitFile := func(fullPath string, info os.FileInfo) (*repb.FileNode, error) {
-		uploadableFile, err := newFileToUpload(digestFunction, fullPath, info)
+	visitFile := func(dir *os.Root, relPath, fullPath string, info os.FileInfo) (*repb.FileNode, error) {
+		uploadableFile, err := newFileToUpload(digestFunction, root, dir, relPath, fullPath, info)
 		if err != nil {
 			return nil, err
 		}
@@ -541,15 +585,12 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		return uploadableFile.FileNode(), nil
 	}
 
-	var walkDir func(parentFullPath, dirName string) (*repb.DirectoryNode, error)
-	walkDir = func(parentFullPath, dirName string) (*repb.DirectoryNode, error) {
+	// walkDir visits dir, which is the directory at relPath in root.
+	var walkDir func(dir *os.Root, relPath string, dirInfo os.FileInfo) (*repb.DirectoryNode, error)
+	walkDir = func(dir *os.Root, relPath string, dirInfo os.FileInfo) (*repb.DirectoryNode, error) {
 		directory := &repb.Directory{}
-		dirFullPath := filepath.Join(parentFullPath, dirName)
-		dirInfo, err := os.Stat(dirFullPath)
-		if err != nil {
-			return nil, err
-		}
-		entries, err := os.ReadDir(dirFullPath)
+		dirFullPath := filepath.Join(rootDir, relPath)
+		entries, err := fs.ReadDir(dir.FS(), ".")
 		if err != nil {
 			return nil, err
 		}
@@ -558,6 +599,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 			if err != nil {
 				return nil, err
 			}
+			childRelPath := filepath.Join(relPath, info.Name())
 			childFullPath := filepath.Join(dirFullPath, info.Name())
 			if info.IsDir() {
 				// Don't recurse on non-uploadable directories.
@@ -570,7 +612,12 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				if isOutputDirectory {
 					outputDirectoryPaths = append(outputDirectoryPaths, childFullPath)
 				}
-				dirNode, err := walkDir(dirFullPath, info.Name())
+				child, err := dir.OpenRoot(info.Name())
+				if err != nil {
+					return nil, err
+				}
+				dirNode, err := walkDir(child, childRelPath, info)
+				child.Close()
 				if err != nil {
 					return nil, err
 				}
@@ -582,13 +629,13 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				if !dirHelper.ShouldUploadFile(childFullPath) {
 					continue
 				}
-				fileNode, err := visitFile(childFullPath, info)
+				fileNode, err := visitFile(dir, childRelPath, childFullPath, info)
 				if err != nil {
 					return nil, err
 				}
 				directory.Files = append(directory.Files, fileNode)
 			} else if info.Mode()&os.ModeSymlink == os.ModeSymlink {
-				if err := handleSymlink(dirHelper, rootDir, cmd, actionResult, directory, childFullPath); err != nil {
+				if err := handleSymlink(dirHelper, root, cmd, actionResult, directory, childRelPath, childFullPath); err != nil {
 					return nil, err
 				}
 			}
@@ -603,7 +650,11 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		blobsToUpload = append(blobsToUpload, d)
 		return d.DirectoryNode(), nil
 	}
-	if _, err := walkDir(rootDir, ""); err != nil {
+	rootInfo, err := root.Stat(".")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := walkDir(root, ".", rootInfo); err != nil {
 		return nil, err
 	}
 
