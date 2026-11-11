@@ -3,7 +3,6 @@ package config_test
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -277,42 +276,4 @@ must_be_a_number: "not a string, like this"
 		require.Contains(t, err.Error(), "retyping YAML map")
 		require.Contains(t, err.Error(), "into int")
 	}
-}
-
-func TestOnReload(t *testing.T) {
-	replaceFlagsForTesting(t)
-
-	// Point config.Path() at a config file we control.
-	configFile := filepath.Join(t.TempDir(), "config.yaml")
-	require.NoError(t, os.WriteFile(configFile, []byte(""), 0644))
-	configPathFlag := flag.CommandLine.Lookup("config_file")
-	require.NotNil(t, configPathFlag)
-	previousPath := config.Path()
-	require.NoError(t, configPathFlag.Value.Set(configFile))
-	t.Cleanup(func() { configPathFlag.Value.Set(previousPath) })
-
-	calls := 0
-	config.OnReload(func() { calls++ })
-
-	require.NoError(t, config.Reload())
-	require.Equal(t, 1, calls)
-}
-
-func TestReloadWithUnsetSliceAndMapFlags(t *testing.T) {
-	replaceFlagsForTesting(t)
-	slice := flag.Slice("slice", []secretHolder{}, "")
-	m := flag.Map("map", map[string]secretHolder{}, "")
-
-	configFile := filepath.Join(t.TempDir(), "config.yaml")
-	require.NoError(t, os.WriteFile(configFile, []byte(""), 0644))
-	configPathFlag := flag.CommandLine.Lookup("config_file")
-	require.NotNil(t, configPathFlag)
-	previousPath := config.Path()
-	require.NoError(t, configPathFlag.Value.Set(configFile))
-	t.Cleanup(func() { configPathFlag.Value.Set(previousPath) })
-
-	require.NoError(t, config.Load())
-	require.NoError(t, config.Reload())
-	require.Empty(t, *slice)
-	require.Empty(t, *m)
 }

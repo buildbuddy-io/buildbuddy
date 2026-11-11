@@ -306,31 +306,6 @@ func (f *fakeHeartbeatStream) Send(req *cppb.RegisterCacheProxyRequest) error {
 	return nil
 }
 
-// Flag values can change at runtime (the config file is re-read on SIGHUP),
-// so heartbeats should report the latest configuration snapshot, which
-// config.OnReload refreshes after each completed reload.
-func TestSendHeartbeat_RefreshesConfiguredFlags(t *testing.T) {
-	stream := &fakeHeartbeatStream{}
-	summary := &cppb.CacheProxySummary{Host: "h", ProxyId: "id"}
-
-	flags.Set(t, "cache_proxy.app_target", "grpcs://before.example.com")
-	refreshConfiguredFlags()
-	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary}))
-
-	// After a config reload (e.g. on SIGHUP), config.OnReload triggers
-	// refreshConfiguredFlags and subsequent heartbeats pick up the change.
-	flags.Set(t, "cache_proxy.app_target", "grpcs://after.example.com")
-	refreshConfiguredFlags()
-	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary}))
-
-	require.Len(t, stream.sent, 2)
-	for _, req := range stream.sent {
-		assert.Equal(t, "id", req.GetDetails().GetSummary().GetProxyId())
-	}
-	assert.Contains(t, stream.sent[0].GetSummary().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://before.example.com")
-	assert.Contains(t, stream.sent[1].GetSummary().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://after.example.com")
-}
-
 func TestSendHeartbeat_FlagMutationRaciness(t *testing.T) {
 	stream := &fakeHeartbeatStream{}
 	summary := &cppb.CacheProxySummary{Host: "h", ProxyId: "id"}

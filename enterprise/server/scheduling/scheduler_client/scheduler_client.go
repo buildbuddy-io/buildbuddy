@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -61,8 +60,7 @@ const (
 var (
 	// Caching for parsed command-line flags, to avoid racing against config
 	// reparsing logic in config.go.
-	registerReloadHookOnce sync.Once
-	configuredFlagsCache   atomic.Pointer[[]string]
+	configuredFlagsCache atomic.Pointer[[]string]
 )
 
 // Options provide overrides for executor registration properties.
@@ -466,10 +464,7 @@ func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler
 	if options.APIKeyOverride != "" {
 		apiKey = options.APIKeyOverride
 	}
-	// Register the config-reload hook and parse the current flags.
-	registerReloadHookOnce.Do(func() {
-		config.OnReload(refreshConfiguredFlags)
-	})
+	// Snapshot the configured flags once at startup.
 	refreshConfiguredFlags()
 
 	shutdownSignal := make(chan struct{})

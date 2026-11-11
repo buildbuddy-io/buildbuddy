@@ -10,7 +10,6 @@ go_library(
     deps = [
         "//proto:cache_proxy_go_proto",
         "//proto:profile_go_proto",
-        "//server/config",
         "//server/environment",
         "//server/hostid",
         "//server/metrics",

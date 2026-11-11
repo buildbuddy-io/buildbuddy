@@ -18,11 +18,9 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -86,8 +84,7 @@ var (
 
 	// Caching for parsed command-line flags, to avoid racing against config
 	// reparsing logic in config.go.
-	registerReloadHookOnce sync.Once
-	configuredFlagsCache   atomic.Pointer[[]string]
+	configuredFlagsCache atomic.Pointer[[]string]
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -124,10 +121,7 @@ func Register(env *real_environment.RealEnv) error {
 		}
 		trimmedLabels[key] = val
 	}
-	// Register the config-reload hook and parse the current flags.
-	registerReloadHookOnce.Do(func() {
-		config.OnReload(refreshConfiguredFlags)
-	})
+	// Snapshot the configured flags once at startup.
 	refreshConfiguredFlags()
 
 	log.Infof("Registering Cache Proxy %s on host %q", proxyID, hostname)

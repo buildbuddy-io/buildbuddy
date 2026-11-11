@@ -4,13 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"runtime/debug"
-	"slices"
 	"strings"
-	"sync"
-	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -36,9 +31,6 @@ var (
 
 	// This may be optionally set by a configured provider.
 	SecretProvider interfaces.ConfigSecretProvider
-
-	reloadHooksMu sync.Mutex
-	reloadHooks   []func()
 )
 
 func Path() string {
@@ -123,62 +115,4 @@ func Load() error {
 	}
 
 	return LoadFromFile(configFile)
-}
-
-// OnReload registers fn to run after the config has been successfully
-// reloaded (e.g. on SIGHUP). The order in which hooks run is not guaranteed.
-func OnReload(fn func()) {
-	reloadHooksMu.Lock()
-	defer reloadHooksMu.Unlock()
-	reloadHooks = append(reloadHooks, fn)
-}
-
-// Reload resets the flags to their default values, re-parses the flags and
-// loads the config file specified by config.Path().
-func Reload() error {
-	if err := flagutil.ResetFlags(); err != nil {
-		return err
-	}
-	if err := Load(); err != nil {
-		return err
-	}
-	reloadHooksMu.Lock()
-	hooks := slices.Clone(reloadHooks)
-	reloadHooksMu.Unlock()
-	for _, fn := range hooks {
-		runReloadHook(fn)
-	}
-	return nil
-}
-
-// runReloadHook runs one reload hook, recovering from any panic so that a
-// misbehaving hook can't take down the reloading goroutine (typically the
-// process-wide SIGHUP handler) or prevent later hooks from running.
-func runReloadHook(fn func()) {
-	defer func() {
-		if panicErr := recover(); panicErr != nil {
-			log.Errorf("Config reload hook panicked: %v\n%s", panicErr, debug.Stack())
-		}
-	}()
-	fn()
-}
-
-// ReloadOnSIGHUP registers a signal handler (as a goroutine) for syscall.SIGHUP
-// that resets the flags to their default values, re-parses the flags and loads
-// the config file specified by config.Path(). This function is only intended to
-// be called once per process (probably near the top of main), as it otherwise
-// could leak goroutines.
-func ReloadOnSIGHUP() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGHUP)
-
-	// Setup a listener to re-read the config file on SIGHUP.
-	go func() {
-		for range c {
-			log.Infof("Re-reading buildbuddy config from '%s'", Path())
-			if err := Reload(); err != nil {
-				log.Warningf("SIGHUP handler err: %s", err)
-			}
-		}
-	}()
 }
