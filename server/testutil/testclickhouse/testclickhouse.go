@@ -50,6 +50,7 @@ const testConfigXML = `
  <!-- The stock config locks the ClickHouse binary in memory, which wastes
       memory on machines that run several test servers. -->
  <mlock_executable>false</mlock_executable>
+ <send_crash_reports><enabled>false</enabled></send_crash_reports>
  <background_schedule_pool_size>16</background_schedule_pool_size>
 </clickhouse>
 `
