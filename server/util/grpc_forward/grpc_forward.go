@@ -197,12 +197,18 @@ func GetForwardingServerOption(env environment.Env) grpc.ServerOption {
 
 func trackActiveStreams(h grpc.StreamHandler) grpc.StreamHandler {
 	return func(srv any, stream grpc.ServerStream) error {
+		// Label by rule rather than method: method names are client-supplied,
+		// so they'd make the series unbounded.
 		method, _ := grpc.MethodFromServerStream(stream)
+		ruleIdx, err := lookupProxyRule(method)
+		if err != nil {
+			return h(srv, stream)
+		}
 		groupID := interfaces.AuthAnonymousUser
 		if c, err := claims.ClaimsFromContext(stream.Context()); err == nil && c.GetGroupID() != "" {
 			groupID = c.GetGroupID()
 		}
-		g := metrics.GRPCForwardActiveStreams.WithLabelValues(method, groupID)
+		g := metrics.GRPCForwardActiveStreams.WithLabelValues((*proxyTargets)[ruleIdx].Prefix, groupID)
 		g.Inc()
 		defer g.Dec()
 		return h(srv, stream)

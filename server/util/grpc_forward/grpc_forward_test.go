@@ -229,9 +229,9 @@ func startProxy(t *testing.T, groupID string) *grpc_client.ClientConnPool {
 }
 
 // startForwardingProxy starts a backend running backendHandler behind a proxy
-// with a single catch-all rule.
-func startForwardingProxy(t *testing.T, backendHandler grpc.StreamHandler, groupID string) *grpc_client.ClientConnPool {
-	flags.Set(t, "app.proxy_targets", []proxyRule{{Prefix: "", Target: startBackend(t, backendHandler)}})
+// with a single rule for prefix.
+func startForwardingProxy(t *testing.T, backendHandler grpc.StreamHandler, prefix, groupID string) *grpc_client.ClientConnPool {
+	flags.Set(t, "app.proxy_targets", []proxyRule{{Prefix: prefix, Target: startBackend(t, backendHandler)}})
 	return startProxy(t, groupID)
 }
 
@@ -243,16 +243,17 @@ func waitForStarted(ctx context.Context, t *testing.T, started <-chan struct{}) 
 	}
 }
 
-func activeStreams(method, groupID string) float64 {
-	return testutil.ToFloat64(metrics.GRPCForwardActiveStreams.WithLabelValues(method, groupID))
+func activeStreams(prefix, groupID string) float64 {
+	return testutil.ToFloat64(metrics.GRPCForwardActiveStreams.WithLabelValues(prefix, groupID))
 }
 
-func requireActiveStreamsEventuallyZero(t *testing.T, method, groupID string) {
-	require.Eventually(t, func() bool { return activeStreams(method, groupID) == 0 }, 30*time.Second, 10*time.Millisecond)
+func requireActiveStreamsEventuallyZero(t *testing.T, prefix, groupID string) {
+	require.Eventually(t, func() bool { return activeStreams(prefix, groupID) == 0 }, 30*time.Second, 10*time.Millisecond)
 }
 
-// Each test uses its own method name because the gauge is global.
-func testActiveStreamsWhileBlocked(t *testing.T, method, serverGroupID, wantGroupID string) {
+// Each test uses its own rule prefix because the gauge is global.
+func testActiveStreamsWhileBlocked(t *testing.T, prefix, serverGroupID, wantGroupID string) {
+	method := prefix + "Stream"
 	started := make(chan struct{})
 	release := make(chan struct{})
 	handler := func(_ any, stream grpc.ServerStream) error {
@@ -266,7 +267,7 @@ func testActiveStreamsWhileBlocked(t *testing.T, method, serverGroupID, wantGrou
 		}
 		return stream.SendMsg(&emptypb.Empty{})
 	}
-	conn := startForwardingProxy(t, handler, serverGroupID)
+	conn := startForwardingProxy(t, handler, prefix, serverGroupID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -276,35 +277,35 @@ func testActiveStreamsWhileBlocked(t *testing.T, method, serverGroupID, wantGrou
 	require.NoError(t, stream.CloseSend())
 	waitForStarted(ctx, t, started)
 
-	require.Equal(t, 1.0, activeStreams(method, wantGroupID))
+	require.Equal(t, 1.0, activeStreams(prefix, wantGroupID))
 
 	close(release)
 	require.NoError(t, stream.RecvMsg(&emptypb.Empty{}))
 	require.Equal(t, io.EOF, stream.RecvMsg(&emptypb.Empty{}))
-	requireActiveStreamsEventuallyZero(t, method, wantGroupID)
+	requireActiveStreamsEventuallyZero(t, prefix, wantGroupID)
 }
 
 func TestForwarding_ActiveStreamsGaugeTracksOpenStream(t *testing.T) {
-	testActiveStreamsWhileBlocked(t, "/gauge.Test/Tracked", "GR123", "GR123")
+	testActiveStreamsWhileBlocked(t, "/gauge.Tracked/", "GR123", "GR123")
 }
 
 func TestForwarding_ActiveStreamsGaugeUsesFallbackGroupWithoutClaims(t *testing.T) {
-	testActiveStreamsWhileBlocked(t, "/gauge.Test/Unauthenticated", "", interfaces.AuthAnonymousUser)
+	testActiveStreamsWhileBlocked(t, "/gauge.Unauthenticated/", "", interfaces.AuthAnonymousUser)
 }
 
 func TestForwarding_ActiveStreamsGaugeReturnsToZeroOnError(t *testing.T) {
-	const method = "/gauge.Test/Rejected"
+	const prefix = "/gauge.Rejected/"
 	// An empty backend handler would succeed; use a handler that rejects.
 	handler := func(any, grpc.ServerStream) error {
 		return status.UnimplementedError("nope")
 	}
-	conn := startForwardingProxy(t, handler, "GR123")
+	conn := startForwardingProxy(t, handler, prefix, "GR123")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	err := conn.Invoke(ctx, method, &emptypb.Empty{}, &emptypb.Empty{})
+	err := conn.Invoke(ctx, prefix+"Unary", &emptypb.Empty{}, &emptypb.Empty{})
 	require.Error(t, err)
-	requireActiveStreamsEventuallyZero(t, method, "GR123")
+	requireActiveStreamsEventuallyZero(t, prefix, "GR123")
 }
 
 // fakeIdentityService records the identity it was asked to sign and returns a
@@ -487,4 +488,15 @@ func TestCtxForBackend(t *testing.T) {
 		// The proxy did not mint a grpc-proxy identity for this request.
 		require.Empty(t, cis.lastClient)
 	})
+}
+
+func TestForwarding_ActiveStreamsGaugeIgnoresUnmatchedMethods(t *testing.T) {
+	conn := startForwardingProxy(t, func(any, grpc.ServerStream) error { return nil }, "/gauge.Matched/", "GR123")
+	before := testutil.CollectAndCount(metrics.GRPCForwardActiveStreams)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	err := conn.Invoke(ctx, "/gauge.Unmatched/Unary", &emptypb.Empty{}, &emptypb.Empty{})
+	require.True(t, status.IsUnimplementedError(err), "got %v", err)
+	require.Equal(t, before, testutil.CollectAndCount(metrics.GRPCForwardActiveStreams))
 }
