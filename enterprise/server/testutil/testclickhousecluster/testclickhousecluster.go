@@ -4,6 +4,7 @@ package testclickhousecluster
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"testing"
@@ -18,11 +19,17 @@ import (
 // Set via x_defs in the BUILD file.
 var clickhouseClusterRlocationpath string
 
+// Cluster is a replicated ClickHouse cluster that Start runs for a test.
+type Cluster struct {
+	// tcpPorts holds the native protocol port of each server.
+	tcpPorts []int
+}
+
 // Start runs the clickhouse_cluster tool with the given args, and waits until
 // both of the tool's default two servers accept connections. It stops the
-// cluster when the test finishes. It returns the data source of the first
-// server.
-func Start(t testing.TB, args ...string) string {
+// cluster when the test finishes.
+func Start(t testing.TB, args ...string) *Cluster {
+	cluster := &Cluster{tcpPorts: []int{9201, 9202}}
 	binary, err := runfiles.Rlocation(clickhouseClusterRlocationpath)
 	require.NoError(t, err)
 	cmd := exec.Command(binary, args...)
@@ -52,7 +59,8 @@ func Start(t testing.TB, args ...string) string {
 		}
 		require.NoError(t, waitErr, "stop clickhouse_cluster")
 	})
-	for _, addr := range []string{"127.0.0.1:9201", "127.0.0.1:9202"} {
+	for _, port := range cluster.tcpPorts {
+		addr := fmt.Sprintf("127.0.0.1:%d", port)
 		require.Eventually(t, func() bool {
 			select {
 			case <-done:
@@ -74,5 +82,11 @@ func Start(t testing.TB, args ...string) string {
 		default:
 		}
 	}
-	return "clickhouse://127.0.0.1:9201/default"
+	return cluster
+}
+
+// DSN returns the native protocol data source of the default database on the
+// cluster's first server.
+func (c *Cluster) DSN() string {
+	return fmt.Sprintf("clickhouse://127.0.0.1:%d/default", c.tcpPorts[0])
 }

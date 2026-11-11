@@ -47,7 +47,7 @@ func TestClickHouseBackupAndRestore(t *testing.T) {
 `)
 
 	envFile := testfs.WriteFile(t, configDir, "backup.env", "BB_CLICKHOUSE_TEST_BACKUP_DIR="+backupDir+"/\n")
-	dsn := testclickhousecluster.Start(t, "--config_file", configPath, "--env_file", envFile)
+	dsn := testclickhousecluster.Start(t, "--config_file", configPath, "--env_file", envFile).DSN()
 
 	// Set up the OLAP DB handle.
 	flags.Set(t, "olap_database.data_source", dsn)
