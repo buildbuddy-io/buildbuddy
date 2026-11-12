@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -87,7 +88,7 @@ func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) 
 				return http.ErrUseLastResponse
 			}
 			// Go keeps credentials when only the port changes, so drop them on any origin change.
-			if req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host {
+			if !sameOrigin(req.URL, via[0].URL) {
 				for _, h := range []string{"Authorization", "Cookie", "Cookie2"} {
 					req.Header.Del(h)
 				}
@@ -95,6 +96,26 @@ func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) 
 			return nil
 		},
 	}}
+}
+
+// sameOrigin reports whether a and b have the same scheme, host and effective port.
+func sameOrigin(a, b *url.URL) bool {
+	return strings.EqualFold(a.Scheme, b.Scheme) &&
+		strings.EqualFold(a.Hostname(), b.Hostname()) &&
+		effectivePort(a) == effectivePort(b)
+}
+
+func effectivePort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	}
+	return ""
 }
 
 type allowedIPRedirectTransport struct {
@@ -112,12 +133,11 @@ func (t *allowedIPRedirectTransport) RoundTrip(req *http.Request) (*http.Respons
 	// ggcr's bearer transport only sees the original request, so it would treat a
 	// 401 challenge from a redirected-to origin (e.g. blob storage) as coming from
 	// the registry and add that origin's scope to the registry token for good.
-	// Strip the challenge so it sees a plain 401. The /v2/ ping is exempt: ggcr
-	// needs its challenge to learn the registry's token realm.
-	if resp.StatusCode == http.StatusUnauthorized && resp.Request != nil && req.URL.Path != "/v2/" && req.URL.Path != "/v2" {
-		if final := resp.Request.URL; final.Scheme != req.URL.Scheme || final.Host != req.URL.Host {
-			resp.Header.Del("WWW-Authenticate")
-		}
+	// That only happens for requests the bearer transport already authorized, so
+	// strip the challenge from those and let ggcr see a plain 401. ggcr's /v2/
+	// ping is unauthenticated and needs the challenge to learn the token realm.
+	if resp.StatusCode == http.StatusUnauthorized && resp.Request != nil && req.Header.Get("Authorization") != "" && !sameOrigin(resp.Request.URL, req.URL) {
+		resp.Header.Del("WWW-Authenticate")
 	}
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		if loc, err := resp.Location(); err == nil {

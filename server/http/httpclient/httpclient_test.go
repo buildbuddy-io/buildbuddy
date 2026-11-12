@@ -144,6 +144,7 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 		wantHeaders http.Header
 		wantBody    string
 		wantErr     string
+		noAuth      bool     // send the first request without Authorization, like ggcr's ping
 		wantAuth    []string // Authorization sent on each hop
 	}{
 		{
@@ -168,15 +169,40 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 			wantAuth:    []string{"Bearer secret", ""},
 		},
 		{
-			name:  "keeps WWW-Authenticate from cross-origin 401 to the /v2/ ping",
-			start: "https://registry.example/v2/",
+			name:   "keeps WWW-Authenticate from cross-origin 401 to an unauthenticated request",
+			start:  "https://registry.example/v2/",
+			noAuth: true,
 			responses: fakeRoundTripper{
 				"https://registry.example/v2/": response(http.StatusFound, "", "Location", "https://10.1.2.3/v2/"),
 				"https://10.1.2.3/v2/":         response(http.StatusUnauthorized, "", "WWW-Authenticate", `Bearer realm="registry"`),
 			},
 			wantStatus:  http.StatusUnauthorized,
 			wantHeaders: http.Header{"Www-Authenticate": {`Bearer realm="registry"`}},
-			wantAuth:    []string{"Bearer secret", ""},
+			wantAuth:    []string{"", ""},
+		},
+		{
+			// The ping client already followed /v2/ to another host and path.
+			name:   "keeps WWW-Authenticate on later hop of a multi-hop ping",
+			start:  "https://mirror.example/ping",
+			noAuth: true,
+			responses: fakeRoundTripper{
+				"https://mirror.example/ping": response(http.StatusFound, "", "Location", "https://10.1.2.3/v2/"),
+				"https://10.1.2.3/v2/":        response(http.StatusUnauthorized, "", "WWW-Authenticate", `Bearer realm="registry"`),
+			},
+			wantStatus:  http.StatusUnauthorized,
+			wantHeaders: http.Header{"Www-Authenticate": {`Bearer realm="registry"`}},
+			wantAuth:    []string{"", ""},
+		},
+		{
+			name:  "treats an explicit default port as the same origin",
+			start: "https://10.1.2.3/v2/img/blobs/sha256:abc",
+			responses: fakeRoundTripper{
+				"https://10.1.2.3/v2/img/blobs/sha256:abc": response(http.StatusFound, "", "Location", "https://10.1.2.3:443/storage/blob"),
+				"https://10.1.2.3:443/storage/blob":        response(http.StatusUnauthorized, "", "WWW-Authenticate", `Bearer realm="registry"`),
+			},
+			wantStatus:  http.StatusUnauthorized,
+			wantHeaders: http.Header{"Www-Authenticate": {`Bearer realm="registry"`}},
+			wantAuth:    []string{"Bearer secret", "Bearer secret"},
 		},
 		{
 			name:  "drops Authorization when only the port changes",
@@ -266,7 +292,9 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 			}
 			req, err := http.NewRequest(http.MethodGet, start, nil)
 			require.NoError(t, err)
-			req.Header.Set("Authorization", "Bearer secret")
+			if !tc.noAuth {
+				req.Header.Set("Authorization", "Bearer secret")
+			}
 			resp, err := tr.RoundTrip(req)
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
