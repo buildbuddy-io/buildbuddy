@@ -4053,6 +4053,24 @@ var (
 		PebbleOperation,
 	})
 
+	PebbleCachePebbleWALBytesWritten = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_wal_bytes_written",
+		Help:      "The number of bytes written to WAL files, including record headers and padding.",
+	}, []string{
+		CacheNameLabel,
+	})
+
+	PebbleCachePebbleWALBytesIn = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_pebble_wal_bytes_in",
+		Help:      "The number of logical bytes written to the WAL.",
+	}, []string{
+		CacheNameLabel,
+	})
+
 	// Total size of cache that pebble allocate mamually from system memory using malloc.
 	PebbleCachePebbleBlockCacheSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,

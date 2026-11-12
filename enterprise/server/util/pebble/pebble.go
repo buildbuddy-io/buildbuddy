@@ -749,6 +749,10 @@ func (mc *MetricsCollector) UpdateMetrics(m *Metrics, om Metrics, cacheName stri
 		metrics.PebbleCachePebbleLevelTablesMovedCount.With(lbls).Add(float64(l.TablesMoved - ol.TablesMoved))
 	}
 
+	// WAL metrics.
+	metrics.PebbleCachePebbleWALBytesWritten.With(nameLabel).Add(float64(m.WAL.BytesWritten - om.WAL.BytesWritten))
+	metrics.PebbleCachePebbleWALBytesIn.With(nameLabel).Add(float64(m.WAL.BytesIn - om.WAL.BytesIn))
+
 	// Block cache metrics.
 	metrics.PebbleCachePebbleBlockCacheSizeBytes.With(nameLabel).Set(float64(m.BlockCache.Size))
 	hitLabel := prometheus.Labels{
