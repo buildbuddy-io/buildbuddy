@@ -6,6 +6,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -3059,6 +3061,184 @@ func TestRedactCachedExecuteResponse(t *testing.T) {
 					protocmp.Transform(),
 				))
 			}
+		})
+	}
+}
+
+// fakeQuotaManager reports the configured namespaces as over quota and
+// records all usage charged to it.
+type fakeQuotaManager struct {
+	mu        sync.Mutex
+	exhausted map[string]bool
+	recorded  map[string]int64
+}
+
+func newFakeQuotaManager(exhausted ...string) *fakeQuotaManager {
+	qm := &fakeQuotaManager{exhausted: map[string]bool{}, recorded: map[string]int64{}}
+	for _, ns := range exhausted {
+		qm.exhausted[ns] = true
+	}
+	return qm
+}
+
+func (qm *fakeQuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
+	qm.mu.Lock()
+	defer qm.mu.Unlock()
+	if qm.exhausted[namespace] {
+		return status.ResourceExhaustedErrorf("quota exceeded for %q", namespace)
+	}
+	return nil
+}
+
+func (qm *fakeQuotaManager) RecordUsage(ctx context.Context, namespace string, quantity int64) (bool, error) {
+	qm.mu.Lock()
+	defer qm.mu.Unlock()
+	qm.recorded[namespace] += quantity
+	return !qm.exhausted[namespace], nil
+}
+
+func (qm *fakeQuotaManager) ReloadBucketsAndNotify(ctx context.Context) error {
+	return nil
+}
+
+func (qm *fakeQuotaManager) Recorded(namespace string) int64 {
+	qm.mu.Lock()
+	defer qm.mu.Unlock()
+	return qm.recorded[namespace]
+}
+
+var (
+	localSnapshotQuotaKey  = quota.GetSKUKey(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes)
+	remoteSnapshotQuotaKey = quota.GetSKUKey(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes)
+)
+
+func TestDispatch_SnapshotSaveQuotaOverridesUserProperties(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		exhausted  []string
+		wantLocal  string
+		wantRemote string
+	}{
+		{name: "within quota", wantLocal: "false", wantRemote: "false"},
+		{name: "local exhausted", exhausted: []string{localSnapshotQuotaKey}, wantLocal: "true", wantRemote: "false"},
+		{name: "remote exhausted", exhausted: []string{remoteSnapshotQuotaKey}, wantLocal: "false", wantRemote: "true"},
+		{name: "both exhausted", exhausted: []string{localSnapshotQuotaKey, remoteSnapshotQuotaKey}, wantLocal: "true", wantRemote: "true"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+			env.SetQuotaManager(newFakeQuotaManager(tc.exhausted...))
+
+			// The user tries to opt back into snapshot saves via both the
+			// action platform and remote header overrides.
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+				platform.OverrideHeaderPrefix+platform.SkipLocalSnapshotSavePropertyName, "false",
+				platform.OverrideHeaderPrefix+platform.SkipRemoteSnapshotSavePropertyName, "false",
+			))
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+			action := &repb.Action{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: platform.SkipLocalSnapshotSavePropertyName, Value: "false"},
+				{Name: platform.SkipRemoteSnapshotSavePropertyName, Value: "false"},
+			}}}
+			arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, action)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			err = env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, "12345678")
+			require.NoError(t, err)
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Len(t, sched.scheduleReqs, 1)
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+			// FindEffectiveValue is what the executor uses to decide.
+			assert.Equal(t, tc.wantLocal, platform.FindEffectiveValue(task, platform.SkipLocalSnapshotSavePropertyName))
+			assert.Equal(t, tc.wantRemote, platform.FindEffectiveValue(task, platform.SkipRemoteSnapshotSavePropertyName))
+		})
+	}
+}
+
+func TestPublishOperation_RecordsSnapshotSaveQuotaUsage(t *testing.T) {
+	const savedBytes = 12345
+	for _, tc := range []struct {
+		name       string
+		stats      *espb.FirecrackerPostExecStats
+		wantLocal  int64
+		wantRemote int64
+	}{
+		{
+			name:  "no save",
+			stats: &espb.FirecrackerPostExecStats{SnapshotSavedBytes: savedBytes},
+		},
+		{
+			name:      "local only",
+			stats:     &espb.FirecrackerPostExecStats{SnapshotSavedLocally: true, SnapshotSavedBytes: savedBytes},
+			wantLocal: savedBytes,
+		},
+		{
+			name:       "local and remote",
+			stats:      &espb.FirecrackerPostExecStats{SnapshotSavedLocally: true, SnapshotSavedRemotely: true, SnapshotSavedBytes: savedBytes},
+			wantLocal:  savedBytes,
+			wantRemote: savedBytes,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, conn, _ := setupEnv(t)
+			qm := newFakeQuotaManager()
+			env.SetQuotaManager(qm)
+			client := repb.NewExecutionClient(conn)
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(context.Background(), "US1")
+			require.NoError(t, err)
+
+			arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, &repb.Action{})
+			executionClient, err := client.Execute(ctx, &repb.ExecuteRequest{
+				ActionDigest:   arn.GetDigest(),
+				DigestFunction: arn.GetDigestFunction(),
+			})
+			require.NoError(t, err)
+			require.NoError(t, executionClient.CloseSend())
+			op, err := executionClient.Recv()
+			require.NoError(t, err)
+			taskID := op.GetName()
+
+			executorCtx := metadata.AppendToOutgoingContext(ctx, usageutil.ClientHeaderName, "executor")
+			stream, err := client.PublishOperation(executorCtx)
+			require.NoError(t, err)
+
+			// First COMPLETED: the execution result, without snapshot stats.
+			start := time.Unix(100, 0)
+			firstOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+				Result: &repb.ActionResult{ExecutionMetadata: &repb.ExecutedActionMetadata{
+					WorkerStartTimestamp:     tspb.New(start),
+					WorkerCompletedTimestamp: tspb.New(start.Add(time.Second)),
+				}},
+			})
+			require.NoError(t, err)
+			require.NoError(t, stream.Send(firstOp))
+
+			// Second COMPLETED: sent after the snapshot is saved.
+			statsAny, err := anypb.New(&espb.PostCompletionStats{FirecrackerPostExecStats: tc.stats})
+			require.NoError(t, err)
+			secondOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+				Result: &repb.ActionResult{ExecutionMetadata: &repb.ExecutedActionMetadata{
+					AuxiliaryMetadata: []*anypb.Any{statsAny},
+				}},
+			})
+			require.NoError(t, err)
+			require.NoError(t, stream.Send(secondOp))
+			_, err = stream.CloseAndRecv()
+			require.NoError(t, err)
+
+			for {
+				_, err := executionClient.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err)
+			}
+
+			// Each quota is charged exactly once, by the second COMPLETED.
+			assert.Equal(t, tc.wantLocal, qm.Recorded(localSnapshotQuotaKey))
+			assert.Equal(t, tc.wantRemote, qm.Recorded(remoteSnapshotQuotaKey))
 		})
 	}
 }
