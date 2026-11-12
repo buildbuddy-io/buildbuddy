@@ -38,3 +38,16 @@ microvm_kernel(
     config = "microvm-kernel-aarch64-v5.10.config",
     version = "v5.10",
 )
+
+# arm64 (v6.18) - EXPERIMENTAL (used by the upgrade-fc-guest-kernel experiment)
+#
+# Build and upload with:
+#   bazel run //enterprise/vmsupport/kernel:guest_kernel_aarch64_v6_18_upload --config=remote --config=target-linux-x86-exec-multiarch
+microvm_kernel(
+    name = "guest_kernel_aarch64_v6_18",
+    out = "vmlinux-aarch64-v6.18",
+    arch = "arm64",
+    config = "microvm-kernel-aarch64-v6.18.config",
+    git_tag = "v6.18.57",
+    version = "v6.18",
+)

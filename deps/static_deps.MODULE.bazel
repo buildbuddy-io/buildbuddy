@@ -67,5 +67,6 @@ use_repo(
     "org_kernel_git_linux_kernel-vmlinux",
     "org_kernel_git_linux_kernel-vmlinux-6.18",
     "org_kernel_git_linux_kernel-vmlinux-arm64",
+    "org_kernel_git_linux_kernel-vmlinux-arm64-6.18",
     "se_curl_cacert",
 )

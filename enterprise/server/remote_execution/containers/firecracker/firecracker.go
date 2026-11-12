@@ -476,25 +476,19 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 		return nil, fmt.Errorf("put initrd into build root dir: %w", err)
 	}
 
-	var guestKernelPath6_18 string
-	var guestKernelDigest6_18 *repb.Digest
-	// TODO: build a 6.18 kernel for arm64, then remove this conditional.
-	if vmlinux6_18RunfilePath != "" {
-		vmlinuxRunfileLocation6_18, err := runfiles.Rlocation(vmlinux6_18RunfilePath)
-		if err != nil {
-			return nil, fmt.Errorf("get vmlinux 6.18 runfile path: %w", err)
-		}
-		p, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation6_18, buildRootDir, 0755)
-		if err != nil {
-			return nil, fmt.Errorf("put vmlinux 6.18 into build root dir: %w", err)
-		}
-		guestKernelPath6_18 = p
-		d, err := digest.ComputeForFile(guestKernelPath6_18, repb.DigestFunction_SHA256)
-		if err != nil {
-			return nil, fmt.Errorf("compute digest for vmlinux 6.18: %w", err)
-		}
-		guestKernelDigest6_18 = d
+	vmlinuxRunfileLocation6_18, err := runfiles.Rlocation(vmlinux6_18RunfilePath)
+	if err != nil {
+		return nil, fmt.Errorf("get vmlinux 6.18 runfile path: %w", err)
 	}
+	guestKernelPath6_18, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation6_18, buildRootDir, 0755)
+	if err != nil {
+		return nil, fmt.Errorf("put vmlinux 6.18 into build root dir: %w", err)
+	}
+	guestKernelDigest6_18, err := digest.ComputeForFile(guestKernelPath6_18, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, fmt.Errorf("compute digest for vmlinux 6.18: %w", err)
+	}
+
 	vmlinuxRunfileLocation5_15, err := runfiles.Rlocation(vmlinuxRunfilePath)
 	if err != nil {
 		return nil, fmt.Errorf("get vmlinux 5.15 runfile path: %w", err)
