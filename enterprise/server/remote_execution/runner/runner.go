@@ -1381,15 +1381,19 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 	if err != nil {
 		return nil, err
 	}
-	// Sandbox runs commands on the host, so record no image even though
+	// Record the image the runner runs, without any credentials. Sandbox
+	// runs commands on the host, so record no image even though
 	// ApplyOverrides fills in the default one. (Bare already has none.)
 	//
 	// A Firecracker runner that restores a snapshot runs the image that the
 	// snapshot was built from, which can differ from props.ContainerImage if
-	// the tag has moved since, or with OverrideSnapshotKey. Snapshot
-	// metadata doesn't record that image, so this records the image in props.
-	containerImage := props.ContainerImage
-	if platform.ContainerType(props.WorkloadIsolationType) == platform.SandboxContainerType {
+	// the tag has moved since. Snapshot metadata doesn't record that image,
+	// so this records the image in props. With OverrideSnapshotKey the
+	// snapshot can come from any image, so record none (unknown).
+	containerImage := platform.SanitizeImageRef(props.ContainerImage)
+	isolationType := platform.ContainerType(props.WorkloadIsolationType)
+	if isolationType == platform.SandboxContainerType ||
+		(isolationType == platform.FirecrackerContainerType && props.OverrideSnapshotKey != nil) {
 		containerImage = ""
 	}
 	runnerID := uuid.New()

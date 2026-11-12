@@ -986,3 +986,21 @@ func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
 	return "", status.InvalidArgumentErrorf(
 		"Unsupported dockerNetwork property value: %s", dockerNetwork)
 }
+
+// SanitizeImageRef strips any credentials and query string from a container
+// image reference, such as "docker://user:secret@gcr.io/img?x=y", so that it
+// can be stored. Image references never contain userinfo, so an "@" that
+// comes before a "/" can only be the end of one; a digest's "@" never is.
+func SanitizeImageRef(ref string) string {
+	ref, _, _ = strings.Cut(ref, "?")
+	scheme := ""
+	if i := strings.Index(ref, "://"); i >= 0 {
+		scheme, ref = ref[:i+len("://")], ref[i+len("://"):]
+	}
+	if slash := strings.LastIndex(ref, "/"); slash >= 0 {
+		if at := strings.LastIndex(ref[:slash], "@"); at >= 0 {
+			ref = ref[at+1:]
+		}
+	}
+	return scheme + ref
+}

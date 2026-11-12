@@ -51,7 +51,6 @@ go_library(
         "//server/util/prefix",
         "//server/util/proto",
         "//server/util/quota",
-        "//server/util/redact",
         "//server/util/rexec",
         "//server/util/status",
         "//server/util/tracing",

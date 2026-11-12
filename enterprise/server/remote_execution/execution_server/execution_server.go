@@ -57,7 +57,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
-	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -139,9 +138,7 @@ func (s *ExecutionServer) fillExecutionFromSchedulingMetadata(md *scpb.Schedulin
 	execution.PredictedFreeDiskBytes = md.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
 	execution.SelfHosted = md.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
 	execution.EffectivePool = md.GetPool()
-	// The raw property value can embed registry credentials, as in
-	// "docker://user:secret@registry/image".
-	execution.RequestedContainerImage = redact.RedactText(md.GetRequestedContainerImage())
+	execution.RequestedContainerImage = md.GetRequestedContainerImage()
 }
 
 func generateCommandSnippet(command *repb.Command) string {
@@ -1109,8 +1106,9 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		// Pass along the raw value rather than coercing unknown types, so that
 		// an unsupported request fails at scheduling time with a message
 		// naming the type that no executor supports.
-		RequestedIsolationType:  platform.FindEffectiveValue(executionTask, platform.WorkloadIsolationPropertyName),
-		RequestedContainerImage: platform.FindEffectiveValue(executionTask, platform.ContainerImagePropertyName),
+		RequestedIsolationType: platform.FindEffectiveValue(executionTask, platform.WorkloadIsolationPropertyName),
+		// Strip any credentials so they aren't stored.
+		RequestedContainerImage: platform.SanitizeImageRef(platform.FindEffectiveValue(executionTask, platform.ContainerImagePropertyName)),
 	}
 	if *writeExecutionProgressStateToRedis {
 		// Record the scheduling metadata now rather than relying on getting it
