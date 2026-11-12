@@ -1860,8 +1860,10 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 			return nil, err
 		}
 		defer db.Close()
-		// Sync deletes before clearing the removal marker; neither Raft
-		// replay nor RemoveData retries can restore them afterward.
+		// Use Sync, not NoSync: a machine crash can drop NoSync writes. Once
+		// the replica is cleared from the removed list below, neither Raft
+		// replay, RemoveData retries, nor the zombie janitor will redo these
+		// deletes, so lost deletes leave orphaned keys.
 		if err = db.DeleteRange(remoteRD.GetStart(), remoteRD.GetEnd(), pebble.Sync); err != nil {
 			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
