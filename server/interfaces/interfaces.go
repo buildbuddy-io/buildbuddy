@@ -1578,12 +1578,22 @@ type GroupStatusChecker interface {
 
 // QuotaManager manages quota.
 type QuotaManager interface {
-	// Allow checks whether a user (identified from the ctx) has exceeded a rate
-	// limit inside the namespace and returns ResourceExhaustedError
-	// when it's not allowed.
-	// If the rate limit has not been exceeded, the underlying storage is updated
-	// by the supplied quantity.
+	// Allow checks whether the user (identified from ctx) has enough quota for
+	// quantity. If so, it consumes quantity. Otherwise, it returns
+	// ResourceExhaustedError and consumes nothing. Returns nil if no quota
+	// applies or the quota service fails, so service errors do not block usage.
+	//
+	// Pass quantity 0 for a read-only check of whether the user is over quota.
+	// When usage is not known ahead of time (such as for execution minutes),
+	// call Allow with quantity 0 before the work begins, and RecordUsage when
+	// the work completes.
 	Allow(ctx context.Context, namespace string, quantity int64) error
+
+	// RecordUsage consumes quantity even if doing so exceeds the quota.
+	// Subsequent Allow calls are blocked until the resulting debt drains.
+	//
+	// Returns false if the usage went over quota.
+	RecordUsage(ctx context.Context, namespace string, quantity int64) (withinQuota bool, err error)
 
 	// Reloads the quota buckets, but does not reset their state. This would
 	// remove a bucket that longer applies to a group. It will send a notification

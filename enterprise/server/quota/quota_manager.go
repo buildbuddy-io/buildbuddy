@@ -53,9 +53,36 @@ type QuotaManager struct {
 	bucketFactory bucketFactory
 }
 
+// Allow checks whether the quota has enough room for quantity and consumes it
+// only if allowed. Pass quantity 0 for a read-only check.
 func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
-	if !*quotaManagerEnabled {
+	allow, err := qm.applyQuota(ctx, namespace, quantity, false /* recordUsageOverages */)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to check quota for %q: %s", namespace, err)
+		// Do not block traffic when the quota system has issues.
 		return nil
+	}
+	if !allow {
+		return status.ResourceExhaustedErrorf(quotaExceededMessageTemplate, namespace)
+	}
+	return nil
+}
+
+// RecordUsage always consumes quantity, even if it exceeds quota. Returns false
+// if the usage went over quota.
+func (qm *QuotaManager) RecordUsage(ctx context.Context, namespace string, quantity int64) (bool, error) {
+	// Account for partial work even when the client canceled the request.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return qm.applyQuota(ctx, namespace, quantity, true /* recordUsageOverages */)
+}
+
+// applyQuota returns whether quantity fit within quota. Errors indicate that
+// checking or recording usage failed. If recordUsageOverages is true, usage is
+// recorded even if it exceeds quota.
+func (qm *QuotaManager) applyQuota(ctx context.Context, namespace string, quantity int64, recordUsageOverages bool) (bool, error) {
+	if !*quotaManagerEnabled {
+		return true, nil
 	}
 
 	key, err := quota.GetKey(ctx, qm.env)
@@ -63,34 +90,33 @@ func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity in
 		metrics.QuotaKeyEmptyCount.With(prometheus.Labels{
 			metrics.QuotaNamespace: namespace,
 		}).Inc()
-		return nil
+		// Generating a quota key fails for unauthenticated requests.
+		// Auth should gate these, not the quota system so allow the request here.
+		return true, nil
 	}
 
 	if err := qm.loadQuotasFromFlagd(ctx, key, namespace); err != nil {
-		log.CtxWarningf(ctx, "Failed to load quotas from flagd for %q: %s", namespace, err)
-		return err
+		return false, status.WrapError(err, "load quotas from flagd")
 	}
 
 	b := qm.findBucket(namespace, key)
 	if b == nil {
-		return nil
+		return true, nil
 	}
 
-	allow, err := b.Allow(ctx, key, quantity)
+	allow, err := b.Allow(ctx, key, quantity, recordUsageOverages)
 	if err != nil {
-		log.CtxWarningf(ctx, "Quota check for %q failed: %s", namespace, err)
-		// Do not block traffic when the quota system has issues.
-		return nil
+		return false, err
 	}
 	if allow {
-		return nil
+		return true, nil
 	}
 
 	metrics.QuotaExceeded.With(prometheus.Labels{
 		metrics.QuotaNamespace: namespace,
 		metrics.QuotaKey:       key,
 	}).Inc()
-	return status.ResourceExhaustedErrorf(quotaExceededMessageTemplate, namespace)
+	return false, nil
 }
 
 type namespace struct {
@@ -129,7 +155,10 @@ type assignedBucket struct {
 
 type Bucket interface {
 	Config() bucketConfig
-	Allow(ctx context.Context, key string, quantity int64) (bool, error)
+	// Allow returns whether the requested quantity fits within quota.
+	// If recordUsageOverages is true, quota is always consumed, even if it exceeds the limit.
+	// If it is false, quota is only consumed if it fits within the limit.
+	Allow(ctx context.Context, key string, quantity int64, recordUsageOverages bool) (bool, error)
 }
 
 type rateLimitedBucket struct {
@@ -141,11 +170,11 @@ func (b *rateLimitedBucket) Config() bucketConfig {
 	return *b.config
 }
 
-func (b *rateLimitedBucket) Allow(ctx context.Context, key string, quantity int64) (bool, error) {
+func (b *rateLimitedBucket) Allow(ctx context.Context, key string, quantity int64, recordUsageOverages bool) (bool, error) {
 	if quantity > math.MaxInt {
 		return false, status.InternalErrorf("quantity (%d) exceeds the limit", quantity)
 	}
-	limitExceeded, _, err := b.rateLimiter.RateLimitCtx(ctx, key, int(quantity))
+	limitExceeded, _, err := b.rateLimiter.RateLimitCtx(ctx, key, int(quantity), recordUsageOverages)
 	return !limitExceeded, err
 }
 
