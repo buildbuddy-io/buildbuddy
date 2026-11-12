@@ -1870,9 +1870,24 @@ func (c *countingBSClient) Write(ctx context.Context, opts ...grpc.CallOption) (
 // populate the proxy's local cache under a different key than the one the
 // OCIFetcher proxy uses, so they never produce hits.
 func TestResolveWithOCIFetcher_NoDirectCacheAccess(t *testing.T) {
+	flags.Set(t, "executor.use_oci_fetcher", true)
+	flags.Set(t, "executor.oci_fetcher_required", false)
+	testResolveWithOCIFetcherNoDirectCacheAccess(t, true)
+}
+
+func TestResolveWithOCIFetcher_Required_NoDirectCacheAccess(t *testing.T) {
+	flags.Set(t, "executor.use_oci_fetcher", false)
+	flags.Set(t, "executor.oci_fetcher_required", true)
+	testResolveWithOCIFetcherNoDirectCacheAccess(t, false)
+}
+
+func testResolveWithOCIFetcherNoDirectCacheAccess(t *testing.T, useOCIFetcher bool) {
+	t.Helper()
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+	resolver, err := oci.NewResolver(te)
+	require.NoError(t, err)
 	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -1893,17 +1908,20 @@ func TestResolveWithOCIFetcher_NoDirectCacheAccess(t *testing.T) {
 	te.SetActionCacheClient(acClient)
 	te.SetByteStreamClient(bsClient)
 
-	ctx := contextWithUnverifiedJWT(&claims.Claims{UserID: "US123"})
-	// Pull twice: the first pull populates the OCIFetcher server's cache and
+	// Pull once authenticated, then anonymously (as during startup warmup).
+	// The first pull populates the OCIFetcher server's cache and
 	// the second should be served from it. Neither should touch the AC or BS
 	// from the executor.
-	for pull := range 2 {
-		pulledImage, err := newResolver(t, te).Resolve(
+	for pull, ctx := range []context.Context{
+		contextWithUnverifiedJWT(&claims.Claims{UserID: "US123"}),
+		context.Background(),
+	} {
+		pulledImage, err := resolver.Resolve(
 			ctx,
 			registry.ImageAddress(imageName),
 			&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS},
 			oci.Credentials{},
-			true, /*=useOCIFetcher*/
+			useOCIFetcher,
 		)
 		require.NoError(t, err)
 		layers, err := pulledImage.Layers()
