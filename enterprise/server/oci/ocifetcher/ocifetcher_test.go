@@ -29,7 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -2510,59 +2509,38 @@ func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 // registry's localhost address.
 func newServerAllowing127(t *testing.T) ofpb.OCIFetcherServer {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	t.Cleanup(func() { remote.SetAllowedPrivateIPs(nil) })
 	_, bsClient, acClient := setupCacheEnv(t)
 	server, err := ocifetcher.NewServer(bsClient, acClient)
 	require.NoError(t, err)
 	return server
 }
 
-func TestFetchManifestBearerRealmOnPrivateIP(t *testing.T) {
-	const token = "test-token"
-	var requireBearer atomic.Bool
-	var tokenHits atomic.Int32
+func TestFetchBlobRedirectToPrivateIP(t *testing.T) {
+	var redirectBlobs atomic.Bool
+	var redirectedHits atomic.Int32
 	var reg *testregistry.Registry
 	reg, _ = setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-		if !requireBearer.Load() || r.Header.Get("Authorization") == "Bearer "+token {
+		if !redirectBlobs.Load() || r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/blobs/") {
 			return true
 		}
-		if r.URL.Path == "/token" {
-			tokenHits.Add(1)
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"token":%q}`, token)
-			return false
+		if r.URL.Query().Get("redirected") == "1" {
+			redirectedHits.Add(1)
+			return true
 		}
-		realm := "http://" + strings.Replace(reg.Address(), "localhost", "127.0.0.1", 1) + "/token"
-		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm=%q,service="test"`, realm))
-		w.WriteHeader(http.StatusUnauthorized)
+		target := strings.Replace(reg.Address(), "localhost", "127.0.0.1", 1)
+		http.Redirect(w, r, "http://"+target+r.URL.Path+"?redirected=1", http.StatusFound)
 		return false
 	})
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
-	requireBearer.Store(true)
-
-	resp, err := newServerAllowing127(t).FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	redirectBlobs.Store(true)
+	layers, err := img.Layers()
 	require.NoError(t, err)
-	wantDigest, wantSize, wantMediaType := imageMetadata(t, img)
-	assertMetadata(t, resp, wantDigest, wantSize, wantMediaType)
-	require.Greater(t, tokenHits.Load(), int32(0), "token endpoint should have been used")
-}
+	digest, err := layers[0].Digest()
+	require.NoError(t, err)
 
-func TestFetchManifestBearerRealmOnDisallowedPrivateIP(t *testing.T) {
-	var requireBearer atomic.Bool
-	var reg *testregistry.Registry
-	reg, _ = setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-		if !requireBearer.Load() {
-			return true
-		}
-		// 127.0.0.2 is private and outside the allowlisted 127.0.0.1/32.
-		realm := "http://" + strings.Replace(reg.Address(), "localhost", "127.0.0.2", 1) + "/token"
-		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm=%q,service="test"`, realm))
-		w.WriteHeader(http.StatusUnauthorized)
-		return false
-	})
-	imageName, _ := reg.PushNamedImage(t, "test-image", nil)
-	requireBearer.Store(true)
-
-	_, err := newServerAllowing127(t).FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	require.ErrorContains(t, err, `realm host "127.0.0.2" is a private or link-local address`)
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = newServerAllowing127(t).FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + digest.String()}, stream)
+	require.NoError(t, err)
+	require.Equal(t, layerData(t, layers[0]), stream.collectData())
+	require.Greater(t, redirectedHits.Load(), int32(0), "blob GETs should have been redirected")
 }

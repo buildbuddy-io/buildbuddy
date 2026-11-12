@@ -110,9 +110,6 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 	if acClient == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherServer requires a non-nil action cache client")
 	}
-	if err := ConfigureRegistryClient(); err != nil {
-		return nil, err
-	}
 	allowedPrivateIPs, err := ParseAllowedPrivateIPs()
 	if err != nil {
 		return nil, err
@@ -639,6 +636,7 @@ func (s *ociFetcherServer) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 	}
 
 	client := httpclient.New(s.allowedPrivateIPs, "oci_fetcher")
+	client.Transport = httpclient.FollowRedirectsToAllowedIPs(client.Transport, s.allowedPrivateIPs)
 	// The mirror transport sits inside the client, below the blob HEAD fallback transport, so
 	// the fallback's allowlist check sees original registry hostnames rather than mirror
 	// hostnames and its ranged GETs get the same mirror rewriting as any other request.
@@ -818,17 +816,6 @@ func ParseAllowedPrivateIPs() ([]*net.IPNet, error) {
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
 	return allowedPrivateIPNets, nil
-}
-
-// ConfigureRegistryClient exempts the allowlisted private IPs from
-// go-containerregistry's process-wide SSRF checks.
-func ConfigureRegistryClient() error {
-	allowedPrivateIPNets, err := ParseAllowedPrivateIPs()
-	if err != nil {
-		return err
-	}
-	remote.SetAllowedPrivateIPs(allowedPrivateIPNets)
-	return nil
 }
 
 func Mirrors() []interfaces.MirrorConfig {

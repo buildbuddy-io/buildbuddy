@@ -202,9 +202,6 @@ type Resolver struct {
 }
 
 func NewResolver(env environment.Env) (*Resolver, error) {
-	if err := ocifetcher.ConfigureRegistryClient(); err != nil {
-		return nil, err
-	}
 	allowedPrivateIPNets, err := ocifetcher.ParseAllowedPrivateIPs()
 	if err != nil {
 		return nil, err
@@ -555,7 +552,7 @@ func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, c
 		}))
 	}
 
-	tr := httpclient.New(r.allowedPrivateIPs, "oci").Transport
+	tr := httpclient.FollowRedirectsToAllowedIPs(httpclient.New(r.allowedPrivateIPs, "oci").Transport, r.allowedPrivateIPs)
 	mirrors := ocifetcher.Mirrors()
 	if len(mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(ocifetcher.NewMirrorTransport(tr, mirrors)))
