@@ -206,7 +206,6 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Added by buildpatches/com_github_google_go_containerregistry_allowed_private_ips.patch.
 	remote.SetAllowedPrivateIPs(allowedPrivateIPNets)
 	imageTagToDigestLRU, err := lru.New[string](&lru.Config[string]{
 		SizeFn:     func(_ string) int64 { return 1 },
