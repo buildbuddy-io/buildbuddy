@@ -1,0 +1,65 @@
+diff --git a/pkg/v1/remote/fetcher.go b/pkg/v1/remote/fetcher.go
+index 26605d9..2926fe4 100644
+--- a/pkg/v1/remote/fetcher.go
++++ b/pkg/v1/remote/fetcher.go
+@@ -20,9 +20,11 @@ import (
+ 	"encoding/hex"
+ 	"fmt"
+ 	"io"
++	"net"
+ 	"net/http"
+ 	"net/url"
+ 	"strings"
++	"sync/atomic"
+ 
+ 	"github.com/google/go-containerregistry/internal/ipaddr"
+ 	"github.com/google/go-containerregistry/internal/limit"
+@@ -41,6 +43,39 @@ const (
+ 	manifestLimit = 100 * mib
+ )
+ 
++var allowedPrivateIPs atomic.Pointer[[]*net.IPNet]
++
++// SetAllowedPrivateIPs lets checkRedirectSSRF allow redirects to IP literals
++// in nets. It stores a deep copy, so later changes to nets have no effect.
++func SetAllowedPrivateIPs(nets []*net.IPNet) {
++	copied := make([]*net.IPNet, 0, len(nets))
++	for _, n := range nets {
++		copied = append(copied, &net.IPNet{
++			IP:   append(net.IP(nil), n.IP...),
++			Mask: append(net.IPMask(nil), n.Mask...),
++		})
++	}
++	allowedPrivateIPs.Store(&copied)
++}
++
++func isAllowedPrivateIP(host string) bool {
++	nets := allowedPrivateIPs.Load()
++	if nets == nil {
++		return false
++	}
++	addr, ok := ipaddr.Parse(host)
++	if !ok {
++		return false
++	}
++	ip := net.IP(addr.AsSlice())
++	for _, n := range *nets {
++		if n.Contains(ip) {
++			return true
++		}
++	}
++	return false
++}
++
+ // fetcher implements methods for reading from a registry.
+ type fetcher struct {
+ 	target  resource
+@@ -99,7 +134,7 @@ func checkRedirectSSRF(req *http.Request, via []*http.Request) error {
+ 	if destHost == origHost {
+ 		return nil // same-host redirect is always allowed
+ 	}
+-	if ipaddr.IsPrivateOrLinkLocal(destHost) {
++	if ipaddr.IsPrivateOrLinkLocal(destHost) && !isAllowedPrivateIP(destHost) {
+ 		return fmt.Errorf("SSRF protection: redirect from %q to private/link-local host %q denied", origHost, destHost)
+ 	}
+ 	return nil
