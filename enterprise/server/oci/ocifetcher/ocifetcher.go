@@ -114,7 +114,6 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 	if err != nil {
 		return nil, err
 	}
-	// Added by buildpatches/com_github_google_go_containerregistry_allowed_private_ips.patch.
 	remote.SetAllowedPrivateIPs(allowedPrivateIPs)
 	pullerLRU, err := lru.New[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
 		SizeFn:  func(_ *pullerLRUEntry) int64 { return 1 },
