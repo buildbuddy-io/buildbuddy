@@ -4,18 +4,22 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
@@ -630,4 +634,218 @@ not json at all
 			assert.Equal(t, tc.want, parseGitFetchedBytes(strings.NewReader(tc.trace2Log)))
 		})
 	}
+}
+
+// credentialHelperTest is a workspace set up to fetch a private repo with the
+// workflow's access token.
+type credentialHelperTest struct {
+	remote        *testgit.Server
+	remoteURL     string
+	wantCommitSHA string
+	home          string
+	checkoutDir   string
+	ws            *workspace
+}
+
+func setupCredentialHelperTest(t *testing.T) *credentialHelperTest {
+	remote := testgit.StartServer(t, testgit.ServerOptions{LogWriter: io.Discard})
+	remote.CreateProject("test-org", "test-repo", &testgit.ProjectSettings{Public: false})
+	sourceDir, wantCommitSHA := testgit.MakeTempRepo(t, map[string]string{"README.md": "test repo"})
+	remote.Push("test-org", "test-repo", remote.AccessToken(), sourceDir)
+	remoteURL := remote.RepoURL("test-org", "test-repo", "")
+
+	// config() writes the global git config, so keep it out of the real HOME.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("USE_SYSTEM_GIT_CREDENTIALS", "")
+	t.Setenv("REPO_USER", "x-access-token")
+	t.Setenv("REPO_TOKEN", remote.AccessToken())
+
+	// Stand in for the CI runner binary in credential helper mode. Put it in a
+	// directory with a space to make sure the path is quoted.
+	credentialHelperDir := filepath.Join(t.TempDir(), "ci runner")
+	require.NoError(t, os.Mkdir(credentialHelperDir, 0755))
+	credentialHelper := filepath.Join(credentialHelperDir, "ci_runner.sh")
+	require.NoError(t, os.WriteFile(credentialHelper, []byte("#!/bin/sh\nprintf 'username=%s\\npassword=%s\\n' \"$REPO_USER\" \"$REPO_TOKEN\"\n"), 0755))
+	t.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", credentialHelper)
+	flags.Set(t, "pushed_repo_url", remoteURL)
+	flags.Set(t, "target_repo_url", remoteURL)
+
+	checkoutDir := t.TempDir()
+	t.Chdir(checkoutDir)
+	invocationLog := newInvocationLog(nil)
+	invocationLog.writer = io.Discard
+	ws := &workspace{
+		rootDir: checkoutDir,
+		log:     &buildEventReporter{log: invocationLog},
+	}
+	require.NoError(t, ws.init(t.Context()))
+
+	return &credentialHelperTest{
+		remote:        remote,
+		remoteURL:     remoteURL,
+		wantCommitSHA: wantCommitSHA,
+		home:          home,
+		checkoutDir:   checkoutDir,
+		ws:            ws,
+	}
+}
+
+// addUserCredentialHelper stands in for a credential helper that the user
+// configured for the repo host, e.g. in the workflow image.
+func (c *credentialHelperTest) addUserCredentialHelper(t *testing.T) {
+	_, gitErr := git(t.Context(), io.Discard, "config", "--global", "--add", "credential.helper", "!f() { echo username=user; echo password=user-password; }; f")
+	require.Nil(t, gitErr)
+}
+
+// fetchAndCheck fetches the repo into the workspace and checks that the
+// expected commit was fetched.
+func (c *credentialHelperTest) fetchAndCheck(t *testing.T) {
+	ctx := t.Context()
+	require.NoError(t, c.ws.fetch(ctx, c.remoteURL, []string{"refs/heads/master"}, 1))
+	fetchedCommitSHA, gitErr := git(ctx, io.Discard, "rev-parse", "FETCH_HEAD")
+	require.Nil(t, gitErr)
+	require.Equal(t, c.wantCommitSHA, strings.TrimSpace(fetchedCommitSHA))
+}
+
+// credentialFillOutsideWorkspace returns the password git would use for the
+// repo host outside the workspace (e.g. for git deps fetched by bazel).
+func (c *credentialHelperTest) credentialFillOutsideWorkspace(t *testing.T) string {
+	u, err := url.Parse(c.remoteURL)
+	require.NoError(t, err)
+	// Use exec directly rather than git(), which runs git in a pty.
+	fill := exec.CommandContext(t.Context(), "git", "credential", "fill")
+	fill.Dir = t.TempDir()
+	fill.Stdin = strings.NewReader(fmt.Sprintf("protocol=%s\nhost=%s\n\n", u.Scheme, u.Host))
+	out, err := fill.Output()
+	require.NoError(t, err)
+	for line := range strings.SplitSeq(string(out), "\n") {
+		if password, ok := strings.CutPrefix(line, "password="); ok {
+			return password
+		}
+	}
+	require.FailNow(t, "no password returned", "output: %s", out)
+	return ""
+}
+
+func TestCredentialHelper_FetchesPrivateRepo(t *testing.T) {
+	c := setupCredentialHelperTest(t)
+	require.NoError(t, c.ws.config(t.Context()))
+	c.fetchAndCheck(t)
+}
+
+func TestCredentialHelper_KeepsAccessTokenOutOfRepoConfig(t *testing.T) {
+	c := setupCredentialHelperTest(t)
+	require.NoError(t, c.ws.config(t.Context()))
+	c.fetchAndCheck(t)
+	repoConfig, err := os.ReadFile(filepath.Join(c.checkoutDir, ".git", "config"))
+	require.NoError(t, err)
+	require.NotContains(t, string(repoConfig), c.remote.AccessToken())
+}
+
+func TestCredentialHelper_WorkspaceIgnoresUserHelper(t *testing.T) {
+	c := setupCredentialHelperTest(t)
+	c.addUserCredentialHelper(t)
+	require.NoError(t, c.ws.config(t.Context()))
+	// The user's helper returns invalid credentials, so the fetch only
+	// succeeds if the workspace uses the workflow's access token.
+	c.fetchAndCheck(t)
+}
+
+func TestCredentialHelper_OutsideWorkspacePrefersUserHelper(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("The global credential helper is only configured on Linux.")
+	}
+	c := setupCredentialHelperTest(t)
+	c.addUserCredentialHelper(t)
+	require.NoError(t, c.ws.config(t.Context()))
+	require.Equal(t, "user-password", c.credentialFillOutsideWorkspace(t))
+}
+
+func TestCredentialHelper_OutsideWorkspaceFallsBackToAccessToken(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("The global credential helper is only configured on Linux.")
+	}
+	c := setupCredentialHelperTest(t)
+	require.NoError(t, c.ws.config(t.Context()))
+	require.Equal(t, c.remote.AccessToken(), c.credentialFillOutsideWorkspace(t))
+}
+
+func TestCredentialHelper_NoGlobalHelperOnMac(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Mac-only test.")
+	}
+	c := setupCredentialHelperTest(t)
+	require.NoError(t, c.ws.config(t.Context()))
+	// Mac workflows aren't isolated, so the access token shouldn't be
+	// available outside the workspace.
+	key, _ := repoCredentialHelperConfig()
+	err := exec.CommandContext(t.Context(), "git", "config", "--global", "--get-all", key).Run()
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, 1, exitErr.ExitCode(), "key should not be set")
+}
+
+func TestCredentialHelper_ConfigIsIdempotent(t *testing.T) {
+	c := setupCredentialHelperTest(t)
+	// config() runs again each time a workspace is reused.
+	require.NoError(t, c.ws.config(t.Context()))
+	require.NoError(t, c.ws.config(t.Context()))
+	c.fetchAndCheck(t)
+	key, _ := repoCredentialHelperConfig()
+	scopes := []string{"--local"}
+	if runtime.GOOS == "linux" {
+		scopes = append(scopes, "--global")
+	}
+	for _, scope := range scopes {
+		out, err := exec.CommandContext(t.Context(), "git", "config", scope, "--get-all", key).Output()
+		require.NoError(t, err)
+
+		// Make sure we've only configured the credential helper once.
+		// Reruns shouldn't add duplicate entries.
+		require.Len(t, strings.Split(strings.TrimSpace(string(out)), "\n"), 1, "%s config: %s", scope, out)
+	}
+}
+
+func TestCredentialHelper_OldSnapshot(t *testing.T) {
+	ctx := t.Context()
+	c := setupCredentialHelperTest(t)
+	// Stand in for a workspace restored from a snapshot taken by an older
+	// runner, which saved the access token in the remote URL.
+	_, gitErr := git(ctx, io.Discard, "remote", "add", "origin", c.remote.RepoURL("test-org", "test-repo", c.remote.AccessToken()))
+	require.Nil(t, gitErr)
+
+	require.NoError(t, c.ws.config(ctx))
+	c.fetchAndCheck(t)
+	repoConfig, err := os.ReadFile(filepath.Join(c.checkoutDir, ".git", "config"))
+	require.NoError(t, err)
+	require.NotContains(t, string(repoConfig), c.remote.AccessToken())
+}
+
+func TestCredentialHelper_SchemelessRepoURL(t *testing.T) {
+	c := setupCredentialHelperTest(t)
+	// Workflows started through the API may pass repo URLs without a scheme,
+	// e.g. "github.com/org/repo".
+	schemelessURL, ok := strings.CutPrefix(c.remoteURL, "http://")
+	require.True(t, ok, "unexpected test server URL %q", c.remoteURL)
+	c.remoteURL = schemelessURL
+	flags.Set(t, "pushed_repo_url", schemelessURL)
+	flags.Set(t, "target_repo_url", schemelessURL)
+
+	require.NoError(t, c.ws.config(t.Context()))
+	c.fetchAndCheck(t)
+}
+
+func TestCredentialHelper_EmbedRepoTokenInRemoteURLFallback(t *testing.T) {
+	c := setupCredentialHelperTest(t)
+	t.Setenv(ci_runner_env.EmbedRepoTokenInRemoteURLEnvVarName, "1")
+	require.NoError(t, c.ws.config(t.Context()))
+	c.fetchAndCheck(t)
+
+	// The token should be in the remote URL, so that steps that reuse it
+	// keep working.
+	remoteURL, err := exec.CommandContext(t.Context(), "git", "remote", "get-url", gitRemoteName(c.remoteURL)).Output()
+	require.NoError(t, err)
+	require.Contains(t, string(remoteURL), c.remote.AccessToken())
 }

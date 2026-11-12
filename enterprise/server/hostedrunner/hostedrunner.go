@@ -315,6 +315,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		},
 	}
 
+	cmd.EnvironmentVariables = append(cmd.EnvironmentVariables, ci_runner_util.ExtraEnvVars(ctx, experiments.WithContext("workflow_action_name", "remote_bazel"))...)
 	for k, v := range req.GetEnv() {
 		// Credentials are passed via env overrides (see credentialEnvOverrides)
 		// so they aren't persisted in the Command, where they could be shown in the UI.

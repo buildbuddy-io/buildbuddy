@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -47,6 +49,7 @@ var (
 
 	BazelCommandOverride = expflag.String("remote_execution.ci_runner_bazel_command", "", "Override the Bazel command used by workflows and hosted runners.", expflag.DeprecatedExperimentName("ci-runner-bazel-command"))
 	PoolOverride         = expflag.String("remote_execution.remote_runner_pool", "", "Override the executor pool used by workflows and hosted runners.", expflag.DeprecatedExperimentName("remote-runner-pool"))
+	extraEnv             = expflag.Object("remote_execution.ci_runner_extra_env", nil, "Extra env vars to set for CI runners, as a JSON object that maps env var names to string values.")
 
 	defaultTimeout      = expflag.String("remote_execution.remote_runner_default_timeout", "", "Override the default CI runner timeout with a duration, such as 24h.")
 	lowSpeedRetryConfig = expflag.Object(LowSpeedRetryConfigExperimentName, nil, "Git fetch retry settings for CI runners, with retries, duration, and rate fields.")
@@ -94,6 +97,23 @@ type LowSpeedRetryConfig struct {
 	// Rate is the transfer rate in bytes per second below which the fetch is
 	// considered too slow. If zero, the ci_runner default applies.
 	Rate int64 `json:"rate"`
+}
+
+// ExtraEnvVars returns the extra env vars to set in the CI runner, configured by the
+// remote_execution.ci_runner_extra_env experiment, sorted by name.
+func ExtraEnvVars(ctx context.Context, opts ...any) []*repb.Command_EnvironmentVariable {
+	object := extraEnv.Get(ctx, opts...)
+	var envVars []*repb.Command_EnvironmentVariable
+	// Sort by name so that the command (and its digest) is deterministic.
+	for _, name := range slices.Sorted(maps.Keys(object)) {
+		value, ok := object[name].(string)
+		if !ok {
+			log.CtxErrorf(ctx, "Ignoring %s experiment value for env var %q: want a string, got %T", extraEnv.Name(), name, object[name])
+			continue
+		}
+		envVars = append(envVars, &repb.Command_EnvironmentVariable{Name: name, Value: value})
+	}
+	return envVars
 }
 
 // GitFetchLowSpeedRetryFlags returns the ci_runner git fetch retry flags

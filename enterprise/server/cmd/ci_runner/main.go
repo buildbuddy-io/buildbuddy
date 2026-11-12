@@ -63,6 +63,7 @@ import (
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	backendLog "github.com/buildbuddy-io/buildbuddy/server/util/log"
+	bbshlex "github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -2357,12 +2358,6 @@ func (ws *workspace) config(ctx context.Context) error {
 		// the microvm while it's running.
 		{"gc.autoDetach", "false"},
 	}
-	if !useSystemGitCredentials {
-		// Disable any credential helpers (in particular, osxkeychain which
-		// displays a blocking popup dialog)
-		cfg = append(cfg, []string{"credential.helper", ""})
-	}
-
 	writeCommandSummary(ws.log, "Configuring repository...")
 	for _, kv := range cfg {
 		// Don't show the config output.
@@ -2371,8 +2366,21 @@ func (ws *workspace) config(ctx context.Context) error {
 		}
 	}
 
+	if !useSystemGitCredentials {
+		// Set up a local credential helper for the workspace.
+		// It supplies the access token for git commands run in the workspace.
+		if err := configureLocalCredentialHelper(ctx); err != nil {
+			return err
+		}
+	}
+
 	// Set up global config (~/.gitconfig) but only on Linux for now since Linux
 	// workflows are isolated.
+	//
+	// This lets Linux workflows clone private git repos as Bazel dependencies,
+	// even though they are cloned as separate
+	// repos, and wouldn't typically share the current workspace's credentials.
+	//
 	// TODO(bduffany): find a solution that works for Mac workflows too.
 	if !useSystemGitCredentials && runtime.GOOS == "linux" {
 		// SSH URL rewrites and git credential helper are used for external git
@@ -2402,12 +2410,25 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 
 	fetchURL := remoteURL
 	useSystemGitCredentials := os.Getenv("USE_SYSTEM_GIT_CREDENTIALS") == "1"
-	if !useSystemGitCredentials {
-		authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(ci_runner_env.RepoUserEnvVarName), os.Getenv(ci_runner_env.RepoTokenEnvVarName))
-		if err != nil {
-			return err
+	if !useSystemGitCredentials && os.Getenv(ci_runner_env.RepoTokenEnvVarName) != "" {
+		if os.Getenv(ci_runner_env.EmbedRepoTokenInRemoteURLEnvVarName) == "1" {
+			authURL, err := gitutil.AuthRepoURL(fetchURL, os.Getenv(ci_runner_env.RepoUserEnvVarName), os.Getenv(ci_runner_env.RepoTokenEnvVarName))
+			if err != nil {
+				return err
+			}
+			fetchURL = authURL
+		} else {
+			// Repo URLs may omit the scheme or host (e.g. "github.com/org/repo" or
+			// "org/repo"), so normalize them into URLs that git can fetch, and
+			// whose host matches the credential helper's. Drop any credentials in
+			// the URL so the credential helper supplies the access token instead.
+			u, err := gitutil.ParseRepoURL(remoteURL)
+			if err != nil {
+				return status.InvalidArgumentErrorf("invalid repo URL %q", remoteURL)
+			}
+			u.User = nil
+			fetchURL = u.String()
 		}
-		fetchURL = authURL
 	}
 
 	remoteName := gitRemoteName(remoteURL)
@@ -2992,22 +3013,62 @@ func getStructuredCommandLine() *clpb.CommandLine {
 	}
 }
 
-func configureGlobalCredentialHelper(ctx context.Context) error {
-	if !strings.HasPrefix(baseRepoURL(), "https://") {
-		return nil
+// repoCredentialHelperConfig returns the git config key and value that make the
+// ci_runner the credential helper for current checkout. This credential helper
+// uses the REPO_TOKEN environment variable to authenticate git requests.
+func repoCredentialHelperConfig() (key, value string) {
+	if os.Getenv(ci_runner_env.RepoTokenEnvVarName) == "" {
+		return "", ""
 	}
-	repoToken := os.Getenv(ci_runner_env.RepoTokenEnvVarName)
-	if repoToken == "" {
-		return nil
-	}
-	u, err := url.Parse(baseRepoURL())
+	// Use the same parsing as fetch(), so that the host matches the URL
+	// that the workspace is fetched from.
+	u, err := gitutil.ParseRepoURL(baseRepoURL())
 	if err != nil {
-		return nil // if URL is unparseable, do nothing
+		return "", "" // if URL is unparseable, do nothing
 	}
-	repoHostURL := fmt.Sprintf("https://%s", u.Host)
-	configKey := fmt.Sprintf("credential.%s.helper", repoHostURL)
-	configValue := fmt.Sprintf("!%s --credential_helper", os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"))
-	if _, err := git(ctx, io.Discard, "config", "--global", configKey, configValue); err != nil {
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return "", ""
+	}
+	key = fmt.Sprintf("credential.%s://%s.helper", u.Scheme, u.Host)
+	// The helper is run by the shell, so quote the path in case it contains
+	// spaces.
+	value = "!" + bbshlex.Quote(os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH")) + " --credential_helper"
+	return key, value
+}
+
+// configureGlobalCredentialHelper adds the ci_runner as a credential helper,
+// for git operations outside the workspace (e.g. git deps fetched by bazel that
+// are cloned as separate repos, and wouldn't typically share the current workspace's credentials).
+//
+// Credential helpers that users have already explicitly configured (e.g. in
+// the workflow image) are tried first, so the ci_runner only acts as a
+// fallback.
+func configureGlobalCredentialHelper(ctx context.Context) error {
+	key, value := repoCredentialHelperConfig()
+	if key == "" {
+		return nil
+	}
+	if _, err := git(ctx, io.Discard, "config", "--global", key, value); err != nil {
+		return err
+	}
+	return nil
+}
+
+// configureLocalCredentialHelper configures the ci_runner as the only
+// credential helper in the current workspace config, so the workspace is always
+// fetched with the workflow's access token.
+func configureLocalCredentialHelper(ctx context.Context) error {
+	// Disable any other credential helpers (in particular, osxkeychain which
+	// displays a blocking popup dialog). This clears the helpers configured
+	// before it, so the ci_runner helper must be configured after it.
+	if _, err := git(ctx, io.Discard, "config", "--local", "--replace-all", "credential.helper", ""); err != nil {
+		return err
+	}
+	key, value := repoCredentialHelperConfig()
+	if key == "" {
+		return nil
+	}
+	if _, err := git(ctx, io.Discard, "config", "--local", "--replace-all", key, value); err != nil {
 		return err
 	}
 	return nil
