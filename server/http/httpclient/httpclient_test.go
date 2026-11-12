@@ -194,37 +194,25 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 			wantAuth:    []string{"", ""},
 		},
 		{
-			name:  "treats an explicit default port as the same origin",
-			start: "https://10.1.2.3/v2/img/blobs/sha256:abc",
-			responses: fakeRoundTripper{
-				"https://10.1.2.3/v2/img/blobs/sha256:abc": response(http.StatusFound, "", "Location", "https://10.1.2.3:443/storage/blob"),
-				"https://10.1.2.3:443/storage/blob":        response(http.StatusUnauthorized, "", "WWW-Authenticate", `Bearer realm="registry"`),
-			},
-			wantStatus:  http.StatusUnauthorized,
-			wantHeaders: http.Header{"Www-Authenticate": {`Bearer realm="registry"`}},
-			wantAuth:    []string{"Bearer secret", "Bearer secret"},
-		},
-		{
-			name:  "drops Authorization when only the port changes",
+			// ggcr follows these itself and handles the challenge per host.
+			name:  "leaves same-hostname redirect to another port for ggcr",
 			start: "https://10.1.2.3/v2/img/blobs/sha256:abc",
 			responses: fakeRoundTripper{
 				"https://10.1.2.3/v2/img/blobs/sha256:abc": response(http.StatusFound, "", "Location", "https://10.1.2.3:8443/blob"),
-				"https://10.1.2.3:8443/blob":               response(http.StatusOK, ""),
 			},
-			wantStatus:  http.StatusOK,
-			wantHeaders: http.Header{},
-			wantAuth:    []string{"Bearer secret", ""},
+			wantStatus:  http.StatusFound,
+			wantHeaders: http.Header{"Location": {"https://10.1.2.3:8443/blob"}},
+			wantAuth:    []string{"Bearer secret"},
 		},
 		{
-			name:  "keeps WWW-Authenticate after same-host redirect",
+			name:  "leaves relative same-host redirect for ggcr with absolute Location",
 			start: "https://10.1.2.3/v2/img/blobs/sha256:abc",
 			responses: fakeRoundTripper{
 				"https://10.1.2.3/v2/img/blobs/sha256:abc": response(http.StatusFound, "", "Location", "/storage/blob"),
-				"https://10.1.2.3/storage/blob":            response(http.StatusUnauthorized, "", "WWW-Authenticate", `Bearer realm="registry"`),
 			},
-			wantStatus:  http.StatusUnauthorized,
-			wantHeaders: http.Header{"Www-Authenticate": {`Bearer realm="registry"`}},
-			wantAuth:    []string{"Bearer secret", "Bearer secret"},
+			wantStatus:  http.StatusFound,
+			wantHeaders: http.Header{"Location": {"https://10.1.2.3/storage/blob"}},
+			wantAuth:    []string{"Bearer secret"},
 		},
 		{
 			name: "leaves redirect to non-allowlisted IP untouched",

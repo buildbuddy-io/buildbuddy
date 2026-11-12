@@ -84,6 +84,11 @@ func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) 
 			if via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
 				return http.ErrUseLastResponse
 			}
+			// ggcr allows same-hostname redirects itself and handles their bearer
+			// challenges per host, so leave those for it, as on master.
+			if strings.EqualFold(req.URL.Hostname(), via[0].URL.Hostname()) {
+				return http.ErrUseLastResponse
+			}
 			if !ipAllowed(net.ParseIP(req.URL.Hostname()), allowed) {
 				return http.ErrUseLastResponse
 			}
