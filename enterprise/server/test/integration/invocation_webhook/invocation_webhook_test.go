@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -65,15 +63,13 @@ func TestInvocationUploadWebhook(t *testing.T) {
 	wsDir := testbazel.MakeTempModule(t, map[string]string{
 		"BUILD": `genrule(name = "gen", outs = ["out"], cmd_bash = "touch $@")`,
 	})
+	// Pass the API key to BES directly: newer Bazels redact --remote_header
+	// in the BEP (bazelbuild/bazel#32039, #32037, #32032), so the server
+	// can't read it from there.
 	buildFlags := []string{
 		":gen",
 		"--remote_header=x-buildbuddy-api-key=" + apiKey.Value,
-	}
-	// Older Bazels let the server read the API key from --remote_header in the
-	// BEP. Bazel 8.9.0, 9.4.0 and 10.0.0 redact it there (bazelbuild/bazel
-	// #32039, #32037, #32032), so pass it to BES directly.
-	if major, minor := bazelVersion(t); major >= 10 || (major == 9 && minor >= 4) || (major == 8 && minor >= 9) {
-		buildFlags = append(buildFlags, "--bes_header=x-buildbuddy-api-key="+apiKey.Value)
+		"--bes_header=x-buildbuddy-api-key=" + apiKey.Value,
 	}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
@@ -155,14 +151,4 @@ func (ws *webhookServer) readInvocation(req *http.Request) (*inpb.Invocation, er
 		return nil, err
 	}
 	return in, nil
-}
-
-func bazelVersion(t *testing.T) (major, minor int) {
-	parts := strings.Split(testbazel.Version, ".")
-	require.GreaterOrEqual(t, len(parts), 2, "parse bazel version %q", testbazel.Version)
-	major, err := strconv.Atoi(parts[0])
-	require.NoError(t, err, "parse bazel version %q", testbazel.Version)
-	minor, err = strconv.Atoi(parts[1])
-	require.NoError(t, err, "parse bazel version %q", testbazel.Version)
-	return major, minor
 }
