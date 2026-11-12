@@ -479,6 +479,14 @@ const (
 	// operator-controlled zone files, so cardinality is bounded. Named
 	// "dns_zone" because ZoneLabel ("zone") is the availability zone of a node.
 	DNSZoneLabel = "dns_zone"
+
+	// Source metric name of a metric exported to customers, such as
+	// "buildbuddy_invocation_duration_usec_exported".
+	ExportedMetricNameLabel = "source_metric"
+
+	// Why an exported histogram series was skipped: `missing_count`,
+	// `missing_sum`, or `missing_buckets`.
+	ExportedMetricSkipReasonLabel = "reason"
 )
 
 // Label value constants
@@ -513,6 +521,10 @@ const (
 
 	WorkflowLabel    = "workflow"
 	RemoteBazelLabel = "remote_bazel"
+
+	ExportedMetricMissingCountReason   = "missing_count"
+	ExportedMetricMissingSumReason     = "missing_sum"
+	ExportedMetricMissingBucketsReason = "missing_buckets"
 )
 
 // Other constants
@@ -2751,6 +2763,18 @@ var (
 		Subsystem: "usage_tracker",
 		Name:      "missing_collection_counts_count",
 		Help:      "The number of times the usage tracking system was missing counts for a particular collection period. This may happen if there are transient redis errors.",
+	})
+
+	// ### Customer metrics export
+
+	ExportedMetricsSkippedHistogramSeriesCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "exported_metrics",
+		Name:      "skipped_histogram_series_count",
+		Help:      "Number of histogram series left out of customer metrics exports because Prometheus returned only some of the series' count, sum, and buckets. Counted once per export built from Prometheus, so a series missing from several exports is counted several times. This may happen briefly while series appear or disappear, such as during pod turnover.",
+	}, []string{
+		ExportedMetricNameLabel,
+		ExportedMetricSkipReasonLabel,
 	})
 
 	// ### Webhooks
