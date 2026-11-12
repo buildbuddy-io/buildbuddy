@@ -312,11 +312,8 @@ func openFile(ctx context.Context, fsys fs.FS, fileName string) (io.ReadCloser, 
 	return fsys.Open(fileName)
 }
 
-// Returns the cgroup version available on this machine, which is returned from
-//
-//	stat -fc %T /sys/fs/cgroup/
-//
-// and should be either 'cgroup2fs' (version 2) or 'tmpfs' (version 1)
+// Returns the cgroup version available on this machine, which is determined by
+// reading the filesystem type of /sys/fs/cgroup/.
 //
 // More info here: https://kubernetes.io/docs/concepts/architecture/cgroups/
 // TODO(iain): preemptively get this in a provider a la Provider in podman.go.
@@ -324,17 +321,18 @@ func getCgroupVersion() (string, error) {
 	if *firecrackerCgroupVersion != "" {
 		return *firecrackerCgroupVersion, nil
 	}
-	b, err := exec.Command("stat", "-fc", "%T", "/sys/fs/cgroup/").Output()
-	if err != nil {
+	var stat unix.Statfs_t
+	if err := unix.Statfs("/sys/fs/cgroup/", &stat); err != nil {
 		return "", status.UnavailableErrorf("Error determining system cgroup version: %v", err)
 	}
-	v := strings.TrimSpace(string(b))
-	if v == "cgroup2fs" {
+
+	switch stat.Type {
+	case unix.CGROUP2_SUPER_MAGIC: // 0x63677270
 		return "2", nil
-	} else if v == "tmpfs" {
+	case unix.CGROUP_SUPER_MAGIC /* 0x27e0eb */, unix.TMPFS_MAGIC /* 0x01021994 */ :
 		return "1", nil
-	} else {
-		return "", status.InternalErrorf("No cgroup version found (system reported %s)", v)
+	default:
+		return "", status.InternalErrorf("No cgroup version found (system reported unsupported filesystem magic 0x%x)", stat.Type)
 	}
 }
 
