@@ -6,9 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -47,8 +45,10 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 			return err
 		}
 		ip := net.ParseIP(host)
-		if ipAllowed(ip, allowed) {
-			return nil
+		for _, ipNet := range allowed {
+			if ipNet.Contains(ip) {
+				return nil
+			}
 		}
 		if (!ip.IsGlobalUnicast() || ip.IsPrivate()) && !(ip.IsLoopback() && *allowLocalhost) {
 			log.Infof("Dialer control blocked address %s", address)
@@ -58,18 +58,9 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 	}
 }
 
-func ipAllowed(ip net.IP, allowed []*net.IPNet) bool {
-	for _, ipNet := range allowed {
-		if ipNet.Contains(ip) {
-			return true
-		}
-	}
-	return false
-}
-
-// FollowRedirectsToAllowedIPs wraps inner so that it follows GET and HEAD
-// redirects to private IP literals in allowed. ggcr rejects those itself;
-// everything else is handed back unfollowed for ggcr's own redirect policy.
+// FollowRedirectsToAllowedIPs wraps inner so that it follows redirects to IP
+// literals in allowed, which ggcr's own SSRF check would refuse. Other
+// redirects are returned unfollowed. With no allowlist it returns inner.
 func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) http.RoundTripper {
 	if len(allowed) == 0 {
 		return inner
@@ -80,42 +71,16 @@ func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) 
 			if len(via) >= 10 {
 				return errors.New("stopped after 10 redirects")
 			}
-			// A 307/308 would re-send the body, e.g. a token POST with a password
-			// or refresh_token, which ggcr's realmRedirectCheck refuses to forward.
-			if via[0].Method != http.MethodGet && via[0].Method != http.MethodHead {
-				return http.ErrUseLastResponse
+			if ip := net.ParseIP(req.URL.Hostname()); ip != nil {
+				for _, ipNet := range allowed {
+					if ipNet.Contains(ip) {
+						return nil
+					}
+				}
 			}
-			// Deliberate: ggcr refuses a token endpoint downgraded to http, so https
-			// registries that redirect to plain-http storage on an allowlisted IP are
-			// not supported.
-			if via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
-				return http.ErrUseLastResponse
-			}
-			// ggcr allows same-hostname redirects itself and handles their bearer
-			// challenges per host, so leave those for it, as on master.
-			if strings.EqualFold(req.URL.Hostname(), via[0].URL.Hostname()) {
-				return http.ErrUseLastResponse
-			}
-			// Public IPs go back to ggcr, which allows them and does its per-host
-			// token exchange.
-			ip := net.ParseIP(req.URL.Hostname())
-			if !isPrivateIP(ip) || !ipAllowed(ip, allowed) {
-				return http.ErrUseLastResponse
-			}
-			// Go already drops these on a hostname change, and every hop followed
-			// here changes hostname; delete them anyway as defense in depth.
-			for _, h := range []string{"Authorization", "Cookie", "Cookie2"} {
-				req.Header.Del(h)
-			}
-			return nil
+			return http.ErrUseLastResponse
 		},
 	}}
-}
-
-// isPrivateIP matches the addresses ggcr's checkRedirectSSRF refuses to redirect to.
-func isPrivateIP(ip net.IP) bool {
-	return ip != nil && (ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsPrivate() || ip.IsUnspecified())
 }
 
 type allowedIPRedirectTransport struct {
@@ -125,26 +90,12 @@ type allowedIPRedirectTransport struct {
 func (t *allowedIPRedirectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.client.Do(req)
 	if err != nil {
-		if urlErr, ok := err.(*url.Error); ok {
-			return nil, urlErr.Err
-		}
 		return nil, err
 	}
-	// ggcr's bearer transport only sees the original request, so it would treat a
-	// 401 challenge from a hop we followed (e.g. blob storage) as coming from the
-	// registry and add that host's scope to the registry token for good. That
-	// only happens for requests the bearer transport already authorized, so strip
-	// the challenge from those and let ggcr see a plain 401. ggcr's /v2/ ping is
-	// unauthenticated and needs the challenge to learn the token realm. Followed
-	// hops always change hostname, so a different hostname means we followed one.
-	followed := resp.Request != nil && !strings.EqualFold(resp.Request.URL.Hostname(), req.URL.Hostname())
-	if followed && resp.StatusCode == http.StatusUnauthorized && req.Header.Get("Authorization") != "" {
-		resp.Header.Del("WWW-Authenticate")
-	}
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		if loc, err := resp.Location(); err == nil {
-			resp.Header.Set("Location", loc.String())
-		}
+	// After a followed hop, a relative Location must resolve against that hop,
+	// not against the URL the caller requested.
+	if loc, err := resp.Location(); err == nil {
+		resp.Header.Set("Location", loc.String())
 	}
 	return resp, nil
 }

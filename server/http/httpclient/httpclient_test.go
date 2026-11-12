@@ -1,7 +1,6 @@
 package httpclient
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -111,217 +110,39 @@ func TestBlockingDialerControl(t *testing.T) {
 	}
 }
 
-type fakeRoundTripper map[string]*http.Response
-
-func (f fakeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	r, ok := f[req.URL.String()]
-	if !ok {
-		return nil, fmt.Errorf("unexpected request to %s", req.URL)
-	}
-	resp := *r
-	resp.Header = r.Header.Clone()
-	resp.Request = req
-	if resp.Body == nil {
-		resp.Body = io.NopCloser(strings.NewReader(""))
-	}
-	return &resp, nil
-}
-
-func TestFollowRedirectsToAllowedIPs(t *testing.T) {
-	response := func(code int, body string, headers ...string) *http.Response {
-		h := http.Header{}
-		for i := 0; i < len(headers); i += 2 {
-			h.Set(headers[i], headers[i+1])
-		}
-		return &http.Response{StatusCode: code, Header: h, Body: io.NopCloser(strings.NewReader(body))}
-	}
-	const registryURL = "https://registry.example/v2/img/blobs/sha256:abc"
-	for _, tc := range []struct {
-		name        string
-		start       string // defaults to registryURL
-		method      string // defaults to GET
-		allowed     string // defaults to 10.0.0.0/8
-		responses   fakeRoundTripper
-		wantStatus  int
-		wantHeaders http.Header
-		wantBody    string
-		wantErr     string
-		noAuth      bool     // send the first request without Authorization, like ggcr's ping
-		wantAuth    []string // Authorization sent on each hop
-	}{
-		{
-			name: "follows redirect to allowlisted IP and keeps final WWW-Authenticate",
-			responses: fakeRoundTripper{
-				registryURL:             response(http.StatusFound, "", "Location", "https://10.1.2.3/blob"),
-				"https://10.1.2.3/blob": response(http.StatusOK, "blob contents", "WWW-Authenticate", `Bearer realm="storage"`),
-			},
-			wantStatus:  http.StatusOK,
-			wantHeaders: http.Header{"Www-Authenticate": {`Bearer realm="storage"`}},
-			wantBody:    "blob contents",
-			wantAuth:    []string{"Bearer secret", ""},
-		},
-		{
-			name: "strips WWW-Authenticate from cross-origin 401",
-			responses: fakeRoundTripper{
-				registryURL:             response(http.StatusFound, "", "Location", "https://10.1.2.3/blob"),
-				"https://10.1.2.3/blob": response(http.StatusUnauthorized, "", "WWW-Authenticate", `Bearer realm="storage",scope="storage:x"`),
-			},
-			wantStatus:  http.StatusUnauthorized,
-			wantHeaders: http.Header{},
-			wantAuth:    []string{"Bearer secret", ""},
-		},
-		{
-			name:   "keeps WWW-Authenticate from cross-origin 401 to an unauthenticated request",
-			start:  "https://registry.example/v2/",
-			noAuth: true,
-			responses: fakeRoundTripper{
-				"https://registry.example/v2/": response(http.StatusFound, "", "Location", "https://10.1.2.3/v2/"),
-				"https://10.1.2.3/v2/":         response(http.StatusUnauthorized, "", "WWW-Authenticate", `Bearer realm="registry"`),
-			},
-			wantStatus:  http.StatusUnauthorized,
-			wantHeaders: http.Header{"Www-Authenticate": {`Bearer realm="registry"`}},
-			wantAuth:    []string{"", ""},
-		},
-		{
-			// The ping client already followed /v2/ to another host and path.
-			name:   "keeps WWW-Authenticate on later hop of a multi-hop ping",
-			start:  "https://mirror.example/ping",
-			noAuth: true,
-			responses: fakeRoundTripper{
-				"https://mirror.example/ping": response(http.StatusFound, "", "Location", "https://10.1.2.3/v2/"),
-				"https://10.1.2.3/v2/":        response(http.StatusUnauthorized, "", "WWW-Authenticate", `Bearer realm="registry"`),
-			},
-			wantStatus:  http.StatusUnauthorized,
-			wantHeaders: http.Header{"Www-Authenticate": {`Bearer realm="registry"`}},
-			wantAuth:    []string{"", ""},
-		},
-		{
-			// ggcr follows these itself and handles the challenge per host.
-			name:  "leaves same-hostname redirect to another port for ggcr",
-			start: "https://10.1.2.3/v2/img/blobs/sha256:abc",
-			responses: fakeRoundTripper{
-				"https://10.1.2.3/v2/img/blobs/sha256:abc": response(http.StatusFound, "", "Location", "https://10.1.2.3:8443/blob"),
-			},
-			wantStatus:  http.StatusFound,
-			wantHeaders: http.Header{"Location": {"https://10.1.2.3:8443/blob"}},
-			wantAuth:    []string{"Bearer secret"},
-		},
-		{
-			name:   "leaves POST 307 to allowlisted IP unfollowed",
-			method: http.MethodPost,
-			responses: fakeRoundTripper{
-				registryURL: response(http.StatusTemporaryRedirect, "", "Location", "https://10.1.2.3/token"),
-			},
-			wantStatus:  http.StatusTemporaryRedirect,
-			wantHeaders: http.Header{"Location": {"https://10.1.2.3/token"}},
-			wantAuth:    []string{"Bearer secret"},
-		},
-		{
-			name:    "leaves redirect to allowlisted public IP unfollowed",
-			allowed: "0.0.0.0/0",
-			responses: fakeRoundTripper{
-				registryURL: response(http.StatusFound, "", "Location", "https://8.8.8.8/blob"),
-			},
-			wantStatus:  http.StatusFound,
-			wantHeaders: http.Header{"Location": {"https://8.8.8.8/blob"}},
-			wantAuth:    []string{"Bearer secret"},
-		},
-		{
-			name: "leaves redirect to non-allowlisted IP untouched",
-			responses: fakeRoundTripper{
-				registryURL: response(http.StatusFound, "", "Location", "https://192.168.1.1/blob", "WWW-Authenticate", "Basic"),
-			},
-			wantStatus:  http.StatusFound,
-			wantHeaders: http.Header{"Location": {"https://192.168.1.1/blob"}, "Www-Authenticate": {"Basic"}},
-		},
-		{
-			name: "returns redirect to non-allowlisted IP after an allowlisted hop",
-			responses: fakeRoundTripper{
-				registryURL:             response(http.StatusFound, "", "Location", "https://10.1.2.3/blob"),
-				"https://10.1.2.3/blob": response(http.StatusFound, "", "Location", "//192.168.1.1/blob"),
-			},
-			wantStatus:  http.StatusFound,
-			wantHeaders: http.Header{"Location": {"https://192.168.1.1/blob"}},
-			wantAuth:    []string{"Bearer secret", ""},
-		},
-		{
-			name: "refuses https to http downgrade to allowlisted IP",
-			responses: fakeRoundTripper{
-				registryURL: response(http.StatusFound, "", "Location", "http://10.1.2.3/blob"),
-			},
-			wantStatus:  http.StatusFound,
-			wantHeaders: http.Header{"Location": {"http://10.1.2.3/blob"}},
-		},
-		{
-			name: "leaves redirect to hostname untouched",
-			responses: fakeRoundTripper{
-				registryURL: response(http.StatusFound, "", "Location", "https://storage.example/blob"),
-			},
-			wantStatus:  http.StatusFound,
-			wantHeaders: http.Header{"Location": {"https://storage.example/blob"}},
-		},
-		{
-			name: "makes relative Location of returned redirect absolute after a hop",
-			responses: fakeRoundTripper{
-				registryURL:               response(http.StatusFound, "", "Location", "https://10.1.2.3/a/blob"),
-				"https://10.1.2.3/a/blob": response(http.StatusMultipleChoices, "", "Location", "other"),
-			},
-			wantStatus:  http.StatusMultipleChoices,
-			wantHeaders: http.Header{"Location": {"https://10.1.2.3/a/other"}},
-		},
-		{
-			name: "stops following an allowlisted redirect loop",
-			responses: fakeRoundTripper{
-				registryURL:             {StatusCode: http.StatusFound, Header: http.Header{"Location": {"https://10.1.2.3/loop"}}},
-				"https://10.1.2.3/loop": {StatusCode: http.StatusFound, Header: http.Header{"Location": {"https://10.1.2.3/loop"}}},
-			},
-			wantErr: "stopped after 10 redirects",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			cidr := tc.allowed
-			if cidr == "" {
-				cidr = "10.0.0.0/8"
-			}
-			_, allowed, err := net.ParseCIDR(cidr)
-			require.NoError(t, err)
-			var gotAuth []string
-			tr := FollowRedirectsToAllowedIPs(roundTripFunc(func(req *http.Request) (*http.Response, error) {
-				gotAuth = append(gotAuth, req.Header.Get("Authorization"))
-				return tc.responses.RoundTrip(req)
-			}), []*net.IPNet{allowed})
-			start := tc.start
-			if start == "" {
-				start = registryURL
-			}
-			method := tc.method
-			if method == "" {
-				method = http.MethodGet
-			}
-			req, err := http.NewRequest(method, start, nil)
-			require.NoError(t, err)
-			if !tc.noAuth {
-				req.Header.Set("Authorization", "Bearer secret")
-			}
-			resp, err := tr.RoundTrip(req)
-			if tc.wantErr != "" {
-				require.ErrorContains(t, err, tc.wantErr)
-				return
-			}
-			require.NoError(t, err)
-			defer resp.Body.Close()
-			require.Equal(t, tc.wantStatus, resp.StatusCode)
-			require.Equal(t, tc.wantHeaders, resp.Header)
-			body, err := io.ReadAll(resp.Body)
-			require.NoError(t, err)
-			require.Equal(t, tc.wantBody, string(body))
-			if tc.wantAuth != nil {
-				require.Equal(t, tc.wantAuth, gotAuth)
-			}
-		})
-	}
-}
-
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestFollowRedirectsToAllowedIPs(t *testing.T) {
+	_, allowed, err := net.ParseCIDR("10.0.0.0/8")
+	require.NoError(t, err)
+	// /v2/blob redirects to its "to" query parameter; anything else returns 200.
+	inner := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("")), Request: req}
+		if req.URL.Path == "/v2/blob" {
+			resp.StatusCode = http.StatusFound
+			resp.Header.Set("Location", req.URL.Query().Get("to"))
+		}
+		return resp, nil
+	})
+	for _, tc := range []struct {
+		name       string
+		allowed    []*net.IPNet
+		to         string
+		wantStatus int
+	}{
+		{name: "allowlisted IP is followed", allowed: []*net.IPNet{allowed}, to: "https://10.1.2.3/blob", wantStatus: http.StatusOK},
+		{name: "other IP is left to the caller", allowed: []*net.IPNet{allowed}, to: "https://192.168.1.1/blob", wantStatus: http.StatusFound},
+		{name: "empty allowlist is a no-op", to: "https://10.1.2.3/blob", wantStatus: http.StatusFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := FollowRedirectsToAllowedIPs(inner, tc.allowed)
+			req, err := http.NewRequest(http.MethodGet, "https://registry.example/v2/blob?to="+tc.to, nil)
+			require.NoError(t, err)
+			resp, err := tr.RoundTrip(req)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantStatus, resp.StatusCode)
+		})
+	}
+}

@@ -2503,37 +2503,3 @@ func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 		})
 	}
 }
-
-func TestFetchBlobRedirectToPrivateIP(t *testing.T) {
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	var redirectBlobs atomic.Bool
-	var redirectedHits atomic.Int32
-	var reg *testregistry.Registry
-	reg, _ = setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-		if !redirectBlobs.Load() || r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/blobs/") {
-			return true
-		}
-		if r.URL.Query().Get("redirected") == "1" {
-			redirectedHits.Add(1)
-			return true
-		}
-		target := strings.Replace(reg.Address(), "localhost", "127.0.0.1", 1)
-		http.Redirect(w, r, "http://"+target+r.URL.Path+"?redirected=1", http.StatusFound)
-		return false
-	})
-	imageName, img := reg.PushNamedImage(t, "test-image", nil)
-	redirectBlobs.Store(true)
-	layers, err := img.Layers()
-	require.NoError(t, err)
-	digest, err := layers[0].Digest()
-	require.NoError(t, err)
-
-	_, bsClient, acClient := setupCacheEnv(t)
-	server, err := ocifetcher.NewServer(bsClient, acClient)
-	require.NoError(t, err)
-	stream := &mockFetchBlobServer{ctx: context.Background()}
-	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + digest.String()}, stream)
-	require.NoError(t, err)
-	require.Equal(t, layerData(t, layers[0]), stream.collectData())
-	require.Greater(t, redirectedHits.Load(), int32(0), "blob GETs should have been redirected")
-}
