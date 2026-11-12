@@ -27,6 +27,7 @@ go_library(
         "//platforms/configs:linux_arm64": [
             "//enterprise/vmsupport/bin:initrd.cpio",
             "//enterprise/vmsupport/bin:vmlinux",
+            "//enterprise/vmsupport/bin:vmlinux_6.18",
         ],
     }),
     embedsrcs = ["guest_api_hash.sha256"],
@@ -43,6 +44,7 @@ go_library(
         "//platforms/configs:linux_arm64": {
             "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
             "vmlinuxRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux)",
+            "vmlinux6_18RunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux_6.18)",
         },
     }),
     deps = [

@@ -21,6 +21,7 @@ go_library(
         "//platforms/configs:linux_arm64": [
             "//enterprise/vmsupport/bin:initrd.cpio",
             "//enterprise/vmsupport/bin:vmlinux",
+            "//enterprise/vmsupport/bin:vmlinux_6.18",
         ],
         "//conditions:default": [
             ":empty",  # embed fails with no embedsrcs

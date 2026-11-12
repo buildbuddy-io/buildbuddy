@@ -35,8 +35,7 @@ if [[ -n "${KERNEL_VERSION:-}" ]]; then
 elif [[ "$ARCH" == "x86_64" ]]; then
   VERSION=v6.18
 elif [[ "$ARCH" == "aarch64" ]]; then
-  # TODO: update arm64 to v6.18 as well
-  VERSION=v5.10
+  VERSION=v6.18
 else
   echo >&2 "Unsupported architecture: $ARCH"
   exit 1

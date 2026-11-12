@@ -107,6 +107,8 @@ func depsRepoName(arch, version string) (string, error) {
 		return "org_kernel_git_linux_kernel-vmlinux-6.18", nil
 	case arch == "aarch64" && version == "v5.10":
 		return "org_kernel_git_linux_kernel-vmlinux-arm64", nil
+	case arch == "aarch64" && version == "v6.18":
+		return "org_kernel_git_linux_kernel-vmlinux-arm64-6.18", nil
 	default:
 		return "", fmt.Errorf("unsupported kernel target arch=%q version=%q", arch, version)
 	}
