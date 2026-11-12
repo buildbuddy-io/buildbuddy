@@ -39,6 +39,7 @@ go_library(
         "//server/util/log",
         "//server/util/platform",
         "//server/util/redact",
+        "//server/util/shlex",
         "//server/util/status",
         "//server/util/usageutil",
         "@com_github_creack_pty//:pty",
@@ -82,6 +83,7 @@ go_test(
     srcs = ["main_test.go"],
     embed = [":ci_runner_lib"],
     deps = [
+        "//enterprise/server/util/ci_runner_env",
         "//enterprise/server/workflow/config",
         "//server/testutil/testgit",
         "//server/testutil/testshell",

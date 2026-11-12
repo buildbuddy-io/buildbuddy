@@ -1102,6 +1102,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		{Name: ci_runner_env.BuildBuddyActionNameEnvVarName, Value: workflowAction.Name},
 		{Name: ci_runner_env.BuildBuddyTriggerEventEnvVarName, Value: wd.EventName},
 	}
+	envVars = append(envVars, ci_runner_util.ExtraEnvVars(ctx, experiments.WithContext("workflow_action_name", workflowAction.Name))...)
 	for k, v := range workflowAction.Env {
 		envVars = append(envVars, &repb.Command_EnvironmentVariable{
 			Name:  k,

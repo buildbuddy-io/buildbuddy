@@ -243,3 +243,19 @@ func TestGitFetchLowSpeedRetryFlags(t *testing.T) {
 		})
 	}
 }
+
+func TestExtraEnvVars(t *testing.T) {
+	ctx := context.Background()
+	require.Empty(t, ExtraEnvVars(ctx))
+
+	flags.Set(t, "remote_execution.ci_runner_extra_env", map[string]any{
+		ci_runner_env.EmbedRepoTokenInRemoteURLEnvVarName: "1",
+		"A_FIRST":      "1",
+		"NOT_A_STRING": true,
+	})
+	// Env vars should be sorted by name, and non-string values ignored.
+	require.Equal(t, []*repb.Command_EnvironmentVariable{
+		{Name: "A_FIRST", Value: "1"},
+		{Name: ci_runner_env.EmbedRepoTokenInRemoteURLEnvVarName, Value: "1"},
+	}, ExtraEnvVars(ctx))
+}
