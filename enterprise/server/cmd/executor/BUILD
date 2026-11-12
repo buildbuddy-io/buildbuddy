@@ -128,8 +128,7 @@ go_binary(
         "--max_shutdown_duration=3s",
     ],
     data = [
-        ":config_files",
-        ":licenses",
+        "//enterprise:licenses",
     ],
     embed = [":executor_lib"],
 )
@@ -407,23 +406,6 @@ container_image(
     tags = ["manual"],
 )
 
-image_layer(
-    name = "binary_image_layer",
-    srcs = {EXECUTOR_PACKAGE_ROOT + "/" + BINARY_NAME: ":" + BINARY_NAME},
-    annotations = {
-        "org.opencontainers.image.title": "Enterprise BuildBuddy Executor",
-        "org.opencontainers.image.description": (
-            "Contains the enterprise BuildBuddy executor binary."
-        ),
-        "org.opencontainers.image.vendor": "BuildBuddy",
-    },
-    # Do not include runfiles so that we can separate configuration files out
-    # into a separate layer. This lets us use a base image without those files
-    # when building our production images.
-    include_runfiles = False,
-    tags = ["manual"],
-)
-
 [
     flatten(
         name = "apt_tar_%s" % arch,
@@ -641,6 +623,24 @@ layer_from_tar(
     optimize = True,
     tags = ["manual"],
 )
+
+image_layer(
+    name = "binary_image_layer",
+    srcs = {EXECUTOR_PACKAGE_ROOT + "/" + BINARY_NAME: ":" + BINARY_NAME},
+    annotations = {
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Executor",
+        "org.opencontainers.image.description": (
+            "Contains the enterprise BuildBuddy executor binary."
+        ),
+        "org.opencontainers.image.vendor": "BuildBuddy",
+    },
+    # Do not include runfiles so that we can separate configuration files out
+    # into a separate layer. This lets us use a base image without those files
+    # when building our production images.
+    include_runfiles = True,
+    tags = ["manual"],
+)
+
 
 pkg_tar(
     name = "licenses_tar",
