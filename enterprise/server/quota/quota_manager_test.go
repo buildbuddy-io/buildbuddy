@@ -129,7 +129,8 @@ func TestQuotaFlagdBuckets(t *testing.T) {
 	}
 	assert.Error(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
 
-	bucket := qm.findBucket("rpc:/google.bytestream.ByteStream/Read", "GR001")
+	bucket, err := qm.getBucket(ctx, "GR001", "rpc:/google.bytestream.ByteStream/Read")
+	require.NoError(t, err)
 	require.NotNil(t, bucket)
 	config := bucket.Config()
 	assert.Equal(t, "rpc:/google.bytestream.ByteStream/Read", config.namespace)
@@ -188,9 +189,8 @@ func TestLoadQuotasFromFlagd(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("insert new bucket for first time", func(t *testing.T) {
-		require.NoError(t, qm.loadQuotasFromFlagd(ctx, "key1", "rpc:/namespace1"))
-
-		bucket := qm.findBucket("rpc:/namespace1", "key1")
+		bucket, err := qm.getBucket(ctx, "key1", "rpc:/namespace1")
+		require.NoError(t, err)
 		require.NotNil(t, bucket)
 		config := bucket.Config()
 		assert.Equal(t, "rpc:/namespace1", config.namespace)
@@ -199,39 +199,48 @@ func TestLoadQuotasFromFlagd(t *testing.T) {
 		assert.Equal(t, int64(5), config.maxBurst)
 	})
 
-	t.Run("skip loading if b	ucket already exists", func(t *testing.T) {
-		require.NoError(t, qm.loadQuotasFromFlagd(ctx, "key1", "rpc:/namespace1"))
-
-		originalBucket := qm.findBucket("rpc:/namespace1", "key1")
+	t.Run("skip loading if bucket already exists", func(t *testing.T) {
+		originalBucket, err := qm.getBucket(ctx, "key1", "rpc:/namespace1")
+		require.NoError(t, err)
 		require.NotNil(t, originalBucket)
 
-		require.NoError(t, qm.loadQuotasFromFlagd(ctx, "key1", "rpc:/namespace1"))
-
-		bucket := qm.findBucket("rpc:/namespace1", "key1")
-		assert.Equal(t, originalBucket, bucket)
+		bucket, err := qm.getBucket(ctx, "key1", "rpc:/namespace1")
+		require.NoError(t, err)
+		assert.Same(t, originalBucket, bucket)
 	})
 
 	t.Run("add new bucket to existing namespace without removing others", func(t *testing.T) {
-		require.NoError(t, qm.loadQuotasFromFlagd(ctx, "key1", "rpc:/namespace1"))
-		require.NoError(t, qm.loadQuotasFromFlagd(ctx, "key2", "rpc:/namespace1"))
-
-		bucket1 := qm.findBucket("rpc:/namespace1", "key1")
-		require.NotNil(t, bucket1, "original bucket should still exist")
-
-		bucket2 := qm.findBucket("rpc:/namespace1", "key2")
+		bucket1, err := qm.getBucket(ctx, "key1", "rpc:/namespace1")
+		require.NoError(t, err)
+		bucket2, err := qm.getBucket(ctx, "key2", "rpc:/namespace1")
+		require.NoError(t, err)
 		require.NotNil(t, bucket2, "new bucket should exist")
+
+		bucket1Again, err := qm.getBucket(ctx, "key1", "rpc:/namespace1")
+		require.NoError(t, err)
+		assert.Same(t, bucket1, bucket1Again, "original bucket should still exist")
 
 		assert.Equal(t, bucket1.Config().namespace, bucket2.Config().namespace)
 	})
 
+	t.Run("namespace without quota is cached", func(t *testing.T) {
+		bucket, err := qm.getBucket(ctx, "key1", "rpc:/unknown")
+		require.NoError(t, err)
+		assert.Nil(t, bucket)
+		_, ok := qm.buckets.Load().Load(bucketKey{namespace: "rpc:/unknown", key: "key1"})
+		assert.True(t, ok)
+
+		qm.reloadNamespaces()
+		_, ok = qm.buckets.Load().Load(bucketKey{namespace: "rpc:/unknown", key: "key1"})
+		assert.False(t, ok)
+	})
+
 	t.Run("different namespaces are independent", func(t *testing.T) {
-		require.NoError(t, qm.loadQuotasFromFlagd(ctx, "key1", "rpc:/namespace1"))
-		require.NoError(t, qm.loadQuotasFromFlagd(ctx, "key1", "rpc:/namespace2"))
-
-		ns1Bucket := qm.findBucket("rpc:/namespace1", "key1")
-		ns2Bucket := qm.findBucket("rpc:/namespace2", "key1")
-
+		ns1Bucket, err := qm.getBucket(ctx, "key1", "rpc:/namespace1")
+		require.NoError(t, err)
 		require.NotNil(t, ns1Bucket)
+		ns2Bucket, err := qm.getBucket(ctx, "key1", "rpc:/namespace2")
+		require.NoError(t, err)
 		require.NotNil(t, ns2Bucket)
 
 		ns1Config := ns1Bucket.Config()
@@ -369,8 +378,7 @@ func TestConcurrentBucketAccess(t *testing.T) {
 			defer func() { done <- true }()
 			key := fmt.Sprintf("key%d", keyID)
 			for range numIterations {
-				qm.loadQuotasFromFlagd(ctx, key, "rpc:/test.Service/Method")
-				qm.findBucket("rpc:/test.Service/Method", key)
+				qm.getBucket(ctx, key, "rpc:/test.Service/Method")
 			}
 		}()
 	}
@@ -428,4 +436,60 @@ func TestCreateGCRABucket_VeryLargePeriod(t *testing.T) {
 	// make sure this doesn't panic
 	_, err := createGCRABucket(env, overflowConfig)
 	require.ErrorContains(t, err, "unable to create GCRARateLimiter: invalid RateQuota throttled.RateQuota")
+}
+
+func BenchmarkAllow(b *testing.B) {
+	flags.Set(b, "app.enable_quota_management", true)
+	env := testenv.GetTestEnv(b)
+	env.SetDefaultRedisClient(testredis.Start(b).Client())
+	testUsers := testauth.TestUsers("US001", "GR001")
+	env.SetAuthenticator(testauth.NewTestAuthenticator(b, testUsers))
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testUsers["US001"])
+
+	// The limit is high enough that the benchmark never gets rate limited.
+	flags := map[string]memprovider.InMemoryFlag{
+		bucketQuotaExperimentName: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "custom",
+			Variants: map[string]any{
+				"custom": map[string]any{
+					"rpc:/limited": map[string]any{
+						"maxRate": map[string]any{
+							"numRequests": int64(1e9),
+							"periodUsec":  int64(1e6),
+						},
+						"maxBurst": int64(1e9),
+					},
+				},
+			},
+		},
+	}
+	domain := b.Name()
+	require.NoError(b, openfeature.SetNamedProviderAndWait(domain, memprovider.NewInMemoryProvider(flags)))
+	fp, err := experiments.NewFlagProvider(domain)
+	require.NoError(b, err)
+	env.SetExperimentFlagProvider(fp)
+
+	for _, tc := range []struct {
+		name    string
+		factory bucketFactory
+		ns      string
+	}{
+		{"fake/limited", createTestBucket, "rpc:/limited"},
+		{"fake/unlimited", createTestBucket, "rpc:/unlimited"},
+		{"redis/limited", createGCRABucket, "rpc:/limited"},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			qm, err := newQuotaManager(env, tc.factory)
+			require.NoError(b, err)
+			b.ReportAllocs()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					if err := qm.Allow(ctx, tc.ns, 1); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		})
+	}
 }
