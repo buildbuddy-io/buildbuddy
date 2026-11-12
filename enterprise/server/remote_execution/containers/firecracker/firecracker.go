@@ -312,11 +312,8 @@ func openFile(ctx context.Context, fsys fs.FS, fileName string) (io.ReadCloser, 
 	return fsys.Open(fileName)
 }
 
-// Returns the cgroup version available on this machine, which is returned from
-//
-//	stat -fc %T /sys/fs/cgroup/
-//
-// and should be either 'cgroup2fs' (version 2) or 'tmpfs' (version 1)
+// Returns the cgroup version available on this machine, which is determined by
+// reading the filesystem type of /sys/fs/cgroup/.
 //
 // More info here: https://kubernetes.io/docs/concepts/architecture/cgroups/
 // TODO(iain): preemptively get this in a provider a la Provider in podman.go.
