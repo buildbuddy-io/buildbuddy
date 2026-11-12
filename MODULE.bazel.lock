@@ -713,7 +713,7 @@
     "@@rules_distroless+//apt:extensions.bzl%apt": {
       "general": {
         "bzlTransitiveDigest": "rLRbp6FFi/KpUYjtiAunuM7MJmPWnbn+TeRDdIcKSu8=",
-        "usagesDigest": "4KLZT+l+/2RiWtLpsDSWLRd9hfohom+4L0Kg3XbLWYs=",
+        "usagesDigest": "OZMLgM/Tt4HGHA+9VDCgDVJHkNiMS5rY1Wp7+yWxWJ0=",
         "recordedInputs": [
           "REPO_MAPPING:rules_distroless+,bazel_lib bazel_lib+",
           "REPO_MAPPING:rules_distroless+,bazel_skylib bazel_skylib+",
@@ -12400,356 +12400,6 @@
               "package_name": "containerd.io"
             }
           },
-          "trixie_dash-arm64_0.5.12-12_filemap": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
-            "attributes": {
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/dash/dash_0.5.12-12_arm64.deb"
-              ],
-              "sha256": "ce4c8688a1a3ea510186ba95aba74d4c49863094e47e1effc0b602839e840c04"
-            }
-          },
-          "trixie_dash-arm64_0.5.12-12": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
-            "attributes": {
-              "target_name": "trixie_dash-arm64_0.5.12-12",
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/dash/dash_0.5.12-12_arm64.deb"
-              ],
-              "sha256": "ce4c8688a1a3ea510186ba95aba74d4c49863094e47e1effc0b602839e840c04",
-              "mergedusr": true,
-              "depends_on": [
-                "/trixie/debianutils:arm64=5.23.2",
-                "/trixie/libc6:arm64=2.41-12+deb13u4",
-                "/trixie/libgcc-s1:arm64=14.2.0-19",
-                "/trixie/gcc-14-base:arm64=14.2.0-19"
-              ],
-              "dep_filemaps": [
-                "@@rules_distroless++apt+trixie_debianutils-arm64_5.23.2_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libc6-arm64_2.41-12-deb13u4_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libgcc-s1-arm64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_gcc-14-base-arm64_14.2.0-19_filemap//:filemap.json"
-              ],
-              "package_name": "dash"
-            }
-          },
-          "trixie_dash-arm64_0.5.12-12_mergedusr": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
-            "attributes": {
-              "target_name": "trixie_dash-arm64_0.5.12-12_mergedusr",
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/dash/dash_0.5.12-12_arm64.deb"
-              ],
-              "sha256": "ce4c8688a1a3ea510186ba95aba74d4c49863094e47e1effc0b602839e840c04",
-              "mergedusr": true,
-              "depends_on": [
-                "/trixie/debianutils:arm64=5.23.2",
-                "/trixie/libc6:arm64=2.41-12+deb13u4",
-                "/trixie/libgcc-s1:arm64=14.2.0-19",
-                "/trixie/gcc-14-base:arm64=14.2.0-19"
-              ],
-              "dep_filemaps": [
-                "@@rules_distroless++apt+trixie_debianutils-arm64_5.23.2_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libc6-arm64_2.41-12-deb13u4_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libgcc-s1-arm64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_gcc-14-base-arm64_14.2.0-19_filemap//:filemap.json"
-              ],
-              "package_name": "dash"
-            }
-          },
-          "trixie_debianutils-arm64_5.23.2_filemap": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
-            "attributes": {
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/debianutils/debianutils_5.23.2_arm64.deb"
-              ],
-              "sha256": "662d59d9cd0d46f0250ddcd997353be915fbc6be692d7c676c73dc33c90715e8"
-            }
-          },
-          "trixie_debianutils-arm64_5.23.2": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
-            "attributes": {
-              "target_name": "trixie_debianutils-arm64_5.23.2",
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/debianutils/debianutils_5.23.2_arm64.deb"
-              ],
-              "sha256": "662d59d9cd0d46f0250ddcd997353be915fbc6be692d7c676c73dc33c90715e8",
-              "mergedusr": true,
-              "depends_on": [
-                "/trixie/libc6:arm64=2.41-12+deb13u4",
-                "/trixie/libgcc-s1:arm64=14.2.0-19",
-                "/trixie/gcc-14-base:arm64=14.2.0-19"
-              ],
-              "dep_filemaps": [
-                "@@rules_distroless++apt+trixie_libc6-arm64_2.41-12-deb13u4_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libgcc-s1-arm64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_gcc-14-base-arm64_14.2.0-19_filemap//:filemap.json"
-              ],
-              "package_name": "debianutils"
-            }
-          },
-          "trixie_debianutils-arm64_5.23.2_mergedusr": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
-            "attributes": {
-              "target_name": "trixie_debianutils-arm64_5.23.2_mergedusr",
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/debianutils/debianutils_5.23.2_arm64.deb"
-              ],
-              "sha256": "662d59d9cd0d46f0250ddcd997353be915fbc6be692d7c676c73dc33c90715e8",
-              "mergedusr": true,
-              "depends_on": [
-                "/trixie/libc6:arm64=2.41-12+deb13u4",
-                "/trixie/libgcc-s1:arm64=14.2.0-19",
-                "/trixie/gcc-14-base:arm64=14.2.0-19"
-              ],
-              "dep_filemaps": [
-                "@@rules_distroless++apt+trixie_libc6-arm64_2.41-12-deb13u4_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libgcc-s1-arm64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_gcc-14-base-arm64_14.2.0-19_filemap//:filemap.json"
-              ],
-              "package_name": "debianutils"
-            }
-          },
-          "trixie_dash-amd64_0.5.12-12_filemap": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
-            "attributes": {
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/dash/dash_0.5.12-12_amd64.deb"
-              ],
-              "sha256": "a8902cb6d8650134764a25fb80aec8589d858ef71ece1680a62e84816c37bb04"
-            }
-          },
-          "trixie_dash-amd64_0.5.12-12": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
-            "attributes": {
-              "target_name": "trixie_dash-amd64_0.5.12-12",
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/dash/dash_0.5.12-12_amd64.deb"
-              ],
-              "sha256": "a8902cb6d8650134764a25fb80aec8589d858ef71ece1680a62e84816c37bb04",
-              "mergedusr": true,
-              "depends_on": [
-                "/trixie/debianutils:amd64=5.23.2",
-                "/trixie/libc6:amd64=2.41-12+deb13u4",
-                "/trixie/libgcc-s1:amd64=14.2.0-19",
-                "/trixie/gcc-14-base:amd64=14.2.0-19"
-              ],
-              "dep_filemaps": [
-                "@@rules_distroless++apt+trixie_debianutils-amd64_5.23.2_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libc6-amd64_2.41-12-deb13u4_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libgcc-s1-amd64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json"
-              ],
-              "package_name": "dash"
-            }
-          },
-          "trixie_dash-amd64_0.5.12-12_mergedusr": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
-            "attributes": {
-              "target_name": "trixie_dash-amd64_0.5.12-12_mergedusr",
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/dash/dash_0.5.12-12_amd64.deb"
-              ],
-              "sha256": "a8902cb6d8650134764a25fb80aec8589d858ef71ece1680a62e84816c37bb04",
-              "mergedusr": true,
-              "depends_on": [
-                "/trixie/debianutils:amd64=5.23.2",
-                "/trixie/libc6:amd64=2.41-12+deb13u4",
-                "/trixie/libgcc-s1:amd64=14.2.0-19",
-                "/trixie/gcc-14-base:amd64=14.2.0-19"
-              ],
-              "dep_filemaps": [
-                "@@rules_distroless++apt+trixie_debianutils-amd64_5.23.2_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libc6-amd64_2.41-12-deb13u4_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libgcc-s1-amd64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json"
-              ],
-              "package_name": "dash"
-            }
-          },
-          "trixie_debianutils-amd64_5.23.2_filemap": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
-            "attributes": {
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/debianutils/debianutils_5.23.2_amd64.deb"
-              ],
-              "sha256": "720e43fda316676076498b4224ad3318049deafe60cc7c601011048de03ee97d"
-            }
-          },
-          "trixie_debianutils-amd64_5.23.2": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
-            "attributes": {
-              "target_name": "trixie_debianutils-amd64_5.23.2",
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/debianutils/debianutils_5.23.2_amd64.deb"
-              ],
-              "sha256": "720e43fda316676076498b4224ad3318049deafe60cc7c601011048de03ee97d",
-              "mergedusr": true,
-              "depends_on": [
-                "/trixie/libc6:amd64=2.41-12+deb13u4",
-                "/trixie/libgcc-s1:amd64=14.2.0-19",
-                "/trixie/gcc-14-base:amd64=14.2.0-19"
-              ],
-              "dep_filemaps": [
-                "@@rules_distroless++apt+trixie_libc6-amd64_2.41-12-deb13u4_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libgcc-s1-amd64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json"
-              ],
-              "package_name": "debianutils"
-            }
-          },
-          "trixie_debianutils-amd64_5.23.2_mergedusr": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
-            "attributes": {
-              "target_name": "trixie_debianutils-amd64_5.23.2_mergedusr",
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/debianutils/debianutils_5.23.2_amd64.deb"
-              ],
-              "sha256": "720e43fda316676076498b4224ad3318049deafe60cc7c601011048de03ee97d",
-              "mergedusr": true,
-              "depends_on": [
-                "/trixie/libc6:amd64=2.41-12+deb13u4",
-                "/trixie/libgcc-s1:amd64=14.2.0-19",
-                "/trixie/gcc-14-base:amd64=14.2.0-19"
-              ],
-              "dep_filemaps": [
-                "@@rules_distroless++apt+trixie_libc6-amd64_2.41-12-deb13u4_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libgcc-s1-amd64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json"
-              ],
-              "package_name": "debianutils"
-            }
-          },
-          "trixie_tar-arm64_1.35-dfsg-3.1_filemap": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
-            "attributes": {
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/t/tar/tar_1.35+dfsg-3.1_arm64.deb"
-              ],
-              "sha256": "c460a8294202ca3802b7c703b0bd70dd8bda1f2fc8785839595cf9d5e060d71b"
-            }
-          },
-          "trixie_tar-arm64_1.35-dfsg-3.1": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
-            "attributes": {
-              "target_name": "trixie_tar-arm64_1.35-dfsg-3.1",
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/t/tar/tar_1.35+dfsg-3.1_arm64.deb"
-              ],
-              "sha256": "c460a8294202ca3802b7c703b0bd70dd8bda1f2fc8785839595cf9d5e060d71b",
-              "mergedusr": true,
-              "depends_on": [
-                "/trixie/libselinux1:arm64=3.8.1-1",
-                "/trixie-security/libpcre2-8-0:arm64=10.46-1~deb13u3",
-                "/trixie/libc6:arm64=2.41-12+deb13u4",
-                "/trixie/libgcc-s1:arm64=14.2.0-19",
-                "/trixie/gcc-14-base:arm64=14.2.0-19",
-                "/trixie/libacl1:arm64=2.3.2-2+b1"
-              ],
-              "dep_filemaps": [
-                "@@rules_distroless++apt+trixie_libselinux1-arm64_3.8.1-1_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie-security_libpcre2-8-0-arm64_10.46-1_deb13u3_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libc6-arm64_2.41-12-deb13u4_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libgcc-s1-arm64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_gcc-14-base-arm64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libacl1-arm64_2.3.2-2-b1_filemap//:filemap.json"
-              ],
-              "package_name": "tar"
-            }
-          },
-          "trixie_tar-arm64_1.35-dfsg-3.1_mergedusr": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
-            "attributes": {
-              "target_name": "trixie_tar-arm64_1.35-dfsg-3.1_mergedusr",
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/t/tar/tar_1.35+dfsg-3.1_arm64.deb"
-              ],
-              "sha256": "c460a8294202ca3802b7c703b0bd70dd8bda1f2fc8785839595cf9d5e060d71b",
-              "mergedusr": true,
-              "depends_on": [
-                "/trixie/libselinux1:arm64=3.8.1-1",
-                "/trixie-security/libpcre2-8-0:arm64=10.46-1~deb13u3",
-                "/trixie/libc6:arm64=2.41-12+deb13u4",
-                "/trixie/libgcc-s1:arm64=14.2.0-19",
-                "/trixie/gcc-14-base:arm64=14.2.0-19",
-                "/trixie/libacl1:arm64=2.3.2-2+b1"
-              ],
-              "dep_filemaps": [
-                "@@rules_distroless++apt+trixie_libselinux1-arm64_3.8.1-1_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie-security_libpcre2-8-0-arm64_10.46-1_deb13u3_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libc6-arm64_2.41-12-deb13u4_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libgcc-s1-arm64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_gcc-14-base-arm64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libacl1-arm64_2.3.2-2-b1_filemap//:filemap.json"
-              ],
-              "package_name": "tar"
-            }
-          },
-          "trixie_tar-amd64_1.35-dfsg-3.1_filemap": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
-            "attributes": {
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/t/tar/tar_1.35+dfsg-3.1_amd64.deb"
-              ],
-              "sha256": "214c02e1aa291076a3147b8a4c4cae02fadf4c67df629186e3e313726faef1de"
-            }
-          },
-          "trixie_tar-amd64_1.35-dfsg-3.1": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
-            "attributes": {
-              "target_name": "trixie_tar-amd64_1.35-dfsg-3.1",
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/t/tar/tar_1.35+dfsg-3.1_amd64.deb"
-              ],
-              "sha256": "214c02e1aa291076a3147b8a4c4cae02fadf4c67df629186e3e313726faef1de",
-              "mergedusr": true,
-              "depends_on": [
-                "/trixie/libselinux1:amd64=3.8.1-1",
-                "/trixie-security/libpcre2-8-0:amd64=10.46-1~deb13u3",
-                "/trixie/libc6:amd64=2.41-12+deb13u4",
-                "/trixie/libgcc-s1:amd64=14.2.0-19",
-                "/trixie/gcc-14-base:amd64=14.2.0-19",
-                "/trixie/libacl1:amd64=2.3.2-2+b1"
-              ],
-              "dep_filemaps": [
-                "@@rules_distroless++apt+trixie_libselinux1-amd64_3.8.1-1_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie-security_libpcre2-8-0-amd64_10.46-1_deb13u3_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libc6-amd64_2.41-12-deb13u4_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libgcc-s1-amd64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libacl1-amd64_2.3.2-2-b1_filemap//:filemap.json"
-              ],
-              "package_name": "tar"
-            }
-          },
-          "trixie_tar-amd64_1.35-dfsg-3.1_mergedusr": {
-            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
-            "attributes": {
-              "target_name": "trixie_tar-amd64_1.35-dfsg-3.1_mergedusr",
-              "urls": [
-                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/t/tar/tar_1.35+dfsg-3.1_amd64.deb"
-              ],
-              "sha256": "214c02e1aa291076a3147b8a4c4cae02fadf4c67df629186e3e313726faef1de",
-              "mergedusr": true,
-              "depends_on": [
-                "/trixie/libselinux1:amd64=3.8.1-1",
-                "/trixie-security/libpcre2-8-0:amd64=10.46-1~deb13u3",
-                "/trixie/libc6:amd64=2.41-12+deb13u4",
-                "/trixie/libgcc-s1:amd64=14.2.0-19",
-                "/trixie/gcc-14-base:amd64=14.2.0-19",
-                "/trixie/libacl1:amd64=2.3.2-2+b1"
-              ],
-              "dep_filemaps": [
-                "@@rules_distroless++apt+trixie_libselinux1-amd64_3.8.1-1_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie-security_libpcre2-8-0-amd64_10.46-1_deb13u3_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libc6-amd64_2.41-12-deb13u4_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libgcc-s1-amd64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json",
-                "@@rules_distroless++apt+trixie_libacl1-amd64_2.3.2-2-b1_filemap//:filemap.json"
-              ],
-              "package_name": "tar"
-            }
-          },
           "trixie_lxcfs-arm64_6.0.4-1-deb13u1_filemap": {
             "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
             "attributes": {
@@ -16664,6 +16314,356 @@
                 "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json"
               ],
               "package_name": "libext2fs2t64"
+            }
+          },
+          "trixie_dash-arm64_0.5.12-12_filemap": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
+            "attributes": {
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/dash/dash_0.5.12-12_arm64.deb"
+              ],
+              "sha256": "ce4c8688a1a3ea510186ba95aba74d4c49863094e47e1effc0b602839e840c04"
+            }
+          },
+          "trixie_dash-arm64_0.5.12-12": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
+            "attributes": {
+              "target_name": "trixie_dash-arm64_0.5.12-12",
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/dash/dash_0.5.12-12_arm64.deb"
+              ],
+              "sha256": "ce4c8688a1a3ea510186ba95aba74d4c49863094e47e1effc0b602839e840c04",
+              "mergedusr": true,
+              "depends_on": [
+                "/trixie/debianutils:arm64=5.23.2",
+                "/trixie/libc6:arm64=2.41-12+deb13u4",
+                "/trixie/libgcc-s1:arm64=14.2.0-19",
+                "/trixie/gcc-14-base:arm64=14.2.0-19"
+              ],
+              "dep_filemaps": [
+                "@@rules_distroless++apt+trixie_debianutils-arm64_5.23.2_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libc6-arm64_2.41-12-deb13u4_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libgcc-s1-arm64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_gcc-14-base-arm64_14.2.0-19_filemap//:filemap.json"
+              ],
+              "package_name": "dash"
+            }
+          },
+          "trixie_dash-arm64_0.5.12-12_mergedusr": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
+            "attributes": {
+              "target_name": "trixie_dash-arm64_0.5.12-12_mergedusr",
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/dash/dash_0.5.12-12_arm64.deb"
+              ],
+              "sha256": "ce4c8688a1a3ea510186ba95aba74d4c49863094e47e1effc0b602839e840c04",
+              "mergedusr": true,
+              "depends_on": [
+                "/trixie/debianutils:arm64=5.23.2",
+                "/trixie/libc6:arm64=2.41-12+deb13u4",
+                "/trixie/libgcc-s1:arm64=14.2.0-19",
+                "/trixie/gcc-14-base:arm64=14.2.0-19"
+              ],
+              "dep_filemaps": [
+                "@@rules_distroless++apt+trixie_debianutils-arm64_5.23.2_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libc6-arm64_2.41-12-deb13u4_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libgcc-s1-arm64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_gcc-14-base-arm64_14.2.0-19_filemap//:filemap.json"
+              ],
+              "package_name": "dash"
+            }
+          },
+          "trixie_debianutils-arm64_5.23.2_filemap": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
+            "attributes": {
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/debianutils/debianutils_5.23.2_arm64.deb"
+              ],
+              "sha256": "662d59d9cd0d46f0250ddcd997353be915fbc6be692d7c676c73dc33c90715e8"
+            }
+          },
+          "trixie_debianutils-arm64_5.23.2": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
+            "attributes": {
+              "target_name": "trixie_debianutils-arm64_5.23.2",
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/debianutils/debianutils_5.23.2_arm64.deb"
+              ],
+              "sha256": "662d59d9cd0d46f0250ddcd997353be915fbc6be692d7c676c73dc33c90715e8",
+              "mergedusr": true,
+              "depends_on": [
+                "/trixie/libc6:arm64=2.41-12+deb13u4",
+                "/trixie/libgcc-s1:arm64=14.2.0-19",
+                "/trixie/gcc-14-base:arm64=14.2.0-19"
+              ],
+              "dep_filemaps": [
+                "@@rules_distroless++apt+trixie_libc6-arm64_2.41-12-deb13u4_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libgcc-s1-arm64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_gcc-14-base-arm64_14.2.0-19_filemap//:filemap.json"
+              ],
+              "package_name": "debianutils"
+            }
+          },
+          "trixie_debianutils-arm64_5.23.2_mergedusr": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
+            "attributes": {
+              "target_name": "trixie_debianutils-arm64_5.23.2_mergedusr",
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/debianutils/debianutils_5.23.2_arm64.deb"
+              ],
+              "sha256": "662d59d9cd0d46f0250ddcd997353be915fbc6be692d7c676c73dc33c90715e8",
+              "mergedusr": true,
+              "depends_on": [
+                "/trixie/libc6:arm64=2.41-12+deb13u4",
+                "/trixie/libgcc-s1:arm64=14.2.0-19",
+                "/trixie/gcc-14-base:arm64=14.2.0-19"
+              ],
+              "dep_filemaps": [
+                "@@rules_distroless++apt+trixie_libc6-arm64_2.41-12-deb13u4_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libgcc-s1-arm64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_gcc-14-base-arm64_14.2.0-19_filemap//:filemap.json"
+              ],
+              "package_name": "debianutils"
+            }
+          },
+          "trixie_dash-amd64_0.5.12-12_filemap": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
+            "attributes": {
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/dash/dash_0.5.12-12_amd64.deb"
+              ],
+              "sha256": "a8902cb6d8650134764a25fb80aec8589d858ef71ece1680a62e84816c37bb04"
+            }
+          },
+          "trixie_dash-amd64_0.5.12-12": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
+            "attributes": {
+              "target_name": "trixie_dash-amd64_0.5.12-12",
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/dash/dash_0.5.12-12_amd64.deb"
+              ],
+              "sha256": "a8902cb6d8650134764a25fb80aec8589d858ef71ece1680a62e84816c37bb04",
+              "mergedusr": true,
+              "depends_on": [
+                "/trixie/debianutils:amd64=5.23.2",
+                "/trixie/libc6:amd64=2.41-12+deb13u4",
+                "/trixie/libgcc-s1:amd64=14.2.0-19",
+                "/trixie/gcc-14-base:amd64=14.2.0-19"
+              ],
+              "dep_filemaps": [
+                "@@rules_distroless++apt+trixie_debianutils-amd64_5.23.2_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libc6-amd64_2.41-12-deb13u4_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libgcc-s1-amd64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json"
+              ],
+              "package_name": "dash"
+            }
+          },
+          "trixie_dash-amd64_0.5.12-12_mergedusr": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
+            "attributes": {
+              "target_name": "trixie_dash-amd64_0.5.12-12_mergedusr",
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/dash/dash_0.5.12-12_amd64.deb"
+              ],
+              "sha256": "a8902cb6d8650134764a25fb80aec8589d858ef71ece1680a62e84816c37bb04",
+              "mergedusr": true,
+              "depends_on": [
+                "/trixie/debianutils:amd64=5.23.2",
+                "/trixie/libc6:amd64=2.41-12+deb13u4",
+                "/trixie/libgcc-s1:amd64=14.2.0-19",
+                "/trixie/gcc-14-base:amd64=14.2.0-19"
+              ],
+              "dep_filemaps": [
+                "@@rules_distroless++apt+trixie_debianutils-amd64_5.23.2_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libc6-amd64_2.41-12-deb13u4_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libgcc-s1-amd64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json"
+              ],
+              "package_name": "dash"
+            }
+          },
+          "trixie_debianutils-amd64_5.23.2_filemap": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
+            "attributes": {
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/debianutils/debianutils_5.23.2_amd64.deb"
+              ],
+              "sha256": "720e43fda316676076498b4224ad3318049deafe60cc7c601011048de03ee97d"
+            }
+          },
+          "trixie_debianutils-amd64_5.23.2": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
+            "attributes": {
+              "target_name": "trixie_debianutils-amd64_5.23.2",
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/debianutils/debianutils_5.23.2_amd64.deb"
+              ],
+              "sha256": "720e43fda316676076498b4224ad3318049deafe60cc7c601011048de03ee97d",
+              "mergedusr": true,
+              "depends_on": [
+                "/trixie/libc6:amd64=2.41-12+deb13u4",
+                "/trixie/libgcc-s1:amd64=14.2.0-19",
+                "/trixie/gcc-14-base:amd64=14.2.0-19"
+              ],
+              "dep_filemaps": [
+                "@@rules_distroless++apt+trixie_libc6-amd64_2.41-12-deb13u4_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libgcc-s1-amd64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json"
+              ],
+              "package_name": "debianutils"
+            }
+          },
+          "trixie_debianutils-amd64_5.23.2_mergedusr": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
+            "attributes": {
+              "target_name": "trixie_debianutils-amd64_5.23.2_mergedusr",
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/d/debianutils/debianutils_5.23.2_amd64.deb"
+              ],
+              "sha256": "720e43fda316676076498b4224ad3318049deafe60cc7c601011048de03ee97d",
+              "mergedusr": true,
+              "depends_on": [
+                "/trixie/libc6:amd64=2.41-12+deb13u4",
+                "/trixie/libgcc-s1:amd64=14.2.0-19",
+                "/trixie/gcc-14-base:amd64=14.2.0-19"
+              ],
+              "dep_filemaps": [
+                "@@rules_distroless++apt+trixie_libc6-amd64_2.41-12-deb13u4_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libgcc-s1-amd64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json"
+              ],
+              "package_name": "debianutils"
+            }
+          },
+          "trixie_tar-arm64_1.35-dfsg-3.1_filemap": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
+            "attributes": {
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/t/tar/tar_1.35+dfsg-3.1_arm64.deb"
+              ],
+              "sha256": "c460a8294202ca3802b7c703b0bd70dd8bda1f2fc8785839595cf9d5e060d71b"
+            }
+          },
+          "trixie_tar-arm64_1.35-dfsg-3.1": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
+            "attributes": {
+              "target_name": "trixie_tar-arm64_1.35-dfsg-3.1",
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/t/tar/tar_1.35+dfsg-3.1_arm64.deb"
+              ],
+              "sha256": "c460a8294202ca3802b7c703b0bd70dd8bda1f2fc8785839595cf9d5e060d71b",
+              "mergedusr": true,
+              "depends_on": [
+                "/trixie/libselinux1:arm64=3.8.1-1",
+                "/trixie-security/libpcre2-8-0:arm64=10.46-1~deb13u3",
+                "/trixie/libc6:arm64=2.41-12+deb13u4",
+                "/trixie/libgcc-s1:arm64=14.2.0-19",
+                "/trixie/gcc-14-base:arm64=14.2.0-19",
+                "/trixie/libacl1:arm64=2.3.2-2+b1"
+              ],
+              "dep_filemaps": [
+                "@@rules_distroless++apt+trixie_libselinux1-arm64_3.8.1-1_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie-security_libpcre2-8-0-arm64_10.46-1_deb13u3_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libc6-arm64_2.41-12-deb13u4_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libgcc-s1-arm64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_gcc-14-base-arm64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libacl1-arm64_2.3.2-2-b1_filemap//:filemap.json"
+              ],
+              "package_name": "tar"
+            }
+          },
+          "trixie_tar-arm64_1.35-dfsg-3.1_mergedusr": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
+            "attributes": {
+              "target_name": "trixie_tar-arm64_1.35-dfsg-3.1_mergedusr",
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/t/tar/tar_1.35+dfsg-3.1_arm64.deb"
+              ],
+              "sha256": "c460a8294202ca3802b7c703b0bd70dd8bda1f2fc8785839595cf9d5e060d71b",
+              "mergedusr": true,
+              "depends_on": [
+                "/trixie/libselinux1:arm64=3.8.1-1",
+                "/trixie-security/libpcre2-8-0:arm64=10.46-1~deb13u3",
+                "/trixie/libc6:arm64=2.41-12+deb13u4",
+                "/trixie/libgcc-s1:arm64=14.2.0-19",
+                "/trixie/gcc-14-base:arm64=14.2.0-19",
+                "/trixie/libacl1:arm64=2.3.2-2+b1"
+              ],
+              "dep_filemaps": [
+                "@@rules_distroless++apt+trixie_libselinux1-arm64_3.8.1-1_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie-security_libpcre2-8-0-arm64_10.46-1_deb13u3_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libc6-arm64_2.41-12-deb13u4_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libgcc-s1-arm64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_gcc-14-base-arm64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libacl1-arm64_2.3.2-2-b1_filemap//:filemap.json"
+              ],
+              "package_name": "tar"
+            }
+          },
+          "trixie_tar-amd64_1.35-dfsg-3.1_filemap": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_filemap.bzl%deb_filemap",
+            "attributes": {
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/t/tar/tar_1.35+dfsg-3.1_amd64.deb"
+              ],
+              "sha256": "214c02e1aa291076a3147b8a4c4cae02fadf4c67df629186e3e313726faef1de"
+            }
+          },
+          "trixie_tar-amd64_1.35-dfsg-3.1": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
+            "attributes": {
+              "target_name": "trixie_tar-amd64_1.35-dfsg-3.1",
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/t/tar/tar_1.35+dfsg-3.1_amd64.deb"
+              ],
+              "sha256": "214c02e1aa291076a3147b8a4c4cae02fadf4c67df629186e3e313726faef1de",
+              "mergedusr": true,
+              "depends_on": [
+                "/trixie/libselinux1:amd64=3.8.1-1",
+                "/trixie-security/libpcre2-8-0:amd64=10.46-1~deb13u3",
+                "/trixie/libc6:amd64=2.41-12+deb13u4",
+                "/trixie/libgcc-s1:amd64=14.2.0-19",
+                "/trixie/gcc-14-base:amd64=14.2.0-19",
+                "/trixie/libacl1:amd64=2.3.2-2+b1"
+              ],
+              "dep_filemaps": [
+                "@@rules_distroless++apt+trixie_libselinux1-amd64_3.8.1-1_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie-security_libpcre2-8-0-amd64_10.46-1_deb13u3_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libc6-amd64_2.41-12-deb13u4_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libgcc-s1-amd64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libacl1-amd64_2.3.2-2-b1_filemap//:filemap.json"
+              ],
+              "package_name": "tar"
+            }
+          },
+          "trixie_tar-amd64_1.35-dfsg-3.1_mergedusr": {
+            "repoRuleId": "@@rules_distroless+//apt/private:deb_import.bzl%deb_import",
+            "attributes": {
+              "target_name": "trixie_tar-amd64_1.35-dfsg-3.1_mergedusr",
+              "urls": [
+                "https://snapshot.debian.org/archive/debian/20261102T202832Z/pool/main/t/tar/tar_1.35+dfsg-3.1_amd64.deb"
+              ],
+              "sha256": "214c02e1aa291076a3147b8a4c4cae02fadf4c67df629186e3e313726faef1de",
+              "mergedusr": true,
+              "depends_on": [
+                "/trixie/libselinux1:amd64=3.8.1-1",
+                "/trixie-security/libpcre2-8-0:amd64=10.46-1~deb13u3",
+                "/trixie/libc6:amd64=2.41-12+deb13u4",
+                "/trixie/libgcc-s1:amd64=14.2.0-19",
+                "/trixie/gcc-14-base:amd64=14.2.0-19",
+                "/trixie/libacl1:amd64=2.3.2-2+b1"
+              ],
+              "dep_filemaps": [
+                "@@rules_distroless++apt+trixie_libselinux1-amd64_3.8.1-1_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie-security_libpcre2-8-0-amd64_10.46-1_deb13u3_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libc6-amd64_2.41-12-deb13u4_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libgcc-s1-amd64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_gcc-14-base-amd64_14.2.0-19_filemap//:filemap.json",
+                "@@rules_distroless++apt+trixie_libacl1-amd64_2.3.2-2-b1_filemap//:filemap.json"
+              ],
+              "package_name": "tar"
             }
           },
           "trixie_tini-arm64_0.19.0-3-b8_filemap": {
