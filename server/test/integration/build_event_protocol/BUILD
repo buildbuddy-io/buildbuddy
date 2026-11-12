@@ -1,10 +1,12 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
-go_test(
+bazel_versions_test(
     name = "build_event_protocol_test",
     size = "enormous",
     timeout = "long",
     srcs = ["build_event_protocol_test.go"],
+    rule = go_test,
     shard_count = 6,
     deps = [
         "//proto:build_event_stream_go_proto",

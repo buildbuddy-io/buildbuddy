@@ -1,8 +1,25 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//server/util/bazel:defs.bzl", "bazel_binary_targets")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load(
+    "//server/util/bazel:defs.bzl",
+    "TESTBAZEL_DEFAULT_VERSION",
+    "TESTBAZEL_LTS_VERSIONS",
+    "TESTBAZEL_RC_VERSIONS",
+    "bazel_binary_targets",
+    "bazel_versions_test",
+)
 
 bazel_binary_targets(
-    versions = ["9.2.0"],
+    versions = [TESTBAZEL_DEFAULT_VERSION] + TESTBAZEL_LTS_VERSIONS,
+    visibility = ["//visibility:public"],
+)
+
+bazel_binary_targets(
+    tags = [
+        "bazel-rc",
+        "manual",
+    ],
+    versions = TESTBAZEL_RC_VERSIONS,
+    visibility = ["//visibility:public"],
 )
 
 go_library(
@@ -10,20 +27,31 @@ go_library(
     testonly = 1,
     srcs = ["testbazel.go"],
     data = [
-        ":bazel-9.2.0_crossplatform",
-        ":bazel-9.2.0_extract_installation",
+        ":bazel-%s_crossplatform" % TESTBAZEL_DEFAULT_VERSION,
+        ":bazel-%s_extract_installation" % TESTBAZEL_DEFAULT_VERSION,
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel",
     visibility = ["//visibility:public"],
     x_defs = {
-        "Version": "9.2.0",
-        "bazelRlocationpath": "$(rlocationpath :bazel-9.2.0_crossplatform)",
-        "outdirRlocationpath": "$(rlocationpath :bazel-9.2.0_extract_installation)",
+        "Version": TESTBAZEL_DEFAULT_VERSION,
+        "bazelRlocationpath": "$(rlocationpath :bazel-%s_crossplatform)" % TESTBAZEL_DEFAULT_VERSION,
+        "outdirRlocationpath": "$(rlocationpath :bazel-%s_extract_installation)" % TESTBAZEL_DEFAULT_VERSION,
     },
     deps = [
         "//server/testutil/testfs",
         "//server/util/bazel",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles",
+    ],
+)
+
+bazel_versions_test(
+    name = "testbazel_test",
+    srcs = ["testbazel_test.go"],
+    rule = go_test,
+    tags = ["block-network"],
+    deps = [
+        ":testbazel",
+        "@com_github_stretchr_testify//require",
     ],
 )

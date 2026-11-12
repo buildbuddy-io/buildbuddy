@@ -1,8 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
-go_test(
+bazel_versions_test(
     name = "fix_test",
     srcs = ["fix_test.go"],
     exec_properties = {
@@ -10,6 +11,7 @@ go_test(
         # startup (e.g. for version checks). Tests themselves are network-free.
         "test.dockerNetwork": "bridge",
     },
+    rule = go_test,
     deps = [
         "//cli/testutil/testcli",
         "//server/testutil/quarantine",

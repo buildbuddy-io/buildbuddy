@@ -1,8 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-go_test(
+bazel_versions_test(
     name = "ci_runner_test",
     size = "medium",
     srcs = ["ci_runner_test.go"],
@@ -12,6 +13,7 @@ go_test(
     exec_properties = {
         "test.EstimatedComputeUnits": "3",
     },
+    rule = go_test,
     shard_count = 31,
     tags = ["block-network"],
     x_defs = {

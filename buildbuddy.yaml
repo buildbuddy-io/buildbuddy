@@ -38,7 +38,7 @@ actions:
           //app/util:shlex_test
           -//enterprise/server/remote_execution/containers/firecracker/...
           -//enterprise/server/remote_execution/overlayfs:overlayfs_test
-          -//enterprise/server/test/integration/remote_execution:remote_execution_test
+          -//enterprise/server/test/integration/remote_execution:all
           -//enterprise/server/remote_execution/vbd:vbd_test
     allow_concurrent_runs: false
   - name: Build public release artifacts (linux_amd64) # with -c opt and no race detection
@@ -194,6 +194,35 @@ actions:
     steps:
       - run: |
           bb detect nondeterminism --bazel_command='build //... --config=linux-workflows' --notify_email --notify_slack=BB_CHECKS_SLACK_WEBHOOK_URL
+  - name: Nightly Bazel RC tests
+    triggers:
+      schedule:
+        crons: ["0 9 * * *"] # 9:00 UTC nightly
+    container_image: ubuntu-22.04
+    resource_requests:
+      disk: 27GB
+      memory: 16GB
+    steps:
+      # Runs the bazel-rc variants of tests that use a real Bazel client (see
+      # bazel_versions_test in server/util/bazel/defs.bzl) and posts to Slack
+      # on failure.
+      - run: |
+          set -euo pipefail
+          TARGETS=$(bazel query --config=linux-workflows 'attr(tags, "\bbazel-rc\b", tests(//...))')
+          if [ -z "$TARGETS" ]; then
+            echo >&2 "No bazel-rc tests found"
+            exit 1
+          fi
+          INVOCATION_ID=$(cat /proc/sys/kernel/random/uuid)
+          STATUS=0
+          bazel test --config=linux-workflows --config=tests-ci --invocation_id="$INVOCATION_ID" -- $TARGETS || STATUS=$?
+          if [ "$STATUS" -ne 0 ]; then
+            URL="https://app.buildbuddy.io/invocation/$INVOCATION_ID"
+            curl -fsS --max-time 30 -X POST -H 'Content-Type: application/json' \
+              --data "{\"text\": \"Bazel RC tests failed: $URL\"}" \
+              "${BB_CHECKS_SLACK_WEBHOOK_URL:-}" || true
+          fi
+          exit "$STATUS"
   - name: Code review
     container_image: ubuntu-22.04
     triggers:

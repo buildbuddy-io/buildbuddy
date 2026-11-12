@@ -169,6 +169,10 @@ func makeLocalGitRepo(t *testing.T, contents map[string]string) (path, commitSHA
 	return path, commitSHA
 }
 
+// testStartupFlag is a non-default startup flag for tests of startup flag
+// parsing.
+const testStartupFlag = "--host_jvm_args=-Dbuildbuddy.remote_bazel_test=true"
+
 // Run remote bazel in a separate process so it doesn't interfere with
 // the local server and cause a race condition.
 func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress string, args ...string) string {
@@ -401,7 +405,7 @@ genrule(
 		// and we won't be able to fetch it.
 		"--runner_exec_properties=instance_name="+randomStr,
 		// Pass a startup flag to test parsing
-		"--digest_function=BLAKE3",
+		testStartupFlag,
 		"build",
 		":main",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
@@ -497,7 +501,7 @@ genrule(
 		// and we won't be able to fetch it.
 		"--runner_exec_properties=instance_name=" + randomStr,
 		// Pass a startup flag to test parsing
-		"--digest_function=BLAKE3",
+		testStartupFlag,
 		"--run_remotely=0",
 		"run",
 		":main",
@@ -545,13 +549,16 @@ genrule(
 	require.NoError(t, err)
 	require.Len(t, invResp.GetInvocation(), 1)
 	userMetadataCount := 0
+	var startupOptions []string
 	for _, event := range invResp.GetInvocation()[0].GetEvent() {
+		startupOptions = append(startupOptions, event.GetBuildEvent().GetOptionsParsed().GetExplicitStartupOptions()...)
 		if user, ok := event.GetBuildEvent().GetBuildMetadata().GetMetadata()["USER"]; ok {
 			require.Equal(t, childUser, user)
 			userMetadataCount++
 		}
 	}
 	require.Equal(t, 1, userMetadataCount)
+	require.Contains(t, startupOptions, testStartupFlag)
 
 	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 		InvocationId: parentInv.InvocationId,
@@ -685,7 +692,10 @@ module(name = "runfiles_test")
 bazel_dep(name = "message_dep", version = "1.0", repo_name = "messages")
 local_path_override(module_name = "message_dep", path = "dep")
 `,
-				".bazelrc": "common --lockfile_mode=off\n",
+				// The local_path_override makes the prewarmed lockfile stale,
+				// and lockfile_mode=off makes Bazel 9 fetch rules_shell from
+				// the network, so let the CI runner's bazel update it.
+				".bazelrc": "common --lockfile_mode=update\n",
 				"dep/MODULE.bazel": `
 module(name = "message_dep", version = "1.0")
 `,
@@ -802,7 +812,7 @@ sh_binary(
 		"--runner_exec_properties=include-secrets=true",
 		// Use --script here, because otherwise $SECRET_TARGET will be parsed
 		// as a string literal and will not be expanded as an env var
-		"--script=echo secret=$SECRET_MESSAGE && bazel run $SECRET_TARGET --noenable_bzlmod --enable_workspace",
+		"--script=echo secret=$SECRET_MESSAGE && bazel run $SECRET_TARGET",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check the invocation logs to ensure the bazel command successfully ran

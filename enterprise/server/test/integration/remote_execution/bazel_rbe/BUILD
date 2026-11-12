@@ -1,11 +1,13 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-go_test(
+bazel_versions_test(
     name = "bazel_rbe_test",
     size = "medium",
     srcs = ["bazel_rbe_test.go"],
+    rule = go_test,
     shard_count = 15,
     deps = [
         "//enterprise/server/remote_execution/commandutil",

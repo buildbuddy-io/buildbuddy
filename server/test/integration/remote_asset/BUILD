@@ -1,8 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//server/util/bazel:defs.bzl", "bazel_versions_test")
 
-go_test(
+bazel_versions_test(
     name = "remote_asset_test",
     srcs = ["remote_asset_test.go"],
+    rule = go_test,
     shard_count = 4,
     tags = ["block-network"],
     deps = [
