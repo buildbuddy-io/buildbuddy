@@ -58,8 +58,6 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 	}
 }
 
-// ggcr's own client refuses redirects to private IPs, so allowlisted ones must
-// be followed here. An empty allowlist must return inner unchanged.
 func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) http.RoundTripper {
 	if len(allowed) == 0 {
 		return inner
