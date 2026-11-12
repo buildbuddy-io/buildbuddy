@@ -190,7 +190,7 @@ image_layer(
 
 image_layer(
     name = "binary_layer",
-    srcs = {APP_PACKAGE_ROOT + "/" + BINARY_NAME: + BINARY_NAME},
+    srcs = {APP_PACKAGE_ROOT + "/" + BINARY_NAME: ":" + BINARY_NAME},
     annotations = {
         "org.opencontainers.image.title": "Enterprise BuildBuddy Server",
         "org.opencontainers.image.description": (
