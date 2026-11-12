@@ -131,7 +131,7 @@ TESTBAZEL_LTS_VERSIONS = [
 # Release candidates. Their targets are tagged manual and bazel-rc so that
 # they only run in the nightly "Bazel RC tests" workflow.
 TESTBAZEL_RC_VERSIONS = [
-    "10.0.0rc2",
+    "10.0.0rc3",
     "8.9.0rc1",
 ]
 
