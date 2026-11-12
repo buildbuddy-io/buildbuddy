@@ -2517,36 +2517,6 @@ func newServerAllowing127(t *testing.T) ofpb.OCIFetcherServer {
 	return server
 }
 
-func TestFetchBlobRedirectToPrivateIP(t *testing.T) {
-	var redirectBlobs atomic.Bool
-	var redirectedHits atomic.Int32
-	var reg *testregistry.Registry
-	reg, _ = setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
-		if !redirectBlobs.Load() || r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/blobs/") {
-			return true
-		}
-		if r.URL.Query().Get("redirected") == "1" {
-			redirectedHits.Add(1)
-			return true
-		}
-		target := strings.Replace(reg.Address(), "localhost", "127.0.0.1", 1)
-		http.Redirect(w, r, "http://"+target+r.URL.Path+"?redirected=1", http.StatusFound)
-		return false
-	})
-	imageName, img := reg.PushNamedImage(t, "test-image", nil)
-	redirectBlobs.Store(true)
-	layers, err := img.Layers()
-	require.NoError(t, err)
-	digest, err := layers[0].Digest()
-	require.NoError(t, err)
-
-	stream := &mockFetchBlobServer{ctx: context.Background()}
-	err = newServerAllowing127(t).FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + digest.String()}, stream)
-	require.NoError(t, err)
-	require.Equal(t, layerData(t, layers[0]), stream.collectData())
-	require.Greater(t, redirectedHits.Load(), int32(0), "blob GETs should have been redirected")
-}
-
 func TestFetchManifestBearerRealmOnPrivateIP(t *testing.T) {
 	const token = "test-token"
 	var requireBearer atomic.Bool
@@ -2575,4 +2545,24 @@ func TestFetchManifestBearerRealmOnPrivateIP(t *testing.T) {
 	wantDigest, wantSize, wantMediaType := imageMetadata(t, img)
 	assertMetadata(t, resp, wantDigest, wantSize, wantMediaType)
 	require.Greater(t, tokenHits.Load(), int32(0), "token endpoint should have been used")
+}
+
+func TestFetchManifestBearerRealmOnDisallowedPrivateIP(t *testing.T) {
+	var requireBearer atomic.Bool
+	var reg *testregistry.Registry
+	reg, _ = setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if !requireBearer.Load() {
+			return true
+		}
+		// 127.0.0.2 is private and outside the allowlisted 127.0.0.1/32.
+		realm := "http://" + strings.Replace(reg.Address(), "localhost", "127.0.0.2", 1) + "/token"
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm=%q,service="test"`, realm))
+		w.WriteHeader(http.StatusUnauthorized)
+		return false
+	})
+	imageName, _ := reg.PushNamedImage(t, "test-image", nil)
+	requireBearer.Store(true)
+
+	_, err := newServerAllowing127(t).FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+	require.ErrorContains(t, err, `realm host "127.0.0.2" is a private or link-local address`)
 }

@@ -110,11 +110,13 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 	if acClient == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherServer requires a non-nil action cache client")
 	}
+	if err := ConfigureRegistryClient(); err != nil {
+		return nil, err
+	}
 	allowedPrivateIPs, err := ParseAllowedPrivateIPs()
 	if err != nil {
 		return nil, err
 	}
-	remote.SetAllowedPrivateIPs(allowedPrivateIPs)
 	pullerLRU, err := lru.New[*pullerLRUEntry](&lru.Config[*pullerLRUEntry]{
 		SizeFn:  func(_ *pullerLRUEntry) int64 { return 1 },
 		MaxSize: int64(pullerLRUMaxEntries),
@@ -816,6 +818,17 @@ func ParseAllowedPrivateIPs() ([]*net.IPNet, error) {
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
 	return allowedPrivateIPNets, nil
+}
+
+// ConfigureRegistryClient exempts the allowlisted private IPs from
+// go-containerregistry's process-wide SSRF checks.
+func ConfigureRegistryClient() error {
+	allowedPrivateIPNets, err := ParseAllowedPrivateIPs()
+	if err != nil {
+		return err
+	}
+	remote.SetAllowedPrivateIPs(allowedPrivateIPNets)
+	return nil
 }
 
 func Mirrors() []interfaces.MirrorConfig {
