@@ -90,7 +90,9 @@ func (qm *QuotaManager) applyQuota(ctx context.Context, namespace string, quanti
 		metrics.QuotaKeyEmptyCount.With(prometheus.Labels{
 			metrics.QuotaNamespace: namespace,
 		}).Inc()
-		return false, status.WrapError(err, "get quota key")
+		// Generating a quota key fails for unauthenticated requests.
+		// Auth should gate these, not the quota system so allow the request here.
+		return true, nil
 	}
 
 	if err := qm.loadQuotasFromFlagd(ctx, key, namespace); err != nil {
