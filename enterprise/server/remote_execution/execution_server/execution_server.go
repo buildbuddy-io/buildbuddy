@@ -57,6 +57,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
+	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -138,7 +139,9 @@ func (s *ExecutionServer) fillExecutionFromSchedulingMetadata(md *scpb.Schedulin
 	execution.PredictedFreeDiskBytes = md.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
 	execution.SelfHosted = md.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
 	execution.EffectivePool = md.GetPool()
-	execution.RequestedContainerImage = md.GetRequestedContainerImage()
+	// The raw property value can embed registry credentials, as in
+	// "docker://user:secret@registry/image".
+	execution.RequestedContainerImage = redact.RedactText(md.GetRequestedContainerImage())
 }
 
 func generateCommandSnippet(command *repb.Command) string {

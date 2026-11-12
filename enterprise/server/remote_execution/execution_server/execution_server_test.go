@@ -797,6 +797,13 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 		},
 		{
+			// Credentials in the requested image are redacted.
+			name:                   "ContainerImageWithCredentials",
+			platformOverrides:      map[string]string{"container-image": "docker://user:secret@gcr.io/test/override:v2"},
+			expectedRequestedImage: "docker://user:<REDACTED>@gcr.io/test/override:v2",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+		},
+		{
 			name:                   "InstanceNameWithColon",
 			instanceName:           "build-14:00",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},

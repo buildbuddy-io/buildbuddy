@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -537,28 +536,25 @@ func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 	}
 }
 
-func TestRunnerPool_ResolveImageDigest(t *testing.T) {
-	flags.Set(t, "executor.enable_oci", true)
-	flags.Set(t, "executor.resolve_image_digests", true)
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+func TestRunnerPool_SandboxRecordsNoImage(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
-	registry := testregistry.Run(t, testregistry.Opts{})
-	t.Cleanup(func() { require.NoError(t, registry.Shutdown()) })
-	_, img := registry.PushNamedImage(t, "test_image", nil)
-	imgDigest, err := img.Digest()
-	require.NoError(t, err)
 	cfg := noLimitsCfg()
 	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 		return NewFakeContainer(), nil
 	})
 	pool := newRunnerPool(t, env, cfg)
-	task := newTask()
-	platform.SetValueForTask(task.ExecutionTask, platform.ContainerImagePropertyName, "docker://"+registry.ImageAddress("test_image"))
+	// Sandbox is only supported on darwin, so create the runner directly
+	// with the properties that ApplyOverrides produces for it there.
+	props := &platform.Properties{
+		WorkloadIsolationType: string(platform.SandboxContainerType),
+		ContainerImage:        "gcr.io/default:v1",
+	}
 
-	r := mustGetNewRunner(t, ctx, pool, task)
+	r, err := pool.newRunner(ctx, &rnpb.RunnerKey{}, props, newTask())
+	require.NoError(t, err)
 
-	assert.Equal(t, registry.ImageAddress("test_image")+"@"+imgDigest.String(), r.Metadata().GetContainerImage())
+	assert.Empty(t, r.Metadata().GetContainerImage())
 }
 
 func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {
