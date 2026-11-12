@@ -582,7 +582,7 @@ func TestRunnerPool_RecordedContainerImage(t *testing.T) {
 				WorkloadIsolationType: string(platform.OCIContainerType),
 				ContainerImage:        "user:secret@gcr.io/img:v1",
 			},
-			want: "gcr.io/img:v1",
+			want: "",
 		},
 		{
 			// Sandbox is only supported on darwin, so this uses the

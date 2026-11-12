@@ -594,28 +594,35 @@ func TestSetValueForTask(t *testing.T) {
 }
 
 func TestSanitizeImageRef(t *testing.T) {
+	const dig = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	for _, tc := range []struct {
 		name, ref, want string
 	}{
-		{"UserPass", "docker://user:secret@gcr.io/img:v1", "docker://gcr.io/img:v1"},
-		{"Token", "docker://ghp_x@gcr.io/img:v1", "docker://gcr.io/img:v1"},
-		{"SchemelessCreds", "user:secret@gcr.io/img:v1", "gcr.io/img:v1"},
-		{"SlashInPassword", "docker://user:a/b@gcr.io/img:v1", "docker://gcr.io/img:v1"},
-		{"QueryString", "docker://gcr.io/img:v1?token=secret", "docker://gcr.io/img:v1"},
+		// Credentials or a query string make the reference invalid, so it's
+		// dropped.
+		{"UserPass", "docker://user:secret@gcr.io/img:v1", ""},
+		{"Token", "docker://ghp_x@gcr.io/img:v1", ""},
+		{"SchemelessCreds", "user:secret@gcr.io/img:v1", ""},
+		{"SlashInPassword", "docker://user:a/b@gcr.io/img:v1", ""},
+		{"QueryString", "docker://gcr.io/img:v1?token=secret", ""},
+		{"CredsAndDigest", "user:secret@gcr.io/img@" + dig, ""},
+		{"QuestionMarkInPassword", "docker://user:pa?ss@gcr.io/img:v1", ""},
+		{"AtInPassword", "docker://user:p@ss@gcr.io/img:v1", ""},
+		{"TokenNoSlash", "ghp_token@ubuntu:20.04", ""},
+		{"UserPassNoSlash", "docker://user:secret@ubuntu", ""},
+		{"UserPassNumericTag", "docker://user:secret@ubuntu:22", ""},
+		{"AtInQuery", "docker://gcr.io/img?token=abc@secret", ""},
+		{"SchemeInPassword", "user:pa://ss@gcr.io/img:v1", ""},
+		{"DigestAndQuery", "gcr.io/img@" + dig + "?x=y", ""},
+		{"Empty", "", ""},
+		// Valid references are kept as given.
 		{"Port", "docker://localhost:5000/ns/img:v1", "docker://localhost:5000/ns/img:v1"},
-		{"Digest", "gcr.io/img@sha256:abc", "gcr.io/img@sha256:abc"},
-		{"CredsAndDigest", "user:secret@gcr.io/img@sha256:abc", "gcr.io/img@sha256:abc"},
-		{"ShortDigest", "ubuntu@sha256:abc", "ubuntu@sha256:abc"},
-		{"QuestionMarkInPassword", "docker://user:pa?ss@gcr.io/img:v1", "docker://gcr.io/img:v1"},
-		{"AtInPassword", "docker://user:p@ss@gcr.io/img:v1", "docker://gcr.io/img:v1"},
-		{"TokenNoSlash", "ghp_token@ubuntu:20.04", "ubuntu:20.04"},
-		{"UserPassNoSlash", "docker://user:secret@ubuntu", "docker://ubuntu"},
 		{"IPv6", "docker://[::1]:5000/img:v1", "docker://[::1]:5000/img:v1"},
 		{"NestedPath", "gcr.io/a/b/c/img:v1", "gcr.io/a/b/c/img:v1"},
-		{"TagAndDigest", "gcr.io/img:v1@sha256:abc", "gcr.io/img:v1@sha256:abc"},
-		{"Sha512Digest", "gcr.io/img@sha512:abc", "gcr.io/img@sha512:abc"},
-		{"DigestAndQuery", "user:secret@gcr.io/img@sha256:abc?x=y", "gcr.io/img@sha256:abc"},
-		{"Empty", "", ""},
+		{"NoRegistry", "docker://ubuntu", "docker://ubuntu"},
+		{"Digest", "gcr.io/img@" + dig, "gcr.io/img@" + dig},
+		{"ShortDigest", "ubuntu@" + dig, "ubuntu@" + dig},
+		{"TagAndDigest", "docker://gcr.io/img:v1@" + dig, "docker://gcr.io/img:v1@" + dig},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, SanitizeImageRef(tc.ref))

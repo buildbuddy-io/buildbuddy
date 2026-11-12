@@ -793,14 +793,15 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			// override applied.
 			name:                   "ContainerImageOverride",
 			platformOverrides:      map[string]string{"container-image": "docker://gcr.io/test/override:v2"},
-			expectedRequestedImage: "docker://gcr.io/test/override:v2",
+			expectedRequestedImage: new("docker://gcr.io/test/override:v2"),
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 		},
 		{
-			// Credentials in the requested image are stripped.
+			// A requested image with credentials isn't a valid reference, so
+			// it isn't recorded.
 			name:                   "ContainerImageWithCredentials",
 			platformOverrides:      map[string]string{"container-image": "docker://user:secret@gcr.io/test/override:v2"},
-			expectedRequestedImage: "docker://gcr.io/test/override:v2",
+			expectedRequestedImage: new(""),
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 		},
 		{
@@ -951,7 +952,7 @@ type publishTest struct {
 	omitSchedulingMetadata bool
 	// expectedRequestedImage is the requested container image the execution
 	// should record. Defaults to the image in the action's platform.
-	expectedRequestedImage string
+	expectedRequestedImage *string
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -1363,8 +1364,8 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.EstimatedMemoryBytes = 10 * tasksize.GiB
 	}
 	expectedExecution.RequestedContainerImage = "docker://gcr.io/test/requested:v1"
-	if test.expectedRequestedImage != "" {
-		expectedExecution.RequestedContainerImage = test.expectedRequestedImage
+	if test.expectedRequestedImage != nil {
+		expectedExecution.RequestedContainerImage = *test.expectedRequestedImage
 	}
 	if test.useDefaultPool {
 		expectedExecution.RequestedPool = ""

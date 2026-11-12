@@ -24,6 +24,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	units "github.com/docker/go-units"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
 )
 
 const (
@@ -987,26 +988,20 @@ func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
 		"Unsupported dockerNetwork property value: %s", dockerNetwork)
 }
 
-// imageDigestPrefix matches the start of what follows the "@" in a digest
-// reference such as "gcr.io/img@sha256:abc".
-var imageDigestPrefix = regexp.MustCompile(`^[a-z0-9]+(?:[+._-][a-z0-9]+)*:[0-9a-fA-F]+(?:\?|$)`)
-
-// SanitizeImageRef strips any credentials and query string from a container
-// image reference, such as "docker://user:secret@gcr.io/img?x=y", so that it
-// can be stored. Image references never contain userinfo, so any "@" that
-// doesn't start a digest ends userinfo; everything up to the last such "@"
-// is dropped.
+// SanitizeImageRef returns a container image reference, such as
+// "docker://gcr.io/img:v1", in a form that's safe to store. It parses the
+// reference the same way the executor does when it pulls. A valid reference
+// can't contain credentials or a query string, so anything that doesn't
+// parse, such as "docker://user:secret@gcr.io/img", is dropped on purpose
+// and returns "".
 func SanitizeImageRef(ref string) string {
-	scheme := ""
-	if i := strings.Index(ref, "://"); i >= 0 {
-		scheme, ref = ref[:i+len("://")], ref[i+len("://"):]
+	prefix := ""
+	if after, ok := strings.CutPrefix(ref, DockerPrefix); ok {
+		prefix, ref = DockerPrefix, after
 	}
-	for at := strings.LastIndex(ref, "@"); at >= 0; at = strings.LastIndex(ref[:at], "@") {
-		if !imageDigestPrefix.MatchString(ref[at+1:]) {
-			ref = ref[at+1:]
-			break
-		}
+	parsed, err := ctrname.ParseReference(ref)
+	if err != nil {
+		return ""
 	}
-	ref, _, _ = strings.Cut(ref, "?")
-	return scheme + ref
+	return prefix + parsed.String()
 }
