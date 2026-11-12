@@ -1271,7 +1271,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "The number of uncompressed snapshot bytes written to the local cache. This will be 0 if the artifact was already cached.",
+      "description": "The 10-minute average write rate for uncompressed snapshot data in the local cache, excluding artifacts that were already cached. The legend ranks groups by their average write rate over the selected timeframe.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1323,7 +1323,7 @@
               }
             ]
           },
-          "unit": "decgbytes"
+          "unit": "binBps"
         },
         "overrides": []
       },
@@ -1336,10 +1336,14 @@
       "id": 22,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "mean"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": true,
+          "sortBy": "Mean",
+          "sortDesc": true
         },
         "tooltip": {
           "hideZeros": false,
@@ -1351,8 +1355,8 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_remote_execution_file_cache_added_file_size_bytes_sum{region=~\"$region\", job=~\"executor-workflows.*\"}[5m])) / 1000000000",
-          "legendFormat": "__auto",
+          "expr": "sum by (group_id) (rate(buildbuddy_firecracker_snapshot_cache_bytes_written{region=~\"$region\", job=~\"executor-workflows.*\", location=\"filecache\"}[10m]))",
+          "legendFormat": "{{group_id}}",
           "range": true,
           "refId": "A"
         }
@@ -1365,7 +1369,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "The number of compressed snapshot bytes written to the remote cache. This will be 0 if the artifact was already cached.",
+      "description": "The 10-minute average write rate for compressed snapshot data in the remote cache, excluding artifacts that were already cached. The legend ranks groups by their average write rate over the selected timeframe.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1430,10 +1434,14 @@
       "id": 14,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "mean"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": true,
+          "sortBy": "Mean",
+          "sortDesc": true
         },
         "tooltip": {
           "hideZeros": false,
@@ -1449,8 +1457,8 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (file_name) (rate(buildbuddy_firecracker_snapshot_remote_cache_upload_size_bytes{region=~\"$region\"}[10m]))",
-          "legendFormat": "__auto",
+          "expr": "sum by (group_id) (rate(buildbuddy_firecracker_snapshot_cache_bytes_written{region=~\"$region\", location=\"remote\"}[10m]))",
+          "legendFormat": "{{group_id}}",
           "range": true,
           "refId": "A"
         }
