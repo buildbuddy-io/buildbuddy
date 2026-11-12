@@ -672,18 +672,19 @@ func GenericSnapshotShape(size *scpb.TaskSize) *scpb.TaskSize {
 }
 
 // genericVMConfig returns the configuration for generic snapshot VMs with the given shape.
-func genericVMConfig(shape *scpb.TaskSize, networkMode fcpb.NetworkMode) *fcpb.VMConfiguration {
+func genericVMConfig(ctx context.Context, shape *scpb.TaskSize, networkMode fcpb.NetworkMode) *fcpb.VMConfiguration {
 	// Generic VMs always have a network interface, so one snapshot serves
 	// every network mode.
 	if networkMode == fcpb.NetworkMode_NETWORK_MODE_OFF {
 		networkMode = fcpb.NetworkMode_NETWORK_MODE_LOCAL
 	}
 	return &fcpb.VMConfiguration{
-		NumCpus:     vcpuCount(shape.GetEstimatedMilliCpu()),
-		MemSizeMb:   shape.GetEstimatedMemoryBytes() / mib,
-		NetworkMode: networkMode,
-		HostCpuid:   getCPUID(),
-		EnablePci:   *enablePCI,
+		NumCpus:        vcpuCount(shape.GetEstimatedMilliCpu()),
+		MemSizeMb:      shape.GetEstimatedMemoryBytes() / mib,
+		NetworkMode:    networkMode,
+		HostCpuid:      getCPUID(),
+		EnablePci:      *enablePCI,
+		EnableKvmClock: execution_experiments.FirecrackerGuestKvmClock.Get(ctx),
 	}
 }
 
@@ -705,7 +706,7 @@ func (p *Provider) buildGenericSnapshots(ctx context.Context, cgroupParent strin
 			break
 		}
 		eg.Go(func() error {
-			vmConfig := genericVMConfig(shape, fcpb.NetworkMode_NETWORK_MODE_OFF)
+			vmConfig := genericVMConfig(ctx, shape, fcpb.NetworkMode_NETWORK_MODE_OFF)
 			vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
 			p.buildGenericSnapshot(ctx, cgroupParent, nil /*=experiments*/, vmConfig)
 			return nil
@@ -764,6 +765,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		EnableVfs:         args.Props.EnableVFS,
 		Ipv6Enabled:       args.Props.NetworkEnableIPv6,
 		EnablePci:         *enablePCI,
+		EnableKvmClock:    execution_experiments.FirecrackerGuestKvmClock.Get(ctx),
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig, false /*=deferRootfsMount*/)
 	opts := ContainerOpts{
@@ -812,7 +814,7 @@ func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.I
 	if err != nil {
 		return nil, err
 	}
-	vmConfig := genericVMConfig(shape, networkMode)
+	vmConfig := genericVMConfig(ctx, shape, networkMode)
 	vmConfig.ScratchDiskSizeMb = int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6)
 	vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
 	// The host memory limit is computed from the scheduled size, which the
@@ -2039,7 +2041,25 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration, deferRootfsMount bool) string {
 		"i8042.nomux",
 		"i8042.nopnp",
 		"i8042.dumbkbd",
-		"tsc=reliable",
+	}
+	if vmConfig.GetEnableKvmClock() {
+		// Use kvm-clock instead of the TSC as the guest clocksource.
+		//
+		// Firecracker restores the TSC of each vCPU separately when loading a
+		// snapshot. If the restore stalls for more than a second between two
+		// vCPUs (for example on a slow UFFD page fault), KVM gives the remaining
+		// vCPUs a different TSC offset. With the tsc clocksource, CLOCK_MONOTONIC
+		// then runs backwards whenever a thread migrates between vCPUs, which
+		// breaks anything in the guest that measures elapsed time. See
+		// https://github.com/buildbuddy-io/buildbuddy/issues/13988.
+		//
+		// kvm-clock is derived from the host's clock and only uses the vCPU's
+		// TSC for the interval since the host last refreshed it, so per-vCPU
+		// TSC skew cancels out.
+		kernelArgs = append(kernelArgs, "clocksource=kvm-clock")
+	} else {
+		// tsc=reliable disables the guest's own TSC sanity checks.
+		kernelArgs = append(kernelArgs, "tsc=reliable")
 	}
 	if !vmConfig.GetIpv6Enabled() {
 		kernelArgs = append(kernelArgs, "ipv6.disable=1")
