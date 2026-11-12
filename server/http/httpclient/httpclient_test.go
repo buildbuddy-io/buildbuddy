@@ -146,13 +146,13 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 		wantErr     string
 	}{
 		{
-			name: "follows redirect to allowlisted IP and strips WWW-Authenticate",
+			name: "follows redirect to allowlisted IP and keeps final WWW-Authenticate",
 			responses: fakeRoundTripper{
 				registryURL:             response(http.StatusFound, "", "Location", "https://10.1.2.3/blob"),
 				"https://10.1.2.3/blob": response(http.StatusOK, "blob contents", "WWW-Authenticate", `Bearer realm="storage"`),
 			},
 			wantStatus:  http.StatusOK,
-			wantHeaders: http.Header{},
+			wantHeaders: http.Header{"Www-Authenticate": {`Bearer realm="storage"`}},
 			wantBody:    "blob contents",
 		},
 		{
@@ -181,6 +181,14 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 			},
 			wantStatus:  http.StatusFound,
 			wantHeaders: http.Header{"Location": {"https://192.168.1.1/blob"}},
+		},
+		{
+			name: "refuses https to http downgrade to allowlisted IP",
+			responses: fakeRoundTripper{
+				registryURL: response(http.StatusFound, "", "Location", "http://10.1.2.3/blob"),
+			},
+			wantStatus:  http.StatusFound,
+			wantHeaders: http.Header{"Location": {"http://10.1.2.3/blob"}},
 		},
 		{
 			name: "leaves redirect to hostname untouched",
@@ -218,6 +226,7 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 			}
 			req, err := http.NewRequest(http.MethodGet, start, nil)
 			require.NoError(t, err)
+			req.Header.Set("Authorization", "Bearer secret")
 			resp, err := tr.RoundTrip(req)
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
@@ -233,3 +242,30 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 		})
 	}
 }
+
+func TestFollowRedirectsToAllowedIPsDropsCredentialsOnPortChange(t *testing.T) {
+	_, allowed, err := net.ParseCIDR("10.0.0.0/8")
+	require.NoError(t, err)
+	var gotAuth []string
+	tr := FollowRedirectsToAllowedIPs(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		gotAuth = append(gotAuth, req.Header.Get("Authorization"))
+		resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("")), Request: req}
+		if req.URL.Port() == "" {
+			resp.StatusCode = http.StatusFound
+			resp.Header.Set("Location", "https://10.1.2.3:8443/blob")
+		}
+		return resp, nil
+	}), []*net.IPNet{allowed})
+	req, err := http.NewRequest(http.MethodGet, "https://10.1.2.3/v2/img/blobs/sha256:abc", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := tr.RoundTrip(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, []string{"Bearer secret", ""}, gotAuth)
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }

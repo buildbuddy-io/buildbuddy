@@ -77,8 +77,17 @@ func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) 
 			if len(via) >= 10 {
 				return errors.New("stopped after 10 redirects")
 			}
+			if via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
+				return http.ErrUseLastResponse
+			}
 			if !ipAllowed(net.ParseIP(req.URL.Hostname()), allowed) {
 				return http.ErrUseLastResponse
+			}
+			// Go keeps credentials when only the port changes, so drop them on any origin change.
+			if req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host {
+				for _, h := range []string{"Authorization", "Cookie", "Cookie2"} {
+					req.Header.Del(h)
+				}
 			}
 			return nil
 		},
@@ -96,12 +105,6 @@ func (t *allowedIPRedirectTransport) RoundTrip(req *http.Request) (*http.Respons
 			return nil, urlErr.Err
 		}
 		return nil, err
-	}
-	if resp.Request == nil || resp.Request.URL.String() == req.URL.String() {
-		return resp, nil
-	}
-	if resp.Request.URL.Scheme != req.URL.Scheme || resp.Request.URL.Host != req.URL.Host {
-		resp.Header.Del("WWW-Authenticate")
 	}
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		if loc, err := resp.Location(); err == nil {

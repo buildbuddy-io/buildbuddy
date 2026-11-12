@@ -2504,18 +2504,8 @@ func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 	}
 }
 
-// newServerAllowing127 returns a server whose registry client allowlists
-// 127.0.0.1, which the tests below use as a "private" host distinct from the
-// registry's localhost address.
-func newServerAllowing127(t *testing.T) ofpb.OCIFetcherServer {
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	_, bsClient, acClient := setupCacheEnv(t)
-	server, err := ocifetcher.NewServer(bsClient, acClient)
-	require.NoError(t, err)
-	return server
-}
-
 func TestFetchBlobRedirectToPrivateIP(t *testing.T) {
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	var redirectBlobs atomic.Bool
 	var redirectedHits atomic.Int32
 	var reg *testregistry.Registry
@@ -2538,8 +2528,11 @@ func TestFetchBlobRedirectToPrivateIP(t *testing.T) {
 	digest, err := layers[0].Digest()
 	require.NoError(t, err)
 
+	_, bsClient, acClient := setupCacheEnv(t)
+	server, err := ocifetcher.NewServer(bsClient, acClient)
+	require.NoError(t, err)
 	stream := &mockFetchBlobServer{ctx: context.Background()}
-	err = newServerAllowing127(t).FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + digest.String()}, stream)
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + digest.String()}, stream)
 	require.NoError(t, err)
 	require.Equal(t, layerData(t, layers[0]), stream.collectData())
 	require.Greater(t, redirectedHits.Load(), int32(0), "blob GETs should have been redirected")

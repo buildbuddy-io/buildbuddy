@@ -2044,3 +2044,64 @@ func TestResolve_BlobRedirectToPrivateIP(t *testing.T) {
 		}
 	}
 }
+
+// The /v2/ ping on localhost redirects to allowlisted 127.0.0.1, which answers
+// 401 with a Bearer challenge whose realm is on localhost.
+func TestResolve_PingRedirectToAllowlistedIPWithBearerChallenge(t *testing.T) {
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry.use_cache_percent", 0)
+	flags.Set(t, "http.client.allow_localhost", true)
+	te := testenv.GetTestEnv(t)
+
+	const token = "test-token"
+	var enabled atomic.Bool
+	var tokenHits, pingRedirects atomic.Int32
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if !enabled.Load() {
+				return true
+			}
+			hostname, port, err := net.SplitHostPort(r.Host)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return false
+			}
+			challenge := `Bearer realm="http://localhost:` + port + `/token",service="test"`
+			if r.URL.Path == "/token" {
+				tokenHits.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprintf(w, `{"token":%q,"access_token":%q}`, token, token)
+				return false
+			}
+			if r.URL.Path == "/v2/" && hostname != "127.0.0.1" {
+				pingRedirects.Add(1)
+				http.Redirect(w, r, "http://127.0.0.1:"+port+"/v2/", http.StatusFound)
+				return false
+			}
+			if r.Header.Get("Authorization") != "Bearer "+token {
+				w.Header().Set("WWW-Authenticate", challenge)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return false
+			}
+			if r.URL.Path == "/v2/" {
+				w.WriteHeader(http.StatusOK)
+				return false
+			}
+			return true
+		},
+	})
+	registry.PushNamedImageWithFiles(t, "ping_redirect_image", map[string][]byte{"/hello": []byte("world")}, nil)
+	enabled.Store(true)
+
+	pulled, err := newResolver(t, te).Resolve(
+		context.Background(),
+		registry.ImageAddress("ping_redirect_image"),
+		&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS},
+		oci.Credentials{},
+		false,
+	)
+	require.NoError(t, err)
+	require.NoError(t, validate.Image(pulled))
+	require.Greater(t, pingRedirects.Load(), int32(0))
+	require.Greater(t, tokenHits.Load(), int32(0))
+}
