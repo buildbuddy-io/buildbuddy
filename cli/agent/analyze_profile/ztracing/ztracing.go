@@ -4,22 +4,32 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 )
 
-const (
-	ztracingCommitSHA = "2652640077baa8852d10f0e33a592a5085206ebe"
-	ztracingURLFormat = "https://storage.googleapis.com/buildbuddy-tools/binaries/ztracing/%s/ztracing-%s.tar.gz"
-)
+const ztracingCommitSHA = "2652640077baa8852d10f0e33a592a5085206ebe"
+
+// ztracingURLFormat is a variable so that tests can point it at a local server.
+var ztracingURLFormat = "https://storage.googleapis.com/buildbuddy-tools/binaries/ztracing/%s/ztracing-%s.tar.gz"
+
+// ztracingSHA256 holds the expected sha256 of each platform's archive at
+// ztracingCommitSHA. Update these together with ztracingCommitSHA.
+var ztracingSHA256 = map[string]string{
+	"darwin-arm64": "2e75d4654d57c4c82fded8aced1440a77e0017c7a9f294e75d155664c2a7ad93",
+	"linux-amd64":  "1dc4d513a7b293346222500943ed4cffc111cbf2b2e2634a765352d3c619b1d8",
+}
 
 type Installation struct {
 	BinaryPath  string
@@ -31,9 +41,8 @@ type Installation struct {
 // Only installations for the configured commit are retained.
 func Setup(ctx context.Context) (*Installation, error) {
 	platform := runtime.GOOS + "-" + runtime.GOARCH
-	switch platform {
-	case "darwin-arm64", "linux-amd64":
-	default:
+	expectedSHA256, ok := ztracingSHA256[platform]
+	if !ok {
 		return nil, fmt.Errorf("ztracing is not available for %s", platform)
 	}
 	downloadURL := fmt.Sprintf(ztracingURLFormat, ztracingCommitSHA, platform)
@@ -45,11 +54,12 @@ func Setup(ctx context.Context) (*Installation, error) {
 	if err := os.MkdirAll(rootDir, 0755); err != nil {
 		return nil, fmt.Errorf("create ztracing cache directory: %w", err)
 	}
-	if err := removeOldInstallations(rootDir, ztracingCommitSHA); err != nil {
+	key := installationKey()
+	if err := removeOldInstallations(rootDir, key); err != nil {
 		return nil, err
 	}
 
-	installationDir := filepath.Join(rootDir, ztracingCommitSHA, platform)
+	installationDir := filepath.Join(rootDir, key, platform)
 	installation := installationAt(installationDir)
 	if isValidInstallation(installation) {
 		if err := addToPath(installation.BinaryPath); err != nil {
@@ -62,18 +72,29 @@ func Setup(ctx context.Context) (*Installation, error) {
 	if err := os.RemoveAll(installationDir); err != nil {
 		return nil, fmt.Errorf("remove incomplete ztracing installation: %w", err)
 	}
-	if err := os.MkdirAll(installationDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(installationDir), 0755); err != nil {
 		return nil, fmt.Errorf("create ztracing installation directory: %w", err)
+	}
+	// Extract into a staging directory and rename it into place, so that an
+	// interrupted extraction never leaves a directory that looks installed.
+	stagingDir, err := os.MkdirTemp(filepath.Dir(installationDir), platform+".tmp-*")
+	if err != nil {
+		return nil, fmt.Errorf("create ztracing staging directory: %w", err)
+	}
+	defer os.RemoveAll(stagingDir)
+	if err := os.Chmod(stagingDir, 0755); err != nil {
+		return nil, fmt.Errorf("chmod ztracing staging directory: %w", err)
 	}
 
 	log.Printf("%sDownloading ztracing at commit %s for %s...%s", terminal.Esc(90), ztracingCommitSHA, platform, terminal.Esc())
-	if err := downloadAndExtract(ctx, downloadURL, rootDir, installationDir); err != nil {
-		os.RemoveAll(installationDir)
+	if err := downloadAndExtract(ctx, downloadURL, expectedSHA256, filepath.Dir(installationDir), stagingDir); err != nil {
 		return nil, err
 	}
-	if !isValidInstallation(installation) {
-		os.RemoveAll(installationDir)
+	if !isValidInstallation(installationAt(stagingDir)) {
 		return nil, fmt.Errorf("downloaded ztracing archive did not contain the expected binary, skill, and license")
+	}
+	if err := os.Rename(stagingDir, installationDir); err != nil && !isValidInstallation(installation) {
+		return nil, fmt.Errorf("move ztracing installation into place: %w", err)
 	}
 	if err := addToPath(installation.BinaryPath); err != nil {
 		return nil, err
@@ -82,7 +103,25 @@ func Setup(ctx context.Context) (*Installation, error) {
 	return installation, nil
 }
 
-func downloadAndExtract(ctx context.Context, downloadURL, tempDir, destinationDir string) error {
+// installationKey names the cache directory for the pinned ztracing build. It
+// covers every platform's archive digest, so installations extracted before
+// digests were verified (keyed by commit only) are never reused.
+func installationKey() string {
+	platforms := make([]string, 0, len(ztracingSHA256))
+	for platform := range ztracingSHA256 {
+		platforms = append(platforms, platform)
+	}
+	sort.Strings(platforms)
+	hash := sha256.New()
+	for _, platform := range platforms {
+		fmt.Fprintf(hash, "%s %s\n", platform, ztracingSHA256[platform])
+	}
+	return ztracingCommitSHA + "-" + hex.EncodeToString(hash.Sum(nil))[:16]
+}
+
+// downloadAndExtract downloads the archive at downloadURL, verifies that its
+// sha256 matches expectedSHA256, and only then extracts it into destinationDir.
+func downloadAndExtract(ctx context.Context, downloadURL, expectedSHA256, tempDir, destinationDir string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return fmt.Errorf("create ztracing download request: %w", err)
@@ -105,12 +144,16 @@ func downloadAndExtract(ctx context.Context, downloadURL, tempDir, destinationDi
 	archivePath := archive.Name()
 	defer os.Remove(archivePath)
 
-	if _, err := io.Copy(archive, rsp.Body); err != nil {
+	hash := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(archive, hash), rsp.Body); err != nil {
 		archive.Close()
 		return fmt.Errorf("write ztracing archive: %w", err)
 	}
 	if err := archive.Close(); err != nil {
 		return fmt.Errorf("close ztracing archive: %w", err)
+	}
+	if actual := hex.EncodeToString(hash.Sum(nil)); actual != expectedSHA256 {
+		return fmt.Errorf("ztracing archive %s has sha256 %s, expected %s", downloadURL, actual, expectedSHA256)
 	}
 	if err := extractArchive(archivePath, destinationDir); err != nil {
 		return fmt.Errorf("extract ztracing archive: %w", err)
@@ -199,7 +242,7 @@ func installationAt(installationDir string) *Installation {
 	}
 }
 
-// removeOldInstallations removes all ztracing installations except the one at the given commit.
+// removeOldInstallations removes all ztracing installations except the one with the given key.
 func removeOldInstallations(rootDir, keep string) error {
 	entries, err := os.ReadDir(rootDir)
 	if err != nil {
