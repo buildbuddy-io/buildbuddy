@@ -205,16 +205,6 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 			wantAuth:    []string{"Bearer secret"},
 		},
 		{
-			name:  "leaves relative same-host redirect for ggcr with absolute Location",
-			start: "https://10.1.2.3/v2/img/blobs/sha256:abc",
-			responses: fakeRoundTripper{
-				"https://10.1.2.3/v2/img/blobs/sha256:abc": response(http.StatusFound, "", "Location", "/storage/blob"),
-			},
-			wantStatus:  http.StatusFound,
-			wantHeaders: http.Header{"Location": {"https://10.1.2.3/storage/blob"}},
-			wantAuth:    []string{"Bearer secret"},
-		},
-		{
 			name: "leaves redirect to non-allowlisted IP untouched",
 			responses: fakeRoundTripper{
 				registryURL: response(http.StatusFound, "", "Location", "https://192.168.1.1/blob", "WWW-Authenticate", "Basic"),

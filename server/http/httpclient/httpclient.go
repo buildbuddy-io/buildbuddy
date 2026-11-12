@@ -92,35 +92,13 @@ func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) 
 			if !ipAllowed(net.ParseIP(req.URL.Hostname()), allowed) {
 				return http.ErrUseLastResponse
 			}
-			// Go keeps credentials when only the port changes, so drop them on any origin change.
-			if !sameOrigin(req.URL, via[0].URL) {
-				for _, h := range []string{"Authorization", "Cookie", "Cookie2"} {
-					req.Header.Del(h)
-				}
+			// Every hop followed here changes hostname, so never forward credentials.
+			for _, h := range []string{"Authorization", "Cookie", "Cookie2"} {
+				req.Header.Del(h)
 			}
 			return nil
 		},
 	}}
-}
-
-// sameOrigin reports whether a and b have the same scheme, host and effective port.
-func sameOrigin(a, b *url.URL) bool {
-	return strings.EqualFold(a.Scheme, b.Scheme) &&
-		strings.EqualFold(a.Hostname(), b.Hostname()) &&
-		effectivePort(a) == effectivePort(b)
-}
-
-func effectivePort(u *url.URL) string {
-	if p := u.Port(); p != "" {
-		return p
-	}
-	switch strings.ToLower(u.Scheme) {
-	case "https":
-		return "443"
-	case "http":
-		return "80"
-	}
-	return ""
 }
 
 type allowedIPRedirectTransport struct {
@@ -136,12 +114,14 @@ func (t *allowedIPRedirectTransport) RoundTrip(req *http.Request) (*http.Respons
 		return nil, err
 	}
 	// ggcr's bearer transport only sees the original request, so it would treat a
-	// 401 challenge from a redirected-to origin (e.g. blob storage) as coming from
-	// the registry and add that origin's scope to the registry token for good.
-	// That only happens for requests the bearer transport already authorized, so
-	// strip the challenge from those and let ggcr see a plain 401. ggcr's /v2/
-	// ping is unauthenticated and needs the challenge to learn the token realm.
-	if resp.StatusCode == http.StatusUnauthorized && resp.Request != nil && req.Header.Get("Authorization") != "" && !sameOrigin(resp.Request.URL, req.URL) {
+	// 401 challenge from a hop we followed (e.g. blob storage) as coming from the
+	// registry and add that host's scope to the registry token for good. That
+	// only happens for requests the bearer transport already authorized, so strip
+	// the challenge from those and let ggcr see a plain 401. ggcr's /v2/ ping is
+	// unauthenticated and needs the challenge to learn the token realm. Followed
+	// hops always change hostname, so a different hostname means we followed one.
+	followed := resp.Request != nil && !strings.EqualFold(resp.Request.URL.Hostname(), req.URL.Hostname())
+	if followed && resp.StatusCode == http.StatusUnauthorized && req.Header.Get("Authorization") != "" {
 		resp.Header.Del("WWW-Authenticate")
 	}
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
