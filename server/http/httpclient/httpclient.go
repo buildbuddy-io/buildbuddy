@@ -58,9 +58,8 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 	}
 }
 
-// FollowRedirectsToAllowedIPs wraps inner so that it follows redirects to IP
-// literals in allowed, which ggcr's own SSRF check would refuse. Other
-// redirects are returned unfollowed. With no allowlist it returns inner.
+// ggcr's own client refuses redirects to private IPs, so allowlisted ones must
+// be followed here. An empty allowlist must return inner unchanged.
 func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) http.RoundTripper {
 	if len(allowed) == 0 {
 		return inner

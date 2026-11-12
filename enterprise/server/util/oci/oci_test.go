@@ -1969,9 +1969,6 @@ func TestRegistryETLDPlusOne(t *testing.T) {
 	}
 }
 
-// TestResolve_BlobRedirectToAllowlistedIP checks that a blob redirect to a
-// signed URL on an allowlisted private IP is followed, and that the backend
-// rejects forwarded credentials.
 func TestResolve_BlobRedirectToAllowlistedIP(t *testing.T) {
 	const token = "test-token"
 	for _, allowed := range [][]string{{"127.0.0.1/32"}, nil} {
@@ -1987,8 +1984,6 @@ func TestResolve_BlobRedirectToAllowlistedIP(t *testing.T) {
 					if useOCIFetcher {
 						te = setupTestEnvWithCache(t)
 					}
-					// Once enabled, requests to localhost act as the registry and
-					// requests to 127.0.0.1 act as the signed-URL blob backend.
 					var enabled atomic.Bool
 					registry := testregistry.Run(t, testregistry.Opts{
 						HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {

@@ -117,7 +117,6 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { re
 func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 	_, allowed, err := net.ParseCIDR("10.0.0.0/8")
 	require.NoError(t, err)
-	// /v2/blob redirects to its "to" query parameter; anything else returns 200.
 	inner := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("")), Request: req}
 		if req.URL.Path == "/v2/blob" {
