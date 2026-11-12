@@ -606,6 +606,15 @@ func TestSanitizeImageRef(t *testing.T) {
 		{"Digest", "gcr.io/img@sha256:abc", "gcr.io/img@sha256:abc"},
 		{"CredsAndDigest", "user:secret@gcr.io/img@sha256:abc", "gcr.io/img@sha256:abc"},
 		{"ShortDigest", "ubuntu@sha256:abc", "ubuntu@sha256:abc"},
+		{"QuestionMarkInPassword", "docker://user:pa?ss@gcr.io/img:v1", "docker://gcr.io/img:v1"},
+		{"AtInPassword", "docker://user:p@ss@gcr.io/img:v1", "docker://gcr.io/img:v1"},
+		{"TokenNoSlash", "ghp_token@ubuntu:20.04", "ubuntu:20.04"},
+		{"UserPassNoSlash", "docker://user:secret@ubuntu", "docker://ubuntu"},
+		{"IPv6", "docker://[::1]:5000/img:v1", "docker://[::1]:5000/img:v1"},
+		{"NestedPath", "gcr.io/a/b/c/img:v1", "gcr.io/a/b/c/img:v1"},
+		{"TagAndDigest", "gcr.io/img:v1@sha256:abc", "gcr.io/img:v1@sha256:abc"},
+		{"Sha512Digest", "gcr.io/img@sha512:abc", "gcr.io/img@sha512:abc"},
+		{"DigestAndQuery", "user:secret@gcr.io/img@sha256:abc?x=y", "gcr.io/img@sha256:abc"},
 		{"Empty", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

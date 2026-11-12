@@ -987,20 +987,26 @@ func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
 		"Unsupported dockerNetwork property value: %s", dockerNetwork)
 }
 
+// imageDigestPrefix matches the start of what follows the "@" in a digest
+// reference such as "gcr.io/img@sha256:abc".
+var imageDigestPrefix = regexp.MustCompile(`^[a-z0-9]+(?:[+._-][a-z0-9]+)*:[0-9a-fA-F]+(?:\?|$)`)
+
 // SanitizeImageRef strips any credentials and query string from a container
 // image reference, such as "docker://user:secret@gcr.io/img?x=y", so that it
-// can be stored. Image references never contain userinfo, so an "@" that
-// comes before a "/" can only be the end of one; a digest's "@" never is.
+// can be stored. Image references never contain userinfo, so any "@" that
+// doesn't start a digest ends userinfo; everything up to the last such "@"
+// is dropped.
 func SanitizeImageRef(ref string) string {
-	ref, _, _ = strings.Cut(ref, "?")
 	scheme := ""
 	if i := strings.Index(ref, "://"); i >= 0 {
 		scheme, ref = ref[:i+len("://")], ref[i+len("://"):]
 	}
-	if slash := strings.LastIndex(ref, "/"); slash >= 0 {
-		if at := strings.LastIndex(ref[:slash], "@"); at >= 0 {
+	for at := strings.LastIndex(ref, "@"); at >= 0; at = strings.LastIndex(ref[:at], "@") {
+		if !imageDigestPrefix.MatchString(ref[at+1:]) {
 			ref = ref[at+1:]
+			break
 		}
 	}
+	ref, _, _ = strings.Cut(ref, "?")
 	return scheme + ref
 }
