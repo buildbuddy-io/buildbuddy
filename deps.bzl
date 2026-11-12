@@ -302,6 +302,12 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-436aa1f3a92a2f8bd81260bc81321e960ee1453413180ccb1dd29985b5f883f6"],
         executable = True,
     )
+    http_file(
+        name = "org_kernel_git_linux_kernel-vmlinux-arm64-6.18",
+        sha256 = "6de699ddc17edee7eb6c99430924bed4b7aa3b1ee5bcac3c4432e06ed2a88c38",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v6.18-6de699ddc17edee7eb6c99430924bed4b7aa3b1ee5bcac3c4432e06ed2a88c38"],
+        executable = True,
+    )
 
     # Mozilla root CA bundle, for actions running in images that do not ship
     # CA certificates.
