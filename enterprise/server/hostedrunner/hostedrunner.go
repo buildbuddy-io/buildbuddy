@@ -340,6 +340,10 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	// Normalize to adhere to the REAPI spec.
 	rexec.NormalizeCommand(cmd)
+	if req.GetContainerImage() == "" {
+		task := &repb.ExecutionTask{Command: cmd, PlatformOverrides: &repb.Platform{Properties: remoteHeaderOverrides(req)}}
+		ci_runner_util.ApplyDefaultImageOverride(ctx, r.env, task, req.GetExecProperties(), DefaultRunnerContainerImage, pool, "remote-bazel")
+	}
 
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, in, repb.DigestFunction_BLAKE3, cmd)
 	if err != nil {
@@ -383,6 +387,19 @@ func (r *runnerService) buildUser(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return cmp.Or(group.Name, u.GetGroupID()), nil
+}
+
+// remoteHeaderOverrides returns the platform overrides that the execution
+// server will derive from the request's remote headers.
+func remoteHeaderOverrides(req *rnpb.RunRequest) []*repb.Platform_Property {
+	var props []*repb.Platform_Property
+	for _, h := range req.GetRemoteHeaders() {
+		k, v, _ := strings.Cut(h, "=")
+		if name, ok := strings.CutPrefix(strings.ToLower(k), platform.OverrideHeaderPrefix); ok {
+			props = append(props, &repb.Platform_Property{Name: name, Value: v})
+		}
+	}
+	return props
 }
 
 func getExecProperty(execProps []*repb.Platform_Property, key string) string {

@@ -494,3 +494,54 @@ func TestRun_GitCredentialsFromEnv(t *testing.T) {
 		require.NotContains(t, []string{"REPO_USER", "REPO_TOKEN"}, ev.GetName())
 	}
 }
+
+func TestDefaultImageOverride(t *testing.T) {
+	const overrideImage = "docker://gcr.io/example/override-image:latest"
+	for _, tc := range []struct {
+		name          string
+		req           *rnpb.RunRequest
+		expectedImage string
+	}{
+		{
+			name:          "override applies",
+			req:           &rnpb.RunRequest{},
+			expectedImage: overrideImage,
+		},
+		{
+			name:          "explicit request image wins",
+			req:           &rnpb.RunRequest{ContainerImage: DefaultRunnerContainerImage},
+			expectedImage: DefaultRunnerContainerImage,
+		},
+		{
+			name: "explicit exec property image wins",
+			req: &rnpb.RunRequest{ExecProperties: []*repb.Platform_Property{
+				{Name: "container-image", Value: DefaultRunnerContainerImage},
+			}},
+			expectedImage: DefaultRunnerContainerImage,
+		},
+		{
+			name: "self-hosted remote header skips override",
+			req: &rnpb.RunRequest{RemoteHeaders: []string{
+				platform.OverrideHeaderPrefix + platform.UseSelfHostedExecutorsPropertyName + "=true",
+			}},
+			expectedImage: DefaultRunnerContainerImage,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.ci_runner_default_image", overrideImage)
+			te, ctx := getEnv(t)
+
+			r, err := New(te)
+			require.NoError(t, err)
+
+			tc.req.Steps = []*rnpb.Step{{Run: "echo hello"}}
+			_, err = r.Run(ctx, tc.req)
+			require.NoError(t, err)
+
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			require.Equal(t, 1, len(execClient.executeRequests))
+			exec := getExecution(t, ctx, te, execClient.executeRequests[0].Payload)
+			require.Equal(t, tc.expectedImage, platform.FindValue(exec.Command.GetPlatform(), "container-image"))
+		})
+	}
+}
