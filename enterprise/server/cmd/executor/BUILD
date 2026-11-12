@@ -641,7 +641,6 @@ image_layer(
     tags = ["manual"],
 )
 
-
 pkg_tar(
     name = "licenses_tar",
     srcs = [
