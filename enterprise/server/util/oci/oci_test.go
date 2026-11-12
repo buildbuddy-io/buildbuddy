@@ -2176,3 +2176,97 @@ func TestResolve_BlobRedirectToAllowlistedIPWithBearerChallenge(t *testing.T) {
 	require.Greater(t, storageHits.Load(), int32(0))
 	require.Zero(t, storageScopeTokenHits.Load(), "storage challenge scope leaked into registry token requests")
 }
+
+// The registry is on allowlisted 127.0.0.1 and redirects blob GETs to
+// 127.0.0.1 on another port, which answers 401 with its own Bearer challenge.
+func TestResolve_BlobRedirectSameHostOtherPortWithBearerChallenge(t *testing.T) {
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry.use_cache_percent", 0)
+	flags.Set(t, "http.client.allow_localhost", true)
+	te := testenv.GetTestEnv(t)
+
+	const regToken = "registry-token"
+	const storageToken = "storage-token"
+	var enabled atomic.Bool
+	var regPort string
+	var storageChallenges, storageTokenHits, storageServed atomic.Int32
+	blobGet := regexp.MustCompile(`^/v2/.+/blobs/sha256:[0-9a-f]+$`)
+
+	storageLis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { storageLis.Close() })
+	_, storagePort, err := net.SplitHostPort(storageLis.Addr().String())
+	require.NoError(t, err)
+	go http.Serve(storageLis, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			storageTokenHits.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"token":%q,"access_token":%q}`, storageToken, storageToken)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer "+storageToken {
+			storageChallenges.Add(1)
+			w.Header().Set("WWW-Authenticate", `Bearer realm="http://127.0.0.1:`+storagePort+`/token",service="storage"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:"+regPort+r.URL.Path, nil)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+regToken)
+		req.Header.Set("X-Storage-Fetch", "1")
+		resp, err := http.DefaultTransport.RoundTrip(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		storageServed.Add(1)
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	}))
+
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if !enabled.Load() {
+				return true
+			}
+			switch {
+			case r.URL.Path == "/token":
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprintf(w, `{"token":%q,"access_token":%q}`, regToken, regToken)
+			case r.Header.Get("Authorization") != "Bearer "+regToken:
+				w.Header().Set("WWW-Authenticate", `Bearer realm="http://127.0.0.1:`+regPort+`/token",service="registry"`)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+			case r.Method == http.MethodGet && blobGet.MatchString(r.URL.Path) && r.Header.Get("X-Storage-Fetch") == "":
+				http.Redirect(w, r, "http://127.0.0.1:"+storagePort+r.URL.Path, http.StatusFound)
+			case r.URL.Path == "/v2/":
+				w.WriteHeader(http.StatusOK)
+			default:
+				return true
+			}
+			return false
+		},
+	})
+	_, regPort, err = net.SplitHostPort(registry.Address())
+	require.NoError(t, err)
+	registry.PushNamedImageWithFiles(t, "same_host_port_image", map[string][]byte{"/hello": []byte("world")}, nil)
+	enabled.Store(true)
+
+	pulled, err := newResolver(t, te).Resolve(
+		context.Background(),
+		"127.0.0.1:"+regPort+"/same_host_port_image",
+		&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS},
+		oci.Credentials{},
+		false,
+	)
+	if err == nil {
+		err = validate.Image(pulled)
+	}
+	require.NoError(t, err)
+	require.Greater(t, storageChallenges.Load(), int32(0))
+	require.Greater(t, storageTokenHits.Load(), int32(0))
+	require.Greater(t, storageServed.Load(), int32(0))
+}
