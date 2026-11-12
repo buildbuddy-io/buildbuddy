@@ -1860,20 +1860,16 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 			return nil, err
 		}
 		defer db.Close()
-		if err = db.DeleteRange(remoteRD.GetStart(), remoteRD.GetEnd(), pebble.NoSync); err != nil {
+		// Sync deletes before clearing the removal marker; neither Raft
+		// replay nor RemoveData retries can restore them afterward.
+		if err = db.DeleteRange(remoteRD.GetStart(), remoteRD.GetEnd(), pebble.Sync); err != nil {
 			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
 
 		// Remove the local range of the replica.
 		localStart, localEnd := keys.Range(replica.LocalKeyPrefix(rd.GetRangeId(), req.GetReplicaId()))
-		if err := db.DeleteRange(localStart, localEnd, pebble.NoSync); err != nil {
+		if err := db.DeleteRange(localStart, localEnd, pebble.Sync); err != nil {
 			return nil, status.InternalErrorf("failed to delete data of local range of c%dn%d from pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
-		}
-
-		// Persist deletes before clearing the removal marker; neither Raft
-		// replay nor RemoveData retries can restore them afterward.
-		if err := db.Flush(); err != nil {
-			return nil, status.InternalErrorf("failed to flush deletes of c%dn%d to pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
 	}
 
