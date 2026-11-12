@@ -1,10 +1,6 @@
 package httpclient
 
 import (
-	"io"
-	"net"
-	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -106,42 +102,6 @@ func TestBlockingDialerControl(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
-		})
-	}
-}
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
-
-func TestFollowRedirectsToAllowedIPs(t *testing.T) {
-	_, allowed, err := net.ParseCIDR("10.0.0.0/8")
-	require.NoError(t, err)
-	inner := roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("")), Request: req}
-		if req.URL.Path == "/v2/blob" {
-			resp.StatusCode = http.StatusFound
-			resp.Header.Set("Location", req.URL.Query().Get("to"))
-		}
-		return resp, nil
-	})
-	for _, tc := range []struct {
-		name       string
-		allowed    []*net.IPNet
-		to         string
-		wantStatus int
-	}{
-		{name: "allowlisted IP is followed", allowed: []*net.IPNet{allowed}, to: "https://10.1.2.3/blob", wantStatus: http.StatusOK},
-		{name: "other IP is left to the caller", allowed: []*net.IPNet{allowed}, to: "https://192.168.1.1/blob", wantStatus: http.StatusFound},
-		{name: "empty allowlist is a no-op", to: "https://10.1.2.3/blob", wantStatus: http.StatusFound},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			tr := FollowRedirectsToAllowedIPs(inner, tc.allowed)
-			req, err := http.NewRequest(http.MethodGet, "https://registry.example/v2/blob?to="+tc.to, nil)
-			require.NoError(t, err)
-			resp, err := tr.RoundTrip(req)
-			require.NoError(t, err)
-			require.Equal(t, tc.wantStatus, resp.StatusCode)
 		})
 	}
 }

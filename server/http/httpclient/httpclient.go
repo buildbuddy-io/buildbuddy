@@ -58,45 +58,6 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 	}
 }
 
-func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) http.RoundTripper {
-	if len(allowed) == 0 {
-		return inner
-	}
-	return &allowedIPRedirectTransport{client: &http.Client{
-		Transport: inner,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return errors.New("stopped after 10 redirects")
-			}
-			if ip := net.ParseIP(req.URL.Hostname()); ip != nil {
-				for _, ipNet := range allowed {
-					if ipNet.Contains(ip) {
-						return nil
-					}
-				}
-			}
-			return http.ErrUseLastResponse
-		},
-	}}
-}
-
-type allowedIPRedirectTransport struct {
-	client *http.Client
-}
-
-func (t *allowedIPRedirectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	// After a followed hop, a relative Location must resolve against that hop,
-	// not against the URL the caller requested.
-	if loc, err := resp.Location(); err == nil {
-		resp.Header.Set("Location", loc.String())
-	}
-	return resp, nil
-}
-
 // verify that metricsTransport implements the RoundTripper interface
 var _ http.RoundTripper = (*metricsTransport)(nil)
 

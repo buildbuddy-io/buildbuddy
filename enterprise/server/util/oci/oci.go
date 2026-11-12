@@ -206,6 +206,8 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Added by buildpatches/com_github_google_go_containerregistry_allowed_private_ips.patch.
+	remote.SetAllowedPrivateIPs(allowedPrivateIPNets)
 	imageTagToDigestLRU, err := lru.New[string](&lru.Config[string]{
 		SizeFn:     func(_ string) int64 { return 1 },
 		MaxSize:    int64(resolveImageDigestLRUMaxEntries),
@@ -552,7 +554,7 @@ func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, c
 		}))
 	}
 
-	tr := httpclient.FollowRedirectsToAllowedIPs(httpclient.New(r.allowedPrivateIPs, "oci").Transport, r.allowedPrivateIPs)
+	tr := httpclient.New(r.allowedPrivateIPs, "oci").Transport
 	mirrors := ocifetcher.Mirrors()
 	if len(mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(ocifetcher.NewMirrorTransport(tr, mirrors)))
