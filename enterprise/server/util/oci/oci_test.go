@@ -1969,45 +1969,78 @@ func TestRegistryETLDPlusOne(t *testing.T) {
 	}
 }
 
+// TestResolve_BlobRedirectToAllowlistedIP checks that a blob redirect to a
+// signed URL on an allowlisted private IP is followed, and that the backend
+// rejects forwarded credentials.
 func TestResolve_BlobRedirectToAllowlistedIP(t *testing.T) {
+	const token = "test-token"
 	for _, allowed := range [][]string{{"127.0.0.1/32"}, nil} {
-		for _, useOCIFetcher := range []bool{false, true} {
-			t.Run(fmt.Sprintf("allowed_%v/use_oci_fetcher_%t", allowed, useOCIFetcher), func(t *testing.T) {
-				flags.Set(t, "executor.container_registry_allowed_private_ips", allowed)
-				flags.Set(t, "executor.container_registry.use_cache_percent", 0)
-				// Lets the test reach the registry on localhost; redirects are
-				// still subject to ggcr's SSRF check.
-				flags.Set(t, "http.client.allow_localhost", true)
-				te := testenv.GetTestEnv(t)
-				if useOCIFetcher {
-					te = setupTestEnvWithCache(t)
-				}
-				// Once enabled, blob GETs on localhost redirect to the same server on 127.0.0.1.
-				var redirectBlobs atomic.Bool
-				registry := testregistry.Run(t, testregistry.Opts{
-					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-						if !redirectBlobs.Load() || !strings.Contains(r.URL.Path, "/blobs/") || strings.HasPrefix(r.Host, "127.0.0.1:") {
-							return true
-						}
-						_, port, _ := net.SplitHostPort(r.Host)
-						http.Redirect(w, r, "http://127.0.0.1:"+port+r.URL.Path, http.StatusFound)
-						return false
-					},
-				})
-				registry.PushNamedImageWithFiles(t, "redirect_image", map[string][]byte{"/hello": []byte("world")}, nil)
-				redirectBlobs.Store(true)
+		for _, bearer := range []bool{false, true} {
+			for _, useOCIFetcher := range []bool{false, true} {
+				t.Run(fmt.Sprintf("allowed_%v/bearer_%t/use_oci_fetcher_%t", allowed, bearer, useOCIFetcher), func(t *testing.T) {
+					flags.Set(t, "executor.container_registry_allowed_private_ips", allowed)
+					flags.Set(t, "executor.container_registry.use_cache_percent", 0)
+					// Lets the test reach the registry on localhost; redirects are
+					// still subject to ggcr's SSRF check.
+					flags.Set(t, "http.client.allow_localhost", true)
+					te := testenv.GetTestEnv(t)
+					if useOCIFetcher {
+						te = setupTestEnvWithCache(t)
+					}
+					// Once enabled, requests to localhost act as the registry and
+					// requests to 127.0.0.1 act as the signed-URL blob backend.
+					var enabled atomic.Bool
+					registry := testregistry.Run(t, testregistry.Opts{
+						HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+							if !enabled.Load() {
+								return true
+							}
+							if strings.HasPrefix(r.Host, "127.0.0.1:") {
+								if r.URL.Query().Get("token") != "abc" {
+									http.Error(w, "missing signed-URL token", http.StatusForbidden)
+									return false
+								}
+								if r.Header.Get("Authorization") != "" {
+									http.Error(w, "forwarded credentials rejected", http.StatusBadRequest)
+									return false
+								}
+								return true
+							}
+							if bearer {
+								if r.URL.Path == "/token" {
+									fmt.Fprintf(w, `{"token":%q}`, token)
+									return false
+								}
+								if r.Header.Get("Authorization") != "Bearer "+token {
+									w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="http://%s/token",service="test"`, r.Host))
+									w.WriteHeader(http.StatusUnauthorized)
+									return false
+								}
+							}
+							if !strings.Contains(r.URL.Path, "/blobs/") {
+								return true
+							}
+							_, port, _ := net.SplitHostPort(r.Host)
+							loc := "http://127.0.0.1:" + port + r.URL.Path + "?token=abc"
+							http.Redirect(w, r, loc, http.StatusTemporaryRedirect)
+							return false
+						},
+					})
+					registry.PushNamedImageWithFiles(t, "redirect_image", map[string][]byte{"/hello": []byte("world")}, nil)
+					enabled.Store(true)
 
-				pulled, err := newResolver(t, te).Resolve(context.Background(), registry.ImageAddress("redirect_image"),
-					&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS}, oci.Credentials{}, useOCIFetcher)
-				if err == nil {
-					err = validate.Image(pulled)
-				}
-				if allowed == nil {
-					require.ErrorContains(t, err, "SSRF protection")
-				} else {
-					require.NoError(t, err)
-				}
-			})
+					pulled, err := newResolver(t, te).Resolve(context.Background(), registry.ImageAddress("redirect_image"),
+						&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS}, oci.Credentials{}, useOCIFetcher)
+					if err == nil {
+						err = validate.Image(pulled)
+					}
+					if allowed == nil {
+						require.ErrorContains(t, err, "SSRF protection")
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
 		}
 	}
 }
