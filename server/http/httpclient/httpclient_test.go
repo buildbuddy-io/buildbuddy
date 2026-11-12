@@ -139,6 +139,8 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		start       string // defaults to registryURL
+		method      string // defaults to GET
+		allowed     string // defaults to 10.0.0.0/8
 		responses   fakeRoundTripper
 		wantStatus  int
 		wantHeaders http.Header
@@ -205,6 +207,26 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 			wantAuth:    []string{"Bearer secret"},
 		},
 		{
+			name:   "leaves POST 307 to allowlisted IP unfollowed",
+			method: http.MethodPost,
+			responses: fakeRoundTripper{
+				registryURL: response(http.StatusTemporaryRedirect, "", "Location", "https://10.1.2.3/token"),
+			},
+			wantStatus:  http.StatusTemporaryRedirect,
+			wantHeaders: http.Header{"Location": {"https://10.1.2.3/token"}},
+			wantAuth:    []string{"Bearer secret"},
+		},
+		{
+			name:    "leaves redirect to allowlisted public IP unfollowed",
+			allowed: "0.0.0.0/0",
+			responses: fakeRoundTripper{
+				registryURL: response(http.StatusFound, "", "Location", "https://8.8.8.8/blob"),
+			},
+			wantStatus:  http.StatusFound,
+			wantHeaders: http.Header{"Location": {"https://8.8.8.8/blob"}},
+			wantAuth:    []string{"Bearer secret"},
+		},
+		{
 			name: "leaves redirect to non-allowlisted IP untouched",
 			responses: fakeRoundTripper{
 				registryURL: response(http.StatusFound, "", "Location", "https://192.168.1.1/blob", "WWW-Authenticate", "Basic"),
@@ -257,7 +279,11 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, allowed, err := net.ParseCIDR("10.0.0.0/8")
+			cidr := tc.allowed
+			if cidr == "" {
+				cidr = "10.0.0.0/8"
+			}
+			_, allowed, err := net.ParseCIDR(cidr)
 			require.NoError(t, err)
 			var gotAuth []string
 			tr := FollowRedirectsToAllowedIPs(roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -268,7 +294,11 @@ func TestFollowRedirectsToAllowedIPs(t *testing.T) {
 			if start == "" {
 				start = registryURL
 			}
-			req, err := http.NewRequest(http.MethodGet, start, nil)
+			method := tc.method
+			if method == "" {
+				method = http.MethodGet
+			}
+			req, err := http.NewRequest(method, start, nil)
 			require.NoError(t, err)
 			if !tc.noAuth {
 				req.Header.Set("Authorization", "Bearer secret")

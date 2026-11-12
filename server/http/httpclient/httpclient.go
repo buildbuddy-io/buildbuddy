@@ -67,7 +67,9 @@ func ipAllowed(ip net.IP, allowed []*net.IPNet) bool {
 	return false
 }
 
-// FollowRedirectsToAllowedIPs wraps inner so that it follows redirects to IP literals in allowed.
+// FollowRedirectsToAllowedIPs wraps inner so that it follows GET and HEAD
+// redirects to private IP literals in allowed. ggcr rejects those itself;
+// everything else is handed back unfollowed for ggcr's own redirect policy.
 func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) http.RoundTripper {
 	if len(allowed) == 0 {
 		return inner
@@ -77,6 +79,11 @@ func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) 
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return errors.New("stopped after 10 redirects")
+			}
+			// A 307/308 would re-send the body, e.g. a token POST with a password
+			// or refresh_token, which ggcr's realmRedirectCheck refuses to forward.
+			if via[0].Method != http.MethodGet && via[0].Method != http.MethodHead {
+				return http.ErrUseLastResponse
 			}
 			// Deliberate: ggcr refuses a token endpoint downgraded to http, so https
 			// registries that redirect to plain-http storage on an allowlisted IP are
@@ -89,16 +96,26 @@ func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) 
 			if strings.EqualFold(req.URL.Hostname(), via[0].URL.Hostname()) {
 				return http.ErrUseLastResponse
 			}
-			if !ipAllowed(net.ParseIP(req.URL.Hostname()), allowed) {
+			// Public IPs go back to ggcr, which allows them and does its per-host
+			// token exchange.
+			ip := net.ParseIP(req.URL.Hostname())
+			if !isPrivateIP(ip) || !ipAllowed(ip, allowed) {
 				return http.ErrUseLastResponse
 			}
-			// Every hop followed here changes hostname, so never forward credentials.
+			// Go already drops these on a hostname change, and every hop followed
+			// here changes hostname; delete them anyway as defense in depth.
 			for _, h := range []string{"Authorization", "Cookie", "Cookie2"} {
 				req.Header.Del(h)
 			}
 			return nil
 		},
 	}}
+}
+
+// isPrivateIP matches the addresses ggcr's checkRedirectSSRF refuses to redirect to.
+func isPrivateIP(ip net.IP) bool {
+	return ip != nil && (ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsPrivate() || ip.IsUnspecified())
 }
 
 type allowedIPRedirectTransport struct {
