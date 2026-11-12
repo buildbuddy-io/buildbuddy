@@ -891,7 +891,7 @@ func writeRegistration(t *testing.T, s *CacheProxyRegistryServer, reg *cppb.Regi
 	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies(reg.GetGroupId()), reg.GetSummary().GetProxyId(), b).Err())
 }
 
-func profileRequest(proxyID string, profileType pfpb.GetProfileRequest_Type) *cppb.GetCacheProxyRequest {
+func profileRequest(proxyID string, profileType pfpb.ProfileType) *cppb.GetCacheProxyRequest {
 	req := getCacheProxyRequest(proxyID)
 	req.GetProfile = &pfpb.GetProfileRequest{Type: profileType}
 	return req
@@ -931,10 +931,10 @@ func TestGetCacheProxy_Profile(t *testing.T) {
 	proxyErr := answerProfileRequest(stream, summary)
 
 	ctx := claims.AuthContextWithJWT(context.Background(), adminUser.(*claims.Claims), nil)
-	rsp, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.GetProfileRequest_HEAP))
+	rsp, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.ProfileType_HEAP))
 	require.NoError(t, err)
 	require.NoError(t, <-proxyErr)
-	assert.Equal(t, pfpb.GetProfileRequest_HEAP, rsp.GetDetails().GetProfile().GetType())
+	assert.Equal(t, pfpb.ProfileType_HEAP, rsp.GetDetails().GetProfile().GetType())
 	assert.Equal(t, []byte("profile-data"), rsp.GetDetails().GetProfile().GetData())
 }
 
@@ -950,14 +950,14 @@ func TestGetCacheProxy_ProfileForwardsToPeer(t *testing.T) {
 	proxyErr := answerProfileRequest(stream, summary)
 
 	ctx := claims.AuthContextWithJWT(context.Background(), adminUser.(*claims.Claims), nil)
-	rsp, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.GetProfileRequest_GOROUTINE))
+	rsp, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.ProfileType_GOROUTINE))
 	require.NoError(t, err)
 	require.NoError(t, <-proxyErr)
-	assert.Equal(t, pfpb.GetProfileRequest_GOROUTINE, rsp.GetDetails().GetProfile().GetType())
+	assert.Equal(t, pfpb.ProfileType_GOROUTINE, rsp.GetDetails().GetProfile().GetType())
 	assert.Equal(t, []byte("profile-data"), rsp.GetDetails().GetProfile().GetData())
 
 	fwd := <-peer.forwarded
-	assert.Equal(t, pfpb.GetProfileRequest_GOROUTINE, fwd.GetGetProfile().GetType())
+	assert.Equal(t, pfpb.ProfileType_GOROUTINE, fwd.GetGetProfile().GetType())
 }
 
 func TestGetCacheProxy_ProfileTypeRequired(t *testing.T) {
@@ -967,7 +967,7 @@ func TestGetCacheProxy_ProfileTypeRequired(t *testing.T) {
 	registerProxy(t, s, client, "id-1")
 
 	ctx := claims.AuthContextWithJWT(context.Background(), adminUser.(*claims.Claims), nil)
-	_, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.GetProfileRequest_UNKNOWN_TYPE))
+	_, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.ProfileType_UNKNOWN_TYPE))
 	require.Error(t, err)
 	assert.True(t, status.IsInvalidArgumentError(err), "expected invalid argument, got: %v", err)
 }
@@ -979,7 +979,7 @@ func TestGetCacheProxy_ProfileRequiresAdmin(t *testing.T) {
 	registerProxy(t, s, client, "id-1")
 
 	ctx := claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil)
-	_, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.GetProfileRequest_HEAP))
+	_, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.ProfileType_HEAP))
 	require.Error(t, err)
 	assert.True(t, status.IsPermissionDeniedError(err), "expected permission denied, got: %v", err)
 }
@@ -1003,7 +1003,7 @@ func TestGetCacheProxy_ProfileAllowsServerAdmin(t *testing.T) {
 	proxyErr := answerProfileRequest(stream, summary)
 
 	ctx := claims.AuthContextWithJWT(context.Background(), serverAdmin, nil)
-	rsp, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.GetProfileRequest_HEAP))
+	rsp, err := s.GetCacheProxy(ctx, profileRequest("id-1", pfpb.ProfileType_HEAP))
 	require.NoError(t, err)
 	require.NoError(t, <-proxyErr)
 	assert.Equal(t, []byte("profile-data"), rsp.GetDetails().GetProfile().GetData())

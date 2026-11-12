@@ -521,7 +521,7 @@ func (s *CacheProxyRegistryServer) GetCacheProxy(ctx context.Context, req *cppb.
 	}
 
 	if profileReq := req.GetGetProfile(); profileReq != nil {
-		if profileReq.GetType() == pfpb.GetProfileRequest_UNKNOWN_TYPE {
+		if profileReq.GetType() == pfpb.ProfileType_UNKNOWN_TYPE {
 			return nil, status.InvalidArgumentError("profile type not specified")
 		}
 		// Confirm the caller is an org/server admin
