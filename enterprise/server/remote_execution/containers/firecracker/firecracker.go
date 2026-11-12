@@ -329,7 +329,7 @@ func getCgroupVersion() (string, error) {
 	switch stat.Type {
 	case unix.CGROUP2_SUPER_MAGIC: // 0x63677270
 		return "2", nil
-	case unix.CGROUP_SUPER_MAGIC /* 0x27e0eb */, unix.TMPFS_MAGIC /* 0x01021994 */:
+	case unix.CGROUP_SUPER_MAGIC /* 0x27e0eb */, unix.TMPFS_MAGIC /* 0x01021994 */ :
 		return "1", nil
 	default:
 		return "", status.InternalErrorf("No cgroup version found (system reported unsupported filesystem magic 0x%x)", stat.Type)
