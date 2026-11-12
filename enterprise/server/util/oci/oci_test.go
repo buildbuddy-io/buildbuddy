@@ -2105,3 +2105,74 @@ func TestResolve_PingRedirectToAllowlistedIPWithBearerChallenge(t *testing.T) {
 	require.Greater(t, pingRedirects.Load(), int32(0))
 	require.Greater(t, tokenHits.Load(), int32(0))
 }
+
+// Blob GETs redirect to allowlisted 127.0.0.1 storage, which answers 401 with
+// its own Bearer challenge. That challenge must not leak into the registry
+// token's scopes.
+func TestResolve_BlobRedirectToAllowlistedIPWithBearerChallenge(t *testing.T) {
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry.use_cache_percent", 0)
+	flags.Set(t, "http.client.allow_localhost", true)
+	te := testenv.GetTestEnv(t)
+
+	const token = "test-token"
+	var enabled atomic.Bool
+	var storageHits, storageScopeTokenHits atomic.Int32
+	blobGet := regexp.MustCompile(`^/v2/.+/blobs/sha256:[0-9a-f]+$`)
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if !enabled.Load() {
+				return true
+			}
+			_, port, err := net.SplitHostPort(r.Host)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return false
+			}
+			realm := `Bearer realm="http://localhost:` + port + `/token",service="test"`
+			switch {
+			case r.URL.Path == "/token":
+				for _, scope := range r.URL.Query()["scope"] {
+					if scope == "storage:x" {
+						storageScopeTokenHits.Add(1)
+					}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprintf(w, `{"token":%q,"access_token":%q}`, token, token)
+			case r.URL.Path == "/storage/blob":
+				storageHits.Add(1)
+				w.Header().Set("WWW-Authenticate", realm+`,scope="storage:x"`)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+			case r.Header.Get("Authorization") != "Bearer "+token:
+				w.Header().Set("WWW-Authenticate", realm)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+			case r.Method == http.MethodGet && blobGet.MatchString(r.URL.Path):
+				http.Redirect(w, r, "http://127.0.0.1:"+port+"/storage/blob", http.StatusFound)
+			case r.URL.Path == "/v2/":
+				w.WriteHeader(http.StatusOK)
+			default:
+				return true
+			}
+			return false
+		},
+	})
+	registry.PushNamedImageWithFiles(t, "storage_challenge_image", map[string][]byte{"/hello": []byte("world")}, nil)
+	enabled.Store(true)
+
+	resolver := newResolver(t, te)
+	for range 2 {
+		pulled, err := resolver.Resolve(
+			context.Background(),
+			registry.ImageAddress("storage_challenge_image"),
+			&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS},
+			oci.Credentials{},
+			false,
+		)
+		if err == nil {
+			err = validate.Image(pulled)
+		}
+		require.ErrorContains(t, err, "401")
+	}
+	require.Greater(t, storageHits.Load(), int32(0))
+	require.Zero(t, storageScopeTokenHits.Load(), "storage challenge scope leaked into registry token requests")
+}

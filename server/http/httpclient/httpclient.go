@@ -77,6 +77,9 @@ func FollowRedirectsToAllowedIPs(inner http.RoundTripper, allowed []*net.IPNet) 
 			if len(via) >= 10 {
 				return errors.New("stopped after 10 redirects")
 			}
+			// Deliberate: ggcr refuses a token endpoint downgraded to http, so https
+			// registries that redirect to plain-http storage on an allowlisted IP are
+			// not supported.
 			if via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
 				return http.ErrUseLastResponse
 			}
@@ -105,6 +108,16 @@ func (t *allowedIPRedirectTransport) RoundTrip(req *http.Request) (*http.Respons
 			return nil, urlErr.Err
 		}
 		return nil, err
+	}
+	// ggcr's bearer transport only sees the original request, so it would treat a
+	// 401 challenge from a redirected-to origin (e.g. blob storage) as coming from
+	// the registry and add that origin's scope to the registry token for good.
+	// Strip the challenge so it sees a plain 401. The /v2/ ping is exempt: ggcr
+	// needs its challenge to learn the registry's token realm.
+	if resp.StatusCode == http.StatusUnauthorized && resp.Request != nil && req.URL.Path != "/v2/" && req.URL.Path != "/v2" {
+		if final := resp.Request.URL; final.Scheme != req.URL.Scheme || final.Host != req.URL.Host {
+			resp.Header.Del("WWW-Authenticate")
+		}
 	}
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		if loc, err := resp.Location(); err == nil {
