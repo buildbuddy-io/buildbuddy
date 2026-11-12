@@ -2411,21 +2411,31 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	fetchURL := remoteURL
 	useSystemGitCredentials := os.Getenv("USE_SYSTEM_GIT_CREDENTIALS") == "1"
 	if !useSystemGitCredentials && os.Getenv(ci_runner_env.RepoTokenEnvVarName) != "" {
-		// Repo URLs may omit the scheme or host (e.g. "github.com/org/repo" or
-		// "org/repo"), so normalize them into URLs that git can fetch, and
-		// whose host matches the credential helper's. Drop any credentials in
-		// the URL so the credential helper supplies the access token instead.
-		u, err := gitutil.ParseRepoURL(remoteURL)
-		if err != nil {
-			return status.InvalidArgumentErrorf("invalid repo URL %q", remoteURL)
+		if os.Getenv(ci_runner_env.EmbedRepoTokenInRemoteURLEnvVarName) == "1" {
+			authURL, err := gitutil.AuthRepoURL(fetchURL, os.Getenv(ci_runner_env.RepoUserEnvVarName), os.Getenv(ci_runner_env.RepoTokenEnvVarName))
+			if err != nil {
+				return err
+			}
+			fetchURL = authURL
+		} else {
+			// Repo URLs may omit the scheme or host (e.g. "github.com/org/repo" or
+			// "org/repo"), so normalize them into URLs that git can fetch, and
+			// whose host matches the credential helper's. Drop any credentials in
+			// the URL so the credential helper supplies the access token instead.
+			u, err := gitutil.ParseRepoURL(remoteURL)
+			if err != nil {
+				return status.InvalidArgumentErrorf("invalid repo URL %q", remoteURL)
+			}
+			u.User = nil
+			fetchURL = u.String()
 		}
-		u.User = nil
-		fetchURL = u.String()
 	}
 
 	remoteName := gitRemoteName(remoteURL)
 	writeCommandSummary(ws.log, "Configuring remote %q...", remoteName)
 
+	// Don't show `git remote add` command or the error message since the URL may
+	// contain the repo access token.
 	if _, err := git(ctx, io.Discard, "remote", "add", remoteName, fetchURL); err != nil {
 		// Rename the existing remote. Removing then re-adding would be simpler,
 		// but unfortunately that drops the "partialclonefilter" options on the

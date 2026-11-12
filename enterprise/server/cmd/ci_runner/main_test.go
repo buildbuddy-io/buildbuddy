@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
@@ -834,4 +835,17 @@ func TestCredentialHelper_SchemelessRepoURL(t *testing.T) {
 
 	require.NoError(t, c.ws.config(t.Context()))
 	c.fetchAndCheck(t)
+}
+
+func TestCredentialHelper_EmbedRepoTokenInRemoteURLFallback(t *testing.T) {
+	c := setupCredentialHelperTest(t)
+	t.Setenv(ci_runner_env.EmbedRepoTokenInRemoteURLEnvVarName, "1")
+	require.NoError(t, c.ws.config(t.Context()))
+	c.fetchAndCheck(t)
+
+	// The token should be in the remote URL, so that steps that reuse it
+	// keep working.
+	remoteURL, err := exec.CommandContext(t.Context(), "git", "remote", "get-url", gitRemoteName(c.remoteURL)).Output()
+	require.NoError(t, err)
+	require.Contains(t, string(remoteURL), c.remote.AccessToken())
 }
