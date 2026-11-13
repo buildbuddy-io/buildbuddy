@@ -813,7 +813,7 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 		if !ok {
 			return
 		}
-		md["x-buildbuddy-platform.pool"] = []string{teePool}
+		md.Append(platform.OverrideHeader, "pool="+teePool)
 		ctx = metadata.NewIncomingContext(ctx, md)
 
 		r := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
@@ -920,8 +920,12 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.Jwt = jwt
 	}
 
+	overrides, err := platform.RemoteHeaderOverrides(ctx)
+	if err != nil {
+		return nil, err
+	}
 	executionTask.PlatformOverrides = &repb.Platform{
-		Properties: platform.RemoteHeaderOverrides(ctx),
+		Properties: overrides,
 	}
 	s.applySnapshotSaveQuota(ctx, executionTask.PlatformOverrides)
 

@@ -43,13 +43,33 @@ const (
 	Ubuntu22_04WorkflowsImage = Ubuntu22_04Image
 	Ubuntu24_04WorkflowsImage = Ubuntu24_04Image
 
-	// OverrideHeaderPrefix is a prefix used to override platform props via
-	// remote headers. The property name immediately follows the prefix in the
-	// header key, and the header value is used as the property value.
+	// DeprecatedOverrideHeaderPrefix is a prefix used to override platform
+	// props via remote headers. The property name immediately follows the
+	// prefix in the header key, and the header value is used as the property
+	// value.
 	//
 	// Example header:
 	//     x-buildbuddy-platform.container-registry-username: _json_key
-	OverrideHeaderPrefix = "x-buildbuddy-platform."
+	//
+	// Deprecated: Use OverrideHeader instead. Headers with this prefix are
+	// still accepted because existing clients send them, but OverrideHeader
+	// takes precedence if both set the same property.
+	DeprecatedOverrideHeaderPrefix = "x-buildbuddy-platform."
+
+	// OverrideHeader is a header used to override platform props via remote
+	// headers, where each header value has the form NAME=VALUE. Unlike
+	// DeprecatedOverrideHeaderPrefix, it supports property names containing
+	// characters that are not allowed in gRPC header keys, such as
+	// "resources:foo". Bazel crashes if a --remote_header key contains these
+	// characters.
+	//
+	// If both headers set the same property, the value from OverrideHeader
+	// takes precedence. If OverrideHeader sets a property more than once, the
+	// last value takes precedence.
+	//
+	// Example header:
+	//     x-buildbuddy-platform: resources:foo=1
+	OverrideHeader = "x-buildbuddy-platform"
 
 	poolPropertyName = "Pool"
 
@@ -626,34 +646,49 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 
 // RemoteHeaderOverrides returns the platform properties that should override
 // the command's platform properties.
-func RemoteHeaderOverrides(ctx context.Context) []*repb.Platform_Property {
-	props := []*repb.Platform_Property{}
+//
+// Each property is returned at most once, so that code which reads the first
+// value of a property agrees with code which reads the last value. If both
+// OverrideHeader and DeprecatedOverrideHeaderPrefix set a property, the
+// OverrideHeader value is returned. If a header sets a property more than once,
+// the last value is returned.
+func RemoteHeaderOverrides(ctx context.Context) ([]*repb.Platform_Property, error) {
+	overrides := &repb.Platform{}
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return props
+		return overrides.Properties, nil
 	}
 	mdMap := map[string][]string(md)
 	for headerName, headerValues := range mdMap {
-		if !strings.HasPrefix(headerName, OverrideHeaderPrefix) {
+		if !strings.HasPrefix(headerName, DeprecatedOverrideHeaderPrefix) {
 			continue
 		}
-		propName := strings.TrimPrefix(headerName, OverrideHeaderPrefix)
+		propName := strings.TrimPrefix(headerName, DeprecatedOverrideHeaderPrefix)
 		for _, propValue := range headerValues {
-			props = append(props, &repb.Platform_Property{
-				Name:  propName,
-				Value: propValue,
-			})
+			SetValue(overrides, propName, propValue)
 		}
 	}
+	// Set OverrideHeader values last, so that they replace values that were set
+	// using DeprecatedOverrideHeaderPrefix.
+	for _, override := range md.Get(OverrideHeader) {
+		name, value, ok := strings.Cut(override, "=")
+		if !ok {
+			// Don't include the header value, since it may contain a secret.
+			return nil, status.InvalidArgumentErrorf("%s header values must have the form NAME=VALUE", OverrideHeader)
+		}
+		SetValue(overrides, name, value)
+	}
 
-	return props
+	return overrides.Properties, nil
 }
 
 // WithRemoteHeaderOverride sets a remote header for an Execute request that
 // overrides the given platform property to the given value. This can be used to
 // set platform properties for an execution independently of the cached Action.
 func WithRemoteHeaderOverride(ctx context.Context, propertyName, propertyValue string) context.Context {
-	return metadata.AppendToOutgoingContext(ctx, OverrideHeaderPrefix+propertyName, propertyValue)
+	// TODO: set OverrideHeader instead, once every app that may receive the
+	// request supports it.
+	return metadata.AppendToOutgoingContext(ctx, DeprecatedOverrideHeaderPrefix+propertyName, propertyValue)
 }
 
 func stringProp(props map[string]string, name string, defaultValue string) string {
@@ -849,9 +884,9 @@ func FindValue(platform *repb.Platform, name string) string {
 }
 
 // FindEffectiveValue returns the effective platform property value for the
-// given task. If a remote header override was set via
-// "x-buildbuddy-platform.<name>", then that value will be returned. Otherwise,
-// it returns the original platform property from the action proto.
+// given task. If the property was overridden via a remote header, then that
+// value will be returned. Otherwise, it returns the original platform property
+// from the action proto.
 func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 	override, ok := findValue(task.GetPlatformOverrides(), name)
 	if ok {

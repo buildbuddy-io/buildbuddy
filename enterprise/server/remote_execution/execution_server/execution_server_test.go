@@ -1110,7 +1110,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	})
 	require.NoError(t, err)
 	for k, v := range test.platformOverrides {
-		clientCtx = metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-platform."+k, v)
+		clientCtx = metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-platform", k+"="+v)
 	}
 	platformProperties := []*repb.Platform_Property{
 		{Name: "EstimatedFreeDiskBytes", Value: "1000"},
@@ -3131,8 +3131,8 @@ func TestDispatch_SnapshotSaveQuotaOverridesUserProperties(t *testing.T) {
 			// The user tries to opt back into snapshot saves via both the
 			// action platform and remote header overrides.
 			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
-				platform.OverrideHeaderPrefix+platform.SkipLocalSnapshotSavePropertyName, "false",
-				platform.OverrideHeaderPrefix+platform.SkipRemoteSnapshotSavePropertyName, "false",
+				platform.OverrideHeader, platform.SkipLocalSnapshotSavePropertyName+"=false",
+				platform.OverrideHeader, platform.SkipRemoteSnapshotSavePropertyName+"=false",
 			))
 			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
 			require.NoError(t, err)

@@ -11,6 +11,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
@@ -591,4 +592,57 @@ func TestSetValueForTask(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRemoteHeaderOverrides(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		md        metadata.MD
+		wantProps []*repb.Platform_Property
+	}{
+		{
+			name:      "prefixed header",
+			md:        metadata.Pairs("x-buildbuddy-platform.pool", "foo"),
+			wantProps: []*repb.Platform_Property{{Name: "pool", Value: "foo"}},
+		},
+		{
+			name: "value format",
+			md: metadata.Pairs(
+				"x-buildbuddy-platform", "resources:foo=1",
+				"x-buildbuddy-platform", "secret-env-overrides=A=1,B=2",
+			),
+			wantProps: []*repb.Platform_Property{
+				{Name: "resources:foo", Value: "1"},
+				{Name: "secret-env-overrides", Value: "A=1,B=2"},
+			},
+		},
+		{
+			name: "both formats",
+			md: metadata.Pairs(
+				"x-buildbuddy-platform.pool", "prefixed",
+				"x-buildbuddy-platform", "pool=value-format",
+			),
+			wantProps: []*repb.Platform_Property{{Name: "pool", Value: "value-format"}},
+		},
+		{
+			name: "repeated property",
+			md: metadata.Pairs(
+				"x-buildbuddy-platform", "pool=first",
+				"x-buildbuddy-platform", "pool=last",
+			),
+			wantProps: []*repb.Platform_Property{{Name: "pool", Value: "last"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			props, err := RemoteHeaderOverrides(metadata.NewIncomingContext(t.Context(), tc.md))
+			require.NoError(t, err)
+			require.Empty(t, cmp.Diff(tc.wantProps, props, protocmp.Transform()))
+		})
+	}
+}
+
+func TestRemoteHeaderOverrides_MalformedValue(t *testing.T) {
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("x-buildbuddy-platform", "pool"))
+	_, err := RemoteHeaderOverrides(ctx)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %s", gstatus.Code(err))
 }
