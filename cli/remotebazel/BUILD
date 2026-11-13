@@ -8,7 +8,10 @@ package(default_visibility = [
 
 go_library(
     name = "remotebazel",
-    srcs = ["remotebazel.go"],
+    srcs = [
+        "netrc.go",
+        "remotebazel.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/remotebazel",
     deps = [
         "//cli/arg",
@@ -37,6 +40,7 @@ go_library(
         "//server/util/flag",
         "//server/util/git",
         "//server/util/grpc_client",
+        "//server/util/platform",
         "//server/util/redact",
         "//server/util/retry",
         "//server/util/rexec",
@@ -52,7 +56,10 @@ go_library(
 
 go_test(
     name = "remotebazel_test",
-    srcs = ["remotebazel_test.go"],
+    srcs = [
+        "netrc_test.go",
+        "remotebazel_test.go",
+    ],
     embed = [":remotebazel"],
     deps = [
         "//cli/arg",
