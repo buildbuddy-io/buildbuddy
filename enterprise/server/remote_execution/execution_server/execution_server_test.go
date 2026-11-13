@@ -3157,6 +3157,45 @@ func TestDispatch_SnapshotSaveQuotaOverridesUserProperties(t *testing.T) {
 	}
 }
 
+func TestDispatch_SkipsSnapshotSavesWithoutACWrite(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		capabilities []capability.Capability
+		wantSkip     string
+	}{
+		{name: "CAS-only key", capabilities: []capability.Capability{capability.Capability_CAS_WRITE}, wantSkip: "true"},
+		{name: "cache-write key", capabilities: []capability.Capability{capability.Capability_CACHE_WRITE}, wantSkip: "false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+			env.SetQuotaManager(newFakeQuotaManager())
+
+			// The user tries to opt back into snapshot saves.
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+				platform.OverrideHeaderPrefix+platform.SkipLocalSnapshotSavePropertyName, "false",
+				platform.OverrideHeaderPrefix+platform.SkipRemoteSnapshotSavePropertyName, "false",
+			))
+			ctx = testauth.WithAuthenticatedUserInfo(ctx, apiKeyUser("AK1", tc.capabilities...))
+			action := &repb.Action{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: platform.SkipLocalSnapshotSavePropertyName, Value: "false"},
+				{Name: platform.SkipRemoteSnapshotSavePropertyName, Value: "false"},
+			}}}
+			arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, action)
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			err = env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, "12345678")
+			require.NoError(t, err)
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Len(t, sched.scheduleReqs, 1)
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+			assert.Equal(t, tc.wantSkip, platform.FindEffectiveValue(task, platform.SkipLocalSnapshotSavePropertyName))
+			assert.Equal(t, tc.wantSkip, platform.FindEffectiveValue(task, platform.SkipRemoteSnapshotSavePropertyName))
+		})
+	}
+}
+
 func TestPublishOperation_RecordsSnapshotSaveQuotaUsage(t *testing.T) {
 	const savedBytes = 12345
 	for _, tc := range []struct {

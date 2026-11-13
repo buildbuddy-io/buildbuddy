@@ -46,6 +46,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -396,7 +397,21 @@ func trimStatus(statusMessage string) string {
 	return statusMessage
 }
 
-func (s *ExecutionServer) applySnapshotSaveQuota(ctx context.Context, overrides *repb.Platform) {
+func (s *ExecutionServer) applySnapshotSaveRestrictions(ctx context.Context, overrides *repb.Platform) {
+	// Saving a snapshot writes its manifest to the action cache, so callers
+	// without AC write permission must not be able to save snapshots, either
+	// remotely or locally on the executor.
+	canWriteAC, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), capability.Capability_CACHE_WRITE)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to check AC write capability; disabling snapshot saves: %s", err)
+	}
+	if err != nil || !canWriteAC {
+		platform.SetValue(overrides, platform.SkipLocalSnapshotSavePropertyName, "true")
+		platform.SetValue(overrides, platform.SkipRemoteSnapshotSavePropertyName, "true")
+		return
+	}
+
+	// Apply quota.
 	qm := s.env.GetQuotaManager()
 	if qm == nil {
 		return
@@ -927,7 +942,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	executionTask.PlatformOverrides = &repb.Platform{
 		Properties: platform.RemoteHeaderOverrides(ctx),
 	}
-	s.applySnapshotSaveQuota(ctx, executionTask.PlatformOverrides)
+	s.applySnapshotSaveRestrictions(ctx, executionTask.PlatformOverrides)
 
 	taskGroupID := interfaces.AuthAnonymousUser
 	if user, err := s.authenticator.AuthenticatedUser(ctx); err == nil {
