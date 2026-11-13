@@ -1981,20 +1981,24 @@ type DigestOperator interface {
 }
 
 type CPULeaser interface {
-	// Acquire returns an int numa node, and an []int set of CPUs that
-	// should be used as a cgroups cpuset. The returned cancel function
-	// *must* be called after a task has been completed, in order to free
-	// these CPUs for other tasks.
+	// Acquire returns the NUMA nodes whose memory a task may use and the set
+	// of CPUs that should be used as its cgroups cpuset. The returned cancel
+	// function *must* be called after a task has been completed, in order to
+	// free these CPUs for other tasks.
 	//
 	// The CPULeaser will attempt to return CPUs for exclusive use, but this
 	// is not guaranteed. It is the job of the CPULeaser to return the least
 	// loaded CPUs, so that no CPU is overloaded.
 	//
+	// A task is pinned to as few NUMA nodes as can hold its CPU and memory
+	// estimates, so a task larger than a single node is pinned to several
+	// nodes and its CPUs span them.
+	//
 	// If more CPUs are requested than the total available on the machine,
 	// the returned set of CPUs will be the set available to the machine.
 	//
 	// Options can be configured via cpuset.
-	Acquire(milliCPU int64, taskID string, opts ...any) (int, []int, func())
+	Acquire(milliCPU, memoryBytes int64, taskID string, opts ...any) (numaNodes []int, cpus []int, release func())
 }
 
 const (
