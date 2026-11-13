@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,7 +16,6 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
@@ -104,6 +104,28 @@ func (f *fakeTaskRouter) MarkSucceeded(ctx context.Context, action *repb.Action,
 }
 
 func (f *fakeTaskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorInstanceID string) {
+}
+
+type fakeGitHubAppService struct {
+	interfaces.GitHubAppService
+	app *fakeGitHubApp
+}
+
+func (s *fakeGitHubAppService) GetGitHubAppForAuthenticatedUser(ctx context.Context) (interfaces.GitHubApp, error) {
+	return s.app, nil
+}
+
+type fakeGitHubApp struct {
+	interfaces.GitHubApp
+	token string
+	err   error
+}
+
+func (a *fakeGitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error) {
+	if a.err != nil {
+		return "", a.err
+	}
+	return a.token, nil
 }
 
 type schedulerOpts struct {
@@ -878,6 +900,27 @@ func newScheduleRequest(ctx context.Context, t *testing.T, env environment.Env, 
 func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props map[string]string) string {
 	req := newScheduleRequest(ctx, t, env, scheduleOpts{props: props})
 	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	require.NoError(t, err)
+	return req.GetTaskId()
+}
+
+// scheduleCIRunnerTask schedules a CI runner task for the given group, with
+// apiKey as its BUILDBUDDY_API_KEY env override.
+func scheduleCIRunnerTask(ctx context.Context, t *testing.T, env environment.Env, groupID, apiKey string, props map[string]string) string {
+	req := newScheduleRequest(ctx, t, env, scheduleOpts{props: props})
+	task := &repb.ExecutionTask{}
+	err := proto.Unmarshal(req.GetSerializedTask(), task)
+	require.NoError(t, err)
+	task.Command.Arguments = []string{"./" + ci_runner_util.ExecutableName, "--pushed_repo_url=https://github.com/acme-inc/repo"}
+	task.PlatformOverrides = &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: platform.EnvOverridesPropertyName, Value: ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=" + apiKey},
+		},
+	}
+	req.SerializedTask, err = proto.Marshal(task)
+	require.NoError(t, err)
+	req.Metadata.TaskGroupId = groupID
+	_, err = env.GetSchedulerService().ScheduleTask(ctx, req)
 	require.NoError(t, err)
 	return req.GetTaskId()
 }
@@ -1857,60 +1900,109 @@ func TestPerKeyLogLimiter(t *testing.T) {
 	require.False(t, limiter.allow("group1"))
 }
 
-func TestLeaseTask_RefreshToken_FailureDoesNotFailLease(t *testing.T) {
+func TestLeaseTask_RefreshToken(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// Error returned for the GitHub token request.
+		tokenErr         error
+		wantEnvOverrides []string
+	}{
+		{
+			name:             "token set",
+			wantEnvOverrides: []string{ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=user1", "REPO_TOKEN=fresh-token"},
+		},
+		{
+			name:             "GitHub app not linked",
+			tokenErr:         status.NotFoundError("GitHub app installation not found"),
+			wantEnvOverrides: []string{ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=user1"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{})
+			expflag.SetFlagProvider(fp)
+			t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			env.SetExperimentFlagProvider(fp)
+			env.SetGitHubAppService(&fakeGitHubAppService{app: &fakeGitHubApp{token: "fresh-token", err: tc.tokenErr}})
+			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			fe.supportsExperimentFlags = true
+			fe.Register()
+			taskID := scheduleCIRunnerTask(ctx, t, env, "group1", "user1" /*=apiKey*/, map[string]string{})
+			fe.WaitForTask(taskID)
+
+			lease := fe.Claim(taskID)
+			defer lease.Finalize()
+
+			envOverrides := strings.Split(lease.task.GetPlatformOverrides().GetProperties()[0].GetValue(), ",")
+			require.ElementsMatch(t, tc.wantEnvOverrides, envOverrides)
+			// The task should get experiment flags whether or not it gets a
+			// token.
+			require.NotEmpty(t, lease.task.GetExperimentFlags())
+		})
+	}
+}
+
+func TestLeaseTask_RefreshToken_FailureFailsLease(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		props           map[string]string
+		wantTaskDeleted bool
+	}{
+		{
+			name:  "retries enabled",
+			props: map[string]string{},
+		},
+		{
+			name:            "retries disabled",
+			props:           map[string]string{platform.RetryPropertyName: "false"},
+			wantTaskDeleted: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			s := env.GetSchedulerService().(*SchedulerServer)
+			env.SetGitHubAppService(&fakeGitHubAppService{app: &fakeGitHubApp{err: status.InternalError("GitHub is down")}})
+			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			fe.Register()
+			taskID := scheduleCIRunnerTask(ctx, t, env, "group1", "user1" /*=apiKey*/, tc.props)
+			fe.WaitForTask(taskID)
+			fe.ResetTasks()
+
+			_, err := fe.leaseTask(taskID, "" /*=reconnectToken*/)
+			require.True(t, status.IsUnavailableError(err), "unexpected lease error: %v", err)
+
+			// The scheduler treats the failed lease as a failed attempt, so
+			// it deletes the task if retries are disabled and offers it to
+			// executors again otherwise.
+			_, err = s.readTask(ctx, taskID)
+			if tc.wantTaskDeleted {
+				require.True(t, status.IsNotFoundError(err), "unexpected read error: %v", err)
+				return
+			}
+			require.NoError(t, err)
+			fe.WaitForTask(taskID)
+		})
+	}
+}
+
+func TestLeaseReconnect_SkipsTokenRefresh(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	app := &fakeGitHubApp{token: "fresh-token"}
+	env.SetGitHubAppService(&fakeGitHubAppService{app: app})
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
+	taskID := scheduleCIRunnerTask(ctx, t, env, "group1", "user1" /*=apiKey*/, map[string]string{})
+	fe.WaitForTask(taskID)
+	lease := fe.Claim(taskID)
 
-	gh, err := githubapp.NewAppService(env, nil, nil)
+	// The executor is already running the task, so it should keep its lease
+	// across a reconnect even while token requests fail.
+	app.err = status.InternalError("GitHub is down")
+	reconnectedLease, err := fe.Reconnect(taskID, lease.leaseID)
 	require.NoError(t, err)
-	env.SetGitHubAppService(gh)
-
-	// Simulate an auth error for token refresh.
-	env.GetAuthenticator().(*testauth.TestAuthenticator).APIKeyProvider = func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) {
-		return nil, status.UnauthenticatedError("invalid API key")
-	}
-
-	overrides := ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=INVALID_API_KEY"
-	task := &repb.ExecutionTask{
-		ExecutionId: "task1",
-		Command: &repb.Command{
-			Arguments: []string{"./" + ci_runner_util.ExecutableName, "--pushed_repo_url=https://github.com/acme-inc/repo"},
-		},
-		PlatformOverrides: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{
-					Name:  platform.EnvOverridesPropertyName,
-					Value: overrides,
-				},
-			},
-		},
-	}
-	taskBytes, err := proto.Marshal(task)
+	err = reconnectedLease.Finalize()
 	require.NoError(t, err)
-
-	req := &scpb.ScheduleTaskRequest{
-		TaskId:         "task1",
-		SerializedTask: taskBytes,
-		Metadata: &scpb.SchedulingMetadata{
-			Os:          defaultOS,
-			Arch:        defaultArch,
-			TaskGroupId: "group1",
-			TaskSize: &scpb.TaskSize{
-				EstimatedMemoryBytes:   100,
-				EstimatedMilliCpu:      100,
-				EstimatedFreeDiskBytes: 100,
-			},
-		},
-	}
-
-	_, err = env.GetSchedulerService().ScheduleTask(ctx, req)
-	require.NoError(t, err)
-	fe.WaitForTask(req.GetTaskId())
-	lease := fe.Claim(req.GetTaskId())
-	defer lease.Finalize()
-
-	require.Equal(t, task, lease.task)
 }
 
 func TestSchedulingDelay_NoDelay(t *testing.T) {

@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -222,6 +223,8 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 }
 
 // SetTaskRepositoryToken sets the GitHub repository token for a trusted remote runner task.
+// It leaves the task unchanged if the task's repo is not a GitHub repo linked
+// to the org through the GitHub app, or if the GitHub app is not configured.
 // It mutates the original task.
 func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb.ExecutionTask, groupID string) error {
 	if !platform.IsCIRunnerCommand(task.GetCommand()) {
@@ -240,13 +243,31 @@ func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb
 		return nil
 	}
 
-	repoURL, err := remoteRunBaseRepoURL(task.GetCommand().GetArguments())
-	if err != nil {
-		return err
+	// Leave the task unchanged if the run does not use a git repo.
+	repoURL := remoteRunBaseRepoURL(task.GetCommand().GetArguments())
+	if repoURL == "" {
+		return nil
+	}
+	// Leave the task unchanged if the repo is not hosted on GitHub, because
+	// the GitHub app can only issue tokens for GitHub repos.
+	if _, err := git.ParseGitHubRepoURL(repoURL); err != nil {
+		return nil
+	}
+	// Leave the task unchanged if the GitHub app is not configured on this
+	// server.
+	gh := env.GetGitHubAppService()
+	if gh == nil {
+		return nil
 	}
 	authCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, apiKey)
-	token, err := getGitHubAccessToken(authCtx, env, groupID, repoURL)
+	token, err := getGitHubAccessToken(authCtx, gh, groupID, repoURL)
 	if err != nil {
+		// NotFound is expected if not authenticating with the GitHub app
+		// integration (e.g. if the repo is public, or the token is set
+		// manually).
+		if status.IsNotFoundError(err) {
+			return nil
+		}
 		return status.WrapError(err, "failed to refresh remote runner git token")
 	}
 	envOverrides["REPO_TOKEN"] = token
@@ -254,11 +275,7 @@ func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb
 	return nil
 }
 
-func getGitHubAccessToken(ctx context.Context, env environment.Env, groupID string, repoURL string) (string, error) {
-	gh := env.GetGitHubAppService()
-	if gh == nil {
-		return "", status.UnimplementedError("No GitHub app configured")
-	}
+func getGitHubAccessToken(ctx context.Context, gh interfaces.GitHubAppService, groupID string, repoURL string) (string, error) {
 	app, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return "", err
@@ -288,19 +305,15 @@ func envOverridesHeader(task *repb.ExecutionTask) map[string]string {
 	return overrides
 }
 
-func remoteRunBaseRepoURL(args []string) (string, error) {
-	pushedRepoURL, _ := commandArgValue(args, "--pushed_repo_url")
+// remoteRunBaseRepoURL returns the target repo URL if set, otherwise the pushed
+// repo URL if set, otherwise "".
+func remoteRunBaseRepoURL(args []string) string {
 	targetRepoURL, _ := commandArgValue(args, "--target_repo_url")
-	if targetRepoURL != "" && targetRepoURL != pushedRepoURL {
-		return targetRepoURL, nil
-	}
-	if pushedRepoURL != "" {
-		return pushedRepoURL, nil
-	}
 	if targetRepoURL != "" {
-		return targetRepoURL, nil
+		return targetRepoURL
 	}
-	return "", status.FailedPreconditionError("could not parse repo URL from command arguments")
+	pushedRepoURL, _ := commandArgValue(args, "--pushed_repo_url")
+	return pushedRepoURL
 }
 
 func commandArgValue(args []string, name string) (string, bool) {

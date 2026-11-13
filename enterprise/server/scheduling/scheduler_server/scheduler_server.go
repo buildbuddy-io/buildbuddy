@@ -2564,7 +2564,18 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 					log.CtxWarningf(ctx, "Could not remove task from unclaimed list: %s", err)
 				}
 			}
-			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), req.GetSupportsExperimentFlags(), key, task.serializedTask, task.metadata.GetTaskGroupId())
+
+			// If this is not a reconnect attempt, update the task with values
+			// computed at lease time. Reconnect attempts are skipped because
+			// the executor is already running the task (and also ignores the
+			// task in the response), so an error here would needlessly fail the
+			// lease.
+			if req.GetReconnectToken() == "" {
+				task.serializedTask, err = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), req.GetSupportsExperimentFlags(), key, task.serializedTask, task.metadata.GetTaskGroupId())
+				if err != nil {
+					return status.WrapError(err, "modify task for lease")
+				}
+			}
 
 			// Prometheus: observe queue wait time. Skip reconnects, since the
 			// executor has been running the task since its first claim.
@@ -2758,32 +2769,34 @@ func (s *SchedulerServer) checkTaskAccess(ctx context.Context, task *persistedTa
 
 // modifyTaskForLease applies lease-time mutations to the serialized task.
 //
-// We do this at lease time so each execution attempt gets the latest values
+// This allows each execution attempt to get the latest values
 // for things like experiments and token refreshes.
 // This is important for tasks that are queued for a long time or are retried
 // after some time, as values computed at initial enqueue can be stale.
-func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, task []byte, taskGroupID string) []byte {
+func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, task []byte, taskGroupID string) ([]byte, error) {
 	taskProto := &repb.ExecutionTask{}
 	if err := proto.Unmarshal(task, taskProto); err != nil {
-		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
-		return task
+		// This should never happen. Alert and return a retryable error.
+		alert.CtxUnexpectedEvent(ctx, "task_proto_unmarshal_error", "Failed to unmarshal execution task: %s", err)
+		return nil, status.UnavailableErrorf("unmarshal ExecutionTask: %s", err)
 	}
 
 	taskProto = s.modifyTaskForExperiments(ctx, executorHostname, supportsExperimentFlags, poolKey, taskProto)
+
+	// Set the GitHub token if applicable.
 	if err := ci_runner_util.SetTaskRepositoryToken(ctx, s.env, taskProto, taskGroupID); err != nil {
-		if status.IsNotFoundError(err) {
-			// This can be expected with Remote Bazel on public repos, where tokens are not needed.
-			return task
-		}
 		log.CtxWarningf(ctx, "Failed to set repository token: %s", err)
+		return nil, status.UnavailableErrorf("set git repository token for task: %s", err)
 	}
 
-	if newTask, err := proto.Marshal(taskProto); err != nil {
-		log.CtxWarningf(ctx, "Failed to marshal updated ExecutionTask: %s", err)
-		return task
-	} else {
-		return newTask
+	newTaskBytes, err := proto.Marshal(taskProto)
+	if err != nil {
+		// This should never happen. Alert and return a retryable error.
+		alert.CtxUnexpectedEvent(ctx, "task_proto_marshal_error", "Failed to marshal execution task: %s", err)
+		return nil, status.UnavailableErrorf("marshal ExecutionTask: %s", err)
 	}
+
+	return newTaskBytes, nil
 }
 
 func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, taskProto *repb.ExecutionTask) *repb.ExecutionTask {

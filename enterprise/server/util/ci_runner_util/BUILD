@@ -18,6 +18,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/bb",
         "//server/util/expflag",
+        "//server/util/git",
         "//server/util/log",
         "//server/util/platform",
         "//server/util/status",
