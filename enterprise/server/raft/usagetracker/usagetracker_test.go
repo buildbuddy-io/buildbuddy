@@ -2,6 +2,8 @@ package usagetracker
 
 import (
 	"context"
+	"maps"
+	"sync"
 	"testing"
 	"time"
 
@@ -219,11 +221,14 @@ func newTestPU(t *testing.T, db pebble.IPebbleDB, globalSizeBytes int64, minEvic
 		dbGetter: leaser,
 		clock:    clockwork.NewRealClock(),
 		nodes:    map[string]*nodePartitionUsage{"n1": {sizeBytes: globalSizeBytes}},
-		deletes:  make(chan *evictionCandidate, 128),
 
 		evictionRateLimit: 1_000_000_000, // don't rate-limit unit tests
 		idleSleepDuration: time.Hour,
 		minEvictionAge:    minEvictionAge,
+		// One candidate per batch and one batch at a time, so candidates
+		// reach the test in exactly the order the sweep found them.
+		evictionBatchSize: 1,
+		numDeleteWorkers:  1,
 
 		metrics: metricSet{
 			atimeIndexSweepSeek:      metrics.RaftAtimeIndexSweepSeekDurationUsec.With(prometheus.Labels{metrics.PartitionID: "FOO"}),
@@ -238,18 +243,36 @@ func (pu *partitionUsage) setGlobalSizeForTest(sizeBytes int64) {
 	pu.nodes["n1"].sizeBytes = sizeBytes
 }
 
-func startEvictionLoopForTest(t *testing.T, pu *partitionUsage) (context.CancelFunc, chan struct{}) {
+// forwardCandidates returns a stand-in for the delete pipeline that forwards
+// every candidate to ch without deleting anything. While ch is full it blocks,
+// backpressuring the sweep the way slow deletes would.
+func forwardCandidates(ch chan<- *evictionCandidate) evictFunc {
+	return func(ctx context.Context, batch []*evictionCandidate) {
+		for _, c := range batch {
+			select {
+			case ch <- c:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
+}
+
+// startEvictionLoopForTest runs the eviction loop, returning a channel (with
+// the given buffer size) that receives every candidate it tries to evict.
+func startEvictionLoopForTest(t *testing.T, pu *partitionUsage, buffer int) <-chan *evictionCandidate {
+	candidates := make(chan *evictionCandidate, buffer)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		pu.evictionLoop(ctx)
+		pu.evictionLoop(ctx, forwardCandidates(candidates))
 		close(done)
 	}()
 	t.Cleanup(func() {
 		cancel()
 		<-done
 	})
-	return cancel, done
+	return candidates
 }
 
 // Over budget, the eviction loop must emit this node's records coldest-first:
@@ -272,12 +295,15 @@ func TestEvictionColdestFirst(t *testing.T) {
 	require.NoError(t, db.Flush())
 
 	pu := newTestPU(t, db, 1<<40 /*=global size, over budget*/, 0 /*=minEvictionAge*/)
-	startEvictionLoopForTest(t, pu)
+	// A batch size that doesn't divide n: the last, partial batch must still
+	// be evicted when the sweep reaches the end of the index.
+	pu.evictionBatchSize = 7
+	candidates := startEvictionLoopForTest(t, pu, 128)
 
 	var got []int64
 	for i := range n {
 		select {
-		case c := <-pu.deletes:
+		case c := <-candidates:
 			got = append(got, c.atime.UnixMicro())
 		case <-time.After(30 * time.Second):
 			t.Fatalf("timed out after %d/%d candidates", i, n)
@@ -292,10 +318,10 @@ func TestEvictionColdestFirst(t *testing.T) {
 		assert.False(t, seen[atime], "candidate atime %d offered twice", atime)
 		seen[atime] = true
 	}
-	// After a full sweep the loop must sleep (1h here) rather than restart at
-	// the front and re-enqueue candidates whose deletes are still in flight.
+	// After a full sweep the loop must sleep (1h here) rather than sweep again
+	// right away: nothing was deleted here, so that would re-offer everything.
 	select {
-	case c := <-pu.deletes:
+	case c := <-candidates:
 		t.Fatalf("candidate re-offered after a full sweep: %q", c.keyBytes)
 	case <-time.After(300 * time.Millisecond):
 	}
@@ -322,12 +348,12 @@ func TestEvictionDropsOrphans(t *testing.T) {
 	require.NoError(t, db.Flush())
 
 	pu := newTestPU(t, db, 1<<40, 0)
-	startEvictionLoopForTest(t, pu)
+	candidates := startEvictionLoopForTest(t, pu, 128)
 
 	// Orphans sort before the valid entry, so the first candidate proves both
 	// were skipped.
 	select {
-	case c := <-pu.deletes:
+	case c := <-candidates:
 		assert.Equal(t, int64(2_000_000), c.atime.UnixMicro())
 		assert.Equal(t, string(valid), string(c.keyBytes))
 	case <-time.After(30 * time.Second):
@@ -357,10 +383,10 @@ func TestNoEvictionBelowThreshold(t *testing.T) {
 
 	// Global size (80% of MaxSizeBytes) just under the 90% eviction cutoff.
 	pu := newTestPU(t, db, (1<<20)*8/10, 0)
-	startEvictionLoopForTest(t, pu)
+	candidates := startEvictionLoopForTest(t, pu, 128)
 
 	select {
-	case c := <-pu.deletes:
+	case c := <-candidates:
 		t.Fatalf("unexpected eviction candidate below threshold: %q", c.keyBytes)
 	case <-time.After(300 * time.Millisecond):
 	}
@@ -377,20 +403,19 @@ func TestEvictionRespectsMinEvictionAge(t *testing.T) {
 	require.NoError(t, db.Flush())
 
 	pu := newTestPU(t, db, 1<<40, time.Hour)
-	startEvictionLoopForTest(t, pu)
+	candidates := startEvictionLoopForTest(t, pu, 128)
 
 	// Only the old record is offered, exactly once: the sweep stops at the
-	// age boundary and the loop then sleeps (1h here) instead of restarting
-	// at the front and re-enqueueing the in-flight candidate.
+	// age boundary and the loop then sleeps (1h here).
 	select {
-	case c := <-pu.deletes:
+	case c := <-candidates:
 		require.Equal(t, string(old), string(c.keyBytes))
 	case <-time.After(30 * time.Second):
 		t.Fatal("timed out waiting for the old record")
 	}
 	select {
-	case c := <-pu.deletes:
-		t.Fatalf("unexpected second candidate %q (fresh record, or in-flight re-offer)", c.keyBytes)
+	case c := <-candidates:
+		t.Fatalf("unexpected second candidate %q (fresh record, or a re-offer)", c.keyBytes)
 	case <-time.After(300 * time.Millisecond):
 	}
 }
@@ -408,16 +433,15 @@ func TestEvictionStopsBelowThreshold(t *testing.T) {
 	require.NoError(t, db.Flush())
 
 	pu := newTestPU(t, db, 1<<40, 0)
-	// A tiny channel keeps the sweep backpressured, so only ~2 candidates can
-	// be in flight when the size drops -- otherwise the whole index would
+	// A tiny buffer keeps the sweep backpressured, so only a few candidates
+	// can be in flight when the size drops -- otherwise the whole index would
 	// already be buffered and the assertion would be vacuous.
-	pu.deletes = make(chan *evictionCandidate, 1)
-	startEvictionLoopForTest(t, pu)
+	candidates := startEvictionLoopForTest(t, pu, 1)
 
 	// Consume a few candidates, then drop the size below the cutoff.
 	for i := range 5 {
 		select {
-		case <-pu.deletes:
+		case <-candidates:
 		case <-time.After(30 * time.Second):
 			t.Fatalf("timed out after %d candidates", i)
 		}
@@ -430,23 +454,22 @@ func TestEvictionStopsBelowThreshold(t *testing.T) {
 drain:
 	for {
 		select {
-		case <-pu.deletes:
+		case <-candidates:
 		case <-deadline:
 			break drain
 		}
 	}
 	select {
-	case c := <-pu.deletes:
+	case c := <-candidates:
 		t.Fatalf("candidate offered after size dropped below threshold: %q", c.keyBytes)
 	case <-time.After(300 * time.Millisecond):
 	}
 }
 
-// A sweep that reaches the age boundary while the partition stays over budget
-// must keep its cursor rather than restarting from the front: the candidates
-// it already enqueued have deletes still in flight (never applied here, since
-// no delete pipeline runs), and a front restart would re-enqueue all of them.
-// Regression test for
+// While a batch's deletes are in flight the loop must not try to evict its
+// records again: a sweep returns only once every batch it dispatched has
+// concluded, so the next sweep -- which starts over from the coldest entry --
+// never sees a record with a pending delete. Regression test for
 // https://github.com/buildbuddy-io/buildbuddy/pull/12877#discussion_r3678539378.
 func TestNoReEnqueueWhileDeletesInFlight(t *testing.T) {
 	dir := testfs.MakeTempDir(t)
@@ -462,27 +485,69 @@ func TestNoReEnqueueWhileDeletesInFlight(t *testing.T) {
 	require.NoError(t, db.Flush())
 
 	pu := newTestPU(t, db, 1<<40, time.Hour)
-	// Disable sleeping so the loop spins: a front-restarting loop would
-	// re-offer the same candidates many times within the test window.
+	// Disable sleeping so the loop spins: a loop that swept again while
+	// deletes were pending would offer the same records many times within the
+	// test window.
 	pu.idleSleepDuration = 0
-	startEvictionLoopForTest(t, pu)
+	// n isn't a multiple of the batch size, so the last batch is a partial
+	// one, dispatched when the sweep reaches the age boundary.
+	pu.evictionBatchSize = 3
+	pu.numDeleteWorkers = 2
 
-	seen := map[string]int{}
-	total := 0
-	deadline := time.After(1 * time.Second)
-drain:
-	for {
+	// A stand-in for the delete pipeline whose deletes stay in flight until
+	// released and then apply, removing the record and its index entry.
+	var mu sync.Mutex
+	offered := map[string]int{}
+	release := make(chan struct{})
+	evict := func(ctx context.Context, batch []*evictionCandidate) {
+		mu.Lock()
+		for _, c := range batch {
+			offered[string(c.keyBytes)]++
+		}
+		mu.Unlock()
 		select {
-		case c := <-pu.deletes:
-			seen[string(c.keyBytes)]++
-			total++
-		case <-deadline:
-			break drain
+		case <-release:
+		case <-ctx.Done():
+			return
+		}
+		for _, c := range batch {
+			assert.NoError(t, db.Delete(c.keyBytes, pebble.NoSync))
+			assert.NoError(t, db.Delete(keys.AtimeIndexKey("FOO", c.atime.UnixMicro(), c.keyBytes), pebble.NoSync))
 		}
 	}
-	require.Equal(t, n, total, "each eligible record must be offered exactly once")
-	for key, count := range seen {
-		require.Equal(t, 1, count, "candidate %q re-enqueued", key)
+	offeredSoFar := func() map[string]int {
+		mu.Lock()
+		defer mu.Unlock()
+		return maps.Clone(offered)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		pu.evictionLoop(ctx, evict)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	// With the first deletes held in flight, nothing may be offered twice.
+	require.Eventually(t, func() bool { return len(offeredSoFar()) > 0 }, 30*time.Second, 10*time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	for key, count := range offeredSoFar() {
+		require.Equal(t, 1, count, "record %q offered again while its delete was in flight", key)
+	}
+
+	// Once the deletes apply, every eligible record gets offered -- and, as
+	// the loop keeps sweeping, still only once.
+	close(release)
+	require.Eventually(t, func() bool { return len(offeredSoFar()) == n }, 30*time.Second, 10*time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	final := offeredSoFar()
+	require.Len(t, final, n)
+	for key, count := range final {
+		require.Equal(t, 1, count, "record %q offered more than once", key)
 	}
 }
 

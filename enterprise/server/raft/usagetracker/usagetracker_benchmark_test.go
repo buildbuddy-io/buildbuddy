@@ -20,7 +20,7 @@ import (
 // BenchmarkEvictionCandidateDiscovery measures how long the eviction loop
 // takes to discover every eligible record: M records total, K of them older
 // than min_eviction_age (spread evenly through the keyspace), timed until K
-// distinct candidates arrive on the deletes channel.
+// distinct candidates have been handed to the delete pipeline.
 //
 // The atime-index sweep's cost is proportional to K (read the index's cold
 // front, stop at the age cutoff); the sampling designs it replaced read
@@ -61,29 +61,31 @@ func BenchmarkEvictionCandidateDiscovery(b *testing.B) {
 					dbGetter: leaser,
 					clock:    clockwork.NewRealClock(),
 					// Far over the eviction threshold, so the loop sweeps.
-					nodes:   map[string]*nodePartitionUsage{"n1": {sizeBytes: 1 << 40}},
-					deletes: make(chan *evictionCandidate, 128),
+					nodes: map[string]*nodePartitionUsage{"n1": {sizeBytes: 1 << 40}},
 
 					evictionRateLimit: 1_000_000_000,
 					idleSleepDuration: time.Hour,
 					minEvictionAge:    time.Hour,
+					evictionBatchSize: 100,
+					numDeleteWorkers:  4,
 
 					metrics: metricSet{
 						atimeIndexSweepSeek:      metrics.RaftAtimeIndexSweepSeekDurationUsec.With(prometheus.Labels{metrics.PartitionID: "FOO"}),
 						atimeIndexOrphansDropped: metrics.RaftAtimeIndexOrphansDropped.With(prometheus.Labels{metrics.PartitionID: "FOO"}),
 					},
 				}
+				candidates := make(chan *evictionCandidate, 128)
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan struct{})
 				go func() {
-					pu.evictionLoop(ctx)
+					pu.evictionLoop(ctx, forwardCandidates(candidates))
 					close(done)
 				}()
 
 				seen := make(map[string]bool, tc.k)
 				for len(seen) < tc.k {
 					select {
-					case c := <-pu.deletes:
+					case c := <-candidates:
 						seen[string(c.keyBytes)] = true
 					case <-time.After(120 * time.Second):
 						cancel()

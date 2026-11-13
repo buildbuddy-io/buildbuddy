@@ -31,7 +31,6 @@ import (
 	"github.com/hashicorp/serf/serf"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
 	"golang.org/x/time/rate"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -43,7 +42,6 @@ var (
 	partitionUsageDeltaGossipThreshold = flag.Int("cache.raft.partition_usage_delta_bytes_threshold", 100e6, "Gossip partition usage information if it has changed by more than this amount since the last gossip.")
 	localSizeUpdatePeriod              = flag.Duration("cache.raft.local_size_update_period", 10*time.Second, "How often we update local size updates.")
 	evictionRateLimit                  = flag.Int("cache.raft.eviction_rate_limit", 300, "Maximum number of entries to evict per second (per partition).")
-	deleteBufferSize                   = flag.Int("cache.raft.delete_buffer_size", 20, "Buffer up to this many eviction candidates between the index sweep and the delete batcher")
 	minEvictionAge                     = flag.Duration("cache.raft.min_eviction_age", 6*time.Hour, "Don't evict anything unless it's been idle for at least this long")
 	// The flag name predates the removal of the sampling-based evictor; it is
 	// kept so existing configs don't break.
@@ -71,17 +69,7 @@ const (
 	// based on data changes.
 	storePartitionUsageMaxAge = 5 * time.Minute
 
-	evictFlushPeriod     = 10 * time.Second
 	metricsRefreshPeriod = 30 * time.Second
-
-	// maxCursorAge bounds how long the eviction sweep can keep running from
-	// its resume cursor before a front-to-back sweep is forced. Cold entries
-	// can land behind the cursor (snapshot recovery imports, verifier
-	// repairs), and a partition that stays over budget would otherwise never
-	// revisit them. Must comfortably exceed evictFlushPeriod so a forced
-	// front sweep doesn't re-enqueue candidates still buffered in the delete
-	// pipeline.
-	maxCursorAge = 1 * time.Minute
 )
 
 // backfillCommitSizeBytes is how large the atime-index backfill lets its write
@@ -173,7 +161,6 @@ type partitionUsage struct {
 	// Global view of usage, keyed by Node Host ID.
 	nodes map[string]*nodePartitionUsage
 
-	deletes    chan *evictionCandidate
 	gcsDeletes chan *sgpb.StorageMetadata_GCSMetadata
 
 	eg       *errgroup.Group
@@ -321,8 +308,10 @@ func (pu *partitionUsage) deleteBatch(ctx context.Context, c rfspb.ApiClient, h 
 	return res, nil
 }
 
-func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evictionKeyMeta) {
-	if len(keys) == 0 {
+// sendDeleteRequests evicts a batch of candidates through raft. It returns
+// once every delete has concluded, successfully or not.
+func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, candidates []*evictionCandidate) {
+	if len(candidates) == 0 {
 		return
 	}
 	start := pu.clock.Now()
@@ -331,14 +320,20 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evicti
 		metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
 	}()
 
+	keyMetas := make([]*evictionKeyMeta, len(candidates))
+	for i, c := range candidates {
+		keyMetas[i] = sender.NewKeyMeta(c.keyBytes, c)
+	}
+
 	// Eviction delete is replay-safe: a duplicate retry after the entry is gone
 	// still returns success, so this path does not need sender-owned sessions.
 	//
-	// TODO(vanja): duplicate deletes are indistinguishable from real
-	// evictions here, double-counting eviction metrics, the speculative
-	// usage decrement and GCS deletes. A not_found field on DeleteResponse
-	// (default false, for rollout safety) would let us tell them apart.
-	rsps, err := pu.sender.RunMultiKey(ctx, keys, pu.deleteBatch)
+	// TODO(vanja): deleting an already-deleted record (e.g. one that another
+	// replica's node evicted first) is indistinguishable from a real eviction
+	// here, so it is double-counted in eviction metrics, the speculative usage
+	// decrement and GCS deletes. A not_found field on DeleteResponse (default
+	// false, for rollout safety) would let us tell them apart.
+	rsps, err := pu.sender.RunMultiKey(ctx, keyMetas, pu.deleteBatch)
 	failed := err != nil
 	if err != nil {
 		log.Warning(err.Error())
@@ -367,82 +362,6 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evicti
 	}
 }
 
-// TODO(vanja): remove the deletes channel and this batcher goroutine
-// (approxlru leftovers): sweepIndex could batch directly, dispatch batches
-// via a size-limited errgroup, and wait for them at sweep exits. Same
-// throughput, but no candidates in flight across sweeps, making the other
-// two eviction TODOs moot.
-func (pu *partitionUsage) processEviction(ctx context.Context) {
-	batches := make(chan []*evictionKeyMeta, 1)
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		defer close(batches)
-		// sendBatch hands a batch to the dispatcher, but bails out on ctx.Done
-		// so the batcher stops promptly on shutdown instead of blocking until
-		// pu.deletes drains. Returns false if ctx was cancelled (return then).
-		sendBatch := func(b []*evictionKeyMeta) bool {
-			select {
-			case batches <- b:
-				return true
-			case <-ctx.Done():
-				return false
-			}
-		}
-		var batch []*evictionKeyMeta
-		timer := time.NewTimer(evictFlushPeriod)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case candidate := <-pu.deletes:
-				batch = append(batch, sender.NewKeyMeta(candidate.keyBytes, candidate))
-				if len(batch) >= pu.evictionBatchSize {
-					if !sendBatch(batch) {
-						return
-					}
-					batch = nil
-					timer.Reset(evictFlushPeriod)
-				}
-			case <-timer.C:
-				if len(batch) > 0 {
-					if !sendBatch(batch) {
-						return
-					}
-					batch = nil
-				}
-				timer.Reset(evictFlushPeriod)
-			}
-		}
-	})
-	wg.Go(func() {
-		sem := semaphore.NewWeighted(int64(pu.numDeleteWorkers))
-		// inner tracks the in-flight sendDeleteRequests goroutines — the only
-		// senders to pu.gcsDeletes. Wait for them, then close gcsDeletes so the
-		// GCS workers drain the remainder and exit.
-		var inner sync.WaitGroup
-		defer func() {
-			inner.Wait()
-			close(pu.gcsDeletes)
-		}()
-		for batch := range batches {
-			if err := sem.Acquire(ctx, 1); err != nil {
-				// Context cancelled; the batcher has already (or will) close
-				// batches, so stop launching new deletes and return.
-				return
-			}
-			inner.Go(func() {
-				defer sem.Release(1)
-				pu.sendDeleteRequests(ctx, batch)
-			})
-		}
-	})
-	// Block until the batcher, the dispatcher, and every in-flight
-	// sendDeleteRequests goroutine have finished. By then the dispatcher has
-	// closed gcsDeletes (above), so the GCS workers can drain the remainder and
-	// exit; Stop just waits for that (see drainGCSDeletes).
-	wg.Wait()
-}
-
 func (pu *partitionUsage) processGCSDeletions(ctx context.Context) {
 	for {
 		select {
@@ -467,7 +386,7 @@ func (pu *partitionUsage) processGCSDeletions(ctx context.Context) {
 
 // drainGCSDeletes waits for the GCS-delete workers to flush the buffered
 // deletes, bounded by shutdownCtx (the shared drain budget). gcsDeletes is
-// closed by processEviction once the producers stop, so the workers drain
+// closed once the eviction loop (its only producer) stops, so the workers drain
 // what's buffered and exit; here we wait for that, then cancel — releasing
 // their context on success, or force-stopping them (abandoning whatever is
 // left) when the budget runs out first.
@@ -502,7 +421,7 @@ func (pu *partitionUsage) startEviction(ctx context.Context) {
 	// partition grows without bound, so alert and retry with backoff rather
 	// than giving up for the process lifetime.
 	for ctx.Err() == nil {
-		err := pu.evictionLoop(ctx)
+		err := pu.evictionLoop(ctx, pu.sendDeleteRequests)
 		if err == nil {
 			return // context done
 		}
@@ -796,14 +715,16 @@ func (pu *partitionUsage) maxAllowedSizeBytes() int64 {
 	return int64(EvictionCutoffThreshold * float64(pu.part.MaxSizeBytes))
 }
 
+// evictFunc deletes a batch of eviction candidates, returning once those
+// deletes have concluded. It may be called from several goroutines at once.
+type evictFunc func(ctx context.Context, batch []*evictionCandidate)
+
 // evictionLoop keeps the partition below its eviction threshold. While the
-// partition is over budget it sweeps the atime index in ascending atime
-// order, enqueueing delete candidates; otherwise it sleeps. Sweeps continue
-// from a resume cursor so candidates whose deletes are still in flight aren't
-// re-enqueued; the cursor resets to the index front once the partition stays
-// below the threshold across a sleep (by then the delete pipeline has had
-// time to drain), or after maxCursorAge without a front sweep.
-func (pu *partitionUsage) evictionLoop(ctx context.Context) error {
+// partition is over budget it sweeps the atime index coldest-first, evicting
+// what it finds; otherwise it sleeps. Every sweep starts from the coldest
+// entry: sweepIndex returns only after the deletes it dispatched have
+// concluded, so a new sweep never sees a record whose delete is in flight.
+func (pu *partitionUsage) evictionLoop(ctx context.Context, evict evictFunc) error {
 	db, err := pu.dbGetter.DB()
 	if err != nil {
 		log.Warningf("partition %q: eviction loop failed to get db: %s", pu.part.ID, err)
@@ -822,75 +743,69 @@ func (pu *partitionUsage) evictionLoop(ctx context.Context) error {
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
-	var resumeKey []byte
-	lastFrontSweep := pu.clock.Now()
-	for {
-		if ctx.Err() != nil {
-			return nil
-		}
+	for ctx.Err() == nil {
 		if pu.GlobalSizeBytes() <= pu.maxAllowedSizeBytes() {
 			if !pu.idleSleep(ctx) {
 				return nil
 			}
-			// Discard the cursor only if the partition is still below the
-			// threshold after sleeping: flapping back over within one sleep
-			// usually means the last sweep's deletes are still buffered (the
-			// batcher can hold a partial batch for up to evictFlushPeriod),
-			// and resuming instead of restarting at the front avoids
-			// re-enqueueing them. TODO(vanja): removing the batcher (see
-			// processEviction) makes this heuristic unnecessary.
-			if pu.GlobalSizeBytes() <= pu.maxAllowedSizeBytes() {
-				resumeKey = nil
-			}
 			continue
 		}
-		if resumeKey != nil && pu.clock.Since(lastFrontSweep) > maxCursorAge {
-			resumeKey = nil
-		}
-		if resumeKey == nil {
-			lastFrontSweep = pu.clock.Now()
-		}
-		nextResume, exhausted, err := pu.sweepIndex(ctx, db, limiter, resumeKey, fileMetadata)
+		exhausted, err := pu.sweepIndex(ctx, db, limiter, fileMetadata, evict)
 		if err != nil {
 			return err
 		}
-		resumeKey = nextResume
 		if exhausted {
-			// Nothing actionable ahead of the cursor: everything currently
-			// eligible has been enqueued and the entries ahead (if any) are
-			// younger than min_eviction_age. Sleep while they age in; keeping
-			// the cursor prevents the next sweep from re-enqueueing
-			// candidates whose deletes are still in flight.
+			// Everything currently eligible has been evicted (or failed to
+			// be); sleep while more entries age past min_eviction_age.
 			if !pu.idleSleep(ctx) {
 				return nil
 			}
 		}
 	}
+	return nil
 }
 
-// sweepIndex walks the partition's atime index from resumeKey (or the coldest
-// entry), enqueueing eviction candidates until the partition drops below its
+// sweepIndex walks the partition's atime index from the coldest entry, handing
+// eviction candidates to evict in batches of evictionBatchSize (at most
+// numDeleteWorkers batches at once), until the partition drops below its
 // eviction threshold, entries become younger than min_eviction_age, or the
-// index is exhausted. Orphaned entries -- the record is gone or its atime
-// moved on (crash windows, cleared or removed ranges) -- are deleted in place;
-// the index is node-local derived state, so those deletes don't go through
-// raft.
+// index is exhausted. It returns only after every batch it dispatched has
+// concluded. Orphaned entries -- the record is gone or its atime moved on
+// (crash windows, cleared or removed ranges) -- are deleted in place; the
+// index is node-local derived state, so those deletes don't go through raft.
 //
-// Returns the key to resume the next sweep from -- the sweep's stop position
-// on every exit path, so consecutive sweeps never re-visit (and re-enqueue)
-// candidates already handed to the delete pipeline -- and whether the sweep
-// exhausted the actionable entries (hit the age boundary or the index end),
-// in which case the caller should sleep before sweeping again.
-func (pu *partitionUsage) sweepIndex(ctx context.Context, db pebble.IPebbleDB, limiter *rate.Limiter, resumeKey []byte, fileMetadata *sgpb.FileMetadata) ([]byte, bool, error) {
+// Returns whether the sweep exhausted the evictable entries (hit the age
+// boundary or the index end), in which case the caller should sleep before
+// sweeping again.
+func (pu *partitionUsage) sweepIndex(ctx context.Context, db pebble.IPebbleDB, limiter *rate.Limiter, fileMetadata *sgpb.FileMetadata, evict evictFunc) (bool, error) {
+	// Wait for in-flight batches on every return path. This is deferred before
+	// the iterator is opened so that the iterator is closed first, rather than
+	// staying open while the last deletes finish.
+	var eg errgroup.Group
+	eg.SetLimit(max(1, pu.numDeleteWorkers))
+	defer eg.Wait()
+
 	start, end := keys.AtimeIndexPartitionRange(pu.part.ID)
-	if resumeKey != nil && bytes.Compare(resumeKey, start) > 0 && bytes.Compare(resumeKey, end) < 0 {
-		start = resumeKey
-	}
 	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
 	if err != nil {
-		return nil, false, err
+		return false, err
 	}
 	defer iter.Close()
+
+	var batch []*evictionCandidate
+	// dispatch hands the current batch to a delete worker, blocking while all
+	// of them are busy.
+	dispatch := func() {
+		if len(batch) == 0 {
+			return
+		}
+		b := batch
+		batch = nil
+		eg.Go(func() error {
+			evict(ctx, b)
+			return nil
+		})
+	}
 
 	// Time the initial seek: evictions leave point tombstones at the index's
 	// cold front, and until compaction drops them this seek pays to skip them
@@ -900,16 +815,14 @@ func (pu *partitionUsage) sweepIndex(ctx context.Context, db pebble.IPebbleDB, l
 	valid := iter.First()
 	pu.metrics.atimeIndexSweepSeek.Observe(float64(pu.clock.Since(seekStart).Microseconds()))
 
-	var lastKey []byte
 	for ; valid; valid = iter.Next() {
-		lastKey = append(lastKey[:0], iter.Key()...)
 		if ctx.Err() != nil {
-			return nil, false, nil
+			return false, nil
 		}
 		if pu.GlobalSizeBytes() <= pu.maxAllowedSizeBytes() {
-			// Below budget; resume at the current (unprocessed) entry if the
-			// budget check turns out to have been optimistic.
-			return bytes.Clone(iter.Key()), false, nil
+			// Below budget. Candidates collected but not yet dispatched are
+			// dropped: they no longer need to be evicted.
+			return false, nil
 		}
 		_, atimeUsec, fileKey, err := keys.ParseAtimeIndexKey(iter.Key())
 		if err != nil {
@@ -922,8 +835,8 @@ func (pu *partitionUsage) sweepIndex(ctx context.Context, db pebble.IPebbleDB, l
 		atime := time.UnixMicro(atimeUsec)
 		if pu.clock.Since(atime) < pu.minEvictionAge {
 			// Entries are atime-ordered: everything from here on is younger.
-			// Resume at this entry -- it becomes eligible as time advances.
-			return bytes.Clone(iter.Key()), true, nil
+			dispatch()
+			return true, nil
 		}
 		// Verify the entry against the stored record; drop orphans in place.
 		fileMetadata.ResetVT()
@@ -964,35 +877,28 @@ func (pu *partitionUsage) sweepIndex(ctx context.Context, db pebble.IPebbleDB, l
 			continue
 		}
 		if err := limiter.Wait(ctx); err != nil {
-			return nil, false, nil // context cancelled
+			return false, nil // context cancelled
 		}
-		candidate := &evictionCandidate{
+		batch = append(batch, &evictionCandidate{
 			keyBytes: bytes.Clone(fileKey),
 			// Clone: fileMetadata is a pooled message reset on the next loop
-			// iteration, but the candidate outlives the sweep in the delete
-			// pipeline (and losing GcsMetadata there would orphan the blob).
+			// iteration, but the candidate lives until its batch has been
+			// deleted (and losing GcsMetadata there would orphan the blob).
 			storageMetadata: fileMetadata.GetStorageMetadata().CloneVT(),
 			// Include the index entry's bytes: LocalSizeBytes counts the
 			// index, so the speculative post-eviction decrement should too.
 			sizeBytes: int64(proto.Size(fileMetadata)) + int64(len(fileKey)) + int64(len(iter.Key())),
 			atime:     atime,
-		}
-		select {
-		case pu.deletes <- candidate:
-		case <-ctx.Done():
-			return nil, false, nil
+		})
+		if len(batch) >= pu.evictionBatchSize {
+			dispatch()
 		}
 	}
 	if err := iter.Error(); err != nil {
-		return nil, false, err
+		return false, err
 	}
-	if lastKey == nil {
-		// The swept span was empty.
-		return nil, true, nil
-	}
-	// Index exhausted: resume just past the last entry, where entries with
-	// newer atimes will appear.
-	return append(lastKey, 0), true, nil
+	dispatch()
+	return true, nil
 }
 
 func (pu *partitionUsage) updateEvictionMetrics(candidates []*evictionCandidate) error {
@@ -1074,7 +980,6 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 			clock:                 clock,
 			nodes:                 make(map[string]*nodePartitionUsage),
 			dbGetter:              dbGetter,
-			deletes:               make(chan *evictionCandidate, *deleteBufferSize),
 			gcsDeletes:            make(chan *sgpb.StorageMetadata_GCSMetadata, *gcsDeleteBufferSize),
 			evictionRateLimit:     *evictionRateLimit,
 			idleSleepDuration:     *idleSleepDuration,
@@ -1192,14 +1097,15 @@ func (ut *Tracker) Start() {
 		pu.eg = eg
 		pu.eg.Go(func() error {
 			pu.startEviction(gctx)
+			// The eviction loop is the only producer of GCS deletes, and its
+			// sweeps wait for the delete batches they dispatch, so nothing
+			// can send on gcsDeletes anymore. Closing it lets the GCS workers
+			// drain what's buffered and exit (see drainGCSDeletes).
+			close(pu.gcsDeletes)
 			return nil
 		})
 		pu.eg.Go(func() error {
 			pu.startAtimeIndexVerifier(gctx)
-			return nil
-		})
-		pu.eg.Go(func() error {
-			pu.processEviction(gctx)
 			return nil
 		})
 		// Run the GCS-delete workers under a separate errgroup/context so that
