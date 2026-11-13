@@ -199,7 +199,7 @@ These properties can be used in different ways:
 - Set `exec_properties` in each BUILD target.
 - Set `--remote_default_exec_properties=KEY=VALUE` in `.bazelrc` or at the Bazel command line.
   Note that these properties are not applied if a target or a target's platform has any execution properties.
-- Set `--remote_header=x-buildbuddy-platform.KEY=VALUE`. This is
+- Set `--remote_header=x-buildbuddy-platform=KEY=VALUE`. This is
   a BuildBuddy-specific feature and is not generally recommended except
   for certain properties, described in
   [Setting properties via remote headers](#setting-properties-via-remote-headers).
@@ -212,13 +212,9 @@ that allows applying execution properties only to tests.
 ### Setting properties via remote headers
 
 BuildBuddy supports setting execution properties via remote headers.
-This can be done by setting `--remote_header=x-buildbuddy-platform.KEY=VALUE`
-at the Bazel command line.
-
-To set a property whose name contains characters that are not allowed in
-header names, such as `resources:foo`, put the property name in the header
-value instead: `--remote_header=x-buildbuddy-platform=resources:foo=1`.
-This flag can be repeated to set more than one property.
+This can be done by setting `--remote_header=x-buildbuddy-platform=KEY=VALUE`
+at the Bazel command line. This flag can be repeated to set more than one
+property.
 
 This feature is useful as a more secure option for passing secret property
 values, such as `container-registry-password` or
