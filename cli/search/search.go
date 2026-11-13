@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -48,7 +49,7 @@ func searchCode(args []string) error {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
-	conn, err := grpc_client.DialSimple(*target)
+	conn, err := grpc_client.DialSimple(*target, credentialhelper.DialOptions(*target)...)
 	if err != nil {
 		return err
 	}

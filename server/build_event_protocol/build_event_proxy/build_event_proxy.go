@@ -28,6 +28,7 @@ type BuildEventProxyClient struct {
 	client      pepb.PublishBuildEventClient
 	rootCtx     context.Context
 	target      string
+	dialOptions []grpc.DialOption
 	clientMux   sync.Mutex // PROTECTS(client)
 	synchronous bool
 }
@@ -38,7 +39,7 @@ func (c *BuildEventProxyClient) reconnectIfNecessary() {
 	}
 	c.clientMux.Lock()
 	defer c.clientMux.Unlock()
-	conn, err := grpc_client.DialSimple(c.target)
+	conn, err := grpc_client.DialSimple(c.target, c.dialOptions...)
 	if err != nil {
 		log.Warningf("Unable to connect to proxy host '%s': %s", c.target, err)
 		c.client = nil
@@ -59,9 +60,13 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func NewBuildEventProxyClient(env environment.Env, target string, synchronous bool) *BuildEventProxyClient {
+// NewBuildEventProxyClient returns a client that forwards build events to
+// target. dialOptions are added to the connection it dials, for example to
+// attach credentials.
+func NewBuildEventProxyClient(env environment.Env, target string, synchronous bool, dialOptions ...grpc.DialOption) *BuildEventProxyClient {
 	c := &BuildEventProxyClient{
 		target:      target,
+		dialOptions: dialOptions,
 		rootCtx:     env.GetServerContext(),
 		synchronous: synchronous,
 	}

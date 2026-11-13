@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/config",
+        "//cli/credentialhelper",
         "//cli/log",
         "//cli/storage",
         "//cli/version",

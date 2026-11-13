@@ -9,13 +9,13 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
+        "//cli/credentialhelper",
         "//cli/log",
         "//cli/login",
         "//proto:buildbuddy_service_go_proto",
         "//proto:secrets_go_proto",
         "//server/util/grpc_client",
         "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//metadata",
         "@org_golang_x_crypto//nacl/box",
     ],
 )

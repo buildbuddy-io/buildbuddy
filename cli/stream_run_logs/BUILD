@@ -12,6 +12,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs",
     deps = [
         "//cli/arg",
+        "//cli/credentialhelper",
         "//cli/log",
         "//cli/stream_run_logs/option_definitions",
         "//cli/terminal",

@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/login",
     deps = [
         "//cli/arg",
+        "//cli/credentialhelper",
         "//cli/log",
         "//cli/storage",
         "//cli/terminal",
@@ -25,6 +26,7 @@ go_test(
     embed = [":login"],
     deps = [
         "//cli/arg",
+        "//cli/credentialhelper",
         "//cli/parser",
         "//cli/parser/test_data",
         "//cli/storage",

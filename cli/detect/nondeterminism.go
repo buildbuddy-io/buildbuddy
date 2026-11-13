@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
@@ -238,7 +239,7 @@ func (c *checker) Run(ctx context.Context) error {
 func (c *checker) notifyNondeterminism(ctx context.Context, m *buildMetadata) error {
 	// Sending notifications requires an API key with notification capabilities.
 	apiKey := os.Getenv("BB_NOTIFY_API_KEY")
-	conn, err := grpc_client.DialSimple(c.opts.besBackend)
+	conn, err := grpc_client.DialSimple(c.opts.besBackend, credentialhelper.DialOptions(c.opts.besBackend)...)
 	if err != nil {
 		return status.UnavailableErrorf("failed to connect to %s: %s", c.opts.besBackend, err)
 	}
@@ -380,6 +381,9 @@ func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, invocati
 		}
 	}
 	if err := login.ConfigureAPIKey(clonedArgs); err != nil {
+		return nil, err
+	}
+	if err := login.ConfigureCredentialHelper(clonedArgs); err != nil {
 		return nil, err
 	}
 	if err := login.ConfigureBESAPIKey(clonedArgs); err != nil {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs/option_definitions"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
@@ -147,7 +148,7 @@ func Execute(runScriptPath string, opts Opts) (int, error) {
 
 	var bbClient bbspb.BuildBuddyServiceClient
 	if opts.BBClient == nil {
-		conn, err := grpc_client.DialSimple(opts.BesBackend)
+		conn, err := grpc_client.DialSimple(opts.BesBackend, credentialhelper.DialOptions(opts.BesBackend)...)
 		if err != nil {
 			return handleStreamingFailure(runScriptPath, sigChan, opts.OnFailure, fmt.Sprintf("failed to dial %s for streaming `run` executable logs: %s", opts.BesBackend, err))
 		}

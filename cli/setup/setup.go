@@ -52,6 +52,9 @@ func Setup(bazelArgs *arg.BazelArgs, execArgs []string, tempDir string) (*Result
 	if err := login.ConfigureAPIKey(bazelArgs); err != nil {
 		return nil, err
 	}
+	if err := login.ConfigureCredentialHelper(bazelArgs); err != nil {
+		return nil, err
+	}
 
 	// Prepare convenience env vars for plugins
 	if err := plugin.PrepareEnv(); err != nil {

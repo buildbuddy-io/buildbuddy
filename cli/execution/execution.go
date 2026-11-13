@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/markdown"
@@ -130,7 +131,7 @@ func handleGet(args []string) (int, error) {
 }
 
 func fetchExecuteResponse(ctx context.Context, target, executionID string) (*repb.ExecuteResponse, error) {
-	conn, err := grpc_client.DialSimple(target)
+	conn, err := grpc_client.DialSimple(target, credentialhelper.DialOptions(target)...)
 	if err != nil {
 		return nil, fmt.Errorf("dial %q: %w", target, err)
 	}

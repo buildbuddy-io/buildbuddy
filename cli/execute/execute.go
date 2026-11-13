@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/execution"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
@@ -132,7 +133,7 @@ func execute(cmdArgs []string) error {
 		return err
 	}
 
-	conn, err := grpc_client.DialSimple(*target)
+	conn, err := grpc_client.DialSimple(*target, credentialhelper.DialOptions(*target)...)
 	if err != nil {
 		return err
 	}
