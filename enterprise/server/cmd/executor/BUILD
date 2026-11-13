@@ -139,7 +139,6 @@ go_binary(
     ],
     data = [
         ":config_files",
-        ":runfiles",
     ],
     embed = [":executor_lib"],
 )
