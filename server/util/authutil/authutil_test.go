@@ -47,6 +47,7 @@ func TestValidateRestrictedACAccess(t *testing.T) {
 		name         string
 		instanceName string
 		cis          interfaces.ClientIdentityService
+		trusted      bool
 		wantErr      bool
 	}{
 		{
@@ -72,6 +73,13 @@ func TestValidateRestrictedACAccess(t *testing.T) {
 			instanceName: interfaces.OCIImageInstanceNamePrefix + "_manifest_content_",
 			cis:          nil,
 			wantErr:      true,
+		},
+		{
+			name:         "restricted prefix, trusted in-process caller, no identity service",
+			instanceName: interfaces.OCIImageInstanceNamePrefix,
+			cis:          nil,
+			trusted:      true,
+			wantErr:      false,
 		},
 		{
 			name:         "restricted prefix, no identity in context",
@@ -118,7 +126,11 @@ func TestValidateRestrictedACAccess(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := &mockEnv{cis: tc.cis}
-			err := ValidateRestrictedACAccess(context.Background(), env, tc.instanceName)
+			ctx := context.Background()
+			if tc.trusted {
+				ctx = ContextWithRestrictedACAccess(ctx)
+			}
+			err := ValidateRestrictedACAccess(ctx, env, tc.instanceName)
 			if tc.wantErr {
 				require.Error(t, err)
 				assert.True(t, status.IsUnauthenticatedError(err), "expected UnauthenticatedError, got: %v", err)
