@@ -139,6 +139,7 @@ go_binary(
     ],
     data = [
         ":config_files",
+        ":licenses",
     ],
     embed = [":executor_lib"],
 )
@@ -498,6 +499,9 @@ image_layer(
         "/usr/sbin/iptables": "/usr/sbin/iptables-nft",
         "/usr/sbin/iptables-restore": "/usr/sbin/iptables-nft-restore",
         "/usr/sbin/iptables-save": "/usr/sbin/iptables-nft-save",
+        "/usr/sbin/ip6tables": "/usr/sbin/ip6tables-nft",
+        "/usr/sbin/ip6tables-restore": "/usr/sbin/ip6tables-nft-restore",
+        "/usr/sbin/ip6tables-save": "/usr/sbin/ip6tables-nft-save",
     },
     tags = ["manual"],
 )
@@ -683,10 +687,10 @@ layer_from_tar(
 image_manifest(
     name = "base_image_manifest",
     annotations = {
-        "org.opencontainers.image.title": "Enterprise BuildBuddy Server (unconfigured)",
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Executor (unconfigured)",
         "org.opencontainers.image.description": (
             "Contains the BuildBuddy binary, runfiles, and symlinks " +
-            "necessary to run the enterprise BuildBuddy server. Does not " +
+            "necessary to run the enterprise BuildBuddy executor. Does not " +
             "include configuration files."
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
