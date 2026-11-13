@@ -685,8 +685,7 @@ func RemoteHeaderOverrides(ctx context.Context) ([]*repb.Platform_Property, erro
 // set platform properties for an execution independently of the cached Action.
 func WithRemoteHeaderOverride(ctx context.Context, propertyName, propertyValue string) context.Context {
 	// TODO: set OverrideHeader instead, once every app that may receive the
-	// request supports it. Apps from before OverrideHeader was added ignore
-	// it, so they would drop the override.
+	// request supports it.
 	return metadata.AppendToOutgoingContext(ctx, DeprecatedOverrideHeaderPrefix+propertyName, propertyValue)
 }
 
