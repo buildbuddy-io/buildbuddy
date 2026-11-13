@@ -717,7 +717,7 @@ func (sm *Replica) clearInMemoryReplicaState() {
 
 // clearRangeData clears data in range [start, end), along with the cleared
 // records' atime-index entries.
-func (sm *Replica) clearRangeData(db ReplicaWriter, rd *rfpb.RangeDescriptor) error {
+func (sm *Replica) clearRangeData(db pebble.IPebbleDB, rd *rfpb.RangeDescriptor) error {
 	if rd.GetStart() == nil || rd.GetEnd() == nil {
 		return nil
 	}
@@ -1225,11 +1225,9 @@ var atimeIndexCleanupCommitSizeBytes = 4 * 1024 * 1024
 //
 // Each chunk's records and index entries are deleted in one batch, committed
 // with opts, so a crash never leaves a record without its entry.
-func DeleteRangeDataAndAtimeIndexEntries(db ReplicaWriter, start, end []byte, opts *pebble.WriteOptions) error {
-	// The scan reads from a snapshot, so deleting behind it is safe.
-	snap := db.NewSnapshot()
-	defer snap.Close()
-	iter, err := snap.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+func DeleteRangeDataAndAtimeIndexEntries(db pebble.IPebbleDB, start, end []byte, opts *pebble.WriteOptions) error {
+	// The iterator reads a consistent view, so deleting behind it is safe.
+	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
 	if err != nil {
 		return err
 	}
@@ -2267,7 +2265,7 @@ func flushBatch(wb pebble.Batch) error {
 
 // applySnapshotFromReader restores a snapshot in bounded batches. It writes
 // the applied index last so a crash triggers snapshot reapplication.
-func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
+func (sm *Replica) applySnapshotFromReader(r io.Reader, db pebble.IPebbleDB) error {
 	wb := db.NewBatch()
 	defer wb.Close()
 
