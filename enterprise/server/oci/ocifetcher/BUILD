@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher",
     deps = [
         "//enterprise/server/oci/ocicache",
+        "//enterprise/server/util/proxy_util",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
@@ -15,6 +16,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
+        "//server/util/authutil",
         "//server/util/bytebufferpool",
         "//server/util/claims",
         "//server/util/flag",
@@ -29,6 +31,8 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
@@ -46,6 +50,7 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//server/http/httpclient",
         "//server/interfaces",
+        "//server/remote_cache/action_cache_server",
         "//server/testutil/testauth",
         "//server/testutil/testcache",
         "//server/testutil/testenv",

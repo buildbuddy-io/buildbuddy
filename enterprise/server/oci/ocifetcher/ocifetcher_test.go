@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -2502,4 +2503,48 @@ func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestCacheProxyActionCacheClientWithoutClientIdentity(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	te.SetAuthenticator(ta)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	require.Nil(t, te.GetClientIdentityService())
+	localAC, err := action_cache_server.NewActionCacheServer(te)
+	require.NoError(t, err)
+	server := newTestServerWithCache(t, te.GetByteStreamClient(), ocifetcher.NewCacheProxyActionCacheClient(localAC))
+
+	reg, counter := setupRegistry(t, nil, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	manifestDigest, _, _ := imageMetadata(t, img)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layers[0])
+
+	fetch := func(userID string) {
+		ctx, err := ta.WithAuthenticatedUser(context.Background(), userID)
+		require.NoError(t, err)
+		_, err = server.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: imageName + "@" + manifestDigest})
+		require.NoError(t, err)
+		stream := &mockFetchBlobServer{ctx: ctx}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + layerDigest.String()}, stream)
+		require.NoError(t, err)
+		require.Equal(t, expectedData, stream.collectData())
+	}
+
+	fetch("US1")
+	counter.Reset()
+	fetch("US1")
+	assertRequests(t, counter, map[string]int{})
+
+	fetch("US2")
+	snapshot := counter.Snapshot()
+	require.Equal(t, 1, snapshot[http.MethodGet+" /v2/test-image/manifests/"+manifestDigest])
+	require.Equal(t, 1, snapshot[http.MethodGet+" /v2/test-image/blobs/"+layerDigest.String()])
 }
