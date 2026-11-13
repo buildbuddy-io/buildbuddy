@@ -357,7 +357,6 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	}
-	env.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(conn))
 
 	// The atime updater must be registered after the remote CAS client (which
 	// it depends on), but before the local CAS server (which depends on it).
