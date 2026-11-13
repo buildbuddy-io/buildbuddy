@@ -1106,8 +1106,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		// Pass along the raw value rather than coercing unknown types, so that
 		// an unsupported request fails at scheduling time with a message
 		// naming the type that no executor supports.
-		RequestedIsolationType: platform.FindEffectiveValue(executionTask, platform.WorkloadIsolationPropertyName),
-		// Strip any credentials so they aren't stored.
+		RequestedIsolationType:  platform.FindEffectiveValue(executionTask, platform.WorkloadIsolationPropertyName),
 		RequestedContainerImage: platform.SanitizeImageRef(platform.FindEffectiveValue(executionTask, platform.ContainerImagePropertyName)),
 	}
 	if *writeExecutionProgressStateToRedis {

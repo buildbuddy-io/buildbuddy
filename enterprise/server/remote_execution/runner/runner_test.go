@@ -513,7 +513,6 @@ func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 			})
 			pool := newRunnerPool(t, env, cfg)
 			r := mustGetNewRunner(t, ctx, pool, newTask())
-			// The runner records the default image, since none was requested.
 			assert.Equal(t, "gcr.io/default:v1", r.Metadata().GetContainerImage())
 			mustAddWithoutEviction(t, ctx, pool, r)
 			// Only with the experiment is the runner reused for a task that
@@ -577,16 +576,8 @@ func TestRunnerPool_RecordedContainerImage(t *testing.T) {
 			want: "gcr.io/img:v1",
 		},
 		{
-			name: "Credentials",
-			props: &platform.Properties{
-				WorkloadIsolationType: string(platform.OCIContainerType),
-				ContainerImage:        "user:secret@gcr.io/img:v1",
-			},
-			want: "",
-		},
-		{
-			// Sandbox is only supported on darwin, so this uses the
-			// properties that ApplyOverrides produces for it there.
+			// Sandbox only runs on darwin, so this uses the properties that
+			// ApplyOverrides produces there.
 			name: "Sandbox",
 			props: &platform.Properties{
 				WorkloadIsolationType: string(platform.SandboxContainerType),

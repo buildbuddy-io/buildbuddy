@@ -789,16 +789,12 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 		},
 		{
-			// The requested image comes from the platform with the header
-			// override applied.
 			name:                   "ContainerImageOverride",
 			platformOverrides:      map[string]string{"container-image": "docker://gcr.io/test/override:v2"},
 			expectedRequestedImage: new("docker://gcr.io/test/override:v2"),
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 		},
 		{
-			// A requested image with credentials isn't a valid reference, so
-			// it isn't recorded.
 			name:                   "ContainerImageWithCredentials",
 			platformOverrides:      map[string]string{"container-image": "docker://user:secret@gcr.io/test/override:v2"},
 			expectedRequestedImage: new(""),
@@ -950,8 +946,8 @@ type publishTest struct {
 	// omitSchedulingMetadata leaves the scheduling metadata out of the
 	// executor's auxiliary metadata, like old executors do.
 	omitSchedulingMetadata bool
-	// expectedRequestedImage is the requested container image the execution
-	// should record. Defaults to the image in the action's platform.
+	// expectedRequestedImage, if set, replaces the default expectation: the
+	// image in the action's platform.
 	expectedRequestedImage *string
 }
 

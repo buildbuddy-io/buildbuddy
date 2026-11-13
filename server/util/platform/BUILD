@@ -15,6 +15,7 @@ go_library(
         "//proto:scheduler_go_proto",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_distribution_reference//:reference",
         "@com_github_docker_go_units//:go-units",
         "@com_github_google_go_containerregistry//pkg/name",
         "@org_golang_google_grpc//metadata",

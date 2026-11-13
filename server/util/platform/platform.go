@@ -23,6 +23,7 @@ import (
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	"github.com/distribution/reference"
 	units "github.com/docker/go-units"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 )
@@ -988,20 +989,18 @@ func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
 		"Unsupported dockerNetwork property value: %s", dockerNetwork)
 }
 
-// SanitizeImageRef returns a container image reference, such as
-// "docker://gcr.io/img:v1", in a form that's safe to store. It parses the
-// reference the same way the executor does when it pulls. A valid reference
-// can't contain credentials or a query string, so anything that doesn't
-// parse, such as "docker://user:secret@gcr.io/img", is dropped on purpose
-// and returns "".
+// SanitizeImageRef returns ref if it's a valid image reference, with or
+// without the docker:// prefix, and "" otherwise. Invalid refs are dropped on
+// purpose: a valid ref can't carry credentials or a query string.
 func SanitizeImageRef(ref string) string {
-	prefix := ""
-	if after, ok := strings.CutPrefix(ref, DockerPrefix); ok {
-		prefix, ref = DockerPrefix, after
+	name := strings.TrimPrefix(ref, DockerPrefix)
+	if _, err := ctrname.ParseReference(name); err == nil {
+		return ref
 	}
-	parsed, err := ctrname.ParseReference(ref)
-	if err != nil {
-		return ""
+	// The docker isolation type parses refs with this, and it accepts some
+	// that ctrname rejects, such as uppercase registry names.
+	if _, err := reference.ParseNormalizedNamed(name); err == nil {
+		return ref
 	}
-	return prefix + parsed.String()
+	return ""
 }
