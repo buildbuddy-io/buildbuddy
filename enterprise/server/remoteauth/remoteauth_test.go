@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testkeys"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
@@ -147,13 +149,16 @@ func (a *fakeAuthService) getPublicKeysCalls() int {
 }
 
 func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
+	return setupWithEnv(t, testenv.GetTestEnv(t))
+}
+
+func setupWithEnv(t *testing.T, te *real_environment.RealEnv) (interfaces.Authenticator, *fakeAuthService) {
 	fakeAuthService := fakeAuthService{
 		nextErr:      map[string]error{},
 		nextHS256Jwt: map[string]string{},
 		nextES256Jwt: map[string]string{},
 	}
 	fakeAuthService.setPublicKeys(claims.GetES256PublicKeys())
-	te := testenv.GetTestEnv(t)
 	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	authpb.RegisterAuthServiceServer(grpcServer, &fakeAuthService)
 	go runServer()
@@ -488,4 +493,108 @@ func TestHS256ReauthResultIsCached(t *testing.T) {
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, incomingHS256JWT))
 	require.Equal(t, remoteES256JWT, ctx.Value(authutil.ContextTokenStringKey))
 	require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+}
+
+func TestAuthFailureCacheIsPerSubdomain(t *testing.T) {
+	flags.Set(t, "auth.remote.cache_auth_failures", true)
+	authenticator, fakeAuth := setupES256(t)
+
+	fakeAuth.setNextErr(t, "foosub", status.UnauthenticatedError("bad key"))
+	ctx := subdomain.Context(contextWithApiKey(t, "foo"), "foosub")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
+	err, _ := authutil.AuthErrorFromContext(ctx)
+	require.True(t, status.IsUnauthenticatedError(err), "got %v", err)
+	require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+
+	// The same key on another subdomain is authenticated separately.
+	fooJwt := validES256Jwt(t, "foo")
+	fakeAuth.setNextJwt(t, "barsub", fooJwt)
+	ctx = subdomain.Context(contextWithApiKey(t, "foo"), "barsub")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
+	require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
+	require.Equal(t, 2, fakeAuth.getAuthenticateCalls())
+
+	// The failure for the first subdomain is still cached.
+	ctx = subdomain.Context(contextWithApiKey(t, "foo"), "foosub")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
+	err, _ = authutil.AuthErrorFromContext(ctx)
+	require.True(t, status.IsUnauthenticatedError(err), "got %v", err)
+	require.Equal(t, 2, fakeAuth.getAuthenticateCalls())
+}
+
+func TestAuthFailureCache(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		enabled     bool
+		err         error
+		wantCached  bool
+		wantIsError func(error) bool
+	}{
+		{name: "unauthenticated cached", enabled: true, err: status.UnauthenticatedError("bad key"), wantCached: true, wantIsError: status.IsUnauthenticatedError},
+		{name: "permission denied cached", enabled: true, err: status.PermissionDeniedError("denied"), wantCached: true, wantIsError: status.IsPermissionDeniedError},
+		{name: "unavailable not cached", enabled: true, err: status.UnavailableError("down"), wantIsError: status.IsUnavailableError},
+		{name: "deadline exceeded not cached", enabled: true, err: status.DeadlineExceededError("slow"), wantIsError: status.IsDeadlineExceededError},
+		{name: "unauthenticated not cached when disabled", enabled: false, err: status.UnauthenticatedError("bad key"), wantIsError: status.IsUnauthenticatedError},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "auth.remote.cache_auth_failures", test.enabled)
+			authenticator, fakeAuth := setupES256(t)
+
+			fakeAuth.setNextErr(t, "", test.err)
+			ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
+			err, _ := authutil.AuthErrorFromContext(ctx)
+			require.True(t, test.wantIsError(err), "got %v", err)
+			require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+
+			// A later request is served from the failure cache if the error
+			// was cacheable; otherwise it reaches the auth service again.
+			fooJwt := validES256Jwt(t, "foo")
+			fakeAuth.setNextJwt(t, "", fooJwt)
+			ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
+			if test.wantCached {
+				require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
+				err, _ = authutil.AuthErrorFromContext(ctx)
+				require.True(t, test.wantIsError(err), "got %v", err)
+				require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+			} else {
+				require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
+				require.Equal(t, 2, fakeAuth.getAuthenticateCalls())
+			}
+		})
+	}
+}
+
+func TestAuthFailureCacheExpiresAndIsPerKey(t *testing.T) {
+	flags.Set(t, "auth.remote.cache_auth_failures", true)
+	clock := clockwork.NewFakeClock()
+	te := testenv.GetTestEnv(t)
+	te.SetClock(clock)
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+	authenticator, fakeAuth := setupWithEnv(t, te)
+
+	fakeAuth.setNextErr(t, "", status.UnauthenticatedError("bad key"))
+	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bad"))
+	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
+	require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+
+	// A different key is not affected by the cached failure.
+	goodJwt := validES256Jwt(t, "good")
+	fakeAuth.setNextJwt(t, "", goodJwt)
+	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "good"))
+	require.Equal(t, goodJwt, ctx.Value(authutil.ContextTokenStringKey))
+	require.Equal(t, 2, fakeAuth.getAuthenticateCalls())
+
+	// The failure is cached until the TTL passes.
+	clock.Advance(authFailureCacheTTL - time.Second)
+	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bad"))
+	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
+	require.Equal(t, 2, fakeAuth.getAuthenticateCalls())
+
+	clock.Advance(2 * time.Second)
+	fakeAuth.setNextJwt(t, "", goodJwt)
+	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bad"))
+	require.Equal(t, goodJwt, ctx.Value(authutil.ContextTokenStringKey))
+	require.Equal(t, 3, fakeAuth.getAuthenticateCalls())
 }
