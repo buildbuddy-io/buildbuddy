@@ -304,6 +304,8 @@ func envOverridesHeader(task *repb.ExecutionTask) map[string]string {
 	return overrides
 }
 
+// remoteRunBaseRepoURL returns the target repo URL if set, otherwise the pushed
+// repo URL if set, otherwise "".
 func remoteRunBaseRepoURL(args []string) string {
 	targetRepoURL, _ := commandArgValue(args, "--target_repo_url")
 	if targetRepoURL != "" {
