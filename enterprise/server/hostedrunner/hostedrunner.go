@@ -504,7 +504,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 
 		// We must set all env overrides in a single platform property, so add them
 		// to credential-related env overrides that were set above.
-		if headerKey == platform.OverrideHeaderPrefix+platform.EnvOverridesPropertyName {
+		if headerKey == platform.DeprecatedOverrideHeaderPrefix+platform.EnvOverridesPropertyName {
 			envOverrides = append(envOverrides, headerVal)
 			continue
 		}

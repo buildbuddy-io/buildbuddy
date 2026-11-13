@@ -1842,7 +1842,7 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 			return "", status.InvalidArgumentError("malformed remote header: key-value pairs should be separated by '='")
 		}
 		// Merge env overrides with credentials so neither replaces the other.
-		if headerKey == platform.OverrideHeaderPrefix+platform.EnvOverridesPropertyName {
+		if headerKey == platform.DeprecatedOverrideHeaderPrefix+platform.EnvOverridesPropertyName {
 			envOverrides = append(envOverrides, headerVal)
 			continue
 		}

@@ -43,19 +43,24 @@ const (
 	Ubuntu22_04WorkflowsImage = Ubuntu22_04Image
 	Ubuntu24_04WorkflowsImage = Ubuntu24_04Image
 
-	// OverrideHeaderPrefix is a prefix used to override platform props via
-	// remote headers. The property name immediately follows the prefix in the
-	// header key, and the header value is used as the property value.
+	// DeprecatedOverrideHeaderPrefix is a prefix used to override platform
+	// props via remote headers. The property name immediately follows the
+	// prefix in the header key, and the header value is used as the property
+	// value.
 	//
 	// Example header:
 	//     x-buildbuddy-platform.container-registry-username: _json_key
-	OverrideHeaderPrefix = "x-buildbuddy-platform."
+	//
+	// Deprecated: Use OverrideHeader instead. Headers with this prefix are
+	// still accepted because existing clients send them.
+	DeprecatedOverrideHeaderPrefix = "x-buildbuddy-platform."
 
 	// OverrideHeader is a header used to override platform props via remote
 	// headers, where each header value has the form NAME=VALUE. Unlike
-	// OverrideHeaderPrefix, it supports property names containing characters
-	// that are not allowed in gRPC header keys, such as "resources:foo". Bazel
-	// crashes if a --remote_header key contains these characters.
+	// DeprecatedOverrideHeaderPrefix, it supports property names containing
+	// characters that are not allowed in gRPC header keys, such as
+	// "resources:foo". Bazel crashes if a --remote_header key contains these
+	// characters.
 	//
 	// Example header:
 	//     x-buildbuddy-platform: resources:foo=1
@@ -640,10 +645,11 @@ func RemoteHeaderOverrides(ctx context.Context) ([]*repb.Platform_Property, erro
 	if !ok {
 		return props, nil
 	}
-	// We read OverrideHeader values before OverrideHeaderPrefix headers, so
-	// that OverrideHeaderPrefix headers win when ParseProperties applies the
-	// overrides in order. Server code such as execution teeing sets props
-	// using OverrideHeaderPrefix and expects them to replace client values.
+	// Read OverrideHeader values before DeprecatedOverrideHeaderPrefix headers,
+	// so that DeprecatedOverrideHeaderPrefix headers win when ParseProperties
+	// applies the overrides in order. Server code such as execution teeing sets
+	// props using DeprecatedOverrideHeaderPrefix and expects them to replace
+	// client values.
 	for _, override := range md.Get(OverrideHeader) {
 		name, value, ok := strings.Cut(override, "=")
 		if !ok {
@@ -657,10 +663,10 @@ func RemoteHeaderOverrides(ctx context.Context) ([]*repb.Platform_Property, erro
 	}
 	mdMap := map[string][]string(md)
 	for headerName, headerValues := range mdMap {
-		if !strings.HasPrefix(headerName, OverrideHeaderPrefix) {
+		if !strings.HasPrefix(headerName, DeprecatedOverrideHeaderPrefix) {
 			continue
 		}
-		propName := strings.TrimPrefix(headerName, OverrideHeaderPrefix)
+		propName := strings.TrimPrefix(headerName, DeprecatedOverrideHeaderPrefix)
 		for _, propValue := range headerValues {
 			props = append(props, &repb.Platform_Property{
 				Name:  propName,
@@ -676,7 +682,7 @@ func RemoteHeaderOverrides(ctx context.Context) ([]*repb.Platform_Property, erro
 // overrides the given platform property to the given value. This can be used to
 // set platform properties for an execution independently of the cached Action.
 func WithRemoteHeaderOverride(ctx context.Context, propertyName, propertyValue string) context.Context {
-	return metadata.AppendToOutgoingContext(ctx, OverrideHeaderPrefix+propertyName, propertyValue)
+	return metadata.AppendToOutgoingContext(ctx, DeprecatedOverrideHeaderPrefix+propertyName, propertyValue)
 }
 
 func stringProp(props map[string]string, name string, defaultValue string) string {
