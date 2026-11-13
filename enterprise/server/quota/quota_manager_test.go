@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
@@ -89,7 +90,7 @@ func TestQuotaService_Errors(t *testing.T) {
 			}
 
 			// Allow should not fail open on quota service errors.
-			require.NoError(t, qm.Allow(ctx, "test", 1))
+			require.NoError(t, qm.Allow(ctx, "test", 1, false /* force */))
 		})
 	}
 }
@@ -156,20 +157,20 @@ func TestQuotaFlagdBuckets(t *testing.T) {
 	usageOperation := "rpc:/google.bytestream.ByteStream/Read"
 
 	// Read-only checks do not consume quota.
-	assert.NoError(t, qm.Allow(ctx, usageOperation, 0))
-	assert.NoError(t, qm.Allow(ctx, usageOperation, 0))
+	assert.NoError(t, qm.Allow(ctx, usageOperation, 0, false /* force */))
+	assert.NoError(t, qm.Allow(ctx, usageOperation, 0, false /* force */))
 
 	// The first 5 requests are allowed, but the 6th is blocked.
 	for range 5 {
-		assert.NoError(t, qm.Allow(ctx, usageOperation, 1))
+		assert.NoError(t, qm.Allow(ctx, usageOperation, 1, false /* force */))
 	}
-	assert.Error(t, qm.Allow(ctx, usageOperation, 1))
+	assert.Error(t, qm.Allow(ctx, usageOperation, 1, false /* force */))
 
 	// Usage is recorded even when over quota.
-	fit, err := qm.RecordUsage(ctx, usageOperation, 1)
+	fit, err := qm.RecordUsage(ctx, usageOperation, 1, false /* force */)
 	require.NoError(t, err)
 	assert.False(t, fit)
-	assert.Error(t, qm.Allow(ctx, usageOperation, 0))
+	assert.Error(t, qm.Allow(ctx, usageOperation, 0, false /* force */))
 
 	bucket := qm.findBucket(usageOperation, "GR001")
 	require.NotNil(t, bucket)
@@ -358,6 +359,37 @@ func TestBucketRowFromMap(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestForced(t *testing.T) {
+	flags.Set(t, "app.enable_quota_management", false)
+	env := testenv.GetTestEnv(t)
+	users := testauth.TestUsers("US001", "GR001")
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
+	ctx := testauth.WithAuthenticatedUserInfo(t.Context(), users["US001"])
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+	qm := &QuotaManager{env: env}
+	bucket := &testLimitingBucket{maxRequests: 1}
+	ns := &namespace{name: "test"}
+	ns.bucketsByKey.Store("GR001", bucket)
+	qm.namespaces.Store("test", ns)
+
+	// Quota is not applied when globally disabled.
+	require.NoError(t, qm.Allow(ctx, "test", 2, false /* force */))
+	withinQuota, err := qm.RecordUsage(ctx, "test", 2, false /* force */)
+	require.NoError(t, err)
+	require.True(t, withinQuota)
+	require.Equal(t, int64(0), bucket.numRequests)
+
+	// Forcing applies quota even when globally disabled.
+	err = qm.Allow(ctx, "test", 2, true /* force */)
+	require.True(t, status.IsResourceExhaustedError(err), "expected ResourceExhausted, got %v", err)
+	withinQuota, err = qm.RecordUsage(ctx, "test", 2, true /* force */)
+	require.NoError(t, err)
+	require.False(t, withinQuota)
+	require.Equal(t, int64(2), bucket.numRequests)
 }
 
 func TestConcurrentBucketAccess(t *testing.T) {

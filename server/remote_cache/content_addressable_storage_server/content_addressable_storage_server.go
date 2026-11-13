@@ -249,7 +249,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		for _, uploadRequest := range req.Requests {
 			totalUploadSize += uploadRequest.GetDigest().GetSizeBytes()
 		}
-		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), totalUploadSize); err != nil {
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), totalUploadSize, false /* force */); err != nil {
 			return nil, err
 		}
 	}
@@ -410,7 +410,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		return rsp, nil
 	}
 	if qm := s.env.GetQuotaManager(); qm != nil {
-		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), totalDownloadSize); err != nil {
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), totalDownloadSize, false /* force */); err != nil {
 			return nil, err
 		}
 	}

@@ -100,6 +100,8 @@ var (
 	maxRunnerCPU         = expflag.Float64("remote_execution.runner.max_cpu", 0, "Maximum CPU that can be requested by a runner, in vCPUs. Must be non-negative. Zero disables the limit.")
 	maxRunnerMemoryBytes = expflag.Int64("remote_execution.runner.max_memory_bytes", 0, "Maximum memory that can be requested by a runner, in bytes. Must be non-negative. Zero disables the limit.")
 
+	enableWorkflowsQuota = expflag.Bool("remote_execution.enable_workflows_quota", false, "If true, enforce workflow quotas (such as snapshot saves) even if quota management is globally disabled.")
+
 	teeInstanceNamePrefix = flag.String("remote_execution.tee_instance_name_prefix", "", "Instance name prefix used to identify tee'ed actions", flag.Internal)
 )
 
@@ -399,10 +401,11 @@ func (s *ExecutionServer) applySnapshotSaveQuota(ctx context.Context, overrides 
 	if qm == nil {
 		return
 	}
-	if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes), 0); err != nil {
+	force := enableWorkflowsQuota.Get(ctx)
+	if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes), 0, force); err != nil {
 		platform.SetValue(overrides, platform.SkipLocalSnapshotSavePropertyName, "true")
 	}
-	if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes), 0); err != nil {
+	if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes), 0, force); err != nil {
 		platform.SetValue(overrides, platform.SkipRemoteSnapshotSavePropertyName, "true")
 	}
 }
@@ -412,6 +415,7 @@ func (s *ExecutionServer) recordSnapshotSaveQuota(ctx context.Context, fcStats *
 	if qm == nil || fcStats.GetSnapshotSavedBytes() <= 0 {
 		return
 	}
+	force := enableWorkflowsQuota.Get(ctx)
 	bytesWritten := fcStats.GetSnapshotSavedBytes()
 	var namespaces []string
 	if fcStats.GetSnapshotSavedLocally() {
@@ -421,7 +425,7 @@ func (s *ExecutionServer) recordSnapshotSaveQuota(ctx context.Context, fcStats *
 		namespaces = append(namespaces, quota.GetSKUKey(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes))
 	}
 	for _, ns := range namespaces {
-		withinQuota, err := qm.RecordUsage(ctx, ns, bytesWritten)
+		withinQuota, err := qm.RecordUsage(ctx, ns, bytesWritten, force)
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to record snapshot usage for %q: %s", ns, err)
 		} else if !withinQuota {
@@ -1273,7 +1277,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		// record the actual usage afterwards.
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
-			if err := qm.Allow(ctx, namespace, 0); err != nil {
+			if err := qm.Allow(ctx, namespace, 0, false /* force */); err != nil {
 				return err
 			}
 		}
@@ -1927,7 +1931,7 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 		// If quota is exceeded, the next execution will be blocked.
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
-			withinQuota, err := qm.RecordUsage(ctx, namespace, counts.CPUNanos)
+			withinQuota, err := qm.RecordUsage(ctx, namespace, counts.CPUNanos, false /* force */)
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to record CPU time quota usage: %s", err)
 			} else if !withinQuota {
@@ -2005,7 +2009,7 @@ func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, ex
 		// If quota is exceeded, the next execution will be blocked.
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
-			withinQuota, err := qm.RecordUsage(ctx, namespace, counts.CPUNanos)
+			withinQuota, err := qm.RecordUsage(ctx, namespace, counts.CPUNanos, false /* force */)
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to record CPU time quota usage: %s", err)
 			} else if !withinQuota {
