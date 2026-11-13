@@ -416,9 +416,9 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 		accessToken = req.GetEnv()[ci_runner_env.RepoTokenEnvVarName]
 	}
 
-	// Use env override headers for credentials. If the token is not set, the
-	// scheduler requests one from the GitHub app when an executor leases the
-	// task.
+	// Use env override headers for credentials. If the repo is linked to the
+	// org through the GitHub app, the scheduler replaces the token set here
+	// (if any) with a GitHub app token when an executor leases the task.
 	envOverrides := []string{
 		ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=" + apiKey.Value,
 		ci_runner_env.RepoUserEnvVarName + "=" + username,
