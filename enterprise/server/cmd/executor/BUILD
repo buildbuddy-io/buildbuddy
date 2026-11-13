@@ -417,6 +417,14 @@ container_image(
     tags = ["manual"],
 )
 
+# This image is the docker image used by the executor to run actions that do not
+# already have a docker image specified.
+container_image(
+    name = "default_base_image",
+    base = "@default_execution_image//image:dockerfile_image.tar",
+    tags = ["manual"],
+)
+
 [
     flatten(
         name = "apt_tar_%s" % arch,
@@ -722,6 +730,7 @@ image_manifest(
         }.items()
     }),
     tags = ["manual"],
+    visibility = ["//visibility:public"],
 )
 
 pkg_tar(
@@ -796,6 +805,7 @@ image_index(
         "//platforms:linux_arm64",
     ],
     tags = ["manual"],
+    visibility = ["//visibility:public"],
 )
 
 image_load(
@@ -814,12 +824,5 @@ image_load(
     repository = "enterprise/executor",
     tag = "latest",
     tags = ["manual"],
-)
-
-# This image is the docker image used by the executor to run actions that do not
-# already have a docker image specified.
-container_image(
-    name = "default_base_image",
-    base = "@default_execution_image//image:dockerfile_image.tar",
-    tags = ["manual"],
+    visibility = ["//visibility:public"],
 )
