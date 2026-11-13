@@ -271,6 +271,10 @@ Valid values are:
     because no snapshots were saved for the `my-feature` branch.
   - If there is no default snapshot available, then a snapshot will be saved
     for the `my-feature` branch on its first run.
+- `never`: Never save a snapshot to the remote cache, on any ref.
+  - Runs can still resume from existing remote snapshots (for example, ones
+    saved by runs using a different policy), and snapshots may still be saved
+    locally on the executor.
 
 See [Recommended configuration](#recommended-configuration) for details on how to
 apply these properties.
