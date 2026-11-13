@@ -603,12 +603,25 @@ func setClientIdentityStreamClientInterceptor(env environment.Env) grpc.StreamCl
 
 func propagateMetadataFromIncomingToOutgoing(keys ...string) func(context.Context) context.Context {
 	return func(ctx context.Context) context.Context {
+		var kv []string
 		for _, key := range keys {
-			if values := metadata.ValueFromIncomingContext(ctx, key); len(values) > 0 {
-				ctx = metadata.AppendToOutgoingContext(ctx, key, values[len(values)-1])
+			values := metadata.ValueFromIncomingContext(ctx, key)
+			// TODO: forward every value of the headers in headerContextKeys too,
+			// once we know that it doesn't change which value servers use.
+			// Servers read only one value of these headers and don't agree on
+			// which one. For example, the cache proxy authenticates with the
+			// last JWT, while copyHeadersToContext uses the first.
+			if _, ok := headerContextKeys[key]; ok && len(values) > 1 {
+				values = values[len(values)-1:]
+			}
+			for _, value := range values {
+				kv = append(kv, key, value)
 			}
 		}
-		return ctx
+		if len(kv) == 0 {
+			return ctx
+		}
+		return metadata.AppendToOutgoingContext(ctx, kv...)
 	}
 }
 
