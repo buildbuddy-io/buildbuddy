@@ -1863,6 +1863,18 @@ func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*v
 }
 
 func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
+	// Remove the name first so that a racing unlink of the same name fails
+	// here rather than also decrementing the child's link count. The name
+	// may also have been rebound since the caller looked it up, in which
+	// case the caller's entry is gone and the new one must be left alone.
+	parentNode.mu.Lock()
+	if cur, ok := parentNode.children[childName]; !ok || cur != childNode {
+		parentNode.mu.Unlock()
+		return syscallErrStatus(syscall.ENOENT)
+	}
+	delete(parentNode.children, childName)
+	parentNode.mu.Unlock()
+
 	childNode.mu.Lock()
 	childNode.attrs = updateAttr(childNode.attrs, func(attr *vfspb.Attrs) {
 		attr.Nlink--
@@ -1879,13 +1891,6 @@ func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
 		childNode.server.mu.Unlock()
 	}
 	childNode.mu.Unlock()
-
-	parentNode.mu.Lock()
-	if _, ok := parentNode.children[childName]; !ok {
-		return syscallErrStatus(syscall.ENOENT)
-	}
-	delete(parentNode.children, childName)
-	parentNode.mu.Unlock()
 	return nil
 }
 
