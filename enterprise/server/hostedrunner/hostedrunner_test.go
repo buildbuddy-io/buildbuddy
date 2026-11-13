@@ -232,8 +232,7 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 		GitRepo:   &gitpb.GitRepo{RepoUrl: "sample"},
 		RepoState: &gitpb.RepoState{Branch: "test"},
 		RemoteHeaders: []string{
-			"x-buildbuddy-platform.env-overrides=PWD=supersecret,USERNAME=bb",
-			"x-buildbuddy-platform=env-overrides=OTHER=value",
+			"x-buildbuddy-platform=env-overrides=PWD=supersecret,USERNAME=bb",
 		},
 		Steps: []*rnpb.Step{{Run: "test-val"}},
 	})
@@ -250,7 +249,6 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	appliedEnvOverrides := envOverridesMetadata[len(envOverridesMetadata)-1]
 	require.Contains(t, appliedEnvOverrides, "PWD=supersecret")
 	require.Contains(t, appliedEnvOverrides, "USERNAME=bb")
-	require.Contains(t, appliedEnvOverrides, "OTHER=value")
 	valueFormatOverrides := execReq.Metadata.Get(platform.OverrideHeader)
 	require.Empty(t, valueFormatOverrides)
 

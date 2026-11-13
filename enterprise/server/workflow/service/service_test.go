@@ -1334,12 +1334,11 @@ func TestExecuteWorkflow_RemoteHeaders(t *testing.T) {
 			Async:   true,
 			RemoteHeaders: []string{
 				// Send multiple secrets in a single comma-separated header.
-				"x-buildbuddy-platform.secret-env-overrides=TOKEN=" + secret + ",TOKEN_WITH_EXTRA_EQUAL_SIGN=" + secret + "=suffix",
-				"x-buildbuddy-platform.secret-env-overrides-base64=" + encodedSecrets,
+				"x-buildbuddy-platform=secret-env-overrides=TOKEN=" + secret + ",TOKEN_WITH_EXTRA_EQUAL_SIGN=" + secret + "=suffix",
+				"x-buildbuddy-platform=secret-env-overrides-base64=" + encodedSecrets,
 				// Make sure we correctly handle env overrides. These should be appended to the existing env overrides
 				// the workflow service applies.
-				"x-buildbuddy-platform.env-overrides=EXTRA=value",
-				"x-buildbuddy-platform=env-overrides=OTHER_EXTRA=value",
+				"x-buildbuddy-platform=env-overrides=EXTRA=value",
 				// Make sure we correctly handle custom headers.
 				"x-custom-header=custom-value",
 			},
@@ -1352,7 +1351,7 @@ func TestExecuteWorkflow_RemoteHeaders(t *testing.T) {
 		assert.Equal(t, []string{"custom-value"}, execReq.Metadata.Get("x-custom-header"))
 		envOverrides := execReq.Metadata.Get("x-buildbuddy-platform.env-overrides")
 		require.Len(t, envOverrides, 1)
-		for _, assignment := range []string{"EXTRA=value", "OTHER_EXTRA=value", "BUILDBUDDY_API_KEY=", "REPO_USER=", "REPO_TOKEN="} {
+		for _, assignment := range []string{"EXTRA=value", "BUILDBUDDY_API_KEY=", "REPO_USER=", "REPO_TOKEN="} {
 			assert.Contains(t, envOverrides[0], assignment)
 		}
 

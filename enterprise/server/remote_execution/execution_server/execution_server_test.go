@@ -1108,7 +1108,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	})
 	require.NoError(t, err)
 	for k, v := range test.platformOverrides {
-		clientCtx = metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-platform."+k, v)
+		clientCtx = metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-platform", k+"="+v)
 	}
 	platformProperties := []*repb.Platform_Property{
 		{Name: "EstimatedFreeDiskBytes", Value: "1000"},
