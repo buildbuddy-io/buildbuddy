@@ -47,3 +47,10 @@ filegroup(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+# ClickHouse's stock server config.xml, which test servers use as their base
+# config.
+alias(
+    name = "config",
+    actual = "@clickhouse_server_config//:etc/clickhouse-server/config.xml",
+)

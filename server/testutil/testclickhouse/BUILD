@@ -4,11 +4,15 @@ go_library(
     name = "testclickhouse",
     testonly = 1,
     srcs = ["testclickhouse.go"],
-    data = ["//tools/clickhouse_bin"],
+    data = [
+        "//tools/clickhouse_bin",
+        "//tools/clickhouse_bin:config",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse",
     visibility = ["//visibility:public"],
     x_defs = {
         "clickhouseRlocationpath": "$(rlocationpath //tools/clickhouse_bin)",
+        "clickhouseConfigRlocationpath": "$(rlocationpath //tools/clickhouse_bin:config)",
     },
     deps = [
         "//server/real_environment",

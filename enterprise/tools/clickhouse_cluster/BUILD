@@ -5,10 +5,14 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "clickhouse_cluster_lib",
     srcs = ["clickhouse_cluster.go"],
-    data = ["//tools/clickhouse_bin"],
+    data = [
+        "//tools/clickhouse_bin",
+        "//tools/clickhouse_bin:config",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/clickhouse_cluster",
     x_defs = {
         "clickhouseRlocationpath": "$(rlocationpath //tools/clickhouse_bin)",
+        "clickhouseConfigRlocationpath": "$(rlocationpath //tools/clickhouse_bin:config)",
     },
     deps = [
         "//server/util/flag",
