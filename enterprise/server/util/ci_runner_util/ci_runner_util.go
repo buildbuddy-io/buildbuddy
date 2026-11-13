@@ -304,17 +304,13 @@ func envOverridesHeader(task *repb.ExecutionTask) map[string]string {
 	return overrides
 }
 
-// remoteRunBaseRepoURL returns "" if the command does not specify a repo.
 func remoteRunBaseRepoURL(args []string) string {
-	pushedRepoURL, _ := commandArgValue(args, "--pushed_repo_url")
 	targetRepoURL, _ := commandArgValue(args, "--target_repo_url")
-	if targetRepoURL != "" && targetRepoURL != pushedRepoURL {
+	if targetRepoURL != "" {
 		return targetRepoURL
 	}
-	if pushedRepoURL != "" {
-		return pushedRepoURL
-	}
-	return targetRepoURL
+	pushedRepoURL, _ := commandArgValue(args, "--pushed_repo_url")
+	return pushedRepoURL
 }
 
 func commandArgValue(args []string, name string) (string, bool) {
