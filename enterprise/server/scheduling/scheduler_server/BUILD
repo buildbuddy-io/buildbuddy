@@ -64,7 +64,6 @@ go_test(
     deps = [
         "//enterprise/server/backends/redis_execution_collector",
         "//enterprise/server/experiments",
-        "//enterprise/server/githubapp",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/tasksize",
         "//enterprise/server/testutil/enterprise_testauth",

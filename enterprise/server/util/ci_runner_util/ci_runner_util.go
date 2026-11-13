@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -222,6 +223,8 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 }
 
 // SetTaskRepositoryToken sets the GitHub repository token for a trusted remote runner task.
+// It leaves the task unchanged if the repo is not hosted on GitHub, the GitHub
+// App is not configured, or an installation is not linked to the org.
 // It mutates the original task.
 func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb.ExecutionTask, groupID string) error {
 	if !platform.IsCIRunnerCommand(task.GetCommand()) {
@@ -244,9 +247,21 @@ func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb
 	if err != nil {
 		return err
 	}
+	// Leave the task unchanged if the repo is not hosted on GitHub, because
+	// the GitHub app can only issue tokens for GitHub repos.
+	if _, err := git.ParseGitHubRepoURL(repoURL); err != nil {
+		return nil
+	}
 	authCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, apiKey)
 	token, err := getGitHubAccessToken(authCtx, env, groupID, repoURL)
 	if err != nil {
+		// NotFound is expected if not authenticating with the GitHub app
+		// integration (e.g. if the repo is public, or the token is set
+		// manually). Unimplemented is expected if the GitHub app is not
+		// configured on this server.
+		if status.IsNotFoundError(err) || status.IsUnimplementedError(err) {
+			return nil
+		}
 		return status.WrapError(err, "failed to refresh remote runner git token")
 	}
 	envOverrides["REPO_TOKEN"] = token
