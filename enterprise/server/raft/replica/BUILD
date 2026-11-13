@@ -36,10 +36,11 @@ go_test(
     size = "medium",
     srcs = [
         "replica_benchmark_test.go",
+        "replica_internal_test.go",
         "replica_test.go",
     ],
+    embed = [":replica"],
     deps = [
-        ":replica",
         "//enterprise/server/filestore",
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
@@ -60,6 +61,7 @@ go_test(
         "//server/util/proto",
         "//server/util/status",
         "//server/util/uuid",
+        "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//config",
         "@com_github_lni_dragonboat_v4//statemachine",

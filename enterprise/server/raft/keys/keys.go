@@ -64,8 +64,9 @@ func Range(key []byte) ([]byte, []byte) {
 // so it is legitimately mutated both by the replica state machine (which
 // writes entries in the same batch as the record, keeping the pair atomic)
 // and directly, outside raft, by node-local maintenance: the usagetracker
-// sweep drops orphaned entries and backfills/verifies the index, and the
-// store deletes entries when removing a replica's data. Going through raft
+// sweep drops orphaned entries and backfills/verifies the index, and snapshot
+// recovery and replica removal delete the entries of the records they clear
+// (replica.DeleteRangeDataAndAtimeIndexEntries). Going through raft
 // for those would be the wrong layer: each node's entry set differs (it
 // depends on local recovery history), so there is no replicated truth to
 // agree on. Correctness rests on the index being orphan-tolerant (a stale

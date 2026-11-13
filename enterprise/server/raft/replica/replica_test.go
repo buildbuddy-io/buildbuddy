@@ -3480,7 +3480,8 @@ func TestAtimeIndexMaintenance(t *testing.T) {
 
 // A replica restored from a snapshot rebuilds the atime index for the
 // received records: the index is node-local derived state and is not part of
-// the snapshot stream itself.
+// the snapshot stream itself. The entries of the records the snapshot replaces
+// are removed with them.
 func TestAtimeIndexSnapshotRestore(t *testing.T) {
 	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
@@ -3495,8 +3496,8 @@ func TestAtimeIndexSnapshotRestore(t *testing.T) {
 	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
 	fr, _ := randomRecord(t, defaultPartition, 100)
-	t0 := int64(1_000_000)
-	fileMetadataKey := writeRecordViaSet(t, em, repl, fr, t0)
+	t0, t1, t2 := int64(1_000_000), int64(2_000_000), int64(3_000_000)
+	fileMetadataKey := writeRecordViaSet(t, em, repl, fr, t2)
 
 	snapI, err := repl.PrepareSnapshot()
 	require.NoError(t, err)
@@ -3519,8 +3520,20 @@ func TestAtimeIndexSnapshotRestore(t *testing.T) {
 	_, err = repl2.Open(stopc)
 	require.NoError(t, err)
 
+	// The restored replica starts out behind: it has an older copy of the
+	// snapshot's record and a record the snapshot no longer contains.
+	em2 := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em2, repl2.Replica)
+	writeRecordViaSet(t, em2, repl2, fr, t0)
+	staleRecord, _ := randomRecord(t, defaultPartition, 100)
+	staleKey := writeRecordViaSet(t, em2, repl2, staleRecord, t1)
+	require.Equal(t, map[int64]string{
+		t0: string(fileMetadataKey),
+		t1: string(staleKey),
+	}, readAtimeIndex(t, repl2, defaultPartition))
+
 	err = repl2.RecoverFromSnapshot(snapFile, nil /*=quitChan*/)
 	require.NoError(t, err)
 
-	require.Equal(t, map[int64]string{t0: string(fileMetadataKey)}, readAtimeIndex(t, repl2, defaultPartition))
+	require.Equal(t, map[int64]string{t2: string(fileMetadataKey)}, readAtimeIndex(t, repl2, defaultPartition))
 }

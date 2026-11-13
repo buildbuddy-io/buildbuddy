@@ -1,4 +1,4 @@
-package store
+package replica
 
 import (
 	"fmt"
@@ -55,8 +55,9 @@ func exists(t *testing.T, db pebble.IPebbleDB, key []byte) bool {
 	return true
 }
 
-// RemoveData's cleanup must delete exactly the records and index entries in
-// the removed span, and tolerate non-record keys (e.g. the meta range).
+// The span cleanup (used by snapshot recovery and replica removal) must delete
+// exactly the records and index entries in the span, and tolerate non-record
+// keys (e.g. the meta range).
 func TestDeleteRangeDataAndAtimeIndexEntries(t *testing.T) {
 	dir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(dir, "test", &pebblev1.Options{})
@@ -76,8 +77,8 @@ func TestDeleteRangeDataAndAtimeIndexEntries(t *testing.T) {
 		recs = append(recs, rec{fk, ik})
 	}
 
-	// Remove the span covering records 2..5 (bounds via their file keys).
-	require.NoError(t, deleteRangeDataAndAtimeIndexEntries(db, recs[2].fileKey, recs[6].fileKey))
+	// Delete the span covering records 2..5 (bounds via their file keys).
+	require.NoError(t, DeleteRangeDataAndAtimeIndexEntries(db, recs[2].fileKey, recs[6].fileKey, pebble.NoSync))
 
 	for i, r := range recs {
 		inSpan := i >= 2 && i < 6
@@ -87,7 +88,7 @@ func TestDeleteRangeDataAndAtimeIndexEntries(t *testing.T) {
 
 	// A span with no file records (e.g. the meta range) works and touches
 	// nothing outside it.
-	require.NoError(t, deleteRangeDataAndAtimeIndexEntries(db, []byte{'\x02'}, []byte{'\x04'}))
+	require.NoError(t, DeleteRangeDataAndAtimeIndexEntries(db, []byte{'\x02'}, []byte{'\x04'}, pebble.NoSync))
 	for i, r := range recs {
 		inSpan := i >= 2 && i < 6
 		require.Equal(t, !inSpan, exists(t, db, r.fileKey), "record %d after meta-span delete", i)

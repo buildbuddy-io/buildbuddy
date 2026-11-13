@@ -828,8 +828,8 @@ func (pu *partitionUsage) sweepIndex(ctx context.Context, db pebble.IPebbleDB, l
 			// can't collide (they stamp a new atime, landing at a different
 			// index key); the writer that recreates entries at historical
 			// atimes is snapshot recovery, replaying records into a span
-			// clearRangeData just wiped -- which is also why the sweep sees
-			// orphans there. Re-check and restore: the reverse mistake --
+			// clearRangeData just wiped (this iterator can still show the
+			// wiped entries). Re-check and restore: the reverse mistake --
 			// restoring an entry for a record deleted inside this window --
 			// only creates an orphan, which is safe. If we fail to restore the
 			// index, verifyAtimeIndexPass will fix it.

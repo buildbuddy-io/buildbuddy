@@ -715,21 +715,13 @@ func (sm *Replica) clearInMemoryReplicaState() {
 	sm.lastAppliedIndex = 0
 }
 
-// clearRangeData clears data in range [start, end). Atime-index entries for
-// the cleared records are left behind as orphans; the eviction scanner drops
-// entries whose stored record is missing or has a different atime.
+// clearRangeData clears data in range [start, end), along with the cleared
+// records' atime-index entries.
 func (sm *Replica) clearRangeData(db ReplicaWriter, rd *rfpb.RangeDescriptor) error {
-	wb := db.NewBatch()
-	defer wb.Close()
-	if rd.GetStart() != nil && rd.GetEnd() != nil {
-		if err := wb.DeleteRange(rd.GetStart(), rd.GetEnd(), nil /*ignored write options*/); err != nil {
-			return err
-		}
+	if rd.GetStart() == nil || rd.GetEnd() == nil {
+		return nil
 	}
-	if err := wb.Commit(pebble.Sync); err != nil {
-		return err
-	}
-	return nil
+	return DeleteRangeDataAndAtimeIndexEntries(db, rd.GetStart(), rd.GetEnd(), pebble.Sync)
 }
 
 // clearReplica clears in-memory replica state, and local range data on the disk.
@@ -1215,6 +1207,85 @@ func deleteAtimeIndexEntry(wb pebble.Batch, fileKey []byte, atimeUsec int64) err
 		return nil
 	}
 	return fatal(wb.Delete(keys.AtimeIndexKey(partID, atimeUsec, fileKey), nil /*ignored write options*/))
+}
+
+// atimeIndexCleanupCommitSizeBytes is how large
+// DeleteRangeDataAndAtimeIndexEntries lets its batch grow before committing a
+// chunk. A range can hold millions of records (one small index delete each),
+// and pebble panics on batches over ~4GB, so the cleanup works in bounded
+// chunks. Var so tests can exercise the chunking cheaply.
+var atimeIndexCleanupCommitSizeBytes = 4 * 1024 * 1024
+
+// DeleteRangeDataAndAtimeIndexEntries deletes every record in [start, end)
+// along with its node-local atime-index entry, in bounded chunks. It is for
+// callers that drop a whole span outside the apply path (snapshot recovery,
+// replica removal); nothing may write to the span while it runs. The entry
+// keys are derived from the stored atimes, so this reads the span before
+// deleting it.
+//
+// Each chunk's records and index entries are deleted in one batch, committed
+// with opts, so a crash never leaves a record without its entry.
+func DeleteRangeDataAndAtimeIndexEntries(db ReplicaWriter, start, end []byte, opts *pebble.WriteOptions) error {
+	// The scan reads from a snapshot, so deleting behind it is safe.
+	snap := db.NewSnapshot()
+	defer snap.Close()
+	iter, err := snap.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+	wb := db.NewBatch()
+	defer wb.Close()
+
+	md := sgpb.FileMetadataFromVTPool()
+	defer md.ReturnToVTPool()
+
+	chunkStart := start
+	commitChunk := func(chunkEnd []byte) error {
+		if err := wb.DeleteRange(chunkStart, chunkEnd, nil /*ignored write options*/); err != nil {
+			return err
+		}
+		if err := wb.Commit(opts); err != nil {
+			return err
+		}
+		wb.Reset()
+		chunkStart = chunkEnd
+		return nil
+	}
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		if !bytes.HasPrefix(iter.Key(), []byte(filestore.PartitionDirectoryPrefix)) {
+			// Not a file record (e.g. meta-range keys); the chunk's range
+			// delete still removes it.
+			continue
+		}
+		// Derive the partition per key rather than from the range start:
+		// today a range never spans partitions, but this direction of the
+		// mapping matching addAtimeIndexEntry costs nothing.
+		partID := keys.PartitionIDFromRangeStart(iter.Key())
+		if partID == "" {
+			continue
+		}
+		md.ResetVT()
+		if err := md.UnmarshalVT(iter.Value()); err != nil {
+			log.Warningf("skipping atime index cleanup for non-FileMetadata key %q: %s", iter.Key(), err)
+			continue
+		}
+		if err := wb.Delete(keys.AtimeIndexKey(partID, md.GetLastAccessUsec(), iter.Key()), nil /*ignored write options*/); err != nil {
+			return err
+		}
+		if wb.Len() >= atimeIndexCleanupCommitSizeBytes {
+			if err := commitChunk(keys.Key(iter.Key()).Next()); err != nil {
+				return err
+			}
+		}
+	}
+	// An iterator error ends the loop indistinguishably from exhaustion;
+	// don't delete the remainder of the span on a truncated scan.
+	if err := iter.Error(); err != nil {
+		return err
+	}
+	return commitChunk(end)
 }
 
 func (sm *Replica) set(wb pebble.Batch, req *rfpb.SetRequest) (*rfpb.SetResponse, error) {
