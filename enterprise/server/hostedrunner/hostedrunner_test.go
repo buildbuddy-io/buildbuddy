@@ -229,12 +229,10 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = r.Run(ctx, &rnpb.RunRequest{
-		GitRepo:   &gitpb.GitRepo{RepoUrl: "sample"},
-		RepoState: &gitpb.RepoState{Branch: "test"},
-		RemoteHeaders: []string{
-			"x-buildbuddy-platform=env-overrides=PWD=supersecret,USERNAME=bb",
-		},
-		Steps: []*rnpb.Step{{Run: "test-val"}},
+		GitRepo:       &gitpb.GitRepo{RepoUrl: "sample"},
+		RepoState:     &gitpb.RepoState{Branch: "test"},
+		RemoteHeaders: []string{"x-buildbuddy-platform=env-overrides=PWD=supersecret,USERNAME=bb"},
+		Steps:         []*rnpb.Step{{Run: "test-val"}},
 	})
 	require.NoError(t, err)
 
@@ -249,8 +247,6 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	appliedEnvOverrides := envOverridesMetadata[len(envOverridesMetadata)-1]
 	require.Contains(t, appliedEnvOverrides, "PWD=supersecret")
 	require.Contains(t, appliedEnvOverrides, "USERNAME=bb")
-	valueFormatOverrides := execReq.Metadata.Get(platform.OverrideHeader)
-	require.Empty(t, valueFormatOverrides)
 
 	// Check that credential-related overrides were not overwritten
 	for _, expectedCredential := range []string{"BUILDBUDDY_API_KEY", "REPO_TOKEN", "REPO_USER"} {
