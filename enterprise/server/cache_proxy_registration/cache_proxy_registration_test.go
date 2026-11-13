@@ -2,7 +2,6 @@ package cache_proxy_registration
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -16,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -292,65 +290,27 @@ func TestConfiguredFlags(t *testing.T) {
 	}
 }
 
-// fakeHeartbeatStream records sent requests; the embedded interface panics on
-// any other method, which sendHeartbeat won't call as long as Send succeeds.
-type fakeHeartbeatStream struct {
-	cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient
-	sent []*cppb.RegisterCacheProxyRequest
-}
-
-func (f *fakeHeartbeatStream) Send(req *cppb.RegisterCacheProxyRequest) error {
-	// Clone the request: real gRPC streams serialize at Send time, but
-	// sendHeartbeat mutates the shared summary between sends.
-	f.sent = append(f.sent, proto.Clone(req).(*cppb.RegisterCacheProxyRequest))
-	return nil
-}
-
 // Flag values can change at runtime (the config file is re-read on SIGHUP),
-// so heartbeats should report the latest configuration snapshot, which
+// so details responses should report the latest configuration snapshot, which
 // config.OnReload refreshes after each completed reload.
-func TestSendHeartbeat_RefreshesConfiguredFlags(t *testing.T) {
-	stream := &fakeHeartbeatStream{}
+func TestDetailsResponse_RefreshesConfiguredFlags(t *testing.T) {
 	summary := &cppb.CacheProxySummary{Host: "h", ProxyId: "id"}
+	rsp := &cppb.RegisterCacheProxyResponse{
+		DetailsRequest: &cppb.GetCacheProxyRequest{IncludeConfiguredFlags: true},
+	}
 
 	flags.Set(t, "cache_proxy.app_target", "grpcs://before.example.com")
 	refreshConfiguredFlags()
-	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary}))
+	before := detailsResponse(summary, rsp, nil)
 
 	// After a config reload (e.g. on SIGHUP), config.OnReload triggers
-	// refreshConfiguredFlags and subsequent heartbeats pick up the change.
+	// refreshConfiguredFlags and subsequent responses pick up the change.
 	flags.Set(t, "cache_proxy.app_target", "grpcs://after.example.com")
 	refreshConfiguredFlags()
-	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary}))
+	after := detailsResponse(summary, rsp, nil)
 
-	require.Len(t, stream.sent, 2)
-	for _, req := range stream.sent {
-		assert.Equal(t, "id", req.GetDetails().GetSummary().GetProxyId())
-	}
-	assert.Contains(t, stream.sent[0].GetSummary().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://before.example.com")
-	assert.Contains(t, stream.sent[1].GetSummary().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://after.example.com")
-}
-
-func TestSendHeartbeat_FlagMutationRaciness(t *testing.T) {
-	stream := &fakeHeartbeatStream{}
-	summary := &cppb.CacheProxySummary{Host: "h", ProxyId: "id"}
-	refreshConfiguredFlags()
-
-	const iterations = 1_000
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for range iterations {
-			_ = sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Summary: summary})
-		}
-	}()
-
-	for i := range iterations {
-		flags.Set(t, "cache_proxy.app_target", fmt.Sprintf("grpcs://app-%d.example.com", i))
-	}
-	<-done
-
-	assert.Len(t, stream.sent, iterations)
+	assert.Contains(t, before.GetDetails().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://before.example.com")
+	assert.Contains(t, after.GetDetails().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://after.example.com")
 }
 
 // detailsRequestingRegistry is a fake registry server that sends a details

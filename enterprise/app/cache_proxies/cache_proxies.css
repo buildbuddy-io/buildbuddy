@@ -27,7 +27,6 @@
   margin-top: 16px;
 }
 
-.cache-proxies-page .cache-proxy-flags-section,
 .cache-proxies-page .cache-proxy-stats-empty {
   margin-top: 16px;
 }
@@ -328,11 +327,6 @@
 
 .cache-proxies-page .cache-stat {
   font-weight: 600;
-}
-
-.cache-proxies-page .cache-proxy-configured-flags {
-  font-family: monospace;
-  overflow-wrap: anywhere;
 }
 
 .cache-proxy-page .title {

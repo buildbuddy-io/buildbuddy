@@ -14,7 +14,7 @@ interface Props {
   proxy: cache_proxy.CacheProxySummary;
   lastCheckInTime?: google_timestamp.protobuf.Timestamp | null;
   statistics?: cache_proxy.IStatistics | null;
-  // When true, the card is in summary mode and flags and statistics are hidden.
+  // When true, the card is in summary mode and statistics are hidden.
   summary?: boolean;
   // The URL of this proxy's details page.
   href: string;
@@ -103,16 +103,6 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Labels:</div>
                 <CacheProxyLabels labels={this.props.proxy.labels} />
-              </div>
-            )}
-            {!this.props.summary && (
-              <div className="cache-proxy-section cache-proxy-flags-section">
-                <div className="cache-proxy-section-title">Configuration:</div>
-                <div className="cache-proxy-configured-flags">
-                  {this.props.proxy.configuredFlags.length > 0
-                    ? this.props.proxy.configuredFlags.map((f) => <div key={f}>{f}</div>)
-                    : "No configured flags reported."}
-                </div>
               </div>
             )}
             {!this.props.summary &&
