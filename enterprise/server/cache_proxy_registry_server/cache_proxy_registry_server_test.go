@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -335,6 +336,29 @@ func TestStreamHeartbeat_PersistsRegistration(t *testing.T) {
 	require.NoError(t, proto.Unmarshal([]byte(data), reg))
 	assert.Equal(t, s.ownHostPort, reg.GetAppHostPort())
 	assert.NotEmpty(t, s.ownHostPort)
+}
+
+func TestStreamHeartbeat_DropsUnknownSummaryFields(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	// Older proxies send configured flags in (now reserved) summary field 11.
+	summary := &cppb.CacheProxySummary{Host: "proxy-1", ProxyId: "id-1"}
+	oldFlags := protowire.AppendTag(nil, 11, protowire.BytesType)
+	oldFlags = protowire.AppendString(oldFlags, "--foo=bar")
+	summary.ProtoReflect().SetUnknown(oldFlags)
+
+	stream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&cppb.RegisterCacheProxyRequest{Summary: summary}))
+	require.NoError(t, closeAndWait(stream))
+
+	data, err := s.rdb.HGet(context.Background(), redisKeyForCacheProxies(testGroupID), "id-1").Result()
+	require.NoError(t, err)
+	reg := &cppb.RegisteredCacheProxy{}
+	require.NoError(t, proto.Unmarshal([]byte(data), reg))
+	assert.Equal(t, "id-1", reg.GetSummary().GetProxyId())
+	assert.Empty(t, reg.GetSummary().ProtoReflect().GetUnknown())
 }
 
 func TestStreamHeartbeat_ShutDown(t *testing.T) {

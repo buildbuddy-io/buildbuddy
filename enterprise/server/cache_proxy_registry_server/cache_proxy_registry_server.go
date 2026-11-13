@@ -383,6 +383,9 @@ func (s *CacheProxyRegistryServer) lookupStream(groupID, proxyID string) *regist
 func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, groupID string, summary *cppb.CacheProxySummary, stats *cppb.Statistics) error {
 	acl := perms.ToACLProto(nil /*=userID*/, groupID, perms.GROUP_WRITE|perms.GROUP_READ)
 
+	// Drop unknown fields so they aren't stored in Redis.
+	summary.ProtoReflect().SetUnknown(nil)
+
 	r := &cppb.RegisteredCacheProxy{
 		Summary:      summary,
 		GroupId:      groupID,

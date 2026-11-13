@@ -55,12 +55,8 @@ message CacheProxySummary {
   // Memory allocated to this cache proxy process, in bytes.
   int64 allocated_memory_bytes = 10;
 
-  // The flags this cache proxy was configured with (via the command line or
-  // config file), in "--name=value" form. Only flags set to non-default
-  // values are included, and the values of secret flags are redacted.
-  //
-  // TODO(go/b/8433): remove this field.
-  repeated string configured_flags = 11;
+  reserved 11;
+  reserved "configured_flags";
 
   // The last time this cache proxy checked in with the server.
   google.protobuf.Timestamp last_check_in_time = 12;

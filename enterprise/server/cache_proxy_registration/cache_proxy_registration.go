@@ -457,11 +457,6 @@ func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, summa
 // sendHeartbeat writes one message to the stream.
 func sendHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, req *cppb.RegisterCacheProxyRequest) error {
 	summary := req.GetSummary()
-	if summary != nil {
-		if flags := configuredFlagsCache.Load(); flags != nil {
-			summary.ConfiguredFlags = *flags
-		}
-	}
 	if req.Details == nil {
 		req.Details = &cppb.CacheProxyDetails{}
 	}
