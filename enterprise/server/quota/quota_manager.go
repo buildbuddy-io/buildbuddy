@@ -54,9 +54,10 @@ type QuotaManager struct {
 }
 
 // Allow checks whether the quota has enough room for quantity and consumes it
-// only if allowed. Pass quantity 0 for a read-only check.
-func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
-	allow, err := qm.applyQuota(ctx, namespace, quantity, false /* recordUsageOverages */)
+// only if allowed. Pass quantity 0 for a read-only check. If force is true,
+// quota is applied even if quota management is globally disabled.
+func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64, force bool) error {
+	allow, err := qm.applyQuota(ctx, namespace, quantity, false /* recordUsageOverages */, force)
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to check quota for %q: %s", namespace, err)
 		// Do not block traffic when the quota system has issues.
@@ -69,19 +70,21 @@ func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity in
 }
 
 // RecordUsage always consumes quantity, even if it exceeds quota. Returns false
-// if the usage went over quota.
-func (qm *QuotaManager) RecordUsage(ctx context.Context, namespace string, quantity int64) (bool, error) {
+// if the usage went over quota. If force is true, usage is recorded even if
+// quota management is globally disabled.
+func (qm *QuotaManager) RecordUsage(ctx context.Context, namespace string, quantity int64, force bool) (bool, error) {
 	// Account for partial work even when the client canceled the request.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	return qm.applyQuota(ctx, namespace, quantity, true /* recordUsageOverages */)
+	return qm.applyQuota(ctx, namespace, quantity, true /* recordUsageOverages */, force)
 }
 
 // applyQuota returns whether quantity fit within quota. Errors indicate that
 // checking or recording usage failed. If recordUsageOverages is true, usage is
-// recorded even if it exceeds quota.
-func (qm *QuotaManager) applyQuota(ctx context.Context, namespace string, quantity int64, recordUsageOverages bool) (bool, error) {
-	if !*quotaManagerEnabled {
+// recorded even if it exceeds quota. If force is true, quota is applied even if
+// quota management is globally disabled.
+func (qm *QuotaManager) applyQuota(ctx context.Context, namespace string, quantity int64, recordUsageOverages, force bool) (bool, error) {
+	if !*quotaManagerEnabled && !force {
 		return true, nil
 	}
 

@@ -198,7 +198,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 
 	// Check quota before reading - use digest size as expected transfer size
 	if qm := s.env.GetQuotaManager(); qm != nil {
-		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), r.GetDigest().GetSizeBytes()); err != nil {
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), r.GetDigest().GetSizeBytes(), false /* force */); err != nil {
 			return err
 		}
 	}
@@ -604,7 +604,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 
 	// Check quota before writing - use digest size as expected upload size
 	if qm := s.env.GetQuotaManager(); qm != nil {
-		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), r.GetDigest().GetSizeBytes()); err != nil {
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), r.GetDigest().GetSizeBytes(), false /* force */); err != nil {
 			return nil, err
 		}
 	}

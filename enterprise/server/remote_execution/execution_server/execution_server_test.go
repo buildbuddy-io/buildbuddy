@@ -3081,7 +3081,7 @@ func newFakeQuotaManager(exhausted ...string) *fakeQuotaManager {
 	return qm
 }
 
-func (qm *fakeQuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
+func (qm *fakeQuotaManager) Allow(ctx context.Context, namespace string, quantity int64, force bool) error {
 	qm.mu.Lock()
 	defer qm.mu.Unlock()
 	if qm.exhausted[namespace] {
@@ -3090,7 +3090,7 @@ func (qm *fakeQuotaManager) Allow(ctx context.Context, namespace string, quantit
 	return nil
 }
 
-func (qm *fakeQuotaManager) RecordUsage(ctx context.Context, namespace string, quantity int64) (bool, error) {
+func (qm *fakeQuotaManager) RecordUsage(ctx context.Context, namespace string, quantity int64, force bool) (bool, error) {
 	qm.mu.Lock()
 	defer qm.mu.Unlock()
 	qm.recorded[namespace] += quantity

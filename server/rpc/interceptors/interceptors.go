@@ -502,7 +502,7 @@ func groupStatusStreamServerInterceptor(env environment.Env) grpc.StreamServerIn
 func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if qm := env.GetQuotaManager(); qm != nil {
-			err := qm.Allow(ctx, rpcQuotaPrefix+info.FullMethod, 1)
+			err := qm.Allow(ctx, rpcQuotaPrefix+info.FullMethod, 1, false /* force */)
 			if err != nil {
 				return nil, err
 			}
@@ -514,7 +514,7 @@ func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerIntercepto
 func quotaStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if qm := env.GetQuotaManager(); qm != nil {
-			err := qm.Allow(stream.Context(), rpcQuotaPrefix+info.FullMethod, 1)
+			err := qm.Allow(stream.Context(), rpcQuotaPrefix+info.FullMethod, 1, false /* force */)
 			if err != nil {
 				return err
 			}

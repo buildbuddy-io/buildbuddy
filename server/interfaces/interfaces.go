@@ -1583,17 +1583,24 @@ type QuotaManager interface {
 	// ResourceExhaustedError and consumes nothing. Returns nil if no quota
 	// applies or the quota service fails, so service errors do not block usage.
 	//
+	// If force is true, quota is applied even if quota management is globally
+	// disabled. This lets infrequent operations opt into quota without
+	// enabling quota checks on every RPC.
+	//
 	// Pass quantity 0 for a read-only check of whether the user is over quota.
 	// When usage is not known ahead of time (such as for execution minutes),
 	// call Allow with quantity 0 before the work begins, and RecordUsage when
 	// the work completes.
-	Allow(ctx context.Context, namespace string, quantity int64) error
+	Allow(ctx context.Context, namespace string, quantity int64, force bool) error
 
 	// RecordUsage consumes quantity even if doing so exceeds the quota.
 	// Subsequent Allow calls are blocked until the resulting debt drains.
 	//
+	// If force is true, usage is recorded even if quota management is
+	// globally disabled.
+	//
 	// Returns false if the usage went over quota.
-	RecordUsage(ctx context.Context, namespace string, quantity int64) (withinQuota bool, err error)
+	RecordUsage(ctx context.Context, namespace string, quantity int64, force bool) (withinQuota bool, err error)
 
 	// Reloads the quota buckets, but does not reset their state. This would
 	// remove a bucket that longer applies to a group. It will send a notification
