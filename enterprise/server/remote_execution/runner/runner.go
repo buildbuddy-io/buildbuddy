@@ -1381,6 +1381,17 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 	if err != nil {
 		return nil, err
 	}
+	// Sandbox runs no image, although ApplyOverrides sets the default one.
+	// A restored Firecracker snapshot runs the image it was built from, which
+	// differs from props.ContainerImage if the tag has moved; snapshot
+	// metadata doesn't record it. With OverrideSnapshotKey the image is
+	// unknown, so record none.
+	containerImage := platform.SanitizeImageRef(props.ContainerImage)
+	isolationType := platform.ContainerType(props.WorkloadIsolationType)
+	if isolationType == platform.SandboxContainerType ||
+		(isolationType == platform.FirecrackerContainerType && props.OverrideSnapshotKey != nil) {
+		containerImage = ""
+	}
 	runnerID := uuid.New()
 	r := &taskRunner{
 		env:     p.env,
@@ -1392,6 +1403,7 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 			TaskNumber:          1,
 			PlatformHash:        platformSHA256.GetHash(),
 			PersistentWorkerKey: key.GetPersistentWorkerKey(),
+			ContainerImage:      containerImage,
 		},
 		task:               st.GetExecutionTask(),
 		schedulingMetadata: st.GetSchedulingMetadata(),

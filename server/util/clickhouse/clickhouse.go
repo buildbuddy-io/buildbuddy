@@ -462,6 +462,8 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		RunnerID:                           in.GetRunnerId(),
 		PlatformHash:                       in.GetPlatformHash(),
 		PersistentWorkerKey:                in.GetPersistentWorkerKey(),
+		RequestedContainerImage:            in.GetRequestedContainerImage(),
+		EffectiveContainerImage:            in.GetEffectiveContainerImage(),
 		RequestedPool:                      in.GetRequestedPool(),
 		EffectivePool:                      in.GetEffectivePool(),
 		SnapshotSavedLocally:               in.GetSnapshotSavedLocally(),

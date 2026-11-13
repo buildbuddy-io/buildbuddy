@@ -23,7 +23,9 @@ import (
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	"github.com/distribution/reference"
 	units "github.com/docker/go-units"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
 )
 
 const (
@@ -61,6 +63,9 @@ const (
 
 	ContainerImagePropertyName = "container-image"
 	DockerPrefix               = "docker://"
+	// RegistryRegionPlaceholder is replaced in container-image names with the
+	// executor's executor.container_registry_region flag.
+	RegistryRegionPlaceholder = "{{region}}"
 
 	containerRegistryUsernamePropertyName = "container-registry-username"
 	containerRegistryPasswordPropertyName = "container-registry-password"
@@ -979,4 +984,22 @@ func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
 
 	return "", status.InvalidArgumentErrorf(
 		"Unsupported dockerNetwork property value: %s", dockerNetwork)
+}
+
+// SanitizeImageRef returns ref if it's a valid image reference, with or
+// without the docker:// prefix, and "" otherwise. Dropping invalid refs strips
+// URL-style userinfo and query strings, but this isn't a credential scrubber:
+// "user:secret@sha256:<hex>" parses as a repo, tag and digest.
+func SanitizeImageRef(ref string) string {
+	name := strings.TrimPrefix(ref, DockerPrefix)
+	name = strings.ReplaceAll(name, RegistryRegionPlaceholder, "region")
+	if _, err := ctrname.ParseReference(name); err == nil {
+		return ref
+	}
+	// The docker isolation type parses refs with this, and it accepts some
+	// that ctrname rejects, such as uppercase registry names.
+	if _, err := reference.ParseNormalizedNamed(name); err == nil {
+		return ref
+	}
+	return ""
 }

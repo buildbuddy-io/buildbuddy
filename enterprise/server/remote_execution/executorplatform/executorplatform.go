@@ -46,10 +46,6 @@ var (
 const (
 	// The app will mint a signed client identity token to workflows.
 	workflowClientIdentityTokenLifetime = 12 * time.Hour
-
-	// Placeholder string in container-image names that will be substituted with
-	// the value of the [containerRegistryRegion] flag.
-	registryRegionPlaceholder = "{{region}}"
 )
 
 type ImageRewrite struct {
@@ -150,7 +146,7 @@ func containerImageName(input string) string {
 	if *containerRegistryRegion == "" {
 		return withoutDockerPrefix
 	}
-	return strings.ReplaceAll(withoutDockerPrefix, registryRegionPlaceholder, *containerRegistryRegion)
+	return strings.ReplaceAll(withoutDockerPrefix, platform.RegistryRegionPlaceholder, *containerRegistryRegion)
 }
 
 func ValidateIsolationTypes() error {

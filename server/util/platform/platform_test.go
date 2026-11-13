@@ -592,3 +592,23 @@ func TestSetValueForTask(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizeImageRef(t *testing.T) {
+	const dig = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	for _, tc := range []struct {
+		name, ref, want string
+	}{
+		{"UserPass", "docker://user:secret@gcr.io/img:v1", ""},
+		{"Token", "docker://ghp_x@gcr.io/img:v1", ""},
+		{"QueryString", "docker://gcr.io/img:v1?token=secret", ""},
+		{"Empty", "", ""},
+		{"TagAndDigest", "docker://gcr.io/img:v1@" + dig, "docker://gcr.io/img:v1@" + dig},
+		{"UppercaseRegistry", "docker://REGISTRY/team/image:v1", "docker://REGISTRY/team/image:v1"},
+		{"RegionTemplate", "docker://{{region}}.gcr.io/{{region}}-ubuntu:latest", "docker://{{region}}.gcr.io/{{region}}-ubuntu:latest"},
+		{"UnsupportedTemplate", "docker://{{zone}}.gcr.io/ubuntu:latest", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, SanitizeImageRef(tc.ref))
+		})
+	}
+}

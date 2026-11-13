@@ -400,6 +400,13 @@ message SchedulingMetadata {
   //
   // Ex. "firecracker"
   string requested_isolation_type = 18;
+
+  // The "container-image" platform property value as requested, including
+  // any platform overrides, or empty if no image was requested or the value
+  // isn't a valid image reference.
+  //
+  // Ex. "docker://gcr.io/flame-public/rbe-ubuntu24-04:latest"
+  string requested_container_image = 19;
 }
 
 message RoutingConfig {
