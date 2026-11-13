@@ -255,11 +255,12 @@ func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb
 	}
 	// Leave the task unchanged if the GitHub app is not configured on this
 	// server.
-	if env.GetGitHubAppService() == nil {
+	gh := env.GetGitHubAppService()
+	if gh == nil {
 		return nil
 	}
 	authCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, apiKey)
-	token, err := getGitHubAccessToken(authCtx, env, groupID, repoURL)
+	token, err := getGitHubAccessToken(authCtx, gh, groupID, repoURL)
 	if err != nil {
 		// NotFound is expected if not authenticating with the GitHub app
 		// integration (e.g. if the repo is public, or the token is set
@@ -274,11 +275,7 @@ func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb
 	return nil
 }
 
-func getGitHubAccessToken(ctx context.Context, env environment.Env, groupID string, repoURL string) (string, error) {
-	gh := env.GetGitHubAppService()
-	if gh == nil {
-		return "", status.UnimplementedError("No GitHub app configured")
-	}
+func getGitHubAccessToken(ctx context.Context, gh interfaces.GitHubAppService, groupID string, repoURL string) (string, error) {
 	app, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return "", err
