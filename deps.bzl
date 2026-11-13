@@ -71,9 +71,9 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
             'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
-        ]).format(release = "v1.16.2-x86_64"),
-        sha256 = "32e3cdcd4081f91fe2b024a266f57dcb3b4e5fec5033e0cb22467ad7f7820bda",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.2/firecracker-v1.16.2-x86_64.tgz"],
+        ]).format(release = "v1.18.0-x86_64"),
+        sha256 = "1ac8eec866dd5eea14efecf6323e22b23eea24054545338a5b34bc5bca6623cd",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.18.0/firecracker-v1.18.0-x86_64.tgz"],
     )
     http_archive(
         name = "com_github_firecracker_microvm_firecracker_arm64",
@@ -81,9 +81,9 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
             'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
-        ]).format(release = "v1.16.2-aarch64"),
-        sha256 = "751365040ca3dde7616c5a1d97cc1304674fae469ce02993104eab22f5961950",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.2/firecracker-v1.16.2-aarch64.tgz"],
+        ]).format(release = "v1.18.0-aarch64"),
+        sha256 = "2a6130ff0338901ff9d7fbd73ce046c6b1c6123889dc84a34d678aa53bd0c0c2",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.18.0/firecracker-v1.18.0-aarch64.tgz"],
     )
 
     http_file(
