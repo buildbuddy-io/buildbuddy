@@ -1100,7 +1100,7 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	if err != nil {
 		return nil, status.WrapError(err, "get capabilities")
 	}
-	isAdmin := slices.Contains(caps, cappb.Capability_ORG_ADMIN)
+	isAdmin := slices.Contains(caps, cappb.Capability_ORG_ADMIN) || user.IsImpersonating()
 	isGroupOwnedKey := key.UserID == ""
 	isOwnKey := user.GetAPIKeyInfo().ID == key.APIKeyID
 	canUseGroupKey := key.VisibleToDevelopers && hasWriteCapability(caps)
