@@ -1,0 +1,66 @@
+.profile-card {
+  background-color: var(--color-bg-card);
+  box-shadow: var(--shadow-4);
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.profile-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.profile-card-title svg {
+  width: 14px;
+  height: 14px;
+}
+
+.profile-card-muted {
+  color: var(--color-text-secondary);
+}
+
+.profile-card-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-card-hint {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.profile-card-command {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 8px 8px 8px 16px;
+  background-color: var(--color-bg-code);
+  border-radius: 6px;
+}
+
+.profile-card-command code {
+  flex-grow: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: monospace;
+  font-size: 13px;
+  background: none;
+  padding: 0;
+}
+
+.profile-card-command .profile-card-copy {
+  padding: 4px 12px;
+  font-size: 13px;
+}

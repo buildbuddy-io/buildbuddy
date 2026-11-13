@@ -43,6 +43,7 @@ ts_library(
         "//app/components/chart:donut_chart",
         "//app/components/filter_input",
         "//app/components/link",
+        "//app/components/profile",
         "//app/components/upgrade",
         "//app/format",
         "//app/router",
@@ -51,6 +52,7 @@ ts_library(
         "//app/util:errors",
         "//enterprise/app/cache_proxies:cache_proxy_card",
         "//proto:cache_proxy_ts_proto",
+        "//proto:profile_ts_proto",
         "//proto:upgrade_ts_proto",
     ],
 )
