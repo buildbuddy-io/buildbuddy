@@ -62,6 +62,10 @@ const (
 	// "resources:foo". Bazel crashes if a --remote_header key contains these
 	// characters.
 	//
+	// If both headers set the same property, the value from OverrideHeader
+	// takes precedence. If OverrideHeader sets a property more than once, the
+	// last value takes precedence.
+	//
 	// Example header:
 	//     x-buildbuddy-platform: resources:foo=1
 	OverrideHeader = "x-buildbuddy-platform"
