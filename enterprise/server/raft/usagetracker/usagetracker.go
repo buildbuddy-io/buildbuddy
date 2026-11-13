@@ -78,13 +78,13 @@ const (
 // tests can exercise the chunking cheaply.
 var backfillCommitSizeBytes = 4 * 1024 * 1024
 
-// verifyChunkRecords is how many records a verify pass examines per iterator
-// before reopening it. The pass is rate-limited and can run for hours on a
-// large partition, and an open pebble iterator pins the sstables from when it
-// was opened -- retained disk that EstimateDiskUsage (and so the partition
-// usage gauge) does not count. At the default verify rate, this keeps each
-// iterator around half a minute old. Var so tests can exercise chunk
-// boundaries cheaply.
+// verifyChunkRecords is how many records a verify pass examines per snapshot
+// before taking a fresh one. The pass is rate-limited and can run for hours on
+// a large partition, and an open pebble snapshot (and the iterator on it)
+// keeps data on disk that compaction would otherwise drop -- retained disk
+// that EstimateDiskUsage (and so the partition usage gauge) does not count.
+// At the default verify rate, this keeps each snapshot around half a minute
+// old. Var so tests can exercise chunk boundaries cheaply.
 var verifyChunkRecords = 30_000
 
 // atimeIndexVersion identifies the atime-index key encoding. It is stored in
@@ -537,10 +537,10 @@ func (pu *partitionUsage) backfillAtimeIndex(ctx context.Context) error {
 // (a crash inside the sweep's orphan-drop/restore window, records written by
 // a pre-index binary during a rollback) and any bug class not yet imagined.
 //
-// It needs no synchronization with concurrent applies: every race it can lose
-// only produces a stale extra entry (an orphan the sweep drops lazily), never
-// a missing one. See verifyAtimeIndexPass for the re-check sequence that keeps
-// the repair count meaningful.
+// It needs no synchronization with concurrent applies: it checks records
+// against a snapshot (see verifyAtimeIndexPass), and a repair that races an
+// apply only produces a stale extra entry (an orphan the sweep drops lazily),
+// never a missing one.
 func (pu *partitionUsage) startAtimeIndexVerifier(ctx context.Context) {
 	if pu.indexVerifyRateLimit <= 0 {
 		return
@@ -569,26 +569,20 @@ func (pu *partitionUsage) startAtimeIndexVerifier(ctx context.Context) {
 }
 
 // verifyAtimeIndexPass makes one full pass over the partition's records,
-// point-reading each record's exact index key. A miss goes through two more
-// checks before it counts as a violation, because the pass runs unsynchronized
-// with applies:
+// checking that each record's index entry exists and repairing (and counting)
+// those that don't.
 //
-//  1. Re-read the record live. The scan iterator sees a snapshot, so the
-//     record's atime may have legitimately moved on (atomically deleting the
-//     entry we just looked for), or the record may be gone; either way the
-//     apply that changed it maintained the index.
-//  2. Re-check the entry. An apply that writes historical atimes (snapshot
-//     recovery) may have written the record and entry between the first
-//     entry check and the record re-read.
+// A record and its entry are read from the same pebble snapshot. The apply
+// path always writes the two in one batch, so at any single instant either
+// both are visible or neither is: a record with no entry in a snapshot is a
+// real violation. Looking the entry up live instead would also report every
+// record whose atime an apply moved after the scan read it.
 //
-// Only then is the entry genuinely missing: repair, count, log. The repair
-// write is safe against any concurrent apply -- if the record moved again in
-// the meantime, the write creates an orphan, which the sweep drops.
+// The repair is a live write. If the record has moved or been deleted since
+// the snapshot, it creates an orphan, which the sweep drops.
 //
-// The pass iterates in chunks of verifyChunkRecords, reopening its iterator
-// between them so no iterator lives for hours (see verifyChunkRecords). The
-// verification logic is chunk-boundary-agnostic: it never trusted a single
-// snapshot anyway, since every miss is re-checked against live reads.
+// The pass works in chunks of verifyChunkRecords, each with its own snapshot,
+// so that no snapshot lives for hours (see verifyChunkRecords).
 func (pu *partitionUsage) verifyAtimeIndexPass(ctx context.Context, limiter *rate.Limiter) (int, error) {
 	db, err := pu.dbGetter.DB()
 	if err != nil {
@@ -621,7 +615,11 @@ func (pu *partitionUsage) verifyAtimeIndexPass(ctx context.Context, limiter *rat
 // span is exhausted or the context was cancelled) and the scanned/repaired
 // counts.
 func (pu *partitionUsage) verifyAtimeIndexChunk(ctx context.Context, db pebble.IPebbleDB, limiter *rate.Limiter, lower, upper []byte, fileMetadata *sgpb.FileMetadata) (nextLower []byte, scanned, repaired int, err error) {
-	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: lower, UpperBound: upper})
+	// Records and index entries are both read from this snapshot, so they
+	// describe the same instant (see verifyAtimeIndexPass).
+	snap := db.NewSnapshot()
+	defer snap.Close()
+	iter, err := snap.NewIter(&pebble.IterOptions{LowerBound: lower, UpperBound: upper})
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -629,7 +627,7 @@ func (pu *partitionUsage) verifyAtimeIndexChunk(ctx context.Context, db pebble.I
 
 	for iter.First(); iter.Valid(); iter.Next() {
 		if scanned >= verifyChunkRecords {
-			// Resume at this (unexamined) record with a fresh iterator.
+			// Resume at this (unexamined) record with a fresh snapshot.
 			return bytes.Clone(iter.Key()), scanned, repaired, nil
 		}
 		scanned++
@@ -644,27 +642,13 @@ func (pu *partitionUsage) verifyAtimeIndexChunk(ctx context.Context, db pebble.I
 		fileKey := iter.Key()
 		atimeUsec := fileMetadata.GetLastAccessUsec()
 		entryKey := keys.AtimeIndexKey(pu.part.ID, atimeUsec, fileKey)
-		if ok, err := hasKey(db, entryKey); err != nil {
+		_, closer, err := snap.Get(entryKey)
+		if err == nil {
+			closer.Close()
+			continue
+		}
+		if err != pebble.ErrNotFound {
 			log.Warningf("atime index verify: cannot check entry %q: %s", entryKey, err)
-			continue
-		} else if ok {
-			continue
-		}
-		// Check 1: the record, live.
-		fileMetadata.ResetVT()
-		err := pebble.GetProto(db, fileKey, fileMetadata)
-		if status.IsNotFoundError(err) || (err == nil && fileMetadata.GetLastAccessUsec() != atimeUsec) {
-			continue
-		}
-		if err != nil {
-			log.Warningf("atime index verify: cannot re-read record %q: %s", fileKey, err)
-			continue
-		}
-		// Check 2: the entry, again.
-		if ok, err := hasKey(db, entryKey); err != nil {
-			log.Warningf("atime index verify: cannot re-check entry %q: %s", entryKey, err)
-			continue
-		} else if ok {
 			continue
 		}
 		if err := db.Set(entryKey, nil, pebble.NoSync); err != nil {
@@ -679,19 +663,6 @@ func (pu *partitionUsage) verifyAtimeIndexChunk(ctx context.Context, db pebble.I
 		return nil, scanned, repaired, err
 	}
 	return nil, scanned, repaired, nil
-}
-
-// hasKey reports whether key exists in db.
-func hasKey(db pebble.IPebbleDB, key []byte) (bool, error) {
-	_, closer, err := db.Get(key)
-	if err == pebble.ErrNotFound {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	closer.Close()
-	return true, nil
 }
 
 // idleSleep pauses the eviction loop for the configured sleep duration to
