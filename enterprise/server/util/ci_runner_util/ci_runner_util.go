@@ -253,14 +253,18 @@ func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb
 	if _, err := git.ParseGitHubRepoURL(repoURL); err != nil {
 		return nil
 	}
+	// Leave the task unchanged if the GitHub app is not configured on this
+	// server.
+	if env.GetGitHubAppService() == nil {
+		return nil
+	}
 	authCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, apiKey)
 	token, err := getGitHubAccessToken(authCtx, env, groupID, repoURL)
 	if err != nil {
 		// NotFound is expected if not authenticating with the GitHub app
 		// integration (e.g. if the repo is public, or the token is set
-		// manually). Unimplemented is expected if the GitHub app is not
-		// configured on this server.
-		if status.IsNotFoundError(err) || status.IsUnimplementedError(err) {
+		// manually).
+		if status.IsNotFoundError(err) {
 			return nil
 		}
 		return status.WrapError(err, "failed to refresh remote runner git token")
