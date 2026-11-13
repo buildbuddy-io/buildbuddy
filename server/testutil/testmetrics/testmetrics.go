@@ -78,6 +78,15 @@ type HistogramValues struct {
 	Buckets map[float64]uint64
 }
 
+// HistogramCountAndSum returns the number of samples that a histogram metric
+// recorded and their sum.
+func HistogramCountAndSum(t testing.TB, metric prometheus.Histogram) (uint64, float64) {
+	m := &dto.Metric{}
+	err := metric.Write(m)
+	require.NoError(t, err)
+	return m.GetHistogram().GetSampleCount(), m.GetHistogram().GetSampleSum()
+}
+
 // HistogramVecValues returns all of the histogram bucket series.
 // Series with different label values are returned as separate series.
 func HistogramVecValues(t testing.TB, metric *prometheus.HistogramVec) []HistogramValues {
