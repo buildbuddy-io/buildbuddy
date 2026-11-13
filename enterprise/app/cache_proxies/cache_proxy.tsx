@@ -12,9 +12,11 @@ import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { cache_proxy } from "../../../proto/cache_proxy_ts_proto";
+import { profile } from "../../../proto/profile_ts_proto";
 import { upgrade } from "../../../proto/upgrade_ts_proto";
 import { CACHE_COLORS } from "../../../app/util/color";
 import { CacheProxyLabels, readWriteRatio, toNumber } from "./cache_proxy_card";
+import ProfileCard from "../../../app/components/profile/profile";
 
 // cacheProxyIdFromPath returns the proxy ID from a /cache-proxy/<id> path, or
 // "" if the path has no ID or its escapes are malformed.
@@ -68,22 +70,39 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
     this.subscription?.unsubscribe();
   }
 
+  service() {
+    if (!this.props.region) {
+      return rpcService.service;
+    }
+    return rpcService.regionalServices.get(this.props.region) ?? null;
+  }
+
+  async collectProfile(request: profile.GetProfileRequest) {
+    const service = this.service();
+    if (!service) {
+      throw new BuildBuddyError("NotFound", `Unknown region "${this.props.region}".`);
+    }
+    const response = await service.getCacheProxy(
+      cache_proxy.GetCacheProxyRequest.create({
+        selector: cache_proxy.CacheProxySelector.create({ proxyId: this.proxyId() }),
+        getProfile: request,
+      })
+    );
+    return response.details?.profile;
+  }
+
   async fetch() {
     if (!this.proxyId()) {
       this.setState({ loading: false, error: new BuildBuddyError("NotFound", "No cache proxy specified.") });
       return;
     }
-    let service = rpcService.service;
-    if (this.props.region) {
-      const regional = rpcService.regionalServices.get(this.props.region);
-      if (!regional) {
-        this.setState({
-          loading: false,
-          error: new BuildBuddyError("NotFound", `Unknown region "${this.props.region}".`),
-        });
-        return;
-      }
-      service = regional;
+    const service = this.service();
+    if (!service) {
+      this.setState({
+        loading: false,
+        error: new BuildBuddyError("NotFound", `Unknown region "${this.props.region}".`),
+      });
+      return;
     }
     this.setState({ loading: true, error: null });
     try {
@@ -241,6 +260,8 @@ export default class CacheProxyComponent extends React.Component<Props, State> {
         )}
 
         {details.configuredFlags && details.configuredFlags.length > 0 && this.renderFlags(details.configuredFlags)}
+
+        <ProfileCard filePrefix={summary.host ?? ""} collect={(request) => this.collectProfile(request)} />
       </div>
     );
   }

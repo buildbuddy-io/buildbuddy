@@ -77,6 +77,7 @@ genrule(
         "//app/components/popup:popup.css",
         "//app/components/select:select.css",
         "//app/components/slider:slider.css",
+        "//app/components/profile:profile.css",
         "//app/components/radio:radio.css",
         "//app/components/spinner:spinner.css",
         "//app/components/tooltip:tooltip.css",
