@@ -10,6 +10,8 @@ go_library(
         "//cli/arg",
         "//cli/bazelisk",
         "//cli/log",
+        "//cli/signedrelease",
+        "//cli/version",
         "//cli/workspace",
     ],
 )

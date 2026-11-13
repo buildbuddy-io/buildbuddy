@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/signedrelease"
 	"github.com/buildbuddy-io/buildbuddy/cli/ssh"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -71,10 +72,6 @@ const (
 	// defaultImage is the container image used for box VMs. This image is
 	// pinned by digest and is likely already cached on BuildBuddy executors.
 	defaultImage = platform.DockerPrefix + platform.Ubuntu22_04Image
-
-	// githubReleaseURL is the download URL for the linux/amd64 bb binary,
-	// used when bb box is run from a non-linux-amd64 host.
-	githubReleaseURL = "https://github.com/buildbuddy-io/bazel/releases/download/%s/bazel-%s-linux-x86_64"
 
 	usage = `
 usage: bb box [options] [name] [command...]
@@ -252,7 +249,7 @@ func handleCreate(args []string) (int, error) {
 	}
 
 	// Get a linux/amd64 bb binary to use as the action input.
-	bbPath, cleanupBB, err := getBBBinary(ctx)
+	bbPath, cleanupBB, err := getBBBinary()
 	if err != nil {
 		return -1, fmt.Errorf("getting bb binary: %w", err)
 	}
@@ -696,9 +693,9 @@ func ensureDockerPrefix(image string) string {
 
 // getBBBinary returns the path to a linux/amd64 bb binary along with a
 // cleanup function to remove any temp files. On a linux/amd64 host the
-// current executable is used directly; on other platforms the release binary
-// is downloaded from GitHub.
-func getBBBinary(ctx context.Context) (path string, cleanup func(), err error) {
+// current executable is used directly; on other platforms the signed release
+// binary for the same version is downloaded and verified.
+func getBBBinary() (path string, cleanup func(), err error) {
 	noop := func() {}
 	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
 		path, err = os.Executable()
@@ -706,43 +703,30 @@ func getBBBinary(ctx context.Context) (path string, cleanup func(), err error) {
 	}
 
 	ver := version.String()
-	url := fmt.Sprintf(githubReleaseURL, ver, ver)
+	if ver == "unknown" {
+		return "", noop, fmt.Errorf("this is a dev build of bb, so there is no release to download a linux/amd64 bb from; use a release build of bb, or run from a linux/amd64 host")
+	}
+	url, err := signedrelease.AssetURL(ver, "linux", "amd64")
+	if err != nil {
+		return "", noop, err
+	}
 	log.Printf("Downloading linux/amd64 bb binary (%s)...", ver)
 
-	f, err := os.CreateTemp("", "bb-linux-amd64-*")
+	dir, err := os.MkdirTemp("", "bb-linux-amd64-*")
 	if err != nil {
 		return "", noop, err
 	}
-	cleanup = func() { os.Remove(f.Name()) }
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
+	cleanup = func() { os.RemoveAll(dir) }
+	path = filepath.Join(dir, "bb")
+	if err := signedrelease.Download(signedrelease.NewDownloadClient(), url, path); err != nil {
 		cleanup()
-		return "", noop, fmt.Errorf("downloading bb: %w", err)
+		return "", noop, fmt.Errorf("downloading bb %s: %w", ver, err)
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		cleanup()
-		return "", noop, fmt.Errorf("downloading bb: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		cleanup()
-		return "", noop, fmt.Errorf("downloading bb from %s: HTTP %d", url, resp.StatusCode)
-	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		cleanup()
-		return "", noop, fmt.Errorf("writing bb binary: %w", err)
-	}
-	if err := f.Close(); err != nil {
+	if err := os.Chmod(path, 0755); err != nil {
 		cleanup()
 		return "", noop, err
 	}
-	if err := os.Chmod(f.Name(), 0755); err != nil {
-		cleanup()
-		return "", noop, err
-	}
-	return f.Name(), cleanup, nil
+	return path, cleanup, nil
 }
 
 // uploadInputRoot uploads the bb binary at the given path and returns a digest of an
