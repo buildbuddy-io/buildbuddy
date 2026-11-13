@@ -1458,6 +1458,10 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 	if !c.supportsRemoteSnapshots || !c.recyclingEnabled {
 		return false
 	}
+	if platform.FindEffectiveValue(c.task, platform.SkipRemoteSnapshotSavePropertyName) == "true" {
+		log.CtxInfof(ctx, "Skipping remote snapshot save: over snapshot save quota")
+		return false
+	}
 
 	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
 
@@ -1499,6 +1503,10 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 
 func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool {
 	if !*snaputil.EnableLocalSnapshotSharing || !c.recyclingEnabled {
+		return false
+	}
+	if platform.FindEffectiveValue(c.task, platform.SkipLocalSnapshotSavePropertyName) == "true" {
+		log.CtxInfof(ctx, "Skipping local snapshot save: over snapshot save quota")
 		return false
 	}
 	// For RBE actions, we don't save another snapshot if one already exists.

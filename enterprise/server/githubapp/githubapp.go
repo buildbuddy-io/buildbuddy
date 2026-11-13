@@ -543,17 +543,73 @@ func (a *GitHubApp) handleInstallationEvent(ctx context.Context, eventType strin
 	if event.GetAction() != "deleted" {
 		return nil
 	}
-	result := a.env.GetDBHandle().NewQuery(ctx, "githubapp_uninstall_app").Raw(`
-		DELETE FROM "GitHubAppInstallations"
-		WHERE installation_id = ?
-	`, event.GetInstallation().GetID()).Exec()
-	if result.Error != nil {
-		return status.InternalErrorf("failed to delete installation: %s", result.Error)
+	installationID := event.GetInstallation().GetID()
+	var rowsAffected int64
+	err := a.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+		installations, err := db.ScanAll(tx.NewQuery(ctx, "githubapp_get_installations_for_uninstall").Raw(`
+			SELECT * FROM "GitHubAppInstallations"
+			WHERE installation_id = ?
+		`, installationID), &tables.GitHubAppInstallation{})
+		if err != nil {
+			return status.InternalErrorf("failed to look up installation: %s", err)
+		}
+		for _, in := range installations {
+			if err := deleteScheduledRunsForInstallation(ctx, tx, in); err != nil {
+				return err
+			}
+		}
+		result := tx.NewQuery(ctx, "githubapp_uninstall_app").Raw(`
+			DELETE FROM "GitHubAppInstallations"
+			WHERE installation_id = ?
+		`, installationID).Exec()
+		if result.Error != nil {
+			return status.InternalErrorf("failed to delete installation: %s", result.Error)
+		}
+		rowsAffected = result.RowsAffected
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	log.CtxInfof(ctx,
 		"Handling GitHub app uninstall event: removed %d installation row(s) for installation %d",
-		result.RowsAffected, event.GetInstallation().GetID())
+		rowsAffected, installationID)
+	return nil
+}
+
+// deleteScheduledRunsForInstallation deletes scheduled workflows for repos
+// owned by the installation's GitHub owner, since they can no longer be
+// dispatched without the installation.
+func deleteScheduledRunsForInstallation(ctx context.Context, tx interfaces.DB, in *tables.GitHubAppInstallation) error {
+	runs, err := db.ScanAll(tx.NewQuery(ctx, "githubapp_get_scheduled_runs_for_installation").Raw(`
+		SELECT * FROM "ScheduledRuns"
+		WHERE group_id = ?
+	`, in.GroupID), &tables.ScheduledRun{})
+	if err != nil {
+		return status.InternalErrorf("failed to look up scheduled runs: %s", err)
+	}
+	var scheduleIDs []string
+	for _, sr := range runs {
+		parsed, err := gitutil.ParseGitHubRepoURL(sr.RepoURL)
+		if err != nil {
+			continue
+		}
+		// GitHub owner names are case-insensitive.
+		if strings.EqualFold(parsed.Owner, in.Owner) {
+			scheduleIDs = append(scheduleIDs, sr.ScheduleID)
+		}
+	}
+	if len(scheduleIDs) == 0 {
+		return nil
+	}
+	if err := tx.NewQuery(ctx, "githubapp_delete_scheduled_runs_for_installation").Raw(`
+		DELETE FROM "ScheduledRuns"
+		WHERE schedule_id IN ?
+	`, scheduleIDs).Exec().Error; err != nil {
+		return status.InternalErrorf("failed to delete scheduled runs: %s", err)
+	}
+	log.CtxInfof(ctx, "Deleted %d scheduled workflow(s) for GitHub app installation %d (owner %q, group %s)", len(scheduleIDs), in.InstallationID, in.Owner, in.GroupID)
 	return nil
 }
 
@@ -831,6 +887,9 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 			return err
 		}
 		if err := authutil.AuthorizeOrgAdmin(u, ti.GroupID); err != nil {
+			return err
+		}
+		if err := deleteScheduledRunsForInstallation(ctx, tx, &ti); err != nil {
 			return err
 		}
 		return tx.NewQuery(ctx, "githubapp_unlink_installation").Raw(`

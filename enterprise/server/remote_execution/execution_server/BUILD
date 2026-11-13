@@ -110,6 +110,7 @@ go_test(
         "//server/util/platform",
         "//server/util/prefix",
         "//server/util/proto",
+        "//server/util/quota",
         "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/usageutil",

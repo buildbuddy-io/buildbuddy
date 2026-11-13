@@ -103,6 +103,8 @@ const (
 	EnableUniversalSnapshotPropertyName = "allow-universal-snapshot"
 	SnapshotSavePolicyPropertyName      = "remote-snapshot-save-policy"
 	SnapshotReadPolicyPropertyName      = "snapshot-read-policy"
+	SkipLocalSnapshotSavePropertyName   = "skip-local-snapshot-save"
+	SkipRemoteSnapshotSavePropertyName  = "skip-remote-snapshot-save"
 	// Warning: Do not manually set the `snapshot-salt` property. It may be automatically overwritten by the server.
 	SnapshotSaltPropertyName                 = "snapshot-salt"
 	MaxStaleFallbackSnapshotAgePropertyName  = "max-stale-fallback-snapshot-age"

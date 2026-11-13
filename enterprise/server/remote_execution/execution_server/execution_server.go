@@ -394,6 +394,42 @@ func trimStatus(statusMessage string) string {
 	return statusMessage
 }
 
+func (s *ExecutionServer) applySnapshotSaveQuota(ctx context.Context, overrides *repb.Platform) {
+	qm := s.env.GetQuotaManager()
+	if qm == nil {
+		return
+	}
+	if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes), 0); err != nil {
+		platform.SetValue(overrides, platform.SkipLocalSnapshotSavePropertyName, "true")
+	}
+	if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes), 0); err != nil {
+		platform.SetValue(overrides, platform.SkipRemoteSnapshotSavePropertyName, "true")
+	}
+}
+
+func (s *ExecutionServer) recordSnapshotSaveQuota(ctx context.Context, fcStats *espb.FirecrackerPostExecStats) {
+	qm := s.env.GetQuotaManager()
+	if qm == nil || fcStats.GetSnapshotSavedBytes() <= 0 {
+		return
+	}
+	bytesWritten := fcStats.GetSnapshotSavedBytes()
+	var namespaces []string
+	if fcStats.GetSnapshotSavedLocally() {
+		namespaces = append(namespaces, quota.GetSKUKey(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes))
+	}
+	if fcStats.GetSnapshotSavedRemotely() {
+		namespaces = append(namespaces, quota.GetSKUKey(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes))
+	}
+	for _, ns := range namespaces {
+		withinQuota, err := qm.RecordUsage(ctx, ns, bytesWritten)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to record snapshot usage for %q: %s", ns, err)
+		} else if !withinQuota {
+			log.CtxInfof(ctx, "Snapshot save quota %q exhausted", ns)
+		}
+	}
+}
+
 // updateExecutionPostCompletion adds a StoredExecution to the collector with
 // just the post completion stats. This relies on the collector merging this
 // data with the existing execution data when flushing to Clickhouse.
@@ -891,6 +927,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	executionTask.PlatformOverrides = &repb.Platform{
 		Properties: overrides,
 	}
+	s.applySnapshotSaveQuota(ctx, executionTask.PlatformOverrides)
 
 	taskGroupID := interfaces.AuthAnonymousUser
 	if user, err := s.authenticator.AuthenticatedUser(ctx); err == nil {
@@ -1631,6 +1668,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to parse PostCompletionStats: %s", err)
 			} else if ok {
+				s.recordSnapshotSaveQuota(ctx, stats.GetFirecrackerPostExecStats())
 				if flushExecutionsOnEOF {
 					if err := s.updateExecutionPostCompletion(ctx, taskID, stats); err != nil {
 						log.CtxErrorf(ctx, "PublishOperation: error updating PostCompletionStats: %s", err)
