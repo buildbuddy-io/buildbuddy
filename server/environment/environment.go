@@ -122,6 +122,7 @@ type Env interface {
 	GetInternalGRPCServer() *grpc.Server
 	GetInternalGRPCSServer() *grpc.Server
 	GetOLAPDBHandle() interfaces.OLAPDBHandle
+	GetTenantQueryService() interfaces.TenantQueryService
 	GetKMS() interfaces.KMS
 	GetSecretService() interfaces.SecretService
 	GetExecutionCollector() interfaces.ExecutionCollector

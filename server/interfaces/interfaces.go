@@ -56,6 +56,7 @@ import (
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	tqpb "github.com/buildbuddy-io/buildbuddy/proto/tenant_query"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
@@ -492,6 +493,16 @@ type OLAPDBHandle interface {
 	FlushUsages(ctx context.Context, entries []*schema.RawUsage) error
 	InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error
 	BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []any)
+}
+
+// TenantQueryService runs SQL that tenants write against the OLAP DB. The OLAP
+// DB runs each query as a user that can only read the rows of a single group,
+// so the service does not need to parse or rewrite the SQL to isolate tenants.
+type TenantQueryService interface {
+	// Query runs the query in req as the group that is authenticated in ctx,
+	// and returns only that group's rows. It does not check the caller's role
+	// or capabilities, so callers must decide who is allowed to run queries.
+	Query(ctx context.Context, req *tqpb.QueryRequest) (*tqpb.QueryResponse, error)
 }
 
 type InvocationDB interface {

@@ -16,6 +16,7 @@ go_library(
         "//server/tables",
         "//server/util/alert",
         "//server/util/clickhouse/schema",
+        "//server/util/clickhouse/tenantquery",
         "//server/util/flag",
         "//server/util/gormutil",
         "//server/util/log",

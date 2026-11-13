@@ -204,6 +204,13 @@ func getConfigXML(r int) string {
   <users_xml><path>users.xml</path></users_xml>
   <local_directory><path>./access/</path></local_directory>
  </user_directories>
+ <!-- Tenant queries rely on the settings below, which are also in ClickHouse's
+      stock config.xml. See schema.EnsureTenantAccess. -->
+ <custom_settings_prefixes>SQL_</custom_settings_prefixes>
+ <access_control_improvements>
+  <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
+  <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
+ </access_control_improvements>
  <background_schedule_pool_size>16</background_schedule_pool_size>
  <remote_servers>
   <%s>

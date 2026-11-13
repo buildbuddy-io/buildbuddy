@@ -28,6 +28,7 @@ const configXML = `
  <logger><level>information</level><console>1</console></logger>
  <listen_host>127.0.0.1</listen_host>
  <tcp_port>%d</tcp_port>
+ <http_port>%d</http_port>
  <path>./data/</path>
  <tmp_path>./tmp/</tmp_path>
  <user_files_path>./user_files/</user_files_path>
@@ -36,6 +37,13 @@ const configXML = `
   <users_xml><path>users.xml</path></users_xml>
   <local_directory><path>./access/</path></local_directory>
  </user_directories>
+ <!-- Tenant queries rely on the settings below, which are also in ClickHouse's
+      stock config.xml. See schema.EnsureTenantAccess. -->
+ <custom_settings_prefixes>SQL_</custom_settings_prefixes>
+ <access_control_improvements>
+  <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
+  <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
+ </access_control_improvements>
  <background_schedule_pool_size>16</background_schedule_pool_size>
 </clickhouse>
 `
@@ -56,12 +64,16 @@ const usersXML = `
 </clickhouse>
 `
 
+const dbName = "buildbuddy_test"
+
 var (
 	// Set by Bazel to the platform-specific ClickHouse executable.
 	clickhouseRlocationpath string
 	clickhouseBinaryPath    string
 	targetsMu               sync.Mutex
 	targets                 = map[testing.TB]string{}
+	httpPortsMu             sync.Mutex
+	httpPorts               = map[testing.TB]int{}
 )
 
 func init() {
@@ -105,14 +117,31 @@ func GetOrStart(t testing.TB) string {
 	return target
 }
 
+// TenantDataSource returns a tenant query data source for the server that was
+// started for t, which connects as the given user.
+func TenantDataSource(t testing.TB, user, password string) string {
+	httpPortsMu.Lock()
+	defer httpPortsMu.Unlock()
+	port, ok := httpPorts[t]
+	require.True(t, ok, "no ClickHouse server was started for this test")
+	return fmt.Sprintf("http://%s:%s@127.0.0.1:%d/%s", user, password, port, dbName)
+}
+
 // Start creates an isolated server which is stopped when the test completes.
 func Start(t testing.TB) string {
-	const dbName = "buildbuddy_test"
-
 	port := testport.FindFree(t)
+	httpPort := testport.FindFree(t)
+	httpPortsMu.Lock()
+	httpPorts[t] = httpPort
+	httpPortsMu.Unlock()
+	t.Cleanup(func() {
+		httpPortsMu.Lock()
+		defer httpPortsMu.Unlock()
+		delete(httpPorts, t)
+	})
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.xml")
-	require.NoError(t, os.WriteFile(configPath, fmt.Appendf(nil, configXML, port), 0600))
+	require.NoError(t, os.WriteFile(configPath, fmt.Appendf(nil, configXML, port, httpPort), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "users.xml"), []byte(usersXML), 0600))
 	logPath := filepath.Join(dir, "server.log")
 	logFile, err := os.Create(logPath)

@@ -7,7 +7,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/column/orderedmap"
@@ -17,6 +19,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
+
+	gormschema "gorm.io/gorm/schema"
 )
 
 var (
@@ -30,6 +34,16 @@ var (
 
 const (
 	projectionCommits = "projection_commits"
+
+	// TenantGroupIDSetting is the custom ClickHouse setting that holds the
+	// group ID of a tenant query. The tenant row policy compares group_id
+	// against it, so ClickHouse fails tenant queries that do not set it. The
+	// server's custom_settings_prefixes must include the "SQL_" prefix.
+	TenantGroupIDSetting = "SQL_group_id"
+
+	// tenantAccessName is the name of the role, row policy, settings profile
+	// and quota that EnsureTenantAccess creates.
+	tenantAccessName = "bb_tenant_query"
 )
 
 // Making a new table? Please make sure you:
@@ -44,6 +58,10 @@ type Table interface {
 	ExcludedFields() []string
 	// Fields that are in the clickhouse Table schema; but not in the primary DB Table Schema.
 	AdditionalFields() []string
+	// Fields that tenant queries may read (see EnsureTenantAccess). Tenant
+	// queries cannot read any other field, including new fields, until we
+	// list the field here.
+	TenantFields() []string
 }
 
 // View represents a ClickHouse "normal view", which is essentially just a saved
@@ -157,6 +175,56 @@ func (i *Invocation) ExcludedFields() []string {
 
 func (i *Invocation) AdditionalFields() []string {
 	return []string{}
+}
+
+func (i *Invocation) TenantFields() []string {
+	return []string{
+		"GroupID",
+		"UpdatedAtUsec",
+		"CreatedAtUsec",
+		"InvocationUUID",
+		"Role",
+		"User",
+		"Host",
+		"CommitSHA",
+		"BranchName",
+		"Command",
+		"BazelExitCode",
+		"UserID",
+		"Pattern",
+		"InvocationStatus",
+		"Attempt",
+		"ActionCount",
+		"RepoURL",
+		"DurationUsec",
+		"Success",
+		"ActionCacheHits",
+		"ActionCacheMisses",
+		"ActionCacheUploads",
+		"CasCacheHits",
+		"CasCacheMisses",
+		"CasCacheUploads",
+		"TotalDownloadSizeBytes",
+		"TotalUploadSizeBytes",
+		"TotalDownloadTransferredSizeBytes",
+		"TotalUploadTransferredSizeBytes",
+		"TotalDownloadUsec",
+		"TotalUploadUsec",
+		"TotalCachedActionExecUsec",
+		"TotalUncachedActionExecUsec",
+		"DownloadThroughputBytesPerSecond",
+		"UploadThroughputBytesPerSecond",
+		"DownloadOutputsOption",
+		"UploadLocalResultsEnabled",
+		"RemoteExecutionEnabled",
+		"Tags",
+		"RunID",
+		"ParentRunID",
+		"RunStatus",
+		"GitFetchTotalBytes",
+		"GitFetchDurationUsec",
+		"GitFetchRetryCount",
+	}
 }
 
 func (i *Invocation) TableName() string {
@@ -445,6 +513,115 @@ func (e *Execution) AdditionalFields() []string {
 	}
 }
 
+func (e *Execution) TenantFields() []string {
+	return []string{
+		"GroupID",
+		"UpdatedAtUsec",
+		"InvocationUUID",
+		"InstanceName",
+		"ExecutionUUID",
+		"Compressor",
+		"DigestFunction",
+		"ActionDigestHash",
+		"ActionDigestSize",
+		"InvocationLinkType",
+		"CreatedAtUsec",
+		"UserID",
+		"SelfHosted",
+		"Region",
+		"OS",
+		"Arch",
+		"Stage",
+		"TargetLabel",
+		"ActionMnemonic",
+		"ConfigurationID",
+		"TestSize",
+		"TestShardIndex",
+		"TestTotalShards",
+		"FileDownloadCount",
+		"FileDownloadSizeBytes",
+		"FileDownloadDurationUsec",
+		"FileUploadCount",
+		"FileUploadSizeBytes",
+		"FileUploadDurationUsec",
+		"PeakMemoryBytes",
+		"CPUNanos",
+		"DiskBytesRead",
+		"DiskBytesWritten",
+		"DiskReadOperations",
+		"DiskWriteOperations",
+		"NetworkBytesSent",
+		"NetworkBytesReceived",
+		"NetworkPacketsSent",
+		"NetworkPacketsReceived",
+		"CPUPressureSomeStallUsec",
+		"CPUPressureFullStallUsec",
+		"MemoryPressureSomeStallUsec",
+		"MemoryPressureFullStallUsec",
+		"IOPressureSomeStallUsec",
+		"IOPressureFullStallUsec",
+		"EstimatedMemoryBytes",
+		"EstimatedMilliCPU",
+		"EstimatedFreeDiskBytes",
+		"RequestedComputeUnits",
+		"RequestedMemoryBytes",
+		"RequestedMilliCPU",
+		"RequestedFreeDiskBytes",
+		"PreviousMeasuredMemoryBytes",
+		"PreviousMeasuredMilliCPU",
+		"PreviousMeasuredFreeDiskBytes",
+		"PredictedMemoryBytes",
+		"PredictedMilliCPU",
+		"PredictedFreeDiskBytes",
+		"QueuedTimestampUsec",
+		"WorkerStartTimestampUsec",
+		"WorkerCompletedTimestampUsec",
+		"InputFetchStartTimestampUsec",
+		"InputFetchCompletedTimestampUsec",
+		"ExecutionStartTimestampUsec",
+		"ExecutionCompletedTimestampUsec",
+		"OutputUploadStartTimestampUsec",
+		"OutputUploadCompletedTimestampUsec",
+		"StatusCode",
+		"ExitCode",
+		"CachedResult",
+		"DoNotCache",
+		"SkipCacheLookup",
+		"ExecutionPriority",
+		"RequestedIsolationType",
+		"EffectiveIsolationType",
+		"RequestedPool",
+		"EffectivePool",
+		"RecycleRunner",
+		"RunnerTaskNumber",
+		"RequestedTimeoutUsec",
+		"EffectiveTimeoutUsec",
+		"SnapshotSavedLocally",
+		"SnapshotSavedRemotely",
+		"SnapshotIsDiff",
+		"SnapshotSavedBytes",
+		"PauseDurationUsec",
+		"VMDockerdWaitDurationUsec",
+		"VMDnsWaitDurationUsec",
+		"VMExecInitDurationUsec",
+		"VMExecDialDurationUsec",
+		"BuildrootDiskUsageBytes",
+		"StatusMessage",
+		"CommandSnippet",
+		"User",
+		"Host",
+		"Pattern",
+		"Role",
+		"BranchName",
+		"CommitSHA",
+		"RepoURL",
+		"Command",
+		"InvocationStatus",
+		"Success",
+		"Tags",
+	}
+}
+
 // TestTargetStatus represents the status of a target, the target info and
 // invocation details
 type TestTargetStatus struct {
@@ -482,6 +659,30 @@ func (t *TestTargetStatus) ExcludedFields() []string {
 
 func (t *TestTargetStatus) AdditionalFields() []string {
 	return []string{}
+}
+
+func (t *TestTargetStatus) TenantFields() []string {
+	return []string{
+		"GroupID",
+		"RepoURL",
+		"CommitSHA",
+		"Label",
+		"InvocationUUID",
+		"RuleType",
+		"UserID",
+		"TargetType",
+		"TestSize",
+		"Status",
+		"Cached",
+		"StartTimeUsec",
+		"DurationUsec",
+		"TestTimeoutUsec",
+		"MaxAttemptDurationUsec",
+		"BranchName",
+		"Role",
+		"Command",
+		"InvocationStartTimeUsec",
+	}
 }
 
 func (t *TestTargetStatus) TableName() string {
@@ -527,6 +728,10 @@ func (i *AuditLog) ExcludedFields() []string {
 
 func (i *AuditLog) AdditionalFields() []string {
 	return []string{}
+}
+
+func (i *AuditLog) TenantFields() []string {
+	return nil
 }
 
 func (i *AuditLog) TableName() string {
@@ -592,6 +797,10 @@ func (i *RawUsage) ExcludedFields() []string {
 }
 
 func (i *RawUsage) AdditionalFields() []string {
+	return nil
+}
+
+func (i *RawUsage) TenantFields() []string {
 	return nil
 }
 
@@ -794,6 +1003,202 @@ func RunMigrations(gdb *gorm.DB) error {
 	err := addProjectionIfNotExist(gdb, &TestTargetStatus{}, projectionCommits, projectionQuery)
 	if err != nil {
 		return status.InternalErrorf("failed to add projection %q: %s", projectionCommits, err)
+	}
+	return nil
+}
+
+// TenantAccess configures the ClickHouse user that runs tenant queries, and
+// the limits that ClickHouse enforces on those queries.
+type TenantAccess struct {
+	// User is the name of the ClickHouse user that runs tenant queries.
+	User string
+	// PasswordSHA256 is the hex-encoded SHA-256 hash of the user's password.
+	PasswordSHA256 string
+
+	// MaxExecutionTime is the longest that a query may run.
+	MaxExecutionTime time.Duration
+	// MaxThreads is the maximum number of threads that a query may use, which
+	// also limits how many CPU cores it can use.
+	MaxThreads int64
+	// MaxMemoryBytes is the maximum amount of memory that a query may use.
+	MaxMemoryBytes int64
+	// MaxResultRows is the maximum number of rows that a query may return.
+	MaxResultRows int64
+	// MaxResultBytes is the maximum size of the result that a query may
+	// return.
+	MaxResultBytes int64
+	// MaxConcurrentQueries is the maximum number of queries that may run at
+	// the same time, counting the queries of every group.
+	MaxConcurrentQueries int64
+
+	// MaxQueriesPerHour is the maximum number of queries that each group may
+	// run per hour.
+	MaxQueriesPerHour int64
+	// MaxExecutionTimePerHour is the maximum total time that the queries of
+	// each group may run per hour.
+	MaxExecutionTimePerHour time.Duration
+}
+
+// EnsureTenantAccess creates the ClickHouse user that runs tenant queries (see
+// server/util/clickhouse/tenantquery), and limits what the user can read and
+// how many resources its queries can use. Tenants write the SQL of these
+// queries, so we rely on ClickHouse to enforce the limits instead of
+// inspecting each query.
+//
+// We create the following for the current database:
+//   - A role, which is the only role that we grant to the user. Everything
+//     below applies to the role.
+//   - A row policy on every table, which only lets a query read the rows whose
+//     group_id equals the query's TenantGroupIDSetting setting.
+//   - A settings profile, which limits each query.
+//   - A quota, which limits each group. ClickHouse tracks usage separately for
+//     each quota key, and tenant queries pass the group ID as the quota key.
+//   - Grants to read the TenantFields of each table.
+//
+// The statements are idempotent, so we run them on every migration in order
+// to apply changes to the TenantAccess and to TenantFields.
+//
+// Tenant isolation also depends on the following server settings, which
+// ClickHouse's stock config.xml has:
+//   - custom_settings_prefixes includes "SQL_", so that queries can set
+//     TenantGroupIDSetting.
+//   - select_from_system_db_requires_grant is true. Otherwise tenant queries
+//     can read system.processes, which shows the queries of other groups.
+//   - users_without_row_policies_can_read_rows is true. Otherwise the row
+//     policy hides all rows from every other user, including the user of the
+//     OLAP DB handle.
+func EnsureTenantAccess(gdb *gorm.DB, access *TenantAccess) error {
+	db := gdb.Migrator().CurrentDatabase()
+	// By default, each ClickHouse server stores users, roles and policies in
+	// its own local directory, so on a cluster we have to create them on every
+	// server.
+	onCluster := ""
+	if clusterOption := getTableClusterOption(); clusterOption != "" {
+		onCluster = " " + clusterOption
+	}
+	stmts := []string{"CREATE ROLE IF NOT EXISTS " + tenantAccessName + onCluster}
+	for _, entity := range []struct{ kind, definition string }{
+		{
+			kind: "ROW POLICY",
+			// The policy is restrictive so that ClickHouse applies it in
+			// addition to every other policy. If it were permissive, then
+			// adding another permissive policy for the role would let tenant
+			// queries read the rows that match either policy.
+			definition: "ON " + db + ".* AS RESTRICTIVE FOR SELECT" +
+				" USING group_id = getSetting('" + TenantGroupIDSetting + "')",
+		},
+		{
+			kind: "SETTINGS PROFILE",
+			definition: "SETTINGS" +
+				fmt.Sprintf(" max_execution_time = %f CONST,", access.MaxExecutionTime.Seconds()) +
+				fmt.Sprintf(" max_threads = %d CONST,", access.MaxThreads) +
+				fmt.Sprintf(" max_memory_usage = %d CONST,", access.MaxMemoryBytes) +
+				fmt.Sprintf(" max_result_rows = %d CONST,", access.MaxResultRows) +
+				fmt.Sprintf(" max_result_bytes = %d CONST,", access.MaxResultBytes) +
+				fmt.Sprintf(" max_concurrent_queries_for_user = %d CONST,", access.MaxConcurrentQueries) +
+				// Otherwise, ClickHouse keeps running a query after we close
+				// the connection, which we do when the caller cancels the
+				// request.
+				" cancel_http_readonly_queries_on_client_close = 1 CONST",
+		},
+		{
+			kind: "QUOTA",
+			definition: "KEYED BY client_key FOR INTERVAL 1 hour MAX" +
+				fmt.Sprintf(" queries = %d,", access.MaxQueriesPerHour) +
+				fmt.Sprintf(" execution_time = %f", access.MaxExecutionTimePerHour.Seconds()),
+		},
+	} {
+		// If the entity already exists, we alter it instead of replacing it.
+		// This way the row policy applies to tenant queries at all times, and
+		// the quota keeps the usage that ClickHouse has tracked for each
+		// group.
+		definition := onCluster + " " + entity.definition + " TO " + tenantAccessName
+		stmts = append(stmts,
+			"CREATE "+entity.kind+" IF NOT EXISTS "+tenantAccessName+definition,
+			"ALTER "+entity.kind+" "+tenantAccessName+definition,
+		)
+	}
+	// We create the user after the row policy, so that the user can never read
+	// rows without it.
+	identified := onCluster + " IDENTIFIED WITH sha256_hash BY '" + access.PasswordSHA256 + "'"
+	stmts = append(stmts,
+		"CREATE USER IF NOT EXISTS "+access.User+identified,
+		"GRANT"+onCluster+" "+tenantAccessName+" TO "+access.User,
+		// ClickHouse only accepts a default role that the user already has,
+		// so this has to come after the grant.
+		"ALTER USER "+access.User+identified+" DEFAULT ROLE "+tenantAccessName,
+	)
+	for _, stmt := range stmts {
+		if err := gdb.Exec(stmt).Error; err != nil {
+			// Only name the kind of statement, because some of the statements
+			// contain the password hash.
+			return fmt.Errorf("%s: %w", strings.Join(strings.Fields(stmt)[:2], " "), err)
+		}
+	}
+	return reconcileTenantGrants(gdb, db, onCluster)
+}
+
+// reconcileTenantGrants grants the tenant role access to the TenantFields of
+// each table, and revokes any other read access that the role has to the
+// database, so that removing a field from TenantFields hides it from tenants.
+func reconcileTenantGrants(gdb *gorm.DB, db, onCluster string) error {
+	columns := map[string][]string{}
+	for _, t := range getAllTables() {
+		if len(t.TenantFields()) == 0 {
+			continue
+		}
+		s, err := gormschema.Parse(t, &sync.Map{}, gdb.NamingStrategy)
+		if err != nil {
+			return fmt.Errorf("parse schema of %s: %w", t.TableName(), err)
+		}
+		for _, name := range t.TenantFields() {
+			field, ok := s.FieldsByName[name]
+			if !ok {
+				return fmt.Errorf("%s has no field named %s", t.TableName(), name)
+			}
+			columns[t.TableName()] = append(columns[t.TableName()], field.DBName)
+		}
+	}
+
+	var grants []struct {
+		Table  sql.NullString
+		Column sql.NullString
+	}
+	err := gdb.Raw(
+		"SELECT `table`, `column` FROM system.grants WHERE role_name = ? AND access_type = 'SELECT' AND database = ?",
+		tenantAccessName, db,
+	).Scan(&grants).Error
+	if err != nil {
+		return fmt.Errorf("list grants: %w", err)
+	}
+	for _, grant := range grants {
+		if grant.Column.Valid && slices.Contains(columns[grant.Table.String], grant.Column.String) {
+			continue
+		}
+		// ClickHouse reports a NULL column for a grant on a whole table, and
+		// also a NULL table for a grant on the whole database.
+		privilege := "SELECT"
+		if grant.Column.Valid {
+			privilege = "SELECT(" + grant.Column.String + ")"
+		}
+		target := db + ".*"
+		if grant.Table.Valid {
+			target = db + "." + grant.Table.String
+		}
+		stmt := "REVOKE" + onCluster + " " + privilege + " ON " + target + " FROM " + tenantAccessName
+		if err := gdb.Exec(stmt).Error; err != nil {
+			return fmt.Errorf("revoke %s on %s: %w", privilege, target, err)
+		}
+	}
+	for _, t := range getAllTables() {
+		if len(columns[t.TableName()]) == 0 {
+			continue
+		}
+		stmt := "GRANT" + onCluster + " SELECT(" + strings.Join(columns[t.TableName()], ", ") + ")" +
+			" ON " + db + "." + t.TableName() + " TO " + tenantAccessName
+		if err := gdb.Exec(stmt).Error; err != nil {
+			return fmt.Errorf("grant select on %s: %w", t.TableName(), err)
+		}
 	}
 	return nil
 }
