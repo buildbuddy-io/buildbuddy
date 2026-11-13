@@ -52,7 +52,8 @@ const (
 	//     x-buildbuddy-platform.container-registry-username: _json_key
 	//
 	// Deprecated: Use OverrideHeader instead. Headers with this prefix are
-	// still accepted because existing clients send them.
+	// still accepted because existing clients send them, but OverrideHeader
+	// takes precedence if both set the same property.
 	DeprecatedOverrideHeaderPrefix = "x-buildbuddy-platform."
 
 	// OverrideHeader is a header used to override platform props via remote
